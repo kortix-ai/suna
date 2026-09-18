@@ -1803,7 +1803,17 @@
     "queueList": "Queue List",
     "stopUnconfirmed": "L’arrêt n’a pas pu être confirmé. L’agent fonctionne peut-être encore. Réessayez de l’arrêter.",
     "queued": "En attente",
-    "queuedFiles": "{count, plural, one {# fichier} other {# fichiers}}"
+    "queuedFiles": "{count, plural, one {# fichier} other {# fichiers}}",
+    "queuedCount": "{count} en file",
+    "collapseQueue": "Réduire la file",
+    "expandQueue": "Développer la file",
+    "editingQueued": "Modification",
+    "cancelEdit": "Annuler la modification",
+    "saveEdit": "Enregistrer la modification",
+    "editAlreadySent": "Déjà envoyé — votre modification reste dans la zone de saisie",
+    "queueActionFailed": "Impossible de joindre le serveur — réessayez",
+    "sendNow": "Envoyer maintenant",
+    "sendNowHint": "S’exécute ensuite — termine la réponse en cours après l’étape en cours"
   },
   "billing": {
     "plan": {

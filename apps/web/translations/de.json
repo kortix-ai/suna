@@ -1803,7 +1803,17 @@
     "queueList": "Queue List",
     "stopUnconfirmed": "Stopp konnte nicht bestätigt werden. Der Agent läuft möglicherweise noch. Versuche es erneut.",
     "queued": "In Warteschlange",
-    "queuedFiles": "{count, plural, one {# Datei} other {# Dateien}}"
+    "queuedFiles": "{count, plural, one {# Datei} other {# Dateien}}",
+    "queuedCount": "{count} in Warteschlange",
+    "collapseQueue": "Warteschlange einklappen",
+    "expandQueue": "Warteschlange ausklappen",
+    "editingQueued": "Wird bearbeitet",
+    "cancelEdit": "Bearbeitung abbrechen",
+    "saveEdit": "Änderung speichern",
+    "editAlreadySent": "Bereits gesendet – deine Änderung bleibt im Eingabefeld",
+    "queueActionFailed": "Server nicht erreichbar – versuche es erneut",
+    "sendNow": "Jetzt senden",
+    "sendNowHint": "Läuft als Nächstes – beendet die aktuelle Antwort nach dem laufenden Schritt"
   },
   "billing": {
     "plan": {

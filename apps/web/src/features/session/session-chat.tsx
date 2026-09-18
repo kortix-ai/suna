@@ -59,20 +59,18 @@ import {
   QUEUE_REMOVED_TOAST_MS,
   createQueueRemoveHandler,
   queueResumeFailedToast,
-  removeFailureCopyKey,
-  restoreFailureCopyKey,
   retryFailureCopyKey,
 } from './queue-action-copy';
 import { removeQueuedDraftSend } from './queue-draft-actions';
 import {
-  composeTakeBack,
   draftClientMessageId,
   draftMessageId,
   isFirstPromptRow,
   projectQueueRows,
   rowsToRemoveOnRewind,
 } from './queue-projection';
-import { restoreQueuedMessage } from './queued-message-restore';
+import { rowForArrowEdit } from './composer/queue-edit';
+import { useQueueEdit } from './use-queue-edit';
 import { ActivityBurst } from './turn/activity-burst';
 import {
   CompactionFailedRow,
@@ -2946,7 +2944,7 @@ export function SessionChat({
     }
     useQueuedDraftStore.getState().prune(sessionId, listed);
   }, [promptInbox.prompts, queuedDrafts, sessionId]);
-  // Read by `handleSend` and `handleTakeBackQueue`, which are stable callbacks.
+  // Read by `handleSend`, a stable callback.
   // Written in an effect, never during render — the same rule as `isBusyRef`.
   const queueRowsRef = useRef(queueRows.rows);
   useEffect(() => {
@@ -2966,7 +2964,8 @@ export function SessionChat({
       pendingActions: promptInbox.pendingActions,
     };
   }, [promptInbox.prompts, promptInbox.pendingActions]);
-  const canTakeBackQueue = queueRows.rows.some((row) => row.takeBackEligible);
+  // The "Press ↑ to edit" hint: exactly when ↑ from an empty composer opens a row.
+  const canTakeBackQueue = rowForArrowEdit(queueRows.rows, true) !== null;
 
   // `resendHeldSend` is declared beside `handleSend`, far below these handlers,
   // so the draft Retry reaches it through a ref. Written in an effect, read
@@ -4687,94 +4686,8 @@ export function SessionChat({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [promptInbox.hold]);
 
-  /**
-   * Edit takes the selected composer entry back. Up takes the latest eligible
-   * entry, preserving whatever is already typed.
-   *
-   * Returns whether it acted, synchronously — the composer keeps Up as a caret
-   * move when there is nothing to take back. The removal itself is async: each
-   * row is DELETEd first, and only what the server actually removed comes back,
-   * so a row a turn already started (409) is never both sent and in the draft.
-   * A removed prompt that cannot come back losslessly (files, no local draft)
-   * is re-queued instead of dropped (`composeTakeBack`).
-   */
-  const takeBackInFlightRef = useRef(false);
-  const handleTakeBackQueue = useCallback(
-    (promptId?: string): boolean => {
-      const eligible = queueRowsRef.current
-        // A row whose own remove or retry is already running is not taken back:
-        // the request in flight is the outcome of the press before this one.
-        .filter(
-          (row) => row.takeBackEligible && !row.pendingAction && (!promptId || row.id === promptId),
-        )
-        .slice(-1);
-      if (eligible.length === 0) return false;
-      if (takeBackInFlightRef.current) return true;
-      takeBackInFlightRef.current = true;
-      // Captured BEFORE the removals: removing a row prunes its draft.
-      const drafts = useQueuedDraftStore.getState().bySession[sessionId] ?? [];
-      void (async () => {
-        try {
-          const settled = await Promise.allSettled(
-            eligible.map((row) => promptInbox.remove(row.id)),
-          );
-          const removed = settled.flatMap((result) =>
-            result.status === 'fulfilled' && result.value ? [result.value] : [],
-          );
-          if (removed.length === 0) {
-            const failure = settled.find((result) => result.status === 'rejected');
-            if (failure?.status === 'rejected') throw failure.reason;
-            return;
-          }
-          const store = useSessionStateStore.getState();
-          for (const prompt of removed) {
-            for (const id of prompt.removed_message_ids ?? [prompt.message_id]) {
-              store.forgetControlPlaneMessage(sessionId, id);
-            }
-          }
-          const { text, files, requeue } = composeTakeBack({ removed, drafts });
-          useQueuedDraftStore.getState().remove(
-            sessionId,
-            removed.map((prompt) => prompt.client_message_id),
-          );
-          if (text || files.length > 0) {
-            const restored = removed[0].overrides;
-            if (restored?.agent) localAgentSet(restored.agent);
-            if (restored?.model) localModelSet(restored.model);
-            localVariantSet(restored?.variant ?? undefined);
-            useSessionComposerPrefillStore.getState().setPrefill(sessionId, text, files);
-          }
-          for (const prompt of requeue) {
-            void promptInbox
-              .enqueue(restoreQueuedMessage(prompt, () => mintSessionWireMessageId(sessionId)))
-              .catch((cause) => {
-                const key = restoreFailureCopyKey(cause);
-                if (key) errorToast(tHardcodedUi.raw(key));
-              });
-          }
-        } catch (error) {
-          // The server's own prose used to land here verbatim — a bare "Not
-          // found" beside the row that had just come back into the composer.
-          // The classification decides the sentence; the body's text is English
-          // for people, not a contract.
-          const key = removeFailureCopyKey(classifyPromptActionError(error));
-          if (key) errorToast(tHardcodedUi.raw(key));
-        } finally {
-          takeBackInFlightRef.current = false;
-        }
-      })();
-      return true;
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    },
-    [
-      sessionId,
-      promptInbox.remove,
-      promptInbox.enqueue,
-      localAgentSet,
-      localModelSet,
-      localVariantSet,
-    ],
-  );
+  // Edit a queued message in place, and Steer one ahead — see `useQueueEdit`.
+  const queueEditor = useQueueEdit({ sessionId, rows: queueRows.rows, promptInbox });
 
   // ---- Triple-ESC to stop ----
   // ESC 1 → show hint (2 more). ESC 2 → show hint (1 more). ESC 3 → stop.
@@ -5224,22 +5137,45 @@ export function SessionChat({
     [projectId, projectSessionId, sessionScopeAgentName],
   );
 
+  // The queued messages — their own full-width card above the composer, and
+  // the one Resume while a Stop holds the queue. Renders nothing when neither
+  // applies.
+  const {
+    editingId: queueEditingId,
+    sendNow: queueSendNow,
+    openEdit: queueOpenEdit,
+  } = queueEditor;
+  const chatAboveSlot = useMemo(
+    () => (
+      <QueuedPromptList
+        rows={queueRows.rows}
+        heldCount={queueRows.heldCount}
+        resumePending={resumePending}
+        onResume={() => void handleResumeQueue()}
+        editingId={queueEditingId}
+        onSendNow={queueSendNow}
+        onEdit={(id) => {
+          queueOpenEdit(id);
+        }}
+        onRemove={(id) => void handleRemoveQueuedMessage(id)}
+        onRetry={handleRetryQueuedMessage}
+      />
+    ),
+    [
+      queueRows,
+      resumePending,
+      handleResumeQueue,
+      queueEditingId,
+      queueSendNow,
+      queueOpenEdit,
+      handleRemoveQueuedMessage,
+      handleRetryQueuedMessage,
+    ],
+  );
+
   const chatInputSlot = useMemo(
     () => (
       <>
-        {/* The queued messages, directly above the card — and the one Resume
-            while a Stop holds the queue. Renders nothing when neither applies. */}
-        <QueuedPromptList
-          rows={queueRows.rows}
-          heldCount={queueRows.heldCount}
-          resumePending={resumePending}
-          onResume={() => void handleResumeQueue()}
-          onEdit={(id) => {
-            handleTakeBackQueue(id);
-          }}
-          onRemove={(id) => void handleRemoveQueuedMessage(id)}
-          onRetry={handleRetryQueuedMessage}
-        />
         {/* Connector actions a policy gated for approval — pauses the run
             until the human decides. Self-hides when nothing's pending. */}
         <SessionApprovalPrompt />
@@ -5281,12 +5217,6 @@ export function SessionChat({
       handleQuestionReply,
       handleQuestionReject,
       handleQuestionActionChange,
-      queueRows,
-      resumePending,
-      handleResumeQueue,
-      handleRemoveQueuedMessage,
-      handleTakeBackQueue,
-      handleRetryQueuedMessage,
       tHardcodedUi,
     ],
   );
@@ -6113,7 +6043,10 @@ export function SessionChat({
                 }}
                 // Up from the first row takes the queue back; the placeholder
                 // says so while there is something to take.
-                onArrowUpAtStart={() => handleTakeBackQueue()}
+                onArrowUpAtStart={queueEditor.editLastRow}
+                queueEdit={queueEditor.queueEdit}
+                onQueueEditSave={queueEditor.saveQueueEdit}
+                onQueueEditEnd={queueEditor.endQueueEdit}
                 hint={
                   canTakeBackQueue ? tHardcodedUi.raw('i18nComplete.text03a01dd53ffa') : undefined
                 }
@@ -6177,6 +6110,7 @@ export function SessionChat({
                 questionCanAct={questionAction.canAct}
                 onQuestionAction={handleQuestionAction}
                 inputSlot={chatInputSlot}
+                aboveSlot={chatAboveSlot}
                 toolbarSlot={chatToolbarSlot}
                 // The shell can now render on a cached transcript alone, i.e. before
                 // the sandbox answers — so sending has to be gated separately from

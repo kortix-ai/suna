@@ -61,8 +61,11 @@ export interface QueueRow {
   retryable: boolean;
   /** The server can still remove this prompt. */
   removable: boolean;
-  /** Up takes it back into the composer without losing anything. */
+  /** The composer can edit it in place without losing anything: its text is
+   *  all there is, or this tab still holds its files. */
   takeBackEligible: boolean;
+  /** Send now can still move it ahead: the server holds it in line. */
+  canSendNow: boolean;
   /** This row already has a request in flight (`promptInbox.pendingActions`).
    *  It must not accept a second one — see `acceptRowAction`. */
   pendingAction?: 'retry' | 'remove';
@@ -156,7 +159,9 @@ export function projectQueueRows(input: {
       // A row from another tab or from before a reload comes back only when
       // its text is all there is: its files live as sandbox paths the composer
       // cannot re-attach.
-      takeBackEligible: state === 'queued' && (Boolean(draft) || attachmentCount === 0),
+      takeBackEligible:
+        state === 'queued' && (Boolean(draft) || attachmentCount === 0),
+      canSendNow: state === 'queued',
       ...(input.pendingActions?.[prompt.prompt_id]
         ? { pendingAction: input.pendingActions[prompt.prompt_id] }
         : {}),
@@ -188,6 +193,7 @@ export function projectQueueRows(input: {
       retryable: Boolean(failure) && isRetryableFailure(failure?.code),
       removable: Boolean(failure),
       takeBackEligible: false,
+      canSendNow: false,
     });
   }
 
@@ -267,44 +273,3 @@ export function rowsToRemoveOnRewind(input: {
   );
 }
 
-/**
- * What Up puts back into the composer, from the prompts the DELETE removed (in
- * queue order).
- *
- * This tab's own drafts come back exactly as typed, with their original files.
- * A removed prompt with no draft comes back as its visible text only when that
- * text is the whole prompt. Anything carrying files is returned in `requeue`
- * instead: the caller re-POSTs it, so a take-back can never silently drop an
- * attachment.
- */
-export function composeTakeBack(input: {
-  removed: readonly RemovedSessionPrompt[];
-  drafts: readonly QueuedDraft[];
-}): { text: string; files: AttachedFile[]; requeue: RemovedSessionPrompt[] } {
-  const draftsById = new Map(input.drafts.map((d) => [d.clientMessageId, d] as const));
-  const texts: string[] = [];
-  const files: AttachedFile[] = [];
-  const requeue: RemovedSessionPrompt[] = [];
-
-  for (const removed of input.removed) {
-    const draft = draftsById.get(removed.client_message_id);
-    if (draft) {
-      if (draft.text) texts.push(draft.text);
-      files.push(...draft.files);
-      continue;
-    }
-    const raw = removed.parts
-      .filter((part) => part.type === 'text' && typeof part.text === 'string')
-      .map((part) => part.text as string)
-      .join('\n');
-    const cleaned = cleanPromptText(raw);
-    const fileParts = removed.parts.filter((part) => part.type === 'file');
-    if (cleaned.fileCount > 0 || fileParts.length > 0) {
-      requeue.push(removed);
-      continue;
-    }
-    if (cleaned.text) texts.push(cleaned.text);
-  }
-
-  return { text: texts.join('\n'), files, requeue };
-}

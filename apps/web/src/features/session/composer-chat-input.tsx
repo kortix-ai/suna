@@ -51,7 +51,12 @@ export function ComposerChatInput({
   placeholder,
   prefill,
   onPrefillApplied,
+  onArrowUpAtStart,
+  queueEdit,
+  onQueueEditSave,
+  onQueueEditEnd,
   inputSlot,
+  aboveSlot,
   toolbarSlot,
   underbarPlacement,
   slashMenuPlacement,
@@ -98,7 +103,14 @@ export function ComposerChatInput({
     options?: SessionPromptOverrides | null;
   } | null;
   onPrefillApplied?: SessionChatInputProps['onPrefillApplied'];
+  /** Queued-message editing — see `SessionChatInputProps.queueEdit`. */
+  onArrowUpAtStart?: SessionChatInputProps['onArrowUpAtStart'];
+  queueEdit?: SessionChatInputProps['queueEdit'];
+  onQueueEditSave?: SessionChatInputProps['onQueueEditSave'];
+  onQueueEditEnd?: SessionChatInputProps['onQueueEditEnd'];
   inputSlot?: ReactNode;
+  /** Full-width content above the composer — see `SessionChatInputProps.aboveSlot`. */
+  aboveSlot?: ReactNode;
   toolbarSlot?: ReactNode;
   underbarPlacement?: SessionChatInputProps['underbarPlacement'];
   slashMenuPlacement?: SessionChatInputProps['slashMenuPlacement'];
@@ -327,7 +339,12 @@ export function ComposerChatInput({
       placeholder={placeholder}
       prefill={prefill}
       onPrefillApplied={onPrefillApplied}
+      onArrowUpAtStart={onArrowUpAtStart}
+      queueEdit={queueEdit}
+      onQueueEditSave={onQueueEditSave}
+      onQueueEditEnd={onQueueEditEnd}
       inputSlot={inputSlot}
+      aboveSlot={aboveSlot}
       toolbarSlot={combinedToolbarSlot}
       underbarPlacement={underbarPlacement}
       slashMenuPlacement={slashMenuPlacement}

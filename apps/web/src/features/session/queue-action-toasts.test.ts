@@ -18,6 +18,10 @@ const shell = readFileSync(
   fileURLToPath(new URL('./instant-session-shell.tsx', import.meta.url)),
   'utf8',
 );
+const queueEdit = readFileSync(
+  fileURLToPath(new URL('./use-queue-edit.ts', import.meta.url)),
+  'utf8',
+);
 
 function between(source: string, start: string, end: string): string {
   const from = source.indexOf(start);
@@ -33,17 +37,17 @@ const flat = (source: string) => source.replace(/\s+/g, ' ');
 const RAW_SERVER_TEXT = /errorToast\(\s*(?:\(?\s*error|cause)[^)]*\.message/;
 
 describe('no queue surface toasts what the server wrote', () => {
-  test('take-back maps the refusal instead of rethrowing the server prose', () => {
-    const takeBack = flat(
-      between(chat, 'const handleTakeBackQueue = useCallback(', '// ---- Triple-ESC to stop ----'),
-    );
-    expect(takeBack).not.toMatch(RAW_SERVER_TEXT);
-    expect(takeBack).toContain('removeFailureCopyKey(classifyPromptActionError(error))');
-    // A prompt that cannot come back losslessly is re-queued. That POST is a
-    // restore, so a 402 belongs to the upgrade dialog, not to a toast here.
-    expect(takeBack).toContain('restoreFailureCopyKey(cause)');
-    // Rows whose own action is already running are not removed a second time.
-    expect(takeBack).toContain('!row.pendingAction');
+  test('edit and send now map every refusal instead of rethrowing the server prose', () => {
+    // REWRITTEN when Edit moved from take-back (DELETE + prefill) to an edit in
+    // the composer (`useQueueEdit`): the same rule, one file. Both refusal
+    // paths classify the error; none toasts what the server wrote.
+    const flatEdit = flat(queueEdit);
+    expect(flatEdit).not.toMatch(RAW_SERVER_TEXT);
+    // Save: the removal's refusal is classified.
+    expect(flatEdit).toContain('const kind = classifyPromptActionError(error);');
+    // Send now: the shared remove and restore copy.
+    expect(flatEdit).toContain('removeFailureCopyKey(classifyPromptActionError(error))');
+    expect(flatEdit).toContain('restoreFailureCopyKey(cause)');
   });
 
   test('the rewind removal loop reads the live inbox, so a row already removed is not deleted again', () => {
@@ -102,7 +106,9 @@ describe('no queue surface toasts what the server wrote', () => {
     expect(list).toContain('onRetry={retryQueuedPrompt}');
     // One function, so the shell cannot drift from SessionChat's wording again.
     expect(list).toContain('queueResumeFailedToast(tI18nHardcoded.raw)');
-    expect(list).toContain('removeFailureCopyKey(classifyPromptActionError(error))');
+    // Edit and Send now go through the same controller SessionChat mounts.
+    expect(list).toContain('shellQueueEdit.openEdit(id)');
+    expect(list).toContain('onSendNow={shellQueueEdit.sendNow}');
 
     const bubbles = flat(between(shell, 'leadingStatus={', 'Once a first message is sent'));
     expect(bubbles).toContain('retryQueuedPrompt(firstPromptRow.prompt_id)');
@@ -112,7 +118,7 @@ describe('no queue surface toasts what the server wrote', () => {
 
   test('SessionChat resumes with the shared toast', () => {
     const resume = flat(
-      between(chat, 'const handleResumeQueue = useCallback(', 'const takeBackInFlightRef'),
+      between(chat, 'const handleResumeQueue = useCallback(', 'const queueEditor = useQueueEdit('),
     );
     expect(resume).toContain('queueResumeFailedToast(tHardcodedUi.raw)');
     expect(resume).not.toContain("tHardcodedUi.raw('i18nComplete.text06619384104c')");

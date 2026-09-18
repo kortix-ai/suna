@@ -8,6 +8,7 @@ import { errorToast } from '@/components/ui/toast';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
 import { QueuedPromptList } from '@/features/session/composer/queued-prompt-list';
+import { useQueueEdit } from '@/features/session/use-queue-edit';
 import {
   firstPromptBubbleTone,
   firstPromptRowIsLive,
@@ -18,7 +19,6 @@ import { isFirstPromptRow, projectQueueRows } from '@/features/session/queue-pro
 import {
   queueResumeFailedToast,
   createQueueRemoveHandler,
-  removeFailureCopyKey,
   retryFailureCopyKey,
   sendRefusalNeedsOwnToast,
 } from '@/features/session/queue-action-copy';
@@ -275,6 +275,8 @@ export function InstantSessionShell({
       }),
     [promptInbox.prompts, promptInbox.pendingActions, extraSends],
   );
+  // The same edit-in-place and Steer the session's own list has — see `useQueueEdit`.
+  const shellQueueEdit = useQueueEdit({ sessionId, rows: shellQueue.rows, promptInbox });
   const transcriptQueue = useMemo(() => {
     const rows = promptInbox.prompts.filter(
       (p) => !isFirstPromptRow(p) && p.placement === 'transcript',
@@ -570,8 +572,13 @@ export function InstantSessionShell({
       // typed mid-turn gets, rather than racing the boot.
       sessionWorking={!!submitted}
       stopDisabled={!!submitted}
-      // What was typed while the box boots — see `shellQueueRows`.
-      inputSlot={
+      onArrowUpAtStart={submitted ? shellQueueEdit.editLastRow : undefined}
+      queueEdit={shellQueueEdit.queueEdit}
+      onQueueEditSave={shellQueueEdit.saveQueueEdit}
+      onQueueEditEnd={shellQueueEdit.endQueueEdit}
+      // What was typed while the box boots — see `shellQueueRows`. Its own
+      // full-width card above the composer, as in SessionChat.
+      aboveSlot={
         submitted ? (
           <QueuedPromptList
             rows={shellQueue.rows}
@@ -583,22 +590,10 @@ export function InstantSessionShell({
             }}
             onRemove={removeQueuedPrompt}
             onRetry={retryQueuedPrompt}
+            editingId={shellQueueEdit.editingId}
+            onSendNow={shellQueueEdit.sendNow}
             onEdit={(id) => {
-              // Edit is a removal whose body goes into the composer, so a
-              // refusal reads as a refused removal.
-              void promptInbox
-                .remove(id)
-                .then((removed) => {
-                  const text = removed.parts
-                    .filter((part) => part.type === 'text')
-                    .map((part) => part.text)
-                    .join('\n');
-                  setPrefill({ text, id: Date.now(), mode: 'merge', options: removed.overrides });
-                })
-                .catch((error) => {
-                  const key = removeFailureCopyKey(classifyPromptActionError(error));
-                  if (key) errorToast(tI18nHardcoded.raw(key));
-                });
+              shellQueueEdit.openEdit(id);
             }}
           />
         ) : undefined

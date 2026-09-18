@@ -1803,7 +1803,17 @@
     "queueList": "Queue List",
     "stopUnconfirmed": "Zaustavljanje nije potvrđeno. Agent je možda i dalje aktivan. Pokušajte ponovo da ga zaustavite.",
     "queued": "На чекању",
-    "queuedFiles": "{count, plural, one {# датотека} few {# датотеке} other {# датотека}}"
+    "queuedFiles": "{count, plural, one {# датотека} few {# датотеке} other {# датотека}}",
+    "queuedCount": "{count} u redu",
+    "collapseQueue": "Skupi red",
+    "expandQueue": "Proširi red",
+    "editingQueued": "Uređuje se",
+    "cancelEdit": "Otkaži izmenu",
+    "saveEdit": "Sačuvaj izmenu",
+    "editAlreadySent": "Već poslato — tvoja izmena je i dalje u polju za unos",
+    "queueActionFailed": "Server nije dostupan — pokušaj ponovo",
+    "sendNow": "Pošalji sada",
+    "sendNowHint": "Pokreće se sledeće — završava trenutni odgovor posle koraka koji je u toku"
   },
   "billing": {
     "plan": {

@@ -37,6 +37,8 @@ const EMPTY_AGENTS: Agent[] = [];
  */
 export interface ComposerUnderbarProps {
   onAttachClick: () => void;
+  /** Attaching is off — an edit of a queued message changes its words only. */
+  attachDisabled?: boolean;
 
   /** Already filtered to non-hidden, non-subagent agents (`primaryAgents` in
    *  composer.tsx) — this component does no further filtering. */
@@ -72,6 +74,7 @@ export interface ComposerUnderbarProps {
 
 export function ComposerUnderbar({
   onAttachClick,
+  attachDisabled = false,
   agents,
   selectedAgent,
   onAgentChange,
@@ -134,6 +137,7 @@ export function ComposerUnderbar({
             variant="ghost"
             size="icon-base"
             onClick={onAttachClick}
+            disabled={attachDisabled}
             aria-label={t('attachFiles')}
             // `hit-area-1` — the same extension the toolbar's send
             // buttons carry. The visible chip stays 32px; the pressable box

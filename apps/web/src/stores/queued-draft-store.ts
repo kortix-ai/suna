@@ -55,6 +55,9 @@ interface QueuedDraftState {
   add: (sessionId: string, draft: QueuedDraft) => void;
   markPosted: (sessionId: string, clientMessageId: string) => void;
   remove: (sessionId: string, clientMessageIds: readonly string[]) => void;
+  /** An in-place edit saved new words: the draft shows them, and keeps its
+   *  files and its place. */
+  setText: (sessionId: string, clientMessageId: string, text: string) => void;
   /**
    * Drop every POSTED draft whose row the inbox no longer lists — it was
    * delivered, removed elsewhere, or taken back. An unposted draft is kept: its
@@ -107,6 +110,16 @@ export const useQueuedDraftStore = create<QueuedDraftState>((set) => ({
         s,
         sessionId,
         drafts.filter((d) => !clientMessageIds.includes(d.clientMessageId)),
+      );
+    }),
+  setText: (sessionId, clientMessageId, text) =>
+    set((s) => {
+      const drafts = s.bySession[sessionId];
+      if (!drafts?.some((d) => d.clientMessageId === clientMessageId)) return s;
+      return withSession(
+        s,
+        sessionId,
+        drafts.map((d) => (d.clientMessageId === clientMessageId ? { ...d, text } : d)),
       );
     }),
   prune: (sessionId, listedClientMessageIds) =>

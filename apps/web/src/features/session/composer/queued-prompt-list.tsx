@@ -1,10 +1,12 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
-import { useEffect, useRef } from 'react';
+import { CaretUpIcon, PencilSimpleIcon, TrashIcon } from '@phosphor-icons/react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { queueFailureLine } from '../queue-failure-copy';
 import type { QueueRow } from '../queue-projection';
 
@@ -19,18 +21,18 @@ import type { QueueRow } from '../queue-projection';
  */
 export const QUEUE_ROW_ACTION_COOLDOWN_MS = 400;
 
-/** What a row's buttons do. Remove and Edit both take the row off the list. */
-export type QueueRowAction = 'remove' | 'edit' | 'retry';
+/** What a row's buttons do. Remove and Send now take the row off the list. */
+export type QueueRowAction = 'remove' | 'edit' | 'retry' | 'sendNow';
 
 /**
  * Does this action take its row off the list, and so shift every row below it?
  *
- * Edit counts: it is a removal whose body goes into the composer, and the SDK
- * filters the row out of its cache on the click, so the list moves under the
- * pointer exactly as it does after Remove. Retry leaves the row in place.
+ * Remove, and Send now, which moves the row into the Quick Queue. Edit keeps
+ * the row where it is while the composer holds its words, and Retry re-queues
+ * it in place.
  */
 function shiftsTheList(action: QueueRowAction): boolean {
-  return action === 'remove' || action === 'edit';
+  return action === 'remove' || action === 'sendNow';
 }
 
 /**
@@ -122,7 +124,12 @@ export interface QueuedPromptListProps {
   rows: readonly QueueRow[];
   heldCount: number;
   resumePending?: boolean;
+  /** The row this composer is editing. It reads Editing and offers nothing. */
+  editingId?: string | null;
+  /** Start with the rows hidden behind the header. */
+  defaultCollapsed?: boolean;
   onResume?: () => void;
+  onSendNow?: (promptId: string) => void;
   onEdit?: (promptId: string) => void;
   onRemove?: (promptId: string) => void;
   onRetry?: (promptId: string) => void;
@@ -132,7 +139,10 @@ export function QueuedPromptList({
   rows,
   heldCount,
   resumePending = false,
+  editingId = null,
+  defaultCollapsed = false,
   onResume,
+  onSendNow,
   onEdit,
   onRemove,
   onRetry,
@@ -140,6 +150,9 @@ export function QueuedPromptList({
   const t = useTranslations('threads');
   const common = useTranslations('common');
   const copy = useTranslations('hardcodedUi');
+  const listId = useId();
+  // Collapse only hides the rows. Nothing is removed, and the count stays.
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
   // Read and written in event handlers only, never during render. `nowMs` comes
   // from the handler for the same reason: the clock is not read while rendering.
   const lastShiftAtRef = useRef<number | null>(null);
@@ -176,32 +189,69 @@ export function QueuedPromptList({
   }, [rows]);
   if (rows.length === 0 && heldCount === 0) return null;
 
+  const resumeButton = onResume && (
+    <Button
+      type="button"
+      variant="ghost"
+      size="xs"
+      className="h-6 gap-1 px-2 text-xs"
+      disabled={resumePending}
+      onClick={onResume}
+    >
+      {resumePending && <Loading className="size-3.5 shrink-0" />}
+      {copy.raw('i18nComplete.textd640c7421da0')}
+    </Button>
+  );
+
   return (
-    <section aria-label={t('queueList')} className="flex w-full flex-col">
-      {heldCount > 0 && (
+    <section
+      aria-label={t('queueList')}
+      className="bg-background border-border flex w-full flex-col rounded-lg border p-1"
+    >
+      {/* Paused with nothing listed: the pause is the whole card. With rows,
+          the header below carries it instead. */}
+      {heldCount > 0 && rows.length === 0 && (
         <div
           data-queue-held
           className="text-muted-foreground flex items-center gap-2 px-3 py-1 text-xs"
         >
           <span className="min-w-0 flex-1">{copy.raw('i18nComplete.text1eb132d9d4da')}</span>
-          {onResume && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              disabled={resumePending}
-              onClick={onResume}
-            >
-              {resumePending && <Loading className="size-3.5 shrink-0" />}
-              {copy.raw('i18nComplete.textd640c7421da0')}
-            </Button>
-          )}
+          {resumeButton}
         </div>
       )}
       {rows.length > 0 && (
-        <ul className="max-h-40 overflow-y-auto">
+        <div
+          {...(heldCount > 0 ? { 'data-queue-held': true } : {})}
+          className="flex items-center gap-2 py-0.5 pr-1 pl-2"
+        >
+          <span className="text-muted-foreground flex min-w-0 flex-1 items-center self-stretch text-xs leading-none">
+            {heldCount > 0
+              ? copy.raw('i18nComplete.text1eb132d9d4da')
+              : t('queuedCount', { count: rows.length })}
+          </span>
+
+          <div className="flex items-center gap-0">
+            {heldCount > 0 && resumeButton}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              className={cn(!collapsed ? 'rotate-180' : 'rotate-0')}
+              aria-label={collapsed ? t('expandQueue') : t('collapseQueue')}
+              aria-expanded={!collapsed}
+              aria-controls={listId}
+              onClick={() => setCollapsed((value) => !value)}
+            >
+              <CaretUpIcon className="size-3.5" />
+            </Button>
+          </div>
+        </div>
+      )}
+      {rows.length > 0 && !collapsed && (
+        <ul id={listId} className="max-h-40 overflow-y-auto">
           {rows.map((row) => {
             const failed = row.state === 'failed';
+            const editing = row.id === editingId;
             const long = row.text.length > 240 || row.text.split('\n').length > 4;
             const failureId = `queued-failure-${row.id}`;
             const failure = failed
@@ -211,17 +261,34 @@ export function QueuedPromptList({
                   copy: (key) => copy.raw(key),
                 })
               : null;
-            // Both buttons are `aria-disabled`, never `disabled`: disabling the
+            // Every button is `aria-disabled`, never `disabled`: disabling the
             // button the user just pressed drops focus to <body>.
             const pending = Boolean(row.pendingAction);
             const actionProps = failed
               ? { 'aria-disabled': pending, 'aria-describedby': failureId }
               : { 'aria-disabled': pending };
+            const removeButton = row.removable && onRemove && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label={copy.raw('i18nComplete.textc0b9d9e9ac1d')}
+                {...actionProps}
+                onClick={(event) => act(event, row, 'remove', Date.now(), () => onRemove(row.id))}
+              >
+                {row.pendingAction === 'remove' ? (
+                  <Loading className="size-3.5 shrink-0" />
+                ) : (
+                  <TrashIcon className="size-3.5" />
+                )}
+              </Button>
+            );
             return (
               <li
                 key={row.id}
                 data-queued-prompt-id={row.id}
                 data-queued-state={row.state}
+                {...(editing ? { 'data-queued-editing': 'true' } : {})}
                 aria-busy={pending || undefined}
                 onFocus={() => {
                   focusedRowRef.current = focusedRowAfter(focusedRowRef.current, {
@@ -236,9 +303,12 @@ export function QueuedPromptList({
                   });
                 }}
                 {...(row.pendingAction ? { 'data-queued-pending': row.pendingAction } : {})}
-                className="group/queued flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1"
+                className={cn(
+                  'group/queued flex min-h-8 flex-wrap items-center gap-x-2 gap-y-1 rounded-md border px-2 py-0.5',
+                  editing ? 'border-border' : 'hover:bg-hover border-transparent',
+                )}
               >
-                <div className="text-muted-foreground min-w-0 flex-1 text-sm break-words">
+                <div className="text-foreground min-w-0 flex-1 text-sm break-words">
                   {long ? (
                     <details>
                       <summary className="focus-visible:outline-ring cursor-pointer truncate rounded-sm focus-visible:outline-2">
@@ -252,7 +322,7 @@ export function QueuedPromptList({
                     <p className="whitespace-pre-wrap">{row.text}</p>
                   )}
                   {row.attachmentCount > 0 && (
-                    <span className="text-xs">
+                    <span className="text-muted-foreground text-xs">
                       {t('queuedFiles', { count: row.attachmentCount })}
                     </span>
                   )}
@@ -267,57 +337,68 @@ export function QueuedPromptList({
                     </p>
                   )}
                 </div>
-                <div
-                  className={cn(
-                    'flex shrink-0 items-center',
-                    !failed &&
-                      'opacity-0 group-focus-within/queued:opacity-100 group-hover/queued:opacity-100 pointer-coarse:opacity-100',
-                  )}
-                >
-                  {row.takeBackEligible && onEdit && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="xs"
-                      {...actionProps}
-                      onClick={(event) => act(event, row, 'edit', Date.now(), () => onEdit(row.id))}
-                    >
-                      {common('edit')}
-                    </Button>
-                  )}
-                  {/* A session that no longer exists refuses every retry, so
-                      the row offers only Remove. */}
-                  {failed && row.retryable && onRetry && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="xs"
-                      aria-label={copy.raw('i18nComplete.text942087cc2d41')}
-                      {...actionProps}
-                      onClick={(event) =>
-                        act(event, row, 'retry', Date.now(), () => onRetry(row.id))
-                      }
-                    >
-                      {row.pendingAction === 'retry' && <Loading className="size-3.5 shrink-0" />}
-                      {copy.raw('i18nComplete.text942087cc2d41')}
-                    </Button>
-                  )}
-                  {row.removable && onRemove && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="xs"
-                      aria-label={copy.raw('i18nComplete.textc0b9d9e9ac1d')}
-                      {...actionProps}
-                      onClick={(event) =>
-                        act(event, row, 'remove', Date.now(), () => onRemove(row.id))
-                      }
-                    >
-                      {row.pendingAction === 'remove' && <Loading className="size-3.5 shrink-0" />}
-                      {common('remove')}
-                    </Button>
-                  )}
-                </div>
+                {editing ? (
+                  <div className="text-muted-foreground flex shrink-0 items-center gap-0.5">
+                    <span className="px-2 text-sm">{t('editingQueued')}</span>
+                  </div>
+                ) : (
+                  <div
+                    className={cn(
+                      'text-muted-foreground flex shrink-0 items-center gap-0.5',
+                      !failed &&
+                        'opacity-0 group-focus-within/queued:opacity-100 group-hover/queued:opacity-100 pointer-coarse:opacity-100',
+                    )}
+                  >
+                    {row.canSendNow && onSendNow && (
+                      <Hint side="top" label={t('sendNowHint')}>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="xs"
+                          className="h-6 gap-1 px-2 text-xs"
+                          {...actionProps}
+                          onClick={(event) =>
+                            act(event, row, 'sendNow', Date.now(), () => onSendNow(row.id))
+                          }
+                        >
+                          {t('sendNow')}
+                        </Button>
+                      </Hint>
+                    )}
+                    {row.takeBackEligible && onEdit && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-label={common('edit')}
+                        {...actionProps}
+                        onClick={(event) =>
+                          act(event, row, 'edit', Date.now(), () => onEdit(row.id))
+                        }
+                      >
+                        <PencilSimpleIcon className="size-3.5" />
+                      </Button>
+                    )}
+                    {/* A session that no longer exists refuses every retry, so
+                        the row offers only Remove. */}
+                    {failed && row.retryable && onRetry && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="xs"
+                        aria-label={copy.raw('i18nComplete.text942087cc2d41')}
+                        {...actionProps}
+                        onClick={(event) =>
+                          act(event, row, 'retry', Date.now(), () => onRetry(row.id))
+                        }
+                      >
+                        {row.pendingAction === 'retry' && <Loading className="size-3.5 shrink-0" />}
+                        {copy.raw('i18nComplete.text942087cc2d41')}
+                      </Button>
+                    )}
+                    {removeButton}
+                  </div>
+                )}
               </li>
             );
           })}

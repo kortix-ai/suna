@@ -5,7 +5,6 @@ import { optimisticSessionPrompt } from '@kortix/sdk/react';
 import type { AttachedFile } from './composer/types';
 import {
   cleanPromptText,
-  composeTakeBack,
   draftClientMessageId,
   draftMessageId,
   isDraftRowId,
@@ -324,6 +323,8 @@ describe('projectQueueRows', () => {
         removable: true,
         retryable: true,
         takeBackEligible: false,
+        // No server row yet: nothing to send now.
+        canSendNow: false,
       },
     ]);
   });
@@ -438,50 +439,6 @@ describe('cleanPromptText', () => {
   });
 });
 
-describe('composeTakeBack', () => {
-  const removed = (
-    clientMessageId: string,
-    parts: RemovedSessionPrompt['parts'],
-  ): RemovedSessionPrompt => ({
-    prompt_id: `p-${clientMessageId}`,
-    client_message_id: clientMessageId,
-    message_id: `msg-${clientMessageId}`,
-    parts,
-    overrides: null,
-  });
-
-  test('one entry per line, in queue order, drafts exactly as typed with their files', () => {
-    const result = composeTakeBack({
-      removed: [
-        removed('q_1', [{ type: 'text', text: 'server copy of one' }]),
-        removed('q_2', [{ type: 'text', text: 'two, from another tab' }]),
-      ],
-      drafts: [draft('q_1', { text: 'one, as typed', files: [remoteFile] })],
-    });
-    expect(result).toEqual({
-      text: 'one, as typed\ntwo, from another tab',
-      files: [remoteFile],
-      requeue: [],
-    });
-  });
-
-  test('a prompt with no draft that carries files goes back to the queue, never into the composer half-empty', () => {
-    const withUpload = removed('q_3', [
-      {
-        type: 'text',
-        text: 'see file\n\n<file path="/workspace/uploads/a.png" mime="image/png" filename="a.png"></file>',
-      },
-    ]);
-    const withFilePart = removed('q_4', [
-      { type: 'text', text: 'see url' },
-      { type: 'file', mime: 'image/png', url: 'https://files.test/b.png' },
-    ]);
-    const result = composeTakeBack({ removed: [withUpload, withFilePart], drafts: [] });
-    expect(result.text).toBe('');
-    expect(result.requeue).toEqual([withUpload, withFilePart]);
-  });
-});
-
 describe('rowsToRemoveOnRewind', () => {
   // A rewind stages `session.revert` and the NEXT delivered prompt commits it,
   // so every queued row has to go before the replacement prompt is sent. The
@@ -519,3 +476,21 @@ describe('rowsToRemoveOnRewind', () => {
     expect(rowsToRemoveOnRewind({ prompts: rows, pendingActions: {} })).toEqual(rows);
   });
 });
+
+describe('the Send now field on a projected row', () => {
+  test('a queued row can be sent now', () => {
+    const [row] = projectQueueRows({ prompts: [prompt({ placement: 'composer' })] }).rows;
+    expect(row.canSendNow).toBe(true);
+  });
+
+  test('delivering and failed rows cannot', () => {
+    const rows = projectQueueRows({
+      prompts: [
+        prompt({ prompt_id: 'd', client_message_id: 'q_d', state: 'delivering' }),
+        prompt({ prompt_id: 'f', client_message_id: 'q_f', state: 'failed' }),
+      ],
+    }).rows;
+    expect(rows.map((r) => r.canSendNow)).toEqual([false, false]);
+  });
+});
+

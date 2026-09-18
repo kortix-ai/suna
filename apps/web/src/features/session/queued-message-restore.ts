@@ -22,6 +22,29 @@
 import type { CreateSessionPromptInput, RemovedSessionPrompt } from '@kortix/sdk';
 
 /**
+ * Send now: the re-POST that moves a removed Queue List prompt into the Quick
+ * Queue.
+ *
+ * `placement: 'transcript'` puts it in the lane that runs ahead of every Queue
+ * List row and ends the running response at its next tool boundary. It is sent
+ * NOW (`clientSentAtMs`), so it lines up behind earlier Quick Queue messages,
+ * and it is never held: the user asked for this message even if Stop holds the
+ * rest.
+ */
+export function sendNowQueuedMessage(
+  removed: RemovedSessionPrompt,
+  mintMessageId: () => string,
+  nowMs: number,
+): CreateSessionPromptInput {
+  return {
+    ...restoreQueuedMessage(removed, mintMessageId),
+    held: false,
+    placement: 'transcript',
+    clientSentAtMs: nowMs,
+  };
+}
+
+/**
  * The re-POST body for a removed prompt: the original CONTENT, a fresh wire id.
  *
  * `clientMessageId` is the original, so the inbox's unique idempotency key

@@ -74,3 +74,23 @@ describe('useQueuedDraftStore', () => {
     expect(useQueuedDraftStore.getState().bySession).toBe(before);
   });
 });
+
+describe('setText — an in-place edit of a queued message', () => {
+  test('rewrites only the named draft, and keeps its files and its place', () => {
+    const store = useQueuedDraftStore.getState();
+    store.add('s-edit', { clientMessageId: 'a', messageId: 'w_a', text: 'one', files: [], createdAtMs: 1, posted: true });
+    store.add('s-edit', { clientMessageId: 'b', messageId: 'w_b', text: 'two', files: [], createdAtMs: 2, posted: true });
+    useQueuedDraftStore.getState().setText('s-edit', 'a', 'one, edited');
+    const drafts = useQueuedDraftStore.getState().bySession['s-edit'];
+    expect(drafts.map((d) => [d.clientMessageId, d.text])).toEqual([
+      ['a', 'one, edited'],
+      ['b', 'two'],
+    ]);
+  });
+
+  test('a draft that is not there changes nothing', () => {
+    const before = useQueuedDraftStore.getState().bySession;
+    useQueuedDraftStore.getState().setText('s-none', 'x', 'y');
+    expect(useQueuedDraftStore.getState().bySession).toBe(before);
+  });
+});

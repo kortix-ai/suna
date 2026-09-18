@@ -1,6 +1,10 @@
 import type { CreateSessionPromptInput, RemovedSessionPrompt } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
-import { createQueueUndoAction, restoreQueuedMessage } from './queued-message-restore';
+import {
+  createQueueUndoAction,
+  restoreQueuedMessage,
+  sendNowQueuedMessage,
+} from './queued-message-restore';
 
 function removed(overrides: Partial<RemovedSessionPrompt> = {}): RemovedSessionPrompt {
   return {
@@ -128,5 +132,26 @@ describe('createQueueUndoAction', () => {
     await Promise.resolve();
 
     expect(errors).toHaveLength(1);
+  });
+});
+
+describe('sendNowQueuedMessage — Send now moves a Queue List row to the Quick Queue', () => {
+  test('re-POSTs the same message in the Quick Queue lane, due now, sent now', () => {
+    const input = sendNowQueuedMessage(
+      removed({ placement: 'composer', held: true }),
+      () => 'msg_fresh',
+      1_700_000_000_000,
+    );
+    expect(input).toEqual({
+      clientMessageId: 'cm_1',
+      messageId: 'msg_fresh',
+      parts: removed().parts,
+      restore: true,
+      // Not held: the user asked for THIS message now, even if Stop held the rest.
+      held: false,
+      placement: 'transcript',
+      overrides: removed().overrides,
+      clientSentAtMs: 1_700_000_000_000,
+    });
   });
 });

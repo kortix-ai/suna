@@ -15,7 +15,9 @@ import { usePromptAttachments, useRuntimeSessions } from '@kortix/sdk/react';
 import {
   ArrowBendDoubleUpLeftIcon,
   ArrowUpLeftIcon as ArrowUpLeft,
+  PencilSimpleIcon,
   WarningIcon,
+  XIcon,
 } from '@phosphor-icons/react';
 import type { JSONContent } from '@tiptap/core';
 import type { RefObject } from 'react';
@@ -49,6 +51,7 @@ import { useModelConnectionGate } from '../use-model-connection-gate';
 import { NO_AGENT_ACCESS_HINT, NO_AGENT_ACCESS_LABEL } from './composer-agent-access';
 import type { DraftScope, StoredDraft } from './draft/composer-draft';
 import { useComposerDraft } from './draft/use-composer-draft';
+import { planQueueEditExit } from './queue-edit';
 import { commandBlocker, sendBlocker, sendBlockerMessage } from './send-blockers';
 
 import { Button } from '@/components/ui/button';
@@ -247,6 +250,22 @@ export interface SessionChatInputProps {
    * acted; `false` keeps Up as an ordinary caret move.
    */
   onArrowUpAtStart?: () => boolean;
+  /**
+   * The queued message this composer is editing, or null. While it is set the
+   * composer holds that message's words behind an Editing chip, submit SAVES
+   * them (`onQueueEditSave`), attaching is off, and the draft is not
+   * autosaved. Whatever the composer held before comes back when the edit ends.
+   */
+  queueEdit?: { id: string; text: string } | null;
+  /** Save the edited words. `saved` and `refused` end the edit — a refusal
+   *  keeps the words in the composer; `failed` keeps the edit open. */
+  onQueueEditSave?: (promptId: string, text: string) => Promise<'saved' | 'refused' | 'failed'>;
+  /**
+   * The edit ended, and the composer already holds what comes after it. The
+   * host clears `queueEdit` here — never before. `cancelled` is the chip's ✕,
+   * Escape, or a question taking the composer over.
+   */
+  onQueueEditEnd?: (promptId: string, outcome: 'saved' | 'refused' | 'cancelled') => void;
   prefill?: {
     text: string;
     id: number;
@@ -289,6 +308,12 @@ export interface SessionChatInputProps {
    */
   onCompactClick?: () => void;
   inputSlot?: React.ReactNode;
+  /**
+   * Full-width content above everything else on the composer — the queued
+   * messages. Its own card, outside the inset strip `inputSlot` lives in.
+   * Renders nothing when the content does.
+   */
+  aboveSlot?: React.ReactNode;
 
   toolbarSlot?: React.ReactNode;
   /**
@@ -477,6 +502,9 @@ function ComposerImpl({
   placeholder = 'Ask anything…',
   hint,
   onArrowUpAtStart,
+  queueEdit = null,
+  onQueueEditSave,
+  onQueueEditEnd,
   prefill = null,
   onPrefillApplied,
   attachRequestId = null,
@@ -485,6 +513,7 @@ function ComposerImpl({
   onContextClick,
   onCompactClick,
   inputSlot,
+  aboveSlot,
   toolbarSlot,
   underbarPlacement = 'below',
   slashMenuPlacement = 'above',
@@ -504,6 +533,7 @@ function ComposerImpl({
   const tModelGate = useTranslations('sessionUi.modelGate');
   const tComposerAttachments = useTranslations('hardcodedUi.composerAttachments');
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tThreads = useTranslations('threads');
 
   const dockId = `composer-slash-dock-${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
 
@@ -511,6 +541,13 @@ function ComposerImpl({
   // Synchronous mirror of `attachedFiles`, for the one reader that cannot
   // wait for a React flush: the submit latch's stash (see `handleSubmit`).
   const attachedFilesRef = useRef<AttachedFile[]>([]);
+  /** The open edit of a queued message and what it set aside — see the edit
+   *  mode block below. Declared here because paste and drop read it too. */
+  const queueEditRef = useRef<{
+    id: string;
+    doc: JSONContent | null;
+    files: AttachedFile[];
+  } | null>(null);
   useEffect(() => {
     attachedFilesRef.current = attachedFiles;
   }, [attachedFiles]);
@@ -573,7 +610,10 @@ function ComposerImpl({
   }, []);
 
   const { handleDocChange, clearSavedDraft } = useComposerDraft({
-    active: draftActive,
+    // Not while a queued message is open: its words are the queue's, and a
+    // saved draft of them would come back as a second message after a reload.
+    // Deactivating flushes first, so the draft the edit set aside is on disk.
+    active: draftActive && !queueEdit,
     scope: draftScope,
     editorRef,
     editorReady: editorElement != null,
@@ -594,6 +634,9 @@ function ComposerImpl({
 
   const appendAttachedFiles = useCallback(
     (files: Iterable<File>) => {
+      // An edit of a queued message changes its words only — paste and drop
+      // attach nothing, the same as the disabled attach button.
+      if (queueEditRef.current) return;
       try {
         const newFiles = stageComposerFiles(Array.from(files), {
           addMany: addPromptAttachments,
@@ -1055,6 +1098,15 @@ function ComposerImpl({
     tComposerAttachments,
   ]);
 
+  // A question takes the composer over, so an open edit of a queued message
+  // closes first — BEFORE the lock below sets the editor aside. Otherwise the
+  // lock would hold the edit's words, and the answer typed next would be saved
+  // over the queued message instead of answering the question.
+  const cancelQueueEditRef = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    if (lockForQuestion) cancelQueueEditRef.current?.();
+  }, [lockForQuestion]);
+
   useEffect(() => {
     if (lockForQuestion) {
       const wasEmpty = editorRef.current?.isEmpty() ?? true;
@@ -1067,6 +1119,144 @@ function ComposerImpl({
       savedDocBeforeQuestionRef.current = null;
     }
   }, [lockForQuestion]);
+
+  /**
+   * Edit mode for a queued message — `queueEdit` in, the stash out.
+   *
+   * Beginning an edit sets aside what the composer holds (document and files,
+   * the way the question lock above sets aside its document) and shows the
+   * queued words. Ending it puts the stash back (`planQueueEditExit`). An end
+   * the host decides (a question arrived, the session changed) is a cancel.
+   * Only a save the server refuses keeps the edited words, above the stash —
+   * that is the one end where they would otherwise be lost.
+   */
+  const onQueueEditSaveRef = useRef(onQueueEditSave);
+  const onQueueEditEndRef = useRef(onQueueEditEnd);
+  useEffect(() => {
+    onQueueEditSaveRef.current = onQueueEditSave;
+    onQueueEditEndRef.current = onQueueEditEnd;
+  });
+  const persistAfterEditRef = useRef(false);
+  const finishQueueEdit = useCallback((outcome: 'saved' | 'cancelled' | 'refused') => {
+    const active = queueEditRef.current;
+    if (!active) return;
+    queueEditRef.current = null;
+    const editor = editorRef.current;
+    const exit = planQueueEditExit({
+      outcome,
+      stash: active,
+      editedText: editor?.getContent().text ?? '',
+    });
+    const stashDoc = exit.stash.doc ?? EMPTY_DOCUMENT;
+    const doc = exit.above
+      ? (planPrefillMerge({
+          prefillDoc: textToDocument(exit.above),
+          prefillIsEmpty: false,
+          currentDoc: stashDoc,
+          currentIsEmpty: exit.stash.doc === null,
+        }) ?? textToDocument(exit.above))
+      : stashDoc;
+    if (exit.stash.doc === null && !exit.above) editor?.clear();
+    else setDocumentWithoutStealingFocus(editor, doc);
+    attachedFilesRef.current = exit.stash.files;
+    setAttachedFiles(exit.stash.files);
+    persistAfterEditRef.current = true;
+  }, []);
+  const queueEditId = queueEdit?.id ?? null;
+  const queueEditText = queueEdit?.text ?? '';
+  useEffect(() => {
+    const active = queueEditRef.current;
+    if (!queueEditId) {
+      if (active) finishQueueEdit('cancelled');
+      return;
+    }
+    if (lockForQuestion && active?.id !== queueEditId) {
+      // The question owns the composer; the edit does not open.
+      onQueueEditEndRef.current?.(queueEditId, 'cancelled');
+      return;
+    }
+    const editor = editorRef.current;
+    if (!editor || editorElement == null || active?.id === queueEditId) return;
+    if (active) finishQueueEdit('cancelled');
+    queueEditRef.current = {
+      id: queueEditId,
+      doc: editor.isEmpty() ? null : editor.getDocument(),
+      files: attachedFilesRef.current,
+    };
+    // Set aside, not removed: the uploads stay staged for the stash's return.
+    attachedFilesRef.current = [];
+    setAttachedFiles([]);
+    editor.setContent(queueEditText);
+    editor.focus();
+    // `queueEditText` is read once, when the edit opens: a poll that repaints
+    // the row must not overwrite what the user is typing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queueEditId, editorElement, finishQueueEdit, lockForQuestion]);
+
+  // What the composer holds after an edit is written to the draft store once
+  // autosave is back on. It was restored while autosave was paused, so without
+  // this a reload before the next keystroke loses it — including the words of
+  // a save the server refused.
+  useEffect(() => {
+    if (queueEditId || !persistAfterEditRef.current) return;
+    persistAfterEditRef.current = false;
+    const editor = editorRef.current;
+    if (editor) handleDocChange(editor.getDocument(), editor.isEmpty());
+  }, [queueEditId, handleDocChange]);
+
+  const queueEditSavingRef = useRef(false);
+  const saveQueueEdit = useCallback(async () => {
+    const active = queueEditRef.current;
+    const save = onQueueEditSaveRef.current;
+    const text = editorRef.current?.getContent().text.trim() ?? '';
+    if (!active || !save || !text || queueEditSavingRef.current) return;
+    queueEditSavingRef.current = true;
+    try {
+      const outcome = await save(active.id, text);
+      // The host may have ended the edit meanwhile; only the edit that was
+      // saved is finished here.
+      if (outcome !== 'failed' && queueEditRef.current?.id === active.id) {
+        finishQueueEdit(outcome);
+        onQueueEditEndRef.current?.(active.id, outcome);
+      }
+    } finally {
+      queueEditSavingRef.current = false;
+    }
+  }, [finishQueueEdit]);
+  const cancelQueueEdit = useCallback(() => {
+    const active = queueEditRef.current;
+    if (!active) return;
+    finishQueueEdit('cancelled');
+    onQueueEditEndRef.current?.(active.id, 'cancelled');
+  }, [finishQueueEdit]);
+  useEffect(() => {
+    cancelQueueEditRef.current = cancelQueueEdit;
+  }, [cancelQueueEdit]);
+  const saveQueueEditRef = useRef(saveQueueEdit);
+  useEffect(() => {
+    saveQueueEditRef.current = saveQueueEdit;
+  });
+
+  // Escape cancels an open edit — unless it is closing the `@`/`/` menu.
+  // ProseMirror preventDefaults EVERY Escape in the editor, so
+  // `defaultPrevented` cannot tell the two apart; the menu's own open state,
+  // read in the capture phase before the menu handles the key, can. Stopping
+  // propagation keeps the page's triple-Escape stop from counting this press.
+  const menuOpenRef = useRef(menuOpen);
+  useEffect(() => {
+    menuOpenRef.current = menuOpen;
+  }, [menuOpen]);
+  useEffect(() => {
+    if (!editorElement || !queueEditId) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.isComposing || menuOpenRef.current) return;
+      e.preventDefault();
+      e.stopPropagation();
+      cancelQueueEdit();
+    };
+    editorElement.addEventListener('keydown', onKeyDown, true);
+    return () => editorElement.removeEventListener('keydown', onKeyDown, true);
+  }, [editorElement, queueEditId, cancelQueueEdit]);
 
   /**
    * The model popover's open state, hoisted out of `ModelSelector` so the `/`
@@ -1446,6 +1636,8 @@ function ComposerImpl({
   });
   const submitLatchRef = useRef<(() => Promise<void>) | null>(null);
   const handleSubmit = useCallback((placement: 'transcript' | 'composer' = 'transcript') => {
+    // An open edit SAVES; it never sends a new message.
+    if (queueEditRef.current) return saveQueueEditRef.current();
     submitPlacementRef.current = placement;
     // A stash whose dispatch no host took comes back as it left: merged into
     // whatever the user typed since, with its files back in the tray.
@@ -1509,9 +1701,13 @@ function ComposerImpl({
     return submitLatchRef.current();
   }, []);
 
-  // A question lock owns the editor: Up there is a caret move, never a take-back.
+  // Up opens a queued message for editing only from an EMPTY editor. With text
+  // in it, under a question lock, or inside an open edit, Up is a caret move.
   const handleArrowUpAtStart = useCallback(
-    () => (lockForQuestion ? false : (onArrowUpAtStart?.() ?? false)),
+    () =>
+      lockForQuestion || queueEditRef.current || !(editorRef.current?.isEmpty() ?? true)
+        ? false
+        : (onArrowUpAtStart?.() ?? false),
     [lockForQuestion, onArrowUpAtStart],
   );
 
@@ -1572,6 +1768,8 @@ function ComposerImpl({
         exists to remove.
       */}
       {slashMenuPlacement === 'above' && <div id={dockId} />}
+
+      {aboveSlot && <div className="mb-2 w-full empty:hidden">{aboveSlot}</div>}
 
       {/*
         The stack above the card. Each layer owns its OWN top rounding rather
@@ -1793,6 +1991,22 @@ function ComposerImpl({
                 editorRef.current?.focus();
               }}
             >
+              {queueEdit && (
+                <span className="bg-kortix-blue/15 text-kortix-blue mb-1.5 inline-flex h-6 items-center gap-1 rounded-sm pr-0.5 pl-2 text-xs">
+                  <PencilSimpleIcon className="size-3.5 shrink-0" />
+                  {tThreads('editingQueued')}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label={tThreads('cancelEdit')}
+                    onClick={cancelQueueEdit}
+                    className="text-kortix-blue size-5 rounded-full"
+                  >
+                    <XIcon className="size-3" />
+                  </Button>
+                </span>
+              )}
               <AnimatedComposerPlaceholder
                 placeholder={editorPlaceholder}
                 active={animatePlaceholder}
@@ -1837,6 +2051,7 @@ function ComposerImpl({
                   <ComposerUnderbar
                     variant="inline"
                     onAttachClick={handleAttachClick}
+                    attachDisabled={!!queueEdit}
                     agents={primaryAgents}
                     selectedAgent={selectedAgent}
                     onAgentChange={onAgentChange}
@@ -1888,6 +2103,7 @@ function ComposerImpl({
               }
               attachmentFailed={attachmentFailed}
               attachmentUnsupported={imagesUnsupportedReason}
+              saveMode={!!queueEdit}
               disabled={disabled}
               modelUnavailable={modelUnavailable}
               agentUnavailable={agentUnavailable}
@@ -1918,6 +2134,7 @@ function ComposerImpl({
       {inlineUnderbar ? null : (
         <ComposerUnderbar
           onAttachClick={handleAttachClick}
+          attachDisabled={!!queueEdit}
           agents={primaryAgents}
           selectedAgent={selectedAgent}
           onAgentChange={onAgentChange}

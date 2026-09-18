@@ -1803,7 +1803,17 @@
     "queueList": "Queue List",
     "stopUnconfirmed": "停止を確認できませんでした。エージェントがまだ実行中の可能性があります。もう一度停止してください。",
     "queued": "待機中",
-    "queuedFiles": "{count, plural, one {#個のファイル} other {#個のファイル}}"
+    "queuedFiles": "{count, plural, one {#個のファイル} other {#個のファイル}}",
+    "queuedCount": "{count} 件キュー中",
+    "collapseQueue": "キューを折りたたむ",
+    "expandQueue": "キューを展開",
+    "editingQueued": "編集中",
+    "cancelEdit": "編集をキャンセル",
+    "saveEdit": "編集を保存",
+    "editAlreadySent": "送信済みです — 編集内容は入力欄に残っています",
+    "queueActionFailed": "サーバーに接続できませんでした — もう一度お試しください",
+    "sendNow": "今すぐ送信",
+    "sendNowHint": "次に実行 — 実行中のステップの後で現在の応答を終了します"
   },
   "billing": {
     "plan": {

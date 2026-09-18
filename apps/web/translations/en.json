@@ -1803,7 +1803,17 @@
     "hintChanged": "Ask what's changed in your project",
     "hintNewLine": "Press Shift+Enter for a new line",
     "hintSettings": "Press {modifier}, to open settings",
-    "hintCompact": "Ask to compact the session when it gets long"
+    "hintCompact": "Ask to compact the session when it gets long",
+    "queuedCount": "{count} Queued",
+    "collapseQueue": "Collapse queue",
+    "expandQueue": "Expand queue",
+    "editingQueued": "Editing",
+    "cancelEdit": "Cancel edit",
+    "saveEdit": "Save edit",
+    "editAlreadySent": "Already sent — your edit is still in the composer",
+    "queueActionFailed": "Couldn’t reach the server — try again",
+    "sendNow": "Send now",
+    "sendNowHint": "Runs next — ends the current response after its running step"
   },
   "billing": {
     "plan": {

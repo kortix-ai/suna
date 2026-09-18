@@ -1803,7 +1803,17 @@
     "queueList": "Queue List",
     "stopUnconfirmed": "无法确认停止。代理可能仍在运行。请再次尝试停止。",
     "queued": "排队中",
-    "queuedFiles": "{count, plural, one {# 个文件} other {# 个文件}}"
+    "queuedFiles": "{count, plural, one {# 个文件} other {# 个文件}}",
+    "queuedCount": "{count} 条排队中",
+    "collapseQueue": "收起队列",
+    "expandQueue": "展开队列",
+    "editingQueued": "编辑中",
+    "cancelEdit": "取消编辑",
+    "saveEdit": "保存编辑",
+    "editAlreadySent": "已发送——你的编辑仍保留在输入框中",
+    "queueActionFailed": "无法连接服务器——请重试",
+    "sendNow": "立即发送",
+    "sendNowHint": "下一个运行——在当前步骤完成后结束当前回复"
   },
   "billing": {
     "plan": {

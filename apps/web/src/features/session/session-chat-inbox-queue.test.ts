@@ -447,27 +447,27 @@ describe('ONE prompt = ONE id = ONE bubble, from Enter', () => {
   });
 });
 
-describe('Up takes the queue back into the composer', () => {
-  test('only what the server actually removed comes back, in queue order, above the draft', () => {
-    const takeBack = between(
-      chat,
-      'const handleTakeBackQueue = useCallback(',
-      '// ---- Triple-ESC to stop ----',
-    );
-    expect(takeBack).toContain('row.takeBackEligible');
-    // Drafts are read BEFORE the removals: removing a row prunes its draft.
-    expect(takeBack.indexOf('useQueuedDraftStore.getState().bySession[sessionId]')).toBeLessThan(
-      takeBack.indexOf('promptInbox.remove(row.id)'),
-    );
-    expect(takeBack).toContain('Promise.allSettled(');
-    expect(takeBack).toContain('composeTakeBack({ removed, drafts })');
-    expect(takeBack).toContain('.setPrefill(sessionId, text, files)');
-    // Anything that cannot come back losslessly goes back to the queue.
-    expect(takeBack).toContain('restoreQueuedMessage(prompt,');
+describe('Up and the pencil edit a queued message in place', () => {
+  // REWRITTEN when Edit stopped taking the row back (DELETE + prefill above
+  // the draft) and became an in-place edit of the queued row. The behaviour is
+  // tested in `composer/queue-edit.test.ts`; these pin the call sites.
+  test('the list and the composer share one controller', () => {
+    expect(chat).toContain('const queueEditor = useQueueEdit({ sessionId, rows: queueRows.rows, promptInbox });');
+    expect(chat).toContain('queueOpenEdit(id);');
+    expect(chat).toContain('editingId={queueEditingId}');
+    expect(chat).toContain('onSendNow={queueSendNow}');
+    // The list is its own full-width card above the composer, not a layer of
+    // the inset strip.
+    expect(chat).toContain('aboveSlot={chatAboveSlot}');
+    expect(chat).toContain('queueEdit={queueEditor.queueEdit}');
+    expect(chat).toContain('onQueueEditSave={queueEditor.saveQueueEdit}');
+    expect(chat).toContain('onQueueEditEnd={queueEditor.endQueueEdit}');
+    // The old take-back is gone, so no second edit model can come back.
+    expect(chat).not.toContain('handleTakeBackQueue');
   });
 
   test('the composer gets the key handler and the hint', () => {
-    expect(chat).toContain('onArrowUpAtStart={() => handleTakeBackQueue()}');
+    expect(chat).toContain('onArrowUpAtStart={queueEditor.editLastRow}');
     // The hint shows only while there is something Up would take back.
     expect(chat).toMatch(/hint=\{\s*canTakeBackQueue \?/);
   });

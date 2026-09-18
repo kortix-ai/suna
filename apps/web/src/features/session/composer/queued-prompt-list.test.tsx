@@ -23,6 +23,7 @@ const row = (over: Partial<QueueRow> & { id: string }): QueueRow => ({
   removable: true,
   retryable: false,
   takeBackEligible: true,
+  canSendNow: false,
   ...over,
 });
 
@@ -171,13 +172,14 @@ describe('acceptRowAction', () => {
 });
 
 describe('nextRowActionState', () => {
-  // Remove and Edit BOTH take the row off the list (Edit is a removal whose
-  // body goes into the composer, and the SDK filters the row out of the cache
-  // on the click). Retry leaves the row where it is, so it starts no cooldown.
+  // Remove and Send now take the row off the list (Send now moves it into the
+  // Quick Queue). Edit keeps it in place while the composer holds its words,
+  // and Retry re-queues it in place, so neither starts a cooldown.
   const table = [
     ['remove', 400, true],
-    ['edit', 400, true],
+    ['edit', 400, false],
     ['retry', 400, false],
+    ['sendNow', 400, true],
   ] as const;
   for (const [action, expectedStamp, shifts] of table) {
     test(`${action} ${shifts ? 'starts' : 'does not start'} the cooldown`, () => {
@@ -190,9 +192,10 @@ describe('nextRowActionState', () => {
   const doubleClick = [
     ['remove', 'remove'],
     ['remove', 'edit'],
-    ['edit', 'edit'],
-    ['edit', 'remove'],
-    ['edit', 'retry'],
+    ['remove', 'sendNow'],
+    ['remove', 'retry'],
+    ['sendNow', 'sendNow'],
+    ['sendNow', 'remove'],
   ] as const;
   for (const [first, second] of doubleClick) {
     test(`a pointer ${second} 200 ms after a ${first} lands on the shifted list and is refused`, () => {
@@ -221,9 +224,9 @@ describe('nextRowActionState', () => {
     ).toEqual({ accepted: false, lastShiftAtMs: 1_000 });
   });
 
-  test('a keyboard Edit right after a pointer Remove is accepted, and re-stamps', () => {
+  test('a keyboard Remove right after a pointer Remove is accepted, and re-stamps', () => {
     expect(
-      nextRowActionState({ action: 'edit', detail: 0, nowMs: 1_010, lastShiftAtMs: 1_000 }),
+      nextRowActionState({ action: 'remove', detail: 0, nowMs: 1_010, lastShiftAtMs: 1_000 }),
     ).toEqual({ accepted: true, lastShiftAtMs: 1_010 });
   });
 
@@ -306,14 +309,15 @@ describe('a failed row', () => {
     expect(remove).toContain('aria-disabled="true"');
     expect(retry).not.toContain('disabled=""');
     expect(remove).not.toContain('disabled=""');
-    expect(retry).toContain('<svg');
-    expect(remove).not.toContain('<svg');
+    // Loading is the orbit spinner; Remove keeps its trash icon, not a spinner.
+    expect(retry).toContain('animate-spinner-orbit');
+    expect(remove).not.toContain('animate-spinner-orbit');
   });
 
   test('a removal in flight shows Loading in Remove alone', () => {
     const markup = failed({ failureCode: 'network', pendingAction: 'remove' });
-    expect(button(markup, 'Remove from queue')!).toContain('<svg');
-    expect(button(markup, 'Retry')!).not.toContain('<svg');
+    expect(button(markup, 'Remove from queue')!).toContain('animate-spinner-orbit');
+    expect(button(markup, 'Retry')!).not.toContain('animate-spinner-orbit');
   });
 
   test('a row with nothing running is not busy', () => {
@@ -377,5 +381,101 @@ describe('focusedRowAfter', () => {
     // one, so the pair has to be a no-op overall.
     const afterBlur = focusedRowAfter('a', { type: 'blur', rowId: 'a' });
     expect(focusedRowAfter(afterBlur, { type: 'focus', rowId: 'a' })).toBe('a');
+  });
+});
+
+describe('the queue list disclosure header', () => {
+  const rows = [row({ id: 'a' }), row({ id: 'b' }), row({ id: 'c' })];
+
+  test('open: "N Queued" and a close button, with no Start Multitasking', () => {
+    const markup = render({ rows });
+    expect(markup).toContain('3 Queued');
+    const close = button(markup, 'Collapse queue');
+    expect(close).toBeDefined();
+    expect(close).toContain('aria-expanded="true"');
+    expect(markup).not.toContain('Multitasking');
+    expect(count(markup, 'data-queued-prompt-id=')).toBe(3);
+  });
+
+  test('closed: the header keeps the count, offers an expand chevron, and hides the rows', () => {
+    const markup = render({ rows, defaultCollapsed: true });
+    expect(markup).toContain('3 Queued');
+    const expand = button(markup, 'Expand queue');
+    expect(expand).toBeDefined();
+    expect(expand).toContain('aria-expanded="false"');
+    expect(button(markup, 'Collapse queue')).toBeUndefined();
+    expect(count(markup, 'data-queued-prompt-id=')).toBe(0);
+  });
+
+  test('a held queue with no rows keeps its Resume line and draws no header', () => {
+    const markup = render({ heldCount: 2 });
+    expect(markup).not.toContain('Queued</');
+    expect(button(markup, 'Collapse queue')).toBeUndefined();
+  });
+});
+
+describe('queued row actions', () => {
+  test('a queued row offers Send now, Edit and Remove, and no overflow menu', () => {
+    const markup = render({
+      rows: [row({ id: 'a', canSendNow: true })],
+      onSendNow: () => {},
+      onEdit: () => {},
+    });
+    const html = buttons(markup);
+    expect(html.some((b) => />Send now</.test(b))).toBe(true);
+    expect(button(markup, 'Edit')).toBeDefined();
+    expect(button(markup, 'Remove from queue')).toBeDefined();
+    expect(button(markup, 'More actions')).toBeUndefined();
+  });
+
+  test('Send now only on a row the server still holds in line', () => {
+    const markup = render({
+      rows: [
+        row({ id: 'queued', canSendNow: true }),
+        row({ id: 'delivering', state: 'delivering', removable: false, canSendNow: false }),
+      ],
+      onSendNow: () => {},
+    });
+    expect(count(markup, '>Send now<')).toBe(1);
+  });
+
+  test('the row being edited is outlined, says Editing, and offers no actions', () => {
+    const markup = render({
+      rows: [row({ id: 'a', canSendNow: true }), row({ id: 'b', canSendNow: true })],
+      editingId: 'a',
+      onSendNow: () => {},
+      onEdit: () => {},
+    });
+    const editing = markup.slice(
+      markup.indexOf('data-queued-prompt-id="a"'),
+      markup.indexOf('data-queued-prompt-id="b"'),
+    );
+    expect(editing).toContain('data-queued-editing="true"');
+    expect(editing).toContain('Editing');
+    expect(editing).not.toContain('>Send now<');
+    expect(editing).not.toContain('aria-label="Edit"');
+    expect(editing).not.toContain('aria-label="Remove from queue"');
+    const other = markup.slice(markup.indexOf('data-queued-prompt-id="b"'));
+    expect(other).toContain('>Send now<');
+  });
+});
+
+
+describe('a paused queue with rows', () => {
+  test('the header reads Queue paused, with Resume before the chevron, and no second line', () => {
+    const markup = render({ rows: [row({ id: 'a' }), row({ id: 'b' })], heldCount: 2 });
+    expect(markup).toContain('Queue paused');
+    expect(markup).not.toContain('2 Queued');
+    expect(count(markup, 'Queue paused')).toBe(1);
+    const resume = markup.indexOf('Resume');
+    const chevron = markup.indexOf('aria-label="Collapse queue"');
+    expect(resume).toBeGreaterThan(-1);
+    expect(resume).toBeLessThan(chevron);
+  });
+
+  test('a queue that is not paused keeps its count and offers no Resume', () => {
+    const markup = render({ rows: [row({ id: 'a' }), row({ id: 'b' })] });
+    expect(markup).toContain('2 Queued');
+    expect(markup).not.toContain('Resume');
   });
 });

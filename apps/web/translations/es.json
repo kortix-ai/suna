@@ -1803,7 +1803,17 @@
     "queueList": "Queue List",
     "stopUnconfirmed": "No se pudo confirmar la detención. El agente podría seguir ejecutándose. Inténtalo de nuevo.",
     "queued": "En cola",
-    "queuedFiles": "{count, plural, one {# archivo} other {# archivos}}"
+    "queuedFiles": "{count, plural, one {# archivo} other {# archivos}}",
+    "queuedCount": "{count} en cola",
+    "collapseQueue": "Contraer cola",
+    "expandQueue": "Expandir cola",
+    "editingQueued": "Editando",
+    "cancelEdit": "Cancelar edición",
+    "saveEdit": "Guardar edición",
+    "editAlreadySent": "Ya enviado: tu edición sigue en el editor",
+    "queueActionFailed": "No se pudo contactar con el servidor: inténtalo de nuevo",
+    "sendNow": "Enviar ahora",
+    "sendNowHint": "Se ejecuta a continuación: termina la respuesta actual tras el paso en curso"
   },
   "billing": {
     "plan": {

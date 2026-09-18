@@ -1803,7 +1803,17 @@
     "queueList": "Queue List",
     "stopUnconfirmed": "Impossibile confermare l’arresto. L’agente potrebbe essere ancora in esecuzione. Riprova.",
     "queued": "In coda",
-    "queuedFiles": "{count, plural, one {# file} other {# file}}"
+    "queuedFiles": "{count, plural, one {# file} other {# file}}",
+    "queuedCount": "{count} in coda",
+    "collapseQueue": "Comprimi coda",
+    "expandQueue": "Espandi coda",
+    "editingQueued": "In modifica",
+    "cancelEdit": "Annulla modifica",
+    "saveEdit": "Salva modifica",
+    "editAlreadySent": "Già inviato: la tua modifica resta nel compositore",
+    "queueActionFailed": "Impossibile raggiungere il server: riprova",
+    "sendNow": "Invia ora",
+    "sendNowHint": "Viene eseguito subito: termina la risposta attuale dopo il passaggio in corso"
   },
   "billing": {
     "plan": {

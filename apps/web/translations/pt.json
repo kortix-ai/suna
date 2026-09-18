@@ -1803,7 +1803,17 @@
     "queueList": "Queue List",
     "stopUnconfirmed": "Não foi possível confirmar a parada. O agente pode continuar em execução. Tente parar novamente.",
     "queued": "Na fila",
-    "queuedFiles": "{count, plural, one {# arquivo} other {# arquivos}}"
+    "queuedFiles": "{count, plural, one {# arquivo} other {# arquivos}}",
+    "queuedCount": "{count} na fila",
+    "collapseQueue": "Recolher fila",
+    "expandQueue": "Expandir fila",
+    "editingQueued": "Editando",
+    "cancelEdit": "Cancelar edição",
+    "saveEdit": "Salvar edição",
+    "editAlreadySent": "Já enviada — sua edição continua no editor",
+    "queueActionFailed": "Não foi possível contatar o servidor — tente novamente",
+    "sendNow": "Enviar agora",
+    "sendNowHint": "Executa em seguida — encerra a resposta atual após a etapa em andamento"
   },
   "billing": {
     "plan": {
