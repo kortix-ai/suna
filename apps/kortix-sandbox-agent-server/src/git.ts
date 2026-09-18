@@ -1958,10 +1958,27 @@ export async function syncOpencodeConfigDirToBase(
   const mergeBase = await execGit(['-C', target, 'merge-base', 'HEAD', ref])
   const branchPoint = mergeBase.code === 0 ? mergeBase.stdout.trim() : null
   if (branchPoint) {
-    const blobId = async (rev: string, path: string): Promise<string> => {
-      const id = await execGit(['-C', target, 'rev-parse', '--verify', '-q', `${rev}:${path}`], LITERAL)
-      return id.code === 0 ? id.stdout.trim() : '' // '' = absent; absent equals absent
+    // One `ls-tree` per commit, not one `rev-parse` per path per commit. A
+    // session that swept a 200-file sync into a commit, with a full 64-entry
+    // history, would otherwise spawn ~12,800 git processes inside a request the
+    // API gives 120 s.
+    const trees = new Map<string, Map<string, string>>()
+    const treeOf = async (rev: string): Promise<Map<string, string>> => {
+      const cached = trees.get(rev)
+      if (cached) return cached
+      const listed = await execGit(['-C', target, 'ls-tree', '-r', '-z', rev, '--', relConfigDir], LITERAL)
+      const tree = new Map<string, string>()
+      for (const entry of listed.code === 0 ? listed.stdout.split('\0').filter(Boolean) : []) {
+        const tab = entry.indexOf('\t')
+        const blob = entry.slice(0, tab).split(' ')[2]
+        if (tab > 0 && blob) tree.set(entry.slice(tab + 1), blob)
+      }
+      trees.set(rev, tree)
+      return tree
     }
+    // '' = absent; absent equals absent, so a committed deletion of a file that
+    // a synced commit also lacked is ours too.
+    const blobId = async (rev: string, path: string): Promise<string> => (await treeOf(rev)).get(path) ?? ''
     const packageJsonCommittedIsOurs = async (): Promise<boolean> => {
       const head = packageJsonWithoutPluginPin(await blobAt('HEAD', packageJsonPath))
       if (head === null) return false
@@ -1981,7 +1998,9 @@ export async function syncOpencodeConfigDirToBase(
       }
       const atHead = await blobId('HEAD', path)
       let ours = false
-      for (const rev of syncedHistory) {
+      // Newest first: a commit almost always carries the bytes of the sync
+      // right before it.
+      for (const rev of [...syncedHistory].reverse()) {
         if ((await blobId(rev, path)) === atHead) {
           ours = true
           break
