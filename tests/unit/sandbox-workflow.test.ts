@@ -19,8 +19,17 @@ describe('native test-lane workflow', () => {
     expect(testWorkflow).toContain('- lane: browser-1');
     expect(testWorkflow).toContain('- lane: browser-2');
     expect(testWorkflow).toContain('- lane: packages');
-    expect(testWorkflow).toContain('args: --browser-only --browser-shard=1/2');
-    expect(testWorkflow).toContain('args: --browser-only --browser-shard=2/2');
+    // Four browser shards since 2026-09-18. Measured: the suite went 10m19s
+    // (run 35384964452, N=2) -> 8m17s (run 35388565759, N=4). The browser long
+    // pole dropped 619s -> 416s, but `packages` (8m01s) is now the binding
+    // lane, so a fifth shard cannot move the total. See tests.yml's matrix
+    // comment for the full decomposition.
+    expect(testWorkflow).toContain('- lane: browser-3');
+    expect(testWorkflow).toContain('- lane: browser-4');
+    for (const n of [1, 2, 3, 4]) {
+      expect(testWorkflow).toContain(`args: --browser-only --browser-shard=${n}/4`);
+    }
+    expect(testWorkflow).not.toContain('--browser-shard=1/2');
     expect(testWorkflow).toContain('args: --packages-only');
     // The unchanged root command is the whole lane.
     expect(testWorkflow).toContain('if [[ -n "$TEST_ARGS" ]]; then pnpm test -- $TEST_ARGS; else pnpm test; fi');
@@ -149,7 +158,12 @@ describe('native test-lane workflow', () => {
     expect(release).toContain('https://staging.kortix.com');
   });
 
-  test('runs all local tests once before main or staging merges', () => {
+  test('gates the local suite on promotes and on an opt-in label, never on every main PR', () => {
+    // 2026-09-18. Every PR into `main` used to wait ~11 min (68 min worst case)
+    // for a suite that gated nothing: `main-push-protection` requires a pull
+    // request with 0 approvals and NO required status checks. The suite now
+    // runs only where it changes an outcome. Keep this test and the workflow
+    // header in sync — they are the contract.
     const testsPr = readFileSync(resolve(root, '.github/workflows/tests-pr.yml'), 'utf8');
 
     expect(testsPr).toContain('branches: [main, staging]');
@@ -157,6 +171,54 @@ describe('native test-lane workflow', () => {
     expect(testsPr).toContain('uses: ./.github/workflows/tests.yml');
     expect(testsPr).toContain('mode: full');
     expect(testsPr).toContain('secrets: inherit');
+
+    // Adding the label to an already-open PR must re-trigger the workflow, or
+    // the opt-in silently needs a push to take effect.
+    expect(testsPr).toContain(
+      'types: [opened, reopened, synchronize, ready_for_review, labeled, unlabeled]',
+    );
+
+    // One decision job owns the verdict; the suite is `needs:`-gated on it.
+    expect(testsPr).toContain('run: ${{ steps.verdict.outputs.run }}');
+    expect(testsPr).toContain("if: needs.decide.outputs.run == 'true'");
+
+    // The three rules that turn it on. `contains(<array>, 'test')` compares
+    // whole elements, so `no-tests-needed` and `latest` cannot match.
+    expect(testsPr).toContain(
+      "HAS_TEST: ${{ contains(github.event.pull_request.labels.*.name, 'test') }}",
+    );
+    expect(testsPr).toContain(
+      "HAS_PREVIEW: ${{ contains(github.event.pull_request.labels.*.name, 'preview') }}",
+    );
+    expect(testsPr).toMatch(/if \[ "\$BASE" = staging \]; then\n\s+run=true/);
+    expect(testsPr).toMatch(/if \[ "\$HAS_TEST" = true \]; then\n\s+run=true/);
+    expect(testsPr).toMatch(/if \[ "\$HAS_PREVIEW" = true \]; then\n\s+run=true/);
+
+    // A skipped suite must say so on the PR. An empty check list is otherwise
+    // indistinguishable from a broken workflow.
+    expect(testsPr).toContain('$GITHUB_STEP_SUMMARY');
+    expect(testsPr).toContain('## Local test suite: NOT RUN');
+  });
+
+  test('the dev trunk tests its own latest commit, and cannot block anything', () => {
+    const testsMain = readFileSync(resolve(root, '.github/workflows/tests-main.yml'), 'utf8');
+
+    // `push` only. A push-triggered run has nothing left to gate: the code
+    // merged, and deploy-dev.yml deploys the same push without waiting.
+    expect(testsMain).toContain('push:\n    branches: [main]');
+    expect(testsMain).not.toContain('pull_request');
+    expect(testsMain).toContain('uses: ./.github/workflows/tests.yml');
+    expect(testsMain).toContain('mode: full');
+    expect(testsMain).toContain('secrets: inherit');
+
+    // Converge on newest, like deploy-dev.yml. A superseded run is cancelled,
+    // and a cancelled run must not be reported as a break.
+    expect(testsMain).toContain('cancel-in-progress: true');
+    expect(testsMain).toContain("needs.full.result != 'cancelled'");
+
+    // A red trunk has to reach its author, or nobody learns main is broken.
+    expect(testsMain).toContain('repos/$REPO/commits/$SHA/comments');
+    expect(testsMain).toContain('::error::main is red at $SHA');
   });
 
   test('does not repeat local tests after staging merge or on the production PR', () => {
@@ -169,17 +231,20 @@ describe('native test-lane workflow', () => {
     expect(release).not.toContain('mode: full');
   });
 
-  test('has one automatic local-suite caller and two intentional deployed targets', () => {
+  test('has two automatic local-suite callers and two intentional deployed targets', () => {
     const workflowRoot = resolve(root, '.github/workflows');
     const workflows = readdirSync(workflowRoot)
       .filter((name) => /\.ya?ml$/.test(name))
       .map((name) => ({ name, source: readFileSync(resolve(workflowRoot, name), 'utf8') }));
 
+    // Exactly two: the label/promote-gated PR caller and the post-merge trunk
+    // caller. A third would mean the suite runs somewhere nobody decided on.
     expect(
-      workflows.filter(({ source }) =>
-        source.includes('uses: ./.github/workflows/tests.yml'),
-      ),
-    ).toHaveLength(1);
+      workflows
+        .filter(({ source }) => source.includes('uses: ./.github/workflows/tests.yml'))
+        .map(({ name }) => name)
+        .sort(),
+    ).toEqual(['tests-main.yml', 'tests-pr.yml']);
     // deploy-preview drives ONE sandbox origin from one job, so it keeps the
     // combined `--target-full` command. The release gate splits the same two
     // lanes across parallel GitHub jobs, so it calls the per-lane commands.

@@ -36,7 +36,7 @@ fails on any bare label, so a new job cannot skip the expression.
 
 ## Test lanes run natively
 
-`tests.yml` runs the four local-profile lanes (`core`, `browser-1`, `browser-2`,
+`tests.yml` runs the six local-profile lanes (`core`, `browser-1` … `browser-4`,
 `packages`) directly on L-tier runners: checkout at the PR head SHA →
 `pnpm install --frozen-lockfile` → (browser lanes) Chromium + `supabase start`
 → `pnpm test -- <lane args>`. Blacksmith's transparent caches make a lane warm

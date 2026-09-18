@@ -1,17 +1,113 @@
 name: Tests - PR
 
+# WHO PAYS FOR THE LOCAL SUITE, AND WHEN (changed 2026-09-18).
+#
+# Until 2026-09-18 every pull request into `main` ran the full four-lane local
+# suite and waited for it. Measured cost on the 20 runs before the change:
+# ~11 min median, 68 min worst case, against ~3-6 min for every other
+# pull-request check (ci, codeql, security-scan, terraform-ci). The suite WAS
+# the pull-request wall clock, and it gated nothing: `main-push-protection`
+# requires a pull request with 0 approvals and NO required status checks, so a
+# red suite never actually blocked a merge into `main`. It only made people
+# wait. `main` is the dev trunk — `AGENTS.md` says breaking or incomplete work
+# may live there while it is shaken out.
+#
+# So the suite now runs where it changes an outcome:
+#
+#   1. A pull request into `staging` — the release candidate. Always gated.
+#      Nothing should reach `staging` unless it is production-ready.
+#   2. A pull request into `main` carrying `test` or `preview`. Opt in per PR
+#      when you want the signal before merging.
+#   3. Every push to `main`, on the latest commit, through `tests-main.yml`.
+#      Non-blocking by construction, because the code already merged.
+#   4. A pull request into `prod`, through `tests-release.yml`, which tests the
+#      DEPLOYED staging SHA instead of a local profile.
+#
+# The `test verdict` job below always runs and always passes. It prints which
+# rule applied and how to ask for the suite, so an empty check list on a PR is
+# a stated decision and not a silent hole.
+
 on:
   pull_request:
     branches: [main, staging]
+    # `labeled` / `unlabeled` are what make the opt-in work: adding `test` to an
+    # open PR re-runs this workflow, and `decide` then turns the suite on
+    # without a push.
+    types: [opened, reopened, synchronize, ready_for_review, labeled, unlabeled]
   workflow_dispatch:
 
 concurrency:
   group: tests-pr-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
+  decide:
+    name: test verdict
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.verdict.outputs.run }}
+    steps:
+      - name: Decide whether the local suite runs
+        id: verdict
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.ref }}
+          # `contains(<array>, 'test')` compares whole elements, so a label
+          # named `no-tests-needed` or `latest` can never match `test`.
+          HAS_TEST: ${{ contains(github.event.pull_request.labels.*.name, 'test') }}
+          HAS_PREVIEW: ${{ contains(github.event.pull_request.labels.*.name, 'preview') }}
+        run: |
+          set -euo pipefail
+          run=false
+          if [ "$EVENT" = workflow_dispatch ]; then
+            run=true; reason="manual dispatch of this workflow."
+          elif [ "$BASE" = staging ]; then
+            run=true; reason="this pull request targets \`staging\`, the release candidate branch. The suite is always gated here."
+          elif [ "$HAS_TEST" = true ]; then
+            run=true; reason="the \`test\` label is set."
+          elif [ "$HAS_PREVIEW" = true ]; then
+            run=true; reason="the \`preview\` label is set."
+          else
+            reason="a pull request into \`main\` does not run the local suite by default."
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          {
+            if [ "$run" = true ]; then
+              echo "## Local test suite: RUNNING"
+            else
+              echo "## Local test suite: NOT RUN"
+            fi
+            echo
+            echo "Reason: $reason"
+            echo
+            echo "| input | value |"
+            echo "| --- | --- |"
+            echo "| event | \`$EVENT\` |"
+            echo "| base branch | \`${BASE:-n/a}\` |"
+            echo "| \`test\` label | \`$HAS_TEST\` |"
+            echo "| \`preview\` label | \`$HAS_PREVIEW\` |"
+            if [ "$run" = false ]; then
+              echo
+              echo "To run it on this pull request, add the **\`test\`** label (local"
+              echo "four-lane suite, ~11 min) or the **\`preview\`** label (the same"
+              echo "suite plus a full self-host preview origin and its deployed"
+              echo "\`--target-full\` run)."
+              echo
+              echo "It also runs on every push to \`main\` (\`Tests - main\`), on every"
+              echo "pull request into \`staging\`, and against deployed staging on every"
+              echo "release pull request into \`prod\` (\`Tests - release\`)."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "[tests-pr] run=$run reason=$reason"
+
   full:
     name: all local tests
+    needs: decide
+    if: needs.decide.outputs.run == 'true'
     uses: ./.github/workflows/tests.yml
     with:
       mode: full

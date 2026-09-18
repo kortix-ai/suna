@@ -1,0 +1,120 @@
+name: Tests - main
+
+# The dev trunk's own test signal, added 2026-09-18 when the per-pull-request
+# gate was removed (see the header of `tests-pr.yml` for the measurement and
+# the reasoning).
+#
+# Every push to `main` runs the full four-lane local suite on THAT commit. It
+# cannot block anything — the code has already merged, and `deploy-dev.yml`
+# deploys from the same push without waiting for this workflow. It exists to
+# answer one question: is `main` green right now, and if not, which commit and
+# which lane broke it.
+#
+# `cancel-in-progress: true` matches `deploy-dev.yml`: the trunk moves fast and
+# the answer we want is always about the LATEST commit, not a superseded one. A
+# cancelled run is therefore normal and is not a failure. The commit that
+# cancels it gets its own run seconds later.
+#
+# A red run posts a comment on the offending commit, which notifies its author.
+# Nothing else escalates: `main` is allowed to be broken while work is shaken
+# out, and the fix is a normal pull request.
+
+on:
+  push:
+    branches: [main]
+    # Skip only pushes that cannot change a test outcome. A push that mixes a
+    # doc with code still runs: GitHub applies `paths-ignore` to the whole
+    # changed set, not per file.
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - '.claude/**'
+      - 'output/**'
+      - 'LICENSE'
+      - '.github/ISSUE_TEMPLATE/**'
+  workflow_dispatch:
+
+concurrency:
+  group: tests-main-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  full:
+    name: all local tests
+    uses: ./.github/workflows/tests.yml
+    with:
+      mode: full
+      artifact-name: tests-main-results
+      retention-days: 14
+    secrets: inherit
+
+  report:
+    name: trunk verdict
+    needs: full
+    # `always()` so a red suite still reports. A cancelled run is a superseded
+    # commit, not a break, so it reports nothing.
+    if: always() && needs.full.result != 'cancelled' && needs.full.result != 'skipped'
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    timeout-minutes: 10
+    permissions:
+      contents: write # commit comment
+      actions: read # read this run's per-lane conclusions
+    steps:
+      - name: Report the trunk verdict
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ needs.full.result }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          failed="$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs" --paginate \
+            --jq '[.jobs[] | select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != null) | select(.name | endswith("lane")) | .name] | join(", ")')"
+
+          {
+            echo "## \`main\` @ \`${SHA:0:8}\`: $RESULT"
+            echo
+            echo "Full local suite (\`core\`, \`browser-1..4\`, \`packages\`)."
+            if [ -n "$failed" ]; then
+              echo
+              echo "Failing lanes: \`$failed\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$RESULT" = success ]; then
+            echo "[tests-main] main is green at $SHA"
+            exit 0
+          fi
+
+          # Built line by line: every line of this script must stay indented
+          # inside the YAML block scalar, so no embedded multi-line literal.
+          {
+            echo "\`main\` is red at this commit."
+            echo
+            echo "Failing lanes: \`${failed:-see the run}\`"
+            echo
+            echo "Run: $RUN_URL"
+            echo
+            echo "This is the post-merge trunk suite (\`tests-main.yml\`). It did not"
+            echo "block the merge — \`main\` is the dev trunk. Reproduce locally with"
+            echo "\`pnpm test -- --full\`, or one lane at a time:"
+            echo
+            echo '```'
+            echo "pnpm test                                        # core"
+            echo "pnpm test -- --packages-only                     # packages"
+            echo "pnpm test -- --browser-only --browser-shard=1/4  # browser-1"
+            echo "pnpm test -- --browser-only --browser-shard=2/4  # browser-2"
+            echo "pnpm test -- --browser-only --browser-shard=3/4  # browser-3"
+            echo "pnpm test -- --browser-only --browser-shard=4/4  # browser-4"
+            echo '```'
+          } > /tmp/trunk-verdict.md
+
+          gh api "repos/$REPO/commits/$SHA/comments" -F body=@/tmp/trunk-verdict.md --jq '.html_url'
+          echo "::error::main is red at $SHA (lanes: ${failed:-unknown})"
+          exit 1

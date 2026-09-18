@@ -383,14 +383,48 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 - Every Linux CI job runs on Blacksmith through `runs-on: ${{ vars.CI_RUNNER_<tier>
   || '<label>' }}`. Tiers, the kill switch back to GitHub-hosted runners, and
   the Docker layer cache: `docs/runbooks/ci-runners.md`.
-- GitHub Actions runs four lanes — `core`, `browser-1`, `browser-2`, `packages` —
-  natively, one Blacksmith runner each (`CI_RUNNER_L`), through
-  `.github/workflows/tests.yml`. The two browser lanes are halves of one sharded
-  run (`--browser-shard=1/2` and `2/2`). The slowest lane defines the gate
-  duration. Each lane is the unchanged root command at the exact PR head SHA;
+- GitHub Actions runs six lanes — `core`, `browser-1` … `browser-4`, `packages`
+  — natively, one Blacksmith runner each (`CI_RUNNER_L`), through
+  `.github/workflows/tests.yml`. The four browser lanes are quarters of one
+  sharded run (`--browser-shard=N/4`, Playwright's native `--shard`). The
+  slowest lane defines the run duration, and since 2026-09-18 that is
+  `packages`, not a browser lane. Measured: run 35384964452 with 2 browser
+  shards = **10m19s** wall clock (browser-2 10m19s was the long pole); run
+  35388565759 with 4 = **8m17s** (browser long pole 6m56s, `packages` 8m01s).
+  That is 19% faster, not the 36% an even split would give — Playwright
+  `--shard` partitions by test count (10/10/9/9), not by duration. **Do not
+  add a fifth browser shard**: it cannot move a total that `packages` sets.
+  Making the suite faster from here means the `packages` lane, whose two-wave
+  parallelism in `tests/bin/package-quality.ts` is deliberate and
+  hazard-documented ("Concurrent isolated Bun workers can spin indefinitely").
+  Read it before changing anything there. Each lane is the unchanged root command at the exact requested SHA;
   browser lanes install Chromium and prestart Supabase first. Do not add
   CI-only test logic. (The Platinum/Daytona sandbox-worker path was removed on
   2026-08-26; only `deploy-preview.yml` still uses a cloud sandbox.)
+- **Where those lanes actually run (changed 2026-09-18):** the suite gates
+  promotes, not ordinary pull requests.
+  1. **A pull request into `main` does not run it.** `Tests - PR`
+     (`tests-pr.yml`) posts a `test verdict` check naming the rule that applied
+     and stops. That check is always green — it is a statement, not a gate.
+  2. **Add the `test` label** to run every lane on that pull request
+     (~8.5 min, measured). The `preview` label also runs them, on top of the preview
+     origin's deployed `--target-full`. Adding either label to an already-open
+     pull request re-triggers the workflow; no push needed.
+  3. **A pull request into `staging` always runs it.** `staging` is the release
+     candidate, so the gate is unconditional there.
+  4. **Every push to `main` runs it** on that commit — `Tests - main`
+     (`tests-main.yml`). It blocks nothing, because the code already merged and
+     `deploy-dev.yml` deploys the same push without waiting. A red run comments
+     on the offending commit and names the failing lanes. A cancelled run means
+     a newer commit superseded it, and is not a break.
+  5. **A pull request into `prod`** runs `tests-release.yml` against *deployed*
+     staging instead — the local profile never runs there.
+- Because a `main` pull request no longer runs the suite for you, **run it
+  yourself before merging**: the narrowest relevant command first, then
+  `pnpm test` (add `--full` for testing infrastructure, broad refactors, and
+  release work). The measured saving is the point — the old gate cost ~11 min
+  median and 68 min worst case on every pull request, while `main-push-protection`
+  required no status check at all, so it never actually blocked a merge.
 - Release tests run `pnpm test -- --target-full` against deployed staging. They block
   production when API or gateway health reports a SHA other than
   `RELEASE_SOURCE_SHA`, when any API flow is excluded, or when a configured

@@ -45,12 +45,48 @@ jobs:
           - lane: core
             mode: core
             args: ""
+          # Four browser shards, not two (2026-09-18). MEASURED, both runs at
+          # full mode on Blacksmith L runners:
+          #
+          #   run 35384964452 (N=2): core 2m18s, packages 6m34s,
+          #                          browser-1 8m11s, browser-2 10m19s
+          #                          -> suite wall clock 10m19s
+          #   run 35388565759 (N=4): core 2m14s, browser-1 3m49s,
+          #                          browser-4 4m59s, browser-2 5m17s,
+          #                          browser-3 6m56s, packages 8m01s
+          #                          -> suite wall clock 8m17s  (19% faster)
+          #
+          # The browser long pole did drop as modelled (619s -> 416s, -33%):
+          # the lane's fixed cost is ~134s (81s runner setup + 53s in-lane
+          # stack boot) and its journeys ~837s, so a lane is ~134 + 837/N.
+          # But `--shard` splits by TEST COUNT (10/10/9/9 here), not by
+          # duration, so the shards come out uneven — browser-3 landed at
+          # 6m56s against a ~5.7 min even-split projection.
+          #
+          # The suite total only improved 19%, not 36%, because `packages`
+          # (8m01s) is now the binding lane. DO NOT add a fifth browser shard:
+          # it cannot move a total that `packages` sets. Making the suite
+          # faster from here means the packages lane, whose two-wave
+          # parallelism in `tests/bin/package-quality.ts` is deliberate and
+          # hazard-documented — read it before changing anything there.
+          #
+          # `--browser-shard` maps straight to Playwright's native `--shard`,
+          # so the denominator needs no partition code (unlike the API shards
+          # in `src/core/shard.ts`). Verified the 4-way split is total and
+          # disjoint: the sorted union of the four shard listings is
+          # byte-identical to the unsharded listing (38 tests).
           - lane: browser-1
             mode: browser
-            args: --browser-only --browser-shard=1/2
+            args: --browser-only --browser-shard=1/4
           - lane: browser-2
             mode: browser
-            args: --browser-only --browser-shard=2/2
+            args: --browser-only --browser-shard=2/4
+          - lane: browser-3
+            mode: browser
+            args: --browser-only --browser-shard=3/4
+          - lane: browser-4
+            mode: browser
+            args: --browser-only --browser-shard=4/4
           - lane: packages
             mode: packages
             args: --packages-only
