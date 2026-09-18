@@ -48,6 +48,8 @@ import { secretsAllowlistPayloadConflicts } from '../secrets';
 import { runtimeContextConflicts } from './idempotency-conflicts';
 import { createProjectSession } from '../lib/sessions';
 import { syncSandboxEnvForPrompt } from '../lib/sandbox-env-sync';
+import { recordSessionActivity } from '../session-activity';
+import { deliveryCountsAsActivity } from './delivery-activity';
 import { applyTriggerSessionAccess } from '../trigger-session-access';
 import { openSession } from '../routes/shared';
 import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
@@ -720,7 +722,22 @@ export async function continueSession(
       return healed ? toTarget(healed) : null;
     },
     send: sendPrompt,
-  }).catch(notLandedOutcome);
+  })
+    .then((outcome) => {
+      // Stamp the sidebar's sort key for a prompt the PLATFORM delivered — a
+      // spawned sub-session, a trigger, a channel message, an approval resume.
+      // The preview proxy already does this for a prompt a browser sends; this
+      // path never did, so those sessions fell back to `updated_at`, which a
+      // dozen background writers advance with no turn behind them, and they
+      // visibly reordered themselves in the sidebar. Best-effort and never
+      // awaited, exactly as at the proxy: a failed stamp degrades ordering and
+      // must never degrade the prompt.
+      if (deliveryCountsAsActivity(outcome)) {
+        void recordSessionActivity({ sessionId, projectId: session.projectId });
+      }
+      return outcome;
+    })
+    .catch(notLandedOutcome);
 }
 
 /** A refused landing proof is its own outcome; anything else keeps throwing. */

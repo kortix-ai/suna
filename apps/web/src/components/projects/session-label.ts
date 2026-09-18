@@ -22,13 +22,22 @@ export function rootOpenCodeSession(session: ProjectSession): ProjectRuntimeSess
   return opencodeSessions.find((item) => !item.parent_id) ?? null;
 }
 
-/** Direct, non-archived children of the root opencode session, newest first. */
+/**
+ * Direct, non-archived children of the root opencode session, newest first.
+ *
+ * Ties break on id. A child with no `updated_at` collapses to `0`, so whole
+ * groups of them tie — and a stable sort then preserves ARRIVAL order, which is
+ * whatever order the sandbox listing came back in. That order is re-derived on
+ * every refetch, and the snapshot writer persists a pure reorder as a change,
+ * so the churn reached every client as sub-sessions visibly swapping places in
+ * the sidebar. Ids are stable and unique; the rendered order now is too.
+ */
 export function directSubsessions(session: ProjectSession): ProjectRuntimeSession[] {
   const root = rootOpenCodeSession(session);
   if (!root) return [];
   return (session.opencode_sessions ?? [])
     .filter((item) => item.parent_id === root.id && !item.archived_at)
-    .sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0));
+    .sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0) || a.id.localeCompare(b.id));
 }
 
 /**
