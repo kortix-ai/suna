@@ -14,6 +14,7 @@ import {
 import Loading from '@/components/ui/loading';
 import { TypedTitle } from '@/components/ui/typed-title';
 import { Slack } from '@/features/icon/icons/slack';
+import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
 import { Telegram } from '@/features/icon/icons/telegram';
 import {
   getSessionDisplayTitle,
@@ -48,6 +49,7 @@ const SOURCE_ICONS: Record<SessionSourceKind, ComponentType<{ className?: string
   chat: ChatTeardropTextIcon,
   slack: Slack,
   telegram: Telegram,
+  teams: MicrosoftTeams,
   email: EnvelopeIcon,
   schedule: CalendarDotsIcon,
   webhook: WebhooksLogoIcon,

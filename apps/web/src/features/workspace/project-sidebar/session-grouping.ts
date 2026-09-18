@@ -84,6 +84,7 @@ const SOURCE_SECTION_ORDER: Array<{ id: string; label: string }> = [
   { id: 'chat', label: 'Chat' },
   { id: 'slack', label: 'Slack' },
   { id: 'telegram', label: 'Telegram' },
+  { id: 'teams', label: 'Teams' },
   { id: 'email', label: 'Email' },
   { id: 'schedule', label: 'Scheduled' },
   { id: 'webhook', label: 'Webhook' },

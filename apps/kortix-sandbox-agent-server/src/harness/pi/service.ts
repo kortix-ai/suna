@@ -91,7 +91,7 @@ export function createPiHarnessService(
       forward: (input) => surface.handle(input),
     },
     control: createPiControlService(live, () => pushProjection('kortix-env-applied')),
-    diagnostics: createPiDiagnosticsService(live),
+    diagnostics: createPiDiagnosticsService(live, () => runtime.lastStartError),
     queries: createPiQueryService(live, surface),
     background: { start: (currentCfg) => startPiBackground(live, currentCfg) },
     assets: createPiAssetsService(),

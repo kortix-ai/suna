@@ -41,11 +41,13 @@ async function processActivity(c: Context, expectedAppId?: string | null): Promi
     return c.json({ status: 200 }, 200);
   }
 
-  try {
-    await handleTeamsActivity(activity);
-  } catch (err) {
+  // Ack now, work later. Bot Framework delivers a conversation's activities in
+  // order and holds the next one until this response arrives; the dispatch
+  // below can wait 10–20 s on a sandbox start or resume, and that wait used to
+  // delay the NEXT message's live card by the same amount.
+  void handleTeamsActivity(activity).catch((err) => {
     console.error('[teams-webhook] dispatch failed', err);
-  }
+  });
 
   return c.body(null, 200);
 }

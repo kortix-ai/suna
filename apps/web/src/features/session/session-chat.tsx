@@ -1,5 +1,7 @@
 'use client';
 
+import { isQuestionTool } from './session-activity-groups';
+
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { detectCommandFromText } from '@/features/session/detect-command';
 import { SessionApprovalPrompt } from '@/features/session/session-approval-prompt';
@@ -275,6 +277,7 @@ import {
   startSessionWithPrompt,
   useAbortRuntimeSession,
   useExecuteRuntimeCommand,
+  useFeatureFlag,
   useProjectConfig,
   useRuntimeAgents,
   useRuntimeBootStalled,
@@ -821,7 +824,7 @@ function resolveTurnError(turn: Turn): string | undefined {
     for (const part of msg.parts) {
       if (part.type !== 'tool') continue;
       const tool = part as ToolPart;
-      if (tool.tool === 'question' && tool.state.status === 'error' && 'error' in tool.state) {
+      if (isQuestionTool(tool.tool) && tool.state.status === 'error' && 'error' in tool.state) {
         return (tool.state as { error: string }).error.replace(/^Error:\s*/, '');
       }
     }
@@ -888,7 +891,7 @@ function SessionTurnImpl({
       if (isToolPart(part)) {
         // `isPlanWriteTool` — NOT a bare `=== 'todowrite'`. The runtime emits
         // both spellings, and the plan card owns both (see plan-anchor.ts).
-        if (isPlanWriteTool(part.tool) || part.tool === 'task' || part.tool === 'question')
+        if (isPlanWriteTool(part.tool) || part.tool === 'task' || isQuestionTool(part.tool))
           return false;
         return shouldShowToolPart(part);
       }
@@ -1068,7 +1071,7 @@ function SessionTurnImpl({
         const part = msg.parts[pi];
         if (part.type !== 'tool') continue;
         const tool = part as ToolPart;
-        if (tool.tool !== 'question') continue;
+        if (!isQuestionTool(tool.tool)) continue;
         questionInfos.push({
           tool,
           msgId: msg.info.id,
@@ -1202,7 +1205,7 @@ function SessionTurnImpl({
         items.push({ type: 'text', part, id: part.id });
       } else if (
         isToolPart(part) &&
-        part.tool === 'question' &&
+        isQuestionTool(part.tool) &&
         answeredQuestionPartsById.has(part.id)
       ) {
         // Use the answered part (may be synthetic with cached answers)
@@ -1463,7 +1466,7 @@ function SessionTurnImpl({
     const parts: (typeof allParts)[number]['part'][] = [];
     for (const { part } of allParts) {
       if (isToolPart(part) && isPlanWriteTool(part.tool)) continue;
-      if (isToolPart(part) && part.tool === 'question') {
+      if (isToolPart(part) && isQuestionTool(part.tool)) {
         // Keep only answered questions, and only if not rendering inline.
         if (!answeredQuestionPartsById.has(part.id) || shouldUseInlineContent) continue;
         // A kept question rides into its burst as the ANSWERED part — the
@@ -2178,6 +2181,8 @@ export function SessionChat({
   // runtime is connected + healthy). We need it here too so the render logic
   // can tell "still booting" apart from "genuinely gone".
   const runtimeReady = useRuntimeReady();
+  const transcriptHistory = useFeatureFlag(projectId, 'session_transcript_history');
+  const allowSendBeforeReady = transcriptHistory.enabled && !!projectSessionId && !runtimeReady;
   // "The health poller GAVE UP", which `!runtimeReady` does not say — that is
   // also every ordinary boot. Only the composer notice reads it, to tell a probe
   // that has not answered yet from one that keeps failing.
@@ -3746,7 +3751,7 @@ export function SessionChat({
           const match = parts.find(
             (p) =>
               p.type === 'tool' &&
-              (p as ToolPart).tool === 'question' &&
+              isQuestionTool((p as ToolPart).tool) &&
               (p as ToolPart).callID === questionReq.tool!.callID,
           );
           if (match) {
@@ -5371,6 +5376,7 @@ export function SessionChat({
   });
   const composerReadiness = sessionComposerReadiness({
     runtimeReady,
+    pendingPrompt: allowSendBeforeReady && working.state === 'working',
     pendingDelivery: working.pendingDelivery,
     connection: sessionConnection,
     settling: composerSettling,
@@ -6148,7 +6154,7 @@ export function SessionChat({
                 sessionId={sessionId}
                 projectId={projectId}
                 providers={providers}
-                modelRequired
+                modelRequired={!allowSendBeforeReady}
                 modelsLoading={providersLoading}
                 threadContext={threadContext}
                 onContextClick={handleContextClick}

@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 658,
+  "count": 661,
   "routes": [
     {
       "method": "GET",
@@ -2081,6 +2081,14 @@
     {
       "method": "PATCH",
       "path": "/v1/projects/:projectId/sessions/:sessionId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/attachments"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/attachments/:attachmentId"
     },
     {
       "method": "GET",

@@ -11,8 +11,8 @@ export interface TeamsActivity {
   conversation?: { id?: string; conversationType?: string; tenantId?: string; name?: string };
   channelData?: {
     tenant?: { id?: string };
-    team?: { id?: string; name?: string };
-    channel?: { id?: string };
+    team?: { id?: string; name?: string; aadGroupId?: string };
+    channel?: { id?: string; name?: string };
   };
   replyToId?: string;
   entities?: Array<Record<string, unknown>>;
@@ -37,8 +37,17 @@ export interface TeamsAttachmentRef {
 export function extractTeamsAttachments(activity: TeamsActivity): TeamsAttachmentRef[] {
   const out: TeamsAttachmentRef[] = [];
   for (const a of activity.attachments ?? []) {
+    // A file shared from OneDrive (personal chat): a pre-authorized download URL.
     if (a.contentType === 'application/vnd.microsoft.teams.file.download.info' && a.content?.downloadUrl) {
       out.push({ name: a.name ?? 'file', downloadUrl: a.content.downloadUrl, fileType: a.content.fileType });
+      continue;
+    }
+    // An image pasted or dragged into the composer: `image/*` with a Bot
+    // Framework attachment URL that needs the bot connector token to fetch
+    // (channels/teams/file-proxy.ts attaches it).
+    if (a.contentType?.startsWith('image/') && a.contentUrl) {
+      const ext = a.contentType.slice('image/'.length).split(';')[0].trim() || 'png';
+      out.push({ name: a.name ?? `image.${ext}`, downloadUrl: a.contentUrl, fileType: ext });
     }
   }
   return out;

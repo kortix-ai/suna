@@ -1,5 +1,8 @@
 'use client';
 
+import { toast } from 'sonner';
+import { fetchSessionAttachment, isSessionAttachmentRef } from '@kortix/sdk';
+
 /** Moved from session-chat.tsx (`UserMessageRow`) so the turn module owns the
  *  user-message card. Full-width card, no reference chips. */
 
@@ -57,6 +60,8 @@ import {
   type SentAttachment,
 } from '../sent-attachment-previews';
 import { buildMentionSegments, type MentionSourceRef } from '../mention-segments';
+import { parseChannelMessage } from './channel-message';
+import { CHANNEL_BRAND_COLOR, ChannelBrandMark, channelPlatformLabel } from './channel-brand';
 import {
   parseAgentMentionReferences,
   parseFileMentionReferences,
@@ -79,13 +84,8 @@ import { PlanCard, useHasPlan } from './plan-card';
 // exclusive to UserMessage, moved verbatim from session-chat.tsx.
 // ============================================================================
 
-// Fixed third-party brand colors for channel-source cards. These are the
-// platforms' own brand hues (not themeable), so they live as named
-// constants rather than as inline hex literals.
-const CHANNEL_BRAND_COLOR = {
-  Telegram: '#29B6F6',
-  Slack: '#E91E63',
-} as const;
+// Channel brand colors + marks live in ./channel-brand.tsx, shared with the
+// outgoing reply card the bash tool renders for `teams send` & co.
 
 // ============================================================================
 // Parse <dcp-notification> XML tags from DCP plugin messages
@@ -557,10 +557,10 @@ export function normalizeAttachments(
   const addUpload = (file: (typeof uploads)[number], index: number) => {
     normalized.push({
       key: file.attachment ? `attachment:${file.attachment}` : `upload:${index}:${file.path}`,
-      ...(file.attachment ? { id: file.attachment } : {}),
+      ...(file.attachment && !isSessionAttachmentRef(file.attachment) ? { id: file.attachment } : {}),
       filename: file.filename || getFilename(file.path),
       mime: file.mime,
-      src: file.path || undefined,
+      src: isSessionAttachmentRef(file.attachment) ? file.attachment : file.path || undefined,
       path: file.path || undefined,
     });
   };
@@ -776,6 +776,40 @@ export interface AttachmentUploadStatus {
   onRetry?: () => void;
 }
 
+function StoredAttachmentFile({ file }: { file: NormalizedAttachment }) {
+  const [downloading, setDownloading] = useState(false);
+  const download = async () => {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      const stored = isSessionAttachmentRef(file.src);
+      const url = stored ? URL.createObjectURL(await fetchSessionAttachment(file.src!)) : sentAttachmentPreview(file.id);
+      if (!url) return;
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = file.filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      if (stored) setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not download attachment');
+    } finally {
+      setDownloading(false);
+    }
+  };
+  return (
+    <div aria-busy={downloading}>
+      <AttachmentTile
+        filename={file.filename}
+        mime={file.mime}
+        className={downloading ? 'cursor-wait' : undefined}
+        onOpen={() => void download()}
+      />
+    </div>
+  );
+}
+
 export function MessageAttachments({
   attachments,
   status,
@@ -841,6 +875,9 @@ export function MessageAttachments({
               );
             }
 
+            if (isSessionAttachmentRef(file.src) || sentAttachmentPreview(file.id)) {
+              return <li key={file.key} className="contents"><StoredAttachmentFile file={file} /></li>;
+            }
             const canOpen = Boolean(file.path);
             return (
               <li key={file.key} className="contents">
@@ -1435,22 +1472,10 @@ export function UserMessage({
     return stripKortixSystemTags(withoutSessions).trim();
   }, [copyText, effectiveCommandInfo]);
 
-  // Detect channel message (Telegram/Slack) in user message
-  const channelMessageInfo = useMemo(() => {
-    if (!rawText) return undefined;
-    const headerMatch = rawText.match(/^\[(\w+)\s*·\s*([^·]+?)\s*·\s*message from\s+([^\]]+)\]\s*/);
-    if (!headerMatch) return undefined;
-    const platform = headerMatch[1] as 'Telegram' | 'Slack';
-    const context = headerMatch[2].trim();
-    const userName = headerMatch[3].trim();
-    const afterHeader = rawText.slice(headerMatch[0].length);
-    const instrStart = afterHeader.search(
-      /\n\s*(Chat ID:|── Telegram instructions|── Slack instructions)/,
-    );
-    const messageText =
-      instrStart >= 0 ? afterHeader.slice(0, instrStart).trim() : afterHeader.trim();
-    return { platform, context, userName, messageText };
-  }, [rawText]);
+  // Detect a channel message (Slack / Microsoft Teams / Telegram): the API
+  // scaffolds these prompts with ids and turn instructions the person never
+  // typed, so the card shows only the platform, the sender, and their words.
+  const channelMessageInfo = useMemo(() => parseChannelMessage(rawText), [rawText]);
 
   // Detect trigger_event in user message
   const triggerEventInfo = useMemo(() => {
@@ -1657,28 +1682,16 @@ export function UserMessage({
     );
   }
 
-  // Channel messages (Telegram/Slack): render as a branded card with user name
+  // Channel messages (Slack / Microsoft Teams / Telegram): a branded card with the sender
   if (channelMessageInfo) {
-    const isTelegram = channelMessageInfo.platform === 'Telegram';
-    const brandColor = isTelegram ? CHANNEL_BRAND_COLOR.Telegram : CHANNEL_BRAND_COLOR.Slack;
+    const brandColor = CHANNEL_BRAND_COLOR[channelMessageInfo.platform];
     return (
       <div className="flex flex-col items-end gap-1">
         <div className="border-border/60 bg-muted/40 inline-flex max-w-[80%] flex-col gap-1.5 rounded-lg border px-4 py-2.5">
           <div className="flex items-center gap-2">
-            <svg
-              className="size-3.5 shrink-0"
-              viewBox="0 0 24 24"
-              fill={brandColor}
-              aria-hidden="true"
-            >
-              {isTelegram ? (
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z" />
-              ) : (
-                <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zM17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.165 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zM15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z" />
-              )}
-            </svg>
+            <ChannelBrandMark platform={channelMessageInfo.platform} />
             <span className="text-xs font-medium" style={{ color: brandColor }}>
-              {channelMessageInfo.platform}
+              {channelPlatformLabel(channelMessageInfo.platform, tI18nComplete)}
             </span>
             <span className="text-muted-foreground text-xs">·</span>
             <span className="text-foreground text-sm font-medium">

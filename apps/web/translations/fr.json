@@ -1085,6 +1085,10 @@
           "name": "Secrets protégés par le réseau",
           "description": "Contrôlez les outils et destinations autorisés à recevoir les secrets du projet."
         },
+        "session_transcript_history": {
+          "name": "Historique de la session",
+          "description": "Enregistre l’historique du chat après chaque tour et l’affiche pendant le démarrage de l’ordinateur de la session."
+        },
         "pooled_provider_secrets": {
           "name": "Secrets de fournisseur partagés",
           "description": "Partagez plusieurs clés de fournisseur avec les membres et choisissez un groupe de clés pour chaque session."
@@ -1437,6 +1441,7 @@
         "chat": "Discussion",
         "slack": "Slack",
         "telegram": "Telegram",
+        "teams": "Teams",
         "email": "Courriel",
         "scheduled": "Programmée",
         "webhook": "Webhook",
@@ -1586,6 +1591,9 @@
   "modelSelector": {
     "search": "Rechercher des modèles",
     "free": "Gratuit",
+    "included": "Inclus",
+    "projectDefaultAccount": "Par défaut du projet",
+    "useAccount": "Utiliser le compte",
     "addProvider": "Ajouter un fournisseur",
     "connectProvider": "Connecter un fournisseur",
     "manageModels": "Gérer les modèles",
@@ -14529,6 +14537,11 @@
       "text922315177668": "Tout ce que le lanceur peut voir",
       "text9224d9e82502": "De retour dans « Provisioning » → « Settings », définissez « Scope » sur « Sync only assigned users and groups » — cette option n’apparaît ici qu’après l’enregistrement des identifiants. Cliquez ensuite sur « Start provisioning » en haut de la page d’aperçu Provisioning (ou sur « Provision on demand » pour transmettre immédiatement un utilisateur affecté au lieu d’attendre le cycle d’environ 40 minutes).",
       "text9225e456b795": "Mentionnez votre agent dans un canal ou une conversation Teams.",
+      "text895ce927db2e": "Conversation personnelle",
+      "text28c7d3f8b75d": "Conversation de groupe",
+      "text72b5b0c53de9": "A répondu dans Microsoft Teams",
+      "textfc73e9ad2dae": "A répondu dans Slack",
+      "text8faf56a14a8d": "A répondu dans Telegram",
       "text8ccfe10f2f2d": "Publier dans votre catalogue Teams",
       "text36f6474748b3": "Publication de l'application dans votre catalogue Teams…",
       "text45b9df5730ac": "En attente de l'approbation de l'application par un administrateur Teams",

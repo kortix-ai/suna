@@ -220,6 +220,7 @@ export async function buildSessionTranscriptSyncEnvelope(
   input: {
     session: ProjectSessionRow;
     limit: number;
+    requireCurrentRoot?: boolean;
   },
   deps: SessionTranscriptDeps = {},
 ): Promise<SessionTranscriptSyncEnvelope> {
@@ -227,10 +228,13 @@ export async function buildSessionTranscriptSyncEnvelope(
     input.session.sessionId,
     input.limit,
   );
-  if (!mirror) {
+  const rootMismatch = input.requireCurrentRoot && (
+    !input.session.opencodeSessionId || mirror?.opencode_session_id !== input.session.opencodeSessionId
+  );
+  if (!mirror || rootMismatch) {
     return {
       available: false,
-      reason: 'no server-side transcript has been captured for this session yet',
+      reason: rootMismatch ? 'stored transcript does not match the current session root' : 'no server-side transcript has been captured for this session yet',
       source: 'none',
       complete: false,
       captured_at: null,

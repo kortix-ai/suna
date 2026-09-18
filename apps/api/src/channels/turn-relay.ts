@@ -69,10 +69,11 @@ export async function relayTurnAnswerDetailed(
   sessionId: string,
   text: string,
   blocks?: unknown[],
+  card?: Record<string, unknown>,
 ): Promise<slack.TurnRelayResult> {
   const platform = await platformFor(sessionId);
   return platform === 'teams'
-    ? fromBoolean(await teams.relayTurnAnswer(sessionId, text))
+    ? fromBoolean(await teams.relayTurnAnswer(sessionId, text, card))
     : slack.relayTurnAnswerDetailed(sessionId, text, blocks);
 }
 

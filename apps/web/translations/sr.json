@@ -1085,6 +1085,10 @@
           "name": "Тајне заштићене на мрежи",
           "description": "Контролишите који алати и одредишта могу да приме тајне пројекта."
         },
+        "session_transcript_history": {
+          "name": "Историја разговора сесије",
+          "description": "Сачувај историју разговора после сваког одговора и прикажи је док се рачунар сесије покреће."
+        },
         "pooled_provider_secrets": {
           "name": "Дељени тајни кључеви провајдера",
           "description": "Делите више кључева провајдера са члановима и изаберите групу кључева за сваку сесију."
@@ -1437,6 +1441,7 @@
         "chat": "Ћаскање",
         "slack": "Slack",
         "telegram": "Telegram",
+        "teams": "Teams",
         "email": "Е-пошта",
         "scheduled": "Заказано",
         "webhook": "Webhook",
@@ -1586,6 +1591,9 @@
   "modelSelector": {
     "search": "Претражи моделе",
     "free": "Бесплатно",
+    "included": "Укључено",
+    "projectDefaultAccount": "Подразумевано за пројекат",
+    "useAccount": "Koristi nalog",
     "addProvider": "Додај добављача",
     "connectProvider": "Повежи добављача",
     "manageModels": "Управљај моделима",
@@ -14529,6 +14537,11 @@
       "text922315177668": "Све што покретач може да види",
       "text9224d9e82502": "Назад у „Provisioning“ → „Settings“, поставите „Scope“ на „Sync only assigned users and groups“ — појављује се овде тек након чувања credentials-а. Затим кликните на „Start provisioning“ на врху странице са прегледом Provisioning-а (или „Provision on demand“ да одмах пошаљете једног додељеног user-а уместо да чекате циклус од око 40 минута).",
       "text9225e456b795": "Помените свог агента у Teams каналу или ћаскању.",
+      "text895ce927db2e": "Лични разговор",
+      "text28c7d3f8b75d": "Групни разговор",
+      "text72b5b0c53de9": "Одговорено у Microsoft Teams",
+      "textfc73e9ad2dae": "Одговорено у Slack-у",
+      "text8faf56a14a8d": "Одговорено у Telegram-у",
       "text8ccfe10f2f2d": "Објави у вашем Teams каталогу",
       "text36f6474748b3": "Објављивање апликације у вашем Teams каталогу…",
       "text45b9df5730ac": "Чека се да Teams администратор одобри апликацију",

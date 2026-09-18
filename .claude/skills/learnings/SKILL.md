@@ -21,6 +21,45 @@ linked, not inlined.
 
 ## Register
 
+### An account-scoped read on an always-mounted surface toasts 403 at every member (2026-09-18)
+
+**Rule:** before adding a query to a component that renders on every project
+page, ask who gets a 403 from it. `GET /accounts/:id/secret-resources` answers
+403 to anyone who is not a member of the ACCOUNT — a project member need not be
+— and the SDK toasts a 403 by default (`showErrors` defaults true,
+`apps/web/src/lib/error-handler.tsx`). Gate such a read on the feature flag its
+routes require AND on a user action (popover open), so the request is
+user-initiated like the provider modal's. **Near-miss:** the model picker's new
+credential read ran on every project page load; the 403 appeared in a real dev
+log on the branch, not in review. Same class as Marko's member 403-toast storm.
+**Enforcer:** none — the toast is 30 s-deduped, so it is quiet in a single
+session and loud across a team. Until one exists, grep a new `use*Query` in an
+always-mounted component for its route's authorization, and check
+`provider-connect.tsx`'s gate shape as the precedent.
+
+### Group attachment must grant the selected agents (2026-09-18)
+
+**Rule:** when attaching an IAM group to a project, load that project's agents
+and save the selected object assignments with the project role. Block submission
+while inventory is unavailable. **Incident:** real Azure SCIM sync succeeded on
+dev, but the attached member could not send messages because no agent grants
+existed. **Enforcer:** `22-resource-grant-multiselect.spec.ts` checks attachment,
+agent assignment persistence, partial-save retry, and the member composer.
+
+### Decide gateway mode with one rule at boot and at prompt; a harness start failure is a `boot_error` (2026-09-18)
+
+**Rule:** decide a box's LLM-gateway mode only with `projectLlmGatewayEnabled`,
+at provision and at prompt-time env-sync alike. Enforce the plan per request in
+the gateway (`principal.freeModelsOnly`), never by withholding env at boot. A
+harness with no native fallback must report a failed start as `boot_error`.
+**Incident:** dev, 2026-09-17 23:14 → 2026-09-18: `session-sandbox.ts` still
+ANDed the 2026-06 plan gate, so pi-harness sessions of a free account booted
+without `KORTIX_LLM_BASE_URL`; pi never started, health said `boot_error: null`,
+the UI spun (96 boxes, 9 dead-lettered prompts). OpenCode hid the split by
+switching to the gateway on the first prompt. **Enforcer:**
+`session-sandbox.test.ts` (gateway env on any plan), `pi-harness.test.ts`
+(failed start → `boot_error`).
+
 ### Preview completion belongs to one workflow attempt; daemons must release the deploy lock (2026-09-18)
 
 **Rule:** give each preview workflow run and attempt its own exit file. Close
@@ -6464,3 +6503,121 @@ leaves a detached HEAD with no `refs/heads/main`.
 *Enforcer:* the `beforeAll` / `afterAll` pair in that file parks the cwd and
 owns the template. Nothing lints for a test that shells out to `git` from inside
 the checkout — that check is the TODO.
+
+### Clear provider ingress after a confirmed resume (2026-09-18)
+
+A successful resume must invalidate cached sandbox ingress before turn recovery
+or runtime refresh. Reads during the stopped interval can cache credentials that
+the provider replaces on start. Invalidating only at stop leaves those credentials
+valid in the API cache for five minutes.
+
+The transcript-history preview queued an attachment prompt correctly, but stale
+Daytona ingress returned HTTP 401 after wake. Two browser runs recovered only
+after retry delays and took 263 and 270 seconds. The session API contract test
+now seeds stopped ingress, resumes the same sandbox, and requires the next
+resolution to return the provider's new credential. It failed before the fix.
+
+### 2026-09-18 — An empty list is not a refusal: a LIST path must carry the denial its single-resource sibling does
+
+**Incident.** A member of an MFA-required account could not see any project,
+with no error and no explanation. `Ino's Test SSO` rendered in the project
+switcher as an account with no projects and a cheerful "Create a project in
+Ino's Test SSO" link. Granting the user account-admin changed nothing; granting
+them the project directly changed nothing. Re-logging in produced no 2FA
+prompt.
+
+Both authorization paths applied the identical account-MFA gate, ABOVE role
+evaluation, so no grant could ever clear it:
+
+```
+authorize()              → deny('account_mfa_required')  → 403 + code
+listAccessibleProjects() → { mode: 'none' }              → [] + HTTP 200
+```
+
+The remedy was fully built and fully wired: the coded 403 → the SDK's
+`kortix:mfa-required` event (`api-client.ts`) → `MfaStepUpProvider`, mounted in
+the web root layout, which runs the TOTP challenge, upgrades the session to
+`aal2`, then `invalidateTokenCache()` + `queryClient.invalidateQueries()` so
+everything refetches. It could never fire, because the ONE surface the user was
+looking at returned `200 []`. The owner never saw any of it: `isSuperAdmin`
+returns `{ mode: 'all' }` one line ABOVE the gate.
+
+**Rules.**
+1. **Every `mode: 'none'` carries its `reason`.** A list path owes its caller
+   exactly what the single-resource path owes them. Returning the empty set
+   without the reason destroys the only information that makes the denial
+   actionable.
+2. **A refusal a user can clear must reach them as a refusal**, not as an empty
+   state. An empty state with a create affordance actively teaches the user
+   that nothing is wrong.
+3. **Write a shared gate ONCE.** `mfaGateBlocks` is the predicate; both callers
+   consult it. Two copies of a condition whose two call sites answer it
+   differently is how this shipped.
+4. **Diagnostic:** a user who sees a container (account, project, folder) but
+   none of its contents, while an admin sees everything, is an authorization
+   path that fails open on the LIST and closed on the ITEM. Compare the two
+   before looking at grants — grants are the thing that cannot fix it.
+
+*Enforcer:* `apps/api/src/iam/list-denial-parity.test.ts` — pins the shared
+predicate's truth table, that the MFA condition appears exactly ONCE in
+`authorize.ts`, and that `listAccessibleProjects` returns no bare
+`{ mode: 'none' }`. Verified falsifiable: restoring the old line turns all three
+parity cases red. `r1.ts` surfaces `account_mfa_required` through the existing
+`buildDenialError`, so the whole downstream remedy works unchanged.
+
+*Related:* the same "refusal rendered as an empty state" shape as
+"A gate the product cannot clear is a dead end" (2026-09-16). That entry fixed
+it for connectors; this is the authorization-listing instance of it. Four more
+were found in one sweep on 2026-09-18 (the model picker's `enabled` boolean
+carries no reason, and a member cannot clear a manager-tier model gate) — those
+remain open.
+
+### 2026-09-18 — Follow-up to the entry above: enumerating is not using, so the gate belongs to the action
+
+The fix recorded above (carry the reason, surface `account_mfa_required` from
+`GET /projects`) shipped and worked end to end on dev: the member got the
+step-up dialog, completed TOTP, and all five projects appeared. It was also
+**the wrong place for the gate**, which only became obvious once it was live —
+opening the project SWITCHER threw a modal auth challenge.
+
+Three behaviours were seen on the real product, in this order:
+
+| gate the list, drop the reason | account renders EMPTY, with a "Create a project" link. No way to discover 2FA was the blocker. |
+| gate the list, surface the reason | correct, and obnoxious: a menu becomes an auth prompt. |
+| **gate on open** | the switcher lists the projects; the challenge arrives when you open one. |
+
+**The rule: an authorization gate belongs to the ACTION, not to the
+enumeration.** Listing a resource is not using it. Every per-project action
+still goes through `authorize`, which still denies `account_mfa_required` and
+returns the coded 403 the step-up dialog keys on — so the remedy is unchanged
+and the protection is unchanged; only the moment it is demanded moved.
+
+The entry above's rule still stands where it applies — **a listing must never
+swallow a reason the caller could act on** — but the better answer for a gate a
+LIST would otherwise trip is usually to not gate the list at all.
+
+**Accepted trade, stated:** a session that has not cleared MFA can now see
+project NAMES (and today the full project row, including `repo_url` and
+`metadata.git`) in an MFA-required account. Reducing the gated row to
+id/name/icon is open follow-up work.
+
+*Enforcer:* `apps/api/src/iam/list-denial-parity.test.ts` now pins the
+ASYMMETRY in both directions — `authorize` keeps `mfaGateBlocks`, the listing
+must not have it, the condition is written once, and no listing denial returns
+without its reason. Verified falsifiable: re-adding the gate to the listing
+turns it red, so "restoring symmetry" between the two functions cannot land by
+accident.
+
+## 2026-09-18 — Directory stale time does not refresh an open page
+
+Entra removed a test group member on dev. The database contained zero members,
+but the open group panel still showed one until reload. `staleTime` only marks
+cached data stale; it does not schedule a fetch. The global query provider also
+disables focus refetches. External SCIM writes cannot invalidate that browser.
+
+Directory readers use the SDK's `contract('directory')`: ten-second foreground
+refreshes plus focus and reconnect refreshes. Keep Azure's provisioning cadence
+separate from browser freshness. Verify external writes while the page stays open.
+
+Enforcers: `packages/sdk/src/react/query-contracts.test.ts` and the external SCIM
+refresh journey in `tests/e2e/specs/22-resource-grant-multiselect.spec.ts`.

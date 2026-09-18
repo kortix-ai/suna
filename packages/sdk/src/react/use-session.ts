@@ -64,6 +64,8 @@ import { extractGatewayErrorDetails, unwrapError } from '../core/turns/errors';
 import { qk } from './query-keys';
 import { clearStartStash, readStartStash } from './session-start-stash';
 import { reconcileHydratedSessionTitle } from './session-title-sync';
+import { useFeatureFlag } from './use-feature-flag';
+import { useSessionTranscriptHistory } from './use-session-transcript-history';
 import { useCanonicalOpenCodeSession } from './use-canonical-opencode-session';
 import type { ModelKey } from './use-model-store';
 import { useOpenCodeEventStream } from './use-opencode-events';
@@ -1017,11 +1019,14 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
 
   // 5. Resolve the canonical OpenCode root id (server-owned; /start hands it over)
   // and sync messages off it.
+  const transcriptHistoryFlag = useFeatureFlag(startEnabled && chatEngine ? projectId : null, 'session_transcript_history');
+  const transcriptHistoryEnabled = enabled && chatEngine && transcriptHistoryFlag.enabled;
+  const transcriptHistory = useSessionTranscriptHistory(projectId, sessionId, transcriptHistoryEnabled);
   const canonicalSession = useCanonicalOpenCodeSession({
     projectId,
     sessionId,
     pinFromStart: startData?.opencode_session_id ?? null,
-    initialPin: initialOpenCodeSessionId,
+    initialPin: transcriptHistory.rootSessionId ?? initialOpenCodeSessionId,
     listRuntimeSessions: switched,
   });
   const { rootSessionId } = canonicalSession;
@@ -1067,6 +1072,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // result instead of whatever it happens to return for that starved call.
   const rawSync = useSessionSync(chatEngine ? ocSessionId : '', {
     kortixSessionScope: `${projectId}/${sessionId}`,
+    mirror: transcriptHistoryEnabled ? transcriptHistory.envelope : undefined,
     networkEnabled: switched,
     working: working.state === 'working',
     // The control plane holding a turn open keeps the transcript verification

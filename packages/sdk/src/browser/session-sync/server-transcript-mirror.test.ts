@@ -320,3 +320,18 @@ describe("loadSessionTranscriptMirror and the open bundle", () => {
 		expect(painted?.opencode_session_id).toBe(ROOT);
 	});
 });
+
+test('an authoritative empty live read cannot be overwritten by late saved history', () => {
+  expect(shouldHydrateFromMirror({
+    envelope: envelope(), runtimeSessionId: ROOT, hasMessages: false, hasLoadedTranscript: true,
+  })).toBe(false);
+});
+
+test('an empty live transcript removes every provisional saved message', async () => {
+  const { useSyncStore } = await import('../stores/sync-store');
+  useSyncStore.getState().clearSession(ROOT);
+  useSyncStore.getState().hydrate(ROOT, mirrorMessagesForHydrate(envelope()), { source: 'cache' });
+  useSyncStore.getState().hydrate(ROOT, [], { source: 'runtime' });
+  expect(useSyncStore.getState().messages[ROOT]).toEqual([]);
+  useSyncStore.getState().clearSession(ROOT);
+});

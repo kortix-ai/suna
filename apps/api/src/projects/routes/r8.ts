@@ -1,3 +1,4 @@
+import { parseSessionAttachmentRef } from '@kortix/shared';
 import { checkBillingActive } from '../../billing/services/billing-gate';
 import { config, type SandboxProviderName } from '../../config';
 import { auth, errors, json } from '../../openapi';
@@ -668,6 +669,12 @@ projectsApp.openapi(
     const sanitized = sanitizeInboxPromptParts(rawParts);
     if ('error' in sanitized) return c.json({ error: sanitized.error }, 400);
     const parts = sanitized.parts;
+    for (const part of parts) {
+      const attachment = parseSessionAttachmentRef(part.url);
+      if (attachment && (attachment.projectId !== projectId || attachment.sessionId !== sessionId)) {
+        return c.json({ error: 'Attachment belongs to another session' }, 400);
+      }
+    }
     const text = flattenPromptText(parts);
 
     const overridesInput = (body.overrides ?? {}) as Record<string, unknown>;

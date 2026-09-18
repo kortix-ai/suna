@@ -169,3 +169,11 @@ describe('headCompleteAfterCapture', () => {
     ).toBe(true);
   });
 });
+
+test('mirror retains bounded private attachment references and strips all other file URLs', () => {
+  const url = 'kortix-attachment://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333';
+  expect(sanitizeParts([{ type: 'file', url }])).toEqual([{ type: 'file', url }]);
+  for (const value of ['https://example.test/secret', 'data:text/plain;base64,YQ==', `${url}?token=secret`]) {
+    expect(sanitizeParts([{ type: 'file', url: value }])).toEqual([{ type: 'file' }]);
+  }
+});

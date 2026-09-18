@@ -140,6 +140,15 @@ export function fixedPrincipalsOf(mode: AccessDialogMode): AccessDialogPrincipal
   return [];
 }
 
+export function agentAccessProjectId(
+  scope: AccessDialogScope,
+  mode: AccessDialogMode,
+  selectedProjectId: string,
+): string | undefined {
+  if (mode.kind === 'attach') return selectedProjectId || undefined;
+  return scope.kind === 'project' ? scope.projectId || undefined : undefined;
+}
+
 export interface AccessDialogResult {
   /** Principal ids whose mutation rejected — bulk callers keep them selected. */
   failedPrincipalIds: string[];
@@ -427,6 +436,7 @@ export function AccessDialog({
   onDone,
 }: AccessDialogProps) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tCommon = useI18nTranslations('common');
   const queryClient = useQueryClient();
   const roleScope = roleScopeFor(scope);
   const projectId = scope.kind === 'project' ? scope.projectId : undefined;
@@ -461,7 +471,10 @@ export function AccessDialog({
   const setAgents = (next: AgentSelection | ((prev: AgentSelection) => AgentSelection)) =>
     setDraft((d) => ({ ...d, agents: typeof next === 'function' ? next(d.agents) : next }));
   const setExpires = (next: string) => setDraft((d) => ({ ...d, expires: next }));
-  const setAttachProjectId = (next: string) => setDraft((d) => ({ ...d, attachProjectId: next }));
+  const setAttachProjectId = (next: string) =>
+    setDraft((d) =>
+      next === d.attachProjectId ? d : { ...d, attachProjectId: next, agents: ALL_AGENTS },
+    );
   const setProjectGrants = (next: ProjectGrantRow[]) =>
     setDraft((d) => ({ ...d, projectGrants: next }));
   const setProjectAccessOpen = (next: boolean) =>
@@ -485,14 +498,15 @@ export function AccessDialog({
   // Not for a project admin: the manager tier uses every agent regardless of
   // grants (`objectUsable` in `apps/api/src/iam/authorize.ts`), so a picker
   // under that role would write rows that change nothing.
+  const agentProjectId = agentAccessProjectId(scope, mode, attachProjectId);
   const showAgents =
-    scope.kind === 'project' &&
-    (mode.kind === 'grant' || mode.kind === 'edit') &&
+    !!agentProjectId &&
+    (mode.kind === 'grant' || mode.kind === 'edit' || mode.kind === 'attach') &&
     builtin !== 'manager';
   const resourceGrantsQuery = useQuery({
-    queryKey: qk.project.resourceGrants(projectId ?? ''),
-    queryFn: () => listProjectResourceGrants(projectId as string),
-    enabled: open && showAgents && !!projectId,
+    queryKey: qk.project.resourceGrants(agentProjectId ?? ''),
+    queryFn: () => listProjectResourceGrants(agentProjectId as string),
+    enabled: open && showAgents,
     ...contract('inventory'),
   });
   const projectAgents = useMemo<ProjectAgentResourceItem[]>(
@@ -830,6 +844,9 @@ export function AccessDialog({
           if (roleId) {
             await assignCustomRole('group', mode.principal.id, roleId, attachProjectId, expiresIso);
           }
+          for (const agentId of effectiveAgentIds(nextBuiltin, roleId, agents, projectAgents)) {
+            await assignAgent('group', mode.principal.id, attachProjectId, agentId, expiresIso);
+          }
         },
       },
     ];
@@ -989,6 +1006,7 @@ export function AccessDialog({
       : null;
   const canSubmit =
     !pending &&
+    (!showAgents || (resourceGrantsQuery.isSuccess && !resourceGrantsQuery.isFetching)) &&
     (mode.kind === 'grant'
       ? selectedCount > 0
       : mode.kind === 'attach'
@@ -1128,6 +1146,20 @@ export function AccessDialog({
             {showAgents ? (
               <Field className="gap-1.5">
                 <FieldLabel>{tI18nComplete.raw('text279b44d2ab4b')}</FieldLabel>
+                {resourceGrantsQuery.isError ? (
+                  <InfoBanner
+                    tone="destructive"
+                    action={
+                      <Button size="sm" variant="outline" onClick={() => void resourceGrantsQuery.refetch()}>
+                        {tCommon('retry')}
+                      </Button>
+                    }
+                  >
+                    {resourceGrantsQuery.error.message}
+                  </InfoBanner>
+                ) : resourceGrantsQuery.isLoading ? (
+                  <Skeleton className="h-6 w-full rounded-md" />
+                ) : null}
                 <Tabs
                   value={agents.mode}
                   onValueChange={(next) =>

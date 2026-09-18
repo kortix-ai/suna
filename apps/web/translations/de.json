@@ -1085,6 +1085,10 @@
           "name": "Netzwerkerzwungene Geheimnisse",
           "description": "Steuern Sie, welche Werkzeuge und Ziele Projektgeheimnisse empfangen dürfen."
         },
+        "session_transcript_history": {
+          "name": "Chatverlauf der Sitzung",
+          "description": "Speichere den Chatverlauf nach jedem Durchlauf und zeige ihn an, während der Sitzungscomputer startet."
+        },
         "pooled_provider_secrets": {
           "name": "Gemeinsam genutzte Anbieter-Schlüssel",
           "description": "Teilen Sie mehrere Anbieter-Schlüssel mit Mitgliedern und wählen Sie einen Schlüsselpool pro Sitzung."
@@ -1437,6 +1441,7 @@
         "chat": "Chat",
         "slack": "Slack",
         "telegram": "Telegram",
+        "teams": "Teams",
         "email": "E-Mail",
         "scheduled": "Geplant",
         "webhook": "Webhook",
@@ -1586,6 +1591,9 @@
   "modelSelector": {
     "search": "Modelle suchen",
     "free": "Kostenlos",
+    "included": "Inklusive",
+    "projectDefaultAccount": "Projektstandard",
+    "useAccount": "Konto verwenden",
     "addProvider": "Anbieter hinzufügen",
     "connectProvider": "Anbieter verbinden",
     "manageModels": "Modelle verwalten",
@@ -14529,6 +14537,11 @@
       "text922315177668": "Alles, was der Launcher sehen kann",
       "text9224d9e82502": "Setzen Sie unter „Provisioning“ → „Settings“ den „Scope“ auf „Sync only assigned users and groups“ — die Option erscheint hier erst, nachdem die Anmeldedaten gespeichert wurden. Klicken Sie anschließend oben auf der Übersichtsseite „Provisioning“ auf „Start provisioning“ (oder auf „Provision on demand“, um einen zugewiesenen Benutzer sofort statt im etwa 40-minütigen Zyklus zu übertragen).",
       "text9225e456b795": "Erwähne deinen Agent in einem Teams-Kanal oder -Chat.",
+      "text895ce927db2e": "Persönlicher Chat",
+      "text28c7d3f8b75d": "Gruppenchat",
+      "text72b5b0c53de9": "In Microsoft Teams geantwortet",
+      "textfc73e9ad2dae": "In Slack geantwortet",
+      "text8faf56a14a8d": "In Telegram geantwortet",
       "text8ccfe10f2f2d": "In deinem Teams-Katalog veröffentlichen",
       "text36f6474748b3": "Die App wird in deinem Teams-Katalog veröffentlicht…",
       "text45b9df5730ac": "Warten auf die Freigabe der App durch einen Teams-Administrator",

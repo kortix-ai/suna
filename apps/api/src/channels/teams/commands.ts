@@ -9,8 +9,10 @@ import {
   currentChannelSelection,
   loadProjectAgentGovernance,
   setChannelAgent,
+  setChannelConversationPolicy,
   setChannelModel,
 } from '../slack/selection';
+import { conversationPolicyLabel, normalizeConversationPolicy } from './participants';
 import { sendCard } from '../teams-api';
 import {
   buildConnectAccountCard,
@@ -29,7 +31,7 @@ import {
 } from './binding';
 import { lookupTeamsIdentity, revokeTeamsIdentity, teamsUserId } from './identity';
 import { buildTeamsLoginUrl } from './login';
-import { type TeamsCommand } from './util';
+import { describeTeamsConversation, type TeamsCommand } from './util';
 import type { TeamsActivity, TeamsConversationRef } from './types';
 
 export { parseTeamsCommand } from './util';
@@ -93,19 +95,19 @@ export async function handleTeamsCommand(input: {
         await post(await buildStatusCard(ctx, input.tenantId, conversationId, input.projectId));
         return true;
       case 'models':
-        await ensureBinding(input.tenantId, conversationId, input.projectId);
+        await ensureBinding(input.tenantId, conversationId, input.projectId, input.activity);
         await post(await buildModelsCard(ctx));
         return true;
       case 'model':
-        await ensureBinding(input.tenantId, conversationId, input.projectId);
+        await ensureBinding(input.tenantId, conversationId, input.projectId, input.activity);
         await post(await setModel(ctx, arg));
         return true;
       case 'agents':
-        await ensureBinding(input.tenantId, conversationId, input.projectId);
+        await ensureBinding(input.tenantId, conversationId, input.projectId, input.activity);
         await post(await buildAgentsCard(ctx, input.projectId));
         return true;
       case 'agent':
-        await ensureBinding(input.tenantId, conversationId, input.projectId);
+        await ensureBinding(input.tenantId, conversationId, input.projectId, input.activity);
         await post(await setAgent(ctx, arg));
         return true;
       case 'projects':
@@ -114,6 +116,10 @@ export async function handleTeamsCommand(input: {
       case 'use':
       case 'switch':
         await post(await switchProject(input.tenantId, conversationId, arg));
+        return true;
+      case 'policy':
+        await ensureBinding(input.tenantId, conversationId, input.projectId, input.activity);
+        await post(await setPolicy(ctx, arg));
         return true;
       default:
         return false;
@@ -125,8 +131,18 @@ export async function handleTeamsCommand(input: {
   }
 }
 
-async function ensureBinding(tenantId: string, conversationId: string, projectId: string): Promise<void> {
-  await ensureTeamsConversationBinding({ tenantId, conversationId, projectId });
+async function ensureBinding(
+  tenantId: string,
+  conversationId: string,
+  projectId: string,
+  activity?: TeamsActivity,
+): Promise<void> {
+  await ensureTeamsConversationBinding({
+    tenantId,
+    conversationId,
+    projectId,
+    ...(activity ? describeTeamsConversation(activity) : {}),
+  });
 }
 
 function helpCard() {
@@ -139,6 +155,7 @@ function helpCard() {
     { cmd: '/agents', desc: 'pick the agent for this conversation' },
     { cmd: '/projects', desc: 'list connected projects' },
     { cmd: '/use <name>', desc: 'point this conversation at another project' },
+    { cmd: '/policy', desc: 'who may join sessions started here: open, owner, approval' },
   ]);
 }
 
@@ -312,6 +329,42 @@ async function setAgent(ctx: ReturnType<typeof teamsChannelCtx>, arg: string) {
   }
   if (!res.ok) return buildNoticeCard('Connect a project to this conversation first.');
   return buildNoticeCard(`Agent set to ${name}. New sessions will use it.`);
+}
+
+const POLICY_ALIASES: Record<string, 'project_open' | 'owner_only' | 'owner_approval'> = {
+  open: 'project_open',
+  project_open: 'project_open',
+  members: 'project_open',
+  owner: 'owner_only',
+  owner_only: 'owner_only',
+  private: 'owner_only',
+  approval: 'owner_approval',
+  owner_approval: 'owner_approval',
+  approve: 'owner_approval',
+};
+
+async function setPolicy(ctx: ReturnType<typeof teamsChannelCtx>, arg: string) {
+  const selection = await currentChannelSelection(ctx);
+  if (!selection) return buildNoticeCard('Connect a project to this conversation first — try /projects.', '📁');
+  const current = normalizeConversationPolicy(selection.conversationPolicy);
+  const requested = arg.trim().toLowerCase();
+  if (!requested) {
+    return buildPanelCard({
+      emoji: '🔒',
+      title: 'Session policy',
+      rows: [
+        { label: 'Current', value: conversationPolicyLabel(current) },
+        { label: 'open', value: 'linked project members can join sessions started here (default)' },
+        { label: 'approval', value: 'the session owner approves each person' },
+        { label: 'owner', value: 'only the session owner' },
+      ],
+    });
+  }
+  const next = POLICY_ALIASES[requested];
+  if (!next) return buildNoticeCard('Use `/policy open`, `/policy approval`, or `/policy owner`.');
+  const ok = await setChannelConversationPolicy(ctx, next);
+  if (!ok) return buildNoticeCard('Connect a project to this conversation first — try /projects.', '📁');
+  return buildNoticeCard(`Session policy set to **${conversationPolicyLabel(next)}**. New sessions started here use it.`, '✅');
 }
 
 async function buildProjectsCard(tenantId: string, currentProjectId: string) {

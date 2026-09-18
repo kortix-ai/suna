@@ -109,6 +109,17 @@ need a running session. Each mirrors a method on the
 - [Sessions](/docs/sdk/sessions) — the session handle `useSession` wraps, and the `KortixSendError` kinds.
 - [Reference](/docs/sdk/reference) — the full REST surface these hooks read from.
 
+
+## Saved history during startup
+
+Enable **Session Transcript History** in a project's **Settings → Feature flags** to let
+`useSession(projectId, sessionId)` show saved chat history while its computer starts.
+The SDK reads the database independently of runtime readiness. Live messages then reconcile
+by their original IDs. Hosts do not need a separate history request or message store.
+
+This flag is off by default. Sessions without saved history use the existing runtime read.
+The initial history window contains the last 40 messages. Older-message loading and attachments
+that require the computer become available when the runtime is ready.
 ### Pending prompts
 
 `useSessionPrompts(projectId, sessionId)` submits to the durable session inbox.

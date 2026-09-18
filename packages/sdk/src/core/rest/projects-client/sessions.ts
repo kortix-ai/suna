@@ -685,14 +685,15 @@ export async function getSessionTranscript(
 export async function getSessionTranscriptSync(
   projectId: string,
   sessionId: string,
-  options?: { limit?: number; signal?: AbortSignal },
+  options?: { limit?: number; signal?: AbortSignal; history?: boolean },
 ) {
   const search = new URLSearchParams({ shape: 'sync' });
   if (options?.limit != null) search.set('limit', String(options.limit));
+  if (options?.history) search.set('history', 'true');
   return unwrap(
     await backendApi.get<SessionTranscriptSyncEnvelope>(
       `/projects/${projectId}/sessions/${sessionId}/transcript?${search.toString()}`,
-      { showErrors: false },
+      { showErrors: false, signal: options?.signal },
     ),
   );
 }

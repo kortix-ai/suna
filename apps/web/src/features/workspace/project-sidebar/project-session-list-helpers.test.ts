@@ -452,3 +452,13 @@ describe('groupSessionsByCoordinator', () => {
     expect(groups.map((g) => g.session.session_id)).toEqual(['orphan-1', 'solo-1']);
   });
 });
+
+describe('getSessionDisplayTitle — Teams mention markup', () => {
+  test('a title created from a channel mention shows the words, not <at> tags', () => {
+    const title = getSessionDisplayTitle({
+      session_id: 's1',
+      name: '<at>Kortix Dev</at>summarize the README in two sentences',
+    } as never);
+    expect(title).toBe('summarize the README in two sentences');
+  });
+});

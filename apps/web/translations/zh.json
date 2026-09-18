@@ -1085,6 +1085,10 @@
           "name": "网络强制保护的机密",
           "description": "控制哪些工具和目标可以接收项目机密。"
         },
+        "session_transcript_history": {
+          "name": "会话聊天记录",
+          "description": "每轮对话后保存聊天记录，并在会话计算机启动时显示。"
+        },
         "pooled_provider_secrets": {
           "name": "共享提供商密钥",
           "description": "与成员共享多个提供商密钥，并为每个会话选择密钥池。"
@@ -1437,6 +1441,7 @@
         "chat": "聊天",
         "slack": "Slack",
         "telegram": "Telegram",
+        "teams": "Teams",
         "email": "电子邮件",
         "scheduled": "已计划",
         "webhook": "Webhook",
@@ -1586,6 +1591,9 @@
   "modelSelector": {
     "search": "搜索模型",
     "free": "免费",
+    "included": "已包含",
+    "projectDefaultAccount": "项目默认",
+    "useAccount": "使用账户",
     "addProvider": "添加提供商",
     "connectProvider": "连接提供商",
     "manageModels": "管理模型",
@@ -14529,6 +14537,11 @@
       "text922315177668": "启动器能看到的全部内容",
       "text9224d9e82502": "返回“Provisioning”→“Settings”，将“Scope”设置为“Sync only assigned users and groups”——凭据保存后，这里才会显示该选项。然后点击 Provisioning 概览页顶部的“Start provisioning”（或点击“Provision on demand”，立即推送一个已分配的用户，而不是等待约 40 分钟的周期）。",
       "text9225e456b795": "在 Teams 频道或聊天中提及你的代理。",
+      "text895ce927db2e": "个人聊天",
+      "text28c7d3f8b75d": "群聊",
+      "text72b5b0c53de9": "已在 Microsoft Teams 中回复",
+      "textfc73e9ad2dae": "已在 Slack 中回复",
+      "text8faf56a14a8d": "已在 Telegram 中回复",
       "text8ccfe10f2f2d": "发布到你的 Teams 目录",
       "text36f6474748b3": "正在将应用发布到你的 Teams 目录…",
       "text45b9df5730ac": "等待 Teams 管理员批准该应用",

@@ -5,7 +5,13 @@ import { useTranslations } from '@/i18n/use-translations';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
 import { ImagePreview } from '@/features/session/image-preview';
 import { cn } from '@/lib/utils';
-import { fetchAttachmentPart, isAttachmentPartRef, isSandboxNotReadyError } from '@kortix/sdk';
+import {
+  fetchAttachmentPart,
+  fetchSessionAttachment,
+  isAttachmentPartRef,
+  isSandboxNotReadyError,
+  isSessionAttachmentRef,
+} from '@kortix/sdk';
 import { useEffect, useMemo, useState } from 'react';
 
 /**
@@ -29,7 +35,7 @@ function isLocalSandboxFilePath(value: string): boolean {
  * error states and so cannot be used at thumbnail size.
  */
 function useAttachmentPartBlobUrl(src: string): { url: string | null; loading: boolean } {
-  const isRef = isAttachmentPartRef(src);
+  const isRef = isAttachmentPartRef(src) || isSessionAttachmentRef(src);
   const [state, setState] = useState<{ src: string; url: string | null; loading: boolean }>({
     src: '',
     url: null,
@@ -42,7 +48,9 @@ function useAttachmentPartBlobUrl(src: string): { url: string | null; loading: b
     let objectUrl: string | null = null;
     void (async () => {
       try {
-        const blob = await fetchAttachmentPart(src);
+        const blob = await (isSessionAttachmentRef(src)
+          ? fetchSessionAttachment(src)
+          : fetchAttachmentPart(src));
         if (cancelled) return;
         objectUrl = URL.createObjectURL(blob);
         setState({ src, url: objectUrl, loading: false });
@@ -104,7 +112,7 @@ export function useSandboxImageSrc(src: string): {
     };
   }, [fileContentData]);
 
-  if (isAttachmentPartRef(src)) {
+  if (isAttachmentPartRef(src) || isSessionAttachmentRef(src)) {
     return { resolvedSrc: partRef.url, isLoading: partRef.loading };
   }
 

@@ -1131,6 +1131,12 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       /** Per-session audit trail of connector-gated agent actions. */
       audit: (limit?: number, options?: Parameters<typeof P.getSessionAudit>[3]) =>
         P.getSessionAudit(projectId, sessionId, limit, options),
+      attachments: {
+        upload: (file: File, options?: Parameters<typeof P.uploadSessionAttachment>[3]) =>
+          P.uploadSessionAttachment(projectId, sessionId, file, options),
+        read: (attachmentId: string, signal?: AbortSignal) =>
+          P.fetchSessionAttachment(`kortix-attachment://${projectId}/${sessionId}/${attachmentId}`, signal),
+      },
       /** Compact server-side transcript read (text + tool calls, no tool inputs/outputs) — callable with project-scoped session tokens. */
       transcript: (options?: Parameters<typeof P.getSessionTranscript>[2]) =>
         P.getSessionTranscript(projectId, sessionId, options),

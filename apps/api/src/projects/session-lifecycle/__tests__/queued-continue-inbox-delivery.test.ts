@@ -20,6 +20,8 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, projects, sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
 import type { SessionLifecycleCommandRow } from '../store';
+import { drizzle } from 'drizzle-orm/pg-proxy';
+import type { SQL } from 'drizzle-orm';
 import { mintWireMessageId, wireIdTime } from '../../wire-message-id';
 
 const SESSION_ID = 'sess-inbox-delivery-1';
@@ -54,6 +56,7 @@ let unverifiedRequeues: Array<{ commandId: string; availableAt: Date }> = [];
 let unlandedRequeues: Array<{ commandId: string; reason: string }> = [];
 let unlandedBudgetLeft = 2;
 let sessionRow: Record<string, unknown> | null = null;
+let projectMetadataExpression: SQL | undefined;
 /** The session's one box, as the turn-authority read sees it. Null = no box. */
 let boxRow: { status: string; metadata: Record<string, unknown> | null } | null = null;
 /** The newest id the inbox's OWN rows say this session has already delivered,
@@ -131,6 +134,7 @@ mock.module('../../../shared/db', () => ({
     select: (projection?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
         where: () => {
+          if (projection?.projectMetadata) projectMetadataExpression = projection.projectMetadata as SQL;
           const limit = async () => {
             if (projection && 'result' in projection && 'payload' in projection) {
               return [{ result: { held: pauseAfterPosts !== null && capturedBodies.length >= pauseAfterPosts }, payload: {} }];
@@ -462,6 +466,7 @@ function baseRow(overrides: Partial<SessionLifecycleCommandRow> = {}): SessionLi
 }
 
 beforeEach(() => {
+  projectMetadataExpression = undefined;
   pauseAfterPosts = null;
   requeues = [];
   unverifiedRequeues = [];
@@ -537,6 +542,16 @@ beforeEach(() => {
 });
 
 describe('executeQueuedContinue — what actually goes on the wire', () => {
+  test('the project flag lookup correlates with the outer session under Drizzle single-table rendering', async () => {
+    expect(await executeQueuedContinue(baseRow())).toBe('succeeded');
+    expect(projectMetadataExpression).toBeDefined();
+    const query = drizzle(async () => ({ rows: [] }))
+      .select({ projectMetadata: projectMetadataExpression! })
+      .from(projectSessions)
+      .toSQL();
+    expect(query.sql).toContain('p.project_id = "kortix"."project_sessions"."project_id"');
+  });
+
   test('Quick Queue arms the active turn boundary after its head is durably queued', async () => {
     boxRow = {
       status: 'active',

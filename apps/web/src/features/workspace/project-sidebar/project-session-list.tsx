@@ -633,6 +633,7 @@ function SessionListSection({
     chat: 'chat',
     slack: 'slack',
     telegram: 'telegram',
+    teams: 'teams',
     email: 'email',
     schedule: 'scheduled',
     webhook: 'webhook',

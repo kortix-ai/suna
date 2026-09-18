@@ -1085,6 +1085,10 @@
           "name": "ネットワーク強制シークレット",
           "description": "プロジェクトのシークレットを受け取れるツールと送信先を制御します。"
         },
+        "session_transcript_history": {
+          "name": "セッションの会話履歴",
+          "description": "各ターン後にチャット履歴を保存し、セッションのコンピューターが起動している間に表示します。"
+        },
         "pooled_provider_secrets": {
           "name": "共有プロバイダーシークレット",
           "description": "複数のプロバイダーキーをメンバーと共有し、セッションごとにキープールを選択します。"
@@ -1437,6 +1441,7 @@
         "chat": "チャット",
         "slack": "Slack",
         "telegram": "Telegram",
+        "teams": "Teams",
         "email": "電子メール",
         "scheduled": "スケジュール済み",
         "webhook": "Webhook",
@@ -1586,6 +1591,9 @@
   "modelSelector": {
     "search": "モデルを検索",
     "free": "無料",
+    "included": "プラン内",
+    "projectDefaultAccount": "プロジェクト既定",
+    "useAccount": "使用するアカウント",
     "addProvider": "プロバイダーを追加",
     "connectProvider": "プロバイダーに接続",
     "manageModels": "モデルを管理",
@@ -14529,6 +14537,11 @@
       "text922315177668": "ランチャーが確認できるすべて",
       "text9224d9e82502": "「Provisioning」→「Settings」に戻り、「Scope」を「Sync only assigned users and groups」に設定します。認証情報を保存した後にのみ、ここに表示されます。その後、Provisioning概要ページ上部の「Start provisioning」をクリックします（または「Provision on demand」で、約40分のサイクルを待たずに割り当て済みユーザーを1人だけ即時プッシュできます）。",
       "text9225e456b795": "Teamsのチャンネルまたはチャットでエージェントをメンションできます。",
+      "text895ce927db2e": "個人チャット",
+      "text28c7d3f8b75d": "グループチャット",
+      "text72b5b0c53de9": "Microsoft Teams で返信しました",
+      "textfc73e9ad2dae": "Slack で返信しました",
+      "text8faf56a14a8d": "Telegram で返信しました",
       "text8ccfe10f2f2d": "Teams カタログに公開",
       "text36f6474748b3": "Teams カタログにアプリを公開しています…",
       "text45b9df5730ac": "Teams 管理者によるアプリの承認を待っています",

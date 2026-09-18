@@ -522,6 +522,8 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "DELETE|v1|projects|:projectId|sessions|:sessionId",
   "GET|v1|projects|:projectId|sessions|:sessionId",
   "PATCH|v1|projects|:projectId|sessions|:sessionId",
+  "POST|v1|projects|:projectId|sessions|:sessionId|attachments",
+  "GET|v1|projects|:projectId|sessions|:sessionId|attachments|:attachmentId",
   "GET|v1|projects|:projectId|sessions|:sessionId|audit",
   "POST|v1|projects|:projectId|sessions|:sessionId|audit|events",
   "POST|v1|projects|:projectId|sessions|:sessionId|commit-push",
