@@ -73,6 +73,7 @@ import {
   selectSessionHarness,
 } from './compile-agent-config';
 import { withProjectGitAuth } from './git';
+import { repositoryGeneration } from './repository-generation';
 import { resolveFastBootGitHintWithCache } from './fast-boot-git-hint';
 import { resolveSessionProvider, sessionProviderIsLocked } from './provider-precedence';
 import { RESERVED_SANDBOX_ENV_NAMES, isReservedSandboxEnvName } from './sandbox-env-names';
@@ -1543,6 +1544,7 @@ export async function createProjectSession(input: {
     // tight grace so finished workers don't idle at full compute.
     ...(input.callerSessionId ? { spawned_by_session: input.callerSessionId } : {}),
     repository_access: repositoryAccess,
+    repository_generation: repositoryGeneration(project.metadata as Record<string, unknown>),
     // Rollback compatibility: older API replicas must also enforce this restriction.
     workspace_mode: repositoryAccess ? 'branch' : 'runtime',
     sandbox_slug: sandboxSlug,

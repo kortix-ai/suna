@@ -129,6 +129,18 @@ describe('pi harness', () => {
     expect(after.model).toBe('faux/faux-1')
   })
 
+  test('a failed pi start is a boot_error, not a silent down', async () => {
+    // The web paints its session error card only from boot_error. runtime() is
+    // null until start() resolves, so a failed start used to leave the box
+    // "down" with boot_error null and the session spinning forever.
+    const r = await boot({ script: [], env: { KORTIX_PI_MODEL_MODE: 'real' }, start: false })
+    await expect(r.service.lifecycle.start()).rejects.toThrow('KORTIX_LLM_BASE_URL')
+    const health = (await r.bearer('/kortix/health').then((res) => res.json())) as Record<string, unknown>
+    expect(health.runtimeReady).toBe(false)
+    expect(health.status).toBe('error')
+    expect(health.boot_error).toBe('pi harness needs KORTIX_LLM_BASE_URL and KORTIX_TOKEN (the Kortix LLM gateway)')
+  })
+
   test('a prompt runs the agent with a real bash tool and lands on the OpenCode wire', async () => {
     const r = await boot({
       script: [{ tool: 'bash', args: { command: 'printf hello-from-pi > note.txt && cat note.txt' } }, { text: 'Wrote the note.' }],

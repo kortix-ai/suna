@@ -1,3 +1,4 @@
+import { parseSessionAttachmentRef } from '@kortix/shared';
 import { checkBillingActive } from '../../billing/services/billing-gate';
 import { config, type SandboxProviderName } from '../../config';
 import { auth, errors, json } from '../../openapi';
@@ -39,6 +40,7 @@ import { callerKortixSessionId } from '../lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { AnyObject, ChangeRequestSchema, SessionStartResultSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
+import { sessionUsesCurrentRepository } from '../lib/repository-generation';
 import { UUID_V4_REGEX, normalizeString, readBody } from '../lib/serializers';
 import {
   continueSession,
@@ -89,7 +91,7 @@ projectsApp.openapi(
     },
     responses: {
       200: json(SessionStartResultSchema, 'Session readiness payload'),
-      ...errors(400, 402, 404),
+      ...errors(400, 402, 404, 409),
     },
   }),
   async (c) => {
@@ -117,6 +119,15 @@ projectsApp.openapi(
     // restartable and the UI offers a Restart that can never work. 404, the
     // same answer the read-by-id gives (see sessionIsTombstoned).
     if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
+    if (!sessionUsesCurrentRepository(
+      loaded.row.metadata as Record<string, unknown>,
+      visible.row.metadata as Record<string, unknown>,
+    )) {
+      return c.json({
+        error: 'This session belongs to a previous repository. Start a new session in the current repository.',
+        code: 'session_repository_changed',
+      }, 409);
+    }
     // The agent this session will actually run has to still be one the caller
     // may run — grants change after a session is created, and `/start` is what
     // resumes a hibernated box days later. The session's stored `agent_name`
@@ -561,6 +572,12 @@ projectsApp.openapi(
     const sanitized = sanitizeInboxPromptParts(rawParts);
     if ('error' in sanitized) return c.json({ error: sanitized.error }, 400);
     const parts = sanitized.parts;
+    for (const part of parts) {
+      const attachment = parseSessionAttachmentRef(part.url);
+      if (attachment && (attachment.projectId !== projectId || attachment.sessionId !== sessionId)) {
+        return c.json({ error: 'Attachment belongs to another session' }, 400);
+      }
+    }
     const text = flattenPromptText(parts);
 
     const overridesInput = (body.overrides ?? {}) as Record<string, unknown>;

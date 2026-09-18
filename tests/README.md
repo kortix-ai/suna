@@ -109,7 +109,7 @@ The warm image contains dependencies and Docker layers only. It contains no
 preview database and no runtime secret.
 
 The runtime secret allowlist contains `DAYTONA_API_KEY`,
-`KE2E_STRIPE_SECRET_KEY`, `KE2E_STRIPE_WEBHOOK_SECRET`, `OPENROUTER_API_KEY`, and the five fields required
+`KE2E_STRIPE_SECRET_KEY`, `KE2E_STRIPE_WEBHOOK_SECRET`, `OPENROUTER_API_KEY`, `MORPH_API_KEY`, and the five fields required
 for the dedicated preview GitHub App installation. Mailpit handles preview
 email. The GitHub App runs the real managed repository and CLI push flows.
 OAuth initiation is the only allowed preview browser exclusion. All API flow

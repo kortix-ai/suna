@@ -45,6 +45,7 @@ export type FeatureFlagKey =
   | 'warm_sessions'
   | 'secrets_egress'
   | 'pi_worker'
+  | 'session_transcript_history'
   | 'pooled_provider_secrets'
   | 'pi_harness';
 
@@ -66,6 +67,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'warm_sessions',
   'secrets_egress',
   'pi_worker',
+  'session_transcript_history',
   'pooled_provider_secrets',
   'pi_harness',
 ] as const;

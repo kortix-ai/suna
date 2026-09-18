@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
 import { loadEnv } from '../../src/core/env';
 import { createDatabaseSession } from '../../src/fixtures/database-project';
 import { createManifestProject, isDeployedTarget, type ManifestProject } from '../helpers/manifest-project';
@@ -44,10 +45,20 @@ test.describe('30 — pooled provider secrets', () => {
       resourcePath = `/accounts/${accountId}/secret-resources/${key.secret_id}`;
       await installBrowserSessionDirect(page, session, `/projects/${project.id}/customize/models`, authOptions);
       await selectAccountForUi(page, accountId);
+      let rejectResourceRead = true;
+      await page.route(`**/v1/accounts/${accountId}/secret-resources?*`, async (route) => {
+        if (rejectResourceRead) await route.fulfill({ status: 503, json: { error: 'Temporary resource list failure' } });
+        else await route.continue();
+      });
       await page.goto(`/projects/${project.id}/customize/models`, { waitUntil: 'domcontentloaded' });
       const welcome = page.getByRole('complementary', { name: 'Welcome from Marko' });
       if (await welcome.isVisible().catch(() => false)) await welcome.getByRole('button', { name: 'Dismiss' }).click();
       const panel = page.getByRole('region', { name: 'Anthropic API keys' });
+      await expect(page.getByText('Provider secrets could not be loaded.', { exact: true })).toBeVisible();
+      rejectResourceRead = false;
+      await page.getByRole('button', { name: 'Try again', exact: true }).click();
+      await expect(panel.getByText('Shared team key', { exact: true })).toBeVisible();
+      await page.unroute(`**/v1/accounts/${accountId}/secret-resources?*`);
       await panel.getByRole('button', { name: 'Actions for Shared team key' }).click();
       await page.getByRole('menuitem', { name: 'Manage access' }).click();
       const dialog = page.getByRole('dialog', { name: 'Access to Shared team key' });
@@ -109,7 +120,7 @@ test.describe('30 — pooled provider secrets', () => {
         accountId, userId: user.id, name: `Pooled provider secrets ${runId}`,
       });
       projectId = project.id;
-      await api(session.access_token, 'PUT', `/projects/${projectId}/agents/kortix/config`, { secrets: ['ANTHROPIC_API_KEY'] });
+      await api(session.access_token, 'PUT', `/projects/${projectId}/agents/kortix/config`, { secrets: ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY'] });
       await installBrowserSessionDirect(page, session, `/projects/${projectId}/customize/models`, authOptions);
       await selectAccountForUi(page, accountId);
       await page.goto(`/projects/${projectId}/customize/models`, { waitUntil: 'domcontentloaded' });
@@ -125,12 +136,22 @@ test.describe('30 — pooled provider secrets', () => {
       if (await welcome.isVisible().catch(() => false)) {
         await welcome.getByRole('button', { name: 'Dismiss' }).click();
       }
-      for (const label of ['Primary test key', 'Backup test key']) {
+      for (const label of ['Primary test key', 'Backup test key for shared research and development sessions']) {
         await panel.getByRole('button', { name: 'Add key' }).click();
         const dialog = page.getByRole('dialog', { name: 'Add key · Anthropic' });
         await expect(dialog.getByRole('radio', { name: /Everyone in this project/ })).toBeChecked();
         await dialog.getByPlaceholder('Primary key').fill(label);
         await dialog.locator('input[type="password"]').fill(`fake-${label.replaceAll(' ', '-')}`);
+        if (label === 'Primary test key') {
+          await page.route(`**/v1/accounts/${accountId}/secret-resources`, async (route) => {
+            if (route.request().method() === 'POST') await route.fulfill({ status: 403, json: { error: 'Key creation denied' } });
+            else await route.continue();
+          });
+          await dialog.getByRole('button', { name: 'Save key' }).click();
+          await expect(dialog.getByRole('alert')).toHaveText('Key creation denied');
+          await expect(dialog.getByPlaceholder('Primary key')).toHaveValue(label);
+          await page.unroute(`**/v1/accounts/${accountId}/secret-resources`);
+        }
         const request = page.waitForRequest((candidate) => candidate.method() === 'POST'
           && candidate.url().endsWith(`/v1/accounts/${accountId}/secret-resources`));
         const response = page.waitForResponse((candidate) => candidate.request().method() === 'POST'
@@ -219,8 +240,8 @@ test.describe('30 — pooled provider secrets', () => {
       await expect(page.getByRole('button', { name: /Provider keys/ })).toBeVisible();
       await page.getByRole('button', { name: /Provider keys/ }).click();
       await page.getByRole('checkbox', { name: 'Primary test key' }).check();
-      await page.getByRole('checkbox', { name: 'Backup test key' }).check();
-      await page.getByRole('button', { name: 'Done' }).click();
+      await page.getByRole('checkbox', { name: 'Backup test key for shared research and development sessions' }).check();
+      await page.getByRole('button', { name: 'Save changes', exact: true }).click();
       await page.getByRole('textbox', { name: 'Message input' }).fill('Verify selected provider keys');
       const createResponse = page.waitForResponse((response) => response.request().method() === 'POST'
         && response.url().endsWith(`/projects/${projectId}/sessions`));
@@ -258,7 +279,7 @@ test.describe('30 — pooled provider secrets', () => {
       await page.getByRole('menuitem', { name: 'Delete key' }).click();
       await page.getByRole('alertdialog').getByRole('button', { name: 'Delete key', exact: true }).click();
       await expect(panel.getByText('Primary test key', { exact: true })).toHaveCount(0);
-      await expect(panel.getByText('Backup test key', { exact: true })).toBeVisible();
+      await expect(panel.getByText('Backup test key for shared research and development sessions', { exact: true })).toBeVisible();
       const after = await api<{ secrets: Array<{ secret_id: string }> }>(
         session.access_token, 'GET', `/accounts/${accountId}/secret-resources?project_id=${projectId}`,
       );
@@ -287,12 +308,97 @@ test.describe('30 — pooled provider secrets', () => {
       });
       const poolPath = `/projects/${projectId}/sessions/${existingSession}/provider-secret-pools`;
       await api(session.access_token, 'PUT', `${poolPath}/anthropic`, { secret_ids: [createdIds[1]] });
+      const secondProvider = await api<{ secret_id: string }>(session.access_token, 'POST', `/accounts/${accountId}/secret-resources`, {
+        project_id: projectId, access_mode: 'project', user_ids: [], provider_id: 'openai', name: 'OPENAI_API_KEY',
+        label: 'Second provider key', value: 'fake-openai-key', consumer: 'llm_gateway', strategy: 'broker',
+      }, 201);
+      createdIds.push(secondProvider.secret_id);
       await page.setViewportSize({ width: 720, height: 480 });
       await page.goto(`/projects/${projectId}/sessions/${existingSession}`, { waitUntil: 'domcontentloaded' });
       await page.getByRole('button', { name: 'Session overrides' }).click();
       await page.getByRole('button', { name: 'Provider keys 1 key selected Override', exact: true }).click();
-      await expect(page.getByRole('checkbox', { name: 'Backup test key' })).toBeChecked();
-      await expect(page.getByRole('button', { name: 'Save key selection', exact: true })).toBeInViewport({ ratio: 1 });
+      await expect(page.getByRole('checkbox', { name: 'Backup test key for shared research and development sessions' })).toBeChecked();
+      const saveChanges = page.getByRole('button', { name: 'Save changes', exact: true });
+      await expect(saveChanges).toBeInViewport({ ratio: 1 });
+      await page.getByRole('checkbox', { name: 'Backup test key for shared research and development sessions' }).uncheck();
+      await page.getByRole('combobox', { name: 'Provider', exact: true }).click();
+      await page.getByRole('option', { name: 'OpenAI', exact: true }).click();
+      await page.getByRole('checkbox', { name: 'Second provider key' }).check();
+      await page.getByRole('button', { name: /^Sandbox/ }).click();
+      await page.getByRole('button', { name: /Provider keys/ }).click();
+      await expect(page.getByRole('checkbox', { name: 'Backup test key for shared research and development sessions' })).not.toBeChecked();
+      await page.keyboard.press('Escape');
+      await page.getByRole('button', { name: 'Session overrides' }).click();
+      await page.getByRole('button', { name: /Provider keys/ }).click();
+      await expect(page.getByRole('checkbox', { name: 'Backup test key for shared research and development sessions' })).not.toBeChecked();
+      await expect(page.getByText('Unsaved key changes', { exact: true })).toBeVisible();
+      const overrides = page.getByRole('dialog', { name: 'Session overrides', exact: true });
+      for (const theme of ['light', 'dark']) {
+        await page.evaluate((value) => { document.documentElement.classList.remove('light', 'dark'); document.documentElement.classList.add(value); }, theme);
+        for (const size of [{ width: 390, height: 844 }, { width: 720, height: 480 }, { width: 1440, height: 900 }]) {
+          await page.setViewportSize(size);
+          // Radix dismisses this popover on the layout changes the loop makes —
+          // the theme swap, and the 1440 -> 390 SHRINK at the theme boundary.
+          // The dismissal is asynchronous, so a single `isVisible()` guard reads
+          // `true` while it is in flight and ANY assertion in the group can land
+          // on a closing panel (observed on both `Save changes` and `Unsaved key
+          // changes`). Re-establish the panel by its own control and retry the
+          // whole group, so a dismissal costs a retry instead of the run. Every
+          // assertion below is unchanged.
+          await expect(async () => {
+            if (!(await saveChanges.isVisible().catch(() => false))) {
+              if (!(await overrides.isVisible().catch(() => false))) {
+                await page.getByRole('button', { name: 'Session overrides' }).click();
+                await expect(overrides).toBeVisible({ timeout: 5_000 });
+              }
+              await page.getByRole('button', { name: /Provider keys/ }).click();
+            }
+            const backup = page.getByRole('checkbox', { name: 'Backup test key for shared research and development sessions' });
+            await expect(backup).not.toBeChecked({ timeout: 5_000 });
+            await expect(page.getByText('Unsaved key changes', { exact: true })).toBeVisible({ timeout: 5_000 });
+            await expect(saveChanges).toBeInViewport({ ratio: 1, timeout: 5_000 });
+            await expect(backup).toBeInViewport({ ratio: 1, timeout: 5_000 });
+            const bounds = await overrides.boundingBox();
+            expect(bounds!.x).toBeGreaterThanOrEqual(0);
+            expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(size.width);
+          }).toPass({ timeout: 60_000 });
+          await page.screenshot({ path: testInfo.outputPath(`provider-selection-${theme}-${size.width}x${size.height}.png`), animations: 'disabled' });
+        }
+        // The scan targets the popover by selector, so an empty result would
+        // report zero violations for a panel that simply is not open.
+        await expect(saveChanges).toBeVisible();
+        const accessibility = await new AxeBuilder({ page }).include('[data-slot="popover-content"][aria-label="Session overrides"]')
+          .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
+        expect(accessibility.violations).toEqual([]);
+      }
+      let rejectSave = true;
+      let releaseSave: () => void = () => {};
+      const heldSave = new Promise<void>((resolve) => { releaseSave = resolve; });
+      await page.route(`**/v1${poolPath}/anthropic`, async (route) => {
+        if (rejectSave && route.request().method() === 'PUT') { await heldSave; await route.fulfill({ status: 403, json: { error: 'Selected key access changed' } }); }
+        else await route.continue();
+      });
+      await saveChanges.click();
+      await expect(page.getByRole('button', { name: /^Saving/ })).toBeDisabled();
+      await expect(page.getByRole('button', { name: 'Manage provider keys', exact: true })).toBeDisabled();
+      await expect(page.getByRole('link', { name: 'Manage provider keys', exact: true })).toHaveCount(0);
+      await page.keyboard.press('Escape');
+      await expect(overrides).toBeVisible();
+      releaseSave();
+      await expect(page.getByRole('alert').filter({ hasText: 'Selected key access changed' })).toBeVisible();
+      await expect(page.getByRole('checkbox', { name: 'Backup test key for shared research and development sessions' })).not.toBeChecked();
+      rejectSave = false;
+      const saveResponse = page.waitForResponse((response) => response.request().method() === 'PUT'
+        && response.url().endsWith(`${poolPath}/anthropic`) && response.status() === 200);
+      await saveChanges.click();
+      expect((await saveResponse).request().postDataJSON()).toEqual({ secret_ids: [] });
+      await expect(page.getByRole('dialog', { name: 'Session overrides', exact: true })).toHaveCount(0);
+      expect((await api<{ pools: Array<{ provider_id: string; secret_ids: string[] }> }>(session.access_token, 'GET', poolPath)).pools)
+        .toContainEqual(expect.objectContaining({ provider_id: 'anthropic', secret_ids: [] }));
+      await page.unroute(`**/v1${poolPath}/anthropic`);
+      expect((await api<{ secret_ids: string[] }>(session.access_token, 'GET', `${poolPath}/openai`)).secret_ids).toEqual([secondProvider.secret_id]);
+      await api(session.access_token, 'PUT', `${poolPath}/openai`, { secret_ids: null });
+      await api(session.access_token, 'DELETE', `/accounts/${accountId}/secret-resources/${secondProvider.secret_id}`);
       await api(session.access_token, 'PUT', `${poolPath}/anthropic`, { secret_ids: [] });
       await api(session.access_token, 'DELETE', `/accounts/${accountId}/secret-resources/${createdIds[1]}`);
       let failPoolRead = true;
@@ -311,9 +417,12 @@ test.describe('30 — pooled provider secrets', () => {
       const resetResponse = page.waitForResponse((response) => response.request().method() === 'PUT'
         && response.url().endsWith(`${poolPath}/anthropic`));
       await page.getByRole('button', { name: 'Reset to project default' }).click();
+      await page.getByRole('button', { name: 'Save changes', exact: true }).click();
       const reset = await resetResponse;
       expect(reset.status()).toBe(200);
       expect(reset.request().postDataJSON()).toEqual({ secret_ids: null });
+      await page.getByRole('button', { name: 'Session overrides' }).click();
+      await page.getByRole('button', { name: /Provider keys/ }).click();
       await expect(page.getByText('Add a provider key in Models to build a pool.')).toBeVisible();
       expect((await api<{ pools: unknown[] }>(session.access_token, 'GET', poolPath)).pools).toEqual([]);
     } finally {

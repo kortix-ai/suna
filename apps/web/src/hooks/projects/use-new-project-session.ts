@@ -114,6 +114,12 @@ export function useNewProjectSession(projectId: string | undefined) {
   const pathname = usePathname();
   const queryClient = useQueryClient();
   const { canRun, isLoading: billingLoading, accountId } = useProjectCanRun(projectId);
+  // The live billing answer. `startSession` must not decide from its render
+  // closure — see the read site below.
+  const billingRef = useRef({ loading: billingLoading, canRun });
+  useEffect(() => {
+    billingRef.current = { loading: billingLoading, canRun };
+  }, [billingLoading, canRun]);
   const openUpgradeDialog = useUpgradeDialogStore((state) => state.openUpgradeDialog);
   const openConnectorGate = useConnectorGateStore((state) => state.openConnectorGate);
   // A ref so the connect-to-start gate's `retry` re-invokes the LATEST create fn.
@@ -168,12 +174,22 @@ export function useNewProjectSession(projectId: string | undefined) {
         return;
       }
 
-      if (isBillingEnabled() && billingLoading) {
+      // Read the LIVE billing answer, not this callback's render closure. The
+      // home composer awaits the account answer before it calls us
+      // (`projects/[id]/page.tsx`), and it resumes inside a closure built
+      // before that answer arrived — so a closure read here reported "still
+      // loading" for a value that had already landed and dropped the prompt
+      // via `onError()`. Measured on the staging release gate: `/detail` and
+      // `/billing/account-state` still had 4.5s and 5.9s to run when Enter
+      // was pressed (run 35242868705).
+      const { loading: billingLoadingNow, canRun: canRunNow } = billingRef.current;
+
+      if (isBillingEnabled() && billingLoadingNow) {
         opts?.onError?.();
         return;
       }
 
-      if (isBillingEnabled() && !canRun) {
+      if (isBillingEnabled() && !canRunNow) {
         openUpgradeDialog({ reason: 'subscription_required', accountId });
         opts?.onError?.();
         return;
@@ -356,9 +372,11 @@ export function useNewProjectSession(projectId: string | undefined) {
       });
     },
     [
+      // `billingLoading` / `canRun` are deliberately absent: they are read
+      // through `billingRef` above, so a billing change must NOT mint a new
+      // `startSession` identity (which churned every consumer's `useCallback`
+      // on each refetch).
       projectId,
-      billingLoading,
-      canRun,
       release,
       router,
       openUpgradeDialog,

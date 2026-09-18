@@ -25,7 +25,29 @@ export interface TeamsManifest {
   }>;
   permissions: string[];
   validDomains: string[];
+  webApplicationInfo: { id: string; resource: string };
+  authorization: {
+    permissions: { resourceSpecific: Array<{ name: string; type: 'Application' | 'Delegated' }> };
+  };
 }
+
+/**
+ * Bump when the manifest changes shape. The org-catalog publish upgrades an
+ * existing app only when this differs from what the catalog holds, and a Teams
+ * admin has to re-consent to new resource-specific permissions on the team.
+ */
+export const TEAMS_MANIFEST_VERSION = '1.2.0';
+
+/**
+ * Resource-specific consent (RSC). `ChannelMessage.Read.Group` lets the bot
+ * receive every message in the channels of a team it is installed in — not
+ * only @-mentions — so a reply in a thread the bot owns continues the
+ * session without re-mentioning it. Dispatch still ignores un-mentioned
+ * messages outside such threads (teams/dispatch.ts).
+ */
+export const TEAMS_RSC_PERMISSIONS = [
+  { name: 'ChannelMessage.Read.Group', type: 'Application' as const },
+];
 
 const BOT_COMMANDS = [
   { title: '/help', description: 'Show what Kortix can do' },
@@ -34,6 +56,7 @@ const BOT_COMMANDS = [
   { title: '/models', description: 'Pick the model for this conversation' },
   { title: '/agents', description: 'Pick the agent for this conversation' },
   { title: '/projects', description: 'List connected projects' },
+  { title: '/policy', description: 'Who may join sessions started here' },
 ];
 
 export interface BuildTeamsManifestConfig {
@@ -65,7 +88,7 @@ export function buildTeamsManifest(cfg: BuildTeamsManifestConfig): TeamsManifest
     $schema:
       'https://developer.microsoft.com/en-us/json-schemas/teams/v1.16/MicrosoftTeams.schema.json',
     manifestVersion: '1.16',
-    version: '1.0.0',
+    version: TEAMS_MANIFEST_VERSION,
     id: cfg.appId,
     developer: {
       name: 'Kortix',
@@ -91,5 +114,9 @@ export function buildTeamsManifest(cfg: BuildTeamsManifestConfig): TeamsManifest
     ],
     permissions: ['identity', 'messageTeamMembers'],
     validDomains: [hostOf(cfg.baseUrl)],
+    // RSC permissions hang off webApplicationInfo; `resource` is required by
+    // the schema and is a placeholder for RSC-only apps.
+    webApplicationInfo: { id: cfg.appId, resource: 'https://RscBasedStoreApp' },
+    authorization: { permissions: { resourceSpecific: TEAMS_RSC_PERMISSIONS } },
   };
 }

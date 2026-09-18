@@ -1,5 +1,25 @@
 {
+  "repositoryChange": {
+    "changedToast": "Dépôt modifié. Les nouvelles sessions utiliseront le nouveau dépôt.",
+    "verifyError": "Impossible de vérifier l’accès à GitHub.",
+    "change": "Modifier",
+    "title": "Changer de dépôt",
+    "description": "Les nouvelles sessions utiliseront le nouveau dépôt. Les sessions existantes ne pourront plus redémarrer après ce changement.",
+    "current": "Dépôt actuel",
+    "newUrl": "URL du nouveau dépôt GitHub",
+    "verifying": "Vérification de GitHub…",
+    "verifyAgain": "Vérifier GitHub à nouveau",
+    "verify": "Vérifier l’accès à GitHub",
+    "noInstallation": "Aucune installation de l’application Kortix n’est disponible pour le propriétaire de ce dépôt. Ajoutez le dépôt à l’installation de l’application sur GitHub, puis vérifiez à nouveau.",
+    "installation": "Installation de l’application GitHub",
+    "selectInstallation": "Sélectionner une installation",
+    "manifestRequirement": "Le nouveau dépôt doit contenir {manifest} sur sa branche par défaut. Arrêtez d’abord les sessions actives et fermez les demandes de modification ouvertes.",
+    "cancel": "Annuler",
+    "changing": "Modification en cours…"
+  },
   "pooledSecrets": {
+    "saveChanges": "Enregistrer les modifications",
+    "unsavedChanges": "Modifications de clés non enregistrées",
     "creationDescription": "La valeur reste chiffrée. Choisissez qui peut utiliser cette connexion avant de l’enregistrer.",
     "whoCanUse": "Qui peut utiliser cette connexion ?",
     "everyoneInProject": "Tous les membres de ce projet",
@@ -1083,6 +1103,10 @@
           "name": "Secrets protégés par le réseau",
           "description": "Contrôlez les outils et destinations autorisés à recevoir les secrets du projet."
         },
+        "session_transcript_history": {
+          "name": "Historique de la session",
+          "description": "Enregistre l’historique du chat après chaque tour et l’affiche pendant le démarrage de l’ordinateur de la session."
+        },
         "pooled_provider_secrets": {
           "name": "Secrets de fournisseur partagés",
           "description": "Partagez plusieurs clés de fournisseur avec les membres et choisissez un groupe de clés pour chaque session."
@@ -1435,6 +1459,7 @@
         "chat": "Discussion",
         "slack": "Slack",
         "telegram": "Telegram",
+        "teams": "Teams",
         "email": "Courriel",
         "scheduled": "Programmée",
         "webhook": "Webhook",
@@ -1584,6 +1609,9 @@
   "modelSelector": {
     "search": "Rechercher des modèles",
     "free": "Gratuit",
+    "included": "Inclus",
+    "projectDefaultAccount": "Par défaut du projet",
+    "useAccount": "Utiliser le compte",
     "addProvider": "Ajouter un fournisseur",
     "connectProvider": "Connecter un fournisseur",
     "manageModels": "Gérer les modèles",
@@ -14527,6 +14555,11 @@
       "text922315177668": "Tout ce que le lanceur peut voir",
       "text9224d9e82502": "De retour dans « Provisioning » → « Settings », définissez « Scope » sur « Sync only assigned users and groups » — cette option n’apparaît ici qu’après l’enregistrement des identifiants. Cliquez ensuite sur « Start provisioning » en haut de la page d’aperçu Provisioning (ou sur « Provision on demand » pour transmettre immédiatement un utilisateur affecté au lieu d’attendre le cycle d’environ 40 minutes).",
       "text9225e456b795": "Mentionnez votre agent dans un canal ou une conversation Teams.",
+      "text895ce927db2e": "Conversation personnelle",
+      "text28c7d3f8b75d": "Conversation de groupe",
+      "text72b5b0c53de9": "A répondu dans Microsoft Teams",
+      "textfc73e9ad2dae": "A répondu dans Slack",
+      "text8faf56a14a8d": "A répondu dans Telegram",
       "text8ccfe10f2f2d": "Publier dans votre catalogue Teams",
       "text36f6474748b3": "Publication de l'application dans votre catalogue Teams…",
       "text45b9df5730ac": "En attente de l'approbation de l'application par un administrateur Teams",
@@ -19409,6 +19442,10 @@
     "providerError": "Impossible de modifier l’accès au fournisseur.",
     "managedTitle": "Modèles gérés par Kortix",
     "managedDescription": "Modèles gérés facturés en crédits Kortix. Aucune clé API nécessaire.",
+    "textImage": "Texte + image",
+    "textOnly": "Texte uniquement",
+    "zdrTitle": "Les fournisseurs de modèles ne conservent pas vos requêtes",
+    "zdrDescription": "La conservation zéro des données (ZDR) signifie que le fournisseur traite vos textes et images, puis ne conserve ni l'entrée ni la réponse après la requête. Kortix stocke séparément vos projets et conversations.",
     "hiddenHint": "Masqué dans le sélecteur. Les requêtes directes restent autorisées ; désactivez-les dans le menu du modèle.",
     "hidden": "Masqué dans le sélecteur",
     "disableModel": "Désactiver le modèle",

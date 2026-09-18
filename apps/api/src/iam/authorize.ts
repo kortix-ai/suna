@@ -98,11 +98,31 @@ export interface Verdict {
   reason: Reason;
 }
 
-/** Which objects of a type the actor may act on. */
+/**
+ * Which objects of a type the actor may act on.
+ *
+ * `none` carries the REASON, because a list path owes its caller exactly what
+ * the single-resource path owes them. `account_mfa_required` is the denial a
+ * person can act on, and a listing that drops it renders as an empty account
+ * with no way to discover the remedy — see `list-denial-parity.test.ts`.
+ */
 export type Accessible =
   | { mode: 'all' }
-  | { mode: 'none' }
+  | { mode: 'none'; reason?: Reason }
   | { mode: 'allow_only'; allowed: Set<string> };
+
+/**
+ * The account-wide MFA gate, written once and consulted by both `authorize`
+ * and `listAccessibleProjects`. Browser sessions only: a token's scope was
+ * already verified, and a PAT has no second factor to step up with.
+ */
+export function mfaGateBlocks(
+  rec: { accountMfaRequired: boolean },
+  tokenId: string | null | undefined,
+  mfaAal: string | undefined,
+): boolean {
+  return rec.accountMfaRequired && !tokenId && mfaAal !== 'aal2';
+}
 
 const allow = (reason: Reason): Verdict => ({ allowed: true, reason });
 const deny = (reason: Reason): Verdict => ({ allowed: false, reason });
@@ -173,7 +193,7 @@ export async function authorize(actor: Actor, action: string, obj: Obj = { type:
 
   // 6. Account-wide MFA. Browser sessions only — a token's scope was just
   // verified in step 4, and a PAT has no second factor to step up with.
-  if (rec.accountMfaRequired && !tokenId && actor.ctx.mfaAal !== 'aal2') {
+  if (mfaGateBlocks(rec, tokenId, actor.ctx.mfaAal)) {
     return deny('account_mfa_required');
   }
 
@@ -268,13 +288,15 @@ async function listAccessibleProjects(actor: Actor, action: string): Promise<Acc
   // operator sees an empty project list inside an account whose every project
   // they can already open by id — a confusing half-state, not a narrower one.
   if (isImpersonatingAccount(actor.userId, actor.accountId)) return { mode: 'all' };
-  if (isImpersonationBlockedAccount(actor.userId, actor.accountId)) return { mode: 'none' };
+  if (isImpersonationBlockedAccount(actor.userId, actor.accountId)) {
+    return { mode: 'none', reason: 'impersonation' };
+  }
 
   const tokenId = actingTokenId(actor);
   const binding = tokenId ? await loadTokenBinding(tokenId) : null;
   const principal = actingPrincipal(actor);
   const rec = await resolvePrincipal(principal, actor.accountId);
-  if (!rec) return { mode: 'none' };
+  if (!rec) return { mode: 'none', reason: 'not_a_member' };
 
   // A token bound to one project narrows the listing to that project, for a
   // human PAT and an agent session alike. A direct service-account bearer has
@@ -282,15 +304,24 @@ async function listAccessibleProjects(actor: Actor, action: string): Promise<Acc
   // null binding for anything else is a revoked token.
   if (tokenId) {
     if (!binding) {
-      if (rec.kind !== 'service_account') return { mode: 'none' };
+      if (rec.kind !== 'service_account') return { mode: 'none', reason: 'token_out_of_scope' };
     } else if (binding.projectId) {
       const v = await authorize(actor, action, { type: 'project', id: binding.projectId });
-      return v.allowed ? { mode: 'allow_only', allowed: new Set([binding.projectId]) } : { mode: 'none' };
+      return v.allowed
+        ? { mode: 'allow_only', allowed: new Set([binding.projectId]) }
+        : { mode: 'none', reason: v.reason };
     }
   }
 
   if (rec.isSuperAdmin) return { mode: 'all' };
-  if (rec.accountMfaRequired && !tokenId && actor.ctx.mfaAal !== 'aal2') return { mode: 'none' };
+
+  // The account-wide MFA gate is DELIBERATELY not applied here. Enumerating a
+  // project is not using it: every per-project action goes through
+  // `authorize`, which still denies `account_mfa_required` and returns the
+  // coded 403 that opens the step-up dialog. Gating the LIST instead turned
+  // opening the project switcher into a modal auth challenge, and before that
+  // (when the listing swallowed the reason) into an account that looked empty.
+  // Show the projects; challenge on open. See `list-denial-parity.test.ts`.
 
   const roles = await loadSystemRoles();
 
@@ -298,7 +329,7 @@ async function listAccessibleProjects(actor: Actor, action: string): Promise<Acc
   // itself lacks the action.
   if (isImplicitManager(rec.accountRoleKey)) {
     const manager = roles.byKey.get('project:manager');
-    return manager?.actions.has(action) ? { mode: 'all' } : { mode: 'none' };
+    return manager?.actions.has(action) ? { mode: 'all' } : { mode: 'none', reason: 'role' };
   }
 
   const allowed = new Set<string>();

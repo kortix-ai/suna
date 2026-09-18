@@ -20,7 +20,9 @@ const CATALOG = {
 
 // glm-5.3-flash is the PLATFORM DEFAULT and, like every managed model, publishes no
 // release date or family — see the regression test below.
+const managedModels = await import('../llm-gateway/models/managed-models');
 mock.module('../llm-gateway/models/managed-models', () => ({
+  ...managedModels,
   isKnownManagedModelId: (id: string) => id === 'glm-5.3-flash' || id === 'claude-opus-4.8',
 }));
 

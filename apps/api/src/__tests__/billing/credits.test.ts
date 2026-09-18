@@ -69,7 +69,7 @@ const { TOKEN_PRICE_MULTIPLIER } = await import('../../billing/services/tiers');
 describe('calculateTokenCost', () => {
   test('known model (glm-5.3-flash): correct cost with 1.2x multiplier', () => {
     const cost = calculateTokenCost(1_000_000, 1_000_000, 'glm-5.3-flash');
-    const expected = (0.075 + 0.25) * TOKEN_PRICE_MULTIPLIER;
+    const expected = (0.15 + 0.5) * TOKEN_PRICE_MULTIPLIER;
     expect(cost).toBeCloseTo(expected, 6);
   });
 

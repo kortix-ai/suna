@@ -1,7 +1,9 @@
 import { expect, test } from '@playwright/test';
+import { loadEnv } from '../../src/core/env';
+import { setDatabaseEnterpriseDemo } from '../../src/fixtures/database-project';
 
 import { createApiJsonClient } from '../helpers/http';
-import { type ManifestProject, createManifestProject } from '../helpers/manifest-project';
+import { type ManifestProject, createManifestProject, fundAccount } from '../helpers/manifest-project';
 import {
   createAuthUser,
   deleteAuthUser,
@@ -211,4 +213,356 @@ test.describe('22 — Resource-grant multi-select', () => {
       await deleteAuthUser(owner.id, authOptions).catch(() => {});
     }
   });
+});
+
+for (const selection of ['selected', 'all'] as const) {
+  test(`group attachment grants ${selection} agents and retries an incomplete save`, async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    const runId = `${selection}-${crypto.randomUUID()}`;
+    const ownerEmail = `e2e-group-agents-${runId}@example.test`;
+    const memberEmail = `e2e-group-member-${runId}@example.test`;
+    const owner = await createAuthUser(ownerEmail, authOptions);
+    const member = await createAuthUser(memberEmail, authOptions);
+    const session = await signIn(ownerEmail, authOptions);
+    let project: ManifestProject | undefined;
+    try {
+      const accounts = await api<AccountSummary[]>(
+        session.access_token,
+        'GET',
+        '/accounts',
+      );
+      const accountId = accounts.find(
+        (item) => item.account_role === 'owner',
+      )!.account_id;
+      await api(
+        session.access_token,
+        'POST',
+        `/accounts/${accountId}/members`,
+        { email: memberEmail, role: 'member' },
+        201,
+      );
+      await fundAccount(databaseUrl!, accountId);
+      await setDatabaseEnterpriseDemo(loadEnv(), accountId, true);
+      const group = await api<{ group_id: string }>(
+        session.access_token,
+        'POST',
+        `/accounts/${accountId}/iam/groups`,
+        { name: `SSO verification ${runId}` },
+        201,
+      );
+      await api(
+        session.access_token,
+        'POST',
+        `/accounts/${accountId}/iam/groups/${group.group_id}/members`,
+        { userIds: [member.id] },
+        [200, 201],
+      );
+      const projectName = `Group agent access ${runId}`;
+      project = await createManifestProject({
+        api,
+        accessToken: session.access_token,
+        accountId,
+        userId: owner.id,
+        name: projectName,
+        databaseUrl: databaseUrl!,
+      });
+      const projectId = project.id;
+      await api(
+        session.access_token,
+        'PATCH',
+        `/projects/${projectId}/experimental`,
+        { feature: 'llm_gateway', enabled: true },
+      );
+      await api(
+        session.access_token,
+        'POST',
+        `/projects/${projectId}/secrets`,
+        {
+          name: 'OPENAI_API_KEY',
+          value: 'sk-e2e-unused-group-access',
+          strategy: 'broker',
+          consumer: 'llm_gateway',
+        },
+        [200, 201],
+      );
+      await api(
+        session.access_token,
+        'PUT',
+        `/projects/${projectId}/model-defaults`,
+        { scope: 'project', model: 'openai/gpt-4o-mini' },
+      );
+      let rejectInventory = true;
+      await page.route(
+        `**/v1/projects/${projectId}/resource-grants`,
+        async (route) => {
+          if (rejectInventory)
+            await route.fulfill({
+              status: 403,
+              json: { error: 'Agent inventory is unavailable' },
+            });
+          else await route.continue();
+        },
+      );
+      const path = `/projects/${projectId}?accountId=${accountId}&accountTab=groups&accountGroup=${group.group_id}`;
+      await installBrowserSessionDirect(page, session, path, authOptions);
+      await selectAccountForUi(page, accountId);
+      await page.goto(path);
+      await dismissOnboarding(page);
+      await page
+        .getByRole('button', { name: 'Attach to project', exact: true })
+        .click();
+      const dialog = page.getByRole('dialog', {
+        name: 'Grant access',
+        exact: true,
+      });
+      await dialog
+        .getByRole('combobox', { name: 'Project', exact: true })
+        .click();
+      await page
+        .getByRole('option', { name: projectName, exact: true })
+        .click();
+      await expect(
+        dialog.getByRole('tab', { name: 'All agents', exact: true }),
+      ).toBeVisible();
+      await expect(
+        dialog.getByText('Agent inventory is unavailable', { exact: true }),
+      ).toBeVisible();
+      await expect(
+        dialog.getByRole('button', { name: 'Attach', exact: true }),
+      ).toBeDisabled();
+      rejectInventory = false;
+      await dialog
+        .getByRole('button', { name: 'Try again', exact: true })
+        .click();
+      await expect(
+        dialog.getByRole('button', { name: 'Attach', exact: true }),
+      ).toBeEnabled();
+      if (selection === 'selected') {
+        await dialog
+          .getByRole('tab', { name: 'Only these…', exact: true })
+          .click();
+        await dialog
+          .getByRole('checkbox', { name: 'kortix', exact: true })
+          .click();
+      }
+      const assignmentPath = `/accounts/${accountId}/iam/assignments`;
+      let rejectAgentGrant = true;
+      await page.route(`**/v1${assignmentPath}`, async (route) => {
+        const body =
+          route.request().method() === 'POST'
+            ? route.request().postDataJSON()
+            : {};
+        if (
+          route.request().method() === 'POST' &&
+          body.object_type === 'agent' &&
+          rejectAgentGrant
+        ) {
+          await route.fulfill({
+            status: 503,
+            json: { error: 'Temporary agent grant failure' },
+          });
+        } else {
+          await route.continue();
+        }
+      });
+      const failed = page.waitForResponse(
+        (response) =>
+          response.url().endsWith(assignmentPath) && response.status() === 503,
+      );
+      await dialog.getByRole('button', { name: 'Attach', exact: true }).click();
+      await failed;
+      await expect(dialog).toBeVisible();
+      await expect(
+        dialog.getByRole('button', { name: 'Attach', exact: true }),
+      ).toBeEnabled();
+      rejectAgentGrant = false;
+      const saved = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          response.url().endsWith(assignmentPath) &&
+          response.status() === 201 &&
+          response.request().postDataJSON().object_id === 'kortix',
+      );
+      await dialog.getByRole('button', { name: 'Attach', exact: true }).click();
+      expect((await saved).request().postDataJSON()).toMatchObject({
+        principal_type: 'group',
+        principal_id: group.group_id,
+        scope_id: projectId,
+        object_type: 'agent',
+        object_id: 'kortix',
+      });
+      await expect(dialog).toHaveCount(0);
+      const after = await api<ResourceGrantsResponse>(
+        session.access_token,
+        'GET',
+        `/projects/${projectId}/resource-grants`,
+      );
+      expect(
+        after.grants.filter(
+          (grant) =>
+            grant.principal_id === group.group_id &&
+            grant.resource_id === 'kortix',
+        ),
+      ).toHaveLength(1);
+      const memberSession = await signIn(memberEmail, authOptions);
+      await installBrowserSessionDirect(
+        page,
+        memberSession,
+        `/projects/${projectId}`,
+        authOptions,
+      );
+      await page.goto(`/projects/${projectId}`);
+      await expect(
+        page.getByRole('button', {
+          name: 'No agents available to you — ask a manager for access',
+        }),
+      ).toHaveCount(0);
+      await expect(
+        page.getByRole('button', { name: 'Select agent', exact: true }),
+      ).toBeEnabled();
+      await page
+        .getByRole('textbox', { name: 'Message input' })
+        .fill('Verify group access');
+      await expect(
+        page.getByRole('button', { name: 'Send message', exact: true }),
+      ).toBeEnabled();
+    } finally {
+      await project?.dispose();
+      await deleteAuthUser(member.id, authOptions);
+      await deleteAuthUser(owner.id, authOptions);
+    }
+  });
+}
+
+test('directory pages refresh external SCIM group and member changes without reloading', async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  const runId = crypto.randomUUID();
+  const ownerEmail = `e2e-directory-owner-${runId}@example.test`;
+  const memberEmail = `e2e-directory-member-${runId}@example.test`;
+  const owner = await createAuthUser(ownerEmail, authOptions);
+  const member = await createAuthUser(memberEmail, authOptions);
+  const session = await signIn(ownerEmail, authOptions);
+  let project: ManifestProject | undefined;
+  try {
+    const accounts = await api<AccountSummary[]>(
+      session.access_token,
+      'GET',
+      '/accounts',
+    );
+    const accountId = accounts.find((item) => item.account_role === 'owner')!.account_id;
+    await fundAccount(databaseUrl!, accountId);
+    await setDatabaseEnterpriseDemo(loadEnv(), accountId, true);
+    project = await createManifestProject({
+      api,
+      accessToken: session.access_token,
+      accountId,
+      userId: owner.id,
+      name: `Directory refresh ${runId}`,
+      databaseUrl: databaseUrl!,
+    });
+    const { secret } = await api<{ secret: string }>(
+      session.access_token,
+      'POST',
+      `/accounts/${accountId}/iam/scim/tokens`,
+      { name: 'Directory refresh browser test' },
+      201,
+    );
+    const scim = createApiJsonClient(
+      `${new URL(apiBase).origin}/scim/v2/accounts/${accountId}`,
+    );
+    const user = await scim<{ id: string }>(
+      secret,
+      'POST',
+      '/Users',
+      { userName: memberEmail, active: true },
+      201,
+    );
+    const path = `/projects/${project.id}?accountId=${accountId}&accountTab=groups`;
+    await installBrowserSessionDirect(page, session, path, authOptions);
+    await selectAccountForUi(page, accountId);
+    await page.goto(path);
+    await dismissOnboarding(page);
+    await expect(
+      page.getByRole('button', { name: 'Create a group', exact: true }),
+    ).toBeVisible();
+    const groupName = `SCIM live ${runId}`;
+    const groupsRead = page.waitForResponse(
+      (r) =>
+        r.url().endsWith(`/accounts/${accountId}/iam/groups`) &&
+        r.request().method() === 'GET' &&
+        r.status() === 200,
+    );
+    const group = await scim<{ id: string }>(
+      secret,
+      'POST',
+      '/Groups',
+      { displayName: groupName, members: [{ value: user.id }] },
+      201,
+    );
+    await expect(page.getByText(groupName, { exact: true })).toBeVisible({
+      timeout: 20_000,
+    });
+    expect((await (await groupsRead).json()).groups).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ group_id: group.id, member_count: 1 }),
+      ]),
+    );
+    await page.getByText(groupName, { exact: true }).click();
+    await expect(page.getByText(memberEmail, { exact: true })).toBeVisible();
+    const groupReadPath = `/accounts/${accountId}/iam/groups/${group.id}/members`;
+    const removedRead = page.waitForResponse(
+      async (r) =>
+        r.url().endsWith(groupReadPath) &&
+        r.status() === 200 &&
+        (await r.json()).members.length === 0,
+    );
+    await scim(secret, 'PATCH', `/Groups/${group.id}`, {
+      Operations: [{ op: 'Remove', path: 'members', value: [{ value: user.id }] }],
+    });
+    await expect(page.getByText(memberEmail, { exact: true })).toHaveCount(0, {
+      timeout: 20_000,
+    });
+    expect((await (await removedRead).json()).members).toEqual([]);
+    const renamed = `${groupName} renamed`;
+    await scim(secret, 'PATCH', `/Groups/${group.id}`, {
+      Operations: [
+        { op: 'Replace', path: 'displayName', value: renamed },
+        { op: 'Add', path: 'members', value: [{ value: user.id }] },
+      ],
+    });
+    await expect(page.getByRole('heading', { name: renamed, exact: true })).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(page.getByText(memberEmail, { exact: true })).toBeVisible({
+      timeout: 20_000,
+    });
+    await page.getByRole('link', { name: /^Members \d+$/ }).click();
+    await expect(page.getByText(memberEmail, { exact: true })).toBeVisible();
+    await scim(secret, 'PATCH', `/Users/${user.id}`, {
+      Operations: [{ op: 'Replace', path: 'active', value: false }],
+    });
+    await expect(page.getByText(memberEmail, { exact: true })).toHaveCount(0, {
+      timeout: 20_000,
+    });
+    await scim(secret, 'PATCH', `/Users/${user.id}`, {
+      Operations: [{ op: 'Replace', path: 'active', value: true }],
+    });
+    await expect(page.getByText(memberEmail, { exact: true })).toBeVisible({
+      timeout: 20_000,
+    });
+    await page.getByRole('link', { name: 'Groups', exact: true }).click();
+    await expect(page.getByText(renamed, { exact: true })).toBeVisible();
+    await scim(secret, 'DELETE', `/Groups/${group.id}`, undefined, 204);
+    await expect(page.getByText(renamed, { exact: true })).toHaveCount(0, {
+      timeout: 20_000,
+    });
+  } finally {
+    if (project) await project.dispose().catch(() => {});
+    await deleteAuthUser(member.id, authOptions).catch(() => {});
+    await deleteAuthUser(owner.id, authOptions).catch(() => {});
+  }
 });

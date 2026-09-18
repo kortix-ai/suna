@@ -1064,6 +1064,36 @@ test('connectorConnect and connectorFinalize are the provider-neutral names for 
   expect(finalized.connected).toBe(true);
 });
 
+test('connectorFinalize can finalize the PROJECT-owned account the connect started', async () => {
+  // The route defaults an absent `owner` to `me` (`parseConnectorConnectOwner`),
+  // so a finalize with no owner polls the CALLER's member connection. A connect
+  // sent with `owner: 'project'` therefore had no matching finalize on this
+  // surface at all: the poll could only ever report the wrong account, and the
+  // caller waited out the full Connect Link timeout.
+  nextResponse = { status: 200, body: { provider: 'composio', connected: true } };
+  await connectorFinalize('P1', 'gmail', { owner: 'project' });
+  expect(last().url).toContain('/connectors/projects/P1/connectors/gmail/connect/finalize');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ owner: 'project' });
+});
+
+test('connectorFinalize can pin the poll to one exact connection', async () => {
+  // Without a selector the route resolves the most recently updated row in the
+  // owner scope. Naming the connection removes that recency race when the
+  // caller already knows which account it reconciled.
+  nextResponse = { status: 200, body: { provider: 'composio', connected: true } };
+  await connectorFinalize('P1', 'gmail', { owner: 'project', connectionId: 'connection-7' });
+  expect(last().body).toEqual({ owner: 'project', connection_id: 'connection-7' });
+});
+
+test('connectorFinalize still sends an empty body when given no options', async () => {
+  // Backwards compatible: every published caller passes two arguments, and the
+  // route must keep applying its own `me` default for them.
+  nextResponse = { status: 200, body: { provider: 'composio', connected: true } };
+  await connectorFinalize('P1', 'gmail', {});
+  expect(last().body).toEqual({});
+});
+
 test('connect surfaces the already-connected verdict the popup flow branches on', () => {
   // `runConnectLinkFlow` reads `response.connected` to skip the hosted page for a
   // no-auth toolkit and for an account that is already live. The field was

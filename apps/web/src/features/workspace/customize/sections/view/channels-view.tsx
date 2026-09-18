@@ -114,6 +114,7 @@ import {
 import { SlackConnectCard } from '@/features/workspace/customize/sections/component/slack-connect-card';
 import { EmailConnectForm } from '@/features/workspace/customize/sections/connectors-view';
 import { TeamsChannelPanel } from '@/features/workspace/customize/sections/teams-channel-panel';
+import { ChannelBrandMark } from '@/features/session/turn/channel-brand';
 import {
   type ChannelBinding,
   useChannelBindings,
@@ -178,6 +179,7 @@ export function ChannelsSection({ projectId }: { projectId: string }) {
   const teamsChannelEnabled = teamsFlag.enabled;
   const { data: install, isLoading: loadingInstall } = useSlackInstall(projectId);
   const { data: mode, isLoading: loadingMode } = useSlackMode(projectId);
+  const { data: teamsInstall } = useTeamsInstall(teamsChannelEnabled ? projectId : null);
   const { data: emailInstall, isLoading: loadingEmail } = useEmailInstall(
     emailChannelEnabled ? projectId : null,
     EMAIL_CONNECTOR_SLUG,
@@ -263,6 +265,13 @@ export function ChannelsSection({ projectId }: { projectId: string }) {
           ) : null}
 
           {install ? <SlackFollowUp projectId={projectId} canWrite={canWrite} /> : null}
+          {/* Bindings are per conversation on EVERY platform (Slack channels, Teams
+              chats/channels). The table used to hang off the Slack nudge, so a
+              Teams-only project could not see or change its agent / model /
+              join policy at all. */}
+          {!install && teamsInstall ? (
+            <ChannelBindingsSection projectId={projectId} canWrite={canWrite} />
+          ) : null}
 
           {teamsChannelEnabled ? <TeamsChannelPanel projectId={projectId} /> : null}
         </>
@@ -495,9 +504,20 @@ function ChannelBindingTableRow({
   return (
     <TableRow className="hover:bg-transparent">
       <TableCell>
-        <div className="min-w-0">
-          <p className="text-sm font-medium">{binding.channelName ?? binding.channelId}</p>
-          <p className="text-muted-foreground text-xs">{binding.workspaceId}</p>
+        <div className="flex min-w-0 items-center gap-2">
+          {binding.platform === 'teams' || binding.platform === 'slack' ? (
+            <ChannelBrandMark platform={binding.platform === 'teams' ? 'Teams' : 'Slack'} />
+          ) : null}
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium" title={binding.channelId}>
+              {binding.channelName ?? binding.channelId}
+            </p>
+            <p className="text-muted-foreground text-xs">
+              {binding.platform === 'teams'
+                ? bindingScopeLabel(binding.channelType, tI18nComplete)
+                : binding.workspaceId}
+            </p>
+          </div>
         </div>
       </TableCell>
       <TableCell>
@@ -591,6 +611,13 @@ function ChannelBindingTableRow({
       </TableCell>
     </TableRow>
   );
+}
+
+/** Teams rows: the conversation scope reads better than a tenant GUID underneath the name. */
+function bindingScopeLabel(channelType: string | null, tI18nComplete: UiTranslator): string {
+  if (channelType === 'personal') return tI18nComplete.raw('text895ce927db2e');
+  if (channelType === 'groupChat') return tI18nComplete.raw('text28c7d3f8b75d');
+  return tI18nComplete.raw('textce4683e7013a');
 }
 
 function errorToastFallback(error: unknown, tI18nComplete: UiTranslator) {
@@ -687,15 +714,14 @@ function TeamsChannelRow({ projectId, canWrite }: { projectId: string; canWrite:
   const connected = Boolean(install);
   const installUrl = mode?.orgConsentUrl ?? null;
   const deepLinkUrl = install?.orgInstalled ? (mode?.deepLinkUrl ?? null) : null;
-  // The consent URL doubles as the retry: consenting again re-runs the
-  // publish against the tenant that is already bound. Offered for a failed
-  // publish and for a managed install that never reached the catalog (an
-  // install from before the outcome was recorded, or a manual tenant bind);
-  // a BYO install has no consent URL, so it never shows.
-  const publishSettled =
+  // The consent URL doubles as the retry AND the upgrade: consenting again
+  // re-runs the publish against the tenant that is already bound, and for an
+  // app already in the catalog the API submits this manifest version as a new
+  // app definition. Hidden only while a publish is in flight or awaiting
+  // review; a BYO install has no consent URL, so it never shows.
+  const publishInFlight =
     install?.publishState === 'publishing' || install?.publishState === 'review';
-  const retryUrl =
-    install && !install.orgInstalled && !publishSettled ? installUrl : null;
+  const retryUrl = install && !publishInFlight ? installUrl : null;
   const retryLabel =
     install?.publishState === 'failed'
       ? tI18nComplete.raw('text942087cc2d41')
