@@ -49,6 +49,7 @@ import { auditRelayConfigFromEnv, auditRelayToken, createAuditRelay } from './op
 import { observeIdleForRunaway } from './runaway-turn-guard'
 import {
   OPENCODE_SESSION_PIN_PATH,
+  readOpenCodeSessionPin,
   resolveOpenCodeAuditSpoolPath,
   writeOpenCodeSeedBakedPin,
   writeOpenCodeSessionPin,
@@ -3110,15 +3111,13 @@ export function buildInitialPromptBody(prompt: string, claimedMessageId?: string
 }
 
 /** Read the pinned OpenCode session id. Returns null if no session was pinned — caller decides
- *  whether to fail or fall back to creating a fresh session. */
+ *  whether to fail or fall back to creating a fresh session.
+ *
+ *  Reading, writing and validating this file all live in runtime-state.ts; this
+ *  is the long-standing name the rest of the harness imports. A pin that does
+ *  not match `isValidOpenCodeSessionId` reads as "not pinned". */
 export function readPinnedOpencodeSessionId(): string | null {
-  try {
-    if (!existsSync(OPENCODE_SESSION_PIN_PATH)) return null
-    const id = readFileSync(OPENCODE_SESSION_PIN_PATH, 'utf8').trim()
-    return id.length > 0 ? id : null
-  } catch {
-    return null
-  }
+  return readOpenCodeSessionPin()
 }
 
 /** Claim warm-seed boot before the host considers monitor or session mode. */
