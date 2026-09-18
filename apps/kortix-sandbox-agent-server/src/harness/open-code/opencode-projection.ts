@@ -34,7 +34,7 @@
  *    several reads died on the browser's 30 s deadline; the same read served
  *    in-VM took 276 ms. The cost was entirely the bytes leaving.
  */
-import { stripInlineAttachmentBytes } from './inline-attachments'
+import { stripInlineAttachmentBytes } from '../../inline-attachments'
 
 // ---------------------------------------------------------------------------
 // State projection — the seven reads `/kortix/opencode/state` replaces

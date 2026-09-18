@@ -916,6 +916,10 @@
         "pi_worker": {
           "name": "Pi Worker Runtime (compiled)",
           "description": "Run sessions with the experimental Pi worker runtime."
+        },
+        "pi_harness": {
+          "name": "Pi Harness (in-sandbox)",
+          "description": "Run sessions on the pi harness inside the session sandbox instead of OpenCode. Off, `runtime: pi` in the manifest still selects pi."
         }
       }
     },

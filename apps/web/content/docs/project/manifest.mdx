@@ -98,7 +98,7 @@ triggers:
 | --------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------ |
 | `kortix_version`                                    | yes      | must be `2`                                                                                |
 | `default_agent`                                     | yes      | must name a declared, enabled agent                                                        |
-| `runtime`                                           | no       | only legal value is `"opencode"` (the default)                                             |
+| `runtime`                                           | no       | `"opencode"` (the default) or `"pi"` — the agent harness a session boots inside its sandbox; `pi` runs pi-agent-core in-process in the sandbox daemon and reads the same `.kortix/opencode/agents/*.md` and skills. The project's `pi_harness` feature flag selects pi without this line. |
 | `project.name` / `project.description`              | no       | display metadata; the platform does not read `project.name` for the project's display name |
 | `env.required` / `env.optional`                     | no       | env var names; `required` is advisory only, never enforced at session start                |
 | `sandbox` / `sandbox.templates` / `sandbox.default` | no       | sandbox image(s) and hardware                                                              |

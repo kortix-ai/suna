@@ -1090,6 +1090,10 @@
         "pi_worker": {
           "name": "Ambiente do worker Pi (compilado)",
           "description": "Execute sessões com o ambiente experimental do worker Pi."
+        },
+        "pi_harness": {
+          "name": "Harness Pi (na sandbox)",
+          "description": "Executa as sessões com o harness Pi dentro da sandbox da sessão em vez do OpenCode. Desativado, `runtime: pi` no manifesto continua a selecionar o Pi."
         }
       }
     },

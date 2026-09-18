@@ -11,7 +11,7 @@ import type {
   HarnessAssetsService,
 } from '../assets'
 import { requireOpenCodeConfig, resolveOpencodeConfigDir } from './config'
-import { ensureInjectedManagedSkills } from './injected-skills'
+import { ensureInjectedManagedSkills } from '../../managed-skills'
 import {
   captureProcessOutput,
   OPENCODE_CURRENT_LINK,

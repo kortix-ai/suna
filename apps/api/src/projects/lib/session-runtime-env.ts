@@ -59,6 +59,13 @@ export interface SessionRuntimeEnvInput {
    *  2` project — see `compile-agent-config.ts`. `null`/omitted for a v1
    *  project: no key is emitted, so v1 sandbox env is byte-for-byte unchanged. */
   compiledAgentConfig?: string | null;
+  /**
+   * The agent harness the sandbox daemon boots, from the manifest's `runtime:`
+   * field. `pi` emits `KORTIX_HARNESS=pi` (pi-agent-core in-process in the
+   * daemon); `opencode`/omitted emits nothing, so an OpenCode session's env is
+   * byte-for-byte unchanged. The daemon's `resolveHarness` rejects any other id.
+   */
+  harness?: 'opencode' | 'pi';
 }
 
 /**
@@ -167,6 +174,8 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     KORTIX_API_URL: input.apiUrl,
     KORTIX_PROJECT_AUTO_CLONE: allowsFullRepository ? '1' : '0',
     KORTIX_REPOSITORY_ACCESS: allowsFullRepository ? '1' : '0',
+    // Which harness kortixd boots. Absent = OpenCode (the daemon default).
+    ...(input.harness === 'pi' ? { KORTIX_HARNESS: 'pi' } : {}),
     // Frontend base for user-facing dashboard links — the agent/CLI must never
     // surface KORTIX_API_URL (the API host) to a human. See sandboxFrontendBaseUrl().
     ...(input.frontendUrl ? { KORTIX_FRONTEND_URL: input.frontendUrl } : {}),

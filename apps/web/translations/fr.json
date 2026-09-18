@@ -1090,6 +1090,10 @@
         "pi_worker": {
           "name": "Environnement du worker Pi (compilé)",
           "description": "Exécutez les sessions avec l’environnement expérimental du worker Pi."
+        },
+        "pi_harness": {
+          "name": "Harness Pi (dans le bac à sable)",
+          "description": "Exécute les sessions avec le harness Pi dans le bac à sable de la session au lieu d'OpenCode. Désactivé, `runtime: pi` dans le manifeste sélectionne toujours Pi."
         }
       }
     },

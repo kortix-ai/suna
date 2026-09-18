@@ -1090,6 +1090,10 @@
         "pi_worker": {
           "name": "Runtime worker Pi (compilato)",
           "description": "Esegui sessioni con il runtime sperimentale del worker Pi."
+        },
+        "pi_harness": {
+          "name": "Harness Pi (nella sandbox)",
+          "description": "Esegue le sessioni con l'harness Pi all'interno della sandbox della sessione invece di OpenCode. Disattivato, `runtime: pi` nel manifest seleziona comunque Pi."
         }
       }
     },
