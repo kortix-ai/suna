@@ -6,7 +6,8 @@ import { useRuntimeStore } from '@kortix/sdk/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { readRuntimeFileWithRetry } from '../api/runtime-file-read';
 import { readFile } from '../api/runtime-files';
-import { SANDBOX_WAKING_REFETCH_INTERVAL_MS } from './file-read-retry';
+import { sandboxWakingRefetchInterval } from './file-read-retry';
+import { useServerHealth } from './use-server-health';
 import { isSystemDirectoryPath } from './system-dir';
 
 export const fileContentKeys = {
@@ -26,6 +27,9 @@ export function useFileContent(
   options?: { enabled?: boolean; staleTime?: number },
 ) {
   const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
+  // The control plane answered the probe from the session row: the box is
+  // asleep and no read can wake it, so the re-read poll below must stop.
+  const { parked } = useServerHealth();
 
   return useQuery<FileContent>({
     queryKey: filePath ? fileContentKeys.file(serverUrl, filePath) : [],
@@ -36,11 +40,11 @@ export function useFileContent(
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
     retry: false,
-    // A readiness 503 (parked/booting sandbox) is a pending state, not a
-    // failure: keep polling until the box is active so the file loads on its
-    // own once the sandbox wakes.
-    refetchInterval: (query) =>
-      isSandboxNotReadyError(query.state.error) ? SANDBOX_WAKING_REFETCH_INTERVAL_MS : false,
+    // A readiness 503 from a BOOTING sandbox is a pending state, not a
+    // failure: keep polling until the box is active so the file loads on its own.
+    // A PARKED box is not coming up on its own, so that same poll would never
+    // end — see `sandboxWakingRefetchInterval`.
+    refetchInterval: (query) => sandboxWakingRefetchInterval(query.state.error, parked),
   });
 }
 

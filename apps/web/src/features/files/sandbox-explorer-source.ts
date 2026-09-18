@@ -1,6 +1,7 @@
 'use client';
 
 import type { FileExplorerSource } from '@/features/project-files/explorer-source';
+import { useProjectFileSource as useMirrorFileSource } from '@/features/project-files/file-source';
 import { useFileList as useMirrorFileList } from '@/features/project-files/hooks/use-file-list';
 import { downloadFile } from './api/runtime-files';
 import { workspaceFileSource } from './file-source';
@@ -29,7 +30,21 @@ export const sandboxExplorerSource: FileExplorerSource = {
     hiddenToggle: true,
     gitStatusChip: true,
   },
-  useFileViewerSource: () => workspaceFileSource,
+  /**
+   * Where the preview modal reads a file's BYTES from.
+   *
+   * It has to follow the listing. Opening the gate over a parked box means the
+   * user can now click a file, and the sandbox reader answers the same
+   * `503 sandbox_not_ready` — which `use-file-content` turns into a 3s
+   * `refetchInterval` that, against a box only a SEND can wake, never ends.
+   * Serving the listing from the mirror while still reading bytes from the dead
+   * daemon would just move the forever-spinner from the panel into the viewer.
+   */
+  useFileViewerSource: () => {
+    const { parked } = useServerHealth();
+    const mirror = useMirrorFileSource();
+    return parked ? mirror : workspaceFileSource;
+  },
   /**
    * The listing, from whichever source can actually answer.
    *
