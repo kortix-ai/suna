@@ -1813,7 +1813,9 @@
     "editAlreadySent": "Déjà envoyé — votre modification reste dans la zone de saisie",
     "queueActionFailed": "Impossible de joindre le serveur — réessayez",
     "sendNow": "Envoyer maintenant",
-    "sendNowHint": "S’exécute ensuite — termine la réponse en cours après l’étape en cours"
+    "sendNowHint": "S’exécute ensuite — termine la réponse en cours après l’étape en cours",
+    "copySessionId": "Copier l’ID de session",
+    "sessionIdCopied": "ID de session copié"
   },
   "billing": {
     "plan": {

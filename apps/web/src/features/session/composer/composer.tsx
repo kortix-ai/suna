@@ -14,7 +14,6 @@ import type {
 import { usePromptAttachments, useRuntimeSessions } from '@kortix/sdk/react';
 import {
   ArrowBendDoubleUpLeftIcon,
-  ArrowUpLeftIcon as ArrowUpLeft,
   PencilSimpleIcon,
   WarningIcon,
   XIcon,
@@ -293,10 +292,6 @@ export interface SessionChatInputProps {
   attachRequestId?: number | null;
 
   providers?: ProviderListResponse;
-  threadContext?: {
-    parentTitle: string;
-    onBackToParent: () => void;
-  };
 
   onContextClick?: () => void;
   /**
@@ -509,7 +504,6 @@ function ComposerImpl({
   onPrefillApplied,
   attachRequestId = null,
   providers,
-  threadContext,
   onContextClick,
   onCompactClick,
   inputSlot,
@@ -1736,7 +1730,7 @@ function ComposerImpl({
    * messages render here, as the first child of `inputSlot`
    * (`queued-prompt-list.tsx`).
    */
-  const showQueueStrip = Boolean(threadContext || inputSlot);
+  const showQueueStrip = Boolean(inputSlot);
 
   return (
     <div
@@ -1794,25 +1788,6 @@ function ComposerImpl({
           */}
           {showQueueStrip && (
             <div className={COMPOSER_INPUT_SLOT_CLASS}>
-              {threadContext && (
-                <button
-                  onClick={threadContext.onBackToParent}
-                  className={cn(
-                    // `group`, or the arrow's `group-hover:` transforms below
-                    // have no group to hover — the nudge was written and never
-                    // fired.
-                    'group text-muted-foreground hover:text-foreground hover:bg-muted/80 flex cursor-pointer items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
-                  )}
-                >
-                  <ArrowUpLeft className="text-muted-foreground size-3.5 flex-shrink-0 transition-transform group-hover:-translate-x-0.5 group-hover:-translate-y-0.5" />
-                  <span className="min-w-0 flex-1 truncate text-left">
-                    {tHardcodedUi.raw('i18nComplete.text09b4cb469c91')}{' '}
-                    <span className="text-foreground font-medium">
-                      {threadContext.parentTitle}
-                    </span>
-                  </span>
-                </button>
-              )}
               {inputSlot}
             </div>
           )}

@@ -1813,7 +1813,9 @@
     "editAlreadySent": "Already sent — your edit is still in the composer",
     "queueActionFailed": "Couldn’t reach the server — try again",
     "sendNow": "Send now",
-    "sendNowHint": "Runs next — ends the current response after its running step"
+    "sendNowHint": "Runs next — ends the current response after its running step",
+    "copySessionId": "Copy session ID",
+    "sessionIdCopied": "Session ID copied"
   },
   "billing": {
     "plan": {

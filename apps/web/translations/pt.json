@@ -1813,7 +1813,9 @@
     "editAlreadySent": "Já enviada — sua edição continua no editor",
     "queueActionFailed": "Não foi possível contatar o servidor — tente novamente",
     "sendNow": "Enviar agora",
-    "sendNowHint": "Executa em seguida — encerra a resposta atual após a etapa em andamento"
+    "sendNowHint": "Executa em seguida — encerra a resposta atual após a etapa em andamento",
+    "copySessionId": "Copiar ID da sessão",
+    "sessionIdCopied": "ID da sessão copiado"
   },
   "billing": {
     "plan": {

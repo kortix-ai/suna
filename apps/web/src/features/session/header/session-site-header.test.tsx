@@ -207,27 +207,18 @@ describe('SessionSiteHeader "more actions" menu — Delete last, technical items
     expect(exportIndex).toBeGreaterThan(renameIndex);
   });
 
-  test('Export and Summarize items are renamed to plain language and styled as visually subordinate', () => {
+  test('Export and Summarize items are renamed to plain language', () => {
     // "Compact session" / "Export transcript" were the jargon-y labels the
     // brief called out by name — they must not survive under those names.
+    //
+    // REWRITTEN 2026-09-19: these items used to be pinned as visually
+    // subordinate (`text-muted-foreground`). The menu now draws every item in
+    // one plain style — Copy session ID, Export and Summarize included — so
+    // only the wording is pinned here. Delete-last is pinned above.
     expect(source).not.toContain('Compact session');
     expect(source).not.toContain('Export transcript');
     expect(source).toContain('Export conversation');
     expect(source).toContain('Summarize conversation');
-
-    const exportItemStart = source.indexOf('Export conversation') - 400;
-    const exportItem = source.slice(
-      Math.max(0, exportItemStart),
-      source.indexOf('Export conversation'),
-    );
-    expect(exportItem).toContain('text-muted-foreground');
-
-    const compactItemStart = source.indexOf('Summarize conversation') - 400;
-    const compactItem = source.slice(
-      Math.max(0, compactItemStart),
-      source.indexOf('Summarize conversation'),
-    );
-    expect(compactItem).toContain('text-muted-foreground');
   });
 });
 

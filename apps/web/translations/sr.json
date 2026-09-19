@@ -1813,7 +1813,9 @@
     "editAlreadySent": "Već poslato — tvoja izmena je i dalje u polju za unos",
     "queueActionFailed": "Server nije dostupan — pokušaj ponovo",
     "sendNow": "Pošalji sada",
-    "sendNowHint": "Pokreće se sledeće — završava trenutni odgovor posle koraka koji je u toku"
+    "sendNowHint": "Pokreće se sledeće — završava trenutni odgovor posle koraka koji je u toku",
+    "copySessionId": "Kopiraj ID sesije",
+    "sessionIdCopied": "ID sesije je kopiran"
   },
   "billing": {
     "plan": {

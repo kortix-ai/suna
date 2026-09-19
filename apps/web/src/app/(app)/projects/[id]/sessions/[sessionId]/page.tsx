@@ -17,6 +17,7 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
 import { resolvePinnedRootSessionId } from '@/features/session/pinned-root-session';
+import { resolveSelectedRuntimeSession } from '@/features/session/selected-runtime-session';
 import { ProviderFailureRecovery } from '@/features/session/provider-failure-recovery';
 import {
   pendingSessionPromptForRecovery,
@@ -102,6 +103,7 @@ import {
   startSessionWithPrompt,
   useRuntimeConnectionStore,
   useProjectSession,
+  useRuntimeSession,
   useSession,
   useSessionPrompts,
   useWakeEscalation,
@@ -1264,9 +1266,19 @@ function ActiveSessionChat({
   const restart = useRestartProjectSession(projectId, sessionId);
 
   const selectedOpenCodeSessionId = searchParams.get('oc');
-  const selectedSession = selectedOpenCodeSessionId
-    ? runtimeSessions.find((session) => session.id === selectedOpenCodeSessionId)
-    : null;
+  // A sub-session the cached runtime list does not have yet is looked up by id
+  // before `oc` is given up on — see `resolveSelectedRuntimeSession`.
+  const selectedLookup = useRuntimeSession(selectedOpenCodeSessionId ?? '');
+  const { session: selectedSession, drop: dropSelectedSession } = resolveSelectedRuntimeSession({
+    selectedId: selectedOpenCodeSessionId,
+    listed: runtimeSessions,
+    listLoading: sessionsLoading,
+    lookup: {
+      data: selectedLookup.isPlaceholderData ? undefined : selectedLookup.data,
+      settled:
+        (selectedLookup.isSuccess && !selectedLookup.isPlaceholderData) || selectedLookup.isError,
+    },
+  });
   // Pin the resolved root id so the chat keeps its identity if the live
   // value blips back to null mid-session — but FOLLOW a non-null change: the
   // SDK's pin precedence only climbs, so a different resolved id is a
@@ -1357,9 +1369,7 @@ function ActiveSessionChat({
   }, [errorSurfaceReady, onChatReady]);
 
   useEffect(() => {
-    if (!selectedOpenCodeSessionId) return;
-    if (selectedSession) return;
-    if (sessionsLoading) return;
+    if (!dropSelectedSession) return;
     const params = new URLSearchParams(searchParams.toString());
     params.delete('oc');
     const query = params.toString();
@@ -1378,14 +1388,7 @@ function ActiveSessionChat({
         ? `/projects/${projectId}/sessions/${sessionId}?${query}`
         : `/projects/${projectId}/sessions/${sessionId}`,
     );
-  }, [
-    selectedOpenCodeSessionId,
-    selectedSession,
-    sessionsLoading,
-    searchParams,
-    projectId,
-    sessionId,
-  ]);
+  }, [dropSelectedSession, searchParams, projectId, sessionId]);
 
   if (!runtimeReady && runtimeBootError && runtimePresentation.replaceSession) {
     return (

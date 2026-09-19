@@ -1813,7 +1813,9 @@
     "editAlreadySent": "送信済みです — 編集内容は入力欄に残っています",
     "queueActionFailed": "サーバーに接続できませんでした — もう一度お試しください",
     "sendNow": "今すぐ送信",
-    "sendNowHint": "次に実行 — 実行中のステップの後で現在の応答を終了します"
+    "sendNowHint": "次に実行 — 実行中のステップの後で現在の応答を終了します",
+    "copySessionId": "セッション ID をコピー",
+    "sessionIdCopied": "セッション ID をコピーしました"
   },
   "billing": {
     "plan": {

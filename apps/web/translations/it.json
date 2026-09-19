@@ -1813,7 +1813,9 @@
     "editAlreadySent": "Già inviato: la tua modifica resta nel compositore",
     "queueActionFailed": "Impossibile raggiungere il server: riprova",
     "sendNow": "Invia ora",
-    "sendNowHint": "Viene eseguito subito: termina la risposta attuale dopo il passaggio in corso"
+    "sendNowHint": "Viene eseguito subito: termina la risposta attuale dopo il passaggio in corso",
+    "copySessionId": "Copia ID sessione",
+    "sessionIdCopied": "ID sessione copiato"
   },
   "billing": {
     "plan": {

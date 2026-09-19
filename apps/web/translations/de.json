@@ -1813,7 +1813,9 @@
     "editAlreadySent": "Bereits gesendet – deine Änderung bleibt im Eingabefeld",
     "queueActionFailed": "Server nicht erreichbar – versuche es erneut",
     "sendNow": "Jetzt senden",
-    "sendNowHint": "Läuft als Nächstes – beendet die aktuelle Antwort nach dem laufenden Schritt"
+    "sendNowHint": "Läuft als Nächstes – beendet die aktuelle Antwort nach dem laufenden Schritt",
+    "copySessionId": "Sitzungs-ID kopieren",
+    "sessionIdCopied": "Sitzungs-ID kopiert"
   },
   "billing": {
     "plan": {

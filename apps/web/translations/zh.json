@@ -1813,7 +1813,9 @@
     "editAlreadySent": "已发送——你的编辑仍保留在输入框中",
     "queueActionFailed": "无法连接服务器——请重试",
     "sendNow": "立即发送",
-    "sendNowHint": "下一个运行——在当前步骤完成后结束当前回复"
+    "sendNowHint": "下一个运行——在当前步骤完成后结束当前回复",
+    "copySessionId": "复制会话 ID",
+    "sessionIdCopied": "已复制会话 ID"
   },
   "billing": {
     "plan": {

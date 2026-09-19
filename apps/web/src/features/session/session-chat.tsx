@@ -5525,6 +5525,11 @@ export function SessionChat({
             sessionId={sessionId}
             sessionTitle={session?.title || 'Untitled'}
             leadingAction={headerLeadingAction}
+            parentSession={
+              threadContext
+                ? { title: threadContext.parentTitle, onOpen: threadContext.onBackToParent }
+                : undefined
+            }
           />
         )}
 
@@ -6089,7 +6094,6 @@ export function SessionChat({
                 providers={providers}
                 modelRequired={!allowSendBeforeReady}
                 modelsLoading={providersLoading}
-                threadContext={threadContext}
                 onContextClick={handleContextClick}
                 onCompactClick={handleCompactClick}
                 replyTo={replyTo}
