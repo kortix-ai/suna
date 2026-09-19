@@ -5,6 +5,11 @@ import { createNewSessionScopeInitialization } from '@/features/session/scope/se
 import { buildNewSessionCreateInput } from './new-session-create';
 
 describe('buildNewSessionCreateInput', () => {
+  it('binds selected provider keys to the first session request', () => {
+    expect(buildNewSessionCreateInput({ providerSecretPools: { anthropic: ['a', 'b'] } })).toEqual({
+      provider_secret_pools: { anthropic: ['a', 'b'] },
+    });
+  });
   it('binds the picked agent as agent_name so it matches the first prompt', () => {
     // The composer sends agent="veyris" on the first prompt, so the session MUST
     // be created bound to "veyris": `project_sessions.agent_name` is what the

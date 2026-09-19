@@ -1,3 +1,4 @@
+import { resolveHarness } from './harness/harness'
 import { chmodSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { dirname, join } from 'node:path'
@@ -50,7 +51,7 @@ function isUnsafeName(name: string): boolean {
   if (DANGEROUS_NAMES.has(name)) return true
   return (
     name.startsWith('KORTIX_') ||
-    name.startsWith('OPENCODE_') ||
+    resolveHarness().environment.isInternalVariable(name) ||
     name.startsWith('LD_') ||
     name.startsWith('DYLD_') ||
     name.startsWith('BASH_FUNC_')

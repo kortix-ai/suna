@@ -3,6 +3,7 @@ import {
   PreviewInfrastructureError,
   buildPreviewBootstrapScript,
   previewLockfileHash,
+  previewDeploymentStatusPath,
   previewSandboxIdentity,
   previewSandboxName,
   runSandboxPreview,
@@ -24,6 +25,41 @@ const input = {
 describe('provider-neutral preview lifecycle', () => {
   it('uses one stable sandbox name per pull request', () => {
     expect(previewSandboxName(6337)).toBe('kortix-preview-pr-6337');
+  });
+
+  it('serializes remote deployments before checkout and test status reset', () => {
+    const script = buildPreviewBootstrapScript({
+      repository: input.repository,
+      ref: 'refs/pull/6337/head',
+      sha: input.sha,
+      prNumber: input.prNumber,
+      origin: 'https://preview.example.com/',
+    });
+    const lock = script.indexOf('flock -x 9');
+    expect(lock).toBeGreaterThan(-1);
+    expect(lock).toBeLessThan(script.indexOf('rm -f "$STATUS" "$PHASE"'));
+    expect(lock).toBeLessThan(script.indexOf('git -C "$ROOT" checkout'));
+  });
+
+  it('isolates completion records by workflow run and attempt', () => {
+    const first = previewDeploymentStatusPath('1234', '1');
+    expect(first).not.toBe(previewDeploymentStatusPath('1234', '2'));
+    expect(first).not.toBe(previewDeploymentStatusPath('1235', '1'));
+    expect(() => previewDeploymentStatusPath('../escape', '1')).toThrow();
+    const script = buildPreviewBootstrapScript({
+      repository: input.repository, ref: 'refs/pull/6337/head', sha: input.sha,
+      prNumber: input.prNumber, origin: 'https://preview.example.com/', statusPath: first,
+    });
+    expect(script).toContain(`STATUS='${first}'`);
+  });
+
+  it('closes the deployment lock before starting the persistent Docker daemon', () => {
+    const script = buildPreviewBootstrapScript({
+      repository: input.repository, ref: 'refs/pull/6337/head', sha: input.sha,
+      prNumber: input.prNumber, origin: 'https://preview.example.com/',
+    });
+    const daemon = script.split('\n').find((line) => line.includes('nohup dockerd'));
+    expect(daemon).toMatch(/9>&-.*&$/);
   });
 
   it('gives a pull request preview a disposable identity and a branch environment a standing one', () => {

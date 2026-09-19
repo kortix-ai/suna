@@ -43,14 +43,18 @@ async function openAdminOverview(
 ): Promise<void> {
   const attempts = 3;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const roleResponse = page.waitForResponse((response) =>
+      response.request().method() === "GET" &&
+      new URL(response.url()).pathname.endsWith("/v1/user-roles"),
+    );
     await page.goto(path, { waitUntil: "domcontentloaded" });
     await expect(page).toHaveURL((url) => url.pathname === path);
-    const overview = page.getByRole("heading", { name: heading }).first();
-    const refused = page.getByText("Admin access required").first();
-    // Resolve the guard's skeleton into one of its two terminal states first,
-    // so a slow probe is a wait and not a failure.
-    await expect(overview.or(refused).first()).toBeVisible({ timeout: 60_000 });
-    if (await overview.isVisible().catch(() => false)) return;
+    const response = await roleResponse;
+    if (response.ok() && (await response.json()).isAdmin === true) {
+      await expect(page.getByRole("heading", { name: heading }).first())
+        .toBeVisible({ timeout: 60_000 });
+      return;
+    }
     if (attempt < attempts) await page.waitForTimeout(5_000);
   }
   throw new Error(

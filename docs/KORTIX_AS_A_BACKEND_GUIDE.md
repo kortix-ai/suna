@@ -99,7 +99,7 @@ request. Do not use a process-global active runtime in a multi-tenant server.
 | `connector_bindings` | Selects one connection for each connector.                                          |
 | `inherit_unbound`    | Keeps default connection resolution for unbound connectors. The default is `false`. |
 | `secrets`            | Narrows the selected agent's project-secret grant. Only a backend-origin caller can set it.    |
-| `require_connectors` | Requires listed connectors to resolve before sandbox startup.                          |
+| `require_connectors` | **Deprecated. Accepted, then ignored.** A session is never refused at create time for a connector with no usable account — see [Accounts and the call-time gate](#connector-accounts-and-the-call-time-gate). |
 
 `runtime_context` accepts at most 64 scalar entries and 16 KiB. The API rejects
 credential-like keys.
@@ -109,19 +109,18 @@ The wire field remains `opencode_model` for OpenCode compatibility.
 ## 3. Connectors
 
 A connector is an agent-facing permission package for one provider
-app. It contains:
+app: a declared capability, not an identity. It contains:
 
 - a project-unique slug
 - a display name
 - a provider configuration
 - a provider app reference
-- an authorization strategy
 - connector policies
 
-A connection is one connected account or credential for a connector.
-
-Every connection under one connector uses the same policies. Create
-two connectors when the same provider app needs two policy sets.
+A connection is one **account** — one connected credential or authorization —
+for a connector. A connector can hold several accounts side by side. Every
+account under one connector uses the connector's policies. Create two
+connectors when the same provider app needs two policy sets.
 
 ```yaml
 connectors:
@@ -129,7 +128,6 @@ connectors:
     name: Gmail read only
     provider: pipedream
     app: gmail
-    authorization_strategy: project
     policies:
       - match: search_email
         action: always_run
@@ -139,31 +137,43 @@ connectors:
 agents:
   support:
     connectors: [gmail-read]
-    connectors_required: [gmail-read]
 ```
 
-### Authorization strategy
+### Account ownership (`owner_type`)
 
-The authorization strategy is exactly one of:
+Each connection's `owner_type` is exactly one of:
 
-- `project`
-- `user`
+- `project` — a **shared** account. Reachable by anyone the connector is
+  granted to: a human member or a service account (agent, trigger).
+- `member` — a **private** account, owned by one project member
+  (`owner_id`). Reachable only by that member, and only in a **private**
+  session. A service account can never run as a member's private account —
+  there is no person behind a service-account call for the account to belong
+  to.
 
-A `project` connector accepts active project connections.
+A call that names no account resolves to the caller's own default private
+account first, then the project's default shared account.
 
-A `user` connector accepts only an active connection owned by the
-acting project member.
+> **Deprecated: `authorization_strategy` (`project` | `user`).** It was a
+> connector-level MODE that made project-owned and member-owned connections
+> mutually exclusive per connector: a `project` connector accepted only
+> project connections, a `user` connector accepted only the acting member's
+> own connection, and a service account (no member identity) could use only
+> `project` connectors. That mode was the direct cause of the incident this
+> section documents the fix for: a `user`-strategy connector had no shared
+> account to offer, so it had no connect flow a service account, a
+> session-create pre-flight, or a channel could ever use — the old refusal
+> below had no remedy that actually existed on the product. The manifest and
+> `PUT .../authorization-strategy` still accept the field; the server ignores
+> it. `owner_type` on each connection is the whole access rule now, and it is
+> no longer mutually exclusive with anything: one connector can hold a
+> `project` account and several `member` accounts at once.
 
-A service account has no member identity. Therefore, its sessions must use
-`project` connectors. A personal access token can use an eligible
-`user` connection owned by the token's member.
+The server enforces `owner_type` during:
 
-The server enforces the strategy during:
-
-- session creation
 - default connection resolution
-- explicit binding
-- session rescope
+- explicit binding (`connector_bindings`)
+- an explicitly named account (`--account`, `account` on a call)
 - connector execution
 
 ### Create a project connection
@@ -209,78 +219,102 @@ await projectHandle.connectors.connections.pipedreamFinalize(
 
 Do not pass an OAuth provider token to `updateCredential()`.
 
-### Required connectors
+Create a **private** account for one member instead by setting `owner_type:
+"member"` and its `owner_id`:
 
-Declare `connectors_required` on the agent. Each entry must also exist in
-`connectors`.
+```ts
+const mine = await projectHandle.connectors.connections.reconcile({
+  connector_alias: "gmail-read",
+  owner_type: "member",
+  owner_id: callingUserId,
+  label: "My Gmail",
+});
+```
 
-Only `require_connectors` and the running agent's `connectors_required` declare
-mandatory connectors. A `connector_bindings` entry selects a connection; it does
-not make the connector mandatory. If an optional bound connector becomes disabled
-or its connection is revoked, unrelated prompts remain admissible. Connector
-calls still enforce the connector's status, connection, and agent permissions.
-Explicit requirements are checked at prompt admission and delivery as well as
-session creation.
+A `member` account is reachable only by `owner_id`, only in a private session,
+and never by a service account. The rest of the create/credential/activate
+flow is identical for both owner types.
 
-Session creation resolves required connectors before sandbox startup.
-Missing connections return:
+### Connector accounts and the call-time gate
+
+`connectors_required` and `require_connectors` are **deprecated and inert.**
+Declaring them still validates (each entry must exist in `connectors`), but
+nothing reads the result any more: a session is never refused at create time,
+rescope, or prompt admission for a connector with no usable account. That
+pre-flight used to return `409 CONNECTOR_CONNECTION_REQUIRED` /
+`409 REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE` before sandbox startup — it
+was the direct cause of the incident this section replaces: a `user`-strategy
+connector had no shared account for the pre-flight to point at, so the
+refusal had no remedy the caller could act on, and the agent's turn silently
+never ran. Neither code can be returned by create, rescope, or prompt
+admission any more. `packages/api-contract` keeps both schemas on the wire —
+an old client parsing the shape does not break — but the server never emits
+them.
+
+The gate moved to the connector **call**, where a real remedy exists. List the
+accounts a connector can be called as, default first:
+
+```bash
+curl -sS \
+  "$KORTIX_API_URL/connectors/projects/$KORTIX_PROJECT_ID/connectors/gmail-read/accounts" \
+  -H "Authorization: Bearer $KORTIX_API_KEY"
+```
 
 ```json
 {
-  "code": "CONNECTOR_CONNECTION_REQUIRED",
-  "message": "Connect the required connectors before starting this session.",
-  "connector_connections": [
-    {
-      "id": "connector-connection-id",
-      "slug": "gmail-read",
-      "name": "Gmail read only",
-      "authorization_strategy": "project"
-    }
+  "connector": "gmail-read",
+  "accounts": [
+    { "connection_id": "...", "label": "Support inbox", "owner_type": "project", "is_default": true },
+    { "connection_id": "...", "label": "My Gmail", "owner_type": "member", "is_default": false }
   ]
 }
 ```
 
-Both refusals are returned before the session row is inserted and before any
-sandbox is provisioned, so a session blocked on a connector costs no tokens.
+Name one on a call — by connection id, by label (case-insensitive), or with
+the selector words `me` (the caller's own default private account) or
+`project` (the project's default shared account):
 
-If a required slug has no configured connector, session creation
-returns:
+```bash
+curl -sS -X POST \
+  "$KORTIX_API_URL/connectors/projects/$KORTIX_PROJECT_ID/call" \
+  -H "Authorization: Bearer $KORTIX_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"connector":"gmail-read","action":"search_email","args":{},"account":"me"}'
+```
+
+Omit `account`, and the call resolves the caller's own default private account
+first, then the project's default shared account — the same default a bound
+connector resolved to before it could hold more than one account. A named
+account that does not resolve is **denied**, never silently substituted:
 
 ```json
 {
-  "error": "Required connector \"gmail-read\" is unavailable",
-  "code": "REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE",
-  "connectors": ["gmail-read"]
+  "ok": false,
+  "status": "denied",
+  "reason": "connector_not_connected",
+  "connector": "gmail-read",
+  "requested_account": "nope",
+  "available_accounts": ["Support inbox", "My Gmail"],
+  "hint": "Connector \"gmail-read\" has no account named \"nope\". Available: \"Support inbox\", \"My Gmail\". Retry with one of those, or omit `account` for the default."
 }
 ```
 
-Each refusal lists every failing alias, so one retry can follow one round of
-fixes. `connectors` and `connector_connections` are the machine-readable lists;
-never parse `error` or `message`.
+When nothing is connected at all, the same `reason` carries `connect_url`
+instead — a hosted authorization link, whenever one can be minted for the
+caller — which is the whole remedy for an unconnected connector now: the
+agent surfaces the link verbatim, and the web transcript renders it as a
+one-click Connect button. The link authorizes a **private** account for
+whoever opens it by default; minting a link for the **shared** account is an
+explicit choice that needs `project.connector.write`.
 
-The two codes have different remedies. `REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE`
-means the connector does not exist in the project — the project owner
-adds it, and no end-user action can substitute.
-`CONNECTOR_CONNECTION_REQUIRED` means the connector exists but has no
-connection this caller may use; each entry carries the connector `id` to
-start a connect flow with. When the strategy is `user`, that flow belongs to the
-end-user's own account, which is why a service-account credential cannot clear
-it on their behalf — mint a setup link and send them through it.
+Every successful call also echoes which account it ran as:
+`"account": { "connection_id": "...", "label": "Support inbox", "owner_type": "project" }`
+— so the transcript always shows the identity a tool call used, not just that
+it succeeded.
 
-`REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE` outranks
-`CONNECTOR_CONNECTION_REQUIRED` when both apply in one request.
-
-Both are distinct from `403 CONNECTOR_NOT_ASSIGNED`, which means the agent is
-not granted the connector at all. That is a manifest fault, and connecting an
-account never clears it.
-
-Create or reconnect the required connection. Then retry session creation.
-
-The durable prompt route (`POST /projects/:id/sessions/:sid/prompts`) checks
-these requirements before queueing. A refusal returns the same `409` contract
-and creates no prompt. A failed requirements lookup returns `503`, not `409`.
-If requirements change after enqueueing, delivery preserves the refusal message
-in `last_error` and fails the prompt without repeating a permanent refusal.
+`403 CONNECTOR_NOT_ASSIGNED` is unrelated to accounts: it means the running
+agent is not granted the connector at all in `kortix.yaml`. That is a manifest
+fault, and connecting an account never clears it.
 
 Stop (`POST .../prompts/hold {"held":true}`) immediately exposes every pending
 or claimed prompt as `waiting` with reason `held`. Reload preserves that state.
@@ -460,15 +494,20 @@ An idempotency key longer than 255 characters returns
 | `400`                        | `INVALID_IDEMPOTENCY_KEY`                        | The idempotency key exceeds 255 characters.                             |
 | `403`                        | `origin_override_forbidden`                      | A non-backend caller supplied a secret allowlist.                       |
 | `403`                        | `CONNECTOR_NOT_ASSIGNED`                         | The selected agent is not granted the connector.                |
-| `404` create / `403` rescope | `CONNECTOR_CONNECTION_NOT_FOUND`                    | The connection is absent or violates the connector strategy. |
+| `404` create / `403` rescope | `CONNECTOR_CONNECTION_NOT_FOUND`                    | The connection is absent, or its `owner_type` is not reachable by this caller/session. |
 | `404`                        | `SECRET_IDENTIFIER_NOT_FOUND`                    | The secret allowlist names an unknown identifier.                       |
-| `409`                        | `CONNECTOR_CONNECTION_REQUIRED`               | A mandatory connector has no active valid connection. Lists every failing connector in `connector_connections`. |
-| `409`                        | `REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE`         | A required slug has no configured connector. Lists every failing alias in `connectors`. |
 | `409`                        | `CONNECTOR_PROVIDER_UNSUPPORTED`                 | The alias is a connector on the project but its provider has no hosted authorization page, so no connect link exists for it. |
 | `409`                        | `CONNECTOR_PIPEDREAM_APP_MISSING`                | The Pipedream connector names no app, so no connect link can be built.  |
 | `409` create / `403` rescope | `CONNECTOR_CONNECTION_INACTIVE`                     | The connector or connection is inactive.                     |
 | `409`                        | `IDEMPOTENCY_*_CONFLICT`                         | The idempotency key was replayed with a changed request body.           |
 | `402`                        | `subscription_required` / `insufficient_credits` | The account cannot start a billed session.                              |
+
+`CONNECTOR_CONNECTION_REQUIRED` and `REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE`
+are **deprecated.** The schemas stay on the wire, but create, rescope, and
+prompt admission never emit them any more — see [Connector accounts and the
+call-time gate](#connector-accounts-and-the-call-time-gate) for the denial
+that replaced them (`connector_not_connected`, on the connector **call**, not
+on session create).
 
 ## 10. Legacy storage
 

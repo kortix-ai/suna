@@ -7,8 +7,12 @@ import {
   createInstallationToken,
   createRepo,
   getFileSha,
+  GitHubAppPermissionError,
+  GitHubIpAllowListError,
+  GitHubSamlSsoError,
   getGitHubAppInstallation,
   listLinkableGitHubAppInstallations,
+  resetGitHubAppSlugCache,
   verifyGitHubInstallationAdmin,
 } from '../projects/github';
 import { runWithContext } from '../lib/request-context';
@@ -314,5 +318,127 @@ describe('GitHub App project repository auth', () => {
         account: { login: 'kortix-ai', type: 'Organization' },
       }),
     ).rejects.toThrow('GitHub organization admin access is required');
+  });
+
+  // Production App `kortix-managed` had only contents + metadata. GitHub then
+  // answers 403 for every membership read, and the old catch reported it as
+  // "admin access is required" to a real organization owner.
+  test('names the missing Members permission when the App itself lacks it', async () => {
+    resetGitHubAppSlugCache();
+    const seen: string[] = [];
+    globalThis.fetch = mock(async (url: string | URL | Request) => {
+      const href = typeof url === 'string' || url instanceof URL ? String(url) : url.url;
+      seen.push(href);
+      if (href.endsWith('/user')) return json({ login: 'markokraemer' });
+      if (href.endsWith('/app')) {
+        return json({ slug: 'kortix-managed', permissions: { contents: 'write', metadata: 'read' } });
+      }
+      return json({ message: 'Resource not accessible by integration' }, 403);
+    }) as unknown as typeof fetch;
+
+    const attempt = verifyGitHubInstallationAdmin('user-token', {
+      id: 42,
+      account: { login: 'libremax', type: 'Organization' },
+      permissions: { contents: 'write', metadata: 'read' },
+    });
+    await expect(attempt).rejects.toBeInstanceOf(GitHubAppPermissionError);
+    await expect(attempt).rejects.toMatchObject({ scope: 'app', missing: ['members'] });
+    expect(seen.some((href) => href.includes('/memberships/'))).toBe(false);
+    resetGitHubAppSlugCache();
+  });
+
+  test('asks the organization to accept the permission when only the installation lacks it', async () => {
+    resetGitHubAppSlugCache();
+    globalThis.fetch = mock(async (url: string | URL | Request) => {
+      const href = typeof url === 'string' || url instanceof URL ? String(url) : url.url;
+      if (href.endsWith('/user')) return json({ login: 'markokraemer' });
+      if (href.endsWith('/app')) {
+        return json({ slug: 'kortix-managed', permissions: { contents: 'write', members: 'read' } });
+      }
+      return json({ message: 'Resource not accessible by integration' }, 403);
+    }) as unknown as typeof fetch;
+
+    const attempt = verifyGitHubInstallationAdmin('user-token', {
+      id: 42,
+      account: { login: 'libremax', type: 'Organization' },
+      permissions: { contents: 'write', metadata: 'read' },
+      html_url: 'https://github.com/organizations/libremax/settings/installations/42',
+    });
+    await expect(attempt).rejects.toMatchObject({ scope: 'installation', missing: ['members'] });
+    await expect(attempt).rejects.toThrow(
+      'https://github.com/organizations/libremax/settings/installations/42',
+    );
+    resetGitHubAppSlugCache();
+  });
+
+  // An Enterprise Cloud organization can restrict access by IP address. GitHub
+  // then refuses the membership read from the Kortix API address with a 403.
+  test('names the organization IP allow list instead of blaming the caller', async () => {
+    resetGitHubAppSlugCache();
+    globalThis.fetch = mock(async (url: string | URL | Request) => {
+      const href = typeof url === 'string' || url instanceof URL ? String(url) : url.url;
+      if (href.endsWith('/user')) return json({ login: 'markokraemer' });
+      if (href.endsWith('/app')) return json({ slug: 'kortix-managed', permissions: { members: 'read' } });
+      return json(
+        {
+          message:
+            'Although you appear to have the correct authorization credentials, the `libremax` ' +
+            'organization has an IP allow list enabled, and your IP address is not permitted to access this resource.',
+        },
+        403,
+      );
+    }) as unknown as typeof fetch;
+
+    const attempt = verifyGitHubInstallationAdmin('user-token', {
+      id: 42,
+      account: { login: 'libremax', type: 'Organization' },
+      permissions: { members: 'read' },
+    });
+    await expect(attempt).rejects.toBeInstanceOf(GitHubIpAllowListError);
+    await expect(attempt).rejects.toThrow('IP allow list');
+    resetGitHubAppSlugCache();
+  });
+
+  // A SAML-enforced organization refuses a user token that was authorized
+  // without an active single sign-on session for that organization.
+  test('names SAML single sign-on instead of blaming the caller', async () => {
+    resetGitHubAppSlugCache();
+    globalThis.fetch = mock(async (url: string | URL | Request) => {
+      const href = typeof url === 'string' || url instanceof URL ? String(url) : url.url;
+      if (href.endsWith('/user')) return json({ login: 'markokraemer' });
+      if (href.endsWith('/app')) return json({ slug: 'kortix-managed', permissions: { members: 'read' } });
+      return json(
+        { message: 'Resource protected by organization SAML enforcement. You must grant your OAuth token access to this organization.' },
+        403,
+      );
+    }) as unknown as typeof fetch;
+
+    const attempt = verifyGitHubInstallationAdmin('user-token', {
+      id: 42,
+      account: { login: 'libremax', type: 'Organization' },
+      permissions: { members: 'read' },
+    });
+    await expect(attempt).rejects.toBeInstanceOf(GitHubSamlSsoError);
+    await expect(attempt).rejects.toThrow('single sign-on');
+    resetGitHubAppSlugCache();
+  });
+
+  test('maps a GitHub integration 403 on the membership read to the permission error', async () => {
+    resetGitHubAppSlugCache();
+    globalThis.fetch = mock(async (url: string | URL | Request) => {
+      const href = typeof url === 'string' || url instanceof URL ? String(url) : url.url;
+      if (href.endsWith('/user')) return json({ login: 'markokraemer' });
+      if (href.endsWith('/app')) return json({ slug: 'kortix-managed', permissions: { members: 'read' } });
+      return json({ message: 'Resource not accessible by integration' }, 403);
+    }) as unknown as typeof fetch;
+
+    // No `permissions` on the installation object: the precheck cannot fire.
+    await expect(
+      verifyGitHubInstallationAdmin('user-token', {
+        id: 42,
+        account: { login: 'libremax', type: 'Organization' },
+      }),
+    ).rejects.toBeInstanceOf(GitHubAppPermissionError);
+    resetGitHubAppSlugCache();
   });
 });

@@ -196,6 +196,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       accountId?: string;
       seed?: boolean;
       managedGit?: boolean;
+      allowAllSecrets?: boolean;
       metadata?: Record<string, unknown>;
     },
   ): Promise<CreatedProject> {
@@ -204,7 +205,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
     if (canCreateDatabaseProject && (env.target === 'local' || (!opts?.seed && !opts?.managedGit))) {
       const localRepository =
         env.target === 'local' && (opts?.seed || opts?.managedGit)
-          ? await createLocalGitRepository(name)
+          ? await createLocalGitRepository(name, { allowAllSecrets: opts?.allowAllSecrets })
           : null;
       if (localRepository) {
         stack.push('local-git', localRepository.root, { dispose: localRepository.dispose });
@@ -219,7 +220,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       databaseProjectCount++;
       databaseProjectIds.add(project.id);
       stack.push('database-project', project.id);
-      return project;
+      return { ...project, accountId };
     }
 
     const id = await provisionProject(adminClient, {
@@ -230,7 +231,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
     managedProjectCount++;
     stack.push('project', id);
     if (opts?.metadata) await mergeDatabaseProjectMetadata(env, id, opts.metadata);
-    return { id, name } as CreatedProject;
+    return { id, name, accountId } as CreatedProject;
   }
 
   const fixturesFor = (stack: ResourceStack, attempt = 1): Fixtures => {
@@ -369,7 +370,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       if (databaseProjectIds.has(project.id)) {
         const id = await createDatabaseSession(env, {
           projectId: project.id,
-          accountId: owner.accountId!,
+          accountId: project.accountId ?? owner.accountId!,
           userId: owner.userId!,
         });
         // No stack entry: deleting the database-only project cascades to its

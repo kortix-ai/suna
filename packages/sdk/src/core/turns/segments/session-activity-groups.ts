@@ -8,6 +8,22 @@ export function isShellActivityTool(toolName: string | undefined): boolean {
   return normalizeActivityToolName(toolName) === 'bash';
 }
 
+/**
+ * Is this the question tool, under either of its names?
+ *
+ * The runtime emits it as `question` or as `ask`, and both already render
+ * identically — the SDK maps both to `questionViewModel` and the web registers
+ * both to `QuestionTool`. The transcript's gates used to compare against the
+ * literal `'question'`, so an `ask` part rendered AS a question while being
+ * treated as an ordinary tool by every filter around it: not dropped while
+ * pending, counted towards `hasSteps`, never an answered-question card, and
+ * invisible to the question self-heal. This is the one place that decides.
+ */
+export function isQuestionTool(toolName: string | undefined): boolean {
+  const name = normalizeActivityToolName(toolName);
+  return name === 'question' || name === 'ask';
+}
+
 export function shellActivityGroupLabel(count: number, running: boolean): string {
   const safeCount = Math.max(0, count);
   const prefix = running ? 'Running' : 'Ran';

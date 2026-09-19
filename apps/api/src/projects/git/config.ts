@@ -4,6 +4,7 @@
 
 import {
   type ManifestFormat,
+  ManifestImportError,
   manifestCandidatePaths,
   manifestFormatForPath,
   parseManifestText,
@@ -208,11 +209,19 @@ export async function loadProjectConfig(
   // Dual-format: resolve kortix.yaml (preferred) or kortix.toml, then parse in
   // the matched format. Without this, a yaml-only project reads no manifest here
   // → its [[agents]] scoping silently vanishes from the config introspection.
-  const resolved = await readManifestFromRepo(
-    project,
-    manifestCandidatePaths(project.manifestPath).map((c) => c.path),
-    project.defaultBranch,
-  ).catch(() => null);
+  const candidatePaths = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
+  const resolved = await readManifestFromRepo(project, candidatePaths, project.defaultBranch)
+    // A broken `imports:` must not make the summary report "no manifest" (the
+    // UI would offer to create one). Degrade to the root file alone; the
+    // Triggers page surfaces the import error itself.
+    .catch((err) =>
+      err instanceof ManifestImportError
+        ? readManifestFromRepo(project, candidatePaths, project.defaultBranch, {
+            resolveImports: false,
+          })
+        : null,
+    )
+    .catch(() => null);
   const manifestRaw = resolved?.content ?? null;
   const manifestFormat: ManifestFormat = resolved ? manifestFormatForPath(resolved.path) : 'toml';
   const manifestFilePath = resolved?.path ?? project.manifestPath;
@@ -327,7 +336,9 @@ export async function loadProjectConfig(
   return {
     is_kortix_repo: Object.values(signals).some(Boolean),
     signals,
-    manifest_raw: manifestRaw,
+    // The root file's own text. `manifest`/`env`/agents below come from the
+    // merged document when the root declares `imports:`.
+    manifest_raw: resolved?.rootContent ?? manifestRaw,
     manifest,
     // The authoritative version verdict. Computed here so no client ever has to
     // infer a version from the raw text — and so an unreadable manifest reports

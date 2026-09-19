@@ -3,7 +3,7 @@ import {
   QuickQueueInterrupt,
   quickQueueSnapshotFromPage,
   type QuickQueueSnapshot,
-} from '../quick-queue-interrupt'
+} from '../harness/open-code/quick-queue-interrupt'
 
 const armed = {
   promptId: 'prompt-1',

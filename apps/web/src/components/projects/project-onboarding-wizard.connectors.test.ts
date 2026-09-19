@@ -12,7 +12,10 @@ describe('project onboarding connections', () => {
     expect(source).toContain('<ConnectorConnectionModal');
     expect(source).toContain('idPrefix="onboarding-tool-connection"');
     expect(source).toContain('connectorSlug: connection.slug');
-    expect(source).toContain('authorizationStrategy: connection.authorizationStrategy');
+    expect(source).toContain('connectorName: connection.name');
+    // The authorization strategy is retired (2026-09-16): an account is shared
+    // or private per connection, chosen at call time — never on the connector.
+    expect(source).not.toContain('authorizationStrategy');
   });
 
   test('allows multiple connections for one provider app', () => {

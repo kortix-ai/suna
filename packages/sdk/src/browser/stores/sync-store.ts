@@ -1813,6 +1813,13 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// deliberately left as-is here.)
 			let droppedPhantoms: Set<string> | null = null;
 			const provisional = fromCache ? undefined : cacheSourcedIds.get(sessionID);
+			if (provisional && incoming.length === 0) {
+				for (const id of [...provisional]) {
+					if (isOptimistic(sessionID, id)) continue;
+					untrackId(cacheSourcedIds, sessionID, id);
+					(droppedPhantoms ??= new Set()).add(id);
+				}
+			}
 			if (provisional && provisional.size > 0 && incoming.length > 0) {
 				let oldestIncoming = incoming[0].id;
 				for (const m of incoming) if (m.id < oldestIncoming) oldestIncoming = m.id;

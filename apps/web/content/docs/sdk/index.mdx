@@ -34,8 +34,9 @@ Create an API key in your own settings, at **Settings → API keys** (`/settings
 
 ## Call a Connector
 
-A Connector defines callable tools. A Connection stores one authorization for
-that Connector. Credentials stay server-side.
+A Connector defines callable tools. A Connection stores one **account** — one
+authorization — for that Connector; a Connector can hold several accounts side
+by side. Credentials stay server-side.
 
 ```ts
 const connectors = kortix.project(projectId).connectors;
@@ -48,6 +49,11 @@ await connectors.call('gmail.send_email', { to, subject, body });
 
 An agent-minted session token already carries its project scope. Use
 `kortix.connectors` when the agent does not have a separate `projectId` value.
+
+A call that names no account resolves to a default automatically. To run as a
+specific one, list `connectors.accounts(slug)` and pass a `connection_id`,
+label, or `me` / `project` as `options.account` on `call()`. See
+[Accounts and the call-time gate](/docs/sdk/reference#accounts-and-the-call-time-gate).
 
 ## Start your first session
 

@@ -41,6 +41,7 @@ import {
   githubAppStateSecret,
   isGithubAppConfigured,
   isGithubAppOAuthConfigured,
+  GITHUB_APP_MANIFEST_PERMISSIONS,
   normalizeGitHubFrontendOrigin,
   resolveGitHubAppSlug,
   signGitHubAppJwt,
@@ -115,19 +116,10 @@ export function buildGithubAppManifest(opts: {
     callback_urls: [`${base}/v1/platform/github-app/oauth/callback`],
     setup_on_update: true,
     public: false,
-    default_permissions: {
-      administration: 'write',
-      contents: 'write',
-      pull_requests: 'write',
-      metadata: 'read',
-      // Backs the account-linking identity proof (oauth/authorize +
-      // oauth/callback below): GET /orgs/{org}/memberships/{user} and
-      // GET /user/memberships/orgs both require "Members: read" on a GitHub
-      // App user-to-server token — without it, verifyGitHubInstallationAdmin
-      // / listLinkableGitHubAppInstallations (projects/github.ts) 403 for
-      // every organization installation.
-      members: 'read',
-    },
+    // One source: the set `resolveGitHubAppPermissions()` audits a hand-made
+    // App against (projects/github.ts), plus the reserved `pull_requests`. `members: read` backs the
+    // account-linking identity proof (oauth/authorize + oauth/callback below).
+    default_permissions: { ...GITHUB_APP_MANIFEST_PERMISSIONS },
     default_events: [],
     hook_attributes: { url: opts.homepageUrl, active: false },
   };
@@ -880,7 +872,14 @@ githubAppSetupRouter.openapi(
       // header, or proxy/CDN access logs), so it's the right place for a
       // short-lived credential in a same-tab redirect chain that has no
       // durable server-side session to stash it in.
-      const fragment = new URLSearchParams({ access_token: accessToken });
+      // `github_token`, NOT `access_token`: the popup is a page of the web
+      // app, whose Supabase browser client watches every load for an
+      // implicit-flow `#access_token=` fragment. A GitHub token under that
+      // name is not a Supabase session, the recovery fails, and the client
+      // drops the session cookie the OPENER is signed in with — the setup
+      // page then sees no user and bounces to /auth mid-link (reported on dev
+      // 2026-09-17).
+      const fragment = new URLSearchParams({ github_token: accessToken });
       return c.redirect(`${landingOrigin}/auth/github-connect#${fragment.toString()}`, 302);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

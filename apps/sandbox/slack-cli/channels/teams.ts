@@ -13,7 +13,11 @@ import {
   parseArgs,
 } from '../lib';
 
-const TEAMS_CONNECTOR = 'teams';
+// The Teams channel materializes under the reserved slug `kortix_teams`
+// (apps/api/src/connectors/channels.ts TEAMS_CHANNEL_CONNECTOR_SLUG). The bare
+// `teams` name is kept as a fallback for a user-declared connector of that
+// name and for older API deployments — same shape as the Slack CLI.
+const TEAMS_CONNECTORS = ['kortix_teams', 'teams'] as const;
 
 function resolveDownloadOutput(outPath: string): string {
   const trimmed = outPath.trim();
@@ -71,7 +75,11 @@ async function sendFile(filePath: string, description?: string) {
   }
   const data = readFileSync(filePath);
   const filename = filePath.split('/').pop() || 'file';
-  const r = await kortixPost<{ ok?: boolean; uploadId?: string }>(
+  // Personal chats take a consent card; channels/group chats get an inline
+  // image or a team-drive link. The server decides from the scope + team.
+  const conversationType = getEnv('MS_TEAMS_CONVERSATION_TYPE');
+  const teamGroupId = getEnv('MS_TEAMS_TEAM_GROUP_ID');
+  const r = await kortixPost<{ ok?: boolean; delivered?: string; uploadId?: string; url?: string }>(
     `/projects/${projectId}/channels/teams/file/upload`,
     {
       service_url: serviceUrl,
@@ -79,25 +87,43 @@ async function sendFile(filePath: string, description?: string) {
       filename,
       content_base64: data.toString('base64'),
       ...(description ? { description } : {}),
+      ...(conversationType ? { conversation_type: conversationType } : {}),
+      ...(teamGroupId ? { team_group_id: teamGroupId } : {}),
     },
   );
-  return { ok: true, delivered: 'consent_card', uploadId: r?.uploadId };
+  return {
+    ok: true,
+    delivered: r?.delivered ?? 'consent_card',
+    ...(r?.uploadId ? { uploadId: r.uploadId } : {}),
+    ...(r?.url ? { url: r.url } : {}),
+  };
 }
 
 async function connectorCall(action: string, args: Record<string, unknown>): Promise<unknown> {
-  try {
-    const res = await kortixConnectorCall<{ data?: unknown }>(`${TEAMS_CONNECTOR}.${action}`, args);
-    return res.data ?? res;
-  } catch (err) {
-    if (err instanceof CliError) throw err;
-    throw err;
+  let lastErr: CliError | null = null;
+  for (const connector of TEAMS_CONNECTORS) {
+    try {
+      const res = await kortixConnectorCall<{ data?: unknown }>(`${connector}.${action}`, args);
+      return (res as { data?: unknown }).data ?? res;
+    } catch (err) {
+      if (!(err instanceof CliError)) throw err;
+      lastErr = err;
+      const reason = err.message || null;
+      // Fall back to the legacy namespace only when the reserved connector is
+      // absent; an upstream Graph error is a real answer from the right one.
+      if (connector === TEAMS_CONNECTORS[0] && (reason === 'connector_not_found' || reason === 'action_not_found')) {
+        continue;
+      }
+      throw err;
+    }
   }
+  throw lastErr ?? new CliError(`Teams connector action "${action}" was not found`);
 }
 
 async function relayTurnStream(
   kind: 'step' | 'answer',
   text: string,
-  extras: { detail?: string; output?: string; sources?: Array<{ url: string; text: string }> } = {},
+  extras: { detail?: string; output?: string; sources?: Array<{ url: string; text: string }>; card?: Record<string, unknown> } = {},
 ): Promise<boolean> {
   const projectId = kortixProjectId();
   const sessionId = kortixSessionId();
@@ -110,6 +136,7 @@ async function relayTurnStream(
       ...(extras.detail ? { detail: extras.detail } : {}),
       ...(extras.output ? { output: extras.output } : {}),
       ...(extras.sources && extras.sources.length > 0 ? { sources: extras.sources } : {}),
+      ...(extras.card ? { card: extras.card } : {}),
     });
     return r?.ok === true;
   } catch {
@@ -161,12 +188,23 @@ async function main(): Promise<void> {
         out(await sendFile(flags.file, readTextFlag(flags) ?? args[0]));
         break;
       }
+      let card: Record<string, unknown> | undefined;
+      if (flags['card-file']) {
+        try {
+          card = JSON.parse(readFileSync(flags['card-file'], 'utf-8')) as Record<string, unknown>;
+        } catch {
+          throw new CliError(`Cannot read/parse --card-file: ${flags['card-file']}`);
+        }
+        if (card.type !== 'AdaptiveCard') {
+          throw new CliError('--card-file must be an Adaptive Card JSON object (type: "AdaptiveCard")');
+        }
+      }
       const text = readTextFlag(flags) ?? args[0];
-      if (!text)
+      if (!text && !card)
         throw new CliError('message text required, e.g. teams send "Done — here is the summary"');
-      const relayed = await relayTurnStream('answer', text.slice(0, 11000));
+      const relayed = await relayTurnStream('answer', (text ?? 'Done.').slice(0, 11000), { card });
       if (relayed) {
-        out({ ok: true, delivered: 'stream' });
+        out({ ok: true, delivered: card ? 'card' : 'stream' });
         break;
       }
       throw new CliError('No active Teams turn to answer.');
@@ -207,9 +245,10 @@ reads run through the Kortix Connector (Graph token resolved server-side).
 Turn commands (use these when answering a Teams message):
   step  "<checkpoint>"   [--detail "<subtitle>"] [--output "<prev result>"] [--source URL|TITLE]
   send  "<answer>"       # deliver your reply — finalizes the live Adaptive Card
+  send  --card-file <path>   # deliver a full Adaptive Card JSON as the reply
 
 Files:
-  send     --file <path> [--text "<description>"]   # offer a file (consent card; user accepts to receive)
+  send     --file <path> [--text "<description>"]   # personal chat: consent card; channel: inline image or team-drive link
   download --url <url> --out <path>                 # download a file shared in the conversation
 
 Read commands (Microsoft Graph, via the Connector):

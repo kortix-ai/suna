@@ -239,7 +239,8 @@ export async function bindDatabaseSessionCredential(
     await client.query(
       `INSERT INTO kortix.session_sandboxes (
          sandbox_id, session_id, account_id, project_id, status
-       ) VALUES ($1::uuid, $1, $2::uuid, $3::uuid, 'provisioning')`,
+       ) VALUES ($1::uuid, $1, $2::uuid, $3::uuid, 'provisioning')
+       ON CONFLICT (sandbox_id) DO NOTHING`,
       [input.sessionId, input.accountId, input.projectId],
     );
     await client.query(

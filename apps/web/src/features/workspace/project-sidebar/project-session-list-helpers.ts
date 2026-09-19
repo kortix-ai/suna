@@ -1,3 +1,4 @@
+import { stripChatMentionMarkup } from '@/components/projects/session-label';
 import type { ChangeRequest, ProjectSession, ProjectSessionStatus } from '@kortix/sdk';
 
 /**
@@ -222,7 +223,14 @@ function resolveSessionTitle(session: ProjectSession): string | null {
     typeof session.metadata?.session_name === 'string'
       ? (session.metadata.session_name as string)
       : null;
-  return session.custom_name?.trim() || session.name?.trim() || legacyMetadataName?.trim() || null;
+  // Teams wraps a channel @-mention of the bot in `<at>…</at>`; sessions titled
+  // from such a message before the API stripped it still carry the tag.
+  return (
+    stripChatMentionMarkup(session.custom_name ?? '') ||
+    stripChatMentionMarkup(session.name ?? '') ||
+    stripChatMentionMarkup(legacyMetadataName ?? '') ||
+    null
+  );
 }
 
 /**

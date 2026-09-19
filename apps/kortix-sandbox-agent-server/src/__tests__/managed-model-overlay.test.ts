@@ -15,9 +15,9 @@ import {
   startManagedModelsPrefetch,
   withManagedOverlay,
   type Opencode,
-} from '../opencode'
-import { loadConfig } from '../config'
-import { reconcileManagedModels, resetManagedReconcileForTests } from '../main'
+} from '../harness/open-code/lifecycle'
+import { loadOpenCodeConfig as loadConfig } from '../harness/open-code/config'
+import { reconcileManagedModels, resetManagedReconcileForTests } from '../harness/open-code/boot'
 
 // The 2026-08-19 outage in one sentence: the image-baked catalog is frozen at
 // template-build time, the managed lineup is deployment config, so a managed
@@ -187,7 +187,7 @@ describe('boot config composition', () => {
 
     expect(elapsed).toBeLessThan(50)
     // The bundled floor still ships, so the picker is never short.
-    expect(models['grok-4.6']).toBeDefined()
+    expect(models['deepseek-v4.1-flash']).toBeDefined()
     expect(models['openai/gpt-5.5']).toBeDefined()
   }, 15_000)
 
@@ -204,7 +204,7 @@ describe('boot config composition', () => {
     } as NodeJS.ProcessEnv)
 
     expect(calls).toEqual([])
-    expect(providerModels(raw)['grok-4.6']).toBeDefined()
+    expect(providerModels(raw)['deepseek-v4.1-flash']).toBeDefined()
   })
 })
 
@@ -299,7 +299,7 @@ describe('withManagedOverlay', () => {
   test('without a live set the bundled managed models only fill gaps', () => {
     const out = withManagedOverlay({ 'grok-4.6': { name: 'baked' } }, null)
     expect(out['grok-4.6']?.name).toBe('baked')
-    expect(out['deepseek-v4-flash']).toBeDefined()
+    expect(out['deepseek-v4.1-flash']).toBeDefined()
   })
 
   test('never removes a model the disk catalog already carried', () => {

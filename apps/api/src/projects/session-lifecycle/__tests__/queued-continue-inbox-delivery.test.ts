@@ -20,6 +20,8 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, projects, sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
 import type { SessionLifecycleCommandRow } from '../store';
+import { drizzle } from 'drizzle-orm/pg-proxy';
+import type { SQL } from 'drizzle-orm';
 import { mintWireMessageId, wireIdTime } from '../../wire-message-id';
 
 const SESSION_ID = 'sess-inbox-delivery-1';
@@ -54,6 +56,7 @@ let unverifiedRequeues: Array<{ commandId: string; availableAt: Date }> = [];
 let unlandedRequeues: Array<{ commandId: string; reason: string }> = [];
 let unlandedBudgetLeft = 2;
 let sessionRow: Record<string, unknown> | null = null;
+let projectMetadataExpression: SQL | undefined;
 /** The session's one box, as the turn-authority read sees it. Null = no box. */
 let boxRow: { status: string; metadata: Record<string, unknown> | null } | null = null;
 /** The newest id the inbox's OWN rows say this session has already delivered,
@@ -97,7 +100,7 @@ let legacyRepairMarkerFailuresRemaining = 0;
 let legacyPendingLoads = 0;
 let promptFailuresRemaining = 0;
 let promptDeduplicationsRemaining = 0;
-let promptResponsePlan: Array<'failed' | 'deduplicated' | 'connector-required'> = [];
+let promptResponsePlan: Array<'failed' | 'deduplicated' | 'permanent-refusal'> = [];
 // Models the sandbox edge DISCARDING an oversized body while answering ok: the
 // POST is captured, but the runtime never holds that message. Scoped to the
 // FIRST posted id, so the delivery's retry lands and the test does not have to
@@ -127,6 +130,7 @@ mock.module('../../../shared/db', () => ({
     select: (projection?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
         where: () => {
+          if (projection?.projectMetadata) projectMetadataExpression = projection.projectMetadata as SQL;
           const limit = async () => {
             if (projection && 'result' in projection && 'payload' in projection) {
               return [{ result: { held: pauseAfterPosts !== null && capturedBodies.length >= pauseAfterPosts }, payload: {} }];
@@ -242,7 +246,11 @@ mock.module('../../../sandbox-proxy/routes/preview', () => ({
         if (idempotencyKey) seenKeys.add(idempotencyKey);
       };
       const plannedResponse = promptResponsePlan.shift();
-      if (plannedResponse === 'connector-required') return Response.json({ code: 'CONNECTOR_CONNECTION_REQUIRED', message: 'Create the required connections before continuing this session.' }, { status: 409 });
+      // A permanent runtime refusal: any 4xx the classifier treats as terminal
+      // (`throwIfPromptRefused` — not 404/408/409/429). The old fixture answered
+      // 409 CONNECTOR_CONNECTION_REQUIRED, which no route emits since the
+      // session connector gate was retired (2026-09-16); a 409 is retryable now.
+      if (plannedResponse === 'permanent-refusal') return Response.json({ code: 'PROMPT_REJECTED', message: 'The runtime rejected this prompt.' }, { status: 422 });
       if (plannedResponse === 'failed') return new Response(null, { status: 500 });
       if (plannedResponse === 'deduplicated') {
         remember();
@@ -450,6 +458,7 @@ function baseRow(overrides: Partial<SessionLifecycleCommandRow> = {}): SessionLi
 }
 
 beforeEach(() => {
+  projectMetadataExpression = undefined;
   pauseAfterPosts = null;
   requeues = [];
   unverifiedRequeues = [];
@@ -524,6 +533,16 @@ beforeEach(() => {
 });
 
 describe('executeQueuedContinue — what actually goes on the wire', () => {
+  test('the project flag lookup correlates with the outer session under Drizzle single-table rendering', async () => {
+    expect(await executeQueuedContinue(baseRow())).toBe('succeeded');
+    expect(projectMetadataExpression).toBeDefined();
+    const query = drizzle(async () => ({ rows: [] }))
+      .select({ projectMetadata: projectMetadataExpression! })
+      .from(projectSessions)
+      .toSQL();
+    expect(query.sql).toContain('p.project_id = "kortix"."project_sessions"."project_id"');
+  });
+
   test('Quick Queue arms the active turn boundary after its head is durably queued', async () => {
     boxRow = {
       status: 'active',
@@ -567,12 +586,12 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(failedCalls).toHaveLength(0);
   });
 
-  test('connector refusals fail once and retain the actionable error', async () => {
-    promptResponsePlan = ['connector-required'];
+  test('a permanent runtime refusal fails once and retains the actionable error', async () => {
+    promptResponsePlan = ['permanent-refusal'];
     expect(await executeQueuedContinue(baseRow())).toBe('failed');
     expect(capturedBodies).toHaveLength(1);
     expect(failedCalls.at(-1)).toMatchObject({
-      message: 'Create the required connections before continuing this session.',
+      message: 'The runtime rejected this prompt.',
       options: { retryable: false },
     });
   });

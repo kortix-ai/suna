@@ -9,6 +9,7 @@ mock.module('../../repositories/project-model-access', () => ({ getProjectModelA
 // exercised end to end. No managed models are served. No managed candidates
 // resolve. No managed upstream credential is read.
 
+let morphKeyReads = 0;
 let bedrockKeyReads = 0;
 let openrouterKeyReads = 0;
 
@@ -29,6 +30,8 @@ mock.module('../../config', () => ({
         if (key === 'LLM_GATEWAY_DEFAULT_MODEL') return 'codex/gpt-5.6-sol';
         if (key === 'LLM_GATEWAY_VISION_MODEL') return 'claude-sonnet-4.6';
         if (key === 'LLM_GATEWAY_FALLBACK_POLICIES') return [];
+        if (key === 'MORPH_API_KEY') { morphKeyReads += 1; return 'operator-morph-key'; }
+        if (key === 'MORPH_API_URL') return 'https://api.morphllm.com/v1';
         if (key === 'AWS_BEDROCK_REGION') return 'us-west-2';
         if (key === 'AWS_BEDROCK_API_KEY') {
           bedrockKeyReads += 1;
@@ -83,6 +86,7 @@ mock.module('../credentials/codex', () => ({
   CODEX_USER_AGENT: 'test-agent',
   CodexRefreshError: class CodexRefreshError extends Error {},
   resolveCodexCredential: async () => null,
+  resolveCodexAccountCredential: async () => null,
 }));
 
 const { RUNTIME_MANAGED_MODELS, getRuntimeManagedModel, isRuntimeManagedModelId } =
@@ -93,11 +97,11 @@ const { gatewayModelCatalog, managedModels } = await import('./catalog-models');
 const { managedPickerModels } = await import('./picker-catalog');
 
 const FAKE_MANAGED_MODEL = {
-  id: 'claude-sonnet-4.6',
-  name: 'Claude Sonnet 4.6',
-  upstreamModelId: 'anthropic.claude-sonnet-4-6-v1:0',
-  transport: 'bedrock' as const,
-  pricingRef: 'claude-sonnet-4.6',
+  id: 'deepseek-v4.1-flash',
+  name: 'DeepSeek V4.1 Flash',
+  upstreamModelId: 'deepseek/deepseek-v4.1-flash',
+  transport: 'openrouter' as const,
+  pricingRef: 'openrouter/deepseek/deepseek-v4.1-flash',
   tier: 'flagship' as const,
   vision: true,
   limit: { context: 200_000, output: 32_000 },
@@ -126,8 +130,8 @@ describe('managed provider disabled (KORTIX_MANAGED_PROVIDER_ENABLED=false, the 
 
   test('managedCandidates()/managedDescriptor() (defense-in-depth) refuse to build a descriptor and read NEITHER credential', () => {
     expect(managedCandidates(FAKE_MANAGED_MODEL)).toEqual([]);
-    expect(managedCandidates({ ...FAKE_MANAGED_MODEL, transport: 'openrouter' })).toEqual([]);
     expect(managedDescriptor(FAKE_MANAGED_MODEL)).toBeNull();
+    expect(morphKeyReads).toBe(0);
     expect(bedrockKeyReads).toBe(0);
     expect(openrouterKeyReads).toBe(0);
   });
@@ -142,6 +146,7 @@ describe('managed provider disabled (KORTIX_MANAGED_PROVIDER_ENABLED=false, the 
       name: 'GatewayResolutionError',
       code: 'model_disabled_on_deployment',
     });
+    expect(morphKeyReads).toBe(0);
     expect(bedrockKeyReads).toBe(0);
     expect(openrouterKeyReads).toBe(0);
   });
@@ -153,6 +158,7 @@ describe('managed provider disabled (KORTIX_MANAGED_PROVIDER_ENABLED=false, the 
     );
     expect(candidates).toHaveLength(1);
     expect(candidates[0]?.apiKey).toBe('operators-own-anthropic-key');
+    expect(morphKeyReads).toBe(0);
     expect(bedrockKeyReads).toBe(0);
     expect(openrouterKeyReads).toBe(0);
   });

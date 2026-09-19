@@ -9,7 +9,7 @@ import { MANAGED_MODELS } from '@kortix/llm-catalog';
 //
 // Imported across app boundaries ON PURPOSE: this file is the tripwire that
 // fails the moment the managed lineup and that hand-maintained table drift.
-import { BUNDLED_MANAGED_MODELS } from '../../../../kortix-sandbox-agent-server/src/opencode';
+import { BUNDLED_MANAGED_MODELS } from '../../../../kortix-sandbox-agent-server/src/harness/open-code/lifecycle';
 import { gatewayModelCatalog } from './catalog-models';
 
 const managedIds = MANAGED_MODELS.map((m) => m.id).sort();
@@ -23,8 +23,7 @@ describe('daemon bundled managed set vs the managed lineup', () => {
 
   // The other direction matters just as much: a bundled entry for a model the
   // gateway no longer serves resolves as model_not_found and 400s every turn
-  // that selects it (see the commented-out kimi-k3 / claude entries in
-  // opencode.ts, deactivated by the 2026-08-10 slim-down).
+  // that selects it (for example, a stale DeepSeek V4 Flash fallback entry).
   test('the daemon fallback advertises no model the managed lineup dropped', () => {
     const extra = bundledIds.filter((id) => !managedIds.includes(id));
     expect(extra).toEqual([]);

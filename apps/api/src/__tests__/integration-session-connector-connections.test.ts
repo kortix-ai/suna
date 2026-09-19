@@ -20,7 +20,13 @@ import {
 import { and, eq } from 'drizzle-orm';
 import { deleteAgentMailInstall, saveAgentMailInstall } from '../channels/install-store';
 import {
+  connectionIsEffectiveProjectDefault,
+  connectorIdsWithSharedCredentials,
+  credentialExists,
+  defaultConnectionIdForConnector,
   deleteCredential,
+  ensureDefaultConnection,
+  ensureMemberConnection,
   resolveCredentialValue,
   resolveConnectionCredentialValue,
   upsertCredential,
@@ -31,10 +37,10 @@ import { makeDbGatewayDeps } from '../connectors/db-deps';
 import { finalizePipedreamConnectionAuthorization } from '../connectors/pipedream';
 import { reconcileEmailConnections } from '../connectors/sync';
 import {
-  missingRequiredConnectorConnectionsForSession,
+  listEntitledConnectorConnections,
   resolveEffectiveSessionConnectorBindings,
-  resolveRequiredConnectorConnections,
   resolveSessionConnectorConnection,
+  resolveSessionConnectorConnectionOutcome,
   sessionConnectorBindingsRequirePrivateVisibility,
   validateSessionConnectorBindings,
 } from '../projects/lib/session-connector-bindings';
@@ -495,12 +501,19 @@ describe('session connector isolation', () => {
     expect(await deps.resolveCredential(connector, null)).toBe('connector-boundary-value');
   });
 
-  test("an omitted user-strategy binding resolves the acting member's authorization", async () => {
+  // THE RULE (2026-09-16): CONNECTOR_A is reachable to USER through TWO
+  // accounts here — their own unpinned CONNECTION_A, and the project's PINNED
+  // CONNECTION_DEFAULT. An unnamed call no longer rank-picks "mine" first
+  // when something is actually pinned — it honors the pin (see
+  // `selectEntitledConnectorConnection`) — so proving "the member's own
+  // authorization is reachable" now requires naming it explicitly.
+  test("account: 'me' resolves the acting member's own authorization, even though the project also has a pinned default", async () => {
     const resolved = await resolveSessionConnectorConnection({
       accountId: ACCOUNT_A,
       projectId: PROJECT_A,
       sessionId: SESSION_DEFAULT,
       alias: 'veyris',
+      account: 'me',
     });
     expect(resolved).toMatchObject({
       connectionId: CONNECTION_A,
@@ -508,7 +521,25 @@ describe('session connector isolation', () => {
     });
   });
 
+  test('an omitted account resolves the PINNED project default over an unpinned member row', async () => {
+    const resolved = await resolveSessionConnectorConnection({
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      sessionId: SESSION_DEFAULT,
+      alias: 'veyris',
+    });
+    expect(resolved).toMatchObject({
+      connectionId: CONNECTION_DEFAULT,
+      isDefault: true,
+      source: 'default',
+    });
+  });
+
   test('effective scope materializes runtime defaults and preserves explicit binding state', async () => {
+    // veyris materializes the PINNED project default (CONNECTION_DEFAULT) —
+    // `resolveEffectiveSessionConnectorBindings` has no per-alias `account` to
+    // name, and the pin is a deliberate choice, so this is the correct
+    // unnamed resolution (see the "omitted account" test above).
     expect(
       await resolveEffectiveSessionConnectorBindings({
         accountId: ACCOUNT_A,
@@ -517,7 +548,7 @@ describe('session connector isolation', () => {
         grantedConnectors: ['veyris', 'email'],
       }),
     ).toEqual({
-      veyris: { connection_id: CONNECTION_A },
+      veyris: { connection_id: CONNECTION_DEFAULT },
       email: { connection_id: EMAIL_CONNECTION_DEFAULT },
     });
 
@@ -563,20 +594,36 @@ describe('session connector isolation', () => {
     });
   });
 
-  test("an omitted user-strategy binding never resolves another member's authorization", async () => {
+  test("an omitted user-strategy binding never resolves another member's authorization, pinned or not", async () => {
     await db
       .update(connectorConnections)
       .set({ isDefault: true })
       .where(eq(connectorConnections.connectionId, CONNECTION_B));
     try {
-      const resolved = await resolveSessionConnectorConnection({
+      // `account: 'me'` proves reachability is per-row: CONNECTION_B is
+      // OTHER_USER's own, marked default or not, and is never reachable to
+      // USER — the caller's own row is what "me" resolves regardless.
+      const asMe = await resolveSessionConnectorConnection({
+        accountId: ACCOUNT_A,
+        projectId: PROJECT_A,
+        sessionId: SESSION_DEFAULT,
+        alias: 'veyris',
+        account: 'me',
+      });
+      expect(asMe?.connectionId).toBe(CONNECTION_A);
+      expect(asMe?.connectionId).not.toBe(CONNECTION_B);
+
+      // The unnamed resolution also never reaches CONNECTION_B — it is not in
+      // USER's entitled list at all, pinned or not — and instead honors the
+      // project's own pin (CONNECTION_DEFAULT), same as the un-pinned case.
+      const unnamed = await resolveSessionConnectorConnection({
         accountId: ACCOUNT_A,
         projectId: PROJECT_A,
         sessionId: SESSION_DEFAULT,
         alias: 'veyris',
       });
-      expect(resolved?.connectionId).toBe(CONNECTION_A);
-      expect(resolved?.connectionId).not.toBe(CONNECTION_B);
+      expect(unnamed?.connectionId).toBe(CONNECTION_DEFAULT);
+      expect(unnamed?.connectionId).not.toBe(CONNECTION_B);
     } finally {
       await db
         .update(connectorConnections)
@@ -646,7 +693,10 @@ describe('session connector isolation', () => {
     expect(email).toMatchObject({ connectionId: EMAIL_CONNECTION_DEFAULT });
 
     // …and an UNBOUND alias still falls back to the project default, instead of
-    // failing closed the way a caller-requested (source: 'request') binding would.
+    // failing closed the way a caller-requested (source: 'request') binding
+    // would. It resolves the PINNED CONNECTION_DEFAULT (see the "omitted
+    // account" test above) — the point here is that it falls through AT ALL,
+    // not which of the several reachable accounts wins that unnamed pick.
     const veyris = await resolveSessionConnectorConnection({
       accountId: ACCOUNT_A,
       projectId: PROJECT_A,
@@ -654,7 +704,7 @@ describe('session connector isolation', () => {
       alias: 'veyris',
     });
     expect(veyris).toMatchObject({
-      connectionId: CONNECTION_A,
+      connectionId: CONNECTION_DEFAULT,
       source: 'default',
     });
   });
@@ -757,12 +807,18 @@ describe('session connector isolation', () => {
     expect(resolved).toBeNull();
   });
 
-  test('project strategy rejects member and unmanaged system authorizations without a capability bypass', async () => {
-    await db
-      .update(connectors)
-      .set({ authorizationStrategy: 'project' })
-      .where(eq(connectors.connectorId, CONNECTOR_A));
-    try {
+  // Reachability is a property of the ROW (connection-access.ts), never of the
+  // connector's (retired) authorization_strategy — proven here by getting the
+  // SAME verdicts under BOTH strategy values. A project-owned row is always
+  // reachable; a member owns their own row regardless of a manage-capability
+  // bypass; an external/unmanaged row is reachable by nobody, capability or
+  // not — that invariant is what actually matters and did not change.
+  test('connection reachability is per-row, not per-connector — the (retired) strategy never changes the verdict', async () => {
+    for (const strategy of ['project', 'user'] as const) {
+      await db
+        .update(connectors)
+        .set({ authorizationStrategy: strategy })
+        .where(eq(connectors.connectorId, CONNECTOR_A));
       const projectOwned = await validateSessionConnectorBindings({
         accountId: ACCOUNT_A,
         projectId: PROJECT_A,
@@ -771,12 +827,13 @@ describe('session connector isolation', () => {
         mayManageSystemConnections: false,
         bindings: { veyris: { connection_id: CONNECTION_DEFAULT } },
       });
-      const memberOwned = await validateSessionConnectorBindings({
+      const ownMemberConnection = await validateSessionConnectorBindings({
         accountId: ACCOUNT_A,
         projectId: PROJECT_A,
         actingUserId: USER,
         actingPrincipalIsServiceAccount: false,
-        mayManageSystemConnections: true,
+        // No manage capability needed — CONNECTION_A is USER's own row.
+        mayManageSystemConnections: false,
         bindings: { veyris: { connection_id: CONNECTION_A } },
       });
       const unmanagedSystem = await validateSessionConnectorBindings({
@@ -788,17 +845,16 @@ describe('session connector isolation', () => {
         bindings: { veyris: { connection_id: CONNECTION_EXTERNAL } },
       });
       expect(projectOwned).toMatchObject({ ok: true });
-      expect(memberOwned).toMatchObject({ ok: false, code: 'CONNECTOR_CONNECTION_NOT_FOUND' });
+      expect(ownMemberConnection).toMatchObject({ ok: true });
       expect(unmanagedSystem).toMatchObject({
         ok: false,
         code: 'CONNECTOR_CONNECTION_NOT_FOUND',
       });
-    } finally {
-      await db
-        .update(connectors)
-        .set({ authorizationStrategy: 'user' })
-        .where(eq(connectors.connectorId, CONNECTOR_A));
     }
+    await db
+      .update(connectors)
+      .set({ authorizationStrategy: 'user' })
+      .where(eq(connectors.connectorId, CONNECTOR_A));
   });
 
   test('a personal-connection binding fails closed if the session becomes shared', async () => {
@@ -883,51 +939,38 @@ describe('session connector isolation', () => {
     }
   });
 
-  test('authorization strategy changes take effect on the next resolution without restart', async () => {
-    await db
-      .update(connectors)
-      .set({ authorizationStrategy: 'project' })
-      .where(eq(connectors.connectorId, CONNECTOR_A));
-    try {
+  // SESSION_A is bound to CONNECTION_A, USER's own member-owned row on
+  // CONNECTOR_A. Flipping the connector's (retired) authorization_strategy
+  // used to invalidate that binding on the next resolution — the exact bug
+  // this initiative retires the flag over. It must now have NO effect: the
+  // binding resolves the same way regardless of the flag's value.
+  test('the (retired) authorization strategy no longer affects resolution on the next call', async () => {
+    for (const strategy of ['project', 'user'] as const) {
+      await db
+        .update(connectors)
+        .set({ authorizationStrategy: strategy })
+        .where(eq(connectors.connectorId, CONNECTOR_A));
       const resolved = await resolveSessionConnectorConnection({
         accountId: ACCOUNT_A,
         projectId: PROJECT_A,
         sessionId: SESSION_A,
         alias: 'veyris',
       });
-      expect(resolved).toBeNull();
+      expect(resolved).toMatchObject({ connectionId: CONNECTION_A, ownerType: 'member' });
+      // No actingUserId supplied here, so the member-owned row (CONNECTION_A)
+      // is never entitled — but the project-owned default (CONNECTION_DEFAULT)
+      // is unconditionally reachable regardless of identity or strategy, and
+      // stays the sole entry in both directions of the flip.
       expect(
-        await missingRequiredConnectorConnectionsForSession({
-          accountId: ACCOUNT_A,
-          projectId: PROJECT_A,
-          sessionId: SESSION_A,
-          aliases: ['veyris'],
-        }),
-      ).toEqual([
-        {
-          id: CONNECTOR_A,
-          slug: 'veyris',
-          name: 'VEYRIS',
-          authorization_strategy: 'project',
-        },
-      ]);
-    } finally {
-      await db
-        .update(connectors)
-        .set({ authorizationStrategy: 'user' })
-        .where(eq(connectors.connectorId, CONNECTOR_A));
+        (
+          await listEntitledConnectorConnections({
+            accountId: ACCOUNT_A,
+            projectId: PROJECT_A,
+            alias: 'veyris',
+          })
+        ).map((c) => c.connectionId),
+      ).toEqual([CONNECTION_DEFAULT]);
     }
-  });
-
-  test('required connector checks reject an unavailable connection', async () => {
-    await expect(
-      missingRequiredConnectorConnectionsForSession({
-        accountId: ACCOUNT_A,
-        projectId: PROJECT_A,
-        sessionId: SESSION_A,
-        aliases: ['unavailable_connector'],
-      }),
-    ).rejects.toThrow('Required connection "unavailable_connector" is unavailable');
   });
 
   test('Pipedream finalize reads and stores the account under the connection-specific identity', async () => {
@@ -1256,196 +1299,246 @@ describe('session connector isolation', () => {
   });
 });
 
-describe('resolveRequiredConnectorConnections (require_connectors)', () => {
-  test("resolves a required connector to the acting user's OWN member connection", async () => {
-    // USER owns CONNECTION_A, a member connection for the 'veyris' connector.
-    const res = await resolveRequiredConnectorConnections({
-      accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
-      actingUserId: USER,
-      actingPrincipalIsServiceAccount: false,
-      aliases: ['veyris'],
-    });
-    expect(res.ok).toBe(true);
-    if (res.ok) {
-      expect(res.bindings).toHaveLength(1);
-      expect(res.bindings[0]).toMatchObject({
-        alias: 'veyris',
-        connectionId: CONNECTION_A,
-        ownerType: 'member',
-        ownerId: USER,
-      });
-    }
-  });
+/**
+ * THE RULE (2026-09-16): an unnamed connector call uses an account implicitly
+ * ONLY when exactly one account is reachable, OR a human has deliberately
+ * pinned a default. Several reachable accounts, none named, none pinned →
+ * `ambiguous`, never a silent guess. Own fixtures (a dedicated connector with
+ * two project-owned, deliberately UNPINNED connections) so this never
+ * interferes with the shared CONNECTOR_A state above.
+ */
+describe('account_required — several reachable accounts, none named, none pinned', () => {
+  const AMBIGUOUS_CONNECTOR = crypto.randomUUID();
+  const AMBIGUOUS_SALES = crypto.randomUUID();
+  const AMBIGUOUS_SUPPORT = crypto.randomUUID();
 
-  test("picks the member's OWN DEFAULT when they hold several connections on one connector", async () => {
-    // A member may now hold several personal connections on one connector
-    // ("Work", "Personal"). "Use my veyris" must not be a coin flip between them
-    // — the one they marked default wins, deterministically.
-    const SECOND = crypto.randomUUID();
-    await db.insert(connectorConnections).values({
-      connectionId: SECOND,
+  beforeAll(async () => {
+    await db.insert(connectors).values({
+      connectorId: AMBIGUOUS_CONNECTOR,
       accountId: ACCOUNT_A,
       projectId: PROJECT_A,
-      connectorId: CONNECTOR_A,
-      ownerType: 'member',
-      ownerId: USER,
-      label: 'My second workspace',
-      isDefault: true,
+      slug: 'ambiguous_multi',
+      name: 'Ambiguous multi-account connector',
+      providerType: 'http',
+      config: { baseUrl: 'https://ambiguous.example.test', auth: { type: 'bearer' } },
     });
-    await upsertConnectionCredential({
-      projectId: PROJECT_A,
-      connectorId: CONNECTOR_A,
-      connectionId: SECOND,
-      value: 'second-workspace-capability',
-      createdBy: USER,
-    });
-    try {
-      const res = await resolveRequiredConnectorConnections({
+    await db.insert(connectorConnections).values([
+      {
+        connectionId: AMBIGUOUS_SALES,
         accountId: ACCOUNT_A,
         projectId: PROJECT_A,
-        actingUserId: USER,
-        actingPrincipalIsServiceAccount: false,
-        aliases: ['veyris'],
-      });
-      expect(res.ok).toBe(true);
-      if (res.ok) expect(res.bindings[0]?.connectionId).toBe(SECOND);
-    } finally {
-      await db
-        .delete(connectorConnections)
-        .where(eq(connectorConnections.connectionId, SECOND));
-    }
-  });
-
-  test('skips a REVOKED connection and uses the active one instead of failing closed', async () => {
-    // The lookup must filter to usable rows IN the query. Fetching an arbitrary
-    // row first and then rejecting it would report "connect your account" while
-    // a perfectly good active connection exists.
-    const REVOKED = crypto.randomUUID();
-    await db.insert(connectorConnections).values({
-      connectionId: REVOKED,
-      accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
-      connectorId: CONNECTOR_A,
-      ownerType: 'member',
-      ownerId: USER,
-      label: 'Revoked workspace',
-      status: 'revoked',
-      isDefault: true, // even as the "default", a revoked row must never win
-    });
-    try {
-      const res = await resolveRequiredConnectorConnections({
+        connectorId: AMBIGUOUS_CONNECTOR,
+        label: 'Sales',
+        isDefault: false,
+      },
+      {
+        connectionId: AMBIGUOUS_SUPPORT,
         accountId: ACCOUNT_A,
         projectId: PROJECT_A,
-        actingUserId: USER,
-        actingPrincipalIsServiceAccount: false,
-        aliases: ['veyris'],
-      });
-      expect(res.ok).toBe(true);
-      if (res.ok) expect(res.bindings[0]?.connectionId).toBe(CONNECTION_A);
-    } finally {
-      await db
-        .delete(connectorConnections)
-        .where(eq(connectorConnections.connectionId, REVOKED));
-    }
+        connectorId: AMBIGUOUS_CONNECTOR,
+        label: 'Support',
+        isDefault: false,
+      },
+    ]);
+    await db.insert(connectionCredentials).values([
+      {
+        connectorId: AMBIGUOUS_CONNECTOR,
+        connectionId: AMBIGUOUS_SALES,
+        valueEnc: encryptProjectSecret(PROJECT_A, 'sales-capability'),
+      },
+      {
+        connectorId: AMBIGUOUS_CONNECTOR,
+        connectionId: AMBIGUOUS_SUPPORT,
+        valueEnc: encryptProjectSecret(PROJECT_A, 'support-capability'),
+      },
+    ]);
   });
 
-  test('resolves DISTINCT users to their own member connections (never each other)', async () => {
-    // OTHER_USER owns CONNECTION_B for the same connector — must not get USER's.
-    const res = await resolveRequiredConnectorConnections({
+  afterAll(async () => {
+    await db.delete(connectionCredentials).where(eq(connectionCredentials.connectorId, AMBIGUOUS_CONNECTOR));
+    await db.delete(connectorConnections).where(eq(connectorConnections.connectorId, AMBIGUOUS_CONNECTOR));
+    await db.delete(connectors).where(eq(connectors.connectorId, AMBIGUOUS_CONNECTOR));
+  });
+
+  test('two reachable shared accounts, none pinned, no account named → ambiguous, both named', async () => {
+    const outcome = await resolveSessionConnectorConnectionOutcome({
       accountId: ACCOUNT_A,
       projectId: PROJECT_A,
-      actingUserId: OTHER_USER,
-      actingPrincipalIsServiceAccount: false,
-      aliases: ['veyris'],
+      sessionId: null,
+      alias: 'ambiguous_multi',
     });
-    expect(res.ok).toBe(true);
-    if (res.ok) expect(res.bindings[0]?.connectionId).toBe(CONNECTION_B);
+    expect(outcome.kind).toBe('ambiguous');
+    if (outcome.kind !== 'ambiguous') throw new Error('expected an ambiguous outcome');
+    expect(outcome.accounts.map((a) => a.connectionId).sort()).toEqual(
+      [AMBIGUOUS_SALES, AMBIGUOUS_SUPPORT].sort(),
+    );
   });
 
-  test('returns the missing connection contract when no valid connection exists', async () => {
-    const res = await resolveRequiredConnectorConnections({
+  test('the null-collapsing wrapper never guesses either — ambiguous resolves to null, not the first row', async () => {
+    const resolved = await resolveSessionConnectorConnection({
       accountId: ACCOUNT_A,
       projectId: PROJECT_A,
-      actingUserId: USER,
-      actingPrincipalIsServiceAccount: false,
-      aliases: ['missing_one'],
+      sessionId: null,
+      alias: 'ambiguous_multi',
     });
-    expect(res.ok).toBe(false);
-    if (!res.ok) {
-      expect(res.code).toBe('CONNECTOR_CONNECTION_REQUIRED');
-      expect(res.connectorConnections).toEqual([
-        {
-          id: MISSING_CONNECTOR_A,
-          slug: 'missing_one',
-          name: 'Missing one',
-          authorization_strategy: 'project',
-        },
-      ]);
-    }
+    expect(resolved).toBeNull();
   });
 
-  test('returns every missing connection in one response', async () => {
-    const res = await resolveRequiredConnectorConnections({
+  test('naming one by label resolves it directly even while the connector is ambiguous overall', async () => {
+    const resolved = await resolveSessionConnectorConnection({
       accountId: ACCOUNT_A,
       projectId: PROJECT_A,
-      actingUserId: USER,
-      actingPrincipalIsServiceAccount: false,
-      aliases: ['missing_two', 'missing_one', 'missing_two'],
+      sessionId: null,
+      alias: 'ambiguous_multi',
+      account: 'Sales',
     });
-    expect(res.ok).toBe(false);
-    if (!res.ok) {
-      expect(res.connectorConnections).toEqual([
-        {
-          id: MISSING_CONNECTOR_B,
-          slug: 'missing_two',
-          name: 'Missing two',
-          authorization_strategy: 'user',
-        },
-        {
-          id: MISSING_CONNECTOR_A,
-          slug: 'missing_one',
-          name: 'Missing one',
-          authorization_strategy: 'project',
-        },
-      ]);
-    }
+    expect(resolved?.connectionId).toBe(AMBIGUOUS_SALES);
   });
 
-  test('a service account cannot satisfy a user-strategy requirement', async () => {
-    const res = await resolveRequiredConnectorConnections({
-      accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
-      actingUserId: SERVICE_ACCOUNT,
-      actingPrincipalIsServiceAccount: true,
-      aliases: ['veyris'],
-    });
-    expect(res.ok).toBe(false);
-    if (!res.ok) expect(res.code).toBe('CONNECTOR_CONNECTION_REQUIRED');
-  });
-
-  test('a service account can satisfy a project-strategy requirement', async () => {
+  test('pinning one is the deliberate-default escape hatch: the unnamed call now resolves to it', async () => {
     await db
-      .update(connectors)
-      .set({ authorizationStrategy: 'project' })
-      .where(eq(connectors.connectorId, CONNECTOR_A));
+      .update(connectorConnections)
+      .set({ isDefault: true })
+      .where(eq(connectorConnections.connectionId, AMBIGUOUS_SUPPORT));
     try {
-      const res = await resolveRequiredConnectorConnections({
+      const outcome = await resolveSessionConnectorConnectionOutcome({
         accountId: ACCOUNT_A,
         projectId: PROJECT_A,
-        actingUserId: SERVICE_ACCOUNT,
-        actingPrincipalIsServiceAccount: true,
-        aliases: ['veyris'],
+        sessionId: null,
+        alias: 'ambiguous_multi',
       });
-      expect(res).toMatchObject({
-        ok: true,
-        bindings: [{ alias: 'veyris', connectionId: CONNECTION_DEFAULT, ownerType: 'project' }],
-      });
+      expect(outcome).toMatchObject({ kind: 'ok', connection: { connectionId: AMBIGUOUS_SUPPORT } });
     } finally {
       await db
-        .update(connectors)
-        .set({ authorizationStrategy: 'user' })
-        .where(eq(connectors.connectorId, CONNECTOR_A));
+        .update(connectorConnections)
+        .set({ isDefault: false })
+        .where(eq(connectorConnections.connectionId, AMBIGUOUS_SUPPORT));
     }
+  });
+
+  test('the real Connector gateway denies the unnamed call account_required through explainMissingConnector', async () => {
+    const deps = makeDbGatewayDeps({
+      userId: USER,
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      sessionId: null,
+      subject: { userId: USER, groupIds: [] },
+      agentGrant: { agent: 'veyris', connectors: ['ambiguous_multi'], kortixCli: [] },
+    });
+    expect(await deps.loadConnectorBySlug(PROJECT_A, 'ambiguous_multi')).toBeNull();
+    expect(await deps.explainMissingConnector?.(PROJECT_A, 'ambiguous_multi')).toBe('account_required');
   });
 });
+
+/**
+ * INVARIANT (2026-09-16, account_required rule): auto-created connections
+ * (`ensureDefaultConnection`, `ensureMemberConnection`) no longer set
+ * `is_default` — only the explicit `PUT .../connections/:id/default` route
+ * pins one. A connector with exactly ONE active project-owned (or one
+ * member-owned) connection must keep resolving credentials and calls exactly
+ * as it did before this rule existed, even though nothing is pinned.
+ */
+describe('credentials.ts — the single-account invariant (no pin required)', () => {
+  const SOLO_SHARED_CONNECTOR = crypto.randomUUID();
+  const SOLO_MEMBER_CONNECTOR = crypto.randomUUID();
+
+  beforeAll(async () => {
+    await db.insert(connectors).values([
+      {
+        connectorId: SOLO_SHARED_CONNECTOR,
+        accountId: ACCOUNT_A,
+        projectId: PROJECT_A,
+        slug: 'solo_shared',
+        name: 'Solo shared connector',
+        providerType: 'http',
+        config: { baseUrl: 'https://solo-shared.example.test', auth: { type: 'bearer' } },
+      },
+      {
+        connectorId: SOLO_MEMBER_CONNECTOR,
+        accountId: ACCOUNT_A,
+        projectId: PROJECT_A,
+        slug: 'solo_member',
+        name: 'Solo member connector',
+        providerType: 'http',
+        config: { baseUrl: 'https://solo-member.example.test', auth: { type: 'bearer' } },
+      },
+    ]);
+  });
+
+  afterAll(async () => {
+    await db
+      .delete(connectionCredentials)
+      .where(eq(connectionCredentials.connectorId, SOLO_SHARED_CONNECTOR));
+    await db
+      .delete(connectorConnections)
+      .where(eq(connectorConnections.connectorId, SOLO_SHARED_CONNECTOR));
+    await db
+      .delete(connectorConnections)
+      .where(eq(connectorConnections.connectorId, SOLO_MEMBER_CONNECTOR));
+    await db.delete(connectors).where(eq(connectors.connectorId, SOLO_SHARED_CONNECTOR));
+    await db.delete(connectors).where(eq(connectors.connectorId, SOLO_MEMBER_CONNECTOR));
+  });
+
+  test('ensureDefaultConnection never marks its row is_default, and is idempotent', async () => {
+    const first = await ensureDefaultConnection({ projectId: PROJECT_A, connectorId: SOLO_SHARED_CONNECTOR });
+    const second = await ensureDefaultConnection({ projectId: PROJECT_A, connectorId: SOLO_SHARED_CONNECTOR });
+    expect(second).toBe(first);
+    const [row] = await db
+      .select({ isDefault: connectorConnections.isDefault, ownerType: connectorConnections.ownerType })
+      .from(connectorConnections)
+      .where(eq(connectorConnections.connectionId, first));
+    expect(row).toMatchObject({ isDefault: false, ownerType: 'project' });
+  });
+
+  test('ensureMemberConnection never marks its row is_default, and is idempotent per (connector, member)', async () => {
+    const first = await ensureMemberConnection({
+      projectId: PROJECT_A,
+      connectorId: SOLO_MEMBER_CONNECTOR,
+      userId: USER,
+    });
+    const second = await ensureMemberConnection({
+      projectId: PROJECT_A,
+      connectorId: SOLO_MEMBER_CONNECTOR,
+      userId: USER,
+    });
+    expect(second).toBe(first);
+    const [row] = await db
+      .select({ isDefault: connectorConnections.isDefault, ownerType: connectorConnections.ownerType })
+      .from(connectorConnections)
+      .where(eq(connectorConnections.connectionId, first));
+    expect(row).toMatchObject({ isDefault: false, ownerType: 'member' });
+  });
+
+  test('defaultConnectionIdForConnector and connectionIsEffectiveProjectDefault resolve the sole unpinned row', async () => {
+    const connectionId = await ensureDefaultConnection({ projectId: PROJECT_A, connectorId: SOLO_SHARED_CONNECTOR });
+    expect(await defaultConnectionIdForConnector(SOLO_SHARED_CONNECTOR)).toBe(connectionId);
+    expect(await connectionIsEffectiveProjectDefault(SOLO_SHARED_CONNECTOR, connectionId)).toBe(true);
+  });
+
+  test('a credential set through the legacy connector-level path resolves through the unpinned solo connection', async () => {
+    await upsertCredential({
+      projectId: PROJECT_A,
+      connectorId: SOLO_SHARED_CONNECTOR,
+      userId: null,
+      value: 'solo-shared-secret',
+    });
+    expect(await resolveCredentialValue(SOLO_SHARED_CONNECTOR, null)).toBe('solo-shared-secret');
+    expect(await credentialExists(SOLO_SHARED_CONNECTOR, null)).toBe(true);
+    expect(await connectorIdsWithSharedCredentials([SOLO_SHARED_CONNECTOR])).toEqual(
+      new Set([SOLO_SHARED_CONNECTOR]),
+    );
+  });
+
+  test('an unnamed call resolves the sole shared account exactly as before this rule existed, even though it is unpinned', async () => {
+    const resolved = await resolveSessionConnectorConnection({
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      sessionId: null,
+      alias: 'solo_shared',
+    });
+    expect(resolved).toMatchObject({ ownerType: 'project' });
+    // The invariant in one assertion: it resolved even though nothing is pinned.
+    expect(resolved?.isDefault).toBe(false);
+  });
+});
+

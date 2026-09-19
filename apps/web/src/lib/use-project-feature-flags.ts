@@ -39,6 +39,9 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const warmSessions = useFeatureFlag(projectId, 'warm_sessions');
   const secretsEgress = useFeatureFlag(projectId, 'secrets_egress');
   const piWorker = useFeatureFlag(projectId, 'pi_worker');
+  const sessionTranscriptHistory = useFeatureFlag(projectId, 'session_transcript_history');
+  const pooledProviderSecrets = useFeatureFlag(projectId, 'pooled_provider_secrets');
+  const piHarness = useFeatureFlag(projectId, 'pi_harness');
 
   return {
     flags: {
@@ -54,8 +57,11 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       warm_sessions: warmSessions.enabled,
       secrets_egress: secretsEgress.enabled,
       pi_worker: piWorker.enabled,
+      session_transcript_history: sessionTranscriptHistory.enabled,
+      pooled_provider_secrets: pooledProviderSecrets.enabled,
+      pi_harness: piHarness.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: piWorker.isLoading,
+    isLoading: piHarness.isLoading,
   };
 }

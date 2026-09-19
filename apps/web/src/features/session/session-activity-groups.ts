@@ -9,6 +9,7 @@ export {
   isEmptyShowPart,
   isInvisibleActivityPart,
   isNoGroupActivityTool,
+  isQuestionTool,
   isShellActivityTool,
   isStandaloneActivityTool,
   normalizeActivityToolName,

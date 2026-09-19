@@ -14,6 +14,10 @@ export interface AdminConnectorCandidate {
   requestAuthType: AdminConnectorView['requestAuthType'];
   secretIdentifier: string | null;
   credentialSource: AdminConnectorView['credentialSource'];
+  /** The accounts this connector holds, default first. Omitted → `[]`. */
+  accounts?: AdminConnectorView['accounts'];
+  /** Label of the account an unnamed call resolves to. Omitted → `null`. */
+  defaultAccount?: AdminConnectorView['default_account'];
 }
 
 export function buildAdminConnectorViews(
@@ -36,5 +40,7 @@ export function buildAdminConnectorViews(
     secretIdentifier: candidate.secretIdentifier,
     credentialSource: candidate.credentialSource,
     secretSet: candidate.requiresAuth ? connectedSlugs.has(candidate.slug) : true,
+    accounts: candidate.accounts ?? [],
+    default_account: candidate.defaultAccount ?? null,
   }));
 }

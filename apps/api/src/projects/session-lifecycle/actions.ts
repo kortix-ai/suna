@@ -1,3 +1,4 @@
+import { sessionAttachmentStore } from '../lib/session-attachments';
 import { pauseComputeSession } from '../../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../../config';
 import { logger } from '../../lib/logger';
@@ -93,6 +94,10 @@ export async function deleteSession(input: {
     .returning();
 
   if (!row) return { error: 'Not found', status: 404 };
+
+  await Promise.resolve().then(() => sessionAttachmentStore().removeSession(projectId, sessionId)).catch((error) => {
+    console.error('[session-attachments] cleanup failed', { projectId, sessionId, error });
+  });
 
   if (sandbox) {
     await db

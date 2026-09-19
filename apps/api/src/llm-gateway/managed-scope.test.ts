@@ -72,8 +72,11 @@ describe('POST /internal/gateway/models — managedOnly', () => {
     });
 
     expect(Object.keys(managed).sort()).toEqual(Object.keys(gatewayModelCatalog(undefined)).sort());
-    expect(managed['grok-4.6']).toBeDefined();
-    expect(managed['deepseek-v4-pro-0813']).toBeDefined();
+    expect(Object.keys(managed).sort()).toEqual([
+      'deepseek-v4.1-flash',
+      'glm-5.3-flash',
+      'kimi-k3',
+    ]);
     expect(managed['anthropic/claude-opus-4-8']).toBeUndefined();
     expect(managed['codex/gpt-5.6-sol']).toBeUndefined();
     // ~3KB instead of ~3.3MB is the whole point of the scope.

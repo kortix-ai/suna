@@ -909,6 +909,7 @@ Do not open, edit, or reformat any \`.kortix/opencode/agents/*.md\` file as part
 ## 8. Write the file, remove the old one
 
 - Write the fully assembled manifest to \`kortix.yaml\` at the repo root (same directory as the old \`kortix.toml\`).
+- If the project has more than ~10 triggers, or long multi-line prompts, keep \`kortix.yaml\` readable: add \`imports: [.kortix/triggers/]\` to the root and write the triggers into YAML files under \`.kortix/triggers/\` (one file per trigger or per group; each file is a \`triggers:\` list). Every other key stays in \`kortix.yaml\`. Slugs must stay unique across all files.
 - Carry over meaningful TOML comments as YAML comments next to the same keys — hand-written context in a manifest is documentation someone chose to leave; don't strip it.
 - Delete the old \`kortix.toml\` in the same commit — don't leave both files (the platform always prefers \`kortix.yaml\` when both exist, but a stale v1 file next to it is confusing for the next person who edits by hand).
 - You do not need to touch any project setting outside git — the platform resolves \`kortix.yaml\` automatically once it exists, regardless of the configured manifest filename.

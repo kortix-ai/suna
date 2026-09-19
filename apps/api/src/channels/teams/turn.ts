@@ -5,11 +5,12 @@ import { config } from '../../config';
 import { classifyTurnError, type TurnErrorInfo } from '../slack/errors';
 import { sessionWebUrl } from '../slack/util';
 import type { StreamTaskChunk } from '../slack-api';
-import { sendCard, sendTyping, updateCard } from '../teams-api';
+import { sendCard, updateCard } from '../teams-api';
 import { saveTeamsServiceUrl } from '../install-store';
-import { buildAnswerCard, buildFinalCard, buildPlanCard } from './cards';
+import { buildAnswerCard, buildFinalCard, buildNoticeCard, buildPlanCard } from './cards';
 import { STREAM_TTL_MS, STALE_AFTER_MS } from './app';
 import type { TeamsActivity, TeamsChannelRef, TeamsConversationRef, TeamsLiveTurn } from './types';
+import { conversationScope } from './util';
 
 const LIVE_PLAN_TITLE = 'Working on it…';
 
@@ -37,6 +38,7 @@ function rowToHandle(row: typeof chatTurnStreams.$inferSelect): TeamsLiveTurn {
     steps: (row.steps as StreamTaskChunk[]) ?? [],
     expiry: new Date(row.expiresAt).getTime(),
     finalized: row.finalized,
+    updatedAt: row.updatedAt ? new Date(row.updatedAt).getTime() : undefined,
     projectId: row.projectId,
     sessionId: row.sessionId,
     originatingActivity: row.originatingEvent as TeamsActivity,
@@ -122,8 +124,15 @@ export async function startTurn(
     tenantId,
     projectId,
   };
-  await sendTyping(ref);
+  // No typing indicator: the live card is the acknowledgement, and an
+  // indicator sent alongside it renders as stray dots under the card.
+  const t0 = Date.now();
   const messageActivityId = (await sendCard(ref, buildPlanCard(LIVE_PLAN_TITLE, []))) ?? '';
+  console.info('[teams-webhook] live card posted', {
+    projectId,
+    ms: Date.now() - t0,
+    posted: Boolean(messageActivityId),
+  });
 
   return {
     conversationId,
@@ -140,6 +149,30 @@ export async function startTurn(
     sessionId: '',
     originatingActivity: activity,
   };
+}
+
+/**
+ * Turn a just-posted live card into a one-line notice. Used when a follow-up
+ * arrives while a turn is already streaming for the session: the running
+ * stream keeps its own card; this one must not become a second, competing
+ * "Working on it…".
+ */
+/**
+ * Close a turn that stopped without ever finishing — the agent's sandbox died,
+ * the run was cancelled mid-deploy, anything that skips `relayTurnEnd`. Same
+ * copy the stale sweeper uses, but applied the moment the next message
+ * arrives instead of up to 30 minutes later. Safe to call concurrently with
+ * the sweeper: the finalize claim decides one winner.
+ */
+export async function closeAbandonedTurn(handle: TeamsLiveTurn): Promise<void> {
+  if (!(await claimFinalize(handle.sessionId))) return;
+  await finalizeTurn(handle, { error: '_This run ended without a reply._' });
+  await deleteTurn(handle.sessionId);
+}
+
+export async function noticeOnLiveCard(handle: TeamsLiveTurn, text: string): Promise<void> {
+  if (!handle.messageActivityId) return;
+  await updateCard(refOf(handle), handle.messageActivityId, buildNoticeCard(text));
 }
 
 async function repaintPlan(handle: TeamsLiveTurn): Promise<void> {
@@ -210,11 +243,15 @@ export async function relayTurnStep(
   return true;
 }
 
-export async function relayTurnAnswer(sessionId: string, text: string): Promise<boolean> {
+export async function relayTurnAnswer(
+  sessionId: string,
+  text: string,
+  card?: Record<string, unknown>,
+): Promise<boolean> {
   const handle = await loadTurn(sessionId);
   if (!handle || handle.finalized) return false;
   if (!(await claimFinalize(sessionId))) return false;
-  await finalizeTurn(handle, { answer: text });
+  await finalizeTurn(handle, { answer: text, card });
   await deleteTurn(sessionId);
   return true;
 }
@@ -239,10 +276,10 @@ export async function relayTurnEnd(
 
 export async function finalizeTurn(
   handle: TeamsLiveTurn,
-  opts: { answer?: string; error?: string; title?: string },
+  opts: { answer?: string; error?: string; title?: string; card?: Record<string, unknown> },
 ): Promise<void> {
-  if (handle.finalized && handle.messageActivityId === '' && !opts.answer && !opts.error) return;
-  const hasContent = Boolean(opts.answer || opts.error);
+  if (handle.finalized && handle.messageActivityId === '' && !opts.answer && !opts.error && !opts.card) return;
+  const hasContent = Boolean(opts.answer || opts.error || opts.card);
   const body = (opts.answer ?? opts.error ?? '').slice(0, 11000);
   const title = opts.title ?? (opts.error ? 'Run failed' : 'Task complete');
   const sessionUrl =
@@ -251,7 +288,11 @@ export async function finalizeTurn(
       : undefined;
 
   try {
-    if (handle.messageActivityId) {
+    if (opts.card) {
+      const answer = buildAnswerCard(body, sessionUrl, opts.card);
+      if (handle.messageActivityId) await updateCard(refOf(handle), handle.messageActivityId, answer);
+      else await sendCard(refOf(handle), answer);
+    } else if (handle.messageActivityId) {
       const last = handle.steps[handle.steps.length - 1];
       if (last && last.status === 'in_progress') last.status = opts.error ? 'error' : 'complete';
       await updateCard(
@@ -276,11 +317,24 @@ export function buildTeamsTurnEnv(tenantId: string, activity: TeamsActivity): Re
   if (activity.conversation?.id) env.MS_TEAMS_CONVERSATION_ID = activity.conversation.id;
   if (activity.serviceUrl) env.MS_TEAMS_SERVICE_URL = activity.serviceUrl;
   if (activity.from?.id) env.MS_TEAMS_USER_ID = activity.from.id;
+  // Scope decides how `teams send --file` delivers: a consent card only works
+  // in personal chats; a channel needs an inline image or a team-drive link.
+  env.MS_TEAMS_CONVERSATION_TYPE = conversationScope(activity);
+  if (activity.channelData?.team?.aadGroupId) env.MS_TEAMS_TEAM_GROUP_ID = activity.channelData.team.aadGroupId;
   return env;
 }
 
+// The conversation serviceUrl is stable for a tenant; every inbound message
+// used to re-encrypt and re-upsert it. One write per distinct value per
+// process is enough — a restart simply writes it once more.
+const persistedServiceUrl = new Map<string, string>();
+
 export async function persistServiceUrl(projectId: string, serviceUrl?: string): Promise<void> {
-  if (serviceUrl) await saveTeamsServiceUrl(projectId, serviceUrl).catch(() => {});
+  if (!serviceUrl || persistedServiceUrl.get(projectId) === serviceUrl) return;
+  persistedServiceUrl.set(projectId, serviceUrl);
+  await saveTeamsServiceUrl(projectId, serviceUrl).catch(() => {
+    persistedServiceUrl.delete(projectId);
+  });
 }
 
 setInterval(() => {

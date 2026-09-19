@@ -12,6 +12,7 @@ import { AuthFrame } from '@/features/auth/auth-card-shell';
 import { AuthPendingScreen } from '@/features/auth/auth-consent';
 import { Rise, StepHeader } from '@/features/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
+import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { useAppHome } from '@/lib/onboarding/use-app-home';
 import {
@@ -21,12 +22,9 @@ import {
   type LinkableGitHubInstallation,
 } from '@kortix/sdk';
 import { GithubLogoIcon as Github } from '@phosphor-icons/react';
+import { requestGitHubUserProof } from '@/lib/github-user-proof';
 
 type SetupState = 'verify' | 'loading' | 'select' | 'empty' | 'saving' | 'done' | 'error';
-
-type GitHubProofMessage =
-  | { type: 'github-connect-success'; provider_token: string }
-  | { type: 'github-connect-error'; message: string };
 
 /**
  * `?github=error&reason=<slug>` — what the backend says when an account link
@@ -206,7 +204,7 @@ function GitHubSetup() {
         installation_id: installationId,
         github_user_token: userToken,
       });
-      finishConnection(status.owner_login);
+      finishConnection(status.owner_login, status.account_id ?? null);
     } catch (error) {
       setState('verify');
       setMessage((error as Error).message || 'GitHub verification failed. Try again.');
@@ -227,22 +225,27 @@ function GitHubSetup() {
         installation_id: installation.installation_id,
         github_user_token: githubUserToken,
       });
-      finishConnection(status.owner_login);
+      finishConnection(status.owner_login, status.account_id ?? null);
     } catch (error) {
       setState('select');
       setMessage((error as Error).message || 'GitHub verification failed. Try again.');
     }
   }
 
-  function finishConnection(ownerLogin: string | null) {
+  function finishConnection(ownerLogin: string | null, linkedAccountId: string | null) {
     setState('done');
     setMessage(
       ownerLogin
         ? `Connected to ${ownerLogin}. Redirecting you back now.`
         : 'GitHub connected. Redirecting you back now.',
     );
+    // The remembered return path first (the hub or /new, as the user left
+    // it). Without one, `/new` — but SCOPED to the account that was just
+    // linked: a bare `/new` resolves to the personal account and shows the
+    // connection as missing (dev, 2026-09-17).
+    const fallback = linkedAccountId ? newWorkspacePathForAccount(linkedAccountId) : '/new';
     redirectTimer.current = window.setTimeout(
-      () => router.replace(consumeGitHubSetupReturn() ?? '/new'),
+      () => router.replace(consumeGitHubSetupReturn() ?? fallback),
       900,
     );
   }
@@ -394,45 +397,6 @@ function getHeading(
       return _exhaustive;
     }
   }
-}
-
-function requestGitHubUserProof(): Promise<string> {
-  const popup = window.open(
-    '/auth/github-connect',
-    'kortix-github-proof',
-    'popup,width=520,height=720',
-  );
-  if (!popup) return Promise.reject(new Error('Allow pop-ups to verify your GitHub access.'));
-
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const finish = (result: { token: string } | { error: Error }) => {
-      if (settled) return;
-      settled = true;
-      window.removeEventListener('message', onMessage);
-      window.clearInterval(closePoll);
-      window.clearTimeout(timeout);
-      if ('error' in result) reject(result.error);
-      else resolve(result.token);
-    };
-    const onMessage = (event: MessageEvent<GitHubProofMessage>) => {
-      if (event.origin !== window.location.origin) return;
-      if (event.data?.type === 'github-connect-success' && event.data.provider_token) {
-        finish({ token: event.data.provider_token });
-      } else if (event.data?.type === 'github-connect-error') {
-        finish({ error: new Error(event.data.message || 'GitHub verification failed.') });
-      }
-    };
-    window.addEventListener('message', onMessage);
-    const closePoll = window.setInterval(() => {
-      if (popup.closed) finish({ error: new Error('GitHub verification was cancelled.') });
-    }, 500);
-    const timeout = window.setTimeout(
-      () => finish({ error: new Error('GitHub verification timed out. Try again.') }),
-      120_000,
-    );
-    popup.focus();
-  });
 }
 
 /** The stored return path, validated, WITHOUT clearing it. */

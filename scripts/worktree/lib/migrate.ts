@@ -15,9 +15,10 @@ export async function runMigrate(worktreePath: string, ports: Ports): Promise<nu
     const pre = await run(['psql', url, '-v', 'ON_ERROR_STOP=1', '-f', prereqs]);
     if (pre !== 0) return pre;
   }
-  // node-pg-migrate (the same `pnpm migrate` the deploy pipeline runs) builds the
-  // schema from packages/db/migrations/*.sql, tracked in kortix_migrations.pgmigrations.
-  return run(['pnpm', '--filter', '@kortix/db', 'migrate'], {
+  // A local worktree can apply its branch migration before an earlier-dated
+  // migration lands on main. The loopback-only command accepts that ledger
+  // order while applying any newly merged migration without deleting data.
+  return run(['pnpm', '--filter', '@kortix/db', 'migrate:local'], {
     cwd: worktreePath,
     env: { DATABASE_URL: url },
   });

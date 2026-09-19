@@ -364,7 +364,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     {
       placeholder,
       disabled,
-      autoFocus,
+      autoFocus = false,
       onSubmit,
       onArrowUpAtStart,
       onEmptyChange,
@@ -659,7 +659,27 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     });
 
     useEffect(() => {
-      editor?.setEditable(!disabled);
+      /**
+       * `emitUpdate: false` — editability is not content.
+       *
+       * TipTap's `setEditable` emits the editor's `update` event by default
+       * (`@tiptap/core`, `Editor.setEditable`), and this editor's `onUpdate` is
+       * `createUpdateHandler`, whose entire job is to report a DOCUMENT change.
+       * So every flip of `disabled` handed the draft saver the live document as
+       * if the user had just typed it.
+       *
+       * That is what put a SENT message back in the project-home composer. Its
+       * send flips `disabled` and deliberately keeps the text in the box
+       * (`clearOnSend={false}`, project-home.tsx), so in a production build the
+       * phantom change landed AFTER the send's `clearSavedDraft()` and its
+       * 400ms debounce re-saved the message as the project's unsent draft —
+       * measured on dev.kortix.com: clear at T, phantom write at T+406ms, and
+       * the next visit to project home restored "Hi" into the composer.
+       *
+       * The view still refreshes — `setOptions` calls `view.updateState`
+       * whether or not the event is emitted.
+       */
+      editor?.setEditable(!disabled, false);
     }, [editor, disabled]);
 
     useEffect(() => {

@@ -97,6 +97,15 @@ export interface FeatureFlagDef {
  */
 const FLAGS: readonly FeatureFlagDef[] = [
   {
+    key: 'session_transcript_history',
+    name: 'Session Transcript History',
+    description: 'Save chat history after each turn and show it from the database while the session computer starts.',
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'behavioral',
+  },
+  {
     key: 'marketplace',
     name: 'Marketplace',
     description:
@@ -268,6 +277,16 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'off never strands an existing enforced secret.',
   },
   {
+    key: 'pooled_provider_secrets',
+    name: 'Pooled Provider Secrets',
+    description: 'Use multiple project credentials per provider, with optional member restrictions and session selection.',
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'behavioral',
+    enforcementNote: 'Session selection and provider credential resolution reject or ignore resource secrets while disabled.',
+  },
+  {
     key: 'pi_worker',
     name: 'Pi Worker Runtime (compiled)',
     description:
@@ -278,6 +297,19 @@ const FLAGS: readonly FeatureFlagDef[] = [
     // the download route answers 403.
     platformDefault: () => false,
     enforcement: 'routes',
+  },
+  {
+    key: 'pi_harness',
+    name: 'Pi Harness (in-sandbox)',
+    description:
+      'Run sessions on the pi agent harness inside the ordinary session sandbox instead of OpenCode (KORTIX_HARNESS=pi in kortixd). Same repo layout, same agents and skills, same wire to the UI; pi starts in-process in ~100 ms after the checkout. On ⇒ every new or restarted session of this project boots pi. Off ⇒ the manifest decides: `runtime: pi` still boots pi, anything else boots OpenCode. Distinct from `pi_worker`, which is the split worker/environment topology.',
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'behavioral',
+    enforcementNote:
+      'Read at session provisioning (projects/lib/sessions.ts buildSessionSandboxEnvVars → ' +
+      'selectSessionHarness). A running session keeps its harness until it is restarted or resumed.',
   },
 ];
 

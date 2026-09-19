@@ -26,3 +26,10 @@ describe('parseTeamsCommand', () => {
     expect(parseTeamsCommand(undefined)).toBeNull();
   });
 });
+
+describe('parseTeamsCommand — /policy', () => {
+  test('parses the policy verb and its argument', () => {
+    expect(parseTeamsCommand('<at>Kortix Dev</at> /policy approval')).toEqual({ verb: 'policy', arg: 'approval' });
+    expect(parseTeamsCommand('/policy')).toEqual({ verb: 'policy', arg: '' });
+  });
+});

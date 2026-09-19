@@ -151,6 +151,7 @@ export async function resolveDefaultModelForPrincipal(
         projectId: principal.projectId as string,
         freeModelsOnly: principal.freeModelsOnly ?? false,
         model: chosen as string,
+        sessionId: principal.sessionId,
       }),
     () => connectedByokFallback(principal.projectId, principal.userId),
   );
@@ -184,6 +185,8 @@ export async function isModelServableForAccount(params: {
   projectId: string;
   freeModelsOnly: boolean;
   model: string;
+  sessionId?: string;
+  providerSecretPools?: Record<string, string[]>;
 }): Promise<boolean> {
   if (params.model === 'auto' || params.model === 'kortix/auto') return false;
   // Accept either the opencode ref (`kortix/<id>`) or the bare wire id — the
@@ -196,8 +199,10 @@ export async function isModelServableForAccount(params: {
         accountId: params.accountId,
         projectId: params.projectId,
         freeModelsOnly: params.freeModelsOnly,
+        ...(params.sessionId ? { sessionId: params.sessionId } : {}),
       },
       wire,
+      { providerSecretPools: params.providerSecretPools, probe: true },
     );
     return candidates.length > 0;
   } catch (err) {
@@ -224,6 +229,8 @@ export async function resolveEffectiveModel(params: {
   agentName?: string | null;
   explicit?: string | null;
   freeModelsOnly: boolean;
+  sessionId?: string;
+  providerSecretPools?: Record<string, string[]>;
 }): Promise<{ model: string | null; source: ModelSource }> {
   if (params.explicit) {
     const servable = await isModelServableForAccount({
@@ -232,6 +239,8 @@ export async function resolveEffectiveModel(params: {
       projectId: params.projectId,
       freeModelsOnly: params.freeModelsOnly,
       model: params.explicit,
+      sessionId: params.sessionId,
+      providerSecretPools: params.providerSecretPools,
     });
     if (servable) return { model: toWireModel(params.explicit), source: 'explicit' };
   }
@@ -257,6 +266,8 @@ export async function resolveEffectiveModel(params: {
         projectId: params.projectId,
         freeModelsOnly: params.freeModelsOnly,
         model: chain.model as string,
+        sessionId: params.sessionId,
+        providerSecretPools: params.providerSecretPools,
       }),
     () => connectedByokFallback(params.projectId, params.userId),
   );

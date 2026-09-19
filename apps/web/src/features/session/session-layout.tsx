@@ -15,6 +15,7 @@ import { SessionDetailPanel } from '@/features/session/action-panel/session-deta
 import { SessionPanelProvider } from '@/features/session/action-panel/session-panel-provider';
 import { useDeliverableReadiness } from '@/features/session/action-panel/shared/use-deliverable-readiness';
 import { MobileToolDrawer } from '@/features/session/mobile-tool-drawer';
+import { ProviderPoolDraftBoundary } from '@/features/session/overrides/provider-pool-draft-context';
 import { SessionAuditPanel } from '@/features/session/session-audit-panel';
 import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
 import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
@@ -497,6 +498,7 @@ export const SessionLayout = memo(function SessionLayout({
   // renders in the side panel, and a card row clicked in one opens a detail in
   // the other. See `session-panel-provider.tsx`.
   const withPanelProvider = (node: React.ReactNode) => (
+    <ProviderPoolDraftBoundary identity={`${projectId}/${projectSessionId ?? sessionId}`}>
     <SessionPanelProvider
       sessionId={sessionId}
       messages={messages}
@@ -506,6 +508,7 @@ export const SessionLayout = memo(function SessionLayout({
     >
       {node}
     </SessionPanelProvider>
+    </ProviderPoolDraftBoundary>
   );
 
   if (isMobile) {

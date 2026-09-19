@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from '@/i18n/test-source';
+import { readFileSync as readRawFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const dir = import.meta.dir;
@@ -379,11 +380,19 @@ describe('Channels view — Email and Teams are entity rows', () => {
 });
 
 describe('Channels view — per-channel binding management (spec §2.5)', () => {
-  test('the bindings table renders only once Slack is connected', () => {
-    // The gate moved into SlackFollowUp, which is itself behind `install` —
-    // it did not disappear.
+  test('the bindings table renders once ANY channel is connected — Slack via its nudge, Teams on its own', () => {
     expect(channelsSource).toMatch(/install \? <SlackFollowUp/);
     expect(channelsSource).toMatch(/function SlackFollowUp[\s\S]*?<ChannelBindingsSection/);
+    // A Teams-only project used to have no way to see or edit its bindings.
+    expect(channelsSource).toMatch(/!install && teamsInstall \? \([\s\S]*?<ChannelBindingsSection/);
+    expect(channelsSource).toContain('useTeamsInstall(');
+  });
+
+  test('a binding row names its platform and, for Teams, its scope instead of the tenant GUID', () => {
+    expect(channelsSource).toContain('<ChannelBrandMark platform=');
+    expect(channelsSource).toContain('bindingScopeLabel(binding.channelType');
+    expect(channelsSource).toContain("'text895ce927db2e'");
+    expect(channelsSource).toContain("'text28c7d3f8b75d'");
   });
 
   test('reads/writes bindings through the shared hook (no ad-hoc fetches)', () => {
@@ -478,5 +487,63 @@ describe('Teams panel — chrome aligned with the rebuilt Slack surface', () => 
     expect(teamsPanelSource).not.toContain('App manifest');
     expect(teamsPanelSource).not.toContain('<pre');
     expect(teamsPanelSource).not.toContain('max-h-64');
+  });
+});
+
+/**
+ * The one-click Teams install (2026-09-17, dev): the API redirected back with
+ * `?teams=consented` and nothing in the web app read it — the row said
+ * "Connected" while the app was NOT in the org catalog, and the reason was
+ * lost. The API now persists the publish outcome on the install and lands on
+ * this surface; the row has to show that outcome and the return status has to
+ * surface as a toast, then leave the URL.
+ */
+describe('Channels view — Teams one-click install outcome', () => {
+  test('the Teams row renders the persisted publish state, not just "connected"', () => {
+    expect(channelsSource).toContain('publishState');
+    expect(channelsSource).toContain("'publishing'");
+    expect(channelsSource).toContain("'review'");
+    expect(channelsSource).toContain("'failed'");
+    // the Graph reason travels with the failed state
+    expect(channelsSource).toContain('publishError');
+  });
+
+  test('a failed publish offers the consent URL again as a retry, next to Disconnect', () => {
+    expect(channelsSource).toContain('text942087cc2d41'); // "Retry"
+    expect(channelsSource).toContain('orgConsentUrl');
+  });
+
+  test('the ?teams= return status becomes a toast and is stripped from the URL', () => {
+    expect(channelsSource).toContain("get('teams')");
+    expect(channelsSource).toContain("delete('teams')");
+    expect(channelsSource).toContain('router.replace');
+    for (const status of ['connected', 'review', 'failed', 'publishing', 'declined', 'disabled', 'unconfigured']) {
+      expect(channelsSource).toContain(`'${status}'`);
+    }
+    // the retired status is gone everywhere on the web side
+    expect(channelsSource).not.toContain('consented');
+  });
+
+  test('every new string goes through the i18n catalog (no hardcoded English)', () => {
+    for (const key of [
+      'text36f6474748b3', // Publishing the app to your Teams catalog…
+      'text45b9df5730ac', // Waiting for a Teams admin to approve the app
+      'textdf5e72815836', // Catalog publish failed
+      'textbfd886d0029b',
+      'text65228e6e414d',
+      'textf5262c55d1be',
+      'text76930360e909',
+      'textb8d155eea2ab',
+      'textd4b32aea5c4a',
+      'text57ef9e5e8110',
+      'text8ccfe10f2f2d', // Publish to your Teams catalog
+    ]) {
+      expect(channelsSource).toContain(key);
+    }
+    // `@/i18n/test-source` annotates each raw('key') call with its English
+    // value, so the hardcoded-English check has to read the file as written.
+    const raw = readRawFileSync(join(dir, 'view/channels-view.tsx'), 'utf8');
+    expect(raw).not.toContain('Catalog publish failed');
+    expect(raw).not.toContain('Publish to your Teams catalog');
   });
 });

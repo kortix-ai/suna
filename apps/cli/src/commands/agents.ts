@@ -85,7 +85,7 @@ kortix.yaml on the project's default branch.
 Subcommands:
   ls [--json]                     Show every agent's pinned model + the fallback
                                   default. (Alias: \`models\`.)
-  model <agent> <model-id>        Pin an agent to a plain model id (e.g. glm-5.3-flash).
+  model <agent> <model-id>        Pin an agent to a plain model id (e.g. deepseek-v4.1-flash).
   model <agent> --clear           Clear the pin — the agent follows the default again.
   default <agent>                 Make this the project's default agent.
   default --show [--json]         Print the current default agent.
@@ -98,7 +98,10 @@ Subcommands:
 Scope options (all replace, none merge):
   --secrets all|none|A,B          Which project secrets reach the agent's env.
   --connectors all|none|a,b       Which connectors it may call as tools.
-  --require-connector <slug>      Repeatable. Must resolve before a session starts.
+  --require-connector <slug>      Repeatable. Deprecated and no longer enforced:
+                                  a session is never refused for an unconnected
+                                  connector. A call picks its account instead —
+                                  see \`kortix connectors accounts <slug>\`.
 
 Config options:
   --file <path>                   A JSON file holding the WHOLE block. \`-\` = stdin.

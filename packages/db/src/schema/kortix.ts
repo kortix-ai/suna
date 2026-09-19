@@ -815,6 +815,59 @@ export const projectSecrets = kortixSchema.table(
   ],
 );
 
+/** Account-owned secret resource. Member grants, rather than a user or project
+ * binding, authorize use. The value stays encrypted in the API data plane. */
+export const accountSecretResources = kortixSchema.table('account_secret_resources', {
+  secretId: uuid('secret_id').defaultRandom().primaryKey(),
+  accountId: uuid('account_id').notNull().references(() => accounts.accountId, { onDelete: 'cascade' }),
+  label: varchar('label', { length: 100 }).notNull(),
+  /** NULL preserves restricted account resources created before project scoping. */
+  projectId: uuid('project_id').references(() => projects.projectId, { onDelete: 'cascade' }),
+  /** New project resources default to project access; old rows remain members-only. */
+  accessMode: varchar('access_mode', { length: 16 }).default('members').notNull(),
+  /** Provider id for model credentials; NULL for other secret resources. */
+  providerId: varchar('provider_id', { length: 100 }),
+  name: varchar('name', { length: 64 }).notNull(),
+  valueEnc: text('value_enc').notNull(),
+  consumer: projectSecretConsumerEnum('consumer').notNull(),
+  strategy: projectSecretStrategyEnum('strategy').notNull(),
+  active: boolean('active').default(true).notNull(),
+  cooldownUntil: timestamp('cooldown_until', { withTimezone: true }),
+  createdBy: uuid('created_by').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('account_secret_resources_account_provider').on(table.accountId, table.providerId),
+  unique('account_secret_resources_account_identity').on(table.secretId, table.accountId),
+]);
+
+/** A member's permission to use one account secret resource. */
+export const accountSecretGrants = kortixSchema.table('account_secret_grants', {
+  secretId: uuid('secret_id').notNull(),
+  accountId: uuid('account_id').notNull().references(() => accounts.accountId, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull(),
+  grantedBy: uuid('granted_by').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.secretId, table.userId] }),
+  foreignKey({ columns: [table.userId, table.accountId], foreignColumns: [accountMemberships.userId, accountMemberships.accountId], name: 'account_secret_grants_member_fk' }).onDelete('cascade'),
+  foreignKey({ columns: [table.secretId, table.accountId], foreignColumns: [accountSecretResources.secretId, accountSecretResources.accountId], name: 'account_secret_grants_resource_fk' }).onDelete('cascade'),
+  index('account_secret_grants_member').on(table.accountId, table.userId),
+]);
+
+/** A session's explicit provider pool. Absence means inherit legacy behavior;
+ * an empty array is an explicit selection of no account credentials. */
+export const sessionProviderSecretPools = kortixSchema.table('session_provider_secret_pools', {
+  sessionId: text('session_id').notNull(),
+  providerId: varchar('provider_id', { length: 100 }).notNull(),
+  secretIds: jsonb('secret_ids').$type<string[]>().default([]).notNull(),
+  nextIndex: integer('next_index').default(0).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.sessionId, table.providerId] }),
+  foreignKey({ columns: [table.sessionId], foreignColumns: [projectSessions.sessionId], name: 'session_provider_pools_session_fk' }).onDelete('cascade'),
+]);
+
 /**
  * Who can see/open a session within the org. `private` (default) = only the
  * creator; `project` = every project member (team-wide); `restricted` = the

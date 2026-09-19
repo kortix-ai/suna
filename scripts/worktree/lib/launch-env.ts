@@ -52,12 +52,6 @@ export function apiLaunchEnv(ports: Ports, c: SlotCreds, opts: ApiLaunchOpts = {
     LLM_GATEWAY_BASE_URL: '',
     LLM_GATEWAY_PROXY_PORT: String(ports.gateway),
     GATEWAY_INTERNAL_TOKEN: DEV_GATEWAY_INTERNAL_TOKEN,
-    // Managed ("kortix/*") models route to AWS Bedrock; the API builds the
-    // descriptor with these and ships it to the standalone gateway. Region
-    // always set; the API key passes through from the parent shell when present
-    // (else it comes from the dotenvx-decrypted apps/api/.env).
-    AWS_BEDROCK_REGION: process.env.AWS_BEDROCK_REGION || 'us-west-2',
-    ...(process.env.AWS_BEDROCK_API_KEY ? { AWS_BEDROCK_API_KEY: process.env.AWS_BEDROCK_API_KEY } : {}),
   };
 }
 

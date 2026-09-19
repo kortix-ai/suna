@@ -31,6 +31,15 @@ describe('runtime catalog provider resolution', () => {
     });
   });
 
+  test('resolves Google Gemini through its OpenAI-compatible API with the primary UI key', () => {
+    expect(resolveCatalogUpstream('google')).toEqual({
+      kind: 'openai-compat',
+      envVar: 'GOOGLE_GENERATIVE_AI_API_KEY',
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+      npm: '@ai-sdk/google',
+    });
+  });
+
   // Bedrock is a STANDALONE BYOK provider (not the cloud-only managed/credits
   // path): the bearer-token API key secret, resolved here so the normal BYOK
   // flow can build a kind:'bedrock' descriptor from a project's own key.

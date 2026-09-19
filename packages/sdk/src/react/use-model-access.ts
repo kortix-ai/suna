@@ -51,7 +51,12 @@ export function useModelAccess(projectId: string | null | undefined) {
   return {
     defaultProvider,
     data: query.data,
-    isLoading: query.isPending,
+    // `isPending`, not `isLoading`, would never clear for a null `projectId`:
+    // `enabled: false` schedules no fetch to settle it. `isLoading` is
+    // query-core's own `isPending && isFetching`, so a disabled query reads
+    // `fetchStatus: 'idle'` and reports settled. See the `learnings` entry
+    // "A disabled react-query is `isPending` forever".
+    isLoading: query.isLoading,
     error: query.error,
     isUpdating: pending > 0,
     setEnabled: mutation.mutateAsync,

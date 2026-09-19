@@ -140,6 +140,19 @@ beforeEach(() => {
   );
 });
 
+test('the hidden boot shell releases draft ownership during handoff', () => {
+  expect(composer.draftActive).toBe(true);
+  renderToStaticMarkup(
+    createElement(InstantSessionShell, {
+      projectId: 'project-1',
+      sessionId: 'session-shell',
+      stage: 'provisioning',
+      draftActive: false,
+    }),
+  );
+  expect(composer.draftActive).toBe(false);
+});
+
 test('boot-shell extra sends POST in Enter order', async () => {
   let finishUpload!: () => void;
   const uploaded = new Promise<void>((resolve) => {

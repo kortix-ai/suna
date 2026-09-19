@@ -147,7 +147,7 @@ export function GroupAccessPanel({
   const groupQuery = useQuery({
     queryKey: ['group', accountId, groupId],
     queryFn: () => getGroup(accountId, groupId),
-    staleTime: 30_000,
+    ...contract('directory'),
   });
 
   // Granular permissions from the IAM engine. Each control gates on the action
@@ -465,13 +465,13 @@ function GroupMembersCard({
   const membersQuery = useQuery({
     queryKey: ['group-members', accountId, groupId],
     queryFn: () => listGroupMembers(accountId, groupId),
-    staleTime: 20_000,
+    ...contract('directory'),
   });
 
   const accountMembersQuery = useQuery({
     queryKey: ['account-members', accountId],
     queryFn: () => listAccountMembers(accountId),
-    staleTime: 30_000,
+    ...contract('directory'),
   });
 
   // Combined index of account-level info per user_id. Lets the group

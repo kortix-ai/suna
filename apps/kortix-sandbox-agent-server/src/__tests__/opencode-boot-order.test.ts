@@ -3,8 +3,8 @@ import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
-import type { Config } from '../config'
-import { createOpencodeSupervisor } from '../opencode'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import { createOpencodeLifecycle } from '../harness/open-code/lifecycle'
 
 const tempDirs: string[] = []
 
@@ -20,7 +20,7 @@ afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-describe('OpenCode supervisor boot', () => {
+describe('OpenCode lifecycle boot', () => {
   test('compiled boot disables the redundant remote model catalog fetch', async () => {
     const fixture = await fixtureFile(1024)
     const capturePath = join(fixture.dir, 'models-fetch.txt')
@@ -39,7 +39,7 @@ describe('OpenCode supervisor boot', () => {
       opencodeInternalPort: 4096,
       opencodeStandbyPort: 4097,
     } as Config
-    const opencode = createOpencodeSupervisor(cfg, fixture.dir, undefined, {
+    const opencode = createOpencodeLifecycle(cfg, fixture.dir, undefined, {
       binaryPathOverride: fixture.path,
       configPathOverride: join(fixture.dir, 'opencode-config.json'),
     })
@@ -78,7 +78,7 @@ describe('OpenCode supervisor boot', () => {
       opencodeInternalPort: 4096,
       opencodeStandbyPort: 4097,
     } as Config
-    const opencode = createOpencodeSupervisor(cfg, fixture.dir, undefined, {
+    const opencode = createOpencodeLifecycle(cfg, fixture.dir, undefined, {
       configPathOverride: join(fixture.dir, 'opencode-config.json'),
       binaryPathResolverOverride: async () => (++attempts === 1 ? null : fixture.path),
     })
@@ -92,7 +92,7 @@ describe('OpenCode supervisor boot', () => {
   })
 
   test('starts OpenCode from compiled config before checkout extraction completes', async () => {
-    const main = await readFile(resolve(import.meta.dir, '..', 'main.ts'), 'utf8')
+    const main = await readFile(resolve(import.meta.dir, '..', 'harness', 'open-code', 'boot.ts'), 'utf8')
     const repo = main.indexOf('const repoMaterializePromise')
     const compiledStart = main.indexOf('const compiledOpencodeStartPromise')
     const checkoutWait = main.indexOf('await repoMaterializePromise')
@@ -104,7 +104,7 @@ describe('OpenCode supervisor boot', () => {
   })
 
   test('starts the LLM proxy before compiled OpenCode can spawn', async () => {
-    const main = await readFile(resolve(import.meta.dir, '..', 'main.ts'), 'utf8')
+    const main = await readFile(resolve(import.meta.dir, '..', 'harness', 'open-code', 'boot.ts'), 'utf8')
     const llmProxyStart = main.indexOf('const llmUrl = startLlmProxy(')
     const llmProxyExport = main.indexOf('process.env.KORTIX_LLM_PROXY_URL = llmUrl', llmProxyStart)
     const compiledStart = main.indexOf('const compiledOpencodeStartPromise')

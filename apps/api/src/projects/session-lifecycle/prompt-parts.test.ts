@@ -256,3 +256,10 @@ test('a native image that is a remote URL is still admitted', () => {
   ]);
   expect('error' in out).toBe(false);
 });
+
+test('accepts stored non-native files and rejects malformed private references', () => {
+  const url = 'kortix-attachment://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333';
+  const file = { type: 'file' as const, filename: 'notes.txt', mime: 'text/plain', url };
+  expect(sanitizeInboxPromptParts([file])).toEqual({ parts: [file] });
+  expect(sanitizeInboxPromptParts([{ ...file, url: url + '/../private' }])).toHaveProperty('error');
+});

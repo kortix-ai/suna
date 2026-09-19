@@ -1,5 +1,7 @@
 'use client';
 
+import { isQuestionTool } from './session-activity-groups';
+
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { detectCommandFromText } from '@/features/session/detect-command';
 import { SessionApprovalPrompt } from '@/features/session/session-approval-prompt';
@@ -85,7 +87,6 @@ import { useOptionalSessionPanel } from '@/features/session/action-panel/session
 import { Composer as SessionChatInput } from '@/features/session/composer/composer';
 import { resolveComposerAgent } from '@/features/session/composer/composer-agent-access';
 import { sessionSlashFiles } from '@/features/session/composer/menus/slash-files';
-import { ConnectorRequiredNotice } from '@/features/session/connector-required-notice';
 import {
   resolveFirstPromptHandover,
   transcriptCarriesFirstPrompt,
@@ -255,6 +256,7 @@ import {
   startSessionWithPrompt,
   useAbortRuntimeSession,
   useExecuteRuntimeCommand,
+  useFeatureFlag,
   useProjectConfig,
   useRuntimeAgents,
   useRuntimeBootStalled,
@@ -781,7 +783,7 @@ function resolveTurnError(turn: Turn): string | undefined {
     for (const part of msg.parts) {
       if (part.type !== 'tool') continue;
       const tool = part as ToolPart;
-      if (tool.tool === 'question' && tool.state.status === 'error' && 'error' in tool.state) {
+      if (isQuestionTool(tool.tool) && tool.state.status === 'error' && 'error' in tool.state) {
         return (tool.state as { error: string }).error.replace(/^Error:\s*/, '');
       }
     }
@@ -847,7 +849,7 @@ function SessionTurnImpl({
       if (isToolPart(part)) {
         // `isPlanWriteTool` — NOT a bare `=== 'todowrite'`. The runtime emits
         // both spellings, and the plan card owns both (see plan-anchor.ts).
-        if (isPlanWriteTool(part.tool) || part.tool === 'task' || part.tool === 'question')
+        if (isPlanWriteTool(part.tool) || part.tool === 'task' || isQuestionTool(part.tool))
           return false;
         return shouldShowToolPart(part);
       }
@@ -1027,7 +1029,7 @@ function SessionTurnImpl({
         const part = msg.parts[pi];
         if (part.type !== 'tool') continue;
         const tool = part as ToolPart;
-        if (tool.tool !== 'question') continue;
+        if (!isQuestionTool(tool.tool)) continue;
         questionInfos.push({
           tool,
           msgId: msg.info.id,
@@ -1161,7 +1163,7 @@ function SessionTurnImpl({
         items.push({ type: 'text', part, id: part.id });
       } else if (
         isToolPart(part) &&
-        part.tool === 'question' &&
+        isQuestionTool(part.tool) &&
         answeredQuestionPartsById.has(part.id)
       ) {
         // Use the answered part (may be synthetic with cached answers)
@@ -1422,7 +1424,7 @@ function SessionTurnImpl({
     const parts: (typeof allParts)[number]['part'][] = [];
     for (const { part } of allParts) {
       if (isToolPart(part) && isPlanWriteTool(part.tool)) continue;
-      if (isToolPart(part) && part.tool === 'question') {
+      if (isToolPart(part) && isQuestionTool(part.tool)) {
         // Keep only answered questions, and only if not rendering inline.
         if (!answeredQuestionPartsById.has(part.id) || shouldUseInlineContent) continue;
         // A kept question rides into its burst as the ANSWERED part — the
@@ -2130,6 +2132,8 @@ export function SessionChat({
   // runtime is connected + healthy). We need it here too so the render logic
   // can tell "still booting" apart from "genuinely gone".
   const runtimeReady = useRuntimeReady();
+  const transcriptHistory = useFeatureFlag(projectId, 'session_transcript_history');
+  const allowSendBeforeReady = transcriptHistory.enabled && !!projectSessionId && !runtimeReady;
   // "The health poller GAVE UP", which `!runtimeReady` does not say — that is
   // also every ordinary boot. Only the composer notice reads it, to tell a probe
   // that has not answered yet from one that keeps failing.
@@ -3717,7 +3721,7 @@ export function SessionChat({
           const match = parts.find(
             (p) =>
               p.type === 'tool' &&
-              (p as ToolPart).tool === 'question' &&
+              isQuestionTool((p as ToolPart).tool) &&
               (p as ToolPart).callID === questionReq.tool!.callID,
           );
           if (match) {
@@ -5266,6 +5270,7 @@ export function SessionChat({
   });
   const composerReadiness = sessionComposerReadiness({
     runtimeReady,
+    pendingPrompt: allowSendBeforeReady && working.state === 'working',
     pendingDelivery: working.pendingDelivery,
     connection: sessionConnection,
     settling: composerSettling,
@@ -5881,46 +5886,6 @@ export function SessionChat({
                         className="mt-2"
                       />
                     )}
-                    {/* A turn refused for a missing connector renders HERE — after
-                    the last turn, directly under the message that triggered it —
-                    rather than as a one-line pill. It is the one failure with a
-                    button that fixes it.
-
-                    Fed `commandError`, NOT `sessionState.sendError`: the SDK sets
-                    `sendError` only inside `useSession.send()`, and this file has
-                    always gone through `sendParts` instead (the send above, and the
-                    resend below). So `sendError` is permanently null here, and
-                    since `TurnErrorDisplay` deliberately suppresses `kind:
-                    'connector'` to leave the remedy to this card, a refused turn
-                    rendered NOTHING — no card, no pill. `commandError` is the same
-                    typed error, classified through the same `classifySendError`. */}
-                    <ConnectorRequiredNotice
-                      error={commandError}
-                      projectId={projectId}
-                      resend={
-                        sessionState && lastSubmittedRef.current
-                          ? () => {
-                              const last = lastSubmittedRef.current;
-                              if (!last) return;
-                              // Clear before, re-classify after: this bypasses the
-                              // normal submit path, which is the only other place
-                              // `commandError` is managed. Without the clear the
-                              // card outlives a successful retry; without the catch
-                              // a second refusal looks like success.
-                              setCommandError(null);
-                              void sessionState
-                                .sendParts(
-                                  last.parts as Parameters<typeof sessionState.sendParts>[0],
-                                  last.options as Parameters<typeof sessionState.sendParts>[1],
-                                )
-                                .catch((err: unknown) =>
-                                  setCommandError(classifySessionError(err)),
-                                );
-                            }
-                          : undefined
-                      }
-                      className="mt-2"
-                    />
                     {/* Active runtime work can precede its transcript turn. Pending
                         delivery already has a queued status and shows no thinking row. */}
                     {showFallbackBusyRow && fallbackBusyRowTurnId === null && (
@@ -6024,6 +5989,7 @@ export function SessionChat({
                   canTakeBackQueue ? tHardcodedUi.raw('i18nComplete.text03a01dd53ffa') : undefined
                 }
                 draftScope={composerDraftScope}
+                draftActive={!deferComposerFocus}
                 attachRequestId={attachRequestId}
                 isBusy={isBusy}
                 // The ONE projection, not the 300 ms busy fade: it is what
@@ -6059,7 +6025,7 @@ export function SessionChat({
                 sessionId={sessionId}
                 projectId={projectId}
                 providers={providers}
-                modelRequired
+                modelRequired={!allowSendBeforeReady}
                 modelsLoading={providersLoading}
                 threadContext={threadContext}
                 onContextClick={handleContextClick}
