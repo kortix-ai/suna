@@ -3,6 +3,7 @@
 import { useTranslations } from '@/i18n/use-translations';
 
 import { cn } from '@/lib/utils';
+import { Copy } from '@/features/icon/icons/copy';
 import {
   WarningCircleIcon as AlertCircle,
   WarningIcon as AlertTriangle,
@@ -10,7 +11,6 @@ import {
   TextBIcon as Bold,
   CheckIcon as Check,
   CaretUpDownIcon as ChevronsUpDown,
-  CopyIcon as Copy,
   DownloadIcon as Download,
   GitBranchIcon as FolderGit2,
   QuestionIcon as HelpCircle,

@@ -11,7 +11,11 @@
  */
 
 import { sessionLifecycleCommands } from '@kortix/db';
-import { DELIVERY_FAILURE_COPY } from '../session-lifecycle/types';
+import {
+  DELIVERY_FAILURE_COPY,
+  PROMPT_FAILURE_CODES,
+  type PromptFailureCode,
+} from '../session-lifecycle/types';
 import { PROMPT_TEXT_PREVIEW_CHARS } from '../session-lifecycle/prompt-parts';
 
 export type PromptRow = typeof sessionLifecycleCommands.$inferSelect;
@@ -144,12 +148,25 @@ export function serializePrompt(row: PromptRow) {
     // of MAX_RUNTIME_UNREACHABLE_RETRIES. 0 for every other row.
     runtime_retries: typeof result.runtime_retries === 'number' ? result.runtime_retries : 0,
     last_error: readableDeliveryError(row.lastError),
+    /** WHY a failed row was given up on, as a stable code a client maps to its
+     *  own words (`last_error` is prose). `null` unless `state` is `failed`. */
+    failure_code: state === 'failed' ? persistedFailureCode(result) : null,
     /** Names + types of this prompt's files, so a reloaded tab can still draw
      *  their tiles while the send is in flight. Never the bytes. */
     attachments: promptAttachments(payload),
     created_at: row.createdAt.toISOString(),
     available_at: row.availableAt.toISOString(),
   };
+}
+
+/**
+ * The code the producer persisted when it gave up on the row. Read, never
+ * derived: a failed row with no code (written before codes were persisted),
+ * or with a value outside the vocabulary, is `unknown`.
+ */
+function persistedFailureCode(result: Record<string, unknown>): PromptFailureCode {
+  const code = result.failure_code;
+  return (PROMPT_FAILURE_CODES as readonly unknown[]).includes(code) ? (code as PromptFailureCode) : 'unknown';
 }
 
 /** Older durable rows retain internal outcome labels across deployments. */

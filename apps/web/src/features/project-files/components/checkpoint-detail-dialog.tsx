@@ -12,13 +12,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { cn } from '@/lib/utils';
 import type { ProjectCommitFile } from '@kortix/sdk';
+import { Copy } from '@/features/icon/icons/copy';
 import {
   WarningCircleIcon as AlertCircle,
   CalendarIcon as Calendar,
   CheckIcon as Check,
   CaretLeftIcon as ChevronLeft,
   CaretRightIcon as ChevronRight,
-  CopyIcon as Copy,
   NotePencilIcon as FileEdit,
   FilePlusIcon as FilePlus2,
   FileArrowUpIcon as FileSymlink,

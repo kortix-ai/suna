@@ -1,6 +1,7 @@
 'use client';
 
-import { ArrowCounterClockwiseIcon, CopyIcon, TrashIcon } from '@phosphor-icons/react';
+import { Copy } from '@/features/icon/icons/copy';
+import { ArrowCounterClockwiseIcon, TrashIcon } from '@phosphor-icons/react';
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
@@ -81,7 +82,7 @@ export function ProviderFailureRecovery({
           onClick={onCopy}
           disabled={!pendingPrompt?.text}
         >
-          <CopyIcon className="size-3.5 shrink-0" />
+          <Copy className="size-3.5 shrink-0" />
           {t('copy')}
         </Button>
         <Button type="button" size="sm" variant="destructive" onClick={onDelete}>

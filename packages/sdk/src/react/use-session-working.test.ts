@@ -1,22 +1,30 @@
-import { describe, expect, mock, test } from 'bun:test';
+import { afterEach, describe, expect, mock, test } from 'bun:test';
 import type { SessionStatus } from '@opencode-ai/sdk/v2/client';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { createElement } from 'react';
+import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import { useSyncStore } from '../browser/stores/sync-store';
 import {
   SERVER_OBSERVATION_MAX_MS,
   STREAM_OBSERVATION_MAX_MS,
+  type WorkingProjection,
   projectWorking,
   workingExpiryAtMs,
 } from '../core/session/working';
 import { openSessionBundle, resetSessionOpenBundles } from '../core/session/open-bundle';
 import { configureKortix } from '../core/http/config';
+import { qk } from './query-keys';
 import {
   WORKING_POLL_ACTIVE_MS,
   readSessionTurnObservation,
   WORKING_POLL_IDLE_MS,
   buildWorkingInputs,
+  useSessionWorking,
   workingPollMs,
   streamObservationStamp,
   streamTurnPhase,
+  type SessionTurnObservation,
 } from './use-session-working';
 
 const T0 = Date.parse('2026-08-18T10:00:00.000Z');
@@ -491,5 +499,261 @@ describe('readSessionTurnObservation', () => {
     // UNKNOWN is not idle: the fallback must ASK, not assume.
     expect(urls.some((u) => u.endsWith('/turn'))).toBe(true);
     expect(observation.turns[0]?.turn_token).toBe('tt-2');
+  });
+});
+
+describe('turn observation source', () => {
+  const BUNDLE_AT = '2026-08-26T12:00:00.000Z';
+
+  function mockFetch(body: (url: string) => unknown) {
+    globalThis.fetch = mock(async (url: unknown) =>
+      new Response(JSON.stringify(body(String(url))), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    ) as unknown as typeof fetch;
+  }
+
+  test('a bundle answer is marked bundle and a direct read is marked read', async () => {
+    resetSessionOpenBundles();
+    mockFetch((url) =>
+      url.includes('/snapshot')
+        ? {
+            observed_at: BUNDLE_AT,
+            turn: { known: true, turns: [] },
+            queue: { known: true, prompts: [], held: false },
+            transcript: { known: true, requested: false },
+            config: { known: true },
+            models: { known: false, reason: 'x' },
+            session: { session_id: 'S1' },
+          }
+        : { turns: [] },
+    );
+    openSessionBundle('P1', 'S1');
+    expect((await readSessionTurnObservation('P1', 'S1')).source).toBe('bundle');
+    expect((await readSessionTurnObservation('P1', 'S1', { bundle: false })).source).toBe('read');
+  });
+
+  test('buildWorkingInputs carries the source and the busy-phase stamp', () => {
+    const inputs = buildWorkingInputs({
+      turn: { turns: [], atMs: T0, source: 'bundle' },
+      inbox: undefined,
+      status: undefined,
+      statusAtMs: 0,
+      runtimeBusySinceAtMs: T0 + 5,
+      optimistic: null,
+      nowMs: T0 + 10,
+    });
+    expect(inputs.server).toEqual({ turns: [], lastEnded: undefined, atMs: T0, source: 'bundle' });
+    expect(inputs.runtimeBusySinceAtMs).toBe(T0 + 5);
+  });
+});
+
+/**
+ * The hook is the one place a busy phase can be watched starting: the store
+ * keeps only the current status. The stamp lives in the shared working store,
+ * so every mount of one session projects the same identity.
+ */
+describe('useSessionWorking — the busy-phase stamp', () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  const realFetch = globalThis.fetch;
+  let root: ReactTestRenderer | undefined;
+  let client: QueryClient | undefined;
+  let working: WorkingProjection | undefined;
+  // Every projection the hook returned, in render order. A value that a later
+  // render corrects was still handed to the host for one render.
+  let renders: WorkingProjection[] = [];
+
+  afterEach(async () => {
+    if (root) await act(async () => root?.unmount());
+    root = undefined;
+    client?.clear();
+    client = undefined;
+    working = undefined;
+    renders = [];
+    useSessionWorkingStore.getState().reset();
+    useSyncStore.getState().reset();
+    globalThis.fetch = realFetch;
+  });
+
+  function probe(runtimeSessionId: string, onRender: (projection: WorkingProjection) => void) {
+    return function Probe() {
+      const projection = useSessionWorking('p1', 's1', { runtimeSessionId });
+      onRender(projection);
+      return null;
+    };
+  }
+
+  async function mount(turn: SessionTurnObservation, runtimeSessionId = 'wire1') {
+    // No read ever settles: the cached observation is the only server input.
+    globalThis.fetch = (() => new Promise<Response>(() => {})) as unknown as typeof fetch;
+    client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    client.setQueryData(qk.project.sessionTurn('p1', 's1'), turn);
+    const Probe = probe(runtimeSessionId, (projection) => {
+      working = projection;
+      renders.push(projection);
+    });
+    await act(async () => {
+      root = create(createElement(QueryClientProvider, { client: client! }, createElement(Probe)));
+    });
+  }
+
+  async function frame(sessionId: string, status: SessionStatus) {
+    await act(async () => {
+      await Bun.sleep(5);
+      useSyncStore.getState().setStatus(sessionId, status);
+      await Bun.sleep(10);
+    });
+    return useSyncStore.getState().sessionStatusAt[sessionId]!;
+  }
+
+  const stamp = () => useSessionWorkingStore.getState().runtimeBusySince?.s1;
+
+  test('is recorded once per idle to non-idle edge; busy/retry oscillation does not move it', async () => {
+    useSyncStore.getState().reset();
+    useSyncStore.getState().setStatus('wire1', { type: 'idle' });
+    await mount({ turns: [], atMs: Date.now() });
+    expect(stamp()).toBeUndefined();
+
+    const busyAt = await frame('wire1', { type: 'busy' });
+    expect(stamp()).toBe(busyAt);
+
+    const retryAt = await frame('wire1', { type: 'retry', attempt: 1, message: 'x', next: 0 });
+    expect(retryAt).toBeGreaterThan(busyAt);
+    await frame('wire1', { type: 'busy' });
+    expect(stamp()).toBe(busyAt);
+
+    await frame('wire1', { type: 'idle' });
+    expect(stamp()).toBe(busyAt);
+
+    const nextBusyAt = await frame('wire1', { type: 'busy' });
+    expect(nextBusyAt).toBeGreaterThan(busyAt);
+    expect(stamp()).toBe(nextBusyAt);
+  });
+
+  test('the shared stamp only moves forward, and an equal stamp is not a store change', () => {
+    // Every mount that watched one edge reports the same frame stamp. None of
+    // those writes may move the stamp back or notify subscribers again.
+    const store = useSessionWorkingStore.getState();
+    store.noteRuntimeBusySince('s1', 200);
+    store.noteRuntimeBusySince('s1', 100);
+    expect(stamp()).toBe(200);
+    const before = useSessionWorkingStore.getState();
+    store.noteRuntimeBusySince('s1', 200);
+    expect(useSessionWorkingStore.getState()).toBe(before);
+    store.noteRuntimeBusySince('s1', 300);
+    expect(stamp()).toBe(300);
+  });
+
+  test('a first frame that is already busy is not an edge', async () => {
+    useSyncStore.getState().reset();
+    await mount({ turns: [], atMs: Date.now() });
+    await frame('wire1', { type: 'busy' });
+    expect(stamp()).toBeUndefined();
+  });
+
+  /** A's last content, then A's wire idle frame, then the pre-relay `/turn`
+   *  read that still lists A — the cache the next turn starts on. */
+  async function mountAfterTurnEnd() {
+    const iso = (ms: number) => new Date(ms).toISOString();
+    useSyncStore.getState().noteSessionActivity('wire1', Date.now() - 1_000);
+    useSyncStore.getState().setStatus('wire1', { type: 'idle' });
+    await Bun.sleep(5);
+    await mount({
+      turns: [{ turn_token: 't_A', state: 'active', message_id: 'A', opencode_session_id: 'oc', started_at: iso(Date.now() - 60_000), accepted_at: null }],
+      atMs: Date.now(),
+      source: 'read',
+    });
+  }
+
+  test('the next busy frame does not name the turn the idle frame ended', async () => {
+    // The next turn's busy frame lifts the idle veto, and A's activity stamp is
+    // still fresh.
+    useSyncStore.getState().reset();
+    await mountAfterTurnEnd();
+    expect(working).toMatchObject({ state: 'idle', turnId: null });
+    const beforeFrame = renders.length;
+
+    await frame('wire1', { type: 'busy' });
+    expect(working).toMatchObject({ state: 'working', source: 'stream', turnId: null });
+    // Not even for one render: the host draws the busy label from each value
+    // it receives, so a name corrected one render later is a visible flash.
+    const afterFrame = renders.slice(beforeFrame);
+    expect(afterFrame.length).toBeGreaterThan(0);
+    expect(afterFrame.filter((projection) => projection.turnId === 'A')).toEqual([]);
+  });
+
+  test('a mount that appears after the flip reads the shared stamp', async () => {
+    // Several places mount the hook for one session. One that mounts during
+    // the busy phase never watches the edge, and must not name the ended turn
+    // the mount beside it has already stopped naming. The last unmount drops
+    // the stamp with the session's other inputs.
+    useSyncStore.getState().reset();
+    await mountAfterTurnEnd();
+    const busyAt = await frame('wire1', { type: 'busy' });
+
+    const late: WorkingProjection[] = [];
+    let lateRoot: ReactTestRenderer | undefined;
+    try {
+      await act(async () => {
+        lateRoot = create(
+          createElement(
+            QueryClientProvider,
+            { client: client! },
+            createElement(probe('wire1', (projection) => late.push(projection))),
+          ),
+        );
+      });
+      expect(late.at(-1)).toMatchObject({ state: 'working', turnId: null });
+      expect(late.filter((projection) => projection.turnId === 'A')).toEqual([]);
+      expect(stamp()).toBe(busyAt);
+    } finally {
+      if (lateRoot) await act(async () => lateRoot?.unmount());
+    }
+    expect(stamp()).toBe(busyAt);
+    await act(async () => root?.unmount());
+    root = undefined;
+    expect(stamp()).toBeUndefined();
+  });
+
+  test('the returned projection changes when the open-turn read ages out', async () => {
+    // Only `serverOpenTurnFresh` moves: the busy frame keeps deciding `working`
+    // on both sides of the bound. The expiry timer re-renders at the bound and
+    // the memo identity must see the change.
+    useSyncStore.getState().reset();
+    const iso = (ms: number) => new Date(ms).toISOString();
+    useSyncStore.getState().setStatus('wire1', { type: 'busy' });
+    await mount({
+      turns: [{ turn_token: 't_A', state: 'active', message_id: 'A', opencode_session_id: 'oc', started_at: iso(Date.now() - 100_000), accepted_at: null }],
+      atMs: Date.now() - SERVER_OBSERVATION_MAX_MS + 250,
+      source: 'read',
+    });
+    const fresh = working;
+    expect(fresh).toMatchObject({ state: 'working', source: 'stream', serverOpenTurnToken: 't_A', serverOpenTurnFresh: true });
+
+    await act(async () => {
+      await Bun.sleep(500);
+    });
+    expect(working).toMatchObject({ state: 'working', source: 'stream', serverOpenTurnToken: 't_A', serverOpenTurnFresh: false });
+    expect(working).not.toBe(fresh);
+  });
+
+  test('guard: a newer read with the same answer returns the same projection object', async () => {
+    // The identity carries the freshness BOOLEAN, never a read stamp, so a
+    // consumer that memoizes on the projection does not re-run once per poll.
+    useSyncStore.getState().reset();
+    const iso = (ms: number) => new Date(ms).toISOString();
+    const turns = [{ turn_token: 't_A', state: 'active' as const, message_id: 'A', opencode_session_id: 'oc', started_at: iso(Date.now() - 1_000), accepted_at: null }];
+    await mount({ turns, atMs: Date.now(), source: 'read' });
+    const first = working;
+    expect(first).toMatchObject({ state: 'working', source: 'server', turnId: 'A', serverOpenTurnFresh: true });
+
+    await act(async () => {
+      await Bun.sleep(5);
+      client!.setQueryData(qk.project.sessionTurn('p1', 's1'), { turns, atMs: Date.now(), source: 'read' });
+      await Bun.sleep(5);
+    });
+    expect(renders.length).toBeGreaterThan(1);
+    expect(working).toBe(first);
   });
 });

@@ -59,9 +59,17 @@ import { settleInboxHoldAfterStopInBackground } from '../session-lifecycle/inbox
 import { disarmAllQuickQueueInterrupt, disarmQuickQueueInterrupt } from '../session-lifecycle/engine';
 import { cancelForwardedPrompt, findInboxRowIdByMessageId } from '../session-lifecycle/cancel-forwarded';
 import {
+  INBOX_HOLD_MS,
+  holdInboxPrompt,
+  isHeldInboxRow,
+  isStopPausedInboxRow,
+  readInboxPromptPresence,
+} from '../session-lifecycle/inbox-rows';
+import {
   flattenPromptText,
   sanitizeInboxPromptParts,
 } from '../session-lifecycle/prompt-parts';
+import { PROMPT_FAILURE_CODES } from '../session-lifecycle/types';
 import { isWarmProjectSession } from '../lib/warm-sessions';
 import { dropWarmSessionMarkerOnAdopt } from './warm-sessions';
 import { refreshCrTips } from './shared';
@@ -447,6 +455,18 @@ const SessionPromptSchema = z.object({
   full_text: z.string().optional(),
   attempts: z.number(),
   last_error: z.string().nullable(),
+  failure_code: z
+    .string()
+    .nullable()
+    .optional()
+    .openapi({
+      description: [
+        'Why delivery gave up, as a stable code to map to your own words (`last_error` is prose).',
+        '`null` unless `state` is `failed`; a failed prompt written before codes existed reads `unknown`.',
+        `One of: ${PROMPT_FAILURE_CODES.map((code) => `\`${code}\``).join(', ')}.`,
+        'New codes may be added; treat an unrecognized one as `unknown`.',
+      ].join(' '),
+    }),
   attachments: z.array(z.object({ filename: z.string(), mime: z.string() })),
   created_at: z.string(),
   available_at: z.string(),
@@ -464,7 +484,91 @@ const RemovedSessionPromptSchema = z.object({
   message_id: z.string(),
   parts: z.array(z.any()),
   overrides: z.any().nullable(),
+  held: z.boolean().openapi({
+    description:
+      'The prompt was held (Stop, or stop-paused). An undo passes it back as `held` with `restore: true`.',
+  }),
 });
+
+/**
+ * The refusal body of a prompt row action (DELETE, retry). `code` is the
+ * contract a client maps to one outcome; `error` is English for logs and for
+ * clients that predate the codes. A session the caller cannot see answers the
+ * plain `{ error: 'Not found' }`, with no prompt code.
+ */
+const PromptActionErrorSchema = z.object({
+  error: z.string(),
+  code: z
+    .string()
+    .optional()
+    .openapi({
+      description:
+        '`prompt_not_found` (404): no such prompt, or already removed. ' +
+        '`prompt_already_sent` (409): the prompt was sent, is being answered, or the drain closed it. ' +
+        '`prompt_cancel_unreachable` (409, DELETE): the prompt is being delivered and the runtime could not be reached to cancel it.',
+    }),
+});
+
+const PROMPT_NOT_FOUND = { error: 'Not found', code: 'prompt_not_found' } as const;
+const PROMPT_ALREADY_SENT = { error: 'Prompt was already sent', code: 'prompt_already_sent' } as const;
+const PROMPT_BEING_ANSWERED = {
+  error: 'Prompt is already being answered',
+  code: 'prompt_already_sent',
+} as const;
+const PROMPT_CANCEL_UNREACHABLE = {
+  error: 'Prompt is being delivered and the runtime could not be reached to cancel it',
+  code: 'prompt_cancel_unreachable',
+} as const;
+
+/**
+ * How the DELETE cancel arm ends when the cancel did not remove the prompt,
+ * decided on the row as it stands NOW. The cancel's own verdict (`answered`,
+ * `unreachable`, `not_forwarded`) is only its own view, and a concurrent
+ * request can have changed the row under it. So the arm runs the plain delete
+ * once more, which re-reads the row when it removes nothing:
+ *
+ *  - The row fell back into line (a failed claim, or the reaper handed a
+ *    forwarded prompt back): it is removed, 200.
+ *  - Two removes of one delivering prompt both reach the runtime. The loser's
+ *    guarded delete finds nothing and reads `answered`, or its poll finds no
+ *    row. Both exits observe a delete that has already committed: the prompt
+ *    is gone (404), or the drain closed it (409 already sent).
+ *  - Still on the wire: the cancel's own refusal, 409.
+ *
+ * One attempt only, so a row that keeps moving cannot hold the request open;
+ * a row that moves again between those statements gets the cancel's refusal.
+ *
+ * One exit stays timing-dependent, and it still answers a code the client maps
+ * to "already sent", never "unreachable": the winner has taken the runtime copy
+ * out but not yet deleted the row, and the loser's tip read finds a later step
+ * (`reachedPlacement` with no copy to compare against) and reads `answered`.
+ */
+async function settleCancelArm(
+  sessionId: string,
+  promptId: string,
+  onWire: { error: string; code: string },
+): Promise<{ removed: PromptRow } | { body: { error: string; code: string }; status: 404 | 409 }> {
+  const settled = await deleteInboxPrompt(sessionId, promptId);
+  if (settled.outcome === 'deleted') return { removed: settled.row };
+  if (settled.outcome === 'missing') return { body: PROMPT_NOT_FOUND, status: 404 };
+  if (settled.outcome === 'sent') return { body: PROMPT_ALREADY_SENT, status: 409 };
+  return { body: onWire, status: 409 };
+}
+
+/** `POST .../prompts` body. Only the undo fields are typed here; the handler
+ *  checks every other field with its own message. */
+const CreateSessionPromptBodySchema = z
+  .object({
+    restore: z.boolean().optional().openapi({
+      description:
+        'Undo of a removed prompt. The send does not release the session hold, and changes no other prompt.',
+    }),
+    held: z.boolean().optional().openapi({
+      description:
+        'With `restore`: re-create the prompt held (the `held` bit DELETE returned). Ignored without `restore`.',
+    }),
+  })
+  .catchall(z.any());
 
 
 function serializeRemovedPrompt(row: PromptRow) {
@@ -490,6 +594,9 @@ function serializeRemovedPrompt(row: PromptRow) {
     parts: parts.length > 0 ? parts : [{ type: 'text', text: payload.text ?? '' }],
     overrides:
       payload.overrides && typeof payload.overrides === 'object' ? payload.overrides : null,
+    // The undo re-creates the row with this bit, so Stop → remove → Undo keeps
+    // the prompt held instead of resuming the queue.
+    held: isHeldInboxRow(row.result) || isStopPausedInboxRow(row.result),
   };
 }
 
@@ -503,7 +610,7 @@ projectsApp.openapi(
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } }, required: true },
+      body: { content: { 'application/json': { schema: CreateSessionPromptBodySchema } }, required: true },
     },
     responses: {
       200: json(z.any(), 'Already queued (same client_message_id)'),
@@ -628,6 +735,14 @@ projectsApp.openapi(
       );
     }
 
+    // An UNDO of a removed prompt. The row was hard-deleted, so the undo is a
+    // fresh POST under the same client id — and a fresh send releases the
+    // session's hold, which made Stop → remove → Undo resume the whole queue.
+    // A restore puts back ONE row, with the held bit its DELETE returned, and
+    // changes no other row.
+    const restore = body.restore === true;
+    const restoreHeld = restore && body.held === true;
+
     // The unique index on `idempotency_key` IS the "retry = same
     // clientMessageId = same row" contract — enforced by the database, not by a
     // cache that a second pod would not share.
@@ -658,12 +773,21 @@ projectsApp.openapi(
         : {}),
       parts,
       overrides,
+      // A held restore is inserted NOT DUE, at the hold horizon, so the
+      // scheduler cannot claim it before `holdInboxPrompt` below marks it.
+      ...(restoreHeld ? { availableAt: new Date(Date.now() + INBOX_HOLD_MS) } : {}),
     });
 
     const stored = (enqueued.row.payload ?? {}) as Record<string, unknown>;
-    const response = {
+    const respond = (status: ReturnType<typeof promptState>) => ({
       prompt_id: enqueued.row.commandId,
-      state: promptState(enqueued.row).state,
+      state: status.state,
+      // WHY the row is not in line, on the acceptance itself — the same field
+      // the list read carries. `held` is the one a client must have here: an
+      // Undo after Stop restores a held row, and a client that learns its
+      // held-ness one read later counts it as work in flight for that round
+      // trip — composer back on Stop for a queue nothing will run.
+      reason: status.reason,
       message_id:
         typeof stored.redeliveredMessageId === 'string'
           ? stored.redeliveredMessageId
@@ -671,19 +795,46 @@ projectsApp.openapi(
             ? stored.wireMessageId
             : messageId,
       deduped: enqueued.deduped,
-      // The write's place on the SERVER clock — stamped after the enqueue
+      // The write's place on the SERVER clock — stamped after the writes
       // settled. Clients rank queue snapshots on this one clock, so a read
       // issued before this POST carries an older stamp and can never erase
       // the row it confirmed (JAY-728).
       observed_at: new Date().toISOString(),
-    };
-    if (enqueued.deduped) return c.json(response, 200);
+    });
+    // A dedupe answers before either hold decision: this call wrote nothing.
+    if (enqueued.deduped) return c.json(respond(promptState(enqueued.row)), 200);
+
+    if (restoreHeld) {
+      // A held restore is two statements: the insert above, then the held
+      // marker. A row whose marker failed is neither held (a release does not
+      // free it) nor due (nothing delivers it), and every later prompt of the
+      // session waits behind it. A retried undo dedupes onto that row before
+      // this branch, so the hold would never be written. The failure therefore
+      // takes the row back out and reaches the caller, and a retry inserts it
+      // again. `deleteInboxPrompt` removes only a row still in line: a row a
+      // sibling sweep already claimed stays. If that delete fails too, the row
+      // stays as it was, and DELETE or retry still act on it.
+      let held: boolean;
+      try {
+        held = await holdInboxPrompt(sessionId, enqueued.row.commandId);
+      } catch (error) {
+        await deleteInboxPrompt(sessionId, enqueued.row.commandId).catch(() => undefined);
+        throw error;
+      }
+      // A held row is not due, so no drain is kicked for it.
+      return c.json(
+        respond(held ? { state: 'waiting', reason: 'held' } : promptState(enqueued.row)),
+        202,
+      );
+    }
 
     // Sending anything NEW lifts a hold the stop button left on this session's
     // queue — the same rule the browser-local queue always had, and the reason
     // stop cannot wedge a session: everything typed afterwards would otherwise
-    // land behind rows that are, by construction, never due.
-    await releaseInboxHold(sessionId).catch(() => undefined);
+    // land behind rows that are, by construction, never due. A restore is not
+    // a new send: the rest of a held queue stays held.
+    if (!restore) await releaseInboxHold(sessionId).catch(() => undefined);
+    const response = respond(promptState(enqueued.row));
 
     // Fire the targeted drain WITHOUT waiting on it: the response is "your
     // prompt is durable", not "your prompt has been delivered". The drain
@@ -756,7 +907,12 @@ projectsApp.openapi(
     },
     responses: {
       200: json(z.object({ removed: RemovedSessionPromptSchema }), 'Deleted'),
-      ...errors(400, 404, 409),
+      ...errors(400),
+      404: json(PromptActionErrorSchema, 'No such prompt (`prompt_not_found`), or no such session'),
+      409: json(
+        PromptActionErrorSchema,
+        'The prompt was already sent (`prompt_already_sent`), or could not be cancelled (`prompt_cancel_unreachable`)',
+      ),
     },
   }),
   async (c: any) => {
@@ -796,7 +952,7 @@ projectsApp.openapi(
     let effectivePromptId = promptId;
     if (promptId.startsWith('msg_')) {
       const found = await findInboxRowIdByMessageId(sessionId, promptId);
-      if (!found) return c.json({ error: 'Not found' }, 404);
+      if (!found) return c.json(PROMPT_NOT_FOUND, 404);
       effectivePromptId = found;
     }
     const outcome = await deleteInboxPrompt(sessionId, effectivePromptId);
@@ -819,25 +975,21 @@ projectsApp.openapi(
         await disarmQuickQueueInterrupt(sessionId, loaded.userId, effectivePromptId);
         return c.json({ removed: serializeRemovedPrompt(cancelled.row) }, 200);
       }
-      if (cancelled.outcome === 'not_forwarded') {
-        // The row fell back into the queue while the cancel watched it.
-        const retried = await deleteInboxPrompt(sessionId, effectivePromptId);
-        if (retried.outcome === 'deleted') {
-          await disarmQuickQueueInterrupt(sessionId, loaded.userId, effectivePromptId);
-          return c.json({ removed: serializeRemovedPrompt(retried.row) }, 200);
-        }
-      }
-      return c.json(
-        {
-          error:
-            cancelled.outcome === 'answered'
-              ? 'Prompt is already being answered'
-              : 'Prompt is being delivered and the runtime could not be reached to cancel it',
-        },
-        409,
+      // Not removed by the cancel. A row that fell back into the queue while
+      // the cancel watched it is removed here; see `settleCancelArm`.
+      const settled = await settleCancelArm(
+        sessionId,
+        effectivePromptId,
+        cancelled.outcome === 'answered' ? PROMPT_BEING_ANSWERED : PROMPT_CANCEL_UNREACHABLE,
       );
+      if ('removed' in settled) {
+        await disarmQuickQueueInterrupt(sessionId, loaded.userId, effectivePromptId);
+        return c.json({ removed: serializeRemovedPrompt(settled.removed) }, 200);
+      }
+      return c.json(settled.body, settled.status);
     }
-    return c.json({ error: 'Not found' }, 404);
+    if (outcome.outcome === 'sent') return c.json(PROMPT_ALREADY_SENT, 409);
+    return c.json(PROMPT_NOT_FOUND, 404);
   },
 );
 
@@ -856,8 +1008,18 @@ projectsApp.openapi(
       }),
     },
     responses: {
-      200: json(SessionPromptSchema, 'Prompt re-queued'),
-      ...errors(400, 404),
+      200: json(
+        SessionPromptSchema.extend({
+          observed_at: z.string().openapi({
+            description:
+              'Server clock after the retry was written. A list read stamped earlier cannot repaint the row `failed`.',
+          }),
+        }),
+        'Prompt re-queued',
+      ),
+      ...errors(400),
+      404: json(PromptActionErrorSchema, 'No such prompt (`prompt_not_found`), or no such session'),
+      409: json(PromptActionErrorSchema, 'The prompt is not retryable: it was already sent (`prompt_already_sent`)'),
     },
   }),
   async (c: any) => {
@@ -884,16 +1046,32 @@ projectsApp.openapi(
 
     // ONE primitive for "retry" and for "send now": both are the user pointing
     // at a row and asking for THAT message. `retryInboxPrompt` promotes it past
-    // the ordering gate, releases the session's hold, and keeps the wire
-    // `message_id` unchanged so the proxy still absorbs a retry of a delivery
-    // that actually landed.
-    const requeued = await retryInboxPrompt(sessionId, promptId);
-    if (!requeued) return c.json({ error: 'Not found' }, 404);
+    // the ordering gate and releases the session's hold. The row keeps the id
+    // the client painted under (`wire_message_id`), but `remintOnDelivery`
+    // makes the delivery re-read the transcript and place the id again. A
+    // duplicate is absorbed by that read and by the proxy's `Idempotency-Key`
+    // claim, not by the id — see `retryInboxPrompt`.
+    let requeued = await retryInboxPrompt(sessionId, promptId);
+    if (!requeued) {
+      // Name WHY nothing was re-queued. A row that is gone and a row that
+      // already went out are different outcomes to the user.
+      const presence = await readInboxPromptPresence(sessionId, promptId);
+      if (presence === 'absent') return c.json(PROMPT_NOT_FOUND, 404);
+      // `queued`: a failed claim put the row back in line between the update
+      // and the read. It never went out, so it is retried once more. One
+      // attempt only: a row that moves again answers 409, and the next retry
+      // re-queues it.
+      if (presence === 'queued') requeued = await retryInboxPrompt(sessionId, promptId);
+      if (!requeued) return c.json(PROMPT_ALREADY_SENT, 409);
+    }
+    // After the write, the same convention as `POST .../prompts`: a list read
+    // issued before this retry carries an older stamp.
+    const observedAt = new Date().toISOString();
 
     void drainSessionLifecycleQueue(
       requeued.idempotencyKey ? { idempotencyKey: requeued.idempotencyKey } : { limit: 1 },
     ).catch(() => undefined);
-    return c.json(serializePrompt(requeued), 200);
+    return c.json({ ...serializePrompt(requeued), observed_at: observedAt }, 200);
   },
 );
 

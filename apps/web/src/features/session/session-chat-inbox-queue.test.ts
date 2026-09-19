@@ -16,6 +16,10 @@ const shell = readFileSync(
   fileURLToPath(new URL('./instant-session-shell.tsx', import.meta.url)),
   'utf8',
 );
+const queueCopy = readFileSync(
+  fileURLToPath(new URL('./queue-action-copy.ts', import.meta.url)),
+  'utf8',
+);
 
 function between(source: string, start: string, end: string): string {
   const from = source.indexOf(start);
@@ -100,15 +104,21 @@ describe('a send paints first and holds its POST on the handed-off uploads', () 
     // The failure is kept in a store outside this component, so a remount
     // (session switch and return) still draws it with Retry. Its reason is
     // localized and never says "Upload failed".
-    const kept = flat(between(send, 'const markHeldSendFailed = (error: unknown) => {', 'const deliver = async'));
+    const kept = flat(between(send, 'const markHeldSendFailed = (origin: HeldSendFailureOrigin, error: unknown) => {', 'const deliver = async'));
     expect(kept).toContain('useHeldSendFailureStore.getState().setHeldSendFailure(sessionId, messageID, {');
     // A 4xx refusal shows its own classified words; every other failure its reason copy
     // (`sentFailureMessage`, tested in `attachment-submission.test.ts`).
     expect(kept).toContain('message: sentFailureMessage(error, tComposerAttachments, classified.message),');
-    expect(kept).toContain('overrides: { ...overrides, clientMessageId },');
+    // The picks THIS send resolved, the words as typed and the original Enter
+    // — not references to a composer that has moved on by the time Retry is
+    // clicked (`captureHeldSend`).
+    expect(kept).toContain('send: captureHeldSend({');
+    expect(kept).toContain('clientMessageId,');
+    expect(kept).toContain('sentAtMs,');
+    expect(kept).toContain('rawText,');
     // An upload that fails after the paint keeps the message: no removal, no draft restore.
     const upload = between(send, 'attachmentParts = await attachments.whenReady();', 'const parts: SessionPromptPart[]');
-    expect(upload).toContain('markHeldSendFailed(err);');
+    expect(upload).toContain("markHeldSendFailed('upload', err);");
     expect(upload).not.toContain('abandonOptimisticSend(');
     expect(upload).not.toContain('throw ');
     // A POST that fails after the paint keeps it too, unless the inbox holds the row.
@@ -122,7 +132,7 @@ describe('a send paints first and holds its POST on the handed-off uploads', () 
     expect(between(send, 'const inboxRowExists = async () => {', 'const deliver = async')).toContain(
       'return inboxHoldsLivePrompt(prompts, clientMessageId);',
     );
-    expect(failedPost).toContain('markHeldSendFailed(result.cause);');
+    expect(failedPost).toContain("markHeldSendFailed('post', result.cause);");
     expect(chat).not.toContain('setHeldSendFailures');
     // An accepted POST releases the send's uploads.
     const accepted = between(send, 'acceptSendReceipt(messageID);', 'return { ok: true } as const;');
@@ -131,8 +141,8 @@ describe('a send paints first and holds its POST on the handed-off uploads', () 
     expect(chat).toContain(
       'useHeldSendFailureStore((state) => state.failuresBySession[sessionId])',
     );
-    expect(chat).toContain(
-      'send.text, send.files, send.mentions, send.attachments, send.overrides',
+    expect(flat(chat)).toContain(
+      'again.text, again.files, again.mentions, again.attachments, again.overrides,',
     );
     // The status is built in the prop, and Retry runs at click time: no call
     // during render receives `handleSend`, which reads refs.
@@ -194,8 +204,9 @@ describe('a send paints first and holds its POST on the handed-off uploads', () 
     expect(shell).toContain(
       'uploadStatus: previewSubmission?.uploadStatus ?? pendingRowSubmission?.uploadStatus,',
     );
+    // The prop wraps across lines at 100 columns, so match its value alone.
     expect(chat.replace(/\s+/g, ' ')).toContain(
-      'uploadStatus={firstPromptSource.uploadStatus ?? firstPromptUploadStatus}',
+      'firstPromptSource.uploadStatus ?? firstPromptUploadStatus',
     );
     // The hero composer remounts when the thread appears, so the shell owns the
     // upload controller that the held send and its Retry use.
@@ -302,12 +313,13 @@ describe('queue row actions address the inbox that holds the row', () => {
     // the agent/model/variant picks, and anything past the truncation — under
     // a button labelled "Undo". The row is hard-deleted, so the delete's own
     // response is the only place the full body still exists.
+    // The handler moved to `queue-action-copy.ts`, shared with the boot shell.
     const remove = between(
-      chat,
-      'const handleRemoveQueuedMessage = useCallback(',
-      'const handleRetryQueuedMessage',
+      queueCopy,
+      'export function createQueueRemoveHandler(',
+      'deps.copy(QUEUE_UNDO_KEY),',
     );
-    expect(remove).toContain('removed = await promptInbox.remove(id)');
+    expect(remove).toContain('removed = await deps.remove(promptId)');
     // The body itself is built by `createQueueUndoAction`/`restoreQueuedMessage`
     // — asserted behaviorally in `queued-message-restore.test.ts`. This proves
     // the DELETE's own response is what reaches it, not the list row.
@@ -321,7 +333,7 @@ describe('queue row actions address the inbox that holds the row', () => {
     // carried is gone with the store it addressed.
     const remove = between(
       chat,
-      'const handleRemoveQueuedMessage = useCallback(',
+      'const handleRemoveQueuedMessage = useMemo(',
       'const handleRetryQueuedMessage',
     );
     expect(remove).not.toContain('localIds');
@@ -404,7 +416,9 @@ describe('ONE prompt = ONE id = ONE bubble, from Enter', () => {
   test('the claimed bubble keeps its queued dimming', () => {
     // Hiding the duplicate must not let the surviving copy read as running
     // while the server still holds the prompt.
-    expect(chat).toContain('if (firstTurnClaim) ids.add(firstTurnClaim.messageId);');
+    expect(between(chat, 'resolveBusyRow({', '}),')).toContain(
+      'claimedFirstTurnId: firstTurnClaim?.messageId ?? null,',
+    );
   });
 
   test('the re-mint alias is announced from an EFFECT, never from the memo that reads it', () => {
@@ -433,27 +447,27 @@ describe('ONE prompt = ONE id = ONE bubble, from Enter', () => {
   });
 });
 
-describe('Up takes the queue back into the composer', () => {
-  test('only what the server actually removed comes back, in queue order, above the draft', () => {
-    const takeBack = between(
-      chat,
-      'const handleTakeBackQueue = useCallback(',
-      '// ---- Triple-ESC to stop ----',
-    );
-    expect(takeBack).toContain('row.takeBackEligible');
-    // Drafts are read BEFORE the removals: removing a row prunes its draft.
-    expect(takeBack.indexOf('useQueuedDraftStore.getState().bySession[sessionId]')).toBeLessThan(
-      takeBack.indexOf('promptInbox.remove(row.id)'),
-    );
-    expect(takeBack).toContain('Promise.allSettled(');
-    expect(takeBack).toContain('composeTakeBack({ removed, drafts })');
-    expect(takeBack).toContain('.setPrefill(sessionId, text, files)');
-    // Anything that cannot come back losslessly goes back to the queue.
-    expect(takeBack).toContain('restoreQueuedMessage(prompt,');
+describe('Up and the pencil edit a queued message in place', () => {
+  // REWRITTEN when Edit stopped taking the row back (DELETE + prefill above
+  // the draft) and became an in-place edit of the queued row. The behaviour is
+  // tested in `composer/queue-edit.test.ts`; these pin the call sites.
+  test('the list and the composer share one controller', () => {
+    expect(chat).toContain('const queueEditor = useQueueEdit({ sessionId, rows: queueRows.rows, promptInbox });');
+    expect(chat).toContain('queueOpenEdit(id);');
+    expect(chat).toContain('editingId={queueEditingId}');
+    expect(chat).toContain('onSendNow={queueSendNow}');
+    // The list is its own full-width card above the composer, not a layer of
+    // the inset strip.
+    expect(chat).toContain('aboveSlot={chatAboveSlot}');
+    expect(chat).toContain('queueEdit={queueEditor.queueEdit}');
+    expect(chat).toContain('onQueueEditSave={queueEditor.saveQueueEdit}');
+    expect(chat).toContain('onQueueEditEnd={queueEditor.endQueueEdit}');
+    // The old take-back is gone, so no second edit model can come back.
+    expect(chat).not.toContain('handleTakeBackQueue');
   });
 
   test('the composer gets the key handler and the hint', () => {
-    expect(chat).toContain('onArrowUpAtStart={() => handleTakeBackQueue()}');
+    expect(chat).toContain('onArrowUpAtStart={queueEditor.editLastRow}');
     // The hint shows only while there is something Up would take back.
     expect(chat).toMatch(/hint=\{\s*canTakeBackQueue \?/);
   });

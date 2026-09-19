@@ -30,6 +30,15 @@ interface SessionWorkingState {
   receipts: Record<string, SendReceipt | null>;
   aborts: Record<string, AbortReceipt>;
   inbox: Record<string, WorkingInboxInput>;
+  /**
+   * This tab's clock at the latest status frame that crossed from `idle` to
+   * not-idle, per session — `WorkingInputs.runtimeBusySinceAtMs`.
+   *
+   * Shared for the same reason the receipts are: several mounts observe one
+   * session, and a mount that appears after the flip never sees the edge. One
+   * slot per session keeps every mount naming the same turn.
+   */
+  runtimeBusySince: Record<string, number>;
 
   /** Record that a prompt just left this tab. Replaces any previous receipt:
    *  the newest send is the one the UI is standing on. Also releases any
@@ -84,6 +93,9 @@ interface SessionWorkingState {
    *  `observed_at`: the write's place on the server clock, which is what bars a
    *  read issued BEFORE the POST from erasing the row after it settles. */
   notePromptAccepted: (sessionId: string, atMs: number, serverAtMs?: number) => void;
+  /** A busy phase began at `atMs` (tab clock). Every mount that watched the
+   *  edge reports the same frame stamp, so an equal or older stamp is ignored. */
+  noteRuntimeBusySince: (sessionId: string, atMs: number) => void;
   /** Drop every input this session holds. Called by `useSessionWorking` when
    *  the LAST observer of the session unmounts — the maps otherwise accumulate
    *  one entry per session visited for the tab's lifetime. Correctness never
@@ -96,6 +108,7 @@ export const useSessionWorkingStore = create<SessionWorkingState>()((set) => ({
   receipts: {},
   aborts: {},
   inbox: {},
+  runtimeBusySince: {},
 
   noteSendReceipt: (sessionId, receipt) =>
     set((state) => {
@@ -206,20 +219,30 @@ export const useSessionWorkingStore = create<SessionWorkingState>()((set) => ({
       };
     }),
 
+  noteRuntimeBusySince: (sessionId, atMs) =>
+    set((state) => {
+      if (!sessionId) return state;
+      const current = state.runtimeBusySince[sessionId];
+      if (current !== undefined && current >= atMs) return state;
+      return { runtimeBusySince: { ...state.runtimeBusySince, [sessionId]: atMs } };
+    }),
+
   clearSession: (sessionId) =>
     set((state) => {
       if (
         !(sessionId in state.receipts) &&
         !(sessionId in state.aborts) &&
-        !(sessionId in state.inbox)
+        !(sessionId in state.inbox) &&
+        !(sessionId in state.runtimeBusySince)
       ) {
         return state;
       }
       const { [sessionId]: _r, ...receipts } = state.receipts;
       const { [sessionId]: _a, ...aborts } = state.aborts;
       const { [sessionId]: _i, ...inbox } = state.inbox;
-      return { receipts, aborts, inbox };
+      const { [sessionId]: _b, ...runtimeBusySince } = state.runtimeBusySince;
+      return { receipts, aborts, inbox, runtimeBusySince };
     }),
 
-  reset: () => set({ receipts: {}, aborts: {}, inbox: {} }),
+  reset: () => set({ receipts: {}, aborts: {}, inbox: {}, runtimeBusySince: {} }),
 }));

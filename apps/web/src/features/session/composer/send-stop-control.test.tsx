@@ -45,3 +45,19 @@ describe('the Send control states why it refuses', () => {
     expect(markup).not.toMatch(/<button[^>]*\sdisabled=""/);
   });
 });
+
+describe('the Save control while a queued message is edited', () => {
+  test('replaces Send with a check labelled Save edit', () => {
+    const markup = renderToStaticMarkup(<SendStopControl {...idle} saveMode />);
+    expect(markup).toContain('aria-label="Save edit"');
+    expect(markup).not.toContain('aria-label="Send message"');
+  });
+
+  test('outranks Stop: the agent is busy whenever a queue exists', () => {
+    const markup = renderToStaticMarkup(
+      <SendStopControl {...idle} isBusy onStop={() => {}} saveMode />,
+    );
+    expect(markup).toContain('aria-label="Save edit"');
+    expect(markup).not.toContain('aria-label="Stop');
+  });
+});

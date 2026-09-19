@@ -5,7 +5,8 @@ import type { UiTranslator } from '@/i18n/translator';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
 import { cn } from '@/lib/utils';
-import { CheckIcon as Check, CopyIcon as Copy } from '@phosphor-icons/react';
+import { Copy } from '@/features/icon/icons/copy';
+import { CheckIcon as Check } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import {
   type CSSProperties,

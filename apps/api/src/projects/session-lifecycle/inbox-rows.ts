@@ -76,7 +76,52 @@ export type InboxPromptDeletion =
    *  body still exists, and the client's undo has to re-create it exactly. */
   | { outcome: 'deleted'; row: SessionLifecycleCommandRow }
   | { outcome: 'delivering' }
+  /** The drain already closed the row without a copy on the wire (skipped):
+   *  see `InboxPromptPresence`. */
+  | { outcome: 'sent' }
   | { outcome: 'missing' };
+
+/**
+ * Where one inbox prompt stands, read fresh.
+ *
+ *  - `absent`: no such row in this session's inbox — never existed, or already
+ *    removed by anyone.
+ *  - `sent`: the drain closed it without a copy on the wire (`succeeded`, and
+ *    skipped: `already_answered`, `consumed_in_band`, or dropped by
+ *    `staged_revert`). Nothing is left to remove or retry. The route answers
+ *    `prompt_already_sent`.
+ *  - `on_wire`: `running`, or `succeeded` and still forwarded, or `delivered`
+ *    (a consumed prompt closes `delivered`) — the DELETE cancel arm decides
+ *    from the transcript.
+ *  - `queued`: back in line (`queued`, `failed`, `dead_lettered`).
+ *
+ * The row actions read this before they refuse, so a refusal names what is
+ * true NOW. Two concurrent removes of one row both reach the runtime; the loser
+ * learns the winner's result here instead of reporting its own stale verdict.
+ */
+export type InboxPromptPresence = 'absent' | 'sent' | 'on_wire' | 'queued';
+
+export async function readInboxPromptPresence(
+  sessionId: string,
+  promptId: string,
+): Promise<InboxPromptPresence> {
+  const [existing] = await db
+    .select({
+      status: sessionLifecycleCommands.status,
+      result: sessionLifecycleCommands.result,
+    })
+    .from(sessionLifecycleCommands)
+    .where(and(eq(sessionLifecycleCommands.commandId, promptId), inboxScope(sessionId)))
+    .limit(1);
+  if (!existing) return 'absent';
+  if (existing.status === 'running') return 'on_wire';
+  if (existing.status !== 'succeeded') return 'queued';
+  // Forwarded (stop-paused included), or confirmed `delivered` on persistence
+  // (the daemon's acceptance relay, which fires long before a model step reads
+  // the message): both are "on the wire".
+  const status = (existing.result as { status?: unknown } | null)?.status;
+  return isForwardedInboxRow(existing.result) || status === 'delivered' ? 'on_wire' : 'sent';
+}
 
 export async function deleteInboxRowsWithAttachmentGrace(predicate: SQL | undefined) {
   return db.transaction(async (tx) => {
@@ -122,31 +167,24 @@ export async function deleteInboxPrompt(
     );
   if (stopPaused[0]) return { outcome: 'deleted', row: stopPaused[0] };
 
-  // Separate the two "no row was removed" cases: a row that is on the wire
-  // cannot be cancelled without lying about it, which is a 409, not a 404.
+  // Separate the "no row was removed" cases: a row that is on the wire cannot
+  // be cancelled without lying about it, which is a 409, not a 404.
   //
   // TWO shapes are on the wire, for the same reason: a `running` row is inside
   // `continueSession`, and a FORWARDED row has already reached OpenCode, which
   // has persisted the user message. Removing either would delete the inbox's
-  // record of a message the session is going to answer.
-  const [existing] = await db
-    .select({
-      status: sessionLifecycleCommands.status,
-      result: sessionLifecycleCommands.result,
-    })
-    .from(sessionLifecycleCommands)
-    .where(and(eq(sessionLifecycleCommands.commandId, promptId), inboxScope(sessionId)))
-    .limit(1);
-  if (!existing) return { outcome: 'missing' };
-  if (existing.status === 'running') return { outcome: 'delivering' };
-  // Forwarded, or confirmed `delivered` on persistence (the daemon's
-  // acceptance relay — which fires long before a model step reads the
-  // message): both are "on the wire", and the DELETE route's cancel arm
-  // decides from the transcript whether the prompt can still come back.
-  const status = (existing.result as { status?: unknown } | null)?.status;
-  return isForwardedInboxRow(existing.result) || status === 'delivered'
-    ? { outcome: 'delivering' }
-    : { outcome: 'missing' };
+  // record of a message the session is going to answer. The DELETE route's
+  // cancel arm decides from the transcript whether it can still come back.
+  //
+  // A row the drain already CLOSED is `sent`, not `missing`: it exists, and
+  // "not found" told the user a prompt that had been sent was gone.
+  const presence = await readInboxPromptPresence(sessionId, promptId);
+  if (presence === 'absent') return { outcome: 'missing' };
+  if (presence === 'sent') return { outcome: 'sent' };
+  // `queued` here means the row moved between the statements above and this
+  // read (a claim that failed back into the queue). The DELETE route's cancel
+  // arm runs this delete once more, which removes it if it is still in line.
+  return { outcome: 'delivering' };
 }
 
 /**
@@ -165,6 +203,16 @@ export async function deleteInboxPrompt(
  * putting the fact in `result` is what let "send now" deliver a stale id. The
  * drain re-reads the transcript before it re-mints and drops the delivery if
  * the prompt turns out to have been answered, so this cannot double-run.
+ *
+ * So a retry does not keep the wire id stable. `payload.wireMessageId` (the id
+ * the client painted under, served as `wire_message_id`) stays on the row.
+ * The delivery re-reads the transcript and places the prompt again: under a
+ * fresh id above the transcript, or under the original id when an open user
+ * message above it will answer both (`openUserAbove`, only while
+ * `deliveryAttempt` is 0). Duplicates are absorbed by that read, which drops a
+ * prompt a reply is already parented on, and by the proxy's `Idempotency-Key`
+ * claim — never by the id. The key is `commandId`, or
+ * `commandId:r<deliveryAttempt>`, and the claim lives `DEDUPE_TTL_MS` (10 min).
  */
 export async function retryInboxPrompt(
   sessionId: string,
@@ -178,8 +226,9 @@ export async function retryInboxPrompt(
     lockedBy: null,
     lockedUntil: null,
     // Wholesale: this clears `admission_reason`, `admission_refusals` and
-    // `held` along with the previous failure, which is exactly what "send
-    // this one now" means for what the row DISPLAYS.
+    // `held` along with the previous failure — its `failure_code` goes with
+    // `lastError` above — which is exactly what "send this one now" means for
+    // what the row DISPLAYS.
     result: { promoted: true },
     payload: sql`${sessionLifecycleCommands.payload} || '{"remintOnDelivery": true}'::jsonb`,
     updatedAt: new Date(),
@@ -213,8 +262,12 @@ export async function retryInboxPrompt(
           // the re-POST needs a key the proxy's 10-minute dedupe claim cannot
           // swallow. Without it "send now" is answered `duplicate`, marked
           // forwarded, and force-closed ten minutes later, never having run.
-          // The arm above does not need it: those statuses never reached the
-          // wire under this row's key.
+          // The arm above does not advance it. A `failed`/`dead_lettered` row
+          // can have been POSTed under its key; inside the claim that re-POST
+          // is answered `deduplicated`, and the landing proof then reads the
+          // id it went out under. When no message has that id, the row goes
+          // out again under `:r<n+1>` (`requeueUnlandedPrompt`), one
+          // `NOT_LANDED_RETRY_DELAY_MS` (2 s) later.
           payload: withNextDeliveryAttempt(
             sql`${sessionLifecycleCommands.payload} || '{"remintOnDelivery": true}'::jsonb`,
           ),
@@ -284,14 +337,7 @@ export async function holdInboxPrompts(sessionId: string, held: boolean): Promis
   if (held) {
     const queued = await db
       .update(sessionLifecycleCommands)
-      .set({
-        availableAt: new Date(Date.now() + INBOX_HOLD_MS),
-        result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) || '{"held": true}'::jsonb`,
-        // A held row is by definition one that did not go out on its first
-        // claim — see `retryInboxPrompt` for why this lives in the payload.
-        payload: sql`${sessionLifecycleCommands.payload} || '{"remintOnDelivery": true}'::jsonb`,
-        updatedAt: new Date(),
-      })
+      .set(heldQueuedRowValues())
       .where(and(inboxScope(sessionId), eq(sessionLifecycleCommands.status, 'queued')))
       .returning({ commandId: sessionLifecycleCommands.commandId });
 
@@ -322,11 +368,7 @@ export async function holdInboxPrompts(sessionId: string, held: boolean): Promis
     // is written for.
     const running = await db
       .update(sessionLifecycleCommands)
-      .set({
-        result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) || '{"held": true}'::jsonb`,
-        payload: sql`${sessionLifecycleCommands.payload} || '{"stopPausedOnDelivery": true, "remintOnDelivery": true}'::jsonb`,
-        updatedAt: new Date(),
-      })
+      .set(heldRunningRowValues())
       .where(and(inboxScope(sessionId), eq(sessionLifecycleCommands.status, 'running')))
       .returning({ commandId: sessionLifecycleCommands.commandId });
 
@@ -439,6 +481,58 @@ export async function holdInboxPrompts(sessionId: string, held: boolean): Promis
 /** Release without asserting anything about whether a hold was set. */
 export function releaseInboxHold(sessionId: string): Promise<number> {
   return holdInboxPrompts(sessionId, false);
+}
+
+/** The Stop hold's marker on a QUEUED row: out of the drain's way for
+ *  `INBOX_HOLD_MS`, and re-minted when it does go out. */
+function heldQueuedRowValues() {
+  return {
+    availableAt: new Date(Date.now() + INBOX_HOLD_MS),
+    result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) || '{"held": true}'::jsonb`,
+    // A held row is by definition one that did not go out on its first
+    // claim — see `retryInboxPrompt` for why this lives in the payload.
+    payload: sql`${sessionLifecycleCommands.payload} || '{"remintOnDelivery": true}'::jsonb`,
+    updatedAt: new Date(),
+  };
+}
+
+/** The Stop hold's marker on a row the drain already CLAIMED — see the running
+ *  arm of `holdInboxPrompts`. */
+function heldRunningRowValues() {
+  return {
+    result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) || '{"held": true}'::jsonb`,
+    payload: sql`${sessionLifecycleCommands.payload} || '{"stopPausedOnDelivery": true, "remintOnDelivery": true}'::jsonb`,
+    updatedAt: new Date(),
+  };
+}
+
+/**
+ * Hold ONE prompt, with the same markers `holdInboxPrompts` writes.
+ *
+ * The undo of a removed held row. The row was deleted, so the undo inserts it
+ * again, and a session-wide hold or release there would change every other
+ * row: Stop → remove → Undo resumed the whole queue. This writes the removed
+ * row's own held bit back and touches nothing else.
+ *
+ * The caller inserts the row already not due (`availableAt` at the hold
+ * horizon), so the scheduler cannot claim it before this lands. A targeted
+ * sibling sweep ignores `availableAt`, so a row it claimed in that window gets
+ * the running-arm marker instead.
+ */
+export async function holdInboxPrompt(sessionId: string, promptId: string): Promise<boolean> {
+  const scope = and(eq(sessionLifecycleCommands.commandId, promptId), inboxScope(sessionId));
+  const [queued] = await db
+    .update(sessionLifecycleCommands)
+    .set(heldQueuedRowValues())
+    .where(and(scope, eq(sessionLifecycleCommands.status, 'queued')))
+    .returning({ commandId: sessionLifecycleCommands.commandId });
+  if (queued) return true;
+  const [running] = await db
+    .update(sessionLifecycleCommands)
+    .set(heldRunningRowValues())
+    .where(and(scope, eq(sessionLifecycleCommands.status, 'running')))
+    .returning({ commandId: sessionLifecycleCommands.commandId });
+  return !!running;
 }
 
 /** Is this row deliberately held out of the drain? */

@@ -25,8 +25,7 @@ import { useKortixRouteProjectId } from '../route-project';
 import { resetPrefetchState } from '../use-session-prefetch';
 import { createEventHandler } from './handle-event';
 import {
-  releaseMessageRehydrate,
-  reserveMessageRehydrate,
+  rehydrateHeldTranscripts,
   resolveClientEvictionUrl,
   shouldSkipStatusFill,
 } from './helpers';
@@ -185,9 +184,15 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
 
     // ---- CONSOLIDATED hydration function ----
     // Single function for hydrating permissions, questions, and session statuses.
-    // Called both on initial connect and on SSE reconnect (gap > 5s).
-    // Previously this logic was duplicated in two places.
-    const hydrateCore = (options?: { refetchSessions?: boolean; rehydrateMessages?: boolean }) => {
+    // Called on initial connect, and on the stream's resync after a reconnect
+    // (`onGapRehydrate`: after the new subscription's first frame, at most once
+    // per 5 s per stream). Previously this logic was duplicated in two places.
+    const hydrateCore = (options?: {
+      refetchSessions?: boolean;
+      rehydrateMessages?: boolean;
+      /** The resync's `contentLost` (see `onGapRehydrate`). */
+      contentLost?: boolean;
+    }) => {
       client.permission
         .list()
         .then((res) => {
@@ -307,12 +312,19 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
         // — see `sessionsNeedingRehydrate`. The slot is filled by the stream,
         // so a gap wide enough to lose message frames is wide enough to lose
         // the frame that would have marked the session busy.
-        for (const sid of sessionsNeedingRehydrate(Object.keys(syncState.messages))) {
-          if (!reserveMessageRehydrate(sid)) continue;
-          reconcileSessionTail(sid, 'sse-gap')
-            .catch(() => {})
-            .finally(() => releaseMessageRehydrate(sid));
-        }
+        //
+        // Each under its own bound (`rehydrateHeldTranscripts`). A running
+        // session whose frames the dropped subscription carried is read on
+        // every resync, gated only by a floor below the stream's 5 s floor.
+        // Every other held transcript keeps the 30 s cooldown and waits for
+        // its read in flight, so a flapping stream does not re-read them all
+        // back to back.
+        rehydrateHeldTranscripts({
+          sessionIds: sessionsNeedingRehydrate(Object.keys(syncState.messages)),
+          contentLost: options.contentLost === true,
+          statusOf: (sid) => syncState.sessionStatus[sid],
+          read: (sid) => reconcileSessionTail(sid, 'sse-gap'),
+        });
       }
     };
 
@@ -322,7 +334,7 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
     // Set up SSE via the framework-free event-stream machine. The
     // connect/reconnect/backoff loop, heartbeat watchdog, and event
     // coalescing all live in `openEventStream` — this wrapper only supplies
-    // the QueryClient-dependent event handler and the gap-rehydrate hook.
+    // the QueryClient-dependent event handler and the resync hook.
     const handle = openEventStream({
       client,
       // A park is not a verdict about the sandbox — only about the last few
@@ -344,7 +356,8 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
         noteSessionSyncEvent(event);
         handleEvent(event);
       },
-      onGapRehydrate: () => hydrateCore({ rehydrateMessages: true }),
+      onGapRehydrate: (_gapMs, info) =>
+        hydrateCore({ rehydrateMessages: true, contentLost: info.contentLost }),
     });
 
     return () => {

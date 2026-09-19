@@ -36,9 +36,9 @@ import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { upsertProjectSecret } from '@kortix/sdk';
 import { qk, refreshProjectProviderState } from '@kortix/sdk/react';
+import { Copy } from '@/features/icon/icons/copy';
 import {
   CheckIcon as Check,
-  CopyIcon as Copy,
   EyeIcon as Eye,
   EyeSlashIcon as EyeSlash,
   InfoIcon as Info,

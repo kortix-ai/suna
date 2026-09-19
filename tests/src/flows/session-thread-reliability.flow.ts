@@ -1107,14 +1107,23 @@ flow(
 
     await ctx.step('retry/send-now names the row, and refuses one on the wire', async () => {
       // One primitive for retry AND "send now": both are the user pointing at a
-      // row and asking for that message. A `running` row is already on the wire
-      // and answers 404 — re-queueing it would double-deliver.
+      // row and asking for that message. A row already on the wire (running or
+      // forwarded) or closed by the drain answers 409 `prompt_already_sent` —
+      // re-queueing it would double-deliver. A row that is gone answers 404
+      // `prompt_not_found`.
       const r = await owner.post(
         '/v1/projects/:projectId/sessions/:sessionId/prompts/:promptId/retry',
         {},
         { params: { ...params, promptId } },
       );
-      r.status([200, 404]);
+      r.status([200, 404, 409]);
+      if (r.statusCode !== 200) {
+        const expected = r.statusCode === 404 ? 'prompt_not_found' : 'prompt_already_sent';
+        const code = r.json<{ code?: unknown }>().code;
+        if (code !== expected) {
+          throw new Error(`retry answered ${r.statusCode} with code ${String(code)}, expected ${expected}`);
+        }
+      }
     });
 
     await ctx.step('DELETE removes the prompt, or refuses it honestly if it is on the wire', async () => {
@@ -1122,14 +1131,23 @@ flow(
         params: { ...params, promptId },
       });
       // 200 removed — and the response CARRIES the prompt it removed, because
-      // the row is hard-deleted and the UI offers an undo. 409 already being
-      // delivered (cancelling would be a lie), 404 already delivered and gone
-      // from the inbox. Never a 5xx.
+      // the row is hard-deleted and the UI offers an undo. 409 when a step is
+      // answering it or the drain closed it (`prompt_already_sent`), or when it
+      // is being delivered and the runtime cannot be reached
+      // (`prompt_cancel_unreachable`). 404 `prompt_not_found` when the row is
+      // gone. Never a 5xx.
       r.status([200, 409, 404]);
       if (r.statusCode === 200) {
         const removed = r.json<any>().removed;
         if (typeof removed?.client_message_id !== 'string' || !Array.isArray(removed?.parts)) {
           throw new Error(`DELETE did not return the removed prompt: ${JSON.stringify(removed)}`);
+        }
+      } else {
+        const expected =
+          r.statusCode === 404 ? ['prompt_not_found'] : ['prompt_already_sent', 'prompt_cancel_unreachable'];
+        const code = r.json<{ code?: unknown }>().code;
+        if (typeof code !== 'string' || !expected.includes(code)) {
+          throw new Error(`DELETE answered ${r.statusCode} with code ${String(code)}, expected ${expected.join(' or ')}`);
         }
       }
     });

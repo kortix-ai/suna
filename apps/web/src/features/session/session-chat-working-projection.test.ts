@@ -8,6 +8,19 @@ import { fileURLToPath } from 'node:url';
 // missing anchor rather than yielding '' and passing.
 const chat = readFileSync(fileURLToPath(new URL('./session-chat.tsx', import.meta.url)), 'utf8');
 
+/** `handleSend`, whole: from its declaration to the declaration after it. */
+function handleSendSource(): string {
+  return between(chat, 'const handleSend = useCallback(', 'const heldSendFailures = useHeldSendFailureStore(');
+}
+
+/** Source with its comment lines removed, so a word in prose is never code. */
+function withoutComments(source: string): string {
+  return source
+    .split('\n')
+    .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+    .join('\n');
+}
+
 function between(source: string, start: string, end: string): string {
   const from = source.indexOf(start);
   expect(from, `anchor not found: ${start}`).toBeGreaterThan(-1);
@@ -65,6 +78,53 @@ describe('the composer reads ONE working answer', () => {
     expect(send).not.toContain('noteSendReceipt(clientMessageId)');
     expect(send).not.toContain('acceptSendReceipt(clientMessageId)');
     expect(send).not.toContain('clearSendReceipt(clientMessageId)');
+  });
+
+  test('the send receipt is taken at paint, before the send can suspend', () => {
+    // Uploads and an earlier send's POST sit between Enter and this send's own
+    // POST. A receipt taken only before the POST left the composer on Send, with
+    // no busy row, under a painted message for that whole wait.
+    const send = handleSendSource();
+    const code = withoutComments(send);
+    const paint = code.indexOf('beginOptimisticSend(sessionId, messageID');
+    const receiptName = code.indexOf('const receiptTurnId = willQueue');
+    const receipt = code.indexOf('noteSendReceipt(messageID, receiptTurnId);');
+    expect(paint).toBeGreaterThan(-1);
+    expect(receiptName).toBeGreaterThan(paint);
+    expect(receipt).toBeGreaterThan(receiptName);
+    // The callback cannot suspend before the receipt: its prologue holds no
+    // `await`, and every closure that does await is declared after it. A
+    // LEXICAL first-`await` search proves neither — it lands inside a nested
+    // function body, which is not a point the send suspends at.
+    expect(code.slice(0, receipt)).not.toMatch(/\bawait\s/);
+    for (const suspendsLater of [
+      'const inboxRowExists = async () => {',
+      'const deliver = async (',
+      'return deliverAfterPaint(',
+    ]) {
+      const at = code.indexOf(suspendsLater);
+      expect(at, `anchor not found: ${suspendsLater}`).toBeGreaterThan(-1);
+      expect(receipt).toBeLessThan(at);
+    }
+    // The note before the POST stays: it restarts the receipt's age cap.
+    const beforePost = code.indexOf('noteSendReceipt(messageID, receiptTurnId);', receipt + 1);
+    expect(beforePost).toBeGreaterThan(code.indexOf('attachmentParts = await attachments.whenReady()'));
+    expect(beforePost).toBeLessThan(code.indexOf('const created = await promptInbox.enqueue({'));
+  });
+
+  test('a send that delivers nothing drops the receipt it took at paint', () => {
+    const code = withoutComments(handleSendSource());
+    // An upload that fails.
+    const upload = between(code, 'attachmentParts = await attachments.whenReady();', 'return messageID;');
+    expect(upload).toContain('clearSendReceipt(messageID);');
+    // Parts that cannot be built: kept painted, or abandoned.
+    const parts = between(code, 'parts.push(...promptFileParts(attachedFiles, attachmentParts));', 'throw err instanceof Error');
+    expect(parts.indexOf('clearSendReceipt(messageID);')).toBeGreaterThan(-1);
+    expect(parts.indexOf('clearSendReceipt(messageID);')).toBeLessThan(parts.indexOf('if (keepsPainted)'));
+    expect(parts).toContain('abandonOptimisticSend(sessionId, messageID);');
+    // A POST the server refused.
+    const refused = between(code, 'if (!result.ok) {', 'return messageID;\n      };');
+    expect(refused.split('clearSendReceipt(messageID);').length - 1).toBe(2);
   });
 
   test('the receipt is dropped on every path where nothing is coming', () => {
@@ -163,8 +223,43 @@ describe('the composer reads ONE working answer', () => {
     // `message_id` is null for every `/` command's turn (`buildSessionCommandInput`
     // sends no `messageID`), so keying this gate on it left it permanently open
     // for the exact producer it guards.
-    expect(chat).toContain('working.serverOpenTurnToken !== null');
+    const gates = between(chat, 'const retryGates = retryingAssistantGates({', '});');
+    expect(gates).toContain('serverOpenTurnToken: working.serverOpenTurnToken,');
+    const command = between(chat, 'const effectiveBusy = resolveEffectiveBusy({', '});');
+    expect(command).toContain('hasRetryingAssistant: retryGates.blocksCommand,');
     expect(chat).not.toContain('working.serverOpenTurnId');
+  });
+
+  test('Stop stands on a FRESH open-turn read; the command gate keeps the age-free token', () => {
+    // A tab whose `/turn` reads stopped landing kept the token for the life of
+    // the page, and a retrying reply pinned Stop on it. `retryingAssistantGates`
+    // carries the behavior tests; this pins which gate reaches which surface.
+    const gates = between(chat, 'const retryGates = retryingAssistantGates({', '});');
+    expect(gates).toContain('serverOpenTurnFresh: working.serverOpenTurnFresh,');
+    const stop = between(chat, 'const stopBusy = resolveEffectiveBusy({', '});');
+    expect(stop).toContain('hasRetryingAssistant: retryGates.holdsStop,');
+    // Stop and the busy row read the delay-hidden `isBusy`, which follows `stopBusy`.
+    expect(chat).toContain('const [isBusy, setIsBusy] = useState(stopBusy);');
+    const fade = withoutComments(between(chat, 'const busyTimerRef = useRef', 'const isBusyRef'));
+    expect(fade).toContain('if (stopBusy) {');
+    expect(fade).not.toContain('effectiveBusy');
+    expect(chat).toContain('isBusy={isBusy}');
+  });
+
+  test('a send reads the AGE-FREE gate: the server holds the turn after Stop lets go', () => {
+    // `isBusyRef` is the first term of `willQueue`, so it decides whether a send
+    // anchors the viewport and names ITSELF as the working turn. The fresh-read
+    // gate must not reach it: on a stale `/turn` read Stop releases, but the
+    // server's admission gate has not — it still holds the open turn and lists
+    // the prompt `waiting (turn_active)`. A direct-send path there names a turn
+    // the runtime never started, which is the double jump `freshSendHint` exists
+    // to prevent.
+    const ref = between(chat, 'const isBusyRef = useRef(false);', 'const expectAssistantResponse');
+    expect(ref).toContain('isBusyRef.current = effectiveBusy;');
+    expect(ref).not.toContain('stopBusy');
+    expect(withoutComments(handleSendSource())).toContain(
+      "isBusyRef.current || promptInbox.prompts.some((prompt) => prompt.state !== 'failed')",
+    );
   });
 
   test('a `/` command still refuses to go out into a turn that is mid-retry', () => {
@@ -186,7 +281,7 @@ describe('the composer reads ONE working answer', () => {
     // `resolveEffectiveBusy` call, and the composer must read `effectiveBusy`.
     expect(chat).toContain('hasRetryingAssistantTurn(messages)');
     const busyResolution = between(chat, 'const effectiveBusy = resolveEffectiveBusy({', '});');
-    expect(busyResolution).toContain('hasRetryingAssistant');
+    expect(busyResolution).toContain('hasRetryingAssistant: retryGates.blocksCommand,');
     expect(chat).toContain('sessionWorking={effectiveBusy}');
   });
 });
@@ -218,7 +313,11 @@ describe('the turn card reads the same working answer', () => {
     // The projection names the turn first; only where it names none does this
     // tab's own unanswered idle send (`freshSendHint`) — the one-frame "queued"
     // flash on send that anchored the scroll back and forth.
-    expect(chat).toContain('hintMessageId: working.turnId ?? freshSendTurnId,');
+    // `resolveBusyRow` applies that order (`working-turn.test.ts`); the page
+    // hands it both.
+    const busyRow = between(chat, 'resolveBusyRow({', '}),');
+    expect(busyRow).toContain('projection: working,');
+    expect(busyRow).toContain('freshSendTurnId,');
     expect(chat).toContain('setFreshSend({ sessionId, messageId: messageID });');
   });
 

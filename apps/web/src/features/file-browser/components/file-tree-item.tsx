@@ -11,12 +11,12 @@ import {
 } from '@/components/ui/context-menu';
 import { getFileIcon } from '@/features/project-files/components/file-icon';
 import { cn } from '@/lib/utils';
+import { Copy } from '@/features/icon/icons/copy';
 import {
   WarningIcon as AlertTriangle,
   CaretRightIcon as ChevronRight,
   WarningCircleIcon as CircleAlert,
   ClipboardIcon as ClipboardCopy,
-  CopyIcon as Copy,
   DownloadIcon as Download,
   ClockCounterClockwiseIcon as History,
   PencilSimpleIcon,

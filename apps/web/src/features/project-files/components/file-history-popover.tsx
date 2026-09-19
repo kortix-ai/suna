@@ -8,13 +8,13 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { GitCommit } from '@/features/file-browser/types';
 import { cn } from '@/lib/utils';
+import { Copy } from '@/features/icon/icons/copy';
 import {
   WarningCircleIcon as AlertCircle,
   CheckIcon as Check,
   CaretDownIcon as ChevronDown,
   CaretRightIcon as ChevronRight,
   ClockIcon as Clock,
-  CopyIcon as Copy,
   NotePencilIcon as FileEdit,
   FilePlusIcon as FilePlus2,
   FileArrowUpIcon as FileSymlink,

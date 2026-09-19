@@ -1005,6 +1005,115 @@ test('createSessionPrompt reports a dedupe rather than hiding it', async () => {
   });
 });
 
+test('createSessionPrompt marks an undo as a restore and carries the removed row hold', async () => {
+  // Undo re-POSTs a removed prompt. It must not resume a queue the user
+  // stopped, so the body says it is a restore and whether the row was held.
+  nextResponse = {
+    status: 202,
+    body: { prompt_id: 'cmd-2', state: 'waiting', message_id: 'msg_b', deduped: false },
+  };
+  await createSessionPrompt('P1', 'S1', {
+    clientMessageId: 'q_1',
+    messageId: 'msg_b',
+    parts: [{ type: 'text', text: 'say hi' }],
+    restore: true,
+    held: true,
+  });
+  expect(last().body).toEqual({
+    client_message_id: 'q_1',
+    message_id: 'msg_b',
+    parts: [{ type: 'text', text: 'say hi' }],
+    restore: true,
+    held: true,
+  });
+
+  await createSessionPrompt('P1', 'S1', {
+    clientMessageId: 'q_1',
+    messageId: 'msg_c',
+    parts: [{ type: 'text', text: 'say hi' }],
+    restore: true,
+    held: false,
+  });
+  expect(last().body).toMatchObject({ restore: true, held: false });
+
+  await createSessionPrompt('P1', 'S1', {
+    clientMessageId: 'q_2',
+    messageId: 'msg_d',
+    parts: [{ type: 'text', text: 'say hi' }],
+  });
+  const plain = last().body as Record<string, unknown>;
+  expect('restore' in plain).toBe(false);
+  expect('held' in plain).toBe(false);
+});
+
+test('a restore POST reaches the host error sink only for billing', async () => {
+  // The Undo toast owns every other refusal. A 402 still has to reach the host:
+  // it is what opens the upgrade dialog.
+  const errors: unknown[] = [];
+  configureKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+    onError: (err: unknown) => errors.push(err),
+  });
+  const restore = {
+    clientMessageId: 'q_1',
+    messageId: 'msg_b',
+    parts: [{ type: 'text' as const, text: 'say hi' }],
+    restore: true,
+    held: false,
+  };
+  try {
+    nextResponse = { status: 409, body: { error: 'Connect GitHub first', code: 'connector_required' } };
+    await expect(createSessionPrompt('P1', 'S1', restore)).rejects.toMatchObject({ status: 409 });
+    nextResponse = { status: 500, body: { error: 'boom' } };
+    await expect(createSessionPrompt('P1', 'S1', restore)).rejects.toMatchObject({ status: 500 });
+    expect(errors).toEqual([]);
+
+    nextResponse = { status: 402, body: { message: 'Out of credits' } };
+    const billing = await createSessionPrompt('P1', 'S1', restore).catch((error: unknown) => error);
+    expect((billing as { status?: number }).status).toBe(402);
+    expect(errors).toEqual([billing]);
+
+    // An ordinary send keeps the transport default: every refusal reaches the sink.
+    errors.length = 0;
+    nextResponse = { status: 409, body: { error: 'Connect GitHub first', code: 'connector_required' } };
+    const { restore: _restore, held: _held, ...send } = restore;
+    await createSessionPrompt('P1', 'S1', send).catch(() => {});
+    expect(errors).toHaveLength(1);
+  } finally {
+    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  }
+});
+
+test('queue rows carry a failure code and a removed row says whether it was held', async () => {
+  const failed: SessionPrompt = {
+    prompt_id: 'cmd-1',
+    client_message_id: 'q_1',
+    message_id: 'msg_a',
+    state: 'failed',
+    reason: null,
+    text: 'say hi',
+    attempts: 3,
+    last_error: 'Out of credits. Top up to continue.',
+    failure_code: 'out_of_credits',
+    created_at: '2026-08-18T00:00:00.000Z',
+    available_at: '2026-08-18T00:00:02.000Z',
+  };
+  nextResponse = { status: 200, body: { prompts: [failed] } };
+  expect((await listSessionPrompts('P1', 'S1')).prompts[0]?.failure_code).toBe('out_of_credits');
+
+  const removed: RemovedSessionPrompt = {
+    prompt_id: 'cmd-1',
+    client_message_id: 'q_1',
+    message_id: 'msg_a',
+    parts: [{ type: 'text', text: 'say hi' }],
+    overrides: null,
+    held: true,
+  };
+  nextResponse = { status: 200, body: { removed } };
+  expect((await deleteSessionPrompt('P1', 'S1', 'cmd-1')).held).toBe(true);
+});
+
 test('listSessionPrompts hits GET .../prompts and hands the rows through verbatim', async () => {
   const prompt: SessionPrompt = {
     prompt_id: 'cmd-1',
@@ -1064,10 +1173,39 @@ test('retrySessionPrompt POSTs .../retry and returns the requeued row', async ()
   const result = await retrySessionPrompt('P1', 'S1', 'cmd-1');
   expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/prompts/cmd-1/retry');
   expect(last().method).toBe('POST');
-  // The wire id is UNCHANGED by a retry: the proxy's delivery claim is keyed on
-  // it, so a retry of a delivery that actually landed is still absorbed.
+  // The response names the row's current wire id. Delivery re-mints it
+  // (`remintOnDelivery`); a duplicate delivery is absorbed by the idempotency
+  // dedupe, not by an unchanged id.
   expect(result.message_id).toBe('msg_a');
   expect(result.state).toBe('queued');
+  // Absent from servers older than the field.
+  expect(result.observed_at).toBeUndefined();
+});
+
+test('retrySessionPrompt hands through the server stamp taken after the write', async () => {
+  // The hook ranks later list reads against it, so a read the server took
+  // before the retry cannot paint the row `failed` again.
+  nextResponse = {
+    status: 200,
+    body: {
+      prompt_id: 'cmd-1',
+      client_message_id: 'q_1',
+      message_id: 'msg_a',
+      state: 'queued',
+      reason: null,
+      text: 'say hi',
+      attempts: 0,
+      last_error: null,
+      failure_code: null,
+      created_at: '2026-08-18T00:00:00.000Z',
+      available_at: '2026-08-18T00:00:00.000Z',
+      observed_at: '2026-08-18T00:00:05.000Z',
+    },
+  };
+  const result = await retrySessionPrompt('P1', 'S1', 'cmd-1');
+  const observedAt: string | undefined = result.observed_at;
+  expect(observedAt).toBe('2026-08-18T00:00:05.000Z');
+  expect(result.failure_code).toBeNull();
 });
 
 test('holdSessionPrompts POSTs .../prompts/hold with the flag and returns the queue', async () => {

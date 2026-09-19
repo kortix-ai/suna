@@ -1,9 +1,9 @@
 'use client';
 
 import { useTranslations } from '@/i18n/use-translations';
+import { Copy } from '@/features/icon/icons/copy';
 import {
   CheckIcon as Check,
-  CopyIcon as Copy,
   KeyIcon as KeyRound,
   DotsThreeIcon as MoreHorizontal,
   TrashIcon as Trash2,

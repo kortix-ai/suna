@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, jest, test } from 'bun:test';
 import type { Message } from '@opencode-ai/sdk/v2/client';
 import { SandboxNotReadyError } from '../../core/http/opencode-errors';
 import { useSyncStore } from '../stores/sync-store';
@@ -299,6 +299,113 @@ describe('session sync controller eviction', () => {
     retained[0]?.release();
     expect(getSessionSyncController('session-0')).not.toBe(retained[0]?.controller);
     for (const entry of retained.slice(1)) entry.release();
+  });
+});
+
+/**
+ * A turn-end repair read sees an open tail with more text than the tab holds:
+ * OpenCode persists `time.completed` after the idle frame. The store stamps
+ * runtime activity for that shape, and the working projection then answered
+ * 'working' on a finished turn. The registry forwards the controller's
+ * no-stamp option into the store.
+ */
+describe('session sync registry hydrate', () => {
+  test('a turn-end read reaches the store without stamping runtime activity; a visible read still stamps', async () => {
+    const sessionId = 'session-repair';
+    let text = 'hel';
+    const client = {
+      session: {
+        messages: async () => ({
+          data: [
+            {
+              info: { id: 'msg_u1', sessionID: sessionId, role: 'user', time: { created: 1 } } as Message,
+              parts: [],
+            },
+            {
+              info: {
+                id: 'msg_a1',
+                sessionID: sessionId,
+                role: 'assistant',
+                parentID: 'msg_u1',
+                time: { created: 2 },
+              } as Message,
+              parts: [{ id: 'prt_a1', sessionID: sessionId, messageID: 'msg_a1', type: 'text', text }],
+            },
+          ],
+        }),
+      },
+    };
+    try {
+      const controller = getSessionSyncController(sessionId, client as never, 'runtime-a');
+      await controller.reconcile('initial');
+      expect(useSyncStore.getState().sessionActivityAt[sessionId]).toBeUndefined();
+
+      text = 'hello';
+      await controller.reconcile('turn-end');
+      expect(useSyncStore.getState().sessionActivityAt[sessionId]).toBeUndefined();
+
+      text = 'hello world';
+      await controller.reconcile('visible');
+      expect(useSyncStore.getState().sessionActivityAt[sessionId]).toBeGreaterThan(0);
+    } finally {
+      resetSessionSyncControllers();
+    }
+  });
+});
+
+/**
+ * The last consumer leaving a working session is not a turn end. The tail of a
+ * running session is open on every read, so a settle cycle there spends its
+ * whole read budget on pages that can weigh megabytes each.
+ */
+describe('session sync registry release', () => {
+  test('releasing the last consumer of a working session issues exactly one tail read', async () => {
+    const sessionId = 'session-running';
+    let reads = 0;
+    const client = {
+      session: {
+        messages: async () => {
+          reads += 1;
+          return {
+            data: [
+              {
+                info: { id: 'msg_u1', sessionID: sessionId, role: 'user', time: { created: 1 } } as Message,
+                parts: [],
+              },
+              {
+                info: {
+                  id: 'msg_a1',
+                  sessionID: sessionId,
+                  role: 'assistant',
+                  parentID: 'msg_u1',
+                  time: { created: 2 },
+                } as Message,
+                parts: [],
+              },
+            ],
+          };
+        },
+      },
+    };
+    const settleMicrotasks = async () => {
+      for (let tick = 0; tick < 20; tick++) await Promise.resolve();
+    };
+    jest.useFakeTimers();
+    try {
+      const controller = getSessionSyncController(sessionId, client as never, 'runtime-a');
+      const release = retainSessionSyncController(sessionId, 'runtime-a');
+      controller.setBusy(true);
+      release();
+      await settleMicrotasks();
+      for (let elapsed = 0; elapsed < 60_000; elapsed += 500) {
+        jest.advanceTimersByTime(500);
+        await settleMicrotasks();
+      }
+      expect(reads).toBe(1);
+    } finally {
+      resetSessionSyncControllers();
+      jest.useRealTimers();
+    }
   });
 });
 

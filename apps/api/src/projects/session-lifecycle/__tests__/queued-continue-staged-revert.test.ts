@@ -407,6 +407,8 @@ describe('executeQueuedContinue — inbox prompts across a staged revert', () =>
     expect(failedCalls[0]!.commandId).toBe('cmd-1');
     expect(failedCalls[0]!.message).toContain('rewound');
     expect(failedCalls[0]!.opts).toMatchObject({ retryable: false, sessionId: SESSION_ID });
+    // The cause is a CODE, not the wording above: a client says it in its own words.
+    expect(failedCalls[0]?.opts).toMatchObject({ failureCode: 'rewound' });
     expect(events).not.toContain('prompt');
     // It DID read the sandbox — the guard only pays that read for a row that
     // could actually be refused by it.

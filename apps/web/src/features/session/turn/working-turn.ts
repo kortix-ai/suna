@@ -1,3 +1,5 @@
+import type { WorkingProjection } from '@kortix/sdk';
+
 import { showTurnBusyIndicator } from '../turn-busy-visibility';
 
 /**
@@ -40,12 +42,26 @@ import { showTurnBusyIndicator } from '../turn-busy-visibility';
 interface TurnLike {
   userMessage: { info: { id: string } };
   assistantMessages: ReadonlyArray<{
-    info: { time?: { completed?: number } | object; error?: unknown };
+    info: { time?: { completed?: number } | object; error?: unknown; finish?: string };
   }>;
 }
 
 const completedAt = (info: { time?: object }): number | undefined =>
   (info.time as { completed?: number } | undefined)?.completed;
+
+/**
+ * The runtime's finish reason says this turn CONTINUES: OpenCode runs another
+ * step while the last one finished with `tool-calls` or `unknown`.
+ *
+ * Positive evidence only. `AssistantMessage.finish` is optional on the wire
+ * (`@opencode-ai/sdk`: `finish?: string`) and nothing else in this app reads
+ * it, so a rule that needs a reason to release the row is a rule that never
+ * fires on a runtime that reports none — the answered turn would keep the busy
+ * row until the next echo, which is the placement this rule exists to fix. An
+ * absent reason therefore leaves the turn over.
+ */
+const finishContinuesTurn = (info: { finish?: string }): boolean =>
+  info.finish === 'tool-calls' || info.finish === 'unknown';
 
 export interface WorkingTurnResolution {
   /** The user message id of the working turn, or null for no turns. */
@@ -57,8 +73,18 @@ export interface WorkingTurnResolution {
 
 /** A completed assistant message can be an intermediate step of an active
  * turn. The working turn yields its row only on evidence: pending delivery, or
- * a projection naming a different active turn. A null active id is a gap
- * between readings; suppressing on it moved Thinking below queued bubbles. */
+ * a projection naming a different active turn. With queued bubbles below, a
+ * null active id is a gap between readings; suppressing on it moved Thinking
+ * below those bubbles.
+ *
+ * With NO queued bubble below, the turn that starts next has no bubble until
+ * the runtime echoes it: a prompt from the list above the composer, a trigger,
+ * another device. The finished answer yields its row to the transcript's end
+ * only when all of these hold:
+ *  - the runtime did not say this turn continues, so a step that asked for
+ *    tools keeps it;
+ *  - the session works, so the row fades where it is when the turn ends;
+ *  - the projection does not name this turn, or work waits for delivery. */
 export function shouldSuppressWorkingTurnBusy(input: {
   hasPendingTurns: boolean;
   newestAssistantCompleted: boolean;
@@ -67,8 +93,21 @@ export function shouldSuppressWorkingTurnBusy(input: {
   pendingDelivery: boolean;
   /** A queued prompt after this turn is being delivered to the runtime now. */
   deliveringBelow?: boolean;
+  /** The newest assistant message's finish reason says another step of THIS
+   *  turn is coming. Absent when the runtime reports no reason, which the wire
+   *  type allows — see `finishContinuesTurn`. */
+  newestAssistantContinuesTurn?: boolean;
+  /** The working projection's state is `working`. */
+  sessionWorking?: boolean;
 }): boolean {
-  if (!input.hasPendingTurns || !input.newestAssistantCompleted) return false;
+  if (!input.newestAssistantCompleted) return false;
+  if (!input.hasPendingTurns) {
+    return (
+      !input.newestAssistantContinuesTurn &&
+      !!input.sessionWorking &&
+      (input.pendingDelivery || input.activeTurnId !== input.workingTurnId)
+    );
+  }
   return (
     input.pendingDelivery ||
     !!input.deliveringBelow ||
@@ -271,4 +310,199 @@ export function resolveWorkingTurn(input: {
   // prompts).
   if (newestWithContent < 0) return { workingTurnId: null, pendingTurnIds: pendingIds };
   return pick(newestWithContent);
+}
+
+/** The inbox fields the busy row reads. `SessionPrompt` satisfies it. */
+export interface BusyRowPrompt {
+  prompt_id: string;
+  state: string;
+  message_id?: string | null;
+  wire_message_id?: string | null;
+}
+
+/** The working projection fields the busy row reads. Derived from the SDK's
+ *  `WorkingProjection`, which owns "is a reply running": a member added there
+ *  reaches this row instead of diverging from a local copy. */
+export type BusyRowProjection = Pick<
+  WorkingProjection,
+  'state' | 'turnId' | 'pendingDelivery'
+>;
+
+export interface BusyRowInput<T extends TurnLike, P extends BusyRowPrompt> {
+  turns: ReadonlyArray<T>;
+  /** The session's inbox rows (`useSessionPrompts().prompts`). */
+  prompts: ReadonlyArray<P>;
+  /** The id a claimed first prompt is on screen under, when a claim exists. */
+  claimedFirstTurnId?: string | null;
+  projection: BusyRowProjection;
+  /** `freshSendHint` for this tab's newest idle send, or null. */
+  freshSendTurnId: string | null;
+  /** The delay-hidden busy value the Stop button reads. */
+  lastTurnWorking: boolean;
+  /** The runtime reports a provider retry for this session. */
+  isRetrying: boolean;
+  /** The turn's reply reported an error. */
+  turnHasError: (turn: T) => boolean;
+  /** The boot stand-in draws the first prompt and its own busy row. */
+  firstPromptStandIn: boolean;
+}
+
+export interface BusyRowResolution<P extends BusyRowPrompt> {
+  workingTurnId: string | null;
+  pendingTurnIds: ReadonlySet<string>;
+  /** Inbox rows by every id their bubble can render under. */
+  pendingPromptsByMessageId: ReadonlyMap<string, P>;
+  /** The working turn draws no busy row of its own. */
+  suppressWorkingTurnBusy: boolean;
+  someTurnDrawsBusyRow: boolean;
+  showFallbackBusyRow: boolean;
+  /** The turn the fallback row renders inside; null renders it at the end. */
+  fallbackBusyRowTurnId: string | null;
+  /** The one turn the server confirmed is running, if any. */
+  confirmedActiveTurnId: string | null;
+}
+
+/**
+ * Where the busy row draws, and which bubbles read as queued.
+ *
+ * One pure answer for the transcript. `SessionChat` renders it and adds
+ * nothing, so the tests exercise the exact placement code the page runs.
+ *
+ * The working turn draws the row itself unless it yields it
+ * (`shouldSuppressWorkingTurnBusy`). A working turn with a COMPLETE answer and
+ * queued prompts below it yields when the work in progress is somewhere else:
+ * its row would sit above the queued bubbles and jump down when one runs. A
+ * turn streaming between steps has an OPEN assistant message, so rule 2 of
+ * `resolveWorkingTurn` picks it and it keeps its row.
+ *
+ * `resolveWorkingTurn` names no turn, or a turn that yields, in states where the
+ * session is working: every prompt on screen is still held by the server with
+ * no answer yet, a finished answer has queued prompts under it, or the next
+ * turn has no bubble yet. The fallback row covers all of them, so the
+ * transcript never reads idle while the composer shows Stop (dev, 2026-09-06:
+ * ~11s on a first prompt). It never stacks with the boot stand-in, which draws
+ * its own row.
+ */
+export function resolveBusyRow<T extends TurnLike, P extends BusyRowPrompt>(
+  input: BusyRowInput<T, P>,
+): BusyRowResolution<P> {
+  const { turns, prompts, projection, lastTurnWorking } = input;
+
+  // Keyed by every id a bubble can be on screen under, because the drain
+  // re-mints `message_id` while the tab still paints `wire_message_id`.
+  const pendingPromptsByMessageId = new Map<string, P>();
+  // Every id a prompt the inbox is delivering right now can render under,
+  // including the synthetic `queued-` id a bubble with no message id uses.
+  const deliveringPromptIds = new Set<string>();
+  // Turns the SERVER still holds in its inbox — see `resolveWorkingTurn`.
+  const unrunTurnIds = new Set<string>();
+  for (const prompt of prompts) {
+    if (prompt.message_id) {
+      pendingPromptsByMessageId.set(prompt.message_id, prompt);
+      unrunTurnIds.add(prompt.message_id);
+    }
+    if (prompt.wire_message_id) {
+      pendingPromptsByMessageId.set(prompt.wire_message_id, prompt);
+      unrunTurnIds.add(prompt.wire_message_id);
+    }
+    if (prompt.state === 'delivering') {
+      if (prompt.message_id) deliveringPromptIds.add(prompt.message_id);
+      if (prompt.wire_message_id) deliveringPromptIds.add(prompt.wire_message_id);
+      deliveringPromptIds.add(`queued-${prompt.prompt_id}`);
+    }
+  }
+  // …and the id the claimed row is actually on screen under, or the surviving
+  // bubble would read as running while the server still holds the prompt.
+  if (input.claimedFirstTurnId) unrunTurnIds.add(input.claimedFirstTurnId);
+
+  // The projection names the turn first; only where it names none does this
+  // tab's own unanswered idle send decide (`freshSendHint`).
+  const workingTurn = resolveWorkingTurn({
+    turns,
+    hintMessageId: projection.turnId ?? input.freshSendTurnId,
+    unrunTurnIds,
+  });
+  const pendingTurnIds = new Set(workingTurn.pendingTurnIds);
+  const workingTurnRow = turns.find((t) => t.userMessage.info.id === workingTurn.workingTurnId);
+
+  // A working turn with a COMPLETE answer yields its row when the work in
+  // progress is somewhere else — see `shouldSuppressWorkingTurnBusy`.
+  let suppressWorkingTurnBusy = false;
+  if (workingTurnRow && workingTurnRow.assistantMessages.length > 0) {
+    const newest = workingTurnRow.assistantMessages[workingTurnRow.assistantMessages.length - 1];
+    suppressWorkingTurnBusy = shouldSuppressWorkingTurnBusy({
+      hasPendingTurns: pendingTurnIds.size > 0,
+      newestAssistantCompleted: !!completedAt(newest.info),
+      newestAssistantContinuesTurn: finishContinuesTurn(newest.info),
+      workingTurnId: workingTurnRow.userMessage.info.id,
+      activeTurnId: projection.turnId,
+      pendingDelivery: !!projection.pendingDelivery,
+      deliveringBelow: workingTurn.pendingTurnIds.some((id) => deliveringPromptIds.has(id)),
+      sessionWorking: projection.state === 'working',
+    });
+  }
+
+  const someTurnDrawsBusyRow = workingTurnDrawsBusyRow({
+    lastTurnWorking,
+    workingTurnId: workingTurn.workingTurnId,
+    suppressed: suppressWorkingTurnBusy,
+    workingTurnHasError: !!workingTurnRow && input.turnHasError(workingTurnRow),
+    isRetrying: input.isRetrying,
+  });
+  // A busy session always draws one row. The boot stand-in draws its own.
+  const showFallbackBusyRow =
+    lastTurnWorking &&
+    !someTurnDrawsBusyRow &&
+    !(input.firstPromptStandIn && turns.length === 0);
+  const fallbackBusyRowTurnId = fallbackBusyRowAfterTurnId({
+    turns,
+    pendingTurnIds,
+    pendingPromptIds: pendingPromptsByMessageId,
+    deliveringPromptIds,
+  });
+
+  const confirmedActiveTurnId =
+    workingTurn.workingTurnId !== null &&
+    turnIsConfirmedActive({
+      isTurnWorking: lastTurnWorking,
+      turnId: workingTurn.workingTurnId,
+      activeTurnId: projection.turnId,
+      pendingDelivery: !!projection.pendingDelivery,
+    })
+      ? workingTurn.workingTurnId
+      : null;
+
+  return {
+    workingTurnId: workingTurn.workingTurnId,
+    pendingTurnIds,
+    pendingPromptsByMessageId,
+    suppressWorkingTurnBusy,
+    someTurnDrawsBusyRow,
+    showFallbackBusyRow,
+    fallbackBusyRowTurnId,
+    confirmedActiveTurnId,
+  };
+}
+
+/**
+ * How one turn's user bubble presents against the queue. A turn the server
+ * confirmed as running drops its pending presentation before the next inbox
+ * poll; any other unanswered bubble with an inbox row, or after the working
+ * turn, reads as queued.
+ */
+export function busyRowTurnPresentation<P extends BusyRowPrompt>(
+  resolution: BusyRowResolution<P>,
+  turn: TurnLike,
+): { confirmedActive: boolean; pendingPrompt: P | undefined; pending: boolean } {
+  const id = turn.userMessage.info.id;
+  const confirmedActive = resolution.confirmedActiveTurnId === id;
+  const pendingPrompt =
+    !confirmedActive && turn.assistantMessages.length === 0
+      ? resolution.pendingPromptsByMessageId.get(id)
+      : undefined;
+  return {
+    confirmedActive,
+    pendingPrompt,
+    pending: !confirmedActive && (Boolean(pendingPrompt) || resolution.pendingTurnIds.has(id)),
+  };
 }

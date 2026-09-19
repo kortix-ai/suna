@@ -1,7 +1,8 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { CheckIcon, CopyIcon } from '@phosphor-icons/react';
+import { Copy } from '@/features/icon/icons/copy';
+import { CheckIcon } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useCallback, useState } from 'react';
@@ -115,7 +116,7 @@ function CodeSurface({
           onClick={copy}
           className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.05] border-border duration-fast ml-auto flex items-center gap-1.5 rounded-md border px-2.5 py-1 font-mono text-[11px] transition-colors"
         >
-          {copied ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
+          {copied ? <CheckIcon className="size-3.5" /> : <Copy className="size-3.5" />}
           {copied ? 'Copied' : 'Copy'}
         </button>
       </div>

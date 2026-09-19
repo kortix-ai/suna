@@ -38,6 +38,78 @@ const FADE_SWAP = {
   transition: { duration: 0.2, ease: 'easeOut' },
 } as const;
 
+/**
+ * How close two mounts have to be to count as ONE row moving.
+ *
+ * One enter duration — `ROLL_SWAP` above runs 0.4s. A row that re-mounts inside
+ * its own enter window is the same row changing mount point (the boot stand-in
+ * to the chat's, the trailing row into a turn), and replaying the enter there
+ * is the blink. Anything later is a new turn starting after an idle gap, which
+ * is worth announcing. Turns are seconds apart, so nothing real falls inside it.
+ */
+export const BUSY_INDICATOR_HANDOVER_MS = 400;
+
+/**
+ * How many waiting rows are mounted in this tab, and when that last changed.
+ *
+ * Module state, not a ref: the point is to carry ACROSS an unmount, and the
+ * instance that has to read it does not exist yet when the write happens.
+ *
+ * The count is what makes a SAME-COMMIT handover readable. React renders the
+ * mounting tree before it runs the deleted tree's passive cleanups, so a
+ * mounting row that only knew about unmounts would read the state from before
+ * the outgoing row left — and the handovers this exists for are exactly the
+ * same-commit ones: the stand-in row and the turn's own row swap as
+ * `turns.length` goes 0 → 1, and the trailing fallback row swaps into a turn.
+ * While the outgoing row is still counted, the mounting one is the same row
+ * moving.
+ */
+export interface BusyEnterPresence {
+  /** Rows mounted right now. */
+  live: number;
+  /** The instant a row last mounted or unmounted. */
+  lastChangeAtMs: number | null;
+}
+
+export function createBusyEnterPresence(): BusyEnterPresence {
+  return { live: 0, lastChangeAtMs: null };
+}
+
+const busyEnterPresence = createBusyEnterPresence();
+
+/** Does a row mounting at `nowMs` play its enter animation? */
+export function shouldAnimateBusyEnter(
+  nowMs: number,
+  presence: BusyEnterPresence = busyEnterPresence,
+): boolean {
+  // Another row is on screen: this mount is that row changing mount point.
+  if (presence.live > 0) return false;
+  if (presence.lastChangeAtMs === null) return true;
+  const sinceMs = nowMs - presence.lastChangeAtMs;
+  // A backwards clock reads as a handover: settled is the outcome that cannot
+  // blink.
+  if (sinceMs < 0) return false;
+  return sinceMs >= BUSY_INDICATOR_HANDOVER_MS;
+}
+
+export function noteBusyIndicatorMounted(
+  atMs: number,
+  presence: BusyEnterPresence = busyEnterPresence,
+): void {
+  presence.live += 1;
+  presence.lastChangeAtMs = atMs;
+}
+
+export function noteBusyIndicatorUnmounted(
+  atMs: number,
+  presence: BusyEnterPresence = busyEnterPresence,
+): void {
+  // Never below zero: an underflow would leave `live` negative and make every
+  // later handover animate.
+  presence.live = Math.max(0, presence.live - 1);
+  presence.lastChangeAtMs = atMs;
+}
+
 export function SessionBusyIndicator({
   statusText,
   elapsedLabel,
@@ -73,6 +145,19 @@ export function SessionBusyIndicator({
   const [ambientIdx, setAmbientIdx] = useState(() =>
     Math.floor(Math.random() * AMBIENT_MESSAGES.length),
   );
+
+  // Read once, at mount, through a lazy initializer — never during a re-render,
+  // and never from a ref. A handover mounts this settled; a first row after an
+  // idle gap rolls its label in, the same roll every later label change uses.
+  // The read happens BEFORE this instance registers itself below, so it only
+  // ever sees the other rows.
+  const [animateEnter] = useState(() => shouldAnimateBusyEnter(Date.now()));
+  useEffect(() => {
+    noteBusyIndicatorMounted(Date.now());
+    return () => {
+      noteBusyIndicatorUnmounted(Date.now());
+    };
+  }, []);
 
   const useAmbient = ambient && !isRetrying && !status;
   useEffect(() => {
@@ -112,7 +197,7 @@ export function SessionBusyIndicator({
         ) : (
           <span className="flex min-w-0 items-center gap-1.5">
             <span className="relative block min-w-0 flex-1 overflow-hidden leading-5">
-              <AnimatePresence initial={false} mode="popLayout">
+              <AnimatePresence initial={animateEnter} mode="popLayout">
                 <m.span
                   key={label}
                   initial={swap.initial}

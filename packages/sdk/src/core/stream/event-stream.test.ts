@@ -26,6 +26,14 @@ function partUpdated(partId: string): OpenCodeEvent {
   } as unknown as OpenCodeEvent;
 }
 
+function keepalive(): OpenCodeEvent {
+  return { type: 'kortix.keepalive' } as unknown as OpenCodeEvent;
+}
+
+function serverConnected(): OpenCodeEvent {
+  return { type: 'server.connected', properties: {} } as unknown as OpenCodeEvent;
+}
+
 class FakeEventChannel {
   private buffer: unknown[] = [];
   private waiter: { resolve: (r: IteratorResult<unknown>) => void; reject: (e: unknown) => void } | null =
@@ -1133,15 +1141,22 @@ describe('openEventStream gap rehydrate', () => {
     await clock.advance(6000);
     channels[0].end();
     await tick();
+    // Nothing yet: a read issued now would predate the new subscription.
+    expect(gaps).toEqual([]);
 
-    expect(gaps).toEqual([6000]);
+    await clock.advance(250);
+    channels[1].push(serverConnected());
+    await tick();
+
+    // Content last flushed at 16 ms; the new subscription exists at 6266 ms.
+    expect(gaps).toEqual([6250]);
 
     handle.close();
   });
 
-  test('does not call onGapRehydrate when the reconnect gap is under 5s', async () => {
+  test('guard: a short reconnect after an attempt with no content does not call onGapRehydrate', async () => {
     const clock = createFakeClock();
-    const { client, channels } = createConnectableClient();
+    const { client, channels, attempts } = createConnectableClient();
     const gaps: number[] = [];
 
     const handle = openEventStream({
@@ -1152,15 +1167,265 @@ describe('openEventStream gap rehydrate', () => {
     });
     await tick();
 
-    channels[0].push(partUpdated('p1'));
+    channels[0].push(keepalive());
+    await tick();
+    await clock.advance(1000);
+    channels[0].push(keepalive());
+    await tick();
+    await clock.advance(1000);
+    channels[0].push(keepalive());
+    await tick();
+    channels[0].end();
+    await tick();
+    await clock.advance(250);
+    expect(attempts()).toBe(2);
+
+    channels[1].push(serverConnected());
     await tick();
     await clock.advance(16);
 
+    expect(gaps).toEqual([]);
+
+    handle.close();
+  });
+});
+
+// A reconnect loses every frame emitted between the old subscription's last
+// frame and the new one's first: the vendor client sends no Last-Event-ID, and
+// every stream error ends as a clean `done` that takes the 250 ms fast path.
+// The host's resync read must therefore be issued AFTER the new subscription
+// exists, and after any attempt that carried content, whatever the gap.
+describe('openEventStream resync after resubscribe', () => {
+  function recordingStream(clock: FakeClock) {
+    const log: string[] = [];
+    const gaps: number[] = [];
+    const infos: Array<{ contentLost: boolean }> = [];
+    const { client, channels, attempts } = createConnectableClient(() => log.push('connect'));
+    const handle = openEventStream({
+      client,
+      onEvent: (event) => log.push(`event:${event.type}`),
+      onGapRehydrate: (gapMs, info) => {
+        log.push('resync');
+        gaps.push(gapMs);
+        infos.push(info);
+      },
+      timers: clock,
+    });
+    return { log, gaps, infos, channels, attempts, handle };
+  }
+
+  test('a reconnect after a content-bearing attempt resyncs after the new first frame, even under 5 s', async () => {
+    const clock = createFakeClock();
+    const { log, gaps, infos, channels, attempts, handle } = recordingStream(clock);
+    await tick();
+
+    channels[0].push(partUpdated('p1'));
+    await tick();
+    await clock.advance(16);
     await clock.advance(1000);
     channels[0].end();
     await tick();
+    await clock.advance(250);
+    expect(attempts()).toBe(2);
+    expect(gaps).toEqual([]);
+
+    channels[1].push(serverConnected());
+    await tick();
+
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]).toBeLessThan(5_000);
+    // The dropped subscription carried content: frames of a running turn can
+    // be lost, so the host may bypass its slower bounds for this resync.
+    expect(infos).toEqual([{ contentLost: true }]);
+    expect(log).toEqual([
+      'connect',
+      'event:message.part.updated',
+      'connect',
+      'event:server.connected',
+      'resync',
+    ]);
+
+    handle.close();
+  });
+
+  test('guard: an attempt with only keepalive frames does not resync, and the reconnect still happens', async () => {
+    const clock = createFakeClock();
+    const { gaps, channels, attempts, handle } = recordingStream(clock);
+    await tick();
+
+    for (let i = 0; i < 3; i++) {
+      channels[0].push(keepalive());
+      await tick();
+      await clock.advance(1000);
+    }
+    channels[0].end();
+    await tick();
+    await clock.advance(250);
+    expect(attempts()).toBe(2);
+
+    channels[1].push(serverConnected());
+    await tick();
+    await clock.advance(16);
 
     expect(gaps).toEqual([]);
+
+    handle.close();
+  });
+
+  test('a keepalive-only stretch of 61 s followed by a reconnect reports the content gap, over 5 s', async () => {
+    const clock = createFakeClock();
+    const { gaps, infos, channels, attempts, handle } = recordingStream(clock);
+    await tick();
+
+    for (let i = 0; i < 3; i++) {
+      await clock.advance(20_000);
+      channels[0].push(keepalive());
+      await tick();
+    }
+    await clock.advance(1_000);
+    channels[0].end();
+    await tick();
+    await clock.advance(250);
+    expect(attempts()).toBe(2);
+
+    channels[1].push(serverConnected());
+    await tick();
+
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]).toBeGreaterThan(5_000);
+    // A gap-only resync: the dropped subscription delivered no content.
+    expect(infos).toEqual([{ contentLost: false }]);
+
+    handle.close();
+  });
+
+  test('two reconnects within 5 s dispatch one resync, not two', async () => {
+    const clock = createFakeClock();
+    const { gaps, channels, handle } = recordingStream(clock);
+    await tick();
+
+    // Attempt 1 carries content, drops, and resubscribes at 1266 ms.
+    channels[0].push(partUpdated('p1'));
+    await tick();
+    await clock.advance(1016);
+    channels[0].end();
+    await tick();
+    await clock.advance(250);
+    channels[1].push(partUpdated('p2'));
+    await tick();
+    expect(gaps).toHaveLength(1);
+
+    // Attempt 2 also carries content and drops 1 s later.
+    await clock.advance(1000);
+    channels[1].end();
+    await tick();
+    await clock.advance(250);
+    channels[2].push(partUpdated('p3'));
+    await tick();
+
+    expect(gaps).toHaveLength(1);
+    // Still one, up to the last millisecond of the floor.
+    await clock.advance(3_749);
+    expect(gaps).toHaveLength(1);
+
+    handle.close();
+  });
+
+  test('a resync the floor held back is dispatched once the floor ends, while subscribed', async () => {
+    const clock = createFakeClock();
+    const { log, gaps, infos, channels, handle } = recordingStream(clock);
+    await tick();
+
+    channels[0].push(partUpdated('p1'));
+    await tick();
+    await clock.advance(1016);
+    channels[0].end();
+    await tick();
+    await clock.advance(250);
+    channels[1].push(partUpdated('p2'));
+    await tick();
+    const firstResyncAt = clock.now();
+
+    await clock.advance(1000);
+    channels[1].end();
+    await tick();
+    await clock.advance(250);
+    channels[2].push(serverConnected());
+    await tick();
+    expect(gaps).toHaveLength(1);
+
+    await clock.advance(firstResyncAt + 5_000 - clock.now());
+    expect(gaps).toHaveLength(2);
+    expect(log.filter((entry) => entry === 'resync')).toHaveLength(2);
+    // The held resync was owed for a dropped subscription that carried content.
+    expect(infos).toEqual([{ contentLost: true }, { contentLost: true }]);
+
+    handle.close();
+  });
+
+  test('a held resync owed for lost content keeps contentLost when a later reconnect lost none', async () => {
+    const clock = createFakeClock();
+    const { infos, channels, handle } = recordingStream(clock);
+    await tick();
+
+    // Attempt 1 carries content; attempt 2's first frame resyncs at 1266 ms.
+    channels[0].push(partUpdated('p1'));
+    await tick();
+    await clock.advance(1016);
+    channels[0].end();
+    await tick();
+    await clock.advance(250);
+    channels[1].push(partUpdated('p2'));
+    await tick();
+    const firstResyncAt = clock.now();
+
+    // Attempt 2 carries content and drops: attempt 3's resync is held.
+    await clock.advance(500);
+    channels[1].end();
+    await tick();
+    await clock.advance(250);
+    channels[2].push(keepalive());
+    await tick();
+
+    // Attempt 3 carries no content and drops: attempt 4 adds a resync that
+    // lost none, still inside the floor.
+    await clock.advance(500);
+    channels[2].end();
+    await tick();
+    await clock.advance(250);
+    channels[3].push(keepalive());
+    await tick();
+    expect(infos).toEqual([{ contentLost: true }]);
+
+    await clock.advance(firstResyncAt + 5_000 - clock.now());
+    expect(infos).toEqual([{ contentLost: true }, { contentLost: true }]);
+
+    handle.close();
+  });
+
+  test('the >5 s gap resync is dispatched after the new first frame, not before the reconnect', async () => {
+    const clock = createFakeClock();
+    const { log, gaps, channels, handle } = recordingStream(clock);
+    await tick();
+
+    channels[0].push(partUpdated('p1'));
+    await tick();
+    await clock.advance(16);
+    await clock.advance(6000);
+    channels[0].end();
+    await tick();
+    await clock.advance(250);
+    channels[1].push(serverConnected());
+    await tick();
+
+    expect(log).toEqual([
+      'connect',
+      'event:message.part.updated',
+      'connect',
+      'event:server.connected',
+      'resync',
+    ]);
+    expect(gaps[0]).toBeGreaterThan(5_000);
 
     handle.close();
   });
@@ -1301,9 +1566,12 @@ describe('openEventStream shared-stream fan-out (F5)', () => {
     await clock.advance(6000);
     channels[0].end();
     await tick();
+    await clock.advance(250);
+    channels[1].push(serverConnected());
+    await tick();
 
-    expect(gapsA).toEqual([6000]);
-    expect(gapsB).toEqual([6000]);
+    expect(gapsA).toEqual([6250]);
+    expect(gapsB).toEqual([6250]);
 
     a.close();
     b.close();

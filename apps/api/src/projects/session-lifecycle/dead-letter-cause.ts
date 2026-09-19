@@ -26,14 +26,23 @@
  * the safe direction.
  */
 
-const CUSTOMER_STATE_PATTERNS: ReadonlyArray<RegExp> = [
-  // Billing: "Out of credits. Top up to continue." / "Your team wallet is out
-  // of credits. Top up to keep your agents running."
+import { CONNECTOR_REFUSAL_CODES, PromptDeliveryRefused } from './prompt-delivery-refusal';
+import type { PromptFailureCode } from './types';
+
+// Billing: "Out of credits. Top up to continue." / "Your team wallet is out
+// of credits. Top up to keep your agents running."
+const BILLING_PATTERNS: ReadonlyArray<RegExp> = [
   /out of credits/i,
   /top up to (continue|keep)/i,
   /insufficient credits/i,
-  // Entitlement: 'Model "codex/gpt-5.6-sol" is not available for this account'
-  /is not available for this account/i,
+];
+
+// Entitlement: 'Model "codex/gpt-5.6-sol" is not available for this account'
+const ENTITLEMENT_PATTERNS: ReadonlyArray<RegExp> = [/is not available for this account/i];
+
+const CUSTOMER_STATE_PATTERNS: ReadonlyArray<RegExp> = [
+  ...BILLING_PATTERNS,
+  ...ENTITLEMENT_PATTERNS,
   // Manifest/config the owner controls:
   // 'workspace mode "read" requires restricted workspace artifacts'
   /workspace mode ".*" requires/i,
@@ -47,4 +56,27 @@ export function deadLetterCause(error: string | null | undefined): DeadLetterCau
   return CUSTOMER_STATE_PATTERNS.some((pattern) => pattern.test(text))
     ? 'customer_state'
     : 'platform';
+}
+
+/**
+ * The failure code a thrown delivery error names, for the drain's own give-up.
+ *
+ * Runs where the prompt fails, with the error object still in hand, and the
+ * result is persisted on the row. The code comes from the refusal's HTTP status
+ * and code first; the message patterns above only name billing and
+ * entitlement, the two causes the gates state in their copy alone.
+ *
+ * A 402 is the billing gate (`BillingGateError`), whatever it says: out of
+ * credits, no subscription, or no credit account. Any other refusal is
+ * `refused`. An error that is not a refusal and matches no pattern is
+ * `unknown`.
+ */
+export function promptFailureCodeForError(error: unknown): PromptFailureCode {
+  const refusal = error instanceof PromptDeliveryRefused ? error : null;
+  if (refusal?.code && CONNECTOR_REFUSAL_CODES.has(refusal.code)) return 'connector_required';
+  if ((error as { status?: unknown } | null)?.status === 402) return 'out_of_credits';
+  const message = (error instanceof Error ? error.message : typeof error === 'string' ? error : '').trim();
+  if (BILLING_PATTERNS.some((pattern) => pattern.test(message))) return 'out_of_credits';
+  if (ENTITLEMENT_PATTERNS.some((pattern) => pattern.test(message))) return 'model_unavailable';
+  return refusal ? 'refused' : 'unknown';
 }

@@ -2,7 +2,7 @@
 
 import type { SessionTranscriptSyncEnvelope } from '../core/rest/projects-client/sessions';
 import type { SessionStatus, Todo } from '@opencode-ai/sdk/v2/client';
-import { useCallback, useEffect, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 import {
   claimSessionCacheOwnership,
   getSessionCacheOwnership,
@@ -91,6 +91,35 @@ interface UseSessionSyncOptions {
    * disagreement lasts; never touches the public `isBusy`.
    */
   serverHoldsTurn?: boolean;
+  /**
+   * Every `turn_token` the latest server `/turn` read lists as open
+   * (`useSession` reads it from the `/turn` query). `undefined` or `null`
+   * means unknown.
+   *
+   * When a token of the last known set is absent from the next set, the hook
+   * issues one `'turn-end'` transcript read while the session stays busy. A
+   * queued prompt that starts the moment a turn ends keeps `working` true
+   * across the boundary, so the busy-to-idle read never runs for the turn that
+   * ended. A boundary that also ends the busy state is read by that switch.
+   */
+  openTurnTokens?: readonly string[] | null;
+}
+
+/**
+ * Did a turn the server listed as open end between two `/turn` reads?
+ *
+ * True when a token of `previous` is absent from `next`. The sets are
+ * compared, not the lists: the ledger's list is not ordered newest-first, and
+ * a turn that opens beside a running one ends nothing. An unknown set
+ * (`null` or `undefined`) on either side is never a boundary.
+ */
+export function openTurnTokensEnded(
+  previous: readonly string[] | null | undefined,
+  next: readonly string[] | null | undefined,
+): boolean {
+  if (!previous || !next) return false;
+  const open = new Set(next);
+  return previous.some((token) => !open.has(token));
 }
 
 /**
@@ -139,7 +168,14 @@ export function livenessBusy(input: {
 }
 
 export function useSessionSync(sessionId: string, options: UseSessionSyncOptions = {}) {
-  const { kortixSessionScope, networkEnabled = true, working, serverHoldsTurn, mirror } = options;
+  const {
+    kortixSessionScope,
+    networkEnabled = true,
+    working,
+    serverHoldsTurn,
+    openTurnTokens,
+    mirror,
+  } = options;
   const runtimeHealthy = useSandboxConnectionStore((state) => state.healthy === true);
   const runtimeScope = useCurrentRuntime((state) => state.sandboxId) ?? 'none';
   const cacheOwnerScope = resolveSessionCacheOwnerScope(runtimeScope, kortixSessionScope);
@@ -359,6 +395,56 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
       livenessBusy({ networkEnabled, runtimeHealthy, working, streamBusy, serverHoldsTurn }),
     );
   }, [controller, streamBusy, networkEnabled, runtimeHealthy, working, serverHoldsTurn]);
+
+  // A TURN BOUNDARY THAT NEVER GOES IDLE. Turn A ends, the server promotes the
+  // queued prompt B, and the projection moves from A's open turn to B's without
+  // answering idle, so the `setBusy(false)` read above never runs for A. A's
+  // last frames can be lost with the stream, and nothing re-read its text
+  // before the verify poll, up to 30 s later. `/turn` still shows the boundary:
+  // a token it listed as open is gone from the next read.
+  //
+  // The effect keys on the sorted token SET, so a reorder or a new object with
+  // the same tokens does not re-run the comparison. An unknown read keeps the
+  // last known set, so [A] -> unknown -> [B] is still a boundary. A boundary
+  // that also ends the busy state is left to `setBusy(false)`: two turn-end
+  // calls would cost a second, chained read.
+  //
+  // While reads are off (`networkEnabled` false, e.g. a runtime switch) the
+  // poll is not busy, so `setBusy(false)` reads nothing either. The last known
+  // set is kept and marked `readsWereOff`; the boundary is compared and read
+  // when reads come back, busy or not. The busy switch cannot also read then:
+  // it was not armed while reads were off.
+  const openTurnSetKey =
+    openTurnTokens == null ? null : JSON.stringify([...new Set(openTurnTokens)].sort());
+  const pollBusy = livenessBusy({
+    networkEnabled,
+    runtimeHealthy,
+    working,
+    streamBusy,
+    serverHoldsTurn,
+  });
+  const lastOpenTurnsRef = useRef<{
+    sessionId: string;
+    tokens: readonly string[];
+    readsWereOff: boolean;
+  } | null>(null);
+  useEffect(() => {
+    if (openTurnSetKey === null) return;
+    const tokens = JSON.parse(openTurnSetKey) as string[];
+    const last = lastOpenTurnsRef.current;
+    const sameSession = last !== null && last.sessionId === sessionId;
+    if (!networkEnabled || !canQueryOpenCodeSession(sessionId)) {
+      lastOpenTurnsRef.current = sameSession
+        ? { ...last, readsWereOff: true }
+        : { sessionId, tokens, readsWereOff: true };
+      return;
+    }
+    lastOpenTurnsRef.current = { sessionId, tokens, readsWereOff: false };
+    if (!sameSession) return;
+    if (!openTurnTokensEnded(last.tokens, tokens)) return;
+    if (!pollBusy && !last.readsWereOff) return;
+    void controller.reconcile('turn-end');
+  }, [controller, networkEnabled, openTurnSetKey, pollBusy, sessionId]);
 
   // Re-read the tail on demand. The transcript body renders this behind its
   // "couldn't load" state so `freshness === 'error'` is recoverable without a

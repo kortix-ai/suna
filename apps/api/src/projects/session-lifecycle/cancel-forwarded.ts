@@ -39,6 +39,14 @@ import type { SessionLifecycleCommandRow } from './store';
 const WORKSPACE = '/workspace';
 const TIP_LIMIT = 30;
 
+/**
+ * Every outcome except `cancelled` is this request's OWN view, and a concurrent
+ * request can have changed the row under it: a second remove that deleted it
+ * first ends here as `answered` (its guarded delete found nothing) or as
+ * `not_forwarded` (its poll found no row). The DELETE route runs the plain
+ * delete once more (`deleteInboxPrompt`, which re-reads a row it cannot
+ * remove) before it turns any of them into a refusal.
+ */
 export type CancelForwardedOutcome =
   | { outcome: 'cancelled'; row: SessionLifecycleCommandRow }
   | { outcome: 'answered' }
@@ -199,7 +207,8 @@ export async function cancelForwardedPrompt(
 
   // The runtime no longer holds it: the row goes, and its turn authority with
   // it. Guarded on status so a concurrent consumption cannot be deleted from
-  // under its own confirmation.
+  // under its own confirmation. Nothing deleted means the row changed or a
+  // concurrent remove took it first — the route's second delete tells which.
   const deleted = await deleteInboxRowsWithAttachmentGrace(
       and(
         eq(sessionLifecycleCommands.commandId, promptId),

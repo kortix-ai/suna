@@ -55,6 +55,17 @@ const ERROR_NOISE_FILTERS = [
   join('lib', 'browser-error-noise.ts'),
   join('app', 'sentry-ignore-errors.test.ts'),
   'sentry.client.config.ts',
+  // The queue-failure tests. A prompt the server refused carries a stable
+  // `failure_code`; `queue-failure-copy.ts` turns `out_of_credits` into one
+  // translation key, and the row renders that key. No queue SOURCE file holds
+  // the English — these four tests do, as the `last_error` the server sends
+  // and as the sentence the key resolves to. They match the wire format and
+  // the catalogue; they author neither, and the copy they assert is decided by
+  // the server's code, so it cannot contradict the server's own answer.
+  join('features', 'session', 'queue-failure-copy.test.ts'),
+  join('features', 'session', 'queue-projection.test.ts'),
+  join('features', 'session', 'composer', 'queued-prompt-list.test.tsx'),
+  join('features', 'session', 'turn', 'queued-prompt-bubbles.test.tsx'),
 ];
 
 /**

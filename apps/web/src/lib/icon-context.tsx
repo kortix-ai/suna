@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useMemo, type ComponentType, type ReactNode } from 'react';
 
+import { Copy } from '@/features/icon/icons/copy';
 import {
   ArrowCounterClockwiseIcon,
   ArrowElbowDownRightIcon,
@@ -17,7 +18,6 @@ import {
   CheckIcon,
   CircleIcon,
   ClockIcon,
-  CopyIcon,
   DotIcon,
   EnvelopeIcon,
   EyedropperIcon,
@@ -122,7 +122,7 @@ export const defaultIcons: Record<IconName, IconComponent> = {
   'chevron-down': CaretDownIcon,
   pipette: EyedropperIcon,
   x: XIcon,
-  copy: CopyIcon,
+  copy: Copy,
   menu: ListIcon,
   dot: DotIcon,
   monitor: MonitorIcon,

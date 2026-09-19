@@ -8,6 +8,7 @@ import {
   FeatureFlagStabilitySchema,
   ErrorEnvelopeSchema,
   OkResponseSchema,
+  PendingSessionPromptSchema,
   OAuth2ApplicationInputSchema,
   OAuth2AuthorizationStartInputSchema,
   OAuth2ClientCredentialsSchema,
@@ -473,6 +474,30 @@ describe('pending session prompt contract', () => {
     expect(() =>
       SessionCreateInputSchema.strict().parse({ pending_prompt: { text: '' } }),
     ).toThrow();
+  });
+
+  test('accepts an optional send_started_at_ms on normal create and warm claim', () => {
+    expect(PendingSessionPromptSchema.safeParse({ text: 'hi', send_started_at_ms: 1 }).success).toBe(
+      true,
+    );
+    const pendingPrompt = { text: 'hi', send_started_at_ms: 1_758_000_000_000 };
+    expect(
+      SessionCreateInputSchema.strict().parse({ pending_prompt: pendingPrompt }).pending_prompt,
+    ).toEqual(pendingPrompt);
+    expect(
+      ClaimWarmProjectSessionInputSchema.strict().parse({
+        session_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+        pending_prompt: pendingPrompt,
+      }).pending_prompt,
+    ).toEqual(pendingPrompt);
+  });
+
+  test('rejects a send_started_at_ms that is not a positive integer epoch', () => {
+    for (const bad of [0, -1, 1.5, '1']) {
+      expect(
+        PendingSessionPromptSchema.safeParse({ text: 'hi', send_started_at_ms: bad }).success,
+      ).toBe(false);
+    }
   });
 });
 

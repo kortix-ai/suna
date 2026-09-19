@@ -81,4 +81,39 @@ describe('convertPendingPromptToInboxRow', () => {
     expect(result.rowValues).toBeNull();
     expect(result.error).toContain('1..');
   });
+
+  test('send_started_at_ms is stored as sendStartedAtMs and never as the inbox order key', () => {
+    const result = convertPendingPromptToInboxRow({
+      ...BASE,
+      pendingPrompt: { text: 'Map this parcel.', agent: 'default', send_started_at_ms: 1_769_999_990_000 },
+    });
+
+    const payload = (result.rowValues as any).payload;
+    expect(payload.sendStartedAtMs).toBe(1_769_999_990_000);
+    // `clientSentAtMs` orders inbox rows (inbox-order.ts). The send instant of
+    // the first prompt must not reorder it against later composer sends.
+    expect('clientSentAtMs' in payload).toBe(false);
+    // The timestamp is delivery telemetry, not a pick.
+    expect(result.metadataPicks).toEqual({ agent: 'default' });
+  });
+
+  test('a malformed send_started_at_ms is dropped, the prompt still converts', () => {
+    for (const bad of [-1, 0, 1.5e20, Number.NaN, '1769999990000', null]) {
+      const result = convertPendingPromptToInboxRow({
+        ...BASE,
+        pendingPrompt: { text: 'hi', send_started_at_ms: bad },
+      });
+      expect(result.error).toBeNull();
+      expect('sendStartedAtMs' in (result.rowValues as any).payload).toBe(false);
+      expect(result.metadataPicks).toEqual({});
+    }
+  });
+
+  test('a fractional send_started_at_ms is truncated to whole milliseconds', () => {
+    const result = convertPendingPromptToInboxRow({
+      ...BASE,
+      pendingPrompt: { text: 'hi', send_started_at_ms: 1_769_999_990_000.9 },
+    });
+    expect((result.rowValues as any).payload.sendStartedAtMs).toBe(1_769_999_990_000);
+  });
 });

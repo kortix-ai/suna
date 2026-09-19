@@ -78,7 +78,8 @@ import {
   withNextDeliveryAttempt,
   withRemintedWireId,
 } from './store';
-import { DELIVERY_FAILURE_COPY } from './types';
+import { DELIVERY_FAILURE_CODE, DELIVERY_FAILURE_COPY } from './types';
+import { promptFailureCodeForError } from './dead-letter-cause';
 import type {
   PromptOverridesWire,
   PromptPartWire,
@@ -131,6 +132,38 @@ const READY_DEADLINE_MS = 300_000;
 const POLL_INTERVAL_MS = 3_000;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * The Send instant a queued `continue_session` payload carries
+ * (`sendStartedAtMs`, written by `convertPendingPromptToInboxRow`), or null.
+ */
+export function readSendStartedAtMs(payload: unknown): number | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const value = (payload as { sendStartedAtMs?: unknown }).sendStartedAtMs;
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
+/**
+ * Milliseconds from the Send press to each delivery timeline mark, keyed by
+ * mark label. `timelineStartedAtEpochMs` is the server wall clock when the
+ * timeline began; a mark's `atMs` is relative to that start. A repeated label
+ * reports its latest mark. A negative interval means the browser clock runs
+ * ahead of the server clock, so it is null instead of a false number. Returns
+ * null when the row carries no Send instant.
+ */
+export function sinceSendMsByMark(
+  marks: ReadonlyArray<{ label: string; atMs: number }>,
+  timelineStartedAtEpochMs: number,
+  sendStartedAtMs: number | null,
+): Record<string, number | null> | null {
+  if (sendStartedAtMs === null) return null;
+  const out: Record<string, number | null> = {};
+  for (const mark of marks) {
+    const sinceSendMs = Math.round(timelineStartedAtEpochMs + mark.atMs - sendStartedAtMs);
+    out[mark.label] = sinceSendMs >= 0 ? sinceSendMs : null;
+  }
+  return out;
+}
 
 export async function createSession(
   command: CreateSessionCommand,
@@ -1611,8 +1644,25 @@ export async function executeQueuedContinue(
   // session behind it. A failed read is a retryable failure, not a wedge.
   // Delivery timeline: one structured line per row (`[provision-timeline]
   // deliver <commandId>`), so "how long did a send take, and where" is a log
-  // read instead of a guess. Same shape as the provision timeline.
+  // read instead of a guess. Same shape as the provision timeline. A row that
+  // carries the Send instant (`sendStartedAtMs`, first prompt from project
+  // home) also logs `sinceSendMs` per mark: the latency the user waited.
+  const deliverStartedAtEpochMs = Date.now();
   const tl = new ProvisionTimeline(row.commandId, 'deliver');
+  const sendStartedAtMs = readSendStartedAtMs(row.payload);
+  const logDeliverTimeline = (delivery: SessionDeliveryOutcome) => {
+    const sinceSendMs = sinceSendMsByMark(
+      tl.summary().marks,
+      deliverStartedAtEpochMs,
+      sendStartedAtMs,
+    );
+    tl.log({
+      sessionId: row.sessionId,
+      source: row.source,
+      outcome: delivery,
+      ...(sinceSendMs ? { sinceSendMs } : {}),
+    });
+  };
   let admission: Awaited<ReturnType<typeof admitInboxPrompt>>;
   try {
     admission = await admitInboxPrompt(row);
@@ -1745,7 +1795,7 @@ export async function executeQueuedContinue(
       await markCommandFailed(
         row.commandId,
         'queued before the session was rewound — send it again to run it',
-        { retryable: false, attempts: row.attempts, sessionId: row.sessionId },
+        { retryable: false, attempts: row.attempts, sessionId: row.sessionId, failureCode: 'rewound' },
       );
       return 'failed';
     }
@@ -2069,10 +2119,10 @@ export async function executeQueuedContinue(
       // the terminal relay has already checked the queue — so the next prompt
       // waits out the admission backoff instead of going out on the turn-end
       // event.
-      tl.log({ sessionId: row.sessionId, source: row.source, outcome: delivery });
+      logDeliverTimeline(delivery);
       return 'succeeded';
     }
-    tl.log({ sessionId: row.sessionId, source: row.source, outcome: delivery });
+    logDeliverTimeline(delivery);
     // 'unreachable' = the RUNTIME was down. The prompt is fine; it waits for the
     // box on its own (long) ladder and is re-armed the moment a wake confirms
     // the runtime is back. Bounded — a spent budget falls through to the
@@ -2087,7 +2137,12 @@ export async function executeQueuedContinue(
       await markCommandFailed(
         row.commandId,
         `${DELIVERY_FAILURE_COPY.unreachable} after ${MAX_RUNTIME_UNREACHABLE_RETRIES} attempts`,
-        { retryable: false, attempts: row.attempts, sessionId: row.sessionId },
+        {
+          retryable: false,
+          attempts: row.attempts,
+          sessionId: row.sessionId,
+          failureCode: DELIVERY_FAILURE_CODE.unreachable,
+        },
       );
       return 'failed';
     }
@@ -2114,6 +2169,7 @@ export async function executeQueuedContinue(
         retryable: false,
         attempts: row.attempts,
         sessionId: row.sessionId,
+        failureCode: DELIVERY_FAILURE_CODE['not-landed'],
       });
       return 'failed';
     }
@@ -2124,6 +2180,7 @@ export async function executeQueuedContinue(
       retryable,
       attempts: row.attempts,
       sessionId: row.sessionId,
+      failureCode: DELIVERY_FAILURE_CODE[delivery],
     });
     return retryable ? 'queued' : 'failed';
   } catch (e) {
@@ -2136,6 +2193,7 @@ export async function executeQueuedContinue(
       retryable,
       attempts: row.attempts,
       sessionId: row.sessionId,
+      failureCode: promptFailureCodeForError(e),
     });
     return retryable ? 'queued' : 'failed';
   }

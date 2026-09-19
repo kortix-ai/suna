@@ -15,6 +15,11 @@
  * client-side, and stripping the text is what makes old-web + new-API safe
  * from a double send. New web seeds its model/agent stores from the picks and
  * POSTs nothing.
+ *
+ * `send_started_at_ms` is the browser's epoch-ms instant of the Send press. It
+ * rides the row as `payload.sendStartedAtMs` so the delivery timeline can log
+ * send-to-delivery latency. It is NOT `clientSentAtMs`: that key orders inbox
+ * rows (inbox-order.ts), and a first prompt must keep its create-time place.
  */
 
 import { buildContinueSessionCommandValues } from './store';
@@ -41,7 +46,13 @@ export function convertPendingPromptToInboxRow(input: {
   nowMs?: number;
 }): PendingPromptConversion {
   const { pendingPrompt } = input;
-  const { text: _text, parts: _parts, ...metadataPicks } = pendingPrompt;
+  const {
+    text: _text,
+    parts: _parts,
+    send_started_at_ms: rawSendStartedAtMs,
+    ...metadataPicks
+  } = pendingPrompt;
+  const sendStartedAtMs = epochMsOrNull(rawSendStartedAtMs);
 
   const text = typeof pendingPrompt.text === 'string' ? pendingPrompt.text.trim() : '';
   const rawParts = Array.isArray(pendingPrompt.parts) ? pendingPrompt.parts : [];
@@ -81,5 +92,15 @@ export function convertPendingPromptToInboxRow(input: {
     parts: sanitized.parts,
     overrides,
   });
+  if (sendStartedAtMs !== null) {
+    rowValues.payload = { ...rowValues.payload, sendStartedAtMs };
+  }
   return { rowValues, metadataPicks, error: null };
+}
+
+/** A positive whole epoch-ms value, or null. Truncates a fractional value. */
+function epochMsOrNull(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  const ms = Math.trunc(value);
+  return Number.isSafeInteger(ms) && ms > 0 ? ms : null;
 }

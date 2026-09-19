@@ -26,11 +26,11 @@ import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { readRuntimeFileWithRetry } from '@/features/files/api/runtime-file-read';
 import { cn } from '@/lib/utils';
+import { Copy } from '@/features/icon/icons/copy';
 import {
   CalendarIcon as Calendar,
   CheckIcon as Check,
   CodeSimpleIcon as Code2,
-  CopyIcon as Copy,
   DatabaseIcon as Database,
   DownloadIcon as Download,
   EyeIcon as Eye,

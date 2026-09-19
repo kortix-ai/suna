@@ -72,6 +72,13 @@ export interface SessionTurnObservation {
   turns: SessionTurn[];
   last_ended?: SessionTurnEnded;
   atMs: number;
+  /**
+   * WHERE the answer came from. `'bundle'`: the session-open bundle, and
+   * `atMs` is the API's `observed_at`. `'read'` (or absent): a direct
+   * `GET .../turn`, and `atMs` is this tab's clock at issue. See
+   * `WorkingServerInput.source`.
+   */
+  source?: 'bundle' | 'read';
 }
 
 /** Fold the two live sources plus the local receipt into the projection's
@@ -94,6 +101,9 @@ export function buildWorkingInputs(input: {
   activityAtMs?: number;
   optimistic: SendReceipt | null;
   abort?: AbortReceipt | null;
+  /** This tab's clock at the latest idle → not-idle status frame
+   *  (`WorkingInputs.runtimeBusySinceAtMs`). Absent keeps that rule off. */
+  runtimeBusySinceAtMs?: number | null;
   nowMs: number;
 }): WorkingInputs {
   return {
@@ -102,8 +112,14 @@ export function buildWorkingInputs(input: {
     abort: input.abort ?? null,
     inbox: input.inbox ?? null,
     server: input.turn
-      ? { turns: input.turn.turns, lastEnded: input.turn.last_ended, atMs: input.turn.atMs }
+      ? {
+          turns: input.turn.turns,
+          lastEnded: input.turn.last_ended,
+          atMs: input.turn.atMs,
+          ...(input.turn.source ? { source: input.turn.source } : {}),
+        }
       : null,
+    runtimeBusySinceAtMs: input.runtimeBusySinceAtMs ?? null,
     // The runtime's own output, which is not an observation OF the runtime but
     // the runtime itself — see `WorkingActivityInput`. It is what answers when
     // every observer has gone quiet: a dropped status frame, a poll throttled
@@ -205,14 +221,17 @@ export async function readSessionTurnObservation(
     const turn = bundle ? openBundleTurn(bundle) : null;
     // The stamp is the bundle's `observed_at` — the instant the SERVER took the
     // reading — never arrival, for the same reason the direct read below stamps
-    // before the request and not after it.
-    if (turn) return { turns: turn.turns, last_ended: turn.last_ended, atMs: turn.atMs };
+    // before the request and not after it. That stamp is the API's clock, so
+    // the answer says so.
+    if (turn) {
+      return { turns: turn.turns, last_ended: turn.last_ended, atMs: turn.atMs, source: 'bundle' };
+    }
   }
   // Stamped BEFORE the request. An answer is only as fresh as the moment
   // it was asked, and a slow proxy hop must not make a stale read look new.
   const atMs = Date.now();
   const status = await getSessionTurn(projectId, sessionId);
-  return { turns: status.turns ?? [], last_ended: status.last_ended, atMs };
+  return { turns: status.turns ?? [], last_ended: status.last_ended, atMs, source: 'read' };
 }
 
 export function useSessionWorking(
@@ -271,6 +290,13 @@ export function useSessionWorking(
     status: SessionStatus;
     origin: 'wire' | 'local';
     atMs: number;
+    /**
+     * The stamp of the frame at which THIS mount watched the stream cross from
+     * `idle` to not-idle, carried across later frames of the same stream.
+     * `null` until it has watched one. Kept in the same state object as the
+     * frame, so no render ever holds the busy frame without its phase stamp.
+     */
+    busySinceAtMs: number | null;
   } | null>(null);
   useEffect(() => {
     if (!status) {
@@ -282,14 +308,44 @@ export function useSessionWorking(
     // over a fabricated one — or the reverse — is a new observation. The stamp
     // itself is the store's arrival time (`streamObservationStamp`), so a
     // remount observing an OLD frame does not mint it a new age.
-    setObserved({
-      key: streamKey,
-      status,
-      origin: statusOrigin ?? 'wire',
-      atMs: streamObservationStamp(statusAtMs, Date.now()),
+    const atMs = streamObservationStamp(statusAtMs, Date.now());
+    setObserved((previous) => {
+      const sameStream = !!previous && previous.key === streamKey;
+      // Only a crossing this mount SAW. A first frame that is already busy is
+      // not an edge: the phase began at some instant this mount did not watch.
+      const phaseBegan =
+        sameStream &&
+        streamTurnPhase(previous.status) === 'idle' &&
+        streamTurnPhase(status) === 'active';
+      return {
+        key: streamKey,
+        status,
+        origin: statusOrigin ?? 'wire',
+        atMs,
+        busySinceAtMs: phaseBegan ? atMs : sameStream ? previous.busySinceAtMs : null,
+      };
     });
   }, [status, statusOrigin, statusAtMs, streamKey]);
   const stream = observed && observed.key === streamKey ? observed : null;
+
+  // WHEN the current busy phase began — `WorkingInputs.runtimeBusySinceAtMs`.
+  // Identity only: a `/turn` read issued before it names no turn.
+  //
+  // Shared per session, because a mount that appears during the phase never
+  // watches the edge, and it would name the ended turn the mount beside it has
+  // already stopped naming. This mount's own sighting counts at once, in the
+  // same render as the frame; the store only carries it to the others. Both are
+  // this tab's clock, so the newer one is the latest edge anyone watched.
+  const sharedBusySinceAtMs = useSessionWorkingStore((state) => state.runtimeBusySince[sessionId]);
+  const ownBusySinceAtMs = stream?.busySinceAtMs ?? null;
+  const runtimeBusySinceAtMs =
+    ownBusySinceAtMs === null
+      ? (sharedBusySinceAtMs ?? null)
+      : Math.max(ownBusySinceAtMs, sharedBusySinceAtMs ?? ownBusySinceAtMs);
+  useEffect(() => {
+    if (!sessionId || ownBusySinceAtMs === null) return;
+    useSessionWorkingStore.getState().noteRuntimeBusySince(sessionId, ownBusySinceAtMs);
+  }, [sessionId, ownBusySinceAtMs]);
 
   // The runtime's own output for THIS session's wire id. Quantized to a second
   // in the store, so subscribing here cannot re-render at the stream's rate.
@@ -309,6 +365,7 @@ export function useSessionWorking(
       activityAtMs,
       optimistic,
       abort,
+      runtimeBusySinceAtMs,
       nowMs,
     });
   const project = (turn: SessionTurnObservation | undefined, nowMs: number): WorkingProjection =>
@@ -412,8 +469,10 @@ export function useSessionWorking(
   }, [expiryAtMs]);
 
   // Stable identity while the ANSWER is unchanged, so consumers that memoize on
-  // it are not re-run once per render just because `now` moved.
-  const identity = `${projection.state}|${projection.pendingDelivery ?? false}|${projection.source}|${projection.turnId}|${projection.since}|${projection.serverOpenTurnToken}`;
+  // it are not re-run once per render just because `now` moved. The freshness
+  // BOOLEAN is part of the answer; the read stamp behind it is not, so a
+  // consumer re-renders once when the read ages out, never once per read.
+  const identity = `${projection.state}|${projection.pendingDelivery ?? false}|${projection.source}|${projection.turnId}|${projection.since}|${projection.serverOpenTurnToken}|${projection.serverOpenTurnFresh ?? false}`;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   return useMemo(() => projection, [identity]);
 }

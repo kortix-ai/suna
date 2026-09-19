@@ -119,6 +119,8 @@ export interface ComposerToolbarProps {
   attachmentFailed?: boolean;
   /** Why the selected model cannot take the attachments, or null. See `SendStopControl`. */
   attachmentUnsupported?: string | null;
+  /** Submit saves an edited queued message. See `SendStopControl`. */
+  saveMode?: boolean;
   onSubmit: () => void;
 }
 
@@ -159,6 +161,7 @@ export function ComposerToolbar({
   agentUnavailable = false,
   attachmentFailed = false,
   attachmentUnsupported = null,
+  saveMode = false,
   onSubmit,
 }: ComposerToolbarProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -247,6 +250,7 @@ export function ComposerToolbar({
           agentUnavailable={agentUnavailable}
           attachmentFailed={attachmentFailed}
           attachmentUnsupported={attachmentUnsupported}
+          saveMode={saveMode}
           onSubmit={onSubmit}
         />
       </div>

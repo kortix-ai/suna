@@ -1,7 +1,7 @@
 'use client';
 
-import { useTranslations } from '@/i18n/use-translations';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { sessionDisplayLabel } from '@/components/projects/session-label';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,7 @@ import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { useSidebar } from '@/components/ui/sidebar';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { Copy } from '@/features/icon/icons/copy';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { ExportTranscriptModal } from '@/features/session/header/export-transcript-modal';
 import { SessionChangesIndicator } from '@/features/session/header/session-changes-indicator';
@@ -33,6 +34,7 @@ import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/sh
 import { getSessionDisplayTitle } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { useReloadSessionConfig } from '@/hooks/projects/use-session-config-freshness';
 import { cn } from '@/lib/utils';
+import { copyToClipboard } from '@/lib/utils/clipboard';
 import {
   type QuickView,
   useIsActionPanelOpen,
@@ -42,6 +44,7 @@ import {
 import { restartProjectSession, stopProjectSession } from '@kortix/sdk';
 import { qk, useProjectSession } from '@kortix/sdk/react';
 import {
+  ArrowUpLeftIcon,
   ArrowsClockwiseIcon,
   CaretDoubleLeftIcon,
   CaretDownIcon,
@@ -79,6 +82,9 @@ interface SessionSiteHeaderProps {
   sessionTitle: string;
   isMobileView?: boolean;
   leadingAction?: React.ReactNode;
+  /** The session this one was spawned from, when it is a sub-session. The menu
+   *  offers the way back to it. */
+  parentSession?: { title: string; onOpen: () => void };
 }
 
 export function SessionSiteHeader({
@@ -86,7 +92,9 @@ export function SessionSiteHeader({
   sessionTitle,
   isMobileView,
   leadingAction,
+  parentSession,
 }: SessionSiteHeaderProps) {
+  const tThreads = useTranslations('threads');
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const devTools = useLocalizedUiCatalog(DEV_TOOLS);
@@ -188,8 +196,28 @@ export function SessionSiteHeader({
   const toggleActionPanel = useToggleActionPanel();
   const readyChip = useReadyChip();
 
+  // The Kortix session id when the route has one (what the CLI and API take),
+  // otherwise the chat session's own id.
+  const copyableSessionId = projectSessionId ?? sessionId;
+  const copySessionId = async () => {
+    if (await copyToClipboard(copyableSessionId)) successToast(tThreads('sessionIdCopied'));
+    else errorToast(tI18nHardcoded.raw('i18nComplete.textb7fdaed41e1a'));
+  };
+
   const sessionActionItems = (
     <>
+      {parentSession && (
+        <>
+          <DropdownMenuItem className="cursor-pointer" onClick={parentSession.onOpen}>
+            <ArrowUpLeftIcon />
+            <span className="min-w-0 truncate">
+              {tI18nHardcoded.raw('i18nComplete.text09b4cb469c91')}{' '}
+              <span className="text-foreground font-medium">{parentSession.title}</span>
+            </span>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+        </>
+      )}
       {isProjectSession && (
         <>
           <DropdownMenuItem className="cursor-pointer" onClick={() => setRenameOpen(true)}>
@@ -240,18 +268,17 @@ export function SessionSiteHeader({
         </>
       )}
 
-      <DropdownMenuItem
-        className="text-muted-foreground hover:text-foreground/90 cursor-pointer [&_svg]:opacity-70"
-        onClick={() => setExportOpen(true)}
-      >
+      <DropdownMenuItem className="cursor-pointer" onClick={() => void copySessionId()}>
+        <Copy />
+        {tThreads('copySessionId')}
+      </DropdownMenuItem>
+
+      <DropdownMenuItem className="cursor-pointer" onClick={() => setExportOpen(true)}>
         <FileDown />
         {tI18nHardcoded.raw('i18nComplete.text5d974f9e80c3')}
       </DropdownMenuItem>
 
-      <DropdownMenuItem
-        className="text-muted-foreground hover:text-foreground/90 cursor-pointer [&_svg]:opacity-70"
-        onClick={() => setCompactOpen(true)}
-      >
+      <DropdownMenuItem className="cursor-pointer" onClick={() => setCompactOpen(true)}>
         <Layers />
         {tI18nHardcoded.raw('i18nComplete.textca838377bb5a')}
       </DropdownMenuItem>

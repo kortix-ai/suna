@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { Kbd } from '@/components/ui/kbd';
 import Loading from '@/components/ui/loading';
-import { ArrowUpIcon as ArrowUp, SquareIcon } from '@phosphor-icons/react';
+import { ArrowUpIcon as ArrowUp, CheckIcon, SquareIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from '@/i18n/use-translations';
 import { NO_MODEL_AVAILABLE_ACTION_MESSAGE } from '../model-availability';
@@ -49,6 +49,12 @@ export interface SendStopControlProps {
   attachmentFailed?: boolean;
   /** Why the selected model cannot take the attachments. Send is refused while set. */
   attachmentUnsupported?: string | null;
+  /**
+   * The composer is editing a queued message: submit SAVES it. Outranks
+   * Stop — a queue only exists while the agent is busy, so Stop would otherwise
+   * stand where the save belongs.
+   */
+  saveMode?: boolean;
   onSubmit: () => void;
 }
 
@@ -69,6 +75,7 @@ export function SendStopControl({
   agentUnavailable = false,
   attachmentFailed = false,
   attachmentUnsupported = null,
+  saveMode = false,
   onSubmit,
 }: SendStopControlProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -83,6 +90,24 @@ export function SendStopControl({
       : attachmentFailed
         ? tAttachments('failedBlocksSend')
         : attachmentUnsupported;
+
+  if (saveMode) {
+    return (
+      <Button
+        size="icon-base"
+        disabled={!canSubmit || submitDisabled}
+        onClick={onSubmit}
+        aria-label={t('saveEdit')}
+        className={ICON_BUTTON}
+      >
+        <AnimatePresence mode="popLayout" initial={false}>
+          <m.span key="save" className="flex items-center" {...ICON_SWAP}>
+            <CheckIcon className="size-4" />
+          </m.span>
+        </AnimatePresence>
+      </Button>
+    );
+  }
 
   if (isSending && !lockForQuestion) {
     return (

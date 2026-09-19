@@ -33,9 +33,9 @@ import {
   useRuntimeSession,
   useSessionSync,
 } from '@kortix/sdk/react';
+import { Copy } from '@/features/icon/icons/copy';
 import {
   CheckIcon as Check,
-  CopyIcon as Copy,
   DownloadIcon as Download,
 } from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';

@@ -23,7 +23,6 @@ export {
   XIcon as IconClose,
   CodeSimpleIcon as IconCode,
   ChatCircleIcon as IconComment,
-  CopyIcon as IconCopy,
   TrashIcon as IconDelete,
   RocketIcon as IconDeploy,
   CheckCircleIcon as IconDone,
@@ -82,5 +81,7 @@ export {
   SpeakerHighIcon as IconVolume,
   WarningIcon as IconWarning,
 } from '@phosphor-icons/react';
+
+export { Copy as IconCopy } from '@/features/icon/icons/copy';
 
 export type { Icon } from '@phosphor-icons/react';

@@ -74,8 +74,11 @@ let forwardedCalls: Array<{ commandId: string; sessionId: string; wireMessageId:
 let failedCalls: Array<{
   commandId: string;
   message: string;
-  options?: { retryable?: boolean };
+  options?: { retryable?: boolean; failureCode?: string };
 }> = [];
+/** What `parkPromptForUnreachableRuntime` answers. `parked: false` is a spent
+ *  runtime-unreachable budget, which the drain dead-letters. */
+let parkOutcome = { parked: true, retries: 1 };
 let payloadPatches: Array<Record<string, unknown>> = [];
 let claimed: SessionLifecycleCommandRow[] = [];
 let openDelayBySession: Record<string, Promise<void> | undefined> = {};
@@ -100,7 +103,8 @@ let legacyRepairMarkerFailuresRemaining = 0;
 let legacyPendingLoads = 0;
 let promptFailuresRemaining = 0;
 let promptDeduplicationsRemaining = 0;
-let promptResponsePlan: Array<'failed' | 'deduplicated' | 'permanent-refusal'> = [];
+let promptResponsePlan: Array<'failed' | 'deduplicated' | 'permanent-refusal' | 'connector-required' | 'out-of-credits'> =
+  [];
 // Models the sandbox edge DISCARDING an oversized body while answering ok: the
 // POST is captured, but the runtime never holds that message. Scoped to the
 // FIRST posted id, so the delivery's retry lands and the test does not have to
@@ -251,6 +255,10 @@ mock.module('../../../sandbox-proxy/routes/preview', () => ({
       // 409 CONNECTOR_CONNECTION_REQUIRED, which no route emits since the
       // session connector gate was retired (2026-09-16); a 409 is retryable now.
       if (plannedResponse === 'permanent-refusal') return Response.json({ code: 'PROMPT_REJECTED', message: 'The runtime rejected this prompt.' }, { status: 422 });
+      // The same terminal shape, carrying a connector code, so the stored
+      // failure keeps its `connector_required` cause for the queue list.
+      if (plannedResponse === 'connector-required') return Response.json({ code: 'CONNECTOR_CONNECTION_REQUIRED', message: 'Create the required connections before continuing this session.' }, { status: 422 });
+      if (plannedResponse === 'out-of-credits') return Response.json({ error: 'Out of credits. Top up to continue.', code: 'insufficient_credits' }, { status: 402 });
       if (plannedResponse === 'failed') return new Response(null, { status: 500 });
       if (plannedResponse === 'deduplicated') {
         remember();
@@ -339,12 +347,12 @@ mock.module('../store', () => ({
   // The delivery path parks a prompt whose RUNTIME was down instead of
   // dead-lettering it. Present so the module mock stays complete.
   MAX_RUNTIME_UNREACHABLE_RETRIES: 3,
-  parkPromptForUnreachableRuntime: async () => ({ parked: true, retries: 1 }),
+  parkPromptForUnreachableRuntime: async () => parkOutcome,
   reArmRuntimeBlockedPrompts: async () => 0,
   markCommandFailed: async (
     commandId: string,
     message: string,
-    options?: { retryable?: boolean },
+    options?: { retryable?: boolean; failureCode?: string },
   ) => {
     failedCalls.push({ commandId, message, options });
   },
@@ -487,6 +495,7 @@ beforeEach(() => {
   succeededCalls = [];
   forwardedCalls = [];
   failedCalls = [];
+  parkOutcome = { parked: true, retries: 1 };
   payloadPatches = [];
   claimed = [];
   openDelayBySession = {};
@@ -594,6 +603,50 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
       message: 'The runtime rejected this prompt.',
       options: { retryable: false },
     });
+  });
+
+  // Each give-up names its cause as a code, pinned here per producer: the
+  // message beside it is prose, and rewording it must not change the code.
+  describe('a prompt the drain gives up on records why, as a code', () => {
+    test('a connector refusal is `connector_required`', async () => {
+      promptResponsePlan = ['connector-required'];
+      expect(await executeQueuedContinue(baseRow())).toBe('failed');
+      expect(failedCalls).toHaveLength(1);
+      expect(failedCalls[0]?.options).toMatchObject({ retryable: false, failureCode: 'connector_required' });
+    });
+
+    test('a billing refusal is `out_of_credits`', async () => {
+      promptResponsePlan = ['out-of-credits'];
+      expect(await executeQueuedContinue(baseRow())).toBe('failed');
+      expect(failedCalls).toHaveLength(1);
+      expect(failedCalls[0]).toMatchObject({
+        message: 'Out of credits. Top up to continue.',
+        options: { retryable: false, failureCode: 'out_of_credits' },
+      });
+    });
+
+    test('a runtime that stays down past its budget is `runtime_unreachable`', async () => {
+      sessionRow = { ...sessionRow, status: 'failed' };
+      parkOutcome = { parked: false, retries: 3 };
+      expect(await executeQueuedContinue(baseRow())).toBe('failed');
+      expect(failedCalls).toHaveLength(1);
+      expect(failedCalls[0]?.options).toMatchObject({ retryable: false, failureCode: 'runtime_unreachable' });
+    });
+
+    test('a session that no longer exists is `session_gone`', async () => {
+      sessionRow = { ...sessionRow, metadata: { deletedAt: '2026-09-17T00:00:00.000Z' } };
+      expect(await executeQueuedContinue(baseRow())).toBe('failed');
+      expect(capturedBodies).toHaveLength(0);
+      expect(failedCalls).toHaveLength(1);
+      expect(failedCalls[0]?.options).toMatchObject({ retryable: false, failureCode: 'session_gone' });
+    });
+
+    test('a prompt that never lands after its budget is `not_landed`', async () => {
+      runtimeDropsFirstDelivery = true;
+      unlandedBudgetLeft = 0;
+      expect(await executeQueuedContinue(baseRow())).toBe('failed');
+      expect(failedCalls.at(-1)?.options).toMatchObject({ retryable: false, failureCode: 'not_landed' });
+    }, 20_000);
   });
 
   test('materializes non-native staged files before prompt_async', async () => {
@@ -1293,6 +1346,53 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     const outcome = await executeQueuedContinue(baseRow());
     expect(outcome).toBe('succeeded');
     expect(capturedBodies[0].messageID).toBe(SUBMITTED_WIRE_ID);
+  });
+
+  test('the deliver timeline logs sinceSendMs per mark when the row carries the Send instant', async () => {
+    // A first prompt from project home carries `sendStartedAtMs` (the
+    // browser's Send press). The `[provision-timeline] deliver` line must turn
+    // that into the latency the user waited, per mark. A row without it logs
+    // no `sinceSendMs` at all.
+    transcript = [];
+    const lines: unknown[][] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => {
+      lines.push(args);
+    };
+    try {
+      const withSend = await executeQueuedContinue(
+        baseRow({
+          commandId: 'cmd-since-send',
+          payload: { ...baseRow().payload, sendStartedAtMs: Date.now() - 5_000 },
+        }),
+      );
+      const withoutSend = await executeQueuedContinue(baseRow({ commandId: 'cmd-no-send' }));
+      expect(withSend).toBe('succeeded');
+      expect(withoutSend).toBe('succeeded');
+    } finally {
+      console.log = originalLog;
+    }
+
+    const deliverLine = (prefix: string) =>
+      lines.find(
+        (args) =>
+          typeof args[0] === 'string' &&
+          args[0].startsWith(`[provision-timeline] deliver ${prefix}`),
+      );
+    const withSendLine = deliverLine('cmd-sinc');
+    expect(withSendLine).toBeDefined();
+    const extra = withSendLine![1] as { sinceSendMs?: Record<string, number | null> };
+    expect(extra.sinceSendMs).toBeDefined();
+    const values = Object.values(extra.sinceSendMs!);
+    expect(values.length).toBeGreaterThan(0);
+    for (const value of values) {
+      expect(value).not.toBeNull();
+      expect(value!).toBeGreaterThanOrEqual(5_000);
+    }
+
+    const withoutSendLine = deliverLine('cmd-no-s');
+    expect(withoutSendLine).toBeDefined();
+    expect(withoutSendLine![1]).not.toHaveProperty('sinceSendMs');
   });
 
   test('a prompt submitted into a LIVE TURN waits — then goes out re-minted when the turn ends', async () => {

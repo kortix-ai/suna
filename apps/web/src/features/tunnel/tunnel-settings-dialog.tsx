@@ -1,8 +1,8 @@
 'use client';
 
+import { Copy } from '@/features/icon/icons/copy';
 import {
   CheckIcon as Check,
-  CopyIcon as Copy,
   InfoIcon as Info,
   MonitorIcon as Monitor,
   DotsThreeIcon as MoreHorizontal,

@@ -41,8 +41,8 @@ export interface WorkingProjection {
    * server still holds authority — a `/` command, which goes straight at
    * OpenCode with no admission gate in front of it — needs to see that
    * authority even in the window where a fresher status frame is (correctly)
-   * deciding `idle`. `null` when no fresh read reports one, so a read too old
-   * to decide cannot latch it.
+   * deciding `idle`. `null` when the latest read reports none. Age-free: a
+   * caller that must not stand on an old read checks `serverOpenTurnFresh`.
    *
    * The TOKEN, never `message_id`. `message_id` is the WIRE id of the prompt
    * that opened the turn, and most producers send none: `postPrompt` omits
@@ -54,6 +54,24 @@ export interface WorkingProjection {
    * minted by the control plane for every turn and is never null.
    */
   serverOpenTurnToken: string | null;
+  /**
+   * `serverOpenTurnToken` is set AND the read that produced it is no older
+   * than `SERVER_OBSERVATION_MAX_MS`.
+   *
+   * The token is age-free on purpose: it keeps the transcript liveness poll
+   * running (`serverHoldsTurn`), and nulling it on age switched off the one
+   * mechanism that could correct a wrong idle. A caller that HOLDS a control
+   * on the token needs the opposite. A retrying assistant pinned the composer
+   * on Stop for as long as the token stood, and a tab whose `/turn` reads had
+   * stopped landing kept that token for the life of the page. Such a caller
+   * reads this field instead.
+   *
+   * Optional in the type only because the field is additive. `projectWorking`
+   * always sets it; `undefined` reads as `false`. It carries no timestamp, so a
+   * consumer that memoizes on the projection re-renders once when the read
+   * ages out, not once per read.
+   */
+  serverOpenTurnFresh?: boolean;
 }
 
 /**
@@ -209,6 +227,18 @@ export interface WorkingServerInput {
   turns: SessionTurn[];
   lastEnded?: SessionTurnEnded;
   atMs: number;
+  /**
+   * WHERE the read came from. `'bundle'` is the session-open bundle: its
+   * `atMs` is the API's `observed_at`, so it is the server's clock, not this
+   * tab's. `'read'` (or absent) is a direct `GET .../turn` stamped on this
+   * tab's clock at issue.
+   *
+   * A bundle read never retires a drain floor and never names a turn against
+   * `runtimeBusySinceAtMs`: both of those compare against a tab-clock stamp,
+   * and a server clock ahead of the tab made a pre-hand-off snapshot look newer
+   * than the drain.
+   */
+  source?: 'bundle' | 'read';
 }
 
 /** One observed runtime status frame, stamped when this tab observed it. */
@@ -295,8 +325,8 @@ export interface WorkingInboxInput {
    * disappears, seconds after the prompt was accepted (dev, 2026-09-06, on
    * video).
    *
-   * Set only by a caller that compared two readings and watched a `queued` or
-   * `delivering` row leave (see the host's `inboxDrained`). A caller that
+   * Set only by a caller that compared two readings and watched a live row —
+   * one `countLiveInboxPrompts` counts — leave (see `inboxDrained`). A caller that
    * reports a count and nothing else leaves it absent, and decides exactly as
    * before. Carried forward while the list stays empty, dropped the moment it
    * is not — the fact is about the queue, not about one HTTP response.
@@ -336,6 +366,26 @@ export interface WorkingInputs {
   stream: WorkingStreamInput | null;
   /** The runtime's own output, last seen. See `WorkingActivityInput`. */
   activity?: WorkingActivityInput | null;
+  /**
+   * This tab's clock at the most recent status frame that crossed from `idle`
+   * to not-idle (`busy`/`retry`) — the instant the current busy phase began.
+   * `busy`↔`retry` flips inside one phase do not move it.
+   *
+   * It decides IDENTITY only, never the working/idle state. A `/turn` read
+   * issued before this instant cannot say which turn the current phase runs:
+   * the read that the previous turn's idle frame triggered lands before the
+   * daemon relay closes that turn's ledger row (1765 ms, measured), and it
+   * stays cached for up to `WORKING_POLL_IDLE_MS`. The next busy frame lifts
+   * the idle veto, and that read then named the FINISHED turn as the running
+   * one. With this stamp such a read names no turn until a read from the new
+   * phase lands (one round trip: the phase change invalidates `/turn`).
+   *
+   * Both sides of the comparison are this tab's clock. The ledger's
+   * `started_at` (API clock) never enters it.
+   *
+   * `null`/absent keeps the rule off: turns are named exactly as before.
+   */
+  runtimeBusySinceAtMs?: number | null;
   nowMs: number;
 }
 
@@ -399,15 +449,16 @@ function instant(value: string | null | undefined): number | null {
  *    `INBOX_OBSERVATION_MAX_MS`. An observation the poll has failed to refresh
  *    for that long is not evidence, and standing on one is the latch. Callers
  *    must re-evaluate at those instants — see `workingExpiryAtMs`.
+ *
+ * And ONE identity rule, which never changes the state: `turnId` names a turn
+ * only from evidence taken inside the current busy phase. A `/turn` read issued
+ * before `runtimeBusySinceAtMs` names none, and a queued send's receipt stops
+ * naming the turn it stood on once the runtime ends that turn.
  */
 export function projectWorking(inputs: WorkingInputs): WorkingProjection {
   const { optimistic, abort, inbox, server, stream, activity, nowMs } = inputs;
+  const runtimeBusySinceAtMs = inputs.runtimeBusySinceAtMs ?? null;
   const receiptLive = !!optimistic && nowMs - optimistic.atMs < OPTIMISTIC_RECEIPT_MAX_MS;
-  const receiptTurnId = optimistic
-    ? optimistic.turnId === undefined
-      ? optimistic.messageId
-      : optimistic.turnId
-    : null;
   // TWO floors, because the two server-side observers have different knowledge.
   //
   // `GET .../turn` reads the control plane's ledger, and there is NO row in it
@@ -458,6 +509,33 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
   // switched off, all mid-run). See `WorkingStreamInput.origin`.
   const idleFrame =
     stream && stream.type === 'idle' && stream.origin !== 'local' ? stream : null;
+
+  // The turn a send names. A direct send names itself. A send made during a
+  // response names THAT response's turn, so its bubble stays pending behind it
+  // — but only while that turn runs. The runtime's own idle frame after the
+  // receipt, or a busy phase that began after it, is that turn ending, and a
+  // name kept past it put the busy label under a finished answer until the
+  // queued prompt's echo arrived. The receipt still holds `working`; it just
+  // stops naming a turn.
+  const receiptStoodOnRunningTurn =
+    !!optimistic && optimistic.turnId != null && optimistic.turnId !== optimistic.messageId;
+  const receiptTurnEnded =
+    receiptStoodOnRunningTurn &&
+    ((runtimeBusySinceAtMs !== null && runtimeBusySinceAtMs > optimistic!.atMs) ||
+      (idleFrame !== null && idleFrame.atMs > optimistic!.atMs));
+  const receiptTurnId = !optimistic || receiptTurnEnded
+    ? null
+    : optimistic.turnId === undefined
+      ? optimistic.messageId
+      : optimistic.turnId;
+
+  // May the server read NAME a turn? Only a read issued inside the current busy
+  // phase — see `WorkingInputs.runtimeBusySinceAtMs`. A bundle read carries the
+  // API's clock and cannot be ranked against this tab's stamp at all.
+  const serverNamesTurn =
+    serverFresh &&
+    (runtimeBusySinceAtMs === null ||
+      (server!.source !== 'bundle' && server!.atMs >= runtimeBusySinceAtMs));
 
   // CONTENT FIRST. Bounded by the stream's own freshness rule, because it
   // arrives on the same transport and goes stale for the same reasons — but
@@ -535,20 +613,6 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
     return true;
   };
 
-  if (activityAfterIdle && activity!.atMs >= abortFloor) {
-    return {
-      state: 'working',
-      source: 'stream',
-      // Activity proves liveness; the ledger identifies which prompt owns it.
-      // Keep that identity while an older inbox snapshot still lists the prompt.
-      turnId: serverFresh
-        ? server!.turns.find((turn) => turn.state === 'active' && !endedByRuntime(turn))?.message_id ?? null
-        : null,
-      since: activity!.atMs,
-      serverOpenTurnToken: server?.turns[0]?.turn_token ?? null,
-    };
-  }
-
   // NOT gated on `serverFresh`. A read going stale is a fact about the READ, not
   // about the row: the control plane does not release a turn because this tab's
   // last look got old. Gating it here made being wrong self-sealing — the token
@@ -565,6 +629,27 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
   // gate in front of it, and that stays true for as long as the row does.
   // Only the WORKING decision moves.
   const serverOpenTurnToken = ledgerTurn?.turn_token ?? null;
+  // The same fact, gated on the read's age — for a caller that holds a control
+  // on it. No timestamp, so the answer changes once, at the bound.
+  const serverOpenTurnFresh = serverOpenTurnToken !== null && serverFresh;
+
+  if (activityAfterIdle && activity!.atMs >= abortFloor) {
+    return {
+      state: 'working',
+      source: 'stream',
+      // Activity proves liveness; the ledger identifies which prompt owns it.
+      // Keep that identity while an older inbox snapshot still lists the prompt.
+      // A read from before this busy phase began cannot: after a turn ends, its
+      // old activity stamp and a pre-relay read both still point at it.
+      turnId: serverNamesTurn
+        ? server!.turns.find((turn) => turn.state === 'active' && !endedByRuntime(turn))?.message_id ?? null
+        : null,
+      since: activity!.atMs,
+      serverOpenTurnToken,
+      serverOpenTurnFresh,
+    };
+  }
+
   // EVERY row, not just the first. The ledger holds more than one open turn
   // whenever a prompt is forwarded while another is running — measured on the
   // local stack as `turns: [B@00:28:56, A@00:28:22]` — and the list is not
@@ -591,9 +676,10 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
       ...(openTurn.state === 'delivering' ? { pendingDelivery: true as const } : {}),
       state: 'working',
       source: 'server',
-      turnId: openTurn.message_id,
+      turnId: serverNamesTurn ? openTurn.message_id : null,
       since: instant(openTurn.started_at) ?? server!.atMs,
       serverOpenTurnToken,
+      serverOpenTurnFresh,
     };
   }
 
@@ -616,6 +702,7 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
       turnId: receiptLive ? receiptTurnId : null,
       since: inbox!.atMs,
       serverOpenTurnToken,
+      serverOpenTurnFresh,
     };
   }
 
@@ -628,7 +715,10 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
   // EVIDENCE, NOT A TIMER, in three parts:
   //
   //  * Only a SERVER READ retires it — one that could have seen the turn, i.e.
-  //    taken at or after the drain, whatever it then says. A stream frame may
+  //    taken at or after the drain, whatever it then says. A DIRECT read: the
+  //    open bundle's stamp is the API's clock, and a server clock ahead of
+  //    this tab made a snapshot from before the hand-off look newer than the
+  //    drain. A stream frame may
   //    not: a box that has just come up answers `idle` in its status snapshot
   //    while the turn it was handed is not on the wire yet, and the SSE-connect
   //    sweep fabricates a `local` idle at the same moment. Neither knows about
@@ -650,7 +740,7 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
     inbox!.pending === 0 &&
     drainedAtMs != null &&
     !abortLive &&
-    !(serverFresh && server!.atMs >= drainedAtMs);
+    !(serverFresh && server!.source !== 'bundle' && server!.atMs >= drainedAtMs);
   if (drainFloorHolds) {
     return {
       pendingDelivery: true,
@@ -659,6 +749,7 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
       turnId: null,
       since: drainedAtMs!,
       serverOpenTurnToken,
+      serverOpenTurnFresh,
     };
   }
 
@@ -673,6 +764,7 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
       turnId: null,
       since: instant(server!.lastEnded?.ended_at) ?? server!.atMs,
       serverOpenTurnToken,
+      serverOpenTurnFresh,
     };
   }
 
@@ -683,6 +775,7 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
       turnId: null,
       since: stream!.atMs,
       serverOpenTurnToken,
+      serverOpenTurnFresh,
     };
   }
 
@@ -694,6 +787,7 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
       turnId: receiptTurnId,
       since: optimistic!.atMs,
       serverOpenTurnToken,
+      serverOpenTurnFresh,
     };
   }
 
@@ -715,6 +809,7 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
     turnId: null,
     since: newest.atMs,
     serverOpenTurnToken,
+    serverOpenTurnFresh,
   };
 }
 

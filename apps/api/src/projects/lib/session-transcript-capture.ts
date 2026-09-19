@@ -21,6 +21,7 @@ import {
 } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 
+import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { readTranscriptPages, retryTranscriptCapture } from './session-transcript-pages';
@@ -41,10 +42,26 @@ import {
 const WORKSPACE_DIRECTORY = '/workspace';
 const CAPTURE_TIMEOUT_MS = 8_000;
 
+/**
+ * Waits before re-reading the box for a capture that did not land.
+ *
+ * A capture runs once per turn end and nothing else retries it, so a single bad
+ * moment — a box saturated by the turn it just finished, a proxy 503 mid-swap,
+ * an endpoint that resolves a beat late — used to freeze the mirror for the
+ * life of the session. The client then seeds a reload from that frozen copy.
+ * Two retries cover that window without holding the relay: the caller is
+ * fire-and-forget.
+ */
+export const CAPTURE_RETRY_DELAYS_MS = [500, 2_000] as const;
+
 export interface CaptureResult {
   captured: number;
   head_complete: boolean;
   pruned: number;
+}
+
+interface CaptureLogger {
+  warn: (message: string, context: Record<string, unknown>) => void;
 }
 
 export interface CaptureDeps {
@@ -60,12 +77,60 @@ export interface CaptureDeps {
     payload: unknown;
     headComplete?: boolean;
   } | null>;
+  /** Seams for the retry test: production uses the real clock and logger. */
+  sleep?: (ms: number) => Promise<void>;
+  logger?: CaptureLogger;
+}
+
+type CaptureReadOptions = NonNullable<Parameters<CaptureDeps['readMessages']>[1]>;
+type CaptureRead = Awaited<ReturnType<CaptureDeps['readMessages']>>;
+
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Read the box for a capture, retrying a read that did not answer.
+ *
+ * A read that throws is a failed read like any other: this never propagates, so
+ * a turn-end relay cannot fail on it. An exhausted read is reported once —
+ * silence here is what made a frozen mirror invisible.
+ *
+ * The FULL-HISTORY path does not come through here: `retryTranscriptCapture`
+ * already re-runs its whole capture, and retrying the read inside that would
+ * multiply the attempts. The legacy tail read has no other retry.
+ */
+export async function readCaptureMessages(
+  sessionId: string,
+  deps: CaptureDeps,
+  options?: CaptureReadOptions,
+): Promise<CaptureRead> {
+  const sleep = deps.sleep ?? wait;
+  const log = deps.logger ?? logger;
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt <= CAPTURE_RETRY_DELAYS_MS.length; attempt += 1) {
+    const read = await deps.readMessages(sessionId, options).catch((err: unknown) => {
+      lastError = err;
+      return null;
+    });
+    if (read) return read;
+    if (attempt < CAPTURE_RETRY_DELAYS_MS.length) await sleep(CAPTURE_RETRY_DELAYS_MS[attempt]);
+  }
+  log.warn('[transcript-mirror] capture read never landed; the mirror stays as it was', {
+    sessionId,
+    attempts: CAPTURE_RETRY_DELAYS_MS.length + 1,
+    ...(lastError
+      ? { error: lastError instanceof Error ? lastError.message : String(lastError) }
+      : {}),
+  });
+  return null;
 }
 
 const liveCaptureDeps: CaptureDeps = {
   async readMessages(sessionId, options) {
     const resolved = await resolveSessionOpencodeEndpoint(sessionId);
-    if (!resolved) return null;
+    if (!resolved) {
+      logger.warn('[transcript-mirror] capture read skipped: no OpenCode endpoint', { sessionId });
+      return null;
+    }
     const deadline = AbortSignal.timeout(options?.fullHistory ? 60_000 : CAPTURE_TIMEOUT_MS);
     const previous = options?.retainHistory
       ? await db
@@ -176,14 +241,18 @@ async function captureSessionTranscript(
       fullHistory || session.metadata?.session_transcript_history_retained === true;
     const capture = async (): Promise<CaptureResult | null> => {
       const startedAt = new Date();
-      const read = await deps.readMessages(sessionId, {
-        fullHistory,
-        projectId: session.projectId,
-        retainHistory,
-      });
+      const readOptions = { fullHistory, projectId: session.projectId, retainHistory };
+      // `retryTranscriptCapture` re-runs the whole full-history capture, so only
+      // the legacy tail read needs `readCaptureMessages`'s own retry.
+      const read = fullHistory
+        ? await deps.readMessages(sessionId, readOptions)
+        : await readCaptureMessages(sessionId, deps, readOptions);
       if (!read) return null;
       const rows = mirrorRowsFromOpencodePayload(read.payload);
-      if (rows.length === 0 && !fullHistory) return null;
+      if (rows.length === 0 && !fullHistory) {
+        logger.warn('[transcript-mirror] capture read carried no messages', { sessionId });
+        return null;
+      }
       if (fullHistory && read.headComplete !== true) return null;
 
       const now = startedAt;

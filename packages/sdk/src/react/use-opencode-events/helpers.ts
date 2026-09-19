@@ -1,6 +1,6 @@
 import { type QueryClient } from '@tanstack/react-query';
 import { STREAM_OBSERVATION_MAX_MS } from '../../core/session/working';
-import { opencodeKeys, type Session } from '../use-opencode-sessions';
+import { opencodeKeys, type Session, type SessionStatus } from '../use-opencode-sessions';
 import { qk } from '../query-keys';
 import type { OpenCodeEvent } from './types';
 
@@ -48,10 +48,31 @@ export function shouldSkipStatusFill(input: {
   return input.nowMs - input.stampedAtMs <= WIRE_STATUS_FILL_FRESHNESS_MS;
 }
 
+/**
+ * Minimum spacing of two URGENT stream-resync transcript re-reads of one
+ * session (see `resyncReadIsUrgent`). The stream already spaces its resyncs
+ * `GAP_REHYDRATE_MS` (5_000, `core/stream/event-stream.ts`) apart. This floor
+ * bounds a stream that remounts and starts a new floor, and subscribers that
+ * share one stream.
+ *
+ * Must stay below `GAP_REHYDRATE_MS`. The stream stamps its floor before any
+ * subscriber runs, and `hydrateCore` reserves after its own setup and after
+ * earlier subscribers. An equal floor dropped the read of a resync the stream
+ * dispatched exactly when its floor ended.
+ */
+const MESSAGE_REHYDRATE_FLOOR_MS = 4_000;
+/**
+ * Minimum spacing of two NON-URGENT stream-resync re-reads of one session. A
+ * flapping stream resyncs every 5 s, and a tail page can take tens of seconds:
+ * without this bound every held transcript read back to back for as long as
+ * the stream flapped.
+ */
 const MESSAGE_REHYDRATE_COOLDOWN_MS = 30_000;
 const PROJECT_METADATA_REFETCH_COOLDOWN_MS = 5_000;
-const messageRehydrateInFlight = new Set<string>();
 const messageRehydrateLastAt = new Map<string, number>();
+/** Stream-resync reads still in flight, per session. A count: an urgent read
+ *  can start while another read of the same session runs. */
+const messageRehydrateInFlight = new Map<string, number>();
 let projectMetadataRefetchLastAt = 0;
 let projectMetadataRefetchTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -115,18 +136,88 @@ export function asStringOrUndefined(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
-export function reserveMessageRehydrate(sessionID: string): boolean {
-  if (!sessionID || messageRehydrateInFlight.has(sessionID)) return false;
-  const now = Date.now();
-  const last = messageRehydrateLastAt.get(sessionID) ?? 0;
-  if (now - last < MESSAGE_REHYDRATE_COOLDOWN_MS) return false;
-  messageRehydrateInFlight.add(sessionID);
-  messageRehydrateLastAt.set(sessionID, now);
+/**
+ * Must a stream resync re-read this session at once?
+ *
+ * Only when the dropped subscription delivered content (`contentLost`) and the
+ * session is running. That is the one case where a read held back loses text
+ * the tab needs now: the frames of a running turn that the reconnect dropped,
+ * whose absence makes the final `message.part.updated` fail the store's prefix
+ * guard. The status slot is current up to the drop, because that subscription
+ * was delivering. Every other held transcript is repaired by the turn-end and
+ * verify reads, and keeps the slower bound.
+ */
+export function resyncReadIsUrgent(input: {
+  contentLost: boolean;
+  status: SessionStatus | undefined;
+}): boolean {
+  if (!input.contentLost) return false;
+  return input.status?.type === 'busy' || input.status?.type === 'retry';
+}
+
+/**
+ * May a stream resync re-read this session's transcript now?
+ *
+ * - Urgent: `MESSAGE_REHYDRATE_FLOOR_MS` since the last reservation. No
+ *   in-flight lock: the resync postdates that read, and the session sync
+ *   controller gives an `sse-gap` read that arrives during another read one
+ *   follow-up read.
+ * - Otherwise: no read of this path in flight for the session, and
+ *   `MESSAGE_REHYDRATE_COOLDOWN_MS` since the last reservation.
+ *
+ * A reservation that returns true must be paired with `releaseMessageRehydrate`
+ * when its read settles.
+ */
+export function reserveMessageRehydrate(
+  sessionID: string,
+  request: { urgent: boolean; nowMs?: number },
+): boolean {
+  if (!sessionID) return false;
+  const nowMs = request.nowMs ?? Date.now();
+  const last = messageRehydrateLastAt.get(sessionID);
+  if (request.urgent) {
+    if (last !== undefined && nowMs - last < MESSAGE_REHYDRATE_FLOOR_MS) return false;
+  } else {
+    if ((messageRehydrateInFlight.get(sessionID) ?? 0) > 0) return false;
+    if (last !== undefined && nowMs - last < MESSAGE_REHYDRATE_COOLDOWN_MS) return false;
+  }
+  messageRehydrateLastAt.set(sessionID, nowMs);
+  messageRehydrateInFlight.set(sessionID, (messageRehydrateInFlight.get(sessionID) ?? 0) + 1);
   return true;
 }
 
 export function releaseMessageRehydrate(sessionID: string): void {
-  messageRehydrateInFlight.delete(sessionID);
+  const count = messageRehydrateInFlight.get(sessionID) ?? 0;
+  if (count <= 1) messageRehydrateInFlight.delete(sessionID);
+  else messageRehydrateInFlight.set(sessionID, count - 1);
+}
+
+/**
+ * Re-read the held transcripts after a stream resync, each under its own bound
+ * (`resyncReadIsUrgent`, `reserveMessageRehydrate`). `read` issues the
+ * `sse-gap` tail read. Returns the sessions it issued a read for.
+ */
+export function rehydrateHeldTranscripts(input: {
+  sessionIds: readonly string[];
+  contentLost: boolean;
+  statusOf: (sessionID: string) => SessionStatus | undefined;
+  read: (sessionID: string) => Promise<void>;
+  nowMs?: number;
+}): string[] {
+  const issued: string[] = [];
+  for (const sid of input.sessionIds) {
+    const urgent = resyncReadIsUrgent({
+      contentLost: input.contentLost,
+      status: input.statusOf(sid),
+    });
+    if (!reserveMessageRehydrate(sid, { urgent, nowMs: input.nowMs })) continue;
+    issued.push(sid);
+    input
+      .read(sid)
+      .catch(() => {})
+      .finally(() => releaseMessageRehydrate(sid));
+  }
+  return issued;
 }
 
 export function scheduleProjectMetadataRefetch(queryClient: QueryClient): void {

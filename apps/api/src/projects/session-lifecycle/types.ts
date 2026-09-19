@@ -203,6 +203,49 @@ export const DELIVERY_FAILURE_COPY: Record<
   failed: 'the session refused it',
 };
 
+/**
+ * Why a prompt was given up on, as a stable code: the wire's `failure_code`.
+ *
+ * `last_error` is prose, and a client cannot localize or map prose. The code is
+ * PERSISTED where the row fails (`result.failure_code`, written by
+ * `markCommandFailed` and the redelivery dead-letter) and only read by
+ * `serializePrompt`. Nothing re-derives it from the message later, so
+ * rewording a message cannot change what a client shows.
+ *
+ * A published contract: add codes, never rename or remove one. `unknown` is
+ * a producer that does not know the cause, and every failed row written before
+ * codes were persisted.
+ */
+export const PROMPT_FAILURE_CODES = [
+  'out_of_credits',
+  'model_unavailable',
+  // No route emits the connector refusal since the session connector gate was
+  // retired; the code stays because a refusal stored before that still reads it.
+  'connector_required',
+  'runtime_unreachable',
+  'not_landed',
+  'redelivery_exhausted',
+  'rewound',
+  'session_gone',
+  'refused',
+  'unknown',
+] as const;
+
+export type PromptFailureCode = (typeof PROMPT_FAILURE_CODES)[number];
+
+/** The code of each delivery outcome the drain gives up on. `pending` is a
+ *  runtime that never became ready: to the user, the same as one that is down. */
+export const DELIVERY_FAILURE_CODE: Record<
+  Exclude<SessionDeliveryOutcome, 'delivered'>,
+  PromptFailureCode
+> = {
+  pending: 'runtime_unreachable',
+  unreachable: 'runtime_unreachable',
+  'not-landed': 'not_landed',
+  'no-session': 'session_gone',
+  failed: 'refused',
+};
+
 export type SessionDeliveryOutcome =
   | 'delivered'
   | 'pending'

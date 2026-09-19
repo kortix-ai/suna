@@ -146,10 +146,14 @@ describe('the bundle legs — every one is tri-state', () => {
     // The stamp is the SERVER's instant, never arrival: an answer is only as
     // fresh as the moment it was taken, and a bundle shared across the first
     // seconds of an open must not claim to be newer than it is.
+    // `source: 'bundle'` marks the server-clock stamp: the projection never
+    // lets this observation retire a drain floor or rank against a tab-clock
+    // busy-phase stamp.
     expect(turn).toEqual({
       turns: [{ turn_token: 't1', state: 'active' }] as never,
       last_ended: undefined,
       atMs: Date.parse('2026-08-26T12:00:00.000Z'),
+      source: 'bundle',
     });
   });
 

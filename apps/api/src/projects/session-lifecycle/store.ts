@@ -9,6 +9,7 @@ import { markTriggerRuntimeDeliveryFailed } from '../trigger-execution-store';
 import { inboxLaneSql, inboxOrderBy, inboxSentAtSql, inboxWireIdSql } from './inbox-order';
 import type {
   CreateSessionCommand,
+  PromptFailureCode,
   QueuedCreateSessionPayload,
   SessionInvocationSource,
   SessionLifecycleResult,
@@ -763,15 +764,28 @@ export async function markCommandFailed(
     attempts: number;
     sessionId?: string | null;
     result?: Record<string, unknown>;
+    /** WHY, as a stable code, written only when the row is given up on.
+     *  Omitted: `unknown`. See `PROMPT_FAILURE_CODES`. */
+    failureCode?: PromptFailureCode;
   },
 ): Promise<void> {
   const retry = opts.retryable && opts.attempts < 5;
+  // A row given up on carries its cause as a code beside the markers it
+  // already has (merged, not replaced); `serializePrompt` serves it. A row
+  // that is only re-queued has not failed, so it gets none.
+  const failure = retry ? null : { failure_code: opts.failureCode ?? 'unknown' };
+  let result: Record<string, unknown> | SQL | undefined = opts.result;
+  if (failure) {
+    result = opts.result
+      ? { ...opts.result, ...failure }
+      : sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) || ${JSON.stringify(failure)}::jsonb`;
+  }
   const [row] = await db
     .update(sessionLifecycleCommands)
     .set({
       status: retry ? 'queued' : 'dead_lettered',
       ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
-      ...(opts.result ? { result: opts.result } : {}),
+      ...(result ? { result } : {}),
       attempts: opts.attempts,
       availableAt: new Date(Date.now() + Math.min(60_000, 2_000 * Math.max(opts.attempts, 1))),
       lockedBy: null,
@@ -797,6 +811,7 @@ export async function markCommandFailed(
   const log = cause === 'customer_state' ? logger.warn : logger.error;
   log('[session-lifecycle] command dead-lettered — giving up after retries', {
     cause,
+    failure_code: failure?.failure_code,
     command_id: row.commandId,
     command_type: row.commandType,
     source: row.source,

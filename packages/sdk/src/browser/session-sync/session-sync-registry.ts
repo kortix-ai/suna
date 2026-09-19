@@ -228,8 +228,12 @@ function createController(sessionId: string, key: string): SessionSyncController
     // projection (`livenessBusy`). `loadSessionRuntimeStatus` stays — it is a
     // published export of `@kortix/sdk/react` — but this controller no longer
     // calls it.
-    hydrate: (messages) => {
-      useSyncStore.getState().hydrate(sessionId, messages);
+    //
+    // `options` carries the controller's no-stamp flag for turn-end repair
+    // reads into the store, so a finished turn's page never brings "working"
+    // back.
+    hydrate: (messages, options) => {
+      useSyncStore.getState().hydrate(sessionId, messages, options);
     },
     markLoaded: () => {
       const state = useSyncStore.getState();
@@ -337,7 +341,9 @@ export function retainSessionSyncController(sessionId: string, runtimeScope?: st
     if (!current || current.controller !== controller) return;
     current.consumers = Math.max(0, current.consumers - 1);
     current.lastUsedAt = Date.now();
-    if (current.consumers === 0) controller.setBusy(false);
+    // The last consumer left. That is not a turn end: a working session keeps
+    // running, so issue one tail read and no settle cycle.
+    if (current.consumers === 0) controller.setBusy(false, { settle: false });
     evictInactiveControllers();
   };
 }

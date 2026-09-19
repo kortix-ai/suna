@@ -20,6 +20,7 @@ import {
   hasLandedOnNewSession,
   useNewSessionGuardStore,
 } from '@/hooks/projects/new-session-guard';
+import { fileNewSessionSendReceipt } from '@/hooks/projects/new-session-send-receipt';
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
 import {
   createWarmSession,
@@ -28,6 +29,7 @@ import {
   takeWarmSessionEntry,
 } from '@/hooks/projects/use-warm-project-session';
 import {
+  pickAdoptedWarmSession,
   reconcileSessionsAfterCreate,
   seedAdoptedWarmSession,
 } from '@/hooks/projects/warm-session-seed';
@@ -217,6 +219,13 @@ export function useNewProjectSession(projectId: string | undefined) {
       // otherwise watch after pressing Enter. `takeWarmSessionEntry` returns
       // null whenever there is nothing suitable, so the create path below stays
       // the authority on billing, the session cap and connector requirements.
+
+      // The Send press, as the composer stamped it onto the prompt. Both the
+      // create and the claim carry that prompt, so both file their receipt
+      // against the same instant — see `fileNewSessionSendReceipt`.
+      const pendingPrompt = opts?.create?.pending_prompt;
+      const sentAtMs = pendingPrompt?.send_started_at_ms ?? Date.now();
+
       const takeOrCreateSession = async () => {
         const warm = takeWarmSessionEntry(projectId, {
           create: opts?.create,
@@ -238,24 +247,39 @@ export function useNewProjectSession(projectId: string | undefined) {
           // A refused claim (another tab took it, marker already gone) is not
           // an error the user should see: fall through to the ordinary create,
           // which carries the same prompt.
-          const pending = opts?.create?.pending_prompt;
-          const primed = pending
+          const warmReceipt = fileNewSessionSendReceipt({
+            sessionId: warm.sessionId,
+            hasPendingPrompt: !!pendingPrompt,
+            sentAtMs,
+          });
+          const claimed = pendingPrompt
             ? await primeTakenWarmSession(projectId, warm, {
-                pending_prompt: pending,
+                pending_prompt: pendingPrompt,
                 ...(opts?.create?.agent_name ? { agent_name: opts.create.agent_name } : {}),
                 ...(opts?.create?.sandbox_slug ? { sandbox_slug: opts.create.sandbox_slug } : {}),
               })
-            : true;
-          if (primed) {
-            adoptedWarmSession = warm.session;
+            : null;
+          if (!pendingPrompt || claimed) {
+            warmReceipt.accept(Date.now());
+            // The CLAIM RESPONSE, not the warm entry's create-time row — see
+            // `pickAdoptedWarmSession` for why the entry's row is the wrong one.
+            adoptedWarmSession = pickAdoptedWarmSession(claimed, warm.session);
             router.prefetch(`/projects/${projectId}/sessions/${warm.sessionId}`);
             return warm.sessionId;
           }
+          // Refused. The ordinary create below carries the same prompt and
+          // files its own receipt against the session it mints.
+          warmReceipt.clear();
         }
 
         const sessionId = crypto.randomUUID();
         markSessionFresh(sessionId);
         router.prefetch(`/projects/${projectId}/sessions/${sessionId}`);
+        const receipt = fileNewSessionSendReceipt({
+          sessionId,
+          hasPendingPrompt: !!pendingPrompt,
+          sentAtMs,
+        });
         try {
           await createProjectSession(projectId, {
             session_id: sessionId,
@@ -271,8 +295,12 @@ export function useNewProjectSession(projectId: string | undefined) {
             (await confirmCommitted(async () =>
               Boolean(await getProjectSession(projectId, sessionId, { showErrors: false })),
             ));
-          if (!committed) throw error;
+          if (!committed) {
+            receipt.clear();
+            throw error;
+          }
         }
+        receipt.accept(Date.now());
         return sessionId;
       };
 
@@ -318,8 +346,11 @@ export function useNewProjectSession(projectId: string | undefined) {
             if (adopted) upsertCachedProjectSession(queryClient, projectId, adopted);
           }
           // The row exists — kick provisioning so it overlaps the navigation.
-          // For an adopted warm session this is also the call that drops the
-          // server's `metadata.warm` marker (apps/api/.../routes/r8.ts).
+          // It also drops the server's `metadata.warm` marker, but only for a
+          // PROMPT-LESS take: `dropWarmSessionMarkerOnAdopt`
+          // (apps/api/.../routes/warm-sessions.ts) runs behind a marker
+          // predicate the claim transaction has already made false. A send that
+          // carried a prompt had its marker dropped by the claim itself.
           const started = prefetchSessionStart(queryClient, projectId, sessionId);
           if (adoptedWarmSession) {
             const replenish = () => {

@@ -269,6 +269,14 @@ const stream = await session.stream({
 await session.send('Refactor the auth module');
 ```
 
+Pass `onGapRehydrate` to be told that frames may have been lost. It fires after
+a reconnect, once the new subscription delivers its first frame, when the
+dropped subscription had delivered content or when no content arrived for more
+than 5 s. `gapMs` counts from the last content frame — the daemon keepalive,
+`server.connected` and `server.heartbeat` do not count — so it can be under
+5 s. It fires at most once per 5 s per stream; a call that comes due inside
+that window fires when the window ends. Re-read the transcript when it fires.
+
 Streaming needs `fetch` with a real `ReadableStream` body and
 `TextDecoderStream`. Browsers, Node 18 and later, Bun, and Cloudflare Workers
 all support it. React Native and Expo do not: their `fetch` has no
@@ -276,9 +284,16 @@ all support it. React Native and Expo do not: their `fetch` has no
 bounded history and status synchronization. Use a platform-specific event
 transport for live events.
 
-The controller loads the newest 10 messages first. `loadOlder()` follows the
-server cursor. `loadHttpSessionHistory()` follows every cursor for explicit
-exports.
+The controller loads the newest 50 messages first.
+`loadOlder()` follows the server cursor. `loadHttpSessionHistory()` follows
+every cursor for explicit exports.
+
+After a turn ends, the controller re-reads the tail until the last assistant
+message completes, at most 5 reads. Those repair reads call `hydrate` with
+`{ stampActivity: false }`, because a repair page is not evidence that the
+runtime is producing and must not restart the liveness clock. Poll reads carry
+a deadline of 3 liveness intervals and are aborted past it; `initial`,
+`turn-end`, `visible` and follow-up reads have none.
 
 ### Event types
 

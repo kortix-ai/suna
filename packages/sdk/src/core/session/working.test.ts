@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import type { SessionPrompt, SessionTurn } from '../rest/projects-client/sessions';
+import type { SessionOpenBundle, SessionPrompt, SessionTurn } from '../rest/projects-client/sessions';
+import { openBundleTurn } from './open-bundle';
 import type { WorkingInboxInput } from './working';
 import {
   INBOX_OBSERVATION_MAX_MS,
@@ -59,6 +60,7 @@ describe('projectWorking', () => {
       turnId: 'msg_01',
       since: started,
       serverOpenTurnToken: 'tt-1',
+      serverOpenTurnFresh: true,
     });
   });
 
@@ -188,6 +190,7 @@ describe('projectWorking', () => {
       turnId: 'msg_01',
       since: T0 + 1_000,
       serverOpenTurnToken: 'tt-1',
+      serverOpenTurnFresh: true,
     });
   });
 
@@ -213,6 +216,7 @@ describe('projectWorking', () => {
       turnId: null,
       since: T0 - 2_000,
       serverOpenTurnToken: null,
+      serverOpenTurnFresh: false,
     });
   });
 
@@ -246,6 +250,7 @@ describe('projectWorking', () => {
       turnId: null,
       since: T0 + 500,
       serverOpenTurnToken: null,
+      serverOpenTurnFresh: false,
     });
   });
 
@@ -275,6 +280,7 @@ describe('projectWorking', () => {
       turnId: null,
       since: T0,
       serverOpenTurnToken: null,
+      serverOpenTurnFresh: false,
     });
   });
 
@@ -293,6 +299,7 @@ describe('projectWorking', () => {
       turnId: 'msg_42',
       since: T0,
       serverOpenTurnToken: null,
+      serverOpenTurnFresh: false,
     });
   });
 
@@ -359,6 +366,7 @@ describe('projectWorking', () => {
       turnId: null,
       since: T0 + 1_000,
       serverOpenTurnToken: null,
+      serverOpenTurnFresh: false,
     });
   });
 
@@ -383,6 +391,7 @@ describe('projectWorking', () => {
       turnId: 'msg_new',
       since: T0 + 300,
       serverOpenTurnToken: null,
+      serverOpenTurnFresh: false,
     });
   });
 
@@ -541,6 +550,7 @@ describe('projectWorking', () => {
       turnId: null,
       since: T0,
       serverOpenTurnToken: null,
+      serverOpenTurnFresh: false,
     });
   });
 
@@ -1244,6 +1254,7 @@ describe('projectWorking — a row the server took off the queue means a turn is
       turnId: null,
       since: T0,
       serverOpenTurnToken: null,
+      serverOpenTurnFresh: false,
     });
   });
 
@@ -1471,4 +1482,294 @@ test('activity after completion does not reuse the ended turn or a delivery rese
       nowMs: T0 + 350,
     }).turnId).toBeNull();
   }
+});
+
+/**
+ * WHICH turn is running comes only from a read taken after the current busy
+ * phase began.
+ *
+ * The runtime's idle frame lands, and the refetch it triggers goes out before
+ * the daemon relay closes the ledger row (measured: relay 1765 ms). That read
+ * still lists the finished turn `active`, and nothing re-reads `/turn` for up
+ * to 15 s. While the idle frame is the current frame, `endedByRuntime` vetoes
+ * that row. The next turn's busy frame replaces the idle frame and lifts the
+ * veto, so the finished turn's old activity stamp named it again: the busy
+ * label drew under the finished answer and the new bubble dimmed as pending.
+ *
+ * `runtimeBusySinceAtMs` is the tab-clock instant this tab watched the stream
+ * cross from idle to not-idle. A read issued before it cannot know which turn
+ * this phase belongs to. Both stamps are tab clock, so server clock skew never
+ * enters the comparison.
+ */
+describe('projectWorking — a turn is named only by a read from the current busy phase', () => {
+  const iso = (ms: number) => new Date(ms).toISOString();
+  const ended = turn({ turn_token: 't_A', message_id: 'A', started_at: iso(T0 - 60_000) });
+
+  test('a busy frame after the end frame does not bring back the ended turn', () => {
+    const projection = projectWorking({
+      optimistic: null,
+      server: { turns: [ended], atMs: T0 + 1_010 },
+      stream: { type: 'busy', origin: 'wire', atMs: T0 + 2_900 },
+      runtimeBusySinceAtMs: T0 + 2_900,
+      activity: { atMs: T0 + 2_950 },
+      nowMs: T0 + 2_960,
+    });
+    expect(projection).toMatchObject({ state: 'working', source: 'stream', turnId: null });
+  });
+
+  test('guard: a read taken after the flip names the new turn', () => {
+    const projection = projectWorking({
+      optimistic: null,
+      server: {
+        turns: [turn({ turn_token: 't_B', message_id: 'R_B', started_at: iso(T0 + 2_850) })],
+        atMs: T0 + 2_905,
+      },
+      stream: { type: 'busy', origin: 'wire', atMs: T0 + 2_900 },
+      runtimeBusySinceAtMs: T0 + 2_900,
+      activity: { atMs: T0 + 2_950 },
+      nowMs: T0 + 2_960,
+    });
+    expect(projection).toMatchObject({ state: 'working', source: 'stream', turnId: 'R_B' });
+  });
+
+  test('the open-turn branch keeps its state but drops a name from before the flip', () => {
+    // A fabricated local idle cannot contradict the ledger, so the open-turn
+    // branch still decides `working` from the pre-flip read. The read cannot
+    // say which turn this phase runs, so it names none.
+    const projection = projectWorking({
+      optimistic: null,
+      server: { turns: [ended], atMs: T0 + 1_010 },
+      stream: { type: 'idle', origin: 'local', atMs: T0 + 3_000 },
+      runtimeBusySinceAtMs: T0 + 2_900,
+      nowMs: T0 + 3_050,
+    });
+    expect(projection).toMatchObject({
+      state: 'working',
+      source: 'server',
+      turnId: null,
+      serverOpenTurnToken: 't_A',
+    });
+    // Guard: a read at the flip instant names its turn.
+    expect(
+      projectWorking({
+        optimistic: null,
+        server: { turns: [ended], atMs: T0 + 2_900 },
+        stream: { type: 'idle', origin: 'local', atMs: T0 + 3_000 },
+        runtimeBusySinceAtMs: T0 + 2_900,
+        nowMs: T0 + 3_050,
+      }).turnId,
+    ).toBe('A');
+  });
+
+  test('guard: without the input the projection names turns exactly as before', () => {
+    for (const runtimeBusySinceAtMs of [undefined, null]) {
+      expect(
+        projectWorking({
+          optimistic: null,
+          server: { turns: [ended], atMs: T0 + 1_010 },
+          stream: { type: 'busy', origin: 'wire', atMs: T0 + 2_900 },
+          runtimeBusySinceAtMs,
+          activity: { atMs: T0 + 2_950 },
+          nowMs: T0 + 2_960,
+        }).turnId,
+      ).toBe('A');
+    }
+  });
+
+  test('guard: ledger clock skew never nulls the name of a turn read after the flip', () => {
+    // `started_at` is the API clock. The rule compares only tab-clock stamps,
+    // so a ledger 3 s ahead of or behind this tab changes nothing.
+    for (const skewMs of [3_000, -3_000]) {
+      const projection = projectWorking({
+        optimistic: null,
+        server: {
+          turns: [turn({ turn_token: 't_B', message_id: 'R_B', started_at: iso(T0 + 2_900 + skewMs) })],
+          atMs: T0 + 2_905,
+        },
+        stream: { type: 'busy', origin: 'wire', atMs: T0 + 2_900 },
+        runtimeBusySinceAtMs: T0 + 2_900,
+        activity: { atMs: T0 + 2_950 },
+        nowMs: T0 + 2_960,
+      });
+      expect(projection.turnId).toBe('R_B');
+    }
+  });
+
+  test('a bundle read cannot be ranked against the flip, so it names no turn', () => {
+    // The bundle's `atMs` is the API's `observed_at`, not this tab's clock.
+    const projection = projectWorking({
+      optimistic: null,
+      server: { turns: [ended], atMs: T0 + 5_000, source: 'bundle' },
+      stream: { type: 'busy', origin: 'wire', atMs: T0 + 2_900 },
+      runtimeBusySinceAtMs: T0 + 2_900,
+      activity: { atMs: T0 + 2_950 },
+      nowMs: T0 + 2_960,
+    });
+    expect(projection).toMatchObject({ state: 'working', turnId: null });
+  });
+});
+
+/**
+ * A queued send's receipt names the turn that was running when it was queued,
+ * so its bubble stays pending behind that turn. Once the runtime ends that turn
+ * — its wire idle frame, or a new busy phase — the association is stale.
+ */
+describe('projectWorking — a queued receipt stops naming a turn that ended', () => {
+  const iso = (ms: number) => new Date(ms).toISOString();
+  const running = turn({ turn_token: 't_A', message_id: 'A', started_at: iso(T0 - 60_000) });
+  const queued = { messageId: 'W_B', turnId: 'A', atMs: T0 - 20_000, acceptedAtMs: T0 - 19_800 };
+
+  test('a wire idle frame after the receipt drops the turn name', () => {
+    const projection = projectWorking({
+      optimistic: queued,
+      inbox: { pending: 1, atMs: T0 + 1_010 },
+      server: { turns: [running], atMs: T0 + 1_010 },
+      stream: { type: 'idle', origin: 'wire', atMs: T0 + 1_000 },
+      runtimeBusySinceAtMs: T0 - 30_000,
+      nowMs: T0 + 1_050,
+    });
+    expect(projection).toMatchObject({ state: 'working', pendingDelivery: true, turnId: null });
+  });
+
+  test('a busy phase that began after the receipt drops the turn name', () => {
+    const projection = projectWorking({
+      optimistic: queued,
+      inbox: { pending: 1, atMs: T0 + 2_800 },
+      server: null,
+      stream: { type: 'busy', origin: 'wire', atMs: T0 + 2_900 },
+      runtimeBusySinceAtMs: T0 + 2_900,
+      nowMs: T0 + 2_950,
+    });
+    expect(projection).toMatchObject({ state: 'working', source: 'server', turnId: null });
+    // The receipt rule answers the same way when nothing else does.
+    expect(
+      projectWorking({
+        optimistic: { ...queued, acceptedAtMs: null },
+        server: null,
+        stream: null,
+        runtimeBusySinceAtMs: T0 + 2_900,
+        nowMs: T0 + 2_950,
+      }),
+    ).toMatchObject({ state: 'working', source: 'optimistic', turnId: null });
+  });
+
+  test('guard: while the turn still runs the receipt keeps naming it', () => {
+    // No idle frame and no new busy phase after the receipt: the queued bubble
+    // stays pending behind the running turn.
+    for (const runtimeBusySinceAtMs of [T0 - 30_000, undefined]) {
+      const projection = projectWorking({
+        optimistic: queued,
+        inbox: { pending: 1, atMs: T0 + 1_010 },
+        server: null,
+        stream: { type: 'busy', origin: 'wire', atMs: T0 - 30_000 },
+        runtimeBusySinceAtMs,
+        nowMs: T0 + 1_050,
+      });
+      expect(projection).toMatchObject({ state: 'working', turnId: 'A' });
+    }
+  });
+
+  test('guard: a direct send names itself whatever the stream did', () => {
+    const projection = projectWorking({
+      optimistic: { messageId: 'W', turnId: 'W', atMs: T0, acceptedAtMs: T0 + 100 },
+      inbox: { pending: 1, atMs: T0 + 100 },
+      server: null,
+      stream: { type: 'idle', origin: 'wire', atMs: T0 + 50 },
+      runtimeBusySinceAtMs: T0 + 80,
+      nowMs: T0 + 200,
+    });
+    expect(projection.turnId).toBe('W');
+  });
+});
+
+/**
+ * The session-open bundle answers the first `/turn` read at page open. Its
+ * stamp is the API's `observed_at`, while the drain stamp is this tab's clock.
+ * Under skew a bundle read that predates the hand-off looked newer than the
+ * drain and retired the floor.
+ */
+describe('projectWorking — only a direct read retires the drain floor', () => {
+  test('a bundle-sourced read never retires it; a direct read with the same stamp does', () => {
+    const inputs = {
+      optimistic: null,
+      inbox: { pending: 0, atMs: T0, drainedAtMs: T0 },
+      stream: null,
+      nowMs: T0 + 500,
+    };
+    expect(
+      projectWorking({ ...inputs, server: { turns: [], atMs: T0 + 200, source: 'bundle' } }),
+    ).toMatchObject({ state: 'working', pendingDelivery: true, turnId: null });
+    expect(
+      projectWorking({ ...inputs, server: { turns: [], atMs: T0 + 200, source: 'read' } }).state,
+    ).toBe('idle');
+    // Absent `source` is a direct read, as every caller before the field was.
+    expect(projectWorking({ ...inputs, server: { turns: [], atMs: T0 + 200 } }).state).toBe('idle');
+  });
+
+  test('the open bundle marks its turn observation, so the rule above can see it', () => {
+    const bundleTurn = openBundleTurn({
+      observed_at: new Date(T0 + 200).toISOString(),
+      turn: { known: true, turns: [] },
+    } as unknown as SessionOpenBundle);
+    expect(bundleTurn).toMatchObject({ turns: [], atMs: T0 + 200, source: 'bundle' });
+    expect(
+      projectWorking({
+        optimistic: null,
+        inbox: { pending: 0, atMs: T0, drainedAtMs: T0 },
+        server: bundleTurn!,
+        stream: null,
+        nowMs: T0 + 500,
+      }).state,
+    ).toBe('working');
+  });
+});
+
+/**
+ * Whether the read behind `serverOpenTurnToken` is young enough to decide.
+ * The token itself stays age-free: it keeps the liveness poll running. A caller
+ * that pins Stop on the token needs to know when the read stopped being
+ * evidence.
+ */
+describe('projectWorking — serverOpenTurnFresh', () => {
+  test('true within SERVER_OBSERVATION_MAX_MS of the read, false one ms later', () => {
+    const inputs = { optimistic: null, server: { turns: [turn()], atMs: T0 }, stream: null };
+    const atBound = projectWorking({ ...inputs, nowMs: T0 + SERVER_OBSERVATION_MAX_MS });
+    expect(atBound.serverOpenTurnToken).toBe('tt-1');
+    expect(atBound.serverOpenTurnFresh).toBe(true);
+
+    const past = projectWorking({ ...inputs, nowMs: T0 + SERVER_OBSERVATION_MAX_MS + 1 });
+    expect(past.serverOpenTurnToken).toBe('tt-1');
+    expect(past.serverOpenTurnFresh).toBe(false);
+  });
+
+  test('false when no read holds a turn', () => {
+    expect(
+      projectWorking({ optimistic: null, server: { turns: [], atMs: T0 }, stream: null, nowMs: T0 })
+        .serverOpenTurnFresh,
+    ).toBe(false);
+    expect(
+      projectWorking({ optimistic: null, server: null, stream: null, nowMs: T0 }).serverOpenTurnFresh,
+    ).toBe(false);
+  });
+
+  test('set on every branch, including one a newer idle frame decided', () => {
+    const projection = projectWorking({
+      optimistic: null,
+      server: { turns: [turn()], atMs: T0 + 60_044 },
+      stream: { type: 'idle', atMs: T0 + 60_000 },
+      nowMs: T0 + 60_200,
+    });
+    expect(projection).toMatchObject({ state: 'idle', serverOpenTurnToken: 'tt-1', serverOpenTurnFresh: true });
+  });
+
+  test('guard: the expiry timer re-evaluates at the instant the read ages out', () => {
+    expect(
+      workingExpiryAtMs({
+        optimistic: null,
+        server: { turns: [turn()], atMs: T0 },
+        stream: null,
+        nowMs: T0 + 1_000,
+      }),
+    ).toBe(T0 + SERVER_OBSERVATION_MAX_MS);
+  });
 });

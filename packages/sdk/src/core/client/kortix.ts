@@ -1292,8 +1292,15 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
        * Framework-free — safe to call from a server-side "Kortix as a
        * Backend" wrapper (Node/Bun), a worker, a CLI, or any non-React host.
        *
-       * Handles connect/reconnect/backoff, a 15s heartbeat watchdog, and
+       * Handles connect/reconnect/backoff, a 60s heartbeat watchdog, and
        * event coalescing internally. Call `handle.close()` to stop.
+       *
+       * `onGapRehydrate(gapMs)` fires after a reconnect, once the new
+       * subscription delivers its first frame, when frames may have been lost:
+       * the dropped subscription delivered content, or no content arrived for
+       * more than 5 s. `gapMs` counts from the last content frame and can be
+       * under 5 s. At most one call per 5 s per stream; a call that comes due
+       * inside that window fires when it ends. See `openEventStream`.
        *
        *   const handle = await session.stream({ onEvent: (e) => console.log(e) });
        *   // later

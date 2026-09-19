@@ -20,6 +20,7 @@ import {
   resolveBillingState,
 } from '@/lib/billing/billing-gate-state';
 import { isBillingEnabled } from '@/lib/config';
+import { beginSessionTiming, clearSessionClick, markSessionClick } from '@/lib/session-timing';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { useFirstPromptPreviewStore } from '@/stores/session-composer-handoff-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
@@ -163,6 +164,9 @@ export default function ProjectIndexPage() {
       // tokens for the first prompt (see buildNewSessionCreateInput). The proxy
       // no longer refuses a prompt whose agent differs — switching is allowed.
       setSending(true);
+      // The send-to-first-output timeline starts at the press, before the
+      // session has an id — `beginSessionTiming` below backdates to it.
+      markSessionClick();
       // Send time, not POST time. A held POST lands after the uploads, and the
       // server orders rows by this stamp: a message sent on the session page
       // meanwhile must still follow this one.
@@ -183,6 +187,9 @@ export default function ProjectIndexPage() {
             error instanceof Error ? error.message : tI18nComplete.raw('texta9c0123d9962'),
           );
           setSending(false);
+          // No session comes of this press, so nothing will consume the click
+          // stamp. Left pending it backdates the next send's timeline.
+          clearSessionClick();
           throw error;
         }
       }
@@ -231,6 +238,10 @@ export default function ProjectIndexPage() {
                     agent: options?.agent ?? null,
                     model: options?.model ?? null,
                     variant: options?.variant ?? null,
+                    // The press, so the server's delivery timeline reports
+                    // send-to-delivery rather than create-to-delivery. Not the
+                    // inbox order key — see `convertPendingPromptToInboxRow`.
+                    send_started_at_ms: sentAtMs,
                     attachment_names:
                       files?.map((file) =>
                         file.kind === 'local' ? file.file.name : file.filename,
@@ -247,9 +258,15 @@ export default function ProjectIndexPage() {
           onError: () => {
             refused = true;
             setSending(false);
+            // `onNavigate` never runs, so the click stamp has no timeline to
+            // start. Drop it here or it backdates the next one.
+            clearSessionClick();
             reject(new Error('Session creation failed'));
           },
           onNavigate: (sessionId) => {
+            // The id exists: bind the click-stamped timeline to it, so the
+            // session page's `first-output` mark measures from the press.
+            beginSessionTiming(sessionId);
             // `sessionId` here is the route/Kortix session id, not the OpenCode
             // pin the session page resolves later (`useCanonicalRuntimeSession`
             // /`ensureOpencodeSessionPin` mint a separate id). Stash under the

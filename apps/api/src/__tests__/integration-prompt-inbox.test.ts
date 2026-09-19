@@ -42,7 +42,7 @@ import {
   requeueUnverifiedRedelivery,
 } from '../projects/session-lifecycle/store';
 import { db } from '../shared/db';
-import { promptState } from '../projects/lib/session-prompt-view';
+import { promptState, serializePrompt } from '../projects/lib/session-prompt-view';
 
 const SANDBOX_ID = crypto.randomUUID();
 const SESSION_ID = crypto.randomUUID();
@@ -595,6 +595,12 @@ describe('requeueAbandonedPrompt against real rows', () => {
     const after = await readRow(row.commandId);
     expect(after.status).toBe('dead_lettered');
     expect((after.result as Record<string, unknown>).status).toBeUndefined();
+    // WHY, as a code, written by the same statement — and the record of what
+    // the row did is still there beside it.
+    expect(after.result).toMatchObject({
+      failure_code: 'redelivery_exhausted',
+      forwarded_message_id: WIRE_ID,
+    });
     // Still the user's row: a dead-lettered prompt is listed, with a retry.
     expect((await listInboxPrompts(SESSION_ID, 200)).map((r) => r.commandId)).toContain(
       row.commandId,
@@ -1212,6 +1218,76 @@ describe('a dead-lettered prompt does not take the session down with it', () => 
     expect(await sessionStatus()).toBe('failed');
     await db.execute(sql`
       UPDATE kortix.project_sessions SET status = 'running' WHERE session_id = ${SESSION_ID}`);
+  });
+});
+
+describe('a prompt given up on records WHY as a code, and a retry clears it', () => {
+  async function listed(commandId: string) {
+    const row = (await listInboxPrompts(SESSION_ID, 200)).find((r) => r.commandId === commandId);
+    if (!row) throw new Error(`prompt ${commandId} is not listed`);
+    return serializePrompt(row);
+  }
+
+  test('the code is merged into result, beside the markers the row already carried', async () => {
+    const row = await enqueue('q_code_merge');
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands
+         SET result = '{"landing_refusals": 2}'::jsonb
+       WHERE command_id = ${row.commandId}::uuid`);
+
+    await markCommandFailed(row.commandId, 'prompt accepted by the runtime but never became a message', {
+      retryable: false,
+      attempts: 1,
+      sessionId: SESSION_ID,
+      failureCode: 'not_landed',
+    });
+
+    const after = await readRow(row.commandId);
+    expect(after.status).toBe('dead_lettered');
+    expect(after.result).toEqual({ landing_refusals: 2, failure_code: 'not_landed' });
+    const view = await listed(row.commandId);
+    expect([view.state, view.failure_code]).toEqual(['failed', 'not_landed']);
+  });
+
+  test('a producer that names no cause is `unknown`; a failure only re-queued records none', async () => {
+    const dead = await enqueue('q_code_unknown');
+    await markCommandFailed(dead.commandId, 'admission check failed: boom', {
+      retryable: true,
+      attempts: 5,
+      sessionId: SESSION_ID,
+    });
+    expect((await readRow(dead.commandId)).result).toEqual({ failure_code: 'unknown' });
+
+    const requeued = await enqueue('q_code_requeued');
+    await markCommandFailed(requeued.commandId, 'the session was not ready in time', {
+      retryable: true,
+      attempts: 1,
+      sessionId: SESSION_ID,
+      failureCode: 'runtime_unreachable',
+    });
+    const after = await readRow(requeued.commandId);
+    expect(after.status).toBe('queued');
+    expect(after.result).not.toHaveProperty('failure_code');
+    expect((await listed(requeued.commandId)).failure_code).toBeNull();
+  });
+
+  test('retry clears the code together with the error', async () => {
+    const row = await enqueue('q_code_retry');
+    await markCommandFailed(row.commandId, 'Out of credits. Top up to continue.', {
+      retryable: false,
+      attempts: 1,
+      sessionId: SESSION_ID,
+      failureCode: 'out_of_credits',
+    });
+    expect((await listed(row.commandId)).failure_code).toBe('out_of_credits');
+
+    const retried = await retryInboxPrompt(SESSION_ID, row.commandId);
+    if (!retried) throw new Error('the retry re-queued nothing');
+    const after = await readRow(row.commandId);
+    expect(after.last_error).toBeNull();
+    expect(after.result).not.toHaveProperty('failure_code');
+    const view = serializePrompt(retried);
+    expect([view.state, view.last_error, view.failure_code]).toEqual(['queued', null, null]);
   });
 });
 
