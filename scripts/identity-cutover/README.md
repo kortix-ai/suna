@@ -1,6 +1,6 @@
 # LibreMax legacy identity cutover
 
-Supabase creates a separate Auth user for SAML SSO. Four LibreMax users currently have both an old email Auth ID and a new SSO Auth ID. The old IDs own migrated sessions. `libremax-pairs.json` records only pairs verified by matching email and distinct Auth identities.
+Supabase creates a separate Auth user after each person's first SAML login. LibreMax has 22 active Entra/SCIM directory people, while only five currently have a SAML Auth ID. Four of those five initially had migrated sessions on a different email Auth ID. `libremax-pairs.json` records those four verified old/new pairs. The other active directory people retain their current Auth ID until their first SAML login; the runtime reconciliation then moves their account-scoped data automatically.
 
 `reconcile.ts` transfers current membership, SCIM bindings, roles, groups, session ownership, session grants, and session-scoped tokens in one database transaction. It also transfers an old personal account's member and primary-owner references. It leaves immutable audit actors, historical `created_by` fields outside sessions, account IDs, session IDs, titles, timestamps, files, and Auth user rows unchanged. A user whose old membership is already revoked gets no new membership or group grant.
 
@@ -28,6 +28,14 @@ dotenvx run -f apps/api/.env.prod --quiet -- bun --no-env-file scripts/identity-
 Run these commands from a checkout that has the production ledger at that relative path, or use an absolute ledger path. The access test signs short-lived JWTs for the eight real Auth IDs and checks production API responses. The deprovisioned user's old and SSO IDs must both receive 403. The cutover does not deploy the account-member deletion fix; that change remains in this draft PR.
 
 This run covers the four pairs in the file. Other old identities have no SSO Auth ID until their first SSO sign-in. Do not synthesize SAML identities or delete the old Auth users: those IDs still anchor historical references and, for one user, a personal account ID. Add each future verified pair to a new cutover input and repeat the same dry-run and API checks.
+
+Audit the entire account, including directory people without a SAML Auth ID:
+
+```sh
+dotenvx run -f apps/api/.env.prod --quiet -- bun --no-env-file scripts/identity-cutover/audit-account.ts --account=9c178b9d-edc3-428a-999f-7a1d7bd325d6
+```
+
+The audit fails when one directory email owns sessions under a different UUID or when two account memberships share one normalized email. Pending directory invitations and historical session owners without a directory record remain visible as separate classifications; neither condition invents access or a SAML identity.
 
 ## Permanent identity rule
 
