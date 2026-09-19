@@ -21,6 +21,12 @@ linked, not inlined.
 
 ## Register
 
+### Offboarding must clear group rows as well as account roles (2026-09-18)
+
+**When:** removing an account member or rebinding a legacy identity to SSO. Delete that member's group rows for the account before deleting membership. Otherwise a later re-invite restores group access without a new grant. Do not copy group rows from an identity whose membership was already revoked.
+
+**Near-miss:** LibreMax's removed legacy user still had one group row after account removal. The identity cutover dry run would have copied it to the SSO ID. The API removal path now clears groups; `MEM-4` proves removal and readback through HTTP. The cutover transfers only groups belonging to accounts where the old identity is still a member.
+
 ### 2026-09-18 — A `bun build --define` substitutes one literal token; a read through an injected `env` object ships `undefined`
 
 **Incident.** The first published `kortix tui` (dev-latest `0.13.25-dev.4589893d`,
@@ -7090,3 +7096,28 @@ with the fix.
 **Unverified.** No real ECS rollout was exercised — no AWS credentials in this
 environment. The poll's behaviour against live ECS is proven only by the next
 real deploy of this script.
+
+### 2026-09-19 — Auth UUIDs are login handles, not account-scoped people
+
+**Incident.** LibreMax users existed twice after Entra SAML sign-in. Their old
+email Auth UUIDs owned migrated sessions while their new SAML UUIDs held current
+membership. Removing only the SAML membership left old ownership intact. SAML
+JIT could also recreate a manually removed member because
+`auto_create_members=true` admitted any valid SAML login.
+
+**Rules.**
+1. Identify a directory person by `(account_id, lower(email))`. Never merge
+   identities across accounts or from email alone.
+2. SCIM controls active state. SAML supplies the current Auth UUID. An active
+   account-scoped SCIM match may move current access and ownership to that UUID.
+3. Manual removal must leave an inactive directory tombstone. SAML JIT cannot
+   override it. Only explicit SCIM reactivation restores directory access.
+4. Directory-controlled accounts set `auto_create_members=false`. Unknown SAML
+   users require an active SCIM row or an existing manual membership.
+5. Revoke legacy standalone PATs during identity cutover. Move only tokens tied
+   to transferred sessions. Preserve historical audit actors.
+
+**Enforcement.** `integration-iam-sso-sync.test.ts` proves active SCIM identity
+reconciliation. Flow `MEM-4` proves manual removal clears group access and reads
+the same SCIM person back as inactive. The production verifier sends a real-shape
+SAML provider claim and requires the removed LibreMax identity to receive 403.
