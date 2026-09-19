@@ -52,10 +52,28 @@ try {
       WHERE d.account_id=$1 AND d.active AND d.deleted_at IS NULL AND d.user_id IS NULL
       ORDER BY d.user_name
     `, [accountId]);
+  const ownerAuthShape = await client.query(`
+    WITH owner_emails AS (
+      SELECT DISTINCT lower(u.email) email
+      FROM kortix.project_sessions s JOIN auth.users u ON u.id=s.created_by
+      WHERE s.account_id=$1
+    ), counts AS (
+      SELECT owner_emails.email, count(u.id)::int auth_ids,
+             count(*) FILTER (WHERE u.is_sso_user)::int sso_ids
+      FROM owner_emails JOIN auth.users u ON lower(u.email)=owner_emails.email
+      GROUP BY owner_emails.email
+    )
+    SELECT count(*)::int owner_emails,
+           count(*) FILTER (WHERE auth_ids=1)::int single_auth_id,
+           count(*) FILTER (WHERE auth_ids>1)::int multiple_auth_ids,
+           count(*) FILTER (WHERE sso_ids>0)::int with_sso_id
+    FROM counts
+  `, [accountId]);
   const output = {
     account_id: accountId,
     ...account.rows[0],
     classifications: classifications.rows,
+    owner_auth_shape: ownerAuthShape.rows[0],
     mismatched_session_owners: mismatches.rows,
     duplicate_membership_emails: duplicates.rows,
     pending_directory_users: pending.rows,
