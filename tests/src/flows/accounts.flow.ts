@@ -228,11 +228,14 @@ flow(
     'POST /v1/accounts/:accountId/iam/groups',
     'POST /v1/accounts/:accountId/iam/groups/:groupId/members',
     'GET /v1/accounts/:accountId/iam/groups/:groupId/members',
+    'POST /v1/accounts/:accountId/iam/scim/tokens',
+    'GET /scim/v2/accounts/:accountId/Users/:userId',
   ] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const member = await team.addMember('member');
     let groupId = '';
+    let scim: ReturnType<typeof ctx.client.withBearer>;
     await ctx.step('enable groups and add the member to one', async () => {
       await enableEnterpriseDemo(ctx, team.id);
       const created = await ctx.client.as(ctx.P.OWNER).post(
@@ -248,6 +251,13 @@ flow(
         { params: { accountId: team.id, groupId } },
       );
       added.status(200).body().has('$.added', 1);
+      const token = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/iam/scim/tokens',
+        { name: ctx.fixtures.name('offboard') },
+        { params: { accountId: team.id } },
+      );
+      token.status(201);
+      scim = ctx.client.withBearer(token.json<any>().secret, 'SCIM');
     });
     await ctx.step('OWNER removes member → ok', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).del('/v1/accounts/:accountId/members/:userId', {
@@ -263,6 +273,10 @@ flow(
       if (r.json<any>().members.some((row: any) => row.user_id === member.userId)) {
         throw new Error('Removed account member remains in the group');
       }
+      const directoryUser = await scim.get('/scim/v2/accounts/:accountId/Users/:userId', {
+        params: { accountId: team.id, userId: member.userId! },
+      });
+      directoryUser.status(200).body().has('$.active', false);
     });
   },
 );

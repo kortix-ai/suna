@@ -28,3 +28,9 @@ dotenvx run -f apps/api/.env.prod --quiet -- bun --no-env-file scripts/identity-
 Run these commands from a checkout that has the production ledger at that relative path, or use an absolute ledger path. The access test signs short-lived JWTs for the eight real Auth IDs and checks production API responses. The deprovisioned user's old and SSO IDs must both receive 403. The cutover does not deploy the account-member deletion fix; that change remains in this draft PR.
 
 This run covers the four pairs in the file. Other old identities have no SSO Auth ID until their first SSO sign-in. Do not synthesize SAML identities or delete the old Auth users: those IDs still anchor historical references and, for one user, a personal account ID. Add each future verified pair to a new cutover input and repeat the same dry-run and API checks.
+
+## Permanent identity rule
+
+A person is unique by `(account_id, normalized_email)`, not globally by email and not by a Supabase Auth UUID. SCIM controls whether a directory person is active. SAML supplies that person's current login UUID. On first SAML use, an active SCIM record with the same account and email moves current membership, groups, roles, session ownership, session grants, session tokens, shares, and GitHub installation state from its prior UUID to the SAML UUID. Historical audit actor fields remain unchanged.
+
+Manual removal marks a matching SCIM person inactive. SAML JIT must not recreate that membership. A later SCIM `active:true` operation is the explicit reactivation. Accounts that require directory-controlled admission must set `auto_create_members=false`; LibreMax has used this setting since 2026-09-19. Manual users without a SCIM record remain controlled by invitations and account admins.

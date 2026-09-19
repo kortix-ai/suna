@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { Client } from 'pg';
 
 type Pair = { old_id: string; new_id: string; email: string };
-type Result = { email: string; before: Record<string, number> };
+type Result = { email: string; before: Record<string, number>; changed: Record<string, number> };
 const pairsPath = process.argv.find(x => x.startsWith('--pairs='))?.slice(8);
 const ledgerPath = process.argv.find(x => x.startsWith('--ledger='))?.slice(9);
 if (!pairsPath || !ledgerPath || !process.env.DATABASE_URL) throw Error('Pass --pairs and --ledger with DATABASE_URL');
@@ -34,12 +34,15 @@ try {
       const old = await count(sql, pair.old_id);
       const sso = await count(sql, pair.new_id);
       if (old !== 0) throw Error(`${pair.email}: ${old} old ${name} rows remain`);
-      const transferred = pair.email === 'uvanajarenukaprasad@libremax.com' && name === 'groups'
-        ? 0 : (expected.before[name] ?? 0);
+      const transferred = name === 'groups' ? expected.changed.groupsInserted
+        : name === 'roles' ? expected.changed.rolesMoved
+        : name === 'memberships' ? expected.changed.membershipInserted
+        : expected.before[name];
+      if (!Number.isInteger(transferred) || transferred < 0) throw Error(`${pair.email}: invalid ${name} ledger count`);
       if (sso < transferred) throw Error(`${pair.email}: ${name} SSO count ${sso} below transferred ${transferred}`);
       result[name] = { old, sso };
     }
-    if (pair.email === 'uvanajarenukaprasad@libremax.com' && (result.memberships.sso !== 0 || result.groups.sso !== 0 || result.roles.sso !== 0)) {
+    if (expected.before.memberships === 0 && (result.memberships.sso !== 0 || result.groups.sso !== 0 || result.roles.sso !== 0)) {
       throw Error('Deprovisioned user regained access');
     }
     console.log(JSON.stringify({ email: pair.email, result }));
