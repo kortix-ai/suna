@@ -135,3 +135,5 @@ production PR owns deployed-staging coverage.
 
 Deployment workflows must still prove the deployed SHA and live health. Test
 success does not prove deployment success.
+
+<!-- e2e probe for PR #7415 gating: delete with the branch -->
