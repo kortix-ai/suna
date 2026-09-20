@@ -240,7 +240,8 @@ function extractAgentsV2(raw: unknown, manifest: ParsedManifest, filename: strin
   const errors: AgentParseError[] = [];
 
   for (const [name, block] of Object.entries(raw as Record<string, unknown>)) {
-    const result = parseAgentEntryV2(name, block, filename);
+    // With `imports:`, attribute the agent to the file that declares it.
+    const result = parseAgentEntryV2(name, block, manifest.imports?.origins.agents[name] ?? filename);
     if (!result.ok) {
       errors.push(result.error);
       continue;

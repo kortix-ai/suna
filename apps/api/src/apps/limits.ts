@@ -13,7 +13,7 @@
  *   1. machine spec  — the same SANDBOX_SPEC_LIMITS ceiling a session snapshot
  *      gets (projects/lib clamps; Apps reject, because an App that silently
  *      receives less than it asked for is still billed for what it asked for);
- *   2. account entitlement — checkBillingActive, exactly as session create;
+ *   2. account entitlement — checkBillingAdmission, exactly as session create;
  *   3. App count      — a per-account cap, like maxProjectsForAccount;
  *   4. concurrency    — running App runtimes, like the concurrent-session cap.
  *
@@ -24,7 +24,7 @@ import { appDeployments, appRuntimes, apps } from '@kortix/db';
 import { and, count, eq, inArray, isNull } from 'drizzle-orm';
 import { config } from '../config';
 import { assertAppBudgetAvailable } from './budget';
-import { checkBillingActive } from '../billing/services/billing-gate';
+import { checkBillingAdmission } from '../billing/services/billing-gate';
 import { getTier } from '../billing/services/tiers';
 import { resolveAccountTier } from '../shared/account-limits';
 import { db } from '../shared/db';
@@ -129,7 +129,7 @@ export class AppAccountUnfundedError extends Error {
  * silently keep burning compute through an App instead.
  */
 export async function assertAppAccountFunded(accountId: string): Promise<void> {
-  const gate = await checkBillingActive(accountId);
+  const gate = await checkBillingAdmission(accountId);
   if (gate.ok) return;
   throw new AppAccountUnfundedError(accountId, gate.message, gate.reason, {
     balance: gate.balance,

@@ -1,0 +1,5 @@
+# Compiled outputs of bundle-host.sh / bundle-all.sh. `kortix-dev` (the Bun
+# source shim) is tracked; every binary here is a build artifact.
+kortix
+kortix-darwin-*
+kortix-linux-*

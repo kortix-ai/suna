@@ -945,12 +945,30 @@
         "type": "object",
         "required": [
           "kortix_version",
-          "default_agent",
-          "agents"
+          "default_agent"
         ],
+        "if": {
+          "not": {
+            "required": [
+              "imports"
+            ]
+          }
+        },
+        "then": {
+          "required": [
+            "agents"
+          ]
+        },
         "properties": {
           "kortix_version": {
             "const": 2
+          },
+          "imports": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^(?![/\\s])(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\*?\\[\\]{}]*[^\\\\*?\\[\\]{}\\s/]/?$"
+            }
           },
           "default_agent": {
             "type": "string",

@@ -196,3 +196,84 @@ flow(
     });
   },
 );
+
+/**
+ * COST-3 — a real sandbox on an account that never subscribed is metered.
+ *
+ * `credit_accounts.billing_model` defaults to 'legacy'. The meter read that
+ * default as "legacy customer" and returned before opening a window, so every
+ * free account and every admin trial ran compute for $0: one prod trial account
+ * ran 16,909 sandboxes with zero `sandbox_compute_sessions` rows. Only a legacy
+ * PAID plan is exempt now.
+ */
+flow(
+  'COST-3',
+  {
+    domain: 'billing',
+    requires: ['funded', 'daytona', 'database'],
+    timeoutMs: 300_000,
+    routes: ['POST /v1/projects/:projectId/sessions'],
+  },
+  async (ctx) => {
+    const { Client } = await import('pg');
+    const databaseUrl = ctx.env.databaseUrl as string;
+    const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
+    const db = new Client({
+      connectionString: databaseUrl,
+      ssl: local ? false : { rejectUnauthorized: false },
+    });
+    await db.connect();
+    try {
+      // Its OWN account, not the shared funded fixture: that one is a legacy
+      // `pro` plan on the preview, which is exactly the exempt group. A fresh
+      // team account takes the `billing_model` column default, funded at tier
+      // `free` — the shape of every account the defect left unmetered.
+      const team = await ctx.fixtures.team();
+      await db.query(
+        `INSERT INTO kortix.credit_accounts
+         (account_id, balance, balance_precise, non_expiring_credits, non_expiring_credits_precise, tier)
+         VALUES ($1, 1000, 1000, 1000, 1000, 'free')
+         ON CONFLICT (account_id) DO UPDATE SET
+           balance = 1000, balance_precise = 1000,
+           non_expiring_credits = 1000, non_expiring_credits_precise = 1000,
+           tier = 'free'`,
+        [team.id],
+      );
+      const project = await team.project();
+      const session = await ctx.fixtures.session(project);
+
+      await ctx.step('the session account carries the legacy default on the free tier', async () => {
+        const account = await db.query(
+          `SELECT ca.billing_model, ca.tier FROM kortix.project_sessions ps
+           JOIN kortix.credit_accounts ca ON ca.account_id = ps.account_id
+           WHERE ps.session_id = $1`,
+          [session.id],
+        );
+        const row = account.rows[0];
+        if (row?.billing_model !== 'legacy' || row?.tier !== 'free') {
+          throw new Error(`fixture account is not legacy/free: ${JSON.stringify(row)}`);
+        }
+      });
+
+      await ctx.step('its sandbox opens a compute window once it is active', async () => {
+        const deadline = Date.now() + 240_000;
+        let last: unknown = null;
+        while (Date.now() < deadline) {
+          const result = await db.query(
+            `SELECT s.status, c.id AS compute_id, c.state, c.cpu_cores, c.memory_gb
+             FROM kortix.session_sandboxes s
+             LEFT JOIN kortix.sandbox_compute_sessions c ON c.sandbox_id = s.sandbox_id
+             WHERE s.session_id = $1`,
+            [session.id],
+          );
+          last = result.rows;
+          if (result.rows.some((r) => r.compute_id)) return;
+          await new Promise((resolve) => setTimeout(resolve, 3_000));
+        }
+        throw new Error(`no sandbox_compute_sessions row opened: ${JSON.stringify(last)}`);
+      });
+    } finally {
+      await db.end();
+    }
+  },
+);

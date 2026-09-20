@@ -101,14 +101,30 @@ projectsApp.openapi(
     // `.kortix/`-only layout still merge. The same validator runs in the CLI's
     // `kortix ship` pre-flight, so CLI users see the same diagnostic before push.
     try {
-      const { validateManifest, manifestFormatForPath, manifestCandidatePaths } = await import(
-        '@kortix/manifest-schema'
-      );
+      const { validateManifest, manifestFormatForPath, manifestCandidatePaths, ManifestImportError } =
+        await import('@kortix/manifest-schema');
+      // `found.content` is the MERGED document when the head declares
+      // `imports:`, so the gate validates what the platform will actually run.
+      // A broken import (missing file, duplicate name, cycle) blocks the merge
+      // with the same 422 a schema violation gets.
       const found = await readManifestFromRepo(
         projectForGit,
         manifestCandidatePaths(projectForGit.manifestPath).map((cand) => cand.path),
         cr.headRef,
-      );
+      ).catch((err: unknown) => {
+        if (err instanceof ManifestImportError) return { importError: err.message } as const;
+        throw err;
+      });
+      if (found && 'importError' in found) {
+        return c.json(
+          {
+            error: 'Manifest validation failed — merge blocked.',
+            code: 'MANIFEST_INVALID',
+            issues: [{ path: 'imports', message: found.importError, severity: 'error' }],
+          },
+          422,
+        );
+      }
       if (found && found.content.trim()) {
         const verdict = validateManifest(found.content, manifestFormatForPath(found.path));
         if (!verdict.valid) {

@@ -64,7 +64,7 @@ import {
 import { withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
 import { loadManifestForEdit } from '../lib/triggers';
-import { MANIFEST_FILENAME, serializeManifest } from '../triggers';
+import { MANIFEST_FILENAME, manifestWrites } from '../triggers';
 
 // A grant set on the wire: an allowlist, or the "all"/"none" sentinels. The
 // deep per-entry validation (grantable kortix_cli actions, etc.) happens in
@@ -271,8 +271,10 @@ projectsApp.openapi(
     const manifestPath = manifest.path || loaded.row.manifestPath || MANIFEST_FILENAME;
     try {
       const gitProject = await withProjectGitAuth(loaded.row);
+      const writes = manifestWrites(manifest, manifestPath);
       await commitMultipleFilesToBranch(gitProject, {
-        files: [{ path: manifestPath, content: serializeManifest(manifest) }],
+        files: writes.files,
+        alsoExpect: writes.alsoExpect,
         message: `chore: set default agent to ${agentName}`,
         branch: loaded.row.defaultBranch,
         expectedFileRevision:
@@ -448,10 +450,8 @@ projectsApp.openapi(
     // `.md` out of sync — commitMultipleFilesToBranch (git/branches.ts) commits
     // every file in one tree/commit, same helper the marketplace install/
     // uninstall paths use for their own atomic multi-file writes (r10.ts).
-    const files = [
-      { path: manifestPath, content: serializeManifest(manifest) },
-      ...(behaviorWrite ? [behaviorWrite] : []),
-    ];
+    const writes = manifestWrites(manifest, manifestPath);
+    const files = [...writes.files, ...(behaviorWrite ? [behaviorWrite] : [])];
     const message = behaviorWrite
       ? `chore: update agent ${agentName} governance + behavior`
       : `chore: update agent ${agentName} governance`;
@@ -460,6 +460,7 @@ projectsApp.openapi(
       const gitProject = await withProjectGitAuth(loaded.row);
       await commitMultipleFilesToBranch(gitProject, {
         files,
+        alsoExpect: writes.alsoExpect,
         message,
         branch: loaded.row.defaultBranch,
         expectedFileRevision:

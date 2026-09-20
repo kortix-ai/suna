@@ -63,6 +63,12 @@ PendingConfirmation until the SNS confirmation email is clicked. The us-west-2
 and eu-west-2 topics carry confirmed email subscriptions managed outside
 Terraform.
 
+Because Drata fails `hasSubscription` while the only subscription is pending,
+the us-east-2 topic also carries a Lambda subscriber
+(`compliance-alerts-logger.tf`) that is Active immediately on Subscribe and
+logs every alert to `/aws/lambda/kortix-compliance-alerts-logger` in
+CloudWatch Logs. The email subscription remains the human delivery channel.
+
 ## Verify EC2 CPU coverage
 
 The reconciler only writes an alarm when it is absent or its metric, threshold,

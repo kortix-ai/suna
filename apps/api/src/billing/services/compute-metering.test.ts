@@ -26,7 +26,7 @@ mock.module('../../config', () => ({
   ),
 }));
 
-let accountsById: Record<string, { billingModel: string } | undefined> = {};
+let accountsById: Record<string, { billingModel: string; tier?: string | null } | undefined> = {};
 let throwForAccountIds = new Set<string>();
 
 mock.module('../repositories/credit-accounts', () => ({
@@ -174,13 +174,21 @@ mock.module('../../platform/providers', () => ({
   }),
 }));
 
+// Mirrors the SQL join in selectMissingComputeCandidates: a metered model, or
+// a legacy-default row that is not a legacy paid plan.
+const isMetered = (a: { billingModel: string; tier?: string | null } | undefined) =>
+  !!a &&
+  (a.billingModel === 'per_seat' ||
+    a.billingModel === 'credit' ||
+    !['tier_2_20', 'tier_6_50', 'tier_25_200', 'tier_200_1000', 'pro'].includes(a.tier ?? 'free'));
+
 const selectMissing = async (limit: number) =>
   sandboxRows
     .filter(
       (r) =>
         r.status === 'active' &&
         !openRowFor(r.sandboxId) &&
-        accountsById[r.accountId]?.billingModel === 'per_seat',
+        isMetered(accountsById[r.accountId]),
     )
     .slice(0, limit)
     .map((r) => ({
@@ -199,7 +207,7 @@ const selectMissingApps = async (limit: number) =>
         r.desiredState === 'running' &&
         r.active &&
         !openRowFor(r.runtimeId) &&
-        accountsById[r.accountId]?.billingModel === 'per_seat',
+        isMetered(accountsById[r.accountId]),
     )
     .slice(0, limit)
     .map((r) => ({
@@ -289,8 +297,18 @@ describe('reconcileMissingComputeSessions', () => {
     expect(openRowFor('sb-ps')).not.toBeNull();
   });
 
-  test('never opens a compute window for a legacy-model account', async () => {
-    accountsById['acct-legacy'] = { billingModel: 'legacy' };
+  test('opens a compute window for a free account whose billing_model is the legacy default', async () => {
+    accountsById['acct-free'] = { billingModel: 'legacy', tier: 'free' };
+    sandboxRows = [sandbox({ sandboxId: 'sb-free', sessionId: 'sb-free', accountId: 'acct-free' })];
+
+    const result = await reconcileMissingComputeSessions();
+
+    expect(result).toEqual({ checked: 1, reconciled: 1, errors: 0 });
+    expect(openRowFor('sb-free')).not.toBeNull();
+  });
+
+  test('never opens a compute window for a legacy PAID subscriber', async () => {
+    accountsById['acct-legacy'] = { billingModel: 'legacy', tier: 'tier_2_20' };
     sandboxRows = [
       sandbox({ sandboxId: 'sb-legacy', sessionId: 'sb-legacy', accountId: 'acct-legacy' }),
     ];

@@ -1,5 +1,5 @@
 import { parseSessionAttachmentRef } from '@kortix/shared';
-import { checkBillingActive } from '../../billing/services/billing-gate';
+import { checkBillingAdmission } from '../../billing/services/billing-gate';
 import { config, type SandboxProviderName } from '../../config';
 import { auth, errors, json } from '../../openapi';
 import { getProvider } from '../../platform/providers';
@@ -148,7 +148,7 @@ projectsApp.openapi(
     }
 
     // Same gate as wake/create: resuming or provisioning spends compute.
-    const billing = await checkBillingActive(loaded.row.accountId);
+    const billing = await checkBillingAdmission(loaded.row.accountId);
     stl.mark('billing-checked');
     if (!billing.ok) {
       return c.json(
@@ -611,7 +611,7 @@ projectsApp.openapi(
     // what is missing, and the human fixes it in one click.
 
     // Same gate as start/wake: a prompt spends compute.
-    const billing = await checkBillingActive(loaded.row.accountId);
+    const billing = await checkBillingAdmission(loaded.row.accountId);
     if (!billing.ok) {
       return c.json(
         {

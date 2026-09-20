@@ -717,7 +717,7 @@ code imports the root.
 interface KortixPlatformConfig {
   backendUrl: string;
   getToken: () => Promise<string | null>;
-  clientSource?: 'api' | 'cli' | 'mobile' | 'web';
+  clientSource?: 'api' | 'cli' | 'mobile' | 'tui' | 'web';
   getUserId?: () => Promise<string | null>;
   billingEnabled?: boolean;
   sandboxId?: string | null;

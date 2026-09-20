@@ -446,6 +446,14 @@ export async function commitMultipleFilesToBranch(
     authorName?: string;
     authorEmail?: string;
     expectedFileRevision?: ExpectedFileRevision;
+    /**
+     * More blobs that must be unchanged at the branch tip, checked together
+     * with `expectedFileRevision` (which supplies the push lease, so it is
+     * required when this is set). A manifest with `imports:` passes every
+     * imported file: a concurrent edit to ANY of them can introduce a duplicate
+     * name the merged document this commit was computed from never saw.
+     */
+    alsoExpect?: Array<{ path: string; sha: string }>;
   },
 ): Promise<{ commitSha: string; branch: string; fileCount: number }> {
   const files = (opts.files ?? [])
@@ -506,6 +514,32 @@ export async function commitMultipleFilesToBranch(
     if (currentWinner !== expectedWinner || currentSha !== expectedFileRevision.sha) {
       throw new GitFileRevisionConflictError(expectedFileRevision.path);
     }
+    const alsoExpect = (opts.alsoExpect ?? [])
+      .map((entry) => ({ path: normalizeTreePath(entry.path), sha: entry.sha }))
+      .filter((entry): entry is { path: string; sha: string } => Boolean(entry.path));
+    if (alsoExpect.length > 0) {
+      const listed = parentSha
+        ? await runGitCapture(
+            ['ls-tree', parentSha, '--', ...alsoExpect.map((entry) => entry.path)],
+            repoPath,
+          )
+        : { stdout: '', stderr: '', exitCode: 0 };
+      if (listed.exitCode !== 0) {
+        throw new Error(`Failed to read current revision for "${alsoExpect[0]?.path}"`);
+      }
+      const tipRevisions = new Map<string, string>();
+      for (const line of listed.stdout.split('\n')) {
+        const match = line.match(/^\d+\s+blob\s+([0-9a-f]{40})\t(.+)$/);
+        if (match?.[1] && match[2]) tipRevisions.set(match[2], match[1]);
+      }
+      for (const entry of alsoExpect) {
+        if (tipRevisions.get(entry.path) !== entry.sha) {
+          throw new GitFileRevisionConflictError(entry.path);
+        }
+      }
+    }
+  } else if (opts.alsoExpect?.length) {
+    throw new Error('alsoExpect requires expectedFileRevision');
   }
 
   const author = opts.authorName || 'Kortix';
