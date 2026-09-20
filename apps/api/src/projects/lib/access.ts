@@ -268,10 +268,18 @@ export async function loadVisibleSession(
   /** True when `created_by` names a service account (or nobody). */
   ownerIsMachine: boolean;
 } | null> {
+  // The caller's share subject (their groups) and the session's grants are
+  // keyed on the user and the session id, not on anything the row returns, so
+  // all three reads go out together. Every session-scoped route pays this
+  // path, and one behind the other is three round trips.
+  const subjectRead = resolveShareSubject(loaded.userId);
+  const grantsRead = loadSessionGrants([sessionId]);
+  subjectRead.catch(() => undefined);
+  grantsRead.catch(() => undefined);
   const row = await loadProjectSessionRow(loaded, sessionId);
   if (!row) return null;
-  const subject = await resolveShareSubject(loaded.userId);
-  const grants = (await loadSessionGrants([sessionId])).get(sessionId) ?? [];
+  const subject = await subjectRead;
+  const grants = (await grantsRead).get(sessionId) ?? [];
   const ownership = {
     origin: row.origin ?? null,
     sessionId,

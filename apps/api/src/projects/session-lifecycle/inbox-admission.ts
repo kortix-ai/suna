@@ -73,7 +73,12 @@ function admissionRefusals(result: unknown): number {
  *  written into `result.admission_reason` and served as `GET .../prompts`'
  *  `reason`, where a second value may well appear again. */
 export type InboxAdmission =
-  | { admit: true }
+  | {
+      admit: true;
+      /** The sandbox row the gate read, for callers that would otherwise re-read
+       *  it. Absent only when the row carries no session. */
+      sandbox?: { status: string; metadata: Record<string, unknown> | null } | null;
+    }
   | {
       admit: false;
       reason: InboxAdmissionReason;
@@ -202,17 +207,33 @@ export async function admitInboxPrompt(
     refusals,
   );
 
+  // THE THREE READS THIS GATE ASKS FOR ARE INDEPENDENT, so they go out
+  // together. Awaiting them one at a time cost three sequential round trips on
+  // every delivery, and the API does not share a region with its database
+  // everywhere it runs (dev: API us-west-2, database us-east-2, ~100 ms per
+  // query). The gate below still CONSUMES them in its original order, and each
+  // one is awaited exactly where its answer is first needed, so the verdict for
+  // any given state is unchanged. Each read also now happens once instead of
+  // twice on the path where a live turn clears.
+  const started = <T>(promise: Promise<T>): Promise<T> => {
+    // An early return may leave one of these unawaited; a rejection must not
+    // surface as an unhandled rejection. The awaiting site still sees it.
+    promise.catch(() => undefined);
+    return promise;
+  };
+  const sandboxRead = started(deps.readSandbox(row.sessionId));
+  const inFlightRead = started(deps.hasInFlightPrompt(row.sessionId, row.commandId));
+  const olderRead = started(deps.hasOlderPendingPrompt(row.sessionId, row));
+
   // A live turn holds delivery for both placements. Quick Queue may request
   // an interrupt at the next tool boundary, but it is still never forwarded
   // into that turn: the terminal relay admits it as its own turn afterward.
-  let sandbox = await deps.readSandbox(row.sessionId);
+  let sandbox = await sandboxRead;
   if (sessionHoldsTurnAuthority(sandbox)) {
     // Only the head may reconcile or arm an interrupt. Quick Queue sorts ahead
     // of every Queue List row (`inbox-order.ts`), so its head arms the
     // interrupt even while older Queue List entries wait.
-    const isHead =
-      !(await deps.hasInFlightPrompt(row.sessionId, row.commandId)) &&
-      !(await deps.hasOlderPendingPrompt(row.sessionId, row));
+    const isHead = !(await inFlightRead) && !(await olderRead);
     if (deps.reconcileTurn && isHead) {
       await deps.reconcileTurn(row.sessionId);
       sandbox = await deps.readSandbox(row.sessionId);
@@ -242,7 +263,7 @@ export async function admitInboxPrompt(
   // of it. Admitting a second prompt into that window races two deliveries of
   // one session, and OpenCode orders what it receives by ARRIVAL — so the loser
   // of that race is the message the user typed FIRST.
-  if (await deps.hasInFlightPrompt(row.sessionId, row.commandId)) {
+  if (await inFlightRead) {
     return { admit: false, reason: 'older_prompt_pending', retryAfterMs: orderBackoffMs };
   }
 
@@ -251,12 +272,12 @@ export async function admitInboxPrompt(
   // does not, because it is about a delivery already happening rather than
   // about which message goes first.
   const promoted = (row.result as { promoted?: unknown } | null)?.promoted === true;
-  if (
-    !promoted &&
-    (await deps.hasOlderPendingPrompt(row.sessionId, row))
-  ) {
+  if (!promoted && (await olderRead)) {
     return { admit: false, reason: 'older_prompt_pending', retryAfterMs: orderBackoffMs };
   }
 
-  return { admit: true };
+  // The sandbox row this gate just read, handed back so the caller does not
+  // read the same row again one round trip later (see `executeQueuedContinue`'s
+  // turn-authority check).
+  return { admit: true, sandbox };
 }
