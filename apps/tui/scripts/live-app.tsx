@@ -421,7 +421,7 @@ if (!SKIP_STREAM) {
   setup.mockInput.pressKey('g');
   await settle(400);
   let deleted = false;
-  for (let attempt = 0; attempt < 20 && !deleted; attempt += 1) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
     setup.mockInput.pressKey('d');
     await settle(700);
     const confirm = setup.captureCharFrame();
