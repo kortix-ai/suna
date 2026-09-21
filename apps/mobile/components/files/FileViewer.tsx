@@ -30,15 +30,9 @@ import Animated, {
 import * as Haptics from 'expo-haptics';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-import { FilePreview, FilePreviewType, getFilePreviewType } from './FilePreviewRenderers';
-import {
-  useOpenCodeFileContent,
-  useOpenCodeFileBlob,
-  blobToDataURL,
-  useOpenCodeWriteFile,
-  downloadOpenCodeFileToCache,
-} from '@/lib/files/hooks';
-import { previewDecision } from '@/lib/files/preview-limits';
+import { FilePreview } from './FilePreviewRenderers';
+import { useFilePreviewData } from './use-file-preview-data';
+import { useOpenCodeWriteFile, downloadOpenCodeFileToCache } from '@/lib/files/hooks';
 import type { SandboxFile } from '@/api/types';
 
 import { log } from '@/lib/logger';
@@ -77,7 +71,6 @@ export function FileViewer({
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const closeScale = useSharedValue(1);
-  const [blobUrl, setBlobUrl] = useState<string | undefined>();
   const [viewMode, setViewMode] = useState<'preview' | 'raw'>('preview');
   const [isDownloading, setIsDownloading] = useState(false);
   // In-place text editing
@@ -85,68 +78,20 @@ export function FileViewer({
   const [draft, setDraft] = useState('');
   const writeMutation = useOpenCodeWriteFile();
 
-  const previewType = file ? getFilePreviewType(file.name) : FilePreviewType.OTHER;
-  const isImage = previewType === FilePreviewType.IMAGE;
-  // Binary file types that should be fetched as blob, not text
-  const isBinaryFile = previewType === FilePreviewType.IMAGE ||
-                       previewType === FilePreviewType.PDF ||
-                       previewType === FilePreviewType.XLSX ||
-                       previewType === FilePreviewType.DOCX ||
-                       previewType === FilePreviewType.BINARY;
-  // Size from the directory listing, when it reports one. Files over the
-  // preview limits are not fetched; Download streams them to disk instead.
-  const listingDecision = file ? previewDecision({ size: file.size, previewType }) : 'preview';
-  // Only image, PDF, and DOCX renderers read the blob. Spreadsheets and
-  // archives show a download prompt, so their bytes are not loaded into JS.
-  const rendersBlob = previewType === FilePreviewType.IMAGE ||
-                      previewType === FilePreviewType.PDF ||
-                      previewType === FilePreviewType.DOCX;
-  const shouldFetchText = file && !isBinaryFile && listingDecision !== 'too-large';
-  const shouldFetchBlob = file && rendersBlob && listingDecision !== 'too-large';
-  
-  // Can show raw view for non-binary files
-  const canShowRaw =
-    file && previewType !== FilePreviewType.BINARY && previewType !== FilePreviewType.OTHER;
-
-  // Fetch file content for text-based files (via OpenCode API)
   const {
-    data: textContent,
-    isLoading: isLoadingText,
-    error: textError,
-  } = useOpenCodeFileContent(
-    shouldFetchText ? sandboxUrl : undefined,
-    shouldFetchText ? file?.path : undefined
-  );
-
-  // Fetch blob for binary files (via OpenCode API)
-  const {
-    data: imageBlob,
-    isLoading: isLoadingImage,
-    error: imageError,
-  } = useOpenCodeFileBlob(
-    shouldFetchBlob ? sandboxUrl : undefined,
-    shouldFetchBlob ? file?.path : undefined
-  );
-
-  // The listing may not report a size; the fetched blob always does.
-  const blobTooLarge =
-    !!imageBlob && previewDecision({ size: imageBlob.size, previewType }) === 'too-large';
-
-  // Convert blob to data URL for binary files (images, PDFs, etc.). A blob over
-  // the limit is never converted: the data URL is a second, larger copy in JS.
-  useEffect(() => {
-    let cancelled = false;
-    if (imageBlob && file?.path && !blobTooLarge) {
-      blobToDataURL(imageBlob, file.path).then((url) => {
-        if (!cancelled) setBlobUrl(url);
-      });
-    } else {
-      setBlobUrl(undefined);
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [imageBlob, file?.path, blobTooLarge]);
+    previewType,
+    isBinaryFile,
+    shouldFetchText,
+    textContent,
+    textError,
+    blob: imageBlob,
+    blobError: imageError,
+    blobTooLarge,
+    blobUrl,
+    isLoading,
+    error: hasError,
+    size: previewSize,
+  } = useFilePreviewData(file, sandboxUrl);
 
   const closeAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: closeScale.value }],
@@ -244,8 +189,6 @@ export function FileViewer({
     }
   };
 
-  const isLoading = isLoadingText || isLoadingImage;
-  const hasError = textError || imageError;
   const canNavigate = fileList && fileList.length > 1 && currentIndex >= 0;
 
   // ── In-place editing ──────────────────────────────────────────────────────
@@ -496,7 +439,7 @@ export function FileViewer({
               blobUrl={blobUrl}
               filePath={file.path}
               sandboxUrl={sandboxUrl}
-              size={imageBlob?.size ?? file.size}
+              size={previewSize}
             />
           )}
         </View>

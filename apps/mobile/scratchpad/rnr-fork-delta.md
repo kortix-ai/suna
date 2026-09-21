@@ -432,6 +432,24 @@ Consumers of `size="icon-sm"`: `components/session/turn/turn-actions.tsx`,
 `session-turn-meta.tsx`, `user-message.tsx`. Each passes `TURN_ACTION_HIT_SLOP`
 so the touch target stays 44pt tall.
 
+### button.tsx `icon-md` size — DEVIATES (2026-09-21)
+
+The composer's control row (add, model, send, Stop, AutoContinue) used `icon`
+(`h-10 w-10`) and the `default` pill (`h-10`). Jay, 2026-09-21: "all those
+button sizes … can please be reduced a bit". The pill has a stock smaller size
+(`sm`, `h-9`); the icon buttons do not: stock has `icon` (40pt) only, and
+`icon-sm` (28pt) is a message action, too small for a primary control. Sizing a
+`Button` by class is banned (CLAUDE.md → Button).
+
+Decision: add `size['icon-md']` to `buttonVariants` as `h-9 w-9` (36pt, the
+height of `sm`) and an empty `'icon-md'` entry to `buttonTextVariants`. No
+other change. Part of the same `button.tsx` deviation, not a new forked file.
+Re-apply after any `add --all --overwrite`.
+
+Consumers of `size="icon-md"`: `components/kortix/composer.tsx` (add, Stop,
+send) and `components/session/SessionChatInput.tsx` (AutoContinue). Each passes
+`hitSlop={COMPOSER_CONTROL_HIT_SLOP}` (4pt), so the touch target stays 44pt.
+
 ### input.tsx chrome — DEVIATES (2026-09-14, supersedes the 2026-09-05 decision below)
 Jay: no input has a border, the placeholder was too small, and input text
 used a different font from the rest of the UI. Stock renders a bordered

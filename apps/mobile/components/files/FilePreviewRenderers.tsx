@@ -171,6 +171,14 @@ export function getLanguageFromFilename(filename: string): string {
   return languageMap[ext] || 'plaintext';
 }
 
+/**
+ * Space the host keeps clear at the bottom of a preview, for controls that float
+ * over it (the session file sheet's pinned bar, the project drawer's approach).
+ * Each renderer ends its content that far above the edge, so the last line of a
+ * document rests above the controls. 0 (the default) changes nothing.
+ */
+export const FilePreviewBottomInsetContext = React.createContext(0);
+
 interface FilePreviewProps {
   content: string | Blob | null;
   fileName: string;
@@ -294,11 +302,13 @@ function ImagePreview({ blobUrl, fileName }: { blobUrl?: string; fileName: strin
 function MarkdownPreview({ content }: { content: string }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const bottomInset = React.useContext(FilePreviewBottomInsetContext);
 
   return (
     <ScrollView
       className="flex-1 px-4 py-4"
       showsVerticalScrollIndicator={true}
+      contentContainerStyle={{ paddingBottom: bottomInset }}
       style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}
     >
       <SelectableMarkdownText isDark={isDark}>
@@ -312,6 +322,7 @@ function MarkdownPreview({ content }: { content: string }) {
  * JSON Preview Component with syntax highlighting
  */
 function JsonPreview({ content }: { content: string }) {
+  const bottomInset = React.useContext(FilePreviewBottomInsetContext);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -331,8 +342,8 @@ function JsonPreview({ content }: { content: string }) {
   }, [content]);
 
   const html = useMemo(
-    () => generateHighlightedCodeHtml(formattedJson, 'json', isDark),
-    [formattedJson, isDark],
+    () => generateHighlightedCodeHtml(formattedJson, 'json', isDark, bottomInset),
+    [formattedJson, isDark, bottomInset],
   );
 
   return (
@@ -357,24 +368,26 @@ function JsonPreview({ content }: { content: string }) {
           </View>
         )}
       />
-      {/* Language badge at bottom */}
-      <View
-        className="px-4 pt-2 border-t"
-        style={{
-          borderTopColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06),
-          backgroundColor: isDark ? THEME.dark.background : THEME.light.background,
-          paddingBottom: Math.max(insets.bottom, 8),
-        }}
-      >
-        <Text
-          className="text-xs font-roobert-medium"
+      {/* Language badge at bottom. Hidden under a host's floating controls. */}
+      {bottomInset === 0 ? (
+        <View
+          className="px-4 pt-2 border-t"
           style={{
-            color: isDark ? withAlpha(THEME.dark.foreground, 0.4) : withAlpha(THEME.light.foreground, 0.4),
+            borderTopColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06),
+            backgroundColor: isDark ? THEME.dark.background : THEME.light.background,
+            paddingBottom: Math.max(insets.bottom, 8),
           }}
         >
-          JSON
-        </Text>
-      </View>
+          <Text
+            className="text-xs font-roobert-medium"
+            style={{
+              color: isDark ? withAlpha(THEME.dark.foreground, 0.4) : withAlpha(THEME.light.foreground, 0.4),
+            }}
+          >
+            JSON
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -386,6 +399,7 @@ function generateHighlightedCodeHtml(
   code: string,
   language: string,
   isDark: boolean,
+  bottomInset = 0,
 ): string {
   const bgColor = isDark ? THEME.dark.card : THEME.light.card;
   const theme = isDark ? 'github-dark' : 'github';
@@ -408,6 +422,7 @@ function generateHighlightedCodeHtml(
     line-height: 20px;
     -webkit-text-size-adjust: none;
   }
+  body { padding-bottom: ${bottomInset}px; }
   .code-wrapper {
     position: relative;
     display: flex;
@@ -493,6 +508,7 @@ function generateHighlightedCodeHtml(
  * Code Preview Component with syntax highlighting via highlight.js WebView.
  */
 function CodePreview({ content, fileName }: { content: string; fileName: string }) {
+  const bottomInset = React.useContext(FilePreviewBottomInsetContext);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -500,8 +516,8 @@ function CodePreview({ content, fileName }: { content: string; fileName: string 
   const onShouldStartLoadWithRequest = usePreviewNavigationGuard();
 
   const html = useMemo(
-    () => generateHighlightedCodeHtml(content, language, isDark),
-    [content, language, isDark],
+    () => generateHighlightedCodeHtml(content, language, isDark, bottomInset),
+    [content, language, isDark, bottomInset],
   );
 
   return (
@@ -527,24 +543,26 @@ function CodePreview({ content, fileName }: { content: string; fileName: string 
           </View>
         )}
       />
-      {/* Language badge at bottom */}
-      <View
-        className="px-4 pt-2 border-t"
-        style={{
-          borderTopColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06),
-          backgroundColor: isDark ? THEME.dark.background : THEME.light.background,
-          paddingBottom: Math.max(insets.bottom, 8),
-        }}
-      >
-        <Text
-          className="text-xs font-roobert-medium"
+      {/* Language badge at bottom. Hidden under a host's floating controls. */}
+      {bottomInset === 0 ? (
+        <View
+          className="px-4 pt-2 border-t"
           style={{
-            color: isDark ? withAlpha(THEME.dark.foreground, 0.4) : withAlpha(THEME.light.foreground, 0.4),
+            borderTopColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06),
+            backgroundColor: isDark ? THEME.dark.background : THEME.light.background,
+            paddingBottom: Math.max(insets.bottom, 8),
           }}
         >
-          {language.toUpperCase()}
-        </Text>
-      </View>
+          <Text
+            className="text-xs font-roobert-medium"
+            style={{
+              color: isDark ? withAlpha(THEME.dark.foreground, 0.4) : withAlpha(THEME.light.foreground, 0.4),
+            }}
+          >
+            {language.toUpperCase()}
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -563,6 +581,7 @@ function HtmlPreview({
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
 
+  const bottomInset = React.useContext(FilePreviewBottomInsetContext);
   // If we have sandbox URL and file path, use Daytona iframe to preview
   const htmlPreviewUrl = constructHtmlPreviewUrl(sandboxUrl, filePath);
   // Pages of the previewed site stay in the WebView. Another site opens outside
@@ -580,6 +599,8 @@ function HtmlPreview({
       <View className="flex-1">
         <WebView
           source={{ uri: htmlPreviewUrl }}
+          // iOS only: the page's end rests above a host's floating controls.
+          contentInset={{ bottom: bottomInset }}
           style={{ flex: 1, backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}
           originWhitelist={['*']}
           onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
@@ -612,11 +633,13 @@ function HtmlPreview({
 function TextPreview({ content }: { content: string }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const bottomInset = React.useContext(FilePreviewBottomInsetContext);
 
   return (
     <ScrollView
       className="flex-1 px-4 py-4"
       showsVerticalScrollIndicator={true}
+      contentContainerStyle={{ paddingBottom: bottomInset }}
       style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}
     >
       <Text
@@ -640,6 +663,7 @@ function TextPreview({ content }: { content: string }) {
 function CsvPreview({ content }: { content: string }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const bottomInset = React.useContext(FilePreviewBottomInsetContext);
 
   // Parse CSV content
   const rows = content.split('\n').filter(row => row.trim());
@@ -656,6 +680,7 @@ function CsvPreview({ content }: { content: string }) {
       <ScrollView
         showsVerticalScrollIndicator={true}
         className="px-4 py-4"
+        contentContainerStyle={{ paddingBottom: bottomInset }}
         style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}
       >
         {/* Headers */}

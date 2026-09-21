@@ -11,6 +11,7 @@ import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import type { Agent } from '@/lib/opencode/hooks/use-opencode-data';
 import type { Session } from '@/lib/platform/types';
 import { searchFiles, rankFile } from '@/lib/utils/file-search';
+import { appendFileMention } from '@/lib/session/session-files';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -246,6 +247,18 @@ export function useMentions({
     [mentionQuery],
   );
 
+  // ── Add a file mention from outside the popover (the Recent files sheet) ──
+
+  const addFileMention = useCallback((label: string, text: string): string => {
+    setMentions((prev) =>
+      prev.some((m) => m.kind === 'file' && m.label === label)
+        ? prev
+        : [...prev, { kind: 'file', label }],
+    );
+    setMentionQuery(null);
+    return appendFileMention(text, label);
+  }, []);
+
   // ── Navigation ──────────────────────────────────────────────────────────
 
   const moveUp = useCallback(() => {
@@ -280,6 +293,7 @@ export function useMentions({
     fileSearchLoading,
     handleTextChange,
     selectMention,
+    addFileMention,
     moveUp,
     moveDown,
     dismiss,

@@ -10,8 +10,10 @@
  * put a grey halo around the card, so the input read darker than the page.
  * No animation, a plain placeholder. Every control is a design-system
  * `Button`: secondary `rounded-full` for add and model, and a round send
- * button that fills with `primary` once there is text or a file to send. Text
- * is 16pt Roobert Regular (design.md §3 Inputs).
+ * button that fills with `primary` once there is text or a file to send. The
+ * control row is 36pt (Jay, 2026-09-21: 40pt read oversized): `icon-md` icon
+ * buttons with 18pt glyphs, a `sm` model pill. Text is 16pt Roobert Regular
+ * (design.md §3 Inputs).
  */
 import * as React from 'react';
 import {
@@ -32,6 +34,12 @@ import { THEME } from '@/lib/utils/theme';
 import { cn } from '@/lib/utils/utils';
 import { StopIcon } from './StopIcon';
 import { ComposerAttachmentTiles } from '@/components/session/composer-attachment-tiles';
+
+/**
+ * Added to each side of a 36pt `icon-md` control, so its touch target is 44pt.
+ * The row's `gap-2` (8pt) keeps neighbouring targets from overlapping.
+ */
+export const COMPOSER_CONTROL_HIT_SLOP = 4;
 
 /** About seven lines of 16pt text, then the field scrolls. */
 const MAX_INPUT_HEIGHT = 160;
@@ -133,8 +141,8 @@ export function Composer({
           minHeight: 40,
           maxHeight: MAX_INPUT_HEIGHT,
           paddingHorizontal: 8,
-          paddingTop: 4,
-          paddingBottom: 12,
+          paddingTop: 6,
+          paddingBottom: 14,
           textAlignVertical: 'top',
         }}
       />
@@ -143,18 +151,21 @@ export function Composer({
         {onAttach ? (
           <Button
             variant="secondary"
-            size="icon"
+            size="icon-md"
             className="rounded-full"
+            hitSlop={COMPOSER_CONTROL_HIT_SLOP}
             onPress={onAttach}
             disabled={disabled}
             accessibilityLabel={attachLabel}>
-            <Icon as={Plus} size={20} />
+            <Icon as={Plus} size={18} />
           </Button>
         ) : null}
         {modelLabel ? (
           <Button
             variant="secondary"
+            size="sm"
             className="shrink rounded-full"
+            hitSlop={COMPOSER_CONTROL_HIT_SLOP}
             onPress={onModelPress}
             disabled={disabled}
             accessibilityLabel={`Model, ${modelLabel}`}>
@@ -167,19 +178,26 @@ export function Composer({
         {accessory}
         <View className="flex-1" />
         {busy ? (
-          <Button variant="secondary" size="icon" className="rounded-full" onPress={onStop} accessibilityLabel="Stop">
-            <StopIcon size={14} className="text-foreground" />
+          <Button
+            variant="secondary"
+            size="icon-md"
+            className="rounded-full"
+            hitSlop={COMPOSER_CONTROL_HIT_SLOP}
+            onPress={onStop}
+            accessibilityLabel="Stop">
+            <StopIcon size={12} className="text-foreground" />
           </Button>
         ) : null}
         {busy && !canSend ? null : (
           <Button
             variant={canSend ? 'default' : 'secondary'}
-            size="icon"
+            size="icon-md"
             className="rounded-full"
+            hitSlop={COMPOSER_CONTROL_HIT_SLOP}
             onPress={onSubmit}
             disabled={!canSend}
             accessibilityLabel="Send">
-            <Icon as={ArrowUp} size={20} />
+            <Icon as={ArrowUp} size={18} />
           </Button>
         )}
       </View>

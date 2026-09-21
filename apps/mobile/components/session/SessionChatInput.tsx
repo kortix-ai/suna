@@ -26,8 +26,8 @@ import { useColorScheme } from 'nativewind';
 import {
   InfinityIcon,
   InfoIcon,
+  StackIcon,
   XIcon,
-  PaperclipIcon,
   TerminalIcon,
   CaretLeftIcon,
   CheckIcon,
@@ -37,7 +37,8 @@ import Svg, { Line } from 'react-native-svg';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { uploadAttachments, withAttachments, type AttachedFile } from '@/lib/session/attachments';
-import { useAttachmentPicker } from './useAttachmentPicker';
+import { AttachSheet, type AttachSheetRef } from './AttachSheet';
+import { SessionFilesSheet } from './SessionFilesSheet';
 
 import type { Agent, FlatModel, Command } from '@/lib/opencode/hooks/use-opencode-data';
 import type { Session } from '@/lib/platform/types';
@@ -47,14 +48,12 @@ import { Text as RNText } from 'react-native';
 import { getSheetBg } from '@/lib/theme-colors';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import {
-  Sheet,
   SheetBackdrop,
-  SheetBody,
-  sheetHandleIndicatorStyle,
-  useSheetBackground,
   type SheetRef,
+  KortixBottomSheetModal,
 } from '@/components/kortix/sheet';
-import { Composer } from '@/components/kortix/composer';
+import { Composer, COMPOSER_CONTROL_HIT_SLOP } from '@/components/kortix/composer';
+import { sessionFileMentionLabel, type SessionFile } from '@/lib/session/session-files';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { ModelPickerSheet } from './ModelPickerSheet';
 import { composerPillLabel, type PickerOption } from '@/lib/session/composer-config';
@@ -283,7 +282,8 @@ function SessionChatInputImpl({
 
   const [autocontinueMode, setAutocontinueMode] = useState<AutoContinueMode | null>(null);
   const [showAutoSheet, setShowAutoSheet] = useState(false);
-  const [showActionsSheet, setShowActionsSheet] = useState(false);
+  const attachSheetRef = useRef<AttachSheetRef>(null);
+  const filesSheetRef = useRef<SheetRef>(null);
 
   // ── File attachments ─────────────────────────────────────────────────────
 
@@ -297,8 +297,6 @@ function SessionChatInputImpl({
   const addFiles = useCallback((files: AttachedFile[]) => {
     setAttachedFiles((prev) => [...prev, ...files]);
   }, []);
-
-  const handleAttachPress = useAttachmentPicker(addFiles);
 
   const availableAutoAlgorithms = useMemo(
     () =>
@@ -486,14 +484,22 @@ function SessionChatInputImpl({
     [variants, variant, onVariantSet],
   );
 
-  // `+` opens the file chooser. When the project has AutoContinue commands it
-  // opens the Add sheet instead, which lists both.
+  // `+` opens the Add sheet: Camera · Photos · Files, then Recent files, plus an
+  // AutoContinue row when the project has AutoContinue commands.
   const hasAutoContinue = availableAutoAlgorithms.length > 0;
   const handleAddPress = useCallback(() => {
     Keyboard.dismiss();
-    if (hasAutoContinue) setShowActionsSheet(true);
-    else handleAttachPress();
-  }, [hasAutoContinue, handleAttachPress]);
+    attachSheetRef.current?.open();
+  }, []);
+
+  const handleSelectSessionFile = useCallback(
+    (file: SessionFile) => {
+      const newText = mention.addFileMention(sessionFileMentionLabel(file.path), text);
+      cursorRef.current = newText.length;
+      setText(newText);
+    },
+    [mention, text],
+  );
 
   const cardHeader =
     inputSlot || stagedCommand ? (
@@ -566,7 +572,7 @@ function SessionChatInputImpl({
             header={cardHeader}
             attachments={attachedFiles}
             onAttach={onboardingMode ? undefined : handleAddPress}
-            attachLabel={hasAutoContinue ? 'Add' : undefined}
+            attachLabel="Add"
             onRemoveAttachment={removeAttachedFile}
             modelLabel={
               onboardingMode || modelsLoading
@@ -580,11 +586,12 @@ function SessionChatInputImpl({
               autocontinueMode && currentAutoAlgorithm ? (
                 <Button
                   variant="secondary"
-                  size="icon"
+                  size="icon-md"
                   className="rounded-full"
+                  hitSlop={COMPOSER_CONTROL_HIT_SLOP}
                   onPress={() => setShowAutoSheet(true)}
                   accessibilityLabel={`AutoContinue, ${currentAutoAlgorithm.label}`}>
-                  <Icon as={InfinityIcon} size={20} className="text-kortix-purple" />
+                  <Icon as={InfinityIcon} size={18} className="text-kortix-purple" />
                 </Button>
               ) : null
             }
@@ -592,13 +599,31 @@ function SessionChatInputImpl({
         </View>
       </View>
 
-      {/* Add sheet — files and AutoContinue. Mounted only when `+` opens it. */}
-      <ActionsSheet
-        visible={showActionsSheet}
-        onClose={() => setShowActionsSheet(false)}
-        onAttach={() => { setShowActionsSheet(false); setTimeout(handleAttachPress, 300); }}
-        onAutoContinue={() => { setShowActionsSheet(false); setTimeout(() => setShowAutoSheet(true), 300); }}
-        autocontinueLabel={autocontinueMode ? (currentAutoAlgorithm?.label || 'On') : 'Off'}
+      {/* Add sheet — Camera · Photos · Files, and AutoContinue when the project has it. */}
+      <AttachSheet ref={attachSheetRef} onPick={addFiles}>
+        <SettingsGroup className="bg-secondary">
+          <SettingsRow
+            icon={StackIcon}
+            label="Recent files"
+            onPress={() => attachSheetRef.current?.closeThen(() => filesSheetRef.current?.open())}
+          />
+          {hasAutoContinue ? (
+            <SettingsRow
+              icon={InfinityIcon}
+              label="AutoContinue"
+              value={autocontinueMode ? (currentAutoAlgorithm?.label || 'On') : 'Off'}
+              onPress={() => attachSheetRef.current?.closeThen(() => setShowAutoSheet(true))}
+            />
+          ) : null}
+        </SettingsGroup>
+      </AttachSheet>
+
+      {/* Recent files — the files this session produced; a row previews the file, "Add to chat" mentions it. */}
+      <SessionFilesSheet
+        ref={filesSheetRef}
+        sessionId={currentSessionId}
+        sandboxUrl={sandboxUrl}
+        onSelect={handleSelectSessionFile}
       />
 
       {/* Model sheet — models by provider, thinking level of the active model */}
@@ -629,52 +654,6 @@ function SessionChatInputImpl({
  * stable callbacks and memoized array props.
  */
 export const SessionChatInput = React.memo(SessionChatInputImpl);
-
-// ─── Add Sheet ──────────────────────────────────────────────────────────────
-
-interface ActionsSheetProps {
-  visible: boolean;
-  onClose: () => void;
-  onAttach: () => void;
-  onAutoContinue: () => void;
-  /** The AutoContinue row's value: the active algorithm, or "Off". */
-  autocontinueLabel: string;
-}
-
-/** What `+` opens when the project has AutoContinue commands: two settings rows. */
-function ActionsSheet({ visible, onClose, onAttach, onAutoContinue, autocontinueLabel }: ActionsSheetProps) {
-  const sheetRef = useRef<SheetRef>(null);
-  // `visible` drives the imperative sheet. A dismiss this effect started must
-  // not call `onClose` again; a user swipe or backdrop tap must.
-  const dismissingRef = useRef(false);
-
-  useEffect(() => {
-    if (visible) {
-      dismissingRef.current = false;
-      sheetRef.current?.open();
-    } else {
-      dismissingRef.current = true;
-      sheetRef.current?.close();
-    }
-  }, [visible]);
-
-  const handleDismiss = useCallback(() => {
-    if (!dismissingRef.current) onClose();
-    dismissingRef.current = false;
-  }, [onClose]);
-
-  return (
-    <Sheet ref={sheetRef} enablePanDownToClose onDismiss={handleDismiss}>
-      {/* `px-4`: the composer's sheets use the 16pt project edge (PickerSheet). */}
-      <SheetBody className="px-4 pt-1">
-        <SettingsGroup className="bg-secondary">
-          <SettingsRow icon={PaperclipIcon} label="Photos and files" onPress={onAttach} />
-          <SettingsRow icon={InfinityIcon} label="AutoContinue" value={autocontinueLabel} onPress={onAutoContinue} />
-        </SettingsGroup>
-      </SheetBody>
-    </Sheet>
-  );
-}
 
 function InfinityOffIcon({ color, size }: { color: string; size: number }) {
   return (
@@ -709,7 +688,6 @@ function AutoContinueSheet({
   algorithms,
   isDark,
 }: AutoContinueSheetProps) {
-  const sheetBg = useSheetBackground();
   const insets = useSafeAreaInsets();
   const [detailAlg, setDetailAlg] = useState<AutoContinueAlgorithm | null>(null);
   const isActive = selected !== null;
@@ -753,19 +731,13 @@ function AutoContinueSheet({
   if (algorithms.length === 0) return null;
 
   return (
-    <BottomSheetModal
+    <KortixBottomSheetModal
       ref={sheetRef}
       enableDynamicSizing
       maxDynamicContentSize={Math.floor(screenHeight * 0.86)}
       enablePanDownToClose={!detailAlg}
       enableOverDrag={false}
       onDismiss={handleSheetDismiss}
-      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
-      backgroundStyle={{
-        backgroundColor: sheetBg,
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-      }}
       backdropComponent={(p) => <SheetBackdrop {...p} opacity={0.4} />}
     >
       {detailAlg ? (
@@ -985,7 +957,7 @@ function AutoContinueSheet({
         </View>
         </BottomSheetScrollView>
       )}
-    </BottomSheetModal>
+    </KortixBottomSheetModal>
   );
 }
 
