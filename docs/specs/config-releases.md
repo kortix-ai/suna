@@ -229,11 +229,30 @@ today.
 In `session-files` mode `archive` and `files` are null. `compiled_governance`
 still comes from the base branch.
 
+### Workspace report
+
+```json
+{
+  "head": "<40 hex>",
+  "config_dir": ".kortix/opencode",
+  "changed": [
+    { "path": ".kortix/opencode/agents/kortix.md", "status": "modified", "blob": "<40 hex>" },
+    { "path": ".kortix/opencode/skills/x/SKILL.md", "status": "deleted", "blob": null }
+  ]
+}
+```
+
+- `status` is `modified`, `added`, `deleted`, or `untracked`.
+- `changed` covers uncommitted changes and every file the session's commits
+  changed since the merge base with the base branch.
+- `blob` is the Git blob ID of the working-tree file, or null when deleted.
+- The daemon builds it with read-only Git commands. It never fetches.
+
 ### Routes
 
 | Route | Caller | Purpose |
 |---|---|---|
-| `GET /v1/projects/{projectId}/sessions/{sessionId}/config-release` | Daemon (session token), session readers | Desired release descriptor |
+| `POST /v1/projects/{projectId}/sessions/{sessionId}/config-release` | Daemon (session token) | Body: `{ "workspace": WorkspaceReport \| null }`. Returns the desired release descriptor. |
 | `GET /v1/projects/{projectId}/config-archives/{configTreeId}` | Daemon, project readers | `302` to the store or streamed bytes |
 | `GET /v1/projects/{projectId}/sessions/{sessionId}/config` | Web, CLI, SDK | Freshness and state. Extended below. |
 
@@ -243,9 +262,12 @@ Regenerate `tests/spec/routes.generated.json` and add REST flows for each route.
 
 The API chooses the mode on every convergence:
 
-1. Call the daemon's `GET /kortix/config/workspace`. It returns the session
-   branch HEAD and every changed or untracked file under the config dir, with
-   its Git blob ID or null when deleted.
+1. Read the workspace report from the descriptor request body. The daemon
+   builds it from the session branch HEAD and every changed or untracked file
+   under the config dir. The API never calls back into the box: a booting box
+   cannot answer. A missing report means `follow-base`. The report only selects
+   this session's file source, so a false report gains nothing: the session can
+   already edit its own files.
 2. Ignore platform-written paths: the plugin pin in `package.json` when it is
    the only difference, installer lockfiles while `package.json` holds no other
    edit, and skill directories the managed overlay ships.
@@ -314,9 +336,33 @@ the `sdk` skill first: test first, and no hand-bumped version.
 
 Single flight: a second request while a convergence runs answers `409`.
 
+Converge response:
+
+```json
+{
+  "ok": true,
+  "outcome": "applied",
+  "config": {
+    "release_id": "<hex or null>",
+    "desired_release_id": "<hex or null>",
+    "source": "release",
+    "mode": "follow-base",
+    "proven": true,
+    "fallback_reason": null,
+    "failed_release_id": null
+  },
+  "reload": { "how": "restarted", "turn_ended": false }
+}
+```
+
+`outcome` is one of `applied`, `unchanged`, `declined`, `quarantined`,
+`session-files`, or `failed`. `reload` is null when no process was replaced.
+The `config` object is identical to the health `config` block.
+
 ### Apply sequence
 
-1. Fetch the descriptor from the API with the session token.
+1. Build the workspace report. Post it to the descriptor route with the
+   session token as the bearer. Use the response as the descriptor.
 2. If `mode` is `session-files`: point OpenCode at the workspace config dir.
    Prepare dependencies and the managed-skill overlay there first. Go to step 7.
 3. If `release_id` equals the running release and the copy verifies: no-op.
