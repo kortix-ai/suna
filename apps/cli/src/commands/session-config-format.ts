@@ -121,21 +121,35 @@ export function describeReloadOutcome(
   bold: Bold = plain,
   dim: Bold = plain,
 ): ConfigLine {
-  if (!result.applied) return { tone: 'warn', text: result.detail };
+  const fallback = Boolean(result.release?.fallback_reason);
+  // The session runs its own edited config files. That is the intended outcome
+  // of `session-files` mode, not a problem (verification DEF-2: it printed as a
+  // warning because the tone keyed only off `agent_files === 'kept-yours'`).
+  // Without a `release` block, kept-yours keeps its old meaning: the base
+  // branch's agent files were NOT applied, which deserves a warning.
+  const sessionFiles = result.release?.mode === 'session-files' && !fallback;
+
+  if (!result.applied) {
+    // "Nothing to apply: already current." is a plain success. Everything else
+    // that applied nothing — mid-turn, unreachable, declined — is a warning.
+    const quiet = !fallback && (result.agent_files === 'already-current' || sessionFiles);
+    return { tone: quiet ? 'ok' : 'warn', text: result.detail };
+  }
 
   // `detail` is the server's sentence and the only thing entitled to say
   // whether the AGENT changed. Warn on the outcomes where it may not have:
-  // the session's own files were kept, the box could not say, or the new
-  // config did not start and an earlier one still runs.
+  // the box could not say, the base branch's files were not applied, or the
+  // new config did not start and an earlier one still runs.
   const needsAttention =
-    result.agent_files === 'kept-yours' ||
+    fallback ||
     result.agent_files === 'unknown' ||
-    Boolean(result.release?.fallback_reason);
+    (result.agent_files === 'kept-yours' && !sessionFiles);
 
-  const transition =
-    result.etag === null && result.release?.running_release_id
-      ? ` — release ${short(result.release.running_release_id)}`
-      : ` — ${result.previous_etag ?? 'unknown'} → ${result.etag}`;
+  // A release is the identity that matters: etags can be equal across two
+  // releases (verification printed "— 37f79103 → 37f79103" for a real change).
+  const transition = result.release?.running_release_id
+    ? ` — release ${short(result.release.running_release_id)}`
+    : ` — ${result.previous_etag ?? 'unknown'} → ${result.etag}`;
   return {
     tone: needsAttention ? 'warn' : 'ok',
     text: `Reloaded ${bold(sessionRef)}${dim(transition)}\n  ${result.detail}`,

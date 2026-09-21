@@ -212,6 +212,57 @@ describe('describeReloadOutcome', () => {
     });
   });
 
+  test('a session running its own config is NOT a warning (E2E DEF-2)', () => {
+    // Verification on a real box printed "!  Reloaded …" for session-files mode:
+    // the tone keyed only off `agent_files === 'kept-yours'`. Running the
+    // session's own edits is the intended outcome of that mode.
+    const applied = describeReloadOutcome(
+      { ...base, agent_files: 'kept-yours', release: release({ mode: 'session-files', source: 'workspace', running_release_id: null }) },
+      REF,
+    );
+    expect(applied.tone).toBe('ok');
+    const notApplied = describeReloadOutcome(
+      {
+        ...base,
+        applied: false,
+        agent_files: 'kept-yours',
+        detail: 'Nothing to apply: this session runs its own config files.',
+        release: release({ mode: 'session-files', source: 'workspace', running_release_id: null }),
+      },
+      REF,
+    );
+    expect(notApplied.tone).toBe('ok');
+  });
+
+  test('without a release block, kept-yours still warns — the old meaning is unchanged', () => {
+    expect(describeReloadOutcome({ ...base, agent_files: 'kept-yours' }, REF).tone).toBe('warn');
+  });
+
+  test('a no-op reload ("already current") is not a warning (E2E DEF-2)', () => {
+    expect(
+      describeReloadOutcome(
+        { ...base, applied: false, agent_files: 'already-current', detail: 'Nothing to apply: already current.' },
+        REF,
+      ),
+    ).toEqual({ tone: 'ok', text: 'Nothing to apply: already current.' });
+  });
+
+  test('a refused or failed reload stays a warning', () => {
+    for (const detail of ['This session is mid-turn.', 'Nothing to apply: no reachable sandbox.']) {
+      expect(describeReloadOutcome({ ...base, applied: false, agent_files: 'unknown', detail }, REF).tone).toBe('warn');
+    }
+  });
+
+  test('with a release block the transition shows release IDs, even when etags are set', () => {
+    // Verification printed "— 37f79103ea3a16e1 → 37f79103ea3a16e1": equal etags
+    // on a release that did change. The release is the identity that matters.
+    const out = describeReloadOutcome(
+      { ...base, previous_etag: 'e1', etag: 'e1', release: release() },
+      REF,
+    );
+    expect(out.text.split('\n')[0]).toBe(`Reloaded abc12345 — release ${RUNNING.slice(0, 12)}`);
+  });
+
   test('bold is applied through the injected formatter only', () => {
     const b = (s: string) => `*${s}*`;
     expect(describeReloadOutcome(base, REF, b).text).toBe(
