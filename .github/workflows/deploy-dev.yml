@@ -16,7 +16,8 @@ name: Deploy Dev
 #                   the dedicated kortix-dev-web ECS Fargate service at
 #                   dev.kortix.com. Vercel is disabled for main.
 #   - CLI         → 4 cross-compiled binaries published to the mutable
-#                   `dev-latest` GitHub prerelease (default API base dev-api).
+#                   `dev-latest` GitHub prerelease (default API base dev-api),
+#                   plus the 4 `kortix-tui` binaries `kortix tui` downloads.
 #
 # Desktop is intentionally NOT here — it's an Electron shell that changes
 # rarely and needs slow signed macOS/Windows runners, so it lives in its own
@@ -172,6 +173,9 @@ jobs:
               - 'VERSION'
             cli:
               - 'apps/cli/**'
+              # `kortix tui` downloads kortix-tui from this same release, so the
+              # TUI binaries are built and published by the CLI job.
+              - 'apps/tui/**'
               - 'packages/starter/**'
               - 'scripts/install.sh'
               - 'pnpm-lock.yaml'
@@ -1078,9 +1082,29 @@ jobs:
               --outfile="artifacts/kortix-$t" \
               apps/cli/src/index.ts
           done
+          # The TUI is NOT in the `kortix` binary — `kortix tui` downloads
+          # kortix-tui from this same release on first use
+          # (apps/cli/src/tui-bin.ts). Same targets, same version string, so the
+          # launcher's <version> lookup always finds its match.
+          # OPENTUI_LIBC is baked so a Linux target embeds one libc variant
+          # instead of both (-6.3 MB on linux-x64); see apps/tui/bundle/_build.sh.
+          for t in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
+            echo "↻ building kortix-tui-$t (cli $CLI_VERSION)"
+            bun build \
+              --compile \
+              --minify \
+              --target="bun-$t" \
+              --define="process.env.OPENTUI_LIBC=\"glibc\"" \
+              --outfile="artifacts/kortix-tui-$t" \
+              apps/tui/src/index.tsx
+          done
           cd artifacts
           chmod +x kortix-*
           sha256sum kortix-* > SHA256SUMS
+          # One `.sha256` beside each TUI asset: the launcher verifies the
+          # download against it before the file becomes executable, and fetching
+          # 100 bytes beats fetching the whole SHA256SUMS list.
+          for f in kortix-tui-*; do sha256sum "$f" > "$f.sha256"; done
           ls -lh
 
       - name: Smoke test (native linux-x64)
@@ -1095,6 +1119,14 @@ jobs:
             artifacts/kortix-darwin-x64
             artifacts/kortix-linux-x64
             artifacts/kortix-linux-arm64
+            artifacts/kortix-tui-darwin-arm64
+            artifacts/kortix-tui-darwin-x64
+            artifacts/kortix-tui-linux-x64
+            artifacts/kortix-tui-linux-arm64
+            artifacts/kortix-tui-darwin-arm64.sha256
+            artifacts/kortix-tui-darwin-x64.sha256
+            artifacts/kortix-tui-linux-x64.sha256
+            artifacts/kortix-tui-linux-arm64.sha256
             artifacts/SHA256SUMS
           if-no-files-found: error
 

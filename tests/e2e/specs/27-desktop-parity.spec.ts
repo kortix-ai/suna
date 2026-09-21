@@ -427,6 +427,29 @@ for (const runtime of runtimes) {
             },
           );
           expect(denied).toContain("Unauthorized IPC sender");
+
+          await resize(720, 480);
+          await page.goto(`${baseURL}/projects/${project.id}/settings/repositories`);
+          const changeRepository = page.getByRole('button', { name: 'Change', exact: true });
+          await expect(changeRepository).toBeVisible();
+          await changeRepository.click();
+          const repositoryDialog = page.getByRole('dialog', { name: 'Change repository' });
+          await expect(repositoryDialog.getByRole('textbox', { name: 'New GitHub repository URL' })).toBeVisible();
+          const confirmRepository = repositoryDialog.getByRole('button', { name: 'Change repository', exact: true });
+          await expect(confirmRepository).toBeVisible();
+          await expect.poll(() => confirmRepository.evaluate((button) => {
+            const bounds = button.getBoundingClientRect();
+            return bounds.bottom <= window.innerHeight;
+          })).toBe(true);
+          const cancelRepository = repositoryDialog.getByRole('button', { name: 'Cancel' });
+          await expect.poll(() => cancelRepository.evaluate((button) => {
+            const bounds = button.getBoundingClientRect();
+            const hit = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
+            return hit === button || button.contains(hit);
+          })).toBe(true);
+          await page.screenshot({ path: test.info().outputPath('desktop-repository-change.png'), scale: 'css' });
+          await cancelRepository.click();
+          await expect(repositoryDialog).toBeHidden();
         }
         for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
           await api(session.access_token, 'PATCH', `/projects/${project.id}/features`, {

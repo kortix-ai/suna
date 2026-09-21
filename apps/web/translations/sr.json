@@ -1,4 +1,22 @@
 {
+  "repositoryChange": {
+    "changedToast": "Репозиторијум је промењен. Нове сесије ће користити нови репозиторијум.",
+    "verifyError": "Није могуће проверити приступ GitHub-у.",
+    "change": "Промени",
+    "title": "Промени репозиторијум",
+    "description": "Нове сесије ће користити нови репозиторијум. Постојеће сесије не могу поново да се покрену након промене.",
+    "current": "Тренутни репозиторијум",
+    "newUrl": "URL новог GitHub репозиторијума",
+    "verifying": "Провера GitHub-а…",
+    "verifyAgain": "Поново провери GitHub",
+    "verify": "Провери приступ GitHub-у",
+    "noInstallation": "За власника овог репозиторијума није доступна инсталација апликације Kortix. Додајте репозиторијум у инсталацију апликације на GitHub-у, па проверите поново.",
+    "installation": "Инсталација GitHub апликације",
+    "selectInstallation": "Изабери инсталацију",
+    "manifestRequirement": "Нови репозиторијум мора да садржи {manifest} на подразумеваној грани. Прво зауставите активне сесије и затворите отворене захтеве за измену.",
+    "cancel": "Откажи",
+    "changing": "Мења се…"
+  },
   "pooledSecrets": {
     "saveChanges": "Sačuvaj izmene",
     "unsavedChanges": "Nesačuvane izmene ključeva",
@@ -19447,6 +19465,10 @@
     "providerError": "Nije moguće ažurirati pristup provajderu.",
     "managedTitle": "Modeli kojima upravlja Kortix",
     "managedDescription": "Upravljani modeli se naplaćuju Kortix kreditima. API ključ nije potreban.",
+    "textImage": "Текст + слика",
+    "textOnly": "Само текст",
+    "zdrTitle": "Pružaoci modela ne čuvaju vaše upite",
+    "zdrDescription": "Nulto zadržavanje podataka (ZDR) znači da pružalac modela obrađuje vaš tekst i slike, ali ne čuva ulaz ni odgovor nakon zahteva. Kortix zasebno čuva vaše projekte i razgovore.",
     "hiddenHint": "Sakriven iz birača. Direktni zahtevi su i dalje dozvoljeni; onemogućite ih u meniju modela.",
     "hidden": "Sakriven iz birača",
     "disableModel": "Onemogući model",

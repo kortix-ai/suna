@@ -151,6 +151,7 @@ describe('ephemeral self-host preview stack', () => {
       'MANAGED_GIT_GITHUB_OWNER',
       'MANAGED_GIT_GITHUB_TOKEN',
       'OPENROUTER_API_KEY',
+      'MORPH_API_KEY',
       'PLATINUM_API_KEY',
     ]);
     expect(() =>
@@ -191,6 +192,7 @@ describe('ephemeral self-host preview stack', () => {
         MANAGED_GIT_GITHUB_INSTALL_ID: '67890',
         MANAGED_GIT_GITHUB_OWNER: 'kortix-preview',
         OPENROUTER_API_KEY: 'openrouter',
+        MORPH_API_KEY: 'morph',
       },
     );
 
@@ -200,6 +202,7 @@ describe('ephemeral self-host preview stack', () => {
     );
     expect(configured.runtimeEnv).toContain('SUPABASE_PUBLIC_URL=https://preview.example');
     expect(configured.runtimeEnv).toContain('INTERNAL_KORTIX_ENV=preview');
+    expect(configured.runtimeEnv).toContain('MORPH_API_KEY=morph');
     // The preview edge drops request bodies above ~124 KiB, Storage uploads included.
     expect(configured.runtimeEnv).toContain('PROMPT_ATTACHMENT_UPLOAD_MODE=chunked');
     expect(configured.runtimeEnv).toContain('KORTIX_FRONTEND_MEMORY_LIMIT=2048m');

@@ -1,4 +1,22 @@
 {
+  "repositoryChange": {
+    "changedToast": "Repository changed. New sessions will use the new repository.",
+    "verifyError": "Could not verify GitHub access.",
+    "change": "Change",
+    "title": "Change repository",
+    "description": "New sessions will use the new repository. Existing sessions cannot restart after the change.",
+    "current": "Current repository",
+    "newUrl": "New GitHub repository URL",
+    "verifying": "Verifying GitHub…",
+    "verifyAgain": "Verify GitHub again",
+    "verify": "Verify GitHub access",
+    "noInstallation": "No Kortix App installation is available for this repository owner. Add the repository to the App installation in GitHub, then verify again.",
+    "installation": "GitHub App installation",
+    "selectInstallation": "Select installation",
+    "manifestRequirement": "The new repository needs {manifest} on its default branch. Stop active sessions and close open change requests first.",
+    "cancel": "Cancel",
+    "changing": "Changing…"
+  },
   "pooledSecrets": {
     "saveChanges": "Save changes",
     "unsavedChanges": "Unsaved key changes",
@@ -19447,6 +19465,10 @@
     "providerError": "Could not update provider access.",
     "managedTitle": "Kortix Managed Models",
     "managedDescription": "Managed models billed with Kortix credits. No API key needed.",
+    "textImage": "Text + image",
+    "textOnly": "Text only",
+    "zdrTitle": "Model providers don't keep your prompts",
+    "zdrDescription": "Zero data retention (ZDR) means the model provider processes your text and images, then does not keep the input or reply after the request. Kortix stores your project and conversation history separately.",
     "hiddenHint": "Hidden from the picker. Direct requests are still allowed; use the model menu to disable them.",
     "hidden": "Hidden from picker",
     "disableModel": "Disable model",

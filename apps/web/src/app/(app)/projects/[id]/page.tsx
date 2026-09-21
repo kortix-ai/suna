@@ -13,6 +13,7 @@ import {
 import { useAccountState } from '@/hooks/billing';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
+import { usePendingSnapshot } from '@/hooks/use-pending-snapshot';
 import {
   billingDialogArgs,
   billingStateAllowsRun,
@@ -56,6 +57,12 @@ export default function ProjectIndexPage() {
   const { canRun, isLoading: billingLoading } = useProjectCanRun(projectId);
   const { data: accountState } = useAccountState({ accountId: projectAccountId });
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
+
+  // The account answer the send path waits on, readable after an await.
+  const billing = usePendingSnapshot(isBillingEnabled() ? billingLoading : false, {
+    accountState,
+    projectAccountId,
+  });
 
   const newSession = useNewProjectSession(projectId);
   // Composer sending state: spans Enter → create confirmed → navigation. Reset
@@ -109,15 +116,39 @@ export default function ProjectIndexPage() {
     ) => {
       if (!text.trim() && !files?.length) return;
 
-      if (isBillingEnabled() && billingLoading) throw new Error('Account access is still loading');
+      // WAIT for the account's answer; never refuse over its absence. This
+      // used to `throw new Error('Account access is still loading')`, which
+      // the composer swallows into a draft restore — so an Enter pressed
+      // before `/projects/:id/detail` + `/billing/account-state` landed
+      // dropped the prompt silently and nothing retried. Project home paints
+      // a focusable composer ~1.1s after navigation; on the staging release
+      // gate those two calls still had 4.5s and 5.9s to run at that moment
+      // (run 35242868705). The answer is one round trip away and the user has
+      // already committed, so hold the send instead of losing it.
+      // Bounded: a wedged query must refuse (as it always did) rather than
+      // leave the composer waiting with nothing on screen.
+      if (isBillingEnabled() && !(await billing.settled())) {
+        throw new Error('Account access is still loading');
+      }
+
+      // Read through the snapshot, not this closure: after the await we are
+      // running in a render that predates the answer, where `accountState` is
+      // still undefined — see `usePendingSnapshot`.
+      const { accountState: currentAccountState, projectAccountId: currentProjectAccountId } =
+        billing.current();
 
       // Gate accounts that cannot run before navigating so we never strand the
       // user on a shell that cannot provision. Free accounts with the monthly
       // sandbox grant are allowed through because their state is `active`.
-      const billingState = isBillingEnabled() ? resolveBillingState(accountState) : null;
-      if (isBillingEnabled() && !billingLoading && !billingStateAllowsRun(billingState)) {
+      const billingState = isBillingEnabled() ? resolveBillingState(currentAccountState) : null;
+      if (isBillingEnabled() && !billingStateAllowsRun(billingState)) {
         openUpgradeDialog(
-          billingDialogArgs(billingState, accountState, projectAccountId, tI18nComplete),
+          billingDialogArgs(
+            billingState,
+            currentAccountState,
+            currentProjectAccountId,
+            tI18nComplete,
+          ),
         );
         throw new Error('Account cannot start a session');
       }
@@ -275,11 +306,9 @@ export default function ProjectIndexPage() {
       startHeldPost(heldAttachments, sessionId);
     },
     [
-      billingLoading,
-      accountState,
+      billing,
       newSession,
       openUpgradeDialog,
-      projectAccountId,
       projectId,
       tI18nComplete,
       tComposerAttachments,

@@ -1,4 +1,22 @@
 {
+  "repositoryChange": {
+    "changedToast": "Repositorio cambiado. Las sesiones nuevas usarán el repositorio nuevo.",
+    "verifyError": "No se pudo verificar el acceso a GitHub.",
+    "change": "Cambiar",
+    "title": "Cambiar repositorio",
+    "description": "Las sesiones nuevas usarán el repositorio nuevo. Las sesiones existentes no podrán reiniciarse después del cambio.",
+    "current": "Repositorio actual",
+    "newUrl": "URL del nuevo repositorio de GitHub",
+    "verifying": "Verificando GitHub…",
+    "verifyAgain": "Verificar GitHub de nuevo",
+    "verify": "Verificar acceso a GitHub",
+    "noInstallation": "No hay una instalación de la aplicación Kortix disponible para el propietario de este repositorio. Añade el repositorio a la instalación de la aplicación en GitHub y vuelve a verificar.",
+    "installation": "Instalación de la aplicación de GitHub",
+    "selectInstallation": "Seleccionar instalación",
+    "manifestRequirement": "El repositorio nuevo necesita {manifest} en su rama predeterminada. Primero detén las sesiones activas y cierra las solicitudes de cambio abiertas.",
+    "cancel": "Cancelar",
+    "changing": "Cambiando…"
+  },
   "pooledSecrets": {
     "saveChanges": "Guardar cambios",
     "unsavedChanges": "Cambios de claves sin guardar",
@@ -19447,6 +19465,10 @@
     "providerError": "No se pudo actualizar el acceso al proveedor.",
     "managedTitle": "Modelos gestionados por Kortix",
     "managedDescription": "Modelos gestionados que usan créditos de Kortix. No necesitas una clave API.",
+    "textImage": "Texto + imagen",
+    "textOnly": "Solo texto",
+    "zdrTitle": "Los proveedores de modelos no guardan tus mensajes",
+    "zdrDescription": "La retención cero de datos (ZDR) significa que el proveedor procesa tus textos e imágenes, pero no guarda la entrada ni la respuesta después de la solicitud. Kortix almacena tus proyectos y conversaciones por separado.",
     "hiddenHint": "Oculto en el selector. Las solicitudes directas siguen permitidas; desactívalas desde el menú del modelo.",
     "hidden": "Oculto en el selector",
     "disableModel": "Desactivar modelo",

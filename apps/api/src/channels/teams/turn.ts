@@ -38,6 +38,7 @@ function rowToHandle(row: typeof chatTurnStreams.$inferSelect): TeamsLiveTurn {
     steps: (row.steps as StreamTaskChunk[]) ?? [],
     expiry: new Date(row.expiresAt).getTime(),
     finalized: row.finalized,
+    updatedAt: row.updatedAt ? new Date(row.updatedAt).getTime() : undefined,
     projectId: row.projectId,
     sessionId: row.sessionId,
     originatingActivity: row.originatingEvent as TeamsActivity,
@@ -156,6 +157,19 @@ export async function startTurn(
  * stream keeps its own card; this one must not become a second, competing
  * "Working on it…".
  */
+/**
+ * Close a turn that stopped without ever finishing — the agent's sandbox died,
+ * the run was cancelled mid-deploy, anything that skips `relayTurnEnd`. Same
+ * copy the stale sweeper uses, but applied the moment the next message
+ * arrives instead of up to 30 minutes later. Safe to call concurrently with
+ * the sweeper: the finalize claim decides one winner.
+ */
+export async function closeAbandonedTurn(handle: TeamsLiveTurn): Promise<void> {
+  if (!(await claimFinalize(handle.sessionId))) return;
+  await finalizeTurn(handle, { error: '_This run ended without a reply._' });
+  await deleteTurn(handle.sessionId);
+}
+
 export async function noticeOnLiveCard(handle: TeamsLiveTurn, text: string): Promise<void> {
   if (!handle.messageActivityId) return;
   await updateCard(refOf(handle), handle.messageActivityId, buildNoticeCard(text));

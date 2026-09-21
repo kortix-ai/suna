@@ -496,7 +496,7 @@ flow(
   },
   async (ctx) => {
     const { projectId, sessionId, sandboxId } = await bootSandbox(ctx, {
-      opencodeModel: 'gpt-5.6-luna',
+      opencodeModel: 'morph-dsv41flash',
     });
     const ocSessionId = await createOcConversation(ctx, sandboxId);
 
@@ -505,7 +505,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(ocPath(sandboxId, `/session/${ocSessionId}/prompt_async`), {
-          model: { providerID: 'kortix', modelID: 'gpt-5.6-luna' },
+          model: { providerID: 'kortix', modelID: 'morph-dsv41flash' },
           parts: [
             {
               type: 'text',
@@ -611,7 +611,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(ocPath(sandboxId, `/session/${ocSessionId}/prompt_async`), {
-          model: { providerID: 'kortix', modelID: 'gpt-5.6-luna' },
+          model: { providerID: 'kortix', modelID: 'morph-dsv41flash' },
           parts: [
             {
               type: 'text',

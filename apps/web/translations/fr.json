@@ -1,4 +1,22 @@
 {
+  "repositoryChange": {
+    "changedToast": "Dépôt modifié. Les nouvelles sessions utiliseront le nouveau dépôt.",
+    "verifyError": "Impossible de vérifier l’accès à GitHub.",
+    "change": "Modifier",
+    "title": "Changer de dépôt",
+    "description": "Les nouvelles sessions utiliseront le nouveau dépôt. Les sessions existantes ne pourront plus redémarrer après ce changement.",
+    "current": "Dépôt actuel",
+    "newUrl": "URL du nouveau dépôt GitHub",
+    "verifying": "Vérification de GitHub…",
+    "verifyAgain": "Vérifier GitHub à nouveau",
+    "verify": "Vérifier l’accès à GitHub",
+    "noInstallation": "Aucune installation de l’application Kortix n’est disponible pour le propriétaire de ce dépôt. Ajoutez le dépôt à l’installation de l’application sur GitHub, puis vérifiez à nouveau.",
+    "installation": "Installation de l’application GitHub",
+    "selectInstallation": "Sélectionner une installation",
+    "manifestRequirement": "Le nouveau dépôt doit contenir {manifest} sur sa branche par défaut. Arrêtez d’abord les sessions actives et fermez les demandes de modification ouvertes.",
+    "cancel": "Annuler",
+    "changing": "Modification en cours…"
+  },
   "pooledSecrets": {
     "saveChanges": "Enregistrer les modifications",
     "unsavedChanges": "Modifications de clés non enregistrées",
@@ -19447,6 +19465,10 @@
     "providerError": "Impossible de modifier l’accès au fournisseur.",
     "managedTitle": "Modèles gérés par Kortix",
     "managedDescription": "Modèles gérés facturés en crédits Kortix. Aucune clé API nécessaire.",
+    "textImage": "Texte + image",
+    "textOnly": "Texte uniquement",
+    "zdrTitle": "Les fournisseurs de modèles ne conservent pas vos requêtes",
+    "zdrDescription": "La conservation zéro des données (ZDR) signifie que le fournisseur traite vos textes et images, puis ne conserve ni l'entrée ni la réponse après la requête. Kortix stocke séparément vos projets et conversations.",
     "hiddenHint": "Masqué dans le sélecteur. Les requêtes directes restent autorisées ; désactivez-les dans le menu du modèle.",
     "hidden": "Masqué dans le sélecteur",
     "disableModel": "Désactiver le modèle",

@@ -12,6 +12,8 @@ import { generateKeyPairSync } from 'node:crypto';
 
 import {
   buildGitHubAppInstallUrl,
+  REQUIRED_GITHUB_APP_PERMISSIONS,
+  resolveGitHubAppPermissions,
   resetGitHubAppSlugCache,
   resolveGitHubAppSlug,
 } from '../projects/github';
@@ -150,5 +152,55 @@ describe('buildGitHubAppInstallUrl', () => {
     serveApp(null, 404);
 
     expect(await buildGitHubAppInstallUrl('account-1')).toBeNull();
+  });
+});
+
+describe('resolveGitHubAppPermissions', () => {
+  function serveAppWith(permissions: Record<string, string>) {
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (url.endsWith('/app')) {
+        appCalls += 1;
+        return new Response(JSON.stringify({ slug: 'kortix-managed', permissions }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      throw new Error(`unexpected request: ${url}`);
+    }) as typeof fetch;
+  }
+
+  test('reports the permissions production ran without, and logs the drift once', async () => {
+    serveAppWith({ contents: 'write', metadata: 'read' });
+    const errors: string[] = [];
+    const realError = console.error;
+    console.error = (...args: unknown[]) => void errors.push(args.map(String).join(' '));
+    try {
+      const first = await resolveGitHubAppPermissions();
+      const second = await resolveGitHubAppPermissions();
+      expect(first.missing).toEqual(['administration', 'members']);
+      expect(second.missing).toEqual(first.missing);
+    } finally {
+      console.error = realError;
+    }
+    expect(appCalls).toBe(1);
+    expect(errors.filter((line) => line.includes('missing required permissions'))).toHaveLength(1);
+  });
+
+  test('reports nothing missing for the manifest permission set', async () => {
+    serveAppWith({ ...REQUIRED_GITHUB_APP_PERMISSIONS });
+    expect((await resolveGitHubAppPermissions()).missing).toEqual([]);
+  });
+
+  test('treats write as satisfying a read requirement', async () => {
+    serveAppWith({ ...REQUIRED_GITHUB_APP_PERMISSIONS, members: 'write' });
+    expect((await resolveGitHubAppPermissions()).missing).toEqual([]);
+  });
+
+  test('shares one GET /app with the slug derivation', async () => {
+    serveAppWith({ ...REQUIRED_GITHUB_APP_PERMISSIONS });
+    await resolveGitHubAppSlug();
+    await resolveGitHubAppPermissions();
+    expect(appCalls).toBe(1);
   });
 });

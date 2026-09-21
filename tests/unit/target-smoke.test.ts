@@ -27,6 +27,40 @@ const trafficDegradedGateway = {
   traffic: { requests: 12, error_rate: 1, window_s: 300 },
 };
 
+const json = (body: unknown, status = 200): Response =>
+  new Response(JSON.stringify(body), { status });
+
+const okApi = (commit = SHA) => json({ status: 'ok', environment: 'staging', commit });
+const okGateway = (commit = SHA) => json({ status: 'healthy', commit });
+const okFrontend = (commit: string | undefined = SHA) =>
+  json({ status: 'ok', service: 'web', version: '0.13.25-staging.8a1e38dc', commit });
+
+/**
+ * Route the mock by URL instead of by call order.
+ *
+ * The preflight reads three surfaces inside one `Promise.all`, so a
+ * `mockResolvedValueOnce` chain binds each payload to whichever position the
+ * implementation happens to fetch in — and silently hands `undefined` to any
+ * read the chain is one short of. Routing by URL states which surface each
+ * payload belongs to and survives a reordering of the three reads.
+ */
+function routedFetch(routes: {
+  api?: () => Response;
+  gateway?: () => Response;
+  frontend?: () => Response;
+}): typeof fetch {
+  return vi.fn<typeof fetch>(async (input) => {
+    const url = typeof input === 'string' ? input : String(input);
+    const route = url.includes('/api/health')
+      ? routes.frontend
+      : url.includes('gateway')
+        ? routes.gateway
+        : routes.api;
+    if (!route) throw new Error(`test mock has no response for ${url}`);
+    return route();
+  }) as unknown as typeof fetch;
+}
+
 describe('deployed staging smoke', () => {
   it('accepts only the exact staging API, web, gateway, and source SHA', () => {
     expect(
@@ -117,61 +151,111 @@ describe('deployed staging smoke', () => {
     ).toThrow('preview');
   });
 
-  it('requires both deployed services to report the exact release SHA', async () => {
-    const fetchImpl = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ status: 'ok', environment: 'staging', commit: SHA }), {
-          status: 200,
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ status: 'healthy', commit: SHA }), {
-          status: 200,
-        }),
-      );
+  it('requires all three deployed surfaces to report the exact release SHA', async () => {
+    const fetchImpl = routedFetch({
+      api: () => okApi(),
+      gateway: () => okGateway(),
+      frontend: () => okFrontend(),
+    });
 
-    await expect(
-      assertTargetSmokeHealth(
-        {
-          apiUrl: 'https://staging-api.kortix.com/v1',
-          webUrl: 'https://staging.kortix.com',
-          gatewayUrl: 'https://gateway-staging.kortix.com',
-          expectedSha: SHA,
-          environment: 'staging',
-        },
-        fetchImpl,
-      ),
-    ).resolves.toBeUndefined();
+    await expect(assertTargetSmokeHealth(STAGING, fetchImpl)).resolves.toBeUndefined();
   });
 
   it('fails when staging serves another SHA', async () => {
-    const fetchImpl = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({ status: 'ok', environment: 'staging', commit: 'b'.repeat(40) }),
-          { status: 200 },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ status: 'healthy', commit: SHA }), {
-          status: 200,
-        }),
+    const fetchImpl = routedFetch({
+      api: () => okApi('b'.repeat(40)),
+      gateway: () => okGateway(),
+      frontend: () => okFrontend(),
+    });
+
+    await expect(assertTargetSmokeHealth(STAGING, fetchImpl)).rejects.toThrow(
+      'staging SHA mismatch',
+    );
+  });
+
+  /**
+   * The defect this file exists to stop. On the v0.13.25 gate the Vercel
+   * deployment for the release SHA was still INITIALIZING when the browser
+   * shards started, so staging.kortix.com served the previous release's
+   * frontend while api and gateway both reported the release SHA. A
+   * two-surface assertion is blind to it.
+   */
+  it('fails when only the frontend is stale, and names all three surfaces', async () => {
+    const stale = 'fa68c114d7a9fcffc34f40497f2980f392797a47';
+    const fetchImpl = routedFetch({
+      api: () => okApi(),
+      gateway: () => okGateway(),
+      frontend: () => okFrontend(stale),
+    });
+
+    const error = await assertTargetSmokeHealth(STAGING, fetchImpl).catch((cause: Error) => cause);
+
+    expect(error).toBeInstanceOf(Error);
+    const message = (error as Error).message;
+    expect(message).toContain('staging SHA mismatch');
+    // A human must be able to read WHICH surface is behind and by what, without
+    // opening the run. All three actual values plus the expectation.
+    expect(message).toContain(`expected=${SHA}`);
+    expect(message).toContain(`api=${SHA}`);
+    expect(message).toContain(`gateway=${SHA}`);
+    expect(message).toContain(`frontend=${stale}`);
+  });
+
+  it.each([
+    // `next.config.ts` resolves the literal 'unknown' when neither
+    // NEXT_PUBLIC_KORTIX_COMMIT nor VERCEL_GIT_COMMIT_SHA reached the build.
+    ['the literal unknown', { status: 'ok', service: 'web', commit: 'unknown' }],
+    // An older frontend, or one whose health route lost the field, sends no
+    // `commit` key at all. Same verdict: nothing to compare.
+    ['no commit field at all', { status: 'ok', service: 'web' }],
+  ])(
+    'reports an unstamped frontend commit (%s) as a build defect, not a mismatch',
+    async (_name, body) => {
+      const fetchImpl = routedFetch({
+        api: () => okApi(),
+        gateway: () => okGateway(),
+        frontend: () => json(body),
+      });
+
+      const error = await assertTargetSmokeHealth(STAGING, fetchImpl).catch(
+        (cause: Error) => cause,
       );
 
-    await expect(
-      assertTargetSmokeHealth(
-        {
-          apiUrl: 'https://staging-api.kortix.com/v1',
-          webUrl: 'https://staging.kortix.com',
-          gatewayUrl: 'https://gateway-staging.kortix.com',
-          expectedSha: SHA,
-          environment: 'staging',
-        },
-        fetchImpl,
-      ),
-    ).rejects.toThrow('staging SHA mismatch');
+      const message = (error as Error).message;
+      expect(message).toContain('did not stamp a commit');
+      expect(message).toContain('NEXT_PUBLIC_KORTIX_COMMIT');
+      expect(message).toContain('broken frontend BUILD, not a stale deploy');
+      // Must NOT be laundered into the stale-deploy wording.
+      expect(message).not.toContain('SHA mismatch');
+    },
+  );
+
+  it('reports Vercel deployment protection instead of failing on an HTML login page', async () => {
+    const fetchImpl = routedFetch({
+      api: () => okApi(),
+      gateway: () => okGateway(),
+      frontend: () =>
+        new Response('Redirecting...', {
+          status: 302,
+          headers: { location: 'https://vercel.com/sso-api?url=https%3A%2F%2Fstaging.kortix.com' },
+        }),
+    });
+
+    await expect(assertTargetSmokeHealth(STAGING, fetchImpl)).rejects.toThrow(
+      'Vercel deployment protection blocked the read',
+    );
+  });
+
+  it('fails when the frontend health route does not answer its own contract', async () => {
+    const fetchImpl = routedFetch({
+      api: () => okApi(),
+      gateway: () => okGateway(),
+      frontend: () => json({ status: 'ok', service: 'not-web', commit: SHA }),
+    });
+
+    await expect(assertTargetSmokeHealth(STAGING, fetchImpl)).rejects.toThrow(
+      'staging frontend health contract failed',
+    );
   });
 
   it('accepts a gateway that reports healthy', () => {
@@ -241,56 +325,41 @@ describe('deployed staging smoke', () => {
   });
 
   it('runs the full smoke against a traffic-degraded staging gateway', async () => {
-    const fetchImpl = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ status: 'ok', environment: 'staging', commit: SHA }), {
-          status: 200,
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify(trafficDegradedGateway), { status: 200 }),
-      );
+    const fetchImpl = routedFetch({
+      api: () => okApi(),
+      gateway: () => json(trafficDegradedGateway),
+      frontend: () => okFrontend(),
+    });
 
     await expect(assertTargetSmokeHealth(STAGING, fetchImpl)).resolves.toBeUndefined();
   });
 
   it('still fails the smoke when the gateway cannot reach the API', async () => {
-    const fetchImpl = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ status: 'ok', environment: 'staging', commit: SHA }), {
-          status: 200,
+    const fetchImpl = routedFetch({
+      api: () => okApi(),
+      gateway: () =>
+        json({
+          status: 'degraded',
+          commit: SHA,
+          incidents: ['kortix api unreachable (http 502)'],
+          checks: { api: { status: 'down' } },
         }),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            status: 'degraded',
-            commit: SHA,
-            incidents: ['kortix api unreachable (http 502)'],
-            checks: { api: { status: 'down' } },
-          }),
-          { status: 200 },
-        ),
-      );
+      frontend: () => okFrontend(),
+    });
 
     await expect(assertTargetSmokeHealth(STAGING, fetchImpl)).rejects.toThrow(
       'cannot reach the API',
     );
   });
 
-  it('requires preview health to report preview and the exact SHA', async () => {
-    const fetchImpl = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ status: 'ok', environment: 'preview', commit: SHA }), {
-          status: 200,
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ status: 'healthy', commit: SHA }), { status: 200 }),
-      );
+  it('requires preview health to report preview and the exact SHA on all three surfaces', async () => {
+    // The preview stack is single-origin, so the three health paths differ only
+    // by prefix: /v1/health, /_gateway/health, /api/health.
+    const fetchImpl = routedFetch({
+      api: () => json({ status: 'ok', environment: 'preview', commit: SHA }),
+      gateway: () => json({ status: 'healthy', commit: SHA }),
+      frontend: () => json({ status: 'ok', service: 'web', commit: SHA }),
+    });
 
     await expect(
       assertTargetSmokeHealth(

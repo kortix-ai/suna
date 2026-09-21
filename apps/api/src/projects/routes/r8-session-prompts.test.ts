@@ -245,6 +245,9 @@ let billingCalls = 0;
 
 mock.module('../../billing/services/billing-gate', () => ({
   checkBillingActive: async () => {
+    throw new Error('a session route must not take a billing hold');
+  },
+  checkBillingAdmission: async () => {
     billingCalls += 1;
     return billingOk
       ? { ok: true }

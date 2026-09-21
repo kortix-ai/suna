@@ -1,4 +1,22 @@
 {
+  "repositoryChange": {
+    "changedToast": "Repository geändert. Neue Sitzungen verwenden das neue Repository.",
+    "verifyError": "GitHub-Zugriff konnte nicht überprüft werden.",
+    "change": "Ändern",
+    "title": "Repository ändern",
+    "description": "Neue Sitzungen verwenden das neue Repository. Bestehende Sitzungen können nach der Änderung nicht neu gestartet werden.",
+    "current": "Aktuelles Repository",
+    "newUrl": "URL des neuen GitHub-Repositories",
+    "verifying": "GitHub wird überprüft…",
+    "verifyAgain": "GitHub erneut überprüfen",
+    "verify": "GitHub-Zugriff überprüfen",
+    "noInstallation": "Für diesen Repository-Eigentümer ist keine Kortix-App-Installation verfügbar. Fügen Sie das Repository in GitHub zur App-Installation hinzu und überprüfen Sie es erneut.",
+    "installation": "GitHub-App-Installation",
+    "selectInstallation": "Installation auswählen",
+    "manifestRequirement": "Das neue Repository benötigt {manifest} auf seinem Standard-Branch. Beenden Sie zuerst aktive Sitzungen und schließen Sie offene Änderungsanfragen.",
+    "cancel": "Abbrechen",
+    "changing": "Wird geändert…"
+  },
   "pooledSecrets": {
     "saveChanges": "Änderungen speichern",
     "unsavedChanges": "Nicht gespeicherte Schlüsseländerungen",
@@ -19447,6 +19465,10 @@
     "providerError": "Der Anbieterzugriff konnte nicht aktualisiert werden.",
     "managedTitle": "Von Kortix verwaltete Modelle",
     "managedDescription": "Verwaltete Modelle, abgerechnet über Kortix-Guthaben. Kein API-Schlüssel erforderlich.",
+    "textImage": "Text + Bild",
+    "textOnly": "Nur Text",
+    "zdrTitle": "Modellanbieter speichern deine Prompts nicht",
+    "zdrDescription": "Zero Data Retention (ZDR) bedeutet: Der Modellanbieter verarbeitet deine Texte und Bilder, speichert aber Eingaben und Antworten nach der Anfrage nicht. Kortix speichert deine Projekte und Unterhaltungen separat.",
     "hiddenHint": "In der Auswahl ausgeblendet. Direkte Anfragen sind weiterhin erlaubt; deaktivieren Sie diese im Modellmenü.",
     "hidden": "In Auswahl ausgeblendet",
     "disableModel": "Modell deaktivieren",

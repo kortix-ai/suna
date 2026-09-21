@@ -85,6 +85,13 @@ async function dispatchFileEvent(
 test("28 — eager composer uploads before Send and reuses handles after refusal", async ({
   page,
 }, testInfo) => {
+  // This journey drives five files through begin → upload → complete, and the
+  // deployed profile's default attempt budget is 120 s. Measured on staging
+  // (release-gate run 35242868705, browser shard 3): one `POST /attachments`
+  // takes 2.67-6.80 s and one `POST .../complete` takes 3.43-10.14 s, so the
+  // round trips alone spend more than that budget. Declare the real cost here,
+  // the way 10-billing and 13-sdk-only do, instead of trimming the assertions.
+  test.setTimeout(240_000);
   const env = loadEnv();
   const email = `e2e-eager-attachments-${randomUUID()}@example.test`;
   const user = await createAuthUser(email, authOptions);
@@ -347,7 +354,12 @@ test("28 — eager composer uploads before Send and reuses handles after refusal
     const retryUpload = page.getByRole("button", {
       name: "Retry upload of retry.txt",
     });
-    await expect(retryUpload).toBeVisible({ timeout: 10_000 });
+    // Reaching the failed state costs TWO server round trips, not one: the
+    // begin, the refused PUT, then a re-sign begin for the same attachment and
+    // its refused PUT. Measured on staging that chain took 10.35 s, so the
+    // 10 s override this assertion used to carry could not pass there. Inherit
+    // the profile's own element budget (45 s deployed, 30 s local) instead.
+    await expect(retryUpload).toBeVisible();
     // A failed attachment refuses Send, and the control says why.
     await expect(send).toBeDisabled();
     await expect(send).toHaveAttribute(
@@ -364,6 +376,15 @@ test("28 — eager composer uploads before Send and reuses handles after refusal
       bytes: Array.from(Buffer.from("drop bytes")),
     });
     await expect(page.getByText("drop.txt", { exact: true })).toBeVisible();
+    // This case removes a READY attachment, so wait for its upload to settle.
+    // The tile is drawn from the local File before its begin answers, and Remove
+    // deletes by attachment id: click it inside that window and the id does not
+    // exist yet. Removing DURING the upload is the remove-me.txt case below;
+    // removing before the id is known is covered by the SDK's own tests
+    // (packages/sdk/src/core/attachments/prompt-attachments.test.ts).
+    await expect(
+      page.locator('li > div[aria-busy="true"]:has([title="drop.txt"])'),
+    ).toHaveCount(0, { timeout: 60_000 });
 
     const deleteDrop = page.waitForResponse(
       (response) =>

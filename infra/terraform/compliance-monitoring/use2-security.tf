@@ -50,7 +50,7 @@ locals {
 
 data "aws_iam_policy_document" "use2_alerts_kms" {
   # checkov:skip=CKV_AWS_109:The account-root statement is the KMS key control plane. Service principals receive data-key operations only.
-  # checkov:skip=CKV_AWS_111:The account root must administer this KMS key. Service access is restricted by SourceAccount.
+  # checkov:skip=CKV_AWS_111:The account root must administer this KMS key. Publishing services are restricted by SourceAccount; SNS delivery decrypt cannot be scoped because delivery calls present no caller context.
   # checkov:skip=CKV_AWS_356:KMS key policies require Resource "*" because the key ARN does not exist during policy evaluation.
   statement {
     sid       = "EnableAccountAdministration"
@@ -80,6 +80,21 @@ data "aws_iam_policy_document" "use2_alerts_kms" {
       test     = "StringEquals"
       variable = "aws:SourceAccount"
       values   = [local.account_id]
+    }
+  }
+
+  # SNS decrypts each message just before delivering it to a subscription,
+  # so the encrypted topic cannot reach its Lambda or email subscribers
+  # unless the key policy allows the SNS service principal (see "Allow
+  # access for Key User (SNS Service Principal)" in the Amazon SNS KMS
+  # documentation).
+  statement {
+    sid       = "AllowSNSDeliveryDecryption"
+    actions   = ["kms:Decrypt", "kms:GenerateDataKey"]
+    resources = ["*"]
+    principals {
+      type        = "Service"
+      identifiers = ["sns.amazonaws.com"]
     }
   }
 }

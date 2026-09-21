@@ -954,6 +954,12 @@ function ComposerImpl({
     modelRequired,
     selectedModel: availableSelectedModel,
     lockForQuestion,
+    // The same two "not in yet" flags `noModelsConnected` below reads. Without
+    // them this refused every send made before the catalog landed — project
+    // home paints a focusable composer ~1.1s after navigation, while
+    // `/model-picker`, `/detail` and `/model-defaults` are all still in flight.
+    modelsLoading,
+    entitlementsPending,
   });
   const noModelsConnected =
     modelRequired &&

@@ -46,6 +46,7 @@ import {
   setSandboxStatus,
 } from '../browser/stores/sandbox-connection-store';
 import { getSandboxUrlForExternalId } from '../browser/stores/server-store';
+import { getBackendUrl } from '../core/session/server-store/url-helpers';
 import { ascendingId, useSyncStore } from '../browser/stores/sync-store';
 import { BillingError, parseBillingError } from '../core/http/api/errors';
 import { isSessionFresh } from '../core/http/fresh-sessions';
@@ -90,7 +91,7 @@ import { useProjectConfig } from './use-project-config';
 import { useProjectModels } from './use-project-models';
 import { useQuestionSelfHeal } from './use-question-self-heal';
 import { useRuntimePhase } from './use-runtime-phase';
-import { useSessionPicks } from './use-session-picks';
+import { useSessionPicks, type SessionPicks } from './use-session-picks';
 import { derivePhase } from './use-session-phase';
 import { useSessionSync } from './use-session-sync';
 import { useSessionStartGiveUp } from './use-session-start-give-up';
@@ -136,6 +137,82 @@ export function shouldRetrySessionStart(
  * pause between holds, not the latency to observe `ready`.
  */
 export const SESSION_START_POLL_MS = 1_500;
+
+/**
+ * The absolute URL of this session's OpenCode runtime, or `null` until the box
+ * is ready.
+ *
+ * `/start` reports the runtime two ways and NEITHER is directly usable:
+ *
+ *  - `sandbox.external_id` — the provider sandbox id. The proxy route is the
+ *    SDK's to compose (`getSandboxUrlForExternalId`), never the host's.
+ *  - `runtime_url` — a RELATIVE path, `/p/<external_id>/8000`
+ *    (`apps/api/src/projects/routes/shared.ts:526`). Returned verbatim it is a
+ *    string no host can fetch.
+ *
+ * The external id wins because it is the same derivation `startProjectSession`
+ * writes into the session-runtime registry and `useSession` hands to
+ * `setCurrentRuntime` — one URL for the session, from one function. The
+ * `runtime_url` branch covers a ready payload whose sandbox row is absent,
+ * and composes the path against the configured backend.
+ *
+ * Gated on `stage === 'ready'`: a sandbox row exists from `provisioning`
+ * onward, and a URL for a box that is not serving yet is an invitation to dial
+ * it — the condition `SessionNotReadyError` exists to prevent.
+ */
+export function resolveSessionRuntimeUrl(
+  start: Pick<SessionStartResult, 'stage' | 'sandbox' | 'runtime_url'> | null | undefined,
+): string | null {
+  if (!start || start.stage !== 'ready') return null;
+  const externalId = start.sandbox?.external_id;
+  if (externalId) return getSandboxUrlForExternalId(externalId);
+  const path = start.runtime_url;
+  if (!path) return null;
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${getBackendUrl()}${path.startsWith('/') ? '' : '/'}${path}`;
+}
+
+/** What a send may carry beyond the parts themselves. */
+export interface SendOptions {
+  model?: ModelKey;
+  agent?: string;
+  variant?: string;
+  directory?: string;
+}
+
+/**
+ * Fold the session's picks and this call's override into the options a send
+ * actually carries.
+ *
+ * Each field is OMITTED when neither source supplies one — `{ variant:
+ * undefined }` is not `{}` to a body builder that iterates keys, and the
+ * runtime reads an absent field as "use the default". `variant` (reasoning
+ * effort) now falls back to `picks.variant` exactly as `model` and `agent`
+ * already fell back to theirs; before `SessionPicks` carried it, every host
+ * kept it in a store of its own and passed it on every call.
+ *
+ * `directory` is deliberately per-send only: it scopes one prompt, not a
+ * session.
+ */
+export function resolveSendOptions(
+  picks: Pick<SessionPicks, 'model' | 'agent' | 'variant'>,
+  override?: {
+    model?: ModelKey | null;
+    agent?: string | null;
+    variant?: string | null;
+    directory?: string | null;
+  },
+): SendOptions {
+  const model = override?.model ?? picks.model;
+  const agent = override?.agent ?? picks.agent;
+  const variant = override?.variant ?? picks.variant;
+  return {
+    ...(model ? { model } : {}),
+    ...(agent ? { agent } : {}),
+    ...(variant ? { variant } : {}),
+    ...(override?.directory ? { directory: override.directory } : {}),
+  };
+}
 
 /**
  * Should the `/start` boot poll fire again, given the last tick's outcome?
@@ -1277,15 +1354,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     },
   ): Promise<void> => {
     if (!runtimeActionReady) throw new RuntimeNotReadyError();
-    const model = override?.model ?? picks.model;
-    const agent = override?.agent ?? picks.agent;
-    const variant = override?.variant;
-    const opts = {
-      ...(model ? { model } : {}),
-      ...(agent ? { agent } : {}),
-      ...(variant ? { variant } : {}),
-      ...(override?.directory ? { directory: override.directory } : {}),
-    };
+    const opts = resolveSendOptions(picks, override);
     // The prompt is going out, so the optimistic message stops being `pending`.
     // Hosts own the optimistic add (they build the message id themselves), so
     // this resolves it the same way `hydrate` correlates an echo: by the
@@ -1522,6 +1591,13 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       : null,
     /** The serialized session_sandboxes row from /start (status, metadata, ids), or null. */
     sandbox,
+    /**
+     * Absolute URL of this session's OpenCode runtime (the `/p/<ext>/8000`
+     * proxy), or null until `stage === 'ready'`. The same URL the hook hands
+     * to `setCurrentRuntime` — hosts that need it for a PTY attach or a direct
+     * daemon call read it here instead of rebuilding it from `sandbox`.
+     */
+    runtimeUrl: resolveSessionRuntimeUrl(startData),
     /** True once the runtime is switched in and ready (equivalent to phase==='ready'). */
     switched,
     /** Whether polling /start again can still make progress (false = terminal). */

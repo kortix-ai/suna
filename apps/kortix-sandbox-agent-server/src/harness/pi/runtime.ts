@@ -903,6 +903,21 @@ export class PiRuntime {
         turns: [...this.completedTurns.entries()].map(([messageId, status]) => ({ messageId, status })),
       }
       const tmp = `${this.dumpPath()}.tmp`
+      // CodeQL js/http-to-file-access (alert 6571) flags the CONTENT argument
+      // below, because `dump.transcript` carries the first-turn prompt that
+      // relay.ts fetched from the Kortix API. Only the content is network-derived;
+      // the PATH is not. `dumpPath()` is built from `cfg.piStateDir`
+      // (KORTIX_PI_STATE_DIR, else <runtime-state-dir>/pi) and `sessionId`
+      // (KORTIX_SESSION_ID) — both process env, and the /kortix/env route cannot
+      // set either one (project-env.ts skips every KORTIX_-prefixed key, and the
+      // control.ts allowlist does not contain them). So no response can redirect
+      // this write. `JSON.stringify` escapes the content into one JSON document,
+      // `restore()` reads it back with `JSON.parse` behind a version + rootId
+      // check, and the result is consumed as transcript data — never executed,
+      // and never a config the agent trusts. The dir is 0o700, the file 0o600,
+      // and piStateDir lives outside /workspace, so it is not in the project
+      // repo or snapshot. Keep the path env-derived; do not take it from a
+      // request or a response body.
       writeFileSync(tmp, JSON.stringify(dump), { mode: 0o600 })
       renameSync(tmp, this.dumpPath())
     } catch (err) {

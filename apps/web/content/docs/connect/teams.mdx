@@ -36,11 +36,13 @@ kortix channels disconnect --platform teams
 ## Chats, channels, and mentions
 
 - **Personal chat:** every message reaches the bot.
-- **Team channel / group chat:** Teams delivers a message only when the bot is
-  `@`-mentioned. With the app's `ChannelMessage.Read.Group` permission (the
-  tenant admin consents when adding the app to a team), a reply in a thread the
-  bot already owns continues the session **without** a mention. A new channel
-  post still needs the mention.
+- **Team channel / group chat:** a new post needs an `@`-mention. After that,
+  a reply in a conversation the bot already owns continues the session
+  **without** one, the way a Slack thread does. That needs the app's
+  `ChannelMessage.Read.Group` (channels) and `ChatMessage.Read.Chat` (group
+  chats) permissions, which the tenant admin consents to when the app is added.
+  If the app was added before these were requested, remove and re-add it to
+  pick up the new consent.
 
 Each chat or channel conversation is its own session. The first message creates
 it; later messages continue it, even after the sandbox stops and resumes. A
@@ -84,6 +86,10 @@ for the conversation: a **consent card** in a personal chat (the recipient
 accepts, then it lands in their OneDrive), an **inline image** in a channel, or
 a **SharePoint link** for any other file shared to the team. Inbound files and
 pasted images are available to the agent to download and work with.
+
+Paste a screenshot and ask about it and the turn runs on a model that can read
+images, even when the conversation's own model is text-only — the session's
+model pick is left alone.
 
 ## Limits
 

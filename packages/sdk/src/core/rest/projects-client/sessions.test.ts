@@ -11,6 +11,7 @@ import type {
 } from './sessions';
 import {
   createProjectSession,
+  sessionParentId,
   createSessionPrompt,
   createSessionPublicShare,
   claimWarmProjectSession,
@@ -1289,4 +1290,53 @@ test('getSessionOpenBundle asks for the transcript window it was given', async (
 test('getSessionOpenBundle throws when the response is unsuccessful', async () => {
   nextResponse = { status: 500, body: { message: 'boom' } };
   await expect(getSessionOpenBundle('P1', 'S1')).rejects.toBeTruthy();
+});
+
+
+// ── sessionParentId ────────────────────────────────────────────────────────
+//
+// A session spawned by an agent from inside another session carries its parent
+// in `metadata.spawned_by_session` (apps/api/src/projects/lib/sessions.ts:1566,
+// deliberately kept on the LIST payload — see LIST_OMITTED_SESSION_METADATA_KEYS
+// in apps/api/src/projects/lib/serializers.ts:84). `metadata` was
+// `Record<string, unknown>`, so every host re-derived the same `typeof … ===
+// 'string'` cast: apps/web/src/components/projects/session-label.ts:61,
+// apps/web/src/features/workspace/project-sidebar/project-session-list-helpers.ts:359,
+// apps/tui/src/lib/session-groups.ts:145.
+
+const child = (metadata: Record<string, unknown>, sessionId = 'child') =>
+  ({ session_id: sessionId, metadata }) as unknown as ProjectSession;
+
+test('sessionParentId reads metadata.spawned_by_session', () => {
+  expect(sessionParentId(child({ spawned_by_session: 'parent-1' }))).toBe('parent-1');
+});
+
+test('sessionParentId is null for a root session', () => {
+  expect(sessionParentId(child({}))).toBeNull();
+  expect(sessionParentId(child({ spawned_by_session: '' }))).toBeNull();
+  expect(sessionParentId(child({ spawned_by_session: '   ' }))).toBeNull();
+});
+
+test('sessionParentId ignores a non-string value', () => {
+  // The column is jsonb. A malformed row must not produce a parent id that a
+  // caller then uses as a session id.
+  expect(sessionParentId(child({ spawned_by_session: 42 }))).toBeNull();
+  expect(sessionParentId(child({ spawned_by_session: null }))).toBeNull();
+  expect(sessionParentId(child({ spawned_by_session: { id: 'x' } }))).toBeNull();
+});
+
+test('sessionParentId refuses a self-referential link', () => {
+  // A session that is its own parent would make any tree walk loop forever.
+  expect(sessionParentId(child({ spawned_by_session: 'child' }, 'child'))).toBeNull();
+});
+
+test('sessionParentId tolerates a session with no metadata at all', () => {
+  expect(sessionParentId({ session_id: 'a' } as unknown as ProjectSession)).toBeNull();
+});
+
+test('ProjectSession.metadata types spawned_by_session as an optional string', () => {
+  const session = child({ spawned_by_session: 'parent-1' });
+  // No cast: the narrowing is the point of the typed metadata.
+  const parent: string | undefined = session.metadata.spawned_by_session;
+  expect(parent).toBe('parent-1');
 });

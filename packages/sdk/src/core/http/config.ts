@@ -29,8 +29,10 @@ export interface KortixPlatformConfig {
    *  Any fetch-shaped function is accepted (the global `fetch` type also carries
    *  runtime extras such as Bun's `preconnect`, which no adapter needs to provide). */
   fetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
-  /** Identifies the host surface in centralized audit events. */
-  clientSource?: 'api' | 'cli' | 'mobile' | 'web';
+  /** Identifies the host surface in centralized audit events. `'tui'` is
+   *  `apps/tui` — a terminal UI that authenticates with the CLI's host config
+   *  but is a distinct surface in `client_reported_source`. */
+  clientSource?: 'api' | 'cli' | 'mobile' | 'tui' | 'web';
   /** Optional UI error sink (toast/log). No-op by default. */
   onError?: (error: unknown, context?: unknown) => void;
   /** Default sandbox id for local/single-sandbox hosts (was `getEnv().SANDBOX_ID`). */

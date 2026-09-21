@@ -186,6 +186,24 @@ teams download --url "<downloadUrl from the prompt>" --out /workspace/incoming/d
 ```
 
 The download runs through the Kortix server (the credential stays server-side); you just give the URL and an output path.
+
+### Images: download, then just look at them
+
+A pasted screenshot arrives as an attachment marked `(image)`. Download it and
+open it with the **`read` tool** — you can see images directly.
+
+```sh
+teams download --url "<downloadUrl from the prompt>" --out /workspace/attachment.png
+# then: read /workspace/attachment.png
+```
+
+Kortix runs an image-bearing turn on a model that can see images, so this
+works even when the conversation's usual model is text-only.
+
+**Do not go looking for OCR.** ImageMagick, tesseract, PIL and an image-captioning
+API are all the wrong move — if `read` shows you the image, describe what you
+see. If it genuinely does not, say so in `teams send` rather than ending the
+turn silently.
 </files-and-artifacts>
 
 <other-surfaces>

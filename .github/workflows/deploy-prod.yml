@@ -368,6 +368,22 @@ jobs:
               --outfile="artifacts/kortix-$t" \
               apps/cli/src/index.ts
           done
+          # The TUI is NOT in the `kortix` binary — `kortix tui` downloads
+          # kortix-tui from this same release on first use
+          # (apps/cli/src/tui-bin.ts). Same targets, same VERSION string, so the
+          # launcher's <version> lookup always finds its match.
+          # OPENTUI_LIBC is baked so a Linux target embeds one libc variant
+          # instead of both (-6.3 MB on linux-x64); see apps/tui/bundle/_build.sh.
+          for t in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
+            echo "↻ building kortix-tui-$t (cli $VERSION)"
+            bun build \
+              --compile \
+              --minify \
+              --target="bun-$t" \
+              --define="process.env.OPENTUI_LIBC=\"glibc\"" \
+              --outfile="artifacts/kortix-tui-$t" \
+              apps/tui/src/index.tsx
+          done
           cd artifacts
           chmod +x kortix-*
           ls -lh
@@ -384,6 +400,10 @@ jobs:
             artifacts/kortix-darwin-x64
             artifacts/kortix-linux-x64
             artifacts/kortix-linux-arm64
+            artifacts/kortix-tui-darwin-arm64
+            artifacts/kortix-tui-darwin-x64
+            artifacts/kortix-tui-linux-x64
+            artifacts/kortix-tui-linux-arm64
           if-no-files-found: error
 
   # ── Publish the public npm packages ─────────────────────────────────────────
@@ -718,6 +738,11 @@ jobs:
           cp -v ./artifacts/kortix-* release/
           cd release
           sha256sum ./* > SHA256SUMS
+          # One `.sha256` beside each TUI asset: `kortix tui` verifies its
+          # download against it before the file becomes executable, and fetching
+          # 100 bytes beats fetching the whole SHA256SUMS list. Written AFTER
+          # SHA256SUMS so the checksum files are not themselves listed in it.
+          for f in kortix-tui-*; do sha256sum "$f" > "$f.sha256"; done
           ls -lh
 
       - name: Create GitHub Release

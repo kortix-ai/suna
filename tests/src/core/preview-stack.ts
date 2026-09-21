@@ -9,6 +9,7 @@ export const PREVIEW_RUNTIME_SECRET_ALLOWLIST = [
   'MANAGED_GIT_GITHUB_OWNER',
   'MANAGED_GIT_GITHUB_TOKEN',
   'OPENROUTER_API_KEY',
+  'MORPH_API_KEY',
   'PLATINUM_API_KEY',
 ] as const;
 
@@ -352,6 +353,7 @@ export function applyPreviewEnvironment(
       rawSecrets.KORTIX_GITHUB_APP_PRIVATE_KEY?.replace(/\r?\n/g, '\\n') ?? '',
     KORTIX_GITHUB_APP_SLUG: rawSecrets.KORTIX_GITHUB_APP_SLUG ?? '',
     OPENROUTER_API_KEY: rawSecrets.OPENROUTER_API_KEY ?? '',
+    MORPH_API_KEY: rawSecrets.MORPH_API_KEY ?? '',
     STRIPE_SECRET_KEY: rawSecrets.KE2E_STRIPE_SECRET_KEY ?? '',
     STRIPE_WEBHOOK_SECRET: rawSecrets.KE2E_STRIPE_WEBHOOK_SECRET ?? '',
   });

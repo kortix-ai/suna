@@ -13,6 +13,7 @@ import { ensureTeamsConversationBinding, teamsChannelCtx } from './binding';
 import { postTeamsIdentityPrompt, resolveTeamsActor, teamsUserId } from './identity';
 import {
   buildTeamsTurnEnv,
+  closeAbandonedTurn,
   deleteTurn,
   finalizeTurn,
   loadTurn,
@@ -22,7 +23,13 @@ import {
   startTurn,
 } from './turn';
 import { sessionWebUrl } from '../slack/util';
-import { extractTeamsAttachments, type TeamsActivity, type TeamsLiveTurn } from './types';
+import { channelTurnModel, promptModelOverride } from '../vision-model';
+import {
+  extractTeamsAttachments,
+  teamsMessageHasImage,
+  type TeamsActivity,
+  type TeamsLiveTurn,
+} from './types';
 import { describeTeamsConversation, stripTeamsMentions } from './util';
 import { ensureTeamsThreadParticipant, normalizeConversationPolicy, rememberTeamsThreadOwner } from './participants';
 
@@ -92,13 +99,22 @@ export async function deliverTeamsFollowUpToSession(input: {
   sessionId: string;
   text: string;
   userId?: string | null;
+  /** This turn only — see channels/vision-model.ts. */
+  model?: string | null;
 }) {
   return teamsSessionLifecycle.continueSession({
     source: 'teams',
     sessionId: input.sessionId,
     text: input.text,
     userId: input.userId,
+    ...(input.model ? { overrides: { model: promptModelOverride(input.model) } } : {}),
   });
+}
+
+/** The model this session is pinned to, as `createProjectSession` recorded it. */
+function sessionModelOf(metadata: Record<string, unknown> | null | undefined): string | null {
+  const value = metadata?.opencode_model;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
 async function bindTurnToSession(handle: TeamsLiveTurn | null, sessionId: string): Promise<void> {
@@ -145,13 +161,38 @@ async function clearConversationErrorNotice(tenantId: string, conversationId: st
  * a real session gets orphaned), only a deleted session (`no-session`) is
  * replaced.
  */
+/**
+ * How long a turn may go without writing a step and still count as "in
+ * flight". Past this the row is treated as abandoned even if the session row
+ * still claims to be running — a wedged conversation is worse than a
+ * duplicate card.
+ */
+const TURN_LIVE_WINDOW_MS = 10 * 60 * 1000;
+
+/**
+ * Is this turn actually still streaming? `finalized: false` alone is not
+ * enough: a sandbox that dies mid-turn never relays `turn_end`, leaving a row
+ * that looks live forever. Such a zombie used to swallow every later message
+ * behind "I'll take this after the current step" until the 30-minute sweeper
+ * ran (dev, 2026-09-18). A turn counts as live only while its session is
+ * running AND the row has moved recently.
+ */
+function turnIsLive(turn: TeamsLiveTurn | null, sessionStatus: string | null): boolean {
+  if (!turn || turn.finalized) return false;
+  if (sessionStatus !== 'running') return false;
+  const movedAt = turn.updatedAt ?? 0;
+  return Date.now() - movedAt < TURN_LIVE_WINDOW_MS;
+}
+
 async function deliverFollowUp(input: {
   projectId: string;
+  accountId: string;
   tenantId: string;
   conversationId: string;
   sessionId: string;
   sessionOwnerId: string | null;
   sessionMetadata: Record<string, unknown> | null;
+  sessionStatus: string | null;
   handle: TeamsLiveTurn | null;
   activity: TeamsActivity;
   userId: string;
@@ -190,17 +231,34 @@ async function deliverFollowUp(input: {
     }
   }
 
-  // A turn is already streaming for this session: the running stream keeps
-  // its card; ours becomes a short notice and is not saved as the turn.
   const inflight = await loadTurn(sessionId);
-  if (inflight && !inflight.finalized) {
+  if (turnIsLive(inflight, input.sessionStatus)) {
+    // A turn really is streaming: the running stream keeps its card, ours
+    // becomes a short notice and is not saved as the turn.
     if (handle) await noticeOnLiveCard(handle, 'Got it — I’ll take this after the current step.');
     handle = null;
   } else {
+    // Either no turn, or one that stopped without finishing. Close the dead
+    // card so the conversation is not wedged behind it, then take over.
+    if (inflight && !inflight.finalized) await closeAbandonedTurn(inflight);
     await bindTurnToSession(handle, sessionId);
   }
 
-  const outcome = await deliverTeamsFollowUpToSession({ sessionId, text: renderFollowUpPrompt(activity), userId });
+  // An image is unreadable on a text-only model, so THIS turn runs on the
+  // configured vision model. The session's own pin is untouched.
+  const turnModel = await channelTurnModel({
+    projectId,
+    accountId: input.accountId,
+    userId,
+    currentModel: sessionModelOf(input.sessionMetadata),
+    hasImage: teamsMessageHasImage(activity),
+  });
+  const outcome = await deliverTeamsFollowUpToSession({
+    sessionId,
+    text: renderFollowUpPrompt(activity),
+    userId,
+    model: turnModel,
+  });
 
   if (outcome === 'delivered') {
     await db
@@ -296,6 +354,7 @@ export async function createOrJoinTeamsConversationSession(input: {
         sessionId: chatThreads.sessionId,
         createdBy: projectSessions.createdBy,
         metadata: projectSessions.metadata,
+        status: projectSessions.status,
       })
       .from(chatThreads)
       .innerJoin(projectSessions, eq(projectSessions.sessionId, chatThreads.sessionId))
@@ -310,11 +369,13 @@ export async function createOrJoinTeamsConversationSession(input: {
     if (existing) {
       const next = await deliverFollowUp({
         projectId,
+        accountId: project.accountId,
         tenantId,
         conversationId,
         sessionId: existing.sessionId,
         sessionOwnerId: existing.createdBy ?? null,
         sessionMetadata: (existing.metadata as Record<string, unknown> | null) ?? null,
+        sessionStatus: (existing.status as string | null) ?? null,
         handle,
         activity,
         userId,
@@ -329,17 +390,19 @@ export async function createOrJoinTeamsConversationSession(input: {
     const sessionId = await waitForConversationSession(tenantId, conversationId);
     if (sessionId) {
       const [row] = await db
-        .select({ createdBy: projectSessions.createdBy, metadata: projectSessions.metadata })
+        .select({ createdBy: projectSessions.createdBy, metadata: projectSessions.metadata, status: projectSessions.status })
         .from(projectSessions)
         .where(eq(projectSessions.sessionId, sessionId))
         .limit(1);
       await deliverFollowUp({
         projectId,
+        accountId: project.accountId,
         tenantId,
         conversationId,
         sessionId,
         sessionOwnerId: row?.createdBy ?? null,
         sessionMetadata: (row?.metadata as Record<string, unknown> | null) ?? null,
+        sessionStatus: (row?.status as string | null) ?? null,
         handle,
         activity,
         userId,
@@ -357,6 +420,18 @@ export async function createOrJoinTeamsConversationSession(input: {
   await ensureTeamsConversationBinding({ projectId, tenantId, conversationId, ...describeTeamsConversation(activity) });
   const selection = await currentChannelSelection(teamsChannelCtx(tenantId, conversationId));
 
+  // A conversation that OPENS with an image has to start on a model that can
+  // read one, and a `/model` pick that has since been retired has to be
+  // replaced — the session pin is what every later turn inherits.
+  const createModel =
+    (await channelTurnModel({
+      projectId,
+      accountId: project.accountId,
+      userId,
+      currentModel: selection?.opencodeModel,
+      hasImage: teamsMessageHasImage(activity),
+    })) ?? selection?.opencodeModel;
+
   const result = await teamsSessionLifecycle.createSession({
     source: 'teams',
     project,
@@ -365,7 +440,7 @@ export async function createOrJoinTeamsConversationSession(input: {
     body: {
       base_ref: project.defaultBranch,
       agent_name: selection?.agentName || 'default',
-      ...(selection?.opencodeModel ? { opencode_model: selection.opencodeModel } : {}),
+      ...(createModel ? { opencode_model: createModel } : {}),
       initial_prompt: renderAgentPrompt(activity, revived),
       // Title from the user's actual words — without the `<at>…</at>` mention
       // markup Teams wraps around the bot's name in channels.
@@ -490,7 +565,22 @@ function renderAttachments(activity: TeamsActivity): string[] {
   const attachments = extractTeamsAttachments(activity);
   if (attachments.length === 0) return [];
   const lines = ['', 'Attached files (download with `teams download --url <url> --out <path>`):'];
-  for (const a of attachments) lines.push(`- ${a.name} — ${a.downloadUrl}`);
+  for (const a of attachments) {
+    const ext = a.fileType ? `.${a.fileType}` : '';
+    lines.push(`- ${a.name}${a.isImage ? ' (image)' : ''} — ${a.downloadUrl}`);
+    if (a.isImage) {
+      lines.push(
+        `    teams download --url "${a.downloadUrl}" --out /workspace/attachment${ext || '.png'}`,
+      );
+    }
+  }
+  if (attachments.some((a) => a.isImage)) {
+    lines.push(
+      '',
+      'Then open the downloaded image with the `read` tool and answer from what you see.',
+      'Do not look for OCR tools — you can read the image directly.',
+    );
+  }
   return lines;
 }
 

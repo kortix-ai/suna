@@ -10,6 +10,7 @@ import { isAccountManager, type ProjectRole } from '../access';
 import { getBackend, hasBackend, parseBasicAuthHeader, type GitScope } from '../git-backends';
 import {
   getGitHubAppInstallation,
+  githubVerificationStatus,
   listLinkableGitHubAppInstallations,
   type GitHubAppInstallation,
   verifyGitHubAppInstallStatePayload,
@@ -943,7 +944,7 @@ projectsApp.openapi(
         {
           error: (error as Error).message || 'GitHub administrator verification failed',
         },
-        403,
+        githubVerificationStatus(error),
       );
     }
 
@@ -1019,7 +1020,7 @@ projectsApp.openapi(
     await verifyGitHubInstallationAdmin(githubUserToken, installation);
   } catch (error) {
     const message = (error as Error).message || 'GitHub administrator verification failed';
-    return c.json({ error: message }, 403);
+    return c.json({ error: message }, githubVerificationStatus(error));
   }
 
   const stateStatus = await consumeGitHubInstallationState({

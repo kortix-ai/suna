@@ -382,4 +382,55 @@ describe('web ECS migration', () => {
       'clearCookiesPreservingBypass',
     );
   });
+
+  /**
+   * The release gate hard-fails when the staging frontend's `/api/health`
+   * reports a commit other than RELEASE_SOURCE_SHA, so the staging Vercel build
+   * MUST receive that SHA. It previously arrived only through
+   * `apps/web/next.config.ts`'s VERCEL_GIT_COMMIT_SHA fallback, which depends on
+   * Vercel inferring git metadata from a `--archive=tgz` CLI deploy. Measured
+   * 2026-09-18, that inference worked (`staging.kortix.com/api/health` returned a
+   * real 40-char SHA, not 'unknown') — but it is not a documented contract, and
+   * a gate that blocks production must not rest on one.
+   */
+  it('passes the source SHA into the staging Vercel frontend build', () => {
+    const workflow = read('.github/workflows/deploy-staging.yml');
+    const start = workflow.indexOf('  deploy-web-vercel:');
+    const end = workflow.indexOf('  verify:', start);
+
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const vercelJob = workflow.slice(start, end);
+
+    // `-b` is a BUILD env var: next.config.ts reads the commit at build time and
+    // inlines it, so `-e` (runtime) would not reach the health route's bundle.
+    expect(vercelJob).toContain('-b NEXT_PUBLIC_KORTIX_COMMIT="$SOURCE_SHA"');
+    expect(vercelJob).toContain('SOURCE_SHA: ${{ needs.preflight.outputs.sha }}');
+    // The same job aliases the host the browser shards drive, so the SHA it
+    // stamps is the SHA the gate reads back.
+    expect(vercelJob).toContain('vercel alias set "$url" "$WEB_HOST"');
+  });
+
+  /**
+   * The gate asserts THREE surfaces, not two. `tests/src/core/target-smoke.ts`
+   * read only the API and the gateway until 2026-09-18, so a staging frontend
+   * whose Vercel deployment had not finished (or whose alias still pointed at
+   * the previous release) passed preflight and then failed browser shards for a
+   * reason unrelated to the code under test.
+   */
+  it('asserts the frontend SHA in the deployed-target preflight', () => {
+    const smoke = read('tests/src/core/target-smoke.ts');
+
+    expect(smoke).toContain('frontendHealthJson');
+    expect(smoke).toContain(`${'$'}{config.webUrl}/api/health`);
+    // All three actual values in one message, so a human sees which is stale.
+    expect(smoke).toContain('frontend=${frontend.commit ?? \'missing\'}');
+    // An unstamped build must not be reported as a stale deploy.
+    expect(smoke).toContain('did not stamp a commit');
+    // The bypass secret comes from the one canonical helper, never a second
+    // hand-rolled header. See deployment-bypass.ts for the incident.
+    expect(smoke).toContain('deploymentBypassRequestHeaders');
+    expect(smoke).toContain('deploymentBypassSecret');
+    expect(smoke).not.toContain("'x-vercel-protection-bypass'");
+  });
 });

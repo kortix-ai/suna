@@ -505,3 +505,120 @@ Everything Slack does that Teams does not, from `apps/api/src/channels/slack/*` 
 ### Already at parity (for the record)
 
 Welcome card on install; `/login` + pending-message resume; `/whoami`, `/logout`; `/status`, `/models`, `/model`, `/agents`, `/agent`, `/projects`, `/use`; per-conversation agent+model selection; question tool (`relayTurnQuestion` → platform); Review Center approve/changes/deny cards; live step card; 5-min event dedup; identity/membership/`project.write` gate; OAuth-style one-click install; BYO bot; inbound attachments + download proxy; session badge/facet + incoming/outgoing cards in the web.
+
+## 6. Pasted images: the model, not the channel (2026-09-21)
+
+The Teams download path was never broken. Evidence from the live dev session
+`196a99f5-8d4d-4d48-988e-cec7152e0d10`, read back from OpenCode through the
+sandbox proxy:
+
+| Step the agent ran | Result |
+|---|---|
+| `teams download --url https://smba.trafficmanager.net/emea/…/views/original --out /workspace/ivan-image.png` | `{"ok":true,"size":28740}` |
+| `file /workspace/ivan-image.png` | `PNG image data, 844 x 281, 8-bit/color RGBA` |
+| `read /workspace/ivan-image.png` | `Image read successfully` |
+| then | `which identify` → no ImageMagick; `which tesseract`; `REPLICATE_API_TOKEN set: yes` |
+| finally | assistant message with **zero parts** — the turn ended with no `teams send` |
+
+The session ran on `kortix/deepseek-v4-flash`. Its served catalog entry (read
+from the sandbox at `/v1/p/<ext>/4096/config/providers`) says
+`capabilities.attachment: false` and `capabilities.input.image: false`, so
+OpenCode never sends the image upstream. The agent held a valid PNG that the
+model could not look at, went hunting for OCR tooling, and gave up.
+
+`LLM_GATEWAY_VISION_MODEL` (`gpt-5.6-luna`, `input.image: true`) already
+encodes the intended answer, but the gateway rule in
+`llm-gateway/routing/resolve-route.ts` only fires when an image part reaches
+the gateway — and OpenCode strips it before that, precisely because the model
+declares it cannot take one.
+
+**Fix:** the channel picks the model, because the channel is what knows the
+inbound message has an image. `channels/vision-model.ts` resolves the target;
+Teams and Slack both use it. A follow-up gets a per-prompt
+`overrides.model` (the session's pin is untouched); a conversation that opens
+with an image is created on the vision model. Off-gateway deployments are a
+no-op.
+
+**The configured target is not always servable.** Probed live on dev with a
+real prompt override:
+
+| model | result |
+|---|---|
+| `gpt-5.6-luna` (the `LLM_GATEWAY_VISION_MODEL` default) | `APIError`: *requires Kortix's managed provider, which is disabled on this deployment* |
+| `glm-5.3-flash` | answered `probe ok` |
+
+So the selector walks candidates — configured target, platform default, then
+the catalog's vision-capable models cheapest-first — and takes the first that
+passes `isModelServableForAccount`. Pinning a prompt to an unservable model
+turns a degraded answer into a failed turn, which is worse than not routing at
+all; when no candidate qualifies the turn runs unchanged and logs why.
+
+Also fixed here: Teams sends inline images as the wildcard type `image/*`, so
+the prompt used to name the file `image.*`.
+
+### How to check it live
+
+1. Paste a screenshot into the personal chat with the bot and ask about it.
+2. `select metadata->>'opencode_model' from kortix.project_sessions where session_id = '<id>';`
+   — an image-opened conversation reads `kortix/gpt-5.6-luna`.
+3. For a follow-up in an existing conversation the pin does NOT change; look
+   for `[teams-webhook] routing an image-bearing turn to the vision model` and
+   for the answer itself describing the image.
+
+### A retired model pin kills a conversation just as quietly
+
+Probed on dev 2026-09-21 with `PUT /v1/projects/:pid/sessions/:sid/model`,
+which runs the same `isModelServableForAccount` check a session create does:
+
+| model | result |
+|---|---|
+| `deepseek-v4-flash` — what the Teams session had been pinned to since 2026-09-18 | `400 INVALID_SESSION_MODEL`, *not available for this account* |
+| `deepseek-v4.1-flash` — the current platform default, vision-capable | `200 applied_live` |
+| `glm-5.3-flash` — cheapest vision-capable | `200 applied_live` |
+| `deepseek-v4-pro-0813` — servable, `attachment: false` | `200 applied_live` |
+| `gpt-5.6-luna` | `400 INVALID_SESSION_MODEL` |
+
+Nothing re-validates a session's pin after creation, so a model retired from
+the catalog leaves the conversation answering nothing, forever, with no
+message to the user. `channelTurnModel` now replaces an unservable pin as well
+as a vision-incapable one. The cheap signal is absence from
+`gatewayModelCatalog`; the decision is always confirmed with
+`isModelServableForAccount` before anything is replaced.
+
+`deepseek-v4-pro-0813` is the fixture for testing the vision path by hand: it
+serves, and it cannot read images.
+
+### Round two: `attachment` is not the vision flag
+
+The first fix routed the image turn away from `deepseek-v4-flash` correctly —
+and landed on `glm-5.3-flash`, which also cannot see images. The agent replied
+*"the model I'm running on right now can't process images"*.
+
+Read from the sandbox at `/v1/p/<ext>/4096/config/providers`:
+
+| model | `attachment` | `input.image` | servable on dev |
+|---|---|---|---|
+| `glm-5.3-flash` | true | **false** | yes |
+| `deepseek-v4-flash` | false | false | **no** (retired) |
+| `gpt-5.6-luna` | true | true | **no** (managed provider off) |
+| `codex/gpt-6-astra`, `codex/gpt-5.6-sol`, `codex/gpt-5.6-terra`, `codex/gpt-5.6-luna`, `codex/gpt-5.5` | true | true | yes |
+
+`glm-5.3-flash` is `vision: true` by hand in `packages/llm-catalog` while its
+`pricingRef` record on models.dev carries text-only modalities. OpenCode
+honours the modalities, so `attachment` is the wrong predicate. The selector
+now uses `modalities.input` containing `image`, and falls back to `attachment`
+only when a model publishes no modalities at all.
+
+Two more things this round:
+
+- Candidates now come from `servableProjectCatalog` — the same list the
+  sandbox registers and the picker shows — instead of the whole org catalog,
+  so the probe loop cannot exhaust itself on BYOK models this project cannot
+  run.
+- `promptModelOverride` must NOT split the model id on its slash. Every served
+  model is registered under the one synthetic `kortix` OpenCode provider, so
+  `codex/gpt-6-astra` is a model on `kortix`, not a model on a provider
+  `codex`. Splitting it addressed a provider the runtime does not have and the
+  override was dropped silently.
+
+**On dev, the image-capable models are the five `codex/*` ones.**

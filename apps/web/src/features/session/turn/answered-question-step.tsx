@@ -24,9 +24,7 @@ import { cn } from '@/lib/utils';
 import { isToolPart, type Part, type ToolPart } from '@/ui';
 import { CaretRightIcon, ChatTeardropTextIcon } from '@phosphor-icons/react';
 import { memo } from 'react';
-import { normalizeActivityToolName,
-  isQuestionTool,
-} from '../session-activity-groups';
+import { isQuestionTool } from '../session-activity-groups';
 
 interface QuestionInput {
   question: string;

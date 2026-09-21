@@ -759,6 +759,58 @@ importers:
         specifier: ~5.9.2
         version: 5.9.3
 
+  apps/tui:
+    dependencies:
+      '@kortix/cli':
+        specifier: workspace:*
+        version: link:../cli
+      '@kortix/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
+      '@opentui/core':
+        specifier: 0.5.11
+        version: 0.5.11(typescript@5.9.3)(web-tree-sitter@0.25.10)
+      '@opentui/core-darwin-arm64':
+        specifier: 0.5.11
+        version: 0.5.11
+      '@opentui/core-darwin-x64':
+        specifier: 0.5.11
+        version: 0.5.11
+      '@opentui/core-linux-arm64':
+        specifier: 0.5.11
+        version: 0.5.11
+      '@opentui/core-linux-arm64-musl':
+        specifier: 0.5.11
+        version: 0.5.11
+      '@opentui/core-linux-x64':
+        specifier: 0.5.11
+        version: 0.5.11
+      '@opentui/core-linux-x64-musl':
+        specifier: 0.5.11
+        version: 0.5.11
+      '@opentui/react':
+        specifier: 0.5.11
+        version: 0.5.11(react-devtools-core@7.0.1)(react@19.3.0)(typescript@5.9.3)(web-tree-sitter@0.25.10)(ws@8.21.3)
+      '@tanstack/react-query':
+        specifier: ^5.75.2
+        version: 5.103.0(react@19.3.0)
+      react:
+        specifier: ^19.2.0
+        version: 19.3.0
+    devDependencies:
+      '@tsconfig/bun':
+        specifier: ^1.0.7
+        version: 1.0.11
+      '@types/bun':
+        specifier: ^1.1.0
+        version: 1.4.2
+      '@types/react':
+        specifier: 19.2.18
+        version: 19.2.18
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
   apps/web:
     dependencies:
       '@base-ui/react':
@@ -7864,6 +7916,100 @@ packages:
     engines: {node: '>=14'}
     dev: false
 
+  /@opentui/core-darwin-arm64@0.5.11:
+    resolution: {integrity: sha512-DRXY5ioq+n1ZNAMAcaFaBunr0cmi2gqucjbTW7lgFp8t9uN3fNZnLTDOqkCTQtT2XhrU4GXqySaPSQ4qFG/EAQ==}
+    cpu: [arm64]
+    os: [darwin]
+    dev: false
+
+  /@opentui/core-darwin-x64@0.5.11:
+    resolution: {integrity: sha512-yP/8GliJDiJNm8YYJKvgWuy6xyCEd8d4GwBVOIzCFOI7ZIbGP8GOTvmwIjRW4Paw20pTttWMWyRoQiCvOXvH2g==}
+    cpu: [x64]
+    os: [darwin]
+    dev: false
+
+  /@opentui/core-linux-arm64-musl@0.5.11:
+    resolution: {integrity: sha512-x+xeR2LYibvIi/qQetRjJR008sFRve60QuDcO8ItxUwzFeKTDzl5CEiZpBXfm5I4FhRNuyuj0TSPIFadMvrjFQ==}
+    cpu: [arm64]
+    os: [linux]
+    dev: false
+
+  /@opentui/core-linux-arm64@0.5.11:
+    resolution: {integrity: sha512-zBIsRFHlLUYFNhapRSNt9dz4mC8gZ4Wxcfy3A+2AwqsgCipcr2FkIuAXYqN08q+IvqFX7DfqgIFGWDNedHTPUg==}
+    cpu: [arm64]
+    os: [linux]
+    dev: false
+
+  /@opentui/core-linux-x64-musl@0.5.11:
+    resolution: {integrity: sha512-MyqOnSs8pTYG2xmFr1xt6xZIuHu2Xu4pkle9my9JdE+WClmusHf0YN9Eas6jQLAq5XUi34r22wMeK0juk93zyw==}
+    cpu: [x64]
+    os: [linux]
+    dev: false
+
+  /@opentui/core-linux-x64@0.5.11:
+    resolution: {integrity: sha512-pSOXqOADrv+zINOgR3FDFA9zVRaim3zl8/yhtO+X9rEJ6f34z3gDund0Gf88hNJSMpZK5xWtipEVm28RY5VF8w==}
+    cpu: [x64]
+    os: [linux]
+    dev: false
+
+  /@opentui/core-win32-arm64@0.5.11:
+    resolution: {integrity: sha512-MGGRXIDJ//HyaqC5ndSr7/CUl+ICdYEAMcjbA00UWsthh4ZO/rYhPkyqOaTn5ck6+G4ca3/+M76J+jImMYTjNg==}
+    cpu: [arm64]
+    os: [win32]
+    requiresBuild: true
+    dev: false
+    optional: true
+
+  /@opentui/core-win32-x64@0.5.11:
+    resolution: {integrity: sha512-sMEGX9rhiPd1gBa190jzj5uIdzKCMImxHmr22hJLxIRWqejxWvqGnRBkW68wT8NfMViDiMtZWavgWL7GgmYCAQ==}
+    cpu: [x64]
+    os: [win32]
+    requiresBuild: true
+    dev: false
+    optional: true
+
+  /@opentui/core@0.5.11(typescript@5.9.3)(web-tree-sitter@0.25.10):
+    resolution: {integrity: sha512-pImMfjCNx7JUp9Df1LRZBDLisWqgzOLXZKXO+hh3jA9ujBFPQnZOqbG+/N5uVAAX8IZGaqhYSQRwSZIFBmcfbQ==}
+    engines: {bun: '>=1.3.0', node: '>=26.4.0'}
+    peerDependencies:
+      web-tree-sitter: 0.25.10
+    dependencies:
+      bun-ffi-structs: 0.3.1(typescript@5.9.3)
+      diff: 9.0.0
+      marked: 17.0.1
+      string-width: 7.2.0
+      strip-ansi: 7.1.2
+      web-tree-sitter: 0.25.10
+    optionalDependencies:
+      '@opentui/core-darwin-arm64': 0.5.11
+      '@opentui/core-darwin-x64': 0.5.11
+      '@opentui/core-linux-arm64': 0.5.11
+      '@opentui/core-linux-arm64-musl': 0.5.11
+      '@opentui/core-linux-x64': 0.5.11
+      '@opentui/core-linux-x64-musl': 0.5.11
+      '@opentui/core-win32-arm64': 0.5.11
+      '@opentui/core-win32-x64': 0.5.11
+    transitivePeerDependencies:
+      - typescript
+    dev: false
+
+  /@opentui/react@0.5.11(react-devtools-core@7.0.1)(react@19.3.0)(typescript@5.9.3)(web-tree-sitter@0.25.10)(ws@8.21.3):
+    resolution: {integrity: sha512-ACH6Kpl3/O1zdNL0sZtzrnxfw0+auJu4eefIbPTAPuNEessyuhd2xvV4agrdWRJCeogywS7er5k7uS/8YRWnZg==}
+    peerDependencies:
+      react: '>=19.2.0'
+      react-devtools-core: ^7.0.1
+      ws: ^8.18.0
+    dependencies:
+      '@opentui/core': 0.5.11(typescript@5.9.3)(web-tree-sitter@0.25.10)
+      react: 19.3.0
+      react-devtools-core: 7.0.1
+      react-reconciler: 0.33.0(react@19.3.0)
+      ws: 8.21.3
+    transitivePeerDependencies:
+      - typescript
+      - web-tree-sitter
+    dev: false
+
   /@orama/orama@3.1.18:
     resolution: {integrity: sha512-a61ljmRVVyG5MC/698C8/FfFDw5a8LOIvyOLW5fztgUXqUpc1jOfQzOitSCbge657OgXXThmY3Tk8fpiDb4UcA==}
     engines: {node: '>= 20.0.0'}
@@ -14324,6 +14470,10 @@ packages:
     engines: {node: '>= 10'}
     dev: true
 
+  /@tsconfig/bun@1.0.11:
+    resolution: {integrity: sha512-DQA3HOKFQ+/yPTUa73k5QGcuEM1ExtL6uWQMR0QrfOTitm0oLHqHd1tI74WtEtMqlIu+tvSMELJ6p5uNxVE7lw==}
+    dev: true
+
   /@tweenjs/tween.js@23.1.3:
     resolution: {integrity: sha512-vJmvvwFxYuGnF2axRtPYocag6Clbb5YS7kLL+SO/TeVFzHqDIWrNKYtcsPMibjDx9O+bu+psAy9NKfWklassUA==}
     dev: false
@@ -17417,6 +17567,14 @@ packages:
     transitivePeerDependencies:
       - supports-color
     dev: true
+
+  /bun-ffi-structs@0.3.1(typescript@5.9.3):
+    resolution: {integrity: sha512-3gM7PpVWLyrwxWjcilSiGuhWanhZivvo6l0u573NziPH6f/gwk6McbaYgn7oJWov6pKGRTDbrg94W5DcJsKTtQ==}
+    peerDependencies:
+      typescript: ^5
+    dependencies:
+      typescript: 5.9.3
+    dev: false
 
   /bun-types@1.4.2:
     resolution: {integrity: sha512-bxV1FgK7yBIzjRe5zBozIM4Bem11ZJcCXSrjWRG3YWLt8yFDePu4cLjpebO8OvPeIE9trbyPF4fuj3Cia4Fj3w==}
@@ -23958,6 +24116,12 @@ packages:
     hasBin: true
     dev: false
 
+  /marked@17.0.1:
+    resolution: {integrity: sha512-boeBdiS0ghpWcSwoNm/jJBwdpFaMnZWRzjA6SkUMYb40SVaN1x7mmfGKp0jvexGcx+7y2La5zRZsYFZI6Qpypg==}
+    engines: {node: '>= 20'}
+    hasBin: true
+    dev: false
+
   /marked@18.0.13:
     resolution: {integrity: sha512-xTxVzZsBFwunP6HDmtBkabUQEYArnP7/rMDGmPj9SlrKlQ4i8MdYVow+nJL0eOqwpUqhzBoTBRADGN6uYwPyOw==}
     engines: {node: '>= 20'}
@@ -27320,6 +27484,16 @@ packages:
       - bufferutil
       - utf-8-validate
 
+  /react-devtools-core@7.0.1:
+    resolution: {integrity: sha512-C3yNvRHaizlpiASzy7b9vbnBGLrhvdhl1CbdU6EnZgxPNbai60szdLtl+VL76UNOt5bOoVTOz5rNWZxgGt+Gsw==}
+    dependencies:
+      shell-quote: 1.10.0
+      ws: 7.5.13
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+    dev: false
+
   /react-dom@16.12.0(react@16.12.0):
     resolution: {integrity: sha512-LMxFfAGrcS3kETtQaCkTKjMiifahaMySFDn71fZUNpPHZQEzmk/GiAeIT8JSOrHB23fnuCOMruL2a8NYlw+8Gw==}
     peerDependencies:
@@ -27874,6 +28048,16 @@ packages:
       prop-types: 15.8.1
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
+    dev: false
+
+  /react-reconciler@0.33.0(react@19.3.0):
+    resolution: {integrity: sha512-KetWRytFv1epdpJc3J4G75I4WrplZE5jOL7Yq0p34+OVOKF4Se7WrdIdVC45XsSSmUTlht2FM/fM1FZb1mfQeA==}
+    engines: {node: '>=0.10.0'}
+    peerDependencies:
+      react: ^19.2.0
+    dependencies:
+      react: 19.3.0
+      scheduler: 0.27.0
     dev: false
 
   /react-redux@9.3.0(@types/react@19.2.18)(react@19.3.0)(redux@5.0.1):
@@ -29733,6 +29917,13 @@ packages:
     dependencies:
       ansi-regex: 5.0.1
 
+  /strip-ansi@7.1.2:
+    resolution: {integrity: sha512-gmBGslpoQJtgnMAvOVqGZpEz9dyoKTCzy2nfz/n8aIFhN/jCE/rCmcxabB6jOOHV+0WNnylOxaxBQPSvcWklhA==}
+    engines: {node: '>=12'}
+    dependencies:
+      ansi-regex: 6.3.0
+    dev: false
+
   /strip-ansi@7.2.0:
     resolution: {integrity: sha512-yDPMNjp4WyfYBkHnjIRLfca1i6KMyGCtsVgoKe/z1+6vukgaENdgGBZt+ZmKPc4gavvEZ5OgHfHdrazhgNyG7w==}
     engines: {node: '>=12'}
@@ -31540,6 +31731,15 @@ packages:
   /web-streams-polyfill@3.3.3:
     resolution: {integrity: sha512-d2JWLCivmZYTSIoge9MsgFCZrt571BikcWGYkjC1khllbTeDlGqZ2D8vD8E/lJa8WGWbb7Plm8/XJYV7IJHZZw==}
     engines: {node: '>= 8'}
+    dev: false
+
+  /web-tree-sitter@0.25.10:
+    resolution: {integrity: sha512-Y09sF44/13XvgVKgO2cNDw5rGk6s26MgoZPXLESvMXeefBf7i6/73eFurre0IsTW6E14Y0ArIzhUMmjoc7xyzA==}
+    peerDependencies:
+      '@types/emscripten': ^1.40.0
+    peerDependenciesMeta:
+      '@types/emscripten':
+        optional: true
     dev: false
 
   /web-vitals@6.2.1:

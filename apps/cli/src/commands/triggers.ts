@@ -31,7 +31,9 @@ const HELP = help`Usage: kortix triggers <subcommand> [options]
 
 Manage the [[triggers]] declared in your project's kortix.yaml — cron
 schedules, webhooks, and monitors. add/rm/enable/disable edit the LOCAL
-kortix.yaml (the source of truth); \`kortix ship\` applies them. ls/fire/info
+manifest (the source of truth); \`kortix ship\` applies them. When kortix.yaml
+lists \`imports:\`, rm/enable/disable edit the file that declares the trigger;
+add writes to kortix.yaml. ls/fire/info
 read live state from the cloud. pause/resume are a SERVER-SIDE activation
 switch (cloud state, not the manifest).
 

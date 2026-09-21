@@ -370,6 +370,16 @@ export function createOpenCodeControlService(
           const workspace = process.env.KORTIX_WORKSPACE || '/workspace'
           const url = `${opencode.getInternalUrl()}/session/${encodeURIComponent(sessionId)}/abort?directory=${encodeURIComponent(workspace)}`
           try {
+            // CodeQL js/file-access-to-http (alert 6375) flags `url` here because
+            // `sessionId` comes from the pin FILE. Nothing leaves the sandbox:
+            // `getInternalUrl()` is the literal `http://127.0.0.1:${port}` built in
+            // lifecycle.ts from the daemon's own live port, so the scheme, host and
+            // port are never file- or caller-derived. `sessionId` is
+            // `encodeURIComponent`-escaped into one path segment and additionally
+            // validated on read against /^[A-Za-z0-9_-]{1,128}$/
+            // (`isValidOpenCodeSessionId`), so it cannot introduce a host, a scheme
+            // or extra path. The only file data on the wire is the session id, sent
+            // to loopback. Do not "fix" this by making the host configurable.
             const res = await fetch(url, {
               method: 'POST',
               signal: AbortSignal.timeout(10_000),

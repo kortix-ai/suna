@@ -337,19 +337,36 @@ test.describe('30 — pooled provider secrets', () => {
         await page.evaluate((value) => { document.documentElement.classList.remove('light', 'dark'); document.documentElement.classList.add(value); }, theme);
         for (const size of [{ width: 390, height: 844 }, { width: 720, height: 480 }, { width: 1440, height: 900 }]) {
           await page.setViewportSize(size);
-          if (!(await overrides.isVisible())) {
-            await page.getByRole('button', { name: 'Session overrides' }).click();
-            await page.getByRole('button', { name: /Provider keys/ }).click();
-          }
-          await expect(page.getByRole('checkbox', { name: 'Backup test key for shared research and development sessions' })).not.toBeChecked();
-          await expect(page.getByText('Unsaved key changes', { exact: true })).toBeVisible();
-          await expect(saveChanges).toBeInViewport({ ratio: 1 });
-          await expect(page.getByRole('checkbox', { name: 'Backup test key for shared research and development sessions' })).toBeInViewport({ ratio: 1 });
-          const bounds = await overrides.boundingBox();
-          expect(bounds!.x).toBeGreaterThanOrEqual(0);
-          expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(size.width);
+          // Radix dismisses this popover on the layout changes the loop makes —
+          // the theme swap, and the 1440 -> 390 SHRINK at the theme boundary.
+          // The dismissal is asynchronous, so a single `isVisible()` guard reads
+          // `true` while it is in flight and ANY assertion in the group can land
+          // on a closing panel (observed on both `Save changes` and `Unsaved key
+          // changes`). Re-establish the panel by its own control and retry the
+          // whole group, so a dismissal costs a retry instead of the run. Every
+          // assertion below is unchanged.
+          await expect(async () => {
+            if (!(await saveChanges.isVisible().catch(() => false))) {
+              if (!(await overrides.isVisible().catch(() => false))) {
+                await page.getByRole('button', { name: 'Session overrides' }).click();
+                await expect(overrides).toBeVisible({ timeout: 5_000 });
+              }
+              await page.getByRole('button', { name: /Provider keys/ }).click();
+            }
+            const backup = page.getByRole('checkbox', { name: 'Backup test key for shared research and development sessions' });
+            await expect(backup).not.toBeChecked({ timeout: 5_000 });
+            await expect(page.getByText('Unsaved key changes', { exact: true })).toBeVisible({ timeout: 5_000 });
+            await expect(saveChanges).toBeInViewport({ ratio: 1, timeout: 5_000 });
+            await expect(backup).toBeInViewport({ ratio: 1, timeout: 5_000 });
+            const bounds = await overrides.boundingBox();
+            expect(bounds!.x).toBeGreaterThanOrEqual(0);
+            expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(size.width);
+          }).toPass({ timeout: 60_000 });
           await page.screenshot({ path: testInfo.outputPath(`provider-selection-${theme}-${size.width}x${size.height}.png`), animations: 'disabled' });
         }
+        // The scan targets the popover by selector, so an empty result would
+        // report zero violations for a panel that simply is not open.
+        await expect(saveChanges).toBeVisible();
         const accessibility = await new AxeBuilder({ page }).include('[data-slot="popover-content"][aria-label="Session overrides"]')
           .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
         expect(accessibility.violations).toEqual([]);
