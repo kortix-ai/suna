@@ -18,6 +18,7 @@ const HEX64 = /^[0-9a-f]{64}$/;
 const DESCRIPTOR = 'POST /v1/projects/:projectId/sessions/:sessionId/config-release';
 const ARCHIVE = 'GET /v1/projects/:projectId/config-archives/:configTreeId';
 const MINT = 'POST /v1/accounts/tokens';
+const CONFIG_STATE = 'GET /v1/projects/:projectId/sessions/:sessionId/config';
 
 type Descriptor = {
   format: string;
@@ -49,6 +50,10 @@ interface Fixture {
   mint(opts?: { repositoryAccess?: boolean; agentName?: string; projectId?: string }): Promise<SessionToken>;
   descriptor(secret: string | null, sessionId: string, body?: unknown): Promise<{ status: number; body: any }>;
   download(secret: string | null, treeId: string): Promise<{ status: number; bytes: Buffer; source: string | null }>;
+  /** Local target only: commit files onto `main` of the bare repository. Returns the new tip. */
+  commit(files: Record<string, string>, message: string): Promise<string>;
+  /** `GET .../sessions/:sessionId/config` as the project owner. */
+  configState(sessionId: string): Promise<{ status: number; body: any }>;
   cleanup(): Promise<void>;
 }
 
@@ -65,6 +70,10 @@ const MANIFEST = [
   '',
 ].join('\n');
 
+function PACKAGE_JSON(pin: string, extra = ''): string {
+  return `{\n  "dependencies": {\n    "@opencode-ai/plugin": "${pin}"${extra}\n  }\n}\n`;
+}
+
 const CONFIG_FILES: Record<string, string> = {
   'kortix.yaml': MANIFEST,
   '.kortix/opencode/opencode.json': '{ "$schema": "https://opencode.ai/config.json" }\n',
@@ -77,6 +86,9 @@ const CONFIG_FILES: Record<string, string> = {
   '.kortix/opencode/.gitattributes': 'notes.md export-ignore\nversion.txt export-subst\n',
   '.kortix/opencode/notes.md': 'kept verbatim\n',
   '.kortix/opencode/version.txt': 'commit $Format:%H$\n',
+  // Platform-written paths the mode decision ignores (spec, "Config mode").
+  '.kortix/opencode/package.json': PACKAGE_JSON('1.17.11'),
+  '.kortix/opencode/bun.lock': '"@opencode-ai/plugin": "1.17.11"\n',
 };
 
 async function run(cmd: string, args: string[], cwd: string, input?: Buffer): Promise<Buffer> {
@@ -217,6 +229,39 @@ async function setup(ctx: FlowContext): Promise<Fixture> {
       } catch {}
       return { status: response.status, body: parsed };
     },
+    async commit(files, message) {
+      if (!localRepo) throw new Error('commit needs the local target');
+      const { mkdtemp, mkdir, rm, writeFile } = await import('node:fs/promises');
+      const { tmpdir } = await import('node:os');
+      const { dirname, join } = await import('node:path');
+      const work = await mkdtemp(join(tmpdir(), 'ke2e-cfg-commit-'));
+      try {
+        await run('git', ['clone', '-q', localRepo, '.'], work);
+        for (const [path, body] of Object.entries(files)) {
+          await mkdir(dirname(join(work, path)), { recursive: true });
+          await writeFile(join(work, path), body);
+        }
+        await run('git', ['add', '-A'], work);
+        await run('git', ['-c', 'user.name=KE2E', '-c', 'user.email=ke2e@kortix.invalid', 'commit', '-qm', message], work);
+        await run('git', ['push', '-q', 'origin', 'HEAD:main'], work);
+        return (await run('git', ['rev-parse', 'HEAD'], work)).toString().trim();
+      } finally {
+        await rm(work, { recursive: true, force: true });
+      }
+    },
+    async configState(sessionId) {
+      const token = (ctx.P.OWNER.auth as { token?: string }).token ?? null;
+      const response = await fetch(`${origin}/v1/projects/${project.id}/sessions/${sessionId}/config`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        signal: AbortSignal.timeout(60_000),
+      });
+      const text = await response.text();
+      let parsed: unknown = text;
+      try {
+        parsed = JSON.parse(text);
+      } catch {}
+      return { status: response.status, body: parsed };
+    },
     async download(secret, treeId) {
       const response = await fetch(`${origin}/v1/projects/${project.id}/config-archives/${treeId}`, {
         headers: secret ? { Authorization: `Bearer ${secret}` } : {},
@@ -237,6 +282,8 @@ async function setup(ctx: FlowContext): Promise<Fixture> {
       };
     },
     async cleanup() {
+      await db.query('DELETE FROM kortix.config_release_failures WHERE project_id = $1', [project.id]).catch(() => {});
+      await db.query('DELETE FROM kortix.config_releases WHERE project_id = $1', [project.id]).catch(() => {});
       for (const sessionId of sessions) {
         await db.query('DELETE FROM kortix.session_sandboxes WHERE session_id = $1', [sessionId]).catch(() => {});
         await db.query('DELETE FROM kortix.project_sessions WHERE session_id = $1', [sessionId]).catch(() => {});
@@ -529,6 +576,10 @@ flow(
         const d = r.body as Descriptor;
         if (d.archive !== null || d.files !== null) throw new Error('restricted session received an archive or files');
         if (d.reason !== 'repository access withheld') throw new Error(`reason ${d.reason}`);
+        // Governance-only release ID: sha256(":" + etag).
+        const { createHash } = await import('node:crypto');
+        const governanceOnly = createHash('sha256').update(`:${d.compiled_governance_etag}`).digest('hex');
+        if (d.release_id !== governanceOnly) throw new Error(`restricted release_id ${d.release_id} is not sha256(":" + etag)`);
         if (!d.compiled_governance) throw new Error('restricted session lost its compiled governance');
         const agents = Object.keys(JSON.parse(d.compiled_governance).agent ?? {});
         if (fixture.localRepo && (agents.length !== 1 || agents[0] !== 'reviewer')) {
@@ -587,6 +638,247 @@ flow(
         for (const [path, content] of files) {
           if (content.includes(Buffer.from(value))) throw new Error(`the secret value appears in ${path}`);
         }
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);
+
+/** A report entry for `path` (repo-relative) with `bytes` in the working tree. */
+async function reported(path: string, status: 'modified' | 'added' | 'deleted' | 'untracked', bytes: string | null) {
+  return { path, status, blob: bytes === null ? null : await gitBlobId(Buffer.from(bytes)) };
+}
+
+// ── CFG-4 — the API chooses the config mode from the workspace report ──────
+flow(
+  'CFG-4',
+  {
+    domain: 'config-releases',
+    requires: ['database'],
+    timeoutMs: 240_000,
+    routes: [MINT, DESCRIPTOR],
+  },
+  async (ctx) => {
+    const fixture = await setup(ctx);
+    try {
+      if (!fixture.localRepo) ctx.skip('the report fixtures commit known bytes into the local bare repository');
+      const own = await fixture.mint();
+      const head = (await baseTip(fixture))!;
+      const report = (changed: unknown[], extra: Record<string, unknown> = {}) => ({
+        workspace: { head, config_dir: '.kortix/opencode', changed, ...extra },
+      });
+      let base!: Descriptor;
+
+      await ctx.step('without a report the session follows the base branch and receives the archive', async () => {
+        const r = await fixture.descriptor(own.secret, own.sessionId);
+        if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
+        base = r.body as Descriptor;
+        if (base.mode !== 'follow-base' || !base.archive || !base.files?.length) throw new Error('no follow-base release');
+      });
+
+      await ctx.step('platform output (plugin pin, lockfile, managed-skill overlay) keeps the session on the base branch', async () => {
+        const pinned = PACKAGE_JSON('1.18.23');
+        const r = await fixture.descriptor(
+          own.secret,
+          own.sessionId,
+          report(
+            [
+              await reported('.kortix/opencode/package.json', 'modified', pinned),
+              await reported('.kortix/opencode/bun.lock', 'modified', '"@opencode-ai/plugin": "1.18.23"\n'),
+              await reported('.kortix/opencode/skills/kortix-system/SKILL.md', 'untracked', 'OVERLAY\n'),
+            ],
+            { package_json: pinned, committed_scope: 'remote' },
+          ),
+        );
+        if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
+        if (r.body.mode !== 'follow-base') throw new Error(`mode ${r.body.mode}`);
+        if (r.body.release_id !== base.release_id || !r.body.archive) throw new Error('follow-base lost its release');
+        if (r.body.reason !== null) throw new Error(`reason ${r.body.reason}`);
+      });
+
+      await ctx.step("a file whose bytes equal a base-branch revision (an old sync, a reverted edit) is not the session's work", async () => {
+        const r = await fixture.descriptor(
+          own.secret,
+          own.sessionId,
+          report([await reported('.kortix/opencode/agents/kortix.md', 'modified', CONFIG_FILES['.kortix/opencode/agents/kortix.md']!)]),
+        );
+        if (r.body.mode !== 'follow-base') throw new Error(`mode ${r.body.mode}`);
+      });
+
+      await ctx.step('a real edit to an agent selects session-files: no archive, no files, base governance kept', async () => {
+        const r = await fixture.descriptor(
+          own.secret,
+          own.sessionId,
+          report([await reported('.kortix/opencode/agents/kortix.md', 'modified', 'MY OWN PROMPT\n')]),
+        );
+        if (r.status !== 200) throw new Error(`expected 200, got ${r.status}`);
+        const d = r.body as Descriptor;
+        if (d.mode !== 'session-files') throw new Error(`mode ${d.mode}`);
+        if (d.archive !== null || d.files !== null) throw new Error('session-files carried an archive or files');
+        if (d.compiled_governance !== base.compiled_governance) throw new Error('session-files lost the base governance');
+        if (d.release_id !== base.release_id) throw new Error('the release ID moved with the mode');
+      });
+
+      await ctx.step('an added dependency, a new skill, and a deleted base file each select session-files', async () => {
+        const withDep = PACKAGE_JSON('1.18.23', ',\n    "left-pad": "1.3.0"');
+        const cases: Array<[string, unknown]> = [
+          ['added dependency', report([await reported('.kortix/opencode/package.json', 'modified', withDep)], { package_json: withDep })],
+          ['new skill', report([await reported('.kortix/opencode/skills/brand-new/SKILL.md', 'untracked', 'draft\n')])],
+          ['deleted base file', report([await reported('.kortix/opencode/skills/demo/SKILL.md', 'deleted', null)])],
+        ];
+        for (const [label, body] of cases) {
+          const r = await fixture.descriptor(own.secret, own.sessionId, body);
+          if (r.status !== 200) throw new Error(`${label}: expected 200, got ${r.status}`);
+          if (r.body.mode !== 'session-files') throw new Error(`${label}: mode ${r.body.mode}`);
+        }
+      });
+
+      await ctx.step('committed_scope "none" is decided from uncommitted changes and names the gap in reason', async () => {
+        const r = await fixture.descriptor(own.secret, own.sessionId, report([], { committed_scope: 'none' }));
+        if (r.status !== 200) throw new Error(`expected 200, got ${r.status}`);
+        if (r.body.mode !== 'follow-base') throw new Error(`mode ${r.body.mode}`);
+        if (!String(r.body.reason ?? '').includes('committed_scope none')) throw new Error(`reason ${r.body.reason}`);
+      });
+
+      await ctx.step('SHA-256 object IDs (64 hex) are accepted; an unknown committed_scope is 400', async () => {
+        const ok = await fixture.descriptor(own.secret, own.sessionId, {
+          workspace: {
+            head: 'c'.repeat(64),
+            config_dir: '.kortix/opencode',
+            changed: [{ path: '.kortix/opencode/agents/x.md', status: 'modified', blob: 'd'.repeat(64) }],
+          },
+        });
+        if (ok.status !== 200) throw new Error(`64-hex: expected 200, got ${ok.status}: ${JSON.stringify(ok.body)}`);
+        const bad = await fixture.descriptor(own.secret, own.sessionId, report([], { committed_scope: 'all' }));
+        if (bad.status !== 400) throw new Error(`unknown committed_scope: expected 400, got ${bad.status}`);
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);
+
+// ── CFG-5 — project quarantine: threshold, fallback, clear on a new release ─
+flow(
+  'CFG-5',
+  {
+    domain: 'config-releases',
+    requires: ['database'],
+    timeoutMs: 300_000,
+    routes: [MINT, DESCRIPTOR, ARCHIVE],
+  },
+  async (ctx) => {
+    const fixture = await setup(ctx);
+    try {
+      if (!fixture.localRepo) ctx.skip('the flow commits new base revisions into the local bare repository');
+      const a = await fixture.mint();
+      const b = await fixture.mint();
+      const c = await fixture.mint();
+      const assigned = async () =>
+        (
+          await fixture.db.query(
+            'SELECT release_id, variant, source_commit, proven_at FROM kortix.config_releases WHERE project_id = $1 ORDER BY created_at',
+            [fixture.projectId],
+          )
+        ).rows as Array<{ release_id: string; variant: string; source_commit: string; proven_at: Date | null }>;
+      // A daemon's health report reaches these tables through GET /config and
+      // the reload. No daemon runs in this profile, so the flow writes the
+      // same rows those paths write.
+      const failed = (releaseId: string, sessionId: string) =>
+        fixture.db.query(
+          `INSERT INTO kortix.config_release_failures (project_id, release_id, session_id, reason)
+           VALUES ($1, $2, $3, 'proven check failed') ON CONFLICT DO NOTHING`,
+          [fixture.projectId, releaseId, sessionId],
+        );
+      let good!: Descriptor;
+      let bad!: Descriptor;
+
+      await ctx.step("the daemon's descriptor request records the assignment; a human read does not", async () => {
+        const r = await fixture.descriptor(a.secret, a.sessionId);
+        if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
+        good = r.body as Descriptor;
+        const rows = await assigned();
+        if (rows.length !== 1 || rows[0]!.release_id !== good.release_id || rows[0]!.variant !== 'project') {
+          throw new Error(`assignment rows ${JSON.stringify(rows)}`);
+        }
+        if (rows[0]!.source_commit !== good.source_commit || rows[0]!.proven_at !== null) throw new Error('assignment row fields');
+        const token = (ctx.P.OWNER.auth as { token?: string }).token ?? null;
+        const human = await fixture.descriptor(token, a.sessionId);
+        if (human.status !== 200) throw new Error(`owner read: ${human.status}`);
+        if ((await assigned()).length !== 1) throw new Error('a human read recorded an assignment');
+      });
+
+      await ctx.step('session A proves the release; the base branch then moves to a new release', async () => {
+        await fixture.db.query(
+          'UPDATE kortix.config_releases SET proven_at = now(), proven_session_id = $3 WHERE project_id = $1 AND release_id = $2',
+          [fixture.projectId, good.release_id, a.sessionId],
+        );
+        const tip = await fixture.commit({ '.kortix/opencode/agents/kortix.md': '---\ndescription: main agent\nmode: primary\n---\nBROKEN.\n' }, 'broken agent');
+        const r = await fixture.descriptor(a.secret, a.sessionId);
+        bad = r.body as Descriptor;
+        if (bad.source_commit !== tip || bad.release_id === good.release_id) throw new Error('the new base did not produce a new release');
+      });
+
+      await ctx.step('a failure from one session does not quarantine the release', async () => {
+        await failed(bad.release_id!, a.sessionId);
+        await failed(bad.release_id!, a.sessionId);
+        const r = await fixture.descriptor(b.secret, b.sessionId);
+        if (r.body.release_id !== bad.release_id) throw new Error(`one session quarantined: got ${r.body.release_id}`);
+      });
+
+      await ctx.step('after failures from 2 distinct sessions, a third session is assigned the last proven release', async () => {
+        await failed(bad.release_id!, b.sessionId);
+        const r = await fixture.descriptor(c.secret, c.sessionId);
+        if (r.status !== 200) throw new Error(`expected 200, got ${r.status}`);
+        const d = r.body as Descriptor;
+        if (d.release_id !== good.release_id) throw new Error(`expected the proven release, got ${d.release_id}`);
+        if (d.source_commit !== good.source_commit || d.config_tree_id !== good.config_tree_id) throw new Error('fallback commit or tree');
+        const download = await fixture.download(c.secret, d.config_tree_id!);
+        if (download.status !== 200) throw new Error(`fallback archive download: ${download.status}`);
+        await assertArchiveMatches(d, download.bytes);
+      });
+
+      await ctx.step('a new base commit with a new release ID is assignable again', async () => {
+        const tip = await fixture.commit({ '.kortix/opencode/agents/kortix.md': '---\ndescription: main agent\nmode: primary\n---\nFIXED.\n' }, 'fixed agent');
+        const r = await fixture.descriptor(c.secret, c.sessionId);
+        const d = r.body as Descriptor;
+        if (d.source_commit !== tip) throw new Error(`expected the new tip ${tip}, got ${d.source_commit}`);
+        if (d.release_id === good.release_id || d.release_id === bad.release_id) throw new Error('the new release was not assigned');
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);
+
+// ── CFG-6 — GET /config without a reachable daemon stays unknown ───────────
+flow(
+  'CFG-6',
+  {
+    domain: 'config-releases',
+    requires: ['database'],
+    timeoutMs: 120_000,
+    routes: [MINT, CONFIG_STATE],
+  },
+  async (ctx) => {
+    const fixture = await setup(ctx);
+    try {
+      const own = await fixture.mint();
+      await ctx.step('a session whose daemon cannot be reached reports stale null, never false, and no release block', async () => {
+        const r = await fixture.configState(own.sessionId);
+        if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
+        if (r.body.sandbox_reachable !== false) throw new Error(`sandbox_reachable ${r.body.sandbox_reachable}`);
+        if (r.body.stale !== null) throw new Error(`stale ${r.body.stale}`);
+        if ('release' in r.body) throw new Error('release block without a daemon report');
+        for (const field of ['base_ref', 'running_etag', 'latest_etag', 'commit_sha']) {
+          if (!(field in r.body)) throw new Error(`missing ${field}`);
+        }
+      });
+      await ctx.step('ANON is rejected with 401', async () => {
+        const origin = ctx.env.apiUrl.replace(/\/v1$/, '');
+        const response = await fetch(`${origin}/v1/projects/${fixture.projectId}/sessions/${own.sessionId}/config`);
+        if (response.status !== 401) throw new Error(`expected 401, got ${response.status}`);
       });
     } finally {
       await fixture.cleanup();

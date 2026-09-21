@@ -172,7 +172,7 @@ export function createConvergenceTriggers(deps: ConvergenceTriggerDeps): Converg
   };
 }
 
-async function listRunningSessionsOnBase(projectId: string, branch: string, limit: number): Promise<string[]> {
+export async function listRunningSessionsOnBase(projectId: string, branch: string, limit: number): Promise<string[]> {
   const rows = await db
     .select({ sessionId: projectSessions.sessionId })
     .from(projectSessions)
