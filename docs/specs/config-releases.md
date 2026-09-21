@@ -51,6 +51,8 @@ identifiers (commit and compiled etag) applied in two steps.
 - An AWS S3 storage backend. The store interface allows it later.
 - Enforcing governance independently of agent files. In `session-files` mode an
   agent file can override compiled governance, as it can today.
+- SHA-256 object-format repositories. The workspace report accepts 64-hex blob
+  IDs, but the release builder and the archive route require 40-hex IDs.
 
 ## Decisions
 
@@ -532,7 +534,7 @@ normally against the new repository.
 | Turn end | API | New. Debounced per session. |
 | Base branch moved by an API write | API | New. `branches.ts`, `r9.ts`, `triggers.ts`, change-request merge. Fan out to idle running sessions, rate-limited. |
 | Push to the base branch through the git proxy | API | New hook |
-| Monitor box started | API | New. `monitor-box.ts:336` schedules nothing today. |
+| Monitor box started | — | Not a trigger. A monitor box runs no OpenCode (`monitor-mode.ts`) and has no session row. It restarts on manifest-revision drift (`monitor-box-core.ts`). |
 
 Never end a turn. A running turn defers convergence to the turn-end trigger.
 
