@@ -68,3 +68,5 @@ production PR owns deployed-staging coverage.
 
 Deployment workflows must still prove the deployed SHA and live health. Test
 success does not prove deployment success.
+
+<!-- throwaway probe: does a deleted tests-pr.yml still run from an old PR branch? -->
