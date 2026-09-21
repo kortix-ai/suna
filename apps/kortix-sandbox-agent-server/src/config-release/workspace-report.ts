@@ -29,6 +29,8 @@ import {
  */
 
 const GIT_TIMEOUT_MS = 15_000
+/** The API's `MAX_WORKSPACE_REPORT_ENTRIES`. */
+export const MAX_REPORT_ENTRIES = 5_000
 
 interface GitResult {
   code: number
@@ -193,7 +195,9 @@ export async function buildWorkspaceReport(
     changes.set(row.path, committed === 'added' && row.status !== 'deleted' ? 'added' : row.status)
   }
 
-  const paths = [...changes.keys()].sort()
+  // The API refuses a report over MAX_WORKSPACE_REPORT_ENTRIES (5,000). A
+  // truncated report still shows session work, which is all the mode needs.
+  const paths = [...changes.keys()].sort().slice(0, MAX_REPORT_ENTRIES)
   const blobs = await worktreeBlobs(repo, paths, format)
   const changed: WorkspaceChange[] = paths.map((path) => {
     const blob = blobs.get(path) ?? null

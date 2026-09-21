@@ -176,9 +176,22 @@ export function deliverGovernance(governance: string | null, etag: string | null
   }
 }
 
-function manifestFrom(descriptor: ConfigReleaseDescriptor): ReleaseManifest {
+/**
+ * The release ID to compare. The spec defines it as
+ * `sha256((config_tree_id ?? "") + ":" + (compiled_governance_etag ?? ""))`,
+ * null only when both are null. An API that sends null for a governance-only
+ * session (no archive) gets the same ID computed here, so a governance-only
+ * change still converges.
+ */
+export function effectiveReleaseId(descriptor: ConfigReleaseDescriptor): string | null {
+  if (descriptor.release_id !== null) return descriptor.release_id
+  if (descriptor.config_tree_id !== null || descriptor.compiled_governance_etag === null) return null
+  return createHash('sha256').update(`:${descriptor.compiled_governance_etag}`).digest('hex')
+}
+
+function manifestFrom(descriptor: ConfigReleaseDescriptor, releaseId: string): ReleaseManifest {
   return {
-    release_id: descriptor.release_id!,
+    release_id: releaseId,
     source_commit: descriptor.source_commit!,
     config_dir: descriptor.config_dir!,
     config_tree_id: descriptor.config_tree_id!,
@@ -251,10 +264,15 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
     // API unreachable or older than the spec: the running config stays.
     return respond('failed', null, (err as Error).message)
   }
-  running.desired_release_id = descriptor.release_id
-  const releaseId = descriptor.release_id
-  if (releaseId === null) {
-    // No release at all, e.g. a config dir over the 4 MiB limit.
+  const releaseId = effectiveReleaseId(descriptor)
+  running.desired_release_id = releaseId
+  // No release: a config dir over the 4 MiB limit (a tree without an
+  // archive), a governance compile failure, or nothing to run at all. The
+  // running config stays.
+  const noRelease =
+    releaseId === null ||
+    (descriptor.mode === 'follow-base' && descriptor.archive === null && descriptor.config_tree_id !== null)
+  if (noRelease || releaseId === null) {
     return respond(descriptor.reason ? 'failed' : 'unchanged', null, descriptor.reason)
   }
 
@@ -349,7 +367,7 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
     return respond('applied', result)
   }
 
-  const manifest = manifestFrom(descriptor)
+  const manifest = manifestFrom(descriptor, releaseId)
   const dir = releaseDir(root, releaseId)
   const verifies = () =>
     verifyRelease({ dir, files: manifest.files, managedSkillsDir: deps.managedSkillsDir })

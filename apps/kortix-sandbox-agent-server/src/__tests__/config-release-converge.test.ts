@@ -8,6 +8,7 @@
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
@@ -485,9 +486,19 @@ describe('convergeConfigRelease — other sources', () => {
 
   test('repository access withheld: the image default dir runs with the governance', async () => {
     const release = baseRelease(GOV_V2)
+    const etag = release.descriptor.compiled_governance_etag!
+    // The spec's shape: release_id = sha256(":" + etag), no tree, no archive.
     api.respond({
       status: 200,
-      json: { ...release.descriptor, archive: null, files: null, reason: 'repository access withheld' },
+      json: {
+        ...release.descriptor,
+        release_id: createHash('sha256').update(`:${etag}`).digest('hex'),
+        config_dir: null,
+        config_tree_id: null,
+        archive: null,
+        files: null,
+        reason: 'repository access withheld',
+      },
     })
     const oc = fakeOpencode()
     const response = await converge(oc)
@@ -498,6 +509,59 @@ describe('convergeConfigRelease — other sources', () => {
     expect(oc.state.governanceAtSpawn).toEqual([GOV_V2])
     expect(api.archiveRequests.length).toBe(0)
     expect((await converge(oc)).outcome).toBe('unchanged')
+  })
+
+  test('the API withheld shape (release_id null) runs the image default; a governance change converges', async () => {
+    const release = baseRelease(GOV_V1)
+    // apps/api toDescriptor for a session without repository access.
+    const withheld = (governance: string, etag: string) => ({
+      ...release.descriptor,
+      release_id: null,
+      config_dir: null,
+      config_tree_id: null,
+      archive: null,
+      files: null,
+      compiled_governance: governance,
+      compiled_governance_etag: etag,
+      reason: 'repository access withheld',
+    })
+    api.respond({ status: 200, json: withheld(GOV_V1, release.descriptor.compiled_governance_etag!) })
+    const oc = fakeOpencode()
+    const first = await converge(oc)
+    expect(first.outcome).toBe('applied')
+    expect(first.config.release_id).toMatch(/^[0-9a-f]{64}$/)
+    expect(first.config.source).toBe('image-default')
+    expect((await converge(oc)).outcome).toBe('unchanged')
+
+    const v2 = baseRelease(GOV_V2)
+    api.respond({ status: 200, json: withheld(GOV_V2, v2.descriptor.compiled_governance_etag!) })
+    const second = await converge(oc)
+    expect(second.outcome).toBe('applied')
+    expect(second.config.release_id).not.toBe(first.config.release_id)
+    expect(oc.state.governanceAtSpawn).toEqual([GOV_V1, GOV_V2])
+  })
+
+  test('a governance compile failure is no release: running config kept', async () => {
+    const release = baseRelease()
+    api.respond({
+      status: 200,
+      json: {
+        ...release.descriptor,
+        release_id: null,
+        config_dir: null,
+        config_tree_id: null,
+        archive: null,
+        files: null,
+        compiled_governance: null,
+        compiled_governance_etag: null,
+        reason: 'compiled governance failed: agent kortix not found',
+      },
+    })
+    const oc = fakeOpencode()
+    const response = await converge(oc)
+    expect(response.outcome).toBe('failed')
+    expect(response.reason).toBe('compiled governance failed: agent kortix not found')
+    expect(oc.state.reloads).toBe(0)
   })
 
   test('no release (config dir over the limit): running config kept, reason reported', async () => {
