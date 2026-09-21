@@ -151,8 +151,9 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 ### Account PATs (CLI tokens)
 
 `TOK-1` `GET /accounts/tokens` → list.
-`TOK-2` `POST /accounts/tokens {name}` → `TOKEN_CREATE` → 201, `secret_key` returned **once** (absent from list). Account-scoped only — this route does **not** accept `projectId`; project-scoped PATs are minted via the project cli-token route (GH-8).
-`TOK-3` `DELETE /accounts/tokens/:tokenId` → `TOKEN_REVOKE` → 200; unknown/already-revoked → 404; revoked token on any route → 401.
+`TOK-2` `POST /accounts/tokens {name}` → `TOKEN_PERSONAL_CREATE` (browser session or unscoped PAT; any other credential needs `TOKEN_CREATE`) → 201, `secret_key` returned **once** (absent from list). Account-scoped only — this route does **not** accept `projectId`; project-scoped PATs are minted via the project cli-token route (GH-8).
+`TOK-3` `DELETE /accounts/tokens/:tokenId` → own personal token: `TOKEN_PERSONAL_REVOKE`; any other token: `TOKEN_REVOKE` → 200; unknown/already-revoked → 404; revoked token on any route → 401.
+`TOK-6` Plain account MEMBER (the `kortix login` path): mints a personal PAT in the team account → 201; the PAT authenticates as the member (`/accounts/me` 200, `auth_type` `pat`) and carries only member rights (account rename → 403); the unscoped PAT mints and revokes another personal PAT → 201 / 200. MEMBER cannot register an OAuth client → 403, cannot revoke the OWNER's token → 403 (owner token still authenticates), revoking an unknown id → 403 (not 404). MEMBER revokes their own token → 200, its secret then → 401.
 `TOK-4` project-scoped PAT (`projectId` set): allowed only on its own project + `/accounts/me`; **everything else → 403** (other project, `/accounts/*`, project-list, and all other surfaces — `enforceTokenProjectScope`).
 
 ### Account deletion

@@ -217,8 +217,11 @@ entitlement-gated.
 
 ### Tokens
 
-Non-interactive credentials for the account. Reads need `token.read`, minting
-needs `token.create`, revoking needs `token.revoke`.
+Non-interactive credentials for the account. Reads need `token.read`. Every
+account member may mint and revoke their own personal keys
+(`token.personal.create`, `token.personal.revoke`); a personal key acts as you
+and never carries more than your own roles. Service accounts and other people's
+keys need `token.create` / `token.revoke` (owner and admin).
 
 | Command | Effect |
 | --- | --- |
