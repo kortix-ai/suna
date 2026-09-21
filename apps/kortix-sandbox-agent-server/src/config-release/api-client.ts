@@ -53,10 +53,38 @@ export class ConfigReleaseApiError extends Error {
     message: string,
     /** HTTP status when the API answered; null for a network or parse failure. */
     readonly status: number | null,
+    /** The `code` field of a JSON error body, when the API sent one. */
+    readonly code: string | null = null,
   ) {
     super(message)
     this.name = 'ConfigReleaseApiError'
   }
+}
+
+/** The API's code for a session from a previous repository generation. */
+export const SESSION_REPOSITORY_CHANGED = 'session_repository_changed'
+
+/**
+ * The project replaced its repository after this session was created
+ * (spec "Repository replacement"). The session is frozen on its running
+ * config: no release applies, and this is not a failure.
+ */
+export function isRepositoryChangedError(err: unknown): err is ConfigReleaseApiError {
+  return err instanceof ConfigReleaseApiError && err.status === 409 && err.code === SESSION_REPOSITORY_CHANGED
+}
+
+/** An error for a non-2xx answer, with the JSON body's `error` and `code` when present. */
+async function errorFromResponse(res: Response, what: string): Promise<ConfigReleaseApiError> {
+  const text = (await res.text().catch(() => '')).slice(0, 2_000)
+  let code: string | null = null
+  let message: string | null = null
+  try {
+    const body = JSON.parse(text) as { code?: unknown; error?: unknown }
+    if (typeof body.code === 'string') code = body.code
+    if (typeof body.error === 'string') message = body.error
+  } catch {}
+  if (code === SESSION_REPOSITORY_CHANGED && message) return new ConfigReleaseApiError(message, res.status, code)
+  return new ConfigReleaseApiError(`${what} answered ${res.status}: ${text.slice(0, 300)}`, res.status, code)
 }
 
 /**
@@ -86,10 +114,7 @@ export async function fetchConfigReleaseDescriptor(
   } catch (err) {
     throw new ConfigReleaseApiError(`descriptor request failed: ${(err as Error).message}`, null)
   }
-  if (!res.ok) {
-    const body = (await res.text().catch(() => '')).slice(0, 300)
-    throw new ConfigReleaseApiError(`descriptor request answered ${res.status}: ${body}`, res.status)
-  }
+  if (!res.ok) throw await errorFromResponse(res, 'descriptor request')
   let json: unknown
   try {
     json = await res.json()
@@ -156,10 +181,7 @@ export async function downloadConfigArchive(
       throw new ConfigReleaseApiError('archive redirected more than once', res.status)
     }
   }
-  if (!res.ok) {
-    const body = (await res.text().catch(() => '')).slice(0, 300)
-    throw new ConfigReleaseApiError(`archive request answered ${res.status}: ${body}`, res.status)
-  }
+  if (!res.ok) throw await errorFromResponse(res, 'archive request')
   const declared = Number(res.headers.get('content-length') ?? NaN)
   if (Number.isFinite(declared) && declared > maxBytes) {
     void res.body?.cancel().catch(() => undefined)

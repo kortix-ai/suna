@@ -31,6 +31,7 @@ import {
   commitAll,
   git,
   initRepo,
+  REPOSITORY_CHANGED,
   serveRelease,
   startFakeApi,
   write,
@@ -744,5 +745,58 @@ describe('fresh boot from a release', () => {
     expect(response.reason).toMatch(/a turn is running/)
     expect(oc.state.reloads).toBe(0)
     expect(api.archiveRequests).toHaveLength(0)
+  })
+})
+
+describe('repository replacement: a previous-repository session is frozen', () => {
+  test('a 409 session_repository_changed descriptor answer is unchanged: no fallback, no quarantine, config kept', async () => {
+    const release = baseRelease()
+    serveRelease(api, release)
+    const oc = fakeOpencode()
+    await converge(oc)
+    const dir = oc.state.dir
+    const pointer = await readBootConfigPointer(store)
+
+    api.respond(REPOSITORY_CHANGED)
+    const response = await converge(oc)
+
+    expect(response).toEqual({
+      ok: true,
+      outcome: 'unchanged',
+      config: {
+        release_id: release.descriptor.release_id,
+        desired_release_id: release.descriptor.release_id,
+        source: 'release',
+        mode: 'follow-base',
+        proven: true,
+        fallback_reason: null,
+        failed_release_id: null,
+      },
+      reload: null,
+      reason: 'Session belongs to a previous repository',
+    })
+    expect(oc.state.dir).toBe(dir)
+    expect(oc.state.reloads).toBe(1)
+    expect(await readBootConfigPointer(store)).toEqual(pointer)
+    expect(await readQuarantine(store)).toEqual({})
+  })
+
+  test('the same 409 from the archive route is unchanged too', async () => {
+    serveRelease(api, baseRelease())
+    api.archiveOverride = REPOSITORY_CHANGED
+    const oc = fakeOpencode()
+    const response = await converge(oc)
+    expect(response.outcome).toBe('unchanged')
+    expect(response.reason).toBe('Session belongs to a previous repository')
+    expect(response.config.fallback_reason).toBeNull()
+    expect(oc.state.reloads).toBe(0)
+    expect(await readQuarantine(store)).toEqual({})
+  })
+
+  test('any other 409 keeps the failed handling', async () => {
+    api.respond({ status: 409, json: { error: 'something else', code: 'other_conflict' } })
+    const response = await converge(fakeOpencode())
+    expect(response.outcome).toBe('failed')
+    expect(response.reason).toMatch(/descriptor request answered 409/)
   })
 })

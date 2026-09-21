@@ -11,12 +11,13 @@ import { join } from 'node:path'
 import { activateBootConfig, materializeRelease, releaseDir, type ReleaseManifest } from '../boot-config'
 import type { ConfigReleaseApi } from '../config-release/api-client'
 import type { OpenCodeConfig } from '../harness/open-code/config'
-import { provenReleaseForEarlySpawn, resolveBootConfig } from '../harness/open-code/config-release'
+import { fetchBootRelease, provenReleaseForEarlySpawn, resolveBootConfig } from '../harness/open-code/config-release'
 import {
   buildRelease,
   commitAll,
   git,
   initRepo,
+  REPOSITORY_CHANGED,
   serveRelease,
   startFakeApi,
   write,
@@ -183,5 +184,30 @@ describe('provenReleaseForEarlySpawn', () => {
     rmSync(`${dir}.json`)
     expect(await provenReleaseForEarlySpawn(store)).toBeNull()
     expect(process.env.KORTIX_COMPILED_AGENT_CONFIG).toBeUndefined()
+  })
+})
+
+describe('boot for a previous-repository session (409 session_repository_changed)', () => {
+  test('no release is fetched; an intact proven pointer boots with no fallback reason', async () => {
+    const dir = await installProvenRelease()
+    api.respond(REPOSITORY_CHANGED)
+    const marks: string[] = []
+    expect(await fetchBootRelease({ cfg: cfg(), api: client(), root: store, mark: (m) => marks.push(m) })).toBeNull()
+    expect(marks).toEqual([])
+    const choice = await resolveBootConfig({ cfg: cfg(), root: store, api: client() })
+    expect(choice).toMatchObject({ dir, source: 'release', fallback_reason: null })
+  })
+
+  test('without a pointer the workspace config boots, with no fallback reason', async () => {
+    api.respond(REPOSITORY_CHANGED)
+    expect(await fetchBootRelease({ cfg: cfg(), api: client(), root: store })).toBeNull()
+    const choice = await resolveBootConfig({ cfg: cfg(), root: store, api: client() })
+    expect(choice).toEqual({
+      dir: join(work, DIR),
+      source: 'workspace',
+      release_id: null,
+      source_commit: null,
+      fallback_reason: null,
+    })
   })
 })

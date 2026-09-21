@@ -21,6 +21,7 @@ import {
   configReleaseApiFrom,
   downloadConfigArchive,
   fetchConfigReleaseDescriptor,
+  isRepositoryChangedError,
   type ConfigReleaseApi,
 } from '../../config-release/api-client'
 import type { ConfigReleaseDescriptor, WorkspaceReport } from '../../config-release/descriptor'
@@ -288,6 +289,9 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
   try {
     descriptor = await fetchConfigReleaseDescriptor(api, report)
   } catch (err) {
+    // A previous-repository session is frozen on its running config: nothing
+    // failed, nothing falls back, nothing is quarantined.
+    if (isRepositoryChangedError(err)) return respond('unchanged', null, err.message)
     // API unreachable or older than the spec: the running config stays.
     return respond('failed', null, (err as Error).message)
   }
@@ -442,6 +446,8 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
       })
     }
   } catch (err) {
+    // The archive route gates on the repository generation too.
+    if (isRepositoryChangedError(err)) return respond('unchanged', null, err.message)
     // Transport, disk or verification failure: nothing is wrong with the
     // release itself, so it is not quarantined. The next trigger retries.
     const reason = `could not build release ${releaseId.slice(0, 12)}: ${(err as Error).message}`
@@ -611,6 +617,10 @@ export async function fetchBootRelease(input: {
     input.mark?.('config-release-extracted')
     return { dir, releaseId, sourceCommit: manifest.source_commit, manifest }
   } catch (err) {
+    if (isRepositoryChangedError(err)) {
+      logger.info('[config-release] session belongs to a previous repository; no release at boot')
+      return null
+    }
     logger.warn('[config-release] no release at boot; the fallback chain applies', {
       err: err instanceof Error ? err.message : String(err),
     })

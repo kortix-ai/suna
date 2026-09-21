@@ -96,6 +96,8 @@ export interface FakeApi {
   archives: Map<string, Buffer>
   /** Serve archives by `302` to the storage server instead of streaming them. */
   redirectToStorage: boolean
+  /** Answer every archive request with this instead of the bytes. */
+  archiveOverride: { status: number; json: unknown } | null
   stop: () => void
 }
 
@@ -107,6 +109,7 @@ export function startFakeApi(token = 'sandbox-token'): FakeApi {
     storageRequests: [] as FakeApi['storageRequests'],
     archives: new Map<string, Buffer>(),
     redirectToStorage: false,
+    archiveOverride: null as { status: number; json: unknown } | null,
   }
   const storage = Bun.serve({
     port: 0,
@@ -132,6 +135,7 @@ export function startFakeApi(token = 'sandbox-token'): FakeApi {
       if (req.method === 'GET' && archive) {
         state.archiveRequests.push({ authorization, path: url.pathname })
         if (authorization !== `Bearer ${token}`) return new Response('unauthorized', { status: 401 })
+        if (state.archiveOverride) return Response.json(state.archiveOverride.json, { status: state.archiveOverride.status })
         if (state.redirectToStorage) {
           return new Response(null, {
             status: 302,
@@ -165,11 +169,23 @@ export function startFakeApi(token = 'sandbox-token'): FakeApi {
     set redirectToStorage(value: boolean) {
       state.redirectToStorage = value
     },
+    get archiveOverride() {
+      return state.archiveOverride
+    },
+    set archiveOverride(value: { status: number; json: unknown } | null) {
+      state.archiveOverride = value
+    },
     stop: () => {
       api.stop(true)
       storage.stop(true)
     },
   }
+}
+
+/** The API's answer for a session from a previous repository generation. */
+export const REPOSITORY_CHANGED = {
+  status: 409,
+  json: { error: 'Session belongs to a previous repository', code: 'session_repository_changed' },
 }
 
 /** Serve `release` from the fake API. */
