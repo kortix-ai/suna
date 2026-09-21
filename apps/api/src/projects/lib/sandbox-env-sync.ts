@@ -29,6 +29,7 @@ import {
 import { resolveSessionNetworkBoundary } from './network-secret-boundary';
 import { sandboxBelongsToThisInstance } from '../instance-scope';
 import type { NetworkBoundarySecretBinding } from '../../secrets/network-boundary';
+import { hasConfigReleaseCapability } from './session-config-release';
 
 /** Resolve the LLM gateway URL used by every supported remote provider. */
 export function llmGatewayBaseUrlForProvider(_providerName: ProviderName): string {
@@ -1117,6 +1118,33 @@ function nonActiveSandboxSkip(
   return { applied: false, reason: `sandbox row is '${status}', not active` };
 }
 
+/**
+ * Does the daemon list `config.release.v1` in `/kortix/health` `capabilities`?
+ * `true`, `false`, or `null` when health did not answer.
+ *
+ * Such a daemon receives compiled governance inside its config release
+ * (docs/specs/config-releases.md, "Capability gate"). A separate
+ * `KORTIX_COMPILED_AGENT_CONFIG` push through `/kortix/env` would restart
+ * OpenCode on governance that does not match the release it runs.
+ */
+export async function daemonHasConfigReleases(
+  baseUrl: string,
+  headers: Record<string, string>,
+  fetchImpl: (url: string, init?: RequestInit) => Promise<Response> = (url, init) => fetch(url, init),
+): Promise<boolean | null> {
+  try {
+    const res = await fetchImpl(`${baseUrl.replace(/\/$/, '')}/kortix/health`, {
+      headers,
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { capabilities?: unknown };
+    return hasConfigReleaseCapability(body.capabilities);
+  } catch {
+    return null;
+  }
+}
+
 export async function pushSessionAgentConfigToSandbox(input: {
   projectId: string;
   sessionId: string;
@@ -1195,6 +1223,21 @@ export async function pushSessionAgentConfigToSandbox(input: {
       port: SANDBOX_SERVICE_PORT,
       transport: 'http',
     });
+    // Capability gate. A daemon with config releases gets governance from its
+    // release; `null` (health did not answer) is not permission to push.
+    const releases = await daemonHasConfigReleases(url, {
+      ...(headers as Record<string, string>),
+      Authorization: `Bearer ${serviceKey}`,
+    });
+    if (releases !== false) {
+      return {
+        applied: false,
+        reason:
+          releases === true
+            ? 'the daemon receives compiled governance in its config release'
+            : 'could not read the daemon capabilities',
+      };
+    }
     // The daemon call blocks until its verified reload either promotes the new
     // runtime or keeps the old one. This phase therefore names the whole
     // apply-and-validate boundary instead of inventing sub-phases we cannot see.

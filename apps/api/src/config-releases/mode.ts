@@ -14,7 +14,8 @@ import type { GitBackedProject } from '../projects/git/types';
 import { managedSkillOverlayFiles } from '../runtime-assets/managed-skills';
 import type { ConfigMode, ConfigRelease } from './builder';
 
-const HEX40 = /^[0-9a-f]{40}$/;
+/** A Git object ID: SHA-1 (40 hex) or SHA-256 (64 hex) repositories. */
+const GIT_OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 /** Bounds on the report, so one request cannot make the API walk an unbounded list. */
 export const MAX_WORKSPACE_REPORT_ENTRIES = 5_000;
 const MAX_PATH_LENGTH = 4_096;
@@ -31,7 +32,7 @@ export const WorkspaceChangeSchema = z
   .object({
     path: repoPath,
     status: z.enum(['modified', 'added', 'deleted', 'untracked']),
-    blob: z.string().regex(HEX40).nullable(),
+    blob: z.string().regex(GIT_OID).nullable(),
   })
   .strict()
   .refine((change) => (change.status === 'deleted') === (change.blob === null), {
@@ -44,9 +45,17 @@ export const MAX_REPORTED_PACKAGE_JSON_BYTES = 256 * 1024;
 
 export const WorkspaceReportSchema = z
   .object({
-    head: z.string().regex(HEX40),
+    head: z.string().regex(GIT_OID),
     config_dir: repoPath,
     changed: z.array(WorkspaceChangeSchema).max(MAX_WORKSPACE_REPORT_ENTRIES),
+    /**
+     * What committed changes cover. `remote`: since the merge base with the
+     * remote base branch. `base-sha`: since `KORTIX_BASE_SHA`. `none`: the box
+     * has no base commit locally, so committed changes are not listed and the
+     * mode is decided from uncommitted changes only. Optional: a report
+     * without it is read as complete.
+     */
+    committed_scope: z.enum(['remote', 'base-sha', 'none']).optional(),
     /**
      * Optional, additive to the spec's report: the working-tree text of
      * `<config_dir>/package.json` when that file is in `changed`. The API needs
@@ -103,10 +112,10 @@ export function managedSkillNames(): ReadonlySet<string> {
   return managedSkillNamesMemo;
 }
 
-/** Git blob ID (SHA-1) of `text`. */
-export function gitBlobId(text: string | Buffer): string {
+/** Git blob ID of `text`: SHA-1 by default, SHA-256 for a SHA-256 repository. */
+export function gitBlobId(text: string | Buffer, format: 'sha1' | 'sha256' = 'sha1'): string {
   const bytes = typeof text === 'string' ? Buffer.from(text, 'utf8') : text;
-  return createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
+  return createHash(format).update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
 }
 
 /**
@@ -214,7 +223,17 @@ export interface ConfigModeDecision {
   mode: ConfigMode;
   /** The first path that counts as session work, or null for `follow-base`. */
   sessionPath: string | null;
+  /**
+   * A gap in the report the decision could not see, or null. The descriptor
+   * route puts it in `reason` when the release has none, so the gap is
+   * visible in the descriptor and not silent.
+   */
+  note: string | null;
 }
+
+/** The descriptor `reason` for a report with `committed_scope: "none"`. */
+export const COMMITTED_SCOPE_NONE_NOTE =
+  'the sandbox could not list committed config changes (committed_scope none); the mode was decided from uncommitted changes only';
 
 /**
  * Choose the config mode from the workspace report (spec, "Config mode").
@@ -234,10 +253,11 @@ export async function decideConfigMode(input: DecideConfigModeInput): Promise<Co
 }
 
 export async function explainConfigMode(input: DecideConfigModeInput): Promise<ConfigModeDecision> {
-  const followBase: ConfigModeDecision = { mode: 'follow-base', sessionPath: null };
   const report = input.report;
+  const note = report?.committed_scope === 'none' ? COMMITTED_SCOPE_NONE_NOTE : null;
+  const followBase: ConfigModeDecision = { mode: 'follow-base', sessionPath: null, note };
   if (!report || report.changed.length === 0) return followBase;
-  const sessionFiles = (path: string): ConfigModeDecision => ({ mode: 'session-files', sessionPath: path });
+  const sessionFiles = (path: string): ConfigModeDecision => ({ mode: 'session-files', sessionPath: path, note });
 
   const configDir = report.config_dir.replace(/\/+$/, '');
   const prefix = `${configDir}/`;
@@ -275,8 +295,11 @@ export async function explainConfigMode(input: DecideConfigModeInput): Promise<C
       if (!entry) return true;
       if (entry.blob === null) return false;
       const reported = report.package_json;
+      const format = entry.blob.length === 64 ? 'sha256' : 'sha1';
       const text =
-        typeof reported === 'string' && gitBlobId(reported) === entry.blob ? reported : await readBlob(entry.blob);
+        typeof reported === 'string' && gitBlobId(reported, format) === entry.blob
+          ? reported
+          : await readBlob(entry.blob);
       const mine = packageJsonWithoutPluginPin(text);
       if (mine === null) return false;
       const history = await historyOf(packageJsonPath);

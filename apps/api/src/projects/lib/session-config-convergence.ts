@@ -110,6 +110,14 @@ export type SessionConfigConvergenceOutcome =
   | 'busy'
   | 'unreachable'
   | 'no-session'
+  /**
+   * The daemon declined the release (proven check failed) or has it in its
+   * box quarantine. Retrying the same release cannot pass; the next base move
+   * or trigger brings a new one.
+   */
+  | 'declined'
+  /** The daemon predates config releases. It converges after its self-update. */
+  | 'awaiting-daemon-update'
   | 'failed';
 
 type Attempt =
@@ -131,6 +139,32 @@ function classify(result: SessionReloadResult): Attempt {
   }
   // A turn is running. It will not be over in five seconds.
   if (result.reason === 'session is mid-turn') return { retry: 'slow', as: 'busy' };
+  // A daemon with config releases reports an explicit outcome.
+  if (result.config_path === 'release') {
+    switch (result.release_outcome) {
+      case 'applied':
+        return { done: 'converged' };
+      case 'unchanged':
+        return { done: 'current' };
+      case 'session-files':
+        // The API chose this mode from the session's own edits. Retrying
+        // cannot change it; the next trigger re-evaluates.
+        return { done: 'kept-session-edits' };
+      case 'declined':
+      case 'quarantined':
+        // The same release fails the same way. No fast loop.
+        return { done: 'declined' };
+      case 'failed':
+        return { retry: 'slow', as: 'failed' };
+      default:
+        // No converge answer: the box was restarting or the call timed out.
+        return { retry: 'transient', as: 'unreachable' };
+    }
+  }
+  // A daemon without config releases received only the refresh, which stages
+  // its replacement. The replacement swaps after 5 min of idle uptime, so the
+  // 6- and 7-minute attempts reach it. The quick ladder cannot.
+  if (result.config_path === 'legacy') return { retry: 'slow', as: 'awaiting-daemon-update' };
   // The session edited its own agent files — or the box runs a daemon that
   // predates the platform-ownership fix and refuses on the platform's files,
   // in which case its staged replacement swaps in after ~5 min of idle uptime.

@@ -20,6 +20,21 @@ describe('ConfigReleaseRequestSchema', () => {
       ).success,
     ).toBe(true);
     expect(ConfigReleaseRequestSchema.safeParse({ workspace: null }).success).toBe(true);
+    // SHA-256 repositories: 64-hex head and blob IDs.
+    expect(
+      ConfigReleaseRequestSchema.safeParse({
+        workspace: {
+          head: 'c'.repeat(64),
+          config_dir: '.kortix/opencode',
+          committed_scope: 'base-sha',
+          changed: [{ path: '.kortix/opencode/a.md', status: 'modified', blob: 'd'.repeat(64) }],
+        },
+      }).success,
+    ).toBe(true);
+    for (const scope of ['remote', 'base-sha', 'none']) {
+      expect(ConfigReleaseRequestSchema.safeParse({ workspace: { head: HEAD, config_dir: '.k', committed_scope: scope, changed: [] } }).success).toBe(true);
+    }
+    expect(ConfigReleaseRequestSchema.safeParse({ workspace: { head: HEAD, config_dir: '.k', package_json: '{}', changed: [] } }).success).toBe(true);
     expect(ConfigReleaseRequestSchema.safeParse({}).success).toBe(true);
   });
 
@@ -32,6 +47,8 @@ describe('ConfigReleaseRequestSchema', () => {
     ['a deleted file with a blob', report([{ path: 'a', status: 'deleted', blob: BLOB }])],
     ['a modified file without a blob', report([{ path: 'a', status: 'modified', blob: null }])],
     ['an uppercase blob', report([{ path: 'a', status: 'modified', blob: 'B'.repeat(40) }])],
+    ['a 50-hex blob', report([{ path: 'a', status: 'modified', blob: 'b'.repeat(50) }])],
+    ['an unknown committed_scope', { workspace: { head: HEAD, config_dir: '.k', committed_scope: 'all', changed: [] } }],
     ['a path with ..', report([{ path: '.kortix/../x', status: 'modified', blob: BLOB }])],
     ['an extra entry key', report([{ path: 'a', status: 'modified', blob: BLOB, mode: '100644' }])],
   ])('rejects %s', (_label, body) => {

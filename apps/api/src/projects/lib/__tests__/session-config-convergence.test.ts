@@ -167,6 +167,64 @@ describe('convergeSessionConfig', () => {
   });
 });
 
+describe('convergeSessionConfig with config releases', () => {
+  const release = (outcome: SessionReloadResult['release_outcome'], overrides: Partial<SessionReloadResult> = {}) =>
+    result({ config_path: 'release', release_outcome: outcome, ...overrides });
+
+  test('applied is converged, unchanged is current, both in one call', async () => {
+    for (const [outcome, expected] of [
+      ['applied', 'converged'],
+      ['unchanged', 'current'],
+    ] as const) {
+      const d = deps([release(outcome)]);
+      expect(await convergeSessionConfig('sess-1', d.deps)).toBe(expected);
+      expect(d.sleeps).toEqual([]);
+    }
+  });
+
+  test('session-files is kept-session-edits and is not retried', async () => {
+    const d = deps([release('session-files', { agent_files: 'kept-yours' })]);
+    expect(await convergeSessionConfig('sess-1', d.deps)).toBe('kept-session-edits');
+    expect(d.reloads.length).toBe(1);
+  });
+
+  test('declined and quarantined never loop', async () => {
+    for (const outcome of ['declined', 'quarantined'] as const) {
+      const d = deps([release(outcome, { applied: false, agent_files: 'unknown' })]);
+      expect(await convergeSessionConfig('sess-1', d.deps)).toBe('declined');
+      expect(d.reloads.length).toBe(1);
+      expect(d.sleeps).toEqual([]);
+    }
+  });
+
+  test('failed retries on the slow clock only', async () => {
+    const failed = release('failed', { applied: false, agent_files: 'unknown' });
+    const d = deps([failed, failed, failed, failed]);
+    expect(await convergeSessionConfig('sess-1', d.deps)).toBe('failed');
+    expect(d.sleeps).toEqual([6 * 60_000, 60_000, 20 * 60_000]);
+  });
+
+  test('a converge call without an answer is retried in seconds', async () => {
+    const d = deps([release(null, { applied: false, agent_files: 'unknown' }), release('applied')]);
+    expect(await convergeSessionConfig('sess-1', d.deps)).toBe('converged');
+    expect(d.sleeps).toEqual([5_000]);
+  });
+
+  test('an old daemon is retried at 6 and 7 minutes, where its self-update lands', async () => {
+    const legacy = result({ config_path: 'legacy', agent_files: 'unknown' });
+    const d = deps([legacy, legacy, release('applied')]);
+    expect(await convergeSessionConfig('sess-1', d.deps)).toBe('converged');
+    expect(d.sleeps).toEqual([6 * 60_000, 60_000]);
+  });
+
+  test('an old daemon that never updates ends as awaiting-daemon-update, bounded', async () => {
+    const legacy = result({ config_path: 'legacy', agent_files: 'unknown' });
+    const d = deps([legacy, legacy, legacy, legacy]);
+    expect(await convergeSessionConfig('sess-1', d.deps)).toBe('awaiting-daemon-update');
+    expect(d.reloads.length).toBe(4);
+  });
+});
+
 describe('configNeedsPush', () => {
   test('files that were brought forward always need the restart that reads them', () => {
     expect(configNeedsPush({ agentFiles: 'updated', runningEtag: 'a', latestEtag: 'a' })).toBe(true);

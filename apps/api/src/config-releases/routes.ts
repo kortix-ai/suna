@@ -40,7 +40,7 @@ import {
   toDescriptor,
   type ConfigReleaseVariant,
 } from './builder';
-import { ConfigReleaseRequestSchema, decideConfigMode } from './mode';
+import { ConfigReleaseRequestSchema, explainConfigMode } from './mode';
 import { serveConfigArchive } from './serve-archive';
 
 const HEX40 = /^[0-9a-f]{40}$/;
@@ -235,14 +235,17 @@ projectsApp.openapi(
     }
 
     const release = await buildConfigRelease(repo, baseSha, configReleaseVariant(session));
-    const mode = await decideConfigMode({
+    const decision = await explainConfigMode({
       project: repo,
       baseSha,
       release,
       report: parsed.data.workspace ?? null,
     });
     const repositoryAccess = repositoryAccessFromSessionMetadata(session.metadata) && humanMayReadFiles;
-    return c.json(toDescriptor(release, mode, { repositoryAccess }));
+    const descriptor = toDescriptor(release, decision.mode, { repositoryAccess });
+    // A gap in the report is named, never silent. `reason` stays the "no
+    // release" reason when there is one.
+    return c.json({ ...descriptor, reason: descriptor.reason ?? decision.note });
   },
 );
 

@@ -113,7 +113,12 @@ mock.module('./network-secret-boundary', () => ({
 }));
 
 const ORIGINAL_FETCH = globalThis.fetch;
-(globalThis as { fetch: unknown }).fetch = async (_url: unknown, init?: { body?: string }) => {
+let daemonCapabilities: string[] | 'down' = ['file.import', 'file.append'];
+(globalThis as { fetch: unknown }).fetch = async (url: unknown, init?: { body?: string }) => {
+  if (String(url).endsWith('/kortix/health')) {
+    if (daemonCapabilities === 'down') return new Response('down', { status: 503 });
+    return Response.json({ capabilities: daemonCapabilities });
+  }
   const body = init?.body ? (JSON.parse(init.body) as Record<string, unknown>) : {};
   posted.push({
     opencodeEnv: body.opencodeEnv as Record<string, string | null> | undefined,
@@ -162,6 +167,7 @@ beforeEach(() => {
   daemonProof = true;
   daemonReload = 'restarted';
   sessionMetadata = null;
+  daemonCapabilities = ['file.import', 'file.append'];
 });
 
 describe('propagateProjectSecretsToActiveSandboxes', () => {
@@ -307,5 +313,27 @@ describe('pushSessionAgentConfigToSandbox', () => {
 
     expect(result.applied).toBe(false);
     expect(posted).toEqual([]);
+  });
+});
+
+describe('capability gate on the compiled-governance push', () => {
+  test('a daemon with config.release.v1 receives NO governance push', async () => {
+    daemonCapabilities = ['file.import', 'file.append', 'config.release.v1'];
+    const result = await pushSessionAgentConfigToSandbox(INPUT);
+    expect(result).toEqual({ applied: false, reason: 'the daemon receives compiled governance in its config release' });
+    expect(posted).toEqual([]);
+  });
+
+  test('a daemon whose health does not answer receives no governance push', async () => {
+    daemonCapabilities = 'down';
+    const result = await pushSessionAgentConfigToSandbox(INPUT);
+    expect(result.applied).toBe(false);
+    expect(posted).toEqual([]);
+  });
+
+  test('an old daemon still receives the governance push', async () => {
+    const result = await pushSessionAgentConfigToSandbox(INPUT);
+    expect(result.applied).toBe(true);
+    expect(posted[0]?.opencodeEnv?.KORTIX_COMPILED_AGENT_CONFIG).toBe(compiled);
   });
 });

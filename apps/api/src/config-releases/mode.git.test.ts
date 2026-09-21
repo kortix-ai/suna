@@ -16,6 +16,7 @@ import type { GitBackedProject } from '../projects/git/types';
 import type { ConfigRelease } from './builder';
 import {
   __clearConfigModeCachesForTests,
+  COMMITTED_SCOPE_NONE_NOTE,
   explainConfigMode,
   gitBlobId,
   packageJsonWithoutPluginPin,
@@ -147,7 +148,7 @@ describe('decideConfigMode with real Git history', () => {
 
   test('an untouched session with platform dirt follows the base branch', async () => {
     const decision = await decide(report(platformDirt(), { package_json: pkg('1.18.23') }));
-    expect(decision).toEqual({ mode: 'follow-base', sessionPath: null });
+    expect(decision).toEqual({ mode: 'follow-base', sessionPath: null, note: null });
   });
 
   test('pin dirt the agent committed and pushed is read from the mirror without package_json', async () => {
@@ -162,7 +163,7 @@ describe('decideConfigMode with real Git history', () => {
 
   test('uncommitted pin dirt without package_json counts as session work: the API cannot read it', async () => {
     const decision = await decide(report(platformDirt()));
-    expect(decision).toEqual({ mode: 'session-files', sessionPath: PKG });
+    expect(decision).toEqual({ mode: 'session-files', sessionPath: PKG, note: null });
   });
 
   test('a package_json whose blob does not match the report is ignored', async () => {
@@ -198,7 +199,7 @@ describe('decideConfigMode with real Git history', () => {
 
   test('a real edit to an agent is session work', async () => {
     const decision = await decide(report([change(AGENT, 'modified', 'MY WORK IN PROGRESS\n')]));
-    expect(decision).toEqual({ mode: 'session-files', sessionPath: AGENT });
+    expect(decision).toEqual({ mode: 'session-files', sessionPath: AGENT, note: null });
   });
 
   test('a new skill is session work', async () => {
@@ -219,7 +220,7 @@ describe('decideConfigMode with real Git history', () => {
     // OWN_SKILL was added after the root commit. Its pre-add absence must not
     // count as a base revision.
     const decision = await decide(report([change(OWN_SKILL, 'deleted', null)]));
-    expect(decision).toEqual({ mode: 'session-files', sessionPath: OWN_SKILL });
+    expect(decision).toEqual({ mode: 'session-files', sessionPath: OWN_SKILL, note: null });
   });
 
   test('a file base itself deleted follows the base branch when the session deletes it too', async () => {
@@ -239,6 +240,14 @@ describe('decideConfigMode with real Git history', () => {
     expect(decision0.mode).toBe('session-files');
     baseCommit({ [AGENT]: 'MERGED EDIT\n' }, 'merge the session edit');
     expect((await decide(report([change(AGENT, 'modified', 'MERGED EDIT\n')]))).mode).toBe('follow-base');
+  });
+
+  test('committed_scope none decides from what was reported and names the gap', async () => {
+    const empty = await decide(report([], { committed_scope: 'none' }));
+    expect(empty).toEqual({ mode: 'follow-base', sessionPath: null, note: COMMITTED_SCOPE_NONE_NOTE });
+    const edited = await decide(report([change(AGENT, 'modified', 'EDIT\n')], { committed_scope: 'none' }));
+    expect(edited).toEqual({ mode: 'session-files', sessionPath: AGENT, note: COMMITTED_SCOPE_NONE_NOTE });
+    expect((await decide(report([], { committed_scope: 'remote' }))).note).toBeNull();
   });
 
   test('paths outside the config dir are not config work', async () => {
