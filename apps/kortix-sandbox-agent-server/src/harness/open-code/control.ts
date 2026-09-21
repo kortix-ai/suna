@@ -1,6 +1,6 @@
 import type { HarnessControlService, HarnessControlOperations, HarnessEnvironmentInput, HarnessRefreshInput } from '../control'
 import { requireOpenCodeConfig } from './config'
-import { convergeConfigRelease, workspaceReportFor } from './config-release'
+import { convergeConfigRelease, releaseGovernanceActive, workspaceReportFor } from './config-release'
 import { writeAgentEnvFile } from '../../agent-env-file'
 import { syncEgressShim } from '../../egress-shim'
 import { invalidateRuntimeState } from './runtime-state-projection'
@@ -44,6 +44,13 @@ const OPENCODE_RUNTIME_ENV_NAMES = new Set([
   'KORTIX_SECRET_CAPABILITIES',
 ])
 
+/**
+ * Owned by a config release while one is active (config-release.ts). A push
+ * of these names is ignored then, so the release's governance stays the one
+ * the next spawn composes.
+ */
+const RELEASE_OWNED_ENV_NAMES = new Set(['KORTIX_COMPILED_AGENT_CONFIG', 'KORTIX_COMPILED_AGENT_CONFIG_ETAG'])
+
 function applyOpencodeRuntimeEnv(input: unknown): { changed: boolean; names: string[] } {
   if (input === undefined) return { changed: false, names: [] }
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
@@ -51,9 +58,14 @@ function applyOpencodeRuntimeEnv(input: unknown): { changed: boolean; names: str
   }
 
   const changedNames: string[] = []
+  const releaseOwned = releaseGovernanceActive()
   for (const [rawName, rawValue] of Object.entries(input as Record<string, unknown>)) {
     const name = rawName.trim().toUpperCase()
     if (!OPENCODE_RUNTIME_ENV_NAMES.has(name)) continue
+    if (releaseOwned && RELEASE_OWNED_ENV_NAMES.has(name)) {
+      logger.info('[env] compiled governance push ignored; the config release owns it', { name })
+      continue
+    }
     if (rawValue === null) {
       if (process.env[name] !== undefined) {
         delete process.env[name]

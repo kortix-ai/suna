@@ -116,6 +116,16 @@ export function runningReleaseDir(root: string = bootConfigRoot()): string | nul
   return running.source === 'release' && running.release_id ? releaseDir(root, running.release_id) : null
 }
 
+/**
+ * Is OpenCode's compiled governance owned by a config release? True once a
+ * release (any source) was applied or spawned on. Then a `/kortix/env` push of
+ * `KORTIX_COMPILED_AGENT_CONFIG` must not replace it: the release is the
+ * authority, and the next convergence delivers any newer governance.
+ */
+export function releaseGovernanceActive(): boolean {
+  return running.release_id !== null
+}
+
 /** Boot records what it spawned on. */
 export function recordBootConfig(next: Partial<RunningConfig> & Pick<RunningConfig, 'source'>): void {
   running = { ...INITIAL, ...next }
