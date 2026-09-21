@@ -225,6 +225,17 @@ describe('convergeSessionConfig with config releases', () => {
   });
 });
 
+describe('convergeSessionConfig for a previous-repository session', () => {
+  test('ends at once with previous-repository on every schedule', async () => {
+    for (const schedule of ['wake', 'trigger'] as const) {
+      const d = deps([result({ applied: false, agent_files: 'unknown', reason: 'session belongs to a previous repository' })]);
+      expect(await convergeSessionConfig('sess-1', d.deps, { schedule })).toBe('previous-repository');
+      expect(d.reloads.length).toBe(1);
+      expect(d.sleeps).toEqual([]);
+    }
+  });
+});
+
 describe('convergeSessionConfig on the trigger schedule', () => {
   test('a busy session ends the attempt at once; the next turn end tries again', async () => {
     const busy = result({ applied: false, agent_files: 'unknown', reason: 'session is mid-turn' });

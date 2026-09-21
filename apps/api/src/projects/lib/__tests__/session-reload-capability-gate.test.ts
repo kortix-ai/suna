@@ -12,6 +12,7 @@ import { readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import {
   convergeToReloadResult,
+  PREVIOUS_REPOSITORY_REASON,
   reloadDetail,
   reloadNeedsAttention,
   reloadSessionConfig,
@@ -57,6 +58,7 @@ function convergeBody(outcome: string, overrides: Record<string, unknown> = {}) 
 
 function fakeDaemon(opts: {
   capable: boolean;
+  previousRepository?: boolean;
   turnInFlight?: boolean;
   converge?: unknown;
   convergeStatus?: number[];
@@ -100,6 +102,7 @@ function fakeDaemon(opts: {
     recordReport: async (input) => {
       recorded.push(input.report);
     },
+    usesCurrentRepository: async () => opts.previousRepository !== true,
   };
   return { deps, requests, pushes, recorded };
 }
@@ -151,6 +154,16 @@ describe('reloadSessionConfig capability gate', () => {
       expect.objectContaining({ release_id: RELEASE_A, failed_release_id: null }),
       expect.objectContaining({ failed_release_id: RELEASE_B }),
     ]);
+  });
+
+  test('a previous-repository session receives nothing: no health read, no converge, no refresh, no push', async () => {
+    for (const capable of [true, false]) {
+      const daemon = fakeDaemon({ capable, previousRepository: true });
+      const result = await reloadSessionConfig({ ...INPUT, force: true }, daemon.deps);
+      expect(daemon.requests).toEqual([]);
+      expect(daemon.pushes).toEqual([]);
+      expect(result).toMatchObject({ applied: false, reason: PREVIOUS_REPOSITORY_REASON });
+    }
   });
 
   test('refresh_repo false skips the pull on a capable daemon, and converge still runs', async () => {

@@ -19,6 +19,7 @@ import { configReleaseVariant, resolveDesiredRelease } from '../../config-releas
 import { recordDaemonConfigReport } from '../../config-releases/quarantine';
 import { isReleaseStale, toSessionConfigRelease } from '../lib/session-config-release';
 import { repositoryAccessFromSessionMetadata } from '../lib/session-sandbox-metadata';
+import { sessionUsesCurrentRepository } from '../lib/repository-generation';
 import {
   combineConfigStaleness,
   isConfigStale,
@@ -67,15 +68,37 @@ projectsApp.openapi(
       manifestPath: loaded.row.manifestPath ?? 'kortix.yaml',
       gitAuthToken: null,
     };
+    const usesCurrentRepository = sessionUsesCurrentRepository(
+      loaded.row.metadata as Record<string, unknown> | null,
+      visible.row.metadata as Record<string, unknown> | null,
+    );
     const [running, latest] = await Promise.all([
       readSandboxConfigState({ sessionId }),
-      latestAgentConfigEtag({
-        projectId,
-        accountId: loaded.row.accountId,
-        sessionId,
-        baseRef,
-      }),
+      // Nothing from the current repository is compiled for a frozen session.
+      usesCurrentRepository
+        ? latestAgentConfigEtag({
+            projectId,
+            accountId: loaded.row.accountId,
+            sessionId,
+            baseRef,
+          })
+        : Promise.resolve(null),
     ]);
+
+    // ── A previous-repository session (spec, "Repository replacement") ──
+    // It keeps the config it runs; no update from the current repository
+    // applies, so it is never stale. The release block reports the box as-is.
+    if (!usesCurrentRepository) {
+      return c.json({
+        base_ref: baseRef,
+        running_etag: running.etag,
+        latest_etag: null,
+        commit_sha: running.commitSha,
+        stale: false,
+        sandbox_reachable: running.reachable,
+        ...(running.configReleases && running.release ? { release: toSessionConfigRelease(running.release) } : {}),
+      });
+    }
 
     // ── A daemon with config releases (spec, "`GET /config`, extended") ──
     if (running.configReleases && running.release) {

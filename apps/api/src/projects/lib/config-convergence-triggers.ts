@@ -185,6 +185,11 @@ export async function listRunningSessionsOnBase(projectId: string, branch: strin
       and(
         eq(projectSessions.projectId, projectId),
         eq(projectSessions.status, 'running'),
+        // Current repository generation only (spec, "Repository replacement").
+        // A replacement moves the base branch, and every session running at
+        // that moment belongs to the previous generation.
+        sql`(coalesce(${projects.metadata}->>'repository_generation', '') = ''
+          OR ${projectSessions.metadata}->>'repository_generation' = ${projects.metadata}->>'repository_generation')`,
         or(
           inArray(projectSessions.baseRef, [branch, `refs/heads/${branch}`]),
           and(sql`${projectSessions.baseRef} IS NULL`, eq(projects.defaultBranch, branch)),

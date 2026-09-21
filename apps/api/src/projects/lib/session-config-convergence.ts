@@ -2,7 +2,7 @@ import { projects, projectSessions } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
-import { reloadSessionConfig, type SessionReloadResult } from './session-reload';
+import { PREVIOUS_REPOSITORY_REASON, reloadSessionConfig, type SessionReloadResult } from './session-reload';
 
 /**
  * Bring a session that just came back up onto its base branch's CURRENT config.
@@ -118,6 +118,8 @@ export type SessionConfigConvergenceOutcome =
   | 'declined'
   /** The daemon predates config releases. It converges after its self-update. */
   | 'awaiting-daemon-update'
+  /** The session belongs to a previous repository generation. It keeps its config. */
+  | 'previous-repository'
   | 'failed';
 
 type Attempt =
@@ -129,6 +131,7 @@ type Attempt =
   | { retry: 'transient' | 'slow'; as: SessionConfigConvergenceOutcome };
 
 function classify(result: SessionReloadResult): Attempt {
+  if (result.reason === PREVIOUS_REPOSITORY_REASON) return { done: 'previous-repository' };
   if (result.reason === 'no reachable sandbox') return { retry: 'transient', as: 'unreachable' };
   // Right after a wake opencode is not answering yet, so the reload cannot tell
   // whether a turn is running. Measured on the #7403 preview: unanswerable at

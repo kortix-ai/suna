@@ -43,6 +43,7 @@ import {
   resolveSelectedAgentConfigForSession,
 } from './compile-agent-config';
 import { recordDaemonConfigReport } from '../../config-releases/quarantine';
+import { sessionUsesCurrentRepository } from './repository-generation';
 import { pushSessionAgentConfigToSandbox } from './sandbox-env-sync';
 import {
   hasConfigReleaseCapability,
@@ -327,6 +328,26 @@ export interface SessionReloadDeps {
   sleep: (ms: number) => Promise<void>;
   /** Record a daemon's failed and proven releases for the project quarantine. */
   recordReport: typeof recordDaemonConfigReport;
+  /** False for a session from a previous repository generation. */
+  usesCurrentRepository: (projectId: string, sessionId: string) => Promise<boolean>;
+}
+
+/** The reload `reason` for a session from a previous repository generation. */
+export const PREVIOUS_REPOSITORY_REASON = 'session belongs to a previous repository';
+
+async function sessionUsesCurrentRepositoryById(projectId: string, sessionId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ projectMetadata: projects.metadata, sessionMetadata: projectSessions.metadata })
+    .from(projectSessions)
+    .innerJoin(projects, eq(projects.projectId, projectSessions.projectId))
+    .where(and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)))
+    .limit(1);
+  // No row: nothing to protect; the later steps find no sandbox either.
+  if (!row) return true;
+  return sessionUsesCurrentRepository(
+    row.projectMetadata as Record<string, unknown> | null,
+    row.sessionMetadata as Record<string, unknown> | null,
+  );
 }
 
 function defaultReloadDeps(): SessionReloadDeps {
@@ -337,6 +358,7 @@ function defaultReloadDeps(): SessionReloadDeps {
     latestEtag: latestAgentConfigEtag,
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     recordReport: recordDaemonConfigReport,
+    usesCurrentRepository: sessionUsesCurrentRepositoryById,
   };
 }
 
@@ -562,6 +584,22 @@ export async function reloadSessionConfig(input: {
   invalidateProjectMirror(input.projectId);
 
   input.onPhase?.('checking-session');
+  // Spec, "Repository replacement": a previous-repository session keeps the
+  // config it runs. Nothing from the current repository reaches it: no
+  // converge, no refresh, no governance push.
+  if (!(await deps.usesCurrentRepository(input.projectId, input.sessionId))) {
+    return {
+      applied: false,
+      previous_etag: null,
+      etag: null,
+      repo_refreshed: false,
+      commit_sha: null,
+      agent_files: 'unknown',
+      opencode_reload: null,
+      turn_ended: null,
+      reason: PREVIOUS_REPOSITORY_REASON,
+    };
+  }
   const before = await readSandboxConfigState(
     {
       sessionId: input.sessionId,

@@ -47,7 +47,7 @@ interface Fixture {
   /** Filesystem path of the bare repository on the local target, else null. */
   localRepo: string | null;
   sessions: string[];
-  mint(opts?: { repositoryAccess?: boolean; agentName?: string; projectId?: string }): Promise<SessionToken>;
+  mint(opts?: { repositoryAccess?: boolean; agentName?: string; projectId?: string; repositoryGeneration?: string }): Promise<SessionToken>;
   descriptor(secret: string | null, sessionId: string, body?: unknown): Promise<{ status: number; body: any }>;
   download(secret: string | null, treeId: string): Promise<{ status: number; bytes: Buffer; source: string | null }>;
   /** Local target only: commit files onto `main` of the bare repository. Returns the new tip. */
@@ -183,8 +183,11 @@ async function setup(ctx: FlowContext): Promise<Fixture> {
       created.status(201);
       const { token_id: tokenId, secret_key: secret } = created.json<{ token_id: string; secret_key: string }>();
       ctx.track('token', tokenId);
-      const metadata =
-        opts.repositoryAccess === false ? { workspace_mode: 'none', repository_access: false } : { workspace_mode: 'branch' };
+      const metadata = {
+        ...(opts.repositoryAccess === false ? { workspace_mode: 'none', repository_access: false } : { workspace_mode: 'branch' }),
+        // Session create copies the project's generation (`sessions.ts`).
+        ...(opts.repositoryGeneration ? { repository_generation: opts.repositoryGeneration } : {}),
+      };
       await db.query(
         `INSERT INTO kortix.project_sessions
            (session_id, account_id, project_id, branch_name, agent_name, status, metadata, created_by, visibility)
@@ -882,6 +885,99 @@ flow(
       });
     } finally {
       await fixture.cleanup();
+    }
+  },
+);
+
+// ── CFG-7 — a previous-repository session receives no release ──────────────
+flow(
+  'CFG-7',
+  {
+    domain: 'config-releases',
+    requires: ['database'],
+    timeoutMs: 240_000,
+    routes: [MINT, DESCRIPTOR, ARCHIVE, CONFIG_STATE],
+  },
+  async (ctx) => {
+    const fixture = await setup(ctx);
+    const { mkdtemp, mkdir, rm, writeFile } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { dirname, join } = await import('node:path');
+    const { randomUUID } = await import('node:crypto');
+    const scratch = await mkdtemp(join(tmpdir(), 'ke2e-cfg-replace-'));
+    try {
+      if (!fixture.localRepo) ctx.skip('replacing the repository needs a second local bare repository');
+      const old = await fixture.mint();
+      let oldDescriptor!: Descriptor;
+      await ctx.step('before the replacement the session receives a descriptor', async () => {
+        const r = await fixture.descriptor(old.secret, old.sessionId);
+        if (r.status !== 200) throw new Error(`expected 200, got ${r.status}`);
+        oldDescriptor = r.body as Descriptor;
+      });
+
+      // The replacement route needs GitHub, which this profile excludes. The
+      // flow writes what `persistProjectRepositoryReplacement` writes: a new
+      // repo_url, default branch, and metadata.repository_generation.
+      const generation = randomUUID();
+      const newRepo = join(scratch, 'new.git');
+      let newTip = '';
+      await ctx.step('the project repository is replaced with a new generation', async () => {
+        await run('git', ['init', '-q', '--bare', '--initial-branch=main', newRepo], scratch);
+        const work = join(scratch, 'work');
+        await run('git', ['clone', '-q', newRepo, work], scratch);
+        const files = { ...CONFIG_FILES, '.kortix/opencode/agents/kortix.md': '---\ndescription: main agent\nmode: primary\n---\nNEW REPOSITORY.\n' };
+        for (const [path, body] of Object.entries(files)) {
+          await mkdir(dirname(join(work, path)), { recursive: true });
+          await writeFile(join(work, path), body);
+        }
+        await run('git', ['add', '-A'], work);
+        await run('git', ['-c', 'user.name=KE2E', '-c', 'user.email=ke2e@kortix.invalid', 'commit', '-qm', 'new repository'], work);
+        await run('git', ['push', '-q', 'origin', 'HEAD:main'], work);
+        newTip = (await run('git', ['rev-parse', 'HEAD'], work)).toString().trim();
+        await fixture.db.query(
+          `UPDATE kortix.projects
+              SET repo_url = $2, default_branch = 'main',
+                  metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object('repository_generation', $3::text),
+                  updated_at = now()
+            WHERE project_id = $1`,
+          [fixture.projectId, newRepo, generation],
+        );
+      });
+
+      await ctx.step('the previous-repository session gets 409 session_repository_changed for the descriptor and the archive', async () => {
+        const r = await fixture.descriptor(old.secret, old.sessionId);
+        if (r.status !== 409) throw new Error(`descriptor: expected 409, got ${r.status}: ${JSON.stringify(r.body)}`);
+        if (r.body?.error !== 'Session belongs to a previous repository' || r.body?.code !== 'session_repository_changed') {
+          throw new Error(`descriptor body ${JSON.stringify(r.body)}`);
+        }
+        const download = await fixture.download(old.secret, oldDescriptor.config_tree_id!);
+        if (download.status !== 409) throw new Error(`archive: expected 409, got ${download.status}`);
+        const body = JSON.parse(download.bytes.toString());
+        if (body.code !== 'session_repository_changed') throw new Error(`archive body ${download.bytes.toString()}`);
+      });
+
+      await ctx.step('GET /config for the previous-repository session reports stale false', async () => {
+        const r = await fixture.configState(old.sessionId);
+        if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
+        if (r.body.stale !== false) throw new Error(`stale ${r.body.stale}`);
+        if (r.body.latest_etag !== null) throw new Error('a frozen session compiled the new repository');
+      });
+
+      await ctx.step('a session created after the replacement receives a descriptor from the new repository', async () => {
+        const fresh = await fixture.mint({ repositoryGeneration: generation });
+        const r = await fixture.descriptor(fresh.secret, fresh.sessionId);
+        if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
+        const d = r.body as Descriptor;
+        if (d.source_commit !== newTip) throw new Error(`source_commit ${d.source_commit}, new tip ${newTip}`);
+        if (d.release_id === oldDescriptor.release_id) throw new Error('the new session got the old release');
+        const download = await fixture.download(fresh.secret, d.config_tree_id!);
+        if (download.status !== 200) throw new Error(`new archive: ${download.status}`);
+        const files = await assertArchiveMatches(d, download.bytes);
+        if (!files.get('agents/kortix.md')?.toString().includes('NEW REPOSITORY.')) throw new Error('archive is not from the new repository');
+      });
+    } finally {
+      await fixture.cleanup();
+      await rm(scratch, { recursive: true, force: true });
     }
   },
 );

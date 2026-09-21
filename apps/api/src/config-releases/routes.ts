@@ -31,6 +31,7 @@ import {
 import { projectsApp } from '../projects/lib/app';
 import { callerKortixSessionId } from '../projects/lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../projects/lib/sandbox-token-session';
+import { sessionUsesCurrentRepository } from '../projects/lib/repository-generation';
 import { repositoryAccessFromSessionMetadata } from '../projects/lib/session-sandbox-metadata';
 import { UUID_V4_REGEX } from '../projects/lib/serializers';
 import { db } from '../shared/db';
@@ -46,6 +47,26 @@ interface ProjectRow {
   repoUrl: string;
   defaultBranch: string;
   manifestPath: string | null;
+  metadata: unknown;
+}
+
+/**
+ * Spec, "Repository replacement": a session from a previous repository
+ * generation receives neither a descriptor nor an archive. Both are built
+ * from the project's current repository; the Git proxy already refuses such
+ * a session (`checkGitProxySessionGeneration`). The daemon reads this exact
+ * body as outcome `unchanged`.
+ */
+export const PREVIOUS_REPOSITORY_BODY = {
+  error: 'Session belongs to a previous repository',
+  code: 'session_repository_changed',
+} as const;
+
+function previousRepository(project: ProjectRow, session: SessionRow): boolean {
+  return !sessionUsesCurrentRepository(
+    project.metadata as Record<string, unknown> | null,
+    session.metadata as Record<string, unknown> | null,
+  );
 }
 
 interface SessionRow {
@@ -96,6 +117,7 @@ async function sandboxSession(
       repoUrl: projects.repoUrl,
       defaultBranch: projects.defaultBranch,
       manifestPath: projects.manifestPath,
+      projectMetadata: projects.metadata,
       projectStatus: projects.status,
     })
     .from(sessionSandboxes)
@@ -125,7 +147,7 @@ async function sandboxSession(
     ok: true,
     value: {
       sessionId: row.sessionId ?? sandboxId,
-      project: row,
+      project: { ...row, metadata: row.projectMetadata },
       session: { baseRef: row.baseRef, agentName: row.agentName, metadata: row.metadata },
     },
   };
@@ -211,6 +233,8 @@ projectsApp.openapi(
       );
     }
 
+    if (previousRepository(project, session)) return c.json(PREVIOUS_REPOSITORY_BODY, 409);
+
     const baseRef = session.baseRef ?? project.defaultBranch;
     try {
       const desired = await resolveDesiredRelease({
@@ -242,7 +266,7 @@ projectsApp.openapi(
     responses: {
       200: { description: 'The config archive', content: { 'application/gzip': { schema: z.any() } } },
       302: { description: 'Redirect to a signed store URL' },
-      ...errors(400, 403, 404, 413),
+      ...errors(400, 403, 404, 409, 413),
     },
   }),
   async (c: any) => {
@@ -256,6 +280,9 @@ projectsApp.openapi(
       const resolved = await sandboxSession(c, projectId, null);
       if (!resolved.ok) return c.json({ error: resolved.error }, resolved.status);
       // A session without repository access never receives a config archive.
+      if (previousRepository(resolved.value.project, resolved.value.session)) {
+        return c.json(PREVIOUS_REPOSITORY_BODY, 409);
+      }
       if (!repositoryAccessFromSessionMetadata(resolved.value.session.metadata)) {
         return c.json({ error: 'repository access withheld' }, 403);
       }
