@@ -19453,13 +19453,27 @@
     "managedDescription": "Kortixクレジットで課金される管理モデルです。APIキーは不要です。",
     "textImage": "テキスト + 画像",
     "textOnly": "テキストのみ",
-    "zdrTitle": "モデル提供元はプロンプトを保存しません",
+    "zdrTitle": "ゼロデータ保持",
     "zdrDescription": "ゼロデータ保持（ZDR）とは、モデル提供元がテキストや画像を処理した後、リクエストの入力や回答を保存しないことです。Kortix はプロジェクトと会話履歴を別に保存します。",
+    "usProvidersTitle": "米国拠点の提供元",
+    "usProvidersDescription": "各 Kortix モデルは、米国に本社を置く固定の推論提供元 1 社で動作します。リクエストが別の提供元に切り替わることはありません。",
     "hiddenHint": "選択リストでは非表示です。直接リクエストは引き続き許可されます。無効にするにはモデルのメニューを使用してください。",
     "hidden": "選択リストで非表示",
     "disableModel": "モデルを無効にする",
     "modelError": "モデルへのアクセスを更新できませんでした。",
     "hiddenShort": "選択リストでは非表示です。直接リクエストは引き続き許可されます。",
     "resetError": "モデル一覧をリセットできませんでした。"
+  },
+  "projectChooser": {
+    "invitations": "招待",
+    "invitedBy": "{email} からの招待",
+    "join": "参加",
+    "joinError": "参加できませんでした。もう一度お試しください。",
+    "unnamedWorkspace": "ワークスペース",
+    "noPermissionTitle": "ワークスペースがまだありません",
+    "noPermissionBody": "オーナーまたは管理者に {email} の招待を依頼してください。",
+    "invitesTitle": "招待されています",
+    "invitesDescription": "チームが共有したプロジェクトに参加するか、自分のプロジェクトを作成してください。",
+    "createProjectInstead": "代わりに新しいプロジェクトを作成"
   }
 }

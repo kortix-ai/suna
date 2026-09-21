@@ -59,19 +59,9 @@ export const STANDALONE_DEFAULT_SETTINGS_TAB: SettingsTab = 'profile';
  *
  * The remembered project when the browser has one — the user goes back to
  * exactly where they were, and nothing is created. Otherwise `/projects`,
- * NOT `PROJECT_LANDING_PATH`.
- *
- * That fallback is deliberate and is the one place this file departs from
- * `latestProjectPath()`'s "never send an implicit destination to the list"
- * rule (`lib/onboarding/last-project-cookie.ts`). `/projects/start` creates a
- * project unconditionally (`ensureFirstProject`, gated only on the account
- * role and `navigationMayCreateProject()`), while the list applies the
- * entitlement-aware rule — `shouldAutoCreateFirstProject` returns `false`
- * when billing is on and `credits.can_run` is false, and otherwise creates
- * the project and `router.replace`s straight into it
- * (`app/(app)/projects/page.tsx:245,295`). So an entitled user still lands in
- * a project either way, and the no-app-access user this route exists for does
- * not get one handed to them by pressing Escape.
+ * which redirects to the `/projects/start` chooser. Neither path creates a
+ * project, so the no-app-access user this route exists for is never handed
+ * one by pressing Escape.
  *
  * Pure and exported for its unit test.
  */
