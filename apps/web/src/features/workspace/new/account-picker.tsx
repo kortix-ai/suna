@@ -2,9 +2,9 @@
 
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import type { KortixAccount } from '@kortix/sdk';
-import { useTranslations } from '@/i18n/use-translations';
 
 /**
  * What `AccountPicker` paints below two creatable accounts: the caller's own
@@ -111,7 +111,7 @@ export function AccountPicker({
     });
     if (!identityLabel && !accountLabel) return null;
     return (
-      <span className={cn('flex min-w-0 flex-col', className)}>
+      <span className={cn('flex w-full min-w-0 flex-col', className)}>
         {identityLabel ? (
           <span className="text-muted-foreground min-w-0 truncate text-sm">{identityLabel}</span>
         ) : null}
@@ -130,13 +130,13 @@ export function AccountPicker({
     <Select value={value ?? undefined} onValueChange={onChange}>
       <SelectTrigger
         id="workspace-account"
-        variant="transparent"
-        size="sm"
         aria-label={t('account.label')}
-        className={cn(
-          'text-muted-foreground hover:text-foreground h-8 max-w-[min(100%,16rem)] min-w-0 px-2',
-          className,
-        )}
+        // className={cn(
+        //   'text-muted-foreground hover:text-foreground h-8 max-w-[min(100%,16rem)] min-w-0 px-2',
+        //   className,
+        // )}
+        className="w-full"
+        size="md"
       >
         {selectedByValue ? (
           <span className="text-muted-foreground flex min-w-0 items-center gap-2 truncate text-sm">
@@ -148,7 +148,7 @@ export function AccountPicker({
       </SelectTrigger>
       <SelectContent align="start">
         {accounts.map((account) => (
-          <SelectItem key={account.account_id} value={account.account_id}>
+          <SelectItem key={account.account_id} size="sm" value={account.account_id}>
             <span className="flex min-w-0 items-center gap-2">
               <EntityAvatar label={account.name} size="xs" />
               <span className="truncate">{account.name}</span>

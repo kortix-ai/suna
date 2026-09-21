@@ -979,8 +979,8 @@ projectsApp.openapi(
         email_sent: emailConfigured,
         email_skip_reason: emailConfigured ? null : 'email_not_configured',
         message: emailConfigured
-          ? `No Kortix account for that email yet — an invitation email has been sent. They'll land on this project as ${role} when they sign up.`
-          : `No Kortix account for that email yet — invitation created. Share the invite link with them; they'll land on this project as ${role} when they sign up.`,
+          ? `No Kortix account for that email yet — an invitation email has been sent. After they sign up, Kortix shows them the invite and they join this project as ${role}.`
+          : `No Kortix account for that email yet — invitation created. Share the invite link with them. After they sign up, Kortix shows them the invite and they join this project as ${role}.`,
       },
       201,
     );

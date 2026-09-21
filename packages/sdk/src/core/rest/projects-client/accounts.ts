@@ -179,6 +179,19 @@ export interface AccountInviteDescribeRedacted {
 
 export type AccountInviteDescribe = AccountInviteDescribeFull | AccountInviteDescribeRedacted;
 
+/** A pending invite addressed to the caller's own email. */
+export interface MyAccountInvite {
+  invite_id: string;
+  account_id: string;
+  account_name: string | null;
+  initial_role: AccountRole;
+  inviter_email: string | null;
+  created_at: string;
+  expires_at: string;
+  /** Projects the invite grants on accept. Empty for a plain workspace invite. */
+  projects: Array<{ project_id: string; name: string; role: string }>;
+}
+
 export async function listAccounts() {
   return unwrap(await backendApi.get<KortixAccount[]>('/accounts'));
 }
@@ -288,6 +301,17 @@ export async function resendAccountInvite(accountId: string, inviteId: string) {
       {},
     ),
   );
+}
+
+/**
+ * The unexpired, unaccepted invites addressed to the caller's email — so an
+ * invitee who signed up without the email link can still find and accept them.
+ */
+export async function listMyAccountInvites() {
+  const res = unwrap(
+    await backendApi.get<{ invites: MyAccountInvite[] }>('/account-invites', { showErrors: false }),
+  );
+  return res.invites;
 }
 
 export async function describeAccountInvite(inviteId: string) {

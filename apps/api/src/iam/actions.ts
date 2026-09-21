@@ -54,6 +54,12 @@ export const ACCOUNT_ACTIONS = {
   TOKEN_READ: 'token.read',
   TOKEN_CREATE: 'token.create',
   TOKEN_REVOKE: 'token.revoke',
+  // A person's OWN personal access tokens. A PAT acts as the person who minted
+  // it, so these grant nothing beyond that person's own roles; every system
+  // account role holds them. `token.create` / `token.revoke` stay admin leaves
+  // for OAuth clients, service accounts, and other people's tokens.
+  TOKEN_PERSONAL_CREATE: 'token.personal.create',
+  TOKEN_PERSONAL_REVOKE: 'token.personal.revoke',
 
   // "Create a brand-new project" must live at account scope (the project
   // doesn't exist yet to scope to).

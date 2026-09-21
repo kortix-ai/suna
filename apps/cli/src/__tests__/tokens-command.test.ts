@@ -170,6 +170,7 @@ describe('kortix tokens', () => {
       'ls [--mine] [--json]',
       'new <name>',
       'service-accounts ls',
+      'token.personal.create',
       'token.create',
       'token.revoke',
       'kortix access grant --service-account',

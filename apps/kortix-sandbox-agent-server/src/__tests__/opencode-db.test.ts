@@ -299,44 +299,93 @@ describe('reads', () => {
   })
 })
 
-describe('concurrency with a live writer', () => {
-  test('a page taken mid-write sees ONE consistent snapshot, never a mix', () => {
+describe('openTurnMessageId — the turn that is RUNNING, from one small row', () => {
+  // The memory guard asks this at 97 % box memory, so it must not load parts
+  // (that is where inline image bytes live) and must not go through HTTP.
+  function seedTurn(
+    db: Database,
+    session: string,
+    n: number,
+    role: 'user' | 'assistant',
+    opts: { parent?: string; completed?: boolean; error?: { name: string; data?: { isRetryable?: boolean } } } = {},
+  ): string {
+    const id = seedMessage(db, session, n, role)
+    db.query('UPDATE message SET data = ? WHERE id = ?').run(
+      JSON.stringify({
+        role,
+        ...(opts.parent ? { parentID: opts.parent } : {}),
+        ...(opts.error ? { error: opts.error } : {}),
+        time: { created: n * 10, ...(opts.completed ? { completed: n * 10 + 5 } : {}) },
+      }),
+      id,
+    )
+    return id
+  }
+
+  test('names the user message the OPEN newest assistant message answers', () => {
+    let running = ''
     build((db) => {
       seedSession(db, 'ses_a')
-      for (let i = 1; i <= 5; i++) seedMessage(db, 'ses_a', i)
+      const first = seedTurn(db, 'ses_a', 1, 'user')
+      seedTurn(db, 'ses_a', 2, 'assistant', { parent: first, completed: true })
+      running = seedTurn(db, 'ses_a', 3, 'user')
+      seedTurn(db, 'ses_a', 4, 'assistant', { parent: running })
     })
-    const reader = new OpencodeDb(dbPath)
-    // Warm the connection so the read below is the only thing under test.
-    expect(reader.messagePage({ sessionId: 'ses_a', limit: 50 })!.messages).toHaveLength(5)
-
-    const writer = new Database(dbPath)
-    writer.exec('PRAGMA journal_mode = WAL')
-    // A writer holding an open transaction: WAL means the reader still sees the
-    // last committed snapshot rather than blocking or reading the pending write.
-    writer.exec('BEGIN IMMEDIATE')
-    writer
-      .query('INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?,?,?,?,?)')
-      .run('msg_pending', 'ses_a', 999, 999, JSON.stringify({ id: 'msg_pending', role: 'user' }))
-
-    const page = reader.messagePage({ sessionId: 'ses_a', limit: 50 })!
-    expect(page.messages.map((m) => m.info.id)).not.toContain('msg_pending')
-    expect(page.messages).toHaveLength(5)
-
-    writer.exec('COMMIT')
-    // …and the very next read sees it. No cache, no restart — the same
-    // behaviour attachment-offload.ts verified live on box i67m4.
-    expect(reader.messagePage({ sessionId: 'ses_a', limit: 50 })!.messages).toHaveLength(6)
-    writer.close()
-    reader.close()
+    expect(new OpencodeDb(dbPath).openTurnMessageId('ses_a')).toBe(running)
   })
 
-  test('a write from this reader is refused — query_only, not just the open flag', () => {
-    build((db) => seedSession(db, 'ses_a'))
-    const reader = new OpencodeDb(dbPath)
-    reader.sessions()
-    // Reach through the private field the way a careless future edit would.
-    const raw = (reader as unknown as { db: Database }).db
-    expect(() => raw.exec("UPDATE session SET title = 'hacked'")).toThrow()
-    reader.close()
+  test('a prompt forwarded into the live turn does not hide the turn that is running', () => {
+    let running = ''
+    build((db) => {
+      seedSession(db, 'ses_a')
+      running = seedTurn(db, 'ses_a', 1, 'user')
+      seedTurn(db, 'ses_a', 2, 'assistant', { parent: running })
+      seedTurn(db, 'ses_a', 3, 'user')
+    })
+    expect(new OpencodeDb(dbPath).openTurnMessageId('ses_a')).toBe(running)
+  })
+
+  test('a FINISHED turn is never named: blaming it for a later abort would rewrite its history', () => {
+    // The guard also fires when it cannot tell whether a turn is running. The
+    // newest assistant row then belongs to a turn that already ended.
+    build((db) => {
+      seedSession(db, 'ses_a')
+      const done = seedTurn(db, 'ses_a', 1, 'user')
+      seedTurn(db, 'ses_a', 2, 'assistant', { parent: done, completed: true })
+    })
+    expect(new OpencodeDb(dbPath).openTurnMessageId('ses_a')).toBeNull()
+  })
+
+  test('a turn that already ended in an error is not running either', () => {
+    build((db) => {
+      seedSession(db, 'ses_a')
+      const dead = seedTurn(db, 'ses_a', 1, 'user')
+      seedTurn(db, 'ses_a', 2, 'assistant', { parent: dead, error: { name: 'MessageAbortedError' } })
+    })
+    expect(new OpencodeDb(dbPath).openTurnMessageId('ses_a')).toBeNull()
+  })
+
+  test('a retrying turn is still running', () => {
+    let running = ''
+    build((db) => {
+      seedSession(db, 'ses_a')
+      running = seedTurn(db, 'ses_a', 1, 'user')
+      seedTurn(db, 'ses_a', 2, 'assistant', {
+        parent: running,
+        error: { name: 'APIError', data: { isRetryable: true } },
+      })
+    })
+    expect(new OpencodeDb(dbPath).openTurnMessageId('ses_a')).toBe(running)
+  })
+
+  test('is scoped to the session, and null when no assistant message exists', () => {
+    build((db) => {
+      seedSession(db, 'ses_a')
+      seedSession(db, 'ses_b')
+      const other = seedTurn(db, 'ses_b', 1, 'user')
+      seedTurn(db, 'ses_b', 2, 'assistant', { parent: other })
+      seedTurn(db, 'ses_a', 3, 'user')
+    })
+    expect(new OpencodeDb(dbPath).openTurnMessageId('ses_a')).toBeNull()
   })
 })

@@ -19,7 +19,7 @@ import pkg from '../package.json';
  * on another, naming a different export each run. Reproduce it in two files:
  *
  *   bun test src/lib/maintenance-store.test.ts \
- *            src/lib/onboarding/ensure-first-project.provision.test.ts   # red
+ *            <a file that mock.module()s @kortix/sdk>                    # red
  *   bun test --isolate <the same two>                                    # green
  *
  * `--isolate` gives each file a fresh global object, which is the same fix and
