@@ -15,7 +15,11 @@ import {
 } from '@/features/session/first-prompt-presentation';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
-import { isFirstPromptRow, projectQueueRows } from '@/features/session/queue-projection';
+import {
+  isFirstPromptRow,
+  projectQueueRows,
+  quickQueueRemove,
+} from '@/features/session/queue-projection';
 import {
   queueResumeFailedToast,
   createQueueRemoveHandler,
@@ -31,6 +35,7 @@ import { SessionWelcome } from '@/features/session/session-welcome';
 import {
   QUEUED_BUBBLE_OPACITY_CLASS,
   QueuedPromptFailure,
+  QueuedPromptRemove,
 } from '@/features/session/turn/queued-prompt-bubbles';
 import type { AttachmentUploadStatus } from '@/features/session/turn/user-message';
 import {
@@ -707,37 +712,57 @@ export function InstantSessionShell({
                 </div>
               )}
               {!hasTranscript &&
-                transcriptQueue.map((entry) => (
-                  <div
-                    key={entry.id}
-                    data-pending-prompt-id={entry.id}
-                    data-queue-tone={entry.prompt?.state === 'failed' ? 'failed' : 'pending'}
-                    className="mt-12"
-                  >
-                    <OptimisticTurn
-                      text={entry.text}
-                      attachments={entry.attachments}
-                      agentNames={agentNames}
-                      deferPreview
-                      busy={false}
-                      className={QUEUED_BUBBLE_OPACITY_CLASS}
-                      leadingStatus={
-                        entry.prompt?.state === 'failed' ? (
-                          <QueuedPromptFailure
-                            lastError={entry.prompt.last_error}
-                            failureCode={entry.prompt.failure_code}
-                            onRetry={() => {
-                              retryQueuedPrompt(entry.prompt!.prompt_id);
-                            }}
-                            onRemove={() => {
-                              void removeQueuedPrompt(entry.prompt!.prompt_id);
-                            }}
-                          />
-                        ) : undefined
-                      }
-                    />
-                  </div>
-                ))}
+                transcriptQueue.map((entry) => {
+                  // The same Remove the chat's waiting bubble offers, by the
+                  // same rule: rows wait longest here, while the session boots.
+                  const queuedRemove = quickQueueRemove({
+                    prompt: entry.prompt,
+                    pendingAction: entry.prompt
+                      ? promptInbox.pendingActions[entry.prompt.prompt_id]
+                      : undefined,
+                  });
+                  return (
+                    <div
+                      key={entry.id}
+                      data-pending-prompt-id={entry.id}
+                      data-queue-tone={entry.prompt?.state === 'failed' ? 'failed' : 'pending'}
+                      className="mt-12"
+                    >
+                      <OptimisticTurn
+                        text={entry.text}
+                        attachments={entry.attachments}
+                        agentNames={agentNames}
+                        deferPreview
+                        busy={false}
+                        className={QUEUED_BUBBLE_OPACITY_CLASS}
+                        leadingStatus={
+                          entry.prompt?.state === 'failed' ? (
+                            <QueuedPromptFailure
+                              lastError={entry.prompt.last_error}
+                              failureCode={entry.prompt.failure_code}
+                              onRetry={() => {
+                                retryQueuedPrompt(entry.prompt!.prompt_id);
+                              }}
+                              onRemove={() => {
+                                void removeQueuedPrompt(entry.prompt!.prompt_id);
+                              }}
+                            />
+                          ) : undefined
+                        }
+                        queueAction={
+                          queuedRemove ? (
+                            <QueuedPromptRemove
+                              pendingAction={queuedRemove.pendingAction}
+                              onRemove={() => {
+                                void removeQueuedPrompt(queuedRemove.promptId);
+                              }}
+                            />
+                          ) : undefined
+                        }
+                      />
+                    </div>
+                  );
+                })}
             </div>
           </div>
         </div>

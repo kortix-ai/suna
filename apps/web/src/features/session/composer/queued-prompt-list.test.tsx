@@ -166,8 +166,12 @@ describe('acceptRowAction', () => {
     ).toBe(false);
   });
 
-  test('the cooldown is 400 ms', () => {
-    expect(QUEUE_ROW_ACTION_COOLDOWN_MS).toBe(400);
+  test('the cooldown outlasts the platform double-click window', () => {
+    // macOS and Windows both default the double-click interval to 500 ms. At
+    // 400 ms two clicks 450 ms apart each landed: the second hit the row that
+    // had slid under the pointer and removed a prompt nobody chose (measured in
+    // a real browser, 2026-09-22: two DELETEs 475 ms apart, both 200).
+    expect(QUEUE_ROW_ACTION_COOLDOWN_MS).toBeGreaterThan(500);
   });
 });
 

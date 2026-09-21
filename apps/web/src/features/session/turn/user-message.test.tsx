@@ -291,6 +291,69 @@ describe('UserMessage timestamp', () => {
   });
 });
 
+describe('UserMessage queue action', () => {
+  const renderWith = (props: Record<string, unknown>, msg: MessageWithParts = stamped) =>
+    renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+          <TooltipProvider>
+            <UserMessage message={msg} sessionId="session-1" ownsPlan={false} {...props} />
+          </TooltipProvider>
+        </NextIntlClientProvider>
+      </QueryClientProvider>,
+    );
+  const remove = (
+    <button type="button" aria-label="Remove from queue">
+      x
+    </button>
+  );
+
+  test('sits in the action cluster, ahead of Copy, inside the one reveal', () => {
+    // A pending bubble: rewind is locked, so the pencil is absent and the queue
+    // action takes its place.
+    const markup = renderWith({ onRewind: () => {}, rewindDisabled: true, queueAction: remove });
+    const fadeAt = markup.indexOf(
+      'opacity-0 group-hover/turn:opacity-100 focus-within:opacity-100',
+    );
+    const removeAt = markup.indexOf('aria-label="Remove from queue"');
+    expect(fadeAt).toBeGreaterThan(-1);
+    expect(removeAt).toBeGreaterThan(fadeAt);
+    expect(markup.indexOf('aria-label="Copy code"')).toBeGreaterThan(removeAt);
+    expect(markup).not.toContain('aria-label="Edit message and rewind session"');
+    // Still exactly one reveal: the control brings none of its own.
+    expect(markup.split('group-hover/turn:opacity-100').length - 1).toBe(1);
+  });
+
+  test('a prompt with nothing to copy still gets it', () => {
+    // No `onRewind` means no Copy (a read-only turn). The cluster used to hang
+    // off `copyText` alone, which would have dropped the queue action with it.
+    const markup = renderWith({ queueAction: remove });
+    expect(markup).not.toContain('aria-label="Copy code"');
+    expect(markup).toContain('aria-label="Remove from queue"');
+  });
+
+  test('an unstamped prompt with nothing to copy still renders the row for it', () => {
+    const markup = renderWith({ queueAction: remove }, message);
+    expect(markup).toContain('aria-label="Remove from queue"');
+  });
+
+  test('a touch device wider than a phone is not left with a hover-only control', () => {
+    // `max-md` covers phones. A tablet is coarse AND wide, so without this the
+    // row sits at zero opacity there: present, sized, and unreachable.
+    const row =
+      renderWith({ queueAction: remove }).match(
+        /class="[^"]*group-hover\/turn:opacity-100[^"]*"/,
+      )?.[0] ?? '';
+    expect(row).toContain('pointer-coarse:opacity-100');
+  });
+
+  test('without one the row is what it was', () => {
+    const markup = renderWith({ onRewind: () => {} });
+    expect(markup).not.toContain('Remove from queue');
+    expect(markup).toContain('aria-label="Copy code"');
+  });
+});
+
 describe('UserMessage persisted attachments', () => {
   test('renders every persisted file part in order without losing the timestamp', () => {
     const persisted = {

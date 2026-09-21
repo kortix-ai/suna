@@ -16,10 +16,13 @@ import type { QueueRow } from '../queue-projection';
  * A Remove takes its row off the list at once, and the next row slides up under
  * the pointer with its own Remove button in the same place. Without this, the
  * second click of a double-click activates that row and removes a prompt the
- * user never chose. 400 ms covers the platform double-click interval; a
- * deliberate second removal costs one extra beat.
+ * user never chose. It has to OUTLAST the platform double-click interval, which
+ * is 500 ms by default on macOS and Windows: at 400 ms two clicks 450 ms apart
+ * each landed, and the second removed the neighbour (measured in a real browser,
+ * 2026-09-22: two DELETEs 475 ms apart, both 200). A deliberate second removal
+ * costs one extra beat.
  */
-export const QUEUE_ROW_ACTION_COOLDOWN_MS = 400;
+export const QUEUE_ROW_ACTION_COOLDOWN_MS = 600;
 
 /** What a row's buttons do. Remove and Send now take the row off the list. */
 export type QueueRowAction = 'remove' | 'edit' | 'retry' | 'sendNow';

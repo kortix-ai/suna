@@ -96,6 +96,7 @@ export function OptimisticTurn({
    */
   busy = true,
   leadingStatus,
+  queueAction,
   className,
 }: {
   text: string;
@@ -107,6 +108,8 @@ export function OptimisticTurn({
   sessionId?: string;
   busy?: boolean;
   leadingStatus?: ReactNode;
+  /** See `UserMessageActions.queueAction`. */
+  queueAction?: ReactNode;
   className?: string;
 }) {
   return (
@@ -120,6 +123,7 @@ export function OptimisticTurn({
           staged={staged}
           uploadStatus={uploadStatus}
           leadingStatus={leadingStatus}
+          queueAction={queueAction}
         />
       </div>
       {busy && <SessionBusyIndicator sessionId={sessionId} className="mt-6" />}
@@ -135,6 +139,7 @@ function OptimisticUserBubble({
   staged,
   uploadStatus,
   leadingStatus,
+  queueAction,
 }: {
   text: string;
   agentNames?: string[];
@@ -143,6 +148,7 @@ function OptimisticUserBubble({
   staged?: ReadonlyArray<SentAttachment>;
   uploadStatus?: AttachmentUploadStatus;
   leadingStatus?: ReactNode;
+  queueAction?: ReactNode;
 }) {
   // Strip every ref block the composer folded into the prompt, in the order it
   // folded them in, so the bubble shows the sentence the user typed and the
@@ -225,7 +231,12 @@ function OptimisticUserBubble({
           two-clocks bug that already made the elapsed timer run backwards here.
           The row stays empty until `time.created` arrives with the real
           message; the label then appears without moving anything. */}
-      <UserMessageActions timestamp={null} copyText={text} leadingStatus={leadingStatus} />
+      <UserMessageActions
+        timestamp={null}
+        copyText={text}
+        leadingStatus={leadingStatus}
+        queueAction={queueAction}
+      />
     </div>
   );
 }

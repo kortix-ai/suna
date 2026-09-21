@@ -90,6 +90,94 @@ export function cleanPromptText(text: string): { text: string; fileCount: number
   return { text: withoutAgents.trim(), fileCount: uploads.files.length };
 }
 
+/** Where a server row stands — see `QueueRowState`. */
+export function queueRowStateOf(prompt: Pick<SessionPrompt, 'prompt_id' | 'state'>): QueueRowState {
+  return prompt.state === 'failed'
+    ? 'failed'
+    : prompt.state === 'delivering'
+      ? 'delivering'
+      : isOptimisticSessionPrompt(prompt)
+        ? 'sending'
+        : 'queued';
+}
+
+/**
+ * The server can still remove this prompt. ONE rule for both lanes: the Queue
+ * List row and the waiting Quick Queue bubble offer Remove for exactly the same
+ * rows, and neither guesses whether a prompt already handed to the runtime can
+ * still be cancelled.
+ */
+export function promptRowRemovable(prompt: Pick<SessionPrompt, 'prompt_id' | 'state'>): boolean {
+  const state = queueRowStateOf(prompt);
+  return state === 'queued' || state === 'failed';
+}
+
+/** The Remove a waiting Quick Queue bubble offers. */
+export interface QuickQueueRemove {
+  promptId: string;
+  /** This row already has a request in flight: the control stays, and refuses
+   *  a press — the same rule as `QueueRow.pendingAction`. */
+  pendingAction?: 'retry' | 'remove';
+}
+
+/**
+ * What a Quick Queue bubble in the conversation offers while it waits, or
+ * `null` for nothing.
+ *
+ * Offered exactly while the inbox lists the row and the server can remove it.
+ * A FAILED prompt is left out on purpose: its failure line already carries
+ * Retry and Remove (`QueuedPromptFailure`), and a bubble has one Remove. The
+ * session's first prompt is the turn about to run, not a queue entry.
+ */
+export function quickQueueRemove(input: {
+  /** The bubble's inbox row. Absent once the inbox stops listing it. */
+  prompt: SessionPrompt | undefined;
+  /** The host knows this turn is the first prompt by more than the row's own
+   *  id — a re-mint claim can name it (`SessionChat`). */
+  firstPrompt?: boolean;
+  /** `promptInbox.pendingActions[prompt.prompt_id]`. */
+  pendingAction?: 'retry' | 'remove';
+}): QuickQueueRemove | null {
+  const { prompt } = input;
+  if (!prompt || input.firstPrompt || isFirstPromptRow(prompt)) return null;
+  if (prompt.state === 'failed' || !promptRowRemovable(prompt)) return null;
+  return {
+    promptId: prompt.prompt_id,
+    ...(input.pendingAction ? { pendingAction: input.pendingAction } : {}),
+  };
+}
+
+/**
+ * Every transcript id this tab may have painted `promptId`'s bubble under, for
+ * a Remove that is about to be sent.
+ *
+ * `promptInbox.remove` takes the row out of `prompts` on the click. A bubble
+ * this tab painted optimistically would outlive it for the DELETE round trip,
+ * and with no row it reads as an ordinary message. So the host takes the
+ * bubble down in the same frame. Nothing is lost if the server refuses: the
+ * next inbox read lists the row again and the conversation redraws the bubble
+ * from it. Until that read lands the bubble is absent while the error toast
+ * says the prompt stayed. The bubble is NOT put back by hand on a refusal: a
+ * DELETE that timed out may have succeeded, and a re-inserted optimistic
+ * message with no row behind it would never leave.
+ *
+ * Empty for a row with an action in flight — the SDK sends no DELETE for it.
+ */
+export function paintedMessageIdsOf(
+  inbox: {
+    prompts: readonly Pick<SessionPrompt, 'prompt_id' | 'message_id' | 'wire_message_id'>[];
+    pendingActions: Readonly<Record<string, 'retry' | 'remove'>>;
+  },
+  promptId: string,
+): string[] {
+  if (inbox.pendingActions[promptId]) return [];
+  const row = inbox.prompts.find((prompt) => prompt.prompt_id === promptId);
+  if (!row) return [];
+  return [...new Set([row.message_id, row.wire_message_id])].filter((id): id is string =>
+    Boolean(id),
+  );
+}
+
 function onScreen(prompt: SessionPrompt, transcriptIds: ReadonlySet<string> | undefined): boolean {
   if (!transcriptIds) return false;
   // ANY of the prompt's ids counts. `message_id` moves to the server's
@@ -132,14 +220,7 @@ export function projectQueueRows(input: {
 
     const draft = prompt.client_message_id ? draftsById.get(prompt.client_message_id) : undefined;
     const cleaned = cleanPromptText(prompt.full_text ?? prompt.text);
-    const state: QueueRowState =
-      prompt.state === 'failed'
-        ? 'failed'
-        : prompt.state === 'delivering'
-          ? 'delivering'
-          : isOptimisticSessionPrompt(prompt)
-            ? 'sending'
-            : 'queued';
+    const state = queueRowStateOf(prompt);
     const attachmentCount = draft
       ? draft.files.length
       : Math.max(prompt.attachments?.length ?? 0, cleaned.fileCount);
@@ -155,7 +236,7 @@ export function projectQueueRows(input: {
       ...(state === 'failed' && prompt.last_error ? { lastError: prompt.last_error } : {}),
       ...(failureCode ? { failureCode } : {}),
       retryable: state === 'failed' && isRetryableFailure(failureCode),
-      removable: state === 'queued' || state === 'failed',
+      removable: promptRowRemovable(prompt),
       // A row from another tab or from before a reload comes back only when
       // its text is all there is: its files live as sandbox paths the composer
       // cannot re-attach.

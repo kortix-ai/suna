@@ -66,7 +66,9 @@ import {
   draftClientMessageId,
   draftMessageId,
   isFirstPromptRow,
+  paintedMessageIdsOf,
   projectQueueRows,
+  quickQueueRemove,
   rowsToRemoveOnRewind,
 } from './queue-projection';
 import { rowForArrowEdit } from './composer/queue-edit';
@@ -85,6 +87,7 @@ import {
   queuedBubbleTone,
   type QueuedPromptState,
   QueuedPromptFailure,
+  QueuedPromptRemove,
   type QueuedPromptStatusState,
 } from './turn/queued-prompt-bubbles';
 import { segmentTurn } from './turn/segment-turn';
@@ -740,6 +743,9 @@ interface SessionTurnProps {
    */
   isFirstPrompt?: boolean;
   pendingPrompt?: SessionPrompt;
+  /** `promptInbox.pendingActions` for `pendingPrompt` — a primitive, so the
+   *  memo on this component still holds. */
+  queuedActionPending?: 'retry' | 'remove';
   onRetryQueued?: (id: string) => void;
   onRemoveQueued?: (id: string) => void;
   /** The files this turn's Send carried, by identity — see `UserMessage`. */
@@ -891,6 +897,7 @@ function SessionTurnImpl({
   pending,
   isFirstPrompt,
   pendingPrompt,
+  queuedActionPending,
   onRetryQueued,
   onRemoveQueued,
   pendingAttachments,
@@ -978,6 +985,12 @@ function SessionTurnImpl({
               (isOptimisticSessionPrompt(pendingPrompt) || pendingPrompt.state === 'delivering')
             ? 'sending'
             : statusState;
+  // A waiting Quick Queue prompt can be taken back, by the Queue List's rule.
+  const queuedRemove = quickQueueRemove({
+    prompt: pendingPrompt,
+    firstPrompt: isFirstPrompt,
+    pendingAction: queuedActionPending,
+  });
 
   const activeAssistantMessage = useMemo(() => {
     if (turn.assistantMessages.length === 0) return undefined;
@@ -1724,6 +1737,14 @@ function SessionTurnImpl({
                       ? () => onRemoveQueued(pendingPrompt.prompt_id)
                       : undefined
                   }
+                />
+              ) : undefined
+            }
+            queueAction={
+              queuedRemove && onRemoveQueued ? (
+                <QueuedPromptRemove
+                  pendingAction={queuedRemove.pendingAction}
+                  onRemove={() => onRemoveQueued(queuedRemove.promptId)}
                 />
               ) : undefined
             }
@@ -3108,6 +3129,13 @@ export function SessionChat({
     return async (id: string) => {
       const clientMessageId = draftClientMessageId(id);
       if (clientMessageId !== null) return removeQueuedDraft(clientMessageId);
+      // The row leaves the inbox on the click, so this tab's own bubble leaves
+      // with it — see `paintedMessageIdsOf`. Only an optimistic copy goes; a
+      // message the runtime confirmed is the transcript's.
+      const store = useSessionStateStore.getState();
+      for (const messageId of paintedMessageIdsOf(promptInboxRef.current, id)) {
+        store.optimisticRemove(sessionId, messageId);
+      }
       return removePrompt(id);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -5947,6 +5975,11 @@ export function SessionChat({
                                   pending={pending}
                                   isFirstPrompt={isFirstPrompt}
                                   pendingPrompt={pendingPrompt}
+                                  queuedActionPending={
+                                    pendingPrompt
+                                      ? promptInbox.pendingActions[pendingPrompt.prompt_id]
+                                      : undefined
+                                  }
                                   onRetryQueued={handleRetryQueuedMessage}
                                   onRemoveQueued={handleRemoveQueuedMessage}
                                   interruptedBeforeRun={interruptedTurnIds.has(

@@ -73,6 +73,23 @@ describe('no queue surface toasts what the server wrote', () => {
     expect(remove).not.toMatch(RAW_SERVER_TEXT);
   });
 
+  test('SessionChat takes the bubble down on the click, with the row', () => {
+    // `promptInbox.remove` filters the row out on the click. This tab's own
+    // optimistic bubble has to leave in the same frame: without its row it
+    // reads as an ordinary message — full colour, Edit-from-here in the slot
+    // Remove just held — for the DELETE round trip.
+    const remove = flat(
+      between(
+        chat,
+        'const handleRemoveQueuedMessage = useMemo(',
+        'const handleRetryQueuedMessage = useCallback(',
+      ),
+    );
+    const early = remove.indexOf('paintedMessageIdsOf(promptInboxRef.current, id)');
+    expect(early).toBeGreaterThan(-1);
+    expect(remove.indexOf('return removePrompt(id);')).toBeGreaterThan(early);
+  });
+
   test('SessionChat retry says nothing when the row simply left the queue', () => {
     const retry = flat(
       between(
@@ -114,6 +131,36 @@ describe('no queue surface toasts what the server wrote', () => {
     expect(bubbles).toContain('retryQueuedPrompt(firstPromptRow.prompt_id)');
     expect(bubbles).toContain('retryQueuedPrompt(entry.prompt!.prompt_id)');
     expect(bubbles).toContain('void removeQueuedPrompt(entry.prompt!.prompt_id)');
+  });
+
+  test('a waiting Quick Queue bubble offers Remove through the same rule and the same handler', () => {
+    // The rule is `quickQueueRemove`, table-tested in `queue-projection.test.ts`;
+    // the control is `QueuedPromptRemove`. These pin that both hosts feed the
+    // rule the row and the actions in flight, and remove through the handler
+    // that paints the Undo toast.
+    const chatRule = flat(between(chat, 'const queuedRemove = quickQueueRemove({', '});'));
+    expect(chatRule).toContain('prompt: pendingPrompt');
+    expect(chatRule).toContain('firstPrompt: isFirstPrompt');
+    expect(chatRule).toContain('pendingAction: queuedActionPending');
+
+    const chatBubble = flat(between(chat, 'data-turn-pending={pending', '{/* ── Assistant parts'));
+    expect(chatBubble).toContain('queueAction={');
+    expect(chatBubble).toContain('<QueuedPromptRemove');
+    expect(chatBubble).toContain('pendingAction={queuedRemove.pendingAction}');
+    expect(chatBubble).toContain('onRemoveQueued(queuedRemove.promptId)');
+
+    const chatTurn = flat(between(chat, 'pendingPrompt={pendingPrompt}', 'interruptedBeforeRun={'));
+    expect(chatTurn).toContain('promptInbox.pendingActions[pendingPrompt.prompt_id]');
+    expect(chatTurn).toContain('onRemoveQueued={handleRemoveQueuedMessage}');
+
+    const shellBubble = flat(
+      between(shell, 'transcriptQueue.map((entry) =>', 'Once a first message is sent'),
+    );
+    expect(shellBubble).toContain('quickQueueRemove({');
+    expect(shellBubble).toContain('prompt: entry.prompt');
+    expect(shellBubble).toContain('promptInbox.pendingActions[entry.prompt.prompt_id]');
+    expect(shellBubble).toContain('<QueuedPromptRemove');
+    expect(shellBubble).toContain('void removeQueuedPrompt(queuedRemove.promptId)');
   });
 
   test('SessionChat resumes with the shared toast', () => {

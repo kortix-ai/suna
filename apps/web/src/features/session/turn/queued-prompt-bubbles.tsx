@@ -1,8 +1,12 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import Hint from '@/components/ui/hint';
 import { InlineMeta } from '@/components/ui/inline-meta';
+import Loading from '@/components/ui/loading';
 import { useTranslations } from '@/i18n/use-translations';
+import { TrashIcon } from '@phosphor-icons/react';
+import { nextRowActionState } from '../composer/queued-prompt-list';
 import { isRetryableFailure, queueFailureLine } from '../queue-failure-copy';
 
 /** Pending text stays legible while the active turn continues above it. */
@@ -25,6 +29,46 @@ export function queuedBubbleTone(
   if (!state) return undefined;
   if (state === 'failed' || state === 'held') return state;
   return 'pending';
+}
+
+/**
+ * Which press of a bubble's Remove runs — the Queue List's own gate
+ * (`nextRowActionState`), for the same reason: the removed bubble leaves at
+ * once and its neighbour slides under the pointer with its own Remove in the
+ * same place, so the second click of a double-click would remove a prompt the
+ * user never chose. Every bubble is its own component, so ONE gate is shared
+ * by all of them rather than held in a ref.
+ *
+ * `focusComposer`: the bubble unmounts with its row. A keyboard press hands
+ * focus to the composer instead of <body>; a pointer press does not, which
+ * would raise the touch keyboard.
+ */
+export function createQueuedRemoveGate(): (input: {
+  /** `MouseEvent.detail`. 0 means the keyboard raised the click. */
+  detail: number;
+  nowMs: number;
+  pendingAction?: 'retry' | 'remove';
+}) => { accepted: boolean; focusComposer: boolean } {
+  let lastShiftAtMs: number | null = null;
+  return (input) => {
+    const next = nextRowActionState({ action: 'remove', ...input, lastShiftAtMs });
+    lastShiftAtMs = next.lastShiftAtMs;
+    return { accepted: next.accepted, focusComposer: next.accepted && input.detail === 0 };
+  };
+}
+
+const queuedRemoveGate = createQueuedRemoveGate();
+
+/** Read in event handlers only: the clock is never read while rendering. */
+function pressQueuedRemove(
+  event: { detail: number },
+  onRemove: () => void,
+  pendingAction?: 'retry' | 'remove',
+): void {
+  const press = queuedRemoveGate({ detail: event.detail, nowMs: Date.now(), pendingAction });
+  if (!press.accepted) return;
+  onRemove();
+  if (press.focusComposer) window.dispatchEvent(new CustomEvent('focus-session-textarea'));
 }
 
 /**
@@ -64,11 +108,55 @@ export function QueuedPromptFailure({
           </Button>
         )}
         {onRemove && (
-          <Button type="button" variant="ghost" size="xs" onClick={onRemove}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            onClick={(event) => pressQueuedRemove(event, onRemove)}
+          >
             {common('remove')}
           </Button>
         )}
       </span>
     </InlineMeta>
+  );
+}
+
+/**
+ * Remove for a Quick Queue prompt that still waits — the Queue List row's own
+ * control, in the bubble's action row where Edit-from-here sits on a delivered
+ * message (a waiting prompt never has both). It reveals with that row, so a
+ * prompt that steers in a second never flashes a control.
+ */
+export function QueuedPromptRemove({
+  onRemove,
+  pendingAction,
+}: {
+  onRemove: () => void;
+  /** See `QuickQueueRemove.pendingAction`. */
+  pendingAction?: 'retry' | 'remove';
+}) {
+  const copy = useTranslations('hardcodedUi');
+  const label = copy.raw('i18nComplete.textc0b9d9e9ac1d');
+  return (
+    <Hint label={label} side="top" align="center">
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-xs"
+        className="hit-area-2"
+        aria-label={label}
+        // `aria-disabled`, never `disabled`: disabling the pressed button drops
+        // focus to <body>. It does not block a click — the gate does.
+        aria-disabled={pendingAction ? true : undefined}
+        onClick={(event) => pressQueuedRemove(event, onRemove, pendingAction)}
+      >
+        {pendingAction === 'remove' ? (
+          <Loading className="size-3.5 shrink-0" />
+        ) : (
+          <TrashIcon className="size-4" />
+        )}
+      </Button>
+    </Hint>
   );
 }

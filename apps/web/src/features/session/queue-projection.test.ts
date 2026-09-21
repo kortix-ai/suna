@@ -8,8 +8,11 @@ import {
   draftClientMessageId,
   draftMessageId,
   isDraftRowId,
+  paintedMessageIdsOf,
   projectQueueRows,
   promptIdForClientMessage,
+  promptRowRemovable,
+  quickQueueRemove,
   rowsToRemoveOnRewind,
 } from './queue-projection';
 
@@ -494,3 +497,105 @@ describe('the Send now field on a projected row', () => {
   });
 });
 
+describe('promptRowRemovable — one removal rule for both lanes', () => {
+  const cases: Array<[string, Partial<SessionPrompt>, boolean]> = [
+    ['queued', {}, true],
+    ['waiting behind the running turn', { state: 'waiting', reason: 'turn_active' }, true],
+    ['waiting behind an older prompt', { state: 'waiting', reason: 'older_prompt_pending' }, true],
+    ['waiting, held by Stop', { state: 'waiting', reason: 'held' }, true],
+    ['failed', { state: 'failed', last_error: 'delivery outcome: failed' }, true],
+    // Its turn is starting: the server refuses a DELETE with 409.
+    ['delivering', { state: 'delivering' }, false],
+    // No server id yet: there is nothing to DELETE.
+    ['not yet confirmed by the server', { prompt_id: 'optimistic:q_9' }, false],
+  ];
+  for (const [name, overrides, removable] of cases) {
+    test(`${name} → ${removable ? 'removable' : 'not removable'}`, () => {
+      expect(promptRowRemovable(prompt(overrides))).toBe(removable);
+    });
+  }
+
+  test('the Queue List row reads the same rule', () => {
+    for (const [, overrides] of cases) {
+      const row = prompt({ placement: 'composer', ...overrides });
+      expect(projectQueueRows({ prompts: [row] }).rows[0].removable).toBe(promptRowRemovable(row));
+    }
+  });
+});
+
+describe('quickQueueRemove — what a waiting Quick Queue bubble offers', () => {
+  const quick = (overrides: Partial<SessionPrompt> = {}) =>
+    prompt({ placement: 'transcript', ...overrides });
+
+  test('a waiting prompt offers Remove, under the row the inbox lists', () => {
+    expect(quickQueueRemove({ prompt: quick() })).toEqual({ promptId: 'cmd-1' });
+    for (const reason of ['turn_active', 'older_prompt_pending', 'held'] as const) {
+      expect(quickQueueRemove({ prompt: quick({ state: 'waiting', reason }) })).toEqual({
+        promptId: 'cmd-1',
+      });
+    }
+  });
+
+  test('a bubble the inbox does not list offers nothing', () => {
+    // Delivered, removed elsewhere, or a Stop-interrupted message the runtime
+    // already holds: there is no row left to DELETE.
+    expect(quickQueueRemove({ prompt: undefined })).toBeNull();
+  });
+
+  test('a prompt the server will not remove offers nothing', () => {
+    expect(quickQueueRemove({ prompt: quick({ state: 'delivering' }) })).toBeNull();
+    expect(quickQueueRemove({ prompt: quick({ prompt_id: 'optimistic:q_9' }) })).toBeNull();
+  });
+
+  test('a failed prompt keeps its one Remove on the failure line', () => {
+    expect(quickQueueRemove({ prompt: quick({ state: 'failed' }) })).toBeNull();
+  });
+
+  test("the session's first prompt is the turn about to run, not a queue entry", () => {
+    expect(quickQueueRemove({ prompt: quick({ client_message_id: 'start_abc' }) })).toBeNull();
+    expect(quickQueueRemove({ prompt: quick({ client_message_id: 'pending:ses_1' }) })).toBeNull();
+    // A re-mint claim can name the first turn without the row saying so.
+    expect(quickQueueRemove({ prompt: quick(), firstPrompt: true })).toBeNull();
+  });
+
+  test('an action in flight stays on the control, so it refuses a second one', () => {
+    for (const pendingAction of ['remove', 'retry'] as const) {
+      expect(quickQueueRemove({ prompt: quick(), pendingAction })).toEqual({
+        promptId: 'cmd-1',
+        pendingAction,
+      });
+    }
+    // An action in flight never makes a row removable that was not.
+    expect(
+      quickQueueRemove({ prompt: quick({ state: 'delivering' }), pendingAction: 'retry' }),
+    ).toBeNull();
+  });
+});
+
+describe('paintedMessageIdsOf — the bubble leaves on the click, with its row', () => {
+  test('every transcript id the row can be painted under, once each', () => {
+    const prompts = [
+      prompt({ prompt_id: 'same', message_id: 'msg_a', wire_message_id: 'msg_a' }),
+      prompt({ prompt_id: 'reminted', message_id: 'msg_new', wire_message_id: 'msg_wire' }),
+      prompt({ prompt_id: 'unplaced', message_id: '' }),
+    ];
+    expect(paintedMessageIdsOf({ prompts, pendingActions: {} }, 'same')).toEqual(['msg_a']);
+    expect(paintedMessageIdsOf({ prompts, pendingActions: {} }, 'reminted')).toEqual([
+      'msg_new',
+      'msg_wire',
+    ]);
+    expect(paintedMessageIdsOf({ prompts, pendingActions: {} }, 'unplaced')).toEqual([]);
+  });
+
+  test('a row the inbox no longer lists names nothing', () => {
+    expect(paintedMessageIdsOf({ prompts: [prompt()], pendingActions: {} }, 'gone')).toEqual([]);
+  });
+
+  test('a row with an action in flight names nothing: the SDK sends no DELETE for it', () => {
+    // `promptInbox.remove` rejects with `prompt_action_pending` and the row
+    // stays listed. Taking the bubble down would be a removal nobody made.
+    expect(
+      paintedMessageIdsOf({ prompts: [prompt()], pendingActions: { 'cmd-1': 'retry' } }, 'cmd-1'),
+    ).toEqual([]);
+  });
+});

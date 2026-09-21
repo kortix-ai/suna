@@ -247,6 +247,17 @@ Each distinct Enter displays its pending prompt immediately, even while an earli
 acceptance request is unresolved. Only a delivery failure adds text: its cause,
 Retry, and Remove. The server inbox continues to own execution order.
 
+A waiting Quick Queue bubble offers **Remove from queue** in its action row, by
+the rule the Queue List row uses: while `prompts` lists the row as `queued` or
+`waiting`, not while it is `delivering` or has an entry in `pendingActions`. The
+removal shows the same notice with Undo, and Undo restores the prompt as a Quick
+Queue bubble.
+
+A restored prompt is a new row created at Undo time. Unless it was held, it
+steers into the turn that runs at that moment. It also counts as typed at Undo
+time: as the head of the Quick Queue it ends a response that is streaming text,
+even when the removed prompt was already waiting before that turn started.
+
 ### Why a turn ended
 
 The transcript of an interrupted turn only carries `MessageAbortedError`. The

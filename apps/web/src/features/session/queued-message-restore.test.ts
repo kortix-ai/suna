@@ -73,6 +73,26 @@ describe('restoreQueuedMessage', () => {
     expect(restoreQueuedMessage(removed(), () => 'msg_fresh').messageId).toBe('msg_fresh');
   });
 
+  test('puts a Quick Queue prompt back in the Quick Queue, under its own key and a fresh wire id', () => {
+    // A waiting Quick Queue bubble offers Remove too. Its Undo must repaint a
+    // bubble in the conversation, never a row above the composer.
+    const body = removed({ placement: 'transcript' });
+    expect(restoreQueuedMessage(body, () => 'msg_fresh')).toEqual({
+      clientMessageId: 'cm_1',
+      messageId: 'msg_fresh',
+      parts: body.parts,
+      overrides: body.overrides!,
+      restore: true,
+      placement: 'transcript',
+    });
+  });
+
+  test('a Queue List prompt goes back above the composer', () => {
+    expect(
+      restoreQueuedMessage(removed({ placement: 'composer' }), () => 'msg_fresh').placement,
+    ).toBe('composer');
+  });
+
   test('omits `overrides` entirely when the prompt carried none', () => {
     // `undefined` and `{}` are not the same downstream: an empty object would
     // send "no agent, no model" rather than "resolve at delivery".

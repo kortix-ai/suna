@@ -37,6 +37,26 @@ describe('OptimisticTurn', () => {
     expect(markup).toContain('aria-label="Copy code"');
   });
 
+  test('carries a queue action into the same action row the server turn uses', () => {
+    // The boot shell draws a waiting Quick Queue prompt through this component.
+    const markup = render(
+      <OptimisticTurn
+        text="ship the thing"
+        busy={false}
+        queueAction={
+          <button type="button" aria-label="Remove from queue">
+            x
+          </button>
+        }
+      />,
+    );
+    const fadeAt = markup.indexOf('group-hover/turn:opacity-100');
+    const removeAt = markup.indexOf('aria-label="Remove from queue"');
+    expect(fadeAt).toBeGreaterThan(-1);
+    expect(removeAt).toBeGreaterThan(fadeAt);
+    expect(markup.indexOf('aria-label="Copy code"')).toBeGreaterThan(removeAt);
+  });
+
   test('waits with a Thinking shimmer — no logomark, no boot copy', () => {
     const markup = render(<OptimisticTurn text="d" />);
     expect(markup).toContain('Thinking');

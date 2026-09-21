@@ -1080,6 +1080,7 @@ export function UserMessageActions({
   onRewind,
   rewindDisabled,
   leadingStatus,
+  queueAction,
 }: {
   /** Epoch milliseconds, or `null` when the backend never stamped one. */
   timestamp: number | null;
@@ -1097,6 +1098,12 @@ export function UserMessageActions({
    * sending prompts render no words; their muted text marks them.
    */
   leadingStatus?: React.ReactNode;
+  /**
+   * A waiting Quick Queue prompt's Remove (`QueuedPromptRemove`). It sits where
+   * Edit-from-here would and reveals with the row; a waiting prompt is never
+   * rewindable, so the two never coexist.
+   */
+  queueAction?: React.ReactNode;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // Copy stays available while the agent is busy / rewind is locked.
@@ -1105,7 +1112,7 @@ export function UserMessageActions({
   const hasMeta = timestamp !== null || Boolean(edited);
 
   // Nothing to say and nothing to do — don't leave an empty row behind.
-  if (!hasMeta && !copyText && !leadingStatus) return null;
+  if (!hasMeta && !copyText && !leadingStatus && !queueAction) return null;
 
   return (
     // The fade sits on the ROW, so the timestamp and the buttons reveal
@@ -1118,7 +1125,7 @@ export function UserMessageActions({
       {leadingStatus}
       <div
         className={cn(
-          'flex items-center gap-2 transition-opacity duration-150',
+          'flex items-center gap-2 transition-opacity duration-(--duration-normal)',
           // `max-md:opacity-100` — the reveal is a DESKTOP affordance only.
           //
           // A touch screen has no hover, so under 768px this row would sit
@@ -1137,7 +1144,10 @@ export function UserMessageActions({
           // counterpart. The two `opacity-100` variants it sits beside
           // agree with it, so no ordering assumption is being made and the
           // desktop string is unchanged.
-          'opacity-0 group-hover/turn:opacity-100 focus-within:opacity-100 max-md:opacity-100',
+          //
+          // `pointer-coarse:opacity-100` — a tablet is a touch screen wider than
+          // 768px. The Queue List rows use the same variant for the same reason.
+          'opacity-0 group-hover/turn:opacity-100 focus-within:opacity-100 max-md:opacity-100 pointer-coarse:opacity-100',
         )}
       >
         {/* `InlineMeta` owns the `·` separator and drops absent children, so a
@@ -1150,8 +1160,9 @@ export function UserMessageActions({
             {edited && 'edited'}
           </InlineMeta>
         )}
-        {copyText && (
+        {(copyText || queueAction) && (
           <div className="flex shrink-0 items-center gap-0.5">
+            {queueAction}
             {canRewind && (
               <Hint label={tI18nComplete.raw('textc72e5d059e24')} side="top" align="center">
                 <Button
@@ -1169,7 +1180,7 @@ export function UserMessageActions({
               </Hint>
             )}
 
-            <CopyButton code={copyText} size="sm" hintSide="top" />
+            {copyText && <CopyButton code={copyText} size="sm" hintSide="top" />}
           </div>
         )}
       </div>
@@ -1295,6 +1306,7 @@ export function UserMessage({
   onEditCancel,
   onEditSend,
   leadingStatus,
+  queueAction,
   pendingAttachments,
   uploadStatus,
   pendingText,
@@ -1330,6 +1342,8 @@ export function UserMessage({
   onEditSend?: (messageId: string, text: string) => void;
   /** See `UserMessageActions.leadingStatus`. */
   leadingStatus?: React.ReactNode;
+  /** See `UserMessageActions.queueAction`. */
+  queueAction?: React.ReactNode;
   /**
    * The files this message's Send carried, in send order. The runtime streams
    * a message's parts text-first and the file parts seconds later; these keep
@@ -1527,6 +1541,7 @@ export function UserMessage({
       onRewind={onRewind}
       rewindDisabled={rewindDisabled}
       leadingStatus={leadingStatus}
+      queueAction={queueAction}
     />
   );
 
