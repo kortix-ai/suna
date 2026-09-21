@@ -19,6 +19,7 @@ import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
  * to report the case that is true almost always.
  */
 
+import { Badge, type badgeVariants } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import Hint from '@/components/ui/hint';
@@ -29,11 +30,13 @@ import { buildAgentGitReconciliationPrompt } from '@/features/session/agent-git-
 import { reloadProgressText } from '@/hooks/projects/session-reload-progress';
 import {
   type ReloadBusyReason,
+  type SessionConfigNotice,
   useSessionConfigFreshness,
 } from '@/hooks/projects/use-session-config-freshness';
 import { useChatSendStore } from '@/stores/chat-send-store';
 import type { SessionReloadPhase } from '@kortix/sdk';
-import { ArrowsClockwiseIcon } from '@phosphor-icons/react';
+import { ArrowsClockwiseIcon, FileCodeIcon, WarningIcon } from '@phosphor-icons/react';
+import type { VariantProps } from 'class-variance-authority';
 import { useState } from 'react';
 import { SessionReloadProgressView } from './session-reload-progress-view';
 
@@ -102,6 +105,8 @@ export function SessionConfigIndicator({
   // This component may vanish the moment a reload lands, and a dialog that
   // unmounts mid-question is worse than no dialog.
   if (notice.kind === 'hidden' && !isPending) return null;
+  if (!isPending && notice.kind === 'session-files') return <SessionConfigFilesChip />;
+  if (!isPending && notice.kind === 'fallback') return <SessionConfigFallbackChip notice={notice} />;
 
   const label = isPending
     ? reloadProgressText(phase, tI18nComplete)
@@ -162,12 +167,12 @@ export function SessionConfigIndicator({
                 {tI18nComplete.raw('textaa821f12cbc6')}
               </p>
 
-              <p className="text-muted-foreground mt-2.5 font-mono text-[11px]">
-                <span className="text-foreground/80">
+              <p className="text-muted-foreground mt-2.5 font-mono text-xs">
+                <span className="text-foreground">
                   {notice.kind === 'stale' ? notice.running : '—'}
                 </span>
                 {' → '}
-                <span className="text-foreground/80">
+                <span className="text-foreground">
                   {notice.kind === 'stale' ? notice.latest : '—'}
                 </span>
               </p>
@@ -208,6 +213,130 @@ export function SessionConfigIndicator({
             </p>
           </div>
         )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/**
+ * `mode: session-files`: the session edited its own config dir, so it runs those
+ * files instead of the base branch's config release. A state, not a problem, so
+ * the chip is neutral and carries no action.
+ */
+function SessionConfigFilesChip() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const label = tI18nComplete.raw('textef40aea2badf');
+  return (
+    <Hint
+      side="bottom"
+      sideOffset={4}
+      delayDuration={300}
+      label={tI18nComplete.raw('text15b25630019e')}
+    >
+      <Badge
+        variant="secondary"
+        size="sm"
+        tabIndex={0}
+        aria-label={label}
+        data-testid="session-config-files-chip"
+        className="max-w-56"
+      >
+        <FileCodeIcon />
+        {/* Icon-only below md: at 720 px the label collided with the centered
+            boot status. The label stays in aria-label and the Hint. */}
+        <span className="hidden truncate md:inline">{label}</span>
+      </Badge>
+    </Hint>
+  );
+}
+
+/**
+ * How loud the fallback chip is. `destructive` is the loud error treatment the
+ * spec recommends (docs/specs/config-releases.md, open decision 1). Set it to
+ * `secondary` for a quiet notice; nothing else changes.
+ */
+const FALLBACK_CHIP_VARIANT: NonNullable<VariantProps<typeof badgeVariants>['variant']> =
+  'destructive';
+
+/**
+ * `fallback_reason` set: the desired config failed on the box, and an earlier
+ * config serves the session. The chip stays until a convergence succeeds. Its
+ * popover names the reason, what runs now, and the release that failed.
+ */
+function SessionConfigFallbackChip({
+  notice,
+}: {
+  notice: Extract<SessionConfigNotice, { kind: 'fallback' }>;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const label = tI18nComplete.raw('textd9ff3a72833d');
+  const servingLabel =
+    notice.source === 'release'
+      ? tI18nComplete.raw('text00ed4c71dc2b')
+      : notice.source === 'workspace'
+        ? tI18nComplete.raw('textd0cd78619cce')
+        : tI18nComplete.raw('textbd7a1a3b4141');
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Badge
+          asChild
+          variant={FALLBACK_CHIP_VARIANT}
+          size="sm"
+          data-testid="session-config-fallback-chip"
+          className="max-w-56 cursor-pointer normal-case active:scale-[0.96]"
+        >
+          <button type="button" aria-label={label}>
+            <WarningIcon />
+            <span className="truncate">{label}</span>
+          </button>
+        </Badge>
+      </PopoverTrigger>
+
+      <PopoverContent
+        align="end"
+        sideOffset={8}
+        className="w-[320px] overflow-hidden p-0"
+        data-testid="session-config-fallback-detail"
+      >
+        <div className="px-4 pt-4 pb-3">
+          <div className="flex items-center gap-2.5">
+            <span className="bg-kortix-red/15 text-kortix-red flex size-8 shrink-0 items-center justify-center rounded-sm">
+              <WarningIcon className="size-4" />
+            </span>
+            <h3 className="text-foreground min-w-0 text-sm font-semibold tracking-tight">
+              {tI18nComplete.raw('textebfb07812fb4')}
+            </h3>
+          </div>
+          <p className="text-muted-foreground mt-2.5 text-xs leading-relaxed">
+            {tI18nComplete.raw('text4e62b29dd3b6')}
+          </p>
+        </div>
+
+        <dl className="border-border space-y-2 border-t px-4 py-3 text-xs">
+          <div className="space-y-0.5">
+            <dt className="text-muted-foreground">{tI18nComplete.raw('textf81ab834de5f')}</dt>
+            <dd className="text-foreground font-mono break-words">{notice.reason}</dd>
+          </div>
+          <div className="space-y-0.5">
+            <dt className="text-muted-foreground">{tI18nComplete.raw('text44cdf35701cd')}</dt>
+            <dd className="text-foreground">
+              {servingLabel}
+              {notice.servingReleaseId ? (
+                <span className="text-muted-foreground ml-1.5 font-mono">
+                  {notice.servingReleaseId}
+                </span>
+              ) : null}
+            </dd>
+          </div>
+          {notice.failedReleaseId ? (
+            <div className="space-y-0.5">
+              <dt className="text-muted-foreground">{tI18nComplete.raw('text591f9f0f3259')}</dt>
+              <dd className="text-foreground font-mono">{notice.failedReleaseId}</dd>
+            </div>
+          ) : null}
+        </dl>
       </PopoverContent>
     </Popover>
   );

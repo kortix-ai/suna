@@ -18569,7 +18569,19 @@
       "textc3bafa5156b4": "Todavía no tienes una cuenta propia",
       "textea5d0ffa0962": "Un responsable del proyecto conecta la cuenta compartida.",
       "text3d6627454174": "Establecer credencial",
-      "text929505ef815a": "Todavía no hay ninguna cuenta conectada. Añade la tuya a continuación o pide a un responsable del proyecto que conecte una compartida."
+      "text929505ef815a": "Todavía no hay ninguna cuenta conectada. Añade la tuya a continuación o pide a un responsable del proyecto que conecte una compartida.",
+      "text931cb67e2af7": "No se pudo cargar la nueva configuración del agente. Esta sesión sigue usando una configuración anterior.",
+      "textef40aea2badf": "Usando la configuración de esta sesión",
+      "text15b25630019e": "Esta sesión cambió su propia configuración de agente. Usa esos archivos en lugar de la configuración de la rama base.",
+      "textd9ff3a72833d": "No se pudo cargar la configuración",
+      "textebfb07812fb4": "No se pudo cargar la nueva configuración del agente",
+      "text4e62b29dd3b6": "Esta sesión usa una configuración anterior. La configuración fallida no se reintenta hasta que cambie la rama base.",
+      "textf81ab834de5f": "Motivo",
+      "text44cdf35701cd": "En uso ahora",
+      "text591f9f0f3259": "Versión fallida",
+      "text00ed4c71dc2b": "Última versión que funcionó",
+      "textd0cd78619cce": "Los archivos de configuración de esta sesión",
+      "textbd7a1a3b4141": "La configuración predeterminada de la plataforma"
     }
   },
   "projectOnboarding": {

@@ -18569,7 +18569,19 @@
       "textc3bafa5156b4": "Noch kein eigenes Konto",
       "textea5d0ffa0962": "Ein Projektmanager verbindet das gemeinsame Konto.",
       "text3d6627454174": "Anmeldedaten festlegen",
-      "text929505ef815a": "Es ist noch kein Konto verbunden. Fügen Sie unten Ihr eigenes hinzu, oder bitten Sie einen Projektmanager, ein gemeinsames Konto zu verbinden."
+      "text929505ef815a": "Es ist noch kein Konto verbunden. Fügen Sie unten Ihr eigenes hinzu, oder bitten Sie einen Projektmanager, ein gemeinsames Konto zu verbinden.",
+      "text931cb67e2af7": "Die neue Agent-Konfiguration konnte nicht geladen werden. Diese Sitzung läuft weiter mit einer früheren Konfiguration.",
+      "textef40aea2badf": "Läuft mit der Konfiguration dieser Sitzung",
+      "text15b25630019e": "Diese Sitzung hat ihre eigene Agent-Konfiguration geändert. Sie verwendet diese Dateien statt der Konfiguration des Basis-Branches.",
+      "textd9ff3a72833d": "Konfiguration nicht geladen",
+      "textebfb07812fb4": "Die neue Agent-Konfiguration konnte nicht geladen werden",
+      "text4e62b29dd3b6": "Eine frühere Konfiguration läuft in dieser Sitzung. Die fehlerhafte Konfiguration wird erst nach einer Änderung am Basis-Branch erneut versucht.",
+      "textf81ab834de5f": "Grund",
+      "text44cdf35701cd": "Läuft jetzt",
+      "text591f9f0f3259": "Fehlgeschlagenes Release",
+      "text00ed4c71dc2b": "Letztes funktionierendes Release",
+      "textd0cd78619cce": "Die Konfigurationsdateien dieser Sitzung",
+      "textbd7a1a3b4141": "Die Standardkonfiguration der Plattform"
     }
   },
   "projectOnboarding": {
