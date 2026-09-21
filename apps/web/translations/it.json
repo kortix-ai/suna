@@ -1599,7 +1599,7 @@
     },
     "previousRepository": {
       "title": "La sessione usa il repository precedente",
-      "message": "Questa sessione conserva l’area di lavoro precedente. Puoi riprenderla, ma Git fetch, push e le richieste di modifica restano disabilitati.",
+      "message": "Questa area di lavoro proviene dal repository precedente del progetto. Git ora si collega al repository corrente. Controlla le modifiche prima del push.",
       "unavailable": "L’area di lavoro precedente non è più disponibile. Avvia una nuova sessione nel repository corrente.",
       "resume": "Riprendi area di lavoro precedente",
       "resuming": "Ripresa in corso…",
@@ -1619,8 +1619,6 @@
     "search": "Cerca modelli",
     "free": "Gratis",
     "included": "Incluso",
-    "projectDefaultAccount": "Predefinito del progetto",
-    "useAccount": "Usa account",
     "addProvider": "Aggiungi provider",
     "connectProvider": "Connetti provider",
     "manageModels": "Gestisci modelli",

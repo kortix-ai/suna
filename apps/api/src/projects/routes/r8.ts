@@ -41,7 +41,6 @@ import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { AnyObject, ChangeRequestSchema, SessionStartResultSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import {
-  sessionRepositoryStartDecision,
   sessionUsesCurrentRepository,
 } from '../lib/repository-generation';
 import { UUID_V4_REGEX, normalizeString, readBody } from '../lib/serializers';
@@ -130,40 +129,6 @@ projectsApp.openapi(
     const sessionMetadata = visible.row.metadata as Record<string, unknown>;
     const repositoryMode = c.req.query('repository_mode');
     const usesCurrentRepository = sessionUsesCurrentRepository(projectMetadata, sessionMetadata);
-    if (!usesCurrentRepository && repositoryMode !== 'previous') {
-      return c.json({
-        error: 'This session uses the previous repository.',
-        code: 'session_repository_changed',
-        remedy: 'Resume the preserved workspace without Git access, or start a new session.',
-      }, 409);
-    }
-    if (!usesCurrentRepository) {
-      if (!visible.canManageLifecycle) {
-        return c.json({
-          error: 'Only the session owner or an account owner/admin can resume a previous-repository workspace.',
-          code: 'previous_repository_resume_forbidden',
-        }, 403);
-      }
-      const [preservedRuntime] = await db
-        .select({ externalId: sessionSandboxes.externalId })
-        .from(sessionSandboxes)
-        .where(and(
-          eq(sessionSandboxes.sessionId, sessionId),
-          eq(sessionSandboxes.projectId, projectId),
-          eq(sessionSandboxes.accountId, loaded.row.accountId),
-        ))
-        .limit(1);
-      const repositoryDecision = sessionRepositoryStartDecision(projectMetadata, sessionMetadata, {
-        repositoryMode,
-        hasPreservedRuntime: Boolean(preservedRuntime?.externalId),
-      });
-      if (!repositoryDecision.ok) {
-        return c.json({
-          error: 'The previous repository workspace is no longer available. Start a new session in the current repository.',
-          code: repositoryDecision.code,
-        }, 409);
-      }
-    }
     // The agent this session will actually run has to still be one the caller
     // may run — grants change after a session is created, and `/start` is what
     // resumes a hibernated box days later. The session's stored `agent_name`
@@ -218,7 +183,11 @@ projectsApp.openapi(
       waitMs,
     });
     stl.mark(`open-session:${result.start.stage}`);
-    stl.log({ waitMs, repositoryMode: usesCurrentRepository ? 'current' : 'previous' });
+    stl.log({
+      waitMs,
+      repositoryMode: usesCurrentRepository ? 'current' : 'previous',
+      compatibilityModeRequested: repositoryMode === 'previous',
+    });
     return c.json(
       {
         ...result.start,

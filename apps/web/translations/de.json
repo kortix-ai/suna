@@ -1599,7 +1599,7 @@
     },
     "previousRepository": {
       "title": "Sitzung verwendet das vorherige Repository",
-      "message": "Diese Sitzung behält ihren vorherigen Arbeitsbereich. Du kannst ihn fortsetzen, aber Git-Abruf, Push und Änderungsanfragen bleiben deaktiviert.",
+      "message": "Dieser Arbeitsbereich stammt aus dem vorherigen Repository des Projekts. Git verbindet sich jetzt mit dem aktuellen Repository. Prüfe die Änderungen vor dem Push.",
       "unavailable": "Der vorherige Arbeitsbereich ist nicht mehr verfügbar. Starte eine neue Sitzung im aktuellen Repository.",
       "resume": "Vorherigen Arbeitsbereich fortsetzen",
       "resuming": "Wird fortgesetzt…",
@@ -1619,8 +1619,6 @@
     "search": "Modelle suchen",
     "free": "Kostenlos",
     "included": "Inklusive",
-    "projectDefaultAccount": "Projektstandard",
-    "useAccount": "Konto verwenden",
     "addProvider": "Anbieter hinzufügen",
     "connectProvider": "Anbieter verbinden",
     "manageModels": "Modelle verwalten",

@@ -1599,7 +1599,7 @@
     },
     "previousRepository": {
       "title": "A sessão usa o repositório anterior",
-      "message": "Esta sessão mantém o espaço de trabalho anterior. Você pode retomá-lo, mas Git fetch, push e solicitações de alteração permanecem desativados.",
+      "message": "Este espaço de trabalho começou no repositório anterior do projeto. O Git agora se conecta ao repositório atual. Revise as alterações antes do push.",
       "unavailable": "O espaço de trabalho anterior não está mais disponível. Inicie uma nova sessão no repositório atual.",
       "resume": "Retomar espaço anterior",
       "resuming": "Retomando…",
@@ -1619,8 +1619,6 @@
     "search": "Buscar modelos",
     "free": "Grátis",
     "included": "Incluído",
-    "projectDefaultAccount": "Padrão do projeto",
-    "useAccount": "Usar conta",
     "addProvider": "Adicionar provedor",
     "connectProvider": "Conectar provedor",
     "manageModels": "Gerenciar modelos",

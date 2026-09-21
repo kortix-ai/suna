@@ -37,6 +37,7 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import {
   FolderOpenIcon,
+  KeyIcon,
   DotsThreeIcon as MoreHorizontal,
   PencilSimpleIcon,
   PlusIcon,
@@ -92,7 +93,9 @@ import {
   formatExpiry,
   removeAccessCopy,
   roleValueLabel,
+  useAccountRoleEditor,
   useAccountRoles,
+  type KebabItem,
   type RoleValue,
 } from '@/features/workspace/shared/access';
 import {
@@ -106,7 +109,12 @@ import {
   type GroupProjectGrant,
 } from '@/lib/iam-client';
 import { usePermission } from '@/lib/use-permission';
-import { detachGroupFromProject, listAccountMembers, listProjectResourceGrants } from '@kortix/sdk';
+import {
+  detachGroupFromProject,
+  listAccountMembers,
+  listProjectResourceGrants,
+  type AccountRole,
+} from '@kortix/sdk';
 import { contract, invalidatePermissionProbes, qk } from '@kortix/sdk/react';
 
 const IDP_BADGE_TITLE =
@@ -127,6 +135,16 @@ export interface GroupAccessPanelProps {
   canReadRoles: boolean;
   /** `policy.read` — the leaf `GET .../iam/policies` asserts. Same rules. */
   canReadPolicies: boolean;
+  /** Used in the account-role dialog copy. */
+  accountName?: string;
+  /** The caller. A member row never offers "Edit access" on it — same rule as
+   *  the account Members list. */
+  currentUserId: string;
+  /** `member.update` — the leaf `PATCH .../members/:userId` asserts. The hub
+   *  holds it in its batched probe; pass it down, do not re-probe. */
+  canUpdateRole: boolean;
+  /** "View access" on a member row — the hub opens `?tab=members&member=`. */
+  onSelectMember: (userId: string) => void;
   /** Back to the groups list — the hub drops the `?group=` param. */
   onBack: () => void;
 }
@@ -137,6 +155,10 @@ export function GroupAccessPanel({
   rbacEnabled = true,
   canReadRoles,
   canReadPolicies,
+  accountName,
+  currentUserId,
+  canUpdateRole,
+  onSelectMember,
   onBack,
 }: GroupAccessPanelProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -259,6 +281,13 @@ export function GroupAccessPanel({
             groupName={group.name}
             canManage={canManageMembers}
             idpManaged={group.source === 'scim'}
+            accountName={accountName}
+            currentUserId={currentUserId}
+            canUpdateRole={canUpdateRole}
+            rbacEnabled={rbacEnabled}
+            canReadPolicies={canReadPolicies}
+            canManageRoles={canManageRoles}
+            onSelectMember={onSelectMember}
           />
 
           <GroupProjectAccessCard
@@ -446,14 +475,29 @@ function GroupMembersCard({
   groupName,
   canManage,
   idpManaged,
+  accountName,
+  currentUserId,
+  canUpdateRole,
+  rbacEnabled,
+  canReadPolicies,
+  canManageRoles,
+  onSelectMember,
 }: {
   accountId: string;
   groupId: string;
   groupName: string;
   canManage: boolean;
   /** SCIM-sourced group: membership is owned by the IdP — the API 409s local
-   *  edits (they'd be clobbered by the next push), so hide the affordances. */
+   *  edits (they'd be clobbered by the next push), so hide the affordances.
+   *  The ACCOUNT role is not IdP-owned, so "Edit access" stays. */
   idpManaged: boolean;
+  accountName?: string;
+  currentUserId: string;
+  canUpdateRole: boolean;
+  rbacEnabled: boolean;
+  canReadPolicies: boolean;
+  canManageRoles: boolean;
+  onSelectMember: (userId: string) => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // Local membership edits only make sense for locally-owned groups.
@@ -461,6 +505,15 @@ function GroupMembersCard({
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<string | null>(null);
+  // The same "Edit access" the account Members list offers: one dialog, one
+  // role resolution, one cached policies read (`useAccountRoleEditor`).
+  const roleEditor = useAccountRoleEditor({
+    accountId,
+    accountName,
+    rbacEnabled,
+    canReadPolicies,
+    canManageRoles,
+  });
 
   const membersQuery = useQuery({
     queryKey: ['group-members', accountId, groupId],
@@ -519,6 +572,42 @@ function GroupMembersCard({
   });
 
   const members = membersQuery.data ?? [];
+
+  // Same items, order and gates as the account Members list row, plus the
+  // group's own "Remove from group".
+  function memberKebab(
+    userId: string,
+    label: string,
+    accountRole: AccountRole | undefined,
+  ): KebabItem[] {
+    const items: KebabItem[] = [];
+    if (canUpdateRole && accountRole && userId !== currentUserId) {
+      items.push({
+        label: tI18nComplete.raw('texta514a684676a'),
+        icon: <PencilSimpleIcon className="size-3.5" />,
+        onSelect: () => roleEditor.openEdit({ userId, label, accountRole }),
+      });
+    }
+    // Only a person on the account roster has a member panel to open.
+    if (accountRole) {
+      items.push({
+        label: tI18nComplete.raw('textf5462009cf42'),
+        icon: <KeyIcon className="size-3.5" />,
+        onSelect: () => onSelectMember(userId),
+      });
+    }
+    if (canMutate) {
+      items.push({
+        label: tI18nComplete.raw('text035edd9bd720'),
+        icon: <TrashIcon className="size-3.5" />,
+        variant: 'destructive',
+        separated: items.length > 0,
+        onSelect: () => setRemoveTarget(userId),
+      });
+    }
+    return items;
+  }
+
   const removeLabel = removeTarget ? (emailByUserId.get(removeTarget) ?? removeTarget) : '';
   const settled = !membersQuery.isLoading;
 
@@ -603,18 +692,7 @@ function GroupMembersCard({
                 }
                 metaParts={[`Added ${formatDate(m.added_at)}`]}
                 kebabLabel={tI18nComplete('text33da220b1a34', { value0: label })}
-                kebab={
-                  canMutate
-                    ? [
-                        {
-                          label: tI18nComplete.raw('text035edd9bd720'),
-                          icon: <TrashIcon className="size-3.5" />,
-                          variant: 'destructive' as const,
-                          onSelect: () => setRemoveTarget(m.user_id),
-                        },
-                      ]
-                    : undefined
-                }
+                kebab={memberKebab(m.user_id, label, meta?.accountRole)}
               />
             );
           })}
@@ -629,6 +707,8 @@ function GroupMembersCard({
         mode={{ kind: 'grant' }}
         excludeUserIds={members.map((m) => m.user_id)}
       />
+
+      {roleEditor.dialog}
 
       <ConfirmDialog
         open={!!removeTarget}

@@ -228,7 +228,7 @@ export async function createDatabaseSession(
 /**
  * Reproduce a repository replacement without calling GitHub. The fixture pins
  * the project and session to different generations and can retain one inert
- * sandbox identity for the explicit previous-workspace start contract.
+ * sandbox identity for the preserved-workspace start contract.
  */
 export async function configurePreviousRepositorySession(
   env: Env,

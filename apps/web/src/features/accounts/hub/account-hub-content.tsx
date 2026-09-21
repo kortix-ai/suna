@@ -21,7 +21,6 @@
  */
 
 import { useTranslations } from '@/i18n/use-translations';
-import { useRouter } from 'next/navigation';
 import { invalidatePermissionProbes, qk } from '@kortix/sdk/react';
 import {
   ArrowSquareOutIcon as ExternalLink,
@@ -35,24 +34,25 @@ import {
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { m, useReducedMotion } from 'motion/react';
+import { useRouter } from 'next/navigation';
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
 
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { AccessHelp } from '@/components/iam/access-help';
 import { AccessProjectsTab } from '@/components/iam/access-projects-tab';
+import { AddGitHubAccountDialog } from '@/components/iam/add-github-account-dialog';
 import { ApiKeysSection } from '@/components/iam/api-keys-card';
 import { AuditTab } from '@/components/iam/audit-tab';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
 import { BackToCustomizeOverlay } from '@/components/iam/back-to-customize-overlay';
 import { EnterpriseDemoCard } from '@/components/iam/enterprise-demo-card';
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
-import { ManagedGitNotice } from '@/components/iam/managed-git-notice';
 import { GroupsTab } from '@/components/iam/groups-tab';
 import { IdentityIntro } from '@/components/iam/identity-intro';
 import { KeyRulesCard } from '@/components/iam/key-rules-card';
+import { ManagedGitNotice } from '@/components/iam/managed-git-notice';
 import { MemberAccessPanel } from '@/components/iam/member-access-panel';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
-import { AddGitHubAccountDialog } from '@/components/iam/add-github-account-dialog';
 import { OAuthAppsCard } from '@/components/iam/oauth-apps-card';
 import { RolesTab } from '@/components/iam/roles-tab';
 import { ScimCard } from '@/components/iam/scim-card';
@@ -79,20 +79,8 @@ import { SettingsRowGroup } from '@/components/ui/settings-row';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import { AccountPane, AccountPaneSkeleton } from './account-pane';
-import {
-  type AccountSection,
-  localizedAccountPaneMeta,
-  paneWidth,
-} from './sections';
-import { forgetPushedEntry, hubTarget, openAccountPanel } from '@/stores/account-panel-store';
-import { useAccountPanelId, useHubSearchParams } from './account-hub-location';
-import { useAccountDetail } from './use-account-detail';
-import { useAccountHubSection } from './use-account-hub-access';
-import { useAccountMembers } from './use-account-members';
 import { BillingTab } from '@/features/accounts/settings/billing-tab';
 import { BrandingTab } from '@/features/accounts/settings/branding-tab';
-import { ScimSetupWizard, SsoSetupWizard } from '@/features/sso-setup/setup-wizard';
 import { TransactionsTab } from '@/features/accounts/settings/transactions-tab';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
 import { useBrandingScope } from '@/features/branding/branding-provider';
@@ -101,6 +89,7 @@ import { Plus } from '@/features/icon/icons/plus';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
+import { ScimSetupWizard, SsoSetupWizard } from '@/features/sso-setup/setup-wizard';
 import {
   ACCESS_ROW_CLASS,
   AccessDialog,
@@ -109,16 +98,16 @@ import {
   AccessRow,
   type KebabItem,
   type RoleValue,
-  builtinRole,
   builtinRoleLabel,
-  customRole,
   formatDate,
   principalLabel,
   roleValueLabel,
+  useAccountRoleEditor,
   useAccountRoles,
 } from '@/features/workspace/shared/access';
 import { useAccountState } from '@/hooks/billing';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
+import { forgetPushedEntry, hubTarget, openAccountPanel } from '@/stores/account-panel-store';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
 import {
   type AccountDetail,
@@ -126,13 +115,11 @@ import {
   type AccountMember,
   type AccountMemberProject,
   type AccountRole,
-  type IamPolicy,
   cancelAccountInvite,
   deleteGitHubInstallation,
   leaveAccount,
   listAccountInvites,
   listGitHubInstallations,
-  listPolicies,
   removeAccountMember,
   resendAccountInvite,
   updateAccountName,
@@ -143,6 +130,12 @@ import {
   UserPlusIcon as UserPlus,
   UsersIcon as Users,
 } from '@phosphor-icons/react';
+import { useAccountPanelId, useHubSearchParams } from './account-hub-location';
+import { AccountPane, AccountPaneSkeleton } from './account-pane';
+import { type AccountSection, localizedAccountPaneMeta, paneWidth } from './sections';
+import { useAccountDetail } from './use-account-detail';
+import { useAccountHubSection } from './use-account-hub-access';
+import { useAccountMembers } from './use-account-members';
 
 // The enterprise IdP surface (SAML SSO + SCIM provisioning) is PLAN-GATED,
 // not env-gated: the cards render only for accounts whose tier carries the
@@ -169,7 +162,6 @@ async function copyInviteLink(url: string, copiedMessage: string, fallbackMessag
     });
   }
 }
-
 
 export function AccountHubContent() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -344,9 +336,7 @@ export function AccountHubContent() {
                   // it from `window.location` rather than from a hard-coded
                   // path is also what keeps the person on the page they opened
                   // the hub over.
-                  returnUrl={
-                    typeof window !== 'undefined' ? window.location.href : '/projects'
-                  }
+                  returnUrl={typeof window !== 'undefined' ? window.location.href : '/projects'}
                   isActive
                 />
                 {/* The "Subscribe to Team plan" button opens the global
@@ -414,6 +404,10 @@ export function AccountHubContent() {
                 rbacEnabled={rbacEnabled}
                 canReadRoles={canReadRoles}
                 canReadPolicies={canReadPolicies}
+                accountName={account.name}
+                currentUserId={user.id}
+                canUpdateRole={canUpdateMember}
+                onSelectMember={(id) => navigate('members', { member: id })}
                 selectedGroupId={selectedAccessGroupId}
                 onSelectGroup={(id) => navigate('groups', { group: id })}
               />
@@ -801,7 +795,9 @@ function GitHubConnectionCard({
         installUrl={installUrl}
         // Back to this hub tab, over the page it is open on.
         returnPath={
-          typeof window === 'undefined' ? '' : `${window.location.pathname}${window.location.search}`
+          typeof window === 'undefined'
+            ? ''
+            : `${window.location.pathname}${window.location.search}`
         }
         // Drop the entry the hub modal pushed, so Back from GitHub returns to
         // the page the hub was opened over.
@@ -1016,7 +1012,6 @@ function MembersCard({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [grantOpen, setGrantOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<AccountMember | null>(null);
   // Set rather than scalar so multiple per-row mutations (remove + role
   // change on different rows) can fly in parallel without their spinners
   // hopping between rows. Helpers below add/remove on mutate/settle.
@@ -1061,25 +1056,16 @@ function MembersCard({
   // in flight, so an optimistic gate would fire the very request it exists to
   // suppress before the verdict arrives.
   const rolesQuery = useAccountRoles(account.account_id, rbacEnabled && canReadRoles === true);
-  const policiesQuery = useQuery({
-    queryKey: ['iam-policies', account.account_id],
-    queryFn: () => listPolicies(account.account_id),
-    enabled: rbacEnabled && canReadPolicies === true,
-    staleTime: 30_000,
+  const roleEditor = useAccountRoleEditor({
+    accountId: account.account_id,
+    accountName: account.name,
+    rbacEnabled,
+    canReadPolicies,
+    canManageRoles,
+    onDone: () => invalidateMembers(),
   });
-  const accountPolicyByUser = useMemo(() => {
-    const map = new Map<string, IamPolicy>();
-    for (const policy of policiesQuery.data ?? []) {
-      if (policy.principal_type === 'member' && policy.scope_type === 'account') {
-        map.set(policy.principal_id, policy);
-      }
-    }
-    return map;
-  }, [policiesQuery.data]);
-  const roleValueFor = (member: AccountMember): RoleValue => {
-    const policy = accountPolicyByUser.get(member.user_id);
-    return policy ? customRole(policy.role_id) : builtinRole(member.account_role);
-  };
+  const roleValueFor = (member: AccountMember): RoleValue =>
+    roleEditor.roleValueFor(member.user_id, member.account_role);
 
   const sorted = useMemo(() => {
     const rank: Record<AccountRole, number> = { owner: 0, admin: 1, member: 2 };
@@ -1264,8 +1250,6 @@ function MembersCard({
     setSelectedIds(failedIds);
   }
 
-  const editRoleValue = editTarget ? roleValueFor(editTarget) : null;
-
   return (
     <div className="space-y-4">
       {isError ? (
@@ -1423,7 +1407,12 @@ function MembersCard({
                   kebab.push({
                     label: tI18nComplete.raw('texta514a684676a'),
                     icon: <PencilSimple className="size-3.5" />,
-                    onSelect: () => setEditTarget(member),
+                    onSelect: () =>
+                      roleEditor.openEdit({
+                        userId: member.user_id,
+                        label,
+                        accountRole: member.account_role,
+                      }),
                   });
                 }
                 kebab.push({
@@ -1563,31 +1552,7 @@ function MembersCard({
         onDone={invalidateMembers}
       />
 
-      {editTarget && editRoleValue ? (
-        <AccessDialog
-          open
-          onOpenChange={(open) => {
-            if (!open) setEditTarget(null);
-          }}
-          accountId={account.account_id}
-          accountName={account.name}
-          scope={{ kind: 'account' }}
-          mode={{
-            kind: 'edit',
-            principal: {
-              type: 'member',
-              id: editTarget.user_id,
-              label: principalLabel(editTarget),
-            },
-            // No `assignmentId`: the roster still carries legacy policy ids,
-            // which are NOT assignment ids. The dialog reads the row back.
-            current: { role: editRoleValue },
-          }}
-          rbacEnabled={rbacEnabled}
-          canManageRoles={canManageRoles}
-          onDone={invalidateMembers}
-        />
-      ) : null}
+      {roleEditor.dialog}
 
       <AccessDialog
         open={bulkDialog === 'set_role'}
