@@ -13,10 +13,10 @@
 import React from 'react';
 import {
   View,
-  Pressable,
   Platform,
   ScrollView,
 } from 'react-native';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
@@ -194,7 +194,7 @@ function MentionRow({
   agentBadgeFg: string;
 }) {
   return (
-    <Pressable
+    <PressableSurface
       onPress={onPress}
       style={({ pressed }) => ({
         flexDirection: 'row',
@@ -207,7 +207,7 @@ function MentionRow({
     >
       {renderLeadingIcon(item, iconMuted, agentBadgeBg, agentBadgeFg)}
       {renderLabel(item, fgColor, mutedFg35)}
-    </Pressable>
+    </PressableSurface>
   );
 }
 

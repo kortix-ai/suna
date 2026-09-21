@@ -407,6 +407,16 @@ documented deviation. Re-apply it after any `add --all --overwrite`.
 Consumers of `size="lg"`: `app/auth/index.tsx`, `components/settings/PlanPage.tsx`,
 `components/auth/EmailAuthDrawer.tsx` (zero importers).
 
+### button.tsx `xl` size — DEVIATES (2026-09-17)
+Jay asked for taller "Continue with Google / Apple / email" pills on the auth
+welcome screen, and only those three. Stock tops out at `lg` (`h-11`, 44pt),
+and the no-sizing-classes rule forbids `className="h-12"` on the Button.
+Decision: add `size.xl` to `buttonVariants` as `h-12 rounded-md px-6 sm:h-11`
+(48pt; the same one-step `sm:` shrink as `lg`) and to `buttonTextVariants` as
+`text-base font-medium` (same label as `lg`). Part of the same `button.tsx`
+deviation, not a new forked file. Re-apply after any `add --all --overwrite`.
+Consumers of `size="xl"`: `app/auth/index.tsx` (the three sign-in pills) only.
+
 ### input.tsx chrome — DEVIATES (2026-09-14, supersedes the 2026-09-05 decision below)
 Jay: no input has a border, the placeholder was too small, and input text
 used a different font from the rest of the UI. Stock renders a bordered

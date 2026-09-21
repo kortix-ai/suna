@@ -1,7 +1,7 @@
 /**
- * ProjectMoreSheet — everything the right drawer held that isn't in the dock's
- * short menu, grouped. Nothing was removed in the redesign; it lives one tap
- * deeper than it used to.
+ * ProjectMoreSheet — everything the old right drawer held, grouped. Nothing
+ * was removed in the redesign. Opens from a tool page's `PageHeader` "···"
+ * button; the project dock, which used to open it too, was removed.
  */
 import * as React from 'react';
 import { View } from 'react-native';

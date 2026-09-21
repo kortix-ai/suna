@@ -58,6 +58,8 @@ import {
   ServicePreviewViewport,
   ToolIconSlot,
   ToolRunningContext,
+  ToolDetailContext,
+  ToolEmptyState,
   ToolSurfaceContext,
   partInput,
   useServicePreview,
@@ -89,6 +91,7 @@ export function ShowTool({ part, sessionId }: ToolProps) {
   const input = partInput(part);
   const running = useContext(ToolRunningContext);
   const fill = useContext(ToolSurfaceContext) === 'panel';
+  const detailBody = useContext(ToolDetailContext) === 'body';
   const activate = useContext(BoundActivateContext);
   const { enabled: navigationEnabled } = useToolNavigation();
 
@@ -172,7 +175,7 @@ export function ShowTool({ part, sessionId }: ToolProps) {
     }),
   });
 
-  if (bodyKind === 'hidden') return null;
+  if (bodyKind === 'hidden') return detailBody ? <ToolEmptyState message="No details" /> : null;
 
   let body: ReactNode;
   if (bodyKind === 'loading') {
@@ -286,28 +289,35 @@ export function ShowTool({ part, sessionId }: ToolProps) {
         backgroundColor: colorScheme === 'dark' ? THEME.dark.secondary : THEME.light.secondary,
       }}
     >
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: TURN_SPACE.gap2,
-          paddingHorizontal: webSpace(2),
-          paddingVertical: webSpace(1.5),
-        }}
-      >
-        <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: TURN_SPACE.gap2, paddingHorizontal: webSpace(1) }}>
-          {running && !type && !items ? (
-            <KortixLoader customSize={TURN_SPACE.icon} />
+      {/* The activity sheet's detail header names the payload: keep only its actions. */}
+      {detailBody && !inlineToolbar ? null : (
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: TURN_SPACE.gap2,
+            paddingHorizontal: webSpace(2),
+            paddingVertical: webSpace(1.5),
+          }}
+        >
+          {detailBody ? (
+            <View />
           ) : (
-            <ToolIconSlot icon={headerIcon} size={TURN_SPACE.icon} color={palette.foreground} />
+            <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: TURN_SPACE.gap2, paddingHorizontal: webSpace(1) }}>
+              {running && !type && !items ? (
+                <KortixLoader customSize={TURN_SPACE.icon} />
+              ) : (
+                <ToolIconSlot icon={headerIcon} size={TURN_SPACE.icon} color={palette.foreground} />
+              )}
+              <Text variant="muted" numberOfLines={1} accessibilityLabel={displayTitle} style={[TURN_TYPE.xs, { flexShrink: 1, color: palette.foreground }]}>
+                {displayTitle}
+              </Text>
+            </View>
           )}
-          <Text variant="muted" numberOfLines={1} accessibilityLabel={displayTitle} style={[TURN_TYPE.xs, { flexShrink: 1, color: palette.foreground }]}>
-            {displayTitle}
-          </Text>
+          {inlineToolbar ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: webSpace(1) }}>{inlineToolbar}</View> : null}
         </View>
-        {inlineToolbar ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: webSpace(1) }}>{inlineToolbar}</View> : null}
-      </View>
+      )}
       <View style={{ overflow: 'hidden' }}>{body}</View>
     </View>
   );

@@ -6,7 +6,7 @@
  */
 
 import React, { useMemo, useCallback, useState, useEffect } from 'react';
-import { View, ScrollView, Image } from 'react-native';
+import { View, Image } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { THEME, withAlpha } from '@/lib/utils/theme';
@@ -41,6 +41,7 @@ import { cardBg, fg, monoFont, muted, mutedStrong } from '../shared/styles';
 import { getToolInput, isToolAnimating } from '../shared/tool-part';
 import { MonoBlock } from '../shared/output-block';
 import { HighlightedCode } from '../shared/highlighted-code';
+import { ToolScroll } from '../shared/surface';
 
 // ─── Image extension detection ──────────────────────────────────────────────
 
@@ -133,19 +134,14 @@ export function ShowExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: 
   // Show file content with syntax highlighting if available
   if (content) {
     return (
-      <ScrollView
-        style={{ maxHeight: 300 }}
-        contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 10 }}
-        nestedScrollEnabled
-        showsVerticalScrollIndicator
-      >
+      <ToolScroll maxHeight={300} contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 10 }} showsVerticalScrollIndicator>
         <HighlightedCode
           content={content.length > 4000 ? content.slice(0, 4000) : content}
           filePath={filePath || 'file.md'}
           isDark={isDark}
           maxLines={50}
         />
-      </ScrollView>
+      </ToolScroll>
     );
   }
 

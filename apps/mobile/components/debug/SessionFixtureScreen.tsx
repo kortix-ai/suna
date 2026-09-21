@@ -25,6 +25,7 @@ import { MarkdownActionsProvider } from '@/components/markdown/inline-code';
 import { QuestionPrompt } from '@/components/session/QuestionPrompt';
 import { SessionBusyIndicator } from '@/components/session/session-busy-indicator';
 import { SessionTurn } from '@/components/session/SessionTurn';
+import { ActivitySheetHost } from '@/components/session/turn/activity-sheet';
 import { useSyncStore } from '@/lib/opencode/sync-store';
 import type { MessageWithParts, PermissionRequest, QuestionRequest, Turn } from '@/lib/opencode/types';
 import { turnTopGap } from '@/lib/session/auto-scroll';
@@ -209,6 +210,7 @@ export function SessionFixtureScreen() {
       ) : (
         <View style={{ height: insets.bottom }} />
       )}
+      <ActivitySheetHost sessionId={SESSION_ID} markdownActions={markdownActions} />
     </View>
   );
 }

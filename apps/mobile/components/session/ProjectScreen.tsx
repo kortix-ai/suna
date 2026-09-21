@@ -24,19 +24,10 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
 import { View, Alert, BackHandler, Platform } from 'react-native';
 import { Stack, useIsFocused, useLocalSearchParams, useRouter } from 'expo-router';
-import { BottomSheetModal } from '@gorhom/bottom-sheet';
-
-import { useQueryClient } from '@tanstack/react-query';
 
 import { getAuthToken } from '@/api/config';
 import { useSandboxContext } from '@/contexts/SandboxContext';
-import {
-  useSessions,
-  useCreateSession,
-  useArchiveSession,
-} from '@/lib/platform/hooks';
-import { useCompactSession } from '@/lib/opencode/hooks/use-compact-session';
-import { useSyncStore } from '@/lib/opencode/sync-store';
+import { useSessions, useCreateSession } from '@/lib/platform/hooks';
 import { SessionPage } from '@/components/session/SessionPage';
 import { SessionConnecting, type SessionConnectError } from '@/components/session/SessionConnecting';
 import {
@@ -74,28 +65,16 @@ import {
   threadSandboxReady,
   type OpenedThread,
 } from '@/lib/session/session-sandbox';
-import { mintWireMessageId } from '@/lib/session/wire-message-id';
-import { ExportTranscriptSheet } from '@/components/session/ExportTranscriptSheet';
-import { SessionRenameSheet } from '@/components/session/SessionRenameSheet';
-import { SessionShareSheet } from '@/components/session/SessionShareSheet';
 import { TabsOverview } from '@/components/session/TabsOverview';
 import { ProjectHome, type ProjectHomeSubmit } from '@/components/session/ProjectHome';
 import { uploadAttachments, withAttachments, type AttachedFile } from '@/lib/session/attachments';
 import { ProjectLeftDrawer } from '@/components/session/ProjectLeftDrawer';
-import { ProjectDock } from '@/components/session/ProjectDock';
 import { ProjectMoreSheet } from '@/components/session/ProjectMoreSheet';
-import { ChatActionsSheet } from '@/components/session/ChatActionsSheet';
 import {
   PageContextMenuSheet,
   type PageContextMenuTarget,
 } from '@/components/session/PageContextMenuSheet';
-import { ViewChangesSheet } from '@/components/session/ViewChangesSheet';
 import { Drawer } from 'react-native-drawer-layout';
-import {
-  dockPillLabel,
-  type ChatActionGates,
-  type ChatActionId,
-} from '@/lib/session/dock-menu';
 import type { SheetRef } from '@/components/kortix/sheet';
 import { haptics } from '@/lib/haptics';
 import { log } from '@/lib/logger';
@@ -104,12 +83,10 @@ import {
   useCreateProjectSession,
   useProjectName,
   useChangeRequests,
-  projectKeys,
 } from '@/lib/projects/hooks';
 import {
   startProjectSession,
   restartProjectSession,
-  deleteProjectSession,
 } from '@/lib/projects/projects-client';
 import type {
   ProjectSession,
@@ -382,15 +359,9 @@ export function ProjectScreen() {
   // Polls pause while a root screen (Account, settings) covers the project.
   const isFocused = useIsFocused();
 
-  // Sheets (web-parity bottom sheets, reused verbatim).
-  const exportTranscriptSheetRef = useRef<BottomSheetModal>(null);
-  const renameSessionSheetRef = useRef<BottomSheetModal>(null);
-  const shareSessionSheetRef = useRef<BottomSheetModal>(null);
-  const viewChangesSheetRef = useRef<BottomSheetModal>(null);
-  // Dock-raised sheets: the "More…" grid, the chat-actions sheet, and the
-  // per-page context menu.
+  // The "More…" grid (opened from a tool page's PageHeader "···" button) and
+  // the per-page context menu.
   const moreRef = useRef<SheetRef>(null);
-  const chatActionsRef = useRef<SheetRef>(null);
   const pageMenuRef = useRef<SheetRef>(null);
   const [pageMenuTarget, setPageMenuTarget] = useState<PageContextMenuTarget | null>(null);
   // Page refs (some tool pages drive imperative actions).
@@ -422,7 +393,6 @@ export function ProjectScreen() {
   const createProjectSession = useCreateProjectSession(projectId);
   const loadedProjectName = useProjectName(projectId);
   const openUpgradeSheet = useUpgradeSheetStore((state) => state.openUpgradeSheet);
-  const projectName = loadedProjectName || 'Your project';
   const connectingStatusLabel = useMemo(() => {
     const ps = projectSessions.find((s) => s.session_id === connectingProjectSessionId);
     return `${(ps && PROJECT_SESSION_STATUS_LABELS[ps.status]) || 'Provisioning'}…`;
@@ -434,9 +404,6 @@ export function ProjectScreen() {
   const sessionSandboxUrl = activeSessionId ? sandboxUrl : undefined;
   const { data: sessions = [] } = useSessions(sessionSandboxUrl);
   const createSession = useCreateSession(sandboxUrl);
-  const archiveSession = useArchiveSession(sandboxUrl);
-  const compactSession = useCompactSession();
-  const queryClient = useQueryClient();
   // Open change-request count — the "Changes" badge in the More sheet.
   const openChangeRequests = useChangeRequests(projectId ?? null, 'open', { poll: isFocused });
   const openCrCount = openChangeRequests.data?.change_requests.length ?? 0;
@@ -740,230 +707,6 @@ export function ProjectScreen() {
     [projectSessions, activeSessionId]
   );
 
-  // ── Chat-action handlers (ported verbatim from ProjectScreenLegacy) ──
-
-  const handleOpenChangeRequest = useCallback(async () => {
-    const ps = activeProjectSession;
-    // Target the chat that's on screen (SessionPage is bound to the context
-    // sandbox + activeSessionId); the row's pin is only a fallback. Sending to
-    // ps.opencode_session_id could hit a session other than the visible one
-    // (e.g. a fork), so the prompt would never appear in the open thread.
-    const targetSandboxUrl = sandboxUrl || ps?.sandbox_url;
-    const targetSessionId = activeSessionId || ps?.opencode_session_id;
-
-    if (!targetSandboxUrl || !targetSessionId) {
-      Alert.alert(
-        'Open change request',
-        'Open a running session before asking the agent to create a change request.'
-      );
-      return;
-    }
-
-    haptics.tap();
-    const baseRef = ps?.base_ref || 'main';
-    const prompt = `Load the kortix-system skill and read about Versions & Change Requests. Then review the changes in this session, commit them, and open a change request to merge into \`${baseRef}\`. Give it a clear title and a description of what changed and why.`;
-
-    // Optimistic user bubble + busy status, exactly like SessionPage's send —
-    // the prompt showing up in the thread IS the confirmation, no alert.
-    useSyncStore.getState().addOptimisticMessage(targetSessionId, {
-      info: {
-        // Wire-format id: the thread sorts messages by id as a string, so the
-        // optimistic message must sort after the real ones already present.
-        id: mintWireMessageId({
-          nowMs: Date.now(),
-          knownMessageIds: (useSyncStore.getState().messages[targetSessionId] ?? []).map(
-            (m) => m.info.id
-          ),
-        }),
-        role: 'user',
-        sessionID: targetSessionId,
-        time: { created: Date.now() },
-      },
-      parts: [
-        {
-          type: 'text',
-          id: `prt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-          text: prompt,
-        },
-      ],
-    });
-    useSyncStore.getState().setStatus(targetSessionId, { type: 'busy' });
-
-    const sent = await sendOpencodePrompt(targetSandboxUrl, targetSessionId, prompt);
-    if (!sent) {
-      useSyncStore.getState().setStatus(targetSessionId, { type: 'idle' });
-      Alert.alert('Could not reach the agent', 'Please try again from the active session.');
-    }
-  }, [activeProjectSession, sandboxUrl, activeSessionId]);
-
-  const handleRestartActiveSession = useCallback(() => {
-    // Kortix id — restartProjectSession, the connecting screen, and
-    // ensureAndOpen all operate in the Kortix id space, not the OpenCode one.
-    const sid = activeProjectSession?.session_id;
-    if (!sid || restartingSession) return;
-    Alert.alert(
-      'Restart Session',
-      'This tears down and re-provisions the session runtime. Your conversation is kept, but anything running in the sandbox (dev servers, terminals) will stop.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Restart',
-          style: 'destructive',
-          onPress: async () => {
-            haptics.tap();
-            setRestartingSession(true);
-            erroredSessionRef.current = sid;
-            ensuringRef.current = null;
-            setConnectError(null);
-            setConnectingProjectSessionId(sid);
-            try {
-              await restartProjectSession(projectId, sid);
-              erroredSessionRef.current = null;
-              void ensureAndOpen(sid);
-            } catch (err: any) {
-              erroredSessionRef.current = sid;
-              setConnectError({
-                title: 'Restart failed',
-                message: err?.message || 'Could not restart the session runtime. Please try again.',
-              });
-            } finally {
-              setRestartingSession(false);
-            }
-          },
-        },
-      ]
-    );
-  }, [activeProjectSession, restartingSession, projectId, ensureAndOpen]);
-
-  // Delete the active session (web parity: deleteProjectSession — destroys the
-  // sandbox, the git branch is preserved server-side). API takes the Kortix
-  // UUID; the tab is keyed by the OpenCode id, and closeTab (not just
-  // deselect) so no dead pill survives in the persisted tab strip.
-  const handleDeleteActiveSession = useCallback(() => {
-    const ps = activeProjectSession;
-    if (!ps) return;
-    const title = ps.custom_name || ps.name || 'this session';
-    Alert.alert(
-      'Delete session?',
-      `This will permanently destroy the sandbox for "${title}". This action cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            haptics.tap();
-            try {
-              await deleteProjectSession(projectId, ps.session_id);
-              if (ps.opencode_session_id) {
-                closeTab(ps.opencode_session_id);
-              } else if (useTabStore.getState().activeSessionId) {
-                navigateToSession(null);
-              }
-              queryClient.invalidateQueries({ queryKey: projectKeys.projectSessions(projectId) });
-              haptics.success();
-            } catch (err: any) {
-              haptics.warning();
-              Alert.alert('Delete failed', err?.message || 'Could not delete the session.');
-            }
-          },
-        },
-      ]
-    );
-  }, [activeProjectSession, projectId, closeTab, navigateToSession, queryClient]);
-
-  const handleArchive = useCallback(
-    (sessionId: string) => {
-      Alert.alert('Archive Session', 'Move this session to archived?', [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Archive',
-          onPress: () => {
-            if (useTabStore.getState().activeSessionId === sessionId) {
-              navigateToSession(null);
-            }
-            archiveSession.mutate(sessionId);
-          },
-        },
-      ]);
-    },
-    [archiveSession, navigateToSession]
-  );
-
-  const handleCompactSession = useCallback(() => {
-    if (activeSessionId && sandboxUrl) {
-      Alert.alert(
-        'Compact Session',
-        'This will summarize older messages using AI to free up context space. Key information is preserved, but original messages will be condensed into a compact summary.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Compact',
-            onPress: () => {
-              compactSession.mutate(
-                { sandboxUrl, sessionId: activeSessionId },
-                {
-                  onError: (err) => {
-                    Alert.alert('Compact Failed', err.message || 'Failed to compact session.');
-                  },
-                }
-              );
-            },
-          },
-        ]
-      );
-    }
-  }, [activeSessionId, sandboxUrl, compactSession]);
-
-  // Gating for the chat-actions sheet. Kept memoized: ChatActionsSheet memoizes
-  // its item list off this object, so an inline literal would defeat it.
-  const chatActionGates: ChatActionGates = useMemo(
-    () => ({
-      hasSession: !!activeSessionId,
-      hasProjectSession: !!activeProjectSession,
-      canManageSharing: activeProjectSession?.can_manage_sharing !== false,
-    }),
-    [activeSessionId, activeProjectSession]
-  );
-
-  const handleChatAction = useCallback(
-    (id: ChatActionId) => {
-      switch (id) {
-        case 'rename':
-          renameSessionSheetRef.current?.present();
-          break;
-        case 'share':
-          shareSessionSheetRef.current?.present();
-          break;
-        case 'restart':
-          handleRestartActiveSession();
-          break;
-        case 'export':
-          exportTranscriptSheetRef.current?.present();
-          break;
-        case 'compact':
-          handleCompactSession();
-          break;
-        case 'viewChanges':
-          viewChangesSheetRef.current?.present();
-          break;
-        case 'archive':
-          if (activeSessionId) handleArchive(activeSessionId);
-          break;
-        case 'delete':
-          handleDeleteActiveSession();
-          break;
-      }
-    },
-    [
-      handleRestartActiveSession,
-      handleCompactSession,
-      handleArchive,
-      handleDeleteActiveSession,
-      activeSessionId,
-    ]
-  );
-
   // Drive the connecting state. ensureAndOpen polls /start and opens the chat.
   // It guards against concurrent runs, so re-firing on re-render is harmless. A
   // session that ended in an error is skipped so we don't immediately re-loop it;
@@ -1203,7 +946,8 @@ export function ProjectScreen() {
   );
 
   // Tool pages keep PageHeader: its hamburger opens the drawer, and its "···"
-  // button opens the dock's menu as a sheet (no floating dock on deep pages).
+  // button opens the More sheet (ProjectMoreSheet) — the project dock's old
+  // grid of pages, with no floating chrome of its own on deep pages.
   const pageChrome = useMemo(
     () => ({
       onOpenDrawer: openDrawer,
@@ -1242,25 +986,6 @@ export function ProjectScreen() {
       openedThreadRef.current = keptOpenedThread;
     }
   }, [renderedOpenedThread, keptOpenedThread]);
-
-  // The floating dock. On project home it names the project; on a thread it
-  // names the chat and adds the long-press actions and the change-request button.
-  const renderDock = (inThread: boolean) => (
-    <ProjectDock
-      label={dockPillLabel({
-        inThread,
-        chatTitle: inThread
-          ? (activeProjectSession?.custom_name ?? activeProjectSession?.name ?? null)
-          : null,
-        projectName,
-      })}
-      onNewChat={handleNewSession}
-      onNavigate={(pageId) => useTabStore.getState().navigateToPage(pageId)}
-      onOpenMore={() => moreRef.current?.open()}
-      onLongPressLabel={inThread ? () => chatActionsRef.current?.open() : undefined}
-      onOpenChangeRequest={inThread ? () => void handleOpenChangeRequest() : undefined}
-    />
-  );
 
   // The open page, thread, or connecting session: the view route's content.
   const viewContent = isHome ? null : (
@@ -1456,15 +1181,10 @@ export function ProjectScreen() {
             />
           </View>
         ) : null}
-
-          {/* Floating dock over a thread, above the composer. */}
-          {activeSessionId && threadReady && !activePageId && !showTabsOverview
-            ? renderDock(true)
-            : null}
         </View>
   );
 
-  // Project home — Kortix symbol, fixed greeting, composer, dock.
+  // Project home — Kortix symbol, fixed greeting, composer.
   const homeContent = (
     <View className="flex-1 bg-background">
       <ProjectHome
@@ -1474,7 +1194,6 @@ export function ProjectScreen() {
         onSubmitNewSession={handleDashboardSend}
         onOpenDrawer={openDrawer}
       />
-      {renderDock(false)}
     </View>
   );
 
@@ -1544,19 +1263,12 @@ export function ProjectScreen() {
         </ProjectRouteProvider>
       </Drawer>
 
-      {/* Dock-raised sheets — the "More…" grid, the chat-actions sheet, and the
-          per-page context menu. ProjectMoreSheet supersedes the old ToolsMenuSheet. */}
+      {/* The "More…" grid and the per-page context menu. ProjectMoreSheet
+          supersedes the old ToolsMenuSheet. */}
       <ProjectMoreSheet
         ref={moreRef}
         onNavigate={(pageId) => useTabStore.getState().navigateToPage(pageId)}
         changesBadgeCount={openCrCount}
-      />
-
-      <ChatActionsSheet
-        ref={chatActionsRef}
-        title={activeProjectSession?.custom_name ?? activeProjectSession?.name ?? 'This chat'}
-        gates={chatActionGates}
-        onAction={handleChatAction}
       />
 
       <PageContextMenuSheet
@@ -1565,20 +1277,6 @@ export function ProjectScreen() {
         workspaceRef={workspacePageRef}
         filesRef={filesPageRef}
         onCreateSessionWithPrompt={handleCreateSessionWithPrompt}
-      />
-
-      <ViewChangesSheet ref={viewChangesSheetRef} sessionId={activeSessionId} />
-
-      <ExportTranscriptSheet ref={exportTranscriptSheetRef} sessionId={activeSessionId} />
-      <SessionRenameSheet
-        ref={renameSessionSheetRef}
-        projectId={projectId}
-        session={activeProjectSession}
-      />
-      <SessionShareSheet
-        ref={shareSessionSheetRef}
-        projectId={projectId}
-        session={activeProjectSession}
       />
     </>
   );

@@ -8,8 +8,10 @@
  * is reached from the project menu (All projects) alone.
  *
  * Every automatic "take me into the app" redirect (sign-in, a back button with
- * no history, leaving an account) replaces to `/` so it lands here. A network
- * failure retries twice, then shows Try again. It never falls back to the list.
+ * no history, leaving an account) replaces to `/` so it lands here. A failure
+ * retries twice, then shows why (lib/projects/start-failure.ts) and three ways
+ * forward: Try again, All projects, Sign out. An ended session leads with
+ * Sign in again. The screen is never a dead end.
  */
 
 import * as React from 'react';
@@ -24,6 +26,11 @@ import { useAuthContext } from '@/contexts';
 import { log } from '@/lib/logger';
 import { projectKeys } from '@/lib/projects/hooks';
 import { resolveLandingProject } from '@/lib/projects/landing';
+import {
+  classifyStartFailure,
+  startFailureCopy,
+  type StartFailure,
+} from '@/lib/projects/start-failure';
 import { listAccounts, listProjectsForAccount } from '@/lib/projects/projects-client';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useLastProjectStore } from '@/stores/last-project-store';
@@ -52,9 +59,10 @@ function whenHydrated(store: PersistedStore): Promise<void> {
 export default function StartScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { user, isAuthenticated, isLoading: authLoading } = useAuthContext();
+  const { user, isAuthenticated, isLoading: authLoading, signOut } = useAuthContext();
   const userId = user?.id ?? null;
-  const [failed, setFailed] = React.useState(false);
+  const [failure, setFailure] = React.useState<StartFailure | null>(null);
+  const [signingOut, setSigningOut] = React.useState(false);
   // Bumped by Try again to re-run the resolve.
   const [attempt, setAttempt] = React.useState(0);
 
@@ -110,11 +118,11 @@ export default function StartScreen() {
           '❌ [start] could not resolve a project to open:',
           err instanceof Error ? err.message : err
         );
-        setFailed(true);
+        setFailure(classifyStartFailure(err));
       }
     };
 
-    setFailed(false);
+    setFailure(null);
     void run(0);
 
     return () => {
@@ -123,19 +131,61 @@ export default function StartScreen() {
     };
   }, [authLoading, isAuthenticated, userId, attempt, queryClient, router]);
 
+  const handleSignOut = React.useCallback(async () => {
+    if (signingOut) return;
+    setSigningOut(true);
+    // A failed sign-out (auth server down) still leaves the screen usable.
+    const result = await signOut().catch(() => null);
+    setSigningOut(false);
+    if (result?.success) router.replace('/auth');
+  }, [router, signOut, signingOut]);
+
+  const copy = failure ? startFailureCopy(failure) : null;
+  const sessionEnded = failure === 'session';
+
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <View className="flex-1 items-center justify-center gap-4 bg-background px-8">
-        {failed ? (
-          <>
+      <View className="flex-1 items-center justify-center bg-background px-8">
+        {copy ? (
+          <View className="w-full max-w-xs items-center">
             <Text variant="large" className="text-center">
-              Could not open your project
+              {copy.title}
             </Text>
-            <Button variant="secondary" onPress={() => setAttempt((n) => n + 1)}>
-              <Text>Try again</Text>
-            </Button>
-          </>
+            <Text variant="muted" className="mt-2 text-center">
+              {copy.body}
+            </Text>
+            <View className="mt-6 w-full gap-2">
+              {sessionEnded ? (
+                <Button size="lg" className="rounded-full" disabled={signingOut} onPress={handleSignOut}>
+                  <Text>Sign in again</Text>
+                </Button>
+              ) : (
+                <>
+                  <Button size="lg" className="rounded-full" onPress={() => setAttempt((n) => n + 1)}>
+                    <Text>Try again</Text>
+                  </Button>
+                  <Button
+                    size="lg"
+                    variant="secondary"
+                    className="rounded-full"
+                    onPress={() => router.replace('/projects')}
+                  >
+                    <Text>All projects</Text>
+                  </Button>
+                  <Button
+                    size="lg"
+                    variant="ghost"
+                    className="rounded-full"
+                    disabled={signingOut}
+                    onPress={handleSignOut}
+                  >
+                    <Text>Sign out</Text>
+                  </Button>
+                </>
+              )}
+            </View>
+          </View>
         ) : (
           <KortixLoader size="xlarge" />
         )}

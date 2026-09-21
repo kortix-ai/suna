@@ -23,7 +23,7 @@
  */
 
 import { useContext, useMemo } from 'react';
-import { ScrollView, View } from 'react-native';
+import { View } from 'react-native';
 import { stripAnsi } from '@kortix/sdk';
 import { TextShimmer } from '@/components/kortix/text-shimmer';
 import { Text } from '@/components/ui/text';
@@ -70,6 +70,7 @@ import { InlineSessionMessagesList, SessionMetadataList } from '../shared/sessio
 import { TURN_SPACE, TURN_TYPE, fg, monoFont, muted, useTurnPalette } from '../shared/styles';
 import { getToolInput } from '../shared/tool-part';
 import type { ToolProps } from '../shared/types';
+import { ToolScroll } from '../shared/surface';
 
 function RichOutput({ view }: { view: BashOutputView }) {
   if (view.kind === 'sessionMeta') return <SessionMetadataList sessions={view.sessions} />;
@@ -100,15 +101,15 @@ function CommandBlock({
   return (
     // `overflow: hidden` clips the command pane's tint to the rounded frame.
     <View style={[{ position: 'relative', overflow: 'hidden' }, frame]}>
-      <ScrollView
-        style={{ maxHeight: BASH_PANE.commandMaxHeight, backgroundColor: frame ? palette.muted40Bg : undefined }}
-        nestedScrollEnabled
+      <ToolScroll
+        maxHeight={BASH_PANE.commandMaxHeight}
+        style={{ backgroundColor: frame ? palette.muted40Bg : undefined }}
         showsVerticalScrollIndicator
       >
         <View style={paneInset}>
           <HighlightedCode code={command} language="bash" typeStyle={TURN_TYPE.xsRelaxed} color={palette.foreground90} />
         </View>
-      </ScrollView>
+      </ToolScroll>
       {/* Anchored to the card, not the scroller, so it never scrolls away. */}
       <ToolCopyButton text={command} />
 
@@ -118,7 +119,7 @@ function CommandBlock({
             <RichOutput view={view} />
           ) : region === 'plain' && view.kind === 'plain' ? (
             <View style={{ position: 'relative' }}>
-              <ScrollView style={{ maxHeight: BASH_PANE.outputMaxHeight }} nestedScrollEnabled showsVerticalScrollIndicator>
+              <ToolScroll maxHeight={BASH_PANE.outputMaxHeight} showsVerticalScrollIndicator>
                 <View style={paneInset}>
                   <Text
                     variant="muted"
@@ -128,7 +129,7 @@ function CommandBlock({
                     {view.text}
                   </Text>
                 </View>
-              </ScrollView>
+              </ToolScroll>
               <ToolCopyButton text={view.text} />
             </View>
           ) : (

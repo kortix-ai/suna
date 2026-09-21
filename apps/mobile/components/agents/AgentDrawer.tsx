@@ -1,3 +1,4 @@
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { SearchBar } from '@/components/kortix/SearchBar';
@@ -21,7 +22,7 @@ import {
 } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
-import { Pressable, View, ScrollView, Keyboard, Alert, Platform } from 'react-native';
+import { View, ScrollView, Keyboard, Alert, Platform } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   withTiming,
@@ -261,7 +262,7 @@ export function AgentDrawer({
       </View>
 
       {/* Connections */}
-      <Pressable
+      <PressableSurface
         onPress={handleConnectionsPress}
         style={({ pressed }) => [
           styles.connectionsContainer,
@@ -289,7 +290,7 @@ export function AgentDrawer({
           </View>
           <ChevronRight size={18} color={c.mutedForeground} />
         </View>
-      </Pressable>
+      </PressableSurface>
 
       {/* Worker Section - ONLY visible in beta mode */}
       {advancedFeaturesEnabled && (
@@ -321,7 +322,7 @@ export function AgentDrawer({
 
             {/* Selected Worker */}
             {selectedAgent ? (
-              <Pressable
+              <PressableSurface
                 onPress={() => navigateToView('agents')}
                 style={({ pressed }) => [
                   styles.workerCard,
@@ -343,9 +344,9 @@ export function AgentDrawer({
                   )}
                 </View>
                 <ChevronRight size={18} color={c.mutedForeground} />
-              </Pressable>
+              </PressableSurface>
             ) : (
-              <Pressable
+              <PressableSurface
                 onPress={() => navigateToView('agents')}
                 style={({ pressed }) => [
                   styles.workerCard,
@@ -362,7 +363,7 @@ export function AgentDrawer({
                   Select a worker
                 </Text>
                 <ChevronRight size={18} color={c.mutedForeground} />
-              </Pressable>
+              </PressableSurface>
             )}
           </View>
 

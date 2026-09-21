@@ -31,6 +31,7 @@ import {
   CheckIcon as Check,
   TrashIcon as Trash2,
 } from '@/lib/icons';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -360,7 +361,7 @@ function AccessCard({ projectId, canManage, isDark, onSelectMember }: { projectI
                   ? `Granted ${formatDate(m.granted_at)}`
                   : 'No project access';
             return (
-              <Pressable
+              <PressableSurface
                 key={m.user_id}
                 disabled={!tappable}
                 onPress={() => { haptics.tap(); onSelectMember(m); }}
@@ -391,7 +392,7 @@ function AccessCard({ projectId, canManage, isDark, onSelectMember }: { projectI
                     {tappable && <Icon as={ChevronRight} size={16} color={c.muted} />}
                   </View>
                 )}
-              </Pressable>
+              </PressableSurface>
             );
           })}
         </View>
@@ -429,7 +430,7 @@ function GroupAccessCard({ projectId, accountId, canManage, isDark, onAttach, on
       ) : (
         <View style={{ marginTop: 8 }}>
           {grants.map((g, i) => (
-            <Pressable
+            <PressableSurface
               key={g.group_id}
               disabled={!canManage}
               onPress={() => { haptics.tap(); onSelectGrant(g); }}
@@ -450,7 +451,7 @@ function GroupAccessCard({ projectId, accountId, canManage, isDark, onAttach, on
               </View>
               <RoleBadge role={g.role} isDark={isDark} />
               {canManage && <Icon as={ChevronRight} size={16} color={c.muted} />}
-            </Pressable>
+            </PressableSurface>
           ))}
         </View>
       )}

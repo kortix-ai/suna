@@ -1,6 +1,6 @@
 /**
  * Shared diff utilities for computing line-level diffs.
- * Used by SessionTurn (inline tool diffs) and ViewChangesSheet (session-wide diff viewer).
+ * Used by the session tool diff renderers under `components/session/tool/`.
  */
 
 export type DiffLine = { type: 'unchanged' | 'added' | 'removed'; text: string };

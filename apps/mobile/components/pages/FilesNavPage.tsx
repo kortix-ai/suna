@@ -44,6 +44,7 @@ import {
   SquaresFourIcon as LayoutGrid,
   ListIcon as List,
 } from '@/lib/icons';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -528,7 +529,7 @@ function FileCard({
   const iconColor = getMutedIconColor(isDark);
   const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
   return (
-    <Pressable
+    <PressableSurface
       onPress={() => { haptics.tap(); onPress(file); }}
       style={({ pressed }) => [
         {
@@ -548,7 +549,7 @@ function FileCard({
       <Text style={{ flex: 1, fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>
         {file.name}
       </Text>
-    </Pressable>
+    </PressableSurface>
   );
 }
 

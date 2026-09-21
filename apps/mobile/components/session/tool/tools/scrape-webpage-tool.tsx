@@ -15,8 +15,9 @@
  */
 
 import { useMemo, useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 import { resolveScrapeResults, wsDomain, type ScrapeResult } from '@kortix/sdk';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { DisclosureContent } from '@/components/session/chain-of-thought';
 import { Text } from '@/components/ui/text';
 import { GlobeIcon, WarningIcon } from '@/lib/icons';
@@ -56,7 +57,7 @@ function ScrapeResultItem({ result, first }: { result: ScrapeResult; first: bool
 
   return (
     <View style={first ? undefined : { borderTopWidth: 1, borderTopColor: palette.border60 }}>
-      <Pressable
+      <PressableSurface
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
         accessibilityLabel={result.title || hostname}
@@ -88,7 +89,7 @@ function ScrapeResultItem({ result, first }: { result: ScrapeResult; first: bool
         >
           {hostname}
         </Text>
-      </Pressable>
+      </PressableSurface>
       <DisclosureContent open={open}>
         <View style={{ paddingHorizontal: webSpace(2), paddingBottom: webSpace(2) }}>
           <ToolMarkdown content={body} />

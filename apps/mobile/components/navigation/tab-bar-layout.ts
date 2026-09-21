@@ -17,7 +17,7 @@ export const usesNativeTabBar = Platform.OS === 'ios';
 
 /** Capsule height of the Android/web floating tab bar (icon over label, like the iOS bar). */
 export const FLOATING_BAR_HEIGHT = 60;
-/** Gap between the floating capsule and the home indicator — matches the dock. */
+/** Gap between the floating capsule and the home indicator. */
 export const FLOATING_BAR_GAP = 8;
 
 /** Space between the last row and the top edge of the tab bar. */

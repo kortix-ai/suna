@@ -21,7 +21,7 @@
  */
 
 import { useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 import Animated, {
   Easing,
   cancelAnimation,
@@ -33,6 +33,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { isErrorOutput } from '@kortix/sdk';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { TextShimmer } from '@/components/kortix/text-shimmer';
 import { Badge } from '@/components/ui/badge';
 import { Text } from '@/components/ui/text';
@@ -159,7 +160,7 @@ function PatchFileRow({
 
   return (
     <View>
-      <Pressable
+      <PressableSurface
         accessibilityRole="button"
         accessibilityState={row.hasDiff ? { expanded: isOpen } : undefined}
         accessibilityLabel={row.relPath}
@@ -200,7 +201,7 @@ function PatchFileRow({
           </Text>
         ) : null}
         <DiffStat additions={file.additions} deletions={file.deletions} />
-      </Pressable>
+      </PressableSurface>
 
       {isOpen && row.hasDiff ? (
         <View

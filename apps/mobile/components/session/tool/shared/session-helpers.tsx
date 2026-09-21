@@ -16,7 +16,8 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { Text } from '@/components/ui/text';
 import { ArrowSquareOutIcon, ChatCircleIcon } from '@/lib/icons';
 import {
@@ -86,7 +87,7 @@ export function SessionMetadataList({ sessions }: { sessions: ParsedSessionMeta[
     <View style={{ rowGap: webSpace(1), padding: webSpace(1.5) }}>
       <CountHeader>{`${sessions.length} session${sessions.length !== 1 ? 's' : ''}`}</CountHeader>
       {sessions.map((s) => (
-        <Pressable
+        <PressableSurface
           key={s.id}
           accessibilityRole="button"
           accessibilityLabel={s.title || 'Session'}
@@ -138,7 +139,7 @@ export function SessionMetadataList({ sessions }: { sessions: ParsedSessionMeta[
           <View style={{ marginTop: webSpace(1) }}>
             <ArrowSquareOutIcon size={TURN_SPACE.statusIcon} color={palette.muted40} />
           </View>
-        </Pressable>
+        </PressableSurface>
       ))}
     </View>
   );

@@ -12,6 +12,7 @@ import {
   Pressable,
   ActivityIndicator,
 } from 'react-native';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { Text } from '@/components/ui/text';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -63,7 +64,7 @@ const ProjectRow = React.memo(function ProjectRow({
   const hasPath = !!project.path && project.path !== '/';
   const sessions = project.sessionCount ?? 0;
   return (
-    <Pressable
+    <PressableSurface
       onPress={() => onPress(project)}
       style={({ pressed }) => ({
         backgroundColor: colors.cardBg,
@@ -178,7 +179,7 @@ const ProjectRow = React.memo(function ProjectRow({
           )}
         </View>
       </View>
-    </Pressable>
+    </PressableSurface>
   );
 });
 

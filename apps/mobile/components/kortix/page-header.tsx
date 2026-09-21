@@ -3,7 +3,8 @@
  *
  * Flat bar on the page's own background: the static hamburger (MenuButton,
  * transparent) on the left, muted-foreground title, and a "···" more
- * button on the right (opens the dock's More sheet; flips to X when open).
+ * button on the right (opens the More sheet, `ProjectMoreSheet`; flips to X
+ * when open).
  *
  * Project pages show the hamburger too: the project drawer opens from every
  * project page (see ProjectRoutes). There is no Go back variant.

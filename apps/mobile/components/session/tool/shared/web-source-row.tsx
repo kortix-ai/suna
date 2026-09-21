@@ -10,8 +10,9 @@
  */
 
 import { useState } from 'react';
-import { Image, Pressable, View } from 'react-native';
+import { Image, View } from 'react-native';
 import { wsDomain, wsFavicon } from '@kortix/sdk';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { Text } from '@/components/ui/text';
 import { GlobeIcon } from '@/lib/icons';
 import { webSpace } from '@/lib/session/user-message';
@@ -86,13 +87,13 @@ export function WebSourceRow({ url, title }: { url: string; title: string }) {
 
   if (!safe) return <View style={row}>{inner}</View>;
   return (
-    <Pressable
+    <PressableSurface
       accessibilityRole="link"
       accessibilityLabel={title}
       onPress={() => openExternal(safe)}
       style={({ pressed }) => [row, pressed && { backgroundColor: palette.muted }]}
     >
       {inner}
-    </Pressable>
+    </PressableSurface>
   );
 }

@@ -15,7 +15,7 @@
  */
 
 import { useContext, useMemo } from 'react';
-import { ScrollView, View } from 'react-native';
+import { View } from 'react-native';
 import { getFilename, isErrorOutput } from '@kortix/sdk';
 import { Text } from '@/components/ui/text';
 import { PencilSimpleIcon } from '@/lib/icons';
@@ -56,6 +56,7 @@ import { ToolRegistry } from '../shared/registry';
 import { TURN_SPACE, TURN_TYPE, monoFont, muted, useTurnPalette } from '../shared/styles';
 import { getToolInput } from '../shared/tool-part';
 import type { ToolProps } from '../shared/types';
+import { ToolScroll } from '../shared/surface';
 
 export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
@@ -163,7 +164,7 @@ export function WriteEditExpandedContent({ tool, isDark }: { tool: ToolPart; isD
   return (
     <View>
       {lineDiff ? (
-        <ScrollView style={{ maxHeight: 300 }} nestedScrollEnabled showsVerticalScrollIndicator>
+        <ToolScroll maxHeight={300} showsVerticalScrollIndicator>
           <View style={{ paddingVertical: 4 }}>
             {lineDiff.slice(0, 40).map((line, i) => {
               const isRemoved = line.type === 'removed';
@@ -192,14 +193,9 @@ export function WriteEditExpandedContent({ tool, isDark }: { tool: ToolPart; isD
               </Text>
             </View>
           )}
-        </ScrollView>
+        </ToolScroll>
       ) : content ? (
-        <ScrollView
-          style={{ maxHeight: 250 }}
-          contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 10 }}
-          nestedScrollEnabled
-          showsVerticalScrollIndicator
-        >
+        <ToolScroll maxHeight={250} contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 10 }} showsVerticalScrollIndicator>
           <LegacyHighlightedCode
             content={(() => {
               const cleaned = stripCodeFences(content);
@@ -209,7 +205,7 @@ export function WriteEditExpandedContent({ tool, isDark }: { tool: ToolPart; isD
             isDark={isDark}
             maxLines={40}
           />
-        </ScrollView>
+        </ToolScroll>
       ) : null}
     </View>
   );

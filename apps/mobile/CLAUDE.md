@@ -64,7 +64,7 @@ Kortix-specific: 23 files, built on top of `components/ui/`. **There is no
 | `pill-input.tsx` | `PillInput` — the same pill on a plain `TextInput`, for full screens outside a sheet (the auth forms). Forwards its ref. Exports `usePillInputStyle`, the one source of the pill's look for both fields. |
 | `settings-list.tsx` | `SettingsHeader` / `SettingsPage` / `SettingsGroup` / `SettingsRow` / `AppearanceToggle` — the only layout for settings-style screens ((settings) stack, Account tab, Accounts, Billing): back-button header (optional centred + transparent variant), page with an optional full-bleed `hero` above a rounded sheet, sentence-case group title, borderless `rounded-2xl` card, full-width separators, icon · label · trailing rows, `AppearanceRow` (opens a System/Light/Dark dialog with a check on the active mode). See `design.md` → Settings screens. |
 | `search-header.tsx` | `SearchHeader` — iOS-style search mode for a screen header: filled 40pt pill (magnifier, auto-focused field, round clear button) + Cancel. A screen swaps its header row for it (projects header search). |
-| `platform-button.tsx` | `PlatformButton` — native SwiftUI button (`@expo/ui`, plain style on the `secondary` fill; no Liquid Glass, its shadow clips) on iOS, design-system `Button` with `rounded-full` on Android. Used for the projects "New" button and the settings Go back button. Falls back to the design-system button when the running binary lacks the `ExpoUI` native module (OTA-safe). |
+| `platform-button.tsx` | `PlatformButton` — native SwiftUI button (`@expo/ui`, plain style on the `secondary` fill; no Liquid Glass, its shadow clips) on iOS, design-system `Button` with `rounded-full` on Android. Used for the projects "New" button and the settings Go back button. Same file: `PlatformFullWidthButton` — a full-width pill (label centred, `leading` React Native element pinned to the left edge) drawn natively on iOS in the design-system variant's tokens (`default` / `outline`, `size` `lg` / `xl`), design-system `Button` elsewhere; used by the auth welcome screen's three sign-in pills. Both fall back to the design-system button when the running binary lacks the `ExpoUI` native module (OTA-safe). |
 | `KortixLogo.tsx` | Brand mark / wordmark, light and dark SVG variants. |
 | `SearchBar.tsx` | Standalone search input with clear button. |
 | `search-list-header.tsx` | "Search input + add button" row under `PageHeader` on list pages. |
@@ -122,7 +122,9 @@ children.
 - Variants: `default` `secondary` `destructive` `outline` `ghost` `link`.
   Gone: `secondary-outline` `accent` `card` `transparent` `inverted` `white`
   `black` — do not reintroduce them.
-- Sizes: `default` (`h-10`) `sm` (`h-9`) `lg` (`h-11`) `icon` (`h-10 w-10`).
+- Sizes: `default` (`h-10`) `sm` (`h-9`) `lg` (`h-11`) `xl` (`h-12`) `icon` (`h-10 w-10`).
+  `xl` is added to the registry output. Only the auth welcome screen's
+  three sign-in pills use it (Jay, 2026-09-17). Every other pill stays `lg`.
 
 **No sizing classes on a Button.** Never pass a height, width, padding, or
 text size/weight in a `Button`'s `className` (`h-14`, `h-[46px]`, `px-1`,
@@ -131,7 +133,7 @@ layout-only classes (`mt-*`, `flex-1`, `self-*`) and `rounded-full` for a pill
 (e.g. the auth screen's provider buttons).
 
 **Label size follows `size`.** `buttonTextVariants` in
-`components/ui/button.tsx` maps `size="lg"` to `text-base font-medium`
+`components/ui/button.tsx` maps `size="lg"` and `size="xl"` to `text-base font-medium`
 (16px Roobert Medium). `default`, `sm`, and `icon` keep stock `text-sm
 font-medium`. Button labels are always medium, never semibold (Jay, 2026-09-16). A `<Text variant="large">` inside a Button does nothing: `Text`
 merges `cn(textVariants, TextClassContext, className)`, so the button context
@@ -338,8 +340,8 @@ that drops props silently breaks the screens that still pass them.
    it, and React Native cannot synthesize the family),
    `native-only-animated-view.tsx` (a cast around an upstream typing gap that
    reproduces against stock), and `button.tsx` (`size="lg"` label is
-   `text-base font-medium`, so no screen sets label or box size by class;
-   no added variants),
+   `text-base font-medium`, plus an added `xl` size — `h-12`, same label —
+   so no screen sets label or box size by class; no added `variant`s),
    and `input.tsx` (borderless filled field in Roobert — no input has a
    border), and `dialog.tsx` + `alert-dialog.tsx` (no `border` on the
    content; `DialogContent` renders its X close button only with

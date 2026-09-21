@@ -3,7 +3,7 @@
  *
  * Pushed from the welcome screen's "Continue with email". Layout follows the
  * Raycast iOS sign-up screen: back button + title, stacked pill fields, one
- * primary button; the account switch and legal links sit at the bottom.
+ * primary button; the account switch sits at the bottom.
  * Google and Apple live only on the welcome screen.
  *
  * Email methods come from env (lib/auth/auth-config): a one-time code and/or a
@@ -27,9 +27,7 @@ import { Text } from '@/components/ui/text';
 import { supabase } from '@/api/supabase';
 import { useAuthContext } from '@/contexts';
 import { magicLinkEnabled, passwordEnabled, type AuthMethod } from '@/lib/auth/auth-config';
-import { openLegalPage } from '@/lib/auth/open-legal';
 import { log } from '@/lib/logger';
-import { THEME, withAlpha } from '@/lib/utils/theme';
 
 /** Supabase email OTP length; the code field submits itself at this length. */
 const OTP_LENGTH = 6;
@@ -54,7 +52,6 @@ export default function EmailAuthScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colorScheme } = useColorScheme();
-  const colors = THEME[colorScheme === 'dark' ? 'dark' : 'light'];
   const { signIn, signUp, signInWithMagicLink, resetPassword } = useAuthContext();
 
   const [mode, setMode] = React.useState<'signin' | 'signup'>('signin');
@@ -326,8 +323,8 @@ export default function EmailAuthScreen() {
           bottomOffset={24}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{
-            // flexGrow lets the spacer below pin the account switch + legal
-            // line to the bottom of the screen when the form is short.
+            // flexGrow lets the spacer below pin the account switch to the
+            // bottom of the screen when the form is short.
             flexGrow: 1,
             paddingHorizontal: 20,
             paddingTop: 16,
@@ -448,8 +445,8 @@ export default function EmailAuthScreen() {
             </View>
           )}
 
-          {/* Pinned to the bottom: the account switch, the sign-in method
-              switch, then legal links. */}
+          {/* Pinned to the bottom: the account switch, then the sign-in
+              method switch. */}
           <View className="flex-1" />
           <View className="pt-8">
             {!awaitingCode && (
@@ -470,15 +467,6 @@ export default function EmailAuthScreen() {
                 <Text>{method === 'magic' ? 'Use password' : 'Use email code'}</Text>
               </Button>
             )}
-            {/* Same two links, labels, and style as the welcome screen. */}
-            <View className="mt-2 flex-row items-center justify-center">
-              <Button variant="link" size="sm" onPress={() => void openLegalPage('privacy')}>
-                <Text style={{ color: withAlpha(colors.foreground, 0.5) }}>Privacy policy</Text>
-              </Button>
-              <Button variant="link" size="sm" onPress={() => void openLegalPage('terms')}>
-                <Text style={{ color: withAlpha(colors.foreground, 0.5) }}>Terms of service</Text>
-              </Button>
-            </View>
           </View>
         </KeyboardAwareScrollView>
       </View>

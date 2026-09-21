@@ -15,7 +15,7 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Pressable, ScrollView, ActivityIndicator, TextInput, Alert, Linking } from 'react-native';
+import { View, ScrollView, ActivityIndicator, TextInput, Alert, Linking } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -28,6 +28,7 @@ import {
   GithubLogoIcon as Github,
   CheckIcon as Check,
 } from '@/lib/icons';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -260,14 +261,14 @@ function RepoCollaboratorInvite({ projectId, isDark }: { projectId: string; isDa
         {(['write', 'read'] as const).map((p) => {
           const active = permission === p;
           return (
-            <Pressable
+            <PressableSurface
               key={p}
               onPress={() => { haptics.tap(); setPermission(p); }}
               style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, height: 32, borderRadius: 9999, borderWidth: 1, borderColor: active ? theme.primary : c.border, backgroundColor: active ? theme.primaryLight : 'transparent', opacity: pressed ? 0.8 : 1 })}
             >
               {active && <Check size={13} color={theme.primary} />}
               <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: active ? c.fg : c.muted }}>{p === 'write' ? 'Can edit' : 'Can view'}</Text>
-            </Pressable>
+            </PressableSurface>
           );
         })}
       </View>
@@ -292,7 +293,7 @@ function ExperimentalCard({ project, canManage, isDark }: { project: KortixProje
 
   return (
     <View style={{ borderRadius: 16, borderWidth: 1, borderStyle: 'dashed', borderColor: c.border, backgroundColor: c.cardBg, padding: 16 }}>
-      <Pressable
+      <PressableSurface
         onPress={toggle}
         style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'flex-start', gap: 10, opacity: pressed ? 0.7 : 1 })}
       >
@@ -309,7 +310,7 @@ function ExperimentalCard({ project, canManage, isDark }: { project: KortixProje
           )}
         </View>
         <ChevronDown size={17} color={c.muted} style={{ transform: [{ rotate: expanded ? '180deg' : '0deg' }] }} />
-      </Pressable>
+      </PressableSurface>
 
       {expanded && (
         <View style={{ marginTop: 12 }}>

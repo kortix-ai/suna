@@ -49,7 +49,7 @@ import { useThemeStore, type ThemePreference } from '@/stores/theme-store';
 /**
  * Side padding of a settings-style screen. `page` is the app default (20pt);
  * `project` is the 16pt edge (`px-4`) of every page inside a project
- * (Jay, 2026-09-16), the same as the project home composer and dock.
+ * (Jay, 2026-09-16), the same as the project home composer.
  */
 export type Gutter = 'page' | 'project';
 const GUTTER_CLASS: Record<Gutter, string> = {

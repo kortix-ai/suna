@@ -12,6 +12,7 @@ import { Animated, FlatList, Pressable, RefreshControl, ScrollView, View } from 
 import { useRouter } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { WarningCircleIcon as AlertCircle, DotsThreeVerticalIcon as MoreVertical, PlusIcon as Plus, MagnifyingGlassIcon as Search, SparkleIcon as Sparkles } from '@/lib/icons';
 
 import { Text } from '@/components/ui/text';
@@ -178,7 +179,7 @@ export default function ProjectsTab() {
       const row = projectToRow(item);
       const chalk = chalkColors(item.name);
       return (
-        <Pressable
+        <PressableSurface
           onPress={() => openProject(item)}
           style={({ pressed }) => (pressed ? { transform: [{ scale: 0.99 }] } : undefined)}
           className="mx-4 mb-2.5 flex-row items-center gap-3 rounded-xl bg-secondary/70 px-4 py-3.5 active:bg-secondary">
@@ -204,7 +205,7 @@ export default function ProjectsTab() {
             className="p-1">
             <Icon as={MoreVertical} size={18} className="text-muted-foreground" />
           </Pressable>
-        </Pressable>
+        </PressableSurface>
       );
     },
     [onRowMenu, openProject],

@@ -15,9 +15,9 @@
  */
 
 import type { ReactNode } from 'react';
-import { ScrollView, View, type StyleProp, type ViewStyle } from 'react-native';
+import { View, type StyleProp, type ViewStyle } from 'react-native';
 import { TURN_SPACE, useTurnPalette } from './styles';
-import { useToolCardFrame, useToolIndent } from './surface';
+import { useToolCardFrame, useToolIndent, ToolScroll } from './surface';
 
 export function ToolResultCard({
   children,
@@ -52,14 +52,9 @@ export function ToolResultCard({
         style,
       ]}
     >
-      <ScrollView
-        style={{ maxHeight: TURN_SPACE.outputMaxHeight }} bounces={false} overScrollMode="never"
-        contentContainerStyle={bodyStyle}
-        nestedScrollEnabled
-        showsVerticalScrollIndicator
-      >
+      <ToolScroll maxHeight={TURN_SPACE.outputMaxHeight} contentContainerStyle={bodyStyle} showsVerticalScrollIndicator>
         {children}
-      </ScrollView>
+      </ToolScroll>
     </View>
   );
 }

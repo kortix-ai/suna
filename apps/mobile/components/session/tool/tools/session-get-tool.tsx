@@ -16,7 +16,8 @@
  */
 
 import { useMemo, useState, type ReactNode } from 'react';
-import { Pressable, View, ScrollView } from 'react-native';
+import { View } from 'react-native';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { Text } from '@/components/ui/text';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import type { ToolPart } from '@/lib/opencode/types';
@@ -44,7 +45,7 @@ import {
   partOutput,
 } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
-import { ToolCaret } from '../shared/surface';
+import { ToolCaret, ToolScroll } from '../shared/surface';
 import type { ToolProps } from '../shared/types';
 import { FONT_MEDIUM, TURN_SPACE, TURN_TYPE, fg, monoFont, muted, mutedStrong, useTurnPalette } from '../shared/styles';
 import { MonoBlock, OutputBlock } from '../shared/output-block';
@@ -84,7 +85,7 @@ function SectionFold({
   const palette = useTurnPalette();
   return (
     <View>
-      <Pressable
+      <PressableSurface
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
         accessibilityLabel={label}
@@ -106,7 +107,7 @@ function SectionFold({
         <Text variant="muted" style={[TURN_TYPE.xs, { marginLeft: 'auto', color: palette.muted50 }]}>
           {count}
         </Text>
-      </Pressable>
+      </PressableSurface>
       <DisclosureContent open={open}>{children}</DisclosureContent>
     </View>
   );
@@ -364,7 +365,7 @@ export function SessionGetExpandedContent({ tool, isDark }: { tool: ToolPart; is
   const metaFs = 11;
 
   return (
-    <ScrollView style={{ maxHeight: 400 }} nestedScrollEnabled showsVerticalScrollIndicator>
+    <ToolScroll maxHeight={400} showsVerticalScrollIndicator>
       <View style={{ padding: 12, gap: 10 }}>
         {/* Session title */}
         <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg(isDark), lineHeight: 20 }}>
@@ -500,6 +501,6 @@ export function SessionGetExpandedContent({ tool, isDark }: { tool: ToolPart; is
           </Text>
         )}
       </View>
-    </ScrollView>
+    </ToolScroll>
   );
 }

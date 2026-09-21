@@ -11,7 +11,6 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import {
   View,
-  Pressable,
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
@@ -27,6 +26,7 @@ import {
   PencilIcon as Pencil,
   PlusIcon as Plus,
 } from '@/lib/icons';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/kortix/page-header';
@@ -102,13 +102,13 @@ function CommandDetail({
 
   return (
     <View style={{ flex: 1 }}>
-      <Pressable
+      <PressableSurface
         onPress={() => { haptics.tap(); onBack(); }}
         style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 4, opacity: pressed ? 0.6 : 1 })}
       >
         <ChevronLeft size={18} color={muted} />
         <Text style={{ fontSize: 14, fontFamily: 'Roobert', color: muted }}>Commands</Text>
-      </Pressable>
+      </PressableSurface>
 
       <View style={{ paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: border }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -190,7 +190,7 @@ function CommandRow({
   const iconBg = withAlpha(fg, isDark ? 0.06 : 0.04);
 
   return (
-    <Pressable
+    <PressableSurface
       onPress={onPress}
       style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12, opacity: pressed ? 0.6 : 1 })}
     >
@@ -210,7 +210,7 @@ function CommandRow({
       </View>
 
       <ChevronRight size={18} color={muted} />
-    </Pressable>
+    </PressableSurface>
   );
 }
 

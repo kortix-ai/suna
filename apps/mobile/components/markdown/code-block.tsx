@@ -8,7 +8,7 @@
  * renders plain in the theme's base colour and follows the newest line; the
  * block highlights once, when the fence closes.
  */
-import React, { memo, useCallback, useEffect, useRef } from 'react';
+import React, { createContext, memo, useCallback, useContext, useEffect, useRef } from 'react';
 import { Text as RNText, View, type StyleProp, type ViewStyle } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 
@@ -41,6 +41,13 @@ export function fenceLanguage(info: unknown): string {
   return typeof info === 'string' ? (info.trim().split(/\s+/)[0] ?? '') : '';
 }
 
+/**
+ * `true` inside a surface that already scrolls vertically (the activity
+ * sheet's detail view). The body then renders at full height, so the one
+ * outer scroller moves it; a capped inner scroller would trap the gesture.
+ */
+export const CodeBlockFullHeightContext = createContext(false);
+
 export const CodeBlock = memo(function CodeBlock({
   code,
   language,
@@ -58,12 +65,47 @@ export const CodeBlock = memo(function CodeBlock({
     if (isStreaming && language) void ensureLanguage(language);
   }, [isStreaming, language]);
 
+  const fullHeight = useContext(CodeBlockFullHeightContext);
   const scrollRef = useRef<React.ComponentRef<typeof ScrollView>>(null);
   // Web pins the scroll to the newest lines while tokens arrive; without it the
   // 520pt clamp holds the reader at the top of a block growing underneath.
   const onContentSizeChange = useCallback(() => {
     if (isStreaming) scrollRef.current?.scrollToEnd({ animated: false });
   }, [isStreaming]);
+
+  const body = (
+    <ScrollView
+      horizontal
+      nestedScrollEnabled
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={{
+        paddingHorizontal: CODE_BLOCK.bodyPaddingX,
+        paddingVertical: CODE_BLOCK.bodyPaddingY,
+      }}
+    >
+      <RNText
+        selectable
+        style={{
+          fontFamily: MONO_FONT,
+          fontSize: CODE_BLOCK.fontSize,
+          lineHeight: CODE_BLOCK.lineHeight,
+          letterSpacing: CODE_BLOCK.letterSpacing,
+          color: palette.strong,
+        }}
+      >
+        {lines.map((line, lineIndex) => (
+          <React.Fragment key={lineIndex}>
+            {lineIndex > 0 ? '\n' : null}
+            {line.map((token, tokenIndex) => (
+              <RNText key={tokenIndex} style={{ color: token.color }}>
+                {token.content}
+              </RNText>
+            ))}
+          </React.Fragment>
+        ))}
+      </RNText>
+    </ScrollView>
+  );
 
   return (
     <View
@@ -113,45 +155,19 @@ export const CodeBlock = memo(function CodeBlock({
           borderTopRightRadius: RADIUS.sm,
         }}
       >
-        <ScrollView
-          ref={scrollRef}
-          style={{ maxHeight: CODE_BLOCK.bodyMaxHeight }}
-          nestedScrollEnabled
-          showsVerticalScrollIndicator
-          onContentSizeChange={onContentSizeChange}
-        >
+        {fullHeight ? (
+          body
+        ) : (
           <ScrollView
-            horizontal
+            ref={scrollRef}
+            style={{ maxHeight: CODE_BLOCK.bodyMaxHeight }}
             nestedScrollEnabled
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{
-              paddingHorizontal: CODE_BLOCK.bodyPaddingX,
-              paddingVertical: CODE_BLOCK.bodyPaddingY,
-            }}
+            showsVerticalScrollIndicator
+            onContentSizeChange={onContentSizeChange}
           >
-            <RNText
-              selectable
-              style={{
-                fontFamily: MONO_FONT,
-                fontSize: CODE_BLOCK.fontSize,
-                lineHeight: CODE_BLOCK.lineHeight,
-                letterSpacing: CODE_BLOCK.letterSpacing,
-                color: palette.strong,
-              }}
-            >
-              {lines.map((line, lineIndex) => (
-                <React.Fragment key={lineIndex}>
-                  {lineIndex > 0 ? '\n' : null}
-                  {line.map((token, tokenIndex) => (
-                    <RNText key={tokenIndex} style={{ color: token.color }}>
-                      {token.content}
-                    </RNText>
-                  ))}
-                </React.Fragment>
-              ))}
-            </RNText>
+            {body}
           </ScrollView>
-        </ScrollView>
+        )}
       </View>
     </View>
   );

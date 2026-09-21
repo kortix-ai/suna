@@ -10,7 +10,7 @@
  */
 
 import { useMemo } from 'react';
-import { ScrollView, View } from 'react-native';
+import { View } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { StackIcon } from '@/lib/icons';
 import { disclosureKey } from '@/lib/session/disclosure-store';
@@ -29,6 +29,7 @@ import { OutputBlock } from '../shared/output-block';
 import { ToolRegistry } from '../shared/registry';
 import { TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
+import { ToolScroll } from '../shared/surface';
 
 export function SessionListBackgroundTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
@@ -53,7 +54,7 @@ export function SessionListBackgroundTool({ part, defaultOpen, forceOpen, locked
       locked={locked}
     >
       {workers.length > 0 ? (
-        <ScrollView style={{ maxHeight: webSpace(56) }} nestedScrollEnabled>
+        <ToolScroll maxHeight={webSpace(56)}>
           {workers.map((w, i) => (
             <View
               key={w.id}
@@ -92,7 +93,7 @@ export function SessionListBackgroundTool({ part, defaultOpen, forceOpen, locked
               </Text>
             </View>
           ))}
-        </ScrollView>
+        </ToolScroll>
       ) : outputIsError ? (
         <ToolOutputFallback output={output} toolName="session_list" />
       ) : output ? (

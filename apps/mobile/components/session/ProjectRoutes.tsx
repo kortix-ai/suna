@@ -2,7 +2,7 @@
  * ProjectRoutes — the screens of the stack inside `/projects/[id]`.
  *
  * A project is a stack over one home, so back always has a place to land:
- *   /projects/[id]          index    — project home (greeting, composer, dock)
+ *   /projects/[id]          index    — project home (greeting, composer)
  *   /projects/[id]/view     view     — every other project state: a tool page
  *                                      (Files, Agents, …), a thread, or a
  *                                      session that is still connecting

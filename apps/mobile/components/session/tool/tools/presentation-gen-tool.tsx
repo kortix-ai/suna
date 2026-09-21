@@ -15,7 +15,7 @@
  */
 
 import { useContext, useMemo } from 'react';
-import { ScrollView, View } from 'react-native';
+import { View } from 'react-native';
 import { parsePresentationOutput } from '@kortix/sdk';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -42,6 +42,7 @@ import {
 import { ToolRegistry } from '../shared/registry';
 import { FONT_MEDIUM, TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
+import { ToolScroll } from '../shared/surface';
 
 function SuccessLine({ children, trailing }: { children: string; trailing?: string }) {
   const palette = useTurnPalette();
@@ -183,15 +184,11 @@ export function PresentationGenTool({ part, defaultOpen, forceOpen, locked }: To
       ) : null}
 
       {!parsed && output ? (
-        <ScrollView
-          style={{ maxHeight: TURN_SPACE.outputMaxHeight }} bounces={false} overScrollMode="never"
-          contentContainerStyle={{ padding: webSpace(2) }}
-          nestedScrollEnabled
-        >
+        <ToolScroll maxHeight={TURN_SPACE.outputMaxHeight} contentContainerStyle={{ padding: webSpace(2) }}>
           <Text variant="muted" selectable style={[TURN_TYPE.xs, { fontFamily: monoFont, color: palette.muted60 }]}>
             {output}
           </Text>
-        </ScrollView>
+        </ToolScroll>
       ) : null}
     </BasicTool>
   );

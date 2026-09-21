@@ -23,7 +23,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react';
-import { ScrollView, View } from 'react-native';
+import { ScrollView, View, type ScrollViewProps } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import * as Clipboard from 'expo-clipboard';
 import { Button } from '@/components/ui/button';
@@ -42,6 +42,49 @@ import { TURN_SPACE, useTurnPalette } from './styles';
 export type ToolSurface = 'inline' | 'panel';
 
 export const ToolSurfaceContext = createContext<ToolSurface>('inline');
+
+/**
+ * A tool drawn in the activity sheet's detail view (`turn/activity-sheet.tsx`).
+ * `body`: the tool the detail is about — `BasicTool` draws its body only, since
+ * the sheet header already names it. `nested`: any tool row inside that body.
+ * At both levels the sheet is the only vertical scroller: `ToolScroll` renders
+ * uncapped, and cards sit flush (no row text column to indent to).
+ */
+export type ToolDetailLevel = 'body' | 'nested' | null;
+
+export const ToolDetailContext = createContext<ToolDetailLevel>(null);
+
+/**
+ * A tool body's capped vertical scroll area. In the transcript it scrolls
+ * inside `maxHeight`; in the activity sheet it renders at full height so the
+ * sheet scrolls it (no nested vertical scroller).
+ */
+export function ToolScroll({
+  maxHeight,
+  style,
+  contentContainerStyle,
+  children,
+  ...props
+}: ScrollViewProps & {
+  /** The transcript cap; `undefined` for a scroller that fills its parent. */
+  maxHeight: number | undefined;
+  children?: ReactNode;
+}) {
+  const detail = useContext(ToolDetailContext);
+  if (detail) return <View style={[style, contentContainerStyle]}>{children}</View>;
+  return (
+    <ScrollView
+      bounces={false}
+      overScrollMode="never"
+      nestedScrollEnabled
+      {...props}
+      style={[{ maxHeight }, style]}
+      contentContainerStyle={contentContainerStyle}
+    >
+      {children}
+    </ScrollView>
+  );
+}
 
 export interface ToolRowVariant {
   /** The row is a step in a chain of thought. */
@@ -67,8 +110,9 @@ export const TOOL_INDENT = TURN_SPACE.toolIndent;
  */
 export function useToolIndent(): number {
   const surface = useContext(ToolSurfaceContext);
+  const detail = useContext(ToolDetailContext);
   const { chain } = useToolRowVariant();
-  if (surface !== 'inline') return 0;
+  if (surface !== 'inline' || detail) return 0;
   return chain ? TURN_SPACE.toolIndentChain : TURN_SPACE.toolIndent;
 }
 
@@ -179,14 +223,9 @@ export function ToolCardFrame({
       }}
     >
       {scroll ? (
-        <ScrollView
-          style={{ maxHeight: TURN_SPACE.outputMaxHeight }} bounces={false} overScrollMode="never"
-          contentContainerStyle={bodyStyle}
-          nestedScrollEnabled
-          showsVerticalScrollIndicator
-        >
+        <ToolScroll maxHeight={TURN_SPACE.outputMaxHeight} contentContainerStyle={bodyStyle} showsVerticalScrollIndicator>
           {children}
-        </ScrollView>
+        </ToolScroll>
       ) : (
         <View style={bodyStyle}>{children}</View>
       )}

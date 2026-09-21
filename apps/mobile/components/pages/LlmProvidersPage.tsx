@@ -20,6 +20,7 @@ import {
   LayoutAnimation,
 } from 'react-native';
 import { Pressable as GestureHandlerPressable } from 'react-native-gesture-handler';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -525,7 +526,7 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
           <>
             {/* Custom Provider — add any OpenAI-compatible endpoint (matches web) */}
             {(!searchQuery || 'custom'.includes(searchQuery.toLowerCase())) && (
-              <Pressable
+              <PressableSurface
                 onPress={openCustomSheet}
                 style={({ pressed }) => [
                   {
@@ -561,7 +562,7 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
                   </Text>
                 </View>
                 <Plus size={18} color={themeColors.primary} />
-              </Pressable>
+              </PressableSurface>
             )}
 
             {popularProviders.length > 0 && (

@@ -7,7 +7,8 @@
  *   label in mono muted (the worker's last step while it runs), a running mark
  *   or "N steps" (mono muted/60) at the right; then "Open session ↗";
  * - with `forceOpen`, the worker's steps below (`SubAgentActivity`); then the
- *   worker's retry/error banner.
+ *   worker's retry/error banner. In the activity sheet's detail
+ *   (`ToolDetailContext` `body`), the steps and banner alone.
  *
  * Web's press target opens `SubSessionModal` and "Open session" navigates to
  * `/projects/:id/sessions/:sid?oc=<child>` (`session-spawn-urls.ts`). Mobile
@@ -17,7 +18,7 @@
  * `KortixLoader`, so the mark is `KortixLoader` at `size-3`.
  */
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useContext, useMemo } from 'react';
 import { Pressable, View } from 'react-native';
 import { getChildSessionId } from '@kortix/sdk';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
@@ -28,6 +29,7 @@ import { webSpace } from '@/lib/session/user-message';
 import { partInput, partStatus, useToolNavigation } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
 import { TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from '../shared/styles';
+import { ToolDetailContext } from '../shared/surface';
 import type { ToolProps } from '../shared/types';
 import { SubAgentActivity, SubAgentStatusBanner, useChildSession } from './sub-agent';
 
@@ -40,6 +42,7 @@ export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
   const childSessionId = useMemo(() => getChildSessionId(part), [part]);
   const { childMessages, childToolParts } = useChildSession(childSessionId);
   const { enabled: navigationEnabled, openSession } = useToolNavigation();
+  const detail = useContext(ToolDetailContext);
 
   const model = useMemo(
     () => sessionSpawnModel({ status, input, childToolParts }),
@@ -50,6 +53,16 @@ export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
   const openChild = useCallback(() => {
     if (childSessionId) openSession(childSessionId);
   }, [childSessionId, openSession]);
+
+  // The activity sheet's detail names the worker already: show its steps alone.
+  if (detail === 'body') {
+    return (
+      <ToolDetailContext.Provider value="nested">
+        <SubAgentActivity childSessionId={childSessionId} parts={childToolParts} />
+        <SubAgentStatusBanner childSessionId={childSessionId} childMessages={childMessages} />
+      </ToolDetailContext.Provider>
+    );
+  }
 
   return (
     <>

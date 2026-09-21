@@ -1,7 +1,8 @@
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { Icon } from '@/components/ui/icon';
 import { CaretDownIcon as ChevronDown } from '@/lib/icons';
 import * as React from 'react';
-import { Platform, Pressable, View } from 'react-native';
+import { Platform, View } from 'react-native';
 import { useAgent } from '@/contexts/AgentContext';
 import { ModeLogo } from '@/components/models/ModeLogo';
 
@@ -50,7 +51,7 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
 
   if (compact) {
     return (
-      <Pressable
+      <PressableSurface
         onPress={onPress}
         style={({ pressed }) => [
           { flexDirection: 'row', alignItems: 'center', gap: 3 },
@@ -59,12 +60,12 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
         hitSlop={ANDROID_HIT_SLOP}>
         <ModeLogo mode={mode} height={10} />
         <Icon as={ChevronDown} size={9} className="text-foreground/60" />
-      </Pressable>
+      </PressableSurface>
     );
   }
 
   return (
-    <Pressable
+    <PressableSurface
       onPress={onPress}
       style={({ pressed }) => [
         {
@@ -80,6 +81,6 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
       hitSlop={ANDROID_HIT_SLOP}>
       <ModeLogo mode={mode} height={11} />
       <Icon as={ChevronDown} size={9} className="text-foreground/50" />
-    </Pressable>
+    </PressableSurface>
   );
 }

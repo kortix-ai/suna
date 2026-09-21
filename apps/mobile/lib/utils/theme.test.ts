@@ -507,6 +507,34 @@ describe('toHexColor matches the real parser for every THEME colour', () => {
     expect(() => toHexColor('#ff0000')).toThrow();
     expect(() => toHexColor('hsla(0, 0%, 50%, 1)')).toThrow();
   });
+
+  it('appends an alpha byte (#rrggbbaa) when alpha is given', () => {
+    expect(toHexColor('hsl(0 0% 11%)', 0.3)).toBe('#1c1c1c4d');
+    expect(toHexColor('hsl(0 100% 50%)', 1)).toBe('#ff0000ff');
+    expect(toHexColor('hsl(0 100% 50%)', 0)).toBe('#ff000000');
+  });
+
+  it('matches withAlpha under normalizeColor for every plain-hsl token (±1 per channel)', () => {
+    const rgba = (int: number) => [...channels(int), int & 255];
+    const mismatched: string[] = [];
+    const scopes = [THEME.light, THEME.dark, THEME.accent] as Record<string, string>[];
+    for (const scope of scopes) {
+      for (const [name, value] of Object.entries(scope)) {
+        if (typeof value !== 'string' || !plainHsl.test(value)) continue;
+        const expected = rgba(normalizeColor(withAlpha(value, 0.3)) as number);
+        const actual = rgba(normalizeColor(toHexColor(value, 0.3)) as number);
+        if (expected.some((c, i) => Math.abs(c - actual[i]) > 1)) {
+          mismatched.push(`${name} = ${value} → ${toHexColor(value, 0.3)}`);
+        }
+      }
+    }
+    expect(mismatched).toEqual([]);
+  });
+
+  it('throws on alpha outside 0–1', () => {
+    expect(() => toHexColor('hsl(0 0% 50%)', -0.1)).toThrow();
+    expect(() => toHexColor('hsl(0 0% 50%)', 1.1)).toThrow();
+  });
 });
 
 /* ────────────────────────────────────────────────────────────────────────────

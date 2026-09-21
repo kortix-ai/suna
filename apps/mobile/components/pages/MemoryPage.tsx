@@ -11,7 +11,6 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import {
   View,
-  Pressable,
   ScrollView,
   Alert,
   RefreshControl,
@@ -20,6 +19,7 @@ import {
   LayoutAnimation,
 } from 'react-native';
 import { Pressable as GestureHandlerPressable } from 'react-native-gesture-handler';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -226,7 +226,7 @@ function MemoryCard({
   }, []);
 
   return (
-    <Pressable
+    <PressableSurface
       onPress={handlePress}
       style={({ pressed }) => [
         {
@@ -363,7 +363,7 @@ function MemoryCard({
           </Button>
         </View>
       )}
-    </Pressable>
+    </PressableSurface>
   );
 }
 

@@ -26,7 +26,7 @@ import { normalizeLanguage } from '@/lib/code-theme';
 import { webSpace } from '@/lib/session/user-message';
 import { parseFrontmatter, type FrontmatterValue } from '@/lib/session/tool-part-accessors';
 import { TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from './styles';
-import { ToolCopyButton, useToolCardFrame, useToolCardPad, useToolIndent } from './surface';
+import { ToolCopyButton, useToolCardFrame, useToolCardPad, useToolIndent, ToolScroll } from './surface';
 
 /**
  * Web `MD_FLUSH_CLASSES` flattens nested `<pre>` chrome inside tool markdown.
@@ -92,7 +92,7 @@ function PayloadCard({
   return (
     <View style={indent ? { marginTop: TURN_SPACE.gap1_5, marginLeft: indent } : undefined}>
       <View style={[{ position: 'relative', overflow: 'hidden' }, frame]}>
-        <ScrollView style={{ maxHeight: TURN_SPACE.outputMaxHeight }} bounces={false} overScrollMode="never" nestedScrollEnabled showsVerticalScrollIndicator>
+        <ToolScroll maxHeight={TURN_SPACE.outputMaxHeight} showsVerticalScrollIndicator>
           {horizontal ? (
             <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false} contentContainerStyle={body}>
               {children}
@@ -100,7 +100,7 @@ function PayloadCard({
           ) : (
             <View style={body}>{children}</View>
           )}
-        </ScrollView>
+        </ToolScroll>
         {copyText ? <ToolCopyButton text={copyText} /> : null}
       </View>
     </View>
@@ -118,7 +118,7 @@ export function ToolCodeCard({ code, language }: { code: string; language: strin
 
 export function ToolCode({ code, language }: { code: string; language: string }) {
   return (
-    <ScrollView style={{ maxHeight: TURN_SPACE.outputMaxHeight }} bounces={false} overScrollMode="never" nestedScrollEnabled>
+    <ToolScroll maxHeight={TURN_SPACE.outputMaxHeight}>
       <ScrollView
         horizontal
         nestedScrollEnabled
@@ -127,7 +127,7 @@ export function ToolCode({ code, language }: { code: string; language: string })
       >
         <HighlightedCode code={code} language={language} />
       </ScrollView>
-    </ScrollView>
+    </ToolScroll>
   );
 }
 

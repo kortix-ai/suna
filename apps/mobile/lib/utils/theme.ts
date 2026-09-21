@@ -31,7 +31,8 @@ export function withAlpha(hslColor: string, alpha: number): string {
 }
 
 /**
- * Converts a THEME `hsl(H S% L%)` string to `#rrggbb`.
+ * Converts a THEME `hsl(H S% L%)` string to `#rrggbb`, or `#rrggbbaa` when
+ * `alpha` (0–1) is given — the native equivalent of `withAlpha`.
  *
  * For native renderers that cannot read hsl: `@expo/ui` SwiftUI modifiers
  * (`background`, `tint`, …) decode colours natively and drop both
@@ -39,10 +40,13 @@ export function withAlpha(hslColor: string, alpha: number): string {
  * error — the view just renders unfilled (seen on PlatformButton). The token
  * stays the source; this only changes its notation.
  */
-export function toHexColor(hslColor: string): string {
+export function toHexColor(hslColor: string, alpha?: number): string {
   const parts = HSL_PARTS.exec(hslColor.trim());
   if (!parts) {
     throw new Error(`toHexColor expects a THEME 'hsl(H S% L%)' string, received: ${hslColor}`);
+  }
+  if (alpha !== undefined && !(alpha >= 0 && alpha <= 1)) {
+    throw new Error(`toHexColor expects alpha between 0 and 1, received: ${alpha}`);
   }
   const h = Number(parts[1]) / 360;
   const s = Number(parts[2]) / 100;
@@ -70,7 +74,7 @@ export function toHexColor(hslColor: string): string {
   }
 
   const channel = (v: number) => Math.round(v * 255).toString(16).padStart(2, '0');
-  return `#${channel(r)}${channel(g)}${channel(b)}`;
+  return `#${channel(r)}${channel(g)}${channel(b)}${alpha === undefined ? '' : channel(alpha)}`;
 }
 
 /**

@@ -17,7 +17,7 @@
  */
 
 import { useState, type ReactNode } from 'react';
-import { Pressable, ScrollView, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Pressable, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { DisclosureContent } from '@/components/session/chain-of-thought';
 import { webSpace } from '@/lib/session/user-message';
@@ -33,7 +33,7 @@ import {
   mutedStrong,
   useTurnPalette,
 } from './styles';
-import { ToolCaret } from './surface';
+import { ToolCaret, ToolScroll } from './surface';
 
 export function OutputBlock({
   text,
@@ -48,11 +48,7 @@ export function OutputBlock({
   const palette = useTurnPalette();
   return (
     <View style={[{ backgroundColor: palette.muted20Bg, borderRadius: TURN_SPACE.radiusSm, overflow: 'hidden' }, style]}>
-      <ScrollView
-        style={{ maxHeight: TURN_SPACE.outputMaxHeight }} bounces={false} overScrollMode="never"
-        contentContainerStyle={{ paddingHorizontal: TURN_SPACE.cardPad, paddingVertical: webSpace(2) }}
-        nestedScrollEnabled
-      >
+      <ToolScroll maxHeight={TURN_SPACE.outputMaxHeight} contentContainerStyle={{ paddingHorizontal: TURN_SPACE.cardPad, paddingVertical: webSpace(2) }}>
         {markdown ? (
           <ToolMarkdown content={text} />
         ) : (
@@ -60,7 +56,7 @@ export function OutputBlock({
             {text}
           </Text>
         )}
-      </ScrollView>
+      </ToolScroll>
     </View>
   );
 }

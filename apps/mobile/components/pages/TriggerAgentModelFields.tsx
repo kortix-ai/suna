@@ -9,7 +9,8 @@
  */
 
 import React, { useState } from 'react';
-import { View, Pressable, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator } from 'react-native';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { CaretRightIcon as ChevronRight, CheckIcon as Check } from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { useThemeColors } from '@/lib/theme-colors';
@@ -62,7 +63,7 @@ export function AgentPickerField({
   return (
     <View>
       <FieldLabel muted={muted}>Agent</FieldLabel>
-      <Pressable
+      <PressableSurface
         onPress={() => { haptics.tap(); setOpen((v) => !v); }}
         style={({ pressed }) => ({ height: 44, borderRadius: 11, borderWidth: 1, borderColor: border, backgroundColor: inputBg, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', opacity: pressed ? 0.7 : 1 })}
       >
@@ -74,7 +75,7 @@ export function AgentPickerField({
         ) : (
           <ChevronRight size={16} color={muted} style={{ transform: [{ rotate: open ? '90deg' : '0deg' }] }} />
         )}
-      </Pressable>
+      </PressableSurface>
       {open && (
         <View style={{ marginTop: 8, borderRadius: 11, borderWidth: 1, borderColor: border, overflow: 'hidden' }}>
           {agents.length === 0 && !isLoading && (
@@ -85,7 +86,7 @@ export function AgentPickerField({
           {agents.map((a, i) => {
             const selected = value === a.name;
             return (
-              <Pressable
+              <PressableSurface
                 key={a.name}
                 onPress={() => { haptics.selection(); onChange(a.name); setOpen(false); }}
                 style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 11, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: border, opacity: pressed ? 0.6 : 1 })}
@@ -97,7 +98,7 @@ export function AgentPickerField({
                   ) : null}
                 </View>
                 {selected && <Check size={15} color={theme.primary} />}
-              </Pressable>
+              </PressableSurface>
             );
           })}
         </View>
@@ -142,16 +143,16 @@ export function ModelPickerField({
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14 }}>
         <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted }}>Model</Text>
         {value && (
-          <Pressable
+          <PressableSurface
             onPress={() => { haptics.tap(); onChange(null); }}
             hitSlop={6}
             style={({ pressed }) => ({ opacity: pressed ? 0.2 : 1 })}
           >
             <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: theme.primary }}>Use default</Text>
-          </Pressable>
+          </PressableSurface>
         )}
       </View>
-      <Pressable
+      <PressableSurface
         onPress={() => { haptics.tap(); setOpen((v) => !v); }}
         style={({ pressed }) => ({ height: 44, borderRadius: 11, borderWidth: 1, borderColor: border, backgroundColor: inputBg, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', marginTop: 6, opacity: pressed ? 0.7 : 1 })}
       >
@@ -163,27 +164,27 @@ export function ModelPickerField({
         ) : (
           <ChevronRight size={16} color={muted} style={{ transform: [{ rotate: open ? '90deg' : '0deg' }] }} />
         )}
-      </Pressable>
+      </PressableSurface>
       {open && (
         <View style={{ marginTop: 8, borderRadius: 11, borderWidth: 1, borderColor: border, overflow: 'hidden' }}>
-          <Pressable
+          <PressableSurface
             onPress={() => { haptics.selection(); onChange(null); setOpen(false); }}
             style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 11, opacity: pressed ? 0.6 : 1 })}
           >
             <Text style={{ flex: 1, fontSize: 13.5, color: fg }}>Default</Text>
             {value == null && <Check size={15} color={theme.primary} />}
-          </Pressable>
+          </PressableSurface>
           {models.map((m) => {
             const selected = value === m.modelID;
             return (
-              <Pressable
+              <PressableSurface
                 key={m.modelID}
                 onPress={() => { haptics.selection(); onChange(m.modelID); setOpen(false); }}
                 style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 11, borderTopWidth: 1, borderTopColor: border, opacity: pressed ? 0.6 : 1 })}
               >
                 <Text style={{ flex: 1, fontSize: 13.5, color: fg }} numberOfLines={1}>{m.modelName}</Text>
                 {selected && <Check size={15} color={theme.primary} />}
-              </Pressable>
+              </PressableSurface>
             );
           })}
         </View>

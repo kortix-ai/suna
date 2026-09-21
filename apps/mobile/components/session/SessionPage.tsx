@@ -120,6 +120,7 @@ import { useSessions } from '@/lib/platform/hooks';
 import { FileViewer } from '@/components/files/FileViewer';
 import { MarkdownActionsProvider } from '@/components/markdown/inline-code';
 import { ToolFilePreviewHost } from '@/components/session/tool/shared/navigation';
+import { ActivitySheetHost } from '@/components/session/turn/activity-sheet';
 import type { PermissionReply } from '@/components/session/tool/tool-part-renderer';
 import type { SandboxFile } from '@/api/types';
 import type { Session } from '@/lib/platform/types';
@@ -143,7 +144,7 @@ interface SessionPageProps {
   /**
    * 'header'   — the legacy top bar (back/title/drawer buttons). Default, so
    *              ProjectScreenLegacy is unaffected.
-   * 'floating' — no header; a floating menu button, and bottom padding for the dock.
+   * 'floating' — no header; a floating menu button.
    */
   chrome?: 'header' | 'floating';
   /** Hides drawer buttons, model/variant selectors — used for onboarding */
@@ -194,7 +195,7 @@ function SessionPageImpl({ sessionId, projectName, onBack, onOpenDrawer, onOpenR
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
-  // Onboarding always uses header chrome (no dock, no floating menu). Explicit guard against any call site
+  // Onboarding always uses header chrome (no floating menu). Explicit guard against any call site
   // that might accidentally pass both onboardingMode and chrome="floating".
   const effectiveChrome = onboardingMode ? 'header' : chrome;
   // Top inset for the message list. Floating chrome has no header, so the
@@ -1676,14 +1677,14 @@ function SessionPageImpl({ sessionId, projectName, onBack, onOpenDrawer, onOpenR
         />
       )}
 
-      {/* Bottom area — question prompt OR chat input */}
+      {/* Bottom area — question prompt OR chat input. `floating` no longer
+          clears a dock (removed): it just sits above the safe area, same as
+          onboarding. */}
       <View
         style={
-          onboardingMode
+          onboardingMode || effectiveChrome === 'floating'
             ? { paddingBottom: insets.bottom }
-            : effectiveChrome === 'floating'
-              ? { paddingBottom: insets.bottom + 64 }
-              : undefined
+            : undefined
         }
       >
         {hasQuestion && activeQuestion ? (
@@ -1737,6 +1738,9 @@ function SessionPageImpl({ sessionId, projectName, onBack, onOpenDrawer, onOpenR
 
       {/* File taps inside tool rows (ToolNavigation.openFile) */}
       <ToolFilePreviewHost />
+
+      {/* The activity summary rows' sheet (ActivityBurst) */}
+      <ActivitySheetHost sessionId={sessionId} markdownActions={markdownActions} />
     </KeyboardAvoidingView>
   );
 }

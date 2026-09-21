@@ -23,7 +23,7 @@
  */
 
 import { useMemo } from 'react';
-import { ScrollView, View } from 'react-native';
+import { View } from 'react-native';
 import type { ParsedQuestion } from '@kortix/sdk';
 import { useColorScheme } from 'nativewind';
 import { TextShimmer } from '@/components/kortix/text-shimmer';
@@ -52,6 +52,7 @@ import { ToolRegistry } from '../shared/registry';
 import { FONT_MEDIUM, TURN_SPACE, TURN_TYPE, fg, mutedStrong, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
 import { getToolInput } from '../shared/tool-part';
+import { ToolScroll } from '../shared/surface';
 
 // One shared identity for "this question has no answer yet".
 const NO_ANSWERS: string[] = [];
@@ -164,7 +165,7 @@ export function QuestionTool({ part, sessionId, defaultOpen, forceOpen, locked, 
       locked={locked}
     >
       {questions.length > 0 ? (
-        <ScrollView style={{ maxHeight: TURN_SPACE.outputMaxHeight }} bounces={false} overScrollMode="never" nestedScrollEnabled>
+        <ToolScroll maxHeight={TURN_SPACE.outputMaxHeight}>
           {questions.map((q, i) => (
             <View
               key={`${i}:${q.question}`}
@@ -177,7 +178,7 @@ export function QuestionTool({ part, sessionId, defaultOpen, forceOpen, locked, 
               <QuestionAnswerBlock question={q} index={i} answers={answers[i] ?? NO_ANSWERS} />
             </View>
           ))}
-        </ScrollView>
+        </ToolScroll>
       ) : (
         <ToolEmptyState message="No questions" />
       )}

@@ -6,7 +6,8 @@
  */
 
 import React, { useState } from 'react';
-import { View, Pressable, TextInput, ScrollView } from 'react-native';
+import { View, TextInput, ScrollView } from 'react-native';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
@@ -82,7 +83,7 @@ export function CronExpressionPicker({
             {presets.map((preset) => {
               const isSelected = selectedPreset === preset.value || (preset.value === '' && showCustomInput);
               return (
-                <Pressable
+                <PressableSurface
                   key={preset.value || 'custom'}
                   onPress={() => handlePresetSelect(preset.value)}
                   style={({ pressed }) => [
@@ -122,7 +123,7 @@ export function CronExpressionPicker({
                       {preset.description}
                     </Text>
                   </View>
-                </Pressable>
+                </PressableSurface>
               );
             })}
           </View>

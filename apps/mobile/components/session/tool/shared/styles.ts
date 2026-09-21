@@ -57,6 +57,8 @@ export const TURN_TYPE = {
   diff: { fontSize: 12.8, lineHeight: 19.84 },
   /** `text-[10px] font-medium tracking-wider uppercase` — `ToolSection` label (0.05em). */
   label10: { fontSize: 10, lineHeight: 15, letterSpacing: 0.5 },
+  /** Activity sheet timeline entry: app body size on the reference's 24pt line pitch. */
+  sheetEntry: { fontSize: 16, lineHeight: 24 },
 } as const;
 
 export const FONT_MEDIUM = 'Roobert-Medium';

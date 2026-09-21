@@ -109,7 +109,7 @@ import { ToolError } from '../tool-error';
 import { ToolMarkdown, ToolOutputCard } from './code-card';
 import { ToolResultCard } from './result-card';
 import { TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from './styles';
-import { ToolIconSlot, useToolRowVariant, type ToolIcon } from './surface';
+import { ToolDetailContext, ToolIconSlot, useToolRowVariant, type ToolIcon } from './surface';
 
 // ─── Re-exports (web import parity) ──────────────────────────────────────────
 
@@ -137,13 +137,16 @@ export {
   ToolCaret,
   ToolCardFrame,
   ToolCopyButton,
+  ToolDetailContext,
   ToolIconSlot,
   ToolRowVariantContext,
+  ToolScroll,
   ToolSurfaceContext,
   useToolCardFrame,
   useToolCardPad,
   useToolIndent,
   useToolRowVariant,
+  type ToolDetailLevel,
   type ToolIcon,
   type ToolSurface,
 } from './surface';
@@ -410,6 +413,7 @@ export function BasicTool({
   const running = useContext(ToolRunningContext);
   const outcome = useContext(ToolOutcomeContext);
   const activate = useContext(BoundActivateContext);
+  const detail = useContext(ToolDetailContext);
   const { chain } = useToolRowVariant();
   const storedChoice = useDisclosureChoice(disclosureId ?? '');
   const [localChoice, setLocalChoice] = useState<boolean | undefined>(undefined);
@@ -445,6 +449,18 @@ export function BasicTool({
     }),
     [chain],
   );
+
+  // The activity sheet's detail: its header already names the tool, so draw
+  // the body alone. Tool rows inside the body are ordinary rows again.
+  if (detail === 'body') {
+    return (
+      <ToolDetailContext.Provider value="nested">
+        <ToolOpenContext.Provider value>
+          {hasBody ? children : <ToolEmptyState message="No details" />}
+        </ToolOpenContext.Provider>
+      </ToolDetailContext.Provider>
+    );
+  }
 
   const header = (
     <ToolHeaderRow

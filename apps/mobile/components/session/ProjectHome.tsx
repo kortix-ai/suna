@@ -4,8 +4,9 @@
  * Web parity with `ProjectHomeWelcomeBody`: the Kortix symbol and one fixed
  * sentence ("Give {project} something real to work on.") sit dead centre, and
  * the chat input is pinned to the bottom. Nothing else: no starter chips,
- * cards, or lists. The floating menu button and the dock are the project
- * screen's chrome, shared with the thread, not part of this content.
+ * cards, or lists. The floating menu button is the project screen's chrome,
+ * shared with the thread, not part of this content. (The project dock that
+ * used to share this chrome was removed — nothing replaced it.)
  *
  * The chat input is one card: text on top, then add files · model · send.
  * Files cannot upload yet (the session's sandbox does not exist), so they ride
@@ -17,11 +18,9 @@
  * - The greeting is absolutely centred in the keyboard-avoiding area. At rest
  *   that area is the whole screen; while typing it is the part above the
  *   keyboard, so the greeting never sits under the composer.
- * - At rest the composer sits above the dock, at the thread composer's
- *   distance from the bottom (SessionPage pads `insets.bottom + 64`,
- *   SessionChatInput adds `pb-2`).
- * - The dock slides away with the keyboard, so the composer follows the
- *   keyboard down to KEYBOARD_GAP above it.
+ * - At rest the composer sits at the thread composer's distance from the
+ *   bottom (SessionPage pads `insets.bottom`, SessionChatInput adds `pb-2`).
+ * - The composer follows the keyboard down to KEYBOARD_GAP above it once it appears.
  */
 
 import * as React from 'react';
@@ -47,8 +46,9 @@ import {
   selectComposerModel,
 } from '@/lib/session/composer-model';
 
-/** The thread composer's distance from the safe-area bottom: 64 + pb-2. */
-const DOCK_SLOT = 72;
+/** The thread composer's own bottom padding (SessionChatInput's `pb-2`), so
+ *  this composer rests at the same distance from the safe-area bottom. */
+const COMPOSER_BOTTOM_GAP = 8;
 /** Composer to keyboard while the keyboard is up. */
 const KEYBOARD_GAP = 8;
 
@@ -90,7 +90,7 @@ export function ProjectHome({
   }, []);
   const pickFiles = useAttachmentPicker(addFiles);
 
-  const restingGap = insets.bottom + DOCK_SLOT;
+  const restingGap = insets.bottom + COMPOSER_BOTTOM_GAP;
   const { progress } = useReanimatedKeyboardAnimation();
   const composerStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: progress.value * (restingGap - KEYBOARD_GAP) }],

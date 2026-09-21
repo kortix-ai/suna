@@ -8,7 +8,7 @@
  *   tabular-nums text-foreground/80` — "Thinking" → "Thinking for 12s" (1s
  *   tick, clock started on the client when the row went live) → "Thought for
  *   12s"; shimmers while running; caret `size-3.5 text-muted-foreground/40`;
- * - opens itself while running (unless `autoOpen` is false), closes when the
+ * - opens itself while running, closes when the
  *   run settles, and the user's toggle wins permanently;
  * - body `mt-3 pl-7`: `flattenThought(texts)` as `text-sm leading-[1.5]
  *   text-foreground/60`, capped at `max-h-54` with scroll fades
@@ -173,15 +173,13 @@ export interface ThoughtStepProps {
   durationMs?: number;
   /** The thought is the whole burst: no glyph. */
   bare?: boolean;
-  /** `false` under minimal density: live reasoning stays behind the caret. */
-  autoOpen?: boolean;
 }
 
-function ThoughtStepImpl({ id, texts, running, durationMs, bare = false, autoOpen = true }: ThoughtStepProps) {
+function ThoughtStepImpl({ id, texts, running, durationMs, bare = false }: ThoughtStepProps) {
   const palette = useTurnPalette();
   const key = disclosureKey('thought', id);
   const choice = useDisclosureChoice(key);
-  const open = resolveDisclosureOpen({ userChoice: choice, auto: autoOpen && running });
+  const open = resolveDisclosureOpen({ userChoice: choice, auto: running });
   const liveElapsed = useLiveElapsedMs(running);
   const label = thoughtLabel(running, liveElapsed, durationMs);
 
@@ -217,7 +215,6 @@ export const ThoughtStep = memo(
     a.running === b.running &&
     a.durationMs === b.durationMs &&
     a.bare === b.bare &&
-    a.autoOpen === b.autoOpen &&
     samePartsList(a.texts, b.texts),
 );
 ThoughtStep.displayName = 'ThoughtStep';

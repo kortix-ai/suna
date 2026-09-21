@@ -16,7 +16,7 @@
  */
 
 import { useMemo, useState } from 'react';
-import { View, ScrollView, Image } from 'react-native';
+import { View, Image } from 'react-native';
 import { parseWebSearchOutput as parseSdkWebSearchOutput } from '@kortix/sdk';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
@@ -46,6 +46,7 @@ import { TURN_SPACE, TURN_TYPE, fg, monoFont, muted, mutedStrong, useTurnPalette
 import type { ToolProps } from '../shared/types';
 import { WebSourceRow } from '../shared/web-source-row';
 import { MonoBlock } from '../shared/output-block';
+import { ToolScroll } from '../shared/surface';
 
 /**
  * Every source, flat, inside one bordered card (web `FlatSourceList`). A
@@ -339,7 +340,7 @@ export function WebSearchExpandedContent({ tool, isDark }: { tool: ToolPart; isD
   }
 
   return (
-    <ScrollView style={{ maxHeight: 400 }} nestedScrollEnabled showsVerticalScrollIndicator>
+    <ToolScroll maxHeight={400} showsVerticalScrollIndicator>
       {queryResults.map((qr, qi) => {
         const isExpanded = expandedQuery === qi;
         const showContent = !isMulti || isExpanded;
@@ -421,6 +422,6 @@ export function WebSearchExpandedContent({ tool, isDark }: { tool: ToolPart; isD
           </View>
         );
       })}
-    </ScrollView>
+    </ToolScroll>
   );
 }

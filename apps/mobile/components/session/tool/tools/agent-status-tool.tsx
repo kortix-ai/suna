@@ -12,8 +12,9 @@
  */
 
 import { useMemo } from 'react';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { Text } from '@/components/ui/text';
 import { CaretRightIcon, CheckIcon, CircleIcon, ClockIcon, StackIcon, XIcon } from '@/lib/icons';
 import { disclosureKey } from '@/lib/session/disclosure-store';
@@ -46,7 +47,7 @@ function TaskStatusRow({ row, first, onOpen }: { row: TaskRow; first: boolean; o
   const palette = useTurnPalette();
   const hasSession = Boolean(onOpen);
   return (
-    <Pressable
+    <PressableSurface
       accessibilityRole={hasSession ? 'button' : undefined}
       accessibilityLabel={hasSession ? `Open ${row.title}` : undefined}
       disabled={!hasSession}
@@ -70,7 +71,7 @@ function TaskStatusRow({ row, first, onOpen }: { row: TaskRow; first: boolean; o
         {row.id.slice(-8)}
       </Text>
       {hasSession ? <CaretRightIcon size={TURN_SPACE.statusIcon} color={withAlpha(palette.mutedForeground, 0.2)} /> : null}
-    </Pressable>
+    </PressableSurface>
   );
 }
 

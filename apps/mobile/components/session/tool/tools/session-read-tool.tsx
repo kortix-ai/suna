@@ -9,7 +9,7 @@
  */
 
 import { useMemo } from 'react';
-import { ScrollView, View } from 'react-native';
+import { View } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { CheckIcon, ClockIcon, EyeglassesIcon, WarningCircleIcon } from '@/lib/icons';
 import { disclosureKey } from '@/lib/session/disclosure-store';
@@ -32,6 +32,7 @@ import { OutputBlock } from '../shared/output-block';
 import { ToolRegistry } from '../shared/registry';
 import { TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
+import { ToolScroll } from '../shared/surface';
 
 const ENTRY_ICON = webSpace(2.5);
 
@@ -69,7 +70,7 @@ export function SessionReadTool({ part, defaultOpen, forceOpen, locked }: ToolPr
       locked={locked}
     >
       {mode === 'tools' && toolEntries.length > 0 ? (
-        <ScrollView style={{ maxHeight: TURN_SPACE.outputMaxHeight }} bounces={false} overScrollMode="never" nestedScrollEnabled>
+        <ToolScroll maxHeight={TURN_SPACE.outputMaxHeight}>
           {toolEntries.map((entry, i) => (
             <View
               key={entry.at}
@@ -114,7 +115,7 @@ export function SessionReadTool({ part, defaultOpen, forceOpen, locked }: ToolPr
               </Text>
             </View>
           ))}
-        </ScrollView>
+        </ToolScroll>
       ) : outputIsError ? (
         <ToolOutputFallback output={output} toolName="session_read" />
       ) : output ? (

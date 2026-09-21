@@ -16,8 +16,9 @@
  */
 
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { looksLikeHtml, wsDomain } from '@kortix/sdk';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { DisclosureContent } from '@/components/session/chain-of-thought';
 import { Text } from '@/components/ui/text';
 import { ArrowSquareOutIcon } from '@/lib/icons';
@@ -45,6 +46,7 @@ import { ToolRegistry } from '../shared/registry';
 import { FONT_MEDIUM, TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
 import { FaviconAvatar } from '../shared/web-source-row';
+import { ToolScroll } from '../shared/surface';
 
 /** Web `max-h-[28rem]`. */
 const BODY_MAX_HEIGHT = 28 * 16;
@@ -59,7 +61,7 @@ function FetchSourceRow({ url, title, domain }: { url: string; title: string; do
   const { openExternal } = useToolNavigation();
   const safe = safeHttpUrl(url);
   return (
-    <Pressable
+    <PressableSurface
       accessibilityRole="link"
       accessibilityLabel={title}
       disabled={!safe}
@@ -95,7 +97,7 @@ function FetchSourceRow({ url, title, domain }: { url: string; title: string; do
         </Text>
       </View>
       <ArrowSquareOutIcon size={TURN_SPACE.statusIcon} color={palette.muted30} />
-    </Pressable>
+    </PressableSurface>
   );
 }
 
@@ -132,7 +134,7 @@ export function WebFetchTool({ part, defaultOpen, forceOpen, locked }: ToolProps
       locked={locked}
     >
       {!output ? null : isError && safeUrl ? (
-        <ScrollView style={{ maxHeight: BODY_MAX_HEIGHT }} nestedScrollEnabled>
+        <ToolScroll maxHeight={BODY_MAX_HEIGHT}>
           <FetchSourceRow url={url} title={domain} domain={domain} />
           <Text
             variant="muted"
@@ -149,9 +151,9 @@ export function WebFetchTool({ part, defaultOpen, forceOpen, locked }: ToolProps
           >
             {errorSummary}
           </Text>
-        </ScrollView>
+        </ToolScroll>
       ) : readable ? (
-        <ScrollView style={{ maxHeight: BODY_MAX_HEIGHT }} nestedScrollEnabled>
+        <ToolScroll maxHeight={BODY_MAX_HEIGHT}>
           <FetchSourceRow url={url} title={readable.title || domain} domain={domain} />
           <Text
             variant="muted"
@@ -184,11 +186,7 @@ export function WebFetchTool({ part, defaultOpen, forceOpen, locked }: ToolProps
           </Pressable>
           <DisclosureContent open={rawOpen}>
             {/* Stays boxed at `max-h-96`: 8000 characters of markup behind an explicit fold. */}
-            <ScrollView
-              style={{ maxHeight: TURN_SPACE.outputMaxHeight }} bounces={false} overScrollMode="never"
-              contentContainerStyle={{ paddingHorizontal: TURN_SPACE.cardPad, paddingBottom: webSpace(2) }}
-              nestedScrollEnabled
-            >
+            <ToolScroll maxHeight={TURN_SPACE.outputMaxHeight} contentContainerStyle={{ paddingHorizontal: TURN_SPACE.cardPad, paddingBottom: webSpace(2) }}>
               <Text
                 variant="muted"
                 selectable
@@ -196,9 +194,9 @@ export function WebFetchTool({ part, defaultOpen, forceOpen, locked }: ToolProps
               >
                 {rawHtmlPreview}
               </Text>
-            </ScrollView>
+            </ToolScroll>
           </DisclosureContent>
-        </ScrollView>
+        </ToolScroll>
       ) : (
         <ToolOutputFallback output={output} isStreaming={status === 'running'} toolName="web_fetch" />
       )}

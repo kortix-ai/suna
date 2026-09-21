@@ -43,7 +43,6 @@ import { CaretDoubleDownIcon as CaretDoubleDownGlyph } from 'phosphor-react-nati
 import { CaretDownIcon as CaretDownGlyph } from 'phosphor-react-native/src/icons/CaretDown';
 import { CaretLeftIcon as CaretLeftGlyph } from 'phosphor-react-native/src/icons/CaretLeft';
 import { CaretRightIcon as CaretRightGlyph } from 'phosphor-react-native/src/icons/CaretRight';
-import { CaretUpDownIcon as CaretUpDownGlyph } from 'phosphor-react-native/src/icons/CaretUpDown';
 import { CaretUpIcon as CaretUpGlyph } from 'phosphor-react-native/src/icons/CaretUp';
 import { CertificateIcon as CertificateGlyph } from 'phosphor-react-native/src/icons/Certificate';
 import { ChartBarIcon as ChartBarGlyph } from 'phosphor-react-native/src/icons/ChartBar';
@@ -63,7 +62,6 @@ import { ClockIcon as ClockGlyph } from 'phosphor-react-native/src/icons/Clock';
 import { CodeIcon as CodeGlyph } from 'phosphor-react-native/src/icons/Code';
 import { CodeSimpleIcon as CodeSimpleGlyph } from 'phosphor-react-native/src/icons/CodeSimple';
 import { CoinsIcon as CoinsGlyph } from 'phosphor-react-native/src/icons/Coins';
-import { ColumnsIcon as ColumnsGlyph } from 'phosphor-react-native/src/icons/Columns';
 import { CompassIcon as CompassGlyph } from 'phosphor-react-native/src/icons/Compass';
 import { CpuIcon as CpuGlyph } from 'phosphor-react-native/src/icons/Cpu';
 import { CreditCardIcon as CreditCardGlyph } from 'phosphor-react-native/src/icons/CreditCard';
@@ -185,7 +183,6 @@ import { ReceiptIcon as ReceiptGlyph } from 'phosphor-react-native/src/icons/Rec
 import { RepeatIcon as RepeatGlyph } from 'phosphor-react-native/src/icons/Repeat';
 import { RobotIcon as RobotGlyph } from 'phosphor-react-native/src/icons/Robot';
 import { RocketIcon as RocketGlyph } from 'phosphor-react-native/src/icons/Rocket';
-import { RowsIcon as RowsGlyph } from 'phosphor-react-native/src/icons/Rows';
 import { ScissorsIcon as ScissorsGlyph } from 'phosphor-react-native/src/icons/Scissors';
 import { SealCheckIcon as SealCheckGlyph } from 'phosphor-react-native/src/icons/SealCheck';
 import { ShareNetworkIcon as ShareNetworkGlyph } from 'phosphor-react-native/src/icons/ShareNetwork';
@@ -275,7 +272,6 @@ export const CaretDoubleDownIcon = withAppWeight(CaretDoubleDownGlyph, 'CaretDou
 export const CaretDownIcon = withAppWeight(CaretDownGlyph, 'CaretDownIcon');
 export const CaretLeftIcon = withAppWeight(CaretLeftGlyph, 'CaretLeftIcon');
 export const CaretRightIcon = withAppWeight(CaretRightGlyph, 'CaretRightIcon');
-export const CaretUpDownIcon = withAppWeight(CaretUpDownGlyph, 'CaretUpDownIcon');
 export const CaretUpIcon = withAppWeight(CaretUpGlyph, 'CaretUpIcon');
 export const CertificateIcon = withAppWeight(CertificateGlyph, 'CertificateIcon');
 export const ChartBarIcon = withAppWeight(ChartBarGlyph, 'ChartBarIcon');
@@ -295,7 +291,6 @@ export const ClockIcon = withAppWeight(ClockGlyph, 'ClockIcon');
 export const CodeIcon = withAppWeight(CodeGlyph, 'CodeIcon');
 export const CodeSimpleIcon = withAppWeight(CodeSimpleGlyph, 'CodeSimpleIcon');
 export const CoinsIcon = withAppWeight(CoinsGlyph, 'CoinsIcon');
-export const ColumnsIcon = withAppWeight(ColumnsGlyph, 'ColumnsIcon');
 export const CompassIcon = withAppWeight(CompassGlyph, 'CompassIcon');
 // Web's own copy glyph (apps/web src/features/icon/icons/copy.tsx), not Phosphor's Copy.
 export { KortixCopyIcon as CopyIcon } from './kortix-copy';
@@ -421,7 +416,6 @@ export const ReceiptIcon = withAppWeight(ReceiptGlyph, 'ReceiptIcon');
 export const RepeatIcon = withAppWeight(RepeatGlyph, 'RepeatIcon');
 export const RobotIcon = withAppWeight(RobotGlyph, 'RobotIcon');
 export const RocketIcon = withAppWeight(RocketGlyph, 'RocketIcon');
-export const RowsIcon = withAppWeight(RowsGlyph, 'RowsIcon');
 export const ScissorsIcon = withAppWeight(ScissorsGlyph, 'ScissorsIcon');
 export const SealCheckIcon = withAppWeight(SealCheckGlyph, 'SealCheckIcon');
 export const ShareNetworkIcon = withAppWeight(ShareNetworkGlyph, 'ShareNetworkIcon');

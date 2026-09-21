@@ -51,8 +51,8 @@ import { FLOATING_BAR_GAP, FLOATING_BAR_HEIGHT } from '@/components/navigation/t
 
 type TabBarProps = Parameters<NonNullable<React.ComponentProps<typeof Tabs>['tabBar']>>[0];
 
-// House motion tokens: the dock's ease-out-quint family, shortened for a
-// small on-screen move; press curves are the dock circle's exact values.
+// House motion tokens: the house ease-out-quint family, shortened for a
+// small on-screen move; press curves match the house press-scale values.
 const SLIDE = { duration: 220, easing: Easing.bezier(0.23, 1, 0.32, 1) };
 const PRESS_IN = { duration: 90, easing: Easing.out(Easing.quad) };
 const PRESS_OUT = { duration: 140, easing: Easing.out(Easing.quad) };

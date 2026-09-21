@@ -20,13 +20,14 @@
  */
 
 import { useState } from 'react';
-import { Pressable, ScrollView, Text as RNText, View } from 'react-native';
+import { Text as RNText, View } from 'react-native';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { Text } from '@/components/ui/text';
 import { CheckCircleIcon, ProhibitIcon, WarningIcon } from '@/lib/icons';
 import type { OutputSection } from '@/lib/session/tool-output-parsers';
 import { webSpace } from '@/lib/session/user-message';
 import { FONT_MEDIUM, FONT_SEMIBOLD, TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from './styles';
-import { ToolCaret } from './surface';
+import { ToolCaret, ToolScroll } from './surface';
 
 export type { OutputSection } from '@/lib/session/tool-output-parsers';
 
@@ -110,7 +111,7 @@ export function StructuredOutput({ sections }: { sections: OutputSection[] }) {
           case 'traceback':
             return (
               <View key={key}>
-                <Pressable
+                <PressableSurface
                   accessibilityRole="button"
                   accessibilityState={{ expanded: showTrace }}
                   onPress={() => setShowTrace((v) => !v)}
@@ -131,10 +132,10 @@ export function StructuredOutput({ sections }: { sections: OutputSection[] }) {
                   <Text variant="muted" style={[TURN_TYPE.xs, { marginLeft: webSpace(1), fontFamily: monoFont, color: palette.muted40 }]}>
                     {section.lines.length} lines
                   </Text>
-                </Pressable>
+                </PressableSurface>
                 {showTrace ? (
                   <View style={{ marginTop: webSpace(1), overflow: 'hidden' }}>
-                    <ScrollView style={{ maxHeight: webSpace(64) }} nestedScrollEnabled>
+                    <ToolScroll maxHeight={webSpace(64)}>
                       <Text
                         variant="muted"
                         selectable
@@ -147,7 +148,7 @@ export function StructuredOutput({ sections }: { sections: OutputSection[] }) {
                           </RNText>
                         ))}
                       </Text>
-                    </ScrollView>
+                    </ToolScroll>
                   </View>
                 ) : null}
               </View>

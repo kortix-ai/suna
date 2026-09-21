@@ -10,7 +10,7 @@
  */
 
 import { useMemo } from 'react';
-import { ScrollView, View } from 'react-native';
+import { View } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { MagnifyingGlassIcon } from '@/lib/icons';
 import { disclosureKey } from '@/lib/session/disclosure-store';
@@ -28,6 +28,7 @@ import {
 import { ToolRegistry } from '../shared/registry';
 import { FONT_MEDIUM, TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
+import { ToolScroll } from '../shared/surface';
 
 const NO_ARGS: string[] = [];
 
@@ -56,7 +57,7 @@ export function SessionSearchTool({ part, defaultOpen, forceOpen, locked }: Tool
       locked={locked}
     >
       {hits.length > 0 ? (
-        <ScrollView style={{ maxHeight: TURN_SPACE.outputMaxHeight }} bounces={false} overScrollMode="never" nestedScrollEnabled>
+        <ToolScroll maxHeight={TURN_SPACE.outputMaxHeight}>
           {hits.map((h, i) => (
             <View
               key={h.id}
@@ -103,7 +104,7 @@ export function SessionSearchTool({ part, defaultOpen, forceOpen, locked }: Tool
               </View>
             </View>
           ))}
-        </ScrollView>
+        </ToolScroll>
       ) : noResults ? (
         <ToolEmptyState message={`No sessions matched "${query}"`} />
       ) : output ? (

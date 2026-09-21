@@ -16,7 +16,8 @@
  */
 
 import { memo, useMemo, useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { Badge } from '@/components/ui/badge';
 import { Text } from '@/components/ui/text';
 import { ProhibitIcon, WarningCircleIcon } from '@/lib/icons';
@@ -139,7 +140,7 @@ function ToolErrorImpl({
       </Text>
       {traceback ? (
         <>
-          <Pressable
+          <PressableSurface
             accessibilityRole="button"
             accessibilityState={{ expanded: showTrace }}
             onPress={toggleTrace}
@@ -157,7 +158,7 @@ function ToolErrorImpl({
             <Text variant="small" style={[TURN_TYPE.xs, { fontFamily: FONT_MEDIUM, color: palette.muted60 }]}>
               Stack trace
             </Text>
-          </Pressable>
+          </PressableSurface>
           {showTrace ? (
             <Text variant="muted"
               selectable

@@ -16,7 +16,7 @@
  */
 
 import { useContext, useMemo } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { getFilename, isErrorOutput, parseReadOutput } from '@kortix/sdk';
 import { TextShimmer } from '@/components/kortix/text-shimmer';
 import { Text } from '@/components/ui/text';
@@ -46,6 +46,7 @@ import { ToolRegistry } from '../shared/registry';
 import { TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from '../shared/styles';
 import { getToolInput } from '../shared/tool-part';
 import type { ToolProps } from '../shared/types';
+import { ToolScroll } from '../shared/surface';
 
 export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
@@ -180,18 +181,13 @@ export function ReadExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: 
   if (!content) return null;
 
   return (
-    <ScrollView
-      style={{ maxHeight: 300 }}
-      contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 10 }}
-      nestedScrollEnabled
-      showsVerticalScrollIndicator
-    >
+    <ToolScroll maxHeight={300} contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 10 }} showsVerticalScrollIndicator>
       <LegacyHighlightedCode
         content={content.length > 4000 ? content.slice(0, 4000) : content}
         filePath={filePath || 'file.txt'}
         isDark={isDark}
         maxLines={50}
       />
-    </ScrollView>
+    </ToolScroll>
   );
 }

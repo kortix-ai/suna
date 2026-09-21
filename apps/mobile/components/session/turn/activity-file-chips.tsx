@@ -15,9 +15,10 @@
  */
 
 import { memo, useCallback } from 'react';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 import Animated from 'react-native-reanimated';
 import type { Part } from '@kortix/sdk';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { Text } from '@/components/ui/text';
 import { WarningIcon } from '@/lib/icons';
 import {
@@ -43,7 +44,7 @@ function FileChipImpl({ path, onOpen }: { path: string; onOpen?: (path: string) 
 
   return (
     <Animated.View style={[{ maxWidth: '100%' }, animatedStyle]}>
-      <Pressable
+      <PressableSurface
         accessibilityRole="button"
         accessibilityLabel={`Open ${filename}`}
         disabled={!onOpen}
@@ -84,7 +85,7 @@ function FileChipImpl({ path, onOpen }: { path: string; onOpen?: (path: string) 
             {fileChipTypeLabel(filename)}
           </Text>
         </View>
-      </Pressable>
+      </PressableSurface>
     </Animated.View>
   );
 }

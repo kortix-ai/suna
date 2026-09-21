@@ -208,8 +208,7 @@ export function TabsOverview({
   const hasScrolled = useRef(false);
   const activeId = activePageId || activeSessionId;
 
-  // Entry animation — rises from the bottom to continue the peek's motion
-  // from the dock's swipe-up gesture.
+  // Entry animation — rises from the bottom, like a sheet being presented.
   const entry = useSharedValue(screenHeight);
   useEffect(() => {
     entry.value = withTiming(0, {

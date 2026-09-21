@@ -1,6 +1,7 @@
 // apps/mobile/components/kortix/list-row.tsx
 import * as React from 'react';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { CaretRightIcon as ChevronRight } from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
@@ -20,7 +21,7 @@ export function ListRow({
 }: ListRowProps) {
   const destructive = variant === 'destructive';
   return (
-    <Pressable
+    <PressableSurface
       onPress={onPress}
       disabled={disabled}
       style={({ pressed }) => (pressed && !disabled ? { transform: [{ scale: 0.98 }] } : undefined)}
@@ -51,6 +52,6 @@ export function ListRow({
           default w-full so left+right absolute offsets compute the width,
           matching the original inset-from-icon, full-to-edge hairline. */}
       {divider ? <Separator className="absolute left-4 right-0 bottom-0 w-auto" /> : null}
-    </Pressable>
+    </PressableSurface>
   );
 }

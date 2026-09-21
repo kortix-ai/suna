@@ -15,8 +15,9 @@
  */
 
 import { useState, type ReactNode } from 'react';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 import { getDirectory, getFilename } from '@kortix/sdk';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { Text } from '@/components/ui/text';
 import { FileTextIcon } from '@/lib/icons';
 import { webSpace } from '@/lib/session/user-message';
@@ -52,7 +53,7 @@ export function ToolListRow({
   const pressable = Boolean(onClick) && !disabled;
 
   return (
-    <Pressable
+    <PressableSurface
       accessibilityRole={pressable ? 'button' : undefined}
       accessibilityLabel={title ?? name}
       accessibilityState={chevron ? { expanded: chevron === 'expanded', disabled } : { disabled }}
@@ -99,7 +100,7 @@ export function ToolListRow({
           {trailing}
         </Text>
       ) : null}
-    </Pressable>
+    </PressableSurface>
   );
 }
 

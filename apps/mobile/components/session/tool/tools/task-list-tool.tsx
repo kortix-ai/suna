@@ -19,6 +19,7 @@ import {
 import { ToolRegistry } from '../shared/registry';
 import { TURN_SPACE } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
+import { ToolScroll } from '../shared/surface';
 
 const NO_ARGS: string[] = [];
 
@@ -36,13 +37,9 @@ export function TaskListTool({ part, forceOpen }: ToolProps) {
       {isError ? (
         <ToolOutputFallback output={output} toolName="task_list" />
       ) : output ? (
-        <ScrollView
-          style={{ maxHeight: webSpace(48) }}
-          contentContainerStyle={{ paddingHorizontal: TURN_SPACE.cardPad, paddingVertical: webSpace(2) }}
-          nestedScrollEnabled
-        >
+        <ToolScroll maxHeight={webSpace(48)} contentContainerStyle={{ paddingHorizontal: TURN_SPACE.cardPad, paddingVertical: webSpace(2) }}>
           <ToolMarkdown content={output} />
-        </ScrollView>
+        </ToolScroll>
       ) : null}
     </BasicTool>
   );

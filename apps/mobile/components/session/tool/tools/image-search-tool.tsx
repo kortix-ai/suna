@@ -13,8 +13,9 @@
  */
 
 import { useMemo, useState } from 'react';
-import { Image, Pressable, View } from 'react-native';
+import { Image, View } from 'react-native';
 import { humanizeSearchQuery } from '@kortix/sdk';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { Text } from '@/components/ui/text';
 import { ImageIcon } from '@/lib/icons';
 import { disclosureKey } from '@/lib/session/disclosure-store';
@@ -43,7 +44,7 @@ function ImageTile({ url, title, size }: { url: string; title: string; size: num
   const [failed, setFailed] = useState(false);
   if (failed) return null;
   return (
-    <Pressable
+    <PressableSurface
       accessibilityRole="imagebutton"
       accessibilityLabel={title || 'Image result'}
       onPress={() => openExternal(url)}
@@ -57,7 +58,7 @@ function ImageTile({ url, title, size }: { url: string; title: string; size: num
       })}
     >
       <Image source={{ uri: url }} style={{ width: size, height: size }} resizeMode="cover" onError={() => setFailed(true)} />
-    </Pressable>
+    </PressableSurface>
   );
 }
 

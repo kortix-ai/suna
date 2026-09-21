@@ -13,7 +13,6 @@ import {
   fileChipTypeLabel,
   hideStepIcon,
   isFileChipPart,
-  isFileChipRun,
   isStalePending,
   isToolRunning,
   isScrollPinnedToEnd,
@@ -240,12 +239,6 @@ describe('file chips', () => {
     expect(isFileChipPart(read('/a.ts'))).toBe(true);
     expect(isFileChipPart(tool('write', 'completed'))).toBe(true);
     expect(isFileChipPart(tool('edit', 'completed'))).toBe(false);
-  });
-
-  test('a chip run is one normalized tool throughout', () => {
-    expect(isFileChipRun([read('/a.ts'), read('/b.ts')])).toBe(true);
-    expect(isFileChipRun([read('/a.ts'), tool('grep', 'completed')])).toBe(false);
-    expect(isFileChipRun([read('/a.ts'), tool('write', 'completed')])).toBe(false);
   });
 
   test('dedupes paths and labels the count of rows below', () => {

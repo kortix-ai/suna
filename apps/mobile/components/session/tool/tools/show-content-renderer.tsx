@@ -31,12 +31,13 @@
  */
 
 import { useCallback, useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react';
-import { Image, Linking, Pressable, ScrollView, View } from 'react-native';
+import { Image, Linking, Pressable, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTypes';
 import { useColorScheme } from 'nativewind';
 import { buildStaticFileLocalUrl, wsFavicon } from '@kortix/sdk';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { useSandboxImage } from '@/components/session/turn/use-sandbox-image';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -61,6 +62,7 @@ import { webSpace } from '@/lib/session/user-message';
 import { decidePreviewNavigation } from '@/lib/utils/html-embed';
 import { THEME } from '@/lib/utils/theme';
 import { HighlightedCode, MarkdownFrontmatterCard, ToolMarkdown, useToolNavigation } from '../shared/infrastructure';
+import { ToolScroll } from '../shared/surface';
 import { FONT_MEDIUM, TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from '../shared/styles';
 
 /** Web `h-[420px]` — media and file viewers in the inline card. */
@@ -161,7 +163,7 @@ function FileCard({ title, fileName, path }: { title?: string; fileName: string;
   const palette = useTurnPalette();
   const { enabled, openFile } = useToolNavigation();
   return (
-    <Pressable
+    <PressableSurface
       accessibilityRole="button"
       accessibilityLabel={`Open ${title || fileName}`}
       disabled={!enabled || !path}
@@ -195,19 +197,19 @@ function FileCard({ title, fileName, path }: { title?: string; fileName: string;
           {path}
         </Text>
       </View>
-    </Pressable>
+    </PressableSurface>
   );
 }
 
 function TextScroll({ fill, children }: { fill: boolean; children: ReactNode }) {
   return (
-    <ScrollView
-      style={fill ? { flex: 1 } : { maxHeight: TURN_SPACE.outputMaxHeight }}
+    <ToolScroll
+      maxHeight={fill ? undefined : TURN_SPACE.outputMaxHeight}
+      style={fill ? { flex: 1 } : undefined}
       contentContainerStyle={{ padding: TEXT_PAD }}
-      nestedScrollEnabled
     >
       {children}
-    </ScrollView>
+    </ToolScroll>
   );
 }
 
@@ -255,7 +257,7 @@ function LinkCard({ url, title, description, fill }: { url: string; title: strin
   const domain = showDomain(url);
   return (
     <View style={[{ padding: TEXT_PAD }, fill && { flex: 1, justifyContent: 'center' }]}>
-      <Pressable
+      <PressableSurface
         accessibilityRole="link"
         accessibilityLabel={title || domain}
         onPress={() => openExternal(url)}
@@ -313,7 +315,7 @@ function LinkCard({ url, title, description, fill }: { url: string; title: strin
           ) : null}
         </View>
         <ArrowSquareOutIcon size={TURN_SPACE.icon} color={palette.muted30} />
-      </Pressable>
+      </PressableSurface>
     </View>
   );
 }
@@ -453,7 +455,7 @@ export function ShowContentRenderer({
       const target = path || safeExternalUrl || '';
       const name = title || fileName || showDomain(target);
       return framed(
-        <Pressable
+        <PressableSurface
           accessibilityRole="button"
           accessibilityLabel={`Open video ${name}`}
           disabled={!navigationEnabled}
@@ -482,7 +484,7 @@ export function ShowContentRenderer({
           <Text variant="muted" numberOfLines={1} style={[TURN_TYPE.xs, { maxWidth: '80%', color: palette.muted60 }]}>
             {name}
           </Text>
-        </Pressable>,
+        </PressableSurface>,
       );
     }
     case 'audio':
@@ -536,17 +538,17 @@ export function ShowContentRenderer({
       const isMarkdownFile = /\.(mdx?|markdown)$/i.test(path);
       return (
         <ViewerFrame label={fileName} actions={toolbarActions}>
-          <ScrollView
-            style={fill ? { flex: 1 } : { maxHeight: SHOW_MEDIA_HEIGHT }}
+          <ToolScroll
+            maxHeight={fill ? undefined : SHOW_MEDIA_HEIGHT}
+            style={fill ? { flex: 1 } : undefined}
             contentContainerStyle={{ padding: TURN_SPACE.cardPad }}
-            nestedScrollEnabled
           >
             {isMarkdownFile ? (
               <MarkdownBody content={textFile.data} />
             ) : (
               <HighlightedCode code={textFile.data} language={languageFromPath(path)} />
             )}
-          </ScrollView>
+          </ToolScroll>
         </ViewerFrame>
       );
     }
@@ -591,9 +593,9 @@ export function ShowContentRenderer({
   return (
     <View style={{ paddingHorizontal: TEXT_PAD, paddingVertical: webSpace(4), rowGap: TURN_SPACE.gap2 }}>
       {content ? (
-        <ScrollView style={fill ? undefined : { maxHeight: TURN_SPACE.outputMaxHeight }} nestedScrollEnabled>
+        <ToolScroll maxHeight={fill ? undefined : TURN_SPACE.outputMaxHeight}>
           <ToolMarkdown content={content} />
-        </ScrollView>
+        </ToolScroll>
       ) : null}
       {path && !content ? <MonoLine icon={FileIcon}>{path}</MonoLine> : null}
       {safeExternalUrl && !content ? (

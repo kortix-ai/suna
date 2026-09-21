@@ -11,7 +11,6 @@
 import React, { useMemo, useState } from 'react';
 import {
   View,
-  Pressable,
   ScrollView,
   ActivityIndicator,
   Alert,
@@ -34,6 +33,7 @@ import {
   ArrowClockwiseIcon as RefreshCw,
   LockIcon as Lock,
 } from '@/lib/icons';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -509,7 +509,7 @@ export function WebhooksPage({
               const sub = `${t.secret_env ? 'Signed' : 'Unsigned'} · ${relativeTime(t.last_fired_at)} · ${(t.agent || 'default').toUpperCase()}`;
               return (
                 <View key={t.slug}>
-                  <Pressable
+                  <PressableSurface
                     onPress={() => openRow(t.slug)}
                     style={({ pressed }) => [
                       { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12 },
@@ -527,7 +527,7 @@ export function WebhooksPage({
                       <Text style={{ fontSize: 12.5, color: muted, marginTop: 2 }} numberOfLines={1}>{sub}</Text>
                     </View>
                     <Icon as={ChevronRight} size={18} color={muted} />
-                  </Pressable>
+                  </PressableSurface>
                   {i < filtered.length - 1 && <View style={{ height: 1, backgroundColor: border, marginLeft: 66 }} />}
                 </View>
               );

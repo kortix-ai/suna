@@ -320,16 +320,6 @@ export function isFileChipPart(part: Part): boolean {
   return isToolPart(part) && FILE_CHIP_VERBS.has(normalizeActivityToolName(part.tool));
 }
 
-/** A run that is one normalized file tool throughout — a grep never joins a read run. */
-export function isFileChipRun(parts: ReadonlyArray<Part>): boolean {
-  const first = parts[0];
-  if (!first || !isToolPart(first) || !isFileChipPart(first)) return false;
-  const name = normalizeActivityToolName(first.tool);
-  return parts.every(
-    (part) => isToolPart(part) && isFileChipPart(part) && normalizeActivityToolName(part.tool) === name,
-  );
-}
-
 function chipPath(part: ToolPart): string | undefined {
   const input = toolStreamingInput(part);
   for (const key of PATH_KEYS) {

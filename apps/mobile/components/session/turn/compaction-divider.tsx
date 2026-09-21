@@ -24,11 +24,12 @@
  */
 
 import { memo, useEffect, useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useColorScheme } from 'nativewind';
 
 import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { TextShimmer } from '@/components/kortix/text-shimmer';
 import { Separator } from '@/components/ui/separator';
 import { Text } from '@/components/ui/text';
@@ -168,7 +169,7 @@ function SummaryPill({
 
   return (
     <Animated.View style={animatedStyle}>
-      <Pressable
+      <PressableSurface
         accessibilityRole="button"
         accessibilityLabel={
           opensDetail ? 'Open compaction summary' : open ? 'Hide compaction summary' : 'Show compaction summary'
@@ -189,7 +190,7 @@ function SummaryPill({
             <CaretDownIcon size={webSpace(3)} color={palette.muted70} />
           </Animated.View>
         )}
-      </Pressable>
+      </PressableSurface>
     </Animated.View>
   );
 }
