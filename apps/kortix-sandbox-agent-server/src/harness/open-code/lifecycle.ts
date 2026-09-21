@@ -35,7 +35,33 @@ export type VerifiedReloadResult =
        */
       turnEnded: boolean | null
     }
-  | { outcome: 'kept-old'; reason: string }
+  | {
+      outcome: 'kept-old'
+      reason: string
+      /**
+       * True when a candidate spawned and then failed: it never served, or it
+       * failed the caller's `prove` check. False when the reload could not
+       * start a candidate at all (no binary, shutdown, desynced ports). Only a
+       * candidate failure says anything about the config.
+       */
+      candidateFailed?: boolean
+    }
+
+/**
+ * A caller-supplied check on the candidate, after it serves the session API
+ * and before it is promoted. `deadline` is the end of the verify budget, in
+ * epoch milliseconds.
+ */
+export type CandidateProof = (
+  baseUrl: string,
+  deadline: number,
+) => Promise<{ ok: true } | { ok: false; reason: string }>
+
+export interface VerifiedReloadOptions {
+  forceFail?: boolean
+  /** Runs on the candidate before promotion; a failure keeps the running process. */
+  prove?: CandidateProof
+}
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { OPENCODE_HOME } from './paths'
@@ -1590,7 +1616,7 @@ export type Opencode = HarnessLifecycleService & {
    * before they ever reach a sandbox, so no supported input can produce a
    * config that fails to start.
    */
-  reloadVerified(opts?: { forceFail?: boolean }): Promise<VerifiedReloadResult>
+  reloadVerified(opts?: VerifiedReloadOptions): Promise<VerifiedReloadResult>
   reconfigure(nextCfg: Config, nextOpencodeConfigDir: string, nextProjectEnv?: ProjectEnvStore): void
   /**
    * Point the NEXT spawn at another config directory and return the previous
@@ -2118,13 +2144,14 @@ export function createOpencodeLifecycle(
    * the caller must either promote it or retire it.
    */
   async function verifyCandidateBoots(
-    opts: { forceFail?: boolean } = {},
+    opts: VerifiedReloadOptions = {},
   ): Promise<
     | { ok: true; candidate: ChildProcess; port: number }
-    | { ok: false; reason: string }
+    | { ok: false; reason: string; candidateFailed: boolean }
   > {
-    if (!binaryPath) return { ok: false, reason: 'opencode binary not resolved yet' }
-    if (stopping) return { ok: false, reason: 'lifecycle is shutting down' }
+    const deadline = Date.now() + VERIFY_READY_TIMEOUT_MS
+    if (!binaryPath) return { ok: false, reason: 'opencode binary not resolved yet', candidateFailed: false }
+    if (stopping) return { ok: false, reason: 'lifecycle is shutting down', candidateFailed: false }
 
     const candidatePort = livePort() === currentCfg.opencodeInternalPort
       ? currentCfg.opencodeStandbyPort
@@ -2141,13 +2168,17 @@ export function createOpencodeLifecycle(
         candidatePort,
         pid: child?.pid ?? null,
       })
-      return { ok: false, reason: `port ${candidatePort} already answers; the port pair is desynced` }
+      return {
+        ok: false,
+        reason: `port ${candidatePort} already answers; the port pair is desynced`,
+        candidateFailed: false,
+      }
     }
     let candidate: ChildProcess
     try {
       candidate = await spawnChild(binaryPath, { port: candidatePort, supervise: false })
     } catch (err) {
-      return { ok: false, reason: `could not spawn candidate: ${(err as Error).message}` }
+      return { ok: false, reason: `could not spawn candidate: ${(err as Error).message}`, candidateFailed: true }
     }
 
     // Fault injection (see the `verify_fail` note on POST /kortix/refresh).
@@ -2155,14 +2186,29 @@ export function createOpencodeLifecycle(
     // the point is to exercise the ACTUAL decline path — candidate spawned,
     // candidate retired, incumbent untouched — rather than a shortcut that
     // proves only the plumbing.
-    const candidateReady = await probeUntilReady(candidatePort, VERIFY_READY_TIMEOUT_MS, candidate)
+    const candidateReady = await probeUntilReady(candidatePort, Math.max(0, deadline - Date.now()), candidate)
     const ready = candidateReady && !opts.forceFail
     if (!ready) {
       await killProcessGroup(candidate, 'SIGTERM').catch(() => {})
       logger.warn('[opencode] candidate never became ready; keeping the running instance', {
         candidatePort,
       })
-      return { ok: false, reason: 'the new opencode did not start; the previous one is still running' }
+      // prettier-ignore
+      return { ok: false, reason: 'the new opencode did not start; the previous one is still running', candidateFailed: true }
+    }
+    if (opts.prove) {
+      const proof = await opts.prove(`http://127.0.0.1:${candidatePort}`, deadline).catch((err: unknown) => ({
+        ok: false as const,
+        reason: `proven check threw: ${err instanceof Error ? err.message : String(err)}`,
+      }))
+      if (!proof.ok) {
+        await killProcessGroup(candidate, 'SIGTERM').catch(() => {})
+        logger.warn('[opencode] candidate failed the proven check; keeping the running instance', {
+          candidatePort,
+          reason: proof.reason,
+        })
+        return { ok: false, reason: proof.reason, candidateFailed: true }
+      }
     }
     logger.info('[opencode] candidate config verified', { candidatePort })
     return { ok: true, candidate, port: candidatePort }
@@ -2580,9 +2626,9 @@ export function createOpencodeLifecycle(
     },
 
     /** Promote the verified process before retiring the previous process. */
-    async reloadVerified(opts: { forceFail?: boolean } = {}): Promise<VerifiedReloadResult> {
+    async reloadVerified(opts: VerifiedReloadOptions = {}): Promise<VerifiedReloadResult> {
       const proven = await verifyCandidateBoots(opts)
-      if (!proven.ok) return { outcome: 'kept-old', reason: proven.reason }
+      if (!proven.ok) return { outcome: 'kept-old', reason: proven.reason, candidateFailed: proven.candidateFailed }
 
       const previous = child
       const previousPort = livePort()

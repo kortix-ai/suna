@@ -33,6 +33,18 @@ export async function resolveOpencodeConfigDirRelative(cfg: Config): Promise<str
 }
 
 /**
+ * The manifest's config dir, repo-relative, when it is a literal path; null
+ * otherwise. Unlike `resolveOpencodeConfigDirRelative` it does not require the
+ * directory to exist: the workspace report must also describe a session that
+ * deleted its `opencode.json`.
+ */
+export async function resolveOpencodeConfigDirLiteral(cfg: Config): Promise<string | null> {
+  const fs = await import('node:fs/promises')
+  const rel = await readOpencodeConfigDirFromManifest(fs, cfg.projectTarget)
+  return isPlainRelativePath(rel) ? rel : null
+}
+
+/**
  * Is this a literal directory path, and nothing cleverer?
  *
  * `opencode.config_dir` comes from a repo-controlled manifest and this value
