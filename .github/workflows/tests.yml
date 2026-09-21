@@ -104,7 +104,7 @@ jobs:
           npm_config_engine_strict: "false"
       - name: Restore Chromium
         if: matrix.mode == 'browser'
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.PLAYWRIGHT_BROWSERS_PATH }}
           key: playwright-chromium-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
