@@ -823,6 +823,11 @@ export interface UseSessionOptions {
   /** Long-poll budget (ms) the client requests on `/start`; the server clamps it. */
   waitMs?: number;
   /**
+   * Explicitly resume the preserved runtime for a session created before the
+   * project repository changed. Git access remains denied by the platform.
+   */
+  repositoryMode?: 'previous';
+  /**
    * Replay a stashed first message (prompt + model + agent from the "new session"
    * screen) once the runtime is ready and the thread is empty. Default true. Hosts
    * with their own first-message hand-off (e.g. apps/web) set this false.
@@ -929,6 +934,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const titleRefreshAbortRef = useRef<AbortController | null>(null);
   const {
     waitMs = 15_000,
+    repositoryMode,
     replayStartStash = true,
     enabled = true,
     chatEngine = true,
@@ -939,7 +945,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const startEnabled = enabled && !!projectId && !!sessionId;
   const start = useQuery({
     queryKey: sessionStartKey(projectId, sessionId),
-    queryFn: () => startProjectSession(projectId, sessionId, waitMs),
+    queryFn: () => startProjectSession(projectId, sessionId, { waitMs, repositoryMode }),
     enabled: startEnabled,
     retry: (failureCount, error) => shouldRetrySessionStart(failureCount, error, sessionId),
     retryDelay: (failureCount, error) =>

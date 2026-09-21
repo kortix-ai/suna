@@ -49,7 +49,11 @@ jobs:
       || contains(github.event.pull_request.labels.*.name, 'test')
       || contains(github.event.pull_request.labels.*.name, 'preview')
     runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
-    timeout-minutes: 60
+    # 20, not 60. Over 57 measured runs the slowest lane (`packages`) had
+    # p50 370s and max 570s, so 20 min is ~2x the worst run seen. The cap is a
+    # hang detector: on 2026-09-21 `@kortix/cli` hung and the lane burned the
+    # full 60 min before `trunk-report` could say `main` was red.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:

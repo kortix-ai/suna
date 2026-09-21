@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { getProjectDetail } from '@kortix/sdk';
-import { contract, qk, type ProviderListResponse, useAccountSecretResources, useFeatureFlag, useModelStore } from '@kortix/sdk/react';
+import { contract, qk, type ProviderListResponse, useModelStore } from '@kortix/sdk/react';
 import {
   CheckIcon as Check,
   CaretDownIcon as ChevronDown,
@@ -324,60 +324,6 @@ function ModelRow({
   );
 }
 
-/**
- * One credential choice inside a provider section.
- *
- * Deliberately quieter than a model row: `text-xs`, a key mark instead of a
- * provider logo, and no default-star slot. It answers a different question
- * ("who pays") from the rows under it ("which model"), and the weight
- * difference is what keeps the two from reading as one list.
- */
-function AccountRow({
-  sectionId,
-  secretId,
-  label,
-  active,
-  onSelect,
-}: {
-  sectionId: string;
-  secretId?: string;
-  label: string;
-  active: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <CommandItem
-      // Scoped by section: two providers may expose the same credential, and
-      // cmdk treats a repeated value as the same item.
-      value={`account:${sectionId}:${secretId ?? 'default'}`}
-      onSelect={onSelect}
-      title={label}
-      className={cn(
-        'cursor-pointer py-1',
-        // Same override as `ModelRow` — `bg-accent` and `bg-popover` resolve to
-        // one token in dark mode, so cmdk's own highlight is invisible here.
-        'hover:bg-hover [&:not([data-nav=pointer]_*)]:data-[selected=true]:bg-hover',
-        active && 'bg-active [&:not([data-nav=pointer]_*)]:data-[selected=true]:bg-active',
-      )}
-    >
-      <KeyRound className="text-muted-foreground size-3.5 shrink-0" />
-      <span
-        className={cn(
-          'min-w-0 flex-1 truncate text-xs',
-          active ? 'text-foreground font-medium' : 'text-muted-foreground',
-        )}
-      >
-        {label}
-      </span>
-      {/* The same fixed 24px trailing slot the model rows use, so the two kinds
-          of row truncate at the same column. */}
-      <span className="flex size-6 shrink-0 items-center justify-center">
-        {active && <Check className="text-foreground size-4" />}
-      </span>
-    </CommandItem>
-  );
-}
-
 /** A section heading in the picker — plain muted text. The colour lives on this
  *  span rather than as a `[&_[cmdk-group-heading]]` override because
  *  `CommandGroup` sets `text-foreground` on the heading element itself; a child
@@ -398,12 +344,6 @@ export interface ModelSelectorProps {
   triggerLabelClassName?: string;
 
   projectId?: string;
-  /** providerID -> pinned credential, or null for the project default. */
-  providerAccountSelection?: Record<string, string | null>;
-  /** Pins which connected credential this session bills to, per provider.
-   *  `null` restores the project default. Omitted when the caller has no
-   *  session to write to, and the chooser then does not render. */
-  onSelectProviderAccount?: (providerID: string, secretId: string | null) => void;
 
   /**
    * Controlled open state. Omit for the normal case — the trigger owns its
@@ -435,8 +375,6 @@ export function ModelSelector({
   disabled = false,
   modelsLoading = false,
   triggerLabelClassName,
-  providerAccountSelection,
-  onSelectProviderAccount,
   open: openProp,
   onOpenChange,
 }: ModelSelectorProps) {
@@ -460,7 +398,7 @@ export function ModelSelector({
   );
 
   const [search, setSearch] = useState('');
-  const [expandedGroups, setExpandedGroups] = useState<ReadonlySet<string>>(new Set());
+  const [toggledGroups, setToggledGroups] = useState<ReadonlyMap<string, boolean>>(new Map());
   const {
     openConnectProvider,
     openUpgrade,
@@ -479,39 +417,6 @@ export function ModelSelector({
     ...contract('config'),
   });
   const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
-  /*
-    The credentials connected on this account, so a provider with more than one
-    can say which pays. Read here rather than threaded through every call site:
-    the picker already reads the project.
-
-    TWO GATES, both of which exist to keep this read off the page-load path:
-
-      1. THE FLAG. Every pool route answers 403 without
-         `pooled_provider_secrets`, so without it the chooser could never work
-         and the request is pure waste. `provider-connect.tsx` gates the same
-         read the same way.
-      2. THE POPOVER. `/accounts/:id/secret-resources` answers 403 to anyone
-         who is not a member of the ACCOUNT — a project member need not be —
-         and the SDK toasts a 403 by default. This selector's trigger renders
-         on every project page, so an ungated read would put a "Forbidden"
-         toast in front of those users on every page load. Fetching only while
-         the popover is open makes the request user-initiated, like the
-         provider modal's.
-  */
-  // Reads the project detail query above — same cache key, no second request.
-  const pooledFlag = useFeatureFlag(projectId, 'pooled_provider_secrets');
-  const providerAccountsQuery = useAccountSecretResources(
-    open && pooledFlag.enabled
-      ? ((projectDetailQuery.data?.project as { account_id?: string } | undefined)?.account_id ?? null)
-      : null,
-    projectId ?? undefined,
-  );
-  // Memoized because `sections` depends on it: `?? []` is a fresh array on
-  // every render, which would rebuild every section on every keystroke.
-  const providerAccounts = useMemo(
-    () => providerAccountsQuery.data?.secrets ?? [],
-    [providerAccountsQuery.data],
-  );
   const baseModels = useMemo(() => {
     return llmGatewayEnabled ? models : models.filter((m) => m.providerID !== 'kortix');
   }, [models, llmGatewayEnabled]);
@@ -529,10 +434,10 @@ export function ModelSelector({
   useEffect(() => {
     if (!open) {
       setSearch('');
-      // Collapse back to the managed set on every open. A section the user
-      // expanded last time is not a preference they set; carrying it would
-      // make the picker's height depend on history.
-      setExpandedGroups(new Set());
+      // Back to the defaults on every open. A section the user toggled last
+      // time is not a preference they set; carrying it would make the
+      // picker's height depend on history.
+      setToggledGroups(new Map());
     }
   }, [open]);
 
@@ -603,8 +508,8 @@ export function ModelSelector({
   const searching = search.trim().length > 0;
 
   const sections = useMemo(
-    () => buildPickerSections(grouped, providerAccounts, providerAccountSelection),
-    [grouped, providerAccounts, providerAccountSelection],
+    () => buildPickerSections(grouped),
+    [grouped],
   );
 
   /**
@@ -769,42 +674,35 @@ export function ModelSelector({
                   )}
 
                   {sections.map((section, sectionIndex) => {
+                    const selectedInSection = section.models.find(
+                      (m) =>
+                        availableSelectedModel?.providerID === m.providerID &&
+                        availableSelectedModel?.modelID === m.modelID,
+                    );
                     const open = isPickerGroupOpen({
                       groupIndex: sectionIndex,
                       groupProviderID: section.id,
                       hasSearch: searching,
-                      containsSelected: section.models.some(
-                        (m) =>
-                          availableSelectedModel?.providerID === m.providerID &&
-                          availableSelectedModel?.modelID === m.modelID,
-                      ),
-                      expanded: expandedGroups,
+                      containsSelected: !!selectedInSection,
+                      toggled: toggledGroups,
                     });
+                    // Records the flip of what is on screen, so collapsing a
+                    // default-open group (the managed set, or the one holding
+                    // the selected model) works like collapsing any other.
                     const toggle = () =>
-                      setExpandedGroups((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(section.id)) next.delete(section.id);
-                        else next.add(section.id);
-                        return next;
-                      });
+                      setToggledGroups((prev) => new Map(prev).set(section.id, !open));
+                    const collapsible = sections.length > 1;
                     return (
                       <Fragment key={section.id}>
                         {sectionIndex > 0 && <CommandSeparator />}
-                        <CommandGroup
-                          heading={
-                            sectionIndex === 0 && sections.length > 1 ? (
-                              <GroupHeading>{section.label}</GroupHeading>
-                            ) : undefined
-                          }
-                          forceMount
-                        >
+                        <CommandGroup forceMount>
                           {/* The LABEL is the control: the provider's name
                               expands and collapses its own models, rather than
-                              a separate "show N models" row underneath it. The
-                              first section is the managed set and is always
-                              open, so it keeps a plain heading with nothing to
-                              press. */}
-                          {sectionIndex > 0 && (
+                              a separate "show N models" row underneath it.
+                              Every section gets the same header, the managed
+                              set included. A lone section has nothing to
+                              collapse against, so it gets no header. */}
+                          {collapsible && (
                             <CommandItem
                               value={`section-${section.id}`}
                               onSelect={toggle}
@@ -825,58 +723,23 @@ export function ModelSelector({
                               {section.models.some(isSubscriptionModel) && (
                                 <Tag>{tModel('included')}</Tag>
                               )}
-                              {!open && (
-                                <span className="text-muted-foreground text-xs">
+                              {/* A collapsed group that holds the selected
+                                  model names it, so collapsing never hides
+                                  what you are on. */}
+                              {!open && selectedInSection && (
+                                <>
+                                  <span className="text-muted-foreground min-w-0 truncate text-xs">
+                                    {pickerModelName(selectedInSection)}
+                                  </span>
+                                  <Check className="text-foreground size-4 shrink-0" />
+                                </>
+                              )}
+                              {!open && !selectedInSection && (
+                                <span className="text-muted-foreground text-xs tabular-nums">
                                   {section.models.length}
                                 </span>
                               )}
                             </CommandItem>
-                          )}
-                          {/*
-                            WHICH CREDENTIAL PAYS. Only when there is a choice
-                            to make: two or more accounts are connected for this
-                            provider and the caller can write the pin.
-
-                            These are cmdk items, not a nested dropdown. A
-                            dropdown inside this popover would take the arrow
-                            keys away from the list that is already listening
-                            for them, and it renders in a portal outside the
-                            popover, which reads as an outside click. As rows,
-                            the choice is keyboard-reachable, needs no second
-                            open, and shows BOTH accounts at once instead of
-                            hiding one behind the name of the other.
-
-                            One block per provider — NOT one section per
-                            account. Every connected account exposes the same
-                            models, so a section each printed those models once
-                            per account: ten rows for five models and two
-                            accounts, twenty for four.
-                          */}
-                          {open && !searching && section.accounts.length > 1 && onSelectProviderAccount && (
-                            <>
-                              <div className="text-muted-foreground px-2 pt-2 pb-1 text-xs font-medium tracking-[0.12em]">
-                                {tModel('useAccount')}
-                              </div>
-                              <AccountRow
-                                sectionId={section.id}
-                                label={tModel('projectDefaultAccount')}
-                                active={section.activeSecretId === null}
-                                onSelect={() => onSelectProviderAccount(section.providerID, null)}
-                              />
-                              {section.accounts.map((account) => (
-                                <AccountRow
-                                  key={account.secret_id}
-                                  sectionId={section.id}
-                                  secretId={account.secret_id}
-                                  label={account.label}
-                                  active={section.activeSecretId === account.secret_id}
-                                  onSelect={() =>
-                                    onSelectProviderAccount(section.providerID, account.secret_id)
-                                  }
-                                />
-                              ))}
-                              <div className="bg-border/60 mx-2 my-1 h-px" />
-                            </>
                           )}
                           {open &&
                             section.models.map((model) => (

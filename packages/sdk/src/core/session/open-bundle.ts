@@ -46,6 +46,7 @@ import {
   type SessionTranscriptSyncEnvelope,
   type SessionTurn,
   type SessionTurnEnded,
+  type SessionTurnFailure,
   getSessionOpenBundle,
 } from '../rest/projects-client/sessions';
 
@@ -181,6 +182,7 @@ export function claimOpenBundle(
 export interface OpenBundleTurnObservation {
   turns: SessionTurn[];
   last_ended: SessionTurnEnded | undefined;
+  recent_failures?: SessionTurnFailure[];
   atMs: number;
   /** `atMs` is the API's clock. The working projection never lets a bundle
    *  read retire a drain floor or rank against a tab-clock stamp — see
@@ -199,6 +201,7 @@ export function openBundleTurn(bundle: SessionOpenBundle): OpenBundleTurnObserva
   return {
     turns: turn.turns ?? [],
     last_ended: turn.last_ended,
+    recent_failures: turn.recent_failures,
     atMs: Number.isFinite(observedAtMs) ? observedAtMs : Date.now(),
     source: 'bundle',
   };

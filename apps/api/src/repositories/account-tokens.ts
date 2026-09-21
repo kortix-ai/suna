@@ -263,6 +263,32 @@ export async function listPersonalAccountTokens(
 }
 
 /** Revoke a token (soft-delete — sets status='revoked' + revoked_at). */
+/**
+ * Who minted an account token, and whether it is a hand-minted personal token
+ * (not a session, service-account or agent-grant bearer). The revoke route
+ * decides between `token.personal.revoke` and `token.revoke` on this.
+ */
+export async function getAccountTokenOwner(
+  tokenId: string,
+  accountId: string,
+): Promise<{ userId: string | null; personal: boolean } | null> {
+  const [row] = await db
+    .select({
+      userId: accountTokens.userId,
+      sessionId: accountTokens.sessionId,
+      serviceAccountId: accountTokens.serviceAccountId,
+      agentGrant: accountTokens.agentGrant,
+    })
+    .from(accountTokens)
+    .where(and(eq(accountTokens.tokenId, tokenId), eq(accountTokens.accountId, accountId)))
+    .limit(1);
+  if (!row) return null;
+  return {
+    userId: row.userId ?? null,
+    personal: !row.sessionId && !row.serviceAccountId && !row.agentGrant,
+  };
+}
+
 export async function revokeAccountToken(
   tokenId: string,
   accountId: string,

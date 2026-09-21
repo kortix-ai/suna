@@ -203,9 +203,6 @@ export interface SessionChatInputProps {
   messages?: MessageWithParts[];
   sessionId?: string;
   projectId?: string;
-  providerAccountSelection?: Record<string, string | null>;
-  /** See ComposerToolbarProps. */
-  onSelectProviderAccount?: (providerID: string, secretId: string | null) => void;
   /**
    * Persist the unsent draft under this scope and restore it on the next
    * mount — see `composer/draft/`. Project scope for the home hero composer
@@ -483,8 +480,6 @@ function ComposerImpl({
   messages,
   sessionId,
   projectId,
-  providerAccountSelection,
-  onSelectProviderAccount,
   draftScope = null,
   draftActive = true,
   disabled = false,
@@ -2025,8 +2020,6 @@ function ComposerImpl({
               onChange={handleFileSelect}
             />
             <ComposerToolbar
-              providerAccountSelection={providerAccountSelection}
-              onSelectProviderAccount={onSelectProviderAccount}
               leading={
                 inlineUnderbar ? (
                   <ComposerUnderbar

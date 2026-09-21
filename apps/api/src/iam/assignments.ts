@@ -207,6 +207,7 @@ export async function assignRole(writer: Writer, accountId: string, input: Assig
   }
 
   await assertPrincipalExists(accountId, input.principal);
+  assertAccountRoleHolder(writer, role, scopeType, input.principal);
   await assertWriterMayAssign(writer, accountId, role, scopeType, scopeId, input.object != null);
   await assertDelegable(role);
 
@@ -365,6 +366,26 @@ export async function updateAssignment(
   if (scopeType === 'project' && !scopeId) {
     throw new HTTPException(400, { message: 'a project-scoped assignment must name a project' });
   }
+  assertAccountRoleHolder(writer, role, scopeType, {
+    type: existing.principalType as PrincipalRef['type'],
+    id: existing.principalId,
+  });
+  // Moving a row AWAY from a role revokes that role, so the writer needs the
+  // same authority over the old role as over the new one. Without this, a
+  // policy edit could re-point an owner's row and demote them.
+  await assertWriterMayAssign(
+    writer,
+    accountId,
+    {
+      roleId: existing.roleId,
+      key: existing.roleKey,
+      scopeType: existing.scopeType as ScopeType,
+      isSystem: existing.roleIsSystem,
+    },
+    existing.scopeType as ScopeType,
+    existing.scopeId,
+    existing.objectType != null,
+  );
   await assertWriterMayAssign(writer, accountId, role, scopeType, scopeId, false);
   await assertDelegable(role);
 
@@ -653,9 +674,39 @@ async function assertWriterMayAssign(
   }
   if (role.isSystem && scopeType === 'account') {
     await assertAuthorized(writer, 'member.update', { type: 'account' });
+    // The owner ceiling. `member.update` is admin-tier; granting or revoking
+    // `owner` is not. `PATCH /accounts/:id/members/:userId` asserts the same
+    // action, and every assignment write (grant, update, revoke) passes
+    // through here, so no route reaches an owner row with less.
+    if (role.key === 'owner') {
+      await assertAuthorized(writer, 'member.super_admin.grant', { type: 'account' });
+    }
     return;
   }
   await assertAuthorized(writer, 'policy.create', { type: 'account' });
+}
+
+/**
+ * A built-in ACCOUNT role (owner / admin / member) is held by a person. The
+ * engine (`resolvePrincipal`) would honor one on a group and hand every member
+ * of that group the tier, but `accountRoleFor` reads only `user` rows. The
+ * member list, the badges and every `getMembership` check would still say
+ * "member" while the person acts as an owner. Refuse the row instead of
+ * creating a role nobody can see. SYSTEM_ACTOR is exempt: internal writers
+ * choose their own principals.
+ */
+function assertAccountRoleHolder(
+  writer: Writer,
+  role: ResolvedRole,
+  scopeType: ScopeType,
+  principal: PrincipalRef,
+): void {
+  if (writer === SYSTEM_ACTOR) return;
+  if (!role.isSystem || scopeType !== 'account') return;
+  if (principal.type === 'user' || principal.type === 'pending') return;
+  throw new HTTPException(400, {
+    message: `an account role ("${role.key}") is held by a person, not a ${principal.type}; give the group a project role or a custom role instead`,
+  });
 }
 
 /**

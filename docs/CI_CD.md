@@ -28,6 +28,9 @@ runs six lanes in parallel — `core`, `browser-1` … `browser-4`, `packages` �
 each natively on one Blacksmith runner (`CI_RUNNER_L`, 8 vCPU / 32 GB). The six
 lanes equal one `pnpm test -- --full` run. The slowest lane defines the
 duration. `--browser-shard=N/4` maps straight to Playwright's native `--shard`.
+Each lane is capped at 20 min (57 runs: `packages` p50 370s, max 570s); the cap
+is a hang detector, and a hung lane concludes `cancelled`, which the trunk
+verdict still reports.
 
 Browser lanes went 2 → 4 on 2026-09-18. Suite wall clock fell from 10m19s
 (run `35384964452`) to 8m17s (run `35388565759`). `packages` (~8 min) is now the
@@ -66,7 +69,10 @@ Two workflows test a deployed origin instead of the local profile:
 
 1. Merge development changes to `main`.
 2. `deploy-dev.yml` deploys the merged API, gateway, and web SHA to ECS dev.
-3. Promote a release candidate to `staging` through a PR.
+   `tests.yml` runs the six lanes on the same push in parallel and does not
+   gate the deploy.
+3. Promote a release candidate to `staging` through a PR. That PR runs
+   `tests.yml`; merge it only when the six lanes are green.
 4. `build-staging.yml` and `deploy-staging.yml` build and deploy staging.
 5. Open the reviewed `staging` to `prod` release PR.
 6. `tests-release.yml` requires the deployed staging API and gateway to report

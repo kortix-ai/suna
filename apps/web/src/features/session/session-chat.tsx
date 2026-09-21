@@ -245,7 +245,12 @@ import {
   shouldShowToolPart,
   unwrapError,
 } from '@/ui';
-import { isAbortError } from '@kortix/sdk';
+import {
+  isAbortError,
+  turnEndNotice,
+  type SessionTurnOutcome,
+  type TurnEndNotice,
+} from '@kortix/sdk';
 import type { ProviderListResponse } from '@kortix/sdk/react';
 import {
   type AbortSettlement,
@@ -293,6 +298,7 @@ import {
   isOptimisticSessionPrompt,
   useSessionStateStore,
   useSessionSync,
+  useSessionTurnOutcome,
   useSessionWorking,
   useSessionWorkingStore,
 } from '@kortix/sdk/react';
@@ -635,8 +641,46 @@ export function deriveTurnErrorAbortState(turn: {
   return { isAbort: false };
 }
 
+/**
+ * What a turn's error row shows. An abort renders nothing — but an abort is the
+ * EFFECT of whatever stopped the turn. `turnEndNotice` (SDK) decides whether the
+ * control plane has something to say about THIS turn and what kind; this only
+ * puts words on it. No notice: the transcript's own error stands, abort or not.
+ */
+export function deriveTurnErrorPresentation(input: {
+  turnError: string | undefined;
+  isAbort: boolean;
+  notice: TurnEndNotice | null;
+}): { text: string | undefined; isAbort: boolean; suggestion: string | undefined } {
+  const { turnError, isAbort, notice } = input;
+  if (!notice) return { text: turnError, isAbort, suggestion: undefined };
+  switch (notice.kind) {
+    case 'sandbox-memory':
+      return {
+        isAbort: false,
+        text: `This turn was stopped because the sandbox was almost out of memory${
+          notice.usedPct === null ? '' : ` (${notice.usedPct}% used)`
+        }.`,
+        suggestion:
+          'The last command used almost all of the sandbox memory. Ask the agent to continue with a ' +
+          'lighter command, for example fewer parallel workers.' +
+          (notice.detail ? ` Details: ${notice.detail}.` : ''),
+      };
+    case 'cause':
+      return { isAbort: false, text: notice.message, suggestion: undefined };
+    case 'unexplained':
+      return {
+        isAbort: false,
+        text: 'This turn stopped before it finished.',
+        suggestion: 'No reason was reported. Send a message to continue from where it stopped.',
+      };
+  }
+}
+
 interface SessionTurnProps {
   turn: Turn;
+  /** What the control plane recorded about how THIS session's turns ended. */
+  turnOutcome: SessionTurnOutcome;
   /**
    * Both were derived HERE from `allMessages`, once per turn, on every render.
    *
@@ -832,6 +876,7 @@ function resolveTurnError(turn: Turn): string | undefined {
 
 function SessionTurnImpl({
   turn,
+  turnOutcome,
   isLast,
   ownsPlan,
   sessionId,
@@ -1026,11 +1071,29 @@ function SessionTurnImpl({
    * synthesized `AbortError` patch applied when the user hits Stop.
    */
   const turnErrorIsAbort = useMemo(() => deriveTurnErrorAbortState(turn).isAbort, [turn]);
+  const turnErrorRow = useMemo(
+    () =>
+      deriveTurnErrorPresentation({
+        turnError,
+        isAbort: turnErrorIsAbort,
+        notice: turnEndNotice(turnOutcome, turn.userMessage.info.id, {
+          hasError: Boolean(turnError),
+          isAbort: turnErrorIsAbort,
+        }),
+      }),
+    [turnError, turnErrorIsAbort, turnOutcome, turn.userMessage.info.id],
+  );
 
   // The gateway's structured fields (provider/suggestion/request_id) for
   // `turnError`, when recoverable — lets TurnErrorDisplay render WHICH
   // provider failed and WHAT to do about it instead of only the raw message.
   const turnErrorDetails = useMemo(() => getTurnErrorDetails(turn), [turn]);
+  // A named end cause brings its own next step; the gateway's details describe
+  // the transcript error it replaced, so they do not apply to it.
+  const turnErrorRowDetails = useMemo(
+    () => (turnErrorRow.suggestion ? { suggestion: turnErrorRow.suggestion } : turnErrorDetails),
+    [turnErrorRow.suggestion, turnErrorDetails],
+  );
 
   // Shell mode detection
   const shellModePart = useMemo(() => getShellModePart(turn), [turn]);
@@ -1496,11 +1559,11 @@ function SessionTurnImpl({
             onPermissionReply={onPermissionReply}
             defaultOpen
           />
-          {turnError && (
+          {turnErrorRow.text && (
             <TurnErrorDisplay
-              errorText={turnError}
-              errorDetails={turnErrorDetails}
-              isAbort={turnErrorIsAbort}
+              errorText={turnErrorRow.text}
+              errorDetails={turnErrorRowDetails}
+              isAbort={turnErrorRow.isAbort}
               className="mt-2"
             />
           )}
@@ -1873,11 +1936,11 @@ function SessionTurnImpl({
       )}
 
       {/* ── Error (abort / failure banner) ── */}
-      {turnError && (
+      {turnErrorRow.text && (
         <TurnErrorDisplay
-          errorText={turnError}
-          errorDetails={turnErrorDetails}
-          isAbort={turnErrorIsAbort}
+          errorText={turnErrorRow.text}
+          errorDetails={turnErrorRowDetails}
+          isAbort={turnErrorRow.isAbort}
         />
       )}
 
@@ -2563,6 +2626,7 @@ export function SessionChat({
     runtimeSessionId: sessionId,
   });
   const isServerBusy = working.state === 'working';
+  const turnOutcome = useSessionTurnOutcome(projectId ?? '', projectSessionId ?? '');
 
   // The one transcript-derived gate that survives, and the only one that
   // carries proof: during a provider 429 OpenCode stamps `info.error` with
@@ -5837,6 +5901,7 @@ export function SessionChat({
                               {suppressedFailedCompaction ? null : (
                                 <SessionTurn
                                   turn={turn}
+                                  turnOutcome={turnOutcome}
                                   isLast={turn.userMessage.info.id === lastUserMessageId}
                                   ownsPlan={turn.userMessage.info.id === planAnchorId}
                                   sessionId={sessionId}

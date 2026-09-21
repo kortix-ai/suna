@@ -81,10 +81,6 @@ export interface ComposerToolbarProps {
   onVariantChange?: (variant: string | null) => void;
 
   projectId: string | undefined;
-  providerAccountSelection?: Record<string, string | null>;
-  /** Pins a provider's credential for this session; null restores the
-   *  project default. */
-  onSelectProviderAccount?: (providerID: string, secretId: string | null) => void;
 
   /** Rendered in the right cluster, ahead of send/stop. The composer passes
    *  this only for the `'inline'` underbar placement — with the `'row'`
@@ -140,8 +136,6 @@ export function ComposerToolbar({
   selectedVariant,
   onVariantChange,
   projectId,
-  providerAccountSelection,
-  onSelectProviderAccount,
   toolbarSlot,
   rewind,
   leading,
@@ -182,8 +176,6 @@ export function ComposerToolbar({
             defaultControls={modelDefaultControls}
             triggerLabelClassName="max-w-[7rem]"
             projectId={projectId}
-            providerAccountSelection={providerAccountSelection}
-            onSelectProviderAccount={onSelectProviderAccount}
             open={modelMenuOpen}
             onOpenChange={onModelMenuOpenChange}
           />

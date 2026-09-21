@@ -1226,13 +1226,8 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
     attachment: true, temperature: true,
     limit: { context: 1_048_576, output: 16_384 }, cost: { input: 0.2, output: 0.6, cache_read: 0.006 },
   },
-  'deepseek-v4-pro-0813': {
-    name: 'DeepSeek V4 Pro 0813', provider: 'kortix', reasoning: true, tool_call: true,
-    attachment: false, temperature: true,
-    limit: { context: 1_048_576, output: 384_000 }, cost: { input: 0.7, output: 2.96, cache_read: 0.033 },
-  },
   'glm-5.3-flash': {
-    name: 'GLM-5.3-Flash', provider: 'kortix', reasoning: true, tool_call: true,
+    name: 'GLM 5.3 Flash', provider: 'kortix', reasoning: true, tool_call: true,
     attachment: true, temperature: true,
     limit: { context: 1_048_576, output: 16_384 }, cost: { input: 0.15, output: 0.5, cache_read: 0.05 },
   },

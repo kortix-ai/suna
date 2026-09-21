@@ -7,22 +7,17 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
-import {
-  clearAutoProjectSuppression,
-  isAutoProjectSuppressed,
-  isProvisionInFlightError,
-  navigationMayCreateProject,
-} from '@/lib/onboarding/ensure-first-project';
 import { readLastProjectId, writeLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import { resolveLandingDestination } from '@/lib/onboarding/resolve-landing-destination';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
+import type { KortixAccount } from '@kortix/sdk';
 import { SignOutIcon } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { classifyLandingTerminal, ProjectStartEmpty } from './landing-terminal';
+import { ProjectChooser } from './project-chooser';
 
 /**
  * Carry the incoming query string onto the resolved destination.
@@ -49,8 +44,10 @@ const RETRY_DELAY_MS = [400, 1200];
  * the user to a project. When the destination project id is not already known,
  * it sends them here. This route exists so that resolving WHICH project never
  * blocks a redirect: it paints the project chrome on the first frame with zero
- * network, then resolves last-used -> first -> auto-provision behind that paint
- * and swaps the URL to the real `/projects/<id>`.
+ * network, then resolves last-used -> first behind that paint and swaps the
+ * URL to the real `/projects/<id>`. With nothing to open it renders the
+ * chooser (`project-chooser.tsx`): pending invites and a create action. It
+ * never creates a project on its own.
  *
  * Before this existed, sign-up awaited a managed git repo create AND a full
  * starter push inside the auth callback, so a new user watched a blank callback
@@ -65,32 +62,19 @@ export default function ProjectStartPage() {
   const resolving = useRef(false);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [failed, setFailed] = useState(false);
-  const [terminal, setTerminal] = useState<ReturnType<typeof classifyLandingTerminal> | null>(null);
+  /** Nothing to open: the chooser, with create permission for the primary account. */
+  const [chooser, setChooser] = useState<{ canCreate: boolean } | null>(null);
 
   useSignedOutRedirect();
-
-  // The guard has done its one job the moment this surface renders: the user
-  // has now been TOLD their last workspace is gone and offered a way back
-  // (below). `isAutoProjectSuppressed` binds the flag to `{accountId, at}`
-  // (`ensure-first-project.ts`), so a stale flag can no longer suppress
-  // auto-provision for a DIFFERENT account — but nothing un-suppresses THIS
-  // account's own retries without this clear: leaving it set would keep
-  // showing this SAME account the "suppressed" terminal on every later visit
-  // to this tab, past the one deliberate delete it was recorded for. Session-
-  // scoped by design (see ensure-first-project.ts): a later sign-in or a
-  // fresh tab still auto-provisions normally, clear or not.
-  useEffect(() => {
-    if (terminal === 'suppressed') clearAutoProjectSuppression();
-  }, [terminal]);
 
   // `retry: 3` is this reader's own budget, kept verbatim: the landing
   // destination is resolved FROM this list, so one transient failure here
   // strands the user on a spinner with nowhere to go.
   const accountsQuery = useAccountsList({ retry: 3 });
 
-  const resolve = useCallback(async () => {
+  const resolve = useCallback(async (fresh?: KortixAccount[]) => {
     if (resolving.current) return;
-    const accounts = accountsQuery.data;
+    const accounts = fresh ?? accountsQuery.data;
     if (!accounts || accounts.length === 0) return;
 
     resolving.current = true;
@@ -101,26 +85,10 @@ export default function ProjectStartPage() {
       // stale persisted selection (a team where the user is a plain member
       // with zero grants) used to end here as a false "No workspace yet"
       // while the personal account, in the same list, held their projects.
-      //
-      // `isAccountSuppressed` is passed straight through, NOT pre-reduced to
-      // a single boolean here: suppression is bound per-account
-      // (ensure-first-project.ts), and this resolver only ever evaluates
-      // auto-create for ONE primary candidate account
-      // (resolve-landing-destination.ts). Computing `.some(...)` over every
-      // account the user owns — the earlier version of this fix — let a flag
-      // set on account A suppress creation on an unrelated account B owned
-      // by the same user, which is the same cross-account leak this task
-      // exists to close, just at a narrower scope. `isAutoProjectSuppressed`
-      // itself is still identity-safe on its own: never against a persisted
-      // `selectedAccountId`, which can be stale left over from a previous
-      // account — the resolver applies it only to the account IT resolves
-      // as primary from the freshly-fetched, server-verified `accounts` list.
       const resolution = await resolveLandingDestination({
         accounts,
         selectedAccountId,
         preferredProjectId: readLastProjectId(user?.id),
-        isAccountSuppressed: isAutoProjectSuppressed,
-        mayCreate: navigationMayCreateProject(),
       });
 
       if (resolution.kind === 'project') {
@@ -133,30 +101,14 @@ export default function ProjectStartPage() {
         return;
       }
 
-      // No project exists in ANY account and the primary candidate account
-      // may not create one: a member workspace context (flow 08's revoked
-      // member), the account the user just emptied by deleting their last
-      // project, or the rare cross-site-navigation edge. `/projects` is a
-      // redirect back to THIS route (Task 21), so bouncing there would loop
-      // forever — render the terminal state inline instead.
-      setTerminal(
-        classifyLandingTerminal({
-          canCreate: resolution.canCreate,
-          suppressed: resolution.suppressed,
-        }),
-      );
+      // No project exists in ANY account. `/projects` is a redirect back to
+      // THIS route (Task 21), so bouncing there would loop forever — render
+      // the chooser inline instead.
+      setChooser({ canCreate: resolution.canCreate });
     } catch (err) {
-      // A concurrent, healthy provision — this account's OTHER tab or entry
-      // point is mid-create with the same persisted idempotency key — is not
-      // a bug. `ensureFirstProject` already re-checked once before throwing;
-      // this loop's own retry (below, same key) is what waits out the rest,
-      // so this must not be logged as though something went wrong.
-      //
-      // The LAST attempt is different: it ends on the "We could not open your
-      // project" screen, and an onboarding that is genuinely stuck must leave
-      // a trace. Silence there is the one state that produces a support ticket
-      // with nothing to read.
-      if (!isProvisionInFlightError(err) || attempts.current >= MAX_RESOLVE_ATTEMPTS) {
+      // The LAST attempt ends on the "We could not open your project" screen,
+      // and a landing that is genuinely stuck must leave a trace.
+      if (attempts.current >= MAX_RESOLVE_ATTEMPTS) {
         console.error('[onboarding] could not resolve a landing project', err);
       }
       const delay = RETRY_DELAY_MS[attempts.current - 1];
@@ -187,18 +139,32 @@ export default function ProjectStartPage() {
   }, []);
 
   // A loaded, EMPTY account list. `resolve` returns early on it, so without
-  // this neither `terminal` nor `failed` is ever set and the loading frame stays
-  // up forever, with no control — a hard lock on desktop, which has no browser
-  // Back. `GET /accounts` bootstraps a personal account or answers 500, so this
-  // is rare; with nothing to open and nowhere to create, it is `no-permission`.
+  // this nothing is ever set and the loading frame stays up forever, with no
+  // control — a hard lock on desktop, which has no browser Back. `GET
+  // /accounts` bootstraps a personal account or answers 500, so this is rare;
+  // the chooser still shows any pending invite, with no create action.
   const noAccounts = accountsQuery.isSuccess && accountsQuery.data.length === 0;
-  const shownTerminal = terminal ?? (noAccounts ? 'no-permission' : null);
+  const shownChooser = chooser ?? (noAccounts ? { canCreate: false } : null);
 
-  if (shownTerminal) {
+  if (shownChooser) {
     return (
       <div className="relative">
-        <StartSignOutButton />
-        <ProjectStartEmpty reason={shownTerminal} />
+        <ProjectChooser
+          canCreate={shownChooser.canCreate}
+          onJoined={({ accountId, destination }) => {
+            setSelectedAccountId(accountId);
+            if (destination) {
+              router.replace(destination);
+              return;
+            }
+            // A workspace invite with no project grant: resolve again against
+            // the account list that now includes the joined workspace.
+            setChooser(null);
+            attempts.current = 0;
+            resolving.current = false;
+            void accountsQuery.refetch().then(({ data }) => resolve(data));
+          }}
+        />
       </div>
     );
   }
@@ -224,15 +190,11 @@ export default function ProjectStartPage() {
 }
 
 /**
- * Both stuck states on this route (terminal and error) used to be dead ends:
- * no app chrome renders here, so a user parked on "No workspace yet" had no
- * way to sign out and try another account. `performSignOut` clears every piece
- * of persisted client state — including the stale account selection that used
- * to cause the false terminal — and then leaves on a document load.
- *
- * Deliberately OUTSIDE `ProjectStartEmpty`: the no-permission case pins "no
- * <a>/<button> in the empty surface" (landing-terminal.test.tsx), and that
- * contract is about create controls that would 403 — not about this exit.
+ * The error state used to be a dead end: no app chrome renders here, so a
+ * user parked on it had no way to sign out and try another account.
+ * `performSignOut` clears every piece of persisted client state and then
+ * leaves on a document load. The chooser carries its own Log out row, the
+ * last row of its panel, the same as the sidebar menu.
  */
 function StartSignOutButton() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');

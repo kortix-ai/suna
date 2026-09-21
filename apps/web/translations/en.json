@@ -1597,6 +1597,15 @@
       "title": "This session is stopped",
       "message": "Its computer was released. Restart the session to bring it back."
     },
+    "previousRepository": {
+      "title": "Session uses previous repository",
+      "message": "This workspace started from the project's previous repository. Git now connects to the current repository. Review changes before you push.",
+      "unavailable": "The previous workspace is no longer available. Start a new session in the current repository.",
+      "resume": "Resume previous workspace",
+      "resuming": "Resuming…",
+      "newSession": "Start new session",
+      "delete": "Delete session"
+    },
     "lost": {
       "title": "This session's computer was lost",
       "message": "Its cloud sandbox disappeared on the provider side, so this session cannot be restarted or recovered. This is a fault on our end, not something you did — it has been reported automatically. Anything committed and pushed from this session is safe in your project's repository."
@@ -1610,8 +1619,6 @@
     "search": "Search models",
     "free": "Free",
     "included": "Included",
-    "projectDefaultAccount": "Project default",
-    "useAccount": "Use account",
     "addProvider": "Add provider",
     "connectProvider": "Connect provider",
     "manageModels": "Manage models",
@@ -19467,13 +19474,27 @@
     "managedDescription": "Managed models billed with Kortix credits. No API key needed.",
     "textImage": "Text + image",
     "textOnly": "Text only",
-    "zdrTitle": "Model providers don't keep your prompts",
+    "zdrTitle": "Zero data retention",
     "zdrDescription": "Zero data retention (ZDR) means the model provider processes your text and images, then does not keep the input or reply after the request. Kortix stores your project and conversation history separately.",
+    "usProvidersTitle": "US-based providers",
+    "usProvidersDescription": "Each Kortix model runs on one pinned inference provider headquartered in the US. Requests never fall back to another provider.",
     "hiddenHint": "Hidden from the picker. Direct requests are still allowed; use the model menu to disable them.",
     "hidden": "Hidden from picker",
     "disableModel": "Disable model",
     "modelError": "Could not update model access.",
     "hiddenShort": "Hidden from the picker. Direct requests are still allowed.",
     "resetError": "Could not reset the model list."
+  },
+  "projectChooser": {
+    "invitations": "Invitations",
+    "invitedBy": "Invited by {email}",
+    "join": "Join",
+    "joinError": "Could not join. Try again.",
+    "unnamedWorkspace": "Workspace",
+    "noPermissionTitle": "No workspace yet",
+    "noPermissionBody": "Ask an owner or admin to invite {email}.",
+    "invitesTitle": "You're invited",
+    "invitesDescription": "Join a project your team shared, or start your own.",
+    "createProjectInstead": "Create a new project instead"
   }
 }

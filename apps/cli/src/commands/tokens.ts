@@ -86,8 +86,10 @@ interface ServiceAccount {
 
 const HELP = help`Usage: kortix tokens <subcommand> [options]
 
-Non-interactive credentials for this account. Reads need token.read; minting
-needs token.create; revoking needs token.revoke.
+Non-interactive credentials for this account. Reads need token.read. Every
+member may mint and revoke their OWN personal keys (token.personal.create,
+token.personal.revoke). Service accounts and other people's keys need
+token.create / token.revoke.
 
 Personal API keys — act as YOU, and die with your membership:
   ls [--mine] [--json]              List the account's keys. --mine narrows to

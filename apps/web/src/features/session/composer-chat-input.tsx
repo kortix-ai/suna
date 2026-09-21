@@ -2,7 +2,6 @@
 
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 
-import { errorToast } from '@/components/ui/toast';
 import { SessionOverridesComposer } from '@/features/session/overrides/session-overrides-composer';
 import type { SessionOverrideSlot } from '@/features/session/overrides/session-overrides-toolbar';
 import type { SessionScopeCommit } from '@/features/session/scope/session-scope-model';
@@ -13,7 +12,7 @@ import {
 } from '@/features/session/session-chat-input';
 import type { SessionPromptOverrides } from '@kortix/sdk';
 import type { AttachmentSubmission } from './composer/attachment-submission';
-import { type Command, useFeatureFlag, type ModelKey, useProjectConfig, useRuntimeAgents, useRuntimeCommands, useRuntimeConfig, useRuntimeProviders, useSessionModelSelection, useSessionProviderSecretPools } from '@kortix/sdk/react';
+import { type Command, type ModelKey, useProjectConfig, useRuntimeAgents, useRuntimeCommands, useRuntimeConfig, useRuntimeProviders, useSessionModelSelection } from '@kortix/sdk/react';
 import { isMetaAgentName } from '@kortix/shared';
 import { resolveComposerAgent } from './composer/composer-agent-access';
 import type { DraftScope } from './composer/draft/composer-draft';
@@ -190,81 +189,6 @@ export function ComposerChatInput({
   } | null>(null);
   const [newProviderSecretPools, setNewProviderSecretPools] = useState<Record<string, string[]>>({});
 
-  // Flag-gated for the same reason the picker's own read is: every pool route
-  // answers 403 without `pooled_provider_secrets`, and the SDK toasts a 403.
-  // Ungated, every session page load would put "Forbidden" in front of every
-  // user on every project that does not have the flag. `useFeatureFlag` reads
-  // the project detail query, so this costs no extra request.
-  const pooledSecretsEnabled = useFeatureFlag(projectId, 'pooled_provider_secrets').enabled;
-  const sessionPools = useSessionProviderSecretPools(
-    pooledSecretsEnabled ? projectId : null,
-    sessionId,
-  );
-
-  /*
-    The picker both READS and WRITES which credential a provider bills to.
-
-    Session overrides -> Provider keys is not a substitute: it edits a POOL
-    with checkboxes ("these keys are allowed"), which cannot say "use THIS
-    one". The picker's question is singular, so it writes a single-element
-    pool.
-
-    Two destinations, one control. A live session writes through its own pool
-    endpoint and takes effect on the next prompt. A session that does not
-    exist yet has nowhere to write, so the choice is held as the draft that
-    rides `provider_secret_pools` in the create body.
-  */
-  const handleSelectProviderAccount = useCallback(
-    (providerID: string, secretId: string | null) => {
-      const secretIds = secretId ? [secretId] : null;
-      if (sessionId) {
-        // The route can still refuse — a non-owner, a session whose model is
-        // locked, the gateway turned off. Say so: the picker's check would
-        // otherwise settle back on the old account with no explanation.
-        sessionPools.setPool.mutate(
-          { providerId: providerID, secretIds },
-          { onError: (error: unknown) => errorToast(error instanceof Error ? error.message : String(error)) },
-        );
-        return;
-      }
-      setNewProviderSecretPools((prev) => {
-        const next = { ...prev };
-        if (secretIds) next[providerID] = secretIds;
-        else delete next[providerID];
-        return next;
-      });
-    },
-    [sessionId, sessionPools.setPool],
-  );
-  /*
-    `can_edit` comes from the pools endpoint itself, so the control appears
-    only where the write would be accepted: the session owner or a project
-    manager, a session that is not machine-owned, and the gateway enabled. A
-    session that does not exist yet has no server answer and no server write —
-    its choice rides the create body, so it is always editable.
-
-    Undefined (still loading, or the feature flag refused the read) means the
-    chooser stays hidden. A control that 403s on click is worse than no
-    control.
-  */
-  const canPinProviderAccount = sessionId ? sessionPools.data?.can_edit === true : true;
-
-  const providerAccountSelection = useMemo<Record<string, string | null>>(() => {
-    const source = sessionId
-      ? Object.fromEntries(
-          (sessionPools.data?.pools ?? []).map((pool: { provider_id: string; secret_ids: string[] }) => [
-            pool.provider_id,
-            pool.secret_ids[0] ?? null,
-          ]),
-        )
-      : newProviderSecretPools;
-    return Object.fromEntries(
-      Object.entries(source).map(([provider, value]) => [
-        provider,
-        Array.isArray(value) ? (value[0] ?? null) : ((value as string | null) ?? null),
-      ]),
-    );
-  }, [sessionId, sessionPools.data, newProviderSecretPools]);
 
   const handleCommittedScope = useCallback(
     (commit: SessionScopeCommit | undefined) => {
@@ -321,8 +245,6 @@ export function ComposerChatInput({
 
   return (
     <SessionChatInput
-      providerAccountSelection={providerAccountSelection}
-      onSelectProviderAccount={canPinProviderAccount ? handleSelectProviderAccount : undefined}
       onSend={(text, files, _mentions, attachments, placement) =>
         onSend(text, files, { ...options(), placement }, attachments)
       }

@@ -1597,6 +1597,15 @@
       "title": "Esta sesión está detenida",
       "message": "Se liberó su ordenador. Reinicia la sesión para recuperarla."
     },
+    "previousRepository": {
+      "title": "La sesión usa el repositorio anterior",
+      "message": "Este espacio de trabajo se inició desde el repositorio anterior del proyecto. Git ahora se conecta al repositorio actual. Revisa los cambios antes de hacer push.",
+      "unavailable": "El espacio de trabajo anterior ya no está disponible. Inicia una sesión nueva en el repositorio actual.",
+      "resume": "Reanudar espacio anterior",
+      "resuming": "Reanudando…",
+      "newSession": "Iniciar sesión nueva",
+      "delete": "Eliminar sesión"
+    },
     "lost": {
       "title": "Se perdió el ordenador de esta sesión",
       "message": "Su sandbox en la nube desapareció del lado del proveedor, por lo que esta sesión no se puede reiniciar ni recuperar. Es un error nuestro, no algo que hayas hecho tú; se ha notificado automáticamente. Todo lo que se confirmó y envió desde esta sesión está a salvo en el repositorio de tu proyecto."
@@ -1610,8 +1619,6 @@
     "search": "Buscar modelos",
     "free": "Gratis",
     "included": "Incluido",
-    "projectDefaultAccount": "Predeterminado del proyecto",
-    "useAccount": "Usar cuenta",
     "addProvider": "Añadir proveedor",
     "connectProvider": "Conectar proveedor",
     "manageModels": "Gestionar modelos",
@@ -19467,13 +19474,27 @@
     "managedDescription": "Modelos gestionados que usan créditos de Kortix. No necesitas una clave API.",
     "textImage": "Texto + imagen",
     "textOnly": "Solo texto",
-    "zdrTitle": "Los proveedores de modelos no guardan tus mensajes",
+    "zdrTitle": "Retención cero de datos",
     "zdrDescription": "La retención cero de datos (ZDR) significa que el proveedor procesa tus textos e imágenes, pero no guarda la entrada ni la respuesta después de la solicitud. Kortix almacena tus proyectos y conversaciones por separado.",
+    "usProvidersTitle": "Proveedores en EE. UU.",
+    "usProvidersDescription": "Cada modelo de Kortix usa un único proveedor de inferencia fijo con sede en EE. UU. Las solicitudes nunca pasan a otro proveedor.",
     "hiddenHint": "Oculto en el selector. Las solicitudes directas siguen permitidas; desactívalas desde el menú del modelo.",
     "hidden": "Oculto en el selector",
     "disableModel": "Desactivar modelo",
     "modelError": "No se pudo actualizar el acceso al modelo.",
     "hiddenShort": "Oculto en el selector. Las solicitudes directas siguen permitidas.",
     "resetError": "No se pudo restablecer la lista de modelos."
+  },
+  "projectChooser": {
+    "invitations": "Invitaciones",
+    "invitedBy": "Invitado por {email}",
+    "join": "Unirse",
+    "joinError": "No se pudo unir. Inténtalo de nuevo.",
+    "unnamedWorkspace": "Espacio de trabajo",
+    "noPermissionTitle": "Aún no hay espacio de trabajo",
+    "noPermissionBody": "Pide a un propietario o administrador que invite a {email}.",
+    "invitesTitle": "Te han invitado",
+    "invitesDescription": "Únete a un proyecto de tu equipo o crea el tuyo.",
+    "createProjectInstead": "Crear un proyecto nuevo"
   }
 }

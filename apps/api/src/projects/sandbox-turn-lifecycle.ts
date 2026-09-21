@@ -208,16 +208,121 @@ function endedLedgerTurns(value: unknown): EndedTurnRecord[] {
  * bound JS array as a record and Postgres rejects `cannot cast type record to
  * text[]`. Every value is still a bound parameter.
  */
+/** What the daemon said went wrong, as `routes/r4.ts` reads it off an end frame. */
+export interface SandboxTurnEndError {
+  name?: string;
+  message?: string;
+  isRetryable?: boolean;
+}
+
+/** The part of an end error the ledger keeps. Null when nobody named the failure. */
+export interface SessionTurnEndErrorRecord {
+  name: string | null;
+  message: string | null;
+}
+
+const END_ERROR_MESSAGE_MAX_CHARS = 2000;
+
+// An abort is the EFFECT of whatever stopped the turn, not its cause: a Stop
+// click, a memory guard and a respawn all surface as one of these. A later end
+// frame that names the cause replaces it; nothing replaces a named cause.
+export const ABORT_END_ERROR_NAMES = ['MessageAbortedError', 'AbortError'];
+
+// A STOP SOMEBODY ASKED FOR IS NOT A FAILURE, and the end frame cannot say so:
+// a requested stop and an abort nobody asked for both reach the ledger as the
+// same OpenCode "Aborted" frame. So the request is stamped on the OPEN turn, at
+// the one place each kind of request passes through the control plane:
+//
+//   UserStop        every client abort (web, mobile, SDK, CLI) is an OpenCode
+//                   `POST /session/:id/abort` through the sandbox proxy.
+//   QueueInterrupt  a prompt sent into a busy session arms an interrupt at the
+//                   next tool boundary (`armQuickQueueInterrupt`).
+//
+// CLOSED on purpose, like `STOP_REASONS`: a reader hides these turns from the
+// failure list, so a free-text value would hide a real failure silently.
+export const REQUESTED_STOP_NAMES = ['UserStop', 'QueueInterrupt'] as const;
+export type RequestedStopName = (typeof REQUESTED_STOP_NAMES)[number];
+
+export function isRequestedStopName(name: string | null | undefined): name is RequestedStopName {
+  return (REQUESTED_STOP_NAMES as readonly string[]).includes(name ?? '');
+}
+
+/** Which open turns a request applies to. Omitted fields match every turn. */
+export interface RequestedStopScope {
+  opencodeSessionId?: string | null;
+  messageId?: string | null;
+}
+
+/**
+ * Stamp a requested stop on the session's open turns. A row whose OpenCode
+ * session is not recorded yet still matches: it cannot be proved to be another
+ * session's turn, and an unmarked stop reads as a failure.
+ */
+export async function markTurnStopRequested(
+  sessionId: string,
+  name: RequestedStopName,
+  scope: RequestedStopScope = {},
+): Promise<void> {
+  const mark = JSON.stringify({ name, message: null });
+  await recordTurnLedger(
+    sql`UPDATE kortix.session_turns
+           SET end_error = ${mark}::jsonb,
+               updated_at = now()
+         WHERE session_id = ${sessionId}
+           AND state <> 'ended'
+           AND (${scope.opencodeSessionId ?? null}::text IS NULL
+             OR opencode_session_id IS NULL
+             OR opencode_session_id = ${scope.opencodeSessionId ?? null})
+           AND (${scope.messageId ?? null}::text IS NULL
+             OR message_id = ${scope.messageId ?? null})`,
+    `mark ${name} ${sessionId}`,
+  );
+}
+
+/** Withdraw a request that will not happen (a disarmed queue interrupt). */
+export async function clearTurnStopRequest(
+  sessionId: string,
+  name: RequestedStopName,
+): Promise<void> {
+  await recordTurnLedger(
+    sql`UPDATE kortix.session_turns
+           SET end_error = NULL,
+               updated_at = now()
+         WHERE session_id = ${sessionId}
+           AND state <> 'ended'
+           AND end_error->>'name' = ${name}`,
+    `clear ${name} ${sessionId}`,
+  );
+}
+
+function endErrorRecord(
+  status: 'idle' | 'error',
+  error?: SandboxTurnEndError | null,
+): SessionTurnEndErrorRecord | null {
+  if (status !== 'error') return null;
+  const name = error?.name?.trim() || null;
+  const message = error?.message?.trim().slice(0, END_ERROR_MESSAGE_MAX_CHARS) || null;
+  return name || message ? { name, message } : null;
+}
+
 function endedTurnLedger(
   owner: SessionTurnOwner,
   turns: EndedTurnRecord[],
   reason: SessionTurnEndReason,
+  endError: SessionTurnEndErrorRecord | null = null,
 ): SQL {
+  const endErrorJson = endError ? JSON.stringify(endError) : null;
+  // A requested stop survives only the abort it caused. A turn that completed
+  // drops it, and a NAMED cause (a memory guard that fired after the request)
+  // always wins: the mark must never hide a failure.
+  const requestedStopNames = sql.join(REQUESTED_STOP_NAMES.map((name) => sql`${name}`), sql`, `);
+  const abortNames = sql.join(ABORT_END_ERROR_NAMES.map((name) => sql`${name}`), sql`, `);
   const values = sql.join(
     turns.map(
       (turn) => sql`(${turn.token}, ${owner.sessionId}, ${owner.sandboxId}::uuid,
           ${owner.projectId}::uuid, ${owner.accountId}::uuid,
           ${turn.opencodeSessionId}, ${turn.messageId}, 'ended', ${reason},
+          ${endErrorJson}::jsonb,
           ${
             turn.startedAtMs === null
               ? sql`now()`
@@ -229,12 +334,20 @@ function endedTurnLedger(
   );
   return sql`INSERT INTO kortix.session_turns
         (turn_token, session_id, sandbox_id, project_id, account_id,
-         opencode_session_id, message_id, state, end_reason, started_at,
+         opencode_session_id, message_id, state, end_reason, end_error, started_at,
          ended_at, created_at, updated_at)
       VALUES ${values}
       ON CONFLICT (turn_token) DO UPDATE SET
             state = 'ended',
             end_reason = EXCLUDED.end_reason,
+            end_error = CASE
+              WHEN EXCLUDED.end_reason = 'failed'
+               AND kortix.session_turns.end_error->>'name' IN (${requestedStopNames})
+               AND (EXCLUDED.end_error IS NULL
+                 OR EXCLUDED.end_error->>'name' IN (${abortNames}))
+                THEN kortix.session_turns.end_error
+              ELSE EXCLUDED.end_error
+            END,
             ended_at = now(),
             opencode_session_id = coalesce(kortix.session_turns.opencode_session_id,
                                            EXCLUDED.opencode_session_id),
@@ -930,6 +1043,36 @@ export function turnCompletionAllowsQueuePromotion(
   );
 }
 
+/**
+ * A second end frame for a turn that is already closed may still be the only one
+ * that says WHY. Session ad02e053 (2026-09-18): OpenCode's own "Aborted" frame
+ * closed the turn 476 ms before the memory guard's frame named the cause. Same
+ * identity match as `wasSandboxTurnAlreadyClosed`; touches `failed` rows only,
+ * and only to replace a missing or abort-only error with a named cause.
+ */
+function refineEndedTurnError(
+  sessionId: string,
+  identity: Partial<SandboxTurnIdentity>,
+  endError: SessionTurnEndErrorRecord,
+): SQL {
+  const abortNames = sql.join(
+    ABORT_END_ERROR_NAMES.map((name) => sql`${name}`),
+    sql`, `,
+  );
+  return sql`
+    UPDATE kortix.session_turns t
+       SET end_error = ${JSON.stringify(endError)}::jsonb,
+           updated_at = now()
+     WHERE t.session_id = ${sessionId}
+       AND t.message_id = ${identity.messageId ?? null}
+       AND t.state = 'ended'
+       AND t.end_reason = 'failed'
+       AND (${identity.opencodeSessionId ?? null}::text IS NULL
+         OR t.opencode_session_id IS NULL
+         OR t.opencode_session_id = ${identity.opencodeSessionId ?? null})
+       AND (t.end_error IS NULL OR t.end_error->>'name' IN (${abortNames}))`;
+}
+
 async function wasSandboxTurnAlreadyClosed(
   sessionId: string,
   identity?: Partial<SandboxTurnIdentity> | null,
@@ -953,7 +1096,7 @@ export async function completeSandboxTurn(
   sessionId: string,
   status: 'idle' | 'error',
   identity?: Partial<SandboxTurnIdentity> | null,
-  error?: { isRetryable?: boolean } | null,
+  error?: SandboxTurnEndError | null,
   graceMs = idleGraceMs(),
 ): Promise<SandboxTurnCompletionResult> {
   if (!isTerminalTurnEnd(status, error)) {
@@ -1109,8 +1252,15 @@ export async function completeSandboxTurn(
   const owner = ledgerIdentity(rows?.[0]);
   const turns = endedLedgerTurns(rows?.[0]?.ended_turns);
   const activeTurnCount = Number(rows[0]?.active_turn_count ?? 0);
+  const endError = endErrorRecord(status, error);
   if (turns.length === 0) {
     if (await wasSandboxTurnAlreadyClosed(sessionId, identity)) {
+      if (identity && endError?.name && !ABORT_END_ERROR_NAMES.includes(endError.name)) {
+        await recordTurnLedger(
+          refineEndedTurnError(sessionId, identity, endError),
+          `refine end error ${identity.messageId} (${endError.name})`,
+        );
+      }
       return {
         outcome: 'already_closed',
         activeTurnCount,
@@ -1126,7 +1276,7 @@ export async function completeSandboxTurn(
   if (owner && turns.length > 0) {
     const endReason: SessionTurnEndReason = status === 'error' ? 'failed' : 'completed';
     await recordTurnLedger(
-      endedTurnLedger(owner, turns, endReason),
+      endedTurnLedger(owner, turns, endReason, endError),
       `complete ${turns.map((turn) => turn.token).join(',')} (${endReason})`,
     );
     // The backstop for an acceptance that never landed: `completed`/`failed`

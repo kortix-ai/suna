@@ -12,8 +12,7 @@
  * create *distinct*, and the key must be reused only across retries of the
  * same create.
  *
- * The TTL matches `PROVISION_ATTEMPT_TTL_MS` in `lib/onboarding/ensure-first-project.ts`
- * and is chosen against the slowest provision this repo documents — a snapshot
+ * The TTL is chosen against the slowest provision this repo documents — a snapshot
  * build of up to ~9 min. At 6x that ceiling the bound can never expire a key
  * while the attempt it identifies could still be committing.
  */

@@ -58,6 +58,7 @@ function ledgerRow(overrides: {
   started_at?: Date;
   accepted_at?: Date | null;
   end_reason?: string | null;
+  end_error?: { name: string | null; message: string | null } | null;
   ended_at?: Date | null;
 }): Record<string, unknown> {
   return {
@@ -68,6 +69,7 @@ function ledgerRow(overrides: {
     started_at: new Date('2026-08-17T00:00:00.000Z'),
     accepted_at: null,
     end_reason: null,
+    end_error: null,
     ended_at: null,
     ...overrides,
   };
@@ -566,13 +568,81 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
   });
 
   test('does not run the terminal read while a turn is live', async () => {
-    // The settled row is irrelevant while a turn is running, and the response
-    // omits `last_ended` in that case — so paying for that index scan would buy
-    // nothing.
+    // `last_ended` is omitted while a turn is running, so its read — the one
+    // ordered by `ended_at` — would buy nothing and must not run.
+    //
+    // CHANGED 2026-09-19 (session ad02e053): this used to pin exactly two reads,
+    // on the premise that every settled row is irrelevant while a turn runs. A
+    // memory-guard abort disproved it: the queued prompt started 5 s later, and
+    // the reason the previous turn failed was unreadable from then on. One
+    // BOUNDED read of named failures (newest 50 turns, by `started_at`) now runs
+    // in both states. The original guard — no `ended_at` scan while live — stands.
     sandboxTable = [runningBox(authorityTurn({ token: 't-live' }))];
     await getTurn();
-    expect(queries.map((q) => q.table)).toEqual(['sandboxes', 'turns']);
+    expect(queries.map((q) => q.table)).toEqual(['sandboxes', 'turns', 'turns']);
     expect(queries[1].where).toContain('col:turn_token in');
+    expect(queries.some((q) => q.orderBy.some((term) => term.includes('ended_at')))).toBe(false);
+    expect(queries[2].orderBy.some((term) => term.includes('started_at'))).toBe(true);
+  });
+
+  test('lists the turns that died, names the cause when there is one, and never a stop somebody asked for', async () => {
+    // Session ad02e053: four sub-agent tasks read "failed" and the turn said
+    // nothing. A failure the user cannot see is the bug.
+    const at = (s: number) => new Date(`2026-08-17T00:00:0${s}.000Z`);
+    const ended = (
+      token: string,
+      s: number,
+      end_reason: string,
+      end_error: { name: string | null; message: string | null } | null,
+    ) =>
+      ledgerRow({
+        turn_token: token,
+        state: 'ended',
+        end_reason,
+        message_id: `msg_${token}`,
+        started_at: at(s),
+        ended_at: at(s),
+        end_error,
+      });
+    turnTable = [
+      ended('named', 7, 'failed', { name: 'SandboxMemoryGuard', message: 'sandbox memory at 97%' }),
+      ended('bare-abort', 6, 'failed', { name: 'MessageAbortedError', message: 'Aborted' }),
+      ended('box-gone', 5, 'runtime_gone', null),
+      // Not failures: somebody asked for these.
+      ended('user-stop', 4, 'failed', { name: 'UserStop', message: null }),
+      ended('queue-interrupt', 3, 'failed', { name: 'QueueInterrupt', message: null }),
+      // Predates `end_error`: a Stop and an unexplained abort were stored alike.
+      ended('legacy', 2, 'failed', null),
+      ended('fine', 1, 'completed', null),
+    ];
+
+    const body = await (await getTurn()).json();
+    expect(body.recent_failures).toEqual([
+      {
+        message_id: 'msg_named',
+        ended_at: '2026-08-17T00:00:07.000Z',
+        error: { name: 'SandboxMemoryGuard', message: 'sandbox memory at 97%' },
+      },
+      { message_id: 'msg_bare-abort', ended_at: '2026-08-17T00:00:06.000Z', error: null },
+      { message_id: 'msg_box-gone', ended_at: '2026-08-17T00:00:05.000Z', error: null },
+    ]);
+  });
+
+  test('a requested stop is never reported as the last turn\'s error', async () => {
+    turnTable = [
+      ledgerRow({
+        turn_token: 't-stopped',
+        state: 'ended',
+        end_reason: 'failed',
+        message_id: 'msg_stopped',
+        ended_at: new Date('2026-08-17T00:00:09.000Z'),
+        end_error: { name: 'UserStop', message: null },
+      }),
+    ];
+    const body = await (await getTurn()).json();
+    expect(body.last_ended.end_reason).toBe('failed');
+    expect(body.last_ended).not.toHaveProperty('error');
+    expect(body).not.toHaveProperty('recent_failures');
   });
 
   test('returns the NEWEST settled turn as last_ended', async () => {

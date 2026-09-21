@@ -5,7 +5,7 @@ export function repositoryGeneration(metadata: Metadata): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
-/** A repository replacement retires sessions pinned to every earlier upstream. */
+/** Classify whether a session started before the project's current repository generation. */
 export function sessionUsesCurrentRepository(project: Metadata, session: Metadata): boolean {
   const current = repositoryGeneration(project);
   return current === null || repositoryGeneration(session) === current;

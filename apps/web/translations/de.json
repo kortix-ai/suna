@@ -1597,6 +1597,15 @@
       "title": "Diese Sitzung wurde beendet",
       "message": "Der zugehörige Computer wurde freigegeben. Starte die Sitzung neu, um sie wiederherzustellen."
     },
+    "previousRepository": {
+      "title": "Sitzung verwendet das vorherige Repository",
+      "message": "Dieser Arbeitsbereich stammt aus dem vorherigen Repository des Projekts. Git verbindet sich jetzt mit dem aktuellen Repository. Prüfe die Änderungen vor dem Push.",
+      "unavailable": "Der vorherige Arbeitsbereich ist nicht mehr verfügbar. Starte eine neue Sitzung im aktuellen Repository.",
+      "resume": "Vorherigen Arbeitsbereich fortsetzen",
+      "resuming": "Wird fortgesetzt…",
+      "newSession": "Neue Sitzung starten",
+      "delete": "Sitzung löschen"
+    },
     "lost": {
       "title": "Der Computer dieser Sitzung ist verloren gegangen",
       "message": "Die Cloud-Sandbox ist beim Anbieter verschwunden. Daher kann diese Sitzung nicht neu gestartet oder wiederhergestellt werden. Das ist ein Fehler unsererseits, nicht deinerseits — er wurde automatisch gemeldet. Alles, was aus dieser Sitzung committed und gepusht wurde, ist im Repository deines Projekts sicher."
@@ -1610,8 +1619,6 @@
     "search": "Modelle suchen",
     "free": "Kostenlos",
     "included": "Inklusive",
-    "projectDefaultAccount": "Projektstandard",
-    "useAccount": "Konto verwenden",
     "addProvider": "Anbieter hinzufügen",
     "connectProvider": "Anbieter verbinden",
     "manageModels": "Modelle verwalten",
@@ -19467,13 +19474,27 @@
     "managedDescription": "Verwaltete Modelle, abgerechnet über Kortix-Guthaben. Kein API-Schlüssel erforderlich.",
     "textImage": "Text + Bild",
     "textOnly": "Nur Text",
-    "zdrTitle": "Modellanbieter speichern deine Prompts nicht",
+    "zdrTitle": "Keine Datenspeicherung",
     "zdrDescription": "Zero Data Retention (ZDR) bedeutet: Der Modellanbieter verarbeitet deine Texte und Bilder, speichert aber Eingaben und Antworten nach der Anfrage nicht. Kortix speichert deine Projekte und Unterhaltungen separat.",
+    "usProvidersTitle": "Anbieter mit Sitz in den USA",
+    "usProvidersDescription": "Jedes Kortix-Modell läuft bei genau einem festgelegten Inferenzanbieter mit Sitz in den USA. Anfragen weichen nie auf einen anderen Anbieter aus.",
     "hiddenHint": "In der Auswahl ausgeblendet. Direkte Anfragen sind weiterhin erlaubt; deaktivieren Sie diese im Modellmenü.",
     "hidden": "In Auswahl ausgeblendet",
     "disableModel": "Modell deaktivieren",
     "modelError": "Der Modellzugriff konnte nicht aktualisiert werden.",
     "hiddenShort": "In der Auswahl ausgeblendet. Direkte Anfragen sind weiterhin erlaubt.",
     "resetError": "Die Modellliste konnte nicht zurückgesetzt werden."
+  },
+  "projectChooser": {
+    "invitations": "Einladungen",
+    "invitedBy": "Eingeladen von {email}",
+    "join": "Beitreten",
+    "joinError": "Beitritt fehlgeschlagen. Versuche es erneut.",
+    "unnamedWorkspace": "Workspace",
+    "noPermissionTitle": "Noch kein Workspace",
+    "noPermissionBody": "Bitte einen Owner oder Admin, {email} einzuladen.",
+    "invitesTitle": "Du wurdest eingeladen",
+    "invitesDescription": "Tritt einem Projekt deines Teams bei oder starte dein eigenes.",
+    "createProjectInstead": "Stattdessen ein neues Projekt erstellen"
   }
 }

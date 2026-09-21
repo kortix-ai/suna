@@ -189,6 +189,7 @@ export {
 } from './use-session-prompts';
 export { useSessionWorkingStore } from '../browser/stores/session-working-store';
 export {
+  useSessionTurnOutcome,
   useSessionWorking,
   workingPollMs,
   buildWorkingInputs,

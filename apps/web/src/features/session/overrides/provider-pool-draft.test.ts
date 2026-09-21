@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { effectiveProviderPools, updateProviderPoolDraft } from './provider-pool-draft';
+import { effectiveProviderPools, normalizePoolSelection, updateProviderPoolDraft } from './provider-pool-draft';
 
 const saved = [{ provider_id: 'anthropic', secret_ids: ['primary'] }, { provider_id: 'openai', secret_ids: ['other'] }];
 
@@ -12,9 +12,17 @@ describe('provider key drafts', () => {
     expect(updateProviderPoolDraft({ openai: [], anthropic: ['backup'] }, 'anthropic', ['primary'], saved)).toEqual({ openai: [] });
   });
 
-  test('empty selection is a disabled provider, not an inherited default', () => {
-    expect(updateProviderPoolDraft({}, 'codex', [], saved)).toEqual({ codex: [] });
-    expect(updateProviderPoolDraft({ codex: [] }, 'codex', null, saved)).toEqual({});
+  test('unchecking the last key resets to the default instead of saving an empty pool', () => {
+    // The gateway treats a configured empty pool as "no usable key": every turn
+    // fails with provider_not_connected. An empty selection means "default".
+    expect(updateProviderPoolDraft({}, 'codex', [], saved)).toEqual({});
+    expect(updateProviderPoolDraft({}, 'anthropic', [], saved)).toEqual({ anthropic: null });
+  });
+
+  test('normalizePoolSelection maps an empty list to the default', () => {
+    expect(normalizePoolSelection([])).toBeNull();
+    expect(normalizePoolSelection(null)).toBeNull();
+    expect(normalizePoolSelection(['a'])).toEqual(['a']);
   });
 
   test('reset remains staged until the common save action', () => {
