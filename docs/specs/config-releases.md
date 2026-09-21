@@ -63,6 +63,7 @@ identifiers (commit and compiled etag) applied in two steps.
 | 2026-09-20 | One PR (#7403) ships the final shape. |
 | 2026-09-21 | The API decides the desired release. The daemon only executes and reports. |
 | 2026-09-21 | Storage default is the Supabase Storage native API. |
+| 2026-09-21 | A session without repository access never receives a config archive. |
 
 ## Terms
 
@@ -138,6 +139,14 @@ Use these terms exactly. Do not use synonyms.
 - The daemon never accepts descriptor content from a request body. A trigger
   only makes the daemon fetch the descriptor from the API. The in-box agent can
   call the trigger; it cannot choose the content.
+- A session without repository access never receives a config archive. Today
+  such a session gets no repository URL and no clone (`session-runtime-env.ts`,
+  `allowsFullRepository`). An archive would disclose files that mode withholds.
+  Its descriptor has `archive: null`, `files: null`, and `reason:
+  "repository access withheld"`. Compiled governance is still delivered. The
+  daemon runs the image default config dir with that governance, as today.
+- The archive route requires repository access. A session token needs a session
+  with repository access. A human caller needs `PROJECT_FILE_READ`.
 
 ## Store
 
@@ -199,8 +208,20 @@ Rules:
 1. Resolve the config dir at the commit with `resolveOpencodeConfigDirAtSha`.
 2. Resolve the config tree ID: `git rev-parse <commit>:<config dir>`.
 3. List files: `git ls-tree -r -z <tree>`. Record path, mode, and blob ID.
-4. If the store lacks the key, build `git archive --format=tar <tree>` piped to
-   `gzip -n`, then `putIfAbsent`.
+4. If the store lacks the key, build the archive, then `putIfAbsent`:
+   - Wrap the tree in a commit with fixed dates: `git commit-tree <tree> -m
+     config` with `GIT_AUTHOR_DATE` and `GIT_COMMITTER_DATE` set to
+     `@0 +0000`. `git archive` of a bare tree stamps the current time, so two
+     builds of one tree give different bytes (measured). Git 2.39 has no
+     `git archive --mtime`.
+   - Run `git commit-tree` and `git archive --format=tar` in a scratch bare
+     repository whose `info/attributes` is `* -export-ignore -export-subst`,
+     with `GIT_ALTERNATE_OBJECT_DIRECTORIES=<mirror>/objects`. Without this a
+     `.gitattributes` in the config dir drops files (`export-ignore`) or
+     rewrites content (`export-subst`), and blob verification on the box fails.
+     The mirror receives no writes.
+   - Pipe the tar through `gzip -n`. Two builds of one tree give identical
+     bytes.
 5. Compile governance for the variant.
 6. Return the release descriptor.
 
@@ -486,6 +507,8 @@ Load `kortix-brand-guidelines` and `kortix-design-system` before any
 | Case | Behaviour |
 |---|---|
 | Base branch has no config dir | No release. Source `image-default`. |
+| Session without repository access | No archive. Governance only. Source `image-default`. |
+| `.gitattributes` with `export-ignore` or `export-subst` in the config dir | Neutralised at build. Archive holds every committed file, unmodified. |
 | Manifest changes `opencode.config_dir` | The new path resolves a new tree. New release ID. |
 | Config dir over 4 MiB | No release. `reason` set. Running config kept. |
 | Session mid-turn | Deferred to turn end. |
