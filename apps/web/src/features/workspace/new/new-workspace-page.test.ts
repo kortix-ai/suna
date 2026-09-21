@@ -483,7 +483,7 @@ describe('/new page: foreign-accounts-list state (B3)', () => {
 
 describe('/new page: exports', () => {
   test('exports NewWorkspacePage', () => {
-    expect(code).toContain('export function NewWorkspacePage()');
+    expect(code).toContain('export function NewWorkspacePage(');
   });
 });
 

@@ -460,7 +460,7 @@ export function ModelSelector({
   );
 
   const [search, setSearch] = useState('');
-  const [expandedGroups, setExpandedGroups] = useState<ReadonlySet<string>>(new Set());
+  const [toggledGroups, setToggledGroups] = useState<ReadonlyMap<string, boolean>>(new Map());
   const {
     openConnectProvider,
     openUpgrade,
@@ -529,10 +529,10 @@ export function ModelSelector({
   useEffect(() => {
     if (!open) {
       setSearch('');
-      // Collapse back to the managed set on every open. A section the user
-      // expanded last time is not a preference they set; carrying it would
-      // make the picker's height depend on history.
-      setExpandedGroups(new Set());
+      // Back to the defaults on every open. A section the user toggled last
+      // time is not a preference they set; carrying it would make the
+      // picker's height depend on history.
+      setToggledGroups(new Map());
     }
   }, [open]);
 
@@ -769,42 +769,35 @@ export function ModelSelector({
                   )}
 
                   {sections.map((section, sectionIndex) => {
+                    const selectedInSection = section.models.find(
+                      (m) =>
+                        availableSelectedModel?.providerID === m.providerID &&
+                        availableSelectedModel?.modelID === m.modelID,
+                    );
                     const open = isPickerGroupOpen({
                       groupIndex: sectionIndex,
                       groupProviderID: section.id,
                       hasSearch: searching,
-                      containsSelected: section.models.some(
-                        (m) =>
-                          availableSelectedModel?.providerID === m.providerID &&
-                          availableSelectedModel?.modelID === m.modelID,
-                      ),
-                      expanded: expandedGroups,
+                      containsSelected: !!selectedInSection,
+                      toggled: toggledGroups,
                     });
+                    // Records the flip of what is on screen, so collapsing a
+                    // default-open group (the managed set, or the one holding
+                    // the selected model) works like collapsing any other.
                     const toggle = () =>
-                      setExpandedGroups((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(section.id)) next.delete(section.id);
-                        else next.add(section.id);
-                        return next;
-                      });
+                      setToggledGroups((prev) => new Map(prev).set(section.id, !open));
+                    const collapsible = sections.length > 1;
                     return (
                       <Fragment key={section.id}>
                         {sectionIndex > 0 && <CommandSeparator />}
-                        <CommandGroup
-                          heading={
-                            sectionIndex === 0 && sections.length > 1 ? (
-                              <GroupHeading>{section.label}</GroupHeading>
-                            ) : undefined
-                          }
-                          forceMount
-                        >
+                        <CommandGroup forceMount>
                           {/* The LABEL is the control: the provider's name
                               expands and collapses its own models, rather than
-                              a separate "show N models" row underneath it. The
-                              first section is the managed set and is always
-                              open, so it keeps a plain heading with nothing to
-                              press. */}
-                          {sectionIndex > 0 && (
+                              a separate "show N models" row underneath it.
+                              Every section gets the same header, the managed
+                              set included. A lone section has nothing to
+                              collapse against, so it gets no header. */}
+                          {collapsible && (
                             <CommandItem
                               value={`section-${section.id}`}
                               onSelect={toggle}
@@ -825,8 +818,19 @@ export function ModelSelector({
                               {section.models.some(isSubscriptionModel) && (
                                 <Tag>{tModel('included')}</Tag>
                               )}
-                              {!open && (
-                                <span className="text-muted-foreground text-xs">
+                              {/* A collapsed group that holds the selected
+                                  model names it, so collapsing never hides
+                                  what you are on. */}
+                              {!open && selectedInSection && (
+                                <>
+                                  <span className="text-muted-foreground min-w-0 truncate text-xs">
+                                    {pickerModelName(selectedInSection)}
+                                  </span>
+                                  <Check className="text-foreground size-4 shrink-0" />
+                                </>
+                              )}
+                              {!open && !selectedInSection && (
+                                <span className="text-muted-foreground text-xs tabular-nums">
                                   {section.models.length}
                                 </span>
                               )}

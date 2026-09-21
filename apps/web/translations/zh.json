@@ -19453,13 +19453,27 @@
     "managedDescription": "使用 Kortix 额度计费的托管模型。无需 API 密钥。",
     "textImage": "文本 + 图像",
     "textOnly": "仅文本",
-    "zdrTitle": "模型服务商不会保留您的提示内容",
+    "zdrTitle": "零数据保留",
     "zdrDescription": "零数据保留（ZDR）是指模型服务商处理您的文本和图片后，不会在请求结束后保存输入或回复。Kortix 会单独保存您的项目和对话记录。",
+    "usProvidersTitle": "美国服务商",
+    "usProvidersDescription": "每个 Kortix 模型固定使用一家总部位于美国的推理服务商。请求绝不会转到其他服务商。",
     "hiddenHint": "已从选择器中隐藏。仍允许直接请求；请通过模型菜单禁用。",
     "hidden": "已从选择器中隐藏",
     "disableModel": "禁用模型",
     "modelError": "无法更新模型访问权限。",
     "hiddenShort": "已从选择器中隐藏。仍允许直接请求。",
     "resetError": "无法重置模型列表。"
+  },
+  "projectChooser": {
+    "invitations": "邀请",
+    "invitedBy": "{email} 邀请了你",
+    "join": "加入",
+    "joinError": "无法加入，请重试。",
+    "unnamedWorkspace": "工作区",
+    "noPermissionTitle": "还没有工作区",
+    "noPermissionBody": "请让所有者或管理员邀请 {email}。",
+    "invitesTitle": "你收到了邀请",
+    "invitesDescription": "加入团队共享的项目，或创建你自己的项目。",
+    "createProjectInstead": "改为创建新项目"
   }
 }
