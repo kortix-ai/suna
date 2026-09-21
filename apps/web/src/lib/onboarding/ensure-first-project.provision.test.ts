@@ -115,11 +115,22 @@ describe('ensureFirstProject provisioning', () => {
 });
 
 describe('isManagedGitUnavailableError', () => {
-  test('true for a 503-status error', async () => {
+  test('true for the 503 the provision route sends when managed git is not configured', async () => {
     const { isManagedGitUnavailableError } = await import('./ensure-first-project');
-    const err = new Error('nope');
+    const err = new Error('Managed git provider "github" is not configured on this server');
     (err as Error & { status: number }).status = 503;
     expect(isManagedGitUnavailableError(err)).toBe(true);
+  });
+
+  // The API's edge middleware (`apps/api/src/index.ts`, EDGE_REWRITTEN_STATUSES)
+  // sends every 502 as a 503 with the body kept, so a bare 503 is not proof of
+  // a configuration state. Prod: create-repo under a personal account answered
+  // this exact 503 and `/new` said "Managed git isn't set up on this server".
+  test('false for an edge-rewritten 502 that carries an upstream failure', async () => {
+    const { isManagedGitUnavailableError } = await import('./ensure-first-project');
+    const err = new Error('GitHub /user/repos failed (403): Resource not accessible by integration');
+    (err as Error & { status: number }).status = 503;
+    expect(isManagedGitUnavailableError(err)).toBe(false);
   });
 
   test('true for the not-configured message with no status', async () => {

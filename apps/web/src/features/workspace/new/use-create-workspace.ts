@@ -225,13 +225,15 @@ export function buildManagedImportRequest(
  * `provisionProjectStream`) throw an `ApiError` carrying the same fields, so
  * every branch below reads identically regardless of which one ran.
  *
- * 502 and 503 are NOT the same failure and must not share a message. This
- * route's only 503 is `isManagedGitUnavailableError`
- * (`ensure-first-project.ts:254`) — managed git is not configured on this
- * server, a server-config state no client-side retry can fix. Telling the
+ * Managed git being unconfigured is NOT an upstream failure and must not share
+ * its message. `isManagedGitUnavailableError` (`ensure-first-project.ts`)
+ * names it by its message: on the wire it is a 503, but so is every 502, which
+ * the API's edge middleware rewrites to 503 (`apps/api/src/index.ts`,
+ * EDGE_REWRITTEN_STATUSES). Managed git unconfigured is a server-config state
+ * no client-side retry can fix. Telling the
  * user to "try again" there is false: nothing they do changes the outcome
- * until an operator configures it. 502 (an upstream/gateway fault) keeps the
- * retryable generic message, matching every OTHER call site that reuses
+ * until an operator configures it. Any other 502 or 503 (an upstream/gateway
+ * fault) keeps the retryable generic message, matching every OTHER call site that reuses
  * `isManagedGitUnavailableError` (`project-create-modal.tsx:352`,
  * `add-to-project-modal.tsx:188`) — same title, so the wording never drifts
  * between the toast those use and the inline message here.
@@ -289,7 +291,9 @@ export function messageFor(error: unknown): string {
     }
     return message || 'Could not create the workspace. Try again.';
   }
-  if (status === 502) return 'Could not create the workspace. Try again.';
+  // A 503 that is not managed git is an edge-rewritten 502 (`apps/api/src/index.ts`,
+  // EDGE_REWRITTEN_STATUSES): an upstream failure, with the upstream's raw text.
+  if (status === 502 || status === 503) return 'Could not create the workspace. Try again.';
   return message || 'Could not create the workspace. Try again.';
 }
 
@@ -325,9 +329,9 @@ const GITHUB_PERSONAL_ACCOUNT_CREATE_UNSUPPORTED = 'github_personal_account_crea
  *   so a role grant made in the meantime can turn this into a success.
  * - `502` (bad gateway) — retryable. A transient upstream/gateway fault; a
  *   later attempt can land differently with no change on the client at all.
- * - `503` (this route's only 503 is `isManagedGitUnavailableError`,
- *   `ensure-first-project.ts:254`) — NOT retryable. A server configuration
- *   state; see `messageFor` above. Reuses that detector rather than
+ * - `503` that `isManagedGitUnavailableError` matches — NOT retryable. A
+ *   server configuration state; see `messageFor` above. Any other `503` is an
+ *   edge-rewritten `502` and falls through to the retryable default. Reuses that detector rather than
  *   re-deriving the 503 check, so this and `messageFor` can never disagree
  *   about which failure is which.
  * - `409` (`provision_in_flight`, final-review FIX 1) — retryable. Named

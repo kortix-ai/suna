@@ -273,7 +273,11 @@ describe('messageFor', () => {
   // configuration state, not a transient failure. Unlike 502, it must NOT
   // get the retry-hint message: nothing the user does changes the outcome.
   test('maps 503 to a server-config message distinct from the 502 retry hint', () => {
-    const msg = messageFor(new ApiError('Service Unavailable', { status: 503 }));
+    const msg = messageFor(
+      new ApiError('Managed git provider "github" is not configured on this server', {
+        status: 503,
+      }),
+    );
     expect(msg).not.toBe('Could not create the workspace. Try again.');
     expect(msg).not.toContain('Try again');
     expect(msg).toBe(
@@ -1217,5 +1221,30 @@ describe('create-repo under a personal GitHub account', () => {
     const msg = messageFor(err());
     expect(msg).toContain('octo-person');
     expect(msg).not.toContain('Managed git');
+  });
+});
+
+/**
+ * The API's edge middleware sends every 502 as a 503 with the body kept
+ * (`apps/api/src/index.ts`, EDGE_REWRITTEN_STATUSES). Prod: create-repo
+ * answered `503 {"error":"GitHub /user/repos failed (403): Resource not
+ * accessible by integration"}` and `/new` said managed git is not set up.
+ */
+describe('an edge-rewritten 502 (503 with an upstream error body)', () => {
+  const err = () =>
+    new ApiError('GitHub /user/repos failed (403): Resource not accessible by integration', {
+      status: 503,
+    });
+
+  test('is not read as managed git being unconfigured', () => {
+    expect(messageFor(err())).not.toContain('Managed git');
+  });
+
+  test('gets the retry hint, not GitHub\'s raw text', () => {
+    expect(messageFor(err())).toBe('Could not create the workspace. Try again.');
+  });
+
+  test('is retryable, like the 502 it was', () => {
+    expect(isRetryableError(err())).toBe(true);
   });
 });

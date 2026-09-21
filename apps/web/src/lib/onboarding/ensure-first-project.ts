@@ -312,13 +312,14 @@ export function isProjectLimitError(err: unknown): boolean {
 /**
  * True for the 503 `POST /projects/provision` returns when no managed-git
  * backend is configured (e.g. self-host with no MANAGED_GIT_* set) — an
- * EXPECTED, operator-fixable state, not a bug. Checks the status code first
- * (ApiError carries `.status`) and falls back to the message text for any
- * caller that only has a plain Error.
+ * EXPECTED, operator-fixable state, not a bug.
+ *
+ * Reads the message, never the status alone. The API's edge middleware
+ * (`apps/api/src/index.ts`, EDGE_REWRITTEN_STATUSES) sends every 502 as a 503
+ * with the body kept, so a bare 503 is also any upstream failure — GitHub's
+ * `/user/repos` 403 on create-repo read as "managed git isn't set up" in prod.
  */
 export function isManagedGitUnavailableError(err: unknown): boolean {
-  const status = (err as { status?: number } | null)?.status;
-  if (status === 503) return true;
   const message = err instanceof Error ? err.message : String(err ?? '');
   return message.includes('is not configured on this server');
 }
