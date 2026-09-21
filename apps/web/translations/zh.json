@@ -213,7 +213,8 @@
       "actionCreate": "创建新仓库",
       "actionImport": "导入现有仓库",
       "ownerTypePersonal": "个人账户",
-      "ownerTypeOrg": "组织"
+      "ownerTypeOrg": "组织",
+      "createPersonalUnsupported": "GitHub 不允许 Kortix 在个人账户中创建仓库。请先在 GitHub 上创建仓库，然后再导入。"
     }
   },
   "projectHome": {

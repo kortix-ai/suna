@@ -213,7 +213,8 @@
       "actionCreate": "Criar um novo repositório",
       "actionImport": "Importar um repositório existente",
       "ownerTypePersonal": "Conta pessoal",
-      "ownerTypeOrg": "Organização"
+      "ownerTypeOrg": "Organização",
+      "createPersonalUnsupported": "O GitHub não permite que o Kortix crie repositórios em uma conta pessoal. Crie o repositório no GitHub e depois importe-o."
     }
   },
   "projectHome": {

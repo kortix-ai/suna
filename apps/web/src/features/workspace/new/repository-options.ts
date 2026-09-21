@@ -20,6 +20,8 @@
  * between that pair and the two controls.
  */
 
+import { githubOwnerKind } from '@/lib/github-installations';
+
 import { withRepositoryChoice } from './github-source';
 import type { NewWorkspaceFormState, RepositorySource } from './new-workspace-form';
 
@@ -116,6 +118,18 @@ export function repositoryAction(state: Pick<NewWorkspaceFormState, 'source'>): 
   return state.source === 'github-import' ? 'import' : 'create';
 }
 
+/**
+ * Whether "Create a new repository" can work under this git account.
+ *
+ * Not under a personal GitHub account. A create authenticates with the
+ * account's GitHub App installation token, and GitHub accepts that token on
+ * `POST /orgs/{org}/repos` but not on `POST /user/repos`. The server refuses
+ * the same case (`github_personal_account_create_unsupported`).
+ */
+export function canCreateRepository(option: GitAccountOption): boolean {
+  return githubOwnerKind(option.ownerType) !== 'personal';
+}
+
 function sourceFor(kind: GitAccountOption['kind'], action: RepositoryAction): RepositorySource {
   if (kind === 'managed') return 'managed';
   return action === 'import' ? 'github-import' : 'github-create';
@@ -123,7 +137,8 @@ function sourceFor(kind: GitAccountOption['kind'], action: RepositoryAction): Re
 
 /**
  * Apply a git-account pick. The action carries over between GitHub owners
- * (a user importing from one org who switches to another is still importing);
+ * (a user importing from one org who switches to another is still importing),
+ * except that a personal account always imports (`canCreateRepository`);
  * `managed` has no action. Delegates the clearing rules to
  * `withRepositoryChoice`, so a switch never leaks a repository or a branch
  * across owners.
@@ -132,8 +147,9 @@ export function withGitAccount(
   state: NewWorkspaceFormState,
   option: GitAccountOption,
 ): NewWorkspaceFormState {
+  const action = canCreateRepository(option) ? repositoryAction(state) : 'import';
   return withRepositoryChoice(state, {
-    kind: sourceFor(option.kind, repositoryAction(state)),
+    kind: sourceFor(option.kind, action),
     installationId: option.installationId,
   });
 }

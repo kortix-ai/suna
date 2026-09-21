@@ -213,7 +213,8 @@
       "actionCreate": "Направи нови репозиторијум",
       "actionImport": "Увези постојећи репозиторијум",
       "ownerTypePersonal": "Лични налог",
-      "ownerTypeOrg": "Организација"
+      "ownerTypeOrg": "Организација",
+      "createPersonalUnsupported": "GitHub ne dozvoljava Kortixu da kreira repozitorijume na ličnom nalogu. Kreirajte repozitorijum na GitHubu, a zatim ga uvezite."
     }
   },
   "projectHome": {

@@ -1194,3 +1194,28 @@ describe('runProvisionAttempt', () => {
     expect(client.waits).toEqual([RETRY_DELAY_MS[0]]);
   });
 });
+
+/**
+ * `POST /projects/create-repo` refuses a personal GitHub account with a typed
+ * 409 (`github_personal_account_create_unsupported`): GitHub rejects an App
+ * installation token on `POST /user/repos`. Retrying resends the same owner
+ * and fails the same way, so no retry is offered, and the server's sentence is
+ * shown as-is.
+ */
+describe('create-repo under a personal GitHub account', () => {
+  const err = () =>
+    new ApiError(
+      'GitHub does not let the Kortix app create repositories in the personal account octo-person. Create the repository on GitHub, then import it.',
+      { status: 409, code: 'github_personal_account_create_unsupported' },
+    );
+
+  test('is not retryable', () => {
+    expect(isRetryableError(err())).toBe(false);
+  });
+
+  test('shows the server sentence, never the managed-git message', () => {
+    const msg = messageFor(err());
+    expect(msg).toContain('octo-person');
+    expect(msg).not.toContain('Managed git');
+  });
+});

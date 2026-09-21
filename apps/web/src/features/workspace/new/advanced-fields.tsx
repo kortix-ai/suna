@@ -22,6 +22,7 @@ import type { NewWorkspaceFormState } from '@/features/workspace/new/new-workspa
 import {
   type GitAccountOption,
   type RepositoryAction,
+  canCreateRepository,
   defaultGitAccount,
   gitAccountOptions,
   parseGitAccount,
@@ -159,6 +160,16 @@ export function AdvancedFields({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [optionsLoading]);
 
+  // A personal account cannot take a new repository (`canCreateRepository`).
+  // `withGitAccount` already lands such a pick on import; this covers a state
+  // that reached `create` another way, such as a `?source=` return path.
+  const canCreate = selected === null || canCreateRepository(selected);
+  const createBlocked = !canCreate && action === 'create';
+  useEffect(() => {
+    if (createBlocked) onChange(withRepositoryAction(state, 'import'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createBlocked]);
+
   function ownerTypeLabel(option: GitAccountOption): string | null {
     if (option.kind !== 'github') return null;
     const kind = githubOwnerKind(option.ownerType);
@@ -278,7 +289,7 @@ export function AdvancedFields({
             onValueChange={(value) => onChange(withRepositoryAction(state, value as RepositoryAction))}
           >
             <TabsList className="w-full">
-              <TabsTrigger value="create" size="sm" className="flex-1">
+              <TabsTrigger value="create" size="sm" className="flex-1" disabled={!canCreate}>
                 {t('repository.actionCreate')}
               </TabsTrigger>
               <TabsTrigger value="import" size="sm" className="flex-1">
@@ -286,6 +297,11 @@ export function AdvancedFields({
               </TabsTrigger>
             </TabsList>
           </Tabs>
+          {!canCreate ? (
+            <p className="text-muted-foreground text-xs">
+              {t('repository.createPersonalUnsupported')}
+            </p>
+          ) : null}
           {action === 'create' ? (
             <p className="text-muted-foreground text-xs">
               {plannedRepoPath(selected.ownerLogin, state.name)

@@ -294,6 +294,14 @@ export function messageFor(error: unknown): string {
 }
 
 /**
+ * `POST /projects/create-repo`'s 409 for a personal GitHub account: GitHub does
+ * not accept the App installation token on `POST /user/repos`
+ * (`apps/api/src/projects/routes/r2.ts`). The owner does not change between
+ * attempts, so a retry fails the same way.
+ */
+const GITHUB_PERSONAL_ACCOUNT_CREATE_UNSUPPORTED = 'github_personal_account_create_unsupported';
+
+/**
  * Whether a failed create should offer a retry.
  *
  * Classified by whether ANYTHING could plausibly be different on the next
@@ -329,6 +337,9 @@ export function messageFor(error: unknown): string {
  *   in-band backoff before ever reaching here (see that function's doc
  *   comment) — this branch only fires once that backoff is exhausted, and
  *   the underlying condition can still clear before the user's next click.
+ * - `409` (`github_personal_account_create_unsupported`) — NOT retryable.
+ *   The chosen owner is a personal GitHub account; the same owner fails the
+ *   same way on every attempt.
  * - Anything else (a plain network `Error`, an unrecognized status) —
  *   retryable. There is no signal here that rules out transience, so the
  *   safer default is to offer the retry rather than silently block a case
@@ -341,6 +352,7 @@ export function messageFor(error: unknown): string {
  */
 export function isRetryableError(error: unknown): boolean {
   const status = (error as { status?: number } | null | undefined)?.status;
+  const code = (error as { code?: string } | null | undefined)?.code;
 
   if (status === 400) return false;
   // The plan cap is a 403 too, but nothing about a retry changes it — only a
@@ -349,6 +361,7 @@ export function isRetryableError(error: unknown): boolean {
   // role granted meanwhile).
   if (isProjectLimitError(error)) return false;
   if (isManagedGitUnavailableError(error)) return false;
+  if (code === GITHUB_PERSONAL_ACCOUNT_CREATE_UNSUPPORTED) return false;
   if (status === 409) return true;
 
   return true;

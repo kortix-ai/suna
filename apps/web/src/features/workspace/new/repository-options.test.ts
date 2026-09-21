@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { INITIAL_FORM_STATE, type NewWorkspaceFormState } from './new-workspace-form';
 import {
   MANAGED_ACCOUNT_VALUE,
+  canCreateRepository,
   defaultGitAccount,
   gitAccountOptions,
   parseGitAccount,
@@ -120,5 +121,42 @@ describe('withGitAccount / withRepositoryAction: two controls over one state', (
 
   test('the action is a no-op for Kortix managed, which has none', () => {
     expect(withRepositoryAction(INITIAL_FORM_STATE, 'import')).toBe(INITIAL_FORM_STATE);
+  });
+});
+
+/**
+ * GitHub accepts an App installation token on `POST /orgs/{org}/repos` but not
+ * on `POST /user/repos` (GitHub's "Endpoints available for GitHub App
+ * installation access tokens"). Every GitHub-backed create authenticates with
+ * the installation token, so "Create a new repository" can never succeed under
+ * a personal account. The form must not offer it, and must not land on it.
+ */
+describe('personal GitHub accounts: import only', () => {
+  const options = gitAccountOptions(connections, true);
+  const personal = parseGitAccount(options, '148404669')!;
+  const org = parseGitAccount(options, '162348906')!;
+
+  test('only an organization can take a new repository', () => {
+    expect(canCreateRepository(personal)).toBe(false);
+    expect(canCreateRepository(org)).toBe(true);
+    expect(canCreateRepository(parseGitAccount(options, MANAGED_ACCOUNT_VALUE)!)).toBe(true);
+  });
+
+  test('picking a personal account from the initial state lands on import, not create', () => {
+    const next = withGitAccount(INITIAL_FORM_STATE, personal);
+    expect(next.source).toBe('github-import');
+    expect(next.installationId).toBe('148404669');
+  });
+
+  test('switching from an org that was creating to a personal account switches to import', () => {
+    const creating = withGitAccount(INITIAL_FORM_STATE, org);
+    expect(creating.source).toBe('github-create');
+    const next = withGitAccount(creating, personal);
+    expect(next.source).toBe('github-import');
+    expect(next.installationId).toBe('148404669');
+  });
+
+  test('an organization still defaults to create', () => {
+    expect(withGitAccount(INITIAL_FORM_STATE, org).source).toBe('github-create');
   });
 });
