@@ -6,6 +6,7 @@ import {
   isPlainConfigDir,
   type WorkspaceChange,
   type WorkspaceChangeStatus,
+  type WorkspaceCommittedScope,
   type WorkspaceReport,
 } from './descriptor'
 
@@ -143,6 +144,51 @@ async function worktreeBlobs(repo: string, paths: string[], format: 'sha1' | 'sh
   return blobs
 }
 
+const OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
+
+/**
+ * The commit the session's committed changes are measured from.
+ *
+ *   - `remote`: the merge base of HEAD and `refs/remotes/origin/<base>`.
+ *   - `base-sha`: `KORTIX_BASE_SHA`, when the commit exists locally and is an
+ *     ancestor of HEAD. A fresh boot (compiled checkout, API delta bundle,
+ *     local session branch) may have no remote-tracking ref at all, or one left
+ *     at the image scaffold's root.
+ *   - `none`: neither is usable; only uncommitted changes are reported.
+ *
+ * When both are usable, the more recent one wins: a remote ref left at the
+ * scaffold root would otherwise list every base commit as session work.
+ */
+async function resolveCommittedBase(
+  repo: string,
+  baseBranch: string,
+  baseSha: string | undefined,
+): Promise<{ scope: WorkspaceCommittedScope; mergeBase: string | null }> {
+  const baseRef = `refs/remotes/origin/${baseBranch}`
+  let remote: string | null = null
+  if ((await git(repo, ['rev-parse', '--verify', '-q', `${baseRef}^{commit}`])).code === 0) {
+    const mergeBase = await git(repo, ['merge-base', 'HEAD', baseRef])
+    if (mergeBase.code === 0 && mergeBase.stdout.trim()) remote = mergeBase.stdout.trim()
+  }
+  let pinned: string | null = null
+  const sha = baseSha?.trim().toLowerCase()
+  if (
+    sha &&
+    OBJECT_ID.test(sha) &&
+    (await git(repo, ['cat-file', '-e', `${sha}^{commit}`])).code === 0 &&
+    (await git(repo, ['merge-base', '--is-ancestor', sha, 'HEAD'])).code === 0
+  ) {
+    pinned = sha
+  }
+  if (remote && pinned) {
+    const remoteIsOlder = (await git(repo, ['merge-base', '--is-ancestor', remote, pinned])).code === 0
+    return remoteIsOlder ? { scope: 'base-sha', mergeBase: pinned } : { scope: 'remote', mergeBase: remote }
+  }
+  if (remote) return { scope: 'remote', mergeBase: remote }
+  if (pinned) return { scope: 'base-sha', mergeBase: pinned }
+  return { scope: 'none', mergeBase: null }
+}
+
 /**
  * Build the report, or return null when there is no repository to report on.
  *
@@ -150,11 +196,15 @@ async function worktreeBlobs(repo: string, paths: string[], format: 'sha1' | 'sh
  * @param configDir  repo-relative config dir; refused unless plain
  * @param baseBranch the base branch; its remote-tracking ref is used only if it
  *                   already exists locally
+ * @param opts.baseSha the base commit the session was created at
+ *                   (`KORTIX_BASE_SHA`); used when it exists locally and is an
+ *                   ancestor of HEAD
  */
 export async function buildWorkspaceReport(
   repo: string,
   configDir: string,
   baseBranch: string,
+  opts: { baseSha?: string } = {},
 ): Promise<WorkspaceReport | null> {
   if (!isPlainConfigDir(configDir)) throw new Error('config dir is not a plain relative path')
   if (!/^[\w./-]+$/.test(baseBranch) || baseBranch.startsWith('-') || baseBranch.includes('..')) {
@@ -168,20 +218,15 @@ export async function buildWorkspaceReport(
 
   const changes = new Map<string, WorkspaceChangeStatus>()
 
-  // Committed work since the merge base. Only against a ref this box already
-  // has: no fetch, so a box that never learned the base branch reports its
-  // uncommitted work alone.
-  const baseRef = `refs/remotes/origin/${baseBranch}`
-  const hasBase = (await git(repo, ['rev-parse', '--verify', '-q', `${baseRef}^{commit}`])).code === 0
-  if (hasBase) {
-    const mergeBase = await git(repo, ['merge-base', 'HEAD', baseRef])
-    if (mergeBase.code === 0 && mergeBase.stdout.trim()) {
-      const committed = await git(repo, [
-        'diff', '--name-status', '-z', '--no-renames', `${mergeBase.stdout.trim()}..HEAD`, '--', configDir,
-      ])
-      if (committed.code !== 0) throw new Error(`git diff failed: ${committed.stderr.trim()}`)
-      for (const row of parseNameStatus(committed.stdout)) changes.set(row.path, row.status)
-    }
+  // Committed work since the point the session branched from the base. No
+  // fetch, so only commits this box already holds can serve as that point.
+  const { scope, mergeBase } = await resolveCommittedBase(repo, baseBranch, opts.baseSha)
+  if (mergeBase) {
+    const committed = await git(repo, [
+      'diff', '--name-status', '-z', '--no-renames', `${mergeBase}..HEAD`, '--', configDir,
+    ])
+    if (committed.code !== 0) throw new Error(`git diff failed: ${committed.stderr.trim()}`)
+    for (const row of parseNameStatus(committed.stdout)) changes.set(row.path, row.status)
   }
 
   // Uncommitted work: staged, unstaged and untracked. `--untracked-files=all`
@@ -207,5 +252,5 @@ export async function buildWorkspaceReport(
     const statusOut: WorkspaceChangeStatus = blob === null ? 'deleted' : listed === 'deleted' ? 'modified' : listed
     return { path, status: statusOut, blob }
   })
-  return { head: headSha, config_dir: configDir, changed }
+  return { head: headSha, config_dir: configDir, committed_scope: scope, changed }
 }

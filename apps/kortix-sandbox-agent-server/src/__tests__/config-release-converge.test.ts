@@ -257,7 +257,7 @@ describe('convergeConfigRelease — follow-base', () => {
     expect(git(work, 'status', '--porcelain')).toBe('')
     // The workspace report of the untouched session went with the request.
     expect(api.descriptorRequests.at(-1)!.body).toEqual({
-      workspace: { head: git(work, 'rev-parse', 'HEAD'), config_dir: DIR, changed: [] },
+      workspace: { head: git(work, 'rev-parse', 'HEAD'), config_dir: DIR, committed_scope: 'remote', changed: [] },
     })
   })
 

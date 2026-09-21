@@ -72,7 +72,7 @@ function fakeControl(over: Partial<HarnessControlOperations> = {}) {
     },
     configWorkspace: async () => {
       calls.workspace++
-      return { head: 'b'.repeat(40), config_dir: '.kortix/opencode', changed: [] }
+      return { head: 'b'.repeat(40), config_dir: '.kortix/opencode', committed_scope: 'remote' as const, changed: [] }
     },
     ...over,
   }
@@ -117,7 +117,7 @@ describe('config routes with a fake control', () => {
     const { control, calls } = fakeControl()
     const res = await createConfigRouter(cfgWithToken, control).request('/workspace', { headers: bearer })
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ head: 'b'.repeat(40), config_dir: '.kortix/opencode', changed: [] })
+    expect(await res.json()).toEqual({ head: 'b'.repeat(40), config_dir: '.kortix/opencode', committed_scope: 'remote' as const, changed: [] })
     expect(calls.workspace).toBe(1)
   })
 

@@ -51,7 +51,7 @@ afterAll(() => {
 describe('fetchConfigReleaseDescriptor', () => {
   test('posts the workspace report with the sandbox bearer and returns the validated descriptor', async () => {
     serveRelease(api, release)
-    const report = { head: 'a'.repeat(40), config_dir: '.kortix/opencode', changed: [] }
+    const report = { head: 'a'.repeat(40), config_dir: '.kortix/opencode', committed_scope: 'remote' as const, changed: [] }
     const descriptor = await fetchConfigReleaseDescriptor(client, report)
     expect(descriptor).toEqual(release.descriptor)
     const last = api.descriptorRequests.at(-1)!

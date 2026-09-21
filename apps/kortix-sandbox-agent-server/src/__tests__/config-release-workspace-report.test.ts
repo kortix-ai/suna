@@ -46,7 +46,7 @@ for (const shallow of [false, true]) {
     test('an untouched session reports HEAD and no changes', async () => {
       const { work } = setup({ shallow })
       const report = await buildWorkspaceReport(work, DIR, 'main')
-      expect(report).toEqual({ head: git(work, 'rev-parse', 'HEAD'), config_dir: DIR, changed: [] })
+      expect(report).toEqual({ head: git(work, 'rev-parse', 'HEAD'), config_dir: DIR, committed_scope: 'remote', changed: [] })
     })
 
     test('uncommitted edits, untracked files and deletions, each with its working-tree blob', async () => {
@@ -142,5 +142,107 @@ describe('buildWorkspaceReport edge cases', () => {
   test('no repository answers null', async () => {
     root = mkdtempSync(join(tmpdir(), 'kortix-ws-report-'))
     expect(await buildWorkspaceReport(root, DIR, 'main')).toBeNull()
+  })
+})
+
+/**
+ * Committed session work must be found in every checkout shape the daemon
+ * boots. A fresh boot runs no in-box `git fetch` (compiled checkout, API delta
+ * bundle, local session branch), so `refs/remotes/origin/<base>` can be
+ * missing or left at the image scaffold's root. Without a base commit the
+ * report said "no committed work", the API answered follow-base, and the
+ * release shadowed the session's own agent edit.
+ */
+describe('committed work in every checkout shape', () => {
+  const AGENT_EDIT = { path: `${DIR}/agents/kortix.md`, status: 'modified' as const }
+
+  function projectBase(repo: string): string {
+    write(repo, `${DIR}/opencode.jsonc`, '{}\n')
+    write(repo, `${DIR}/agents/kortix.md`, 'PROMPT\n')
+    write(repo, `${DIR}/skills/project/SKILL.md`, 'PROJECT SKILL\n')
+    return commitAll(repo, 'project base')
+  }
+
+  function commitAgentEdit(repo: string): void {
+    write(repo, `${DIR}/agents/kortix.md`, 'SESSION PROMPT\n')
+    commitAll(repo, 'agent edits its prompt')
+  }
+
+  test('full clone with the remote ref (also the project-seed adoption shape): scope remote', async () => {
+    const { work } = setup({ shallow: true })
+    // Seed adoption: `remote set-url` + `checkout -B <session>` on the baked clone.
+    git(work, 'remote', 'set-url', 'origin', 'https://api.example/v1/git/p.git')
+    git(work, 'checkout', '-q', '-B', 'ses-2')
+    commitAgentEdit(work)
+    const report = await buildWorkspaceReport(work, DIR, 'main', { baseSha: git(work, 'rev-parse', 'HEAD~1') })
+    expect(report!.committed_scope).toBe('base-sha')
+    expect(report!.changed).toEqual([{ ...AGENT_EDIT, blob: git(work, 'hash-object', '--', AGENT_EDIT.path) }])
+    const withoutPin = await buildWorkspaceReport(work, DIR, 'main')
+    expect(withoutPin!.committed_scope).toBe('remote')
+    expect(withoutPin!.changed.map((c) => c.path)).toEqual([AGENT_EDIT.path])
+  })
+
+  test('fresh-boot shape: local session branch at KORTIX_BASE_SHA, no origin ref: scope base-sha', async () => {
+    root = mkdtempSync(join(tmpdir(), 'kortix-ws-report-'))
+    const work = join(root, 'work')
+    initRepo(work)
+    const baseSha = projectBase(work)
+    // Compiled checkout / delta bundle: origin is set, nothing was fetched.
+    git(work, 'remote', 'add', 'origin', 'https://api.example/v1/git/p.git')
+    git(work, 'checkout', '-q', '-b', 'ses-3')
+    commitAgentEdit(work)
+    expect(spawnSync('git', ['-C', work, 'rev-parse', '--verify', '-q', 'refs/remotes/origin/main']).status).not.toBe(0)
+
+    const report = await buildWorkspaceReport(work, DIR, 'main', { baseSha })
+    expect(report!.committed_scope).toBe('base-sha')
+    expect(report!.changed).toEqual([{ ...AGENT_EDIT, blob: git(work, 'hash-object', '--', AGENT_EDIT.path) }])
+
+    // Without the pin the gap is visible, not silent.
+    write(work, `${DIR}/agents/draft.md`, 'UNCOMMITTED\n')
+    const blind = await buildWorkspaceReport(work, DIR, 'main')
+    expect(blind!.committed_scope).toBe('none')
+    expect(blind!.changed.map((c) => c.path)).toEqual([`${DIR}/agents/draft.md`])
+  })
+
+  test('scaffold shape: origin ref at the scaffold root, project delta applied locally: scope base-sha', async () => {
+    root = mkdtempSync(join(tmpdir(), 'kortix-ws-report-'))
+    const scaffold = join(root, 'scaffold')
+    const work = join(root, 'work')
+    initRepo(scaffold)
+    write(scaffold, `${DIR}/opencode.jsonc`, '{}\n')
+    write(scaffold, `${DIR}/agents/kortix.md`, 'STARTER PROMPT\n')
+    commitAll(scaffold, 'starter root')
+    // tryScaffoldDeltaFetch: local clone of the baked scaffold, set-url, then
+    // the project's delta lands on the local base branch (API bundle).
+    git(root, 'clone', '--quiet', scaffold, work)
+    git(work, 'config', 'user.email', 't@t.co')
+    git(work, 'config', 'user.name', 'T')
+    git(work, 'remote', 'set-url', 'origin', 'https://api.example/v1/git/p.git')
+    const baseSha = projectBase(work)
+    git(work, 'checkout', '-q', '-b', 'ses-4')
+    commitAgentEdit(work)
+
+    const report = await buildWorkspaceReport(work, DIR, 'main', { baseSha })
+    expect(report!.committed_scope).toBe('base-sha')
+    // Only the session's commit: the project's own base commit is not session work.
+    expect(report!.changed).toEqual([{ ...AGENT_EDIT, blob: git(work, 'hash-object', '--', AGENT_EDIT.path) }])
+
+    // Measured from the stale scaffold ref alone, base content leaks in.
+    const remoteOnly = await buildWorkspaceReport(work, DIR, 'main')
+    expect(remoteOnly!.committed_scope).toBe('remote')
+    expect(remoteOnly!.changed.map((c) => c.path)).toContain(`${DIR}/skills/project/SKILL.md`)
+  })
+
+  test('a KORTIX_BASE_SHA that is not an ancestor of HEAD, or not local, is not used', async () => {
+    const { work } = setup({ shallow: false })
+    commitAgentEdit(work)
+    const foreign = await buildWorkspaceReport(work, DIR, 'main', { baseSha: 'a'.repeat(40) })
+    expect(foreign!.committed_scope).toBe('remote')
+    git(work, 'checkout', '-q', '-b', 'side', 'HEAD~1')
+    write(work, 'other.txt', 'x\n')
+    const side = commitAll(work, 'side')
+    git(work, 'checkout', '-q', 'ses-1')
+    const notAncestor = await buildWorkspaceReport(work, DIR, 'main', { baseSha: side })
+    expect(notAncestor!.committed_scope).toBe('remote')
   })
 })

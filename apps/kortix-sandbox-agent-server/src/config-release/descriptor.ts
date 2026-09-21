@@ -115,8 +115,16 @@ export interface WorkspaceChange {
   blob: string | null
 }
 
+/**
+ * What committed changes cover. `remote`: since the merge base with
+ * `refs/remotes/origin/<base>`. `base-sha`: since `KORTIX_BASE_SHA`. `none`:
+ * no base commit is available locally, so committed changes are NOT listed.
+ */
+export type WorkspaceCommittedScope = 'remote' | 'base-sha' | 'none'
+
 export interface WorkspaceReport {
   head: string
   config_dir: string
+  committed_scope: WorkspaceCommittedScope
   changed: WorkspaceChange[]
 }

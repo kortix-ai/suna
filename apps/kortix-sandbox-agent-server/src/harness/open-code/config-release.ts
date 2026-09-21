@@ -167,7 +167,7 @@ export async function prepareConfigDir(dir: string, managedSkillsDir?: string): 
 export async function workspaceReportFor(cfg: OpenCodeConfig): Promise<WorkspaceReport | null> {
   const configDir = await resolveOpencodeConfigDirLiteral(cfg)
   if (!configDir) return null
-  return buildWorkspaceReport(cfg.projectTarget, configDir, cfg.defaultBranch)
+  return buildWorkspaceReport(cfg.projectTarget, configDir, cfg.defaultBranch, { baseSha: cfg.baseSha })
 }
 
 /**
