@@ -21,12 +21,15 @@ import {
   DEPRECATED_KORTIX_CLI_ALIASES,
   GRANTABLE_KORTIX_CLI_ACTIONS,
   type ManifestIssue,
+  ManifestImportError,
   formatIssues,
+  hasManifestImports,
   manifestFormatForPath,
   validateManifest,
 } from '@kortix/manifest-schema';
 import { extractSandboxTemplates } from '@kortix/shared/sandbox';
 import { lintDockerfile } from '../dockerfile-lint.ts';
+import { resolveLocalManifestImports } from '../manifest-imports.ts';
 import { resolveLocalManifest } from '../manifest.ts';
 import { C, help, status } from '../style.ts';
 
@@ -174,7 +177,23 @@ export function runValidate(argv: string[]): number {
     return 2;
   }
 
-  const result = validateManifest(raw, manifestFormatForPath(filePath));
+  let result = validateManifest(raw, manifestFormatForPath(filePath));
+  // `imports:` — validate the MERGED document, the one the platform runs. A
+  // broken import (missing file, duplicate name, cycle, root-only key in an
+  // imported file) is an error here, the same one the CR-merge gate returns.
+  if (result.parsed && hasManifestImports(result.parsed) && manifestFormatForPath(filePath) === 'yaml') {
+    try {
+      const merged = resolveLocalManifestImports(filePath, 'yaml');
+      result = validateManifest(merged.raw, 'yaml');
+    } catch (err) {
+      if (!(err instanceof ManifestImportError)) throw err;
+      result = {
+        ...result,
+        valid: false,
+        issues: [...result.issues, { path: 'imports', message: err.message, severity: 'error' }],
+      };
+    }
+  }
 
   // Manifest issues first, then the Dockerfile lint — one merged report, one
   // exit code. A Dockerfile `error` fails `validate` exactly like a schema

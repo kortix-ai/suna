@@ -1,5 +1,25 @@
 {
+  "repositoryChange": {
+    "changedToast": "Репозиторијум је промењен. Нове сесије ће користити нови репозиторијум.",
+    "verifyError": "Није могуће проверити приступ GitHub-у.",
+    "change": "Промени",
+    "title": "Промени репозиторијум",
+    "description": "Нове сесије ће користити нови репозиторијум. Постојеће сесије не могу поново да се покрену након промене.",
+    "current": "Тренутни репозиторијум",
+    "newUrl": "URL новог GitHub репозиторијума",
+    "verifying": "Провера GitHub-а…",
+    "verifyAgain": "Поново провери GitHub",
+    "verify": "Провери приступ GitHub-у",
+    "noInstallation": "За власника овог репозиторијума није доступна инсталација апликације Kortix. Додајте репозиторијум у инсталацију апликације на GitHub-у, па проверите поново.",
+    "installation": "Инсталација GitHub апликације",
+    "selectInstallation": "Изабери инсталацију",
+    "manifestRequirement": "Нови репозиторијум мора да садржи {manifest} на подразумеваној грани. Прво зауставите активне сесије и затворите отворене захтеве за измену.",
+    "cancel": "Откажи",
+    "changing": "Мења се…"
+  },
   "pooledSecrets": {
+    "saveChanges": "Sačuvaj izmene",
+    "unsavedChanges": "Nesačuvane izmene ključeva",
     "creationDescription": "Вредност остаје шифрована. Изаберите ко може да користи ову везу пре чувања.",
     "whoCanUse": "Ко може да користи ову везу?",
     "everyoneInProject": "Сви у овом пројекту",
@@ -1083,6 +1103,10 @@
           "name": "Тајне заштићене на мрежи",
           "description": "Контролишите који алати и одредишта могу да приме тајне пројекта."
         },
+        "session_transcript_history": {
+          "name": "Историја разговора сесије",
+          "description": "Сачувај историју разговора после сваког одговора и прикажи је док се рачунар сесије покреће."
+        },
         "pooled_provider_secrets": {
           "name": "Дељени тајни кључеви провајдера",
           "description": "Делите више кључева провајдера са члановима и изаберите групу кључева за сваку сесију."
@@ -1435,6 +1459,7 @@
         "chat": "Ћаскање",
         "slack": "Slack",
         "telegram": "Telegram",
+        "teams": "Teams",
         "email": "Е-пошта",
         "scheduled": "Заказано",
         "webhook": "Webhook",
@@ -1584,6 +1609,9 @@
   "modelSelector": {
     "search": "Претражи моделе",
     "free": "Бесплатно",
+    "included": "Укључено",
+    "projectDefaultAccount": "Подразумевано за пројекат",
+    "useAccount": "Koristi nalog",
     "addProvider": "Додај добављача",
     "connectProvider": "Повежи добављача",
     "manageModels": "Управљај моделима",
@@ -14527,6 +14555,11 @@
       "text922315177668": "Све што покретач може да види",
       "text9224d9e82502": "Назад у „Provisioning“ → „Settings“, поставите „Scope“ на „Sync only assigned users and groups“ — појављује се овде тек након чувања credentials-а. Затим кликните на „Start provisioning“ на врху странице са прегледом Provisioning-а (или „Provision on demand“ да одмах пошаљете једног додељеног user-а уместо да чекате циклус од око 40 минута).",
       "text9225e456b795": "Помените свог агента у Teams каналу или ћаскању.",
+      "text895ce927db2e": "Лични разговор",
+      "text28c7d3f8b75d": "Групни разговор",
+      "text72b5b0c53de9": "Одговорено у Microsoft Teams",
+      "textfc73e9ad2dae": "Одговорено у Slack-у",
+      "text8faf56a14a8d": "Одговорено у Telegram-у",
       "text8ccfe10f2f2d": "Објави у вашем Teams каталогу",
       "text36f6474748b3": "Објављивање апликације у вашем Teams каталогу…",
       "text45b9df5730ac": "Чека се да Teams администратор одобри апликацију",
@@ -19409,6 +19442,10 @@
     "providerError": "Nije moguće ažurirati pristup provajderu.",
     "managedTitle": "Modeli kojima upravlja Kortix",
     "managedDescription": "Upravljani modeli se naplaćuju Kortix kreditima. API ključ nije potreban.",
+    "textImage": "Текст + слика",
+    "textOnly": "Само текст",
+    "zdrTitle": "Pružaoci modela ne čuvaju vaše upite",
+    "zdrDescription": "Nulto zadržavanje podataka (ZDR) znači da pružalac modela obrađuje vaš tekst i slike, ali ne čuva ulaz ni odgovor nakon zahteva. Kortix zasebno čuva vaše projekte i razgovore.",
     "hiddenHint": "Sakriven iz birača. Direktni zahtevi su i dalje dozvoljeni; onemogućite ih u meniju modela.",
     "hidden": "Sakriven iz birača",
     "disableModel": "Onemogući model",

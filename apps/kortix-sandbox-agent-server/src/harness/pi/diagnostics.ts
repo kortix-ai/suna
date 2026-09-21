@@ -37,7 +37,9 @@ function wantedSessionBranch(): string {
   return (process.env.KORTIX_BRANCH_NAME ?? '').trim()
 }
 
-export function createPiDiagnosticsService(runtime: () => PiRuntime | null): HarnessDiagnosticsService {
+// `startError` reads the runtime even before start() resolves: `runtime()` is
+// null until then, and a failed start must still surface as boot_error.
+export function createPiDiagnosticsService(runtime: () => PiRuntime | null, startError: () => string | null): HarnessDiagnosticsService {
   return {
     async health(context, query): Promise<HarnessHealthReport> {
       const { cfg, bootTime, staticWebPort } = context
@@ -50,9 +52,9 @@ export function createPiDiagnosticsService(runtime: () => PiRuntime | null): Har
       const repoReady = !repoRequired || (repoInfo !== null && (!wantBranch || repoInfo.branch === wantBranch))
       const initialSessionReady = !bootState.initialOpenCodeSessionRequired || !!bootState.initialOpenCodeSessionId
       const initialSessionError = bootState.initialOpenCodeSessionError ?? null
-      const startError = rt?.lastStartError ?? null
-      const runtimeReady = repoReady && !bootState.repoMaterializationError && !initialSessionError && !startError && state === 'ok' && initialSessionReady
-      const status = runtimeReady ? 'ok' : bootState.repoMaterializationError || initialSessionError || startError ? 'error' : state
+      const startFailure = startError()
+      const runtimeReady = repoReady && !bootState.repoMaterializationError && !initialSessionError && !startFailure && state === 'ok' && initialSessionReady
+      const status = runtimeReady ? 'ok' : bootState.repoMaterializationError || initialSessionError || startFailure ? 'error' : state
       const probe = query.turn !== undefined && rt ? rt.turnProbe(query.turn.messageId || null) : null
       return {
         daemon: 'ok',
@@ -79,7 +81,7 @@ export function createPiDiagnosticsService(runtime: () => PiRuntime | null): Har
         model: rt?.selectedModel() ? `${rt.selectedModel()!.providerID}/${rt.selectedModel()!.modelID}` : null,
         runtime: await runtimeConvergenceReport(),
         ...(probe ? { turn_in_flight: probe.inFlight, turn_end: probe.end, turn_orphaned_prompt: probe.orphanedPrompt } : {}),
-        boot_error: bootState.repoMaterializationError ?? initialSessionError ?? startError,
+        boot_error: bootState.repoMaterializationError ?? initialSessionError ?? startFailure,
         opencode_session_id: bootState.initialOpenCodeSessionId ?? null,
         opencode_session_required: !!bootState.initialOpenCodeSessionRequired,
         config_provider: bootState.configProvider ?? null,
@@ -115,7 +117,7 @@ export function createPiDiagnosticsService(runtime: () => PiRuntime | null): Har
           busy: rt?.busy() ?? false,
           messages: rt?.transcript.count ?? 0,
           skills: rt?.skillList().length ?? 0,
-          start_error: rt?.lastStartError ?? null,
+          start_error: startError(),
         },
         boot: {
           repo_materialization_error: bootState.repoMaterializationError,

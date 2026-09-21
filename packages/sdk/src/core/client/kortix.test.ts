@@ -1598,6 +1598,12 @@ test('kortix.iam.can probes one leaf for one principal', async () => {
   expect(last().url).toContain('action=project.write');
 });
 
+test('session attachments upload before runtime initialization', async () => {
+  await kortix.session('PID123', 'SID456').attachments.upload(new File(['hello'], 'notes.txt'));
+  expect(last().url).toContain('/projects/PID123/sessions/SID456/attachments');
+  expect(last().method).toBe('POST');
+});
+
 test('the facade carries the connect owner through to both connect surfaces', async () => {
   // The web host and the CLI both pick the owner in the UI and hand it to the
   // facade; if the facade dropped it, every account would be created under the

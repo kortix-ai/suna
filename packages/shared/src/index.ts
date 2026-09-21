@@ -16,3 +16,4 @@ export * from "./pi-worker";
 export * from "./environment-secret";
 export * from "./utils/format-relative";
 export * from './prompt-attachments';
+export * from './session-attachments';

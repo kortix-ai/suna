@@ -380,11 +380,19 @@ describe('Channels view — Email and Teams are entity rows', () => {
 });
 
 describe('Channels view — per-channel binding management (spec §2.5)', () => {
-  test('the bindings table renders only once Slack is connected', () => {
-    // The gate moved into SlackFollowUp, which is itself behind `install` —
-    // it did not disappear.
+  test('the bindings table renders once ANY channel is connected — Slack via its nudge, Teams on its own', () => {
     expect(channelsSource).toMatch(/install \? <SlackFollowUp/);
     expect(channelsSource).toMatch(/function SlackFollowUp[\s\S]*?<ChannelBindingsSection/);
+    // A Teams-only project used to have no way to see or edit its bindings.
+    expect(channelsSource).toMatch(/!install && teamsInstall \? \([\s\S]*?<ChannelBindingsSection/);
+    expect(channelsSource).toContain('useTeamsInstall(');
+  });
+
+  test('a binding row names its platform and, for Teams, its scope instead of the tenant GUID', () => {
+    expect(channelsSource).toContain('<ChannelBrandMark platform=');
+    expect(channelsSource).toContain('bindingScopeLabel(binding.channelType');
+    expect(channelsSource).toContain("'text895ce927db2e'");
+    expect(channelsSource).toContain("'text28c7d3f8b75d'");
   });
 
   test('reads/writes bindings through the shared hook (no ad-hoc fetches)', () => {

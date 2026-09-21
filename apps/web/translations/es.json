@@ -1,5 +1,25 @@
 {
+  "repositoryChange": {
+    "changedToast": "Repositorio cambiado. Las sesiones nuevas usarán el repositorio nuevo.",
+    "verifyError": "No se pudo verificar el acceso a GitHub.",
+    "change": "Cambiar",
+    "title": "Cambiar repositorio",
+    "description": "Las sesiones nuevas usarán el repositorio nuevo. Las sesiones existentes no podrán reiniciarse después del cambio.",
+    "current": "Repositorio actual",
+    "newUrl": "URL del nuevo repositorio de GitHub",
+    "verifying": "Verificando GitHub…",
+    "verifyAgain": "Verificar GitHub de nuevo",
+    "verify": "Verificar acceso a GitHub",
+    "noInstallation": "No hay una instalación de la aplicación Kortix disponible para el propietario de este repositorio. Añade el repositorio a la instalación de la aplicación en GitHub y vuelve a verificar.",
+    "installation": "Instalación de la aplicación de GitHub",
+    "selectInstallation": "Seleccionar instalación",
+    "manifestRequirement": "El repositorio nuevo necesita {manifest} en su rama predeterminada. Primero detén las sesiones activas y cierra las solicitudes de cambio abiertas.",
+    "cancel": "Cancelar",
+    "changing": "Cambiando…"
+  },
   "pooledSecrets": {
+    "saveChanges": "Guardar cambios",
+    "unsavedChanges": "Cambios de claves sin guardar",
     "creationDescription": "El valor permanece cifrado. Elige quién puede usar esta conexión antes de guardarla.",
     "whoCanUse": "¿Quién puede usar esta conexión?",
     "everyoneInProject": "Todos en este proyecto",
@@ -1083,6 +1103,10 @@
           "name": "Secretos protegidos por la red",
           "description": "Controla qué herramientas y destinos pueden recibir los secretos del proyecto."
         },
+        "session_transcript_history": {
+          "name": "Historial de la sesión",
+          "description": "Guarda el historial del chat después de cada turno y muéstralo mientras se inicia el equipo de la sesión."
+        },
         "pooled_provider_secrets": {
           "name": "Secretos de proveedor compartidos",
           "description": "Comparte varias claves de proveedor con miembros y selecciona un grupo de claves para cada sesión."
@@ -1435,6 +1459,7 @@
         "chat": "Chat",
         "slack": "Slack",
         "telegram": "Telegram",
+        "teams": "Teams",
         "email": "Correo electrónico",
         "scheduled": "Programado",
         "webhook": "Webhook",
@@ -1584,6 +1609,9 @@
   "modelSelector": {
     "search": "Buscar modelos",
     "free": "Gratis",
+    "included": "Incluido",
+    "projectDefaultAccount": "Predeterminado del proyecto",
+    "useAccount": "Usar cuenta",
     "addProvider": "Añadir proveedor",
     "connectProvider": "Conectar proveedor",
     "manageModels": "Gestionar modelos",
@@ -14527,6 +14555,11 @@
       "text922315177668": "Todo lo que el lanzador puede ver",
       "text9224d9e82502": "De vuelta en «Provisioning» → «Settings», establece «Scope» en «Sync only assigned users and groups»; esta opción solo aparece aquí después de guardar las credenciales. Luego haz clic en «Start provisioning» en la parte superior de la página de resumen de Provisioning (o en «Provision on demand» para enviar al instante un usuario asignado, en lugar de esperar el ciclo de unos 40 minutos).",
       "text9225e456b795": "Menciona a tu agente en un canal o chat de Teams.",
+      "text895ce927db2e": "Chat personal",
+      "text28c7d3f8b75d": "Chat grupal",
+      "text72b5b0c53de9": "Respondió en Microsoft Teams",
+      "textfc73e9ad2dae": "Respondió en Slack",
+      "text8faf56a14a8d": "Respondió en Telegram",
       "text8ccfe10f2f2d": "Publicar en tu catálogo de Teams",
       "text36f6474748b3": "Publicando la app en tu catálogo de Teams…",
       "text45b9df5730ac": "Esperando que un administrador de Teams apruebe la app",
@@ -19409,6 +19442,10 @@
     "providerError": "No se pudo actualizar el acceso al proveedor.",
     "managedTitle": "Modelos gestionados por Kortix",
     "managedDescription": "Modelos gestionados que usan créditos de Kortix. No necesitas una clave API.",
+    "textImage": "Texto + imagen",
+    "textOnly": "Solo texto",
+    "zdrTitle": "Los proveedores de modelos no guardan tus mensajes",
+    "zdrDescription": "La retención cero de datos (ZDR) significa que el proveedor procesa tus textos e imágenes, pero no guarda la entrada ni la respuesta después de la solicitud. Kortix almacena tus proyectos y conversaciones por separado.",
     "hiddenHint": "Oculto en el selector. Las solicitudes directas siguen permitidas; desactívalas desde el menú del modelo.",
     "hidden": "Oculto en el selector",
     "disableModel": "Desactivar modelo",

@@ -26,6 +26,8 @@
     "build": "pnpm -r run build",
     "cli:bundle": "pnpm --filter @kortix/cli bundle",
     "cli:bundle:all": "pnpm --filter @kortix/cli bundle:all",
+    "tui:bundle": "pnpm --filter @kortix/tui bundle",
+    "tui:bundle:all": "pnpm --filter @kortix/tui bundle:all",
     "nuke": "bash scripts/nuke-local.sh",
     "nuke:start": "bash scripts/nuke-local.sh --start",
     "stripe:listen": "stripe listen --api-key \"$(dotenvx get STRIPE_SECRET_KEY -f apps/api/.env)\" --forward-to http://localhost:8008/v1/billing/webhooks/stripe",

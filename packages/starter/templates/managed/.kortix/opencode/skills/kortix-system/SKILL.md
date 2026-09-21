@@ -44,7 +44,11 @@ The repo has two configuration layers with strict ownership:
   `opencode.config_dir`. OpenCode owns prompts, tools, permissions, extensions,
   and provider settings.
 
-Kortix-specific settings go in `kortix.yaml`. OpenCode behavior stays in the
+Kortix-specific settings go in `kortix.yaml`. A large manifest splits across
+files: the root lists `imports:` (YAML files or directories), and each imported
+file declares `triggers`, `connectors`, `agents`, or `apps`. The platform merges
+them into one manifest. Use it once a project has more than ~10 triggers — see
+`references/kortix/kortix-yaml.md` → `imports:`. OpenCode behavior stays in the
 OpenCode config directory. Legacy v1 and current v2 projects both use
 OpenCode REST.
 </overview>
@@ -345,7 +349,10 @@ Kortix runs work on a schedule through **triggers** — a durable entry in
 the project's `kortix.yaml` (`triggers:`). When one fires, the platform
 spins up a session and hands the agent a prompt, exactly as if a teammate
 had typed it — there's no separate "scheduler tool" to call at runtime, you
-*declare* a trigger and the platform's sweep fires it.
+*declare* a trigger and the platform's sweep fires it. A trigger may live in
+`kortix.yaml` or in any file the root's `imports:` brings in (for example
+`.kortix/triggers/reports/weekly.yaml`); before adding one, check where the
+project keeps its triggers and follow that layout.
 
 Decide the mechanism first: one-off reminder → `type: cron` + `run_at`;
 recurring → `type: cron` + `cron` (6-field croner) + `timezone`; reacts to
@@ -688,6 +695,7 @@ to see the full enum.
 
 <reference path=".kortix/opencode/skills/kortix-system/references/kortix/kortix-yaml.md">
   In-depth `kortix.yaml` reference. Covers versions 1 and 2; logical agents;
+  `imports:` (splitting the manifest across YAML files and directories);
   every shared top-level key (`project:`,
   `env:`, `sandbox:`); every `triggers:` field (cron +
   webhook, incl. `session_mode` and the project-wide `triggers_paused`

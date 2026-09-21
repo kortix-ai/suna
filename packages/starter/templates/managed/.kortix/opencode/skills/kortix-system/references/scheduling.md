@@ -11,6 +11,14 @@ spins up a session and hands the agent a prompt, exactly as if a teammate had
 typed it. There is no separate "scheduler tool" to call at runtime; you
 *declare* a trigger, and the platform's sweep fires it for you.
 
+**Where a trigger lives.** In `kortix.yaml`, or in any YAML file the root's
+`imports:` list brings in. A project with many triggers keeps them out of the
+root: `imports: [.kortix/triggers/]`, then one file per trigger or per group
+(`.kortix/triggers/reports/weekly.yaml`), nested as deep as you like. Slugs
+stay unique across ALL files — a duplicate fails the whole manifest. Look at
+the existing layout first and put a new trigger where its siblings are. Rules:
+`kortix-yaml.md` → `imports:`.
+
 > **Talking to people about this:** say "recurring task", "scheduled run",
 > "automatic check", or "reminder." Don't say "cron job" or paste a cron
 > string at a non-technical user — translate it ("every weekday at 9am").

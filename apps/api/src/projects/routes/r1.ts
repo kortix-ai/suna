@@ -10,6 +10,7 @@ import { isAccountManager, type ProjectRole } from '../access';
 import { getBackend, hasBackend, parseBasicAuthHeader, type GitScope } from '../git-backends';
 import {
   getGitHubAppInstallation,
+  githubVerificationStatus,
   listLinkableGitHubAppInstallations,
   type GitHubAppInstallation,
   verifyGitHubAppInstallStatePayload,
@@ -219,6 +220,11 @@ projectsApp.openapi(
     'project',
   );
 
+  // Empty, whatever the reason. `account_mfa_required` cannot reach here: the
+  // listing is deliberately not MFA-gated, because challenging someone for
+  // opening the project switcher is worse than showing the names and
+  // challenging them when they open one. `authorize` still denies every
+  // per-project action with the coded 403 the step-up dialog keys on.
   if (accessible.mode === 'none') return c.json([]);
 
   // Build the project rows + the per-row role label the UI renders. The engine
@@ -938,7 +944,7 @@ projectsApp.openapi(
         {
           error: (error as Error).message || 'GitHub administrator verification failed',
         },
-        403,
+        githubVerificationStatus(error),
       );
     }
 
@@ -1014,7 +1020,7 @@ projectsApp.openapi(
     await verifyGitHubInstallationAdmin(githubUserToken, installation);
   } catch (error) {
     const message = (error as Error).message || 'GitHub administrator verification failed';
-    return c.json({ error: message }, 403);
+    return c.json({ error: message }, githubVerificationStatus(error));
   }
 
   const stateStatus = await consumeGitHubInstallationState({

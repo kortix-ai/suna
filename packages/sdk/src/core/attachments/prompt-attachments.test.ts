@@ -792,3 +792,73 @@ test('remove resolves after local removal; a hanging or failing DELETE never rej
   expect(deletes).toHaveLength(2);
   controller.dispose();
 });
+
+/**
+ * The initiation POST is the only answer that names the row the server has
+ * already created, so aborting it strands that row until its 24-hour expiry —
+ * against a budget of 40 unfinished handles per user.
+ */
+function deferredInitiationTransport() {
+  const requests: string[] = [];
+  let answer!: (settlement: 'handle' | 'failure') => void;
+  configureKortix({
+    backendUrl: 'https://api.test',
+    getToken: async () => 'token',
+    fetch: async (url, init) => {
+      const target = String(url);
+      requests.push(`${init?.method} ${target}`);
+      if (init?.method === 'DELETE') return new Response(null, { status: 204 });
+      if (init?.method === 'PUT') return Response.json({ received_bytes: 3, size: 3 });
+      if (target.endsWith('/complete')) return Response.json(metadata);
+      // The initiation answers only when the test says so, and — like a real
+      // fetch — rejects the moment its signal aborts.
+      return new Promise<Response>((resolve, reject) => {
+        answer = (settlement) =>
+          settlement === 'handle'
+            ? resolve(
+                Response.json({ ...metadata, upload: { kind: 'chunked', chunk_size: 65536 } }),
+              )
+            : reject(new DOMException('Network request failed', 'TypeError'));
+        init?.signal?.addEventListener('abort', () =>
+          reject(new DOMException('The operation was aborted.', 'AbortError')),
+        );
+      });
+    },
+  });
+  return { requests, answer: (settlement: 'handle' | 'failure') => answer(settlement) };
+}
+
+test('remove during initiation deletes the row the server already created', async () => {
+  const wire = deferredInitiationTransport();
+  const controller = createPromptAttachmentController('p');
+  const id = controller.add(new File(['abc'], 'a.txt'));
+  await settle();
+  // One initiation in flight, and no handle yet: nothing to delete by id.
+  expect(wire.requests).toEqual(['POST https://api.test/projects/p/attachments']);
+
+  await controller.remove(id);
+  expect(controller.getSnapshot().attachments).toEqual([]);
+
+  wire.answer('handle');
+  await settle();
+  expect(wire.requests.filter((line) => line.startsWith('DELETE'))).toEqual([
+    'DELETE https://api.test/projects/p/attachments/attachment-1',
+  ]);
+  // A removed file never sends its bytes, so the deferral costs no upload.
+  expect(wire.requests.filter((line) => line.startsWith('PUT'))).toEqual([]);
+  controller.dispose();
+});
+
+test('remove during an initiation that never yields a handle deletes nothing', async () => {
+  const wire = deferredInitiationTransport();
+  const controller = createPromptAttachmentController('p');
+  const id = controller.add(new File(['abc'], 'a.txt'));
+  await settle();
+  await controller.remove(id);
+
+  wire.answer('failure');
+  await settle();
+  expect(wire.requests.filter((line) => line.startsWith('DELETE'))).toEqual([]);
+  expect(controller.getSnapshot().attachments).toEqual([]);
+  controller.dispose();
+});

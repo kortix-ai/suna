@@ -32,7 +32,7 @@
  *
  * Do not "optimise" this back to `false` without redoing both probes above.
  */
-export type FreshnessTier = 'live' | 'config' | 'inventory' | 'volatile';
+export type FreshnessTier = 'live' | 'config' | 'inventory' | 'volatile' | 'directory';
 
 const GC_TIME = 30 * 60 * 1000;
 
@@ -55,6 +55,7 @@ const TIERS: Record<FreshnessTier, { staleTime: number }> = {
    * is materially wrong at t+30s.
    */
   volatile: { staleTime: 5_000 },
+  directory: { staleTime: 10_000 },
 };
 
 export function contract(tier: FreshnessTier) {
@@ -62,6 +63,14 @@ export function contract(tier: FreshnessTier) {
     staleTime: TIERS[tier].staleTime,
     gcTime: GC_TIME,
     refetchOnMount: true as const,
+    ...(tier === 'directory'
+      ? {
+          refetchInterval: 10_000,
+          refetchIntervalInBackground: false,
+          refetchOnWindowFocus: 'always' as const,
+          refetchOnReconnect: 'always' as const,
+        }
+      : {}),
   };
 }
 

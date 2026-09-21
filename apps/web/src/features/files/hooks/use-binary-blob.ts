@@ -6,7 +6,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { readRuntimeFileWithRetry } from '../api/runtime-file-read';
 import { readFileAsBlob } from '../api/runtime-files';
-import { SANDBOX_WAKING_REFETCH_INTERVAL_MS } from './file-read-retry';
+import { sandboxWakingRefetchInterval } from './file-read-retry';
+import { useServerHealth } from './use-server-health';
 
 // ── Query keys ─────────────────────────────────────────────────────────────
 
@@ -40,6 +41,8 @@ export function useBinaryBlob(filePath: string | null): {
   error: string | null;
 } {
   const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
+  // Asleep, not booting — the re-read below takes the slow lane.
+  const { parked } = useServerHealth();
 
   // ── Fetch the raw Blob — this is what React Query caches ────────────
   const query = useQuery<Blob>({
@@ -66,11 +69,9 @@ export function useBinaryBlob(filePath: string | null): {
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
     retry: false,
-    // A readiness 503 (parked/booting sandbox) is a pending state, not a
-    // failure: keep polling until the box is active so the blob loads on its
-    // own once the sandbox wakes.
-    refetchInterval: (query) =>
-      isSandboxNotReadyError(query.state.error) ? SANDBOX_WAKING_REFETCH_INTERVAL_MS : false,
+    // A readiness 503 is a pending state, not a failure. A booting box earns the
+    // fast cadence; a parked one is watched slowly. See the helper.
+    refetchInterval: (query) => sandboxWakingRefetchInterval(query.state.error, parked),
   });
 
   const cachedBlob = query.data ?? null;

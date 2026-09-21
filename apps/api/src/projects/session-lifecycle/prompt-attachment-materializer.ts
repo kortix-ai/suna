@@ -1,4 +1,4 @@
-import { isModelNativeAttachmentMime } from '@kortix/shared';
+import { isModelNativeAttachmentMime, parseSessionAttachmentRef, promptFileReferenceXml, type SessionAttachmentScope } from '@kortix/shared';
 
 import { resolvePromptAttachments } from '../prompt-attachments';
 import type { PromptPartWire } from './store';
@@ -125,6 +125,8 @@ export async function materializePromptAttachments(input: {
   projectId?: string;
   materializationKey: string;
   writeFile: RuntimePromptFileWriter;
+  readAttachment?: (scope: SessionAttachmentScope) => Promise<Blob | null>;
+  saveAttachment?: (file: { index: number; filename: string; mime: string; bytes: Uint8Array }) => Promise<string>;
   resolveAttachments?: PromptAttachmentsResolver;
   importAttachment?: RuntimePromptAttachmentImporter;
   /**
@@ -188,7 +190,7 @@ export async function materializePromptAttachments(input: {
           filename: resolved.filename,
           mime: resolved.mime,
         };
-        if (isModelNativeAttachmentMime(resolved.mime)) {
+        if (!input.saveAttachment && isModelNativeAttachmentMime(resolved.mime)) {
           const estimatedCost =
             `data:${resolved.mime};base64,`.length + 4 * Math.ceil(resolved.size / 3);
           if (estimatedCost <= inlineBudget) {
@@ -211,6 +213,10 @@ export async function materializePromptAttachments(input: {
 
     const url = part.url ?? '';
     const staged = url.toLowerCase().startsWith('data:');
+    if (parseSessionAttachmentRef(url) || (staged && input.saveAttachment)) {
+      candidates.push({ part, index });
+      continue;
+    }
     if (!isModelNativeAttachmentMime(part.mime ?? '')) {
       if (staged) candidates.push({ part, index });
       continue;
@@ -234,6 +240,16 @@ export async function materializePromptAttachments(input: {
       });
       try {
         if (candidate.resolved) {
+          let savedBytes: Uint8Array | undefined;
+          if (input.saveAttachment) {
+            savedBytes = await candidate.resolved.readBytes();
+            const attachmentUrl = await input.saveAttachment({
+              index: candidate.index, filename: reference.filename, mime: reference.mime, bytes: savedBytes,
+            });
+            reference.text = promptFileReferenceXml({
+              path: reference.targetPath, filename: reference.filename, mime: reference.mime, attachmentUrl,
+            });
+          }
           let imported: Awaited<ReturnType<RuntimePromptAttachmentImporter>>;
           try {
             imported = await (input.importAttachment ?? importRuntimePromptAttachment)({
@@ -260,7 +276,7 @@ export async function materializePromptAttachments(input: {
             imported = null;
           }
           if (!imported) {
-            const bytes = await candidate.resolved.readBytes();
+            const bytes = savedBytes ?? await candidate.resolved.readBytes();
             await input.writeFile({
               externalId: input.externalId,
               sessionId: input.sessionId,
@@ -272,7 +288,25 @@ export async function materializePromptAttachments(input: {
             });
           }
         } else {
-          const { bytes } = parseStagedPromptDataUrl(candidate.part);
+          const stored = parseSessionAttachmentRef(candidate.part.url);
+          let bytes: Uint8Array;
+          let attachmentUrl: string | undefined;
+          if (stored) {
+            if (stored.sessionId !== input.sessionId || (input.projectId && stored.projectId !== input.projectId)) throw new Error('Attachment belongs to another session');
+            if (!input.readAttachment) throw new Error('Attachment storage is unavailable');
+            const blob = await input.readAttachment(stored);
+            if (!blob) throw new Error('Saved attachment was not found');
+            bytes = new Uint8Array(await blob.arrayBuffer());
+            attachmentUrl = candidate.part.url;
+          } else {
+            bytes = parseStagedPromptDataUrl(candidate.part).bytes;
+            if (input.saveAttachment) attachmentUrl = await input.saveAttachment({
+              index: candidate.index, filename: reference.filename, mime: reference.mime, bytes,
+            });
+          }
+          if (attachmentUrl) reference.text = promptFileReferenceXml({
+            path: reference.targetPath, filename: reference.filename, mime: reference.mime, attachmentUrl,
+          });
           await input.writeFile({
             externalId: input.externalId,
             sessionId: input.sessionId,

@@ -17,6 +17,8 @@ export interface PublishResult {
   published: boolean;
   pendingReview?: boolean;
   teamsAppId?: string;
+  /** The app already existed and a new app definition (manifest version) was submitted. */
+  updated?: boolean;
   error?: string;
 }
 
@@ -95,6 +97,21 @@ export async function publishTeamsAppToCatalog(input: {
   }
   if (res.status === 409) {
     const id = await lookupCatalogAppId(input.accessToken, input.appId);
+    if (!id) return { ok: true, published: true };
+    // Already in the catalog: submit this package as a new app definition so
+    // manifest changes (version, RSC permissions, commands) reach the tenant.
+    let upd: Response;
+    try {
+      upd = await postPackage(`${CATALOG_URL}/${encodeURIComponent(id)}/appDefinitions`, zip, input.accessToken);
+    } catch (err) {
+      console.warn('[teams-catalog] app definition update failed', requestError(err, 'Graph app-definition update'));
+      return { ok: true, published: true, teamsAppId: id };
+    }
+    if (upd.status === 200 || upd.status === 201 || upd.status === 202) {
+      return { ok: true, published: true, teamsAppId: id, updated: true };
+    }
+    const text = await bodySnippet(upd);
+    console.warn('[teams-catalog] app definition update rejected', { status: upd.status, body: text });
     return { ok: true, published: true, teamsAppId: id };
   }
   if (res.status === 403) {

@@ -101,3 +101,35 @@ export function graphToken(tenantId: string, creds?: TeamsBotCreds | null): Prom
 export function clearTeamsTokenCache(): void {
   tokenCache.clear();
 }
+
+/**
+ * Mint the shared bot-connector token ahead of the first inbound message.
+ * The token is cached for its lifetime (minus a margin), so without this the
+ * first message after a deploy — or after an hour of silence — paid the
+ * login.microsoftonline.com round trip before "Working on it…" could be
+ * posted. No-op when the managed bot is not configured; never throws.
+ */
+export async function prewarmTeamsBotToken(): Promise<boolean> {
+  if (!teamsConfigured()) return false;
+  try {
+    await botConnectorToken();
+    return true;
+  } catch (err) {
+    console.warn('[teams-auth] bot token prewarm failed', (err as Error)?.message);
+    return false;
+  }
+}
+
+/** Keep the bot-connector token warm for the life of the process. */
+export const TEAMS_TOKEN_REFRESH_MS = 50 * 60 * 1000;
+
+export function startTeamsBotTokenRefresh(): ReturnType<typeof setInterval> | null {
+  if (!teamsConfigured()) return null;
+  void prewarmTeamsBotToken();
+  const timer = setInterval(() => {
+    tokenCache.delete(`${config.MICROSOFT_APP_ID}|${config.MICROSOFT_APP_TENANT}|${BOT_CONNECTOR_SCOPE}`);
+    void prewarmTeamsBotToken();
+  }, TEAMS_TOKEN_REFRESH_MS);
+  timer.unref();
+  return timer;
+}

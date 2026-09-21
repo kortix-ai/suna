@@ -99,6 +99,19 @@ export { useChatTurns, type TurnView, renderParts, type PartRenderers } from './
 // SDK-owned hook (only the client fn). Each owns its own query key + the
 // mutations a settings/workbench screen actually needs, with invalidation
 // wired so writes reflect without a manual refetch.
+// The two lists every host opens on. Both had a client fn and a `qk` key and
+// no hook, so each host rewrote the useQuery wiring — including a TUI key
+// (`['tui','accounts',…]`) that shared nothing with the rest of the cache.
+export {
+  useAccounts,
+  useProjects,
+  accountsQueryOptions,
+  projectsQueryOptions,
+  type AccountsKey,
+  type ProjectsKey,
+  type UseAccountsOptions,
+  type UseProjectsOptions,
+} from './use-accounts';
 export { useProjectSecrets, projectSecretsKey } from './use-project-secrets';
 export { useAccountSecretResources, useSessionProviderSecretPools } from './use-provider-secrets';
 export { useProjectTriggers, projectTriggersKey } from './use-project-triggers';

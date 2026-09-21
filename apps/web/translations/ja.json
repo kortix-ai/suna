@@ -1,5 +1,25 @@
 {
+  "repositoryChange": {
+    "changedToast": "リポジトリを変更しました。新しいセッションでは新しいリポジトリを使用します。",
+    "verifyError": "GitHub へのアクセスを確認できませんでした。",
+    "change": "変更",
+    "title": "リポジトリを変更",
+    "description": "新しいセッションでは新しいリポジトリを使用します。変更後は既存のセッションを再起動できません。",
+    "current": "現在のリポジトリ",
+    "newUrl": "新しい GitHub リポジトリの URL",
+    "verifying": "GitHub を確認中…",
+    "verifyAgain": "GitHub を再確認",
+    "verify": "GitHub へのアクセスを確認",
+    "noInstallation": "このリポジトリの所有者に利用できる Kortix App のインストールがありません。GitHub でリポジトリを App のインストールに追加し、再度確認してください。",
+    "installation": "GitHub App のインストール",
+    "selectInstallation": "インストールを選択",
+    "manifestRequirement": "新しいリポジトリのデフォルトブランチには {manifest} が必要です。先に実行中のセッションを停止し、開いている変更リクエストを閉じてください。",
+    "cancel": "キャンセル",
+    "changing": "変更中…"
+  },
   "pooledSecrets": {
+    "saveChanges": "変更を保存",
+    "unsavedChanges": "キーの変更は未保存です",
     "creationDescription": "値は暗号化されます。保存する前に、この接続を使用できる人を選んでください。",
     "whoCanUse": "この接続を使用できる人",
     "everyoneInProject": "このプロジェクトの全員",
@@ -1083,6 +1103,10 @@
           "name": "ネットワーク強制シークレット",
           "description": "プロジェクトのシークレットを受け取れるツールと送信先を制御します。"
         },
+        "session_transcript_history": {
+          "name": "セッションの会話履歴",
+          "description": "各ターン後にチャット履歴を保存し、セッションのコンピューターが起動している間に表示します。"
+        },
         "pooled_provider_secrets": {
           "name": "共有プロバイダーシークレット",
           "description": "複数のプロバイダーキーをメンバーと共有し、セッションごとにキープールを選択します。"
@@ -1435,6 +1459,7 @@
         "chat": "チャット",
         "slack": "Slack",
         "telegram": "Telegram",
+        "teams": "Teams",
         "email": "電子メール",
         "scheduled": "スケジュール済み",
         "webhook": "Webhook",
@@ -1584,6 +1609,9 @@
   "modelSelector": {
     "search": "モデルを検索",
     "free": "無料",
+    "included": "プラン内",
+    "projectDefaultAccount": "プロジェクト既定",
+    "useAccount": "使用するアカウント",
     "addProvider": "プロバイダーを追加",
     "connectProvider": "プロバイダーに接続",
     "manageModels": "モデルを管理",
@@ -14527,6 +14555,11 @@
       "text922315177668": "ランチャーが確認できるすべて",
       "text9224d9e82502": "「Provisioning」→「Settings」に戻り、「Scope」を「Sync only assigned users and groups」に設定します。認証情報を保存した後にのみ、ここに表示されます。その後、Provisioning概要ページ上部の「Start provisioning」をクリックします（または「Provision on demand」で、約40分のサイクルを待たずに割り当て済みユーザーを1人だけ即時プッシュできます）。",
       "text9225e456b795": "Teamsのチャンネルまたはチャットでエージェントをメンションできます。",
+      "text895ce927db2e": "個人チャット",
+      "text28c7d3f8b75d": "グループチャット",
+      "text72b5b0c53de9": "Microsoft Teams で返信しました",
+      "textfc73e9ad2dae": "Slack で返信しました",
+      "text8faf56a14a8d": "Telegram で返信しました",
       "text8ccfe10f2f2d": "Teams カタログに公開",
       "text36f6474748b3": "Teams カタログにアプリを公開しています…",
       "text45b9df5730ac": "Teams 管理者によるアプリの承認を待っています",
@@ -19409,6 +19442,10 @@
     "providerError": "プロバイダーへのアクセスを更新できませんでした。",
     "managedTitle": "Kortix管理モデル",
     "managedDescription": "Kortixクレジットで課金される管理モデルです。APIキーは不要です。",
+    "textImage": "テキスト + 画像",
+    "textOnly": "テキストのみ",
+    "zdrTitle": "モデル提供元はプロンプトを保存しません",
+    "zdrDescription": "ゼロデータ保持（ZDR）とは、モデル提供元がテキストや画像を処理した後、リクエストの入力や回答を保存しないことです。Kortix はプロジェクトと会話履歴を別に保存します。",
     "hiddenHint": "選択リストでは非表示です。直接リクエストは引き続き許可されます。無効にするにはモデルのメニューを使用してください。",
     "hidden": "選択リストで非表示",
     "disableModel": "モデルを無効にする",

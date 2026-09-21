@@ -5,6 +5,7 @@ import {
   ALL_AGENTS,
   accessDialogCopy,
   agentSelectionFromCurrent,
+  agentAccessProjectId,
   bulkGroupPlan,
   diffAccessDraft,
   diffAgentGrants,
@@ -374,5 +375,23 @@ describe('the dialog writes assignments, not policies', () => {
     expect(dialogSource).toContain(
       "const expirySupported = scope.kind !== 'group' && mode.kind !== 'bulk-group';",
     );
+  });
+});
+
+
+describe('Azure group attachment agent inventory', () => {
+  const attach: AccessDialogMode = { kind: 'attach', principal: { type: 'group', id: 'azure-group', label: 'Azure' } };
+  test('loads the selected project instead of the empty attachment scope', () => {
+    expect(agentAccessProjectId({ kind: 'project', projectId: '', projectName: '' }, attach, 'chosen-project')).toBe('chosen-project');
+  });
+  test('does not load agents before choosing a project', () => {
+    expect(agentAccessProjectId(PROJECT, attach, '')).toBeUndefined();
+  });
+  test('changing the attachment target switches inventories', () => {
+    expect(agentAccessProjectId(PROJECT, attach, 'second-project')).toBe('second-project');
+  });
+  test('ordinary project grants keep their own project', () => {
+    expect(agentAccessProjectId(PROJECT, { kind: 'grant' }, 'ignored')).toBe('p_1');
+    expect(agentAccessProjectId(ACCOUNT, { kind: 'grant' }, '')).toBeUndefined();
   });
 });

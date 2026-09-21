@@ -6,7 +6,7 @@ const managedModelSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   upstreamModelId: z.string().min(1),
-  transport: z.enum(['bedrock', 'openrouter']),
+  transport: z.literal('openrouter'),
   providerBrand: z.string().min(1).optional(),
   pricingRef: z.string().min(1),
   pricing: z
@@ -32,7 +32,12 @@ const managedModelSchema = z.object({
     context: z.number().int().positive(),
     output: z.number().int().positive(),
   }),
-  openrouterProvider: z.record(z.unknown()).optional(),
+  openrouterProvider: z.object({
+    only: z.tuple([z.string().min(1)]),
+    allow_fallbacks: z.literal(false),
+    zdr: z.literal(true),
+    data_collection: z.literal('deny'),
+  }),
 });
 
 export function parseManagedModels(
@@ -61,25 +66,9 @@ export function parseManagedModels(
 }
 
 /**
- * API/control-plane managed model overlay used by runtime routing and catalog
- * responses. CLOUD-ONLY: empty whenever KORTIX_MANAGED_PROVIDER_ENABLED is off
- * (the self-host default) — a self-host operator brings their own LLM keys and
- * must never see or route to Kortix's shared upstream credentials.
- * This is the single choke point: every consumer (the served model catalog,
- * the picker, and request-time routing) reads through here or getRuntimeManagedModel()
- * below, so gating it here alone keeps the managed lineup off everywhere.
- *
- * IMPORTANT — what the "managed provider" IS and IS NOT (a recurring
- * misconception): KORTIX_MANAGED_PROVIDER_ENABLED is a CLOUD-ONLY CONVENIENCE
- * so cloud users can spend their KORTIX CREDITS for a zero-config experience —
- * it routes to Kortix's own shared upstream credentials, billed as credits.
- * It is not the mechanism by which Bedrock or OpenRouter is available.
- * Bedrock is a standalone provider that a project uses by connecting
- * its OWN credentials (BYOK). To give a self-host Bedrock you connect Bedrock
- * as a standalone BYOK provider (project secret AWS_BEARER_TOKEN_BEDROCK →
- * resolveCatalogUpstream('amazon-bedrock') builds a kind:'bedrock' descriptor
- * via the normal BYOK path); you do NOT turn this flag on. This managed overlay
- * stays purely the cloud credits convenience.
+ * Kortix-credit managed models. This registry is empty
+ * when the cloud managed-provider flag is off. The picker, catalog, and gateway
+ * all use this registry, so self-host users never receive the shared key.
  */
 export const RUNTIME_MANAGED_MODELS: readonly ManagedModel[] =
   config.KORTIX_MANAGED_PROVIDER_ENABLED
@@ -105,7 +94,25 @@ export function isRuntimeManagedModelId(id: string): boolean {
 // messaging say "this model needs the managed provider, which is off here"
 // instead of the misleading "no such model".
 const BUNDLED_BY_ID = new Map(BUNDLED_MANAGED_MODELS.map((model) => [model.id, model] as const));
-const RETIRED_MANAGED_MODEL_IDS = new Set(['glm-5.2']);
+const RETIRED_MANAGED_MODEL_IDS = new Set([
+  'glm-5.2', 'grok-4.6', 'deepseek-v4-flash',
+  'muse-spark-1.2', 'minimax-m3', 'gpt-5.6-luna', 'gpt-6-astra',
+  'morph-glm53-744b', 'morph-dsv4flash', 'morph-kimik3',
+  'morph-kimik3-fast', 'morph-dsv41flash',
+  'deepseek-v4-flash-0731', 'kimi-k3-fast',
+]);
+
+const LEGACY_MANAGED_IDS: Record<string, string> = {
+  'morph-kimik3': 'kimi-k3',
+  'morph-kimik3-fast': 'kimi-k3-fast',
+  'morph-dsv41flash': 'deepseek-v4.1-flash',
+  'morph-dsv4flash': 'deepseek-v4-flash-0731',
+  'deepseek-v4-flash': 'deepseek-v4-flash-0731',
+};
+
+export function canonicalManagedModelId(id: string): string {
+  return LEGACY_MANAGED_IDS[id] ?? id;
+}
 
 export function isKnownManagedModelId(id: string): boolean {
   return BUNDLED_BY_ID.has(id) || RETIRED_MANAGED_MODEL_IDS.has(id);
@@ -153,6 +160,8 @@ export function resolvePlatformDefaultModelId(
   const trimmed = configured.trim();
   if (!trimmed) return trimmed;
   const bare = bareManagedId(trimmed);
+  const alias = canonicalManagedModelId(bare);
+  if (alias !== bare && served.some((model) => model.id === alias)) return alias;
   // Not a managed id at all → a BYOK ref; leave it alone.
   if (!isKnownManagedModelId(bare)) return trimmed;
   if (served.some((model) => model.id === bare)) return trimmed;

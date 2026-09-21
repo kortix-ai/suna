@@ -41,8 +41,29 @@ describe('publishTeamsAppToCatalog — delegated org-catalog publish', () => {
     expect(urls.some((u) => u.includes('requiresReview=true'))).toBe(true);
   });
 
-  test('an already-published app (409) resolves its id via externalId lookup', async () => {
+  test('an already-published app (409) resolves its id and submits the package as a new app definition', async () => {
+    const posts: string[] = [];
     globalThis.fetch = (async (url: any, init: any) => {
+      const u = String(url);
+      if (init?.method === 'POST' && u.endsWith('/appDefinitions')) {
+        posts.push(u);
+        expect(init.headers['content-type']).toBe('application/zip');
+        return jsonRes(201, { id: 'def-2' });
+      }
+      if (init?.method === 'POST') return new Response('', { status: 409 });
+      return jsonRes(200, { value: [{ id: 'existing-77' }] });
+    }) as any;
+
+    const r = await publishTeamsAppToCatalog({ accessToken: 'tok', baseUrl: 'https://dev-api', appId: 'app-1' });
+
+    expect(r).toMatchObject({ ok: true, published: true, teamsAppId: 'existing-77', updated: true });
+    expect(posts).toEqual(['https://graph.microsoft.com/v1.0/appCatalogs/teamsApps/existing-77/appDefinitions']);
+  });
+
+  test('a rejected app-definition update still reports the existing app as published', async () => {
+    globalThis.fetch = (async (url: any, init: any) => {
+      const u = String(url);
+      if (init?.method === 'POST' && u.endsWith('/appDefinitions')) return jsonRes(403, { error: { code: 'Forbidden' } });
       if (init?.method === 'POST') return new Response('', { status: 409 });
       return jsonRes(200, { value: [{ id: 'existing-77' }] });
     }) as any;
@@ -50,6 +71,7 @@ describe('publishTeamsAppToCatalog — delegated org-catalog publish', () => {
     const r = await publishTeamsAppToCatalog({ accessToken: 'tok', baseUrl: 'https://dev-api', appId: 'app-1' });
 
     expect(r).toMatchObject({ ok: true, published: true, teamsAppId: 'existing-77' });
+    expect(r.updated).toBeUndefined();
   });
 
   test('reports failure when the publish is rejected outright', async () => {

@@ -1221,136 +1221,25 @@ type KortixGatewayModel = {
 }
 
 export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
-  // 2026-08-10 managed slim-down: Claude Opus 4.8 / Claude Sonnet 4.6 / Kimi K3
-  // deactivated in @kortix/llm-catalog MANAGED_MODELS — kept commented out here
-  // to match, so this fallback map never advertises a model the gateway
-  // resolves as model_not_found.
-  // 'claude-opus-4.8': {
-  //   name: 'Claude Opus 4.8',
-  //   provider: 'kortix',
-  //   reasoning: true,
-  //   tool_call: true,
-  //   attachment: true,
-  //   temperature: true,
-  //   limit: { context: 1_000_000, output: 64_000 },
-  // },
-  // 'claude-sonnet-4.6': {
-  //   name: 'Claude Sonnet 4.6',
-  //   provider: 'kortix',
-  //   reasoning: true,
-  //   tool_call: true,
-  //   attachment: true,
-  //   temperature: true,
-  //   limit: { context: 1_000_000, output: 64_000 },
-  // },
-  // Managed default for fresh sessions (PLATFORM_DEFAULT_MODEL_ID).
-  // Bare id = Kortix-managed.
-  'deepseek-v4-flash': {
-    name: 'DeepSeek V4 Flash',
-    provider: 'kortix',
-    reasoning: true,
-    tool_call: true,
-    attachment: false,
-    temperature: true,
-    limit: { context: 1_048_576, output: 64_000 },
+  'deepseek-v4.1-flash': {
+    name: 'DeepSeek V4.1 Flash', provider: 'kortix', reasoning: true, tool_call: true,
+    attachment: true, temperature: true,
+    limit: { context: 1_048_576, output: 16_384 }, cost: { input: 0.2, output: 0.6, cache_read: 0.006 },
   },
   'deepseek-v4-pro-0813': {
-    name: 'DeepSeek V4 Pro 0813',
-    provider: 'kortix',
-    reasoning: true,
-    reasoning_options: [
-      { type: 'toggle' },
-      { type: 'effort', values: ['low', 'high', 'max'] },
-    ],
-    tool_call: true,
-    attachment: false,
-    structured_output: false,
-    temperature: true,
-    limit: { context: 1_048_575, output: 384_000 },
-    cost: { input: 1.74, output: 3.48, cache_read: 0.145 },
+    name: 'DeepSeek V4 Pro 0813', provider: 'kortix', reasoning: true, tool_call: true,
+    attachment: false, temperature: true,
+    limit: { context: 1_048_576, output: 384_000 }, cost: { input: 0.7, output: 2.96, cache_read: 0.033 },
   },
-  'muse-spark-1.2': {
-    name: 'Muse Spark 1.2',
-    provider: 'kortix',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_048_576, output: 131_072 },
-  },
-  'minimax-m3': {
-    name: 'MiniMax M3',
-    provider: 'kortix',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 524_288, output: 131_072 },
-  },
-  // temperature:false — Luna rejects a client-sent temperature (models.dev
-  // openrouter/openai/gpt-5.6-luna), same regression class as the OpenAI
-  // reasoning-model guard below. Must NOT advertise temperature support or
-  // OpenCode sends one and 400s the turn.
-  'gpt-5.6-luna': {
-    name: 'GPT-5.6 Luna',
-    provider: 'kortix',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: false,
-    limit: { context: 1_050_000, output: 128_000 },
-  },
-  'gpt-6-astra': {
-    name: 'GPT-6 Astra',
-    provider: 'kortix',
-    reasoning: true,
-    reasoning_options: [{ type: 'effort', values: ['low', 'medium', 'high', 'xhigh', 'max'] }],
-    tool_call: true,
-    attachment: true,
-    temperature: false,
-    structured_output: true,
-    limit: { context: 1_050_000, output: 128_000 },
-    cost: {
-      input: 10,
-      output: 50,
-      cache_read: 1,
-      cache_write: 12.5,
-      tiers: [{ input: 20, output: 75, cache_read: 2, cache_write: 25, tier: { type: 'context', size: 272_000 } }],
-      context_over_200k: { input: 20, output: 75, cache_read: 2, cache_write: 25 },
-    },
-  },
-  'grok-4.6': {
-    name: 'Grok 4.6',
-    provider: 'kortix',
-    reasoning: true,
-    reasoning_options: [{ type: 'effort', values: ['low', 'medium', 'high', 'xhigh'] }],
-    tool_call: true,
-    attachment: true,
-    structured_output: true,
-    temperature: true,
-    limit: { context: 500_000, output: 500_000 },
-    cost: {
-      input: 2,
-      output: 6,
-      cache_read: 0.5,
-      context_over_200k: { input: 4, output: 12, cache_read: 1 },
-    },
-  },
-  // Mirrors @kortix/llm-catalog `glm-5.3-flash` (added 2026-08-27). Capabilities
-  // = models.dev openrouter/z-ai/glm-5.3-flash: effort low/high/max, image
-  // input, temperature:true, structured_output:true. Limit = the safe
-  // intersection of the pinned z-ai + novita hosts.
   'glm-5.3-flash': {
-    name: 'GLM 5.3 Flash',
-    provider: 'kortix',
-    reasoning: true,
-    reasoning_options: [{ type: 'effort', values: ['low', 'high', 'max'] }],
-    tool_call: true,
-    attachment: true,
-    structured_output: true,
-    temperature: true,
-    limit: { context: 1_048_576, output: 131_072 },
-    cost: { input: 0.075, output: 0.25, cache_read: 0.015 },
+    name: 'GLM-5.3-Flash', provider: 'kortix', reasoning: true, tool_call: true,
+    attachment: true, temperature: true,
+    limit: { context: 1_048_576, output: 16_384 }, cost: { input: 0.15, output: 0.5, cache_read: 0.05 },
+  },
+  'kimi-k3': {
+    name: 'Kimi K3 2.8T', provider: 'kortix', reasoning: true, tool_call: true,
+    attachment: true, temperature: true,
+    limit: { context: 1_048_576, output: 16_384 }, cost: { input: 2.5, output: 10.95, cache_read: 0.25 },
   },
   'openai/gpt-5.5': {
     name: 'GPT-5.5',

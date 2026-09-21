@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { FRESHNESS, contract, type FreshnessTier } from './query-contracts';
 
-const TIERS: FreshnessTier[] = ['live', 'config', 'inventory', 'volatile'];
+const TIERS: FreshnessTier[] = ['live', 'config', 'inventory', 'volatile', 'directory'];
 
 describe('freshness contracts', () => {
   // The whole point of a tier is that a call site cannot disagree with it.
@@ -79,5 +79,26 @@ describe('freshness contracts', () => {
     // keep — add a `volatile` entity and this goes red.
     const tiers = Object.entries(FRESHNESS) as [string, FreshnessTier][];
     expect(tiers.filter(([, tier]) => tier === 'volatile')).toEqual([]);
+  });
+});
+
+
+describe('external directory updates', () => {
+  test('refreshes visible directory data every ten seconds and when focus returns', () => {
+    expect(contract('directory')).toMatchObject({
+      staleTime: 10_000,
+      refetchInterval: 10_000,
+      refetchIntervalInBackground: false,
+      refetchOnWindowFocus: 'always',
+      refetchOnReconnect: 'always',
+      refetchOnMount: true,
+    });
+  });
+
+  test('does not introduce polling for other freshness tiers', () => {
+    for (const tier of ['live', 'config', 'inventory', 'volatile'] as const) {
+      expect(contract(tier)).not.toHaveProperty('refetchInterval');
+      expect(contract(tier)).not.toHaveProperty('refetchOnWindowFocus');
+    }
   });
 });

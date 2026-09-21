@@ -1644,17 +1644,43 @@ export async function setConnectorSecretBinding(
   );
 }
 
+export interface ConnectorFinalizeOptions {
+  /**
+   * Owner scope of the account to finalize. Must MATCH the owner the paired
+   * `connectorConnect` used: the route defaults an absent value to `me`, so
+   * finalizing a `project` authorization without this polls the caller's own
+   * member connection and never reports the shared account active.
+   */
+  owner?: ConnectorConnectOwner;
+  /**
+   * Finalize this exact connection. Omitted, the route resolves the most
+   * recently updated connection in the owner scope — correct for a connect this
+   * client just started, but a caller that already knows the connection should
+   * name it rather than rely on recency.
+   */
+  connectionId?: string;
+}
+
 /**
  * Poll a hosted authorization until the provider reports an active account.
  *
  * On success the API tells the session that requested the connector, so the
  * agent resumes without anyone typing "done".
  */
-export async function connectorFinalize(projectId: string, slug: string) {
+export async function connectorFinalize(
+  projectId: string,
+  slug: string,
+  options: ConnectorFinalizeOptions = {},
+) {
+  // Each key is omitted rather than sent as null when unset: the API reads a
+  // key's PRESENCE to apply its own default, and an older client sends neither.
+  const body: Record<string, string> = {};
+  if (options.owner) body.owner = options.owner;
+  if (options.connectionId) body.connection_id = options.connectionId;
   return unwrap(
     await backendApi.post<ConnectorFinalizeResult>(
       `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/connect/finalize`,
-      {},
+      body,
     ),
   );
 }

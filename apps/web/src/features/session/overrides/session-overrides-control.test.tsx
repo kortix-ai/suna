@@ -32,7 +32,7 @@ const rows = (overrides: Partial<SessionOverrideRow>[] = []): SessionOverrideRow
   },
 ];
 
-const messages = { threads: { sessionOverrides: 'Session overrides' } };
+const messages = { threads: { sessionOverrides: 'Session overrides' }, pooledSecrets: { saveChanges: 'Save changes', saving: 'Saving…' } };
 
 function withMessages(children: React.ReactNode) {
   return (
@@ -134,4 +134,13 @@ describe('SessionOverridesControlContent', () => {
     expect(withOverrides).not.toContain('2 overrides');
     expect(withOverrides).not.toContain('>Agent<');
   });
+});
+
+test('one footer communicates unsaved changes and an actionable save error', () => {
+  const html = render({ pendingNote: 'Unsaved key changes', error: 'Selected key access changed' });
+  expect(html).toContain('Unsaved key changes');
+  expect(html).toContain('role="alert"');
+  expect(html).toContain('Selected key access changed');
+  expect(html.match(/>Save changes</g)).toHaveLength(1);
+  expect(html).not.toContain('>Done<');
 });
