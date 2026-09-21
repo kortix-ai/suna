@@ -222,8 +222,10 @@ export function ProjectHome({
           {/* Tap outside the field to close the keyboard. Not a control. */}
           <Pressable className="flex-1" onPress={Keyboard.dismiss} accessible={false} />
 
+          {/* `box-none`: only the symbol takes touches (its hidden 10-second
+              press); the space around it still reaches the Pressable above. */}
           <View
-            pointerEvents="none"
+            pointerEvents="box-none"
             className="absolute inset-0 items-center justify-center">
             <ProjectHero />
           </View>

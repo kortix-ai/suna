@@ -96,9 +96,14 @@ interface MetalKortixLogoProps {
   /** Side of the layout box, in points. Same meaning as `KortixLogo.size`. */
   size: number;
   tone: Tone;
+  /**
+   * The user's colours (`logoPaletteColors`, `lib/effects/logo-palette`) in
+   * place of the default metal for `tone`. Null or absent: the default.
+   */
+  palette?: { first: Rgba; second: Rgba } | null;
 }
 
-export function MetalKortixLogo({ size, tone }: MetalKortixLogoProps) {
+export function MetalKortixLogo({ size, tone, palette }: MetalKortixLogoProps) {
   const image = useImage(TEXTURE);
   const effect = React.useMemo(() => {
     const made = Skia.RuntimeEffect.Make(HEATMAP_SKSL);
@@ -109,12 +114,13 @@ export function MetalKortixLogo({ size, tone }: MetalKortixLogoProps) {
   const flat = <KortixLogo size={size} color={tone} />;
   if (!image || !effect) return flat;
 
-  return <MetalCanvas size={size} tone={tone} image={image} effect={effect} />;
+  return <MetalCanvas size={size} tone={tone} palette={palette} image={image} effect={effect} />;
 }
 
 function MetalCanvas({
   size,
   tone,
+  palette,
   image,
   effect,
 }: MetalKortixLogoProps & {
@@ -182,7 +188,7 @@ function MetalCanvas({
   }, [running, sweep, sweepTarget]);
 
   const canvasSize = size / P.scale;
-  const colors = PALETTE[tone];
+  const colors = palette ?? PALETTE[tone];
   // Plain numbers, so the worklet below captures no Skia object.
   const imageWidth = image.width();
   const imageHeight = image.height();
