@@ -45,6 +45,7 @@ interface StorageErrorBody {
   statusCode?: string | number;
   error?: string;
   message?: string;
+  code?: string;
 }
 
 async function readErrorBody(response: Response): Promise<StorageErrorBody> {
@@ -62,7 +63,17 @@ function isDuplicate(status: number, body: StorageErrorBody): boolean {
   return String(body.statusCode) === '409' || /duplicate|already exists/i.test(`${body.error} ${body.message}`);
 }
 
+/**
+ * A missing bucket after a successful create. Measured: a bad service-role key
+ * also answers HTTP 400 `NoSuchBucket`, identical to a missing bucket. It is
+ * never read as "object not found".
+ */
+function isMissingBucket(body: StorageErrorBody): boolean {
+  return body.code === 'NoSuchBucket' || /bucket not found/i.test(`${body.error} ${body.message}`);
+}
+
 function isNotFound(status: number, body: StorageErrorBody): boolean {
+  if (isMissingBucket(body)) return false;
   if (status === 404) return true;
   return String(body.statusCode) === '404' || /not.?found/i.test(`${body.error} ${body.message}`);
 }
@@ -136,6 +147,15 @@ export class SupabaseConfigArchiveStore implements ConfigArchiveStore {
     throw new ConfigArchiveStoreError(`create bucket ${this.bucket} failed: ${describe(response.status, body)}`, response.status);
   }
 
+  private missingBucket(operation: string, status: number): ConfigArchiveStoreError {
+    // Re-create on the next call, in case the bucket was deleted.
+    this.bucketReady = null;
+    return new ConfigArchiveStoreError(
+      `${operation}: bucket ${this.bucket} not found after create; the service-role key is probably rejected`,
+      status,
+    );
+  }
+
   async putIfAbsent(key: string, body: Buffer): Promise<'created' | 'exists'> {
     await this.ensureBucket();
     // No `x-upsert`: the native API refuses a second write of one key.
@@ -149,6 +169,7 @@ export class SupabaseConfigArchiveStore implements ConfigArchiveStore {
       return 'created';
     }
     const error = await readErrorBody(response);
+    if (isMissingBucket(error)) throw this.missingBucket(`upload ${key}`, response.status);
     if (isDuplicate(response.status, error)) return 'exists';
     throw new ConfigArchiveStoreError(`upload ${key} failed: ${describe(response.status, error)}`, response.status);
   }
@@ -162,6 +183,7 @@ export class SupabaseConfigArchiveStore implements ConfigArchiveStore {
     });
     if (!response.ok) {
       const error = await readErrorBody(response);
+      if (isMissingBucket(error)) throw this.missingBucket(`sign ${key}`, response.status);
       if (isNotFound(response.status, error)) return null;
       throw new ConfigArchiveStoreError(`sign ${key} failed: ${describe(response.status, error)}`, response.status);
     }
@@ -182,6 +204,7 @@ export class SupabaseConfigArchiveStore implements ConfigArchiveStore {
       return true;
     }
     const error = await readErrorBody(response);
+    if (isMissingBucket(error)) throw this.missingBucket(`info ${key}`, response.status);
     if (isNotFound(response.status, error)) return false;
     throw new ConfigArchiveStoreError(`info ${key} failed: ${describe(response.status, error)}`, response.status);
   }

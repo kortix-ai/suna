@@ -153,6 +153,21 @@ describe('SupabaseConfigArchiveStore', () => {
     expect(JSON.parse(String(sign.body))).toEqual({ expiresIn: 900 });
   });
 
+  test('NoSuchBucket after a successful create is an error, never "not found"', async () => {
+    const noBucket = { statusCode: '404', error: 'Bucket not found', message: 'Bucket not found', code: 'NoSuchBucket' };
+    let creates = 0;
+    const { store: s } = store([
+      [/\/storage\/v1\/bucket$/, () => (creates++, json(200, {}))],
+      [/\/object\//, () => json(400, noBucket)],
+    ]);
+    const key = configArchiveKey(PROJECT, TREE);
+    await expect(s.exists(key)).rejects.toThrow('service-role key is probably rejected');
+    await expect(s.downloadUrl(key, 900)).rejects.toThrow('service-role key is probably rejected');
+    await expect(s.putIfAbsent(key, Buffer.from('x'))).rejects.toThrow('service-role key is probably rejected');
+    // Each failure resets the bucket, so the next call re-creates it.
+    expect(creates).toBe(3);
+  });
+
   test('downloadUrl returns null for a missing object', async () => {
     const { store: s } = store([
       [/\/storage\/v1\/bucket$/, () => json(200, {})],
