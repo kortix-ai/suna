@@ -1330,6 +1330,7 @@ flow(
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const member = await team.addMember('member');
+    const admin = await team.addMember('admin');
     const project = await team.project();
     let assignmentId = '';
 
@@ -1448,6 +1449,49 @@ flow(
       r.status(400);
     });
 
+    await ctx.step('ADMIN cannot grant owner — not to themselves, not to anyone → 403', async () => {
+      for (const principalId of [admin.userId, member.userId]) {
+        const r = await ctx.client.as(admin).post(
+          '/v1/accounts/:accountId/iam/assignments',
+          { principal_type: 'user', principal_id: principalId, role_key: 'owner', scope_type: 'account' },
+          { params: { accountId: team.id } },
+        );
+        r.status(403);
+      }
+      const list = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/iam/assignments', {
+        params: { accountId: team.id },
+        query: { scope_type: 'account' },
+      });
+      list.status(200);
+      const owners = (list.json<any>().assignments as any[])
+        .filter((a) => a.role_key === 'owner')
+        .map((a) => a.principal_id);
+      if (owners.includes(admin.userId) || owners.includes(member.userId)) {
+        throw new Error(`a refused owner grant left a row behind: ${JSON.stringify(owners)}`);
+      }
+    });
+
+    await ctx.step('an account role is held by a person — granting one to a group → 400', async () => {
+      await enableEnterpriseDemo(ctx, team.id);
+      const g = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/accounts/:accountId/iam/groups',
+          { name: ctx.fixtures.name('acct-role-grp') },
+          { params: { accountId: team.id } },
+        );
+      g.status(201);
+      const groupId = g.json<any>().group_id;
+      for (const roleKey of ['owner', 'admin', 'member']) {
+        const r = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/accounts/:accountId/iam/assignments',
+          { principal_type: 'group', principal_id: groupId, role_key: roleKey, scope_type: 'account' },
+          { params: { accountId: team.id } },
+        );
+        r.status(400);
+      }
+    });
+
     await ctx.step('NONMEMBER cannot read assignments → 403', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
@@ -1466,6 +1510,7 @@ flow(
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const member = await team.addMember('member');
+    const admin = await team.addMember('admin');
     const project = await team.project();
     let assignmentId = '';
 
@@ -1539,6 +1584,22 @@ flow(
           params: { accountId: team.id, assignmentId: rows[0].assignment_id },
         });
       r.status(409);
+    });
+
+    await ctx.step("ADMIN cannot revoke an owner's owner assignment → 403", async () => {
+      const list = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/iam/assignments', {
+        params: { accountId: team.id },
+        query: { principal_type: 'user', principal_id: ctx.P.OWNER.userId!, scope_type: 'account' },
+      });
+      list.status(200);
+      const ownerRow = (list.json<any>().assignments as any[]).find((a) => a.role_key === 'owner');
+      if (!ownerRow) throw new Error('expected the OWNER to hold an owner assignment');
+      const r = await ctx.client
+        .as(admin)
+        .del('/v1/accounts/:accountId/iam/assignments/:assignmentId', {
+          params: { accountId: team.id, assignmentId: ownerRow.assignment_id },
+        });
+      r.status(403);
     });
 
     await ctx.step('a malformed assignment id is a 404, never a 500', async () => {

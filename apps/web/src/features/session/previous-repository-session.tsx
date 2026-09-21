@@ -1,13 +1,23 @@
 'use client';
 
 import { GitBranchIcon } from '@phosphor-icons/react';
-import Link from 'next/link';
 
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
-import { EmptyState } from '@/features/layout/section/empty-state';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { useTranslations } from '@/i18n/use-translations';
 import { isSessionStartError } from '@kortix/sdk';
+
+function repositoryGeneration(metadata: Record<string, unknown> | null | undefined): string | null {
+  const generation = metadata?.repository_generation;
+  return typeof generation === 'string' && generation.length > 0 ? generation : null;
+}
+
+export function sessionUsesPreviousRepository(
+  projectMetadata: Record<string, unknown> | null | undefined,
+  sessionMetadata: Record<string, unknown> | null | undefined,
+): boolean {
+  const current = repositoryGeneration(projectMetadata);
+  return current !== null && repositoryGeneration(sessionMetadata) !== current;
+}
 
 export function isPreviousRepositorySessionError(error: unknown): boolean {
   return isSessionStartError(error) && error.code === 'session_repository_changed';
@@ -17,42 +27,16 @@ export function isPreviousRepositoryRuntimeUnavailableError(error: unknown): boo
   return isSessionStartError(error) && error.code === 'previous_repository_runtime_unavailable';
 }
 
-export function PreviousRepositorySession({
-  projectId,
-  canResume,
-  isResuming,
-  onResume,
-  onDelete,
-}: {
-  projectId: string;
-  canResume: boolean;
-  isResuming: boolean;
-  onResume: () => void;
-  onDelete: () => void;
-}) {
+export function PreviousRepositoryNotice() {
   const t = useTranslations('sessionPage.previousRepository');
 
   return (
-    <EmptyState
+    <InfoBanner
+      tone="warning"
       icon={GitBranchIcon}
-      title={t('title')}
-      description={canResume ? t('message') : t('unavailable')}
-      action={
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          {canResume ? (
-            <Button size="sm" onClick={onResume} disabled={isResuming} aria-busy={isResuming}>
-              {isResuming ? <Loading className="size-3.5 shrink-0" /> : null}
-              {isResuming ? t('resuming') : t('resume')}
-            </Button>
-          ) : null}
-          <Button asChild size="sm" variant={canResume ? 'outline' : 'default'}>
-            <Link href={`/projects/${projectId}`}>{t('newSession')}</Link>
-          </Button>
-          <Button size="sm" variant="ghost" onClick={onDelete}>
-            {t('delete')}
-          </Button>
-        </div>
-      }
-    />
+      className="rounded-none border-x-0 border-t-0"
+    >
+      {t('message')}
+    </InfoBanner>
   );
 }

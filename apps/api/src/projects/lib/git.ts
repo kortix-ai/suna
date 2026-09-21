@@ -37,7 +37,7 @@ import type { GitPrincipal } from '../../git-proxy/ref-policy';
 import {
   workspaceMetadataAllowsRepositoryAccess,
 } from './session-workspace-access';
-import { repositoryGeneration, sessionUsesCurrentRepository } from './repository-generation';
+import { repositoryGeneration } from './repository-generation';
 
 // Memoized briefly (positive hits only): this runs on every project-scoped
 // request. Each DB statement is a fast same-region roundtrip (~3ms measured,
@@ -920,7 +920,7 @@ export async function authorizeGitProxy(
   if (hit && hit.expiresAt > now && hit.value.ok) {
     const current = await currentGitProxyProject(projectId);
     if (current && sameRepository(current, hit.value.project)) {
-      return checkGitProxySessionGeneration(hit.value, current);
+      return { ...hit.value, project: current };
     }
     gitProxyAuthzMemo.delete(key);
   }
@@ -930,8 +930,7 @@ export async function authorizeGitProxy(
     if (!current || !sameRepository(current, verdict.project)) {
       return { ok: false, status: 409, message: 'Repository changed during authorization; retry the request' };
     }
-    const checked = await checkGitProxySessionGeneration(verdict, current);
-    if (!checked.ok) return checked;
+    const checked = { ...verdict, project: current };
     gitProxyAuthzMemo.set(key, { value: checked, expiresAt: now + GIT_PROXY_AUTHZ_TTL_MS });
     if (gitProxyAuthzMemo.size > 10_000) {
       for (const [k, v] of gitProxyAuthzMemo) if (v.expiresAt <= now) gitProxyAuthzMemo.delete(k);
@@ -949,21 +948,6 @@ async function currentGitProxyProject(projectId: string): Promise<ProjectRow | n
 function sameRepository(a: ProjectRow, b: ProjectRow): boolean {
   return a.repoUrl === b.repoUrl &&
     repositoryGeneration(a.metadata as Record<string, unknown>) === repositoryGeneration(b.metadata as Record<string, unknown>);
-}
-
-async function checkGitProxySessionGeneration(
-  verdict: Extract<GitProxyAuth, { ok: true }>,
-  project: ProjectRow,
-): Promise<GitProxyAuth> {
-  if (verdict.principal.kind !== 'session') return { ...verdict, project };
-  const [session] = await db.select({ metadata: projectSessions.metadata })
-    .from(projectSessions)
-    .where(and(eq(projectSessions.sessionId, verdict.principal.sessionId), eq(projectSessions.projectId, project.projectId)))
-    .limit(1);
-  if (!session || !sessionUsesCurrentRepository(
-    project.metadata as Record<string, unknown>, session.metadata as Record<string, unknown>,
-  )) return { ok: false, status: 409, message: 'Session belongs to a previous repository' };
-  return { ...verdict, project };
 }
 
 async function authorizeGitProxyUncached(

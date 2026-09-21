@@ -5,6 +5,7 @@ import {
   configurePreviousRepositorySession,
   createDatabaseSession,
 } from '../../src/fixtures/database-project';
+import { seedSessionTranscript } from '../../src/fixtures/session-transcript';
 import { createApiJsonClient } from '../helpers/http';
 import {
   type ManifestProject,
@@ -25,7 +26,7 @@ const authOptions = {
   password: 'PreviousRepository123!',
 };
 
-test('31 — previous repository session offers one explicit preserved-workspace bypass', async ({
+test('31 — previous repository session loads history without a repository gate', async ({
   page,
 }, testInfo) => {
   test.setTimeout(180_000);
@@ -66,20 +67,28 @@ test('31 — previous repository session offers one explicit preserved-workspace
       accountId,
       preserveRuntime: true,
     });
+    const transcript = await seedSessionTranscript(env, {
+      projectId: project.id,
+      accountId,
+      sessionId,
+      ensureSandbox: false,
+    });
+    await api(auth.access_token, 'PATCH', `/projects/${project.id}/features`, {
+      feature: 'session_transcript_history',
+      enabled: true,
+    });
 
     const route = `/projects/${project.id}/sessions/${sessionId}`;
     await installBrowserSessionDirect(page, auth, route, authOptions);
     await selectAccountForUi(page, accountId);
     await dismissOnboarding(page);
 
-    let previousModeRequests = 0;
+    let startRequests = 0;
+    const repositoryModes: Array<string | null> = [];
     await page.route(`**/sessions/${sessionId}/start*`, async (requestRoute) => {
       const url = new URL(requestRoute.request().url());
-      if (url.searchParams.get('repository_mode') !== 'previous') {
-        await requestRoute.continue();
-        return;
-      }
-      previousModeRequests += 1;
+      startRequests += 1;
+      repositoryModes.push(url.searchParams.get('repository_mode'));
       await requestRoute.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -88,30 +97,31 @@ test('31 — previous repository session offers one explicit preserved-workspace
           agent_name: 'default',
           retriable: true,
           sandbox: null,
-          opencode_session_id: null,
+          opencode_session_id: transcript.root,
           runtime_transport: 'rest',
         }),
       });
     });
 
     await page.goto(route, { waitUntil: 'domcontentloaded' });
-    const previousRepositoryTitle = page.getByText('Session uses previous repository', {
-      exact: true,
-    });
-    await expect(previousRepositoryTitle).toBeVisible();
     await dismissWelcomeCard(page);
+    await expect.poll(() => startRequests).toBeGreaterThan(0);
+    expect(repositoryModes).toEqual([null]);
+    await expect(page.getByText('Show my saved conversation.', { exact: true })).toBeVisible();
+    await expect(
+      page.getByText('This reply is stored in the database.', { exact: true }),
+    ).toBeVisible();
     await expect(
       page.getByText(
-        'This session keeps its previous workspace. You can resume it, but Git fetch, push, and change requests stay disabled.',
+        "This workspace started from the project's previous repository. Git now connects to the current repository. Review changes before you push.",
         { exact: true },
       ),
     ).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Resume previous workspace' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Start new session' })).toHaveAttribute(
-      'href',
-      `/projects/${project.id}`,
+    await expect(page.getByRole('button', { name: 'Resume previous workspace' })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Continue in current repository' })).toHaveCount(0);
+    await expect(page.getByText('Session uses previous repository', { exact: true })).toHaveCount(
+      0,
     );
-    await expect(page.getByRole('button', { name: 'Delete session' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Retry' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Copy prompt' })).toHaveCount(0);
 
@@ -122,24 +132,25 @@ test('31 — previous repository session offers one explicit preserved-workspace
     });
 
     await page.setViewportSize({ width: 720, height: 480 });
-    await expect(previousRepositoryTitle).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Resume previous workspace' })).toBeVisible();
+    await expect(page.getByText('Show my saved conversation.', { exact: true })).toBeVisible();
+    await expect(
+      page.getByText(
+        "This workspace started from the project's previous repository. Git now connects to the current repository. Review changes before you push.",
+        { exact: true },
+      ),
+    ).toBeVisible();
     await page.screenshot({
       animations: 'disabled',
       path: testInfo.outputPath('previous-repository-session-720x480.png'),
       fullPage: true,
     });
     await page.evaluate(() => document.documentElement.classList.add('dark'));
-    await expect(previousRepositoryTitle).toBeVisible();
+    await expect(page.getByText('Show my saved conversation.', { exact: true })).toBeVisible();
     await page.screenshot({
       animations: 'disabled',
       path: testInfo.outputPath('previous-repository-session-dark-720x480.png'),
       fullPage: true,
     });
-
-    await page.getByRole('button', { name: 'Resume previous workspace' }).click();
-    await expect.poll(() => previousModeRequests).toBeGreaterThan(0);
-    await expect(previousRepositoryTitle).toHaveCount(0);
   } finally {
     await project?.dispose();
     await deleteAuthUser(owner.id, authOptions);

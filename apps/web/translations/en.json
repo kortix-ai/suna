@@ -1599,7 +1599,7 @@
     },
     "previousRepository": {
       "title": "Session uses previous repository",
-      "message": "This session keeps its previous workspace. You can resume it, but Git fetch, push, and change requests stay disabled.",
+      "message": "This workspace started from the project's previous repository. Git now connects to the current repository. Review changes before you push.",
       "unavailable": "The previous workspace is no longer available. Start a new session in the current repository.",
       "resume": "Resume previous workspace",
       "resuming": "Resuming…",
@@ -1619,8 +1619,6 @@
     "search": "Search models",
     "free": "Free",
     "included": "Included",
-    "projectDefaultAccount": "Project default",
-    "useAccount": "Use account",
     "addProvider": "Add provider",
     "connectProvider": "Connect provider",
     "manageModels": "Manage models",

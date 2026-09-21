@@ -1599,7 +1599,7 @@
     },
     "previousRepository": {
       "title": "会话使用先前的仓库",
-      "message": "此会话保留先前的工作区。你可以恢复它，但 Git fetch、push 和变更请求仍会被禁用。",
+      "message": "此工作区基于项目先前的仓库创建。Git 现在连接到当前仓库。请在 push 前检查更改。",
       "unavailable": "先前的工作区已不可用。请在当前仓库中启动新会话。",
       "resume": "恢复先前的工作区",
       "resuming": "正在恢复…",
@@ -1619,8 +1619,6 @@
     "search": "搜索模型",
     "free": "免费",
     "included": "已包含",
-    "projectDefaultAccount": "项目默认",
-    "useAccount": "使用账户",
     "addProvider": "添加提供商",
     "connectProvider": "连接提供商",
     "manageModels": "管理模型",
