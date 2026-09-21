@@ -7215,3 +7215,42 @@ write` on every publish job, so npm Trusted Publishing (OIDC) needs no code
 change — only a per-package Trusted Publisher entry on npmjs.com for
 `@kortix/llm-catalog`, `@kortix/sdk` and `@kortix/agent-tunnel`. That removes
 the stored `NPM_TOKEN` and this expiry failure mode entirely.
+
+### 2026-09-21 — A job that hits `timeout-minutes` concludes `cancelled`, not `failure`, so `if: failure()` misses a hang
+
+**When:** writing any job that must react to another job going red — a
+notifier, a reporter, a cleanup — or sizing `timeout-minutes`.
+
+**Rule 1.** Gate the reactor on the result, not on `failure()`:
+`if: github.event_name == 'push' && !cancelled() && needs.<job>.result != 'success'`.
+A job killed by its own `timeout-minutes` concludes `cancelled`. `failure()`
+stays false for it, so a hang reports nothing. `cancelled()` is true only when
+the whole run is cancelled (a superseded commit), which is the one case that
+must stay silent.
+
+**Rule 2.** Size a cap from measured runs, as a hang detector. The test lanes
+had `timeout-minutes: 60` for work whose slowest lane measured p50 370s, max
+570s over 57 runs. Now 20.
+
+**Rule 3.** A `pull_request` run takes its workflow FILES from the merge ref
+(`refs/pull/N/merge` = head merged into the current base), not from the branch
+head. A workflow change on `main` therefore reaches every open PR at its next
+push, with no action. Proven with a probe PR cut from pre-change `main` (#7442):
+it still carried the deleted `tests-pr.yml`, ran 0 of it, and ran the new
+`tests.yml`. A PR with a merge conflict has no merge ref and runs no
+`pull_request` workflow at all.
+
+**Near-miss.** #7415 moved the local suite off every PR and onto every push to
+`main`, with `trunk-report` commenting on a red commit. It shipped with
+`if: failure()`; an adversarial review caught the hole before merge. The first
+real trunk run (35569621180) then hit exactly that case: `@kortix/cli` hung in
+the `packages` lane for the full 60 min, the lane concluded `cancelled`, and
+only the corrected condition posted the verdict. Under `failure()`, `main` would
+have been red for an hour with no signal. The same run's manual re-run failed in
+55s on `npm E404` for a package published 3.5 minutes earlier: two different
+pre-existing flakes, both false alarms against an innocent commit.
+
+**Enforcement.** `tests/unit/sandbox-workflow.test.ts` pins the `trunk-report`
+condition, rejects `failure()` on its `if:` line, and pins
+`timeout-minutes: 20` on the lanes; each was proven to fail on a seeded
+revert. PRs #7415, #7443.

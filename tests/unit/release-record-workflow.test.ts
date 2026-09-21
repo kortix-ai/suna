@@ -370,4 +370,27 @@ describe('deploy-prod: github-release refuses an incomplete Release', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  // npm's registry refuses a sigstore provenance bundle built anywhere but a
+  // GitHub-hosted runner: v0.13.25 (run 35589361726) failed every publish with
+  // `E422 ... Unsupported GitHub Actions runner environment` on
+  // blacksmith-4vcpu-ubuntu-2404, AFTER Trusted Publishing had authenticated
+  // and signed. Speed buys nothing on these jobs; provenance does.
+  it('publishes npm packages from a GitHub-hosted runner, never Blacksmith', () => {
+    const publishJobs = [
+      'Publish @kortix/llm-catalog to npm',
+      'Publish @kortix/sdk to npm',
+      'Publish @kortix/agent-tunnel to npm',
+      'Publish and deprecate final @kortix/executor-sdk',
+    ];
+    const lines = workflow.split('\n');
+    for (const name of publishJobs) {
+      const at = lines.findIndex((l) => l.includes(`name: ${name}`));
+      expect(at, `job not found: ${name}`).toBeGreaterThan(-1);
+      const runsOn = lines.slice(at, at + 8).find((l) => l.trim().startsWith('runs-on:'));
+      expect(runsOn, `no runs-on for ${name}`).toBeDefined();
+      expect(runsOn, `${name} must not run on Blacksmith`).not.toMatch(/blacksmith/i);
+      expect(runsOn, `${name} must be GitHub-hosted`).toContain('ubuntu-latest');
+    }
+  });
 });

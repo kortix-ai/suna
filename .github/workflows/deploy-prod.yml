@@ -438,7 +438,10 @@ jobs:
   publish-llm-catalog:
     name: Publish @kortix/llm-catalog to npm
     needs: version
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    # npm rejects sigstore provenance built on a non-GitHub-hosted runner
+    # (E422 'Unsupported GitHub Actions runner environment', v0.13.25,
+    # run 35589361726). Trusted Publishing needs a GitHub-hosted runner.
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
@@ -474,7 +477,10 @@ jobs:
   publish-sdk:
     name: Publish @kortix/sdk to npm
     needs: [version, publish-llm-catalog]
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    # npm rejects sigstore provenance built on a non-GitHub-hosted runner
+    # (E422 'Unsupported GitHub Actions runner environment', v0.13.25,
+    # run 35589361726). Trusted Publishing needs a GitHub-hosted runner.
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
@@ -510,7 +516,10 @@ jobs:
   publish-agent-tunnel:
     name: Publish @kortix/agent-tunnel to npm
     needs: version
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    # npm rejects sigstore provenance built on a non-GitHub-hosted runner
+    # (E422 'Unsupported GitHub Actions runner environment', v0.13.25,
+    # run 35589361726). Trusted Publishing needs a GitHub-hosted runner.
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
@@ -545,7 +554,10 @@ jobs:
     name: Publish and deprecate final @kortix/executor-sdk
     needs: [version, publish-sdk]
     if: ${{ needs.version.outputs.version == '0.12.5' }}
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    # npm rejects sigstore provenance built on a non-GitHub-hosted runner
+    # (E422 'Unsupported GitHub Actions runner environment', v0.13.25,
+    # run 35589361726). Trusted Publishing needs a GitHub-hosted runner.
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write

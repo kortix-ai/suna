@@ -18,6 +18,10 @@ redeploy on demand.
   `dev-api.kortix.com/v1/health` and builds only surfaces stale vs it; if that
   SHA can't be resolved it FAILS SAFE and builds everything.
 
+- **Tests in parallel:** the same push runs `tests.yml` (six lanes) on the merge
+  commit. It never gates or delays the deploy. A red run comments on the commit
+  with the failing lanes; a cancelled run means a newer push superseded it.
+
 `staging` and `prod` are unaffected — promote-gated, never per-push (see the
 `kortix-release` skill).
 

@@ -190,8 +190,12 @@ It is not a save point, and it is not how you show someone your work.
    `preview` label. That builds a complete self-host preview for the branch — its
    own PostgreSQL, Supabase, API, gateway, frontend, and HTTPS origin. This is how
    work is shared and reviewed internally. **Sharing never requires merging.**
+   The `preview` label also runs the six-lane `Tests` suite on the PR.
 3. Run the relevant local unit, type, integration, and end-to-end checks with
-   real inputs and outputs. Keep the PR green as you go, not at the end.
+   real inputs and outputs. **CI does not run the local suite on a PR into
+   `main`** — run it yourself (narrowest command first, then `pnpm test`), or
+   add the `test` label to get the six CI lanes (~8 min, no push needed). Keep
+   the PR green as you go, not at the end.
 4. Merge `main` into the canonical branch daily. A branch that diverges for weeks
    detonates on merge exactly like a 1,500-line PR does.
 5. **Never merge to `main` without the user's explicit approval of that merge.**
@@ -211,7 +215,9 @@ It is not a save point, and it is not how you show someone your work.
    if yours was cancelled before it deployed, the next push re-picks-up your
    still-stale surface, or force it with
    `gh workflow run deploy-dev.yml -f surface=all`. Full procedure, surfaces,
-   and verification: `docs/runbooks/deploy-dev.md`.
+   and verification: `docs/runbooks/deploy-dev.md`. The same push runs the
+   `Tests` suite on the merge commit in parallel. It does not gate the deploy.
+   A red run comments on the commit and names the failing lanes — read it.
 8. Re-run the user-visible behavior against `https://dev.kortix.com` and/or
    `https://dev-api.kortix.com`. Prefer the real Kortix CLI configured for the
    dev API for CLI/project/session flows, and direct authenticated HTTP calls for
