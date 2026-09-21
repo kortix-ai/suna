@@ -495,17 +495,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
     openrouterProvider: { only: ['deepinfra/fp8'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
   },
   {
-    id: 'deepseek-v4-pro-0813', name: 'DeepSeek V4 Pro 0813',
-    upstreamModelId: 'deepseek/deepseek-v4-pro-0813',
-    transport: 'openrouter', pricingRef: 'openrouter/deepseek/deepseek-v4-pro-0813',
-    pricing: { inputPerMillion: 0.7, cachedInputPerMillion: 0.033, outputPerMillion: 2.96 },
-    tier: 'balanced', vision: false, limit: { context: 1_048_576, output: 384_000 },
-    openrouterProvider: {
-      only: ['sail-research/us'], allow_fallbacks: false, zdr: true, data_collection: 'deny',
-    },
-  },
-  {
-    id: 'glm-5.3-flash', name: 'GLM-5.3-Flash', upstreamModelId: 'z-ai/glm-5.3-flash',
+    id: 'glm-5.3-flash', name: 'GLM 5.3 Flash', upstreamModelId: 'z-ai/glm-5.3-flash',
     transport: 'openrouter', pricingRef: 'openrouter/z-ai/glm-5.3-flash',
     pricing: { inputPerMillion: 0.15, cachedInputPerMillion: 0.05, outputPerMillion: 0.5 },
     tier: 'fast', vision: true, limit: { context: 1_048_576, output: 16_384 },

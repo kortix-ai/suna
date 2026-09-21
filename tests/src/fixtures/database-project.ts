@@ -130,6 +130,32 @@ export async function setDatabaseEnterpriseDemo(
   }
 }
 
+export async function fundDatabaseAccount(
+  env: Env,
+  accountId: string,
+  open: OpenProjectDb = openProjectDb,
+): Promise<void> {
+  const databaseUrl = assertDatabaseFixtureAllowed(env, "fund account for");
+  const client = await open(databaseUrl);
+  try {
+    await client.query(
+      `INSERT INTO kortix.credit_accounts (
+         account_id, balance, balance_precise,
+         non_expiring_credits, non_expiring_credits_precise, tier
+       ) VALUES ($1::uuid, 1000, 1000, 1000, 1000, 'tier_2_20')
+       ON CONFLICT (account_id) DO UPDATE SET
+         balance = 1000,
+         balance_precise = 1000,
+         non_expiring_credits = 1000,
+         non_expiring_credits_precise = 1000,
+         tier = 'tier_2_20'`,
+      [accountId],
+    );
+  } finally {
+    await client.end();
+  }
+}
+
 export async function mergeDatabaseProjectMetadata(
   env: Env,
   projectId: string,
@@ -197,6 +223,58 @@ export async function createDatabaseSession(
     await client.end();
   }
   return sessionId;
+}
+
+/**
+ * Reproduce a repository replacement without calling GitHub. The fixture pins
+ * the project and session to different generations and can retain one inert
+ * sandbox identity for the preserved-workspace start contract.
+ */
+export async function configurePreviousRepositorySession(
+  env: Env,
+  input: {
+    projectId: string;
+    sessionId: string;
+    accountId: string;
+    preserveRuntime: boolean;
+  },
+  open: OpenProjectDb = openProjectDb,
+): Promise<void> {
+  const databaseUrl = assertDatabaseFixtureAllowed(env, "configure previous-repository session for");
+  const client = await open(databaseUrl);
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `UPDATE kortix.projects
+       SET metadata = COALESCE(metadata, '{}'::jsonb) || '{"repository_generation":"generation-current"}'::jsonb
+       WHERE project_id = $1::uuid`,
+      [input.projectId],
+    );
+    await client.query(
+      `UPDATE kortix.project_sessions
+       SET status = 'stopped',
+           sandbox_provider = 'daytona',
+           metadata = COALESCE(metadata, '{}'::jsonb) || '{"repository_generation":"generation-previous"}'::jsonb
+       WHERE session_id = $1 AND project_id = $2::uuid`,
+      [input.sessionId, input.projectId],
+    );
+    if (input.preserveRuntime) {
+      await client.query(
+        `INSERT INTO kortix.session_sandboxes (
+           sandbox_id, session_id, account_id, project_id, provider, external_id, status, config, metadata
+         ) VALUES ($1::uuid, $1, $2::uuid, $3::uuid, 'daytona', $4, 'error', '{}'::jsonb, '{}'::jsonb)
+         ON CONFLICT (sandbox_id) DO UPDATE
+         SET external_id = EXCLUDED.external_id, status = EXCLUDED.status`,
+        [input.sessionId, input.accountId, input.projectId, `ke2e-preserved-${input.sessionId}`],
+      );
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    await client.end();
+  }
 }
 
 /** Read one prompt attachment's retention state: remaining references, and whether the cleanup sweep may remove it now. */

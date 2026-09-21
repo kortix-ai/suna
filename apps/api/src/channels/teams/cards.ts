@@ -80,8 +80,26 @@ function planContainer(title: string, steps: StreamTaskChunk[]): CardElement[] {
   return elements;
 }
 
-export function buildPlanCard(title: string, steps: StreamTaskChunk[]): Record<string, unknown> {
-  return card(planContainer(title, steps));
+export const TEAMS_STOP_VERB = 'teams_stop';
+
+/**
+ * The live "working on it" card.
+ *
+ * `sessionId` adds the Stop button. Every other Kortix surface can end a run
+ * the moment it goes wrong; in Teams the only lever was to wait out the
+ * 30-minute GC, and a wedged turn swallowed every later message in the
+ * conversation (dev 2026-09-19). The button carries the session id because the
+ * invoke that comes back names no turn of its own.
+ */
+export function buildPlanCard(
+  title: string,
+  steps: StreamTaskChunk[],
+  sessionId?: string,
+): Record<string, unknown> {
+  return card(
+    planContainer(title, steps),
+    sessionId ? [executeAction('Stop', TEAMS_STOP_VERB, { sessionId })] : undefined,
+  );
 }
 
 export function buildFinalCard(opts: {
@@ -235,6 +253,41 @@ export function buildSelectCard(opts: {
   return card(body);
 }
 
+/**
+ * The agent picker, in both of its moods.
+ *
+ * `/agents` builds the neutral one: the conversation's current pick is marked
+ * "✓ In use". A failed session start builds the recovery one by passing `lead`
+ * — it leads with the failure, marks nothing as current (the conversation's own
+ * pick is the dead agent it is replacing), and closes with what to do next.
+ * Both carry the same `teams_set_agent` verb, so one tap fixes the conversation
+ * either way and `interactivity.ts` needs no second handler.
+ */
+export function buildAgentPickerCard(opts: {
+  agents: ReadonlyArray<{ name: string; description?: string | null }>;
+  current: string | null;
+  lead?: { title: string; subtitle: string };
+}): Record<string, unknown> {
+  const current = opts.lead ? null : opts.current;
+  const options: SelectOption[] = [
+    { label: 'Default', current: !opts.lead && !current, data: { agent: '' } },
+    ...opts.agents.slice(0, 6).map((a) => ({
+      label: a.name,
+      hint: a.description ?? undefined,
+      current: current === a.name,
+      data: { agent: a.name },
+    })),
+  ];
+  return buildSelectCard({
+    emoji: opts.lead ? '⚠️' : '🤖',
+    title: opts.lead?.title ?? 'Agent',
+    subtitle: opts.lead?.subtitle ?? (current ? `Currently ${current}` : 'Currently the default agent'),
+    verb: 'teams_set_agent',
+    options,
+    ...(opts.lead ? { footer: 'Pick one, then send your message again.' } : {}),
+  });
+}
+
 export function buildPanelCard(opts: {
   emoji?: string;
   title: string;
@@ -358,5 +411,109 @@ export function buildHelpCard(commands: Array<{ cmd: string; desc: string }>): R
   return card([
     ...headerBlock('⚡', 'Kortix commands', 'Run a command, or just @-mention me with a task.'),
     emphasisContainer(rows),
+  ]);
+}
+
+// ─── Forms: real inputs, not a list of options in prose ─────────────────────
+//
+// Teams' only rich surface is the Adaptive Card, and a card can carry actual
+// inputs — text boxes, dropdowns, toggles, dates — with one Submit. An
+// `Action.Execute` returns every input's value to the bot in
+// `activity.value.action.data`, keyed by the input's `id`, alongside the
+// action's own data. `channels/teams/interactivity.ts` reads them back under
+// the `teams_form` verb and feeds the answers into the session as the user's
+// next message, so a form round-trips exactly like a typed reply.
+//
+// The card is built HERE rather than handed over as raw JSON by the agent so
+// the submit verb, the field ids and the branding cannot drift, and so a
+// malformed spec fails server-side instead of rendering a dead button.
+
+export const TEAMS_FORM_VERB = 'teams_form';
+
+/** One input on a form card. `type` maps onto the Adaptive Card input set. */
+export interface TeamsFormField {
+  id: string;
+  label: string;
+  type?: 'text' | 'textarea' | 'number' | 'date' | 'time' | 'choice' | 'multichoice' | 'toggle';
+  placeholder?: string;
+  value?: string;
+  required?: boolean;
+  /** For `choice` / `multichoice`. A bare string is both label and value. */
+  choices?: Array<string | { title: string; value: string }>;
+}
+
+export interface TeamsFormSpec {
+  title?: string;
+  subtitle?: string;
+  submitLabel?: string;
+  fields: TeamsFormField[];
+}
+
+const MAX_FORM_FIELDS = 12;
+const MAX_CHOICES = 24;
+
+function choiceList(field: TeamsFormField): CardElement[] {
+  return (field.choices ?? [])
+    .slice(0, MAX_CHOICES)
+    .map((c) => (typeof c === 'string' ? { title: c, value: c } : { title: c.title, value: c.value }))
+    .filter((c) => !!c.title && !!c.value);
+}
+
+function formInput(field: TeamsFormField): CardElement | null {
+  const id = field.id?.trim();
+  // `fieldIds` travels as a comma-joined string on the submit action, so a
+  // comma in an id would split one field into two on the way back.
+  if (!id || id.includes(',')) return null;
+  const common = { id, ...(field.required ? { isRequired: true, errorMessage: `${field.label} is required` } : {}) };
+  switch (field.type ?? 'text') {
+    case 'textarea':
+      return { type: 'Input.Text', isMultiline: true, placeholder: field.placeholder, value: field.value, ...common };
+    case 'number':
+      return { type: 'Input.Number', placeholder: field.placeholder, value: field.value, ...common };
+    case 'date':
+      return { type: 'Input.Date', value: field.value, ...common };
+    case 'time':
+      return { type: 'Input.Time', value: field.value, ...common };
+    case 'toggle':
+      return { type: 'Input.Toggle', title: field.label, value: field.value ?? 'false', valueOn: 'true', valueOff: 'false', ...common };
+    case 'choice':
+    case 'multichoice': {
+      const choices = choiceList(field);
+      if (choices.length === 0) return null;
+      return {
+        type: 'Input.ChoiceSet',
+        choices,
+        ...(field.type === 'multichoice' ? { isMultiSelect: true, style: 'expanded' } : {}),
+        placeholder: field.placeholder,
+        value: field.value,
+        ...common,
+      };
+    }
+    default:
+      return { type: 'Input.Text', placeholder: field.placeholder, value: field.value, ...common };
+  }
+}
+
+/**
+ * A card with real inputs and a Submit. Returns null when the spec carries no
+ * usable field, so a caller never posts an empty form with a dead button.
+ */
+export function buildFormCard(spec: TeamsFormSpec): Record<string, unknown> | null {
+  const fields = (spec.fields ?? []).slice(0, MAX_FORM_FIELDS);
+  const body: CardElement[] = [...headerBlock('📝', spec.title?.trim() || 'A few details', spec.subtitle)];
+  const ids: string[] = [];
+  for (const field of fields) {
+    const input = formInput(field);
+    if (!input) continue;
+    // A toggle renders its own label, so it does not get a second one.
+    if ((field.type ?? 'text') !== 'toggle') {
+      body.push(text(field.label, { weight: 'bolder', size: 'small', spacing: 'medium', wrap: true }));
+    }
+    body.push(input);
+    ids.push(field.id.trim());
+  }
+  if (ids.length === 0) return null;
+  return card(body, [
+    executeAction(spec.submitLabel?.trim() || 'Submit', TEAMS_FORM_VERB, { fieldIds: ids.join(',') }),
   ]);
 }

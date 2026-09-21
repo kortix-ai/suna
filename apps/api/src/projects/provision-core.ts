@@ -339,7 +339,9 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
       projectId,
       accountId: scope.accountId,
       slug: repoSlug,
-      message,
+      // NOT `message`: that key is the log line's own text, so the provider's
+      // reason was overwritten and never reached Better Stack (2026-09-16).
+      error: message,
     });
     return { status: 502, body: { error: message } };
   }

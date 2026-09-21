@@ -8,6 +8,9 @@ import {
   resolveProjectAutomationActor as resolveLifecycleAutomationActor,
 } from '../../projects/session-lifecycle';
 import { currentChannelSelection } from '../slack/selection';
+import { startErrorMessage, TEAMS_START_ERROR_COMMANDS } from '../start-error';
+import { buildAgentUnavailableCard } from './agent-picker';
+import { resolveAgentGrant } from '../../projects/agents';
 import { EVENT_DEDUPE_TTL_MS } from './app';
 import { ensureTeamsConversationBinding, teamsChannelCtx } from './binding';
 import { postTeamsIdentityPrompt, resolveTeamsActor, teamsUserId } from './identity';
@@ -20,10 +23,17 @@ import {
   noticeOnLiveCard,
   persistServiceUrl,
   saveTurn,
+  showStopOnLiveCard,
   startTurn,
 } from './turn';
 import { sessionWebUrl } from '../slack/util';
-import { extractTeamsAttachments, type TeamsActivity, type TeamsLiveTurn } from './types';
+import { channelTurnModel, modelReadsImages, promptModelOverride } from '../vision-model';
+import {
+  extractTeamsAttachments,
+  teamsMessageHasImage,
+  type TeamsActivity,
+  type TeamsLiveTurn,
+} from './types';
 import { describeTeamsConversation, stripTeamsMentions } from './util';
 import { ensureTeamsThreadParticipant, normalizeConversationPolicy, rememberTeamsThreadOwner } from './participants';
 
@@ -93,19 +103,50 @@ export async function deliverTeamsFollowUpToSession(input: {
   sessionId: string;
   text: string;
   userId?: string | null;
+  /** This turn only — see channels/vision-model.ts. */
+  model?: string | null;
 }) {
   return teamsSessionLifecycle.continueSession({
     source: 'teams',
     sessionId: input.sessionId,
     text: input.text,
     userId: input.userId,
+    ...(input.model ? { overrides: { model: promptModelOverride(input.model) } } : {}),
   });
+}
+
+/**
+ * The RUNNING AGENT's granted env names, resolved lazily — a `codex/*` model
+ * needs `CODEX_AUTH_JSON` there or the gateway refuses the turn. Only called
+ * when a codex candidate is actually reached.
+ */
+function agentGrantEnvFor(
+  project: { projectId: string } & Record<string, unknown>,
+  agentName: string | null,
+): () => Promise<readonly string[] | 'all' | null> {
+  return async () => {
+    // A resolution failure is NOT "unrestricted": returning an empty list
+    // makes `grantAllowsCodex` fail closed, so a turn is never pinned to a
+    // ChatGPT-backed model this agent might not be allowed to use.
+    const grant = await resolveAgentGrant(agentName || 'default', project as never).catch(() => undefined);
+    if (grant === undefined) return [];
+    const env = (grant as { env?: readonly string[] | 'all' } | null)?.env;
+    return env ?? null;
+  };
+}
+
+/** The model this session is pinned to, as `createProjectSession` recorded it. */
+function sessionModelOf(metadata: Record<string, unknown> | null | undefined): string | null {
+  const value = metadata?.opencode_model;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
 async function bindTurnToSession(handle: TeamsLiveTurn | null, sessionId: string): Promise<void> {
   if (!handle) return;
   handle.sessionId = sessionId;
   await saveTurn(handle);
+  // Stop is only paintable once the card knows which session it would end.
+  await showStopOnLiveCard(handle);
 }
 
 const ERROR_NOTICE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -171,6 +212,8 @@ function turnIsLive(turn: TeamsLiveTurn | null, sessionStatus: string | null): b
 
 async function deliverFollowUp(input: {
   projectId: string;
+  accountId: string;
+  agentGrantEnv?: () => Promise<readonly string[] | 'all' | null>;
   tenantId: string;
   conversationId: string;
   sessionId: string;
@@ -228,7 +271,41 @@ async function deliverFollowUp(input: {
     await bindTurnToSession(handle, sessionId);
   }
 
-  const outcome = await deliverTeamsFollowUpToSession({ sessionId, text: renderFollowUpPrompt(activity), userId });
+  // An image is unreadable on a text-only model, so THIS turn runs on the
+  // configured vision model. The session's own pin is untouched.
+  // Backfill the conversation's display name on every message, not only at
+  // session creation: a channel bound before the name was read off the
+  // activity showed a raw `19:…@thread.tacv2;messageid=…` in the bindings
+  // table forever. The binding helper keeps its own per-process cache, so a
+  // settled conversation costs nothing.
+  void ensureTeamsConversationBinding({
+    projectId,
+    tenantId,
+    conversationId,
+    ...describeTeamsConversation(activity),
+  }).catch((err) => console.warn('[teams-webhook] binding backfill failed', err));
+
+  const hasImage = teamsMessageHasImage(activity);
+  const currentModel = sessionModelOf(input.sessionMetadata);
+  const turnModel = await channelTurnModel({
+    projectId,
+    accountId: input.accountId,
+    userId,
+    currentModel,
+    hasImage,
+    agentGrantEnv: input.agentGrantEnv,
+  });
+  // Nothing reachable can read the image. Say so in the prompt rather than
+  // letting the agent discover it by calling `read` and finding nothing — that
+  // is what sent it hunting for ImageMagick and tesseract on 2026-09-19.
+  const imagesUnavailable =
+    hasImage && !turnModel && !modelReadsImages(projectId, currentModel || undefined);
+  const outcome = await deliverTeamsFollowUpToSession({
+    sessionId,
+    text: renderFollowUpPrompt(activity, imagesUnavailable),
+    userId,
+    model: turnModel,
+  });
 
   if (outcome === 'delivered') {
     await db
@@ -339,6 +416,8 @@ export async function createOrJoinTeamsConversationSession(input: {
     if (existing) {
       const next = await deliverFollowUp({
         projectId,
+        accountId: project.accountId,
+        agentGrantEnv: agentGrantEnvFor(project, null),
         tenantId,
         conversationId,
         sessionId: existing.sessionId,
@@ -365,6 +444,8 @@ export async function createOrJoinTeamsConversationSession(input: {
         .limit(1);
       await deliverFollowUp({
         projectId,
+        accountId: project.accountId,
+        agentGrantEnv: agentGrantEnvFor(project, null),
         tenantId,
         conversationId,
         sessionId,
@@ -380,13 +461,26 @@ export async function createOrJoinTeamsConversationSession(input: {
         tenantId,
         conversationId,
       });
-      if (handle) await finalizeTurn(handle, { error: startErrorMessage(undefined) });
+      if (handle) await finalizeTurn(handle, { error: startError(undefined, undefined) });
     }
     return;
   }
 
   await ensureTeamsConversationBinding({ projectId, tenantId, conversationId, ...describeTeamsConversation(activity) });
   const selection = await currentChannelSelection(teamsChannelCtx(tenantId, conversationId));
+
+  // A conversation that OPENS with an image has to start on a model that can
+  // read one, and a `/model` pick that has since been retired has to be
+  // replaced — the session pin is what every later turn inherits.
+  const createModel =
+    (await channelTurnModel({
+      projectId,
+      accountId: project.accountId,
+      userId,
+      currentModel: selection?.opencodeModel,
+      hasImage: teamsMessageHasImage(activity),
+      agentGrantEnv: agentGrantEnvFor(project, selection?.agentName ?? null),
+    })) ?? selection?.opencodeModel;
 
   const result = await teamsSessionLifecycle.createSession({
     source: 'teams',
@@ -396,7 +490,7 @@ export async function createOrJoinTeamsConversationSession(input: {
     body: {
       base_ref: project.defaultBranch,
       agent_name: selection?.agentName || 'default',
-      ...(selection?.opencodeModel ? { opencode_model: selection.opencodeModel } : {}),
+      ...(createModel ? { opencode_model: createModel } : {}),
       initial_prompt: renderAgentPrompt(activity, revived),
       // Title from the user's actual words — without the `<at>…</at>` mention
       // markup Teams wraps around the bot's name in channels.
@@ -426,7 +520,27 @@ export async function createOrJoinTeamsConversationSession(input: {
 
   if (result.error) {
     console.error('[teams-webhook] createProjectSession failed', { status: result.error.status, body: result.error.body });
-    if (handle) await finalizeTurn(handle, { error: startErrorMessage(result.error.status) });
+    if (handle) {
+      // A deleted / renamed / disabled agent is rejected up front as
+      // `400 AGENT_NOT_DECLARED`, and no amount of retrying revives it. Hand
+      // over the picker instead of a line of text, so one tap re-points the
+      // conversation at a live agent.
+      const code = (result.error.body as { code?: string } | undefined)?.code;
+      if (code === 'AGENT_NOT_DECLARED' && tenantId && conversationId) {
+        await finalizeTurn(handle, {
+          title: "Couldn't start — pick an agent",
+          card: await buildAgentUnavailableCard({
+            tenantId,
+            conversationId,
+            projectId,
+            badAgent: selection?.agentName ?? null,
+            teamsUserId: teamsUserId(activity),
+          }),
+        });
+      } else {
+        await finalizeTurn(handle, { error: startError(result.error.status, result.error.body) });
+      }
+    }
     return;
   }
 
@@ -450,17 +564,12 @@ export async function createOrJoinTeamsConversationSession(input: {
   }
 }
 
-function startErrorMessage(status: number | undefined): string {
-  if (status === 402) {
-    return "This workspace is out of credits, so I can't start a session. Top up in the Kortix dashboard and send your message again.";
-  }
-  if (status === 429) {
-    return 'This workspace is at its concurrent-session limit right now. Close or finish a running session, then send your message again.';
-  }
-  if (status === 404) {
-    return "I couldn't find this project to start a session — it may have been moved or deleted. Reconnect Kortix to this team and try again.";
-  }
-  return "I couldn't start a session just now. Give it a moment and send your message again — I'll reply right here.";
+// Teams' binding of the shared channel start-error classifier. It used to map
+// only 402 / 429 / 404: every error CODE and every 400, 403, 409 and 5xx
+// collapsed into "give it a moment and send your message again", which is the
+// wrong instruction for a dead sandbox template or an unlinked account.
+function startError(status: number | undefined, body: unknown): string {
+  return startErrorMessage(status, body, TEAMS_START_ERROR_COMMANDS);
 }
 
 function queuedMessage(reason?: string): string {
@@ -517,15 +626,39 @@ const TURN_INSTRUCTIONS = [
   '- Deliver the final answer with `teams send` (text, or an Adaptive Card via --card-file). One `teams send` per turn — it finalizes the live message.',
 ].join('\n');
 
+const NO_VISION_NOTE = [
+  '',
+  'IMPORTANT: no image-capable model is available in this project, so you',
+  'cannot see the attached image even after downloading it. Do not call `read`',
+  'on it and do not look for OCR tools. Tell the user plainly that you cannot',
+  'view images here, ask them to paste the text or describe it, and mention',
+  'that a project admin can enable an image-capable model.',
+].join('\n');
+
 function renderAttachments(activity: TeamsActivity): string[] {
   const attachments = extractTeamsAttachments(activity);
   if (attachments.length === 0) return [];
   const lines = ['', 'Attached files (download with `teams download --url <url> --out <path>`):'];
-  for (const a of attachments) lines.push(`- ${a.name} — ${a.downloadUrl}`);
+  for (const a of attachments) {
+    const ext = a.fileType ? `.${a.fileType}` : '';
+    lines.push(`- ${a.name}${a.isImage ? ' (image)' : ''} — ${a.downloadUrl}`);
+    if (a.isImage) {
+      lines.push(
+        `    teams download --url "${a.downloadUrl}" --out /workspace/attachment${ext || '.png'}`,
+      );
+    }
+  }
+  if (attachments.some((a) => a.isImage)) {
+    lines.push(
+      '',
+      'Then open the downloaded image with the `read` tool and answer from what you see.',
+      'Do not look for OCR tools — you can read the image directly.',
+    );
+  }
   return lines;
 }
 
-export function renderFollowUpPrompt(activity: TeamsActivity): string {
+export function renderFollowUpPrompt(activity: TeamsActivity, imagesUnavailable = false): string {
   const user = activity.from?.name ?? activity.from?.id ?? 'unknown';
   const text = stripTeamsMentions(activity.text ?? '');
   return [
@@ -533,6 +666,7 @@ export function renderFollowUpPrompt(activity: TeamsActivity): string {
     '',
     text,
     ...renderAttachments(activity),
+    ...(imagesUnavailable ? [NO_VISION_NOTE] : []),
     '',
     TURN_INSTRUCTIONS,
   ].join('\n');

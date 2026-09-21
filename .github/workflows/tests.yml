@@ -1,34 +1,39 @@
 name: Tests
 
-# The four local-profile lanes run NATIVELY on Blacksmith runners since
-# 2026-08-26. Before that each lane ran inside a Platinum/Daytona cloud sandbox
-# (a cloud-sandbox worker script) with the runner as a thin orchestrator; the
-# provider path failed on its own (Platinum restore timeouts → Daytona fallback
-# whose kernel could not mount overlay2) on roughly every third lane on
-# 2026-08-25. A Blacksmith runner already has Docker, 8 vCPU / 32 GB, a
-# transparent pnpm/actions cache, and org-wide Docker image caching (the
-# Supabase images stay pulled), so the lane is the unchanged root command:
-# `pnpm test -- <lane args>`. Pull-request previews (deploy-preview.yml) still
-# use a sandbox — they need a long-lived public HTTPS origin, which a runner
-# cannot provide.
+# The local suite: six lanes (core, browser-1..4, packages) on Blacksmith
+# runners. Each lane is the unchanged root command `pnpm test -- <args>`.
+#
+# It runs when ANY of these holds:
+#   1. a push to `main`                    — post-merge trunk signal
+#   2. a `workflow_dispatch`               — manual
+#   3. a pull request into `staging`       — the release candidate, always
+#   4. a pull request carrying `test` or `preview`
+#
+# A plain pull request into `main` does not run it. The old per-pull-request
+# gate cost ~11 min median and 68 min worst case, and it gated nothing: neither
+# `main` nor `staging` has a required status check, so a red suite never
+# blocked a merge. `main` is the dev trunk.
+#
+# `trunk-report` comments on the offending commit when a push to `main` is red.
+# A superseded (cancelled) run reports nothing. A green run runs no extra job.
+# Any label change on a labelled pull request restarts its in-flight suite:
+# `types` cannot filter by label name.
 
 on:
-  workflow_call:
-    inputs:
-      mode:
-        description: Root test mode.
-        required: false
-        default: full
-        type: string
-      artifact-name:
-        description: Uploaded artifact name.
-        required: true
-        type: string
-      retention-days:
-        description: Artifact retention in days.
-        required: false
-        default: 14
-        type: number
+  pull_request:
+    branches: [main, staging]
+    # `labeled` / `unlabeled` make the opt-in work: adding `test` to an open
+    # pull request re-triggers this workflow with no push.
+    types: [opened, reopened, synchronize, ready_for_review, labeled, unlabeled]
+  push:
+    # No `paths-ignore`: the suite parses markdown (`tests/spec/end-to-end.md`
+    # feeds route coverage), so a docs-only push can break it.
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -36,8 +41,19 @@ permissions:
 jobs:
   lane:
     name: ${{ matrix.lane }} lane
+    # `contains(<array>, 'test')` compares whole elements, so a label named
+    # `no-tests-needed` or `latest` can never match `test`.
+    if: >-
+      github.event_name != 'pull_request'
+      || github.base_ref == 'staging'
+      || contains(github.event.pull_request.labels.*.name, 'test')
+      || contains(github.event.pull_request.labels.*.name, 'preview')
     runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
-    timeout-minutes: 60
+    # 20, not 60. Over 57 measured runs the slowest lane (`packages`) had
+    # p50 370s and max 570s, so 20 min is ~2x the worst run seen. The cap is a
+    # hang detector: on 2026-09-21 `@kortix/cli` hung and the lane burned the
+    # full 60 min before `trunk-report` could say `main` was red.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -45,44 +61,45 @@ jobs:
           - lane: core
             mode: core
             args: ""
+          # Four browser shards since 2026-09-18. Measured on Blacksmith L:
+          # the suite went 10m19s (run 35384964452, N=2) -> 8m17s (run
+          # 35388565759, N=4); the browser long pole dropped 619s -> 416s.
+          # `packages` (8m01s) is now the binding lane, so a fifth browser
+          # shard cannot move the total. `--browser-shard` is Playwright's
+          # native `--shard`, which splits by test count, not by duration.
           - lane: browser-1
             mode: browser
-            args: --browser-only --browser-shard=1/2
+            args: --browser-only --browser-shard=1/4
           - lane: browser-2
             mode: browser
-            args: --browser-only --browser-shard=2/2
+            args: --browser-only --browser-shard=2/4
+          - lane: browser-3
+            mode: browser
+            args: --browser-only --browser-shard=3/4
+          - lane: browser-4
+            mode: browser
+            args: --browser-only --browser-shard=4/4
           - lane: packages
             mode: packages
             args: --packages-only
     env:
       CI: "1"
       TEST_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      TEST_MODE: ${{ inputs.mode }}
       TEST_LANE: ${{ matrix.lane }}
       TEST_ARGS: ${{ matrix.args }}
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
     steps:
-      - name: Validate the requested test mode
-        run: |
-          case "$TEST_MODE" in
-            full|core|browser|packages) ;;
-            *) echo "::error::Invalid test mode: $TEST_MODE"; exit 2 ;;
-          esac
       - uses: actions/checkout@v7
-        if: inputs.mode == 'full' || inputs.mode == matrix.mode
         with:
           ref: ${{ env.TEST_SHA }}
           fetch-depth: 1
       - uses: actions/setup-node@v7
-        if: inputs.mode == 'full' || inputs.mode == matrix.mode
         with:
           node-version: 22
       - uses: oven-sh/setup-bun@v2
-        if: inputs.mode == 'full' || inputs.mode == matrix.mode
         with:
           bun-version: 1.3.14
       - name: Install workspace dependencies
-        if: inputs.mode == 'full' || inputs.mode == matrix.mode
         run: |
           corepack enable pnpm
           echo "pnpm: $(pnpm -v)  node: $(node -v)  bun: $(bun -v)  docker: $(docker -v)"
@@ -90,35 +107,59 @@ jobs:
         env:
           npm_config_engine_strict: "false"
       - name: Restore Chromium
-        if: matrix.mode == 'browser' && (inputs.mode == 'full' || inputs.mode == matrix.mode)
+        if: matrix.mode == 'browser'
         uses: actions/cache@v4
         with:
           path: ${{ env.PLAYWRIGHT_BROWSERS_PATH }}
           key: playwright-chromium-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
       - name: Install Chromium
-        if: matrix.mode == 'browser' && (inputs.mode == 'full' || inputs.mode == matrix.mode)
+        if: matrix.mode == 'browser'
         run: pnpm --dir tests exec playwright install --with-deps chromium
+      - name: Free the local Supabase ports
+        # Blacksmith runners are reused, and a job that ended without stopping
+        # its stack leaves containers holding 54321-54324. The next
+        # `supabase start` then dies with
+        #   failed to bind host port for 0.0.0.0:54324: address already in use
+        # which looks exactly like a test failure. Seen four times on
+        # 2026-09-21 across the core, packages and browser lanes.
+        #
+        # `supabase stop` only reaches containers of the same project name, so
+        # anything else still holding a port is removed by port, not by name.
+        run: |
+          set -uo pipefail
+          pnpm exec supabase stop --no-backup || true
+          for port in 54321 54322 54323 54324; do
+            ids=$(docker ps -aq --filter "publish=$port" || true)
+            if [ -n "$ids" ]; then
+              echo "[ci] removing stale container(s) on port $port: $ids"
+              docker rm -f $ids || true
+            fi
+          done
       - name: Prestart Supabase for the browser lane
         # The root runner reuses a running local Supabase. Starting it before the
         # lane keeps Next.js cold-route compilation and the Supabase image
         # extraction from overlapping inside the runner's memory budget.
-        if: matrix.mode == 'browser' && (inputs.mode == 'full' || inputs.mode == matrix.mode)
+        if: matrix.mode == 'browser'
         run: pnpm exec supabase start --ignore-health-check
       - name: Run the root test lane
-        if: inputs.mode == 'full' || inputs.mode == matrix.mode
         run: |
           set -euo pipefail
-          if [[ "$TEST_LANE" == "packages" && "$TEST_MODE" == "full" ]]; then
+          # SDK tests run in the core lane; skipping them here keeps the
+          # binding `packages` lane as short as it can be.
+          if [[ "$TEST_LANE" == "packages" ]]; then
             export KORTIX_PACKAGE_SKIP_SDK_TESTS=1
           fi
           echo "[ci] lane=$TEST_LANE sha=$TEST_SHA command=pnpm test -- $TEST_ARGS"
           # shellcheck disable=SC2086 # TEST_ARGS is a matrix literal, split on purpose
           if [[ -n "$TEST_ARGS" ]]; then pnpm test -- $TEST_ARGS; else pnpm test; fi
       - name: Stop the local Supabase stack
-        if: always() && matrix.mode == 'browser' && (inputs.mode == 'full' || inputs.mode == matrix.mode)
+        # EVERY lane, not just the browser ones. The core and packages lanes
+        # start Supabase too (through `pnpm test`), and leaving it running is
+        # what strands the ports for the next job on a reused runner.
+        if: always()
         run: pnpm exec supabase stop --no-backup || true
       - name: Guard test artifacts against secrets
-        if: always() && (inputs.mode == 'full' || inputs.mode == matrix.mode)
+        if: always()
         run: |
           set -euo pipefail
           # grep, never rg: GitHub's ubuntu images ship no ripgrep, and with the
@@ -134,11 +175,75 @@ jobs:
           fi
           echo "No secret-shaped values found."
       - uses: actions/upload-artifact@v7
-        if: always() && (inputs.mode == 'full' || inputs.mode == matrix.mode)
+        if: always()
         with:
-          name: ${{ inputs.artifact-name }}-${{ matrix.lane }}
+          name: tests-results-${{ matrix.lane }}
           path: |
             tests/test-results/**
             !tests/test-results/deployment-bypass-state.json
           if-no-files-found: warn
-          retention-days: ${{ inputs.retention-days }}
+          retention-days: 14
+
+  trunk-report:
+    name: trunk verdict
+    needs: lane
+    # A lane that hits `timeout-minutes` concludes `cancelled`, not `failure`,
+    # so `failure()` would miss it. `cancelled()` is true only when the whole
+    # run is cancelled, which is the superseded-commit case.
+    if: github.event_name == 'push' && !cancelled() && needs.lane.result != 'success'
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    timeout-minutes: 10
+    permissions:
+      contents: write # commit comment
+      actions: read # read this run's per-lane conclusions
+    steps:
+      - name: Report the trunk verdict
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          # `|| true`: a failed lookup must not swallow the comment below.
+          failed="$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs" --paginate \
+            --jq '[.jobs[] | select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != null) | select(.name | endswith("lane")) | .name] | join(", ")' || true)"
+
+          {
+            echo "## \`main\` @ \`${SHA:0:8}\`: failure"
+            echo
+            echo "Full local suite (\`core\`, \`browser-1..4\`, \`packages\`)."
+            if [ -n "$failed" ]; then
+              echo
+              echo "Failing lanes: \`$failed\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Built line by line: every line of this script must stay indented
+          # inside the YAML block scalar, so no embedded multi-line literal.
+          {
+            echo "\`main\` is red at this commit."
+            echo
+            echo "Failing lanes: \`${failed:-see the run}\`"
+            echo
+            echo "Run: $RUN_URL"
+            echo
+            echo "This is the post-merge trunk suite (\`tests.yml\`). It did not"
+            echo "block the merge — \`main\` is the dev trunk. Reproduce locally with"
+            echo "\`pnpm test -- --full\`, or one lane at a time:"
+            echo
+            echo '```'
+            echo "pnpm test                                        # core"
+            echo "pnpm test -- --packages-only                     # packages"
+            echo "pnpm test -- --browser-only --browser-shard=1/4  # browser-1"
+            echo "pnpm test -- --browser-only --browser-shard=2/4  # browser-2"
+            echo "pnpm test -- --browser-only --browser-shard=3/4  # browser-3"
+            echo "pnpm test -- --browser-only --browser-shard=4/4  # browser-4"
+            echo '```'
+          } > /tmp/trunk-verdict.md
+
+          gh api "repos/$REPO/commits/$SHA/comments" -F body=@/tmp/trunk-verdict.md --jq '.html_url'
+          echo "::error::main is red at $SHA (lanes: ${failed:-unknown})"
+          exit 1

@@ -4,7 +4,7 @@ import { applyVerdict, getReviewItemById } from '../../projects/review-items';
 import { setChannelAgent, setChannelModel } from '../slack/selection';
 import { resolveConversationProject, setConversationProject, teamsChannelCtx } from './binding';
 import { consumePendingTeamsPickerMessage } from './auth-resume';
-import { buildNoticeCard } from './cards';
+import { TEAMS_FORM_VERB, TEAMS_STOP_VERB, buildNoticeCard } from './cards';
 import {
   createTeamsAccessRequest,
   lookupTeamsIdentity,
@@ -13,6 +13,7 @@ import {
 } from './identity';
 import { decideTeamsThreadJoin } from './participants';
 import { createOrJoinTeamsConversationSession } from './session';
+import { stopTeamsTurn } from './stop';
 import type { TeamsActivity, TeamsConversationRef } from './types';
 
 export interface TeamsInvokeResponse {
@@ -53,6 +54,10 @@ export async function handleAdaptiveCardAction(activity: TeamsActivity): Promise
       return handlePickProject(activity, action.data);
     case 'teams_answer':
       return handleAnswer(activity, action.data);
+    case TEAMS_FORM_VERB:
+      return handleForm(activity, action.data);
+    case TEAMS_STOP_VERB:
+      return handleStop(activity, action.data);
     case 'teams_review':
       return handleReview(activity, action.data);
     default:
@@ -82,6 +87,39 @@ async function handleSetModel(
   const stored = toOpencodeModelRef(model);
   await setChannelModel(ctx, stored);
   return cardResponse(buildNoticeCard(`Model set to ${labelForModelRef(stored)}.`, '✅'));
+}
+
+/**
+ * Stop the run behind the live card.
+ *
+ * The invoke carries the session id the card was drawn with; nothing about the
+ * activity itself names a turn. `stopTeamsTurn` decides whether this person may
+ * end it and settles the card, so the reply here is only what the presser is
+ * told — and a refusal reads the same to them as to anyone watching, because an
+ * `Action.Execute` response is shown to the presser alone.
+ */
+async function handleStop(
+  activity: TeamsActivity,
+  data: Record<string, unknown>,
+): Promise<TeamsInvokeResponse> {
+  const sessionId = typeof data.sessionId === 'string' ? data.sessionId : '';
+  if (!sessionId) return cardResponse(buildNoticeCard('That run is no longer available.'));
+  const outcome = await stopTeamsTurn({
+    sessionId,
+    teamsUserId: teamsUserId(activity) ?? '',
+    byName: activity.from?.name,
+  });
+  if (!outcome.stopped) return cardResponse(buildNoticeCard(outcome.notice));
+  return cardResponse(
+    buildNoticeCard(
+      outcome.stoppedRuntime
+        ? 'Stopped. The agent is no longer working on this.'
+        : // The ledger is closed either way; say so without claiming a reach we
+          // did not have. A parked or already-finished sandbox is the usual case.
+          'Stopped. The run was already closing on its own.',
+      '✅',
+    ),
+  );
 }
 
 async function handleSetAgent(
@@ -155,6 +193,60 @@ async function handleAnswer(
   }).catch((err) => console.error('[teams-webhook] answer follow-up failed', err));
 
   return cardResponse(buildNoticeCard(`Answer received: ${answer}`));
+}
+
+/**
+ * A form card's Submit. `Action.Execute` returns every `Input.*` value in
+ * `activity.value.action.data`, keyed by the input id, merged with the
+ * action's own data — so the inputs arrive here beside `verb` and `fieldIds`.
+ *
+ * `fieldIds` is the card's own list of what it asked for, written by
+ * `buildFormCard`. Reading the answers through it (rather than "every key that
+ * is not `verb`") keeps a client-supplied key out of the message, and keeps
+ * the order the user saw.
+ */
+async function handleForm(
+  activity: TeamsActivity,
+  data: Record<string, unknown>,
+): Promise<TeamsInvokeResponse> {
+  const convo = convoOf(activity);
+  if (!convo) return cardResponse(buildNoticeCard("I couldn't record that."));
+
+  const ids = typeof data.fieldIds === 'string' ? data.fieldIds.split(',').map((f) => f.trim()).filter(Boolean) : [];
+  const answered: Array<{ id: string; value: string }> = [];
+  for (const id of ids) {
+    const raw = data[id];
+    const value =
+      typeof raw === 'string' ? raw.trim() : typeof raw === 'number' || typeof raw === 'boolean' ? String(raw) : '';
+    if (value) answered.push({ id, value });
+  }
+  if (answered.length === 0) {
+    return cardResponse(buildNoticeCard('Nothing was filled in — open the form again and add at least one answer.'));
+  }
+
+  const projectId = await resolveConversationProject(convo.tenantId, convo.conversationId);
+  if (!projectId) return cardResponse(buildNoticeCard("This conversation isn't connected to a project."));
+
+  const text = ['Form submitted:', ...answered.map((a) => `- ${a.id}: ${a.value}`)].join('\n');
+  const synthetic: TeamsActivity = {
+    ...activity,
+    type: 'message',
+    text,
+    id: `${activity.id ?? 'form'}:form`,
+  };
+  void createOrJoinTeamsConversationSession({
+    projectId,
+    tenantId: convo.tenantId,
+    conversationId: convo.conversationId,
+    activity: synthetic,
+  }).catch((err) => console.error('[teams-webhook] form follow-up failed', err));
+
+  return cardResponse(
+    buildNoticeCard(
+      ['**Submitted** — working on it.', '', ...answered.map((a) => `- **${a.id}:** ${a.value}`)].join('\n'),
+      '✅',
+    ),
+  );
 }
 
 const VERDICT_MAP: Record<string, 'approve' | 'reject' | 'changes'> = {

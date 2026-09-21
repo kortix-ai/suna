@@ -40,7 +40,9 @@ import { callerKortixSessionId } from '../lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { AnyObject, ChangeRequestSchema, SessionStartResultSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
-import { sessionUsesCurrentRepository } from '../lib/repository-generation';
+import {
+  sessionUsesCurrentRepository,
+} from '../lib/repository-generation';
 import { UUID_V4_REGEX, normalizeString, readBody } from '../lib/serializers';
 import {
   continueSession,
@@ -88,10 +90,14 @@ projectsApp.openapi(
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
+      query: z.object({
+        wait_ms: z.string().optional(),
+        repository_mode: z.enum(['previous']).optional(),
+      }),
     },
     responses: {
       200: json(SessionStartResultSchema, 'Session readiness payload'),
-      ...errors(400, 402, 404, 409),
+      ...errors(400, 402, 403, 404, 409),
     },
   }),
   async (c) => {
@@ -119,15 +125,10 @@ projectsApp.openapi(
     // restartable and the UI offers a Restart that can never work. 404, the
     // same answer the read-by-id gives (see sessionIsTombstoned).
     if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
-    if (!sessionUsesCurrentRepository(
-      loaded.row.metadata as Record<string, unknown>,
-      visible.row.metadata as Record<string, unknown>,
-    )) {
-      return c.json({
-        error: 'This session belongs to a previous repository. Start a new session in the current repository.',
-        code: 'session_repository_changed',
-      }, 409);
-    }
+    const projectMetadata = loaded.row.metadata as Record<string, unknown>;
+    const sessionMetadata = visible.row.metadata as Record<string, unknown>;
+    const repositoryMode = c.req.query('repository_mode');
+    const usesCurrentRepository = sessionUsesCurrentRepository(projectMetadata, sessionMetadata);
     // The agent this session will actually run has to still be one the caller
     // may run — grants change after a session is created, and `/start` is what
     // resumes a hibernated box days later. The session's stored `agent_name`
@@ -182,7 +183,11 @@ projectsApp.openapi(
       waitMs,
     });
     stl.mark(`open-session:${result.start.stage}`);
-    stl.log({ waitMs });
+    stl.log({
+      waitMs,
+      repositoryMode: usesCurrentRepository ? 'current' : 'previous',
+      compatibilityModeRequested: repositoryMode === 'previous',
+    });
     return c.json(
       {
         ...result.start,
@@ -321,8 +326,19 @@ const SessionTurnSchema = z.object({
 
 const SessionTurnLastEndedSchema = z.object({
   turn_token: z.string(),
+  message_id: z.string().optional(),
   end_reason: z.string().nullable(),
   ended_at: z.string().nullable(),
+  error: z
+    .object({ name: z.string().nullable(), message: z.string().nullable() })
+    .optional(),
+});
+
+const SessionTurnFailureSchema = z.object({
+  message_id: z.string(),
+  ended_at: z.string().nullable(),
+  // Null when the turn failed and nobody named why.
+  error: z.object({ name: z.string().nullable(), message: z.string().nullable() }).nullable(),
 });
 
 const SessionTurnResponseSchema = z.object({
@@ -334,6 +350,7 @@ const SessionTurnResponseSchema = z.object({
   // caller reconciling by `message_id`.
   turns: z.array(SessionTurnSchema),
   last_ended: SessionTurnLastEndedSchema.optional(),
+  recent_failures: z.array(SessionTurnFailureSchema).optional(),
 });
 
 // GET /v1/projects/:projectId/sessions/:sessionId/turn

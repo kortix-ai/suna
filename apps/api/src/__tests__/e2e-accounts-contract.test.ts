@@ -505,6 +505,10 @@ mock.module('../shared/db', () => ({
     }),
     execute: async (query: unknown) => {
       const strings = collectStringValues(query);
+      if (strings.some((value) => value.includes('WITH candidates AS'))) {
+        const user = authUsers.find((candidate) => strings.includes(candidate.email));
+        return user ? [{ user_id: user.id }] : [];
+      }
       const accountId = strings.find((value) =>
         memberRows.some((row) => row.accountId === value)
       );

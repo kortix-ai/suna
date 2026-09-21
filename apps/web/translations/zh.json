@@ -1597,6 +1597,15 @@
       "title": "此会话已停止",
       "message": "其计算机已被释放。重启会话即可恢复。"
     },
+    "previousRepository": {
+      "title": "会话使用先前的仓库",
+      "message": "此工作区基于项目先前的仓库创建。Git 现在连接到当前仓库。请在 push 前检查更改。",
+      "unavailable": "先前的工作区已不可用。请在当前仓库中启动新会话。",
+      "resume": "恢复先前的工作区",
+      "resuming": "正在恢复…",
+      "newSession": "启动新会话",
+      "delete": "删除会话"
+    },
     "lost": {
       "title": "此会话的计算机已丢失",
       "message": "其云端沙盒已在服务提供商一侧消失，因此无法重启或恢复此会话。这是我们的问题，并非你的操作所致 — 系统已自动上报。已从此会话提交并推送的内容仍安全地保存在项目仓库中。"
@@ -1610,8 +1619,6 @@
     "search": "搜索模型",
     "free": "免费",
     "included": "已包含",
-    "projectDefaultAccount": "项目默认",
-    "useAccount": "使用账户",
     "addProvider": "添加提供商",
     "connectProvider": "连接提供商",
     "manageModels": "管理模型",
@@ -18560,7 +18567,35 @@
       "textc3bafa5156b4": "你还没有自己的账户",
       "textea5d0ffa0962": "共享账户由项目管理员连接。",
       "text3d6627454174": "设置凭据",
-      "text929505ef815a": "尚未连接任何账户。在下方添加你自己的账户，或请项目管理员连接一个共享账户。"
+      "text929505ef815a": "尚未连接任何账户。在下方添加你自己的账户，或请项目管理员连接一个共享账户。",
+      "text3312ddb06c1d": "在 Azure 中注册机器人，在此连接，然后将应用包上传到 Teams。",
+      "text7f1b55a356b0": "在 Azure 中注册机器人",
+      "text91004edf8b30": "将其连接到此项目",
+      "text6014c20ee34a": "将应用上传到 Teams",
+      "text22891df1ec93": "创建一个 Azure Bot 资源，然后将其指向本项目的消息传递终结点。你需要它的应用 ID、客户端密码和租户 ID。",
+      "text8dcb943dc3b2": "消息传递终结点",
+      "text2dd53600f505": "打开 Azure",
+      "text8eb37da4b2df": "创建一个 Azure Bot 资源。Multi Tenant 或 Single Tenant 均可。",
+      "textf8a542d3c304": "打开 Configuration，粘贴上面的消息传递终结点。",
+      "text4587dfe8ba37": "仍在 Configuration 中，创建客户端密码并立即复制其值——Azure 只显示一次。",
+      "text97fa07f21de8": "我已创建机器人",
+      "text576111a7aee1": "应用程序(客户端) ID",
+      "text1dc4abe27594": "目录(租户) ID",
+      "textf68f19d4f41b": "在 Azure 中机器人的 Configuration 页面上。",
+      "text39eba5dfad95": "你复制的密码值，而不是它的 ID。",
+      "texte9c014cbed45": "你的 Microsoft Entra 目录 ID，在租户的 Overview 页面上。",
+      "text408bab8e8be6": "你的清单现在包含该机器人的应用 ID。用它构建应用包并上传到 Teams。",
+      "text843ed3b90b42": "将此文件与 192×192 的 color.png 和 32×32 的透明 outline.png 一起打包为 zip。",
+      "text5c71673648a2": "在 Teams 中依次打开 Apps → Manage your apps → Upload an app，上传该 zip。",
+      "text91b9932411cc": "将应用添加到聊天或频道，然后提及它以开始会话。",
+      "textd208e2f1260f": "打开 Teams 管理中心",
+      "text98722a5463cb": "无法连接 Teams",
+      "text53e5f96332d9": "授予管理员同意，使 Kortix 机器人可以在你的租户中运行。",
+      "texte2f95a2e3a77": "在 Teams 管理中心（或 Teams → Apps → Manage your apps → Upload）中，上传由此清单和 color.png、outline.png 图标构建的应用包。",
+      "textd9692dea50e7": "将应用添加到聊天或频道，然后在下方粘贴租户 ID，以将其绑定到此项目。",
+      "text8dd795841572": "客户端密码已加密。只有此工作区的智能体可以读取。",
+      "text5cb103d6008c": "频道会话",
+      "text31d248c44579": "未命名会话"
     }
   },
   "projectOnboarding": {
@@ -19444,13 +19479,27 @@
     "managedDescription": "使用 Kortix 额度计费的托管模型。无需 API 密钥。",
     "textImage": "文本 + 图像",
     "textOnly": "仅文本",
-    "zdrTitle": "模型服务商不会保留您的提示内容",
+    "zdrTitle": "零数据保留",
     "zdrDescription": "零数据保留（ZDR）是指模型服务商处理您的文本和图片后，不会在请求结束后保存输入或回复。Kortix 会单独保存您的项目和对话记录。",
+    "usProvidersTitle": "美国服务商",
+    "usProvidersDescription": "每个 Kortix 模型固定使用一家总部位于美国的推理服务商。请求绝不会转到其他服务商。",
     "hiddenHint": "已从选择器中隐藏。仍允许直接请求；请通过模型菜单禁用。",
     "hidden": "已从选择器中隐藏",
     "disableModel": "禁用模型",
     "modelError": "无法更新模型访问权限。",
     "hiddenShort": "已从选择器中隐藏。仍允许直接请求。",
     "resetError": "无法重置模型列表。"
+  },
+  "projectChooser": {
+    "invitations": "邀请",
+    "invitedBy": "{email} 邀请了你",
+    "join": "加入",
+    "joinError": "无法加入，请重试。",
+    "unnamedWorkspace": "工作区",
+    "noPermissionTitle": "还没有工作区",
+    "noPermissionBody": "请让所有者或管理员邀请 {email}。",
+    "invitesTitle": "你收到了邀请",
+    "invitesDescription": "加入团队共享的项目，或创建你自己的项目。",
+    "createProjectInstead": "改为创建新项目"
   }
 }

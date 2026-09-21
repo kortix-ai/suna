@@ -21,9 +21,15 @@ Two ways, both from **Settings → Channels**:
   **Add to Teams** (a deep link into the Teams client) so anyone can add the
   bot to a chat or channel. If a later version of the app changes, click
   **Publish to your Teams catalog** again to push the update.
-- **Bring your own bot.** Expand the panel, toggle it on, and supply your Azure
-  Bot's app id and client secret plus the tenant id. Use this on self-hosted
-  deployments or when you run your own registration.
+- **Bring your own bot.** Click **Use your own Microsoft Teams app** for a
+  three-step wizard: register an Azure Bot, connect it to Kortix with its app
+  id, client secret and tenant id, then download the generated app package and
+  upload it to Teams. Use this on self-hosted deployments or when you run your
+  own registration.
+
+  The order matters. Kortix builds the manifest from **your** app id, so it can
+  only generate the package after step 2 — the wizard shows you the messaging
+  endpoint to paste into Azure before it asks for anything else.
 
 The CLI mirrors the dashboard:
 
@@ -36,11 +42,13 @@ kortix channels disconnect --platform teams
 ## Chats, channels, and mentions
 
 - **Personal chat:** every message reaches the bot.
-- **Team channel / group chat:** Teams delivers a message only when the bot is
-  `@`-mentioned. With the app's `ChannelMessage.Read.Group` permission (the
-  tenant admin consents when adding the app to a team), a reply in a thread the
-  bot already owns continues the session **without** a mention. A new channel
-  post still needs the mention.
+- **Team channel / group chat:** a new post needs an `@`-mention. After that,
+  a reply in a conversation the bot already owns continues the session
+  **without** one, the way a Slack thread does. That needs the app's
+  `ChannelMessage.Read.Group` (channels) and `ChatMessage.Read.Chat` (group
+  chats) permissions, which the tenant admin consents to when the app is added.
+  If the app was added before these were requested, remove and re-add it to
+  pick up the new consent.
 
 Each chat or channel conversation is its own session. The first message creates
 it; later messages continue it, even after the sandbox stops and resumes. A
@@ -71,11 +79,22 @@ Type these in a chat with the bot (in a channel, `@`-mention it first):
 | --- | --- |
 | `/help` | List the commands |
 | `/login`, `/logout`, `/whoami` | Link, unlink, or show your Kortix account |
-| `/status` | The effective project, agent, and model here |
+| `/status` | The effective project, agent and model here, and the run in progress |
+| `/stop` | Stop the run in progress here |
 | `/models`, `/model <ref>` | Pick the model for this conversation |
 | `/agents`, `/agent <name>` | Pick the agent for this conversation |
 | `/projects`, `/use <name>` | List connected projects, or point this one at another |
 | `/policy [open\|approval\|owner]` | Who may join sessions started here |
+
+## Stopping a run
+
+While the agent works, its live card carries a **Stop** button. `/stop` does
+the same thing after the card has scrolled out of reach. Either ends the run at
+the runtime, not just on the card — a run that is left open swallows the next
+message in the conversation instead of answering it.
+
+The person who sent the message being answered can stop it, as can anyone
+already working in that session. A bystander in the channel cannot.
 
 ## Files
 
@@ -84,6 +103,38 @@ for the conversation: a **consent card** in a personal chat (the recipient
 accepts, then it lands in their OneDrive), an **inline image** in a channel, or
 a **SharePoint link** for any other file shared to the team. Inbound files and
 pasted images are available to the agent to download and work with.
+
+Paste a screenshot and ask about it and the turn runs on a model that can read
+images, even when the conversation's own model is text-only — the session's
+model pick is left alone.
+
+## Questions and forms
+
+The agent asks with controls, not prose. A quick either/or arrives as a card
+with a button per option. Anything that needs typed input or several answers
+arrives as a form: text boxes, dropdowns, toggles and a Submit button, like
+asking in the Kortix app.
+
+Either way you answer in place, and your answer reaches the agent as your next
+message in the conversation. You can always ignore the card and just type.
+
+## Posting on its own
+
+Besides replying where it was asked, the agent can post into any chat or
+channel the bot is already in for this project — a nightly summary, an alert,
+a hand-off. It cannot reach a conversation it was never added to.
+
+## When a session will not start
+
+Kortix says what is wrong instead of asking you to try again, because most
+start failures never clear on a retry: a sandbox template that no longer
+exists, an account that is not linked, a project you cannot reach, or a
+workspace out of credits. Each one names the fix and the command that applies
+it.
+
+If the agent set for the conversation has been deleted or renamed, the failure
+arrives as a picker: choose a live agent, then send your message again. The
+list only offers agents you have access to.
 
 ## Limits
 

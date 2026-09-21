@@ -1597,6 +1597,15 @@
       "title": "Cette session est arrêtée",
       "message": "Son ordinateur a été libéré. Redémarrez la session pour le récupérer."
     },
+    "previousRepository": {
+      "title": "La session utilise le dépôt précédent",
+      "message": "Cet espace de travail provient du dépôt précédent du projet. Git se connecte maintenant au dépôt actuel. Vérifiez les modifications avant le push.",
+      "unavailable": "L’espace de travail précédent n’est plus disponible. Démarrez une nouvelle session dans le dépôt actuel.",
+      "resume": "Reprendre l’espace précédent",
+      "resuming": "Reprise…",
+      "newSession": "Démarrer une nouvelle session",
+      "delete": "Supprimer la session"
+    },
     "lost": {
       "title": "L’ordinateur de cette session a été perdu",
       "message": "Son environnement cloud a disparu du côté du fournisseur. Cette session ne peut donc pas être redémarrée ou récupérée. Il s’agit d’un problème de notre côté, pas d’une erreur de votre part — il a été signalé automatiquement. Tout ce qui a été validé et poussé depuis cette session est conservé dans le dépôt de votre projet."
@@ -1610,8 +1619,6 @@
     "search": "Rechercher des modèles",
     "free": "Gratuit",
     "included": "Inclus",
-    "projectDefaultAccount": "Par défaut du projet",
-    "useAccount": "Utiliser le compte",
     "addProvider": "Ajouter un fournisseur",
     "connectProvider": "Connecter un fournisseur",
     "manageModels": "Gérer les modèles",
@@ -18560,7 +18567,35 @@
       "textc3bafa5156b4": "Vous n’avez pas encore de compte personnel",
       "textea5d0ffa0962": "Un responsable du projet connecte le compte partagé.",
       "text3d6627454174": "Définir l’identifiant",
-      "text929505ef815a": "Aucun compte n’est encore connecté. Ajoutez le vôtre ci-dessous, ou demandez à un responsable du projet de connecter un compte partagé."
+      "text929505ef815a": "Aucun compte n’est encore connecté. Ajoutez le vôtre ci-dessous, ou demandez à un responsable du projet de connecter un compte partagé.",
+      "text3312ddb06c1d": "Enregistrez un bot dans Azure, connectez-le ici, puis téléversez le package de l'application dans Teams.",
+      "text7f1b55a356b0": "Enregistrer le bot dans Azure",
+      "text91004edf8b30": "Le connecter à ce projet",
+      "text6014c20ee34a": "Téléverser l'application dans Teams",
+      "text22891df1ec93": "Créez une ressource Azure Bot, puis pointez-la vers le point de terminaison de messagerie de ce projet. Vous aurez besoin de son ID d'application, d'un secret client et de votre ID de locataire.",
+      "text8dcb943dc3b2": "Point de terminaison de messagerie",
+      "text2dd53600f505": "Ouvrir Azure",
+      "text8eb37da4b2df": "Créez une ressource Azure Bot. Multi Tenant ou Single Tenant conviennent.",
+      "textf8a542d3c304": "Ouvrez Configuration et collez le point de terminaison de messagerie ci-dessus.",
+      "text4587dfe8ba37": "Toujours dans Configuration, créez un secret client et copiez sa valeur maintenant : Azure ne l'affiche qu'une fois.",
+      "text97fa07f21de8": "J'ai créé le bot",
+      "text576111a7aee1": "ID d'application (client)",
+      "text1dc4abe27594": "ID d'annuaire (locataire)",
+      "textf68f19d4f41b": "Sur la page Configuration du bot dans Azure.",
+      "text39eba5dfad95": "La valeur du secret que vous avez copiée, pas son ID.",
+      "texte9c014cbed45": "Votre ID d'annuaire Microsoft Entra, sur la page Overview du locataire.",
+      "text408bab8e8be6": "Votre manifeste contient désormais l'ID d'application de ce bot. Créez-en un package d'application et téléversez-le dans Teams.",
+      "text843ed3b90b42": "Compressez ce fichier avec un color.png de 192×192 et un outline.png transparent de 32×32.",
+      "text5c71673648a2": "Dans Teams, allez dans Apps → Manage your apps → Upload an app, puis téléversez le zip.",
+      "text91b9932411cc": "Ajoutez l'application à une conversation ou un canal, puis mentionnez-la pour démarrer une session.",
+      "textd208e2f1260f": "Ouvrir le centre d'administration Teams",
+      "text98722a5463cb": "Impossible de connecter Teams",
+      "text53e5f96332d9": "Accordez le consentement administrateur pour que le bot Kortix puisse s'exécuter dans votre locataire.",
+      "texte2f95a2e3a77": "Dans le centre d'administration Teams (ou Teams → Apps → Manage your apps → Upload), téléversez un package d'application créé à partir de ce manifeste, avec les icônes color.png et outline.png.",
+      "textd9692dea50e7": "Ajoutez l'application à une conversation ou un canal, puis collez ci-dessous votre ID de locataire pour la lier à ce projet.",
+      "text8dd795841572": "Le secret client est chiffré. Seul l'agent de cet espace de travail peut le lire.",
+      "text5cb103d6008c": "Fil de canal",
+      "text31d248c44579": "Conversation sans titre"
     }
   },
   "projectOnboarding": {
@@ -19444,13 +19479,27 @@
     "managedDescription": "Modèles gérés facturés en crédits Kortix. Aucune clé API nécessaire.",
     "textImage": "Texte + image",
     "textOnly": "Texte uniquement",
-    "zdrTitle": "Les fournisseurs de modèles ne conservent pas vos requêtes",
+    "zdrTitle": "Conservation zéro des données",
     "zdrDescription": "La conservation zéro des données (ZDR) signifie que le fournisseur traite vos textes et images, puis ne conserve ni l'entrée ni la réponse après la requête. Kortix stocke séparément vos projets et conversations.",
+    "usProvidersTitle": "Fournisseurs basés aux États-Unis",
+    "usProvidersDescription": "Chaque modèle Kortix utilise un seul fournisseur d'inférence fixe, basé aux États-Unis. Les requêtes ne basculent jamais vers un autre fournisseur.",
     "hiddenHint": "Masqué dans le sélecteur. Les requêtes directes restent autorisées ; désactivez-les dans le menu du modèle.",
     "hidden": "Masqué dans le sélecteur",
     "disableModel": "Désactiver le modèle",
     "modelError": "Impossible de modifier l’accès au modèle.",
     "hiddenShort": "Masqué dans le sélecteur. Les requêtes directes restent autorisées.",
     "resetError": "Impossible de réinitialiser la liste des modèles."
+  },
+  "projectChooser": {
+    "invitations": "Invitations",
+    "invitedBy": "Invité par {email}",
+    "join": "Rejoindre",
+    "joinError": "Impossible de rejoindre. Réessayez.",
+    "unnamedWorkspace": "Espace de travail",
+    "noPermissionTitle": "Aucun espace de travail",
+    "noPermissionBody": "Demandez à un propriétaire ou un administrateur d'inviter {email}.",
+    "invitesTitle": "Vous êtes invité",
+    "invitesDescription": "Rejoignez un projet partagé par votre équipe, ou créez le vôtre.",
+    "createProjectInstead": "Créer plutôt un nouveau projet"
   }
 }

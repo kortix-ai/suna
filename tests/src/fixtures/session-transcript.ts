@@ -7,6 +7,7 @@ export async function seedSessionTranscript(
     projectId: string;
     accountId: string;
     sessionId: string;
+    ensureSandbox?: boolean;
   },
 ) {
   if (!env.databaseUrl || env.target === 'prod')
@@ -85,10 +86,12 @@ export async function seedSessionTranscript(
         ],
       );
     }
-    await db.query(
-      "INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status, external_id, base_url) VALUES ($1::uuid,$1,$2,$3,'stopped',$1,'http://127.0.0.1:1')",
-      [input.sessionId, input.accountId, input.projectId],
-    );
+    if (input.ensureSandbox !== false) {
+      await db.query(
+        "INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status, external_id, base_url) VALUES ($1::uuid,$1,$2,$3,'stopped',$1,'http://127.0.0.1:1')",
+        [input.sessionId, input.accountId, input.projectId],
+      );
+    }
   } finally {
     await db.end();
   }
