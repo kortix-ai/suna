@@ -4,7 +4,7 @@ import { applyVerdict, getReviewItemById } from '../../projects/review-items';
 import { setChannelAgent, setChannelModel } from '../slack/selection';
 import { resolveConversationProject, setConversationProject, teamsChannelCtx } from './binding';
 import { consumePendingTeamsPickerMessage } from './auth-resume';
-import { buildNoticeCard } from './cards';
+import { TEAMS_FORM_VERB, buildNoticeCard } from './cards';
 import {
   createTeamsAccessRequest,
   lookupTeamsIdentity,
@@ -53,6 +53,8 @@ export async function handleAdaptiveCardAction(activity: TeamsActivity): Promise
       return handlePickProject(activity, action.data);
     case 'teams_answer':
       return handleAnswer(activity, action.data);
+    case TEAMS_FORM_VERB:
+      return handleForm(activity, action.data);
     case 'teams_review':
       return handleReview(activity, action.data);
     default:
@@ -155,6 +157,60 @@ async function handleAnswer(
   }).catch((err) => console.error('[teams-webhook] answer follow-up failed', err));
 
   return cardResponse(buildNoticeCard(`Answer received: ${answer}`));
+}
+
+/**
+ * A form card's Submit. `Action.Execute` returns every `Input.*` value in
+ * `activity.value.action.data`, keyed by the input id, merged with the
+ * action's own data — so the inputs arrive here beside `verb` and `fieldIds`.
+ *
+ * `fieldIds` is the card's own list of what it asked for, written by
+ * `buildFormCard`. Reading the answers through it (rather than "every key that
+ * is not `verb`") keeps a client-supplied key out of the message, and keeps
+ * the order the user saw.
+ */
+async function handleForm(
+  activity: TeamsActivity,
+  data: Record<string, unknown>,
+): Promise<TeamsInvokeResponse> {
+  const convo = convoOf(activity);
+  if (!convo) return cardResponse(buildNoticeCard("I couldn't record that."));
+
+  const ids = typeof data.fieldIds === 'string' ? data.fieldIds.split(',').map((f) => f.trim()).filter(Boolean) : [];
+  const answered: Array<{ id: string; value: string }> = [];
+  for (const id of ids) {
+    const raw = data[id];
+    const value =
+      typeof raw === 'string' ? raw.trim() : typeof raw === 'number' || typeof raw === 'boolean' ? String(raw) : '';
+    if (value) answered.push({ id, value });
+  }
+  if (answered.length === 0) {
+    return cardResponse(buildNoticeCard('Nothing was filled in — open the form again and add at least one answer.'));
+  }
+
+  const projectId = await resolveConversationProject(convo.tenantId, convo.conversationId);
+  if (!projectId) return cardResponse(buildNoticeCard("This conversation isn't connected to a project."));
+
+  const text = ['Form submitted:', ...answered.map((a) => `- ${a.id}: ${a.value}`)].join('\n');
+  const synthetic: TeamsActivity = {
+    ...activity,
+    type: 'message',
+    text,
+    id: `${activity.id ?? 'form'}:form`,
+  };
+  void createOrJoinTeamsConversationSession({
+    projectId,
+    tenantId: convo.tenantId,
+    conversationId: convo.conversationId,
+    activity: synthetic,
+  }).catch((err) => console.error('[teams-webhook] form follow-up failed', err));
+
+  return cardResponse(
+    buildNoticeCard(
+      ['**Submitted** — working on it.', '', ...answered.map((a) => `- **${a.id}:** ${a.value}`)].join('\n'),
+      '✅',
+    ),
+  );
 }
 
 const VERDICT_MAP: Record<string, 'approve' | 'reject' | 'changes'> = {

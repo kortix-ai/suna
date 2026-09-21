@@ -1597,6 +1597,15 @@
       "title": "This session is stopped",
       "message": "Its computer was released. Restart the session to bring it back."
     },
+    "previousRepository": {
+      "title": "Session uses previous repository",
+      "message": "This session keeps its previous workspace. You can resume it, but Git fetch, push, and change requests stay disabled.",
+      "unavailable": "The previous workspace is no longer available. Start a new session in the current repository.",
+      "resume": "Resume previous workspace",
+      "resuming": "Resuming…",
+      "newSession": "Start new session",
+      "delete": "Delete session"
+    },
     "lost": {
       "title": "This session's computer was lost",
       "message": "Its cloud sandbox disappeared on the provider side, so this session cannot be restarted or recovered. This is a fault on our end, not something you did — it has been reported automatically. Anything committed and pushed from this session is safe in your project's repository."

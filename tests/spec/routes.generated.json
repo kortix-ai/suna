@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 662,
+  "count": 664,
   "routes": [
     {
       "method": "GET",
@@ -1604,6 +1604,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/channels/teams/conversations"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/channels/teams/file"
     },
     {
@@ -1621,6 +1625,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/channels/teams/manifest"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/teams/message"
     },
     {
       "method": "GET",

@@ -29,6 +29,7 @@ let sessionCreateBody: Record<string, unknown> | null = null;
 let sessionList: Record<string, unknown>[] = [];
 let transcriptRequests: URL[] = [];
 let apiRequests: string[] = [];
+let clientCreatesBranch = false;
 
 function git(args: string[], cwd?: string): string {
   return execFileSync('git', args, {
@@ -98,6 +99,7 @@ describe('sessions new CLI flow', () => {
     sessionList = [];
     transcriptRequests = [];
     apiRequests = [];
+    clientCreatesBranch = false;
 
     cpSync(join(templateRoot, 'repo'), repo, { recursive: true });
     cpSync(join(templateRoot, 'origin.git'), origin, { recursive: true });
@@ -129,7 +131,7 @@ describe('sessions new CLI flow', () => {
             default_branch: 'main',
             manifest_path: 'kortix.yaml',
             status: 'active',
-            metadata: {},
+            metadata: clientCreatesBranch ? {} : { git: { managed: true } },
             last_opened_at: null,
             created_at: '2026-01-01T00:00:00.000Z',
             updated_at: '2026-01-01T00:00:00.000Z',
@@ -137,7 +139,8 @@ describe('sessions new CLI flow', () => {
         }
         if (req.method === 'POST' && url.pathname === `/v1/projects/${PROJECT_ID}/sessions`) {
           sessionCreateBody = await req.json() as Record<string, unknown>;
-          const sessionId = sessionCreateBody.session_id as string;
+          const sessionId = (sessionCreateBody.session_id as string | undefined)
+            ?? '00000000-0000-4000-a000-000000000333';
           return Response.json({
             session_id: sessionId,
             account_id: ACCOUNT_ID,
@@ -242,6 +245,7 @@ describe('sessions new CLI flow', () => {
   });
 
   test('creates the session branch with local git credentials before creating the API session', async () => {
+    clientCreatesBranch = true;
     const code = await runSessions(['new']);
 
     expect(code).toBe(0);
