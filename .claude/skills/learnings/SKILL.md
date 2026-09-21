@@ -7145,3 +7145,73 @@ no balance), flow `COST-3` (a real sandbox on a legacy-default free account
 opens a compute window), `credit-plans.test.ts` (`accountRowMetersCompute`
 truth table), and `r8-session-prompts.test.ts`, whose `checkBillingActive` mock
 throws. No enforcer yet for rule (1) in general — it is a review habit.
+
+### A release's RECORD is never gated on an external registry; "shipped but unrecorded" is its own failure mode (2026-09-21)
+
+**When:** wiring `needs:` on any job that writes a release's record — the tag,
+the GitHub Release, its binaries, the `/changelog` entry, the VERSION syncs.
+Ask, per edge: does this job's OUTPUT come from that dependency? If not, the
+edge only imports that dependency's failures.
+
+**Incident.** v0.13.25, `deploy-prod.yml` run `35589361726`, prod merge
+`b902d67fc4`. Production was live and correct — `api.kortix.com`,
+`gateway.kortix.com` and `kortix.com` all served `0.13.25`, images carried
+`0.13.25` + `latest` + `prod`, prod migrations applied. The run still ended
+`failure`: `publish-llm-catalog` and `publish-agent-tunnel` died with
+`npm error code E404` / `404 Not Found - PUT
+https://registry.npmjs.org/@kortix%2fagent-tunnel` — npm answers **404, not
+403**, for an auth failure on a package that exists, so the message names the
+wrong cause. `NPM_TOKEN` was created `2026-06-21`; a 90-day granular token
+expires ~`2026-09-19`. One edge did the damage: `publish-sdk`
+`needs: publish-llm-catalog` skipped, and `github-release` `needs:
+publish-sdk` skipped with it — taking `attach-desktop`, `announce`,
+`sync-main-version` and `sync-staging-version`. Five jobs, one edge. Prod
+shipped 0.13.25 with **no tag, no Release, no CLI or desktop binaries, no
+changelog entry, and both VERSION files still on the old target.**
+
+**Rules.**
+1. **Separate "failed to ship" from "shipped but unrecorded."** They need
+   different alarms and different recoveries. The second looks green from every
+   user-facing probe — `/health` served the new version throughout — and is
+   visible only in the run's job list. A red deploy-prod run whose product is
+   demonstrably live is this class until proven otherwise.
+2. **A release record depends on what produces its bytes.** Here that is
+   `build-cli` and `attach-desktop`, never npm. Keep the edges that are real
+   (`deploy-ecs`, `verify-live-version` — v0.10.0/v0.10.1 announced Releases
+   while the ECS deploy had failed) and delete the ones that only import risk.
+3. **Decoupling is not silencing.** A failed job fails the whole workflow run
+   whatever depends on it, so no `continue-on-error` was needed or added: the
+   run still ends red, it just no longer erases the release record.
+4. **A Release with no assets is worse than no Release.** `scripts/install.sh`
+   resolves `releases/latest` then `releases/download/${VERSION}/${ASSET}`, and
+   `apps/cli/src/update-check.ts` reads the same `latest` — so a partial
+   vX.Y.Z becomes `latest` and 404s every install. Decoupling a release job
+   from a false gate means adding the true one in the same change.
+5. **Read the run's own job list before believing the premise of a report.**
+   Two jobs blamed on npm here were not: `verify-schema` is disabled by a
+   missing `ENABLE_PROD_SCHEMA_GATE` repo variable and an in-file comment, and
+   `deploy-us-shadow` by `ENABLE_US_SHADOW_DEPLOY`. `gh run view <id> --json
+   jobs` plus a transitive-`needs` closure settles it; reasoning from the
+   failure does not.
+
+**Enforcement.** `tests/unit/release-record-workflow.test.ts` walks the whole
+`deploy-prod.yml` `needs:` graph and fails if ANY job transitively reaches an
+npm publish; it also pins `github-release`'s genuine preconditions, that the
+publish jobs carry no `continue-on-error`, and that the asset guard's expected
+list still equals `build-cli`'s `upload-artifact` paths. It EXECUTES the
+guard's real shell against staged fixtures (missing, truncated, unlisted,
+sidecar-less, empty). Proven falsifiable four ways: restoring the npm edge
+reddens 6 cases, deleting the guard step 9, drifting the upload list 2, and one
+`continue-on-error` 1.
+
+**Predecessor.** The 2026-08-26 entry above ("`github-release` needs the npm
+publishes…") named this exact decoupling as a TODO after v0.13.6 hit the same
+class from a different cause (`npm install -g npm@latest` → `EBADENGINE`). It
+was left as prose for four weeks and cost a second release. **A learning whose
+enforcer is a TODO is a scheduled repeat.**
+
+**Follow-up, not done here.** `deploy-prod.yml` already grants `id-token:
+write` on every publish job, so npm Trusted Publishing (OIDC) needs no code
+change — only a per-package Trusted Publisher entry on npmjs.com for
+`@kortix/llm-catalog`, `@kortix/sdk` and `@kortix/agent-tunnel`. That removes
+the stored `NPM_TOKEN` and this expiry failure mode entirely.
