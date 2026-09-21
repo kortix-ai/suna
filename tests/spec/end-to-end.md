@@ -120,7 +120,7 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 ## 4. Accounts & identity
 
 `ME-1` `GET /accounts/me` → 200 user + memberships. `ANON` → 401.
-`ACCT-1` `GET /accounts` → list memberships (auto-claims pending invites by email).
+`ACCT-1` `GET /accounts` → list memberships (auto-claims pending plain account invites by email; an invite carrying a project grant waits for Join via `INV-8`).
 `ACCT-2` `POST /accounts {name}` → 201 team account, caller = `owner` (an `account_memberships` identity row plus an account-scope `owner` assignment).
 `ACCT-3` `GET /accounts/:id` → member → 200; `NONMEMBER` → 403.
 `ACCT-4` `PATCH /accounts/:id {name}` → `ACCOUNT_WRITE` (OWNER/ADMIN) → 200; `MEMBER` → 403.
@@ -142,6 +142,7 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 `INV-3` `GET /account-invites/:inviteId` → describe pending invite (auth; redacts on email mismatch).
 `INV-4` `POST /account-invites/:inviteId/accept` → 200 membership created (rate-limited); already accepted by this user → 200 `{already_accepted:true}`; **expired → 410**; wrong email → 403.
 `INV-5` `POST /account-invites/:inviteId/decline` → 200; already accepted → 409; wrong email → 403; not found → 404.
+`INV-8` `GET /account-invites` → auth → 200 `{invites:[{invite_id, account_id, account_name, initial_role, inviter_email, created_at, expires_at, projects:[{project_id,name,role}]}]}`: every unexpired, unaccepted invite addressed to the caller's email, so an invitee who signed up without the email link finds it (the `/projects/start` chooser and the Switch Project menu). Another user's invites never appear; ANON → 401; an accepted invite drops out.
 
 ### Organization branding (Enterprise)
 
@@ -234,7 +235,7 @@ DB `projects` (`status active|archived`, unique `(account_id, repo_url)`). Soft 
 ### Project access (membership)
 
 `PACC-1` `GET /projects/:id/access` → `read` → members + effective project roles.
-`PACC-2` `POST /projects/:id/access/invite {email,role}` → `manage`. **Existing Kortix user → 200** — `ensureOrgMembership` auto-adds them to the org as `member` then grants the project role (account-manager target → implicit access, `project_role:null`). **Email with no Kortix account yet → 201 `{status:"invited", invite_id, invite_url, project_role}`** — an account invitation with a `bootstrap_grant` is created/merged idempotently so they land on the project at signup. Missing email / bad role → 400; non-account-member caller → 403 (`loadProjectForUser` — 404 only when the project row is missing/archived).
+`PACC-2` `POST /projects/:id/access/invite {email,role}` → `manage`. **Existing Kortix user → 200** — `ensureOrgMembership` auto-adds them to the org as `member` then grants the project role (account-manager target → implicit access, `project_role:null`). **Email with no Kortix account yet → 201 `{status:"invited", invite_id, invite_url, project_role}`** — an account invitation with a `bootstrap_grant` is created/merged idempotently. After signup the invitee sees it in `GET /account-invites` (`INV-8`) and lands on the project when they join. Nothing is auto-accepted. Missing email / bad role → 400; non-account-member caller → 403 (`loadProjectForUser` — 404 only when the project row is missing/archived).
 `PACC-3` `PUT /projects/:id/access/:userId {role}` → `manage`.
 `PACC-4` `DELETE /projects/:id/access/:userId` → `manage`.
 `PACC-7` `GET/POST/DELETE /projects/:id/resource-grants[/:grantId]` → manager-only per-resource scoping. **AGENT-ONLY (resource-model simplification): `agent` is the only member/department-scopable resource** — assigning an agent lets the assignee USE it and inherit its declared skills/connectors/secrets (to USE, not edit; editing needs the manager role). A POST with `resource_type=skill` or `secret` → **400** (agent-only; the guard runs before any config/DB load, so no existing resource is needed). Reading/listing/revoking pre-existing skill/secret grant rows still works (back-compat), but none can be CREATED. GET lists grantable resources (`$.resources.agents`) + existing grants. POST `resource_type=agent` with a real agent id + member/group principal → 201; unknown/invalid `resource_type` (e.g. `database`) → 400; invalid/foreign principal → 400/404; deleting unknown grant → 404.

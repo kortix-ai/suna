@@ -19453,13 +19453,27 @@
     "managedDescription": "Upravljani modeli se naplaćuju Kortix kreditima. API ključ nije potreban.",
     "textImage": "Текст + слика",
     "textOnly": "Само текст",
-    "zdrTitle": "Pružaoci modela ne čuvaju vaše upite",
+    "zdrTitle": "Nulto zadržavanje podataka",
     "zdrDescription": "Nulto zadržavanje podataka (ZDR) znači da pružalac modela obrađuje vaš tekst i slike, ali ne čuva ulaz ni odgovor nakon zahteva. Kortix zasebno čuva vaše projekte i razgovore.",
+    "usProvidersTitle": "Pružaoci sa sedištem u SAD",
+    "usProvidersDescription": "Svaki Kortix model radi kod jednog fiksnog pružaoca inferencije sa sedištem u SAD. Zahtevi nikada ne prelaze na drugog pružaoca.",
     "hiddenHint": "Sakriven iz birača. Direktni zahtevi su i dalje dozvoljeni; onemogućite ih u meniju modela.",
     "hidden": "Sakriven iz birača",
     "disableModel": "Onemogući model",
     "modelError": "Nije moguće ažurirati pristup modelu.",
     "hiddenShort": "Sakriven iz birača. Direktni zahtevi su i dalje dozvoljeni.",
     "resetError": "Nije moguće resetovati listu modela."
+  },
+  "projectChooser": {
+    "invitations": "Pozivi",
+    "invitedBy": "Poziva {email}",
+    "join": "Pridruži se",
+    "joinError": "Pridruživanje nije uspelo. Pokušajte ponovo.",
+    "unnamedWorkspace": "Radni prostor",
+    "noPermissionTitle": "Još nema radnog prostora",
+    "noPermissionBody": "Zamolite vlasnika ili administratora da pozove {email}.",
+    "invitesTitle": "Pozvani ste",
+    "invitesDescription": "Pridružite se projektu vašeg tima ili napravite svoj.",
+    "createProjectInstead": "Umesto toga napravite novi projekat"
   }
 }

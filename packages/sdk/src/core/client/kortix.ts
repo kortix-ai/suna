@@ -340,6 +340,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
    * genuinely don't fit account- or project-scoping.
    */
   const accountInvites = {
+    /** The caller's own pending invites, matched by email. */
+    listMine: P.listMyAccountInvites,
     describe: P.describeAccountInvite,
     accept: P.acceptAccountInvite,
     decline: P.declineAccountInvite,

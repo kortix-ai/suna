@@ -1,10 +1,11 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 import {
   accountGroupMembers,
   accountInvitations,
   accountMemberships,
   accounts,
+  projects,
 } from '@kortix/db';
 import type { AppEnv } from '../types';
 import { db } from '../shared/db';
@@ -186,6 +187,99 @@ async function applyBootstrapGrants(
   }
   return applied;
 }
+
+const MyInviteSchema = z
+  .object({
+    invite_id: z.string(),
+    account_id: z.string(),
+    account_name: z.string().nullable(),
+    initial_role: z.string(),
+    inviter_email: z.string().nullable(),
+    created_at: z.string(),
+    expires_at: z.string(),
+    /** Projects the invite grants on accept. Empty for a plain workspace invite. */
+    projects: z.array(z.object({ project_id: z.string(), name: z.string(), role: z.string() })),
+  })
+  .openapi('MyInvite');
+
+// GET /v1/account-invites — the pending invites addressed to the caller's
+// email. The chooser at /projects/start lists them, so an invitee who signs up
+// without the email link still finds the workspace or project they were
+// invited to. Only unexpired, unaccepted invites; nothing is redacted because
+// every row is addressed to the caller.
+accountInvitesRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/',
+    tags: ['accounts'],
+    summary: "List the caller's pending invites",
+    ...auth,
+    responses: {
+      200: json(z.object({ invites: z.array(MyInviteSchema) }), 'Pending invites'),
+      ...errors(401),
+    },
+  }),
+  async (c: any) => {
+    const callerEmail = normalizeEmail(c.get('userEmail') as string | undefined);
+    if (!callerEmail) return c.json({ invites: [] });
+
+    const rows = await db
+      .select({ invite: accountInvitations, accountName: accounts.name })
+      .from(accountInvitations)
+      .leftJoin(accounts, eq(accounts.accountId, accountInvitations.accountId))
+      .where(
+        and(
+          sql`lower(${accountInvitations.email}) = ${callerEmail}`,
+          isNull(accountInvitations.acceptedAt),
+          gt(accountInvitations.expiresAt, new Date()),
+        ),
+      )
+      .orderBy(accountInvitations.createdAt);
+
+    const grantsByInvite = new Map(
+      rows.map(({ invite }) => [
+        invite.inviteId,
+        (invite.bootstrapGrants ?? [])
+          .map(validateBootstrapGrant)
+          .filter((g): g is ValidatedGrant => g !== null),
+      ]),
+    );
+    const projectIds = [...new Set([...grantsByInvite.values()].flat().map((g) => g.project_id))];
+    const projectNames = new Map<string, string>();
+    if (projectIds.length > 0) {
+      const projectRows = await db
+        .select({ projectId: projects.projectId, name: projects.name, accountId: projects.accountId })
+        .from(projects)
+        .where(inArray(projects.projectId, projectIds));
+      for (const row of projectRows) projectNames.set(`${row.accountId}:${row.projectId}`, row.name);
+    }
+
+    const inviters = new Map<string, string | null>();
+    for (const { invite } of rows) {
+      if (invite.invitedBy && !inviters.has(invite.invitedBy)) {
+        inviters.set(invite.invitedBy, await lookupAuthEmail(invite.invitedBy));
+      }
+    }
+
+    return c.json({
+      invites: rows.map(({ invite, accountName }) => ({
+        invite_id: invite.inviteId,
+        account_id: invite.accountId,
+        account_name: accountName ?? null,
+        initial_role: invite.initialRole,
+        inviter_email: invite.invitedBy ? (inviters.get(invite.invitedBy) ?? null) : null,
+        created_at: invite.createdAt.toISOString(),
+        expires_at: invite.expiresAt.toISOString(),
+        // A grant only counts when its project still exists in the invite's
+        // own account; a deleted project drops out instead of showing a blank row.
+        projects: (grantsByInvite.get(invite.inviteId) ?? []).flatMap((g) => {
+          const name = projectNames.get(`${invite.accountId}:${g.project_id}`);
+          return name ? [{ project_id: g.project_id, name, role: g.role }] : [];
+        }),
+      })),
+    });
+  },
+);
 
 // GET /v1/account-invites/:inviteId — describe an invite. Redacts identifying
 // fields when the caller's email doesn't match the invite, so the URL alone

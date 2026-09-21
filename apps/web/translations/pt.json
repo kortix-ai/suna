@@ -19453,13 +19453,27 @@
     "managedDescription": "Modelos gerenciados cobrados em créditos Kortix. Não é necessária uma chave API.",
     "textImage": "Texto + imagem",
     "textOnly": "Apenas texto",
-    "zdrTitle": "Os provedores de modelos não guardam seus prompts",
+    "zdrTitle": "Retenção zero de dados",
     "zdrDescription": "Retenção zero de dados (ZDR) significa que o provedor processa seus textos e imagens, mas não guarda a entrada nem a resposta após a solicitação. A Kortix armazena seus projetos e conversas separadamente.",
+    "usProvidersTitle": "Provedores sediados nos EUA",
+    "usProvidersDescription": "Cada modelo da Kortix usa um único provedor de inferência fixo, sediado nos EUA. As solicitações nunca passam para outro provedor.",
     "hiddenHint": "Oculto no seletor. Solicitações diretas continuam permitidas; desative-as no menu do modelo.",
     "hidden": "Oculto no seletor",
     "disableModel": "Desativar modelo",
     "modelError": "Não foi possível atualizar o acesso ao modelo.",
     "hiddenShort": "Oculto no seletor. Solicitações diretas continuam permitidas.",
     "resetError": "Não foi possível redefinir a lista de modelos."
+  },
+  "projectChooser": {
+    "invitations": "Convites",
+    "invitedBy": "Convidado por {email}",
+    "join": "Entrar",
+    "joinError": "Não foi possível entrar. Tente novamente.",
+    "unnamedWorkspace": "Espaço de trabalho",
+    "noPermissionTitle": "Ainda sem espaço de trabalho",
+    "noPermissionBody": "Peça a um proprietário ou administrador para convidar {email}.",
+    "invitesTitle": "Você foi convidado",
+    "invitesDescription": "Entre em um projeto da sua equipe ou crie o seu.",
+    "createProjectInstead": "Criar um novo projeto"
   }
 }

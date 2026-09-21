@@ -24,7 +24,7 @@ import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import {
   isManagedGitUnavailableError,
   isProjectLimitError,
-} from '@/lib/onboarding/ensure-first-project';
+} from '@/lib/onboarding/provision-errors';
 import { writeLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import {
   createProjectRepo,
@@ -227,7 +227,7 @@ export function buildManagedImportRequest(
  *
  * 502 and 503 are NOT the same failure and must not share a message. This
  * route's only 503 is `isManagedGitUnavailableError`
- * (`ensure-first-project.ts:254`) — managed git is not configured on this
+ * (`lib/onboarding/provision-errors.ts`) — managed git is not configured on this
  * server, a server-config state no client-side retry can fix. Telling the
  * user to "try again" there is false: nothing they do changes the outcome
  * until an operator configures it. 502 (an upstream/gateway fault) keeps the
@@ -240,14 +240,13 @@ export function buildManagedImportRequest(
  * 403 branch, and deliberately, not folded into it: `enforceProjectQuota`
  * (`apps/api/src/projects/lib/access.ts`) returns 403 too, and
  * `FREE_TIER_PROJECT_LIMIT = 1` (`apps/api/src/shared/account-limits.ts`)
- * plus `ensureFirstProject` auto-provisioning every account's first project
- * means EVERY free-tier user who clicks "Create a workspace…" hits this —
- * not an edge case. The generic 403 message ("You need owner or admin
+ * means every free-tier user who already has one project and clicks
+ * "Create a workspace…" hits this — not an edge case. The generic 403 message ("You need owner or admin
  * access…") is actively false for them: they have the role, they are simply
  * out of quota. The server's own message is reused verbatim rather than
  * inventing new copy — it already states the exact limit and the upgrade
  * path, matching what the deleted create modal's `isProjectLimitError`
- * handling reused for the same code (`ensure-first-project.ts`).
+ * handling reused for the same code (`provision-errors.ts`).
  *
  * `provision_in_flight` (409, final-review FIX 1) also gets its own branch,
  * never the raw server text: `PROVISION_IN_FLIGHT_CODE`'s own doc comment
@@ -318,7 +317,7 @@ export function messageFor(error: unknown): string {
  * - `502` (bad gateway) — retryable. A transient upstream/gateway fault; a
  *   later attempt can land differently with no change on the client at all.
  * - `503` (this route's only 503 is `isManagedGitUnavailableError`,
- *   `ensure-first-project.ts:254`) — NOT retryable. A server configuration
+ *   `lib/onboarding/provision-errors.ts`) — NOT retryable. A server configuration
  *   state; see `messageFor` above. Reuses that detector rather than
  *   re-deriving the 503 check, so this and `messageFor` can never disagree
  *   about which failure is which.
@@ -358,8 +357,8 @@ export function isRetryableError(error: unknown): boolean {
  * The network calls `runCreateAttempt` and `runProvisionAttempt` need,
  * injectable so their logic is unit-tested with a plain fake instead of
  * `mock.module('@kortix/sdk', ...)` — process-wide in this monorepo and a
- * hazard for sibling test suites (see `ensure-first-project.ts`'s own
- * `EnsureFirstProjectClient` for the same pattern). `wait` is injected too, so
+ * hazard for sibling test suites (see `resolve-landing-destination.ts`'s
+ * `LandingClient` for the same pattern). `wait` is injected too, so
  * a test exercises the FULL retry budget without sleeping the real
  * 400ms/1200ms.
  */
@@ -521,8 +520,8 @@ export async function runProvisionAttempt(
  * `mock.module('@kortix/sdk', ...)`, which is process-wide in this monorepo.
  *
  * `attemptKeyFor`/`clearAttemptKey`/`writeLastProjectId`/`now` don't depend on
- * React and could be given real module-level defaults (as
- * `EnsureFirstProjectClient` does in `ensure-first-project.ts`); the other
+ * React and could be given real module-level defaults (as `LandingClient`
+ * does in `resolve-landing-destination.ts`); the other
  * three (`primeProjectCache`, `invalidateProjects`, `enterOnboarding`) are
  * inherently render-scoped — they close over the live `queryClient`/`router`
  * a hook only has inside a component — so there is no single "no-args"
@@ -632,10 +631,8 @@ async function runSourceAttempt(
  *
  * **No onboarding gate.** An earlier version read the account's project count
  * here and pre-stamped the new project onboarded unless it was the account's
- * first. That gate could never fire: the account's first project is
- * auto-provisioned (`ensure-first-project.ts`), never created through `/new`,
- * so the count was always >= 1 by the time anyone reached this code — and the
- * pre-stamp made the wizard render `null` on arrival, every single time.
+ * first. The pre-stamp made the wizard render `null` on arrival for every
+ * project after the first.
  * Every `/new` create now runs onboarding, and the only thing that stamps the
  * project is the wizard finishing.
  *
