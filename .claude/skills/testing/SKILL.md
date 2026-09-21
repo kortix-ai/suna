@@ -136,8 +136,8 @@ must change together.
 - Run `pnpm test -- --target-full` against the sandbox HTTPS origin.
 - Post the preview URL and `/_tests/` report URL in one sticky PR comment.
 - Keep a failed product-test sandbox. Do not hide its failure with fallback.
-- Delete the sandbox on unlabel, close, or PR head change.
-- Remove the `preview` label after a PR head change.
+- Redeploy the environment in place on a push. Keep the `preview` label.
+- Delete the sandbox on unlabel or branch deletion. Closing the PR does not.
 - Reconcile stale Platinum and Daytona previews each day.
 
 The preview warm image can contain dependencies and Docker layers. It must not

@@ -17,7 +17,7 @@ describe('switcherItems', () => {
   const items = switcherItems({
     sessions: [session('s1', 'Casual greeting', 3), session('s2', 'Fix claims', 90, 'stopped')],
     projects: [
-      { project_id: 'p1', name: 'LibreMax' },
+      { project_id: 'p1', name: 'Project Atlas' },
       { project_id: 'p2', name: 'Essentia' },
     ],
     activeProjectId: 'p1',
@@ -39,7 +39,7 @@ describe('switcherItems', () => {
   });
 
   test('the active project is marked, never hidden', () => {
-    expect(items[2]).toMatchObject({ label: 'project · LibreMax', right: 'active' });
+    expect(items[2]).toMatchObject({ label: 'project · Project Atlas', right: 'active' });
     expect(items[3]).toMatchObject({ label: 'project · Essentia', right: '' });
   });
 

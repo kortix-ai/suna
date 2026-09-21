@@ -2,12 +2,12 @@ import { buildInviteUrl, isInviteEmailConfigured, sendAccountInviteEmail } from 
 import { PROJECT_ACTIONS, authorize } from '../../iam';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
+import { resolveAccountIdentityByEmail } from '../../iam/account-identity';
 import { actorOf } from '../../iam/actor';
 import { assignPendingProjectRole, revokePendingAssignments, revokeProjectRole } from '../../iam/assignments';
 import { normalizeProjectRole, parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR } from '../../iam/roles';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
-import { lookupUserIdByEmail } from '../../shared/users';
 import { isAccountManager, roleAllows, type AccountRole, type ProjectRole } from '../access';
 import {
   accountRoleMap,
@@ -841,7 +841,7 @@ projectsApp.openapi(
       },
     responses: {
         200: json(z.any(), 'OK'),
-        ...errors(400, 404),
+        ...errors(400, 404, 409),
     },
   }),
   async (c: any) => {
@@ -859,7 +859,11 @@ projectsApp.openapi(
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);
 
-  const targetUserId = await lookupUserIdByEmail(email);
+  const identity = await resolveAccountIdentityByEmail(loaded.row.accountId, email);
+  if (identity.ambiguous) {
+    return c.json({ error: 'Multiple account identities use this email', code: 'account_identity_ambiguous' }, 409);
+  }
+  const targetUserId = identity.userId;
   if (!targetUserId) {
     // No Kortix user yet. Upsert an account invitation carrying a
     // bootstrap_grant so when they accept, they're added to the org

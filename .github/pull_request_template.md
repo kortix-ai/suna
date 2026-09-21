@@ -1,7 +1,11 @@
 <!--
-  Every change to a protected branch goes through this PR + review (SOC 2 CC8.1).
-  Fill out each section. PRs cannot be merged without a passing CI check and an
-  approving review from someone other than the author.
+  Every change to `main`, `staging` or `prod` goes through a pull request
+  (SOC 2 CC8.1). Fill out each section.
+  - `prod`: needs an approving review and the `full suite + quality gates` check.
+  - `main` / `staging`: the ruleset requires the pull request only. The author
+    owns what was verified before merging.
+  - The test suite does not run on a plain PR into `main`. Add the `test` label
+    to run it (the `preview` label also runs it), or run `pnpm test` locally.
 -->
 
 ## Summary
@@ -21,7 +25,8 @@ Closes #
 
 ## How was this tested?
 
-<!-- Commands run, manual steps, screenshots. State what you verified. -->
+<!-- Commands run, manual steps, screenshots. State what you verified.
+     Say whether `pnpm test` ran locally or the `test` label ran it in CI. -->
 
 ## Security & data review
 
@@ -39,5 +44,5 @@ Closes #
 ## Reviewer checklist
 
 - [ ] Change is scoped and understandable
-- [ ] Tests/CI pass and cover the change
+- [ ] Tests cover the change, and the suite passed (locally or via the `test` label)
 - [ ] Security & data review above is satisfied

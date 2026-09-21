@@ -129,10 +129,10 @@ exclusions and all other browser journey exclusions fail the preview test.
 Use **Run workflow** to select `platinum` or `daytona` explicitly for one
 provider proof. A new deployment deletes any existing provider sandbox for the
 same pull request. A test failure keeps the sandbox available for diagnosis.
-Removing the label, closing the pull request, or pushing a new commit deletes
-the sandbox. A new commit also removes the stale `preview` label. A scheduled
-reconciler deletes sandboxes whose pull request is closed, unlabeled, or at a
-different SHA.
+A push to a labelled branch redeploys its environment in place, and the label
+stays. Removing the label or deleting the branch deletes the sandbox; closing
+the pull request does not. A scheduled reconciler deletes environments whose
+branch no longer exists.
 
 `tests-release.yml` runs the deployed staging suite for pull requests into
 `prod`. It does not repeat the local-profile suite. It rejects development and
