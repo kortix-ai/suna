@@ -12,13 +12,14 @@ import { createHash } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
-import { readBootConfigPointer, readQuarantine, releaseDir } from '../boot-config'
+import { quarantineRelease, readBootConfigPointer, readQuarantine, releaseDir } from '../boot-config'
 import type { ConfigReleaseApi } from '../config-release/api-client'
 import type { OpenCodeConfig } from '../harness/open-code/config'
 import {
   ConvergeBusyError,
   configReleaseReport,
   convergeConfigRelease,
+  fetchBootRelease,
   recordBootConfig,
   resetConfigReleaseStateForTests,
   runningSourceCommit,
@@ -98,7 +99,7 @@ afterAll(() => {
 })
 
 interface FakeOpencode {
-  opencode: Pick<Opencode, 'useConfigDir' | 'getConfigDir' | 'reloadVerified' | 'getPid'>
+  opencode: Pick<Opencode, 'useConfigDir' | 'getConfigDir' | 'reloadVerified' | 'getPid' | 'getInternalUrl'>
   state: {
     dir: string
     pid: number | null
@@ -125,6 +126,8 @@ function fakeOpencode(opts: { startFails?: boolean; notStarted?: boolean; pid?: 
     },
     getConfigDir: () => state.dir,
     getPid: () => state.pid,
+    // The live process is the fake OpenCode, serving whatever `served.dir` holds.
+    getInternalUrl: () => `http://127.0.0.1:${opencodeServer.port}`,
     async reloadVerified(options: VerifiedReloadOptions = {}): Promise<VerifiedReloadResult> {
       state.reloads++
       state.governanceAtSpawn.push(process.env.KORTIX_COMPILED_AGENT_CONFIG)
@@ -168,6 +171,7 @@ function converge(oc: FakeOpencode, over: { api?: ConfigReleaseApi | null } = {}
     root: store,
     managedSkillsDir: overlay,
     api: over.api === undefined ? client() : over.api,
+    proofBudgetMs: 1_500,
     prepare: async (dir) => {
       prepared.push(dir)
       cpSync(overlay, join(dir, 'skills'), { recursive: true, force: true })
@@ -638,5 +642,107 @@ describe('provenCheck', () => {
     } finally {
       server.stop(true)
     }
+  })
+})
+
+describe('fresh boot from a release', () => {
+  test('fetchBootRelease extracts the desired release with no workspace report, and marks both steps', async () => {
+    const release = baseRelease()
+    serveRelease(api, release)
+    const marks: string[] = []
+    const boot = await fetchBootRelease({
+      cfg: cfg(),
+      api: client(),
+      root: store,
+      managedSkillsDir: overlay,
+      prepare: async () => undefined,
+      mark: (label) => marks.push(label),
+    })
+    expect(boot).toMatchObject({ releaseId: release.descriptor.release_id, dir: releaseDir(store, release.descriptor.release_id!) })
+    expect(marks).toEqual(['config-release-fetched', 'config-release-extracted'])
+    expect(api.descriptorRequests.at(-1)!.body).toEqual({ workspace: null })
+    expect(readFileSync(join(boot!.dir, 'agents/kortix.md'), 'utf8')).toBe('PROMPT v1\n')
+    // Nothing is proven yet: the pointer waits for the proof.
+    expect(await readBootConfigPointer(store)).toBeNull()
+
+    const downloads = api.archiveRequests.length
+    await fetchBootRelease({ cfg: cfg(), api: client(), root: store, managedSkillsDir: overlay, prepare: async () => undefined })
+    expect(api.archiveRequests.length).toBe(downloads)
+  })
+
+  test('fetchBootRelease answers null for an older API, a session-files descriptor and a quarantined release', async () => {
+    const opts = { cfg: cfg(), api: client(), root: store, prepare: async () => undefined }
+    api.respond({ status: 404, json: { error: 'not found' } })
+    expect(await fetchBootRelease(opts)).toBeNull()
+    const release = baseRelease()
+    api.respond({ status: 200, json: { ...release.descriptor, mode: 'session-files', archive: null, files: null } })
+    expect(await fetchBootRelease(opts)).toBeNull()
+    serveRelease(api, release)
+    await quarantineRelease(store, release.descriptor.release_id!, 'failed before')
+    expect(await fetchBootRelease(opts)).toBeNull()
+  })
+
+  test('the convergence after ready proves a boot release on the live process and writes the pointer', async () => {
+    const release = baseRelease()
+    serveRelease(api, release)
+    const boot = await fetchBootRelease({ cfg: cfg(), api: client(), root: store, prepare: async () => undefined })
+    const oc = fakeOpencode()
+    oc.opencode.useConfigDir(boot!.dir)
+    served.dir = boot!.dir
+    recordBootConfig({ source: 'release', release_id: boot!.releaseId, source_commit: boot!.sourceCommit, proven: false })
+
+    const response = await converge(oc)
+
+    expect(response.outcome).toBe('applied')
+    expect(response.reload).toBeNull()
+    expect(response.config).toMatchObject({ release_id: boot!.releaseId, proven: true, source: 'release' })
+    expect(oc.state.reloads).toBe(0)
+    expect((await readBootConfigPointer(store))!.release_id).toBe(boot!.releaseId)
+    expect((await converge(oc)).outcome).toBe('unchanged')
+  })
+
+  test('a boot release that fails the proof is quarantined and OpenCode steps down the chain', async () => {
+    write(origin, `${DIR}/tools/firecrawl.ts`, 'export default {}\n')
+    commitAll(origin, 'tool with a missing dependency')
+    served.droppedTools = new Set(['firecrawl'])
+    const release = baseRelease()
+    serveRelease(api, release)
+    const boot = await fetchBootRelease({ cfg: cfg(), api: client(), root: store, prepare: async () => undefined })
+    const oc = fakeOpencode()
+    oc.opencode.useConfigDir(boot!.dir)
+    served.dir = boot!.dir
+    recordBootConfig({ source: 'release', release_id: boot!.releaseId, source_commit: boot!.sourceCommit, proven: false })
+
+    const response = await converge(oc)
+
+    expect(response.outcome).toBe('declined')
+    expect(response.reason).toBe('tools not loaded: firecrawl')
+    expect(response.config).toMatchObject({
+      source: 'workspace',
+      release_id: null,
+      desired_release_id: boot!.releaseId,
+      failed_release_id: boot!.releaseId,
+      fallback_reason: 'tools not loaded: firecrawl',
+    })
+    expect(oc.state.dir).toBe(join(work, DIR))
+    expect(Object.keys(await readQuarantine(store))).toEqual([boot!.releaseId])
+    expect(await readBootConfigPointer(store)).toBeNull()
+  })
+
+  test('a running turn defers the swap; nothing is replaced', async () => {
+    serveRelease(api, baseRelease())
+    const oc = fakeOpencode()
+    const response = await convergeConfigRelease({
+      cfg: cfg(),
+      opencode: oc.opencode,
+      root: store,
+      api: client(),
+      prepare: async () => undefined,
+      turnInFlight: async () => true,
+    })
+    expect(response.outcome).toBe('failed')
+    expect(response.reason).toMatch(/a turn is running/)
+    expect(oc.state.reloads).toBe(0)
+    expect(api.archiveRequests).toHaveLength(0)
   })
 })

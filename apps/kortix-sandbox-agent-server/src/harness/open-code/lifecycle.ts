@@ -16,6 +16,9 @@ import { spawn, type ChildProcess } from 'node:child_process'
  * `turnEnded` is only ever true for the respawn path — a dispose re-reads the
  * config in place and interrupts nothing.
  */
+/** How long a candidate opencode gets to start serving, and pass the proven check, before we give up. */
+export const VERIFY_READY_TIMEOUT_MS = 90_000
+
 export interface ReloadConfigResult {
   how: 'disposed' | 'restarted' | 'kept-old'
   turnEnded: boolean | null
@@ -2113,8 +2116,6 @@ export function createOpencodeLifecycle(
     }, delay)
   }
 
-  /** How long a candidate opencode gets to start serving before we give up. */
-  const VERIFY_READY_TIMEOUT_MS = 90_000
 
   /**
    * Reload the config by BOOTING THE NEW OPENCODE FIRST.

@@ -28,7 +28,7 @@ import { buildWorkspaceReport } from '../../config-release/workspace-report'
 import { logger } from '../../logger'
 import { ensureInjectedManagedSkills } from '../../managed-skills'
 import { resolveOpencodeConfigDir, resolveOpencodeConfigDirLiteral, type OpenCodeConfig } from './config'
-import type { Opencode, VerifiedReloadResult } from './lifecycle'
+import { VERIFY_READY_TIMEOUT_MS, type Opencode, type VerifiedReloadResult } from './lifecycle'
 import { ensureOpencodeConfigDeps } from './opencode-config-deps'
 import { provenCheck, toolNamesFromFiles } from './proven-check'
 
@@ -125,7 +125,7 @@ export function convergeInFlight(): boolean {
 
 export interface ConvergeDeps {
   cfg: OpenCodeConfig
-  opencode: Pick<Opencode, 'useConfigDir' | 'getConfigDir' | 'reloadVerified' | 'getPid'>
+  opencode: Pick<Opencode, 'useConfigDir' | 'getConfigDir' | 'reloadVerified' | 'getPid' | 'getInternalUrl'>
   root?: string
   /** Overlay source; defaults to the image-baked overlay. */
   managedSkillsDir?: string
@@ -138,6 +138,14 @@ export interface ConvergeDeps {
   /** Overrides the proven check. Tests point it at a fake OpenCode. */
   prove?: typeof provenCheck
   proveFetch?: typeof fetch
+  /**
+   * Is a turn running? A replacement retires the running process and would
+   * end the turn, so any answer other than `false` defers the swap to the next
+   * trigger (the API converges again at turn end). Absent: never deferred.
+   */
+  turnInFlight?: () => Promise<boolean | null>
+  /** Proven check budget for a release already running; the spec's 90 s. */
+  proofBudgetMs?: number
 }
 
 /** Dependencies and the managed-skill overlay, the preparation every config dir gets. */
@@ -276,9 +284,15 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
     return respond(descriptor.reason ? 'failed' : 'unchanged', null, descriptor.reason)
   }
 
-  // Every replacement needs a live process to fall back on.
-  const requireRunning = (): ConvergeResponse | null =>
-    opencode.getPid() === null ? respond('failed', null, 'opencode is not running; nothing to replace') : null
+  // Every replacement needs a live process to fall back on, and must not end
+  // a running turn.
+  const requireRunning = async (): Promise<ConvergeResponse | null> => {
+    if (opencode.getPid() === null) return respond('failed', null, 'opencode is not running; nothing to replace')
+    if (deps.turnInFlight && (await deps.turnInFlight().catch(() => null)) !== false) {
+      return respond('failed', null, 'a turn is running or its state is unknown; the swap waits for the next trigger')
+    }
+    return null
+  }
 
   const swap = async (dir: string, toolNames: readonly string[]) => {
     const previousDir = opencode.useConfigDir(dir)
@@ -311,7 +325,7 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
     ) {
       return respond('unchanged', null)
     }
-    const notRunning = requireRunning()
+    const notRunning = await requireRunning()
     if (notRunning) return notRunning
     await (deps.prepare ?? ((target) => prepareConfigDir(target, deps.managedSkillsDir)))(dir)
     const result = await swap(dir, await toolNamesInDir(dir))
@@ -343,7 +357,7 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
     if (running.release_id === releaseId && running.source === 'image-default' && opencode.getConfigDir() === dir) {
       return respond('unchanged', null)
     }
-    const notRunning = requireRunning()
+    const notRunning = await requireRunning()
     if (notRunning) return notRunning
     const result = await swap(dir, [])
     if (result.outcome === 'kept-old') {
@@ -372,9 +386,13 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
   const verifies = () =>
     verifyRelease({ dir, files: manifest.files, managedSkillsDir: deps.managedSkillsDir })
 
-  // 3. Same release, intact copy: nothing to do.
+  // 3. Same release, intact copy: nothing to do. A release spawned at boot
+  //    before any proof is proven now, on the live process.
   if (running.source === 'release' && running.release_id === releaseId && opencode.getConfigDir() === dir) {
-    if (await verifies()) return respond('unchanged', null)
+    if (await verifies()) {
+      if (running.proven) return respond('unchanged', null)
+      return proveBootRelease(deps, { root, api, releaseId, manifest, dir })
+    }
     logger.warn('[config-release] the running release no longer verifies; rebuilding', { releaseId })
   }
 
@@ -386,7 +404,7 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
     return respond('quarantined', null, running.fallback_reason)
   }
 
-  const notRunning = requireRunning()
+  const notRunning = await requireRunning()
   if (notRunning) return notRunning
 
   // 5–6. Download, extract, verify, prepare, seal, rename. An intact copy
@@ -448,17 +466,153 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
 }
 
 /**
- * The last proven release, for a spawn before the repository exists. Only the
- * pointer and the manifest are read here; `resolveBootConfig` verifies the
- * files once the checkout is in place. Delivers the release's governance.
+ * Prove a release OpenCode was spawned on at boot, before any proof ran.
+ *
+ * No replacement is started: the proven check runs against the live process.
+ * On success the pointer is written. On failure the release is quarantined
+ * and OpenCode moves down the fallback chain (last proven release, workspace,
+ * image default) through a verified swap.
  */
-export async function provenReleaseForEarlySpawn(root: string = bootConfigRoot()): Promise<{ dir: string } | null> {
+async function proveBootRelease(
+  deps: ConvergeDeps,
+  input: { root: string; api: ConfigReleaseApi; releaseId: string; manifest: ReleaseManifest; dir: string },
+): Promise<ConvergeResponse> {
+  const { cfg, opencode } = deps
+  const { root, releaseId, manifest, dir } = input
+  const budget = deps.proofBudgetMs ?? VERIFY_READY_TIMEOUT_MS
+  const proof = await (deps.prove ?? provenCheck)(opencode.getInternalUrl(), Date.now() + budget, {
+    directory: cfg.projectTarget,
+    toolNames: toolNamesFromFiles(manifest.files),
+    fetchImpl: deps.proveFetch,
+  })
+  if (proof.ok) {
+    const previous = await readBootConfigPointer(root)
+    await activateBootConfig(root, {
+      release_id: releaseId,
+      source_commit: manifest.source_commit,
+      config_dir: manifest.config_dir,
+      dir,
+      proven: true,
+    })
+    await pruneBootConfigs(root, previous ? [releaseId, previous.release_id] : [releaseId])
+    running = { ...running, proven: true, fallback_reason: null, failed_release_id: null }
+    logger.info('[config-release] the boot release is proven', { releaseId })
+    return respond('applied', null)
+  }
+
+  await quarantineRelease(root, releaseId, proof.reason)
+  running.failed_release_id = releaseId
+  running.fallback_reason = proof.reason
+  logger.warn('[config-release] the boot release failed the proven check; falling back', {
+    releaseId,
+    reason: proof.reason,
+  })
+  if (deps.turnInFlight && (await deps.turnInFlight().catch(() => null)) !== false) {
+    return respond('declined', null, `${proof.reason}; the fallback waits for the turn to end`)
+  }
+  const fallback = await resolveBootConfig({
+    cfg,
+    root,
+    managedSkillsDir: deps.managedSkillsDir,
+    api: input.api,
+    prepare: deps.prepare,
+  })
+  const previousDir = opencode.useConfigDir(fallback.dir)
+  const result = await opencode.reloadVerified()
+  if (result.outcome === 'kept-old') {
+    opencode.useConfigDir(previousDir)
+    return respond('declined', null, `${proof.reason}; the fallback did not start: ${result.reason}`)
+  }
+  running = {
+    release_id: fallback.release_id,
+    desired_release_id: releaseId,
+    source: fallback.source,
+    mode: 'follow-base',
+    proven: fallback.source === 'release',
+    fallback_reason: [proof.reason, fallback.fallback_reason].filter(Boolean).join('; '),
+    failed_release_id: releaseId,
+    source_commit: fallback.source_commit,
+  }
+  return respond('declined', result, proof.reason)
+}
+
+export interface BootRelease {
+  dir: string
+  releaseId: string
+  sourceCommit: string
+  manifest: ReleaseManifest
+}
+
+/**
+ * Fetch and extract the desired release at boot, in parallel with the repo
+ * clone. No workspace report exists yet, so the request carries none and the
+ * API answers follow-base; the convergence after ready corrects the mode.
+ * Null when there is no archive to run (older API, API unreachable, a
+ * session-files or governance-only descriptor, a quarantined release). Never
+ * throws.
+ */
+export async function fetchBootRelease(input: {
+  cfg: OpenCodeConfig
+  api?: ConfigReleaseApi | null
+  root?: string
+  managedSkillsDir?: string
+  prepare?: (dir: string) => Promise<void>
+  mark?: (label: string) => void
+}): Promise<BootRelease | null> {
+  const { cfg } = input
+  const root = input.root ?? bootConfigRoot()
+  const api =
+    input.api === undefined
+      ? configReleaseApiFrom({ apiUrl: cfg.apiUrl, projectId: cfg.projectId, sandboxToken: cfg.sandboxToken })
+      : input.api
+  if (!api) return null
+  try {
+    const descriptor = await fetchConfigReleaseDescriptor(api, null)
+    input.mark?.('config-release-fetched')
+    const releaseId = effectiveReleaseId(descriptor)
+    if (descriptor.mode !== 'follow-base' || descriptor.archive === null || releaseId === null) return null
+    if ((await readQuarantine(root))[releaseId]) return null
+    const manifest = manifestFrom(descriptor, releaseId)
+    const dir = releaseDir(root, releaseId)
+    const intact =
+      existsSync(dir) && (await verifyRelease({ dir, files: manifest.files, managedSkillsDir: input.managedSkillsDir }))
+    if (intact) {
+      await writeReleaseManifest(root, manifest)
+    } else {
+      const archive = await downloadConfigArchive(api, manifest.archive_url, { expectedBytes: manifest.archive_bytes })
+      await materializeRelease({
+        root,
+        manifest,
+        archive,
+        managedSkillsDir: input.managedSkillsDir,
+        prepare: input.prepare ?? ((staged) => prepareConfigDir(staged, input.managedSkillsDir)),
+      })
+    }
+    input.mark?.('config-release-extracted')
+    return { dir, releaseId, sourceCommit: manifest.source_commit, manifest }
+  } catch (err) {
+    logger.warn('[config-release] no release at boot; the fallback chain applies', {
+      err: err instanceof Error ? err.message : String(err),
+    })
+    return null
+  }
+}
+
+/**
+ * The last proven release, for a spawn before the repository exists, when it
+ * still verifies against its manifest. Delivers the release's governance.
+ */
+export async function provenReleaseForEarlySpawn(
+  root: string = bootConfigRoot(),
+  managedSkillsDir?: string,
+): Promise<{ dir: string; releaseId: string; sourceCommit: string } | null> {
   const pointer = await readBootConfigPointer(root)
   if (!pointer?.proven || !existsSync(pointer.dir)) return null
   const manifest = await readReleaseManifest(root, pointer.release_id)
   if (!manifest) return null
+  if (!(await verifyRelease({ dir: pointer.dir, files: manifest.files, managedSkillsDir }))) return null
   deliverGovernance(manifest.compiled_governance, manifest.compiled_governance_etag)
-  return { dir: pointer.dir }
+  return { dir: pointer.dir, releaseId: pointer.release_id, sourceCommit: pointer.source_commit }
 }
 
 export interface BootConfigChoice {

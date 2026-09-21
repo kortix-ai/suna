@@ -161,9 +161,19 @@ describe('resolveBootConfig', () => {
 describe('provenReleaseForEarlySpawn', () => {
   test('names the proven release and delivers its governance', async () => {
     const dir = await installProvenRelease()
-    expect(await provenReleaseForEarlySpawn(store)).toEqual({ dir })
+    expect(await provenReleaseForEarlySpawn(store)).toEqual({
+      dir,
+      releaseId: release.descriptor.release_id!,
+      sourceCommit: release.descriptor.source_commit!,
+    })
     expect(process.env.KORTIX_COMPILED_AGENT_CONFIG).toBe(GOV)
     expect(dir).toBe(releaseDir(store, release.descriptor.release_id!))
+  })
+
+  test('refuses a release that no longer verifies', async () => {
+    tamper(await installProvenRelease())
+    expect(await provenReleaseForEarlySpawn(store)).toBeNull()
+    expect(process.env.KORTIX_COMPILED_AGENT_CONFIG).toBeUndefined()
   })
 
   test('refuses an unproven pointer and a release without its manifest', async () => {
