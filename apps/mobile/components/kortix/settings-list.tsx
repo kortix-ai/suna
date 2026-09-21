@@ -275,6 +275,13 @@ export interface SettingsRowProps {
   checked?: boolean;
   /** Omit for a row whose control lives in `right`. */
   onPress?: () => void;
+  /** A second action on a long press (a session row's actions sheet). */
+  onLongPress?: () => void;
+  /** Spoken name of the long-press action. Needs `onLongPress`. */
+  longPressLabel?: string;
+  /** Spoken label when the visible label alone is not enough ("{title}, {status}, {time}"). */
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
   /**
    * Trailing content. Defaults to a chevron when the row has `onPress`
    * (an arrow when `external`). Pass a Switch / ToggleGroup to replace it,
@@ -298,6 +305,10 @@ export function SettingsRow({
   value,
   checked = false,
   onPress,
+  onLongPress,
+  longPressLabel,
+  accessibilityLabel,
+  accessibilityHint,
   right,
   external = false,
   badge,
@@ -328,7 +339,25 @@ export function SettingsRow({
   // Rows inside a card highlight on press (iOS list behaviour) instead of
   // scaling, which would pull them away from the card edges.
   return (
-    <Pressable onPress={onPress} disabled={!onPress} className="active:bg-accent">
+    <Pressable
+      onPress={onPress}
+      onLongPress={onLongPress}
+      disabled={!onPress}
+      accessibilityRole={onPress ? 'button' : undefined}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityHint={accessibilityHint}
+      // A screen reader cannot long-press: the second action is a named one.
+      accessibilityActions={
+        onLongPress
+          ? [{ name: 'activate' }, { name: 'longpress', label: longPressLabel }]
+          : undefined
+      }
+      onAccessibilityAction={
+        onLongPress
+          ? (event) => (event.nativeEvent.actionName === 'longpress' ? onLongPress() : onPress?.())
+          : undefined
+      }
+      className="active:bg-accent">
       <View className="flex-row items-center px-4 py-3">
         {/* Leading slot is at least 20pt wide so icon rows share one label line.
             A row without leading content drops the slot and its gap entirely. */}

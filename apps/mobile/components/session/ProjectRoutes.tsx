@@ -70,6 +70,11 @@ export interface ProjectRouteValue {
   homeKey: number;
   /** Return the project to its home state. Stable. */
   goHome: () => void;
+  /**
+   * New session: reset to the home state and pop a covering route, so project
+   * home's composer starts the session. What the drawer's New session does.
+   */
+  newSession: () => void;
   /** The view finished its push transition over project home. Stable. */
   onViewCovered: () => void;
   /** The project this stack shows (the `[id]` route param). */

@@ -4,14 +4,22 @@
  *
  *   header   SettingsHeader: hamburger row, then the large "Sessions" title
  *   search   SearchListHeader, filters by display title
- *   list     Today / Yesterday / This week / Older, headers only when more
- *            than one group has sessions. Row: status mark · title · time
+ *   list     Today / Yesterday / This week / Older, one `SettingsGroup` of
+ *            `SettingsRow`s each (the settings screens' layout); a group's title
+ *            shows only when more than one group has sessions.
+ *            Row: status mark · title · time
+ *   button   New session, pinned at the bottom right over a fade of the page:
+ *            the project drawer's bottom bar (`PinnedBar`). The list scrolls
+ *            under it. It returns to project home, whose composer starts the
+ *            session.
  *
  * Tap a row → the session opens in the view route, which replaces this page
  * (useCoveringRoute), so the stack stays one screen over project home.
- * Long press → a bottom sheet of actions: Rename, Share, Restart, Stop (running
- * only), Delete. Rename, Share and Delete open their own overlay only after the
- * action sheet has closed, so two overlays never stack.
+ * Long press → the options sheet (`KortixBottomSheetModal`, no close button,
+ * content height with a full-height stop above it): Rename, Share, Restart, Stop
+ * (running only), Delete. Rename and Share push their form in place of the
+ * options (`sheet-push`), with Back to return. Delete confirms in a dialog that
+ * opens only after the sheet has closed, so two overlays never stack.
  *
  * No filter, grouping or ordering controls: the list is always newest activity
  * first. Title, status, grouping and relative time come from
@@ -19,19 +27,14 @@
  */
 
 import * as React from 'react';
-import {
-  Pressable,
-  RefreshControl,
-  SectionList,
-  View,
-  type SectionListRenderItem,
-} from 'react-native';
+import { FlatList, RefreshControl, View, type ListRenderItem } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { useIsFocused } from 'expo-router/react-navigation';
-import type { BottomSheetModal } from '@gorhom/bottom-sheet';
-import { PencilIcon as Pencil, ArrowCounterClockwiseIcon as RotateCcw, ExportIcon as Share, SquareIcon as Square, TrashIcon as Trash2 } from '@/lib/icons';
+import { BottomSheetScrollView, type BottomSheetModal } from '@gorhom/bottom-sheet';
+import Animated from 'react-native-reanimated';
+import { NavigationArrowIcon, PencilIcon as Pencil, ArrowCounterClockwiseIcon as RotateCcw, ExportIcon as Share, SquareIcon as Square, TrashIcon as Trash2 } from '@/lib/icons';
 
 import {
   AlertDialog,
@@ -43,16 +46,18 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
+import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { PinnedBar, usePinnedBarInset } from '@/components/kortix/pinned-bar';
 import { SearchListHeader } from '@/components/kortix/search-list-header';
 import { SettingsGroup, SettingsHeader, SettingsRow } from '@/components/kortix/settings-list';
-import { Sheet, type SheetRef } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal, SheetTitleRow } from '@/components/kortix/sheet';
+import { POP_IN, PUSH_IN, SheetBackButton } from '@/components/kortix/sheet-push';
 import { useToast } from '@/components/kortix/toast-provider';
 import { useCoveringRoute, useProjectRoute } from '@/components/session/ProjectRoutes';
-import { SessionRenameSheet } from '@/components/session/SessionRenameSheet';
-import { SessionShareSheet } from '@/components/session/SessionShareSheet';
+import { SessionRenameForm } from '@/components/session/SessionRenameForm';
+import { SessionShareForm } from '@/components/session/SessionShareForm';
 import { SessionStatusMark } from '@/components/session/SessionStatusMark';
 import { haptics } from '@/lib/haptics';
 import { projectKeys, useProjectSessionsPaged } from '@/lib/projects/hooks';
@@ -73,78 +78,64 @@ import {
   shortRelative,
   spokenRelative,
 } from '@/lib/session/session-list';
-import { cn } from '@/lib/utils/index';
 import { THEME } from '@/lib/utils/theme';
 import { useTabStore } from '@/stores/tab-store';
 
 /** Relative times ("5m") re-render on this interval so they do not freeze. */
 const NOW_TICK_MS = 60_000;
+/** `Button size="lg"`: the pinned New session button, as in the project drawer. */
+const NEW_SESSION_BUTTON_HEIGHT = 44;
+
+/** Space between two groups: the settings screens' 18pt. */
+function GroupGap() {
+  return <View style={{ height: 18 }} />;
+}
 
 // ── Row ──────────────────────────────────────────────────────────────────────
 
 interface SessionRowProps {
   session: ProjectSession;
   now: number;
-  /** First row of its group: rounded top, no separator above. */
-  first: boolean;
-  /** Last row of its group: rounded bottom. */
-  last: boolean;
   onOpen: (session: ProjectSession) => void;
   onActions: (session: ProjectSession) => void;
 }
 
-/**
- * A group is a borderless rounded card like `SettingsGroup`, split into one
- * surface per row so the list stays virtualised. Row values match
- * `SettingsRow`: `px-4 py-3` (py one step below px), 20pt leading slot, one-line label.
- */
+/** One `SettingsRow`: status mark · title · time. No chevron: the time holds the right edge. */
 const SessionRow = React.memo(function SessionRow({
   session,
   now,
-  first,
-  last,
   onOpen,
   onActions,
 }: SessionRowProps) {
   const title = sessionDisplayTitle(session);
   const status = sessionDisplayStatus(session);
   const lastActivity = sessionLastActivityAt(session);
-  const time = shortRelative(lastActivity, now);
 
   return (
-    <View
-      className={cn('overflow-hidden bg-card', first && 'rounded-t-2xl', last && 'rounded-b-2xl')}>
-      {first ? null : <Separator />}
-      <Pressable
-        onPress={() => onOpen(session)}
-        onLongPress={() => onActions(session)}
-        accessibilityRole="button"
-        accessibilityLabel={`${title}, ${sessionStatusLabel(status)}, ${spokenRelative(lastActivity, now)}`}
-        accessibilityHint="Opens the session"
-        accessibilityActions={[{ name: 'activate' }, { name: 'longpress', label: 'Session actions' }]}
-        onAccessibilityAction={(event) => {
-          if (event.nativeEvent.actionName === 'longpress') onActions(session);
-          else onOpen(session);
-        }}
-        className="flex-row items-center px-4 py-3 active:bg-accent">
-        <View className="mr-3">
-          <SessionStatusMark status={status} />
-        </View>
-        <Text className="flex-1 text-foreground" numberOfLines={1}>
-          {title}
-        </Text>
-        <Text variant="muted" className="ml-3 tabular-nums">
-          {time}
-        </Text>
-      </Pressable>
-    </View>
+    <SettingsRow
+      leading={<SessionStatusMark status={status} />}
+      label={title}
+      value={shortRelative(lastActivity, now)}
+      right={null}
+      onPress={() => onOpen(session)}
+      onLongPress={() => onActions(session)}
+      longPressLabel="Session actions"
+      accessibilityLabel={`${title}, ${sessionStatusLabel(status)}, ${spokenRelative(lastActivity, now)}`}
+      accessibilityHint="Opens the session"
+    />
   );
 });
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
-type SheetAction = 'rename' | 'share' | 'delete';
-type EditTarget = { kind: 'rename' | 'share'; session: ProjectSession };
+/** The options sheet's view: its rows, or a form pushed over them. */
+type SheetView = 'options' | 'rename' | 'share';
+const PUSHED_VIEW_TITLE: Record<Exclude<SheetView, 'options'>, string> = {
+  rename: 'Rename session',
+  share: 'Share session',
+};
+/** The full-height stop above the content height: drag the sheet up to reach it. */
+const OPTIONS_SHEET_SNAP_POINTS = ['100%'];
 
 interface SessionSection {
   key: string;
@@ -153,7 +144,7 @@ interface SessionSection {
 }
 
 export function ProjectSessionsPage() {
-  const { projectId, openDrawer } = useProjectRoute();
+  const { projectId, openDrawer, newSession } = useProjectRoute();
   // Opens a row's session once; also replaces this page with the view when a
   // session opens without a row tap (drawer row, notification, deep link).
   const openSession = useCoveringRoute();
@@ -230,10 +221,14 @@ export function ProjectSessionsPage() {
   }, [hasNextPage, isFetchingNextPage, refreshing, fetchNextPage]);
 
   // ── Action sheet ──
-  const actionSheetRef = React.useRef<SheetRef>(null);
+  const actionSheetRef = React.useRef<BottomSheetModal>(null);
+  const [sheetView, setSheetView] = React.useState<SheetView>('options');
+  // True once the user came back from Rename: only then the options slide in.
+  const [returning, setReturning] = React.useState(false);
   const [menuSession, setMenuSession] = React.useState<ProjectSession | null>(null);
   // Set before the sheet closes; read when its close animation ends.
-  const afterCloseRef = React.useRef<SheetAction | null>(null);
+  // Delete confirms in a dialog, which opens only after the sheet has closed.
+  const deleteAfterCloseRef = React.useRef(false);
 
   const openActions = React.useCallback((session: ProjectSession) => {
     haptics.medium();
@@ -241,24 +236,12 @@ export function ProjectSessionsPage() {
   }, []);
 
   React.useEffect(() => {
-    if (menuSession) actionSheetRef.current?.open();
+    if (menuSession) actionSheetRef.current?.present();
   }, [menuSession]);
 
-  // Rename and Share reuse the session sheets. The target is set first and
-  // the sheet presents after that render, so it seeds from this session.
-  const renameSheetRef = React.useRef<BottomSheetModal>(null);
-  const shareSheetRef = React.useRef<BottomSheetModal>(null);
-  const [editTarget, setEditTarget] = React.useState<EditTarget | null>(null);
-  React.useEffect(() => {
-    if (!editTarget) return;
-    const ref = editTarget.kind === 'rename' ? renameSheetRef : shareSheetRef;
-    ref.current?.present();
-  }, [editTarget]);
-  // The live row, so a refetch while a sheet is open reaches it.
-  const editSession = editTarget
-    ? (allSessions.find((s) => s.session_id === editTarget.session.session_id) ??
-      editTarget.session)
-    : null;
+  // The live row, so a refetch while the sheet is open reaches its forms.
+  const liveRow = (session: ProjectSession) =>
+    allSessions.find((s) => s.session_id === session.session_id) ?? session;
 
   const [confirmDelete, setConfirmDelete] = React.useState<ProjectSession | null>(null);
   // The title of the last delete target. It is not cleared on close, so the
@@ -268,23 +251,32 @@ export function ProjectSessionsPage() {
 
   const handleSheetDismiss = React.useCallback(() => {
     const session = menuSession;
-    const next = afterCloseRef.current;
-    afterCloseRef.current = null;
+    const confirm = deleteAfterCloseRef.current;
+    deleteAfterCloseRef.current = false;
     setMenuSession(null);
-    if (!session || !next) return;
-    if (next === 'delete') {
-      setDeleteFailed(false);
-      setDeleteTitle(sessionDisplayTitle(session));
-      setConfirmDelete(session);
-    } else {
-      setEditTarget({ kind: next, session });
-    }
+    setSheetView('options');
+    setReturning(false);
+    if (!session || !confirm) return;
+    setDeleteFailed(false);
+    setDeleteTitle(sessionDisplayTitle(session));
+    setConfirmDelete(session);
   }, [menuSession]);
 
-  const closeSheetThen = React.useCallback((action: SheetAction) => {
-    afterCloseRef.current = action;
-    actionSheetRef.current?.close();
+  const pushView = React.useCallback((view: Exclude<SheetView, 'options'>) => {
+    haptics.tap();
+    setSheetView(view);
+    // Rename goes to full height (Jay, 2026-09-22): the field sits at the top,
+    // clear of the keyboard, and the sheet does not resize as the keyboard moves.
+    if (view === 'rename') actionSheetRef.current?.snapToPosition('100%');
   }, []);
+  const popView = React.useCallback(() => {
+    haptics.tap();
+    setReturning(true);
+    setSheetView('options');
+    // Back to the content height: index 0, the stop under the full-height one.
+    actionSheetRef.current?.snapToIndex(0);
+  }, []);
+  const closeSheet = React.useCallback(() => actionSheetRef.current?.dismiss(), []);
 
   // Restart and Stop open no overlay: close the sheet and run at once.
   const busyRef = React.useRef(new Set<string>());
@@ -316,7 +308,7 @@ export function ProjectSessionsPage() {
   const handleRestart = React.useCallback(() => {
     if (!menuSession) return;
     haptics.tap();
-    actionSheetRef.current?.close();
+    actionSheetRef.current?.dismiss();
     void runLifecycle(menuSession, 'restart', restartProjectSession, {
       success: 'Session restarting',
       failure: 'Unable to restart the session. Try again.',
@@ -326,7 +318,7 @@ export function ProjectSessionsPage() {
   const handleStop = React.useCallback(() => {
     if (!menuSession) return;
     haptics.tap();
-    actionSheetRef.current?.close();
+    actionSheetRef.current?.dismiss();
     void runLifecycle(menuSession, 'stop', stopProjectSession, {
       success: 'Session stopped',
       failure: 'Unable to stop the session. Try again.',
@@ -364,34 +356,33 @@ export function ProjectSessionsPage() {
   }, [confirmDelete, deleteSession, toast, invalidateSessions]);
 
   // ── Render ──
-  const renderItem = React.useCallback<SectionListRenderItem<ProjectSession, SessionSection>>(
-    ({ item, index, section }) => (
-      <SessionRow
-        session={item}
-        now={now}
-        first={index === 0}
-        last={index === section.data.length - 1}
-        onOpen={openSession}
-        onActions={openActions}
-      />
+  // One list item per group: a `SettingsGroup` of `SettingsRow`s, the settings
+  // screens' layout. The title shows only when more than one group has sessions.
+  const showHeaders = grouped.showHeaders;
+  const renderSection = React.useCallback<ListRenderItem<SessionSection>>(
+    ({ item: section }) => (
+      <SettingsGroup title={showHeaders ? section.title : undefined}>
+        {section.data.map((session) => (
+          <SessionRow
+            key={session.session_id}
+            session={session}
+            now={now}
+            onOpen={openSession}
+            onActions={openActions}
+          />
+        ))}
+      </SettingsGroup>
     ),
-    [now, openSession, openActions]
+    [showHeaders, now, openSession, openActions]
   );
 
-  const showHeaders = grouped.showHeaders;
-  const renderSectionHeader = React.useCallback(
-    ({ section }: { section: SessionSection }) =>
-      showHeaders ? (
-        <Text
-          variant="muted"
-          accessibilityRole="header"
-          className="mb-2 px-4"
-          style={section.key === sections[0]?.key ? undefined : { marginTop: 18 }}>
-          {section.title}
-        </Text>
-      ) : null,
-    [showHeaders, sections]
-  );
+  // ── New session: the project drawer's pinned button, at the bottom right ──
+  const listBottomInset = usePinnedBarInset(NEW_SESSION_BUTTON_HEIGHT);
+  const pageBackground = isDark ? THEME.dark.background : THEME.light.background;
+  const handleNewSession = React.useCallback(() => {
+    haptics.tap();
+    newSession();
+  }, [newSession]);
 
   const loading = sessionsQuery.isLoading;
   const loadFailed = sessionsQuery.isError && !hasSessions;
@@ -423,16 +414,14 @@ export function ProjectSessionsPage() {
               inputProps={{ accessibilityLabel: 'Search sessions' }}
             />
           ) : null}
-          <SectionList
-            sections={sections}
-            keyExtractor={(session) => session.session_id}
-            renderItem={renderItem}
-            renderSectionHeader={renderSectionHeader}
-            stickySectionHeadersEnabled={false}
+          <FlatList
+            data={sections}
+            keyExtractor={(section) => section.key}
+            renderItem={renderSection}
+            ItemSeparatorComponent={GroupGap}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
             showsVerticalScrollIndicator={false}
-            initialNumToRender={20}
             onEndReached={onEndReached}
             onEndReachedThreshold={0.6}
             ListFooterComponent={
@@ -447,7 +436,9 @@ export function ProjectSessionsPage() {
               flexGrow: 1,
               paddingHorizontal: 16,
               paddingTop: 4,
-              paddingBottom: insets.bottom + 28,
+              // The list scrolls under the pinned New session button; its last
+              // row rests above it.
+              paddingBottom: listBottomInset,
             }}
             ListEmptyComponent={
               <View className="flex-1 items-center justify-center px-8">
@@ -467,52 +458,101 @@ export function ProjectSessionsPage() {
         </>
       )}
 
-      <Sheet ref={actionSheetRef} enablePanDownToClose onDismiss={handleSheetDismiss}>
-        {menuSession ? (
-          <View
-            className="px-5 pt-1"
-            style={{ gap: 16, paddingBottom: Math.max(insets.bottom, 16) + 8 }}>
-            <Text variant="large" accessibilityRole="header" className="px-1" numberOfLines={1}>
-              {sessionDisplayTitle(menuSession)}
-            </Text>
-            <SettingsGroup>
-              <SettingsRow icon={Pencil} label="Rename" onPress={() => closeSheetThen('rename')} />
-              {canManageSharing ? (
-                <SettingsRow icon={Share} label="Share" onPress={() => closeSheetThen('share')} />
-              ) : null}
-              {canManageLifecycle ? (
-                <SettingsRow icon={RotateCcw} label="Restart" right={null} onPress={handleRestart} />
-              ) : null}
-              {canManageLifecycle && menuStatus === 'running' ? (
-                <SettingsRow icon={Square} label="Stop" right={null} onPress={handleStop} />
-              ) : null}
-              {canManageLifecycle ? (
-                <SettingsRow
-                  icon={Trash2}
-                  label="Delete"
-                  destructive
-                  right={null}
-                  onPress={() => {
-                    haptics.warning();
-                    closeSheetThen('delete');
-                  }}
-                />
-              ) : null}
-            </SettingsGroup>
-          </View>
-        ) : null}
-      </Sheet>
+      {/* The project drawer's pinned bar (`PinnedBar`), its New session button at
+          the bottom right. Hidden while the page loads. */}
+      {loading ? null : (
+        <PinnedBar
+          controlHeight={NEW_SESSION_BUTTON_HEIGHT}
+          background={pageBackground}
+          className="justify-end px-5">
+          <Button size="lg" className="rounded-full" onPress={handleNewSession}>
+            {/* Web's New session glyph, flipped horizontally: tip up-right (the drawer's). */}
+            <Icon as={NavigationArrowIcon} size={20} style={{ transform: [{ scaleX: -1 }] }} />
+            <Text>New session</Text>
+          </Button>
+        </PinnedBar>
+      )}
 
-      <SessionRenameSheet
-        ref={renameSheetRef}
-        projectId={projectId}
-        session={editTarget?.kind === 'rename' ? editSession : null}
-      />
-      <SessionShareSheet
-        ref={shareSheetRef}
-        projectId={projectId}
-        session={editTarget?.kind === 'share' ? editSession : null}
-      />
+      {/* Session options: `KortixBottomSheetModal`, no close button. It opens at
+          its content height and drags up to full height (the `100%` stop).
+          Rename and Share push in place of the options (`sheet-push`). */}
+      <KortixBottomSheetModal
+        ref={actionSheetRef}
+        enableDynamicSizing
+        snapPoints={OPTIONS_SHEET_SNAP_POINTS}
+        topInset={insets.top}
+        enablePanDownToClose
+        onDismiss={handleSheetDismiss}
+        keyboardBehavior="interactive"
+        keyboardBlurBehavior="restore"
+        android_keyboardInputMode="adjustResize">
+        {/* One scrollable child: dynamic sizing needs it, and Share's member list
+            can be taller than the screen. */}
+        <BottomSheetScrollView
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + 8 }}>
+          {!menuSession ? null : sheetView === 'options' ? (
+            <Animated.View key="options" entering={returning ? POP_IN : undefined}>
+              <SheetTitleRow title={sessionDisplayTitle(menuSession)} hideClose />
+              {/* The actions sit on the 16pt project edge, the title row's inset. */}
+              <View className="px-4">
+                <SettingsGroup>
+                  <SettingsRow icon={Pencil} label="Rename" onPress={() => pushView('rename')} />
+                  {canManageSharing ? (
+                    <SettingsRow icon={Share} label="Share" onPress={() => pushView('share')} />
+                  ) : null}
+                  {canManageLifecycle ? (
+                    <SettingsRow
+                      icon={RotateCcw}
+                      label="Restart"
+                      right={null}
+                      onPress={handleRestart}
+                    />
+                  ) : null}
+                  {canManageLifecycle && menuStatus === 'running' ? (
+                    <SettingsRow icon={Square} label="Stop" right={null} onPress={handleStop} />
+                  ) : null}
+                  {canManageLifecycle ? (
+                    <SettingsRow
+                      icon={Trash2}
+                      label="Delete"
+                      destructive
+                      right={null}
+                      onPress={() => {
+                        haptics.warning();
+                        deleteAfterCloseRef.current = true;
+                        closeSheet();
+                      }}
+                    />
+                  ) : null}
+                </SettingsGroup>
+              </View>
+            </Animated.View>
+          ) : (
+            // Rename and Share push in place of the options; Back returns to them.
+            <Animated.View key={sheetView} entering={PUSH_IN}>
+              <SheetTitleRow
+                title={PUSHED_VIEW_TITLE[sheetView]}
+                leading={<SheetBackButton onPress={popView} />}
+              />
+              {sheetView === 'rename' ? (
+                <SessionRenameForm
+                  projectId={projectId}
+                  session={liveRow(menuSession)}
+                  onDone={closeSheet}
+                />
+              ) : (
+                <SessionShareForm
+                  projectId={projectId}
+                  session={liveRow(menuSession)}
+                  onDone={closeSheet}
+                />
+              )}
+            </Animated.View>
+          )}
+        </BottomSheetScrollView>
+      </KortixBottomSheetModal>
 
       <AlertDialog
         open={!!confirmDelete}

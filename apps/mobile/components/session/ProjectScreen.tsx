@@ -1286,6 +1286,7 @@ export function ProjectScreen() {
     isHome,
     homeKey,
     goHome,
+    newSession: returnHome,
     onViewCovered: handleViewCovered,
     projectId,
     // Stable: a useCallback whose only dependency is a zustand store action.
