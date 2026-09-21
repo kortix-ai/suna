@@ -2863,6 +2863,16 @@ projectsApp.openapi(
             );
           }
         }
+        // THE TURN ENDED — converge the session's config now that no turn
+        // runs (spec, "Convergence triggers": a running turn defers
+        // convergence to turn end). Debounced per session, detached, and it
+        // never ends a turn: a turn the promoted prompt starts makes it return
+        // as busy, and that turn's end tries again.
+        if (turnCompletionAllowsQueuePromotion(turnCompletion) && promotedPromptId === null) {
+          void import('../lib/config-convergence-triggers')
+            .then((triggers) => triggers.notifySessionTurnEnded(sessionId))
+            .catch(() => {});
+        }
         console.info('[turn-stream] terminal turn settlement', {
           sessionId,
           opencodeSessionId:

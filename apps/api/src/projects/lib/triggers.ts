@@ -1928,6 +1928,11 @@ export async function commitRepoFile(
       };
     }
     invalidateProjectMirror(project.projectId);
+    // The base branch moved through the Contents API. The git-CLI path below
+    // notifies from `commitMultipleFilesToBranch`.
+    void import('./config-convergence-triggers')
+      .then((triggers) => triggers.notifyBaseBranchMoved(project.projectId, branch, 'manifest-write'))
+      .catch(() => {});
     return { ok: true };
   }
 

@@ -32,6 +32,7 @@ import {
   encodeReportStatus,
   parseReceivePackCommands,
   wantsSideband,
+  type RefUpdate,
 } from './receive-pack';
 import { evaluateRefUpdates, principalLabel } from './ref-policy';
 import { denialsAfterScopes } from './ref-scopes';
@@ -201,6 +202,8 @@ async function forwardAuthorized(
   scope: GitScope,
   suffix: string,
   body: ReadableStream<Uint8Array> | null,
+  /** The ref updates of a receive-pack, read by `gateReceivePack`. */
+  pushedRefs: readonly RefUpdate[] = [],
 ): Promise<Response> {
   const projectId = auth.project.projectId;
   const upstream = await resolveProjectUpstreamMemo(auth.project, scope);
@@ -269,6 +272,7 @@ async function forwardAuthorized(
   // provider(s) a session on this project will actually use (pinned provider =>
   // that one; no pin => every enabled provider).
   if (suffix === '/git-receive-pack' && res.status >= 200 && res.status < 300) {
+    notifyPushedBranches(projectId, pushedRefs);
     void (async () => {
       try {
         const gitProject = await loadGitProject({ row: auth.project });
@@ -392,6 +396,18 @@ async function forwardAuthorized(
   return new Response(res.body, { status: res.status, headers: respHeaders });
 }
 
+/**
+ * Convergence trigger for a push through this proxy (spec, "Convergence
+ * triggers"). `notifyPushedRefs` filters the refs and rate-limits. Dynamic
+ * import: `projects/lib` is a heavy graph this module does not load eagerly.
+ */
+function notifyPushedBranches(projectId: string, updates: readonly RefUpdate[]): void {
+  if (updates.length === 0) return;
+  void import('../projects/lib/config-convergence-triggers')
+    .then((triggers) => triggers.notifyPushedRefs(projectId, updates))
+    .catch(() => {});
+}
+
 // ── ref policy on push ────────────────────────────────────────────────────
 /**
  * Read the ref commands off the head of a receive-pack body and decide whether
@@ -406,7 +422,7 @@ async function forwardAuthorized(
 async function gateReceivePack(
   c: any,
   auth: Extract<GitProxyAuth, { ok: true }>,
-): Promise<Response | { body: ReadableStream<Uint8Array> }> {
+): Promise<Response | { body: ReadableStream<Uint8Array>; updates: RefUpdate[] }> {
   // git never content-encodes a receive-pack body (it gzips upload-pack
   // requests only, verified against git 2.39.1). If one ever arrives encoded we
   // cannot read the commands, so we refuse instead of forwarding unexamined.
@@ -472,6 +488,7 @@ async function gateReceivePack(
   // through. The pack itself is never buffered.
   const prefix = concatChunks(chunks, buffered);
   return {
+    updates: parsed.updates,
     body: new ReadableStream<Uint8Array>({
       start(controller) {
         if (prefix.length > 0) controller.enqueue(prefix);
@@ -996,6 +1013,6 @@ gitProxyApp.openapi(
     // point where both the principal and the refs it wants to move are known.
     const gated = await gateReceivePack(c, auth);
     if (gated instanceof Response) return gated;
-    return forwardAuthorized(c, auth, 'write', '/git-receive-pack', gated.body);
+    return forwardAuthorized(c, auth, 'write', '/git-receive-pack', gated.body, gated.updates);
   },
 );

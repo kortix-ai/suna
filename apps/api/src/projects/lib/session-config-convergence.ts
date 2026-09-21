@@ -70,7 +70,7 @@ export interface SessionConfigConvergenceTarget {
 export interface SessionConfigConvergenceDeps {
   loadTarget: (sessionId: string) => Promise<SessionConfigConvergenceTarget | null>;
   reload: (
-    input: SessionConfigConvergenceTarget & { onlyIfStale: true; force: false },
+    input: SessionConfigConvergenceTarget & { onlyIfStale: true; force: false; refreshRepo?: boolean },
   ) => Promise<SessionReloadResult>;
   sleep: (ms: number) => Promise<void>;
 }
@@ -179,9 +179,23 @@ function classify(result: SessionReloadResult): Attempt {
  * Awaitable core — exported so tests can assert the schedule without a timer.
  * Production call sites use `scheduleSessionConfigConvergence`.
  */
+export interface ConvergeSessionConfigOptions {
+  /**
+   * `wake` (default): the resume and restart schedule, both clocks.
+   * `trigger`: one attempt plus the quick ladder for a box that is not
+   * answering yet. A busy session or an old daemon ends the attempt: the next
+   * turn end or base move triggers again. Used by the turn-end and base-move
+   * triggers, which fire often.
+   */
+  schedule?: 'wake' | 'trigger';
+  /** Pull the session branch. Default true (the wake path). Triggers pass false. */
+  refreshRepo?: boolean;
+}
+
 export async function convergeSessionConfig(
   sessionId: string,
   deps: SessionConfigConvergenceDeps = defaultDeps,
+  options: ConvergeSessionConfigOptions = {},
 ): Promise<SessionConfigConvergenceOutcome> {
   try {
     const target = await deps.loadTarget(sessionId);
@@ -190,12 +204,22 @@ export async function convergeSessionConfig(
     let soon = 0;
     let later = 0;
     for (;;) {
-      const attempt = classify(await deps.reload({ ...target, onlyIfStale: true, force: false }));
+      const attempt = classify(
+        await deps.reload({
+          ...target,
+          onlyIfStale: true,
+          force: false,
+          ...(options.refreshRepo === false ? { refreshRepo: false } : {}),
+        }),
+      );
       if ('done' in attempt) return attempt.done;
+      if (options.schedule === 'trigger' && attempt.retry === 'slow') return attempt.as;
       const delay =
         attempt.retry === 'transient' && soon < RETRY_SOON_MS.length
           ? RETRY_SOON_MS[soon++]
-          : RETRY_LATER_MS[later++];
+          : options.schedule === 'trigger'
+            ? undefined
+            : RETRY_LATER_MS[later++];
       if (delay === undefined) return attempt.as;
       await deps.sleep(delay);
     }

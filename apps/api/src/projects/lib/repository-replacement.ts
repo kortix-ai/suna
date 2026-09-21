@@ -229,5 +229,9 @@ export async function persistProjectRepositoryReplacement(input: {
   });
 
   invalidateProjectMirror(input.projectId);
+  // The base branch now points into another repository: new config.
+  void import('./config-convergence-triggers')
+    .then((triggers) => triggers.notifyBaseBranchMoved(input.projectId, input.defaultBranch, 'repository-replacement'))
+    .catch(() => {});
   return result;
 }

@@ -225,6 +225,34 @@ describe('convergeSessionConfig with config releases', () => {
   });
 });
 
+describe('convergeSessionConfig on the trigger schedule', () => {
+  test('a busy session ends the attempt at once; the next turn end tries again', async () => {
+    const busy = result({ applied: false, agent_files: 'unknown', reason: 'session is mid-turn' });
+    const d = deps([busy]);
+    expect(await convergeSessionConfig('sess-1', d.deps, { schedule: 'trigger' })).toBe('busy');
+    expect(d.sleeps).toEqual([]);
+  });
+
+  test('an old daemon is one attempt, not the 27-minute ladder', async () => {
+    const d = deps([result({ config_path: 'legacy', agent_files: 'unknown' })]);
+    expect(await convergeSessionConfig('sess-1', d.deps, { schedule: 'trigger' })).toBe('awaiting-daemon-update');
+    expect(d.reloads.length).toBe(1);
+  });
+
+  test('a box that is not answering yet still gets the quick ladder, and no slow one', async () => {
+    const unreachable = result({ applied: false, agent_files: 'unknown', reason: 'no reachable sandbox' });
+    const d = deps(Array.from({ length: 8 }, () => unreachable));
+    expect(await convergeSessionConfig('sess-1', d.deps, { schedule: 'trigger' })).toBe('unreachable');
+    expect(d.sleeps).toEqual([5_000, 10_000, 15_000, 30_000]);
+  });
+
+  test('refreshRepo false reaches the reload', async () => {
+    const d = deps([result({ config_path: 'release', release_outcome: 'unchanged' })]);
+    await convergeSessionConfig('sess-1', d.deps, { schedule: 'trigger', refreshRepo: false });
+    expect(d.reloads[0]).toMatchObject({ refreshRepo: false, onlyIfStale: true, force: false });
+  });
+});
+
 describe('configNeedsPush', () => {
   test('files that were brought forward always need the restart that reads them', () => {
     expect(configNeedsPush({ agentFiles: 'updated', runningEtag: 'a', latestEtag: 'a' })).toBe(true);
