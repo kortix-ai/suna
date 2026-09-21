@@ -25,6 +25,7 @@ ID, and the branch name are the same value. See
 | `s.update(input)` | `PATCH …/sessions/:sid` | Renames the session or updates metadata |
 | `s.start(waitMs?)` | `POST …/sessions/:sid/start` | Provisions and boots the runtime |
 | `s.restart()` | `POST …/sessions/:sid/restart` | Restarts the runtime; keeps the same sandbox |
+| `s.configState()` | `GET …/sessions/:sid/config` | Reads config freshness (`stale`) and the config release state (`release`) |
 | `s.reloadConfig(input?)` | `POST …/sessions/:sid/reload` | Recompiles agent config and replaces the runtime after validation |
 | `s.reloadConfigStream(input, onEvent)` | `POST …/sessions/:sid/reload-stream` | Runs the same reload and emits server-confirmed progress phases |
 | `s.stop()` | `POST …/sessions/:sid/stop` | Stops the runtime; the session stays |
@@ -69,6 +70,25 @@ The phases are `checking-session`, `refreshing-workspace`, `compiling-config`,
 `applying-config`, and `confirming-config`. The server omits
 `refreshing-workspace` when `refresh_repo` is `false`. The
 `applying-config` phase includes the daemon's validated runtime replacement.
+
+`s.configState()` returns `release` when the API supports config releases.
+Its type is `SessionConfigRelease`. The reload results carry the same object.
+
+```ts
+const { stale, release } = await s.configState();
+if (release?.fallback_reason) {
+  // The desired config failed on the box. An earlier config runs the session.
+  console.warn(release.fallback_reason, release.running_release_id);
+} else if (release?.mode === 'session-files') {
+  // The session edited its own config dir and runs those files.
+} else if (stale === true) {
+  await s.reloadConfig({ refresh_repo: false });
+}
+```
+
+`stale` is tri-state. `null` means Kortix could not tell. Test `stale === true`,
+never `!stale`. An older API omits `release`. See
+[Config convergence](/docs/work/runtime#config-convergence).
 
 Three more read methods round out the handle:
 
