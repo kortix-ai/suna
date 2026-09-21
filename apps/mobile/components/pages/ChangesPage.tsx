@@ -65,7 +65,7 @@ import type {
   ProjectBranch,
 } from '@/lib/projects/projects-client';
 import { haptics } from '@/lib/haptics';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal, SheetTitleRow } from '@/components/kortix/sheet';
 
 interface PageTabLike {
   id: string;
@@ -400,7 +400,7 @@ function CRRow({
   );
 }
 
-function BranchRow({ branch, isDark }: { branch: ProjectBranch; isDark: boolean }) {
+export function BranchRow({ branch, isDark }: { branch: ProjectBranch; isDark: boolean }) {
   const theme = useThemeColors();
   const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
   const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
@@ -543,12 +543,7 @@ export function OpenCRSheet({
 
   return (
     <View style={{ flex: 1 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08) }}>
-        <Text style={{ flex: 1, fontSize: 18, fontFamily: 'Roobert-Medium', color: fg }}>Open a change request</Text>
-        <Pressable onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: closeBg, alignItems: 'center', justifyContent: 'center' }}>
-          <X size={17} color={muted} />
-        </Pressable>
-      </View>
+      <SheetTitleRow title="Open a change request" onClose={() => { haptics.tap(); onClose(); }} />
 
       <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         {branchesQuery.isLoading ? (
@@ -633,7 +628,6 @@ export function ChangesPage({
   isDrawerOpen,
   isRightDrawerOpen,
 }: ChangesPageProps) {
-  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -803,32 +797,26 @@ export function ChangesPage({
       </PageContent>
 
       {/* CR detail */}
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={detailSheetRef}
         snapPoints={['94%']}
         enableDynamicSizing={false}
         onDismiss={() => setSelectedCrId(null)}
-        backgroundStyle={{ backgroundColor: sheetBg }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
-        backdropComponent={SheetBackdrop}
       >
         {selectedCrId ? (
           <CRDetailSheet projectId={projectId} crId={selectedCrId} onClose={() => detailSheetRef.current?.dismiss()} isDark={isDark} />
         ) : (
           <View style={{ height: 1 }} />
         )}
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
 
       {/* Open a change request */}
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={createSheetRef}
         snapPoints={['88%']}
         enableDynamicSizing={false}
-        backgroundStyle={{ backgroundColor: sheetBg }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
-        backdropComponent={SheetBackdrop}
       >
         <OpenCRSheet
           projectId={projectId}
@@ -842,7 +830,7 @@ export function ChangesPage({
           }}
           isDark={isDark}
         />
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
     </View>
   );
 }
