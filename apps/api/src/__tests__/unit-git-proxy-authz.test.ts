@@ -21,7 +21,6 @@ let projectRow: Record<string, unknown> | null = null;
 let patResult: Record<string, unknown> = {};
 let apiKeyResult: Record<string, unknown> = {};
 let sandboxRow: Record<string, unknown> | null = null;
-let currentSessionRow: Record<string, unknown> | null = null;
 let monitorBoxRow: Record<string, unknown> | null = null;
 /** The session connector-token grant the sandbox path resolves (account_tokens.agent_grant). */
 let grantRow: Record<string, unknown> | null = null;
@@ -40,8 +39,6 @@ mock.module('../shared/db', () => ({
         ? () => (grantRow ? [grantRow] : [])
         : fields?.sessionMetadata
           ? () => (sandboxRow ? [sandboxRow] : [])
-          : fields?.metadata
-            ? () => (currentSessionRow ? [currentSessionRow] : [])
           : fields?.boxEpoch
             ? () => (monitorBoxRow ? [monitorBoxRow] : [])
             : () => (projectRow ? [projectRow] : []);
@@ -103,7 +100,6 @@ beforeEach(() => {
   patResult = { isValid: true, accountId: OWNER_ACCOUNT, userId: 'user-1', tokenId: 'tok-1' };
   apiKeyResult = { isValid: false };
   sandboxRow = null;
-  currentSessionRow = { metadata: {} };
   grantRow = null;
   authorizeAllowed = false;
   authorizeCalls = [];
@@ -388,14 +384,17 @@ describe('authorizeGitProxy — verdict memo', () => {
     expect(validateCalls).toBe(2);
   });
 
-  test('an old session loses Git access even if its verdict is cached', async () => {
+  test('an old session keeps Git access through the stable proxy after a repository switch', async () => {
     apiKeyResult = { isValid: true, accountId: OWNER_ACCOUNT, type: 'sandbox', sandboxId: 'sandbox-1' };
     sandboxRow = { sandboxId: 'sandbox-1', sessionId: 'sandbox-1', branchName: 'sandbox-1', sessionMetadata: { workspace_mode: 'branch' } };
-    currentSessionRow = { metadata: {} };
     expect((await authorizeGitProxy('kortix_session_switch', PROJECT_ID, 'write')).ok).toBe(true);
     projectRow = { ...projectRow, repoUrl: 'https://github.com/example-org/new.git', metadata: { repository_generation: 'new' } };
     const result = await authorizeGitProxy('kortix_session_switch', PROJECT_ID, 'write');
-    expect(result).toMatchObject({ ok: false, status: 409, message: 'Session belongs to a previous repository' });
+    expect(result).toMatchObject({
+      ok: true,
+      project: { repoUrl: 'https://github.com/example-org/new.git' },
+      principal: { kind: 'session', sessionId: 'sandbox-1', branch: 'sandbox-1' },
+    });
   });
 
   test("a positive verdict is reused for the clone's follow-up requests without re-validating", async () => {

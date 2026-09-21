@@ -80,8 +80,26 @@ function planContainer(title: string, steps: StreamTaskChunk[]): CardElement[] {
   return elements;
 }
 
-export function buildPlanCard(title: string, steps: StreamTaskChunk[]): Record<string, unknown> {
-  return card(planContainer(title, steps));
+export const TEAMS_STOP_VERB = 'teams_stop';
+
+/**
+ * The live "working on it" card.
+ *
+ * `sessionId` adds the Stop button. Every other Kortix surface can end a run
+ * the moment it goes wrong; in Teams the only lever was to wait out the
+ * 30-minute GC, and a wedged turn swallowed every later message in the
+ * conversation (dev 2026-09-19). The button carries the session id because the
+ * invoke that comes back names no turn of its own.
+ */
+export function buildPlanCard(
+  title: string,
+  steps: StreamTaskChunk[],
+  sessionId?: string,
+): Record<string, unknown> {
+  return card(
+    planContainer(title, steps),
+    sessionId ? [executeAction('Stop', TEAMS_STOP_VERB, { sessionId })] : undefined,
+  );
 }
 
 export function buildFinalCard(opts: {
@@ -233,6 +251,41 @@ export function buildSelectCard(opts: {
   }
   if (opts.footer) body.push(text(opts.footer, { isSubtle: true, size: 'small', spacing: 'small', wrap: true }));
   return card(body);
+}
+
+/**
+ * The agent picker, in both of its moods.
+ *
+ * `/agents` builds the neutral one: the conversation's current pick is marked
+ * "✓ In use". A failed session start builds the recovery one by passing `lead`
+ * — it leads with the failure, marks nothing as current (the conversation's own
+ * pick is the dead agent it is replacing), and closes with what to do next.
+ * Both carry the same `teams_set_agent` verb, so one tap fixes the conversation
+ * either way and `interactivity.ts` needs no second handler.
+ */
+export function buildAgentPickerCard(opts: {
+  agents: ReadonlyArray<{ name: string; description?: string | null }>;
+  current: string | null;
+  lead?: { title: string; subtitle: string };
+}): Record<string, unknown> {
+  const current = opts.lead ? null : opts.current;
+  const options: SelectOption[] = [
+    { label: 'Default', current: !opts.lead && !current, data: { agent: '' } },
+    ...opts.agents.slice(0, 6).map((a) => ({
+      label: a.name,
+      hint: a.description ?? undefined,
+      current: current === a.name,
+      data: { agent: a.name },
+    })),
+  ];
+  return buildSelectCard({
+    emoji: opts.lead ? '⚠️' : '🤖',
+    title: opts.lead?.title ?? 'Agent',
+    subtitle: opts.lead?.subtitle ?? (current ? `Currently ${current}` : 'Currently the default agent'),
+    verb: 'teams_set_agent',
+    options,
+    ...(opts.lead ? { footer: 'Pick one, then send your message again.' } : {}),
+  });
 }
 
 export function buildPanelCard(opts: {

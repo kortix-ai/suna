@@ -1,4 +1,5 @@
 import { config } from '../../config';
+import { formatRelativeTime, sessionWebUrl } from '../slack/util';
 import { lookupEmailsByUserIds } from '../../projects/lib/access';
 import { listPickerModels, labelForModelRef } from '../../llm-gateway/models/picker';
 import { isModelServableForAccount } from '../../llm-gateway/resolution/default-model';
@@ -12,6 +13,8 @@ import {
   setChannelConversationPolicy,
   setChannelModel,
 } from '../slack/selection';
+import { buildAgentsPicker } from './agent-picker';
+import { stopTeamsTurn } from './stop';
 import { conversationPolicyLabel, normalizeConversationPolicy } from './participants';
 import { sendCard } from '../teams-api';
 import {
@@ -23,6 +26,8 @@ import {
   type SelectOption,
 } from './cards';
 import {
+  conversationSession,
+  type TeamsConversationSession,
   ensureTeamsConversationBinding,
   listTenantProjects,
   resolveConversationProject,
@@ -89,6 +94,32 @@ export async function handleTeamsCommand(input: {
       case 'help':
         await post(helpCard());
         return true;
+      case 'stop':
+      case 'cancel': {
+        // The live card's Stop button is the primary lever; this is the one
+        // that still works after the card has scrolled out of reach.
+        const session = await conversationSession(input.tenantId, conversationId);
+        if (!session) {
+          await post(buildNoticeCard('Nothing is running in this conversation.'));
+          return true;
+        }
+        const outcome = await stopTeamsTurn({
+          sessionId: session.sessionId,
+          teamsUserId: userId ?? '',
+          byName: input.activity.from?.name,
+        });
+        await post(
+          outcome.stopped
+            ? buildNoticeCard(
+                outcome.stoppedRuntime
+                  ? 'Stopped. The agent is no longer working on this.'
+                  : 'Stopped. The run was already closing on its own.',
+                '✅',
+              )
+            : buildNoticeCard(outcome.notice),
+        );
+        return true;
+      }
       case 'status':
       case 'config':
       case 'settings':
@@ -104,7 +135,7 @@ export async function handleTeamsCommand(input: {
         return true;
       case 'agents':
         await ensureBinding(input.tenantId, conversationId, input.projectId, input.activity);
-        await post(await buildAgentsCard(ctx, input.projectId));
+        await post(await buildAgentsPicker(ctx, input.projectId, undefined, userId));
         return true;
       case 'agent':
         await ensureBinding(input.tenantId, conversationId, input.projectId, input.activity);
@@ -155,6 +186,7 @@ function helpCard() {
     { cmd: '/agents', desc: 'pick the agent for this conversation' },
     { cmd: '/projects', desc: 'list connected projects' },
     { cmd: '/use <name>', desc: 'point this conversation at another project' },
+    { cmd: '/stop', desc: 'stop the run in progress here' },
     { cmd: '/policy', desc: 'who may join sessions started here: open, owner, approval' },
   ]);
 }
@@ -165,9 +197,10 @@ async function buildStatusCard(
   conversationId: string,
   projectId: string,
 ) {
-  const [selection, projects] = await Promise.all([
+  const [selection, projects, session] = await Promise.all([
     currentChannelSelection(ctx),
     listTenantProjects(tenantId).catch(() => []),
+    conversationSession(tenantId, conversationId).catch(() => null),
   ]);
   const projectName = projects.find((p) => p.projectId === projectId)?.name ?? projectId;
   return buildPanelCard({
@@ -177,9 +210,33 @@ async function buildStatusCard(
       { label: 'Project', value: projectName },
       { label: 'Agent', value: selection?.agentName || 'default' },
       { label: 'Model', value: selection?.opencodeModel ? labelForModelRef(selection.opencodeModel) : 'project default' },
+      // The run itself. `/status` was the one place a user looks to answer
+      // "what is this conversation doing", and it answered everything except
+      // that — so a run that had quietly stopped looked identical to one still
+      // working.
+      { label: 'Session', value: describeConversationSession(session) },
     ],
-    url: `${dashboardBase()}/projects/${projectId}`,
+    // Deep-link to the run when there is one: the project page is a detour
+    // from the thing the card is about.
+    url: session
+      ? sessionWebUrl(config.FRONTEND_URL, projectId, session.sessionId)
+      : `${dashboardBase()}/projects/${projectId}`,
   });
+}
+
+const SESSION_STATUS_GLYPH: Record<string, string> = {
+  running: '⏳',
+  idle: '✓',
+  stopped: '•',
+  failed: '✗',
+};
+
+function describeConversationSession(session: TeamsConversationSession | null): string {
+  if (!session) return 'none yet — @-mention me with a task';
+  const status = session.status ?? 'unknown';
+  const glyph = SESSION_STATUS_GLYPH[status] ?? '•';
+  const when = session.createdAt ? ` · started ${formatRelativeTime(session.createdAt)}` : '';
+  return `${glyph} ${status}${when}`;
 }
 
 async function buildWhoamiCard(
@@ -286,39 +343,9 @@ async function setModel(ctx: ReturnType<typeof teamsChannelCtx>, arg: string) {
   return buildNoticeCard(`Model set to ${labelForModelRef(stored)}. New sessions will use it.`);
 }
 
-async function buildAgentsCard(ctx: ReturnType<typeof teamsChannelCtx>, projectId: string) {
-  const [governance, selection] = await Promise.all([
-    loadProjectAgentGovernance(projectId),
-    currentChannelSelection(ctx),
-  ]);
-  const current = selection?.agentName ?? null;
-  if (governance.agents.length === 0) {
-    return buildNoticeCard(
-      'This project has no declared agents, so it runs the default agent. Declare agents in `kortix.yaml` to switch here.',
-      '🤖',
-    );
-  }
-  const options: SelectOption[] = [
-    { label: 'Default', current: !current, data: { agent: '' } },
-    ...governance.agents.slice(0, 6).map((a) => ({
-      label: a.name,
-      hint: a.description ?? undefined,
-      current: current === a.name,
-      data: { agent: a.name },
-    })),
-  ];
-  return buildSelectCard({
-    emoji: '🤖',
-    title: 'Agent',
-    subtitle: current ? `Currently ${current}` : 'Currently the default agent',
-    verb: 'teams_set_agent',
-    options,
-  });
-}
-
 async function setAgent(ctx: ReturnType<typeof teamsChannelCtx>, arg: string) {
   const name = arg.trim();
-  if (!name) return buildAgentsCard(ctx, (await currentChannelSelection(ctx))?.projectId ?? '');
+  if (!name) return buildAgentsPicker(ctx, (await currentChannelSelection(ctx))?.projectId ?? '');
   if (name.toLowerCase() === 'default') {
     await setChannelAgent(ctx, null);
     return buildNoticeCard('Agent reset to the project default.');

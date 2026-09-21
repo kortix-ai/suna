@@ -22,8 +22,7 @@ import { loadSlackTokenForProject } from '../install-store';
 import { linkSlackIdentity, lookupSlackIdentity, resolveSlackActor, revokeSlackIdentity } from './identity';
 import { conversationPolicyLabel, normalizeConversationPolicy } from './participants';
 import { lookupEmailsByUserIds } from '../../accounts/core/app';
-import { filterAccessibleObjects, unscopedResourceIds } from '../../iam';
-import { actorForUser } from '../../iam/actor';
+import { scopedProjectAgents } from '../scoped-agents';
 import type { SlashResponse } from './types';
 
 export interface SlashCtx {
@@ -958,39 +957,8 @@ export async function loadScopedChannelAgents(input: {
   projectId: string;
   slackUserId?: string;
 }): Promise<Array<{ name: string; description: string | null }>> {
-  let agents: Awaited<ReturnType<typeof listProjectAgents>> = [];
-  try {
-    agents = await listProjectAgents(input.projectId);
-  } catch (err) {
-    console.warn('[slack-webhook] listProjectAgents failed', err);
-  }
-  try {
-    const names = agents.map((a) => a.name);
-    const identity = input.slackUserId ? await lookupSlackIdentity(input.teamId, input.slackUserId) : null;
-    let allowedNames: string[];
-    if (identity) {
-      const [proj] = await db
-        .select({ accountId: projects.accountId })
-        .from(projects)
-        .where(eq(projects.projectId, input.projectId))
-        .limit(1);
-      allowedNames = proj
-        ? await filterAccessibleObjects(
-            actorForUser(identity.userId, proj.accountId),
-            input.projectId,
-            'agent',
-            names,
-          )
-        : await unscopedResourceIds(input.projectId, 'agent', names);
-    } else {
-      allowedNames = await unscopedResourceIds(input.projectId, 'agent', names);
-    }
-    const allow = new Set(allowedNames);
-    agents = agents.filter((a) => allow.has(a.name));
-  } catch (err) {
-    console.warn('[slack-webhook] agent scoping filter failed', err);
-  }
-  return agents;
+  const identity = input.slackUserId ? await lookupSlackIdentity(input.teamId, input.slackUserId) : null;
+  return scopedProjectAgents(input.projectId, identity?.userId ?? null);
 }
 
 export function buildAgentPickerBlocks(

@@ -18,9 +18,10 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
 import { resolvePinnedRootSessionId } from '@/features/session/pinned-root-session';
 import {
-  PreviousRepositorySession,
+  PreviousRepositoryNotice,
   isPreviousRepositoryRuntimeUnavailableError,
   isPreviousRepositorySessionError,
+  sessionUsesPreviousRepository,
 } from '@/features/session/previous-repository-session';
 import { ProviderFailureRecovery } from '@/features/session/provider-failure-recovery';
 import {
@@ -229,6 +230,24 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     initialOpenCodeSessionId,
     repositoryMode,
   });
+  const previousRepositorySession = isPreviousRepositorySessionError(session.startError);
+  const previousRepositoryRuntimeUnavailable = isPreviousRepositoryRuntimeUnavailableError(
+    session.startError,
+  );
+  const usesPreviousRepository = sessionUsesPreviousRepository(
+    projectDetail?.project.metadata,
+    currentProjectSession?.metadata,
+  );
+  useEffect(() => {
+    if (!previousRepositorySession || repositoryMode === 'previous') return;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) setRepositoryMode('previous');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [previousRepositorySession, repositoryMode]);
   useEffect(() => {
     if (repositoryMode !== 'previous') return;
     void queryClient.resetQueries({
@@ -557,6 +576,12 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     if (session.messages.length > 0) setSawTranscript(true);
   }, [session.messages.length]);
   const hasTranscript = session.messages.length > 0 || sawTranscript;
+  const previousRepositoryHistoryAvailable =
+    hasTranscript &&
+    (usesPreviousRepository ||
+      repositoryMode === 'previous' ||
+      previousRepositorySession ||
+      previousRepositoryRuntimeUnavailable);
   const surface = { newSessionHint: handoff.newSessionHint, hasTranscript, hasPendingFirstPrompt };
   const overlay = resolveSessionOverlay({ ...surface, shellShowsFirstPrompt });
   // WHICH overlay is settled above; this decides whether it may COVER the chat.
@@ -638,9 +663,15 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     sandboxStatus: sandbox?.status,
   };
   const unmaterializedFailure =
-    !authLoading && !!user && isUnmaterializedSessionFailure(terminalState);
+    !previousRepositoryHistoryAvailable &&
+    !authLoading &&
+    !!user &&
+    isUnmaterializedSessionFailure(terminalState);
   const dormantWithoutRuntime =
-    !authLoading && !!user && isDormantSessionWithoutRuntime(terminalState);
+    !previousRepositoryHistoryAvailable &&
+    !authLoading &&
+    !!user &&
+    isDormantSessionWithoutRuntime(terminalState);
   const sessionContentAvailable = canMountSessionChat({
     switched: session.switched,
     opencodeSessionId: session.opencodeSessionId,
@@ -713,10 +744,6 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     ? `session ${sandbox.sandbox_id.slice(0, 8)}`
     : undefined;
   const sessionMissing = session.startError?.status === 404 && !sandbox;
-  const previousRepositorySession = isPreviousRepositorySessionError(session.startError);
-  const previousRepositoryRuntimeUnavailable = isPreviousRepositoryRuntimeUnavailableError(
-    session.startError,
-  );
   const recoverableFailure = (() => {
     if (sessionMissing) return null;
     const metadata = (sandbox?.metadata as Record<string, unknown>) ?? {};
@@ -751,7 +778,11 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     if (unmaterializedFailure) {
       return provisioningFailurePresentation({}, sandboxLabel ?? 'session', tI18nComplete);
     }
-    if (session.startError) {
+    if (
+      session.startError &&
+      !previousRepositorySession &&
+      !previousRepositoryRuntimeUnavailable
+    ) {
       return provisioningFailurePresentation(
         {
           failureCategory: 'sandbox-provider',
@@ -832,16 +863,10 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       );
     }
 
-    if (previousRepositorySession || previousRepositoryRuntimeUnavailable) {
+    if (previousRepositorySession && !hasTranscript) {
       return (
         <HeaderlessSessionSurface>
-          <PreviousRepositorySession
-            projectId={projectId}
-            canResume={!previousRepositoryRuntimeUnavailable}
-            isResuming={repositoryMode === 'previous'}
-            onResume={() => setRepositoryMode('previous')}
-            onDelete={() => setDeleteOpen(true)}
-          />
+          <SessionStartingLoader stage="starting" projectId={projectId} sessionId={sessionId} />
         </HeaderlessSessionSurface>
       );
     }
@@ -938,7 +963,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     // into a fresh session: the server deliberately preserved this identity
     // instead of attaching a replacement box, and the UI must not undo that.
     // Say what happened, name the id, and stop.
-    if (runtimeIdentityUnavailable) {
+    if (runtimeIdentityUnavailable && !previousRepositoryHistoryAvailable) {
       return (
         <InlineSessionError
           title={tSessionPage('lost.title')}
@@ -1105,7 +1130,14 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
 
   return (
     <>
-      <SandboxLoadingBoundary>{inner}</SandboxLoadingBoundary>
+      <SandboxLoadingBoundary>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          {(usesPreviousRepository || repositoryMode === 'previous' || previousRepositorySession) && (
+            <PreviousRepositoryNotice />
+          )}
+          {inner}
+        </div>
+      </SandboxLoadingBoundary>
       <SessionDeleteModal
         projectId={projectId}
         sessionId={sessionId}

@@ -4,6 +4,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   isPreviousRepositoryRuntimeUnavailableError,
   isPreviousRepositorySessionError,
+  sessionUsesPreviousRepository,
 } from './previous-repository-session';
 
 describe('previous repository session state', () => {
@@ -37,5 +38,21 @@ describe('previous repository session state', () => {
     });
     expect(isPreviousRepositoryRuntimeUnavailableError(error)).toBe(true);
     expect(isPreviousRepositorySessionError(error)).toBe(false);
+  });
+
+  test('detects a session pinned before the current repository generation', () => {
+    expect(
+      sessionUsesPreviousRepository(
+        { repository_generation: 'generation-current' },
+        { repository_generation: 'generation-previous' },
+      ),
+    ).toBe(true);
+    expect(
+      sessionUsesPreviousRepository(
+        { repository_generation: 'generation-current' },
+        { repository_generation: 'generation-current' },
+      ),
+    ).toBe(false);
+    expect(sessionUsesPreviousRepository({}, {})).toBe(false);
   });
 });

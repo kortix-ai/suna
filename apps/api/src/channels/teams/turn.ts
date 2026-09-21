@@ -177,7 +177,30 @@ export async function noticeOnLiveCard(handle: TeamsLiveTurn, text: string): Pro
 
 async function repaintPlan(handle: TeamsLiveTurn): Promise<void> {
   if (!handle.messageActivityId) return;
-  await updateCard(refOf(handle), handle.messageActivityId, buildPlanCard(LIVE_PLAN_TITLE, handle.steps));
+  await updateCard(
+    refOf(handle),
+    handle.messageActivityId,
+    // `sessionId` is what puts Stop on the card, and it is empty until the
+    // session exists — there is nothing to stop before then.
+    buildPlanCard(LIVE_PLAN_TITLE, handle.steps, handle.sessionId || undefined),
+  );
+}
+
+/**
+ * Repaint the live card once the turn knows its session, so Stop appears
+ * without waiting for the agent's first step. Best effort: a card that cannot
+ * be updated still gains the button on the next step.
+ */
+export async function showStopOnLiveCard(handle: TeamsLiveTurn | null): Promise<void> {
+  if (!handle || !handle.messageActivityId || !handle.sessionId || handle.finalized) return;
+  try {
+    await repaintPlan(handle);
+  } catch (err) {
+    console.warn('[teams-webhook] could not repaint the live card with Stop', {
+      sessionId: handle.sessionId,
+      err: (err as Error)?.message,
+    });
+  }
 }
 
 export async function relayTurnStep(
@@ -208,7 +231,10 @@ export async function relayTurnStep(
       status: 'in_progress',
     };
     if (opts.detail) firstStep.details = opts.detail.slice(0, 500);
-    const activityId = await sendCard(refOf(handle), buildPlanCard(LIVE_PLAN_TITLE, [firstStep]));
+    const activityId = await sendCard(
+      refOf(handle),
+      buildPlanCard(LIVE_PLAN_TITLE, [firstStep], handle.sessionId || undefined),
+    );
     if (!activityId) return false;
     handle.messageActivityId = activityId;
     handle.steps = [firstStep];
@@ -276,7 +302,14 @@ export async function relayTurnEnd(
 
 export async function finalizeTurn(
   handle: TeamsLiveTurn,
-  opts: { answer?: string; error?: string; title?: string; card?: Record<string, unknown> },
+  opts: {
+    answer?: string;
+    error?: string;
+    title?: string;
+    card?: Record<string, unknown>;
+    /** A deliberate stop: the step in flight neither finished nor failed. */
+    stopped?: boolean;
+  },
 ): Promise<void> {
   if (handle.finalized && handle.messageActivityId === '' && !opts.answer && !opts.error && !opts.card) return;
   const hasContent = Boolean(opts.answer || opts.error || opts.card);
@@ -294,7 +327,12 @@ export async function finalizeTurn(
       else await sendCard(refOf(handle), answer);
     } else if (handle.messageActivityId) {
       const last = handle.steps[handle.steps.length - 1];
-      if (last && last.status === 'in_progress') last.status = opts.error ? 'error' : 'complete';
+      if (last && last.status === 'in_progress') {
+        // A stopped step gets the neutral glyph. `complete` would claim work
+        // that never finished, and `error` paints a red ✗ over something the
+        // user chose to end.
+        last.status = opts.stopped ? 'pending' : opts.error ? 'error' : 'complete';
+      }
       await updateCard(
         refOf(handle),
         handle.messageActivityId,

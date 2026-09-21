@@ -40,23 +40,13 @@ flow(
       preserveRuntime: true,
     });
 
-    await ctx.step(
-      'ordinary start refuses the previous repository and names the remedy',
-      async () => {
-        const response = await ctx.client.as(ctx.P.OWNER).post(path, {}, { params });
-        response
-          .status(409)
-          .body()
-          .has('$.code', 'session_repository_changed')
-          .has(
-            '$.remedy',
-            'Resume the preserved workspace without Git access, or start a new session.',
-          );
-      },
-    );
+    await ctx.step('ordinary start opens the preserved workspace without a bypass', async () => {
+      const response = await ctx.client.as(ctx.P.OWNER).post(path, {}, { params });
+      response.status(200).body().has('$.stage', 'stopped');
+    });
 
     await ctx.step(
-      'explicit previous mode passes the generation gate for the preserved runtime',
+      'the legacy previous mode parameter remains backward compatible',
       async () => {
         const response = await ctx.client.as(ctx.P.OWNER).post(
           path,
@@ -70,7 +60,7 @@ flow(
       },
     );
 
-    await ctx.step('a project member cannot bypass the session lifecycle owner gate', async () => {
+    await ctx.step('ordinary agent access policy still applies to a project member', async () => {
       const response = await ctx.client.as(member).post(
         path,
         {},
@@ -79,7 +69,13 @@ flow(
           query: { repository_mode: 'previous' },
         },
       );
-      response.status(403).body().has('$.code', 'previous_repository_resume_forbidden');
+      response
+        .status(403)
+        .body()
+        .has(
+          '$.error',
+          "You don't have access to any agent in this project. Ask a manager to grant you one.",
+        );
     });
 
     const unavailableSessionId = await createDatabaseSession(ctx.env, {
@@ -95,7 +91,7 @@ flow(
     });
 
     await ctx.step(
-      'explicit previous mode never provisions a replacement when the old runtime is gone',
+      'a missing previous runtime uses the ordinary stopped-session recovery path',
       async () => {
         const response = await ctx.client.as(ctx.P.OWNER).post(
           path,
@@ -105,7 +101,7 @@ flow(
             query: { repository_mode: 'previous' },
           },
         );
-        response.status(409).body().has('$.code', 'previous_repository_runtime_unavailable');
+        response.status(200).body().has('$.stage', 'stopped');
       },
     );
   },

@@ -115,6 +115,26 @@ jobs:
       - name: Install Chromium
         if: matrix.mode == 'browser'
         run: pnpm --dir tests exec playwright install --with-deps chromium
+      - name: Free the local Supabase ports
+        # Blacksmith runners are reused, and a job that ended without stopping
+        # its stack leaves containers holding 54321-54324. The next
+        # `supabase start` then dies with
+        #   failed to bind host port for 0.0.0.0:54324: address already in use
+        # which looks exactly like a test failure. Seen four times on
+        # 2026-09-21 across the core, packages and browser lanes.
+        #
+        # `supabase stop` only reaches containers of the same project name, so
+        # anything else still holding a port is removed by port, not by name.
+        run: |
+          set -uo pipefail
+          pnpm exec supabase stop --no-backup || true
+          for port in 54321 54322 54323 54324; do
+            ids=$(docker ps -aq --filter "publish=$port" || true)
+            if [ -n "$ids" ]; then
+              echo "[ci] removing stale container(s) on port $port: $ids"
+              docker rm -f $ids || true
+            fi
+          done
       - name: Prestart Supabase for the browser lane
         # The root runner reuses a running local Supabase. Starting it before the
         # lane keeps Next.js cold-route compilation and the Supabase image
@@ -133,7 +153,10 @@ jobs:
           # shellcheck disable=SC2086 # TEST_ARGS is a matrix literal, split on purpose
           if [[ -n "$TEST_ARGS" ]]; then pnpm test -- $TEST_ARGS; else pnpm test; fi
       - name: Stop the local Supabase stack
-        if: always() && matrix.mode == 'browser'
+        # EVERY lane, not just the browser ones. The core and packages lanes
+        # start Supabase too (through `pnpm test`), and leaving it running is
+        # what strands the ports for the next job on a reused runner.
+        if: always()
         run: pnpm exec supabase stop --no-backup || true
       - name: Guard test artifacts against secrets
         if: always()

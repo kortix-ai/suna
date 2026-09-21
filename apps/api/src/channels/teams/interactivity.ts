@@ -4,7 +4,7 @@ import { applyVerdict, getReviewItemById } from '../../projects/review-items';
 import { setChannelAgent, setChannelModel } from '../slack/selection';
 import { resolveConversationProject, setConversationProject, teamsChannelCtx } from './binding';
 import { consumePendingTeamsPickerMessage } from './auth-resume';
-import { TEAMS_FORM_VERB, buildNoticeCard } from './cards';
+import { TEAMS_FORM_VERB, TEAMS_STOP_VERB, buildNoticeCard } from './cards';
 import {
   createTeamsAccessRequest,
   lookupTeamsIdentity,
@@ -13,6 +13,7 @@ import {
 } from './identity';
 import { decideTeamsThreadJoin } from './participants';
 import { createOrJoinTeamsConversationSession } from './session';
+import { stopTeamsTurn } from './stop';
 import type { TeamsActivity, TeamsConversationRef } from './types';
 
 export interface TeamsInvokeResponse {
@@ -55,6 +56,8 @@ export async function handleAdaptiveCardAction(activity: TeamsActivity): Promise
       return handleAnswer(activity, action.data);
     case TEAMS_FORM_VERB:
       return handleForm(activity, action.data);
+    case TEAMS_STOP_VERB:
+      return handleStop(activity, action.data);
     case 'teams_review':
       return handleReview(activity, action.data);
     default:
@@ -84,6 +87,39 @@ async function handleSetModel(
   const stored = toOpencodeModelRef(model);
   await setChannelModel(ctx, stored);
   return cardResponse(buildNoticeCard(`Model set to ${labelForModelRef(stored)}.`, '✅'));
+}
+
+/**
+ * Stop the run behind the live card.
+ *
+ * The invoke carries the session id the card was drawn with; nothing about the
+ * activity itself names a turn. `stopTeamsTurn` decides whether this person may
+ * end it and settles the card, so the reply here is only what the presser is
+ * told — and a refusal reads the same to them as to anyone watching, because an
+ * `Action.Execute` response is shown to the presser alone.
+ */
+async function handleStop(
+  activity: TeamsActivity,
+  data: Record<string, unknown>,
+): Promise<TeamsInvokeResponse> {
+  const sessionId = typeof data.sessionId === 'string' ? data.sessionId : '';
+  if (!sessionId) return cardResponse(buildNoticeCard('That run is no longer available.'));
+  const outcome = await stopTeamsTurn({
+    sessionId,
+    teamsUserId: teamsUserId(activity) ?? '',
+    byName: activity.from?.name,
+  });
+  if (!outcome.stopped) return cardResponse(buildNoticeCard(outcome.notice));
+  return cardResponse(
+    buildNoticeCard(
+      outcome.stoppedRuntime
+        ? 'Stopped. The agent is no longer working on this.'
+        : // The ledger is closed either way; say so without claiming a reach we
+          // did not have. A parked or already-finished sandbox is the usual case.
+          'Stopped. The run was already closing on its own.',
+      '✅',
+    ),
+  );
 }
 
 async function handleSetAgent(
