@@ -1,24 +1,101 @@
-/* Throwaway prototype motion. Layout changes remain immediate. */
-.hero-prototype-change {
-  animation: hero-prototype-change var(--duration-moderate, 200ms) ease-out;
+/* Reference geometry is deliberate: the user requested Rightfit's exact layout.
+   These dimensions are scoped to the development prototype. */
+.rightfit-container {
+  width: min(1152px, calc(100% - 32px));
+  margin-inline: auto;
 }
-@keyframes hero-prototype-change {
-  from {
-    opacity: 0;
-    transform: translateY(3px);
+.rightfit-nav-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  min-height: 56px;
+}
+.rightfit-hero {
+  padding-top: 240px;
+  padding-bottom: 88px;
+}
+.rightfit-intro {
+  display: grid;
+  grid-template-columns: minmax(0, 720px) minmax(0, 384px);
+  gap: 48px;
+  align-items: end;
+  margin-bottom: 40px;
+}
+.rightfit-title {
+  font-size: 60px;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+}
+.rightfit-description {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 20px;
+  text-align: right;
+  padding-bottom: 4px;
+}
+.rightfit-media {
+  flex: none;
+  position: relative;
+  aspect-ratio: 16 / 10;
+  padding: 7.2% 7.2% 3.6%;
+  background: url('/wallpapers/neuro-dark.jpg') center / cover;
+}
+.rightfit-screen {
+  height: 100%;
+  min-width: 0;
+}
+.rightfit-screen video {
+  object-fit: contain;
+  object-position: center;
+}
+.rightfit-tab-bar {
+  scrollbar-width: thin;
+}
+@media (max-width: 1023px) {
+  .rightfit-hero {
+    padding-top: 160px;
+    padding-bottom: 64px;
   }
-  to {
-    opacity: 1;
-    transform: translateY(0);
+  .rightfit-intro {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+  .rightfit-title {
+    font-size: 48px;
+  }
+  .rightfit-description {
+    align-items: flex-start;
+    text-align: left;
+    max-width: 560px;
+  }
+  .rightfit-media {
+    aspect-ratio: auto;
+    height: 480px;
+    padding: 32px;
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  .hero-prototype-change {
-    animation: none;
+@media (max-width: 639px) {
+  .rightfit-nav-row {
+    grid-template-columns: 1fr auto;
   }
-  .hero-prototype *,
-  .hero-prototype *::before,
-  .hero-prototype *::after {
-    transition: none !important;
+  .rightfit-hero {
+    padding-top: 128px;
+    padding-bottom: 48px;
+  }
+  .rightfit-title {
+    font-size: 40px;
+  }
+  .rightfit-intro {
+    margin-bottom: 32px;
+  }
+  .rightfit-media {
+    height: 400px;
+    padding: 16px;
+  }
+  .rightfit-media:has([data-surface='web']),
+  .rightfit-media:has([data-surface='cli']) {
+    height: auto;
+    aspect-ratio: 16 / 10;
   }
 }

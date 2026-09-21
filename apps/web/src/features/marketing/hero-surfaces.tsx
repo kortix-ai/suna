@@ -8,6 +8,7 @@ import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
 import { Slack } from '@/features/icon/icons/slack';
 import { SdkSurface, SurfaceLink } from '@/features/marketing/landing/code-panels';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useTranslations } from '@/i18n/use-translations';
 import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
 import { cn } from '@/lib/utils';
 import {
@@ -17,13 +18,12 @@ import {
   DeviceMobileIcon as Smartphone,
   TerminalWindowIcon as Terminal,
 } from '@phosphor-icons/react';
-import { useTranslations } from '@/i18n/use-translations';
 import { useTheme } from 'next-themes';
 import Image from 'next/image';
 import type { ComponentType, ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 
-type SurfaceId = 'web' | 'slack' | 'teams' | 'email' | 'mobile' | 'cli' | 'sdk';
+export type SurfaceId = 'web' | 'slack' | 'teams' | 'email' | 'mobile' | 'cli' | 'sdk';
 
 type Surface = {
   id: SurfaceId;
@@ -33,7 +33,7 @@ type Surface = {
 
 /** Web leads and CLI follows it: the two recorded-in-the-product surfaces sit
  *  together at the front, then the channels, then the API. */
-const SURFACES: Surface[] = [
+export const SURFACES: Surface[] = [
   { id: 'web', label: 'Web', icon: Monitor },
   { id: 'cli', label: 'CLI', icon: Terminal },
   { id: 'slack', label: 'Slack', icon: Slack },
@@ -588,7 +588,7 @@ function CliSurface() {
   );
 }
 
-function SurfacePanel({ surface }: { surface: SurfaceId }) {
+export function SurfacePanel({ surface }: { surface: SurfaceId }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   switch (surface) {
     case 'web':

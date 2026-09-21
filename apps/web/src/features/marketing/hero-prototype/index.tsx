@@ -23,7 +23,7 @@ export default function HeroPrototype() {
   return (
     <>
       {selected === 'hero-a' ? <HeroA /> : <Hero />}
-      {showComparison && (
+      {showComparison && params.get('compare') === '1' && (
         <aside
           aria-label="Hero prototype comparison"
           className="bg-popover fixed bottom-4 left-1/2 z-40 flex max-w-full -translate-x-1/2 items-center gap-2 rounded-full border px-2 py-1 shadow-md"
