@@ -33,7 +33,9 @@ export function createHarnessControlRouter(harness: HarnessService, context: Har
     router.route(path, controller)
     router.route(`${path}/`, controller)
   }
-  mount('/health', createHealthRouter(context, harness.diagnostics))
+  // `config.release.v1`: the API may send POST /kortix/config/converge.
+  // Advertised only by a control that implements it.
+  mount('/health', createHealthRouter(context, harness.diagnostics, control.convergeConfig ? ['config.release.v1'] : []))
   mount('/refresh', createRefreshRouter(context.cfg, control))
   mount('/config', createConfigRouter(context.cfg, control))
   mount('/abort', createAbortRouter(context.cfg, control))

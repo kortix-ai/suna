@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { readBootConfigPointer } from '../../boot-config-git'
+import { readBootConfigPointer } from '../../boot-config'
 import { execFile } from 'node:child_process'
 import { readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -358,11 +358,11 @@ export function createOpenCodeAssetsService(
 ): HarnessAssetsService {
   return {
     componentNames: ['opencode'],
-    // The overlay goes where opencode READS: the config copy when the box has
-    // converged on the base branch (boot-config.ts), else the working tree.
+    // The overlay goes where opencode READS: the proven release when the box
+    // runs one (boot-config.ts), else the working tree.
     resolveConfigDir: async (cfg) => {
       const pointer = await readBootConfigPointer()
-      return pointer && existsSync(pointer.dir)
+      return pointer?.proven && existsSync(pointer.dir)
         ? pointer.dir
         : resolveOpencodeConfigDir(requireOpenCodeConfig(cfg))
     },

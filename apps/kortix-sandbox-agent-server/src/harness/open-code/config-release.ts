@@ -429,6 +429,20 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
   return respond('applied', result)
 }
 
+/**
+ * The last proven release, for a spawn before the repository exists. Only the
+ * pointer and the manifest are read here; `resolveBootConfig` verifies the
+ * files once the checkout is in place. Delivers the release's governance.
+ */
+export async function provenReleaseForEarlySpawn(root: string = bootConfigRoot()): Promise<{ dir: string } | null> {
+  const pointer = await readBootConfigPointer(root)
+  if (!pointer?.proven || !existsSync(pointer.dir)) return null
+  const manifest = await readReleaseManifest(root, pointer.release_id)
+  if (!manifest) return null
+  deliverGovernance(manifest.compiled_governance, manifest.compiled_governance_etag)
+  return { dir: pointer.dir }
+}
+
 export interface BootConfigChoice {
   dir: string
   source: ConfigSource
