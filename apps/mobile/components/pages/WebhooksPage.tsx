@@ -40,9 +40,14 @@ import { Icon } from '@/components/ui/icon';
 import { PageHeader } from '@/components/kortix/page-header';
 import { PageContent } from '@/components/kortix/page-content';
 import { SearchListHeader } from '@/components/kortix/search-list-header';
+import { ListRow } from '@/components/kortix/list-row';
+import { PageList, StatusDot } from '@/components/kortix/page-list';
 import { useThemeColors } from '@/lib/theme-colors';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import { AgentPickerField, ModelPickerField } from './TriggerAgentModelFields';
+import { PromptEditView, PromptPreview } from './TriggerPromptField';
+import { POP_IN, PUSH_IN } from '@/components/kortix/sheet-push';
+import Animated from 'react-native-reanimated';
 import {
   useProjectTriggers,
   useCreateProjectTrigger,
@@ -55,7 +60,7 @@ import type { ProjectTrigger } from '@/lib/projects/projects-client';
 import { slugify, relativeTime } from '@/lib/projects/triggers-format';
 import { API_URL } from '@/api/config';
 import { haptics } from '@/lib/haptics';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal, SheetTitleRow } from '@/components/kortix/sheet';
 
 interface PageTabLike {
   id: string;
@@ -161,12 +166,7 @@ function WebhookCreateSheet({
 
   return (
     <View style={{ flex: 1 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: withAlpha(fg, 0.08) }}>
-        <Text style={{ flex: 1, fontSize: 18, fontFamily: 'Roobert-Medium', color: fg }}>New webhook</Text>
-        <Button variant="secondary" size="icon" className="rounded-full" onPress={() => { haptics.tap(); onClose(); }} hitSlop={8}>
-          <Icon as={X} size={17} color={muted} />
-        </Button>
-      </View>
+      <SheetTitleRow title="New webhook" onClose={() => { haptics.tap(); onClose(); }} />
 
       <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 6 }}>Name</Text>
@@ -256,7 +256,13 @@ function WebhookDetailSheet({
   const fire = useFireProjectTrigger(projectId);
   const update = useUpdateProjectTrigger(projectId);
   const del = useDeleteProjectTrigger(projectId);
-  const [prompt, setPrompt] = useState(trigger.prompt_template);
+  const [editingPrompt, setEditingPrompt] = useState(false);
+  // The detail slides back in only after the editor was open, never on first open.
+  const [returning, setReturning] = useState(false);
+  const closePromptEditor = () => {
+    setReturning(true);
+    setEditingPrompt(false);
+  };
   const [copied, setCopied] = useState<'url' | 'curl' | null>(null);
 
   const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
@@ -268,7 +274,6 @@ function WebhookDetailSheet({
 
   const url = trigger.webhook_url ?? webhookUrlFor(projectId, trigger.slug);
   const signed = !!trigger.secret_env;
-  const promptChanged = prompt !== trigger.prompt_template && prompt.trim().length > 0;
 
   const copy = async (key: 'url' | 'curl', text: string) => {
     haptics.tap();
@@ -293,10 +298,10 @@ function WebhookDetailSheet({
       onError: (e: any) => Alert.alert('Failed', e?.message || 'Could not update.'),
     });
   };
-  const handleSavePrompt = () => {
-    if (!promptChanged) return;
+  const handleSavePrompt = (next: string) => {
     haptics.tap();
-    update.mutate({ slug: trigger.slug, input: { prompt_template: prompt } }, {
+    update.mutate({ slug: trigger.slug, input: { prompt_template: next } }, {
+      onSuccess: closePromptEditor,
       onError: (e: any) => Alert.alert('Failed', e?.message || 'Could not save prompt.'),
     });
   };
@@ -320,8 +325,22 @@ function WebhookDetailSheet({
     ]);
   };
 
+  if (editingPrompt) {
+    return (
+      <Animated.View key="prompt" entering={PUSH_IN} style={{ flex: 1 }}>
+        <PromptEditView
+          value={trigger.prompt_template}
+          placeholders="{{ message.text }} · {{ trigger.type }} · {{ fired_at }}"
+          saving={update.isPending}
+          onSave={handleSavePrompt}
+          onBack={closePromptEditor}
+        />
+      </Animated.View>
+    );
+  }
+
   return (
-    <View style={{ flex: 1 }}>
+    <Animated.View key="detail" entering={returning ? POP_IN : undefined} style={{ flex: 1 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: border }}>
         <View style={{ width: 40, height: 40, borderRadius: 11, backgroundColor: iconBg, alignItems: 'center', justifyContent: 'center' }}>
           <Webhook size={19} color={muted} />
@@ -371,26 +390,10 @@ function WebhookDetailSheet({
         <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: muted, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 18, marginBottom: 8 }}>Sample request</Text>
         <CopyRow label="Copy curl" value={curlSample(url)} onCopy={() => copy('curl', curlSample(url))} copied={copied === 'curl'} isDark={isDark} />
 
-        {/* Prompt */}
-        <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: muted, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 18, marginBottom: 8 }}>Prompt</Text>
-        <BottomSheetTextInput
-          value={prompt}
-          onChangeText={setPrompt}
-          multiline
-          placeholder="What should the agent do?"
-          placeholderTextColor={muted}
-          style={{ minHeight: 96, borderRadius: 11, borderWidth: 1, borderColor: border, backgroundColor: inputBg, padding: 12, fontSize: 14, color: fg, fontFamily: 'Roobert', textAlignVertical: 'top' }}
-        />
-        <Text style={{ fontSize: 11.5, color: muted, marginTop: 6 }}>Placeholders: {'{{ message.text }}'} · {'{{ trigger.type }}'} · {'{{ fired_at }}'}</Text>
-        {promptChanged && (
-          <Button size="lg" onPress={handleSavePrompt} disabled={update.isPending} className="mt-2.5 rounded-full">
-            {update.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
-            <Text>Save prompt</Text>
-          </Button>
-        )}
+        <PromptPreview value={trigger.prompt_template} onEdit={() => setEditingPrompt(true)} />
 
-        <AgentPickerField projectId={projectId} value={trigger.agent} onChange={handleAgentChange} isDark={isDark} />
-        <ModelPickerField projectId={projectId} value={trigger.model} onChange={handleModelChange} isDark={isDark} />
+        <AgentPickerField projectId={projectId} value={trigger.agent} onChange={handleAgentChange} flush />
+        <ModelPickerField projectId={projectId} value={trigger.model} onChange={handleModelChange} flush />
 
         {/* Metadata */}
         <View style={{ marginTop: 22, borderRadius: 12, borderWidth: 1, borderColor: border, paddingHorizontal: 14 }}>
@@ -405,7 +408,7 @@ function WebhookDetailSheet({
           ))}
         </View>
       </BottomSheetScrollView>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -419,7 +422,6 @@ export function WebhooksPage({
   isDrawerOpen,
   isRightDrawerOpen,
 }: WebhooksPageProps) {
-  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -459,6 +461,8 @@ export function WebhooksPage({
         onOpenRightDrawer={onOpenRightDrawer}
         isDrawerOpen={isDrawerOpen}
         isRightDrawerOpen={isRightDrawerOpen}
+        onAdd={() => { haptics.tap(); addSheetRef.current?.present(); }}
+        addLabel="New webhook"
       />
 
       <PageContent>
@@ -480,92 +484,62 @@ export function WebhooksPage({
           </View>
         )}
 
-        <SearchListHeader value={search} onChangeText={setSearch} placeholder="Search webhooks" onAdd={() => { haptics.tap(); addSheetRef.current?.present(); }} />
+        <SearchListHeader value={search} onChangeText={setSearch} placeholder="Search webhooks" />
 
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: insets.bottom + 40 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          {isLoading ? (
-            <View style={{ paddingVertical: 48, alignItems: 'center' }}><ActivityIndicator size="small" color={muted} /></View>
-          ) : forbidden ? (
-            <View style={{ padding: 40, alignItems: 'center' }}><Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>You don't have access to this project's webhooks.</Text></View>
-          ) : isError ? (
-            <View style={{ padding: 24, alignItems: 'center', gap: 12 }}>
-              <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>{(error as Error)?.message ?? 'Failed to load webhooks'}</Text>
-              <Button variant="outline" size="sm" className="rounded-full" onPress={() => refetch()}>
-                <Text>Retry</Text>
-              </Button>
-            </View>
-          ) : filtered.length === 0 ? (
-            <View style={{ padding: 40, alignItems: 'center', gap: 12 }}>
-              <Webhook size={26} color={muted} />
-              <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>{all.length === 0 ? 'No webhooks yet.' : 'No webhooks match your search.'}</Text>
-              {all.length === 0 && (
-                <Button variant="outline" size="sm" className="rounded-full" onPress={() => { haptics.tap(); addSheetRef.current?.present(); }}>
-                  <Text>New webhook</Text>
-                </Button>
-              )}
-            </View>
-          ) : (
-            filtered.map((t, i) => {
-              const sub = `${t.secret_env ? 'Signed' : 'Unsigned'} · ${relativeTime(t.last_fired_at)} · ${(t.agent || 'default').toUpperCase()}`;
-              return (
-                <View key={t.slug}>
-                  <PressableSurface
-                    onPress={() => openRow(t.slug)}
-                    style={({ pressed }) => [
-                      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12 },
-                      pressed && { opacity: 0.6 },
-                    ]}
-                  >
-                    <View style={{ width: 38, height: 38, borderRadius: 10, backgroundColor: withAlpha(fg, isDark ? 0.06 : 0.04), alignItems: 'center', justifyContent: 'center' }}>
-                      <Icon as={Webhook} size={18} color={muted} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>{t.name || t.slug}</Text>
-                        <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: t.enabled ? THEME.accent.green : muted }} />
-                      </View>
-                      <Text style={{ fontSize: 12.5, color: muted, marginTop: 2 }} numberOfLines={1}>{sub}</Text>
-                    </View>
-                    <Icon as={ChevronRight} size={18} color={muted} />
-                  </PressableSurface>
-                  {i < filtered.length - 1 && <View style={{ height: 1, backgroundColor: border, marginLeft: 66 }} />}
+        <PageList
+          isLoading={isLoading}
+          errorMessage={!forbidden && isError && all.length === 0 ? ((error as Error)?.message ?? 'Unable to load webhooks') : null}
+          onRetry={() => void refetch()}
+          onRefresh={() => refetch()}
+          emptyLabel={
+            forbidden
+              ? "You don't have access to this project's webhooks"
+              : filtered.length === 0
+                ? all.length === 0 ? 'No webhooks yet' : 'No matching webhooks'
+                : null
+          }>
+          {filtered.map((t, i) => (
+            <ListRow
+              key={t.slug}
+              title={t.name || t.slug}
+              subtitle={`${t.secret_env ? 'Signed' : 'Unsigned'} · ${relativeTime(t.last_fired_at)} · ${t.agent || 'default'}`}
+              divider={i < filtered.length - 1}
+              onPress={() => openRow(t.slug)}
+              right={
+                <View className="flex-row items-center gap-3">
+                  <StatusDot on={!!t.enabled} label={t.enabled ? 'Active' : 'Paused'} />
+                  <Icon as={ChevronRight} size={18} className="text-muted-foreground" />
                 </View>
-              );
-            })
-          )}
-        </ScrollView>
+              }
+            />
+          ))}
+        </PageList>
       </PageContent>
 
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={addSheetRef}
         snapPoints={['92%']}
         enableDynamicSizing={false}
-        backgroundStyle={{ backgroundColor: sheetBg }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
-        backdropComponent={SheetBackdrop}
       >
         <WebhookCreateSheet projectId={projectId} onClose={() => addSheetRef.current?.dismiss()} isDark={isDark} />
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
 
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={detailSheetRef}
         snapPoints={['92%']}
         enableDynamicSizing={false}
         onDismiss={() => setSelectedSlug(null)}
-        backgroundStyle={{ backgroundColor: sheetBg }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
-        backdropComponent={SheetBackdrop}
       >
         {selected ? (
           <WebhookDetailSheet projectId={projectId} trigger={selected} onClose={() => detailSheetRef.current?.dismiss()} isDark={isDark} />
         ) : (
           <View style={{ height: 1 }} />
         )}
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
     </View>
   );
 }

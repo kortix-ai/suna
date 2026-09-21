@@ -3,8 +3,10 @@
  * opens on mobile (`components/session/turn/activity-sheet.tsx`).
  *
  * One entry per thing the agent did: a thought (merged fragments), or one tool
- * call. Same-family group rows are unfolded, so every call is its own entry
- * with its own detail view. Grouping, plumbing, and the thought-running rule
+ * call. A thought is listed as "Thinking" (Jay, 2026-09-22): the list says that
+ * the agent thought, not what. A tap opens the thought's text. Same-family
+ * group rows are unfolded, so every call is its own entry with its own detail
+ * view. Grouping, plumbing, and the thought-running rule
  * come from `burstView` (and through it `mergeBurstSteps`), so the sheet lists
  * exactly the steps the summary row counts.
  *
@@ -25,12 +27,16 @@ export type ActivitySheetEntry =
   | {
       kind: 'thought';
       key: string;
-      /** One line: the thought's bold heading, else its first sentence. */
+      /**
+       * Always `THOUGHT_TITLE` (Jay, 2026-09-22): the list names the step and
+       * shows none of the thought. The text is `body`, the detail a tap opens.
+       */
       title: string;
-      /** The thought as markdown, without the heading the title took. */
+      /** The thought as markdown: the merged fragments, paragraphs kept. */
       body: string;
       running: boolean;
-      openable: true;
+      /** A thought opens once it has text. */
+      openable: boolean;
     }
   | {
       kind: 'tool';
@@ -47,40 +53,8 @@ export type ActivitySheetEntry =
 
 // ─── Thought ─────────────────────────────────────────────────────────────────
 
-const LEADING_HEADING = /^\s*\*\*([^*\n]+)\*\*\s*/;
-const FIRST_SENTENCE = /^(.+?[.!?])(?:\s|$)/;
-
-/** Markdown that carries no meaning in a one-line title. */
-function plainText(text: string): string {
-  return text
-    .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/`([^`]*)`/g, '$1')
-    .replace(/^#{1,6}\s*/gm, '')
-    .replace(/\*\*([^*]*)\*\*/g, '$1')
-    .replace(/(^|\s)[*_]([^*_]+)[*_]/g, '$1$2')
-    .replace(/^\s*[-*+]\s+/gm, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-/**
- * A thought's title and body. Reasoning models often open a thought with a
- * bold heading: that heading is the title, and the body drops it. Otherwise
- * the title is the first sentence of the plain text.
- */
-export function summarizeThought(texts: ReadonlyArray<string>): { title: string; body: string } {
-  const headed = texts.findIndex((text) => LEADING_HEADING.test(text));
-  if (headed >= 0) {
-    const title = LEADING_HEADING.exec(texts[headed])![1].trim();
-    const body = texts
-      .map((text, index) => (index === headed ? text.replace(LEADING_HEADING, '') : text).trim())
-      .filter(Boolean)
-      .join('\n\n');
-    return { title, body };
-  }
-  const plain = plainText(texts.join(' '));
-  return { title: FIRST_SENTENCE.exec(plain)?.[1] ?? (plain || 'Thinking'), body: texts.join('\n\n') };
-}
+/** The label of a thought in the list. */
+export const THOUGHT_TITLE = 'Thinking';
 
 // ─── Tool ────────────────────────────────────────────────────────────────────
 
@@ -138,9 +112,10 @@ export function activitySheetEntries(view: Pick<BurstView, 'steps' | 'running'>)
         {
           kind: 'thought',
           key: step.key,
-          ...summarizeThought(step.texts),
+          title: THOUGHT_TITLE,
+          body: step.texts.join('\n\n'),
           running: view.running && step.running,
-          openable: true,
+          openable: step.texts.some((text) => text.trim().length > 0),
         },
       ];
     }

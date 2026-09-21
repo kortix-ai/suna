@@ -23,11 +23,16 @@ export interface TriggerModelOption {
   modelName: string;
 }
 
-/** Flatten + sort the gateway catalog into picker options. */
+/**
+ * Flatten + sort the project's model picker into options. A model the project
+ * has switched off (`enabled: false`) is dropped: a trigger must not be pinned
+ * to a model the project does not serve.
+ */
 export function flattenTriggerModelCatalog(
   models: ProjectLlmCatalogResponse['models'] | undefined,
 ): TriggerModelOption[] {
   return Object.entries(models ?? {})
+    .filter(([, model]) => model.enabled !== false)
     .map(([modelID, model]) => ({ modelID, modelName: model.name || modelID }))
     .sort((a, b) => a.modelName.localeCompare(b.modelName));
 }

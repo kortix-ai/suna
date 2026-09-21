@@ -31,11 +31,23 @@ import {
   XIcon as X,
   ShieldWarningIcon as ShieldAlert,
   type AppIcon,
+  CubeIcon,
 } from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { PageHeader } from '@/components/kortix/page-header';
 import { PageContent } from '@/components/kortix/page-content';
 import { SearchListHeader } from '@/components/kortix/search-list-header';
+import Animated from 'react-native-reanimated';
+import { ListRow } from '@/components/kortix/list-row';
+import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
+import { SheetTextInput } from '@/components/kortix/SheetInput';
+import { POP_IN, PUSH_IN, SheetBackButton } from '@/components/kortix/sheet-push';
+import { Icon } from '@/components/ui/icon';
+import { PageList } from '@/components/kortix/page-list';
+import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
+import { MODELS_PAGE_ID } from '@/lib/session/dock-menu';
+import { useTabStore } from '@/stores/tab-store';
 import { useThemeColors } from '@/lib/theme-colors';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import {
@@ -48,7 +60,7 @@ import {
 } from '@/lib/projects/hooks';
 import type { ProjectSecret, ConnectorSharing } from '@/lib/projects/projects-client';
 import { haptics } from '@/lib/haptics';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal, SheetTitleRow } from '@/components/kortix/sheet';
 
 interface PageTabLike {
   id: string;
@@ -221,6 +233,9 @@ function SharingField({
 
 // ─── Shared value form ────────────────────────────────────────────────────────
 
+/** `Input`'s geometry (44pt, `rounded-xl`) on the sheet's text field. */
+const FIELD_STYLE = { height: 44, borderRadius: 12, paddingHorizontal: 14 } as const;
+
 function SharedSecretForm({
   projectId,
   initialName,
@@ -228,6 +243,7 @@ function SharedSecretForm({
   configured,
   initialSharing,
   onClose,
+  pushed,
   isDark,
 }: {
   projectId: string;
@@ -236,6 +252,8 @@ function SharedSecretForm({
   configured: boolean;
   initialSharing: ConnectorSharing;
   onClose: () => void;
+  /** Shown inside the detail sheet: Back takes the close button's slot. */
+  pushed?: boolean;
   isDark: boolean;
 }) {
   const theme = useThemeColors();
@@ -270,26 +288,18 @@ function SharedSecretForm({
 
   return (
     <View style={{ flex: 1 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 12 }}>
-        <Text style={{ flex: 1, fontSize: 18, fontFamily: 'Roobert-Medium', color: fg }}>
-          {nameEditable ? 'Add a secret' : configured ? 'Edit shared value' : 'Set shared value'}
-        </Text>
-        <Pressable onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: inputBg, alignItems: 'center', justifyContent: 'center' }}>
-          <X size={17} color={muted} />
-        </Pressable>
-      </View>
+      <SheetTitleRow title={nameEditable ? 'Add a secret' : configured ? 'Edit shared value' : 'Set shared value'} onClose={() => { haptics.tap(); onClose(); }} leading={pushed ? <SheetBackButton onPress={() => { haptics.tap(); onClose(); }} /> : undefined} />
 
-      <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 6 }}>Name</Text>
-        <BottomSheetTextInput
+      <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: 16, gap: 8 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <Label>Name</Label>
+        <SheetTextInput mono
           value={name}
           onChangeText={(t) => setName(sanitizeName(t))}
           editable={nameEditable}
           placeholder="STRIPE_API_KEY"
-          placeholderTextColor={muted}
           autoCapitalize="characters"
           autoCorrect={false}
-          style={{ height: 44, borderRadius: 11, borderWidth: 1, borderColor: border, backgroundColor: inputBg, paddingHorizontal: 12, fontSize: 14, color: nameEditable ? fg : muted, fontFamily: MONO, marginBottom: 4 }}
+          style={FIELD_STYLE}
         />
         {nameEditable && name.length > 0 && !nameValid && (
           <Text style={{ fontSize: 12, color: (isDark ? THEME.dark.destructive : THEME.light.destructive), marginBottom: 8 }}>
@@ -297,34 +307,29 @@ function SharedSecretForm({
           </Text>
         )}
 
-        <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted, marginTop: 12, marginBottom: 6 }}>
+        <Label>
           {configured ? 'New value' : 'Value'}
-        </Text>
-        <BottomSheetTextInput
+        </Label>
+        <SheetTextInput
           value={value}
           onChangeText={setValue}
           placeholder={configured ? 'Leave blank to keep current' : 'Paste the secret value…'}
-          placeholderTextColor={muted}
           secureTextEntry
           autoCapitalize="none"
           autoCorrect={false}
-          style={{ minHeight: 44, borderRadius: 11, borderWidth: 1, borderColor: border, backgroundColor: inputBg, paddingHorizontal: 12, fontSize: 14, color: fg, fontFamily: 'Roobert' }}
+          style={FIELD_STYLE}
         />
-        <Text style={{ fontSize: 12.5, color: muted, marginTop: 6 }}>Encrypted at rest and never shown again.</Text>
+        <Text variant="muted">Encrypted at rest and never shown again.</Text>
 
-        <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted, marginTop: 18, marginBottom: 8 }}>Who can use it</Text>
+        <Label>Who can use it</Label>
         <SharingField projectId={projectId} value={sharing} onChange={setSharing} isDark={isDark} />
       </BottomSheetScrollView>
 
-      <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08) }}>
-        <Pressable
-          onPress={handleSave}
-          disabled={!canSave}
-          style={{ height: 48, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: canSave ? 1 : 0.5 }}
-        >
-          {upsert.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
-          <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Save shared value</Text>
-        </Pressable>
+      {/* Pinned under the form: always reachable above the keyboard. */}
+      <View className="px-4 pt-3" style={{ paddingBottom: insets.bottom + 16 }}>
+        <Button size="lg" className="rounded-full" onPress={handleSave} disabled={!canSave}>
+          <Text>{upsert.isPending ? 'Saving…' : 'Save shared value'}</Text>
+        </Button>
       </View>
     </View>
   );
@@ -337,12 +342,15 @@ function PersonalSecretForm({
   initialName,
   nameEditable,
   onClose,
+  pushed,
   isDark,
 }: {
   projectId: string;
   initialName: string;
   nameEditable: boolean;
   onClose: () => void;
+  /** Shown inside the detail sheet: Back takes the close button's slot. */
+  pushed?: boolean;
   isDark: boolean;
 }) {
   const theme = useThemeColors();
@@ -374,53 +382,40 @@ function PersonalSecretForm({
 
   return (
     <View style={{ flex: 1 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 12 }}>
-        <Text style={{ flex: 1, fontSize: 18, fontFamily: 'Roobert-Medium', color: fg }}>
-          {nameEditable ? 'Add your value' : 'Your value'}
-        </Text>
-        <Pressable onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: inputBg, alignItems: 'center', justifyContent: 'center' }}>
-          <X size={17} color={muted} />
-        </Pressable>
-      </View>
+      <SheetTitleRow title={nameEditable ? 'Add your value' : 'Your value'} onClose={() => { haptics.tap(); onClose(); }} leading={pushed ? <SheetBackButton onPress={() => { haptics.tap(); onClose(); }} /> : undefined} />
 
-      <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 6 }}>Name</Text>
-        <BottomSheetTextInput
+      <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: 16, gap: 8 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <Label>Name</Label>
+        <SheetTextInput mono
           value={name}
           onChangeText={(t) => setName(sanitizeName(t))}
           editable={nameEditable}
           placeholder="STRIPE_API_KEY"
-          placeholderTextColor={muted}
           autoCapitalize="characters"
           autoCorrect={false}
-          style={{ height: 44, borderRadius: 11, borderWidth: 1, borderColor: border, backgroundColor: inputBg, paddingHorizontal: 12, fontSize: 14, color: nameEditable ? fg : muted, fontFamily: MONO, marginBottom: 12 }}
+          style={FIELD_STYLE}
         />
 
-        <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 6 }}>Your value</Text>
-        <BottomSheetTextInput
+        <Label>Your value</Label>
+        <SheetTextInput
           value={value}
           onChangeText={setValue}
           placeholder="Paste your value…"
-          placeholderTextColor={muted}
           secureTextEntry
           autoCapitalize="none"
           autoCorrect={false}
-          style={{ minHeight: 44, borderRadius: 11, borderWidth: 1, borderColor: border, backgroundColor: inputBg, paddingHorizontal: 12, fontSize: 14, color: fg, fontFamily: 'Roobert' }}
+          style={FIELD_STYLE}
         />
-        <Text style={{ fontSize: 12.5, color: muted, marginTop: 6 }}>
+        <Text variant="muted">
           Only used in your own sessions. Other members never see it.
         </Text>
       </BottomSheetScrollView>
 
-      <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08) }}>
-        <Pressable
-          onPress={handleSave}
-          disabled={!canSave}
-          style={{ height: 48, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: canSave ? 1 : 0.5 }}
-        >
-          {setPersonal.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
-          <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Use my own value</Text>
-        </Pressable>
+      {/* Pinned under the form: always reachable above the keyboard. */}
+      <View className="px-4 pt-3" style={{ paddingBottom: insets.bottom + 16 }}>
+        <Button size="lg" className="rounded-full" onPress={handleSave} disabled={!canSave}>
+          <Text>{setPersonal.isPending ? 'Saving…' : 'Use my own value'}</Text>
+        </Button>
       </View>
     </View>
   );
@@ -473,6 +468,12 @@ function SecretDetailSheet({
   const theme = useThemeColors();
   const insets = useSafeAreaInsets();
   const [view, setView] = useState<'detail' | 'shared' | 'personal'>('detail');
+  // The detail slides back in only after a form was open, never on first open.
+  const [returning, setReturning] = useState(false);
+  const back = () => {
+    setReturning(true);
+    setView('detail');
+  };
   const setPersonal = useSetPersonalProjectSecret(projectId);
   const deletePersonal = useDeletePersonalProjectSecret(projectId);
   const deleteShared = useDeleteProjectSecret(projectId);
@@ -483,31 +484,6 @@ function SecretDetailSheet({
   const border = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08);
   const iconBg = isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04);
   const closeBg = isDark ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.04);
-
-  if (view === 'shared') {
-    return (
-      <SharedSecretForm
-        projectId={projectId}
-        initialName={row.name}
-        nameEditable={false}
-        configured={!!s?.configured}
-        initialSharing={s?.sharing ?? { mode: 'project' }}
-        onClose={() => setView('detail')}
-        isDark={isDark}
-      />
-    );
-  }
-  if (view === 'personal') {
-    return (
-      <PersonalSecretForm
-        projectId={projectId}
-        initialName={row.name}
-        nameEditable={false}
-        onClose={() => setView('detail')}
-        isDark={isDark}
-      />
-    );
-  }
 
   const canManageShared = canManage || !!s?.can_manage_shared;
   const sharedSelectable = !!s?.configured && !!s?.usable_by_me;
@@ -553,70 +529,91 @@ function SecretDetailSheet({
     ]);
   };
 
+  // A value form pushes in over the detail, the activity sheet's motion
+  // (`sheet-push`): in from the right, and the detail back in from the left.
+  if (view !== 'detail') {
+    return (
+      <Animated.View key={view} entering={PUSH_IN} style={{ flex: 1 }}>
+        {view === 'shared' ? (
+          <SharedSecretForm
+            projectId={projectId}
+            initialName={row.name}
+            nameEditable={false}
+            configured={!!s?.configured}
+            initialSharing={s?.sharing ?? { mode: 'project' }}
+            onClose={back}
+            pushed
+            isDark={isDark}
+          />
+        ) : (
+          <PersonalSecretForm
+            projectId={projectId}
+            initialName={row.name}
+            nameEditable={false}
+            onClose={back}
+            pushed
+            isDark={isDark}
+          />
+        )}
+      </Animated.View>
+    );
+  }
+
   return (
-    <View style={{ flex: 1 }}>
-      {/* Header */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: border }}>
-        <View style={{ width: 40, height: 40, borderRadius: 11, backgroundColor: iconBg, alignItems: 'center', justifyContent: 'center' }}>
-          {mineActive ? <User size={19} color={muted} /> : <Key size={19} color={muted} />}
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 16, fontFamily: MONO, color: fg }} numberOfLines={1}>{row.name}</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 }}>
-            <Text style={{ fontSize: 12.5, fontFamily: 'Roobert', color: muted }}>{statusText(s)}</Text>
-            {row.required && <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: THEME.accent.orange }}>· Required</Text>}
-          </View>
-        </View>
-        <Pressable onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: closeBg, alignItems: 'center', justifyContent: 'center' }}>
-          <X size={17} color={muted} />
-        </Pressable>
-      </View>
+    <Animated.View key="detail" entering={returning ? POP_IN : undefined} style={{ flex: 1 }}>
+      <SheetTitleRow title={row.name} onClose={() => { haptics.tap(); onClose(); }} />
 
-      <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }} showsVerticalScrollIndicator={false}>
-        {/* Source chooser — only when a personal value or a usable shared value exists */}
-        {(s?.mine || sharedSelectable) && (
-          <>
-            <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Use in my sessions</Text>
-            <View style={{ flexDirection: 'row', backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.04), borderRadius: 9999, padding: 3, marginBottom: 18 }}>
-              {([
-                { key: 'shared', label: 'Shared', on: s?.effective_source === 'shared', enabled: sharedSelectable, onPress: chooseShared },
-                { key: 'mine', label: 'Mine', on: mineActive, enabled: true, onPress: chooseMine },
-              ] as const).map((opt) => (
-                <Pressable
-                  key={opt.key}
-                  onPress={opt.enabled ? opt.onPress : undefined}
-                  disabled={!opt.enabled}
-                  style={{ flex: 1, paddingVertical: 8, borderRadius: 9999, alignItems: 'center', backgroundColor: opt.on ? (isDark ? withAlpha(THEME.dark.foreground, 0.12) : THEME.light.background) : 'transparent', opacity: opt.enabled ? 1 : 0.4 }}
-                >
-                  <Text style={{ fontSize: 13, fontFamily: opt.on ? 'Roobert-Medium' : 'Roobert', color: opt.on ? fg : muted }}>{opt.label}</Text>
-                </Pressable>
-              ))}
-            </View>
-          </>
-        )}
+      <BottomSheetScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: insets.bottom + 32, gap: 16 }}
+        showsVerticalScrollIndicator={false}>
+        {/* Which value my sessions use: only when there is a choice to make. */}
+        {s?.mine || sharedSelectable ? (
+          <SettingsGroup title="Use in my sessions" className="bg-secondary">
+            <SettingsRow
+              icon={Users}
+              label="Shared value"
+              checked={s?.effective_source === 'shared'}
+              right={null}
+              onPress={sharedSelectable ? chooseShared : undefined}
+            />
+            <SettingsRow icon={User} label="My value" checked={mineActive} right={null} onPress={chooseMine} />
+          </SettingsGroup>
+        ) : null}
 
-        {/* Personal value */}
-        <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Your value</Text>
-        <ActionRow label={s?.mine ? 'Edit my value' : 'Set my value'} onPress={() => { haptics.tap(); setView('personal'); }} isDark={isDark} />
-        {s?.mine && (
-          <ActionRow label="Remove my value" destructive onPress={confirmRemovePersonal} isDark={isDark} busy={deletePersonal.isPending} />
-        )}
+        <SettingsGroup title="My value" className="bg-secondary">
+          <SettingsRow
+            label={s?.mine ? 'Edit my value' : 'Set my value'}
+            onPress={() => { haptics.tap(); setView('personal'); }}
+          />
+          {s?.mine ? (
+            <SettingsRow
+              label={deletePersonal.isPending ? 'Removing…' : 'Remove my value'}
+              destructive
+              right={null}
+              onPress={deletePersonal.isPending ? undefined : confirmRemovePersonal}
+            />
+          ) : null}
+        </SettingsGroup>
 
-        {/* Shared value */}
-        {canManageShared && (
-          <>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 22, marginBottom: 2 }}>
-              <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>Shared value</Text>
-              {scope && <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: theme.primary }}>· {scope}</Text>}
-            </View>
-            <ActionRow label={s?.configured ? 'Edit shared value' : 'Set shared value'} onPress={() => { haptics.tap(); setView('shared'); }} isDark={isDark} />
-            {s?.configured && (
-              <ActionRow label="Delete shared value" destructive onPress={confirmDeleteShared} isDark={isDark} busy={deleteShared.isPending} />
-            )}
-          </>
-        )}
+        {canManageShared ? (
+          <SettingsGroup title={scope ? `Shared value · ${scope}` : 'Shared value'} className="bg-secondary">
+            <SettingsRow
+              label={s?.configured ? 'Edit shared value' : 'Set shared value'}
+              onPress={() => { haptics.tap(); setView('shared'); }}
+            />
+            {s?.configured ? (
+              <SettingsRow
+                label={deleteShared.isPending ? 'Deleting…' : 'Delete shared value'}
+                destructive
+                right={null}
+                onPress={deleteShared.isPending ? undefined : confirmDeleteShared}
+              />
+            ) : null}
+          </SettingsGroup>
+        ) : null}
       </BottomSheetScrollView>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -648,7 +645,6 @@ export function SecretsNavPage({
   isDrawerOpen,
   isRightDrawerOpen,
 }: SecretsNavPageProps) {
-  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -698,6 +694,8 @@ export function SecretsNavPage({
         onOpenRightDrawer={onOpenRightDrawer}
         isDrawerOpen={isDrawerOpen}
         isRightDrawerOpen={isRightDrawerOpen}
+        onAdd={() => { haptics.tap(); addSheetRef.current?.present(); }}
+        addLabel="New secret"
       />
 
       <PageContent>
@@ -716,78 +714,60 @@ export function SecretsNavPage({
           value={search}
           onChangeText={setSearch}
           placeholder="Search secrets"
-          onAdd={() => { haptics.tap(); addSheetRef.current?.present(); }}
         />
 
-        <ScrollView
-        style={{ flex: 1 }}
-          contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          {isLoading ? (
-            <View style={{ paddingVertical: 48, alignItems: 'center' }}>
-              <ActivityIndicator size="small" color={muted} />
+        <PageList
+          isLoading={isLoading}
+          errorMessage={isError && rows.length === 0 ? ((error as Error)?.message ?? 'Unable to load secrets') : null}
+          onRetry={() => void refetch()}
+          onRefresh={() => refetch()}
+          emptyLabel={filtered.length === 0 ? (rows.length === 0 ? 'No secrets yet' : 'No matching secrets') : null}
+          footer={
+            // A provider API key is a project secret. The Models page is where a
+            // provider is connected, so this page links to it.
+            <View className="px-4 pt-6">
+              <SettingsGroup>
+                <SettingsRow
+                  icon={CubeIcon}
+                  label="Manage providers"
+                  onPress={() => { haptics.tap(); useTabStore.getState().navigateToPage(MODELS_PAGE_ID); }}
+                />
+              </SettingsGroup>
             </View>
-          ) : isError ? (
-            <View style={{ padding: 24, alignItems: 'center', gap: 12 }}>
-              <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>{(error as Error)?.message ?? 'Failed to load secrets'}</Text>
-              <Pressable onPress={() => refetch()} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
-                <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Retry</Text>
-              </Pressable>
-            </View>
-          ) : filtered.length === 0 ? (
-            <View style={{ padding: 40, alignItems: 'center', gap: 10 }}>
-              <Key size={26} color={muted} />
-              <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>
-                {rows.length === 0 ? 'No secrets yet.' : 'No secrets match your search.'}
-              </Text>
-            </View>
-          ) : (
-            filtered.map((row, i) => {
-              const s = row.secret;
-              const Icon = s?.effective_source === 'mine' ? User : Key;
-              const amber = row.required && (s?.effective_source ?? 'none') === 'none';
-              const scope = sharingScopeLabel(s?.sharing);
-              return (
-                <View key={row.name}>
-                  <Pressable
-                    onPress={() => openRow(row.name)}
-                    style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12, backgroundColor: amber ? withAlpha(THEME.accent.orange, 0.05) : 'transparent' }}
-                  >
-                    <View style={{ width: 38, height: 38, borderRadius: 10, backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04), alignItems: 'center', justifyContent: 'center' }}>
-                      <Icon size={18} color={muted} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Text style={{ fontSize: 14.5, fontFamily: MONO, color: fg }} numberOfLines={1}>{row.name}</Text>
-                        {row.required && <Text style={{ fontSize: 10.5, fontFamily: 'Roobert-Medium', color: THEME.accent.orange }}>REQUIRED</Text>}
-                        {row.optional && <Text style={{ fontSize: 10.5, fontFamily: 'Roobert-Medium', color: muted }}>OPTIONAL</Text>}
-                      </View>
-                      <Text style={{ fontSize: 12.5, color: muted, marginTop: 2 }} numberOfLines={1}>
-                        {statusText(s)}{scope ? ` · ${scope}` : ''}
-                      </Text>
-                    </View>
-                    <ChevronRight size={18} color={muted} />
-                  </Pressable>
-                  {i < filtered.length - 1 && <View style={{ height: 1, backgroundColor: border, marginLeft: 66 }} />}
-                </View>
-              );
-            })
-          )}
-        </ScrollView>
+          }>
+          {filtered.map((row, i) => {
+            const s = row.secret;
+            const scope = sharingScopeLabel(s?.sharing);
+            const need = row.required ? 'Required' : row.optional ? 'Optional' : null;
+            return (
+              <ListRow
+                key={row.name}
+                title={row.name}
+                subtitle={[need, statusText(s), scope].filter(Boolean).join(' · ')}
+                divider={i < filtered.length - 1}
+                onPress={() => openRow(row.name)}
+                right={
+                  <View className="flex-row items-center gap-3">
+                    {/* A required secret with no value: the one state that blocks a run. */}
+                    {row.required && (s?.effective_source ?? 'none') === 'none' ? (
+                      <View accessibilityLabel="Not set" className="size-1.5 rounded-full bg-kortix-orange" />
+                    ) : null}
+                    <Icon as={ChevronRight} size={18} className="text-muted-foreground" />
+                  </View>
+                }
+              />
+            );
+          })}
+        </PageList>
       </PageContent>
 
       {/* Add */}
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={addSheetRef}
         snapPoints={['92%']}
         enableDynamicSizing={false}
-        backgroundStyle={{ backgroundColor: sheetBg }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
-        backdropComponent={SheetBackdrop}
       >
         {canManage ? (
           <SharedSecretForm
@@ -808,19 +788,16 @@ export function SecretsNavPage({
             isDark={isDark}
           />
         )}
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
 
       {/* Detail */}
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={detailSheetRef}
         snapPoints={['92%']}
         enableDynamicSizing={false}
         onDismiss={() => setSelectedName(null)}
-        backgroundStyle={{ backgroundColor: sheetBg }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
-        backdropComponent={SheetBackdrop}
       >
         {selectedRow ? (
           <SecretDetailSheet
@@ -833,7 +810,7 @@ export function SecretsNavPage({
         ) : (
           <View style={{ height: 1 }} />
         )}
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
     </View>
   );
 }

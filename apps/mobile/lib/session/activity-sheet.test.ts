@@ -6,7 +6,6 @@ import {
   activitySheetEntries,
   burstHasPendingPermission,
   ownsBurst,
-  summarizeThought,
   toolHasDetail,
 } from './activity-sheet';
 
@@ -41,41 +40,6 @@ function entriesFor(parts: Part[], working = false, isTrailing = false) {
 }
 
 // ─── Thought summary ─────────────────────────────────────────────────────────
-
-describe('summarizeThought', () => {
-  test('a leading bold heading is the title and leaves the body', () => {
-    expect(summarizeThought(['**Drafting a prompt for the queue UI**\n\nI need to look at the composer first.'])).toEqual({
-      title: 'Drafting a prompt for the queue UI',
-      body: 'I need to look at the composer first.',
-    });
-  });
-
-  test('the heading may sit in a later fragment', () => {
-    expect(summarizeThought(['Some context.', '**Mapping queue behaviour**\n\nbody'])).toEqual({
-      title: 'Mapping queue behaviour',
-      body: 'Some context.\n\nbody',
-    });
-  });
-
-  test('a fragment that is only a heading leaves no empty paragraph', () => {
-    expect(summarizeThought(['**Planning**', 'Read the file.'])).toEqual({ title: 'Planning', body: 'Read the file.' });
-  });
-
-  test('without a heading, the first sentence is the title, with no prefix', () => {
-    expect(summarizeThought(['Recalling how queued messages behave. Then check the drain order.'])).toEqual({
-      title: 'Recalling how queued messages behave.',
-      body: 'Recalling how queued messages behave. Then check the drain order.',
-    });
-  });
-
-  test('markdown never leaks into the title, and whitespace collapses', () => {
-    expect(summarizeThought(['Check `useQueue` in\n\n**composer** first'])).toMatchObject({
-      title: 'Check useQueue in composer first',
-    });
-  });
-});
-
-// ─── Tool detail ─────────────────────────────────────────────────────────────
 
 describe('toolHasDetail', () => {
   test('a call with arguments, output, an error, or still running has a detail', () => {
@@ -127,21 +91,28 @@ describe('burstHasPendingPermission', () => {
 // ─── Entries ─────────────────────────────────────────────────────────────────
 
 describe('activitySheetEntries', () => {
-  test('a thought is one entry with its summary as title and the rest as body', () => {
+  test('a thought is listed as "Thinking"; its text is the detail a tap opens', () => {
     const [entry] = entriesFor([reasoning('**Planning**\n\nFirst read the file.'), tool('bash', 'completed')]);
-    expect(entry).toMatchObject({
+    expect(entry).toEqual({
       kind: 'thought',
-      title: 'Planning',
-      body: 'First read the file.',
+      key: entry.key,
+      title: 'Thinking',
+      body: '**Planning**\n\nFirst read the file.',
       running: false,
       openable: true,
     });
   });
 
-  test('thought fragments merge into one entry whose body keeps paragraphs', () => {
+  test('thought fragments merge into one "Thinking" entry whose body keeps paragraphs', () => {
     const entries = entriesFor([reasoning('one'), reasoning('two'), tool('bash', 'completed')]);
     expect(entries).toHaveLength(2);
-    expect(entries[0]).toMatchObject({ kind: 'thought', body: 'one\n\ntwo' });
+    expect(entries[0]).toMatchObject({ kind: 'thought', title: 'Thinking', body: 'one\n\ntwo', openable: true });
+  });
+
+  test('a thought with no text yet does not open', () => {
+    const entries = entriesFor([reasoning('   '), tool('bash', 'completed')]);
+    const thought = entries.find((entry) => entry.kind === 'thought');
+    if (thought) expect(thought).toMatchObject({ title: 'Thinking', openable: false });
   });
 
   test('a same-family group expands into one entry per call', () => {

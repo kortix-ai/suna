@@ -1,11 +1,16 @@
 /**
  * The activity sheet — what a burst's summary row opens on mobile.
  *
- * A gorhom sheet (40% of the screen, drag up to full) with a timeline of everything the agent did in the burst
- * (`activitySheetEntries`): a thought is a small dot and its summary line; a
- * tool call is a bordered icon tile and its step label. A thin rail joins the
- * markers. Tapping an entry pushes its detail inside the same sheet: a thought
- * shows its text, a tool call its body. Back returns to the list.
+ * A `KortixBottomSheetModal` (40% of the screen, drag up to full) with a
+ * timeline of everything the agent did in the burst (`activitySheetEntries`): a
+ * thought is a small dot and the label "Thinking", never its content
+ * (Jay, 2026-09-22); a tool call is a bordered icon tile and its step label. A
+ * thin rail joins the markers. Tapping an entry pushes its detail inside the
+ * same sheet: a thought shows its text, a tool call its body. Back returns to
+ * the list.
+ *
+ * The title row is the app's one (`SheetTitleRow`): close at the far left, the
+ * title centred. In a detail, Back takes the close button's slot.
  *
  * `ActivitySheetHost` is mounted once by the transcript screen and renders the
  * sheet from `useActivitySheetStore`. The owning burst row keeps the store's
@@ -16,19 +21,19 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler, Pressable, View } from 'react-native';
-import Animated, { Easing, ReduceMotion, SlideInLeft, SlideInRight } from 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { isToolPart, type ToolPart } from '@kortix/sdk';
-import { Button } from '@/components/ui/button';
+import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
 import { SelectableMarkdownText } from '@/components/kortix/selectable-markdown';
+import { KortixBottomSheetModal, SheetTitleRow } from '@/components/kortix/sheet';
+import { POP_IN, PUSH_IN, SheetBackButton } from '@/components/kortix/sheet-push';
 import { TextShimmer } from '@/components/kortix/text-shimmer';
 import { CodeBlockFullHeightContext } from '@/components/markdown/code-block';
 import { MarkdownActionsProvider, type MarkdownActions } from '@/components/markdown/inline-code';
-import { CaretLeftIcon, XIcon } from '@/lib/icons';
 import { useSyncStore } from '@/lib/opencode/sync-store';
 import { activitySheetEntries, burstHasPendingPermission, type ActivitySheetEntry } from '@/lib/session/activity-sheet';
 import { useActivitySheetStore } from '@/lib/session/activity-sheet-store';
@@ -46,9 +51,6 @@ const SHEET = {
   // Chrome: top corner radius; header row height; X / back glyph centred 38pt
   // from the edge (18 + 40pt icon button / 2); glyph size.
   radius: 36,
-  headerHeight: 56,
-  headerPadX: 18,
-  headerIcon: 22,
   // Content: tile left edge 18pt; 12pt under the header; 24pt above the home indicator.
   padX: 18,
   padTop: 12,
@@ -61,16 +63,10 @@ const SHEET = {
   // Marker to text 16pt (text starts at 58pt); 20pt between entries.
   markerGap: 16,
   entryGap: 20,
-  // Rail clearance from a marker's visible edge: 8pt at a dot, 3pt at a tile.
-  railGapDot: 8,
-  railGapTile: 3,
+  // Rail clearance from a marker's visible edge: 3pt, the same at a dot and at a
+  // tile. A thought gets no spacing of its own (Jay, 2026-09-22).
+  railGap: 3,
 } as const;
-
-/** iOS push: strong ease-out, under 300ms, no movement under reduced motion. */
-const PUSH_MS = 250;
-const PUSH_EASING = Easing.bezier(0.23, 1, 0.32, 1);
-const PUSH_IN = SlideInRight.duration(PUSH_MS).easing(PUSH_EASING).reduceMotion(ReduceMotion.System);
-const POP_IN = SlideInLeft.duration(PUSH_MS).easing(PUSH_EASING).reduceMotion(ReduceMotion.System);
 
 /** Opens at 40% of the screen (Jay, 2026-09-17); drag up for the full height. */
 const SNAP_POINTS = ['40%', '100%'];
@@ -106,10 +102,6 @@ function EntryMarker({ entry }: { entry: ActivitySheetEntry }) {
 /** Distance from the marker box edge to the marker's visible edge. */
 function markerInset(entry: ActivitySheetEntry): number {
   return entry.kind === 'thought' ? (SHEET.marker - SHEET.dot) / 2 : 0;
-}
-
-function railGap(entry: ActivitySheetEntry): number {
-  return entry.kind === 'thought' ? SHEET.railGapDot : SHEET.railGapTile;
 }
 
 const TOOL_TITLE = [TURN_TYPE.sheetEntry, { fontFamily: FONT_MEDIUM }];
@@ -164,8 +156,8 @@ function TimelineEntry({
               position: 'absolute',
               left: SHEET.marker / 2,
               width: 1,
-              top: SHEET.marker - markerInset(entry) + railGap(entry),
-              bottom: railGap(next) - markerInset(next),
+              top: SHEET.marker - markerInset(entry) + SHEET.railGap,
+              bottom: SHEET.railGap - markerInset(next),
               backgroundColor: palette.border,
             }}
           />
@@ -182,6 +174,7 @@ function TimelineEntry({
 
 function EntryDetail({ entry, context }: { entry: ActivitySheetEntry; context: ActivityContextValue }) {
   const { colorScheme } = useColorScheme();
+  // The list shows "Thinking"; the thought's text is this detail.
   if (entry.kind === 'thought') {
     return (
       <SelectableMarkdownText isDark={colorScheme === 'dark'} isStreaming={entry.running}>
@@ -204,46 +197,17 @@ function EntryDetail({ entry, context }: { entry: ActivitySheetEntry; context: A
 
 // ─── Sheet ───────────────────────────────────────────────────────────────────
 
+/**
+ * The app's one sheet title row (`SheetTitleRow`): close at the far left, the
+ * title centred. In a detail, Back takes the close button's slot.
+ */
 function ActivitySheetHeader({ title, onBack, onClose }: { title: string; onBack?: () => void; onClose: () => void }) {
-  const palette = useTurnPalette();
   return (
-    <View
-      style={{
-        height: SHEET.headerHeight,
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: SHEET.headerPadX,
-      }}
-    >
-      <Button
-        variant="ghost"
-        size="icon"
-        className="rounded-full"
-        accessibilityLabel={onBack ? 'Back' : 'Close'}
-        onPress={onBack ?? onClose}
-      >
-        {onBack ? (
-          <CaretLeftIcon size={SHEET.headerIcon} color={palette.foreground} />
-        ) : (
-          <XIcon size={SHEET.headerIcon} color={palette.foreground} />
-        )}
-      </Button>
-      <View
-        pointerEvents="none"
-        style={{
-          position: 'absolute',
-          left: SHEET.headerHeight + SHEET.headerPadX,
-          right: SHEET.headerHeight + SHEET.headerPadX,
-          top: 0,
-          bottom: 0,
-          justifyContent: 'center',
-        }}
-      >
-        <Text variant="large" role="heading" numberOfLines={1} className="text-center">
-          {title}
-        </Text>
-      </View>
-    </View>
+    <SheetTitleRow
+      title={title}
+      onClose={onClose}
+      leading={onBack ? <SheetBackButton onPress={onBack} /> : undefined}
+    />
   );
 }
 
@@ -264,8 +228,6 @@ interface ActivitySheetProps {
 function ActivitySheetImpl({ entries, context, markdownActions, dismissRequested, onDismiss }: ActivitySheetProps) {
   const ref = useRef<BottomSheetModal>(null);
   const insets = useSafeAreaInsets();
-  const { colorScheme } = useColorScheme();
-  const sheetBg = useSheetBackground();
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   // The list animates only when it comes back from a detail, never on open.
   const [returning, setReturning] = useState(false);
@@ -303,20 +265,13 @@ function ActivitySheetImpl({ entries, context, markdownActions, dismissRequested
   };
 
   return (
-    <BottomSheetModal
+    <KortixBottomSheetModal
       ref={ref}
       snapPoints={SNAP_POINTS}
       enableDynamicSizing={false}
       enablePanDownToClose
       topInset={insets.top}
       onDismiss={onDismiss}
-      backdropComponent={SheetBackdrop}
-      handleIndicatorStyle={sheetHandleIndicatorStyle(colorScheme === 'dark')}
-      backgroundStyle={{
-        backgroundColor: sheetBg,
-        borderTopLeftRadius: SHEET.radius,
-        borderTopRightRadius: SHEET.radius,
-      }}
     >
       <MarkdownActionsProvider value={markdownActions ?? NO_MARKDOWN_ACTIONS}>
         {selected ? (
@@ -339,7 +294,7 @@ function ActivitySheetImpl({ entries, context, markdownActions, dismissRequested
           </Animated.View>
         )}
       </MarkdownActionsProvider>
-    </BottomSheetModal>
+    </KortixBottomSheetModal>
   );
 }
 

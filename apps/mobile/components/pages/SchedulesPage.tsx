@@ -36,9 +36,14 @@ import { Icon } from '@/components/ui/icon';
 import { PageHeader } from '@/components/kortix/page-header';
 import { PageContent } from '@/components/kortix/page-content';
 import { SearchListHeader } from '@/components/kortix/search-list-header';
+import { ListRow } from '@/components/kortix/list-row';
+import { PageList, StatusDot } from '@/components/kortix/page-list';
 import { useThemeColors } from '@/lib/theme-colors';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import { AgentPickerField, ModelPickerField } from './TriggerAgentModelFields';
+import { PromptEditView, PromptPreview } from './TriggerPromptField';
+import { POP_IN, PUSH_IN } from '@/components/kortix/sheet-push';
+import Animated from 'react-native-reanimated';
 import {
   useProjectTriggers,
   useCreateProjectTrigger,
@@ -57,7 +62,8 @@ import {
   relativeTime,
 } from '@/lib/projects/triggers-format';
 import { haptics } from '@/lib/haptics';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal, SheetTitleRow, useSheetBackground } from '@/components/kortix/sheet';
+import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 
 interface PageTabLike {
   id: string;
@@ -137,12 +143,7 @@ function ScheduleCreateSheet({
 
   return (
     <View style={{ flex: 1 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: withAlpha(fg, 0.08) }}>
-        <Text style={{ flex: 1, fontSize: 18, fontFamily: 'Roobert-Medium', color: fg }}>New schedule</Text>
-        <Button variant="secondary" size="icon" className="rounded-full" onPress={() => { haptics.tap(); onClose(); }} hitSlop={8}>
-          <Icon as={X} size={17} color={muted} />
-        </Button>
-      </View>
+      <SheetTitleRow title="New schedule" onClose={() => { haptics.tap(); onClose(); }} />
 
       <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         {/* mode */}
@@ -246,22 +247,23 @@ function ScheduleDetailSheet({
   onClose: () => void;
   isDark: boolean;
 }) {
-  const theme = useThemeColors();
   const insets = useSafeAreaInsets();
+  const sheetBackground = useSheetBackground();
   const fire = useFireProjectTrigger(projectId);
   const update = useUpdateProjectTrigger(projectId);
   const del = useDeleteProjectTrigger(projectId);
-  const [prompt, setPrompt] = useState(trigger.prompt_template);
+  const [editingPrompt, setEditingPrompt] = useState(false);
+  // The detail slides back in only after the editor was open, never on first open.
+  const [returning, setReturning] = useState(false);
+  const closePromptEditor = () => {
+    setReturning(true);
+    setEditingPrompt(false);
+  };
 
   const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
   const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
-  const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
-  const border = withAlpha(fg, 0.08);
-  const iconBg = withAlpha(fg, isDark ? 0.06 : 0.04);
-  const inputBg = withAlpha(fg, isDark ? 0.05 : 0.03);
 
   const oneOff = !!trigger.run_at;
-  const promptChanged = prompt !== trigger.prompt_template && prompt.trim().length > 0;
 
   const handleFire = () => {
     haptics.tap();
@@ -279,10 +281,10 @@ function ScheduleDetailSheet({
       onError: (e: any) => Alert.alert('Failed', e?.message || 'Could not update.'),
     });
   };
-  const handleSavePrompt = () => {
-    if (!promptChanged) return;
+  const handleSavePrompt = (next: string) => {
     haptics.tap();
-    update.mutate({ slug: trigger.slug, input: { prompt_template: prompt } }, {
+    update.mutate({ slug: trigger.slug, input: { prompt_template: next } }, {
+      onSuccess: closePromptEditor,
       onError: (e: any) => Alert.alert('Failed', e?.message || 'Could not save prompt.'),
     });
   };
@@ -306,89 +308,78 @@ function ScheduleDetailSheet({
     ]);
   };
 
-  return (
-    <View style={{ flex: 1 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: border }}>
-        <View style={{ width: 40, height: 40, borderRadius: 11, backgroundColor: iconBg, alignItems: 'center', justifyContent: 'center' }}>
-          <Timer size={19} color={muted} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 16, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>{trigger.name || trigger.slug}</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 }}>
-            <Text style={{ fontSize: 12, fontFamily: MONO, color: muted }} numberOfLines={1}>{trigger.slug}</Text>
-            <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999, backgroundColor: trigger.enabled ? withAlpha(THEME.accent.green, 0.15) : withAlpha(muted, 0.18) }}>
-              <Text style={{ fontSize: 10, fontFamily: 'Roobert-Medium', color: trigger.enabled ? THEME.accent.green : muted }}>{trigger.enabled ? 'Active' : 'Paused'}</Text>
-            </View>
-          </View>
-        </View>
-        <Button variant="secondary" size="icon" className="rounded-full" onPress={() => { haptics.tap(); onClose(); }} hitSlop={8}>
-          <Icon as={X} size={17} color={muted} />
-        </Button>
-      </View>
-
-      {/* Action bar */}
-      <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingTop: 14 }}>
-        <Button size="lg" onPress={handleFire} disabled={fire.isPending} className="flex-1 rounded-full">
-          {fire.isPending ? <ActivityIndicator size="small" color={theme.primaryForeground} /> : <Icon as={Play} size={15} color={theme.primaryForeground} />}
-          <Text>Fire now</Text>
-        </Button>
-        <Button variant="outline" size="icon" className="rounded-full" onPress={togglePaused} disabled={update.isPending}>
-          <Icon as={trigger.enabled ? Pause : Play} size={17} color={fg} />
-        </Button>
-        <Button variant="outline" size="icon" className="rounded-full" onPress={handleDelete} disabled={del.isPending}>
-          {del.isPending ? <ActivityIndicator size="small" color={destructiveColor} /> : <Icon as={Trash2} size={16} color={destructiveColor} />}
-        </Button>
-      </View>
-
-      <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        {/* Schedule */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-          <Clock size={14} color={muted} />
-          <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>Schedule</Text>
-        </View>
-        <Text style={{ fontSize: 14.5, fontFamily: 'Roobert-Medium', color: fg }}>
-          {oneOff ? describeRunAt(trigger.run_at) : describeCron(trigger.cron)}
-        </Text>
-        {!oneOff && trigger.cron && (
-          <Text style={{ fontSize: 12.5, fontFamily: MONO, color: muted, marginTop: 4 }}>{trigger.cron} · {trigger.timezone}</Text>
-        )}
-        {oneOff && <Text style={{ fontSize: 12.5, color: muted, marginTop: 4 }}>Fires a single time, then stays dormant.</Text>}
-
-        {/* Prompt */}
-        <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: muted, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 22, marginBottom: 8 }}>Prompt</Text>
-        <BottomSheetTextInput
-          value={prompt}
-          onChangeText={setPrompt}
-          multiline
-          placeholder="What should the agent do?"
-          placeholderTextColor={muted}
-          style={{ minHeight: 96, borderRadius: 11, borderWidth: 1, borderColor: border, backgroundColor: inputBg, padding: 12, fontSize: 14, color: fg, fontFamily: 'Roobert', textAlignVertical: 'top' }}
+  if (editingPrompt) {
+    return (
+      <Animated.View key="prompt" entering={PUSH_IN} style={{ flex: 1 }}>
+        <PromptEditView
+          value={trigger.prompt_template}
+          placeholders="{{ message.text }} · {{ fired_at }}"
+          saving={update.isPending}
+          onSave={handleSavePrompt}
+          onBack={closePromptEditor}
         />
-        <Text style={{ fontSize: 11.5, color: muted, marginTop: 6 }}>Placeholders: {'{{ message.text }}'} · {'{{ fired_at }}'}</Text>
-        {promptChanged && (
-          <Button size="lg" onPress={handleSavePrompt} disabled={update.isPending} className="mt-2.5 rounded-full">
-            {update.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
-            <Text>Save prompt</Text>
-          </Button>
-        )}
+      </Animated.View>
+    );
+  }
 
-        <AgentPickerField projectId={projectId} value={trigger.agent} onChange={handleAgentChange} isDark={isDark} />
-        <ModelPickerField projectId={projectId} value={trigger.model} onChange={handleModelChange} isDark={isDark} />
+  return (
+    <Animated.View key="detail" entering={returning ? POP_IN : undefined} style={{ flex: 1 }}>
+      {/* No status badge and no slug here (Jay, 2026-09-22): the title names the
+          schedule, and the pause button below says whether it runs. */}
+      <SheetTitleRow title={trigger.name || trigger.slug} onClose={() => { haptics.tap(); onClose(); }} />
 
-        {/* Metadata */}
-        <View style={{ marginTop: 22, borderRadius: 12, borderWidth: 1, borderColor: border, paddingHorizontal: 14 }}>
-          {[
-            { l: 'Last fired', v: relativeTime(trigger.last_fired_at) },
-            { l: 'Source', v: trigger.path },
-          ].map((row, i) => (
-            <View key={row.l} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 11, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: border }}>
-              <Text style={{ fontSize: 13, color: muted }}>{row.l}</Text>
-              <Text style={{ flex: 1, textAlign: 'right', fontSize: 13, fontFamily: MONO, color: fg }} numberOfLines={1}>{row.v}</Text>
-            </View>
-          ))}
-        </View>
+      <BottomSheetScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: 24, gap: 16 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled">
+        <SettingsGroup className="bg-secondary">
+          <SettingsRow label="Runs" value={oneOff ? describeRunAt(trigger.run_at) : describeCron(trigger.cron)} />
+          {!oneOff && trigger.cron ? <SettingsRow label="Cron" value={trigger.cron} /> : null}
+          {!oneOff && trigger.timezone ? <SettingsRow label="Time zone" value={trigger.timezone} /> : null}
+        </SettingsGroup>
+
+        <PromptPreview value={trigger.prompt_template} onEdit={() => setEditingPrompt(true)} />
+
+        <AgentPickerField projectId={projectId} value={trigger.agent} onChange={handleAgentChange} flush />
+        <ModelPickerField projectId={projectId} value={trigger.model} onChange={handleModelChange} flush />
+
+        <SettingsGroup className="bg-secondary">
+          <SettingsRow label="Last fired" value={relativeTime(trigger.last_fired_at)} />
+          <SettingsRow label="Source" value={trigger.path} />
+        </SettingsGroup>
       </BottomSheetScrollView>
-    </View>
+
+      {/* Pinned action bar: always on screen, whatever the scroll position
+          (Jay, 2026-09-22). Fire now · pause or resume · delete. */}
+      <View
+        className="flex-row items-center gap-3 px-4 pt-3"
+        style={{ backgroundColor: sheetBackground, paddingBottom: Math.max(insets.bottom, 16) + 8 }}>
+        <Button size="lg" onPress={handleFire} disabled={fire.isPending} className="flex-1 rounded-full">
+          <Icon as={Play} size={16} className="text-primary-foreground" />
+          <Text>{fire.isPending ? 'Firing…' : 'Fire now'}</Text>
+        </Button>
+        <Button
+          variant="secondary"
+          size="lg"
+          className="rounded-full"
+          onPress={togglePaused}
+          disabled={update.isPending}
+          accessibilityLabel={trigger.enabled ? 'Pause schedule' : 'Resume schedule'}>
+          <Icon as={trigger.enabled ? Pause : Play} size={16} className="text-foreground" />
+          <Text>{trigger.enabled ? 'Pause' : 'Resume'}</Text>
+        </Button>
+        <Button
+          variant="secondary"
+          size="icon"
+          className="rounded-full"
+          onPress={handleDelete}
+          disabled={del.isPending}
+          accessibilityLabel="Delete schedule">
+          <Icon as={Trash2} size={18} className="text-destructive" />
+        </Button>
+      </View>
+    </Animated.View>
   );
 }
 
@@ -402,7 +393,6 @@ export function SchedulesPage({
   isDrawerOpen,
   isRightDrawerOpen,
 }: SchedulesPageProps) {
-  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -425,7 +415,6 @@ export function SchedulesPage({
     const q = search.trim().toLowerCase();
     return q ? all.filter((t) => (t.name || t.slug).toLowerCase().includes(q)) : all;
   }, [all, search]);
-  const activeCount = all.filter((t) => t.enabled).length;
   const selected = useMemo(() => all.find((t) => t.slug === selectedSlug) ?? null, [all, selectedSlug]);
 
   const openRow = (slug: string) => {
@@ -442,6 +431,8 @@ export function SchedulesPage({
         onOpenRightDrawer={onOpenRightDrawer}
         isDrawerOpen={isDrawerOpen}
         isRightDrawerOpen={isRightDrawerOpen}
+        onAdd={() => { haptics.tap(); addSheetRef.current?.present(); }}
+        addLabel="New schedule"
       />
 
       <PageContent>
@@ -457,98 +448,63 @@ export function SchedulesPage({
           </View>
         )}
 
-        <SearchListHeader value={search} onChangeText={setSearch} placeholder="Search schedules" onAdd={() => { haptics.tap(); addSheetRef.current?.present(); }} />
+        <SearchListHeader value={search} onChangeText={setSearch} placeholder="Search schedules" />
 
-        {all.length > 0 && (
-          <View style={{ paddingHorizontal: 16, paddingTop: 2, paddingBottom: 6 }}>
-            <Text style={{ fontSize: 12.5, color: muted }}>{activeCount} of {all.length} active</Text>
-          </View>
-        )}
-
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: insets.bottom + 40 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          {isLoading ? (
-            <View style={{ paddingVertical: 48, alignItems: 'center' }}><ActivityIndicator size="small" color={muted} /></View>
-          ) : forbidden ? (
-            <View style={{ padding: 40, alignItems: 'center' }}><Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>You don't have access to this project's schedules.</Text></View>
-          ) : isError ? (
-            <View style={{ padding: 24, alignItems: 'center', gap: 12 }}>
-              <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>{(error as Error)?.message ?? 'Failed to load schedules'}</Text>
-              <Button variant="outline" size="sm" className="rounded-full" onPress={() => refetch()}>
-                <Text>Retry</Text>
-              </Button>
-            </View>
-          ) : filtered.length === 0 ? (
-            <View style={{ padding: 40, alignItems: 'center', gap: 12 }}>
-              <Timer size={26} color={muted} />
-              <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>{all.length === 0 ? 'No schedules yet.' : 'No schedules match your search.'}</Text>
-              {all.length === 0 && (
-                <Button variant="outline" size="sm" className="rounded-full" onPress={() => { haptics.tap(); addSheetRef.current?.present(); }}>
-                  <Text>New schedule</Text>
-                </Button>
-              )}
-            </View>
-          ) : (
-            filtered.map((t, i) => {
-              const sub = `${t.run_at ? 'One-off' : describeCron(t.cron)} · ${relativeTime(t.last_fired_at)} · ${(t.agent || 'default').toUpperCase()}`;
-              return (
-                <View key={t.slug}>
-                  <PressableSurface
-                    onPress={() => openRow(t.slug)}
-                    style={({ pressed }) => [
-                      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12 },
-                      pressed && { opacity: 0.6 },
-                    ]}
-                  >
-                    <View style={{ width: 38, height: 38, borderRadius: 10, backgroundColor: withAlpha(fg, isDark ? 0.06 : 0.04), alignItems: 'center', justifyContent: 'center' }}>
-                      <Icon as={Timer} size={18} color={muted} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>{t.name || describeCron(t.cron)}</Text>
-                        <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: t.enabled ? THEME.accent.green : muted }} />
-                      </View>
-                      <Text style={{ fontSize: 12.5, color: muted, marginTop: 2 }} numberOfLines={1}>{sub}</Text>
-                    </View>
-                    <Icon as={ChevronRight} size={18} color={muted} />
-                  </PressableSurface>
-                  {i < filtered.length - 1 && <View style={{ height: 1, backgroundColor: border, marginLeft: 66 }} />}
+        <PageList
+          isLoading={isLoading}
+          errorMessage={!forbidden && isError && all.length === 0 ? ((error as Error)?.message ?? 'Unable to load schedules') : null}
+          onRetry={() => void refetch()}
+          onRefresh={() => refetch()}
+          emptyLabel={
+            forbidden
+              ? "You don't have access to this project's schedules"
+              : filtered.length === 0
+                ? all.length === 0 ? 'No schedules yet' : 'No matching schedules'
+                : null
+          }
+>
+          {filtered.map((t, i) => (
+            <ListRow
+              key={t.slug}
+              title={t.name || describeCron(t.cron)}
+              subtitle={`${t.run_at ? 'One-off' : describeCron(t.cron)} · ${relativeTime(t.last_fired_at)} · ${t.agent || 'default'}`}
+              divider={i < filtered.length - 1}
+              onPress={() => openRow(t.slug)}
+              right={
+                <View className="flex-row items-center gap-3">
+                  <StatusDot on={!!t.enabled} label={t.enabled ? 'Active' : 'Paused'} />
+                  <Icon as={ChevronRight} size={18} className="text-muted-foreground" />
                 </View>
-              );
-            })
-          )}
-        </ScrollView>
+              }
+            />
+          ))}
+        </PageList>
       </PageContent>
 
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={addSheetRef}
         snapPoints={['92%']}
         enableDynamicSizing={false}
-        backgroundStyle={{ backgroundColor: sheetBg }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
-        backdropComponent={SheetBackdrop}
       >
         <ScheduleCreateSheet projectId={projectId} onClose={() => addSheetRef.current?.dismiss()} isDark={isDark} />
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
 
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={detailSheetRef}
         snapPoints={['92%']}
         enableDynamicSizing={false}
         onDismiss={() => setSelectedSlug(null)}
-        backgroundStyle={{ backgroundColor: sheetBg }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
-        backdropComponent={SheetBackdrop}
       >
         {selected ? (
           <ScheduleDetailSheet projectId={projectId} trigger={selected} onClose={() => detailSheetRef.current?.dismiss()} isDark={isDark} />
         ) : (
           <View style={{ height: 1 }} />
         )}
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
     </View>
   );
 }

@@ -30,6 +30,7 @@ import {
   CaretRightIcon as ChevronRight,
   CheckIcon as Check,
   TrashIcon as Trash2,
+  type AppIcon,
 } from '@/lib/icons';
 import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { Text } from '@/components/ui/text';
@@ -37,6 +38,17 @@ import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { PageHeader } from '@/components/kortix/page-header';
 import { PageContent } from '@/components/kortix/page-content';
+import {
+  BOTTOM_FADE_HEIGHT,
+  BottomFade,
+  TopFade,
+  useScrollFade,
+} from '@/components/kortix/scroll-fade';
+import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
+import { SheetTextInput } from '@/components/kortix/SheetInput';
+import { Skeleton } from '@/components/ui/skeleton';
+import { useToast } from '@/components/kortix/toast-provider';
+import Animated from 'react-native-reanimated';
 import { useThemeColors } from '@/lib/theme-colors';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import {
@@ -60,9 +72,10 @@ import type {
   ProjectAccessMember,
   ProjectGroupGrant,
   ProjectRole,
+  PendingProjectInvite,
 } from '@/lib/projects/projects-client';
 import { haptics } from '@/lib/haptics';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal, SheetTitleRow } from '@/components/kortix/sheet';
 
 const MONO = 'Menlo';
 const ROLES: ProjectRole[] = ['member', 'manager'];
@@ -101,15 +114,6 @@ function isInheritedFromGroupOnly(m: ProjectAccessMember): boolean {
   return !m.has_implicit_access && !m.project_role && m.effective_project_role !== null && (m.group_sources?.length ?? 0) > 0;
 }
 
-function inheritedSummary(m: ProjectAccessMember): string | null {
-  if (!isInheritedFromGroupOnly(m)) return null;
-  const sources = m.group_sources!;
-  const head = sources[0];
-  const rest = sources.length - 1;
-  const label = ROLE_DESC[m.effective_project_role!].label;
-  return rest > 0 ? `Inherited ${label} via ${head.group_name} + ${rest} more` : `Inherited ${label} via ${head.group_name}`;
-}
-
 function useColors(isDark: boolean) {
   const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
   return {
@@ -146,26 +150,6 @@ function RoleBadge({ role, isDark, withShield }: { role: string; isDark: boolean
   );
 }
 
-function CardHeader({ title, description, count, isDark, action }: { title: string; description?: string; count?: number; isDark: boolean; action?: React.ReactNode }) {
-  const c = useColors(isDark);
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 4 }}>
-      <View style={{ flex: 1 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: c.fg }}>{title}</Text>
-          {typeof count === 'number' && (
-            <View style={{ minWidth: 20, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 999, backgroundColor: c.avatarBg, alignItems: 'center' }}>
-              <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: c.muted }}>{count}</Text>
-            </View>
-          )}
-        </View>
-        {description && <Text style={{ fontSize: 12, lineHeight: 17, color: c.muted, marginTop: 4 }}>{description}</Text>}
-      </View>
-      {action}
-    </View>
-  );
-}
-
 function RolePills({ value, onChange, isDark, disabled }: { value: ProjectRole; onChange: (r: ProjectRole) => void; isDark: boolean; disabled?: boolean }) {
   return (
     <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -189,9 +173,11 @@ function RolePills({ value, onChange, isDark, disabled }: { value: ProjectRole; 
 
 // ─── Invite card ──────────────────────────────────────────────────────────────
 
-function InviteCard({ projectId, isDark }: { projectId: string; isDark: boolean }) {
-  const c = useColors(isDark);
-  const theme = useThemeColors();
+// ─── Invite (a sheet, opened by the header's `+`) ────────────────────────────
+
+function InviteSheet({ projectId, onClose }: { projectId: string; onClose: () => void; isDark: boolean }) {
+  const toast = useToast();
+  const insets = useSafeAreaInsets();
   const invite = useInviteProjectMember(projectId);
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<ProjectRole>('member');
@@ -203,275 +189,272 @@ function InviteCard({ projectId, isDark }: { projectId: string; isDark: boolean 
     invite.mutate({ email: email.trim(), role }, {
       onSuccess: (result) => {
         haptics.success();
-        setEmail('');
-        if (isInviteSent(result)) {
-          Alert.alert('Invitation sent', `Invitation sent to ${result.email}. They'll join this project as ${ROLE_DESC[result.project_role].label} when they sign up.`);
-        } else {
-          Alert.alert('Member added', 'They now have access to this project.');
-        }
+        toast.success(isInviteSent(result) ? `Invitation sent to ${result.email}` : 'Member added');
+        onClose();
       },
-      onError: (e: any) => Alert.alert('Failed', e?.message || 'Failed to invite member.'),
+      onError: (e: any) => toast.error(e?.message || 'Unable to invite. Try again.'),
     });
   };
 
   return (
-    <View style={{ borderRadius: 16, borderWidth: 1, borderColor: c.border, backgroundColor: c.cardBg, padding: 16 }}>
-      <CardHeader title="Invite by email" description="Add a Kortix user. If they don't have an account yet, they'll get an invitation email." isDark={isDark} />
-      <View style={{ marginTop: 12 }}>
-        <TextInput
+    <View className="flex-1">
+      <SheetTitleRow title="Invite member" onClose={() => { haptics.tap(); onClose(); }} />
+      <BottomSheetScrollView
+        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: insets.bottom + 24, gap: 16 }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}>
+        <SheetTextInput
           value={email}
           onChangeText={setEmail}
-          placeholder="teammate@example.com"
-          placeholderTextColor={c.muted}
+          placeholder="Email"
+          accessibilityLabel="Email"
           autoCapitalize="none"
           autoCorrect={false}
+          autoFocus
           keyboardType="email-address"
+          returnKeyType="send"
+          onSubmitEditing={submit}
           editable={!invite.isPending}
-          style={{ height: 44, borderRadius: 11, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, paddingHorizontal: 12, fontSize: 14, color: c.fg, fontFamily: 'Roobert' }}
         />
-        <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: c.muted, marginTop: 14, marginBottom: 8 }}>Role</Text>
-        <RolePills value={role} onChange={setRole} isDark={isDark} disabled={invite.isPending} />
-        <Button size="lg" onPress={submit} disabled={!canSubmit} className="mt-3.5 rounded-full">
-          {invite.isPending ? <ActivityIndicator size="small" color={theme.primaryForeground} /> : <Icon as={UserPlus} size={15} color={theme.primaryForeground} />}
-          <Text>Invite</Text>
+        <SettingsGroup title="Role" className="bg-secondary">
+          {ROLES.map((r) => (
+            <SettingsRow
+              key={r}
+              label={ROLE_DESC[r].label}
+              checked={role === r}
+              right={null}
+              onPress={invite.isPending ? undefined : () => { haptics.selection(); setRole(r); }}
+            />
+          ))}
+        </SettingsGroup>
+        <Button size="lg" onPress={submit} disabled={!canSubmit} className="rounded-full">
+          <Text>{invite.isPending ? 'Inviting…' : 'Invite'}</Text>
         </Button>
+      </BottomSheetScrollView>
+    </View>
+  );
+}
+
+// ─── Pending invite actions (a sheet) ─────────────────────────────────────────
+
+function PendingInviteSheet({
+  projectId,
+  invite,
+  onClose,
+}: {
+  projectId: string;
+  invite: PendingProjectInvite;
+  onClose: () => void;
+  isDark: boolean;
+}) {
+  const toast = useToast();
+  const insets = useSafeAreaInsets();
+  const resend = useResendProjectInvite(projectId);
+  const revoke = useRevokeProjectInvite(projectId);
+  const busy = resend.isPending || revoke.isPending;
+
+  return (
+    <View className="flex-1">
+      <SheetTitleRow title={invite.email} onClose={() => { haptics.tap(); onClose(); }} />
+      <View className="gap-4 px-4 pt-1" style={{ paddingBottom: insets.bottom + 24 }}>
+        <SettingsGroup className="bg-secondary">
+          <SettingsRow label="Role" value={ROLE_DESC[invite.project_role]?.label ?? invite.project_role} />
+          <SettingsRow
+            label={invite.invite_expired ? 'Link expired' : 'Link expires'}
+            value={invite.invite_expired ? undefined : formatDate(invite.invite_expires_at)}
+          />
+        </SettingsGroup>
+        <SettingsGroup className="bg-secondary">
+          <SettingsRow
+            icon={RefreshCw}
+            label={resend.isPending ? 'Sending…' : 'Resend invitation'}
+            right={null}
+            onPress={busy ? undefined : () => {
+              haptics.tap();
+              resend.mutate(invite.invite_id, {
+                onSuccess: (res) => {
+                  toast.success(res.email_sent ? 'Invitation sent' : 'Email is unavailable. Share the link yourself.');
+                  onClose();
+                },
+                onError: (e: any) => toast.error(e?.message || 'Unable to resend. Try again.'),
+              });
+            }}
+          />
+          <SettingsRow
+            icon={X}
+            label={revoke.isPending ? 'Revoking…' : 'Revoke invitation'}
+            destructive
+            right={null}
+            onPress={busy ? undefined : () => {
+              haptics.medium();
+              revoke.mutate(invite.invite_id, {
+                onSuccess: onClose,
+                onError: (e: any) => toast.error(e?.message || 'Unable to revoke. Try again.'),
+              });
+            }}
+          />
+        </SettingsGroup>
       </View>
     </View>
   );
 }
 
-// ─── Pending invites card ─────────────────────────────────────────────────────
+// ─── Page sections: one titled group of rows each ─────────────────────────────
 
-function PendingInvitesCard({ projectId, isDark }: { projectId: string; isDark: boolean }) {
-  const c = useColors(isDark);
+/** Leading slot of every row on this page: 28pt, so every label starts on one x. */
+const LEADING = 28;
+
+/** An icon in the avatar's 28pt circle, for a row that has no person. */
+function LeadingIcon({ icon }: { icon: AppIcon }) {
+  return (
+    <View className="items-center justify-center rounded-full bg-secondary" style={{ width: LEADING, height: LEADING }}>
+      <Icon as={icon} size={15} className="text-foreground/80" />
+    </View>
+  );
+}
+
+/** Holds the chevron's 16pt slot on a row that does not open, so every value ends on one x. */
+const NO_CHEVRON = <View style={{ width: 16 }} />;
+
+/** The role a member holds here, as a row's value. */
+function memberRoleLabel(m: ProjectAccessMember): string {
+  if (m.has_implicit_access) return ROLE_DESC.manager.label;
+  const role = m.effective_project_role;
+  return role ? (ROLE_DESC[role]?.label ?? role) : 'No access';
+}
+
+function PendingGroup({ projectId, onSelect }: { projectId: string; onSelect: (invite: PendingProjectInvite) => void }) {
   const invitesQuery = usePendingProjectInvites(projectId, true);
-  const resend = useResendProjectInvite(projectId);
-  const revoke = useRevokeProjectInvite(projectId);
-  const [busyId, setBusyId] = useState<string | null>(null);
-
   const pending = invitesQuery.data?.pending ?? [];
-  if (!invitesQuery.isLoading && pending.length === 0) return null;
-
-  const onResend = (id: string) => {
-    haptics.tap();
-    setBusyId(id);
-    resend.mutate(id, {
-      onSuccess: (res) => Alert.alert(res.email_sent ? 'Invite sent' : 'Email skipped', res.email_sent ? 'The invitation email was sent.' : 'Email delivery is unavailable — share the invite link manually.'),
-      onError: (e: any) => Alert.alert('Failed', e?.message || 'Failed to resend invitation.'),
-      onSettled: () => setBusyId(null),
-    });
-  };
-  const onRevoke = (id: string, email: string) => {
-    Alert.alert('Revoke invitation?', `The invitation for ${email} will be cancelled.`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Revoke', style: 'destructive', onPress: () => {
-        haptics.medium();
-        setBusyId(id);
-        revoke.mutate(id, { onError: (e: any) => Alert.alert('Failed', e?.message || 'Failed to revoke invitation.'), onSettled: () => setBusyId(null) });
-      } },
-    ]);
-  };
-
+  if (pending.length === 0) return null;
   return (
-    <View style={{ borderRadius: 16, borderWidth: 1, borderColor: c.border, backgroundColor: c.cardBg, padding: 16 }}>
-      <CardHeader title="Pending invitations" description="Invited by email but not accepted yet." count={pending.length} isDark={isDark} />
-      {invitesQuery.isLoading ? (
-        <View style={{ paddingVertical: 20, alignItems: 'center' }}><ActivityIndicator size="small" color={c.muted} /></View>
-      ) : (
-        <View style={{ marginTop: 8 }}>
-          {pending.map((inv, i) => {
-            const busy = busyId === inv.invite_id;
-            return (
-              <View key={inv.invite_id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}>
-                <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: withAlpha(THEME.accent.orange, 0.14), alignItems: 'center', justifyContent: 'center' }}>
-                  <Icon as={Mail} size={16} color={THEME.accent.orange} />
-                </View>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Text style={{ flex: 1, fontSize: 14, fontFamily: 'Roobert-Medium', color: c.fg }} numberOfLines={1}>{inv.email}</Text>
-                    <RoleBadge role={inv.project_role} isDark={isDark} />
-                  </View>
-                  {inv.invite_expired ? (
-                    <Text style={{ fontSize: 11.5, color: THEME.accent.orange, marginTop: 3 }}>Invite link expired — ask them to request a fresh one</Text>
-                  ) : (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 }}>
-                      <Icon as={Clock} size={11} color={c.muted} />
-                      <Text style={{ fontSize: 11.5, color: c.muted }}>Link expires {formatDate(inv.invite_expires_at)}</Text>
-                    </View>
-                  )}
-                </View>
-                {busy ? (
-                  <ActivityIndicator size="small" color={c.muted} />
-                ) : (
-                  <View style={{ flexDirection: 'row', gap: 6 }}>
-                    <Button variant="outline" size="icon" className="rounded-full" onPress={() => onResend(inv.invite_id)} hitSlop={6}>
-                      <Icon as={RefreshCw} size={14} color={c.muted} />
-                    </Button>
-                    <Button variant="outline" size="icon" className="rounded-full" onPress={() => onRevoke(inv.invite_id, inv.email)} hitSlop={6}>
-                      <Icon as={X} size={14} color={c.destructive} />
-                    </Button>
-                  </View>
-                )}
-              </View>
-            );
-          })}
-        </View>
-      )}
-    </View>
+    <SettingsGroup title="Pending invites">
+      {pending.map((inv) => (
+        <SettingsRow
+          key={inv.invite_id}
+          leading={<LeadingIcon icon={Mail} />}
+          label={inv.email}
+          value={inv.invite_expired ? 'Expired' : (ROLE_DESC[inv.project_role]?.label ?? inv.project_role)}
+          onPress={() => { haptics.tap(); onSelect(inv); }}
+        />
+      ))}
+    </SettingsGroup>
   );
 }
 
-// ─── Project access card ──────────────────────────────────────────────────────
-
-function AccessCard({ projectId, canManage, isDark, onSelectMember }: { projectId: string; canManage: boolean; isDark: boolean; onSelectMember: (m: ProjectAccessMember) => void }) {
-  const c = useColors(isDark);
+function PeopleGroup({
+  projectId,
+  canManage,
+  isDark,
+  onInvite,
+  onSelectMember,
+}: {
+  projectId: string;
+  canManage: boolean;
+  isDark: boolean;
+  onInvite: () => void;
+  onSelectMember: (m: ProjectAccessMember) => void;
+}) {
   const accessQuery = useProjectAccess(projectId);
-
   const members = accessQuery.data?.members ?? [];
-  const accessMembers = useMemo(() => members.filter((m) => m.has_implicit_access || m.effective_project_role != null), [members]);
-  const sorted = useMemo(() => [...accessMembers].sort((a, b) => {
-    const d = accountRoleRank(a.account_role) - accountRoleRank(b.account_role);
-    return d !== 0 ? d : userLabel(a).localeCompare(userLabel(b));
-  }), [accessMembers]);
+  const sorted = useMemo(
+    () =>
+      members
+        .filter((m) => m.has_implicit_access || m.effective_project_role != null)
+        .sort((a, b) => {
+          const d = accountRoleRank(a.account_role) - accountRoleRank(b.account_role);
+          return d !== 0 ? d : userLabel(a).localeCompare(userLabel(b));
+        }),
+    [members],
+  );
 
+  if (accessQuery.isLoading) {
+    return (
+      <View className="gap-3">
+        <Skeleton className="h-12 w-full rounded-2xl" />
+        <Skeleton className="h-12 w-full rounded-2xl" />
+        <Skeleton className="h-12 w-full rounded-2xl" />
+      </View>
+    );
+  }
+  if (accessQuery.isError && sorted.length === 0) {
+    return (
+      <View className="items-center gap-4 pt-10">
+        <Text variant="muted" className="text-center">
+          {(accessQuery.error as Error)?.message || 'Unable to load members'}
+        </Text>
+        <Button variant="secondary" size="lg" className="rounded-full" onPress={() => void accessQuery.refetch()}>
+          <Text>Try again</Text>
+        </Button>
+      </View>
+    );
+  }
   return (
-    <View style={{ borderRadius: 16, borderWidth: 1, borderColor: c.border, backgroundColor: c.cardBg, padding: 16 }}>
-      <CardHeader title="Project access" description="Account owners and admins always have Manager access." count={accessMembers.length} isDark={isDark} />
-      {accessQuery.isLoading ? (
-        <View style={{ paddingVertical: 24, alignItems: 'center' }}><ActivityIndicator size="small" color={c.muted} /></View>
-      ) : accessQuery.isError ? (
-        <View style={{ paddingVertical: 12, gap: 10 }}>
-          <Text style={{ fontSize: 13, color: c.destructive }}>{(accessQuery.error as Error)?.message || 'Failed to load access'}</Text>
-          <Button variant="outline" size="sm" className="self-start rounded-full" onPress={() => accessQuery.refetch()}>
-            <Text>Retry</Text>
-          </Button>
-        </View>
-      ) : (
-        <View style={{ marginTop: 8 }}>
-          {sorted.map((m, i) => {
-            const inheritedOnly = isInheritedFromGroupOnly(m);
-            const summary = inheritedSummary(m);
-            const effRole = m.effective_project_role;
-            const tappable = canManage && !m.has_implicit_access;
-            const subtitle = m.has_implicit_access
-              ? 'Implicit account access'
-              : summary
-                ? summary
-                : m.project_role
-                  ? `Granted ${formatDate(m.granted_at)}`
-                  : 'No project access';
-            return (
-              <PressableSurface
-                key={m.user_id}
-                disabled={!tappable}
-                onPress={() => { haptics.tap(); onSelectMember(m); }}
-                style={({ pressed }) => [
-                  { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border },
-                  pressed && tappable && { opacity: 0.6 },
-                ]}
-              >
-                <Avatar email={m.email} isDark={isDark} />
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                    <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: c.fg }} numberOfLines={1}>{userLabel(m)}</Text>
-                    <RoleBadge role={m.account_role} isDark={isDark} />
-                    {(m.group_sources ?? []).map((g) => (
-                      <View key={g.group_id} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999, borderWidth: 1, borderColor: c.border }}>
-                        <Icon as={Users} size={10} color={c.muted} />
-                        <Text style={{ fontSize: 10.5, color: c.muted }}>{g.group_name}</Text>
-                      </View>
-                    ))}
-                  </View>
-                  <Text style={{ fontSize: 11.5, color: c.muted, marginTop: 3 }} numberOfLines={1}>{subtitle}</Text>
-                </View>
-                {m.has_implicit_access ? (
-                  <RoleBadge role="Manager" isDark={isDark} withShield />
-                ) : (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    {effRole && <RoleBadge role={effRole} isDark={isDark} withShield={inheritedOnly} />}
-                    {tappable && <Icon as={ChevronRight} size={16} color={c.muted} />}
-                  </View>
-                )}
-              </PressableSurface>
-            );
-          })}
-        </View>
-      )}
-    </View>
+    <SettingsGroup title="People">
+      {/* Invite is here too, not only behind the header's `+`: for an owner
+          with no one else in the project, it is the one thing to do. */}
+      {canManage ? (
+        <SettingsRow leading={<LeadingIcon icon={UserPlus} />} label="Invite member" onPress={() => { haptics.tap(); onInvite(); }} />
+      ) : null}
+      {sorted.map((m) => {
+        // Account owners and admins hold Manager here by their account role: nothing to edit.
+        const tappable = canManage && !m.has_implicit_access;
+        return (
+          <SettingsRow
+            key={m.user_id}
+            leading={<Avatar email={m.email} isDark={isDark} size={LEADING} />}
+            label={userLabel(m)}
+            value={memberRoleLabel(m)}
+            right={tappable ? undefined : NO_CHEVRON}
+            onPress={tappable ? () => { haptics.tap(); onSelectMember(m); } : undefined}
+          />
+        );
+      })}
+    </SettingsGroup>
   );
 }
 
-// ─── Group access card ────────────────────────────────────────────────────────
-
-function GroupAccessCard({ projectId, accountId, canManage, isDark, onAttach, onSelectGrant }: { projectId: string; accountId: string; canManage: boolean; isDark: boolean; onAttach: () => void; onSelectGrant: (g: ProjectGroupGrant) => void }) {
-  const c = useColors(isDark);
-  const theme = useThemeColors();
+function GroupsGroup({
+  projectId,
+  canManage,
+  onAttach,
+  onSelectGrant,
+}: {
+  projectId: string;
+  canManage: boolean;
+  onAttach: () => void;
+  onSelectGrant: (g: ProjectGroupGrant) => void;
+}) {
   const grantsQuery = useProjectGroupGrants(projectId);
-  const grants = useMemo(() => [...(grantsQuery.data?.grants ?? [])].sort((a, b) => a.created_at.localeCompare(b.created_at)), [grantsQuery.data]);
-
+  const grants = useMemo(
+    () => [...(grantsQuery.data?.grants ?? [])].sort((a, b) => a.created_at.localeCompare(b.created_at)),
+    [grantsQuery.data],
+  );
+  if (grantsQuery.isLoading || (grants.length === 0 && !canManage)) return null;
   return (
-    <View style={{ borderRadius: 16, borderWidth: 1, borderColor: c.border, backgroundColor: c.cardBg, padding: 16 }}>
-      <CardHeader
-        title="Group access"
-        description="Attach an account group. Every member of the group gets the chosen role here."
-        count={grants.length}
-        isDark={isDark}
-        action={canManage ? (
-          <Button variant="outline" size="sm" className="rounded-full" onPress={() => { haptics.tap(); onAttach(); }}>
-            <Icon as={UserPlus} size={13} color={theme.primary} />
-            <Text style={{ color: theme.primary }}>Attach</Text>
-          </Button>
-        ) : undefined}
-      />
-      {grantsQuery.isLoading ? (
-        <View style={{ paddingVertical: 20, alignItems: 'center' }}><ActivityIndicator size="small" color={c.muted} /></View>
-      ) : grants.length === 0 ? (
-        <Text style={{ fontSize: 12.5, color: c.muted, marginTop: 10 }}>No groups attached yet.</Text>
-      ) : (
-        <View style={{ marginTop: 8 }}>
-          {grants.map((g, i) => (
-            <PressableSurface
-              key={g.group_id}
-              disabled={!canManage}
-              onPress={() => { haptics.tap(); onSelectGrant(g); }}
-              style={({ pressed }) => [
-                { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border },
-                pressed && canManage && { opacity: 0.6 },
-              ]}
-            >
-              <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: c.avatarBg, alignItems: 'center', justifyContent: 'center' }}>
-                <Icon as={Users} size={16} color={c.muted} />
-              </View>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: c.fg }} numberOfLines={1}>{g.group_name}</Text>
-                <Text style={{ fontSize: 11.5, color: c.muted, marginTop: 3 }} numberOfLines={1}>
-                  Attached {formatDate(g.created_at)}
-                  {typeof g.member_count === 'number' ? ` · ${g.member_count} ${g.member_count === 1 ? 'member' : 'members'}` : ''}
-                </Text>
-              </View>
-              <RoleBadge role={g.role} isDark={isDark} />
-              {canManage && <Icon as={ChevronRight} size={16} color={c.muted} />}
-            </PressableSurface>
-          ))}
-        </View>
-      )}
-    </View>
+    <SettingsGroup title="Groups">
+      {grants.map((g) => (
+        <SettingsRow
+          key={g.group_id}
+          leading={<LeadingIcon icon={Users} />}
+          label={g.group_name}
+          value={ROLE_DESC[g.role as ProjectRole]?.label ?? g.role}
+          right={canManage ? undefined : NO_CHEVRON}
+          onPress={canManage ? () => { haptics.tap(); onSelectGrant(g); } : undefined}
+        />
+      ))}
+      {canManage ? (
+        <SettingsRow leading={<LeadingIcon icon={UserPlus} />} label="Attach a group" onPress={() => { haptics.tap(); onAttach(); }} />
+      ) : null}
+    </SettingsGroup>
   );
 }
 
 // ─── sheets ───────────────────────────────────────────────────────────────────
 
-function SheetHeader({ title, onClose, isDark, leading }: { title: string; onClose: () => void; isDark: boolean; leading?: React.ReactNode }) {
-  const c = useColors(isDark);
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: c.border }}>
-      {leading}
-      <Text style={{ flex: 1, fontSize: 17, fontFamily: 'Roobert-Medium', color: c.fg }} numberOfLines={1}>{title}</Text>
-      <Button variant="secondary" size="icon" className="rounded-full" onPress={() => { haptics.tap(); onClose(); }} hitSlop={8}>
-        <Icon as={X} size={17} color={c.muted} />
-      </Button>
-    </View>
-  );
+function SheetHeader({ title, onClose }: { title: string; onClose: () => void; isDark?: boolean; leading?: React.ReactNode }) {
+  // The app's one sheet title row: close at the far left, title centred.
+  return <SheetTitleRow title={title} onClose={() => { haptics.tap(); onClose(); }} />;
 }
 
 function RoleRadioRow({ role, selected, onPress, isDark }: { role: ProjectRole; selected: boolean; onPress: () => void; isDark: boolean }) {
@@ -698,6 +681,8 @@ function GrantSheet({ projectId, grant, onClose, isDark }: { projectId: string; 
 // ─── page ─────────────────────────────────────────────────────────────────────
 
 type SheetState =
+  | { kind: 'invite' }
+  | { kind: 'pending'; invite: PendingProjectInvite }
   | { kind: 'member'; member: ProjectAccessMember }
   | { kind: 'attach' }
   | { kind: 'grant'; grant: ProjectGroupGrant }
@@ -711,11 +696,10 @@ export function MembersNavPage({
   isDrawerOpen,
   isRightDrawerOpen,
 }: MembersNavPageProps) {
-  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
-  const c = useColors(isDark);
+  const scrollFade = useScrollFade();
 
   const projectQuery = useProject(projectId);
   const accessQuery = useProjectAccess(projectId);
@@ -740,47 +724,54 @@ export function MembersNavPage({
         onOpenRightDrawer={onOpenRightDrawer}
         isDrawerOpen={isDrawerOpen}
         isRightDrawerOpen={isRightDrawerOpen}
+        onAdd={canManage ? () => { haptics.tap(); open({ kind: 'invite' }); } : undefined}
+        addLabel="Invite member"
       />
 
       <PageContent>
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: insets.bottom + 48, gap: 16 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          <View>
-            <Text style={{ fontSize: 19, fontFamily: 'Roobert-Medium', color: c.fg }}>Project members</Text>
-            <Text style={{ fontSize: 12.5, lineHeight: 18, color: c.muted, marginTop: 4 }}>
-              Control who can access this project. Account owners and admins always have Manager access.
-            </Text>
-          </View>
-
-          {canManage && <InviteCard projectId={projectId} isDark={isDark} />}
-          {canManage && <PendingInvitesCard projectId={projectId} isDark={isDark} />}
-
-          <AccessCard projectId={projectId} canManage={canManage} isDark={isDark} onSelectMember={(m) => open({ kind: 'member', member: m })} />
-
-          {accountId && (
-            <GroupAccessCard
+        <View className="flex-1">
+          <Animated.ScrollView
+            className="flex-1"
+            onScroll={scrollFade.onScroll}
+            scrollEventThrottle={16}
+            contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: BOTTOM_FADE_HEIGHT + insets.bottom, gap: 18 }}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled">
+            {canManage ? <PendingGroup projectId={projectId} onSelect={(invite) => open({ kind: 'pending', invite })} /> : null}
+            <PeopleGroup
               projectId={projectId}
-              accountId={accountId}
               canManage={canManage}
               isDark={isDark}
-              onAttach={() => open({ kind: 'attach' })}
-              onSelectGrant={(g) => open({ kind: 'grant', grant: g })}
+              onInvite={() => open({ kind: 'invite' })}
+              onSelectMember={(m) => open({ kind: 'member', member: m })}
             />
-          )}
-        </ScrollView>
+            {accountId ? (
+              <GroupsGroup
+                projectId={projectId}
+                canManage={canManage}
+                onAttach={() => open({ kind: 'attach' })}
+                onSelectGrant={(g) => open({ kind: 'grant', grant: g })}
+              />
+            ) : null}
+          </Animated.ScrollView>
+          <TopFade style={scrollFade.topFadeStyle} />
+          <BottomFade />
+        </View>
       </PageContent>
 
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={sheetRef}
-        snapPoints={sheet?.kind === 'grant' ? ['62%'] : sheet?.kind === 'member' ? ['78%'] : ['82%']}
+        snapPoints={sheet?.kind === 'pending' ? ['42%'] : sheet?.kind === 'invite' ? ['58%'] : sheet?.kind === 'grant' ? ['62%'] : sheet?.kind === 'member' ? ['78%'] : ['82%']}
         enableDynamicSizing={false}
         onDismiss={() => setSheet(null)}
-        backgroundStyle={{ backgroundColor: sheetBg }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
-        backdropComponent={SheetBackdrop}
       >
-        {sheet?.kind === 'member' ? (
+        {sheet?.kind === 'invite' ? (
+          <InviteSheet projectId={projectId} onClose={() => sheetRef.current?.dismiss()} isDark={isDark} />
+        ) : sheet?.kind === 'pending' ? (
+          <PendingInviteSheet projectId={projectId} invite={sheet.invite} onClose={() => sheetRef.current?.dismiss()} isDark={isDark} />
+        ) : sheet?.kind === 'member' ? (
           <MemberSheet projectId={projectId} accountId={accountId} member={sheet.member} onClose={() => sheetRef.current?.dismiss()} isDark={isDark} />
         ) : sheet?.kind === 'attach' && accountId ? (
           <AttachGroupSheet projectId={projectId} accountId={accountId} attachedIds={attachedIds} onClose={() => sheetRef.current?.dismiss()} isDark={isDark} />
@@ -789,7 +780,7 @@ export function MembersNavPage({
         ) : (
           <View style={{ height: 1 }} />
         )}
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
     </View>
   );
 }

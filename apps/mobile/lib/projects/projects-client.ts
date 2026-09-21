@@ -350,6 +350,9 @@ export {
   deletePersonalProjectSecret,
 } from '@kortix/sdk';
 
+// ── Default agent ───────────────────────────────────────────────────────────
+export { updateProjectDefaultAgent } from '@kortix/sdk';
+
 // ── Channels — Slack (web parity: customize/sections/channels-view) ───────────
 
 export type { SlackInstallation, SlackMode } from '@kortix/sdk';

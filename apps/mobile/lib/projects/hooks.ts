@@ -73,6 +73,7 @@ import {
   updateProject,
   updateProjectTrigger,
   upsertProjectSecret,
+  updateProjectDefaultAgent,
   inviteProjectMember,
   updateProjectAccess,
   revokeProjectAccess,
@@ -212,32 +213,6 @@ export function useProject(projectId: string | null) {
     enabled: !!projectId,
     staleTime: 20_000,
   });
-}
-
-/**
- * The project's name, on first paint when possible. `useProject` has no cache
- * the first time a project opens, but the projects list it was opened from
- * already holds the name, so read that until the detail loads. Without it the
- * project home's greeting swaps "Give it …" for the real name mid-transition.
- *
- * Name only, on purpose: list rows are not seeded into `useProject` as
- * placeholder data, because its consumers (DevPage, SettingsNavPage) key their
- * loading states off `isLoading`.
- */
-export function useProjectName(projectId: string | null): string | undefined {
-  const queryClient = useQueryClient();
-  const { data } = useProject(projectId);
-  if (data?.name) return data.name;
-  if (!projectId) return undefined;
-  const lists = queryClient.getQueriesData<{ project_id: string; name: string }[]>({
-    queryKey: ['projects'],
-  });
-  for (const [, list] of lists) {
-    if (!Array.isArray(list)) continue;
-    const row = list.find((p) => p.project_id === projectId);
-    if (row?.name) return row.name;
-  }
-  return undefined;
 }
 
 // ── Settings (web parity: customize/sections/settings-view) ───────────────────
@@ -658,6 +633,15 @@ export function useUpsertProjectSecret(projectId: string) {
   });
 }
 
+/** Set the agent a new session runs on when the user picks none. */
+export function useSetProjectDefaultAgent(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (agentName: string) => updateProjectDefaultAgent(projectId, agentName),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.projectDetail(projectId) }),
+  });
+}
+
 /** Delete the shared value of a secret (members' overrides are left intact). */
 export function useDeleteProjectSecret(projectId: string) {
   const queryClient = useQueryClient();
@@ -790,9 +774,14 @@ export function useProjectAgentsForTrigger(projectId: string | null) {
  *  true when the project hasn't turned the LLM gateway on; treat that as "no
  *  override available" rather than an error. */
 export function useProjectModelCatalogForTrigger(projectId: string | null) {
+  // `/model-picker`, NOT `/llm-catalog`: the raw catalog is the full runtime
+  // projection (7134 models on 2026-09-16). The picker rendered every one of
+  // them as a row, so the sheet froze when it opened (Jay, 2026-09-22). The
+  // model picker is the bounded, connection-aware list the composer reads, and
+  // it shares that query's cache: the list is usually there before the tap.
   const query = useQuery({
-    queryKey: projectKeys.llmCatalog(projectId),
-    queryFn: () => getProjectLlmCatalog(projectId!),
+    queryKey: projectKeys.modelPicker(projectId),
+    queryFn: () => getProjectModelPicker(projectId!),
     enabled: !!projectId,
     staleTime: 60_000,
     retry: false,
