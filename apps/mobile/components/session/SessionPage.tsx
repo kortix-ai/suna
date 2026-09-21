@@ -21,7 +21,7 @@ import {
   type NativeSyntheticEvent,
   type NativeScrollEvent,
 } from 'react-native';
-import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
+import { KeyboardAvoidingView, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
 import Reanimated, {
   Easing as ReanimatedEasing,
   useAnimatedStyle,
@@ -38,7 +38,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ListIcon as MenuIcon, XIcon as CloseIcon, ListIcon, XIcon, PaperPlaneTiltIcon, ArrowUpIcon, ArrowDownIcon, CaretUpIcon, CaretDownIcon, DotsThreeIcon } from '@/lib/icons';
 import { MenuButton } from '@/components/kortix/menu-button';
 import { PlatformButton } from '@/components/kortix/platform-button';
-import { FloatingMenuButton } from '@/components/session/FloatingMenuButton';
+import { FLOATING_MENU_CLEARANCE, FloatingMenuButton } from '@/components/session/FloatingMenuButton';
+import { AgentPill } from '@/components/session/AgentPill';
+import { useProjectModelCatalog } from '@/lib/projects/hooks';
+import { openProjectModelsOnWeb } from '@/lib/session/connect-model';
+import { offeredSessionModels, type PickerCatalogModel, type PickerModel } from '@/lib/session/model-picker';
 import { haptics } from '@/lib/haptics';
 import { Icon } from '@/components/ui/icon';
 import { Text as RNText } from 'react-native';
@@ -132,6 +136,8 @@ import { AnimatedToggleIcon } from '@/components/kortix/animated-toggle-icon';
 
 interface SessionPageProps {
   sessionId: string;
+  /** The session's project: its model catalog is the thread's model list. */
+  projectId?: string;
   /** Project name for the fresh-session hero — "Give {name} something real to work on." */
   projectName?: string;
   onBack: () => void;
@@ -190,7 +196,18 @@ function readSavedScrollOffset(sessionId: string): number {
   return typeof saved?.scrollOffset === 'number' ? saved.scrollOffset : 0;
 }
 
-function SessionPageImpl({ sessionId, projectName, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, chrome = 'header', onboardingMode, onSkipOnboarding }: SessionPageProps) {
+/** A catalog model the sandbox has not listed (yet), as the composer's `FlatModel`. */
+function flatModelFromCatalog(model: PickerModel, entry: PickerCatalogModel): FlatModel {
+  return {
+    ...model,
+    reasoning: entry.reasoning ?? false,
+    contextWindow: entry.limit?.context,
+    family: entry.family,
+    releaseDate: entry.release_date,
+  };
+}
+
+function SessionPageImpl({ sessionId, projectId, projectName, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, chrome = 'header', onboardingMode, onSkipOnboarding }: SessionPageProps) {
   const router = useRouter();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -200,9 +217,19 @@ function SessionPageImpl({ sessionId, projectName, onBack, onOpenDrawer, onOpenR
   const effectiveChrome = onboardingMode ? 'header' : chrome;
   // Top inset for the message list. Floating chrome has no header, so the
   // list would start under the status bar and the floating menu button —
-  // inset it below them (insets.top + 8 button offset + 40 button + 12 gap).
+  // inset it below them (FLOATING_MENU_CLEARANCE, where the top fade ends).
   // Header chrome keeps the original 16pt breathing room below the header.
-  const listTopInset = effectiveChrome === 'floating' ? insets.top + 60 : 16;
+  const listTopInset = effectiveChrome === 'floating' ? insets.top + FLOATING_MENU_CLEARANCE : 16;
+  // The bottom area rests above the home indicator (`insets.bottom`). While
+  // the keyboard is up the indicator is covered, so the inset collapses with
+  // the keyboard's progress: the composer then sits its own 12pt (`pb-3`) above
+  // the keyboard, the same gap as the project home composer (design.md §5).
+  const padsSafeArea = onboardingMode || effectiveChrome === 'floating';
+  const bottomInset = insets.bottom;
+  const { progress: keyboardProgress } = useReanimatedKeyboardAnimation();
+  const bottomAreaStyle = useAnimatedStyle(() => ({
+    paddingBottom: bottomInset * (1 - keyboardProgress.value),
+  }));
   const { sandboxUrl } = useSandboxContext();
   const flatListRef = useRef<FlatList>(null);
   // Saved scroll offset: read once per session, not subscribed. Subscribing
@@ -567,8 +594,26 @@ function SessionPageImpl({ sessionId, projectName, onBack, onOpenDrawer, onOpenR
   // useOpenCodeModels reads) so the arrays keep their identity between
   // renders and the memoized composer can skip stream renders.
   const { data: providers } = useOpenCodeProviders(sandboxUrl);
-  const allModels = useMemo(() => (providers ? flattenModels(providers) : EMPTY_MODELS), [providers]);
-  const visibleModels = useMemo(() => filterToLatestModels(allModels), [allModels]);
+  const sandboxModels = useMemo(() => (providers ? flattenModels(providers) : EMPTY_MODELS), [providers]);
+  // The models this thread can run on: web's rule (`lib/session/model-picker.ts`).
+  // A gateway project lists its `/model-picker` catalog — the list project home
+  // and web show; any other project lists its sandbox's own providers.
+  const { catalog: modelCatalog, isLoading: catalogLoading } = useProjectModelCatalog(projectId ?? null);
+  const allModels = useMemo(
+    () => offeredSessionModels(sandboxModels, modelCatalog, flatModelFromCatalog),
+    [sandboxModels, modelCatalog],
+  );
+  // The catalog is already curated by the server. A native provider list is
+  // not: it keeps the newest model per family.
+  const visibleModels = useMemo(
+    () => (modelCatalog ? allModels : filterToLatestModels(allModels)),
+    [modelCatalog, allModels],
+  );
+  const modelsLoading = catalogLoading || (!modelCatalog && !providers);
+  const handleConnectModel = useCallback(() => {
+    if (modelCatalog && projectId) openProjectModelsOnWeb(projectId);
+    else useTabStore.getState().navigateToPage('page:llm-providers');
+  }, [modelCatalog, projectId]);
   const defaults = providers?.default ?? EMPTY_DEFAULTS;
   const { data: config } = useOpenCodeConfig(sandboxUrl);
   const { data: commands = EMPTY_COMMANDS } = useOpenCodeCommands(sandboxUrl);
@@ -599,7 +644,6 @@ function SessionPageImpl({ sessionId, projectName, onBack, onOpenDrawer, onOpenR
       resolvedRef.current.setModel(providerID, modelID, { explicit: true }),
     [],
   );
-  const handleVariantCycle = useCallback(() => resolvedRef.current.cycleVariant(), []);
   const handleVariantSet = useCallback((v: string | null) => resolvedRef.current.setVariant(v), []);
   const handleTextChange = useCallback((t: string) => {
     inputTextRef.current = t;
@@ -1591,8 +1635,14 @@ function SessionPageImpl({ sessionId, projectName, onBack, onOpenDrawer, onOpenR
         </View>
       ) : (
         /* Floating menu button — opens the project drawer (every project page
-           shows it, Jay 2026-09-16). */
-        <FloatingMenuButton onPress={onOpenDrawer} />
+           shows it, Jay 2026-09-16). `fade`: turns scroll under the button and
+           the status bar, so they fade out there instead of showing through. */
+        <FloatingMenuButton onPress={onOpenDrawer} fade>
+          {/* The agent is a thread-level choice: it sits at the right end of
+              the header, not in the composer (design.md §5). Hidden with fewer
+              than two agents. */}
+          <AgentPill agents={resolvedAgents} activeName={resolved.agent?.name ?? null} onChange={handleAgentChange} />
+        </FloatingMenuButton>
       )}
 
       {/* Messages + Fresh Session Hero — flat continuation of the page
@@ -1680,13 +1730,7 @@ function SessionPageImpl({ sessionId, projectName, onBack, onOpenDrawer, onOpenR
       {/* Bottom area — question prompt OR chat input. `floating` no longer
           clears a dock (removed): it just sits above the safe area, same as
           onboarding. */}
-      <View
-        style={
-          onboardingMode || effectiveChrome === 'floating'
-            ? { paddingBottom: insets.bottom }
-            : undefined
-        }
-      >
+      <Reanimated.View style={padsSafeArea ? bottomAreaStyle : undefined}>
         {hasQuestion && activeQuestion ? (
           <QuestionPrompt
             key={activeQuestion.id}
@@ -1706,12 +1750,12 @@ function SessionPageImpl({ sessionId, projectName, onBack, onOpenDrawer, onOpenR
             agents={resolvedAgents}
             model={resolvedModel}
             models={visibleModels}
+            modelsLoading={modelsLoading}
+            onConnectModel={handleConnectModel}
             modelKey={resolvedModelKey}
             variant={resolved.variant}
             variants={resolvedVariants}
-            onAgentChange={handleAgentChange}
             onModelChange={handleModelChange}
-            onVariantCycle={handleVariantCycle}
             onVariantSet={handleVariantSet}
             sessions={allSessions}
             currentSessionId={sessionId}
@@ -1722,7 +1766,7 @@ function SessionPageImpl({ sessionId, projectName, onBack, onOpenDrawer, onOpenR
             inputSlot={inputSlot}
           />
         )}
-      </View>
+      </Reanimated.View>
 
       {/* File mention viewer */}
       <FileViewer

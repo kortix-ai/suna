@@ -1,19 +1,19 @@
 /**
- * SessionChatInput — chat input with agent/model/variant toolbar and @mentions.
+ * SessionChatInput — the thread's chat input.
  *
- * Matches the Computer frontend's chat input:
- * - Left toolbar: Agent selector, Model selector, Variant (thinking) toggle
- * - Right toolbar: Send / Stop buttons
- * - Multiline text input
- * - @mention autocomplete for files, agents, and sessions
+ * The card is `Composer`, the same one the project home renders (design.md
+ * §5): text on top, then add · model · send. This file adds what only a thread
+ * has: @mentions, slash commands, the message queue slot, file upload on send,
+ * AutoContinue, and the model sheet with the active model's thinking levels.
+ * The agent is not here: it is the thread header's `AgentPill`.
  */
 
-import React, { forwardRef, useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   TextInput,
   ScrollView,
-  Platform,
+  Pressable,
   StyleSheet,
   Keyboard,
   useWindowDimensions,
@@ -27,38 +27,38 @@ import {
   InfinityIcon,
   InfoIcon,
   XIcon,
-  PlusIcon,
   PaperclipIcon,
-  GearSixIcon as SettingsIcon,
-  CaretRightIcon as ChevronRightIcon,
   TerminalIcon,
-  CaretDownIcon,
-  ListIcon,
-  StopIcon,
-  ArrowUpIcon,
   CaretLeftIcon,
   CheckIcon,
-  type AppIcon,
-  UserIcon,
-  CpuIcon,
-  LightningIcon,
 } from '@/lib/icons';
 import { Icon } from '@/components/ui/icon';
 import Svg, { Line } from 'react-native-svg';
-import { BottomSheetModal, BottomSheetView, BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { uploadAttachments, withAttachments, type AttachedFile } from '@/lib/session/attachments';
 import { useAttachmentPicker } from './useAttachmentPicker';
-import { ComposerAttachmentTiles } from './composer-attachment-tiles';
 
 import type { Agent, FlatModel, Command } from '@/lib/opencode/hooks/use-opencode-data';
 import type { Session } from '@/lib/platform/types';
 import { MentionSuggestions } from './MentionSuggestions';
 import { useMentions, type TrackedMention, type MentionItem } from './useMentions';
 import { Text as RNText } from 'react-native';
-import { useThemeColors, getToggleTrackBg, getToggleActiveBg, getSheetBg } from '@/lib/theme-colors';
+import { getSheetBg } from '@/lib/theme-colors';
 import { THEME, withAlpha } from '@/lib/utils/theme';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import {
+  Sheet,
+  SheetBackdrop,
+  SheetBody,
+  sheetHandleIndicatorStyle,
+  useSheetBackground,
+  type SheetRef,
+} from '@/components/kortix/sheet';
+import { Composer } from '@/components/kortix/composer';
+import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
+import { ModelPickerSheet } from './ModelPickerSheet';
+import { composerPillLabel, type PickerOption } from '@/lib/session/composer-config';
+import { modelPickerOptions, pickerModelName } from '@/lib/session/model-picker';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -178,17 +178,19 @@ interface SessionChatInputProps {
   isBusy?: boolean;
   disabled?: boolean;
   placeholder?: string;
-  /** Agent/model/variant config */
+  /** The agent a send runs on (chosen in the thread header), and all agents for @mentions. */
   agent?: Agent | null;
   agents?: Agent[];
   model?: FlatModel | null;
   models?: FlatModel[];
+  /** The model list is not known yet: the pill hides instead of reading "Connect model". */
+  modelsLoading?: boolean;
+  /** "Connect provider" in the model sheet's empty state. */
+  onConnectModel?: () => void;
   modelKey?: { providerID: string; modelID: string } | null;
   variant?: string | null;
   variants?: string[];
-  onAgentChange?: (name: string) => void;
   onModelChange?: (providerID: string, modelID: string) => void;
-  onVariantCycle?: () => void;
   onVariantSet?: (variant: string | null) => void;
   /** Data for @mentions */
   sessions?: Session[];
@@ -204,7 +206,7 @@ interface SessionChatInputProps {
   commands?: Command[];
   /** Called when a command is submitted (staged command + optional args) */
   onCommand?: (command: Command, args?: string) => void;
-  /** Hides config toolbar (agent/model/variant selectors) — used for onboarding */
+  /** Hides the add button and the model pill — used for onboarding */
   onboardingMode?: boolean;
   /** Initial text to populate the input with (e.g. restored after question prompt) */
   initialText?: string;
@@ -231,12 +233,12 @@ function SessionChatInputImpl({
   agents = EMPTY_AGENTS,
   model,
   models = EMPTY_MODELS,
+  modelsLoading = false,
+  onConnectModel,
   modelKey,
   variant,
   variants = EMPTY_VARIANTS,
-  onAgentChange,
   onModelChange,
-  onVariantCycle,
   onVariantSet,
   sessions = EMPTY_SESSIONS,
   currentSessionId,
@@ -255,14 +257,12 @@ function SessionChatInputImpl({
   const cursorRef = useRef(0);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const themeColors = useThemeColors();
 
-  // Config sheet — imperative BottomSheetModal ref (same pattern as ProjectPicker).
-  const configSheetRef = useRef<BottomSheetModal>(null);
-  const openConfigSheet = useCallback(() => {
+  const modelSheetRef = useRef<SheetRef>(null);
+  const openModelSheet = useCallback(() => {
     Keyboard.dismiss();
     requestAnimationFrame(() => {
-      configSheetRef.current?.present();
+      modelSheetRef.current?.open();
     });
   }, []);
 
@@ -378,15 +378,11 @@ function SessionChatInputImpl({
     [],
   );
 
-  const canSend = (text.trim().length > 0 || attachedFiles.length > 0) && !disabled && !isUploading;
   const hasDraftText = text.trim().length > 0;
-  const hasContent = text.trim().length > 0 || attachedFiles.length > 0;
 
   useEffect(() => {
     onDraftChange?.(hasDraftText);
   }, [hasDraftText, onDraftChange]);
-
-  const hasToolbar = agents.length > 0 || models.length > 0;
 
   const handleSubmit = useCallback(async () => {
     // Slash command popover open — select highlighted command
@@ -467,10 +463,66 @@ function SessionChatInputImpl({
     }
   }, [text, disabled, onSend, agent, modelKey, variant, mention, isBusy, onEnqueue, slashFilter, filteredCommands, slashIndex, handleSelectCommand, stagedCommand, onCommand, autocontinueMode, commands, attachedFiles, sandboxUrl]);
 
-  // Variant display
-  const variantLabel = variant
-    ? variant.charAt(0).toUpperCase() + variant.slice(1)
-    : 'Default';
+  // Web's groups and order (`lib/session/model-picker.ts`): the real upstream
+  // provider, never the raw provider name (always "Kortix" under the gateway).
+  const modelOptions = useMemo<PickerOption[]>(
+    () => modelPickerOptions(models, (m) => `${m.providerID}/${m.modelID}`),
+    [models],
+  );
+  // Web's "No model connected": the models have loaded and the project offers none.
+  const noModelConnected = !modelsLoading && models.length === 0;
+
+  const handleModelSelect = useCallback(
+    (key: string) => {
+      // A model id can contain "/", so the key is looked up, not split.
+      const picked = models.find((m) => `${m.providerID}/${m.modelID}` === key);
+      if (picked) onModelChange?.(picked.providerID, picked.modelID);
+    },
+    [models, onModelChange],
+  );
+
+  const thinking = useMemo(
+    () => ({ levels: variants, selected: variant ?? null, onSelect: (level: string | null) => onVariantSet?.(level) }),
+    [variants, variant, onVariantSet],
+  );
+
+  // `+` opens the file chooser. When the project has AutoContinue commands it
+  // opens the Add sheet instead, which lists both.
+  const hasAutoContinue = availableAutoAlgorithms.length > 0;
+  const handleAddPress = useCallback(() => {
+    Keyboard.dismiss();
+    if (hasAutoContinue) setShowActionsSheet(true);
+    else handleAttachPress();
+  }, [hasAutoContinue, handleAttachPress]);
+
+  const cardHeader =
+    inputSlot || stagedCommand ? (
+      <View className="gap-2">
+        {/* Queue / question slot */}
+        {inputSlot}
+        {stagedCommand ? (
+          <View className="flex-row items-center gap-2">
+            <View className="shrink flex-row items-center gap-1.5 rounded-full bg-secondary py-1.5 pl-3 pr-2">
+              <Icon as={TerminalIcon} size={14} className="text-muted-foreground" />
+              <Text variant="small" numberOfLines={1} className="shrink">
+                /{stagedCommand.name}
+              </Text>
+              <Pressable
+                onPress={() => {
+                  setStagedCommand(null);
+                  setText('');
+                }}
+                hitSlop={11}
+                accessibilityRole="button"
+                accessibilityLabel={`Remove command ${stagedCommand.name}`}
+                className="active:opacity-60">
+                <Icon as={XIcon} size={14} className="text-muted-foreground" />
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
+      </View>
+    ) : null;
 
   return (
     <>
@@ -495,306 +547,68 @@ function SessionChatInputImpl({
           />
         )}
 
-        {/* Text input area */}
-        <View className="px-3 pt-1 pb-2">
-          <View className="rounded-2xl px-3 pt-2 pb-1 bg-card border border-border">
-            {/* Queue / question slot — rendered above textarea */}
-            {inputSlot}
-
-            {/* Attached file previews — the same tile the sent message draws */}
-            {attachedFiles.length > 0 && (
-              <View style={{ marginBottom: 6 }}>
-                <ComposerAttachmentTiles files={attachedFiles} onRemove={removeAttachedFile} />
-              </View>
-            )}
-
-            {/* Staged command badge */}
-            {stagedCommand && (
-              <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  paddingBottom: 6,
-                  gap: 8,
-                }}
-              >
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    paddingHorizontal: 10,
-                    paddingVertical: 5,
-                    borderRadius: 8,
-                    backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
-                    borderWidth: 1,
-                    borderColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06),
-                  }}
-                >
-                  <TerminalIcon size={12} color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} style={{ marginRight: 6 }} />
-                  <RNText
-                    style={{
-                      fontSize: 13,
-                      fontFamily: 'Roobert-Medium',
-                      color: isDark ? THEME.dark.foreground : THEME.light.foreground,
-                      maxWidth: 220,
-                    }}
-                    numberOfLines={1}
-                  >
-                    /{stagedCommand.name}
-                  </RNText>
-                  <Button
-                    variant="ghost"
-                    className="h-auto w-auto gap-0 rounded-md p-0 active:bg-transparent active:opacity-20"
-                    onPress={() => { setStagedCommand(null); setText(''); }}
-                    hitSlop={8}
-                    style={{ marginLeft: 6 }}
-                  >
-                    <XIcon size={12} color={isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground} />
-                  </Button>
-                </View>
-                {stagedCommand.description && (
-                  <RNText
-                    numberOfLines={1}
-                    style={{
-                      fontSize: 11,
-                      fontFamily: 'Roobert',
-                      color: isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground,
-                      flex: 1,
-                    }}
-                  >
-                    {stagedCommand.description}
-                  </RNText>
-                )}
-              </View>
-            )}
-
-            <>
-                {/* TextInput */}
-                <View style={{ position: 'relative' }}>
-                  <TextInput
-                    ref={inputRef}
-                    value={text}
-                    onChangeText={handleTextChange}
-                    onSelectionChange={handleSelectionChange}
-                    placeholder={stagedCommand ? 'Enter details and press send, or tap X to cancel' : placeholder}
-                    placeholderTextColor={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground}
-                    multiline
-                    maxLength={10000}
-                    style={{
-                      maxHeight: 100,
-                      fontSize: 14,
-                      lineHeight: 20,
-                      color: isDark ? THEME.dark.foreground : THEME.light.foreground,
-                      paddingTop: Platform.OS === 'ios' ? 5 : 3,
-                      paddingBottom: Platform.OS === 'ios' ? 5 : 3,
-                      minHeight: 32,
-                    }}
-                    onSubmitEditing={handleSubmit}
-                    blurOnSubmit={false}
-                    returnKeyType="default"
-                    editable={!disabled}
-                  />
-                </View>
-
-                {/* Compact toolbar row — minimal like Slack */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 4, paddingBottom: 2 }}>
-                  {/* Left: "+" button + compact context indicators */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                    {!onboardingMode && (
-                      <Button
-                        variant="ghost"
-                        className="h-auto w-auto gap-0 rounded-full p-0 active:bg-transparent active:opacity-70"
-                        onPress={() => setShowActionsSheet(true)}
-                        hitSlop={6}
-                        style={{
-                          width: 26,
-                          height: 26,
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          borderRadius: 13,
-                          backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
-                        }}
-                      >
-                        <PlusIcon size={14} color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />
-                      </Button>
-                    )}
-
-                    {/* Compact config label */}
-                    <Button
-                      variant="ghost"
-                      className="h-auto w-auto gap-0 rounded-full p-0 active:bg-transparent active:opacity-70"
-                      onPress={openConfigSheet}
-                      hitSlop={6}
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        paddingHorizontal: 6,
-                        paddingVertical: 3,
-                        borderRadius: 12,
-                      }}
-                    >
-                      <Text
-                        numberOfLines={1}
-                        style={{
-                          fontSize: 13,
-                          fontFamily: 'Roobert',
-                          color: isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground,
-                          maxWidth: 140,
-                        }}
-                      >
-                        {agent?.name ? agent.name.charAt(0).toUpperCase() + agent.name.slice(1) : 'Agent'}
-                        {model?.modelName ? ` · ${model.modelName}` : ''}
-                        {variant ? ` · ${variantLabel}` : ''}
-                      </Text>
-                      <CaretDownIcon size={9} color={isDark ? THEME.dark.border : THEME.light.border} style={{ marginLeft: 2 }} />
-                    </Button>
-
-                    {/* Compact autocontinue indicator — only when mode is active */}
-                    {!!autocontinueMode && currentAutoAlgorithm && (
-                      <Button
-                        variant="ghost"
-                        className="h-auto w-auto gap-0 rounded-full p-0 active:bg-transparent active:opacity-70"
-                        onPress={() => setShowAutoSheet(true)}
-                        hitSlop={6}
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          paddingHorizontal: 6,
-                          paddingVertical: 3,
-                          borderRadius: 10,
-                          backgroundColor: withAlpha(THEME.accent.purple, isDark ? 0.15 : 0.12),
-                        }}
-                      >
-                        <View style={{
-                          width: 5,
-                          height: 5,
-                          borderRadius: 2.5,
-                          backgroundColor: THEME.accent.purple,
-                          marginRight: 4,
-                        }} />
-                        <Text
-                          style={{
-                            fontSize: 11,
-                            fontFamily: 'Roobert-Medium',
-                            color: THEME.accent.purple,
-                          }}
-                          numberOfLines={1}
-                        >
-                          {currentAutoAlgorithm.label}
-                        </Text>
-                      </Button>
-                    )}
-                  </View>
-
-                  {/* Right: queue + send/stop */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    {isBusy && canSend && onEnqueue && (
-                      <Button
-                        variant="ghost"
-                        className="h-auto w-auto gap-0 rounded-full p-0 active:bg-transparent active:opacity-70"
-                        onPress={handleSubmit}
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          paddingHorizontal: 8,
-                          paddingVertical: 3,
-                          borderRadius: 12,
-                          backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06),
-                        }}
-                      >
-                        <ListIcon size={11} color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} style={{ marginRight: 3 }} />
-                        <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground }}>
-                          Queue
-                        </Text>
-                      </Button>
-                    )}
-                    {isBusy ? (
-                      <Button
-                        variant="ghost"
-                        className="h-auto w-auto gap-0 rounded-full p-0 active:bg-transparent active:opacity-70"
-                        onPress={onStop}
-                        style={{
-                          width: 26,
-                          height: 26,
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          borderRadius: 13,
-                          backgroundColor: themeColors.primary,
-                        }}
-                      >
-                        <StopIcon size={12} color={themeColors.primaryForeground} weight="fill" />
-                      </Button>
-                    ) : hasContent ? (
-                      <Button
-                        variant="ghost"
-                        className="h-auto w-auto gap-0 rounded-full p-0 opacity-100 active:bg-transparent active:opacity-70"
-                        onPress={handleSubmit}
-                        disabled={!canSend}
-                        style={{
-                          width: 26,
-                          height: 26,
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          borderRadius: 13,
-                          backgroundColor: canSend ? themeColors.primary : (isDark ? THEME.dark.border : THEME.light.border),
-                        }}
-                      >
-                        <ArrowUpIcon size={14} color={canSend ? themeColors.primaryForeground : (isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground)} />
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="ghost"
-                        className="h-auto w-auto gap-0 rounded-full p-0 opacity-100 active:bg-transparent active:opacity-70"
-                        onPress={handleSubmit}
-                        disabled={true}
-                        style={{
-                          width: 26,
-                          height: 26,
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          borderRadius: 13,
-                          backgroundColor: isDark ? THEME.dark.border : THEME.light.border,
-                        }}
-                      >
-                        <ArrowUpIcon size={14} color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />
-                      </Button>
-                    )}
-                  </View>
-                </View>
-              </>
-          </View>
+        {/* The project home's card (design.md §5): same edge, same bottom gap.
+            `pb-3` under `px-4`: vertical padding is one step below horizontal
+            (design.md §2). It is the gap above the keyboard while typing. */}
+        <View className="px-4 pb-3 pt-1">
+          <Composer
+            inputRef={inputRef}
+            value={text}
+            onChangeText={handleTextChange}
+            onSelectionChange={handleSelectionChange}
+            onSubmit={handleSubmit}
+            placeholder={stagedCommand ? 'Add details, then send' : placeholder}
+            maxLength={10000}
+            disabled={disabled || isUploading}
+            allowEmptySend={!!stagedCommand}
+            busy={isBusy}
+            onStop={onStop}
+            header={cardHeader}
+            attachments={attachedFiles}
+            onAttach={onboardingMode ? undefined : handleAddPress}
+            attachLabel={hasAutoContinue ? 'Add' : undefined}
+            onRemoveAttachment={removeAttachedFile}
+            modelLabel={
+              onboardingMode || modelsLoading
+                ? null
+                : noModelConnected
+                  ? 'Connect model'
+                  : composerPillLabel(model ? pickerModelName(model) : undefined, variant)
+            }
+            onModelPress={openModelSheet}
+            accessory={
+              autocontinueMode && currentAutoAlgorithm ? (
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  className="rounded-full"
+                  onPress={() => setShowAutoSheet(true)}
+                  accessibilityLabel={`AutoContinue, ${currentAutoAlgorithm.label}`}>
+                  <Icon as={InfinityIcon} size={20} className="text-kortix-purple" />
+                </Button>
+              ) : null
+            }
+          />
         </View>
-
-
       </View>
 
-      {/* Actions bottom sheet — attach, config, autocontinue */}
+      {/* Add sheet — files and AutoContinue. Mounted only when `+` opens it. */}
       <ActionsSheet
         visible={showActionsSheet}
         onClose={() => setShowActionsSheet(false)}
-        isDark={isDark}
         onAttach={() => { setShowActionsSheet(false); setTimeout(handleAttachPress, 300); }}
-        onConfig={() => { setShowActionsSheet(false); setTimeout(openConfigSheet, 300); }}
-        onAutoContinue={availableAutoAlgorithms.length > 0 ? () => { setShowActionsSheet(false); setTimeout(() => setShowAutoSheet(true), 300); } : undefined}
-        autocontinueLabel={autocontinueMode ? (currentAutoAlgorithm?.label || 'Auto') : 'Off'}
-        autocontinueActive={!!autocontinueMode}
-        configLabel={`${agent?.name ? agent.name.charAt(0).toUpperCase() + agent.name.slice(1) : 'Agent'}${model?.modelName ? ` · ${model.modelName}` : ''}${variant ? ` · ${variantLabel}` : ''}`}
-        onboardingMode={onboardingMode}
+        onAutoContinue={() => { setShowActionsSheet(false); setTimeout(() => setShowAutoSheet(true), 300); }}
+        autocontinueLabel={autocontinueMode ? (currentAutoAlgorithm?.label || 'On') : 'Off'}
       />
 
-      {/* Config bottom sheet — agent, model, variant (dynamic-sized) */}
-      <ConfigSheet
-        ref={configSheetRef}
-        isDark={isDark}
-        agents={agents}
-        selectedAgent={agent || null}
-        onAgentChange={(name) => { onAgentChange?.(name); }}
-        models={models}
-        selectedModel={model || null}
-        onModelChange={(pid, mid) => { onModelChange?.(pid, mid); }}
-        variants={variants}
-        selectedVariant={variant || null}
-        onVariantSet={(v) => onVariantSet?.(v)}
+      {/* Model sheet — models by provider, thinking level of the active model */}
+      <ModelPickerSheet
+        ref={modelSheetRef}
+        options={modelOptions}
+        activeKey={model ? `${model.providerID}/${model.modelID}` : null}
+        onSelect={handleModelSelect}
+        thinking={thinking}
+        onConnect={onConnectModel}
       />
 
       <AutoContinueSheet
@@ -816,242 +630,49 @@ function SessionChatInputImpl({
  */
 export const SessionChatInput = React.memo(SessionChatInputImpl);
 
-function AutoContinueButton({
-  isDark,
-  isActive,
-  label,
-  onPress,
-}: {
-  isDark: boolean;
-  isActive: boolean;
-  label: string;
-  onPress: () => void;
-}) {
-  const activeBg = withAlpha(THEME.accent.purple, isDark ? 0.18 : 0.16);
-  const inactiveBg = isDark ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.04);
-  const activeColor = THEME.accent.purple;
-  const mutedColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
-
-  return (
-    <Button
-      variant="ghost"
-      className="h-auto w-auto gap-0 rounded-full p-0 active:bg-transparent active:opacity-80"
-      onPress={onPress}
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 10,
-        paddingVertical: 5,
-        borderRadius: 20,
-        backgroundColor: isActive ? activeBg : inactiveBg,
-        borderWidth: isActive ? 1 : 0,
-        borderColor: isActive ? withAlpha(THEME.accent.purple, 0.4) : 'transparent',
-      }}
-      hitSlop={6}
-    >
-      <Text
-        style={{
-          fontSize: 12,
-          fontFamily: 'Roobert-Medium',
-          color: isActive ? (isDark ? THEME.dark.foreground : THEME.light.foreground) : mutedColor,
-          marginLeft: 0,
-        }}
-        numberOfLines={1}
-      >
-        {label}
-      </Text>
-      <CaretDownIcon size={10} color={isActive ? (THEME.accent.purple) : mutedColor} style={{ marginLeft: 4 }} />
-    </Button>
-  );
-}
-
-// ─── Actions Sheet ──────────────────────────────────────────────────────────
+// ─── Add Sheet ──────────────────────────────────────────────────────────────
 
 interface ActionsSheetProps {
   visible: boolean;
   onClose: () => void;
-  isDark: boolean;
   onAttach: () => void;
-  onConfig: () => void;
-  onAutoContinue?: () => void;
+  onAutoContinue: () => void;
+  /** The AutoContinue row's value: the active algorithm, or "Off". */
   autocontinueLabel: string;
-  autocontinueActive: boolean;
-  configLabel: string;
-  onboardingMode: boolean;
 }
 
-function ActionsSheet({
-  visible,
-  onClose,
-  isDark,
-  onAttach,
-  onConfig,
-  onAutoContinue,
-  autocontinueLabel,
-  autocontinueActive,
-  configLabel,
-  onboardingMode,
-}: ActionsSheetProps) {
-  const sheetBg = useSheetBackground();
-  const insets = useSafeAreaInsets();
-  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
-  const fgColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
-  const bg = getSheetBg(isDark);
-
-  // Sync `visible` prop to the imperative BottomSheetModal API so the caller
-  // API stays unchanged. Dismiss originating from user gesture flows back
-  // through onClose; programmatic dismissals are guarded by dismissingRef.
-  const sheetRef = useRef<BottomSheetModal>(null);
+/** What `+` opens when the project has AutoContinue commands: two settings rows. */
+function ActionsSheet({ visible, onClose, onAttach, onAutoContinue, autocontinueLabel }: ActionsSheetProps) {
+  const sheetRef = useRef<SheetRef>(null);
+  // `visible` drives the imperative sheet. A dismiss this effect started must
+  // not call `onClose` again; a user swipe or backdrop tap must.
   const dismissingRef = useRef(false);
 
   useEffect(() => {
     if (visible) {
       dismissingRef.current = false;
-      sheetRef.current?.present();
+      sheetRef.current?.open();
     } else {
       dismissingRef.current = true;
-      sheetRef.current?.dismiss();
+      sheetRef.current?.close();
     }
   }, [visible]);
 
-  const handleSheetDismiss = useCallback(() => {
+  const handleDismiss = useCallback(() => {
     if (!dismissingRef.current) onClose();
     dismissingRef.current = false;
   }, [onClose]);
 
-
-  const rows: Array<{
-    key: string;
-    icon: typeof PaperclipIcon;
-    label: string;
-    description: string;
-    onPress: () => void;
-  }> = [];
-
-  if (!onboardingMode) {
-    rows.push({
-      key: 'attach',
-      icon: PaperclipIcon,
-      label: 'Attach files',
-      description: 'Photos, documents, or files',
-      onPress: onAttach,
-    });
-  }
-  rows.push({
-    key: 'config',
-    icon: SettingsIcon,
-    label: 'Agent & Model',
-    description: configLabel,
-    onPress: onConfig,
-  });
-  if (onAutoContinue) {
-    rows.push({
-      key: 'autocontinue',
-      icon: InfinityIcon,
-      label: 'AutoContinue',
-      description: autocontinueActive
-        ? `Active · ${autocontinueLabel}`
-        : 'Off — manual mode',
-      onPress: onAutoContinue,
-    });
-  }
-
   return (
-    <BottomSheetModal
-      ref={sheetRef}
-      enableDynamicSizing
-      enablePanDownToClose
-      enableOverDrag={false}
-      onDismiss={handleSheetDismiss}
-      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
-      backgroundStyle={{
-        backgroundColor: sheetBg,
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-      }}
-      backdropComponent={(p) => <SheetBackdrop {...p} opacity={0.4} />}
-    >
-      <BottomSheetView style={{ paddingBottom: insets.bottom + 8 }}>
-        {/* Header — drag handle is the only affordance; swipe down or tap
-            backdrop to dismiss. */}
-        <View style={{ paddingHorizontal: 20, paddingTop: 6, paddingBottom: 10 }}>
-          <Text
-            style={{
-              fontSize: 18,
-              fontFamily: 'Roobert-SemiBold',
-              color: fgColor,
-            }}
-          >
-            Actions
-          </Text>
-        </View>
-
-        {/* Settings-style rows: plain icon, title + subtitle,
-            chevron, and a thin divider between rows (no per-row card bg). */}
-        <View style={{ paddingHorizontal: 20 }}>
-          {rows.map((row, idx) => {
-            const isLast = idx === rows.length - 1;
-            return (
-              <React.Fragment key={row.key}>
-                <Button
-                  variant="ghost"
-                  className="h-auto w-full gap-0 rounded-none justify-start p-0 active:bg-transparent active:opacity-70"
-                  onPress={row.onPress}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    paddingVertical: 14,
-                  }}
-                >
-                  <Icon
-                    as={row.icon}
-                    size={18}
-                    color={isDark ? withAlpha(THEME.dark.foreground, 0.8) : withAlpha(THEME.light.foreground, 0.8)}
-                  />
-                  <View style={{ marginLeft: 16, flex: 1 }}>
-                    <Text
-                      style={{
-                        fontSize: 15,
-                        fontFamily: 'Roobert-Medium',
-                        color: fgColor,
-                      }}
-                    >
-                      {row.label}
-                    </Text>
-                    <Text
-                      style={{
-                        marginTop: 2,
-                        fontSize: 12,
-                        fontFamily: 'Roobert',
-                        color: muted,
-                      }}
-                      numberOfLines={1}
-                    >
-                      {row.description}
-                    </Text>
-                  </View>
-                  <Icon
-                    as={ChevronRightIcon}
-                    size={16}
-                    color={isDark ? withAlpha(THEME.dark.foreground, 0.35) : withAlpha(THEME.light.foreground, 0.35)}
-                  />
-                </Button>
-                {!isLast && (
-                  <View
-                    style={{
-                      height: 1,
-                      backgroundColor: isDark
-                        ? withAlpha(THEME.dark.foreground, 0.08)
-                        : withAlpha(THEME.light.foreground, 0.08),
-                    }}
-                  />
-                )}
-              </React.Fragment>
-            );
-          })}
-        </View>
-      </BottomSheetView>
-    </BottomSheetModal>
+    <Sheet ref={sheetRef} enablePanDownToClose onDismiss={handleDismiss}>
+      {/* `px-4`: the composer's sheets use the 16pt project edge (PickerSheet). */}
+      <SheetBody className="px-4 pt-1">
+        <SettingsGroup className="bg-secondary">
+          <SettingsRow icon={PaperclipIcon} label="Photos and files" onPress={onAttach} />
+          <SettingsRow icon={InfinityIcon} label="AutoContinue" value={autocontinueLabel} onPress={onAutoContinue} />
+        </SettingsGroup>
+      </SheetBody>
+    </Sheet>
   );
 }
 
@@ -1449,372 +1070,3 @@ function SlashCommandSuggestions({
     </View>
   );
 }
-
-type ConfigTab = 'agent' | 'model' | 'thinking';
-
-const TAB_CONFIG: { key: ConfigTab; label: string; icon: AppIcon }[] = [
-  { key: 'agent', label: 'Agent', icon: UserIcon },
-  { key: 'model', label: 'Model', icon: CpuIcon },
-  { key: 'thinking', label: 'Thinking', icon: LightningIcon },
-];
-
-const ConfigSheet = forwardRef<
-  BottomSheetModal,
-  {
-    isDark: boolean;
-    agents: Agent[];
-    selectedAgent: Agent | null;
-    onAgentChange: (name: string) => void;
-    models: FlatModel[];
-    selectedModel: FlatModel | null;
-    onModelChange: (providerId: string, modelId: string) => void;
-    variants: string[];
-    selectedVariant: string | null;
-    onVariantSet: (variant: string | null) => void;
-  }
->(function ConfigSheet(
-  {
-    isDark,
-    agents,
-    selectedAgent,
-    onAgentChange,
-    models,
-    selectedModel,
-    onModelChange,
-    variants,
-    selectedVariant,
-    onVariantSet,
-  },
-  ref,
-) {
-  const insets = useSafeAreaInsets();
-  const { height: screenHeight } = useWindowDimensions();
-  const [activeTab, setActiveTab] = useState<ConfigTab>('agent');
-  const fgColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
-  const mutedColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
-  const selectedBg = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.05);
-  const tabBg = getToggleTrackBg(isDark);
-  const tabActiveBg = getToggleActiveBg(isDark);
-  // Sticky header bg must match the sheet bg so the area above the tabs
-  // (around the drag handle) doesn't look like a different shade.
-  const bg = useSheetBackground();
-
-
-  // Filter tabs to only show ones with content
-  const visibleTabs = TAB_CONFIG.filter((t) => {
-    if (t.key === 'agent') return agents.length > 0;
-    if (t.key === 'model') return models.length > 0;
-    if (t.key === 'thinking') return variants.length > 0;
-    return false;
-  });
-
-  const handleSheetChange = useCallback(
-    (index: number) => {
-      if (index < 0) return;
-      if (visibleTabs.length === 0) return;
-      if (!visibleTabs.some((t) => t.key === activeTab)) {
-        setActiveTab(visibleTabs[0].key);
-      }
-    },
-    [activeTab, visibleTabs],
-  );
-
-  return (
-    <BottomSheetModal
-      ref={ref}
-      enableDynamicSizing
-      maxDynamicContentSize={Math.floor(screenHeight * 0.86)}
-      enablePanDownToClose
-      enableOverDrag={false}
-      onChange={handleSheetChange}
-      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
-      backgroundStyle={{
-        backgroundColor: bg,
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-      }}
-      backdropComponent={(p) => <SheetBackdrop {...p} opacity={0.4} />}
-    >
-      {/* Top-level BottomSheetScrollView so scroll gestures work. Header +
-          tabs are wrapped in a single sticky block (index 0) so they stay
-          pinned while the items list scrolls underneath. The sheet still
-          sizes to content via enableDynamicSizing; scroll only activates
-          when content exceeds maxDynamicContentSize. */}
-      <BottomSheetScrollView
-        contentContainerStyle={{ paddingBottom: insets.bottom + 12 }}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        stickyHeaderIndices={[0]}
-      >
-      {/* Sticky header block: title + tab bar. Solid bg so scrolled items
-          don't show through. */}
-      <View style={{ backgroundColor: bg }}>
-        <View style={{ paddingHorizontal: 20, paddingTop: 6, paddingBottom: 12 }}>
-          <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fgColor }}>
-            Configuration
-          </Text>
-        </View>
-        <View
-          style={{
-            flexDirection: 'row',
-            marginHorizontal: 20,
-            marginBottom: 16,
-            borderRadius: 9999,
-            backgroundColor: tabBg,
-            padding: 3,
-          }}
-        >
-          {visibleTabs.map((tab) => {
-            const isActive = activeTab === tab.key;
-            return (
-              <Button
-                key={tab.key}
-                variant="ghost"
-                className="h-auto flex-1 shrink gap-0 rounded-full p-0 active:bg-transparent active:opacity-70"
-                onPress={() => setActiveTab(tab.key)}
-                style={{
-                  flex: 1,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  paddingVertical: 8,
-                  borderRadius: 9999,
-                  backgroundColor: isActive ? tabActiveBg : 'transparent',
-                  gap: 5,
-                }}
-              >
-                <tab.icon size={14} color={isActive ? fgColor : mutedColor} />
-                <Text
-                  style={{
-                    fontSize: 13,
-                    fontFamily: isActive ? 'Roobert-SemiBold' : 'Roobert-Medium',
-                    color: isActive ? fgColor : mutedColor,
-                  }}
-                >
-                  {tab.label}
-                </Text>
-              </Button>
-            );
-          })}
-        </View>
-      </View>
-
-      {/* Content (items flow below the sticky header block) */}
-      <View>
-        {/* Agent tab */}
-        {activeTab === 'agent' && agents.filter((a) => !a.hidden).map((a) => {
-          const isSelected = selectedAgent?.name === a.name;
-          return (
-            <Button
-              key={a.name}
-              variant="ghost"
-              className="h-auto w-full gap-0 rounded-none justify-start p-0 active:bg-transparent active:opacity-60"
-              onPress={() => onAgentChange(a.name)}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                paddingHorizontal: 20,
-                paddingVertical: 14,
-                backgroundColor: isSelected ? selectedBg : 'transparent',
-              }}
-            >
-              <View style={{ flex: 1 }}>
-                <Text
-                  style={{
-                    fontSize: 16,
-                    fontFamily: isSelected ? 'Roobert-Medium' : 'Roobert',
-                    color: fgColor,
-                    textTransform: 'capitalize',
-                  }}
-                >
-                  {a.name}
-                </Text>
-                {a.description ? (
-                  <Text
-                    style={{ fontSize: 13, fontFamily: 'Roobert', color: mutedColor, marginTop: 3 }}
-                    numberOfLines={2}
-                  >
-                    {a.description}
-                  </Text>
-                ) : null}
-              </View>
-              {isSelected && (
-                <CheckIcon size={20} color={fgColor} />
-              )}
-            </Button>
-          );
-        })}
-
-        {/* Model tab — grouped by provider */}
-        {activeTab === 'model' && (() => {
-          // Group models by provider
-          const groups: { providerID: string; providerName: string; models: typeof models }[] = [];
-          const seen = new Map<string, typeof models>();
-          for (const m of models) {
-            const key = m.providerID;
-            if (!seen.has(key)) {
-              const group: typeof models = [];
-              seen.set(key, group);
-              groups.push({ providerID: key, providerName: m.providerName || key, models: group });
-            }
-            seen.get(key)!.push(m);
-          }
-
-          return groups.map((group) => (
-            <View key={group.providerID}>
-              {/* Provider header */}
-              <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  paddingHorizontal: 20,
-                  paddingTop: 16,
-                  paddingBottom: 8,
-                }}
-              >
-                <Text
-                  style={{
-                    fontSize: 11,
-                    fontFamily: 'Roobert-SemiBold',
-                    color: mutedColor,
-                    textTransform: 'uppercase',
-                    letterSpacing: 0.8,
-                  }}
-                >
-                  {group.providerName}
-                </Text>
-                <Text
-                  style={{
-                    fontSize: 11,
-                    fontFamily: 'Roobert-Medium',
-                    color: isDark ? withAlpha(THEME.dark.foreground, 0.2) : withAlpha(THEME.light.foreground, 0.2),
-                  }}
-                >
-                  {group.models.length}
-                </Text>
-              </View>
-              {/* Models in this provider */}
-              {group.models.map((m) => {
-                const isSelected =
-                  selectedModel?.providerID === m.providerID &&
-                  selectedModel?.modelID === m.modelID;
-                return (
-                  <Button
-                    key={`${m.providerID}/${m.modelID}`}
-                    variant="ghost"
-                    className="h-auto w-full gap-0 rounded-none justify-start p-0 active:bg-transparent active:opacity-60"
-                    onPress={() => onModelChange(m.providerID, m.modelID)}
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      paddingHorizontal: 20,
-                      paddingVertical: 12,
-                      backgroundColor: isSelected ? selectedBg : 'transparent',
-                    }}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text
-                        style={{
-                          fontSize: 15,
-                          fontFamily: isSelected ? 'Roobert-Medium' : 'Roobert',
-                          color: fgColor,
-                        }}
-                        numberOfLines={1}
-                      >
-                        {m.modelName || m.modelID}
-                      </Text>
-                      <Text
-                        style={{ fontSize: 12, fontFamily: 'Roobert', color: mutedColor, marginTop: 2 }}
-                        numberOfLines={1}
-                      >
-                        {m.modelID}
-                      </Text>
-                    </View>
-                    {isSelected && (
-                      <CheckIcon size={20} color={fgColor} />
-                    )}
-                  </Button>
-                );
-              })}
-            </View>
-          ));
-        })()}
-
-        {/* Thinking tab */}
-        {activeTab === 'thinking' && (
-          <>
-            <Button
-              variant="ghost"
-              className="h-auto w-full gap-0 rounded-none justify-start p-0 active:bg-transparent active:opacity-60"
-              onPress={() => onVariantSet(null)}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                paddingHorizontal: 20,
-                paddingVertical: 14,
-                backgroundColor: !selectedVariant ? selectedBg : 'transparent',
-              }}
-            >
-              <View style={{ flex: 1 }}>
-                <Text
-                  style={{
-                    fontSize: 16,
-                    fontFamily: !selectedVariant ? 'Roobert-Medium' : 'Roobert',
-                    color: fgColor,
-                  }}
-                >
-                  Default
-                </Text>
-                <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: mutedColor, marginTop: 3 }}>
-                  Standard response
-                </Text>
-              </View>
-              {!selectedVariant && (
-                <CheckIcon size={20} color={fgColor} />
-              )}
-            </Button>
-            {variants.map((v) => {
-              const isSelected = selectedVariant === v;
-              return (
-                <Button
-                  key={v}
-                  variant="ghost"
-                  className="h-auto w-full gap-0 rounded-none justify-start p-0 active:bg-transparent active:opacity-60"
-                  onPress={() => onVariantSet(v)}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    paddingHorizontal: 20,
-                    paddingVertical: 14,
-                    backgroundColor: isSelected ? selectedBg : 'transparent',
-                  }}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text
-                      style={{
-                        fontSize: 16,
-                        fontFamily: isSelected ? 'Roobert-Medium' : 'Roobert',
-                        color: fgColor,
-                        textTransform: 'capitalize',
-                      }}
-                    >
-                      {v}
-                    </Text>
-                    <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: mutedColor, marginTop: 3 }}>
-                      Extended thinking mode
-                    </Text>
-                  </View>
-                  {isSelected && (
-                    <CheckIcon size={20} color={fgColor} />
-                  )}
-                </Button>
-              );
-            })}
-          </>
-        )}
-      </View>
-      </BottomSheetScrollView>
-    </BottomSheetModal>
-  );
-});

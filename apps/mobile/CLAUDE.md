@@ -71,7 +71,7 @@ Kortix-specific: 23 files, built on top of `components/ui/`. **There is no
 | `page-header.tsx` | Unified top header (hamburger / title / "···" more button) for every page. |
 | `page-content.tsx` | Content area under `PageHeader` — no card framing, consistent top spacing. |
 | `list-row.tsx` | Standard settings-style row (`title` / `subtitle` / `left` / `right` / divider). |
-| `composer.tsx` | The project home's chat input: one card with the text field on top and add · model · send `Button`s below. No border, no animated placeholder. See design.md → Project home. |
+| `composer.tsx` | The chat input of the project home and of a thread (`SessionChatInput` wraps it): one card with the text field on top and add · model · send `Button`s below. Page colour (`bg-background`) in both themes, hairline `border-border` in both themes, no shadow. No animated placeholder. Thread-only slots: `header` (queue, staged command), `accessory` (AutoContinue), `busy` (Stop). See design.md → Project home. |
 | `animated-toggle-icon.tsx` | Cross-fade + rotate between an icon and its "X" close state, used by `PageHeader`. |
 | `kortix-loader.tsx` | Lottie brand loading spinner. |
 | `ShimmerText.tsx` | Gradient-sweep shimmer text for "AI is working" status lines. |

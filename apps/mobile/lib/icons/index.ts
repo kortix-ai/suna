@@ -203,7 +203,6 @@ import { SquareIcon as SquareGlyph } from 'phosphor-react-native/src/icons/Squar
 import { SquaresFourIcon as SquaresFourGlyph } from 'phosphor-react-native/src/icons/SquaresFour';
 import { StackIcon as StackGlyph } from 'phosphor-react-native/src/icons/Stack';
 import { StarIcon as StarGlyph } from 'phosphor-react-native/src/icons/Star';
-import { StopIcon as StopGlyph } from 'phosphor-react-native/src/icons/Stop';
 import { StopCircleIcon as StopCircleGlyph } from 'phosphor-react-native/src/icons/StopCircle';
 import { StorefrontIcon as StorefrontGlyph } from 'phosphor-react-native/src/icons/Storefront';
 import { SunIcon as SunGlyph } from 'phosphor-react-native/src/icons/Sun';
@@ -436,7 +435,6 @@ export const SquareIcon = withAppWeight(SquareGlyph, 'SquareIcon');
 export const SquaresFourIcon = withAppWeight(SquaresFourGlyph, 'SquaresFourIcon');
 export const StackIcon = withAppWeight(StackGlyph, 'StackIcon');
 export const StarIcon = withAppWeight(StarGlyph, 'StarIcon');
-export const StopIcon = withAppWeight(StopGlyph, 'StopIcon');
 export const StopCircleIcon = withAppWeight(StopCircleGlyph, 'StopCircleIcon');
 export const StorefrontIcon = withAppWeight(StorefrontGlyph, 'StorefrontIcon');
 export const SunIcon = withAppWeight(SunGlyph, 'SunIcon');

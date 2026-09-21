@@ -61,7 +61,7 @@ const KEYBOARD_HIDE = { duration: 150, easing: Easing.out(Easing.quad) };
 const KEYBOARD_SHOW = { duration: 200, easing: Easing.bezier(0.23, 1, 0.32, 1) };
 
 /** Soft lift for the light capsule, from the foreground token. */
-/** Soft shadow for a light floating surface. Also used by the home Composer. */
+/** Soft shadow for a light floating surface. The composer does not use it (design.md §5). */
 export const LIGHT_SHADOW = `0px 6px 24px ${withAlpha(THEME.light.foreground, 0.12)}`;
 
 /** How far the scroll-edge fade reaches above the capsule. */

@@ -5,7 +5,6 @@
 
 import { useMemo, useRef } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { composerModelOptions } from '@/lib/session/composer-model';
 import {
   nextProjectSessionsPollWindow,
   projectSessionsPollInterval,
@@ -766,8 +765,10 @@ export function useProjectModelCatalogForTrigger(projectId: string | null) {
  *  runtime projection (7134 models on 2026-09-16) with no `enabled` flags and
  *  no `defaultModel`, so the pill read "Default" and offered models the project
  *  does not serve. `/model-picker` is the bounded, connection-aware list (8–13
- *  models) with both fields. 404 `llm_gateway_disabled` leaves the list empty,
- *  which hides the pill. */
+ *  models) with both fields. 404 `llm_gateway_disabled` leaves `catalog`
+ *  undefined: the project runs on its sandbox's own providers. The thread
+ *  reads the same catalog (`lib/session/model-picker.ts`), so home and thread
+ *  list the same models as web. */
 export function useProjectModelCatalog(projectId: string | null) {
   const query = useQuery({
     queryKey: projectKeys.modelPicker(projectId),
@@ -776,8 +777,13 @@ export function useProjectModelCatalog(projectId: string | null) {
     staleTime: 60_000,
     retry: false,
   });
-  const models = useMemo(() => composerModelOptions(query.data?.models), [query.data]);
-  return { models, defaultModel: query.data?.defaultModel };
+  return {
+    /** The raw catalog. Undefined while loading, and for a project without the gateway. */
+    catalog: query.data?.models,
+    defaultModel: query.data?.defaultModel,
+    /** First load only: consumers hide the model pill instead of flashing "Connect model". */
+    isLoading: query.isLoading,
+  };
 }
 
 // ── Change requests (web parity) ──────────────────────────────────────────────

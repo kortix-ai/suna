@@ -275,7 +275,9 @@ async function probeSandboxHealth(sandboxUrl: string): Promise<SandboxHealth> {
 async function sendOpencodePrompt(
   sandboxUrl: string,
   opencodeSessionId: string,
-  text: string
+  text: string,
+  picks?: ProjectHomeSubmit['picks'],
+  agent?: string | null
 ): Promise<boolean> {
   try {
     const token = await getAuthToken();
@@ -287,7 +289,12 @@ async function sendOpencodePrompt(
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ parts: [{ type: 'text', text }] }),
+        // The same body the thread sends (SessionPage): model and level at the top.
+        body: JSON.stringify({
+          parts: [{ type: 'text', text }],
+          ...(picks ? { model: picks.model, variant: picks.variant } : {}),
+          ...(agent ? { agent } : {}),
+        }),
       }
     );
     if (!res.ok) {
@@ -310,6 +317,10 @@ async function sendOpencodePrompt(
 interface PendingPrompt {
   text: string;
   files: AttachedFile[];
+  /** The model and thinking level picked on project home (`firstPromptPicks`). */
+  picks: ProjectHomeSubmit['picks'];
+  /** The agent picked on project home. */
+  agent: string | null;
 }
 
 /**
@@ -320,7 +331,7 @@ interface PendingPrompt {
 async function deliverPendingPrompt(
   sandboxUrl: string,
   opencodeSessionId: string,
-  { text, files }: PendingPrompt
+  { text, files, picks, agent }: PendingPrompt
 ): Promise<boolean> {
   let fileBlock = '';
   try {
@@ -328,7 +339,7 @@ async function deliverPendingPrompt(
   } catch (err: any) {
     log.error('[connect] attachment upload failed:', err?.message || err);
   }
-  return sendOpencodePrompt(sandboxUrl, opencodeSessionId, withAttachments(text, fileBlock));
+  return sendOpencodePrompt(sandboxUrl, opencodeSessionId, withAttachments(text, fileBlock), picks, agent);
 }
 
 // ─── Main screen ────────────────────────────────────────────────────────────
@@ -775,7 +786,7 @@ export function ProjectScreen() {
   const [isDashboardSending, setIsDashboardSending] = useState(false);
 
   const handleDashboardSend = useCallback(
-    async ({ text, files, model }: ProjectHomeSubmit) => {
+    async ({ text, files, model, picks, agent }: ProjectHomeSubmit) => {
       if (!projectId || isDashboardSending) return;
       if (!text.trim() && files.length === 0) return;
 
@@ -785,12 +796,23 @@ export function ProjectScreen() {
         // yet. Those sends stash the prompt and deliver it once the session
         // connects (connectToProjectSession). Text-only sends keep the
         // server-side initial_prompt. The model is baked in at create.
+        // A thinking level cannot ride `initial_prompt` (it carries text only),
+        // so a text-only send with a level uses web's channel instead:
+        // `pending_prompt`, which the server delivers with its model and level
+        // (apps/api session-lifecycle/pending-prompt.ts).
         const hasFiles = files.length > 0;
+        const firstPrompt = hasFiles
+          ? {}
+          : picks
+            ? { pending_prompt: { text, agent, model: picks.model, variant: picks.variant } }
+            : { initial_prompt: text };
         const session = await createProjectSession.mutateAsync({
-          ...(hasFiles ? {} : { initial_prompt: text }),
+          ...firstPrompt,
           ...(model ? { opencode_model: model } : {}),
+          // The session is bound to this agent; `initial_prompt` runs on it.
+          ...(agent ? { agent_name: agent } : {}),
         });
-        if (hasFiles) pendingPromptsRef.current[session.session_id] = { text, files };
+        if (hasFiles) pendingPromptsRef.current[session.session_id] = { text, files, picks, agent };
         // Enter the connecting state — the effect drives provisioning and opens
         // the server-created session once ready.
         navigateToSession(null);
@@ -1159,6 +1181,7 @@ export function ProjectScreen() {
              "···" tools menu. */
           <SessionPage
             sessionId={activeSessionId}
+            projectId={projectId}
             projectName={loadedProjectName}
             onBack={handleBack}
             onOpenDrawer={openDrawer}

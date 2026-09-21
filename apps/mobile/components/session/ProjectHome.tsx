@@ -19,7 +19,7 @@
  *   that area is the whole screen; while typing it is the part above the
  *   keyboard, so the greeting never sits under the composer.
  * - At rest the composer sits at the thread composer's distance from the
- *   bottom (SessionPage pads `insets.bottom`, SessionChatInput adds `pb-2`).
+ *   bottom (SessionPage pads `insets.bottom`, SessionChatInput adds `pb-3`).
  * - The composer follows the keyboard down to KEYBOARD_GAP above it once it appears.
  */
 
@@ -34,29 +34,50 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Composer } from '@/components/kortix/composer';
 import type { SheetRef } from '@/components/kortix/sheet';
+import { AgentPill } from '@/components/session/AgentPill';
 import { FloatingMenuButton } from '@/components/session/FloatingMenuButton';
 import { ModelPickerSheet } from '@/components/session/ModelPickerSheet';
 import { ProjectGreeting } from '@/components/session/ProjectGreeting';
 import { useAttachmentPicker } from '@/components/session/useAttachmentPicker';
-import { useProjectModelCatalog } from '@/lib/projects/hooks';
+import { useProjectDetail, useProjectModelCatalog } from '@/lib/projects/hooks';
 import type { AttachedFile } from '@/lib/session/attachments';
 import {
   composerModelLabel,
   effectiveComposerModel,
   selectComposerModel,
 } from '@/lib/session/composer-model';
+import { useLocalConfigStore } from '@/lib/opencode/hooks/use-local-config';
+import {
+  composerPillLabel,
+  homeAgentName,
+  pickableAgents,
+  type PickerOption,
+} from '@/lib/session/composer-config';
+import { openProjectModelsOnWeb } from '@/lib/session/connect-model';
+import { catalogPickerModels, firstPromptPicks, modelPickerOptions } from '@/lib/session/model-picker';
 
-/** The thread composer's own bottom padding (SessionChatInput's `pb-2`), so
- *  this composer rests at the same distance from the safe-area bottom. */
-const COMPOSER_BOTTOM_GAP = 8;
-/** Composer to keyboard while the keyboard is up. */
-const KEYBOARD_GAP = 8;
+/** One identity while the project detail loads, so the agent memo does not churn. */
+const EMPTY_AGENTS: NonNullable<ReturnType<typeof useProjectDetail>['data']>['config']['agents'] = [];
+
+/** The thread composer's own bottom padding (SessionChatInput's `pb-3`), so
+ *  this composer rests at the same distance from the safe-area bottom. `pb-3`
+ *  under the `px-4` edge: vertical is one step below horizontal (design.md §2). */
+const COMPOSER_BOTTOM_GAP = 12;
+/** Composer to keyboard while the keyboard is up. The same 12pt as the thread. */
+const KEYBOARD_GAP = 12;
 
 export interface ProjectHomeSubmit {
   text: string;
   files: AttachedFile[];
   /** Gateway wire id, or null to use the project default. */
   model: string | null;
+  /**
+   * The thinking level to run the first message on, with the model it belongs
+   * to. Null when no level is set (`firstPromptPicks`).
+   */
+  picks: { model: { providerID: string; modelID: string }; variant: string } | null;
+  /** The agent to start the session on. Null: none is sent and the server decides. */
+  agent: string | null;
 }
 
 export interface ProjectHomeProps {
@@ -83,7 +104,77 @@ export function ProjectHome({
   const [model, setModel] = React.useState<string | null>(null);
   const modelSheetRef = React.useRef<SheetRef>(null);
 
-  const { models, defaultModel } = useProjectModelCatalog(projectId);
+  // The same catalog, groups, and order as web and the thread
+  // (`lib/session/model-picker.ts`).
+  const { catalog, defaultModel, isLoading: catalogLoading } = useProjectModelCatalog(projectId);
+  const catalogModels = React.useMemo(() => catalogPickerModels(catalog), [catalog]);
+  const modelOptions = React.useMemo<PickerOption[]>(
+    () => modelPickerOptions(catalogModels, (m) => m.modelID),
+    [catalogModels],
+  );
+  // Thinking: the active model's levels, from the catalog. The level lives in
+  // the store the thread reads (`modelVariants["kortix/<modelID>"]`), so a
+  // level set here is the thread's level, and the other way round.
+  const activeModel = effectiveComposerModel(model, defaultModel);
+  const levels = React.useMemo(
+    () => Object.keys(catalogModels.find((m) => m.modelID === activeModel)?.variants ?? {}),
+    [catalogModels, activeModel],
+  );
+  const variantKey = activeModel ? `kortix/${activeModel}` : '';
+  const storedVariant = useLocalConfigStore((s) => (variantKey ? (s.modelVariants[variantKey] ?? null) : null));
+  const setStoredVariant = useLocalConfigStore((s) => s.setVariant);
+  const variant = storedVariant && levels.includes(storedVariant) ? storedVariant : null;
+  const thinking = React.useMemo(
+    () => ({
+      levels,
+      selected: variant,
+      onSelect: (level: string | null) => {
+        if (variantKey) setStoredVariant(variantKey, level);
+      },
+    }),
+    [levels, variant, variantKey, setStoredVariant],
+  );
+  // A gateway project that offers no model: the pill asks to connect one. A
+  // project without the gateway has no catalog, so the pill stays hidden.
+  const noModelConnected = !catalogLoading && catalog !== undefined && modelOptions.length === 0;
+  const modelLabel = noModelConnected
+    ? 'Connect model'
+    : composerModelLabel(
+        modelOptions.map((o) => ({ modelID: o.key, modelName: o.label })),
+        model,
+        defaultModel,
+      );
+  // The thread's pill text: "{model} · {level}".
+  const pillLabel = modelLabel && variant ? composerPillLabel(modelLabel, variant) : modelLabel;
+
+  // Agent: home has no sandbox, so the choices are the project config's agents
+  // (`/detail`). Web's order: the pick made here, else the project default,
+  // else the last agent picked anywhere (`homeAgentName`). A pick also becomes
+  // the store's last-used agent, which the thread's header reads.
+  const { data: projectDetail } = useProjectDetail(projectId);
+  const projectAgents = projectDetail?.config?.agents ?? EMPTY_AGENTS;
+  const [pickedAgent, setPickedAgent] = React.useState<string | null>(null);
+  const lastUsedAgent = useLocalConfigStore((s) => s.selectedAgent);
+  const setLastUsedAgent = useLocalConfigStore((s) => s.setAgent);
+  const agentName = React.useMemo(
+    () =>
+      homeAgentName(
+        pickableAgents(projectAgents).map((a) => a.name),
+        {
+          picked: pickedAgent,
+          projectDefault: projectDetail?.config?.default_agent ?? projectDetail?.config?.open_code_default_agent,
+          lastUsed: lastUsedAgent,
+        },
+      ),
+    [projectAgents, pickedAgent, projectDetail, lastUsedAgent],
+  );
+  const handleAgentChange = React.useCallback(
+    (name: string) => {
+      setPickedAgent(name);
+      setLastUsedAgent(name);
+    },
+    [setLastUsedAgent],
+  );
 
   const addFiles = React.useCallback((picked: AttachedFile[]) => {
     setFiles((prev) => [...prev, ...picked]);
@@ -104,13 +195,24 @@ export function ProjectHome({
   const handleSubmit = React.useCallback(() => {
     const text = draft.trim();
     if ((!text && files.length === 0) || sending) return;
-    onSubmitNewSession({ text, files, model });
-  }, [draft, files, model, sending, onSubmitNewSession]);
+    // The thread's header reads the store: it then shows the agent this session runs on.
+    if (agentName) setLastUsedAgent(agentName);
+    onSubmitNewSession({
+      text,
+      files,
+      model,
+      picks: firstPromptPicks(activeModel, variant, levels),
+      agent: agentName,
+    });
+  }, [draft, files, model, activeModel, variant, levels, agentName, setLastUsedAgent, sending, onSubmitNewSession]);
 
   return (
     <View className="flex-1 bg-background">
       {/* Floating menu button — opens the left drawer. */}
-      <FloatingMenuButton onPress={onOpenDrawer} />
+      <FloatingMenuButton onPress={onOpenDrawer}>
+        {/* The agent, at the right end of the header — the thread's place for it. */}
+        <AgentPill agents={projectAgents} activeName={agentName} onChange={handleAgentChange} />
+      </FloatingMenuButton>
 
       <KeyboardAvoidingView className="flex-1" behavior="padding">
         <View className="flex-1">
@@ -138,7 +240,7 @@ export function ProjectHome({
               onRemoveAttachment={(index) =>
                 setFiles((prev) => prev.filter((_, i) => i !== index))
               }
-              modelLabel={composerModelLabel(models, model, defaultModel)}
+              modelLabel={pillLabel}
               onModelPress={() => {
                 Keyboard.dismiss();
                 modelSheetRef.current?.open();
@@ -150,9 +252,11 @@ export function ProjectHome({
 
       <ModelPickerSheet
         ref={modelSheetRef}
-        models={models}
-        activeModel={effectiveComposerModel(model, defaultModel)}
+        options={modelOptions}
+        activeKey={activeModel}
+        thinking={thinking}
         onSelect={(modelID) => setModel(selectComposerModel(modelID, defaultModel))}
+        onConnect={() => openProjectModelsOnWeb(projectId)}
       />
     </View>
   );
