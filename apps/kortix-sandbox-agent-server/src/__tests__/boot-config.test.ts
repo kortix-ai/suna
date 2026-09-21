@@ -1,17 +1,10 @@
 /**
- * The converged OpenCode config lives OUTSIDE the repository.
+ * The config release store, OUTSIDE the repository.
  *
- * Until 2026-09-18 a config reload wrote the base branch's `.kortix/opencode`
- * into the session's tracked working tree. Measured consequences: an agent's
- * `git add -A` swept those bytes into a session commit, the change request then
- * listed the agent prompt as "modified by the session", and the merge CONFLICTED
- * on a file nobody in the session had touched. Every guard that tried to tell
- * the platform's writes from the session's was a symptom of that one decision.
- *
- * So the platform never writes `/workspace`. It extracts the config dir at an
- * exact commit into its own directory, makes it read-only, and proves it is
- * intact before every spawn. Real git repositories, because extraction and
- * verification are properties of git's object store.
+ * A release is built from the archive the API serves and verified file by file
+ * against the Git blob IDs in the descriptor. The archive store is untrusted
+ * transport, so a changed byte, a missing file or an extra file is refused.
+ * Real repositories and real `git archive | gzip -n` output; nothing mocks Git.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { spawnSync } from 'node:child_process'
@@ -24,7 +17,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
-  readdirSync,
+  readlinkSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -34,11 +27,18 @@ import { join } from 'node:path'
 import {
   activateBootConfig,
   deactivateBootConfig,
-  materializeBootConfig,
+  extractConfigArchive,
+  materializeRelease,
   pruneBootConfigs,
+  quarantineRelease,
   readBootConfigPointer,
-  verifyBootConfig,
+  readQuarantine,
+  readReleaseManifest,
+  releaseDir,
+  verifyRelease,
+  type ReleaseManifest,
 } from '../boot-config'
+import { buildRelease, commitAll, git, initRepo, write, type BuiltRelease } from './helpers/config-release-fixtures'
 
 const REL = '.kortix/opencode'
 let root: string
@@ -46,41 +46,47 @@ let repo: string
 let store: string
 let overlay: string
 
-function git(...args: string[]) {
-  const r = spawnSync('git', args, { cwd: repo, encoding: 'utf8' })
-  if (r.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${r.stderr}`)
-  return r.stdout.trim()
+function manifestOf(release: BuiltRelease): ReleaseManifest {
+  const d = release.descriptor
+  return {
+    release_id: d.release_id!,
+    source_commit: d.source_commit!,
+    config_dir: d.config_dir!,
+    config_tree_id: d.config_tree_id!,
+    archive_url: d.archive!.url,
+    archive_bytes: d.archive!.bytes,
+    files: d.files!,
+    compiled_governance: d.compiled_governance,
+    compiled_governance_etag: d.compiled_governance_etag,
+  }
 }
-function write(rel: string, body: string, mode?: number) {
-  mkdirSync(join(repo, rel.split('/').slice(0, -1).join('/')), { recursive: true })
-  writeFileSync(join(repo, rel), body)
-  if (mode) chmodSync(join(repo, rel), mode)
+
+function release(message: string, governance: string | null = null): BuiltRelease {
+  return buildRelease(repo, commitAll(repo, message), REL, { governance })
 }
-function commit(message: string): string {
-  git('add', '-A')
-  git('commit', '-qm', message)
-  return git('rev-parse', 'HEAD')
+
+async function materialize(built: BuiltRelease, prepare?: (dir: string) => Promise<void>) {
+  return materializeRelease({ root: store, manifest: manifestOf(built), archive: built.archive, prepare, managedSkillsDir: overlay })
 }
-const input = (sha: string) => ({ repo, sha, relConfigDir: REL, root: store, managedSkillsDir: overlay })
+
+const verify = (built: BuiltRelease, dir: string) =>
+  verifyRelease({ dir, files: built.descriptor.files!, managedSkillsDir: overlay })
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), 'kortix-boot-config-'))
+  root = mkdtempSync(join(tmpdir(), 'kortix-release-store-'))
   repo = join(root, 'repo')
   store = join(root, 'store')
   overlay = join(root, 'managed-skills')
-  mkdirSync(repo, { recursive: true })
-  mkdirSync(join(overlay, 'kortix-cli'), { recursive: true })
-  writeFileSync(join(overlay, 'kortix-cli', 'SKILL.md'), 'OVERLAY\n')
-  git('init', '--initial-branch=main', '--quiet')
-  git('config', 'user.email', 't@t.co')
-  git('config', 'user.name', 'T')
-  write(`${REL}/opencode.jsonc`, '{}\n')
-  write(`${REL}/agents/kortix.md`, 'PROMPT v1\n')
-  write(`${REL}/skills/pdf/SKILL.md`, 'PDF\n')
-  write(`${REL}/skills/pdf/scripts/run.sh`, '#!/bin/sh\necho hi\n', 0o755)
-  write(`${REL}/skills/kortix-cli/SKILL.md`, 'STALE REPO COPY\n')
-  write(`${REL}/package.json`, '{"dependencies":{"@opencode-ai/plugin":"1.17.11"}}\n')
-  write('app.ts', 'export const x = 1\n')
+  initRepo(repo)
+  write(overlay, 'kortix-cli/SKILL.md', 'OVERLAY\n')
+  write(repo, `${REL}/opencode.jsonc`, '{}\n')
+  write(repo, `${REL}/agents/kortix.md`, 'PROMPT v1\n')
+  write(repo, `${REL}/skills/pdf/SKILL.md`, 'PDF\n')
+  write(repo, `${REL}/skills/pdf/scripts/run.sh`, '#!/bin/sh\necho hi\n')
+  chmodSync(join(repo, `${REL}/skills/pdf/scripts/run.sh`), 0o755)
+  write(repo, `${REL}/skills/kortix-cli/SKILL.md`, 'STALE REPO COPY\n')
+  write(repo, `${REL}/package.json`, '{"dependencies":{"@opencode-ai/plugin":"1.17.11"}}\n')
+  write(repo, 'app.ts', 'export const x = 1\n')
 })
 
 afterEach(() => {
@@ -88,209 +94,166 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
-describe('materializeBootConfig', () => {
-  test('extracts the config dir at an exact commit, and nothing else', async () => {
-    const sha = commit('v1')
-    const { dir } = await materializeBootConfig(input(sha))
-
-    expect(dir.startsWith(store)).toBe(true)
+describe('materializeRelease', () => {
+  test('builds <root>/<release_id> from the archive with exactly the listed files', async () => {
+    const built = release('v1')
+    const { dir } = await materialize(built)
+    expect(dir).toBe(join(store, built.descriptor.release_id!))
     expect(readFileSync(join(dir, 'agents/kortix.md'), 'utf8')).toBe('PROMPT v1\n')
-    expect(readFileSync(join(dir, 'skills/pdf/SKILL.md'), 'utf8')).toBe('PDF\n')
     expect(existsSync(join(dir, 'app.ts'))).toBe(false)
-    expect(existsSync(join(dir, '.kortix'))).toBe(false)
-  })
-
-  test('it reads the COMMIT, not the working tree', async () => {
-    const sha = commit('v1')
-    write(`${REL}/agents/kortix.md`, 'UNCOMMITTED SESSION EDIT\n')
-
-    const { dir } = await materializeBootConfig(input(sha))
-
-    expect(readFileSync(join(dir, 'agents/kortix.md'), 'utf8')).toBe('PROMPT v1\n')
+    expect(await verify(built, dir)).toBe(true)
+    expect(await readReleaseManifest(store, built.descriptor.release_id!)).toEqual(manifestOf(built))
   })
 
   test('it never writes the repository', async () => {
-    const sha = commit('v1')
-    await materializeBootConfig(input(sha))
-
-    expect(git('status', '--porcelain')).toBe('')
+    const built = release('v1')
+    const head = git(repo, 'rev-parse', 'HEAD')
+    await materialize(built)
+    expect(git(repo, 'status', '--porcelain')).toBe('')
+    expect(git(repo, 'rev-parse', 'HEAD')).toBe(head)
   })
 
-  test('the project files are read-only, so an edit to the wrong copy fails loudly', async () => {
-    const sha = commit('v1')
-    const { dir } = await materializeBootConfig(input(sha))
-
+  test('project files are read-only; an executable keeps its execute bit', async () => {
+    const { dir } = await materialize(release('v1'))
     expect(() => accessSync(join(dir, 'agents/kortix.md'), constants.W_OK)).toThrow()
-    expect(() => writeFileSync(join(dir, 'agents/kortix.md'), 'x')).toThrow()
-    // A script a skill ships stays executable.
-    expect(() => accessSync(join(dir, 'skills/pdf/scripts/run.sh'), constants.X_OK)).not.toThrow()
-  })
-
-  test('what the platform itself writes stays writable', async () => {
-    // opencode's installer rewrites the plugin pin and the lockfile at spawn,
-    // and the runtime-assets pass re-injects the managed-skill overlay.
-    const sha = commit('v1')
-    const { dir } = await materializeBootConfig(input(sha))
-
-    expect(() => accessSync(join(dir, 'package.json'), constants.W_OK)).not.toThrow()
-    expect(() => accessSync(dir, constants.W_OK)).not.toThrow()
-    expect(() => accessSync(join(dir, 'skills'), constants.W_OK)).not.toThrow()
+    expect(() => writeFileSync(join(dir, 'agents/kortix.md'), 'EDIT\n')).toThrow()
+    accessSync(join(dir, 'skills/pdf/scripts/run.sh'), constants.X_OK)
   })
 
   test('the prepare hook runs on the staged directory before it is sealed', async () => {
-    const sha = commit('v1')
-    const { dir } = await materializeBootConfig({
-      ...input(sha),
-      prepare: async (staged) => {
-        writeFileSync(join(staged, 'skills/kortix-cli/SKILL.md'), 'OVERLAY\n')
-      },
+    let staged = ''
+    const { dir } = await materialize(release('v1'), async (path) => {
+      staged = path
+      cpSync(overlay, join(path, 'skills'), { recursive: true, force: true })
+      writeFileSync(join(path, 'bun.lock'), 'lock\n')
     })
-
+    expect(staged).toMatch(/\.tmp$/)
+    expect(staged.startsWith(`${dir}.`)).toBe(true)
+    expect(existsSync(staged)).toBe(false)
     expect(readFileSync(join(dir, 'skills/kortix-cli/SKILL.md'), 'utf8')).toBe('OVERLAY\n')
   })
 
-  test('the same commit is materialized once', async () => {
-    const sha = commit('v1')
-    const first = await materializeBootConfig(input(sha))
-    let prepared = 0
-    const second = await materializeBootConfig({ ...input(sha), prepare: async () => void prepared++ })
-
-    expect(second.dir).toBe(first.dir)
-    expect(prepared).toBe(0)
+  test('a failing prepare leaves no release and no staging directory', async () => {
+    const built = release('v1')
+    await expect(materialize(built, async () => { throw new Error('deps failed') })).rejects.toThrow(/deps failed/)
+    expect(existsSync(releaseDir(store, built.descriptor.release_id!))).toBe(false)
+    expect(spawnSync('ls', [store]).stdout.toString().trim()).toBe('')
   })
 
-  test('a commit without the config dir is refused, not extracted empty', async () => {
-    rmSync(join(repo, '.kortix'), { recursive: true, force: true })
-    const sha = commit('no config')
-
-    await expect(materializeBootConfig(input(sha))).rejects.toThrow()
-    // Nothing half-built is left where a later boot could adopt it.
-    expect(existsSync(store) ? readdirSync(store) : []).toEqual([])
-  })
-
-  test('a repo-controlled config dir cannot become an option or escape the tree', async () => {
-    const sha = commit('v1')
-    for (const relConfigDir of ['../outside', '--output=/tmp/x', '/etc', ':(top)*', 'a\nb']) {
-      await expect(materializeBootConfig({ ...input(sha), relConfigDir })).rejects.toThrow()
-    }
+  test('a tracked symlink is extracted as a link to its committed target', async () => {
+    symlinkSync('kortix.md', join(repo, `${REL}/agents/alias.md`))
+    const built = release('symlink')
+    const { dir } = await materialize(built)
+    expect(readlinkSync(join(dir, 'agents/alias.md'))).toBe('kortix.md')
+    expect(await verify(built, dir)).toBe(true)
   })
 })
 
-describe('verifyBootConfig', () => {
-  test('an untouched copy verifies', async () => {
-    const sha = commit('v1')
-    const { dir } = await materializeBootConfig(input(sha))
-
-    expect(await verifyBootConfig({ ...input(sha), dir })).toBe(true)
+describe('extractConfigArchive refuses an archive that does not match its descriptor', () => {
+  test('a changed byte', async () => {
+    const built = release('v1')
+    const files = structuredClone(built.descriptor.files!)
+    const agent = files.find(([path]) => path === 'agents/kortix.md')!
+    agent[2] = 'f'.repeat(40)
+    await expect(extractConfigArchive(built.archive, files, join(root, 'x'))).rejects.toThrow(/does not match its blob ID/)
+    expect(existsSync(join(root, 'x'))).toBe(false)
   })
 
-  test('a tampered project file does not', async () => {
-    // The agent runs as the same user as the daemon and has sudo, so read-only
-    // is a guard against accidents, not a security boundary. THIS is the
-    // guarantee: an edit to the copy never survives a spawn.
-    const sha = commit('v1')
-    const { dir } = await materializeBootConfig(input(sha))
-    chmodSync(join(dir, 'agents/kortix.md'), 0o644)
-    writeFileSync(join(dir, 'agents/kortix.md'), 'INJECTED PROMPT\n')
-
-    expect(await verifyBootConfig({ ...input(sha), dir })).toBe(false)
+  test('a file the descriptor does not list', async () => {
+    const built = release('v1')
+    const files = built.descriptor.files!.filter(([path]) => path !== 'opencode.jsonc')
+    await expect(extractConfigArchive(built.archive, files, join(root, 'x'))).rejects.toThrow(/unlisted files: opencode.jsonc/)
   })
 
-  test('a deleted project file does not', async () => {
-    const sha = commit('v1')
-    const { dir } = await materializeBootConfig(input(sha))
+  test('a listed file the archive lacks', async () => {
+    const built = release('v1')
+    const files = [...built.descriptor.files!, ['agents/extra.md', '100644', 'e'.repeat(40)] as const] as never
+    await expect(extractConfigArchive(built.archive, files, join(root, 'x'))).rejects.toThrow(/missing agents\/extra.md/)
+  })
+
+  test('an archive from another tree, and bytes that are not gzip', async () => {
+    const first = release('v1')
+    write(repo, `${REL}/agents/kortix.md`, 'PROMPT v2\n')
+    const second = release('v2')
+    await expect(extractConfigArchive(second.archive, first.descriptor.files!, join(root, 'x'))).rejects.toThrow(/blob ID/)
+    await expect(extractConfigArchive(Buffer.from('not gzip'), first.descriptor.files!, join(root, 'x'))).rejects.toThrow(/decompress/)
+  })
+
+  test('a file list with a path inside a listed file', async () => {
+    const built = release('v1')
+    const files = [...built.descriptor.files!, ['opencode.jsonc/x', '100644', 'e'.repeat(40)]] as never
+    await expect(extractConfigArchive(built.archive, files, join(root, 'x'))).rejects.toThrow(/inside a listed file/)
+  })
+})
+
+describe('verifyRelease', () => {
+  test('a tampered, a deleted, or an ADDED project file fails verification', async () => {
+    const built = release('v1')
+    const { dir } = await materialize(built)
     spawnSync('chmod', ['-R', 'u+w', dir])
+    writeFileSync(join(dir, 'agents/kortix.md'), 'TAMPERED\n')
+    expect(await verify(built, dir)).toBe(false)
+    writeFileSync(join(dir, 'agents/kortix.md'), 'PROMPT v1\n')
+    expect(await verify(built, dir)).toBe(true)
+    writeFileSync(join(dir, 'agents/rogue.md'), 'ADDED\n')
+    expect(await verify(built, dir)).toBe(false)
+    rmSync(join(dir, 'agents/rogue.md'))
     rmSync(join(dir, 'skills/pdf/SKILL.md'))
-
-    expect(await verifyBootConfig({ ...input(sha), dir })).toBe(false)
+    expect(await verify(built, dir)).toBe(false)
   })
 
-  test('an ADDED file is tampering too — opencode would load it', async () => {
-    // Hashing only the committed files misses the cheapest attack there is:
-    // drop a new agent, tool or second opencode.json next to them.
-    const sha = commit('v1')
-    for (const extra of ['agents/injected.md', 'tools/exfil.ts', 'opencode.json', 'skills/pdf/extra.md']) {
-      const { dir } = await materializeBootConfig(input(sha))
-      spawnSync('chmod', ['-R', 'u+w', dir])
-      mkdirSync(join(dir, extra.split('/').slice(0, -1).join('/')), { recursive: true })
-      writeFileSync(join(dir, extra), 'x')
-
-      expect(await verifyBootConfig({ ...input(sha), dir })).toBe(false)
-      rmSync(dir, { recursive: true, force: true })
-    }
-  })
-
-  test('what the platform writes is not tampering', async () => {
-    const sha = commit('v1')
-    const { dir } = await materializeBootConfig(input(sha))
+  test('what the platform writes after extraction is not tampering', async () => {
+    const built = release('v1')
+    const { dir } = await materialize(built)
     writeFileSync(join(dir, 'package.json'), '{"dependencies":{"@opencode-ai/plugin":"1.18.23"}}\n')
     writeFileSync(join(dir, 'bun.lock'), 'lock\n')
     mkdirSync(join(dir, 'node_modules/zod'), { recursive: true })
     writeFileSync(join(dir, 'node_modules/zod/index.js'), '')
     spawnSync('chmod', ['-R', 'u+w', join(dir, 'skills/kortix-cli')])
     writeFileSync(join(dir, 'skills/kortix-cli/SKILL.md'), 'NEWER OVERLAY\n')
-
-    expect(await verifyBootConfig({ ...input(sha), dir })).toBe(true)
+    expect(await verify(built, dir)).toBe(true)
   })
 
-  test('the overlay the daemon injects by DEFAULT is not tampering', async () => {
-    // #7403 preview, 2026-09-18: a second reload with nothing new answered
-    // `updated` again. Production passes no `managedSkillsDir`; "undefined" was
-    // read as "no managed skills", so the twelve `kortix-*` directories the
-    // overlay injects counted as ADDED files, verification failed on every call
-    // and the copy was silently re-extracted. Every unit test passed the dir
-    // explicitly, so none of them could see it.
-    const previous = process.env.KORTIX_MANAGED_SKILLS_DIR
-    process.env.KORTIX_MANAGED_SKILLS_DIR = overlay
-    try {
-      mkdirSync(join(overlay, 'kortix-system'), { recursive: true })
-      writeFileSync(join(overlay, 'kortix-system', 'SKILL.md'), 'NOT IN THE REPO\n')
-      const sha = commit('v1')
-      const production = { repo, sha, relConfigDir: REL, root: store }
-      const { dir } = await materializeBootConfig({
-        ...production,
-        prepare: async (staged) => {
-          cpSync(overlay, join(staged, 'skills'), { recursive: true, force: true })
-        },
-      })
-
-      expect(await verifyBootConfig({ ...production, dir })).toBe(true)
-    } finally {
-      if (previous === undefined) delete process.env.KORTIX_MANAGED_SKILLS_DIR
-      else process.env.KORTIX_MANAGED_SKILLS_DIR = previous
-    }
-  })
-
-  test('a tracked symlink is compared by its target, never followed', async () => {
+  test('a swapped symlink is compared by its target, never followed', async () => {
     symlinkSync('kortix.md', join(repo, `${REL}/agents/alias.md`))
-    const sha = commit('symlink')
-    const { dir } = await materializeBootConfig(input(sha))
-    expect(await verifyBootConfig({ ...input(sha), dir })).toBe(true)
-
+    const built = release('symlink')
+    const { dir } = await materialize(built)
     spawnSync('chmod', ['u+w', join(dir, 'agents')])
     rmSync(join(dir, 'agents/alias.md'))
     symlinkSync('/etc/passwd', join(dir, 'agents/alias.md'))
-    expect(await verifyBootConfig({ ...input(sha), dir })).toBe(false)
+    expect(await verify(built, dir)).toBe(false)
   })
 })
 
-describe('the active pointer', () => {
-  test('survives a daemon restart and names the commit', async () => {
-    const sha = commit('v1')
-    const { dir } = await materializeBootConfig(input(sha))
+describe('the pointer', () => {
+  test('names the release, its commit and whether it was proven', async () => {
+    const built = release('v1')
+    const { dir } = await materialize(built)
     expect(await readBootConfigPointer(store)).toBeNull()
-
-    await activateBootConfig(store, { sha, relConfigDir: REL, dir })
-
-    expect(await readBootConfigPointer(store)).toEqual({ sha, relConfigDir: REL, dir })
+    const pointer = {
+      release_id: built.descriptor.release_id!,
+      source_commit: built.descriptor.source_commit!,
+      config_dir: REL,
+      dir,
+      proven: true,
+    }
+    await activateBootConfig(store, pointer)
+    expect(await readBootConfigPointer(store)).toEqual(pointer)
+    await deactivateBootConfig(store)
+    expect(await readBootConfigPointer(store)).toBeNull()
   })
 
-  test('a pointer outside the store, or with a malformed commit, is ignored', async () => {
+  test('a pointer outside the store, at another release, or in the old format is ignored', async () => {
     mkdirSync(store, { recursive: true })
+    const id = 'a'.repeat(64)
+    const base = { release_id: id, source_commit: 'b'.repeat(40), config_dir: REL, proven: true }
     for (const pointer of [
-      { sha: 'a'.repeat(40), relConfigDir: REL, dir: '/etc' },
-      { sha: 'not-a-sha', relConfigDir: REL, dir: join(store, 'x') },
-      { sha: 'a'.repeat(40), relConfigDir: REL, dir: join(store, '..', 'escape') },
+      { ...base, dir: '/etc' },
+      { ...base, dir: join(store, 'c'.repeat(64)) },
+      { ...base, dir: join(store, '..', id) },
+      { ...base, release_id: 'not-hex', dir: join(store, 'not-hex') },
+      { ...base, config_dir: ':(top)*', dir: join(store, id) },
+      { sha: 'b'.repeat(40), relConfigDir: REL, dir: join(store, 'b'.repeat(40)) },
     ]) {
       writeFileSync(join(store, 'current.json'), JSON.stringify(pointer))
       expect(await readBootConfigPointer(store)).toBeNull()
@@ -298,28 +261,45 @@ describe('the active pointer', () => {
     writeFileSync(join(store, 'current.json'), '{not json')
     expect(await readBootConfigPointer(store)).toBeNull()
   })
+})
 
-  test('deactivating returns the box to the workspace floor', async () => {
-    const sha = commit('v1')
-    const { dir } = await materializeBootConfig(input(sha))
-    await activateBootConfig(store, { sha, relConfigDir: REL, dir })
-
-    await deactivateBootConfig(store)
-
-    expect(await readBootConfigPointer(store)).toBeNull()
+describe('quarantine and pruning', () => {
+  test('a quarantined release is recorded by release_id; another release_id is not blocked', async () => {
+    const bad = 'd'.repeat(64)
+    await quarantineRelease(store, bad, 'the new opencode did not start')
+    const entries = await readQuarantine(store)
+    expect(Object.keys(entries)).toEqual([bad])
+    expect(entries[bad]!.reason).toBe('the new opencode did not start')
+    expect(entries['e'.repeat(64)]).toBeUndefined()
   })
 
-  test('pruning keeps the named copies and removes the read-only rest', async () => {
-    const first = await materializeBootConfig(input(commit('v1')))
-    write(`${REL}/agents/kortix.md`, 'PROMPT v2\n')
-    const second = await materializeBootConfig(input(commit('v2')))
-    write(`${REL}/agents/kortix.md`, 'PROMPT v3\n')
-    const third = await materializeBootConfig(input(commit('v3')))
+  test('pruning keeps the named releases with their manifests, the pointer and the quarantine', async () => {
+    const first = await materialize(release('v1'))
+    write(repo, `${REL}/agents/kortix.md`, 'PROMPT v2\n')
+    const secondBuilt = release('v2')
+    const second = await materialize(secondBuilt)
+    write(repo, `${REL}/agents/kortix.md`, 'PROMPT v3\n')
+    const thirdBuilt = release('v3')
+    const third = await materialize(thirdBuilt)
+    mkdirSync(join(store, 'f'.repeat(40)), { recursive: true }) // a copy from the git-based store
+    await activateBootConfig(store, {
+      release_id: thirdBuilt.descriptor.release_id!,
+      source_commit: thirdBuilt.descriptor.source_commit!,
+      config_dir: REL,
+      dir: third.dir,
+      proven: true,
+    })
+    await quarantineRelease(store, 'd'.repeat(64), 'x')
 
-    await pruneBootConfigs(store, [second.dir, third.dir])
+    await pruneBootConfigs(store, [secondBuilt.descriptor.release_id!, thirdBuilt.descriptor.release_id!])
 
     expect(existsSync(first.dir)).toBe(false)
+    expect(existsSync(`${first.dir}.json`)).toBe(false)
+    expect(existsSync(join(store, 'f'.repeat(40)))).toBe(false)
     expect(existsSync(second.dir)).toBe(true)
+    expect(await readReleaseManifest(store, secondBuilt.descriptor.release_id!)).not.toBeNull()
     expect(existsSync(third.dir)).toBe(true)
+    expect(await readBootConfigPointer(store)).not.toBeNull()
+    expect(Object.keys(await readQuarantine(store))).toEqual(['d'.repeat(64)])
   })
 })

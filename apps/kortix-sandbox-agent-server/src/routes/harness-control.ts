@@ -6,6 +6,7 @@ import type { ResourceMonitor } from '../resources'
 import type { HarnessService } from '../harness/harness'
 import { createHealthRouter } from './health'
 import { createRefreshRouter } from './refresh'
+import { createConfigRouter } from './config'
 import { createAbortRouter } from './abort'
 import { createEnvRouter } from './env'
 import { createPartRouter } from './part'
@@ -32,8 +33,11 @@ export function createHarnessControlRouter(harness: HarnessService, context: Har
     router.route(path, controller)
     router.route(`${path}/`, controller)
   }
-  mount('/health', createHealthRouter(context, harness.diagnostics))
+  // `config.release.v1`: the API may send POST /kortix/config/converge.
+  // Advertised only by a control that implements it.
+  mount('/health', createHealthRouter(context, harness.diagnostics, control.convergeConfig ? ['config.release.v1'] : []))
   mount('/refresh', createRefreshRouter(context.cfg, control))
+  mount('/config', createConfigRouter(context.cfg, control))
   mount('/abort', createAbortRouter(context.cfg, control))
   mount('/part', createPartRouter(queries.attachments))
   mount('/logs', createLogsRouter(context.cfg, harness.diagnostics))

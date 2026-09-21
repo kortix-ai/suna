@@ -1,5 +1,6 @@
 import type { Config } from '../config'
-import type { ConfigDirSyncResult, RepoInfo } from '../git'
+import type { WorkspaceReport } from '../config-release/descriptor'
+import type { RepoInfo } from '../git'
 import type { ProjectEnvStore } from '../project-env'
 
 /** HTTP-independent control input. Native environment names remain adapter-owned. */
@@ -36,9 +37,6 @@ export interface HarnessEnvironmentResult {
 export interface HarnessRefreshInput {
   syncBase: boolean
   skipRestart: boolean
-  syncConfigDir: boolean
-  /** Respawn the runtime when, and only when, the directory it reads changed. */
-  reloadIfSynced?: boolean
   /** Leave the checkout exactly as it is — no pull of the session branch. */
   skipRepo?: boolean
   baseSha?: string
@@ -48,9 +46,6 @@ export interface HarnessRefreshInput {
 export interface HarnessRefreshResult {
   ok: true
   repo: { before: RepoInfo; after: RepoInfo }
-  config_dir?: ConfigDirSyncResult
-  /** Present when the runtime was respawned because the directory it reads changed. */
-  config_dir_reload?: { how: 'restarted' | 'kept-old'; turn_ended: boolean | null }
   reload?: {
     outcome: 'swapped' | 'kept-old'
     port?: number
@@ -74,9 +69,37 @@ export interface HarnessAbortAfterToolInput {
   messageId: string
 }
 
+/** The health `config` block. Spec: docs/specs/config-releases.md, "Health". */
+export interface HarnessConfigReleaseReport {
+  release_id: string | null
+  desired_release_id: string | null
+  source: 'release' | 'workspace' | 'image-default'
+  mode: 'follow-base' | 'session-files' | null
+  proven: boolean
+  fallback_reason: string | null
+  failed_release_id: string | null
+}
+
+/** Response of `POST /kortix/config/converge`. */
+export interface HarnessConfigConvergeResult {
+  ok: boolean
+  outcome: 'applied' | 'unchanged' | 'declined' | 'quarantined' | 'session-files' | 'failed'
+  config: HarnessConfigReleaseReport
+  reload: { how: 'restarted'; turn_ended: boolean | null } | null
+  reason: string | null
+}
+
 export interface HarnessControlOperations {
   applyEnvironment(input: HarnessEnvironmentInput): Promise<HarnessEnvironmentResult>
   refresh(input: HarnessRefreshInput): Promise<HarnessRefreshResult>
+  /**
+   * Fetch the desired config release from the API and apply it. Absent on a
+   * runtime without config releases. Throws an error named
+   * `ConvergeBusyError` while another convergence runs.
+   */
+  convergeConfig?(): Promise<HarnessConfigConvergeResult>
+  /** Read-only report of session work under the config dir; null without a repository. */
+  configWorkspace?(): Promise<WorkspaceReport | null>
   abort(): Promise<HarnessAbortResult>
   armAbortAfterTool(input: HarnessAbortAfterToolInput): Promise<void>
   /** Without a prompt id, disarm every pending interrupt. */

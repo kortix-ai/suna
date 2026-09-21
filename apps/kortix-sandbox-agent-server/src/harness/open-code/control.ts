@@ -1,6 +1,6 @@
 import type { HarnessControlService, HarnessControlOperations, HarnessEnvironmentInput, HarnessRefreshInput } from '../control'
-import { requireOpenCodeConfig, resolveOpencodeConfigDir, resolveOpencodeConfigDirRelative } from './config'
-import { convergeOpencodeConfigDir } from './config-dir-converge'
+import { requireOpenCodeConfig } from './config'
+import { convergeConfigRelease, releaseGovernanceActive, workspaceReportFor } from './config-release'
 import { writeAgentEnvFile } from '../../agent-env-file'
 import { syncEgressShim } from '../../egress-shim'
 import { invalidateRuntimeState } from './runtime-state-projection'
@@ -44,6 +44,13 @@ const OPENCODE_RUNTIME_ENV_NAMES = new Set([
   'KORTIX_SECRET_CAPABILITIES',
 ])
 
+/**
+ * Owned by a config release while one is active (config-release.ts). A push
+ * of these names is ignored then, so the release's governance stays the one
+ * the next spawn composes.
+ */
+const RELEASE_OWNED_ENV_NAMES = new Set(['KORTIX_COMPILED_AGENT_CONFIG', 'KORTIX_COMPILED_AGENT_CONFIG_ETAG'])
+
 function applyOpencodeRuntimeEnv(input: unknown): { changed: boolean; names: string[] } {
   if (input === undefined) return { changed: false, names: [] }
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
@@ -51,9 +58,14 @@ function applyOpencodeRuntimeEnv(input: unknown): { changed: boolean; names: str
   }
 
   const changedNames: string[] = []
+  const releaseOwned = releaseGovernanceActive()
   for (const [rawName, rawValue] of Object.entries(input as Record<string, unknown>)) {
     const name = rawName.trim().toUpperCase()
     if (!OPENCODE_RUNTIME_ENV_NAMES.has(name)) continue
+    if (releaseOwned && RELEASE_OWNED_ENV_NAMES.has(name)) {
+      logger.info('[env] compiled governance push ignored; the config release owns it', { name })
+      continue
+    }
     if (rawValue === null) {
       if (process.env[name] !== undefined) {
         delete process.env[name]
@@ -295,36 +307,12 @@ export function createOpenCodeControlService(
             opencode_turn_ended: reloadTurnEnded,
           }
         },
-        async refresh({
-          syncBase,
-          skipRestart,
-          syncConfigDir,
-          reloadIfSynced,
-          skipRepo,
-          baseSha,
-          forceFail,
-        }: HarnessRefreshInput) {
+        async refresh({ syncBase, skipRestart, skipRepo, baseSha, forceFail }: HarnessRefreshInput) {
           const repo = syncBase
             ? await syncWorkspaceToBase(cfg, baseSha)
             : skipRepo
               ? await unchangedRepo(cfg.projectTarget)
               : await refreshRepo(cfg)
-          // After the repo op, so a successful pull is reflected before the
-          // session's config work is inspected. Never writes the working tree.
-          const converged = syncConfigDir
-            ? await convergeOpencodeConfigDir({
-                cfg,
-                opencode,
-                relConfigDir: await resolveOpencodeConfigDirRelative(cfg),
-                workspaceConfigDir: await resolveOpencodeConfigDir(cfg),
-                baseSha,
-                // A full restart below respawns on the new directory anyway.
-                reload: skipRestart && reloadIfSynced === true,
-              })
-            : undefined
-          const configDir = converged
-            ? { synced: converged.synced, ...(converged.skipped ? { skipped: converged.skipped } : {}) }
-            : undefined
           // Verified swap, not a kill-then-hope restart: boot the new opencode,
           // prove it serves, and only then retire the running one. A config that
           // cannot boot leaves the session on the opencode it already had.
@@ -369,15 +357,6 @@ export function createOpenCodeControlService(
               before: repo.before,
               after: repo.after,
             },
-            ...(configDir ? { config_dir: configDir } : {}),
-            ...(converged?.reload
-              ? {
-                  config_dir_reload: {
-                    how: converged.reload.how,
-                    turn_ended: converged.reload.turnEnded,
-                  },
-                }
-              : {}),
             ...(reload
               ? {
                   reload: {
@@ -398,6 +377,10 @@ export function createOpenCodeControlService(
             opencode_pid: opencode.getPid(),
           }
         },
+        // Config releases (docs/specs/config-releases.md). The descriptor is
+        // always fetched from the API; nothing here takes one as input.
+        convergeConfig: () => convergeConfigRelease({ cfg, opencode }),
+        configWorkspace: () => workspaceReportFor(cfg),
         async abort() {
           const sessionId = readPinnedOpencodeSessionId()
           if (!sessionId) {

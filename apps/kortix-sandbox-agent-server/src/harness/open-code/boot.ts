@@ -31,8 +31,18 @@ import { materializeProject } from '../../config-provider/config-provider'
 import { scheduleRuntimeProjectionPush } from './runtime-projection-relay'
 import { repairOpencodeConfigDir } from './apple-double'
 import { ensureOpencodeConfigDeps } from './opencode-config-deps'
-import { resolveActiveOpencodeConfigDir } from './config-dir-converge'
-import { readBootConfigPointer } from '../../boot-config'
+import {
+  ConvergeBusyError,
+  convergeConfigRelease,
+  deliverGovernance,
+  fetchBootRelease,
+  provenReleaseForEarlySpawn,
+  recordBootConfig,
+  resolveBootConfig,
+  type BootConfigChoice,
+  type BootRelease,
+} from './config-release'
+import { configReleaseApiFrom } from '../../config-release/api-client'
 import { OPENCODE_HOME } from './paths'
 import { ensureInjectedManagedSkills } from '../../managed-skills'
 // Converge `/usr/local/bin/kortix` + the managed-skill overlay on the API this
@@ -153,6 +163,15 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
   // reconfigured with the resolved dir below, before the process is ever
   // spawned. `reconfigure` only rewrites state read at spawn time, so this is
   // exactly equivalent to constructing it late.
+  // Config releases (docs/specs/config-releases.md, "Boot"). A proven release
+  // that still verifies is spawned on before the clone. Otherwise the desired
+  // release is fetched in parallel with the clone.
+  const earlyPointer = cfg.autoClone ? await provenReleaseForEarlySpawn() : null
+  const releaseApi =
+    cfg.autoClone && !earlyPointer
+      ? configReleaseApiFrom({ apiUrl: cfg.apiUrl, projectId: cfg.projectId, sandboxToken: cfg.sandboxToken })
+      : null
+  const hintedConfigDir = cfg.autoClone ? resolveHintedOpencodeConfigDir(cfg) : null
   const harness = createOpenCodeHarnessService(cfg, cfg.defaultOpencodeConfigDir, projectEnv, {
     onStartupMark: bootMark,
     onFirstListeningResponse: () => {
@@ -166,7 +185,7 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
     // The early-spawn path (below) starts OpenCode before the checkout exists.
     // Keep the directory-scoped probe closed until the workspace is complete so
     // no Instance — and no tool registry — is built against a partial tree.
-    deferDirectoryProbe: cfg.autoClone && resolveHintedOpencodeConfigDir(cfg) !== null,
+    deferDirectoryProbe: cfg.autoClone && (hintedConfigDir !== null || earlyPointer !== null || releaseApi !== null),
   onUnplannedRespawn: () => {
       // opencode died on its own and is back. Close whatever turn it was
       // writing, or the client streams a part that will never complete.
@@ -269,6 +288,12 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
         })
     : Promise.resolve()
 
+  // The desired release, fetched and extracted while the clone runs. The
+  // descriptor wait is short: an early spawn on the hint waits for it.
+  const bootReleasePromise: Promise<BootRelease | null> | null = releaseApi
+    ? fetchBootRelease({ cfg, api: releaseApi, mark: bootMark, descriptorTimeoutMs: BOOT_DESCRIPTOR_TIMEOUT_MS })
+    : null
+
   // Every gateway session routes OpenCode through the localhost LLM proxy.
   // Start it before either compiled-config or checkout-config OpenCode can
   // spawn, so both boot paths receive the same provider base URL.
@@ -289,36 +314,52 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
   // ── Spawn OpenCode BEFORE the checkout exists ──────────────────────────
   // OpenCode's process boot (bun start, module load, ~3–4 s on a 2-vCPU box)
   // does not read the repo; only its per-directory Instance does, and that is
-  // created lazily by the first directory-scoped request. The API resolved the
-  // config dir at the base tip (KORTIX_OPENCODE_CONFIG_DIR_HINT), so the env
-  // var OpenCode reads at Instance init already points at the right place.
-  // After the repo lands we install config deps + injected skills there and
-  // dispose the instances in place (~50 ms) so the next request re-detects
-  // the git root and re-reads config. No hint → the serial boot below.
-  // A converged box spawns straight onto its config copy. Spawning on the
-  // working-tree hint instead would be "a WRONG dir" below and cost every resume
-  // an opencode restart. Existence only here — the copy is verified against its
-  // commit once the repository is available, before the workspace gate opens.
-  const pointedConfigDir = cfg.autoClone ? (await readBootConfigPointer())?.dir ?? null : null
-  const earlyOpencodeConfigDir = cfg.autoClone
-    ? pointedConfigDir && existsSync(pointedConfigDir)
-      ? pointedConfigDir
-      : resolveHintedOpencodeConfigDir(cfg)
-    : null
+  // created lazily by the first directory-scoped request. So OpenCode can
+  // spawn on a config dir that does not need the checkout:
+  //   1. the last proven release, when it still verifies;
+  //   2. the desired release, when it is extracted before the clone ends;
+  //   3. without a release path (no API, an API that predates releases): the
+  //      config dir the API resolved at the base tip
+  //      (KORTIX_OPENCODE_CONFIG_DIR_HINT).
+  // After the repo lands the instances are disposed in place (~50 ms) so the
+  // next request re-detects the git root. No candidate → the serial boot.
+  const earlyCandidatePossible =
+    cfg.autoClone && (earlyPointer !== null || bootReleasePromise !== null || hintedConfigDir !== null)
   // Only the early-spawn path can expose a half-built workspace; every other
   // boot leaves this undefined and the proxy gate below is inert.
-  if (earlyOpencodeConfigDir) bootState.workspaceReady = false
+  if (earlyCandidatePossible) bootState.workspaceReady = false
   let opencodeStartedEarly = false
+  const early: { dir: string | null; release: BootRelease | null } = { dir: null, release: null }
   const earlyOpencodeStartPromise: Promise<void> | null =
-    earlyOpencodeConfigDir && !(process.env.KORTIX_COMPILED_OPENCODE_CONFIG_DIR ?? '').trim()
+    earlyCandidatePossible && !(process.env.KORTIX_COMPILED_OPENCODE_CONFIG_DIR ?? '').trim()
       ? (async () => {
-          harness.configuration.reconfigure(cfg, earlyOpencodeConfigDir, projectEnv)
+          let dir = earlyPointer?.dir ?? null
+          if (!dir && bootReleasePromise) {
+            const first = await Promise.race([
+              bootReleasePromise,
+              repoMaterializePromise.then(() => 'checkout' as const),
+            ])
+            if (first === 'checkout') return // the clone won; the serial path decides
+            if (first) {
+              early.release = first
+              deliverGovernance(first.manifest.compiled_governance, first.manifest.compiled_governance_etag)
+              dir = first.dir
+            } else {
+              dir = hintedConfigDir // no release path: today's behaviour
+            }
+          } else if (!dir) {
+            dir = hintedConfigDir
+          }
+          if (!dir) return
+          early.dir = dir
+          harness.configuration.reconfigure(cfg, dir, projectEnv)
           await opencode.start()
           opencodeStartedEarly = opencode.getPid() !== null
           if (opencodeStartedEarly) {
             bootMark('opencode-spawned')
-            logger.info('[boot] opencode spawned before checkout (config-dir hint)', {
-              opencodeConfigDir: earlyOpencodeConfigDir,
+            logger.info('[boot] opencode spawned before checkout', {
+              opencodeConfigDir: dir,
+              source: earlyPointer ? 'proven release' : early.release ? 'desired release' : 'config-dir hint',
             })
           }
         })().catch((err) => {
@@ -365,34 +406,78 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
     scheduleHistoryBackfill(cfg, cfg.projectTarget)
   }
 
-  // The working-tree config dir is the FLOOR. A box that has converged on the
-  // base branch reads a read-only copy of the config dir instead, and a resume
-  // restarts this process — so the choice is read back from disk here, or every
-  // wake would drop the box onto the config of its provision day until the
-  // API's convergence pass caught up. Verified against its commit; falls back
-  // to the floor on any failure (config-dir-converge.ts).
-  const workspaceOpencodeConfigDir = await resolveOpencodeConfigDir(cfg)
-  const activeConfig = bootState.repoMaterializationError
-    ? { dir: workspaceOpencodeConfigDir, sha: null }
-    : await resolveActiveOpencodeConfigDir({ cfg, workspaceConfigDir: workspaceOpencodeConfigDir })
+  // The fallback chain below the desired release (config-release.ts): the
+  // last proven release when it still verifies, else the workspace config dir,
+  // else the image default. A resume restarts this process, so the choice is
+  // read back from disk here; the convergence after ready moves the box onto
+  // the desired release.
+  // The desired release wins when it arrived: early, or within a short wait
+  // after the clone. Its proof runs in the convergence after ready.
+  const bootRelease: BootRelease | null =
+    early.release ??
+    (bootReleasePromise && !bootState.repoMaterializationError
+      ? await Promise.race([
+          bootReleasePromise,
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), BOOT_RELEASE_WAIT_MS)),
+        ])
+      : null)
+  if (bootRelease && !early.release) {
+    deliverGovernance(bootRelease.manifest.compiled_governance, bootRelease.manifest.compiled_governance_etag)
+  }
+  const activeConfig: BootConfigChoice = bootState.repoMaterializationError
+    ? await (async () => {
+        const dir = await resolveOpencodeConfigDir(cfg)
+        return {
+          dir,
+          source: dir === cfg.defaultOpencodeConfigDir ? ('image-default' as const) : ('workspace' as const),
+          release_id: null,
+          source_commit: null,
+          fallback_reason: 'the repository did not materialize',
+        }
+      })()
+    : bootRelease
+      ? {
+          dir: bootRelease.dir,
+          source: 'release',
+          release_id: bootRelease.releaseId,
+          source_commit: bootRelease.sourceCommit,
+          fallback_reason: null,
+        }
+      : await resolveBootConfig({ cfg })
+  recordBootConfig({
+    source: activeConfig.source,
+    release_id: activeConfig.release_id,
+    source_commit: activeConfig.source_commit,
+    // A release from the store's pointer was proven on this box; a freshly
+    // fetched one is proven by the convergence after ready.
+    proven: activeConfig.source === 'release' && !bootRelease,
+    fallback_reason: activeConfig.fallback_reason,
+  })
+  const runsRelease = activeConfig.source === 'release'
   const opencodeConfigDir = activeConfig.dir
   logger.info('[boot] resolved opencode config dir', {
     opencodeConfigDir,
-    usingProjectConfig: opencodeConfigDir !== cfg.defaultOpencodeConfigDir,
-    baseConfigSha: activeConfig.sha,
+    source: activeConfig.source,
+    releaseId: activeConfig.release_id,
+    fallbackReason: activeConfig.fallback_reason,
   })
   // An early spawn on a WRONG dir (hint stale vs. the checkout) is not
   // reusable: OPENCODE_CONFIG_DIR is process env. Fall through to the serial
   // path, which reconfigures and starts a fresh process below.
-  if (opencodeStartedEarly && !bootState.repoMaterializationError && opencodeConfigDir !== earlyOpencodeConfigDir) {
+  if (opencodeStartedEarly && !bootState.repoMaterializationError && opencodeConfigDir !== early.dir) {
     logger.warn('[boot] config-dir hint did not match the checkout; restarting OpenCode', {
-      hinted: earlyOpencodeConfigDir,
+      hinted: early.dir,
       resolved: opencodeConfigDir,
     })
     await opencode.stop().catch(() => {})
     opencodeStartedEarly = false
   }
-  if (!opencodeStartedFromCompiledConfig) {
+  // A release was prepared when it was extracted (dependencies and the
+  // managed-skill overlay ran on its staging dir). Nothing is written into
+  // `/workspace` while OpenCode runs a release.
+  if (runsRelease) {
+    if (!opencodeStartedFromCompiledConfig) bootMark('config-deps')
+  } else if (!opencodeStartedFromCompiledConfig) {
     await ensureOpencodeConfigDeps(opencodeConfigDir)
     await ensureInjectedManagedSkills(opencodeConfigDir)
     bootMark('config-deps')
@@ -707,6 +792,40 @@ export async function reconcileManagedModels(
   }
 }
 
+/** How long an early spawn on the hint waits for the descriptor at boot. */
+const BOOT_DESCRIPTOR_TIMEOUT_MS = 5_000
+/** How long the serial path waits for an in-flight release after the clone. */
+const BOOT_RELEASE_WAIT_MS = 3_000
+
+/**
+ * One convergence once OpenCode is ready (docs/specs/config-releases.md,
+ * "Boot" step 3). It proves a release spawned at boot and moves the box onto
+ * the desired release. Detached: it never delays readiness. A swap waits while
+ * a turn runs; the API converges again at turn end. The seed-adoption path
+ * reaches this through `startSessionRuntime`, so it converges once after
+ * adoption.
+ */
+function scheduleConvergenceAfterReady(opencode: Opencode, cfg: Config, bootMark: (label: string) => void): void {
+  void convergeConfigRelease({
+    cfg,
+    opencode,
+    turnInFlight: () => opencodeTurnInFlight(opencode.getInternalUrl(), cfg.workspace),
+  })
+    .then((response) => {
+      logger.info('[boot] config convergence after ready', {
+        outcome: response.outcome,
+        releaseId: response.config.release_id,
+        source: response.config.source,
+        reason: response.reason,
+      })
+      if (response.config.source === 'release' && response.config.proven) bootMark('config-release-proven')
+    })
+    .catch((err) => {
+      if (err instanceof ConvergeBusyError) return
+      logger.warn('[boot] config convergence after ready failed', { err: String(err) })
+    })
+}
+
 async function startSessionRuntime(
   harness: OpenCodeHarnessService,
   cfg: Config,
@@ -943,6 +1062,7 @@ async function startSessionRuntime(
       // box is usable, so a cold session answers its roster from Postgres.
       scheduleRuntimeProjectionPush('boot')
       scheduleRuntimeAssetsReconcile(cfg)
+      scheduleConvergenceAfterReady(opencode, cfg, bootMark)
     }
     await maybeCreateInitialOpencodeSession(
       opencode,
@@ -989,6 +1109,7 @@ async function startSessionRuntime(
     runDeferredHistoryBackfill(bootState)
     scheduleRuntimeProjectionPush('boot')
     scheduleRuntimeAssetsReconcile(cfg)
+    scheduleConvergenceAfterReady(opencode, cfg, bootMark)
     // Only start the loop if the initial-session branch didn't already (avoids a
     // duplicate subscription when the initial session was requested but failed).
     if (!loopStarted) harness.events.subscribe(cfg, eventHandlers)

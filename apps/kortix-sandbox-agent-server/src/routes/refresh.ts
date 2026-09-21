@@ -1,34 +1,27 @@
 import { Hono } from 'hono'
 import type { Config } from '../config'
 import type { HarnessControlOperations } from '../harness/control'
-import { KORTIX_SERVICE_CALL_HEADER, KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '../kortix-user-context'
+import { KORTIX_SERVICE_CALL_HEADER } from '../kortix-user-context'
 import { logger } from '../logger'
-
-function bearerToken(header: string | undefined): string | null {
-  if (!header?.startsWith('Bearer ')) return null
-  return header.slice('Bearer '.length).trim() || null
-}
+import { runConvergence } from './config'
+import { authorizeControl } from './control-auth'
 
 export function createRefreshRouter(cfg: Config, control: HarnessControlOperations): Hono {
   const router = new Hono()
   let refreshInFlight: Promise<Response> | null = null
 
   router.post('/', async (c) => {
-    if (!cfg.sandboxToken) {
-      return c.json({ error: 'daemon not configured', detail: 'KORTIX_TOKEN unset' }, 503)
-    }
+    const auth = authorizeControl(c, cfg, 'refresh')
+    if (auth.response) return auth.response
+    const serviceAuthenticated = auth.serviceAuthenticated
 
-    const serviceAuthenticated =
-      bearerToken(c.req.header('Authorization')) === cfg.sandboxToken
-    if (!serviceAuthenticated) {
-      const auth = verifyKortixUserContext(
-        c.req.header(KORTIX_USER_CONTEXT_HEADER),
-        cfg.sandboxToken,
-      )
-      if (!auth.ok) {
-        logger.warn('[refresh] reject', { reason: auth.reason })
-        return c.json({ error: 'unauthorized', reason: auth.reason }, 401)
-      }
+    // `?config_dir=1` is an alias of `POST /kortix/config/converge`, for an API
+    // that predates config releases. It fetches the desired release from the
+    // API and applies it; every other refresh flag is ignored, and the working
+    // tree is never written. A runtime without config releases (pi) keeps the
+    // plain refresh it always did for this flag.
+    if (c.req.query('config_dir') === '1' && c.req.query('base') !== '1' && control.convergeConfig) {
+      return runConvergence(c, control)
     }
 
     if (refreshInFlight) {
@@ -74,26 +67,6 @@ export function createRefreshRouter(cfg: Config, control: HarnessControlOperatio
       )
     }
     const skipRestart = c.req.query('restart') === '0'
-    // `?config_dir=1` puts the runtime on the base branch's CURRENT config. It
-    // never writes the working tree: a session with no config work of its own is
-    // moved onto a read-only copy of the config dir at the base tip, and one
-    // that edits its own agent keeps reading `/workspace`
-    // (harness/open-code/config-dir-converge.ts). Separate from `base=1`, which
-    // resets the session's BRANCH.
-    //
-    // An older daemon simply ignores this parameter and does the plain refresh,
-    // so the API can send it unconditionally without version negotiation.
-    const syncConfigDir = c.req.query('config_dir') === '1'
-    // `?reload_if_synced=1` — respawn the runtime when, and only when, the
-    // directory it reads changed. opencode reads that directory at spawn, and the
-    // API's env push restarts it only when the env it carries changed; a skill
-    // body, a tool or a plugin is not in that env. Measured on the #7403 preview:
-    // a skill-only merge left the same pid serving the old skill list.
-    //
-    // A separate flag, not a new `restart` value: an older daemon reads any
-    // `restart` other than '0' as "restart always", which would restart opencode
-    // on every wake. An unknown flag is ignored, which is today's behaviour.
-    const reloadIfSynced = c.req.query('reload_if_synced') === '1'
     // `?repo=0` — leave the checkout exactly as it is. Converging the config no
     // longer involves the working tree, so the web's "Reload config" can load
     // the base branch's agents without the `git pull` it has always declined to
@@ -110,8 +83,6 @@ export function createRefreshRouter(cfg: Config, control: HarnessControlOperatio
         return c.json(await control.refresh({
           syncBase,
           skipRestart,
-          syncConfigDir,
-          reloadIfSynced,
           skipRepo,
           baseSha,
           forceFail: c.req.query('verify_fail') === '1',

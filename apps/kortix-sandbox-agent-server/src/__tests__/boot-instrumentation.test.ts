@@ -55,7 +55,10 @@ describe('boot instrumentation', () => {
 
     // Native boot: gate requested exactly when the early spawn can happen, and
     // opened only after config deps + injected skills.
-    expect(MAIN).toContain('deferDirectoryProbe: cfg.autoClone && resolveHintedOpencodeConfigDir(cfg) !== null')
+    // A config release (proven pointer or fetched release) can spawn early too.
+    expect(MAIN).toContain(
+      'deferDirectoryProbe: cfg.autoClone && (hintedConfigDir !== null || earlyPointer !== null || releaseApi !== null)',
+    )
     const deps = MAIN.indexOf("bootMark('config-deps')")
     const open = MAIN.indexOf('opencode.markWorkspaceReady()', deps)
     const reload = MAIN.indexOf('harness.configuration.reloadForWorkspace()', open)
@@ -69,7 +72,7 @@ describe('boot instrumentation', () => {
     expect(PROXY).toContain("bootState.workspaceReady === false")
     expect(PROXY).toContain("'workspace_not_ready'")
     // set false only on the early-spawn path, true once deps + skills are in
-    expect(MAIN).toContain('if (earlyOpencodeConfigDir) bootState.workspaceReady = false')
+    expect(MAIN).toContain('if (earlyCandidatePossible) bootState.workspaceReady = false')
     // The gate must open where the workspace is COMPLETE — after the deps and
     // the injected skills — and never inside the early-spawn block. An earlier
     // revision opened it right after start(), which made the whole fix inert
