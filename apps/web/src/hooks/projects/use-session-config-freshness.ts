@@ -24,6 +24,7 @@ import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import {
   getProjectSessionConfigState,
   reloadProjectSessionConfigStream,
+  type SessionConfigRelease,
   type SessionConfigState,
   type SessionReloadPhase,
   type SessionReloadResult,
@@ -54,37 +55,89 @@ export function sessionConfigKey(projectId?: string, sessionId?: string) {
 /**
  * What, if anything, the UI should say.
  *
- * Deliberately NOT a boolean and deliberately without an `ok` member: the only
- * thing worth rendering is "you are behind". Everything else — current,
- * still loading, an inconclusive check, nothing to compare, box asleep —
- * collapses to `hidden`, because a session that is fine should cost zero chrome.
+ * Deliberately NOT a boolean and deliberately without an `ok` member: a current
+ * session costs zero chrome. Still loading, an inconclusive check, nothing to
+ * compare, and a box asleep all collapse to `hidden`.
+ *
+ * - `stale`: the session runs an older config than the one available.
+ * - `session-files`: the session edited its own config dir and runs those files.
+ * - `fallback`: the desired config failed on the box, and an earlier config
+ *   serves the session. `servingReleaseId` is null when the workspace config
+ *   or the image default serves it.
  */
 export type SessionConfigNotice =
-  { kind: 'hidden' } | { kind: 'stale'; running: string; latest: string };
+  | { kind: 'hidden' }
+  | { kind: 'stale'; running: string; latest: string }
+  | { kind: 'session-files' }
+  | {
+      kind: 'fallback';
+      reason: string;
+      source: SessionConfigRelease['source'];
+      servingReleaseId: string | null;
+      failedReleaseId: string | null;
+    };
+
+/** Release IDs are 64 hex characters. Twelve identify one in a header. */
+const RELEASE_ID_DISPLAY_LENGTH = 12;
+
+function shortReleaseId(id: string | null | undefined): string | null {
+  return id ? id.slice(0, RELEASE_ID_DISPLAY_LENGTH) : null;
+}
 
 /**
  * Pure, so the branch order is testable without a DOM or a network.
  *
- * The order matters and mirrors the CLI's. `stale` is consulted BEFORE the
- * reachability and compile checks, because when the server could answer, its
- * answer is the answer; the later branches only exist to explain a `null`.
+ * Order:
+ * 1. `fallback` first. After a failed convergence `stale` is also true, and
+ *    "update available" would offer to retry the release that just failed.
+ * 2. `stale` next, as before. In `session-files` mode a stale session has
+ *    edits that are not loaded yet, so the reload offer is the right answer.
+ * 3. `session-files` last. It is a state, not a problem.
+ *
+ * A response without `release` (an API that predates config releases) reaches
+ * only the `stale` and `hidden` branches, exactly as before.
  */
 export function sessionConfigNotice(state: SessionConfigState | undefined): SessionConfigNotice {
   if (!state) return { kind: 'hidden' };
+  const release = state.release;
+  if (release?.fallback_reason) {
+    return {
+      kind: 'fallback',
+      reason: release.fallback_reason,
+      source: release.source,
+      servingReleaseId: shortReleaseId(release.running_release_id),
+      failedReleaseId: shortReleaseId(release.failed_release_id),
+    };
+  }
   if (state.stale === true) {
     return {
       kind: 'stale',
-      // Both are non-null whenever `stale` is a boolean — that is what
-      // `isConfigStale` guarantees server-side. The fallbacks keep a contract
-      // change from rendering "undefined" at a user.
-      running: state.running_etag ?? '—',
-      latest: state.latest_etag ?? '—',
+      // A capable daemon decides `stale` by release ID, and its etags can be
+      // null. An old daemon always reports both etags. The dash keeps a
+      // contract change from rendering "undefined" at a user.
+      running: state.running_etag ?? shortReleaseId(release?.running_release_id) ?? '—',
+      latest: state.latest_etag ?? shortReleaseId(release?.desired_release_id) ?? '—',
     };
   }
+  if (release?.mode === 'session-files') return { kind: 'session-files' };
   // `false` is current. `null` is inconclusive: the sandbox is sleeping, the
   // project has no compiled config, or an older runtime cannot report an etag.
   // None is an error, and none warrants persistent UI.
   return { kind: 'hidden' };
+}
+
+/**
+ * How a finished reload is announced.
+ *
+ * A reload that ends on a fallback kept an earlier config: that is an error,
+ * never a success. `kept-yours` and `unknown` agent files are warnings, as
+ * before.
+ */
+export function reloadResultTone(result: SessionReloadResult): 'success' | 'warning' | 'error' {
+  if (result.release?.fallback_reason) return 'error';
+  if (!result.applied) return 'warning';
+  if (result.agent_files === 'kept-yours' || result.agent_files === 'unknown') return 'warning';
+  return 'success';
 }
 
 /**
@@ -194,19 +247,23 @@ export function useReloadSessionConfig(projectId: string, sessionId: string) {
       // It landed — whatever refusal opened the dialog is answered.
       setBusyReason(null);
       queryClient.invalidateQueries({ queryKey: sessionConfigKey(projectId, sessionId) });
-      if (!result.applied) {
+      const tone = reloadResultTone(result);
+      if (tone === 'error') {
+        // The box declined the new config and kept an earlier one. The header
+        // shows the same reason until the next convergence.
+        errorToast(tI18nComplete.raw('text931cb67e2af7'), {
+          description: result.release?.fallback_reason ?? undefined,
+        });
+      } else if (!result.applied) {
         warningToast(reloadNotAppliedCopy(result.reason));
-        return;
+      } else if (tone === 'warning') {
+        // The session's own agent files were kept, or we could not confirm.
+        // `detail` already words every case.
+        warningToast(result.detail);
+      } else {
+        successToast(result.detail || tI18nComplete.raw('text4a920574ea10'));
       }
-      // Only two outcomes warrant a warning: the session's own agent files were
-      // kept (so the agent still runs THEIR version), or we could not confirm.
-      // The other three are successes — an earlier version keyed off a boolean
-      // and warned on "already current", which is just fine. `detail` already
-      // words every case.
-      const needsAttention =
-        result.agent_files === 'kept-yours' || result.agent_files === 'unknown';
-      if (needsAttention) warningToast(result.detail);
-      else successToast(result.detail || tI18nComplete.raw('text4a920574ea10'));
+      if (!result.applied) return;
       // A reload RESTARTS opencode. Refreshing only the config query would
       // leave the chat bound to a runtime that just went away — so invalidate
       // exactly what a restart does.

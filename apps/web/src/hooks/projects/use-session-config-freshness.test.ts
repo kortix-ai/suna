@@ -1,4 +1,4 @@
-import type { SessionConfigState } from '@kortix/sdk';
+import type { SessionConfigRelease, SessionConfigState, SessionReloadResult } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import {
   CONFIG_FRESHNESS_STALE_TIME_MS,
   reloadNotAppliedCopy,
+  reloadResultTone,
   sessionConfigNotice,
 } from './use-session-config-freshness';
 
@@ -92,6 +93,180 @@ describe('sessionConfigNotice', () => {
     expect(sessionConfigNotice(state({ stale: true, sandbox_reachable: false })).kind).toBe(
       'stale',
     );
+  });
+});
+
+const release = (over: Partial<SessionConfigRelease>): SessionConfigRelease => ({
+  mode: 'follow-base',
+  source: 'release',
+  running_release_id: 'r'.repeat(64),
+  desired_release_id: 'r'.repeat(64),
+  proven: true,
+  fallback_reason: null,
+  failed_release_id: null,
+  ...over,
+});
+
+describe('sessionConfigNotice with a config release block', () => {
+  test('current: the running release is the desired release, nothing renders', () => {
+    expect(sessionConfigNotice(state({ stale: false, release: release({}) }))).toEqual({
+      kind: 'hidden',
+    });
+  });
+
+  test('update available: stale true keeps the existing stale notice', () => {
+    expect(
+      sessionConfigNotice(
+        state({
+          stale: true,
+          release: release({ desired_release_id: 'd'.repeat(64) }),
+        }),
+      ),
+    ).toEqual({ kind: 'stale', running: 'aaaaaaaaaaaaaaaa', latest: 'aaaaaaaaaaaaaaaa' });
+  });
+
+  test('update available without etags names the two release IDs, shortened', () => {
+    // A capable daemon decides `stale` by release ID. The etags can be null.
+    expect(
+      sessionConfigNotice(
+        state({
+          stale: true,
+          running_etag: null,
+          latest_etag: null,
+          release: release({
+            running_release_id: '0123456789abcdef'.repeat(4),
+            desired_release_id: 'fedcba9876543210'.repeat(4),
+          }),
+        }),
+      ),
+    ).toEqual({ kind: 'stale', running: '0123456789ab', latest: 'fedcba987654' });
+  });
+
+  test('session config: mode session-files shows the neutral chip', () => {
+    expect(
+      sessionConfigNotice(
+        state({
+          stale: false,
+          release: release({
+            mode: 'session-files',
+            source: 'workspace',
+            running_release_id: null,
+            desired_release_id: null,
+          }),
+        }),
+      ),
+    ).toEqual({ kind: 'session-files' });
+  });
+
+  test('session config with unloaded edits: stale wins, so the reload is offered', () => {
+    expect(
+      sessionConfigNotice(
+        state({ stale: true, release: release({ mode: 'session-files', source: 'workspace' }) }),
+      ).kind,
+    ).toBe('stale');
+  });
+
+  test('fallback: a set fallback_reason shows the reason and what serves now', () => {
+    expect(
+      sessionConfigNotice(
+        state({
+          stale: true,
+          release: release({
+            running_release_id: '0123456789abcdef'.repeat(4),
+            desired_release_id: 'fedcba9876543210'.repeat(4),
+            failed_release_id: 'fedcba9876543210'.repeat(4),
+            fallback_reason: 'GET /agent did not list the default agent within 90 s',
+          }),
+        }),
+      ),
+    ).toEqual({
+      kind: 'fallback',
+      reason: 'GET /agent did not list the default agent within 90 s',
+      source: 'release',
+      servingReleaseId: '0123456789ab',
+      failedReleaseId: 'fedcba987654',
+    });
+  });
+
+  test('fallback wins over stale and over session-files', () => {
+    // After a failed convergence the running release differs from the desired
+    // one, so `stale` is true. Offering "update available" would retry a
+    // release that just failed; the reason is the useful answer.
+    for (const mode of ['follow-base', 'session-files'] as const) {
+      expect(
+        sessionConfigNotice(
+          state({ stale: true, release: release({ mode, fallback_reason: 'extract failed' }) }),
+        ).kind,
+      ).toBe('fallback');
+    }
+  });
+
+  test('fallback to the image default names no release', () => {
+    expect(
+      sessionConfigNotice(
+        state({
+          stale: null,
+          release: release({
+            source: 'image-default',
+            running_release_id: null,
+            failed_release_id: null,
+            fallback_reason: 'no config dir on the base branch',
+          }),
+        }),
+      ),
+    ).toEqual({
+      kind: 'fallback',
+      reason: 'no config dir on the base branch',
+      source: 'image-default',
+      servingReleaseId: null,
+      failedReleaseId: null,
+    });
+  });
+
+  test('an empty fallback_reason is not a fallback', () => {
+    expect(
+      sessionConfigNotice(state({ stale: false, release: release({ fallback_reason: '' }) })).kind,
+    ).toBe('hidden');
+  });
+
+  test('a response without release renders exactly as before for every legacy combination', () => {
+    for (const stale of [true, false, null] as const) {
+      const legacy = state({ stale });
+      expect('release' in legacy).toBe(false);
+      expect(sessionConfigNotice(legacy).kind).toBe(stale === true ? 'stale' : 'hidden');
+    }
+  });
+});
+
+describe('reloadResultTone', () => {
+  const result = (over: Partial<SessionReloadResult>): SessionReloadResult => ({
+    applied: true,
+    previous_etag: null,
+    etag: null,
+    repo_refreshed: false,
+    commit_sha: null,
+    detail: 'Reloaded.',
+    ...over,
+  });
+
+  test('a clean reload is a success', () => {
+    expect(reloadResultTone(result({}))).toBe('success');
+    expect(reloadResultTone(result({ release: release({}) }))).toBe('success');
+  });
+
+  test('kept-yours and unknown agent files stay warnings', () => {
+    expect(reloadResultTone(result({ agent_files: 'kept-yours' }))).toBe('warning');
+    expect(reloadResultTone(result({ agent_files: 'unknown' }))).toBe('warning');
+  });
+
+  test('a reload that ended on a fallback is an error, never a success', () => {
+    expect(
+      reloadResultTone(result({ release: release({ fallback_reason: 'proven check failed' }) })),
+    ).toBe('error');
+  });
+
+  test('a not-applied reload is a warning', () => {
+    expect(reloadResultTone(result({ applied: false }))).toBe('warning');
   });
 });
 

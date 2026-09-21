@@ -18560,7 +18560,19 @@
       "textc3bafa5156b4": "Você ainda não tem uma conta própria",
       "textea5d0ffa0962": "Um gestor do projeto conecta a conta compartilhada.",
       "text3d6627454174": "Definir credencial",
-      "text929505ef815a": "Ainda não há nenhuma conta conectada. Adicione a sua abaixo, ou peça a um gestor do projeto para conectar uma conta compartilhada."
+      "text929505ef815a": "Ainda não há nenhuma conta conectada. Adicione a sua abaixo, ou peça a um gestor do projeto para conectar uma conta compartilhada.",
+      "text931cb67e2af7": "Não foi possível carregar a nova configuração do agente. Esta sessão continua usando uma configuração anterior.",
+      "textef40aea2badf": "Usando a configuração desta sessão",
+      "text15b25630019e": "Esta sessão alterou a própria configuração do agente. Ela usa esses arquivos em vez da configuração do branch base.",
+      "textd9ff3a72833d": "Falha ao carregar a configuração",
+      "textebfb07812fb4": "Não foi possível carregar a nova configuração do agente",
+      "text4e62b29dd3b6": "Uma configuração anterior está em uso nesta sessão. A configuração com falha só será tentada novamente quando o branch base mudar.",
+      "textf81ab834de5f": "Motivo",
+      "text44cdf35701cd": "Em uso agora",
+      "text591f9f0f3259": "Release com falha",
+      "text00ed4c71dc2b": "Última release funcional",
+      "textd0cd78619cce": "Os arquivos de configuração desta sessão",
+      "textbd7a1a3b4141": "A configuração padrão da plataforma"
     }
   },
   "projectOnboarding": {
