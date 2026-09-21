@@ -285,10 +285,12 @@ describe('buildConfigRelease', () => {
     expect(release.reason).toContain('compiled governance failed');
   });
 
-  test('a commit with no config dir produces no release', async () => {
+  test('a commit with no config dir produces a governance-only release', async () => {
     const sha = commit({ 'kortix.yaml': MANIFEST('first'), 'README.md': 'x\n' }, 'no config');
     const release = await buildConfigRelease(project, sha, 'project', { store });
-    expect(release.release_id).toBeNull();
+    expect(release.release_id).toBe(
+      createHash('sha256').update(`:${release.compiled_governance_etag}`).digest('hex'),
+    );
     expect(release.config_dir).toBeNull();
     expect(release.archive).toBeNull();
     expect(release.files).toBeNull();
@@ -355,10 +357,19 @@ describe('buildConfigRelease', () => {
     expect(descriptor.archive).toBeNull();
     expect(descriptor.files).toBeNull();
     expect(descriptor.config_tree_id).toBeNull();
-    expect(descriptor.release_id).toBeNull();
+    expect(descriptor.release_id).toBe(configReleaseId(null, release.compiled_governance_etag));
+    expect(descriptor.release_id).not.toBe(release.release_id);
     expect(descriptor.reason).toBe('repository access withheld');
     expect(descriptor.compiled_governance).toBe(release.compiled_governance);
     expect(descriptor.compiled_governance_etag).toBe(release.compiled_governance_etag);
+  });
+});
+
+describe('configReleaseId', () => {
+  test('is null only when both parts are null', () => {
+    expect(configReleaseId(null, null)).toBeNull();
+    expect(configReleaseId(null, 'e'.repeat(16))).toBe(createHash('sha256').update(`:${'e'.repeat(16)}`).digest('hex'));
+    expect(configReleaseId('t'.repeat(40), null)).toBe(createHash('sha256').update(`${'t'.repeat(40)}:`).digest('hex'));
   });
 });
 

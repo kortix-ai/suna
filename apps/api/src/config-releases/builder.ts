@@ -39,7 +39,7 @@ export type ConfigReleaseFile = [path: string, mode: string, blob: string];
 
 export interface ConfigReleaseDescriptor {
   format: typeof CONFIG_RELEASE_FORMAT;
-  /** `sha256(config_tree_id + ":" + (compiled_governance_etag ?? ""))`, hex. Null when there is no release. */
+  /** `sha256((config_tree_id ?? "") + ":" + (compiled_governance_etag ?? ""))`, hex. Null when there is no release. */
   release_id: string | null;
   mode: ConfigMode;
   source_commit: string;
@@ -70,9 +70,18 @@ export class ConfigReleaseCommitNotFoundError extends Error {
   }
 }
 
-export function configReleaseId(configTreeId: string, compiledGovernanceEtag: string | null): string {
+/**
+ * `sha256((config_tree_id ?? "") + ":" + (compiled_governance_etag ?? ""))`,
+ * hex. Null only when both are null. A session without a config archive (no
+ * config dir, or no repository access) still has a release ID when it has
+ * governance, so a governance-only change converges.
+ */
+export function configReleaseId(configTreeId: string | null, compiledGovernanceEtag: string | null): string | null;
+export function configReleaseId(configTreeId: string, compiledGovernanceEtag: string | null): string;
+export function configReleaseId(configTreeId: string | null, compiledGovernanceEtag: string | null): string | null {
+  if (configTreeId === null && compiledGovernanceEtag === null) return null;
   return createHash('sha256')
-    .update(`${configTreeId}:${compiledGovernanceEtag ?? ''}`)
+    .update(`${configTreeId ?? ''}:${compiledGovernanceEtag ?? ''}`)
     .digest('hex');
 }
 
@@ -304,12 +313,20 @@ async function build(
   };
 
   const configDir = await resolveOpencodeConfigDirAtSha(mirror, project, commit);
+  // No config dir: a governance-only release. The daemon runs the image
+  // default config dir with this governance.
+  const governanceOnly = configReleaseId(null, etag);
   if (!configDir) {
-    return { ...withGovernance, reason: 'the commit has no OpenCode config dir' };
+    return { ...withGovernance, release_id: governanceOnly, reason: 'the commit has no OpenCode config dir' };
   }
   const treeId = await resolveConfigTreeId(mirror, commit, configDir);
   if (!treeId) {
-    return { ...withGovernance, config_dir: configDir, reason: `config dir ${configDir} is not a tree at ${commit}` };
+    return {
+      ...withGovernance,
+      release_id: governanceOnly,
+      config_dir: configDir,
+      reason: `config dir ${configDir} is not a tree at ${commit}`,
+    };
   }
   const located: ConfigRelease = { ...withGovernance, config_dir: configDir, config_tree_id: treeId };
 
@@ -389,7 +406,8 @@ export function toDescriptor(
     return {
       ...release,
       mode,
-      release_id: null,
+      // Governance-only release ID: a governance change still converges.
+      release_id: configReleaseId(null, release.compiled_governance_etag),
       config_dir: null,
       config_tree_id: null,
       archive: null,
