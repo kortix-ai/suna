@@ -147,6 +147,11 @@ GitHub access, and Pipedream connectors — ports, local URLs, keys and Docker C
 generated for you. Note that `self-host start` pulls its images from Docker Hub, so this is a
 self-hosted install rather than a disconnected one.
 
+Support any Serper.dev-compatible endpoint (like litescrape.com, serpbase.dev, and others)
+through the existing Serper proxy. Set `SERPER_API_URL` and `SERPER_API_KEY` for your provider.
+See [Serper.dev-compatible endpoints](apps/web/content/docs/host/index.mdx#serperdev-compatible-endpoints)
+for setup instructions.
+
 Managed hosting is **[Kortix Cloud](https://kortix.com)**.
 
 ---
