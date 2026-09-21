@@ -15,7 +15,9 @@ import {
   adoptRuntimeSandboxTurn,
   beginSandboxTurn,
   clearSandboxTurn,
+  clearTurnStopRequest,
   completeSandboxTurn,
+  markTurnStopRequested,
   reconcileSandboxTurnDelivery,
   settleOpenSandboxTurnsQuery,
 } from '../projects/sandbox-turn-lifecycle';
@@ -1214,3 +1216,116 @@ describe('adoptRuntimeSandboxTurn — box-initiated turn authority', () => {
     expect(await readOpenBySession()).toHaveLength(0);
   });
 });
+
+// Why a failed turn ended, and who asked. Every assertion reads the row back
+// from Postgres: the rule lives in SQL (an upsert CASE and two guarded UPDATEs),
+// so a test that only inspected the statement text could not fail.
+describe('end_error: causes, requested stops, and which one wins', () => {
+  const ROOT = 'ses_root';
+  const MSG = 'msg_running';
+  const ABORT = { name: 'MessageAbortedError', message: 'Aborted' };
+  const GUARD = { name: 'SandboxMemoryGuard', message: 'sandbox memory at 97%' };
+
+  /** One running turn: authority in the sandbox metadata, and its open ledger row. */
+  async function openTurn(token = t('running'), messageId = MSG, opencodeSessionId = ROOT) {
+    await setLifecycleState({
+      activeTurns: {
+        [token]: { token, state: 'active', opencodeSessionId, messageId, startedAtMs: 1 },
+      },
+    });
+    await db.execute(sql`
+      INSERT INTO kortix.session_turns
+        (turn_token, session_id, sandbox_id, project_id, account_id,
+         opencode_session_id, message_id, state, started_at, created_at, updated_at)
+      VALUES (${token}, ${SESSION_ID}, ${SANDBOX_ID}::uuid, ${PROJECT_ID}::uuid,
+              ${ACCOUNT_ID}::uuid, ${opencodeSessionId}, ${messageId}, 'active',
+              now(), now(), now())`);
+    return token;
+  }
+  const end = (error: { name: string; message: string } | undefined, status: 'idle' | 'error' = 'error') =>
+    completeSandboxTurn(SESSION_ID, status, { opencodeSessionId: ROOT, messageId: MSG }, error, 60_000);
+
+  test('an abort nobody asked for is recorded as the abort it is', async () => {
+    const token = await openTurn();
+    expect((await end(ABORT)).outcome).toBe('closed');
+    const row = await readTurn(token);
+    expect(row?.end_reason).toBe('failed');
+    expect(row?.end_error).toEqual(ABORT);
+  });
+
+  test('a requested stop survives the abort it caused', async () => {
+    const token = await openTurn();
+    await markTurnStopRequested(SESSION_ID, 'UserStop', { opencodeSessionId: ROOT });
+    await end(ABORT);
+    expect((await readTurn(token))?.end_error).toEqual({ name: 'UserStop', message: null });
+  });
+
+  test('a named cause beats a requested stop: the mark never hides a real failure', async () => {
+    // Stop pressed, the abort never landed, and the memory guard fired later.
+    const token = await openTurn();
+    await markTurnStopRequested(SESSION_ID, 'UserStop', { opencodeSessionId: ROOT });
+    await end(GUARD);
+    expect((await readTurn(token))?.end_error).toEqual(GUARD);
+  });
+
+  test('a turn that completes drops the request that never fired', async () => {
+    const token = await openTurn();
+    await markTurnStopRequested(SESSION_ID, 'QueueInterrupt', { opencodeSessionId: ROOT, messageId: MSG });
+    await end(undefined, 'idle');
+    const row = await readTurn(token);
+    expect(row?.end_reason).toBe('completed');
+    expect(row?.end_error).toBeNull();
+  });
+
+  test('a withdrawn queue interrupt leaves a later abort unexplained', async () => {
+    const token = await openTurn();
+    await markTurnStopRequested(SESSION_ID, 'QueueInterrupt', { messageId: MSG });
+    await clearTurnStopRequest(SESSION_ID, 'QueueInterrupt');
+    await end(ABORT);
+    expect((await readTurn(token))?.end_error).toEqual(ABORT);
+  });
+
+  test('clearing one kind of request leaves the other in place', async () => {
+    const token = await openTurn();
+    await markTurnStopRequested(SESSION_ID, 'UserStop');
+    await clearTurnStopRequest(SESSION_ID, 'QueueInterrupt');
+    expect((await readTurn(token))?.end_error).toEqual({ name: 'UserStop', message: null });
+  });
+
+  test('a request is scoped: another OpenCode session or another message is untouched', async () => {
+    const token = await openTurn();
+    await markTurnStopRequested(SESSION_ID, 'UserStop', { opencodeSessionId: 'ses_child' });
+    expect((await readTurn(token))?.end_error).toBeNull();
+    await markTurnStopRequested(SESSION_ID, 'QueueInterrupt', { messageId: 'msg_other' });
+    expect((await readTurn(token))?.end_error).toBeNull();
+  });
+
+  test('a request never rewrites a turn that already ended', async () => {
+    const token = await openTurn();
+    await end(GUARD);
+    await markTurnStopRequested(SESSION_ID, 'UserStop');
+    expect((await readTurn(token))?.end_error).toEqual(GUARD);
+  });
+
+  test('a cause that arrives after the abort closed the turn replaces the abort, once', async () => {
+    // Session ad02e053: OpenCode's "Aborted" frame beat the guard's by 476 ms.
+    const token = await openTurn();
+    await end(ABORT);
+    expect((await end(GUARD)).outcome).toBe('already_closed');
+    expect((await readTurn(token))?.end_error).toEqual(GUARD);
+
+    // A named cause is final: neither a late abort nor a second cause moves it.
+    await end(ABORT);
+    await end({ name: 'SomethingElse', message: 'later' });
+    expect((await readTurn(token))?.end_error).toEqual(GUARD);
+  });
+
+  test('a late cause never turns a requested stop into a failure', async () => {
+    const token = await openTurn();
+    await markTurnStopRequested(SESSION_ID, 'UserStop');
+    await end(ABORT);
+    await end(GUARD);
+    expect((await readTurn(token))?.end_error).toEqual({ name: 'UserStop', message: null });
+  });
+});
+

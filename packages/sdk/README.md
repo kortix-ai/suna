@@ -385,6 +385,17 @@ OpenCode query and synchronization controllers to the sandbox runtime. Two
 sandboxes cannot share browser cache state when a snapshot exposes the same
 OpenCode id during adoption.
 
+After a project replaces its repository, `/start` rejects sessions from the
+previous repository by default. A recovery screen can resume an existing
+preserved workspace explicitly:
+
+```tsx
+useSession(projectId, sessionId, { repositoryMode: 'previous' });
+```
+
+This option cannot create a replacement workspace. Project Git access remains
+disabled because the session keeps its previous repository generation.
+
 Message retries keep the originating sandbox URL after navigation. A `404` or
 `410` message read stops automatic retries and preserves the cached transcript.
 An explicit reconciliation can recover the controller when the session returns.
@@ -925,6 +936,25 @@ appears immediately, including while a previous POST is pending. The working hoo
 updates `pendingDelivery` when the same turn becomes active, without waiting for
 a different turn ID or timestamp.
 
+
+### Why a turn ended
+
+The transcript of an interrupted turn only carries `MessageAbortedError`. The
+control plane records the cause the sandbox reported, for example
+`SandboxMemoryGuard` when box memory passed its guard threshold, in
+`session_turns.end_error`. A stop somebody asked for is recorded there too, as a
+request (`UserStop` for a client abort, `QueueInterrupt` for a prompt sent into a
+busy session), and a request is never reported as a failure.
+
+`GET .../turn` returns the cause in `last_ended.error` and lists the turns that
+died in `recent_failures`, keyed by `message_id`, whether or not a turn is
+running: named causes, and failures with `error: null` when nobody named one.
+`useSessionTurnOutcome(projectId, sessionId)` reads both, plus the read time
+`atMs`, from the cache `useSessionWorking()` keeps fresh and makes no request of
+its own. `turnEndNotice(outcome, messageId, transcript)` turns that into one
+typed notice per turn — `sandbox-memory`, `cause`, `unexplained`, or `null` — so
+a host maps a kind to copy and never parses the sandbox's message.
+`turnEndCause(outcome, messageId)` returns the raw recorded cause.
 
 ### External directory freshness
 

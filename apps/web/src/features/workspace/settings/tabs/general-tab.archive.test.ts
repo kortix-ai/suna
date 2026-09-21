@@ -167,6 +167,69 @@ describe('runProjectArchive', () => {
     expect(forgetCalls).toBe(0);
   });
 
+  /**
+   * Deleting from the settings panel left the user on `/projects/<deleted-id>`
+   * with no redirect — for the account's LAST project that meant no way to
+   * reach the "create a workspace" surface at all. The exit is the id-free
+   * door `/projects/start`: with the suppression flag set it renders the
+   * empty state (Create → `/new`); with other projects left it opens the next
+   * one (the deleted id is already forgotten). `replace`-style navigation is
+   * the caller's job; this pins WHEN and WHERE.
+   */
+  test("leaves for /projects/start after deleting the account's last project, after suppress + forget", async () => {
+    const events: string[] = [];
+    await runProjectArchive(
+      'p1',
+      1,
+      client({
+        archiveProject: async () => {
+          events.push('archived');
+        },
+      }),
+      () => events.push('suppressed'),
+      () => events.push('forgotten'),
+      (path: string) => events.push(`left:${path}`),
+    );
+    // The flag and the cleared cookie must exist BEFORE `/projects/start`
+    // reads them, or it would auto-create a project / reopen the deleted one.
+    expect(events).toEqual(['archived', 'forgotten', 'suppressed', 'left:/projects/start']);
+  });
+
+  test('leaves for /projects/start when other projects remain', async () => {
+    const left: string[] = [];
+    await runProjectArchive(
+      'p1',
+      3,
+      client(),
+      () => {},
+      () => {},
+      (path: string) => left.push(path),
+    );
+    expect(left).toEqual(['/projects/start']);
+  });
+
+  test('does NOT leave the project when the archive call fails', async () => {
+    let leaveCalls = 0;
+    const failing = client({
+      archiveProject: async () => {
+        throw new Error('archive failed');
+      },
+    });
+    await expect(
+      runProjectArchive(
+        'p1',
+        1,
+        failing,
+        () => {},
+        () => {},
+        () => {
+          leaveCalls += 1;
+        },
+      ),
+    ).rejects.toThrow('archive failed');
+    expect(leaveCalls).toBe(0);
+  });
+
   test('suppression fires strictly after archiveProject resolves, not before', async () => {
     // Ordering matters: onSuppress must observe a completed archive, never a
     // still-in-flight one.
@@ -228,6 +291,19 @@ describe('GeneralTab wires the archive mutation to runProjectArchive', () => {
     expect(code).toContain('runProjectArchive(');
     expect(code).toContain('accountProjectCountForArchive(accountProjectsQuery.data)');
     expect(code).toContain('{ archiveProject }');
-    expect(code).toContain('suppressAutoProjectAfterDelete,');
+    // Scoped to the deleted project's account, never the bare zero-arg
+    // callback: that falls back to the globally-selected account, which a
+    // project opened by URL can leave pointing at a different account.
+    expect(code).toContain('() => suppressAutoProjectAfterDelete(accountId)');
+    expect(code).not.toContain('suppressAutoProjectAfterDelete,');
+  });
+
+  test('the leave callback closes the settings overlay and replaces the route', async () => {
+    const code = (await source).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+    // The overlay's open state is global: left open, it reappears over the
+    // next project. `replace`, not `push`: Back must not reopen the deleted one.
+    expect(code).toContain('useSettingsPanelStore.getState().close();');
+    expect(code).toContain('router.replace(path);');
+    expect(code).not.toContain('router.push(path)');
   });
 });

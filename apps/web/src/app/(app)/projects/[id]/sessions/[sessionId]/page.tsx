@@ -17,6 +17,11 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
 import { resolvePinnedRootSessionId } from '@/features/session/pinned-root-session';
+import {
+  PreviousRepositorySession,
+  isPreviousRepositoryRuntimeUnavailableError,
+  isPreviousRepositorySessionError,
+} from '@/features/session/previous-repository-session';
 import { ProviderFailureRecovery } from '@/features/session/provider-failure-recovery';
 import {
   pendingSessionPromptForRecovery,
@@ -164,6 +169,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const queryClient = useQueryClient();
   const router = useRouter();
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [repositoryMode, setRepositoryMode] = useState<'previous' | undefined>();
 
   // Billing gate. An account that cannot run should not KEEP polling to start a
   // session — the backend would never provision a sandbox, so the poll spins
@@ -221,7 +227,15 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     enabled: canPollSessionStart({ hasUser: !!user, billingBlocked }),
     replayStartStash: false,
     initialOpenCodeSessionId,
+    repositoryMode,
   });
+  useEffect(() => {
+    if (repositoryMode !== 'previous') return;
+    void queryClient.resetQueries({
+      queryKey: sessionStartKey(projectId, sessionId),
+      exact: true,
+    });
+  }, [projectId, queryClient, repositoryMode, sessionId]);
   const sandbox = session.sandbox;
   const startStage = session.stage ?? 'provisioning';
   // The immutable agent this session was created with — known BEFORE the
@@ -699,6 +713,10 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     ? `session ${sandbox.sandbox_id.slice(0, 8)}`
     : undefined;
   const sessionMissing = session.startError?.status === 404 && !sandbox;
+  const previousRepositorySession = isPreviousRepositorySessionError(session.startError);
+  const previousRepositoryRuntimeUnavailable = isPreviousRepositoryRuntimeUnavailableError(
+    session.startError,
+  );
   const recoverableFailure = (() => {
     if (sessionMissing) return null;
     const metadata = (sandbox?.metadata as Record<string, unknown>) ?? {};
@@ -811,6 +829,20 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
             </Button>
           }
         />
+      );
+    }
+
+    if (previousRepositorySession || previousRepositoryRuntimeUnavailable) {
+      return (
+        <HeaderlessSessionSurface>
+          <PreviousRepositorySession
+            projectId={projectId}
+            canResume={!previousRepositoryRuntimeUnavailable}
+            isResuming={repositoryMode === 'previous'}
+            onResume={() => setRepositoryMode('previous')}
+            onDelete={() => setDeleteOpen(true)}
+          />
+        </HeaderlessSessionSurface>
       );
     }
 

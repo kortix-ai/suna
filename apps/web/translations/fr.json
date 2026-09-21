@@ -1597,6 +1597,15 @@
       "title": "Cette session est arrêtée",
       "message": "Son ordinateur a été libéré. Redémarrez la session pour le récupérer."
     },
+    "previousRepository": {
+      "title": "La session utilise le dépôt précédent",
+      "message": "Cette session conserve son espace de travail précédent. Vous pouvez le reprendre, mais Git fetch, push et les demandes de modification restent désactivés.",
+      "unavailable": "L’espace de travail précédent n’est plus disponible. Démarrez une nouvelle session dans le dépôt actuel.",
+      "resume": "Reprendre l’espace précédent",
+      "resuming": "Reprise…",
+      "newSession": "Démarrer une nouvelle session",
+      "delete": "Supprimer la session"
+    },
     "lost": {
       "title": "L’ordinateur de cette session a été perdu",
       "message": "Son environnement cloud a disparu du côté du fournisseur. Cette session ne peut donc pas être redémarrée ou récupérée. Il s’agit d’un problème de notre côté, pas d’une erreur de votre part — il a été signalé automatiquement. Tout ce qui a été validé et poussé depuis cette session est conservé dans le dépôt de votre projet."
