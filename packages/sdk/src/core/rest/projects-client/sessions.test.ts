@@ -5,7 +5,9 @@ import type {
   CreateProjectSessionInput,
   ProjectSession,
   RemovedSessionPrompt,
+  SessionConfigRelease,
   SessionPrompt,
+  SessionReloadResult,
   SessionTurn,
   SessionTurnStatus,
 } from './sessions';
@@ -604,6 +606,72 @@ test('getProjectSessionConfigState preserves a NULL stale — "could not tell" i
   const result = await getProjectSessionConfigState('P1', 'S1');
   expect(result.stale).toBeNull();
   expect(result.stale).not.toBe(false);
+});
+
+const RELEASE_FALLBACK: SessionConfigRelease = {
+  mode: 'follow-base',
+  source: 'release',
+  running_release_id: 'a'.repeat(64),
+  desired_release_id: 'b'.repeat(64),
+  proven: true,
+  fallback_reason: 'replacement did not serve GET /agent within 90 s',
+  failed_release_id: 'b'.repeat(64),
+};
+
+test('getProjectSessionConfigState carries the release block unchanged', async () => {
+  // The release block names the config the box runs, the config the API
+  // assigns, and why they differ. The web header derives its state from it.
+  nextResponse = {
+    status: 200,
+    body: {
+      base_ref: 'main',
+      running_etag: null,
+      latest_etag: null,
+      commit_sha: 'c'.repeat(40),
+      stale: true,
+      sandbox_reachable: true,
+      release: RELEASE_FALLBACK,
+    },
+  };
+  const result = await getProjectSessionConfigState('P1', 'S1');
+  const release: SessionConfigRelease | undefined = result.release;
+  expect(release).toEqual(RELEASE_FALLBACK);
+});
+
+test('getProjectSessionConfigState from an API without releases has no release block', async () => {
+  // An API that predates config releases omits the field. It must stay
+  // undefined, so a host renders exactly what it rendered before.
+  nextResponse = {
+    status: 200,
+    body: {
+      base_ref: 'main',
+      running_etag: 'aaaaaaaaaaaaaaaa',
+      latest_etag: 'aaaaaaaaaaaaaaaa',
+      commit_sha: null,
+      stale: null,
+      sandbox_reachable: true,
+    },
+  };
+  const result = await getProjectSessionConfigState('P1', 'S1');
+  expect(result.release).toBeUndefined();
+});
+
+test('reloadProjectSessionConfig carries the release block of the converged box', async () => {
+  const sessionFiles: SessionConfigRelease = {
+    mode: 'session-files',
+    source: 'workspace',
+    running_release_id: null,
+    desired_release_id: null,
+    proven: true,
+    fallback_reason: null,
+    failed_release_id: null,
+  };
+  nextResponse = {
+    status: 200,
+    body: { applied: true, detail: 'ok', release: sessionFiles },
+  };
+  const result: SessionReloadResult = await reloadProjectSessionConfig('P1', 'S1');
+  expect(result.release).toEqual(sessionFiles);
 });
 
 test('reloadProjectSessionConfig POSTs to /reload with an empty body by default', async () => {

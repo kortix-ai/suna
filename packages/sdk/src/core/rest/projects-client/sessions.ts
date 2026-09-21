@@ -1205,6 +1205,41 @@ export async function stopProjectSession(projectId: string, sessionId: string) {
 }
 
 /**
+ * The config release state of one session: which config release the box runs,
+ * which one the API assigns, and why the two differ.
+ *
+ * A config release is one archive of the base branch's config dir plus one
+ * compiled governance. The sandbox serves it from a read-only directory, never
+ * from `/workspace`.
+ */
+export interface SessionConfigRelease {
+  /**
+   * `follow-base`: the session runs the base branch's config release.
+   * `session-files`: the session edited its own config dir, so it runs those
+   * files from its workspace.
+   */
+  mode: 'follow-base' | 'session-files';
+  /**
+   * Where the running config comes from, as the daemon reports it.
+   * `image-default` means neither a release nor the workspace config was usable.
+   */
+  source: 'release' | 'workspace' | 'image-default';
+  /** The release ID the box serves from. `null` when no release is running. */
+  running_release_id: string | null;
+  /** The release ID the API assigns. `null` when the base branch produces none. */
+  desired_release_id: string | null;
+  /** True when the running config passed the proven check on this box. */
+  proven: boolean;
+  /**
+   * Why the box runs a config other than the desired release. `null` when it
+   * does not. When set, an earlier config serves the session.
+   */
+  fallback_reason: string | null;
+  /** The release ID that failed on this box, when one did. */
+  failed_release_id: string | null;
+}
+
+/**
  * Whether a session is running the agent config the manifest compiles to now.
  *
  * A session's agent behaviour is compiled from git ONCE, at provision, and
@@ -1231,6 +1266,11 @@ export interface SessionConfigState {
    */
   stale: boolean | null;
   sandbox_reachable: boolean;
+  /**
+   * The config release state. Absent on a response from an API that predates
+   * config releases; a host then renders from `stale` alone.
+   */
+  release?: SessionConfigRelease;
 }
 
 /**
@@ -1302,6 +1342,12 @@ export interface SessionReloadResult {
   /** Why nothing was applied. Internal wording — map it, don't render it. */
   reason?: string;
   detail: string;
+  /**
+   * The config release state after the reload. Absent on a response from an
+   * API that predates config releases. A set `fallback_reason` means the reload
+   * did not take effect and an earlier config still serves the session.
+   */
+  release?: SessionConfigRelease;
 }
 
 /** Server-observed boundaries for a live session-config reload. */
