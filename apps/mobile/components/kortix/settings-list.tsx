@@ -35,9 +35,7 @@ import {
 } from '@/lib/icons';
 
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
-import { Separator } from '@/components/ui/separator';
 import { Text } from '@/components/ui/text';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { MenuButton } from '@/components/kortix/menu-button';
@@ -214,14 +212,24 @@ export function SettingsPage({
   );
 }
 
-/** Sentence-case title above a borderless rounded card; renders nothing when empty. */
+/**
+ * Sentence-case title above a group of rows; renders nothing when empty.
+ *
+ * Each row is its own rounded tile (Jay, 2026-09-22). The divider between two
+ * rows is a 2pt gap, not a hairline: whatever is behind the group shows through
+ * it (`bg-background` on a page, the sheet colour in a sheet), so the rows read
+ * as separate tiles of one group. The group's outer corners are `rounded-2xl`;
+ * the corners between two rows are `rounded-md`.
+ */
+const ROW_GAP = 2;
+
 export function SettingsGroup({
   title,
   className,
   children,
 }: {
   title?: string;
-  /** Card surface override — e.g. `bg-background` on a `bg-popover` dialog. */
+  /** Row surface override — e.g. `bg-background` on a `bg-popover` dialog. */
   className?: string;
   children: React.ReactNode;
 }) {
@@ -236,14 +244,21 @@ export function SettingsGroup({
           {title}
         </Text>
       ) : null}
-      <Card className={cn('gap-0 overflow-hidden rounded-2xl border-0 py-0', className)}>
+      <View style={{ gap: ROW_GAP }}>
         {rows.map((row, i) => (
-          <React.Fragment key={row.key ?? i}>
-            {i > 0 ? <Separator /> : null}
+          // `overflow-hidden` clips the row's pressed fill to the tile's corners.
+          <View
+            key={row.key ?? i}
+            className={cn(
+              'overflow-hidden rounded-sm bg-card',
+              i === 0 && 'rounded-t-2xl',
+              i === rows.length - 1 && 'rounded-b-2xl',
+              className
+            )}>
             {row}
-          </React.Fragment>
+          </View>
         ))}
-      </Card>
+      </View>
     </View>
   );
 }

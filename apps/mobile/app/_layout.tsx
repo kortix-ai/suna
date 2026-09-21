@@ -25,6 +25,7 @@ import {
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { ThemeProvider } from 'expo-router/react-navigation';
 import { PortalHost } from '@rn-primitives/portal';
+import { OVERLAY_PORTAL_HOST } from '@/lib/ui/portal-hosts';
 import { ToastProvider } from '@/components/kortix/toast-provider';
 import { OfflineBanner } from '@/components/kortix/OfflineBanner';
 import {
@@ -524,6 +525,8 @@ export default function RootLayout() {
                                 <OfflineBanner />
                               </ThemeProvider>
                             </BottomSheetModalProvider>
+                            {/* Above every bottom sheet: dropdowns opened from inside a sheet. */}
+                            <PortalHost name={OVERLAY_PORTAL_HOST} />
                           </ToastProvider>
                         </PresenceProvider>
                       </AdvancedFeaturesProvider>
