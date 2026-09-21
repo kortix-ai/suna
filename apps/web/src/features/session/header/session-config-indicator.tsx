@@ -242,7 +242,9 @@ function SessionConfigFilesChip() {
         className="max-w-56"
       >
         <FileCodeIcon />
-        <span className="truncate">{label}</span>
+        {/* Icon-only below md: at 720 px the label collided with the centered
+            boot status. The label stays in aria-label and the Hint. */}
+        <span className="hidden truncate md:inline">{label}</span>
       </Badge>
     </Hint>
   );
