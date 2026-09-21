@@ -52,6 +52,8 @@ import {
 import { FloatingMenuButton } from '@/components/session/FloatingMenuButton';
 import {
   androidBackMove,
+  pageBackMove,
+  returnThreadForPage,
   drawerRouteMove,
   drawerSessionRowMove,
   returnHomeMove,
@@ -69,7 +71,8 @@ import { TabsOverview } from '@/components/session/TabsOverview';
 import { ProjectHome, type ProjectHomeSubmit } from '@/components/session/ProjectHome';
 import { uploadAttachments, withAttachments, type AttachedFile } from '@/lib/session/attachments';
 import { ProjectLeftDrawer } from '@/components/session/ProjectLeftDrawer';
-import { ProjectMoreSheet } from '@/components/session/ProjectMoreSheet';
+import { ProjectHeaderActions } from '@/components/session/ProjectHeaderActions';
+import { CustomizeSheet } from '@/components/session/CustomizeSheet';
 import {
   PageContextMenuSheet,
   type PageContextMenuTarget,
@@ -81,9 +84,9 @@ import { log } from '@/lib/logger';
 import {
   useProjectSessions,
   useCreateProjectSession,
-  useProjectName,
-  useChangeRequests,
 } from '@/lib/projects/hooks';
+import { useReviewItems } from '@/lib/review/use-review';
+import { countReviewItemsBySegment } from '@kortix/sdk';
 import {
   startProjectSession,
   restartProjectSession,
@@ -157,9 +160,6 @@ const Pages = {
   get SkillsPage(): typeof import('@/components/pages/SkillsPage').SkillsPage {
     return require('@/components/pages/SkillsPage').SkillsPage;
   },
-  get CommandsPage(): typeof import('@/components/pages/CommandsPage').CommandsPage {
-    return require('@/components/pages/CommandsPage').CommandsPage;
-  },
   get ConnectorsPage(): typeof import('@/components/pages/ConnectorsPage').ConnectorsPage {
     return require('@/components/pages/ConnectorsPage').ConnectorsPage;
   },
@@ -177,6 +177,9 @@ const Pages = {
   },
   get ChangesPage(): typeof import('@/components/pages/ChangesPage').ChangesPage {
     return require('@/components/pages/ChangesPage').ChangesPage;
+  },
+  get ReviewPage(): typeof import('@/components/pages/ReviewPage').ReviewPage {
+    return require('@/components/pages/ReviewPage').ReviewPage;
   },
   get FilesNavPage(): typeof import('@/components/pages/FilesNavPage').FilesNavPage {
     return require('@/components/pages/FilesNavPage').FilesNavPage;
@@ -344,6 +347,22 @@ async function deliverPendingPrompt(
 
 // ─── Main screen ────────────────────────────────────────────────────────────
 
+/**
+ * The drawer's close spring (Jay, 2026-09-22). The library's one spring
+ * (stiffness 1000, damping 500, mass 3) is 4.6× overdamped: its slow pole
+ * decays at ~2/s, so a close crawls over its last third. This one is
+ * critically damped (damping = 2·√stiffness at mass 1): 90% of the travel in
+ * ~195ms, settled in ~330ms, no overshoot. It stays a spring, so a swipe
+ * release keeps its velocity. Open keeps the library spring: an exit runs
+ * faster than an enter.
+ *
+ * `closeSpringConfig` is not a library prop: it comes from
+ * `patches/react-native-drawer-layout+4.2.10.patch`. When the patch is not
+ * applied (`npx patch-package` after an install), `tsc` fails on the prop.
+ * Module scope: the library lists it as a `useCallback` dependency.
+ */
+const DRAWER_CLOSE_SPRING = { stiffness: 400, damping: 40, mass: 1 };
+
 export function ProjectScreen() {
   const { id: projectId } = useLocalSearchParams<{ id: string }>();
 
@@ -372,7 +391,7 @@ export function ProjectScreen() {
 
   // The "More…" grid (opened from a tool page's PageHeader "···" button) and
   // the per-page context menu.
-  const moreRef = useRef<SheetRef>(null);
+  const customizeSheetRef = useRef<SheetRef>(null);
   const pageMenuRef = useRef<SheetRef>(null);
   const [pageMenuTarget, setPageMenuTarget] = useState<PageContextMenuTarget | null>(null);
   // Page refs (some tool pages drive imperative actions).
@@ -402,7 +421,6 @@ export function ProjectScreen() {
   // effect from immediately re-driving (and re-looping) a known-failed session.
   const erroredSessionRef = useRef<string | null>(null);
   const createProjectSession = useCreateProjectSession(projectId);
-  const loadedProjectName = useProjectName(projectId);
   const openUpgradeSheet = useUpgradeSheetStore((state) => state.openUpgradeSheet);
   const connectingStatusLabel = useMemo(() => {
     const ps = projectSessions.find((s) => s.session_id === connectingProjectSessionId);
@@ -415,9 +433,13 @@ export function ProjectScreen() {
   const sessionSandboxUrl = activeSessionId ? sandboxUrl : undefined;
   const { data: sessions = [] } = useSessions(sessionSandboxUrl);
   const createSession = useCreateSession(sandboxUrl);
-  // Open change-request count — the "Changes" badge in the More sheet.
-  const openChangeRequests = useChangeRequests(projectId ?? null, 'open', { poll: isFocused });
-  const openCrCount = openChangeRequests.data?.change_requests.length ?? 0;
+  // Review items that wait for the user — the Review row's value in the project
+  // sheet. Open change requests are among them (the API adapts them into the list).
+  const reviewItems = useReviewItems(projectId ?? null, { poll: isFocused });
+  const reviewNeedsYouCount = useMemo(
+    () => countReviewItemsBySegment(reviewItems.data ?? []).needs_you,
+    [reviewItems.data]
+  );
 
   // Split sessions into active (TabsOverview grid).
   const activeSessions = useMemo(
@@ -485,6 +507,22 @@ export function ProjectScreen() {
   // in. A ref: the thread (zustand) can commit before the sandbox (React
   // state), and that render must already see the expected URL.
   const openedThreadRef = useRef<OpenedThread | null>(null);
+  // The thread a tool page was opened over (its OpenCode session id), for the
+  // way back. Every opener is covered: the project sheet's rows, and a thread's
+  // own links (Connect provider). Read by `returnToThread`, cleared by `goHome`.
+  const returnThreadRef = useRef<string | null>(null);
+  useEffect(
+    () =>
+      useTabStore.subscribe((state, previous) => {
+        if (!state.activePageId || state.activePageId === previous.activePageId) return;
+        returnThreadRef.current = returnThreadForPage({
+          activeSessionId: previous.activeSessionId,
+          activePageId: previous.activePageId,
+          current: returnThreadRef.current,
+        });
+      }),
+    []
+  );
 
   // Switch the SandboxContext to a session's sandbox and render its chat. Needs
   // both the sandbox URL and the resolved OpenCode pin (opencode_session_id).
@@ -659,8 +697,8 @@ export function ProjectScreen() {
     [navigateToSession]
   );
 
-  // Start an agent-led config session (New / Edit from the Agents/Skills/
-  // Commands pages). Mirrors web's useConfigureThread.
+  // Start an agent-led config session (New / Edit from the Agents and Skills
+  // pages). Mirrors web's useConfigureThread.
   const handleConfigureSession = useCallback(
     async (prompt: string) => {
       if (!projectId) return;
@@ -768,6 +806,7 @@ export function ProjectScreen() {
   // it. Stops a running connect loop, so a session that boots later does not
   // reopen the view.
   const goHome = useCallback(() => {
+    returnThreadRef.current = null;
     ensuringRef.current = null;
     openedThreadRef.current = null;
     setConnectingProjectSessionId(null);
@@ -778,7 +817,25 @@ export function ProjectScreen() {
     if (tabs.activeSessionId || tabs.activePageId) tabs.navigateToSession(null);
   }, [clearSandbox]);
   const handleBack = goHome;
-  const handlePageBack = goHome;
+
+  // Back from a tool page. A page and a thread share the view route, and
+  // opening a page clears the store's active thread, so the thread is
+  // remembered (`returnThreadRef`) and reopened here. The sandbox did not
+  // change, so the thread renders at once, with no reconnect. A page opened
+  // from project home goes home.
+  const returnToThread = useCallback((): boolean => {
+    const tabs = useTabStore.getState();
+    const returnThreadId = returnThreadRef.current;
+    if (pageBackMove({ activePageId: tabs.activePageId, returnThreadId }) !== 'return-to-thread') {
+      return false;
+    }
+    returnThreadRef.current = null;
+    tabs.navigateToSession(returnThreadId);
+    return true;
+  }, []);
+  const handlePageBack = useCallback(() => {
+    if (!returnToThread()) goHome();
+  }, [returnToThread, goHome]);
 
   // Simplified project-home send flow (ported from web 3f150e0). Creates a
   // project session with the typed prompt as initial_prompt and drops into the
@@ -835,7 +892,7 @@ export function ProjectScreen() {
   // Stable handlers, so a memoized SessionPage skips parent re-renders.
   const openDrawer = useCallback(() => setDrawerOpen(true), []);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
-  const openMoreSheet = useCallback(() => moreRef.current?.open(), []);
+  const openCustomizeSheet = useCallback(() => customizeSheetRef.current?.open(), []);
 
   // Project route stack (ProjectRoutes).
   const [homeKey, setHomeKey] = useState(0);
@@ -913,7 +970,8 @@ export function ProjectScreen() {
             setDrawerOpen(false);
             return true;
           case 'pop-home':
-            returnHome();
+            // A page opened over a thread returns to that thread, not to home.
+            if (!returnToThread()) returnHome();
             return true;
           case 'home':
             // `navigation` is the root stack: never pop below the project.
@@ -921,7 +979,7 @@ export function ProjectScreen() {
         }
       });
       return () => subscription.remove();
-    }, [navigation, returnHome])
+    }, [navigation, returnHome, returnToThread])
   );
 
   // ── Presentation glue ──
@@ -968,16 +1026,16 @@ export function ProjectScreen() {
   );
 
   // Tool pages keep PageHeader: its hamburger opens the drawer, and its "···"
-  // button opens the More sheet (ProjectMoreSheet) — the project dock's old
-  // grid of pages, with no floating chrome of its own on deep pages.
+  // button opens the project sheet (CustomizeSheet), the same sheet the
+  // floating header's "···" opens on project home and in a thread.
   const pageChrome = useMemo(
     () => ({
       onOpenDrawer: openDrawer,
-      onOpenRightDrawer: openMoreSheet,
+      onOpenRightDrawer: openCustomizeSheet,
       isDrawerOpen: drawerOpen,
       isRightDrawerOpen: false,
     }),
-    [openDrawer, openMoreSheet, drawerOpen]
+    [openDrawer, openCustomizeSheet, drawerOpen]
   );
 
   // ── Route content ──
@@ -1070,13 +1128,6 @@ export function ProjectScreen() {
               onConfigure={handleConfigureSession}
               {...pageChrome}
             />
-          ) : activePageId === 'page:commands' && PAGE_TABS[activePageId] ? (
-            <Pages.CommandsPage
-              page={PAGE_TABS[activePageId]}
-              projectId={projectId}
-              onConfigure={handleConfigureSession}
-              {...pageChrome}
-            />
           ) : activePageId === 'page:connectors' && PAGE_TABS[activePageId] ? (
             <Pages.ConnectorsPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
           ) : activePageId === 'page:secrets-nav' && PAGE_TABS[activePageId] ? (
@@ -1089,6 +1140,13 @@ export function ProjectScreen() {
             <Pages.WebhooksPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
           ) : activePageId === 'page:changes' && PAGE_TABS[activePageId] ? (
             <Pages.ChangesPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
+          ) : activePageId === 'page:review' && PAGE_TABS[activePageId] ? (
+            <Pages.ReviewPage
+              page={PAGE_TABS[activePageId]}
+              projectId={projectId}
+              {...pageChrome}
+              onOpenSession={handleOpenSessionById}
+            />
           ) : activePageId === 'page:files-nav' && PAGE_TABS[activePageId] ? (
             <Pages.FilesNavPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
           ) : activePageId === 'page:sandbox' && PAGE_TABS[activePageId] ? (
@@ -1182,9 +1240,9 @@ export function ProjectScreen() {
           <SessionPage
             sessionId={activeSessionId}
             projectId={projectId}
-            projectName={loadedProjectName}
             onBack={handleBack}
             onOpenDrawer={openDrawer}
+            onOpenRightDrawer={openCustomizeSheet}
             chrome="floating"
             isDrawerOpen={drawerOpen}
             isRightDrawerOpen={false}
@@ -1195,7 +1253,9 @@ export function ProjectScreen() {
              as the thread: no top bar, just the floating menu button that
              opens the project drawer. */
           <View style={{ flex: 1 }} className="bg-background">
-            <FloatingMenuButton onPress={openDrawer} />
+            <FloatingMenuButton onPress={openDrawer}>
+              <ProjectHeaderActions onOpenMore={openCustomizeSheet} />
+            </FloatingMenuButton>
             <SessionConnecting
               statusLabel={connectingStatusLabel}
               error={connectError}
@@ -1207,15 +1267,15 @@ export function ProjectScreen() {
         </View>
   );
 
-  // Project home — Kortix symbol, fixed greeting, composer.
+  // Project home — Kortix symbol, composer.
   const homeContent = (
     <View className="flex-1 bg-background">
       <ProjectHome
         projectId={projectId}
-        projectName={loadedProjectName}
         sending={isDashboardSending}
         onSubmitNewSession={handleDashboardSend}
         onOpenDrawer={openDrawer}
+        onOpenMore={openCustomizeSheet}
       />
     </View>
   );
@@ -1260,6 +1320,7 @@ export function ProjectScreen() {
         swipeEnabled={isFocused}
         swipeEdgeWidth={80}
         swipeMinDistance={30}
+        closeSpringConfig={DRAWER_CLOSE_SPRING}
         renderDrawerContent={renderDrawer}>
         <ProjectRouteProvider value={projectRoute}>
           {/* Native Stack: platform default push/pop. No iOS swipe-back: the
@@ -1286,12 +1347,12 @@ export function ProjectScreen() {
         </ProjectRouteProvider>
       </Drawer>
 
-      {/* The "More…" grid and the per-page context menu. ProjectMoreSheet
-          supersedes the old ToolsMenuSheet. */}
-      <ProjectMoreSheet
-        ref={moreRef}
+      {/* The project sheet and the per-page context menu. The sheet's Review
+          row carries the count of items that wait for the user. */}
+      <CustomizeSheet
+        ref={customizeSheetRef}
         onNavigate={(pageId) => useTabStore.getState().navigateToPage(pageId)}
-        changesBadgeCount={openCrCount}
+        reviewBadgeCount={reviewNeedsYouCount}
       />
 
       <PageContextMenuSheet

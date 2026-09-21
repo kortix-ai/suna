@@ -25,6 +25,7 @@ import {
   UsersIcon,
   QuestionIcon,
   type AppIcon,
+  SealCheckIcon,
 } from '@/lib/icons';
 
 /**
@@ -51,13 +52,13 @@ const PAGE_TAB_ICONS: Record<string, AppIcon> = {
   'page:projects': FolderIcon,
   'page:agents': CpuIcon,
   'page:skills': SparkleIcon,
-  'page:commands': CodeIcon,
   'page:connectors': PuzzlePieceIcon,
   'page:secrets-nav': KeyIcon,
   'page:channels-nav': ChatIcon,
   'page:schedules': ClockIcon,
   'page:webhooks': GitForkIcon,
   'page:changes': GitPullRequestIcon,
+  'page:review': SealCheckIcon,
   'page:files-nav': FolderIcon,
   'page:sandbox': CubeIcon,
   'page:dev': TerminalIcon,

@@ -40,6 +40,7 @@ import { MenuButton } from '@/components/kortix/menu-button';
 import { PlatformButton } from '@/components/kortix/platform-button';
 import { FLOATING_MENU_CLEARANCE, FloatingMenuButton } from '@/components/session/FloatingMenuButton';
 import { AgentPill } from '@/components/session/AgentPill';
+import { ProjectHeaderActions } from '@/components/session/ProjectHeaderActions';
 import { useProjectModelCatalog } from '@/lib/projects/hooks';
 import { openProjectModelsOnWeb } from '@/lib/session/connect-model';
 import { offeredSessionModels, type PickerCatalogModel, type PickerModel } from '@/lib/session/model-picker';
@@ -128,7 +129,7 @@ import { ActivitySheetHost } from '@/components/session/turn/activity-sheet';
 import type { PermissionReply } from '@/components/session/tool/tool-part-renderer';
 import type { SandboxFile } from '@/api/types';
 import type { Session } from '@/lib/platform/types';
-import { ProjectGreeting } from '@/components/session/ProjectGreeting';
+import { ProjectHero } from '@/components/session/ProjectHero';
 
 // AnimatedToggleIcon was extracted to components/kortix/animated-toggle-icon.tsx
 // so it can be shared with PageHeader and page-level headers across the app.
@@ -138,8 +139,6 @@ interface SessionPageProps {
   sessionId: string;
   /** The session's project: its model catalog is the thread's model list. */
   projectId?: string;
-  /** Project name for the fresh-session hero — "Give {name} something real to work on." */
-  projectName?: string;
   onBack: () => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
@@ -207,7 +206,7 @@ function flatModelFromCatalog(model: PickerModel, entry: PickerCatalogModel): Fl
   };
 }
 
-function SessionPageImpl({ sessionId, projectId, projectName, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, chrome = 'header', onboardingMode, onSkipOnboarding }: SessionPageProps) {
+function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, chrome = 'header', onboardingMode, onSkipOnboarding }: SessionPageProps) {
   const router = useRouter();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -1638,10 +1637,17 @@ function SessionPageImpl({ sessionId, projectId, projectName, onBack, onOpenDraw
            shows it, Jay 2026-09-16). `fade`: turns scroll under the button and
            the status bar, so they fade out there instead of showing through. */
         <FloatingMenuButton onPress={onOpenDrawer} fade>
-          {/* The agent is a thread-level choice: it sits at the right end of
-              the header, not in the composer (design.md §5). Hidden with fewer
-              than two agents. */}
-          <AgentPill agents={resolvedAgents} activeName={resolved.agent?.name ?? null} onChange={handleAgentChange} />
+          {/* The agent is a thread-level choice: it sits in the header, not in
+              the composer (design.md §5). Hidden with fewer than two agents.
+              The `···` button after it opens the project sheet. Onboarding
+              has no project sheet, so the pill holds the edge there. */}
+          {onOpenRightDrawer && !onboardingMode ? (
+            <ProjectHeaderActions onOpenMore={onOpenRightDrawer}>
+              <AgentPill agents={resolvedAgents} activeName={resolved.agent?.name ?? null} onChange={handleAgentChange} edge={false} />
+            </ProjectHeaderActions>
+          ) : (
+            <AgentPill agents={resolvedAgents} activeName={resolved.agent?.name ?? null} onChange={handleAgentChange} />
+          )}
         </FloatingMenuButton>
       )}
 
@@ -1703,7 +1709,6 @@ function SessionPageImpl({ sessionId, projectId, projectName, onBack, onOpenDraw
         <ScrollToBottomButton visible={showScrollButton} onPress={jumpToEnd} />
 
         <FreshSessionHero
-          projectName={projectName}
           opacity={heroOpacity}
           visible={showFreshHero}
         />
@@ -1843,16 +1848,14 @@ function ScrollToBottomButton({ visible, onPress }: { visible: boolean; onPress:
 }
 
 /**
- * FreshSessionHero — the project greeting centred in the message area of a
- * chat with no messages yet. Same `ProjectGreeting` as ProjectHome, so a new
+ * FreshSessionHero — the Kortix symbol centred in the message area of a
+ * chat with no messages yet. Same `ProjectHero` as ProjectHome, so a new
  * chat opens onto the surface the project home showed.
  */
 function FreshSessionHero({
-  projectName,
   opacity,
   visible,
 }: {
-  projectName?: string;
   opacity: Animated.Value;
   visible: boolean;
 }) {
@@ -1881,12 +1884,11 @@ function FreshSessionHero({
         bottom: 0,
         alignItems: 'center',
         justifyContent: 'center',
-        paddingHorizontal: 32,
         opacity,
       }}
     >
       <Animated.View style={{ transform: [{ translateY }] }}>
-        <ProjectGreeting projectName={projectName} />
+        <ProjectHero />
       </Animated.View>
     </Animated.View>
   );

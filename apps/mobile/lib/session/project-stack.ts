@@ -63,6 +63,35 @@ export function androidBackMove(
 }
 
 /**
+ * A tool page and a thread share the `view` route, and opening a page clears
+ * the store's active thread. So the thread a page was opened over is
+ * remembered here, for the way back. `activeSessionId` and `activePageId` are
+ * the store's values before the page opens; `current` is the remembered thread.
+ * - a thread is shown → remember it
+ * - a page is shown → keep the thread that page was opened over
+ * - project home → nothing to return to
+ */
+export function returnThreadForPage(state: {
+  activeSessionId: string | null;
+  activePageId: string | null;
+  current: string | null;
+}): string | null {
+  if (state.activePageId) return state.current;
+  return state.activeSessionId;
+}
+
+/**
+ * Back from the view (Android back, a page's own back control): a page opened
+ * over a thread returns to that thread. Everything else returns to project home.
+ */
+export function pageBackMove(state: {
+  activePageId: string | null;
+  returnThreadId: string | null;
+}): 'return-to-thread' | 'home' {
+  return state.activePageId && state.returnThreadId ? 'return-to-thread' : 'home';
+}
+
+/**
  * The project session whose content the view shows, or null. Same order as
  * the view's render: the tabs overview and a tool page cover everything, then
  * a thread (its project session id), then a connecting session.

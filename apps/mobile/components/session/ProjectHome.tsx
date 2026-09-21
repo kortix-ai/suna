@@ -1,12 +1,11 @@
 /**
  * ProjectHome — the project screen when no chat is open (COR-34).
  *
- * Web parity with `ProjectHomeWelcomeBody`: the Kortix symbol and one fixed
- * sentence ("Give {project} something real to work on.") sit dead centre, and
- * the chat input is pinned to the bottom. Nothing else: no starter chips,
- * cards, or lists. The floating menu button is the project screen's chrome,
- * shared with the thread, not part of this content. (The project dock that
- * used to share this chrome was removed — nothing replaced it.)
+ * The Kortix symbol sits dead centre, alone (Jay, 2026-09-21: no sentence, no
+ * project name), and the chat input is pinned to the bottom. Nothing else: no
+ * starter chips, cards, or lists. The floating header (hamburger · agent pill ·
+ * `···`, which opens the project sheet) is the project screen's chrome, shared
+ * with the thread, not part of this content.
  *
  * The chat input is one card: text on top, then add files · model · send.
  * Files cannot upload yet (the session's sandbox does not exist), so they ride
@@ -15,9 +14,10 @@
  * `opencode_model`.
  *
  * Layout:
- * - The greeting is absolutely centred in the keyboard-avoiding area. At rest
- *   that area is the whole screen; while typing it is the part above the
- *   keyboard, so the greeting never sits under the composer.
+ * - The symbol (`ProjectHero`) is absolutely centred in the keyboard-avoiding
+ *   area. At rest that area is the whole screen; while typing it is the part
+ *   above the keyboard, so the symbol never sits under the composer. It is
+ *   large at rest and scales down with the keyboard.
  * - At rest the composer sits at the thread composer's distance from the
  *   bottom (SessionPage pads `insets.bottom`, SessionChatInput adds `pb-3`).
  * - The composer follows the keyboard down to KEYBOARD_GAP above it once it appears.
@@ -35,10 +35,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Composer } from '@/components/kortix/composer';
 import type { SheetRef } from '@/components/kortix/sheet';
 import { AgentPill } from '@/components/session/AgentPill';
+import { ProjectHeaderActions } from '@/components/session/ProjectHeaderActions';
 import { FloatingMenuButton } from '@/components/session/FloatingMenuButton';
 import { ModelPickerSheet } from '@/components/session/ModelPickerSheet';
-import { ProjectGreeting } from '@/components/session/ProjectGreeting';
-import { useAttachmentPicker } from '@/components/session/useAttachmentPicker';
+import { ProjectHero } from '@/components/session/ProjectHero';
+import { AttachSheet, type AttachSheetRef } from '@/components/session/AttachSheet';
 import { useProjectDetail, useProjectModelCatalog } from '@/lib/projects/hooks';
 import type { AttachedFile } from '@/lib/session/attachments';
 import {
@@ -82,27 +83,28 @@ export interface ProjectHomeSubmit {
 
 export interface ProjectHomeProps {
   projectId: string;
-  /** Undefined while the project loads; the greeting says "it" until then. */
-  projectName?: string;
   /** A send is in flight: the composer keeps its content and locks. */
   sending?: boolean;
   /** Parent handles the create+connect flow for a brand-new session. */
   onSubmitNewSession: (input: ProjectHomeSubmit) => void;
   onOpenDrawer: () => void;
+  /** Opens the project sheet (agents, skills, schedules, review, models, secrets). */
+  onOpenMore: () => void;
 }
 
 export function ProjectHome({
   projectId,
-  projectName,
   sending = false,
   onSubmitNewSession,
   onOpenDrawer,
+  onOpenMore,
 }: ProjectHomeProps) {
   const insets = useSafeAreaInsets();
   const [draft, setDraft] = React.useState('');
   const [files, setFiles] = React.useState<AttachedFile[]>([]);
   const [model, setModel] = React.useState<string | null>(null);
   const modelSheetRef = React.useRef<SheetRef>(null);
+  const attachSheetRef = React.useRef<AttachSheetRef>(null);
 
   // The same catalog, groups, and order as web and the thread
   // (`lib/session/model-picker.ts`).
@@ -179,7 +181,6 @@ export function ProjectHome({
   const addFiles = React.useCallback((picked: AttachedFile[]) => {
     setFiles((prev) => [...prev, ...picked]);
   }, []);
-  const pickFiles = useAttachmentPicker(addFiles);
 
   const restingGap = insets.bottom + COMPOSER_BOTTOM_GAP;
   const { progress } = useReanimatedKeyboardAnimation();
@@ -210,8 +211,10 @@ export function ProjectHome({
     <View className="flex-1 bg-background">
       {/* Floating menu button — opens the left drawer. */}
       <FloatingMenuButton onPress={onOpenDrawer}>
-        {/* The agent, at the right end of the header — the thread's place for it. */}
-        <AgentPill agents={projectAgents} activeName={agentName} onChange={handleAgentChange} />
+        {/* The agent, then the `···` button that opens the project sheet. */}
+        <ProjectHeaderActions onOpenMore={onOpenMore}>
+          <AgentPill agents={projectAgents} activeName={agentName} onChange={handleAgentChange} edge={false} />
+        </ProjectHeaderActions>
       </FloatingMenuButton>
 
       <KeyboardAvoidingView className="flex-1" behavior="padding">
@@ -221,8 +224,8 @@ export function ProjectHome({
 
           <View
             pointerEvents="none"
-            className="absolute inset-0 items-center justify-center px-8">
-            <ProjectGreeting projectName={projectName} />
+            className="absolute inset-0 items-center justify-center">
+            <ProjectHero />
           </View>
 
           <Reanimated.View className="px-4" style={[{ paddingBottom: restingGap }, composerStyle]}>
@@ -235,7 +238,7 @@ export function ProjectHome({
               attachments={files}
               onAttach={() => {
                 Keyboard.dismiss();
-                pickFiles();
+                attachSheetRef.current?.open();
               }}
               onRemoveAttachment={(index) =>
                 setFiles((prev) => prev.filter((_, i) => i !== index))
@@ -249,6 +252,8 @@ export function ProjectHome({
           </Reanimated.View>
         </View>
       </KeyboardAvoidingView>
+
+      <AttachSheet ref={attachSheetRef} onPick={addFiles} />
 
       <ModelPickerSheet
         ref={modelSheetRef}

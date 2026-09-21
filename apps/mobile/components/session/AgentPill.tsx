@@ -14,7 +14,10 @@
  * agents; project home has no sandbox and passes the project config's.
  *
  * `-mr-2.5` mirrors `MenuButton`'s `-ml-2.5`: the pressed pill ends 6pt from
- * the screen edge, like the hamburger's pressed circle on the left.
+ * the screen edge, like the hamburger's pressed circle on the left. It applies
+ * only when the pill is the last control of the row (`edge`). On project home
+ * and in a thread the `···` button follows it (`ProjectHeaderActions`), so the
+ * pill passes `edge={false}`.
  */
 import * as React from 'react';
 import { Keyboard } from 'react-native';
@@ -25,6 +28,7 @@ import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { CaretDownIcon } from '@/lib/icons';
+import { cn } from '@/lib/utils';
 import { agentDisplayName, pickableAgents, type PickerOption } from '@/lib/session/composer-config';
 
 interface AgentPillProps {
@@ -32,9 +36,11 @@ interface AgentPillProps {
   /** The agent the next message runs on. Null: none resolved, the pill reads "Agent". */
   activeName: string | null;
   onChange: (name: string) => void;
+  /** The pill is the row's last control. False when the `···` button follows it. */
+  edge?: boolean;
 }
 
-export function AgentPill({ agents, activeName, onChange }: AgentPillProps) {
+export function AgentPill({ agents, activeName, onChange, edge = true }: AgentPillProps) {
   const sheetRef = React.useRef<SheetRef>(null);
   const options = React.useMemo<PickerOption[]>(
     () => pickableAgents(agents).map((a) => ({ key: a.name, label: agentDisplayName(a.name) })),
@@ -48,7 +54,7 @@ export function AgentPill({ agents, activeName, onChange }: AgentPillProps) {
     <>
       <Button
         variant="ghost"
-        className="-mr-2.5 shrink rounded-full bg-background"
+        className={cn('shrink rounded-full bg-background', edge && '-mr-2.5')}
         onPress={() => {
           Keyboard.dismiss();
           sheetRef.current?.open();

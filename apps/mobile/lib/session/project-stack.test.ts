@@ -10,6 +10,8 @@ import {
   drawerSessionRowMove,
   returnHomeMove,
   shownProjectSessionId,
+  pageBackMove,
+  returnThreadForPage,
 } from './project-stack';
 
 const COVERING = [
@@ -126,5 +128,47 @@ describe('drawerSessionRowMove', () => {
   test('another row opens its session', () => {
     expect(drawerSessionRowMove('ps-2', 'ps-1')).toBe('open');
     expect(drawerSessionRowMove('ps-2', null)).toBe('open');
+  });
+});
+
+describe('returnThreadForPage', () => {
+  test('a page opened over a thread remembers that thread', () => {
+    expect(
+      returnThreadForPage({ activeSessionId: 'ses-1', activePageId: null, current: null }),
+    ).toBe('ses-1');
+  });
+
+  test('a second page opened from the first keeps the same thread', () => {
+    expect(
+      returnThreadForPage({ activeSessionId: null, activePageId: 'page:agents', current: 'ses-1' }),
+    ).toBe('ses-1');
+  });
+
+  test('a page opened from project home has no thread to return to', () => {
+    expect(
+      returnThreadForPage({ activeSessionId: null, activePageId: null, current: null }),
+    ).toBeNull();
+  });
+
+  test('a stale thread does not survive a page opened from project home', () => {
+    expect(
+      returnThreadForPage({ activeSessionId: null, activePageId: null, current: 'ses-1' }),
+    ).toBeNull();
+  });
+});
+
+describe('pageBackMove', () => {
+  test('back from a page opened over a thread returns to that thread', () => {
+    expect(pageBackMove({ activePageId: 'page:review', returnThreadId: 'ses-1' })).toBe(
+      'return-to-thread',
+    );
+  });
+
+  test('back from a page opened from project home goes home', () => {
+    expect(pageBackMove({ activePageId: 'page:review', returnThreadId: null })).toBe('home');
+  });
+
+  test('back from a thread goes home, whatever was remembered', () => {
+    expect(pageBackMove({ activePageId: null, returnThreadId: 'ses-1' })).toBe('home');
   });
 });

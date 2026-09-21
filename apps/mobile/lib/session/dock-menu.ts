@@ -1,13 +1,15 @@
 /**
- * dock-menu — the "More…" sheet's data.
+ * dock-menu — the project sheet's data.
  *
- * The project dock itself was removed (nothing replaced it: no floating menu
- * button, no long-press sheet trigger, from project home or a thread). The
- * chat-actions sheet that used to share this module was also removed — its
- * only trigger was the dock's long-press, and it had no other opener.
+ * The sheet opens from the `···` button at the right end of the header, on
+ * project home and in a thread (`ProjectHeaderActions`), and from a tool
+ * page's `PageHeader` "···" button (Jay, 2026-09-21).
  *
- * This module survives because `ProjectMoreSheet` and `PageContextMenuSheet`
- * still consume its data.
+ * Group one is the project's core sections, untitled. Group two keeps every
+ * other page. Connectors have no row: mobile leaves them to web. Changes has no
+ * row and no other entry point: Review holds change requests, opens new ones
+ * (`+`), and lists the branches (history button). Dev has no row: it is web's
+ * "Develop on your own machine" guide, terminal commands for a laptop. Models opens the provider page until its own page exists.
  *
  * Pure data only. No React, no icons, no zustand: this module is
  * unit-tested under `bun test`, which cannot load native modules. Icon keys
@@ -15,12 +17,13 @@
  */
 
 export type DockIconKey =
-  // dock rows still used elsewhere (PageContextMenuSheet)
-  | 'files' | 'agents' | 'skills' | 'settings' | 'rename' | 'delete'
-  // more sheet
-  | 'commands' | 'connectors' | 'secrets' | 'channels'
-  | 'schedules' | 'webhooks' | 'terminal' | 'sandbox' | 'dev'
-  | 'changes' | 'members';
+  // page context menu rows (PageContextMenuSheet)
+  | 'files' | 'settings' | 'rename' | 'delete'
+  // project sheet, core sections
+  | 'agents' | 'skills' | 'schedules' | 'review' | 'models' | 'secrets'
+  // project sheet, more
+  | 'webhooks' | 'channels' | 'members'
+  | 'terminal' | 'sandbox';
 
 export interface DockMenuItem {
   kind: 'item';
@@ -30,45 +33,37 @@ export interface DockMenuItem {
   pageId: string;
 }
 
-export interface MoreSheetGroup {
-  title: string;
+export interface CustomizeSheetGroup {
+  /** Null: the group has no title (the core sections). */
+  title: string | null;
   items: DockMenuItem[];
 }
 
-/** Everything the old right drawer held, opened from a tool page's "···" button. */
-export const MORE_SHEET_GROUPS: MoreSheetGroup[] = [
+/** The page the Review row opens. It carries the row's badge. */
+export const REVIEW_PAGE_ID = 'page:review';
+/** The page the Models row opens. The Secrets page links to it ("Manage providers"). */
+export const MODELS_PAGE_ID = 'page:llm-providers';
+
+export const CUSTOMIZE_SHEET_GROUPS: CustomizeSheetGroup[] = [
   {
-    title: 'Build',
-    items: [{ kind: 'item', label: 'Commands', icon: 'commands', pageId: 'page:commands' }],
-  },
-  {
-    title: 'Connect',
+    title: null,
     items: [
-      { kind: 'item', label: 'Connectors', icon: 'connectors', pageId: 'page:connectors' },
-      { kind: 'item', label: 'Secrets', icon: 'secrets', pageId: 'page:secrets-nav' },
-      { kind: 'item', label: 'Channels', icon: 'channels', pageId: 'page:channels-nav' },
-    ],
-  },
-  {
-    title: 'Automate',
-    items: [
+      { kind: 'item', label: 'Agents', icon: 'agents', pageId: 'page:agents' },
+      { kind: 'item', label: 'Skills', icon: 'skills', pageId: 'page:skills' },
       { kind: 'item', label: 'Schedules', icon: 'schedules', pageId: 'page:schedules' },
-      { kind: 'item', label: 'Webhooks', icon: 'webhooks', pageId: 'page:webhooks' },
+      { kind: 'item', label: 'Review', icon: 'review', pageId: REVIEW_PAGE_ID },
+      { kind: 'item', label: 'Models', icon: 'models', pageId: MODELS_PAGE_ID },
+      { kind: 'item', label: 'Secrets', icon: 'secrets', pageId: 'page:secrets-nav' },
     ],
   },
   {
-    title: 'Advanced',
+    title: 'More',
     items: [
+      { kind: 'item', label: 'Webhooks', icon: 'webhooks', pageId: 'page:webhooks' },
+      { kind: 'item', label: 'Channels', icon: 'channels', pageId: 'page:channels-nav' },
+      { kind: 'item', label: 'Members', icon: 'members', pageId: 'page:members' },
       { kind: 'item', label: 'Terminal', icon: 'terminal', pageId: 'page:terminal' },
       { kind: 'item', label: 'Sandbox', icon: 'sandbox', pageId: 'page:sandbox' },
-      { kind: 'item', label: 'Dev', icon: 'dev', pageId: 'page:dev' },
-    ],
-  },
-  {
-    title: 'Project',
-    items: [
-      { kind: 'item', label: 'Changes', icon: 'changes', pageId: 'page:changes' },
-      { kind: 'item', label: 'Members', icon: 'members', pageId: 'page:members' },
     ],
   },
 ];
