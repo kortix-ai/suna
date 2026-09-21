@@ -268,6 +268,18 @@ async function deliverFollowUp(input: {
 
   // An image is unreadable on a text-only model, so THIS turn runs on the
   // configured vision model. The session's own pin is untouched.
+  // Backfill the conversation's display name on every message, not only at
+  // session creation: a channel bound before the name was read off the
+  // activity showed a raw `19:…@thread.tacv2;messageid=…` in the bindings
+  // table forever. The binding helper keeps its own per-process cache, so a
+  // settled conversation costs nothing.
+  void ensureTeamsConversationBinding({
+    projectId,
+    tenantId,
+    conversationId,
+    ...describeTeamsConversation(activity),
+  }).catch((err) => console.warn('[teams-webhook] binding backfill failed', err));
+
   const hasImage = teamsMessageHasImage(activity);
   const currentModel = sessionModelOf(input.sessionMetadata);
   const turnModel = await channelTurnModel({

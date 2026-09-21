@@ -5,6 +5,17 @@ import { describe, expect, test } from 'vitest';
 const root = resolve(import.meta.dirname, '../..');
 const testWorkflow = readFileSync(resolve(root, '.github/workflows/tests.yml'), 'utf8');
 
+// One `lane` job step, from its `- name:` to the next step at the same indent.
+// Asserting on the whole file cannot tell `if: always()` on the Supabase stop
+// from the same line on the artifact upload.
+const laneStep = (name: string): string => {
+  const start = testWorkflow.indexOf(`      - name: ${name}\n`);
+  expect(start, `step "${name}" is missing`).toBeGreaterThan(-1);
+  const rest = testWorkflow.slice(start + 1);
+  const next = rest.indexOf('\n      - name: ');
+  return next === -1 ? rest : rest.slice(0, next);
+};
+
 describe('native test-lane workflow', () => {
   test('runs six root lanes natively on Blacksmith at the pull request head SHA', () => {
     // Since 2026-08-26 the lanes run on the runner itself. The old
@@ -41,11 +52,28 @@ describe('native test-lane workflow', () => {
     expect(testWorkflow).not.toMatch(/^ {4}timeout-minutes: 60$/m);
   });
 
-  test('gives the browser lanes Chromium and a prestarted Supabase, and always stops it', () => {
+  test('gives the browser lanes Chromium and a prestarted Supabase', () => {
     expect(testWorkflow).toContain('pnpm --dir tests exec playwright install --with-deps chromium');
     expect(testWorkflow).toContain('pnpm exec supabase start --ignore-health-check');
-    expect(testWorkflow).toContain('pnpm exec supabase stop --no-backup || true');
-    expect(testWorkflow).toMatch(/if: always\(\) && matrix\.mode == 'browser'/);
+  });
+
+  test('stops Supabase on every lane and frees its ports before one starts', () => {
+    // The stop used to be `if: always() && matrix.mode == 'browser'`. The core
+    // and packages lanes start Supabase too (through `pnpm test`), so a lane
+    // that ended without stopping it stranded 54321-54324 on the reused
+    // Blacksmith runner and the next `supabase start` died with
+    // `address already in use` — four runs on 2026-09-21.
+    const stop = laneStep('Stop the local Supabase stack');
+    expect(stop).toContain('pnpm exec supabase stop --no-backup || true');
+    expect(stop).toContain('if: always()');
+    expect(stop).not.toContain("matrix.mode == 'browser'");
+
+    // `supabase stop` only reaches containers of the SAME project name, so a
+    // stack left by another checkout has to be removed by published port.
+    const free = laneStep('Free the local Supabase ports');
+    expect(free).toContain('docker ps -aq --filter "publish=$port"');
+    expect(free).toContain('54321 54322 54323 54324');
+    expect(free).not.toContain('if:');
   });
 
   test('has no cloud-sandbox worker path left', () => {

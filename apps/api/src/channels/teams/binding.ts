@@ -117,6 +117,24 @@ async function resolveBoundProject(tenantId: string, conversationId: string): Pr
   return installed ? binding.projectId : null;
 }
 
+/**
+ * One write per distinct (conversation, name, type) per process.
+ *
+ * `ensureTeamsConversationBinding` now runs on EVERY inbound message so a
+ * conversation's display name is backfilled rather than captured only at
+ * session creation — the dev tenant had channel bindings showing a raw
+ * `19:…@thread.tacv2;messageid=…` in the bindings table because they were
+ * bound before the name was being read off the activity. An upsert per message
+ * would be a write per message; this is the same shape as
+ * `persistServiceUrl`'s cache in teams/turn.ts, and a restart simply writes
+ * each one once more.
+ */
+const describedBindings = new Map<string, string>();
+
+export function resetTeamsBindingCacheForTest(): void {
+  describedBindings.clear();
+}
+
 export async function ensureTeamsConversationBinding(input: {
   tenantId: string;
   conversationId: string;
@@ -124,6 +142,9 @@ export async function ensureTeamsConversationBinding(input: {
   channelName?: string | null;
   channelType?: string | null;
 }): Promise<boolean> {
+  const cacheKey = `${input.tenantId}:${input.conversationId}`;
+  const described = `${input.projectId}|${input.channelName ?? ''}|${input.channelType ?? ''}`;
+  if (describedBindings.get(cacheKey) === described) return true;
   const [installed] = await db
     .select({ projectId: chatInstalls.projectId })
     .from(chatInstalls)
@@ -159,6 +180,7 @@ export async function ensureTeamsConversationBinding(input: {
         ...(input.channelType ? { channelType: input.channelType } : {}),
       },
     });
+  describedBindings.set(cacheKey, described);
   return true;
 }
 
