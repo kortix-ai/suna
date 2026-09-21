@@ -139,7 +139,10 @@ test.describe('30 — pooled provider secrets', () => {
       for (const label of ['Primary test key', 'Backup test key for shared research and development sessions']) {
         await panel.getByRole('button', { name: 'Add key' }).click();
         const dialog = page.getByRole('dialog', { name: 'Add key · Anthropic' });
-        await expect(dialog.getByRole('radio', { name: /Everyone in this project/ })).toBeChecked();
+        await expect(dialog.getByRole('radio', { name: /Specific members/ })).toBeChecked();
+        await expect(dialog.getByText('1 selected', { exact: true })).toBeVisible();
+        const sharedWithProject = label !== 'Primary test key';
+        if (sharedWithProject) await dialog.getByRole('radio', { name: /Everyone in this project/ }).click();
         await dialog.getByPlaceholder('Primary key').fill(label);
         await dialog.locator('input[type="password"]').fill(`fake-${label.replaceAll(' ', '-')}`);
         if (label === 'Primary test key') {
@@ -157,7 +160,8 @@ test.describe('30 — pooled provider secrets', () => {
         const response = page.waitForResponse((candidate) => candidate.request().method() === 'POST'
           && candidate.url().endsWith(`/v1/accounts/${accountId}/secret-resources`));
         await dialog.getByRole('button', { name: 'Save key' }).click();
-        expect((await request).postDataJSON()).toMatchObject({ label, project_id: projectId, access_mode: 'project', provider_id: 'anthropic', consumer: 'llm_gateway' });
+        expect((await request).postDataJSON()).toMatchObject({ label, project_id: projectId, provider_id: 'anthropic', consumer: 'llm_gateway',
+          ...(sharedWithProject ? { access_mode: 'project', user_ids: [] } : { access_mode: 'members', user_ids: [user.id] }) });
         const saved = await response;
         expect(saved.status()).toBe(201);
         const body = await saved.json() as { secret_id: string; value?: string };
@@ -216,7 +220,7 @@ test.describe('30 — pooled provider secrets', () => {
         const startRequest = page.waitForRequest((request) => request.method() === 'POST'
           && request.url().endsWith(`/v1/projects/${projectId}/oauth/openai/start`));
         await dialog.getByRole('button', { name: 'Connect account' }).click();
-        expect((await startRequest).postDataJSON()).toEqual({ resource_label: label, sharing: { mode: 'project' } });
+        expect((await startRequest).postDataJSON()).toEqual({ resource_label: label, sharing: { mode: 'members', memberIds: [user.id] } });
 
         await expect(dialog.getByText(`TEST-CODE-${oauthStarts}`)).toBeVisible();
         if (oauthStarts === 1) {
@@ -265,15 +269,16 @@ test.describe('30 — pooled provider secrets', () => {
       await panel.getByRole('button', { name: 'Actions for Primary test key' }).click();
       await page.getByRole('menuitem', { name: 'Manage access' }).click();
       const accessDialog = page.getByRole('dialog', { name: 'Access to Primary test key' });
-      await expect(accessDialog.getByRole('radio', { name: /Everyone in this project/ })).toBeChecked();
-      await page.screenshot({ path: testInfo.outputPath('provider-access-modes.png'), fullPage: true, animations: 'disabled' });
-      await accessDialog.getByRole('radio', { name: /Specific members/ }).click();
+      await expect(accessDialog.getByRole('radio', { name: /Specific members/ })).toBeChecked();
       await expect(accessDialog.getByRole('textbox', { name: 'Search members' })).toBeVisible();
+      await page.screenshot({ path: testInfo.outputPath('provider-access-modes.png'), fullPage: true, animations: 'disabled' });
+      await accessDialog.getByRole('radio', { name: /Everyone in this project/ }).click();
+      await expect(accessDialog.getByRole('textbox', { name: 'Search members' })).toHaveCount(0);
       const accessRequest = page.waitForRequest((request) => request.method() === 'PUT' &&
         request.url().endsWith(`/accounts/${accountId}/secret-resources/${createdIds[0]}/access`));
       await accessDialog.getByRole('button', { name: 'Done' }).click();
-      expect((await accessRequest).postDataJSON()).toMatchObject({ mode: 'members' });
-      await expect(panel.getByText('1 member')).toBeVisible();
+      expect((await accessRequest).postDataJSON()).toMatchObject({ mode: 'project' });
+      await expect(panel.getByRole('listitem').filter({ hasText: 'Primary test key' }).getByText('Everyone in this project')).toBeVisible();
 
       await panel.getByRole('button', { name: 'Actions for Primary test key' }).click();
       await page.getByRole('menuitem', { name: 'Delete key' }).click();
