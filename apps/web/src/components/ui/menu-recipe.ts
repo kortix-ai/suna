@@ -26,7 +26,7 @@ export type MenuRowTone = 'default' | 'destructive';
 
 /** Padding and type per step. Radius and gap stay fixed so columns line up. */
 const MENU_ROW_SIZE: Record<MenuRowSize, string> = {
-  sm: 'px-2.5 py-1.5 text-sm',
+  sm: 'px-2.5 py-[5px] text-sm',
   md: 'px-3 py-2.5 text-sm',
   lg: 'px-3.5 py-2 text-base',
 };
