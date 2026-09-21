@@ -177,8 +177,10 @@ test('provider and model access persists, keeps credentials, and updates control
     await page.getByRole('menuitem', { name: 'Manage access' }).click();
     const accessDialog = page.getByRole('dialog');
     await expect(accessDialog.getByRole('heading', { name: 'Access to Primary test key' })).toBeVisible();
-    await expect(accessDialog.getByRole('radio', { name: /Everyone in this project/ })).toBeChecked();
-    await accessDialog.getByRole('radio', { name: /Specific members/ }).click();
+    // The Add dialog creates keys as "Specific members" with the creator
+    // preselected (sharing with the project is an explicit opt-in), so Manage
+    // access opens on that mode rather than "Everyone in this project".
+    await expect(accessDialog.getByRole('radio', { name: /Specific members/ })).toBeChecked();
     await expect(accessDialog.getByRole('textbox', { name: 'Search members' })).toBeVisible();
     await expect(accessDialog.getByRole('button', { name: new RegExp(email) })).toBeVisible();
     await accessDialog.getByRole('button', { name: 'Done' }).click();
