@@ -20,6 +20,31 @@ export type ProjectSessionStatus =
   | 'failed'
   | 'completed';
 
+/**
+ * The session's `metadata` jsonb bag.
+ *
+ * Open by design — the API writes many keys and adds more over time, so the
+ * index signature stays. Keys the SDK has verified against the API and that
+ * hosts read back are declared, so a reader gets a type instead of `unknown`.
+ * Declaring a key here is NOT breaking: a `Record<string, unknown>` still
+ * assigns to this in both directions (an optional property is not satisfied by
+ * a source index signature, so TypeScript skips it).
+ */
+export interface ProjectSessionMetadata {
+  /**
+   * The session that spawned this one — an agent starting a sub-session from
+   * inside a turn. Written at create time by
+   * `apps/api/src/projects/lib/sessions.ts:1566` and deliberately retained on
+   * the list payload (`LIST_OMITTED_SESSION_METADATA_KEYS`,
+   * `apps/api/src/projects/lib/serializers.ts:84`). Absent on a root session.
+   *
+   * Read it through {@link sessionParentId}, which also rejects a malformed or
+   * self-referential value.
+   */
+  spawned_by_session?: string;
+  [key: string]: unknown;
+}
+
 export interface ProjectSession {
   session_id: string;
   account_id: string;
@@ -46,7 +71,7 @@ export interface ProjectSession {
   agent_name: string | null;
   status: ProjectSessionStatus;
   error: string | null;
-  metadata: Record<string, unknown>;
+  metadata: ProjectSessionMetadata;
   opencode_sessions: ProjectOpenCodeSession[];
   // Ownership + org-visibility (Phase 2 session sharing).
   created_by?: string | null;
@@ -86,6 +111,28 @@ export interface ProjectSession {
   deleted_by?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * The session that spawned `session`, or `null` when it is a root session.
+ *
+ * Three hosts hand-rolled the identical `typeof meta.spawned_by_session ===
+ * 'string'` cast over an `unknown` bag
+ * (`apps/web/src/components/projects/session-label.ts:61`,
+ * `apps/web/src/features/workspace/project-sidebar/project-session-list-helpers.ts:359`,
+ * `apps/tui/src/lib/session-groups.ts:145`). `metadata` is jsonb, so a
+ * malformed row is possible and a non-string must never escape as a session
+ * id. A self-referential link is rejected too: a session that is its own
+ * parent makes any tree walk loop forever.
+ */
+export function sessionParentId(
+  session: Pick<ProjectSession, 'session_id'> & { metadata?: ProjectSessionMetadata },
+): string | null {
+  const parent = session.metadata?.spawned_by_session;
+  if (typeof parent !== 'string') return null;
+  const trimmed = parent.trim();
+  if (!trimmed || trimmed === session.session_id) return null;
+  return trimmed;
 }
 
 export type SessionRuntimeContextScalar = string | number | boolean | null;

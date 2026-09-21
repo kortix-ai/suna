@@ -26,9 +26,12 @@ const vercelBypass = deploymentBypassSecret();
 export function resolveBrowserWorkers(value: string | undefined, ci: boolean): number {
   const configuredWorkers = Number.parseInt(value ?? '', 10);
   if (Number.isFinite(configuredWorkers) && configuredWorkers > 0) return configuredWorkers;
-  // The warm Daytona lane has 6 vCPU and 12 GiB RAM. One worker keeps cold
-  // Next.js route compilation below the guest memory limit. Two local workers
-  // keep cold compilation below the full-suite deadline on development Macs.
+  // CI: one worker per browser shard. Chosen when lanes ran in a 6 vCPU /
+  // 12 GiB Daytona guest (removed 2026-08-26), to keep cold Next.js route
+  // compilation under its memory limit. Lanes now run on 8 vCPU / 32 GB
+  // Blacksmith runners and parallelism comes from the four shards in
+  // `tests.yml`. Two local workers keep cold compilation below the full-suite
+  // deadline on development Macs.
   if (ci) return 1;
   return 2;
 }

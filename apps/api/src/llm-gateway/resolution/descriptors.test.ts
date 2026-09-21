@@ -187,79 +187,48 @@ describe('livePricing + stripBedrockInferenceProfilePrefix — the actual $0 bug
   });
 });
 
-describe('managed Grok 4.6 descriptor', () => {
-  test('routes through OpenRouter xAI with context-tier pricing', () => {
+describe('managed OpenRouter descriptor', () => {
+  test('routes DeepSeek through its pinned ZDR endpoint with Kortix credits', () => {
     expect(managedCandidates({
-      id: 'grok-4.6',
-      name: 'Grok 4.6',
-      upstreamModelId: 'x-ai/grok-4.6',
+      id: 'deepseek-v4.1-flash',
+      name: 'DeepSeek V4.1 Flash',
+      upstreamModelId: 'deepseek/deepseek-v4.1-flash',
       transport: 'openrouter',
-      pricingRef: 'openrouter/x-ai/grok-4.6',
-      tier: 'flagship',
+      pricingRef: 'openrouter/deepseek/deepseek-v4.1-flash',
+      pricing: { inputPerMillion: 0.2, cachedInputPerMillion: 0.006, outputPerMillion: 0.6 },
+      tier: 'balanced',
       vision: true,
-      limit: { context: 500_000, output: 500_000 },
-      openrouterProvider: { order: ['xai'], allow_fallbacks: true },
+      limit: { context: 1_048_576, output: 16_384 },
+      openrouterProvider: { only: ['deepinfra/fp8'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
     })).toEqual([expect.objectContaining({
       provider: 'openrouter',
       kind: 'openai-compat',
       baseUrl: 'https://openrouter.ai/api/v1',
       apiKey: 'openrouter-test-key',
-      resolvedModel: 'x-ai/grok-4.6',
+      resolvedModel: 'deepseek/deepseek-v4.1-flash',
       billingMode: 'credits',
       markup: 2,
-      pricing: {
-        inputPerMillion: 2,
-        outputPerMillion: 6,
-        cachedInputPerMillion: 0.5,
-        cacheWritePerMillion: undefined,
-        tiers: undefined,
-        contextOver200k: {
-          inputPerMillion: 4,
-          outputPerMillion: 12,
-          cachedInputPerMillion: 1,
-          cacheWritePerMillion: undefined,
-          contextThreshold: 200_000,
-        },
-      },
-      bodyExtras: { provider: { order: ['xai'], allow_fallbacks: true } },
+      pricing: expect.objectContaining({
+        inputPerMillion: 0.2,
+        cachedInputPerMillion: 0.006,
+        outputPerMillion: 0.6,
+      }),
+      bodyExtras: { provider: { only: ['deepinfra/fp8'], allow_fallbacks: false, zdr: true, data_collection: 'deny' } },
     })]);
   });
 });
 
-describe('managed DeepSeek V4 Pro 0813 descriptor', () => {
-  test('routes DeepSeek V4 Pro 0813 through the reachable GMICloud endpoint', () => {
-    expect(managedCandidates({
-      id: 'deepseek-v4-pro-0813',
-      name: 'DeepSeek V4 Pro 0813',
-      upstreamModelId: 'deepseek/deepseek-v4-pro-0813',
-      transport: 'openrouter',
-      pricingRef: 'openrouter/deepseek/deepseek-v4-pro-0813',
-      pricing: {
-        inputPerMillion: 1.74,
-        cachedInputPerMillion: 0.145,
-        outputPerMillion: 3.48,
-      },
-      tier: 'balanced',
-      vision: false,
-      limit: { context: 1_048_575, output: 384_000 },
-      openrouterProvider: {
-        order: ['gmicloud'],
-        allow_fallbacks: true,
-      },
-    })).toEqual([expect.objectContaining({
-      provider: 'openrouter',
-      resolvedModel: 'deepseek/deepseek-v4-pro-0813',
-      pricing: expect.objectContaining({
-        inputPerMillion: 1.74,
-        cachedInputPerMillion: 0.145,
-        outputPerMillion: 3.48,
-      }),
-      bodyExtras: {
-        provider: {
-          order: ['gmicloud'],
-          allow_fallbacks: true,
-        },
-      },
-    })]);
-  });
+test('managed GLM pins CoreWeave and enforces ZDR without fallback', () => {
+  expect(managedCandidates({
+    id: 'glm-5.3-flash', name: 'GLM-5.3-Flash',
+    upstreamModelId: 'z-ai/glm-5.3-flash', transport: 'openrouter',
+    pricingRef: 'openrouter/z-ai/glm-5.3-flash',
+    pricing: { inputPerMillion: 0.15, cachedInputPerMillion: 0.05, outputPerMillion: 0.5 },
+    tier: 'fast', vision: true, limit: { context: 1_048_576, output: 16_384 },
+    openrouterProvider: { only: ['coreweave/nvfp4'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
+  })).toEqual([expect.objectContaining({
+    provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1',
+    resolvedModel: 'z-ai/glm-5.3-flash', billingMode: 'credits',
+    bodyExtras: { provider: { only: ['coreweave/nvfp4'], allow_fallbacks: false, zdr: true, data_collection: 'deny' } },
+  })]);
 });

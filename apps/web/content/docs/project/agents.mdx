@@ -22,6 +22,8 @@ Each agent has two parts:
 - **Governance** — an entry in `kortix.yaml`'s `agents` map, keyed by the same
   name. It sets what the agent may access on Kortix: connectors, secrets,
   skills, and CLI actions.
+  The map can live in a file the manifest lists under
+  [`imports:`](/docs/project/manifest#imports); `default_agent` stays in `kortix.yaml`.
 
 The manifest never sets a prompt, mode, or tool. The `.md` file never sets
 platform access. See [the manifest reference](/docs/project/manifest) for

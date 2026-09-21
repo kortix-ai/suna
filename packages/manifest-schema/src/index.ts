@@ -19,6 +19,7 @@ import { Cron } from 'croner';
 import { TomlError } from 'smol-toml';
 import { type ManifestFormat, parseManifestText } from './format';
 import { parseConnectorHeaders } from './connector-headers';
+import { normalizeImportPath } from './imports';
 import {
   CHANNEL_PLATFORMS,
   CONNECTOR_AUTH_TYPES,
@@ -67,6 +68,29 @@ export {
   parseManifestText,
   serializeManifestObject,
 } from './format';
+
+export {
+  type ImportableKey,
+  type ManifestImportReader,
+  type ManifestImportReaderSync,
+  type ManifestOrigins,
+  type ManifestSourceFile,
+  type ResolvedManifest,
+  type SplitManifestFile,
+  IMPORTABLE_LIST_KEYS,
+  IMPORTABLE_MAP_KEYS,
+  IMPORT_PATH_PATTERN,
+  MANIFEST_IMPORTS_KEY,
+  MAX_IMPORT_DEPTH,
+  MAX_IMPORT_FILES,
+  ManifestImportError,
+  ROOT_ONLY_KEYS,
+  hasManifestImports,
+  normalizeImportPath,
+  resolveManifestImports,
+  resolveManifestImportsSync,
+  splitManifestByOrigin,
+} from './imports';
 
 // Re-exported for backward compatibility — these lived as local `const`s in
 // this file until the `constants.ts` extraction (see that module's doc for
@@ -292,6 +316,7 @@ function validateManifestBodyV2(
   format: ManifestFormat,
   issues: ManifestIssue[],
 ): void {
+  validateImports(parsed.imports, 'imports', issues);
   validateProject(parsed.project, 'project', issues);
   validateEnv(parsed.env, 'env', issues);
   validateOpenCode(parsed.opencode, 'opencode', issues);
@@ -305,6 +330,29 @@ function validateManifestBodyV2(
   const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues);
   validateDefaultAgentV2(parsed.default_agent, 'default_agent', agentNames, disabledNames, issues);
   validateTriggerAgentRefsV2(parsed.triggers, 'triggers', agentNames, issues);
+}
+
+/**
+ * `imports:` shape check (v2). The files themselves are resolved by
+ * `resolveManifestImports` — this only guards the list a root file declares, so
+ * `kortix validate` and the editor schema flag a bad path before any read.
+ */
+function validateImports(value: unknown, path: string, issues: ManifestIssue[]): void {
+  if (value === undefined || value === null) return;
+  if (!Array.isArray(value)) {
+    issues.push({ path, message: '`imports` must be a list of paths', severity: 'error' });
+    return;
+  }
+  value.forEach((entry, index) => {
+    if (normalizeImportPath(entry) === null) {
+      issues.push({
+        path: `${path}[${index}]`,
+        message:
+          'must be a repository-relative path to a .yaml/.yml file or a directory (no "..", no absolute path, no glob)',
+        severity: 'error',
+      });
+    }
+  });
 }
 
 /** Format issues into a colored, console-friendly multi-line string. */

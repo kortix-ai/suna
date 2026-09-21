@@ -32,7 +32,19 @@ export interface TeamsAttachmentRef {
   name: string;
   downloadUrl: string;
   fileType?: string;
+  /** An image the agent can look at directly once downloaded. */
+  isImage?: boolean;
 }
+
+/** Teams sends inline images as the wildcard type `image/*`, with no filename. */
+const IMAGE_EXTENSIONS: Record<string, string> = {
+  png: 'png',
+  jpeg: 'jpg',
+  jpg: 'jpg',
+  gif: 'gif',
+  webp: 'webp',
+  bmp: 'bmp',
+};
 
 export function extractTeamsAttachments(activity: TeamsActivity): TeamsAttachmentRef[] {
   const out: TeamsAttachmentRef[] = [];
@@ -46,8 +58,16 @@ export function extractTeamsAttachments(activity: TeamsActivity): TeamsAttachmen
     // Framework attachment URL that needs the bot connector token to fetch
     // (channels/teams/file-proxy.ts attaches it).
     if (a.contentType?.startsWith('image/') && a.contentUrl) {
-      const ext = a.contentType.slice('image/'.length).split(';')[0].trim() || 'png';
-      out.push({ name: a.name ?? `image.${ext}`, downloadUrl: a.contentUrl, fileType: ext });
+      const subtype = a.contentType.slice('image/'.length).split(';')[0].trim().toLowerCase();
+      // `image/*` carries no real subtype — name the file without a misleading
+      // extension rather than `image.*`, which is not a filename.
+      const ext = IMAGE_EXTENSIONS[subtype];
+      out.push({
+        name: a.name ?? (ext ? `image.${ext}` : 'image'),
+        downloadUrl: a.contentUrl,
+        ...(ext ? { fileType: ext } : {}),
+        isImage: true,
+      });
     }
   }
   return out;
@@ -86,4 +106,9 @@ export interface TeamsLiveTurn {
   projectId: string;
   sessionId: string;
   originatingActivity: TeamsActivity;
+}
+
+/** Does this message carry an image the model has to be able to see? */
+export function teamsMessageHasImage(activity: TeamsActivity): boolean {
+  return extractTeamsAttachments(activity).some((a) => a.isImage === true);
 }

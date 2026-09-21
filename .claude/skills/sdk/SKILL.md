@@ -528,8 +528,8 @@ tripwire lives inside `test`, so a green `test` covers it — but read the outpu
 a skipped file is not a passing file.
 
 The `packages` lane (`tests/bin/package-quality.ts`, reached by
-`pnpm test -- --packages-only` and by CI through `.github/workflows/tests-pr.yml`
-→ `tests.yml`) additionally runs `scripts/stage-npm-publish.test.mjs`,
+`pnpm test -- --packages-only` and by CI through `.github/workflows/tests.yml`)
+additionally runs `scripts/stage-npm-publish.test.mjs`,
 `scripts/publish-npm-package.test.mjs`, this package's `smoke:install`, and a
 stage + **dry-pack** of `@kortix/llm-catalog`, `@kortix/sdk`, and the deprecated
 `@kortix/executor-sdk` adapter.

@@ -9,90 +9,48 @@ import { catalogModelForWireModel, gatewayCodexModels, gatewayModelCatalog } fro
 describe('gatewayModelCatalog — served catalog', () => {
   const full = gatewayModelCatalog('proj');
 
-  test('serves managed Astra with vision, tools, and its supported effort ladder', () => {
-    expect(full['gpt-6-astra']).toMatchObject({
-      name: 'GPT-6 Astra',
+  test('serves managed DeepSeek V4.1 with vision, tools, and a context limit', () => {
+    expect(full['deepseek-v4.1-flash']).toMatchObject({
+      name: 'DeepSeek V4.1 Flash',
       provider: 'kortix',
       attachment: true,
       tool_call: true,
-      temperature: false,
-      reasoning_options: [{ type: 'effort', values: ['low', 'medium', 'high', 'xhigh', 'max'] }],
-      limit: { context: 1_050_000, output: 128_000 },
-      cost: { input: 10, output: 50, cache_read: 1, cache_write: 12.5 },
+      temperature: true,
+      limit: { context: 1_048_576, output: 16_384 },
+      cost: { input: 0.2, output: 0.6, cache_read: 0.006 },
     });
   });
 
-  test('brands managed DeepSeek V4 Flash with the Kortix provider', () => {
-    expect(full['deepseek-v4-flash']?.provider).toBe('kortix');
+  test('serves Kimi K3 with image input', () => {
+    expect(full['kimi-k3']).toMatchObject({
+      provider: 'kortix', attachment: true, tool_call: true,
+      cost: { input: 2.5, output: 10.95, cache_read: 0.25 },
+    });
+    expect(full['deepseek-v4-flash-0731']).toBeUndefined();
+    expect(full['kimi-k3-fast']).toBeUndefined();
   });
 
-  test('serves the curated managed GLM 5.3 Flash price', () => {
+  test('brands managed DeepSeek V4.1 Flash with the Kortix provider', () => {
+    expect(full['deepseek-v4.1-flash']?.provider).toBe('kortix');
+  });
+
+  test('serves the CoreWeave GLM 5.3 Flash price and vision capability', () => {
     expect(full['glm-5.3-flash']?.cost).toEqual({
-      input: 0.075,
-      output: 0.25,
-      cache_read: 0.015,
+      input: 0.15,
+      output: 0.5,
+      cache_read: 0.05,
     });
+    expect(full['glm-5.3-flash']).toMatchObject({ provider: 'kortix', attachment: true });
   });
 
-  // Regression: managedModels() used to hardcode `temperature: true` for the
-  // whole managed lineup. gpt-5.6-luna REJECTS a client-sent temperature —
-  // OpenCode reads this served record, so advertising support 400s every
-  // Luna turn. Capabilities must come from the real catalog record via
-  // pricingRef; curated vision/limit still win.
-  test('managed gpt-5.6-luna serves its REAL capabilities (temperature:false, effort ladder)', () => {
-    const luna = full['gpt-5.6-luna'];
-    expect(luna).toBeDefined();
-    expect(luna?.temperature).toBe(false);
-    expect(luna?.reasoning_options?.[0]?.values).toEqual([
-      'none',
-      'low',
-      'medium',
-      'high',
-      'xhigh',
-      'max',
-    ]);
-    // Curated fields win over the models.dev record.
-    expect(luna?.attachment).toBe(true);
-    expect(luna?.limit?.context).toBe(1_050_000);
-    // GLM 5.3 Flash supports temperature in the live catalog.
-    expect(full['glm-5.3-flash']?.temperature).toBe(true);
+  test('does not serve retired DeepSeek V4 Pro under Kortix', () => {
+    expect(full['deepseek-v4-pro-0813']).toBeUndefined();
   });
 
-  test('serves Grok 4.6 capabilities and context-tier pricing from models.dev', () => {
-    expect(full['grok-4.6']).toMatchObject({
-      name: 'Grok 4.6',
-      provider: 'kortix',
-      reasoning: true,
-      reasoning_options: [{ type: 'effort', values: ['low', 'medium', 'high', 'xhigh'] }],
-      tool_call: true,
-      attachment: true,
-      structured_output: true,
-      temperature: true,
-      limit: { context: 500_000, output: 500_000 },
-      cost: {
-        input: 2,
-        output: 6,
-        cache_read: 0.5,
-        context_over_200k: { input: 4, output: 12, cache_read: 1 },
-      },
-    });
-  });
-
-  test('serves DeepSeek V4 Pro 0813 with its real capabilities and prices', () => {
-    expect(full['deepseek-v4-pro-0813']).toMatchObject({
-      name: 'DeepSeek V4 Pro 0813',
-      provider: 'kortix',
-      reasoning: true,
-      reasoning_options: [
-        { type: 'toggle' },
-        { type: 'effort', values: ['low', 'high', 'max'] },
-      ],
-      tool_call: true,
-      attachment: false,
-      temperature: true,
-      limit: { context: 1_048_575, output: 384_000 },
-      cost: { input: 1.74, output: 3.48, cache_read: 0.145 },
-    });
+  test('does not serve other retired text-only managed models', () => {
+    for (const id of ['deepseek-v4-flash', 'glm-5.3-flash-text']) {
+      expect(full[id], id).toBeUndefined();
+    }
   });
 
   test('every served model carries a positive context limit', () => {
@@ -104,7 +62,7 @@ describe('gatewayModelCatalog — served catalog', () => {
 
   test('synthetic auto is absent; anonymous callers get managed-only', () => {
     expect(full.auto).toBeUndefined();
-    expect(full['deepseek-v4-flash']).toBeDefined();
+    expect(full['deepseek-v4.1-flash']).toBeDefined();
     expect(full['glm-5.3-flash']).toBeDefined();
 
     const managedOnly = gatewayModelCatalog(undefined);
@@ -155,7 +113,7 @@ describe('gatewayModelCatalog — served catalog', () => {
     // BYOK catalog entries brand as their real upstream provider.
     expect(full['anthropic/claude-opus-4-8']?.provider).toBe('anthropic');
     // Managed models brand as `kortix`.
-    expect(full['deepseek-v4-flash']?.provider).toBe('kortix');
+    expect(full['deepseek-v4.1-flash']?.provider).toBe('kortix');
     expect(full['glm-5.3-flash']?.provider).toBe('kortix');
     // Codex (ChatGPT subscription) models brand as their own `codex` provider,
     // distinct from the raw `openai` BYOK provider.
@@ -219,7 +177,7 @@ describe('gatewayModelCatalog — free-tier visibility', () => {
 
   test('free tier sees no managed Kortix models', () => {
     expect(freeFull.auto).toBeUndefined();
-    for (const id of ['claude-opus-4.8', 'claude-sonnet-4.6', 'glm-5.3-flash', 'kimi-k3', 'deepseek-v4-flash', 'gpt-6-astra']) {
+    for (const id of ['claude-opus-4.8', 'claude-sonnet-4.6', 'glm-5.3-flash', 'deepseek-v4.1-flash', 'deepseek-v4-flash-0731', 'kimi-k3', 'gpt-6-astra']) {
       expect(freeFull[id], id).toBeUndefined();
     }
   });
@@ -252,31 +210,12 @@ describe('catalogModelForWireModel — generation-controls capability lookup', (
     expect(model?.temperature).toBe(false);
   });
 
-  // MUST-FIX regression (adversarial review of PR #4995): `claude-opus-4.8`'s
-  // `pricingRef` used to be the DOTTED display id, which never matches
-  // models.dev's DASHED catalog id — this lookup silently missed and fell
-  // back to a permissive synthetic record (temperature:true, no
-  // reasoning_options) instead of the model's REAL capabilities
-  // (temperature:false, reasoning_options up to 'xhigh'/'max'). Assert the
-  // REAL entry, not just `reasoning:true` (which the synthetic fallback also
-  // satisfied and so wouldn't have caught the regression).
-  // 2026-08-10 slim-down: the Claude managed ids this test used are
-  // deactivated. deepseek-v4-flash keeps the regression covered — its
-  // pricingRef ('openrouter/deepseek/deepseek-v4-flash') resolves to the REAL
-  // models.dev openrouter entry, whose reasoning_options ('high'/'xhigh') the
-  // synthetic fallback would not carry.
-  test('resolves a managed bare id to its REAL catalog capabilities via pricingRef, not the synthetic fallback', () => {
-    const flash = catalogModelForWireModel('deepseek-v4-flash');
+  test('resolves a managed bare id to its image-capable gateway record', () => {
+    const flash = catalogModelForWireModel('glm-5.3-flash');
     expect(flash).toBeDefined();
-    expect(flash?.id).toBe('deepseek/deepseek-v4-flash');
+    expect(flash?.id).toBe('glm-5.3-flash');
     expect(flash?.reasoning).toBe(true);
     expect(flash?.temperature).toBe(true);
-    // models.dev publishes a `toggle` entry alongside the effort ladder for
-    // this model — find the effort knob rather than assuming index 0. The
-    // synthetic fallback carries no reasoning_options at all.
-    const effort = flash?.reasoning_options?.find((option) => option.type === 'effort');
-    expect(effort?.values?.length).toBeGreaterThan(1);
-    expect(effort?.values).toContain('high');
     expect(flash?.limit?.context).toBe(1_048_576);
   });
 

@@ -27,7 +27,7 @@ import {
   sandboxComputeSessions,
   sessionSandboxes,
 } from '@kortix/db';
-import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
 import { config } from '../../config';
 import {
   type ProviderName,
@@ -57,10 +57,21 @@ import {
   DEFAULT_COMPUTE_RATE_MULTIPLIER,
   clampComputeRateMultiplier,
 } from './entitlement-overrides';
-import { accountMetersCompute } from './tiers';
+import { LEGACY_PAID_TIERS_UNMETERED, accountRowMetersCompute } from './tiers';
 
 /** Kept in lockstep with accountMetersCompute() — see tier-facts.ts. */
 const METERED_BILLING_MODELS = ['per_seat', 'credit'] as const;
+
+/**
+ * SQL form of `accountRowMetersCompute()`: a metered model, or any row that is
+ * not a legacy paid plan. `tier` is coalesced because `NULL NOT IN (...)` is
+ * NULL, which would drop a row the TypeScript predicate meters.
+ */
+const accountRowMetersComputeSql = () =>
+  or(
+    inArray(creditAccounts.billingModel, METERED_BILLING_MODELS),
+    notInArray(sql`coalesce(${creditAccounts.tier}, '')`, [...LEGACY_PAID_TIERS_UNMETERED]),
+  );
 
 const PARTIAL_BILL_INTERVAL_MS = 60 * 60 * 1000; // 1h
 // Bounded like every other periodic sweep in this codebase (REAP_BATCH_SIZE in
@@ -138,19 +149,19 @@ async function computeRateMultiplierFor(accountId: string): Promise<number> {
 
 /**
  * Open a metering row when a sandbox transitions to `active`.
- * No-op for legacy accounts — they continue to be billed via the flat machine
- * tier model in COMPUTE_TIERS.
+ * No-op for a legacy PAID plan only (see `accountRowMetersCompute`). Every
+ * other account, free and trial included, pays for compute from its wallet.
  */
 export async function startComputeSession(opts: StartComputeOpts): Promise<string | null> {
   // Hard gate: self-hosted / billing-disabled deploys never meter compute, even
   // if a credit_accounts row has a metered billing_model (stale data).
   if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return null;
   const account = await getCreditAccount(opts.accountId);
-  // `accountMetersCompute`, NOT `isPerSeatAccount`. Per-seat used to be the only
-  // metered model, so the gate was written as an identity check; read literally
-  // it grants every other model free compute. The v3 `credit` plans are metered
-  // too — that omission would have been an unbilled hole through the new tiers.
-  if (!accountMetersCompute(account?.billingModel)) return null;
+  // `accountRowMetersCompute`, NOT a check on `billing_model` alone. The column
+  // defaults to 'legacy', so a model-only gate hands free compute to every
+  // account that never completed a checkout — free accounts and admin trials.
+  // Only a legacy PAID plan is exempt. See tier-facts.ts.
+  if (!accountRowMetersCompute(account)) return null;
 
   // If a row is already open (e.g. duplicate hook), reuse it.
   const existing = await getOpenComputeSession(opts.sandboxId);
@@ -405,7 +416,7 @@ export async function resumeComputeSession(opts: StartComputeOpts): Promise<stri
  * stopped→active wake path). Reuses the spec from the sandbox's most recent
  * window so the resumed compute bills exactly like the original run, without
  * re-resolving the project manifest on the hot reopen path. No-op when billing
- * is disabled / the account isn't per-seat / a row is already open
+ * is disabled / the account does not meter compute / a row is already open
  * (startComputeSession is idempotent on an open row).
  */
 export async function reopenComputeForSandbox(
@@ -460,7 +471,7 @@ export interface ReconcileMissingComputeResult {
  *
  * This sweeps every `active` sandbox with no currently-open compute row and
  * reopens one via `reopenComputeForSandbox`, which already applies the
- * `accountMetersCompute` gate (no-op for `legacy` accounts — never reimplemented
+ * `accountRowMetersCompute` gate (no-op for a legacy paid plan — never reimplemented
  * here) and reuses the sandbox's last known spec so a reconciled window bills
  * at the same rate the sandbox always has. Idempotent: `startComputeSession`
  * underneath is a no-op if a row already raced open between the SELECT below
@@ -473,13 +484,13 @@ export interface ReconcileMissingComputeResult {
  * Candidate query, exported so its predicate can be asserted directly rather
  * than through a mock that reimplements the filtering.
  *
- * The `per_seat` inner join is load-bearing, not defence-in-depth: a `legacy`
- * account can NEVER be metered (`startComputeSession` returns early), so every
- * active legacy box matches "no open window" permanently. Without this filter an
- * unordered `LIMIT` fills with legacy rows on every pass and the per-seat rows
+ * The metered-account inner join is load-bearing, not defence-in-depth: a legacy
+ * paid plan can NEVER be metered (`startComputeSession` returns early), so every
+ * active box on one matches "no open window" permanently. Without this filter an
+ * unordered `LIMIT` fills with those rows on every pass and the metered rows
  * this sweep exists for are never reached — a no-op that costs a round-trip per
  * row. The inner join also drops accounts with no `credit_accounts` row at all,
- * which is the same fail-closed outcome as the `accountMetersCompute` gate below.
+ * which is the same fail-closed outcome as the `accountRowMetersCompute` gate below.
  */
 export function selectMissingComputeCandidates(limit = RECONCILE_MISSING_BATCH_SIZE) {
   return db
@@ -495,9 +506,9 @@ export function selectMissingComputeCandidates(limit = RECONCILE_MISSING_BATCH_S
       creditAccounts,
       and(
         eq(creditAccounts.accountId, sessionSandboxes.accountId),
-        // Mirrors accountMetersCompute() — every metered billing model, not just
-        // per-seat. A model missing here silently stops being charged.
-        inArray(creditAccounts.billingModel, METERED_BILLING_MODELS),
+        // Mirrors accountRowMetersCompute(). An account missing here silently
+        // stops being charged.
+        accountRowMetersComputeSql(),
       ),
     )
     .leftJoin(
@@ -546,7 +557,7 @@ export function selectMissingAppComputeCandidates(limit = RECONCILE_MISSING_BATC
       creditAccounts,
       and(
         eq(creditAccounts.accountId, appRuntimes.accountId),
-        inArray(creditAccounts.billingModel, METERED_BILLING_MODELS),
+        accountRowMetersComputeSql(),
       ),
     )
     .leftJoin(

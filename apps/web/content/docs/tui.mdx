@@ -1,0 +1,202 @@
+---
+title: TUI
+description: The experimental Kortix terminal client — run it, drive it with the keyboard, and hand a session to opencode.
+---
+
+> **Experimental.** `kortix tui` installs a separate binary on first run, and
+> its keys, screens and flags can change without a deprecation.
+
+`@kortix/tui` is a full terminal client for Kortix. It renders with
+[OpenTUI](https://github.com/anomalyco/opentui) on [Bun](https://bun.sh) and
+reads every byte of Kortix data through [`@kortix/sdk`](/docs/sdk) — the same
+package the web app uses — so a session in the terminal is the same session in
+the browser.
+
+It mirrors the web product: a sidebar of accounts, projects and sessions; a
+transcript with the composer, the model, effort and agent pickers, and the
+question and permission prompts; a real shell in the session's sandbox; and the
+Files, Review, Apps, Customize and Account screens.
+
+## Run it
+
+```sh
+kortix login          # writes ~/.config/kortix/config.json
+kortix tui            # first run: "Install now? [Y/n]"
+```
+
+`kortix tui` signs in with the host you are already on, so there is nothing to
+configure. It is a **launcher**: the TUI itself is a second binary,
+`kortix-tui`, because the renderer's native library adds ~19 MB per platform and
+`kortix` should not carry it for a command most people never run.
+
+The first `kortix tui` asks before downloading. It fetches the `kortix-tui`
+build that matches this CLI's version from the same GitHub release the `kortix`
+binary came from, checks it against the release's `.sha256`, and stores it in
+`~/.kortix/tui/<version>/`. That takes a few seconds once per CLI version; every
+later run execs the cached copy. A `kortix` that cannot reach GitHub, or a
+platform with no published build, is the one case where you build your own —
+see `KORTIX_TUI_BIN` below.
+
+| Flag | Effect |
+| --- | --- |
+| `--host <name>` | Use this configured host instead of the active one. A host that is not logged in is an error. |
+| `--project <id>` | List this project's sessions. Defaults to the host's default project, else its first project. |
+| `--session <id>` | Open this session at boot. |
+| `--install` | Install `kortix-tui` now and exit. No prompt — this is the form for a script, a Dockerfile or a machine with no terminal. |
+| `--uninstall` | Delete `~/.kortix/tui/` and exit. `kortix uninstall` removes it too, with the rest of `~/.kortix`. |
+
+Off a terminal — a pipe, CI, a non-interactive shell — `kortix tui` never starts
+the download on its own. It exits `2` and prints `kortix tui --install`.
+
+With no host logged in at all, the TUI opens its own login screen instead of
+failing: pick a configured host, or press `n` to add one (name, API URL, token —
+validated before it is saved).
+
+The terminal needs at least 80 × 24.
+
+To run it from a clone of the repo instead — which is what you want when you are
+changing the TUI itself:
+
+```sh
+git clone https://github.com/kortix-ai/suna
+cd suna
+pnpm install
+pnpm --filter @kortix/tui dev
+```
+
+That path needs Bun 1.3 or newer: `@opentui/core` ships a Bun-FFI native
+renderer.
+
+## Environment variables
+
+These apply to `pnpm --filter @kortix/tui dev`. The environment beats the config
+and writes nothing to disk, which is what a script or a second host wants. Under
+`kortix tui` the CLI resolves the host, so `--host`, `--project` and `--session`
+are the equivalents — with one exception: `KORTIX_TOKEN` is read by the CLI too,
+and a stale one left exported in a shell outranks `kortix login` for both.
+
+| Variable | Effect |
+| --- | --- |
+| `KORTIX_API_KEY` | Bearer token. With it, the CLI config is not read at all. |
+| `KORTIX_TOKEN` | The same, under the name the CLI uses inside a sandbox. |
+| `KORTIX_API_URL` | Backend origin, with or without `/v1`. Defaults to `https://api.kortix.com`. |
+| `KORTIX_PROJECT_ID` | The project whose sessions the sidebar lists. Defaults to the host's default project, else the first. |
+| `KORTIX_SESSION_ID` | Open this session at boot. |
+| `KORTIX_CONFIG_FILE` | Read hosts from this file instead of `~/.config/kortix/config.json`. |
+| `KORTIX_TUI_THEME` | `dark` or `light`. Otherwise `COLORFGBG` decides, defaulting to dark. |
+| `KORTIX_TUI_BIN` | Run this `kortix-tui` binary instead of a managed one. Nothing is downloaded and no version is checked. |
+| `KORTIX_TUI_HOST` | The configured host to open, by name. `kortix tui --host <name>` sets it, and it outranks `KORTIX_API_KEY` / `KORTIX_TOKEN`. |
+
+```sh
+KORTIX_API_URL=http://localhost:8008 KORTIX_API_KEY="$TOKEN" \
+  pnpm --filter @kortix/tui dev
+```
+
+## Building the TUI binary yourself
+
+A source checkout, an unpublished platform, or an offline machine:
+
+```sh
+pnpm --filter @kortix/tui bundle       # → apps/tui/bundle/kortix-tui
+KORTIX_TUI_BIN=$PWD/apps/tui/bundle/kortix-tui kortix tui
+```
+
+`pnpm --filter @kortix/tui bundle:all` builds all four release targets
+(`kortix-tui-darwin-arm64`, `kortix-tui-darwin-x64`, `kortix-tui-linux-x64`,
+`kortix-tui-linux-arm64`) — the same command the release workflow runs.
+
+A `kortix` built from source reports version `dev` and has no release to match,
+so it refuses to invent a download. Copy your build to
+`~/.kortix/tui/dev/kortix-tui` and `kortix tui` finds it with no environment
+variable at all.
+
+## Screens
+
+| Screen | Key | What it is |
+| --- | --- | --- |
+| Session | default | The transcript, the prompts, and the composer. |
+| Files | `Alt+F` | The session sandbox's workspace tree and a syntax-highlighted viewer. |
+| Review | `Alt+R` | Open change requests and their diffs. |
+| Apps | `Alt+A` | The project's deployed Apps, their status and URLs. |
+| Customize | `Alt+C` | Agents · Skills · Secrets · Triggers · Connectors. |
+| Account | `Alt+U` | Members, invites, roles, and the billing readout. |
+| Terminal | `Alt+T` | A real shell in the session's sandbox, beside the transcript. |
+| Switcher | `Ctrl+P` | One filter over every session and project. |
+| Help | `?` | Every binding, generated from the keymap. |
+
+## Keys
+
+`?` prints the full table — 143 bindings across twelve scopes — generated from
+the app's own keymap, so a binding that is not in the overlay does not exist.
+These are the ones that work anywhere:
+
+
+| Keys | Action |
+| --- | --- |
+| `Ctrl+c / Ctrl+q` | Quit. Ctrl+C asks once, then quits on the second press. Inside the terminal panel Ctrl+C belongs to the shell and only Ctrl+Q quits. |
+| `?` | Show this help. Not while a text input or the terminal has focus. |
+| `Tab` | Focus the next region: sidebar → transcript → composer → terminal. |
+| `Shift+Tab` | Focus the previous region. |
+| `Ctrl+p` | Open the session switcher. |
+| `Ctrl+n` | Create a session in this project and open it. |
+| `Alt+t` | Toggle the terminal panel. |
+| `Alt+f` | Open the files screen. |
+| `Alt+r` | Open the review screen. |
+| `Alt+a` | Open the apps screen. |
+| `Alt+c` | Open the customize screen. |
+| `Alt+u` | Open the account screen: members, invites, billing. |
+| `Alt+o` | Hand this session to the stock opencode TUI. Returning repaints the app. |
+| `Alt+h / Ctrl+h` | Switch host. Ctrl+H needs the kitty keyboard protocol: the byte it sends is Backspace. |
+| `Esc` | Close the overlay, leave the screen, or move focus back to the composer. |
+
+Two terminal facts shape that table:
+
+- **`Alt` is `Option` on macOS.** Terminal.app and iTerm2 send `Alt+T` as the
+  two bytes `ESC t`. The keymap accepts that and the kitty encoding, so every
+  `Alt` chord works in both. In Terminal.app, turn on *Use Option as Meta key*.
+- **`Ctrl+H` is the ASCII backspace byte.** A terminal without the kitty
+  keyboard protocol cannot tell the two apart, which is why `Alt+H` is the
+  host switcher's first chord. `Shift+Enter` has the same problem: `Ctrl+J`
+  is the portable newline and always works.
+
+Inside the terminal panel the shell keeps every key, `Ctrl+C` included. Only
+`Tab`, `Shift+Tab`, `Alt+T` and `Ctrl+Q` stay the app's.
+
+## Attach mode
+
+`Alt+O` — or `a` on a sidebar row, or `/attach` in the composer — hands the
+session to the stock [opencode](https://opencode.ai) TUI. The TUI resolves the
+session's runtime, downloads the exact opencode build that sandbox runs into
+`~/.kortix/opencode/<version>/` once, starts a localhost proxy that injects your
+Kortix token, and suspends itself while opencode has the terminal. On exit the
+Kortix TUI repaints on the same session and toasts the exit code. It is the same
+seam as [`kortix sessions connect`](/docs/cli).
+
+The first attach is slow because of that one download. A session that is not
+running is started first, and a cold sandbox boot is minutes, not seconds.
+
+Leaving opencode is `Ctrl+C` twice **within one second** — `Esc` does not do it,
+and two presses spaced further apart are two separate interrupts that opencode
+ignores. The Kortix TUI repaints as soon as opencode exits.
+
+## Known gaps
+
+- **`@path` attachments are parsed but not sent.** The composer counts mentions
+  and shows `@n`; the SDK's attachment surface is browser-`File` shaped, so a
+  path is not uploaded yet.
+- **Effort options come from the model's catalog variants.** A model that
+  publishes none offers `Auto` alone. That is the catalog's answer, not a bug.
+- **The Account and Customize screens are read-mostly.** They expose the small
+  writes the web app exposes and print the web URL for anything else. No OAuth
+  from the terminal: connectors print the page to open.
+- **The session header has no name until the server sets one.** A new session
+  reads `Untitled` for a few seconds.
+
+## Source
+
+`apps/tui` in the [Kortix repo](https://github.com/kortix-ai/suna). The
+launcher is `apps/cli/src/commands/tui.ts`, and `apps/cli/src/tui-bin.ts`
+resolves, downloads and verifies the binary. `SPEC.md`
+there is the plan, `README.md` is the operator's guide (every key, every
+troubleshooting path), and `docs/opentui-notes.md` records the OpenTUI
+behaviors the app had to work around.

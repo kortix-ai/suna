@@ -1,6 +1,15 @@
 // File-tree reads over the bare mirror: listing, name/content search, single
 // file reads, subtree archive streaming, and per-file/at-ref history.
 
+import {
+  type ManifestImportReader,
+  type ResolvedManifest,
+  hasManifestImports,
+  manifestFormatForPath,
+  parseManifestText,
+  resolveManifestImports,
+  serializeManifestObject,
+} from '@kortix/manifest-schema';
 import { validateRef } from '../git-ref';
 import { listCommits } from './commits';
 import { isGitPathNotFoundError, normalizeTreePath, refreshMirror, runGit, runGitCapture, spawn } from './mirror';
@@ -159,6 +168,19 @@ export function isRepoFileNotFoundError(err: unknown): err is RepoFileNotFoundEr
  * highest-priority present one — refreshing the mirror once, unlike probing each
  * path via readRepoFile (which would refresh + spawn a process per candidate).
  * Returns the matched path + content, or null when no candidate exists.
+ *
+ * IMPORTS: a YAML manifest that declares `imports:` is resolved HERE, at the one
+ * read every consumer goes through, so none of them can forget to. `content`
+ * is then the MERGED document (root + every imported file) re-serialized as
+ * YAML — byte-identical consumers (agent grants, the CR-merge gate, the config
+ * summary, the agent compiler) parse it exactly as they parse a single file.
+ * `rootContent` keeps the root file's own text, and `imports` carries each
+ * source file + the origin of every entry for the write path. A manifest
+ * without `imports:` is returned untouched: same bytes, no extra git calls.
+ *
+ * A broken import (missing file, duplicate name, cycle, root-only key in an
+ * imported file) THROWS `ManifestImportError`. It must never read as "absent":
+ * callers answer an absent manifest with a synthesized permissive one.
  */
 export async function readManifestFromRepo(
   project: GitBackedProject,
@@ -170,6 +192,9 @@ export async function readManifestFromRepo(
      *  Authorization reads set this: an unreadable ref must not be laundered
      *  into the synthesized permissive manifest a blank project gets. */
     strictRef?: boolean;
+    /** Default true. False returns the root file alone, unresolved — for a
+     *  caller degrading after a `ManifestImportError`, never as a first read. */
+    resolveImports?: boolean;
   },
 ): Promise<{
   path: string;
@@ -182,6 +207,10 @@ export async function readManifestFromRepo(
    *  commit — a stale mirror, a mid-fetch ref — is recognisable as stale
    *  instead of being applied as if the manifest had changed. */
   commit: string | null;
+  /** The root manifest file's own text. Equals `content` without imports. */
+  rootContent: string;
+  /** Set only when the manifest declares `imports:`. */
+  imports?: ResolvedManifest;
 } | null> {
   const normalized = candidatePaths
     .map((p) => normalizeTreePath(p))
@@ -212,7 +241,61 @@ export async function readManifestFromRepo(
   const shown = await runGit(['show', `${treeRef}:${winner}`], repoPath, false);
   const resolved = await runGitCapture(['rev-parse', '--verify', '--quiet', `${treeRef}^{commit}`], repoPath);
   const commit = resolved.exitCode === 0 ? resolved.stdout.trim() || null : null;
-  return { path: winner, content: shown.stdout, sha: revision, candidatePaths: normalized, commit };
+  const found = {
+    path: winner,
+    content: shown.stdout,
+    sha: revision,
+    candidatePaths: normalized,
+    commit,
+    rootContent: shown.stdout,
+  };
+  // `imports` is a top-level key, so a manifest without that line cannot use
+  // the feature — skip the extra YAML parse on the (hot) common path.
+  if (
+    opts?.resolveImports === false ||
+    manifestFormatForPath(winner) !== 'yaml' ||
+    !/^imports\s*:/m.test(shown.stdout)
+  ) {
+    return found;
+  }
+  let rootRaw: Record<string, unknown>;
+  try {
+    rootRaw = parseManifestText(shown.stdout, 'yaml');
+  } catch {
+    // A root syntax error is the caller's to report, from the same text.
+    return found;
+  }
+  if (!hasManifestImports(rootRaw)) return found;
+  // Read imports at the commit the root was read at, not the branch name: a
+  // push landing between the two reads would otherwise mix two revisions.
+  const imports = await resolveManifestImports(
+    { path: winner, raw: rootRaw, revision },
+    gitManifestImportReader(repoPath, commit ?? treeRef),
+  );
+  return { ...found, content: serializeManifestObject(imports.raw, 'yaml'), imports };
+}
+
+/** `ManifestImportReader` over a bare mirror at one fixed ref. */
+function gitManifestImportReader(repoPath: string, ref: string): ManifestImportReader {
+  return {
+    async list(path) {
+      const listed = await runGitCapture(['ls-tree', '-r', ref, '--', path], repoPath);
+      if (listed.exitCode !== 0) {
+        throw new Error(
+          `git ls-tree ${ref} -- ${path} failed (exit ${listed.exitCode}): ${listed.stderr.trim() || 'no output'}`,
+        );
+      }
+      const entries: Array<{ path: string; revision: string }> = [];
+      for (const line of listed.stdout.split('\n')) {
+        const match = line.match(/^\d+\s+blob\s+([0-9a-f]{40})\t(.+)$/);
+        if (match?.[1] && match[2]) entries.push({ path: match[2], revision: match[1] });
+      }
+      return entries;
+    },
+    async read(path) {
+      return (await runGit(['show', `${ref}:${path}`], repoPath, false)).stdout;
+    },
+  };
 }
 
 /**
