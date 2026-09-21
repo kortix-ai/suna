@@ -3,8 +3,12 @@
 Every Linux job in `.github/workflows/` runs on [Blacksmith](https://docs.blacksmith.sh)
 runners. macOS and Windows jobs (desktop installers) stay on GitHub-hosted
 runners: they are free on this public repo, and Blacksmith's Windows pool is in
-beta. The GitHub "default setup" CodeQL workflow (`Code Quality: Push on main`)
-is not a file in this repo and stays on `ubuntu-latest`.
+beta. GitHub **Code Quality** (`dynamic/github-code-quality/codeql`, a
+GitHub-managed CodeQL run that is not a file here) was turned off on 2026-09-21:
+`gh api -X PATCH repos/kortix-ai/suna/code-quality/setup -f state=not-configured`.
+It re-analysed js-ts plus python and go on every PR and push (~7 min each) and
+uploaded zero code-scanning alerts. The committed `.github/workflows/codeql.yml`
+is the only CodeQL run and the SOC 2 SAST control.
 
 Migration history: PR #6901 (Blacksmith's Migration Wizard, mechanical label
 rewrite), then the follow-up that added tiers, the kill switch, the Docker layer
@@ -36,8 +40,8 @@ fails on any bare label, so a new job cannot skip the expression.
 
 ## Test lanes run natively
 
-`tests.yml` runs the four local-profile lanes (`core`, `browser-1`, `browser-2`,
-`packages`) directly on L-tier runners: checkout at the PR head SHA →
+`tests.yml` runs the six local-profile lanes (`core`, `browser-1` … `browser-4`,
+`packages`) directly on L-tier runners: checkout at the requested SHA →
 `pnpm install --frozen-lockfile` → (browser lanes) Chromium + `supabase start`
 → `pnpm test -- <lane args>`. Blacksmith's transparent caches make a lane warm
 after its first run on a new lockfile: the pnpm store (`actions/cache`

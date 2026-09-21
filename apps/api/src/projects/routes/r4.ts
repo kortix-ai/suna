@@ -54,6 +54,7 @@ import { buildTeamsManifest } from '../../channels/teams-manifest';
 import { teamsDeepLink, teamsMode } from '../../channels/teams-mode';
 import { teamsOrgConsentUrl } from '../../channels/teams-oauth';
 import { downloadTeamsFile, initiateTeamsUpload } from '../../channels/teams/file-proxy';
+import { listTeamsPostTargets, postToTeamsConversation } from '../../channels/teams/post';
 import {
   relayTurnAnswerDetailed,
   relayTurnEnd,
@@ -166,6 +167,7 @@ import {
   findProjectTriggerBySlug,
 } from '../triggers';
 import { turnStreamKindField, turnStreamKindNeedsConnectorWrite } from './r4-turn-stream-kind';
+import { buildFormCard, type TeamsFormSpec } from '../../channels/teams/cards';
 import {
   abandonSandboxTurn,
   acceptSandboxTurn,
@@ -1976,6 +1978,75 @@ projectsApp.openapi(
 
 projectsApp.openapi(
   createRoute({
+    method: 'get',
+    path: '/{projectId}/channels/teams/conversations',
+    tags: ['channels'],
+    summary: 'GET /:projectId/channels/teams/conversations (proactive-post targets)',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: {
+      200: json(
+        z.object({ conversations: z.array(z.object({ conversationId: z.string(), name: z.string().nullable(), type: z.string().nullable() })) }),
+        'Conversations this project may post into',
+      ),
+      ...errors(403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    if (!teamsChannelEnabled(loaded.row.metadata)) return c.json(featureDisabledBody('teams'), 403);
+    return c.json({ conversations: await listTeamsPostTargets(projectId) });
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/channels/teams/message',
+    tags: ['channels'],
+    summary: 'POST /:projectId/channels/teams/message (proactive post)',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(
+        z.object({ ok: z.boolean(), conversationId: z.string(), delivered: z.string() }).passthrough(),
+        'Message posted',
+      ),
+      ...errors(400, 403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Posting into a customer's Teams conversation is a send primitive, gated
+    // on connector-write exactly like the file upload below.
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    );
+    if (!teamsChannelEnabled(loaded.row.metadata)) return c.json(featureDisabledBody('teams'), 403);
+    const body = await readBody(c);
+    const result = await postToTeamsConversation(projectId, {
+      conversationId: String(body.conversation_id ?? body.conversationId ?? ''),
+      text: typeof body.text === 'string' ? body.text : undefined,
+      card: body.card && typeof body.card === 'object' && !Array.isArray(body.card) ? (body.card as Record<string, unknown>) : undefined,
+    });
+    if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 403 | 404);
+    return c.json(result);
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
     method: 'post',
     path: '/{projectId}/channels/teams/file/upload',
     tags: ['channels'],
@@ -2466,6 +2537,7 @@ projectsApp.openapi(
       sources?: Array<{ url?: string; text?: string }>;
       blocks?: unknown[];
       card?: Record<string, unknown>;
+      form?: Record<string, unknown>;
       status?: string;
       opencode_session_id?: string;
       turn_message_id?: string;
@@ -2889,10 +2961,25 @@ projectsApp.openapi(
       : undefined;
     const blocks = Array.isArray(body.blocks) && body.blocks.length > 0 ? body.blocks : undefined;
     // A full Adaptive Card for the Teams answer (`teams send --card-file`).
-    const card =
-      body.card && typeof body.card === 'object' && !Array.isArray(body.card)
+    // `form` is the safe alternative: the agent describes the FIELDS and the
+    // server builds the card, so the submit verb and the branding cannot
+    // drift and a malformed spec fails here instead of rendering a dead
+    // button. See channels/teams/cards.ts buildFormCard.
+    const formSpec =
+      body.form && typeof body.form === 'object' && !Array.isArray(body.form)
+        ? (body.form as unknown as TeamsFormSpec)
+        : undefined;
+    const card = formSpec
+      ? (buildFormCard(formSpec) ?? undefined)
+      : body.card && typeof body.card === 'object' && !Array.isArray(body.card)
         ? (body.card as Record<string, unknown>)
         : undefined;
+    if (formSpec && !card) {
+      return c.json(
+        { ok: false, reason: 'invalid_form', error: 'the form needs at least one field with an id and a label' },
+        400,
+      );
+    }
 
     // `reason` is what makes `ok: false` actionable in the sandbox: `slack
     // step` and `slack send` print it, so an agent can tell "no Slack turn is

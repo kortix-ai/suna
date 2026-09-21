@@ -1,5 +1,5 @@
 import { parseSessionAttachmentRef } from '@kortix/shared';
-import { checkBillingActive } from '../../billing/services/billing-gate';
+import { checkBillingAdmission } from '../../billing/services/billing-gate';
 import { config, type SandboxProviderName } from '../../config';
 import { auth, errors, json } from '../../openapi';
 import { getProvider } from '../../platform/providers';
@@ -40,7 +40,10 @@ import { callerKortixSessionId } from '../lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { AnyObject, ChangeRequestSchema, SessionStartResultSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
-import { sessionUsesCurrentRepository } from '../lib/repository-generation';
+import {
+  sessionRepositoryStartDecision,
+  sessionUsesCurrentRepository,
+} from '../lib/repository-generation';
 import { UUID_V4_REGEX, normalizeString, readBody } from '../lib/serializers';
 import {
   continueSession,
@@ -88,10 +91,14 @@ projectsApp.openapi(
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
+      query: z.object({
+        wait_ms: z.string().optional(),
+        repository_mode: z.enum(['previous']).optional(),
+      }),
     },
     responses: {
       200: json(SessionStartResultSchema, 'Session readiness payload'),
-      ...errors(400, 402, 404, 409),
+      ...errors(400, 402, 403, 404, 409),
     },
   }),
   async (c) => {
@@ -119,14 +126,43 @@ projectsApp.openapi(
     // restartable and the UI offers a Restart that can never work. 404, the
     // same answer the read-by-id gives (see sessionIsTombstoned).
     if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
-    if (!sessionUsesCurrentRepository(
-      loaded.row.metadata as Record<string, unknown>,
-      visible.row.metadata as Record<string, unknown>,
-    )) {
+    const projectMetadata = loaded.row.metadata as Record<string, unknown>;
+    const sessionMetadata = visible.row.metadata as Record<string, unknown>;
+    const repositoryMode = c.req.query('repository_mode');
+    const usesCurrentRepository = sessionUsesCurrentRepository(projectMetadata, sessionMetadata);
+    if (!usesCurrentRepository && repositoryMode !== 'previous') {
       return c.json({
-        error: 'This session belongs to a previous repository. Start a new session in the current repository.',
+        error: 'This session uses the previous repository.',
         code: 'session_repository_changed',
+        remedy: 'Resume the preserved workspace without Git access, or start a new session.',
       }, 409);
+    }
+    if (!usesCurrentRepository) {
+      if (!visible.canManageLifecycle) {
+        return c.json({
+          error: 'Only the session owner or an account owner/admin can resume a previous-repository workspace.',
+          code: 'previous_repository_resume_forbidden',
+        }, 403);
+      }
+      const [preservedRuntime] = await db
+        .select({ externalId: sessionSandboxes.externalId })
+        .from(sessionSandboxes)
+        .where(and(
+          eq(sessionSandboxes.sessionId, sessionId),
+          eq(sessionSandboxes.projectId, projectId),
+          eq(sessionSandboxes.accountId, loaded.row.accountId),
+        ))
+        .limit(1);
+      const repositoryDecision = sessionRepositoryStartDecision(projectMetadata, sessionMetadata, {
+        repositoryMode,
+        hasPreservedRuntime: Boolean(preservedRuntime?.externalId),
+      });
+      if (!repositoryDecision.ok) {
+        return c.json({
+          error: 'The previous repository workspace is no longer available. Start a new session in the current repository.',
+          code: repositoryDecision.code,
+        }, 409);
+      }
     }
     // The agent this session will actually run has to still be one the caller
     // may run — grants change after a session is created, and `/start` is what
@@ -148,7 +184,7 @@ projectsApp.openapi(
     }
 
     // Same gate as wake/create: resuming or provisioning spends compute.
-    const billing = await checkBillingActive(loaded.row.accountId);
+    const billing = await checkBillingAdmission(loaded.row.accountId);
     stl.mark('billing-checked');
     if (!billing.ok) {
       return c.json(
@@ -182,7 +218,7 @@ projectsApp.openapi(
       waitMs,
     });
     stl.mark(`open-session:${result.start.stage}`);
-    stl.log({ waitMs });
+    stl.log({ waitMs, repositoryMode: usesCurrentRepository ? 'current' : 'previous' });
     return c.json(
       {
         ...result.start,
@@ -321,8 +357,19 @@ const SessionTurnSchema = z.object({
 
 const SessionTurnLastEndedSchema = z.object({
   turn_token: z.string(),
+  message_id: z.string().optional(),
   end_reason: z.string().nullable(),
   ended_at: z.string().nullable(),
+  error: z
+    .object({ name: z.string().nullable(), message: z.string().nullable() })
+    .optional(),
+});
+
+const SessionTurnFailureSchema = z.object({
+  message_id: z.string(),
+  ended_at: z.string().nullable(),
+  // Null when the turn failed and nobody named why.
+  error: z.object({ name: z.string().nullable(), message: z.string().nullable() }).nullable(),
 });
 
 const SessionTurnResponseSchema = z.object({
@@ -334,6 +381,7 @@ const SessionTurnResponseSchema = z.object({
   // caller reconciling by `message_id`.
   turns: z.array(SessionTurnSchema),
   last_ended: SessionTurnLastEndedSchema.optional(),
+  recent_failures: z.array(SessionTurnFailureSchema).optional(),
 });
 
 // GET /v1/projects/:projectId/sessions/:sessionId/turn
@@ -611,7 +659,7 @@ projectsApp.openapi(
     // what is missing, and the human fixes it in one click.
 
     // Same gate as start/wake: a prompt spends compute.
-    const billing = await checkBillingActive(loaded.row.accountId);
+    const billing = await checkBillingAdmission(loaded.row.accountId);
     if (!billing.ok) {
       return c.json(
         {

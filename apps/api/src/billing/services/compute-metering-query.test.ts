@@ -86,6 +86,13 @@ describe('reconcile candidate predicate', () => {
     expect(params).toContain('per_seat');
   });
 
+  test('also admits a legacy-default row unless its tier is a legacy paid plan', () => {
+    const { sql, params } = rendered();
+    expect(sql).toMatch(/credit_accounts"?\."?tier/);
+    expect(params).toContain('tier_2_20');
+    expect(params).toContain('pro');
+  });
+
   test('only considers active sandboxes with no open compute window', () => {
     const { sql, params } = rendered();
     expect(sql).toMatch(/session_sandboxes"?\."?status"? = /);

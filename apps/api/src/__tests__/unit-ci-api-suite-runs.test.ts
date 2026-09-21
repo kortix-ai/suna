@@ -16,14 +16,16 @@ const packageJson = JSON.parse(read('apps/api/package.json')) as {
 const laneJob = workflow.slice(workflow.indexOf('\n  lane:'));
 
 describe('the kortix-api suite actually runs on pull requests', () => {
-  test('the reusable workflow runs every root lane natively at the exact PR head SHA', () => {
+  test('the test workflow runs every root lane natively at the exact PR head SHA', () => {
     expect(laneJob).toContain('matrix:');
     expect(laneJob).toContain('- lane: core');
     expect(laneJob).toContain('- lane: browser-1');
     expect(laneJob).toContain('- lane: browser-2');
     expect(laneJob).toContain('- lane: packages');
-    expect(laneJob).toContain('args: --browser-only --browser-shard=1/2');
-    expect(laneJob).toContain('args: --browser-only --browser-shard=2/2');
+    // Four browser shards since 2026-09-18 (see tests.yml's matrix comment).
+    for (const n of [1, 2, 3, 4]) {
+      expect(laneJob).toContain(`args: --browser-only --browser-shard=${n}/4`);
+    }
     expect(laneJob).toContain('args: --packages-only');
     expect(laneJob).toContain('if [[ -n "$TEST_ARGS" ]]; then pnpm test -- $TEST_ARGS; else pnpm test; fi');
     expect(laneJob).toContain('export KORTIX_PACKAGE_SKIP_SDK_TESTS=1');

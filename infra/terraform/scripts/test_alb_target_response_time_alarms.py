@@ -24,6 +24,9 @@ RECONCILER = (
 RECONCILER_TF = (
     ROOT / "terraform/compliance-monitoring/alb-alarm-reconciler.tf"
 ).read_text()
+LOGGER_TF = (
+    ROOT / "terraform/compliance-monitoring/compliance-alerts-logger.tf"
+).read_text()
 
 # (prefix, config, ALB discovery local the sibling alarms iterate, SNS action)
 REGION_FAMILIES = (
@@ -119,6 +122,29 @@ class AlbTargetResponseTimeAlarmTests(unittest.TestCase):
         self.assertIn("topic_arn = aws_sns_topic.use2_alerts.arn", subscription)
         self.assertIn('protocol  = "email"', subscription)
         self.assertIn('endpoint  = "marko@kortix.com"', subscription)
+        # A pending email subscription still fails Drata's hasSubscription
+        # fact (tests 294/296/298, observed 2026-09-18). Lambda-protocol
+        # subscriptions are Active immediately on Subscribe, so the use2
+        # topic must also declare an auto-confirmed Lambda subscriber or the
+        # invariant "the use2 topic always has a confirmed subscriber"
+        # depends on a human clicking the SNS confirmation email.
+        lambda_subscription = block(
+            LOGGER_TF,
+            'resource "aws_sns_topic_subscription" "use2_alerts_lambda" {',
+        )
+        self.assertIn(
+            "topic_arn = aws_sns_topic.use2_alerts.arn", lambda_subscription
+        )
+        self.assertIn('protocol  = "lambda"', lambda_subscription)
+        self.assertIn(
+            "endpoint  = aws_lambda_function.use2_compliance_alerts_logger.arn",
+            lambda_subscription,
+        )
+        # SNS may invoke the logger only from the use2 alert topic.
+        self.assertIn('principal     = "sns.amazonaws.com"', LOGGER_TF)
+        self.assertIn(
+            "source_arn    = aws_sns_topic.use2_alerts.arn", LOGGER_TF
+        )
         # Reconciler-created alarms in every region notify the same topics.
         self.assertIn(
             "ALERT_TOPIC_ARN = aws_sns_topic.use2_alerts.arn", RECONCILER_TF

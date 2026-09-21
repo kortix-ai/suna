@@ -84,8 +84,15 @@ curl -fsS https://staging.kortix.com/api/runtime-config | grep 'staging-api.kort
 gh run list --repo kortix-ai/suna --branch staging --limit 10
 ```
 
-`qa-staging` must target `staging.kortix.com` / `staging-api.kortix.com`. A green
-run against dev is not a staging gate.
+The staging gates, in order:
+
+1. The PR into `staging` runs the six-lane `Tests` suite (`tests.yml`). It must be
+   green before that PR merges. It is not a required check — you enforce it.
+2. The push to `staging` runs `build-staging.yml` and `deploy-staging.yml`.
+3. The release PR into `prod` runs `tests-release.yml` against deployed staging.
+   Its `full suite + quality gates` job is the only required check in the repo.
+
+A green run against dev is not a staging gate. (`qa-staging.yml` no longer exists.)
 
 ### Step 3.6 — cost the pending PROD migrations
 
@@ -201,7 +208,8 @@ prod forward — i.e. "fix forward" just works again.
 1. `git log $PREV..origin/staging` read in full — notes account for all of it.
 2. Bump chosen per §1 (default patch).
 3. title + notes written in kortix-voice, accurate to the log.
-4. `staging.kortix.com` and `staging-api.kortix.com` verified on the staging SHA.
+4. `Tests` was green on the PR into `staging`; `staging.kortix.com` and
+   `staging-api.kortix.com` verified on the staging SHA.
 5. `promote.yml` run with title + notes; release PR merged into `prod`.
 6. deploy-prod ran, ECS services green, api.kortix.com on the new version.
 7. GitHub Release shows the title + notes → `/changelog` reads cleanly.

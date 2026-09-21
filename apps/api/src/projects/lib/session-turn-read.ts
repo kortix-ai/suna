@@ -20,7 +20,12 @@ import { scheduleSessionTurnRecovery } from '../session-lifecycle/inbox-turn-rec
 import { db } from '../../shared/db';
 import { sessionSandboxes, sessionTurns } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
-import { RUNNING_SANDBOX_STATUSES, storedSandboxTurns } from '../sandbox-turn-lifecycle';
+import {
+  ABORT_END_ERROR_NAMES,
+  RUNNING_SANDBOX_STATUSES,
+  isRequestedStopName,
+  storedSandboxTurns,
+} from '../sandbox-turn-lifecycle';
 
 /** One turn the control plane is holding open, in wire shape. */
 export interface SessionTurnView {
@@ -37,9 +42,78 @@ export interface SessionTurnState {
   turns: SessionTurnView[];
   last_ended?: {
     turn_token: string;
+    /** The user message the turn answered. OMITTED for a turn nobody named. */
+    message_id?: string;
     end_reason: string | null;
     ended_at: string | null;
+    /** Why a `failed` turn ended. OMITTED when nobody named the failure. */
+    error?: { name: string | null; message: string | null };
   };
+  /**
+   * Recent turns that FAILED, newest first, with the cause when one was named.
+   * OMITTED when there are none. A turn the user stopped is not a failure and is
+   * never listed. Reported whether or not a turn is running: `last_ended` is one
+   * row and vanishes the moment the next turn starts, and a queued prompt starts
+   * it seconds after a failure — the outcome has to stay findable by `message_id`.
+   */
+  recent_failures?: SessionTurnFailure[];
+}
+
+export interface SessionTurnFailure {
+  message_id: string;
+  ended_at: string | null;
+  /** Null when the turn failed and nobody named why (a bare abort, or nothing). */
+  error: { name: string | null; message: string | null } | null;
+}
+
+/** How many of a session's newest turns are searched for named failures. */
+const RECENT_FAILURE_TURN_WINDOW = 50;
+
+/**
+ * Bounded by turn count, not by failure count: this read is polled, and a
+ * session with no failures must not scan its whole history to learn that.
+ * Served by `session_turns_session_idx` (session_id, started_at DESC).
+ *
+ * A failure the user cannot see is the bug this read exists to end, so a turn is
+ * listed whenever the ledger says it died:
+ *
+ *   - `runtime_gone`: the box vanished under it. Never a requested stop.
+ *   - `failed` with a recorded error. A bare abort is the EFFECT of whatever
+ *     stopped the turn, never a cause, so it reads as `error: null`.
+ *
+ * Not listed: a stop somebody asked for (`REQUESTED_STOP_NAMES`), and a `failed`
+ * row with NO recorded error. Every end frame has written `end_error` since the
+ * column exists, so such a row predates it — and before it, a user Stop and an
+ * unexplained abort were stored identically. Listing them would flag every turn
+ * anyone ever stopped.
+ */
+async function readRecentTurnFailures(sessionId: string): Promise<SessionTurnFailure[]> {
+  const recent = await db
+    .select({
+      messageId: sessionTurns.messageId,
+      endReason: sessionTurns.endReason,
+      endError: sessionTurns.endError,
+      endedAt: sessionTurns.endedAt,
+    })
+    .from(sessionTurns)
+    .where(and(eq(sessionTurns.sessionId, sessionId), eq(sessionTurns.state, 'ended')))
+    .orderBy(desc(sessionTurns.startedAt))
+    .limit(RECENT_FAILURE_TURN_WINDOW);
+  const failures: SessionTurnFailure[] = [];
+  for (const turn of recent) {
+    if (!turn.messageId) continue;
+    const name = turn.endError?.name ?? null;
+    const died =
+      turn.endReason === 'runtime_gone' || (turn.endReason === 'failed' && turn.endError !== null);
+    if (!died || isRequestedStopName(name)) continue;
+    const named = turn.endError && !(name && ABORT_END_ERROR_NAMES.includes(name));
+    failures.push({
+      message_id: turn.messageId,
+      ended_at: turn.endedAt ? turn.endedAt.toISOString() : null,
+      error: named ? turn.endError : null,
+    });
+  }
+  return failures;
 }
 
 export async function readSessionTurnState(sessionId: string): Promise<SessionTurnState> {
@@ -138,12 +212,16 @@ export async function readSessionTurnState(sessionId: string): Promise<SessionTu
         a.turn.turn_token.localeCompare(b.turn.turn_token),
     )
     .map((entry) => entry.turn);
-  if (live.length > 0) return { turns: live };
+  const failures = await readRecentTurnFailures(sessionId);
+  const recentFailures = failures.length > 0 ? { recent_failures: failures } : {};
+  if (live.length > 0) return { turns: live, ...recentFailures };
 
   const [ended] = await db
     .select({
       turnToken: sessionTurns.turnToken,
+      messageId: sessionTurns.messageId,
       endReason: sessionTurns.endReason,
+      endError: sessionTurns.endError,
       endedAt: sessionTurns.endedAt,
     })
     .from(sessionTurns)
@@ -167,10 +245,16 @@ export async function readSessionTurnState(sessionId: string): Promise<SessionTu
       ? {
           last_ended: {
             turn_token: ended.turnToken,
+            ...(ended.messageId ? { message_id: ended.messageId } : {}),
             end_reason: ended.endReason,
             ended_at: ended.endedAt ? ended.endedAt.toISOString() : null,
+            // A requested stop is bookkeeping, not an error to report.
+            ...(ended.endError && !isRequestedStopName(ended.endError.name)
+              ? { error: ended.endError }
+              : {}),
           },
         }
       : {}),
+    ...recentFailures,
   };
 }

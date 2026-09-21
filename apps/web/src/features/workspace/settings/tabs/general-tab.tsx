@@ -149,9 +149,11 @@ import {
 } from '@/hooks/projects/project-rename-cache';
 import { useDebounce } from '@/hooks/use-debounce';
 import { suppressAutoProjectAfterDelete } from '@/lib/onboarding/ensure-first-project';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { forgetLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCans } from '@/lib/use-project-can';
+import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import {
   archiveProject,
   getProject,
@@ -162,6 +164,7 @@ import {
 } from '@kortix/sdk';
 import { contract, invalidateProjectIdentity, qk } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from '@/i18n/use-translations';
 import { SettingsTabHeader } from '../settings-tab-header';
 
@@ -433,12 +436,18 @@ export async function runProjectArchive(
    *  still renders, so its cookie must survive. Unlike `onSuppress` it does
    *  not depend on the remaining count: forgetting is about THIS project. */
   onForget?: () => void,
+  /** Leave the deleted project for the id-free landing door. Runs LAST: that
+   *  door reads the forgotten cookie and the suppression flag, so it opens the
+   *  next project, or — after the account's last one — the empty state whose
+   *  Create button goes to `/new`, instead of auto-creating a replacement. */
+  onLeave?: (path: string) => void,
 ): Promise<void> {
   await client.archiveProject(projectId);
   onForget?.();
   if (remainingProjectCountBeforeArchive !== null && remainingProjectCountBeforeArchive <= 1) {
     onSuppress();
   }
+  onLeave?.(PROJECT_LANDING_PATH);
 }
 
 /**
@@ -593,6 +602,7 @@ export function GeneralTab({ projectId }: { projectId: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('settings.workspace');
   const queryClient = useQueryClient();
+  const router = useRouter();
   const { user } = useAuth();
   const [archiveOpen, setArchiveOpen] = useState(false);
 
@@ -630,10 +640,22 @@ export function GeneralTab({ projectId }: { projectId: string }) {
         projectId,
         accountProjectCountForArchive(accountProjectsQuery.data),
         { archiveProject },
-        suppressAutoProjectAfterDelete,
+        // Scope the guard to the DELETED project's account, not the globally
+        // selected one: a project opened by URL can leave the selection on a
+        // different account, and a flag on the wrong account lets
+        // `/projects/start` auto-create a replacement instead of showing the
+        // empty state. `undefined` falls back to the selected account.
+        () => suppressAutoProjectAfterDelete(accountId),
         // The archived project must stop being where `/` and the settings
         // exit land (JAY-729) — otherwise they redirect into a 404 gate.
         () => forgetLastProjectId(user?.id, projectId),
+        // The overlay's open state is global, so close it first or it would
+        // reopen over the next project. `replace`: Back must not return to
+        // the deleted project.
+        (path) => {
+          useSettingsPanelStore.getState().close();
+          router.replace(path);
+        },
       ),
     onSuccess: () => {
       successToast(tI18nComplete('textdd9e881230eb'));

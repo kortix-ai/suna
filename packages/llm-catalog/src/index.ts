@@ -485,7 +485,7 @@ export function pricingRefLookupCandidates(pricingRef: string): string[] {
 
 // Managed IDs are bare gateway model IDs. OpenCode uses `kortix/<id>` so the
 // picker shows Kortix while the gateway routes through ZDR OpenRouter endpoints.
-// Every bundled model supports image input.
+// Vision is explicit per model so the picker and runtime reject image input for text-only models.
 export const MANAGED_MODELS: ManagedModel[] = [
   {
     id: 'deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', upstreamModelId: 'deepseek/deepseek-v4.1-flash',
@@ -495,7 +495,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
     openrouterProvider: { only: ['deepinfra/fp8'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
   },
   {
-    id: 'glm-5.3-flash', name: 'GLM-5.3-Flash', upstreamModelId: 'z-ai/glm-5.3-flash',
+    id: 'glm-5.3-flash', name: 'GLM 5.3 Flash', upstreamModelId: 'z-ai/glm-5.3-flash',
     transport: 'openrouter', pricingRef: 'openrouter/z-ai/glm-5.3-flash',
     pricing: { inputPerMillion: 0.15, cachedInputPerMillion: 0.05, outputPerMillion: 0.5 },
     tier: 'fast', vision: true, limit: { context: 1_048_576, output: 16_384 },

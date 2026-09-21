@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm';
-import { chatEventDedup, chatThreads, projects } from '@kortix/db';
+import { chatEventDedup, chatThreads, projectSessions, projects } from '@kortix/db';
 import { db } from '../../shared/db';
 import { filterAccessibleObjects } from '../../iam';
 import { actorForUser } from '../../iam/actor';
@@ -20,6 +20,7 @@ import {
 } from './participants';
 import { buildSlackTurnEnv, finalizeTurn, saveTurn, startTurn } from './turn';
 import type { SlackEnvelope, SlackEvent } from './types';
+import { channelTurnModel, promptModelOverride } from '../vision-model';
 
 const defaultSlackSessionLifecycle = {
   continueSession: continueLifecycleSession,
@@ -41,12 +42,46 @@ export async function deliverSlackFollowUpToSession(input: {
   sessionId: string;
   text: string;
   userId?: string | null;
+  /** This turn only — see channels/vision-model.ts. */
+  model?: string | null;
 }) {
   return slackSessionLifecycle.continueSession({
     source: 'slack',
     sessionId: input.sessionId,
     text: input.text,
     userId: input.userId,
+    ...(input.model ? { overrides: { model: promptModelOverride(input.model) } } : {}),
+  });
+}
+
+/** Does this Slack message carry an image the model has to be able to see? */
+export function slackMessageHasImage(event: SlackEvent): boolean {
+  return (event.files ?? []).some((f) => f.mimetype?.startsWith('image/') === true);
+}
+
+/**
+ * The model a follow-up must run on — see channels/vision-model.ts. Null when
+ * the session's own model is fine.
+ */
+async function followUpModel(
+  projectId: string,
+  accountId: string,
+  userId: string,
+  sessionId: string,
+  event: SlackEvent,
+): Promise<string | null> {
+  const [row] = await db
+    .select({ metadata: projectSessions.metadata })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, sessionId))
+    .limit(1);
+  const pinned = (row?.metadata as Record<string, unknown> | null)?.opencode_model;
+  return channelTurnModel({
+    projectId,
+    accountId,
+    userId,
+    currentModel: typeof pinned === 'string' && pinned.trim() ? pinned.trim() : null,
+    hasImage: slackMessageHasImage(event),
   });
 }
 
@@ -88,7 +123,12 @@ export async function createOrJoinThreadSession(input: {
   if (claimKey && !(await claimThreadCreate(claimKey))) {
     const sessionId = await waitForThreadSession(teamId, threadId);
     if (sessionId) {
-      await deliverSlackFollowUpToSession({ sessionId, text: renderFollowUpPrompt(envelope, event), userId: actorUserId });
+      await deliverSlackFollowUpToSession({
+        sessionId,
+        text: renderFollowUpPrompt(envelope, event),
+        userId: actorUserId,
+        model: await followUpModel(projectId, project.accountId, actorUserId, sessionId, event),
+      });
     } else {
       console.warn('[slack-webhook] lost thread-create claim but winner never published a session', {
         teamId,
@@ -114,7 +154,12 @@ export async function createOrJoinThreadSession(input: {
       )
       .limit(1);
     if (existing) {
-      await deliverSlackFollowUpToSession({ sessionId: existing.sessionId, text: renderFollowUpPrompt(envelope, event), userId: actorUserId });
+      await deliverSlackFollowUpToSession({
+        sessionId: existing.sessionId,
+        text: renderFollowUpPrompt(envelope, event),
+        userId: actorUserId,
+        model: await followUpModel(projectId, project.accountId, actorUserId, existing.sessionId, event),
+      });
       return;
     }
   }
@@ -163,6 +208,17 @@ export async function createOrJoinThreadSession(input: {
     return;
   }
 
+  // A thread that OPENS with an image has to start on a model that can read
+  // one, and a retired `/kortix models` pick has to be replaced.
+  const createModel =
+    (await channelTurnModel({
+      projectId,
+      accountId: project.accountId,
+      userId,
+      currentModel: selection?.opencodeModel,
+      hasImage: slackMessageHasImage(event),
+    })) ?? selection?.opencodeModel;
+
   const result = await slackSessionLifecycle.createSession({
     source: 'slack',
     project,
@@ -171,7 +227,7 @@ export async function createOrJoinThreadSession(input: {
     body: {
       base_ref: project.defaultBranch,
       agent_name: launchAgent,
-      ...(selection?.opencodeModel ? { opencode_model: selection.opencodeModel } : {}),
+      ...(createModel ? { opencode_model: createModel } : {}),
       initial_prompt: renderAgentPrompt(envelope, event, revived),
       // Title from the user's actual words, not the scaffolded envelope — the
       // rendered prompt carries team/channel ids and turn instructions, and the

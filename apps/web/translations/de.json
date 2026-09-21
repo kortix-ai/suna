@@ -1597,6 +1597,15 @@
       "title": "Diese Sitzung wurde beendet",
       "message": "Der zugehörige Computer wurde freigegeben. Starte die Sitzung neu, um sie wiederherzustellen."
     },
+    "previousRepository": {
+      "title": "Sitzung verwendet das vorherige Repository",
+      "message": "Diese Sitzung behält ihren vorherigen Arbeitsbereich. Du kannst ihn fortsetzen, aber Git-Abruf, Push und Änderungsanfragen bleiben deaktiviert.",
+      "unavailable": "Der vorherige Arbeitsbereich ist nicht mehr verfügbar. Starte eine neue Sitzung im aktuellen Repository.",
+      "resume": "Vorherigen Arbeitsbereich fortsetzen",
+      "resuming": "Wird fortgesetzt…",
+      "newSession": "Neue Sitzung starten",
+      "delete": "Sitzung löschen"
+    },
     "lost": {
       "title": "Der Computer dieser Sitzung ist verloren gegangen",
       "message": "Die Cloud-Sandbox ist beim Anbieter verschwunden. Daher kann diese Sitzung nicht neu gestartet oder wiederhergestellt werden. Das ist ein Fehler unsererseits, nicht deinerseits — er wurde automatisch gemeldet. Alles, was aus dieser Sitzung committed und gepusht wurde, ist im Repository deines Projekts sicher."

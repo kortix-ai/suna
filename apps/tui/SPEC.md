@@ -131,7 +131,7 @@ Rules:
 
 ```
 ┌ sidebar 28c ──┬ session ───────────────────────────┬ terminal (toggle, 40%) ┐
-│ ▾ LibreMax     │ Casual greeting            ⌥T ⌥F   │ Terminal            × │
+│ ▾ Project Atlas     │ Casual greeting            ⌥T ⌥F   │ Terminal            × │
 │ + New session  │ ─────────────────────────────────── │ kortix@sandbox:/ws $  │
 │   Customize    │ ▸ Completed 7 steps                 │                       │
 │   Apps         │ I can do a full …                   │                       │
