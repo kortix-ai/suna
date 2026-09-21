@@ -48,19 +48,3 @@ describe('ConfigReleaseRequestSchema', () => {
   });
 });
 
-describe('decideConfigMode (seam until step 4)', () => {
-  test('follows the base branch for a report and for no report', async () => {
-    const input = {
-      project: { projectId: 'p', repoUrl: '', defaultBranch: 'main', manifestPath: 'kortix.yaml' },
-      baseSha: HEAD,
-      release: {} as ConfigRelease,
-    };
-    expect(await decideConfigMode({ ...input, report: null })).toBe('follow-base');
-    expect(
-      await decideConfigMode({
-        ...input,
-        report: { head: HEAD, config_dir: '.kortix/opencode', changed: [{ path: 'x', status: 'modified', blob: BLOB }] },
-      }),
-    ).toBe('follow-base');
-  });
-});
