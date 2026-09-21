@@ -68,7 +68,7 @@ import type { ProjectFileEntry, ProjectBranch, ProjectCommit } from '@/lib/proje
 import type { SandboxFile } from '@/api/types';
 import { getAuthToken } from '@/api/config';
 import { haptics } from '@/lib/haptics';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { SheetBackdrop, useSheetBackground, KortixBottomSheetModal, SheetTitleRow } from '@/components/kortix/sheet';
 
 interface PageTabLike {
   id: string;
@@ -169,12 +169,7 @@ function VersionSheet({
 
   return (
     <View style={{ flex: 1 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: border }}>
-        <Text style={{ flex: 1, fontSize: 18, fontFamily: 'Roobert-Medium', color: fg }}>Version</Text>
-        <Button variant="secondary" size="icon" className="rounded-full" onPress={() => { haptics.tap(); onClose(); }} hitSlop={8}>
-          <Icon as={X} size={17} color={muted} />
-        </Button>
-      </View>
+      <SheetTitleRow title="Version" onClose={() => { haptics.tap(); onClose(); }} />
       <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingVertical: 6, flexGrow: 1 }} showsVerticalScrollIndicator={false}>
         {sorted.length > 0 ? (
           sorted.map((b) => {
@@ -835,13 +830,10 @@ export function FilesNavPage({
       </PageContent>
 
       {/* Version selector */}
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={versionSheetRef}
         snapPoints={['65%']}
         enableDynamicSizing={false}
-        backgroundStyle={{ backgroundColor: sheetBg }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
-        backdropComponent={SheetBackdrop}
       >
         <VersionSheet
           branches={branchesQuery.data?.branches ?? []}
@@ -853,7 +845,7 @@ export function FilesNavPage({
           isLoading={branchesQuery.isLoading || branchesQuery.isFetching}
           isDark={isDark}
         />
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
 
       {/* File viewer */}
       {viewerIndex != null && (

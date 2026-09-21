@@ -52,7 +52,7 @@ import type { TriggerApp, ComposioTriggerType } from '@/api/types';
 import { SvgUri } from 'react-native-svg';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { log } from '@/lib/logger';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -155,7 +155,6 @@ export function TriggerCreationDrawer({
   agentId: propAgentId,
   onUpgradePress,
 }: TriggerCreationDrawerProps) {
-  const sheetBg = useSheetBackground();
   const bottomSheetModalRef = React.useRef<BottomSheetModal>(null);
   const { colorScheme } = useColorScheme();
   const router = useRouter();
@@ -751,16 +750,11 @@ export function TriggerCreationDrawer({
             : cronExpression.trim());
 
   return (
-    <BottomSheetModal
+    <KortixBottomSheetModal
       ref={bottomSheetModalRef}
       snapPoints={snapPoints}
       enablePanDownToClose
       onDismiss={handleDismiss}
-      backdropComponent={SheetBackdrop}
-      backgroundStyle={{
-        backgroundColor: sheetBg,
-      }}
-      handleIndicatorStyle={sheetHandleIndicatorStyle(colorScheme === 'dark')}
       enableDynamicSizing={shouldUseDynamicSizing}
       style={{
         borderTopLeftRadius: 24,
@@ -1424,6 +1418,6 @@ export function TriggerCreationDrawer({
           </>
         )}
       </BottomSheetScrollView>
-    </BottomSheetModal>
+    </KortixBottomSheetModal>
   );
 }

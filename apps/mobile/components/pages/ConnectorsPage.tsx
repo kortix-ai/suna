@@ -76,7 +76,7 @@ import type {
   PolicyDefaultMode,
 } from '@/lib/projects/projects-client';
 import { haptics } from '@/lib/haptics';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 
 interface PageTabLike {
   id: string;
@@ -1205,7 +1205,6 @@ export function ConnectorsPage({
   isDrawerOpen,
   isRightDrawerOpen,
 }: ConnectorsPageProps) {
-  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -1352,29 +1351,23 @@ export function ConnectorsPage({
         </>
       </PageContent>
 
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={addSheetRef}
         snapPoints={['92%']}
         enableDynamicSizing={false}
-        backgroundStyle={{ backgroundColor: sheetBg }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
-        backdropComponent={SheetBackdrop}
       >
         <AddConnectorView projectId={projectId} onClose={() => addSheetRef.current?.dismiss()} />
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
 
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={detailSheetRef}
         snapPoints={['92%']}
         enableDynamicSizing={false}
         onDismiss={() => setSelectedSlug(null)}
-        backgroundStyle={{ backgroundColor: sheetBg }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
-        backdropComponent={SheetBackdrop}
       >
         {selected ? (
           <ConnectorDetail
@@ -1388,18 +1381,15 @@ export function ConnectorsPage({
         ) : (
           <View style={{ height: 1 }} />
         )}
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
 
       {/* Set credential — its own sheet, stacked over the detail sheet */}
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={credentialSheetRef}
         snapPoints={['70%']}
         enableDynamicSizing={false}
-        backgroundStyle={{ backgroundColor: sheetBg }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
-        backdropComponent={SheetBackdrop}
       >
         {selected ? (
           <SetCredentialView
@@ -1410,7 +1400,7 @@ export function ConnectorsPage({
         ) : (
           <View style={{ height: 1 }} />
         )}
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
     </View>
   );
 }

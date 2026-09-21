@@ -8,7 +8,7 @@ import * as React from 'react';
 import { View, Alert, Pressable, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BottomSheetModal, BottomSheetView } from '@gorhom/bottom-sheet';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 
 interface ThreadActionsDrawerProps {
@@ -69,7 +69,6 @@ export function ThreadActionsDrawer({
   onFiles,
   onDelete,
 }: ThreadActionsDrawerProps) {
-  const sheetBg = useSheetBackground();
   const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -127,18 +126,12 @@ export function ThreadActionsDrawer({
 
 
   return (
-    <BottomSheetModal
+    <KortixBottomSheetModal
+      title={t('threadActions.title')}
       ref={bottomSheetRef}
       enableDynamicSizing
       enablePanDownToClose
       onDismiss={handleDismiss}
-      backdropComponent={SheetBackdrop}
-      backgroundStyle={{
-        backgroundColor: sheetBg,
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-      }}
-      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
       {...Platform.select({
         android: {
           android_keyboardInputMode: 'adjustResize' as const,
@@ -150,12 +143,6 @@ export function ThreadActionsDrawer({
           paddingBottom: Math.max(insets.bottom, 20) + 20,
         }}
       >
-        <View className="px-6 pt-2 pb-4">
-          <Text className="text-lg font-roobert-semibold text-foreground">
-            {t('threadActions.title')}
-          </Text>
-        </View>
-
         <View>
           {onShare && (
             <ActionRow
@@ -181,6 +168,6 @@ export function ThreadActionsDrawer({
           )}
         </View>
       </BottomSheetView>
-    </BottomSheetModal>
+    </KortixBottomSheetModal>
   );
 }

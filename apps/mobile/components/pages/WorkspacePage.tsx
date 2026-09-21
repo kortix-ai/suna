@@ -67,7 +67,7 @@ import {
 } from '@/lib/opencode/hooks/use-opencode-data';
 import { useKortixConnectors, type KortixConnector } from '@/lib/kortix';
 import { WorkspaceSettingsSheet, type WorkspaceSettingsSheetRef } from './WorkspaceSettingsSheet';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -171,14 +171,13 @@ interface WorkspacePageProps {
   onCreateSessionWithPrompt?: (title: string, prompt: string) => void;
   /** Called when the page-context ("···") menu should open — mirrors
    *  FilesPage's onRequestMenu. Rendered as its own header action so it
-   *  doesn't collide with `onOpenRightDrawer` (the More sheet). */
+   *  doesn't collide with `onOpenRightDrawer` (the Customize sheet). */
   onRequestMenu?: () => void;
 }
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(function WorkspacePage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, onCreateSessionWithPrompt, onRequestMenu }, ref) {
-  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -738,20 +737,17 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
       )}
 
       {/* Detail bottom sheet */}
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={detailSheetRef}
         enableDynamicSizing
         enablePanDownToClose
         maxDynamicContentSize={600}
-        backdropComponent={SheetBackdrop}
-        backgroundStyle={{ backgroundColor: sheetBg, borderRadius: 24 }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         onDismiss={() => setSelectedItem(null)}
       >
         <BottomSheetScrollView showsVerticalScrollIndicator={false}>
           <DetailContent />
         </BottomSheetScrollView>
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
 
       {/* Settings bottom sheet */}
       <WorkspaceSettingsSheet ref={settingsSheetRef} />

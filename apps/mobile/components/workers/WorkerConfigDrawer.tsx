@@ -21,7 +21,7 @@ import { InstructionsScreen } from './screens/InstructionsScreen';
 import { ToolsScreen } from './screens/ToolsScreen';
 import { ConnectionsScreen } from './screens/ConnectionsScreen';
 import { TriggersScreen } from './screens/TriggersScreen';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 import { THEME } from '@/lib/utils/theme';
 
 interface WorkerConfigDrawerProps {
@@ -50,7 +50,6 @@ export function WorkerConfigDrawer({
   initialView = 'instructions',
   onUpgradePress,
 }: WorkerConfigDrawerProps) {
-  const sheetBg = useSheetBackground();
   const bottomSheetRef = React.useRef<BottomSheetModal>(null);
   const { colorScheme } = useColorScheme();
   // Initialize activeView with initialView, and update it whenever initialView changes
@@ -91,18 +90,12 @@ export function WorkerConfigDrawer({
 
   // Use BottomSheetModal to render above everything (hamburger menu, credits, etc.)
   return (
-    <BottomSheetModal
+    <KortixBottomSheetModal
       ref={bottomSheetRef}
       snapPoints={snapPoints}
       onDismiss={handleDismiss}
       enablePanDownToClose
-      backdropComponent={SheetBackdrop}
-      backgroundStyle={{
-        backgroundColor: sheetBg,
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-      }}
-      handleIndicatorStyle={sheetHandleIndicatorStyle(colorScheme === 'dark')}>
+>
       <View className="flex-1">
         {/* Header */}
         <View className="flex-row items-center justify-between border-b border-border px-4 py-3">
@@ -219,6 +212,6 @@ export function WorkerConfigDrawer({
           </BottomSheetScrollView>
         )}
       </View>
-    </BottomSheetModal>
+    </KortixBottomSheetModal>
   );
 }

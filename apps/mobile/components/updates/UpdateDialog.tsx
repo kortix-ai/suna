@@ -30,7 +30,7 @@ import { Button } from '@/components/ui/button';
 import { KortixLogo } from '@/components/kortix/KortixLogo';
 import { useThemeColors } from '@/lib/theme-colors';
 import type { ChangelogEntry } from '@/lib/platform/client';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 
 type DialogStep = 'confirm' | 'updating' | 'done' | 'failed';
@@ -102,7 +102,6 @@ export function UpdateDialog({
   onConfirm,
   onRetry,
 }: UpdateDialogProps) {
-  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -199,20 +198,13 @@ export function UpdateDialog({
   return (
     <>
       {/* Bottom sheet — confirm step only */}
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={sheetRef}
         enableDynamicSizing
         maxDynamicContentSize={Math.floor(screenHeight * 0.86)}
         enablePanDownToClose
         enableOverDrag={false}
         onDismiss={handleSheetDismiss}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
-        backgroundStyle={{
-          backgroundColor: sheetBg,
-          borderTopLeftRadius: 24,
-          borderTopRightRadius: 24,
-        }}
-        backdropComponent={SheetBackdrop}
       >
         <BottomSheetView style={{ paddingBottom: insets.bottom + 8 }}>
           <View>
@@ -295,7 +287,7 @@ export function UpdateDialog({
             </View>
           </View>
         </BottomSheetView>
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
 
       {/* Full-screen splash — updating / done / failed (mirrors web UpdateDialog) */}
       <Modal

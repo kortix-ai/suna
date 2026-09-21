@@ -46,7 +46,7 @@ import { ComposioToolsContent } from '@/components/settings/connections/Composio
 import { CustomMcpContent } from '@/components/settings/connections/CustomMcpDialog';
 import { CustomMcpToolsContent } from '@/components/settings/connections/CustomMcpToolsSelector';
 import { log } from '@/lib/logger';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 
 interface AgentDrawerProps {
@@ -88,7 +88,6 @@ export function AgentDrawer({
   onOpenWorkerConfig,
   onDismiss,
 }: AgentDrawerProps) {
-  const sheetBg = useSheetBackground();
   const bottomSheetRef = React.useRef<BottomSheetModal>(null);
   const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
@@ -503,19 +502,12 @@ export function AgentDrawer({
   );
 
   return (
-    <BottomSheetModal
+    <KortixBottomSheetModal
       ref={bottomSheetRef}
       snapPoints={advancedFeaturesEnabled ? ['70%'] : ['50%']}
       enablePanDownToClose
       onDismiss={handleDismiss}
       onChange={handleSheetChange}
-      backdropComponent={SheetBackdrop}
-      backgroundStyle={{
-        backgroundColor: sheetBg,
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-      }}
-      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
       style={{
         zIndex: 50,
         elevation: Platform.OS === 'android' ? 10 : undefined,
@@ -646,7 +638,7 @@ export function AgentDrawer({
           )}
         </BottomSheetScrollView>
       )}
-    </BottomSheetModal>
+    </KortixBottomSheetModal>
   );
 }
 

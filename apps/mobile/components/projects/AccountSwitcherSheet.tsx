@@ -18,7 +18,7 @@ import { useThemeColors } from '@/lib/theme-colors';
 import { haptics } from '@/lib/haptics';
 import type { KortixAccount } from '@/lib/projects/projects-client';
 import { NewAccountSheet } from '@/components/accounts/NewAccountSheet';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 
 interface AccountSwitcherSheetProps {
@@ -36,7 +36,6 @@ export function AccountSwitcherSheet({
   onSelect,
   onClose,
 }: AccountSwitcherSheetProps) {
-  const sheetBg = useSheetBackground();
   const sheetRef = useRef<BottomSheetModal>(null);
   const router = useRouter();
   const { colorScheme } = useColorScheme();
@@ -70,14 +69,11 @@ export function AccountSwitcherSheet({
 
   return (
     <>
-    <BottomSheetModal
+    <KortixBottomSheetModal
       ref={sheetRef}
       enableDynamicSizing
       enablePanDownToClose
       onDismiss={onClose}
-      backdropComponent={SheetBackdrop}
-      backgroundStyle={{ backgroundColor: sheetBg, borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
-      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
     >
       <BottomSheetView style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: insets.bottom + 12 }}>
         <Text className="px-2 pb-1.5 font-roobert-medium text-xs uppercase tracking-wider text-muted-foreground">
@@ -122,7 +118,7 @@ export function AccountSwitcherSheet({
         />
         <ActionRow icon={Plus} label="New account" onPress={handleNewAccount} />
       </BottomSheetView>
-    </BottomSheetModal>
+    </KortixBottomSheetModal>
 
     <NewAccountSheet
       open={showNewAccount}

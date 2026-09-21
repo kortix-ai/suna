@@ -46,7 +46,7 @@ import { PageHeader } from '@/components/kortix/page-header';
 import { PageContent } from '@/components/kortix/page-content';
 import { useThemeColors } from '@/lib/theme-colors';
 import { THEME, withAlpha } from '@/lib/utils/theme';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { sheetHandleIndicatorStyle, useSheetBackground, KortixBottomSheetModal } from '@/components/kortix/sheet';
 
 // `BottomSheetTouchable` used to come from `@gorhom/bottom-sheet`'s re-exported
 // legacy touchable, which itself just proxies react-native-gesture-handler's
@@ -425,11 +425,10 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
       </ScrollView>
 
       {/* ── Add Secret Sheet ── */}
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={addSheetRef}
         enableDynamicSizing
         enablePanDownToClose
-        backdropComponent={SheetBackdrop}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
         android_keyboardInputMode="adjustResize"
@@ -495,14 +494,13 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
             </Text>
           </BottomSheetTouchable>
         </BottomSheetView>
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
 
       {/* ── Edit Secret Sheet ── */}
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={editSheetRef}
         enableDynamicSizing
         enablePanDownToClose
-        backdropComponent={SheetBackdrop}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
         android_keyboardInputMode="adjustResize"
@@ -552,14 +550,13 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
             </Text>
           </BottomSheetTouchable>
         </BottomSheetView>
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
 
       {/* ── Delete Secret Sheet ── */}
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={deleteSheetRef}
         enableDynamicSizing
         enablePanDownToClose
-        backdropComponent={SheetBackdrop}
         onDismiss={() => setDeleteKey('')}
         {...sheetStyles}
       >
@@ -612,7 +609,7 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
             </BottomSheetTouchable>
           </View>
         </BottomSheetView>
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
       </PageContent>
     </View>
   );

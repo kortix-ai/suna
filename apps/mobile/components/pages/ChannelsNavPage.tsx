@@ -45,7 +45,7 @@ import {
 } from '@/lib/projects/hooks';
 import { API_URL } from '@/api/config';
 import { haptics } from '@/lib/haptics';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal, SheetTitleRow } from '@/components/kortix/sheet';
 
 interface PageTabLike {
   id: string;
@@ -155,18 +155,7 @@ function ByoSlackSheet({
 
   return (
     <View style={{ flex: 1 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: withAlpha(fg, 0.08) }}>
-        <Text style={{ flex: 1, fontSize: 18, fontFamily: 'Roobert-Medium', color: fg }}>Bring your own Slack app</Text>
-        <Button
-          variant="secondary"
-          size="icon"
-          onPress={() => { haptics.tap(); onClose(); }}
-          hitSlop={8}
-          className="rounded-full"
-        >
-          <Icon as={X} size={17} color={muted} />
-        </Button>
-      </View>
+      <SheetTitleRow title="Bring your own Slack app" onClose={() => { haptics.tap(); onClose(); }} />
 
       {/* Step indicator */}
       <View style={{ flexDirection: 'row', gap: 6, paddingHorizontal: 16, paddingTop: 12 }}>
@@ -295,7 +284,6 @@ export function ChannelsNavPage({
   isDrawerOpen,
   isRightDrawerOpen,
 }: ChannelsNavPageProps) {
-  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -461,18 +449,15 @@ export function ChannelsNavPage({
         </ScrollView>
       </PageContent>
 
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={byoSheetRef}
         snapPoints={['92%']}
         enableDynamicSizing={false}
-        backgroundStyle={{ backgroundColor: sheetBg }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
-        backdropComponent={SheetBackdrop}
       >
         <ByoSlackSheet projectId={projectId} onClose={() => byoSheetRef.current?.dismiss()} isDark={isDark} />
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
     </View>
   );
 }

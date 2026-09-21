@@ -18,7 +18,7 @@ import { Avatar } from '@/components/kortix/avatar';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { SearchBar } from '@/components/kortix/SearchBar';
 import { SheetTextInput } from '@/components/kortix/SheetInput';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal, SheetTitleRow } from '@/components/kortix/sheet';
 import { SettingsGroup, SettingsPage, SettingsRow } from '@/components/kortix/settings-list';
 import { haptics } from '@/lib/haptics';
 import { listGroups, createGroup } from '@/lib/accounts/groups-client';
@@ -31,7 +31,6 @@ function memberCount(n: number | null | undefined): string {
 }
 
 export function GroupsTab({ account, can, isDark }: { account: AccountDetail; can: AccountCaps; isDark: boolean }) {
-  const sheetBg = useSheetBackground();
   const router = useRouter();
   const accountId = account.account_id;
   const canCreate = can['group.create'];
@@ -117,15 +116,12 @@ export function GroupsTab({ account, can, isDark }: { account: AccountDetail; ca
         )}
       </SettingsPage>
 
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={createRef}
         snapPoints={['46%']}
         enableDynamicSizing={false}
-        backgroundStyle={{ backgroundColor: sheetBg }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
-        backdropComponent={SheetBackdrop}
       >
         <CreateGroupSheet
           accountId={accountId}
@@ -137,7 +133,7 @@ export function GroupsTab({ account, can, isDark }: { account: AccountDetail; ca
             router.push(`/accounts/${accountId}/groups/${groupId}`);
           }}
         />
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
     </View>
   );
 }
@@ -154,12 +150,7 @@ function CreateGroupSheet({ accountId, onCreated, onClose, isDark }: { accountId
 
   return (
     <View style={{ flex: 1 }}>
-      <View className="flex-row items-center gap-3 px-5 pb-2 pt-1">
-        <Text variant="large" className="flex-1">
-          Create group
-        </Text>
-        <SheetCloseButton onPress={() => { haptics.tap(); onClose(); }} isDark={isDark} />
-      </View>
+      <SheetTitleRow title="Create group" onClose={() => { haptics.tap(); onClose(); }} />
       <BottomSheetScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8, gap: 12 }}

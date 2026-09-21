@@ -75,7 +75,7 @@ import {
 } from '@/hooks/useChannelWizards';
 import { useOpenCodeAgents, useOpenCodeProviders, flattenModels, filterToLatestModels } from '@/lib/opencode/hooks/use-opencode-data';
 import { SlackIcon } from '@/components/icons/slack-icon';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 
 // ─── Channel Type Icons ─────────────────────────────────────────────────────
 
@@ -440,7 +440,6 @@ function ChannelDetailSheet({
   onDelete: (channel: ChannelConfig) => void;
   onClose: () => void;
 }) {
-  const sheetBg = useSheetBackground();
   const insets = useSafeAreaInsets();
   const sheetPadding = useSheetBottomPadding();
   const { sandboxUrl } = useSandboxContext();
@@ -528,14 +527,11 @@ function ChannelDetailSheet({
   const webhookUrl = channel?.webhook_url || (channel?.platformConfig?.webhook_url as string) || '';
 
   return (
-    <BottomSheetModal
+    <KortixBottomSheetModal
       ref={sheetRef}
       snapPoints={['85%']}
       enablePanDownToClose
       onDismiss={onClose}
-      backdropComponent={SheetBackdrop}
-      backgroundStyle={{ backgroundColor: sheetBg, borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
-      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
     >
       {channel ? (
       <BottomSheetScrollView contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: sheetPadding }} showsVerticalScrollIndicator={false}>
@@ -685,7 +681,7 @@ function ChannelDetailSheet({
         </View>
       </BottomSheetScrollView>
       ) : null}
-    </BottomSheetModal>
+    </KortixBottomSheetModal>
   );
 }
 
@@ -724,7 +720,6 @@ function AddChannelSheet({
   onCreated: () => void;
   isCreating: boolean;
 }) {
-  const sheetBg = useSheetBackground();
   const insets = useSafeAreaInsets();
   const sheetPadding = useSheetBottomPadding();
   const [view, setView] = useState<WizardView>('type-select');
@@ -767,17 +762,14 @@ function AddChannelSheet({
   const isWizard = view === 'telegram-wizard' || view === 'slack-wizard';
 
   return (
-    <BottomSheetModal
+    <KortixBottomSheetModal
       ref={sheetRef}
       {...(isWizard ? { snapPoints: ['90%'] } : { enableDynamicSizing: true })}
       enablePanDownToClose
-      backdropComponent={SheetBackdrop}
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"
       android_keyboardInputMode="adjustResize"
       onDismiss={reset}
-      backgroundStyle={{ backgroundColor: sheetBg, borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
-      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
     >
       <BottomSheetScrollView
         contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: sheetPadding }}
@@ -887,7 +879,7 @@ function AddChannelSheet({
           </>
         )}
       </BottomSheetScrollView>
-    </BottomSheetModal>
+    </KortixBottomSheetModal>
   );
 }
 

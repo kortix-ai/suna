@@ -32,7 +32,7 @@ import { Avatar } from '@/components/kortix/avatar';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { SearchBar } from '@/components/kortix/SearchBar';
 import { SheetTextInput } from '@/components/kortix/SheetInput';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal, SheetTitleRow } from '@/components/kortix/sheet';
 import { SettingsGroup, SettingsPage, SettingsRow } from '@/components/kortix/settings-list';
 import { haptics } from '@/lib/haptics';
 import { useAccountGroups } from '@/lib/projects/hooks';
@@ -74,7 +74,6 @@ export function MembersTab({
   const router = useRouter();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const sheetBg = useSheetBackground();
   const accountId = account.account_id;
 
   const membersQuery = useAccountMembers(accountId);
@@ -367,16 +366,14 @@ export function MembersTab({
         )}
       </SettingsPage>
 
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={sheetRef}
         snapPoints={sheet?.kind === 'invite' ? ['62%'] : sheet?.kind === 'bulkRole' ? ['46%'] : ['54%']}
         enableDynamicSizing={false}
         onDismiss={() => setSheet(null)}
-        backgroundStyle={{ backgroundColor: sheetBg }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
-        backdropComponent={SheetBackdrop}>
+>
         {sheet?.kind === 'invite' ? (
           <InviteSheet accountId={accountId} onClose={() => sheetRef.current?.dismiss()} />
         ) : sheet?.kind === 'bulkGroup' ? (
@@ -398,7 +395,7 @@ export function MembersTab({
         ) : (
           <View style={{ height: 1 }} />
         )}
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
     </View>
   );
 }
@@ -406,21 +403,8 @@ export function MembersTab({
 // ─── sheet chrome ─────────────────────────────────────────────────────────────
 
 function SheetTitle({ title, onClose }: { title: string; onClose: () => void }) {
-  const { colorScheme } = useColorScheme();
-  return (
-    <View className="flex-row items-center gap-3 px-5 pb-4 pt-1">
-      <Text variant="large" className="flex-1" numberOfLines={1}>
-        {title}
-      </Text>
-      <SheetCloseButton
-        isDark={colorScheme === 'dark'}
-        onPress={() => {
-          haptics.tap();
-          onClose();
-        }}
-      />
-    </View>
-  );
+  // The app's one sheet title row: close at the far left, title centred.
+  return <SheetTitleRow title={title} onClose={() => { haptics.tap(); onClose(); }} />;
 }
 
 function SheetFooter({ children }: { children: React.ReactNode }) {

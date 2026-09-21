@@ -51,7 +51,7 @@ import { BottomSheetModal, BottomSheetView, BottomSheetFlatList, BottomSheetScro
 import { useLanguage } from '@/contexts/LanguageContext';
 import { ToolkitIcon } from '@/components/settings/connections/ToolkitIcon';
 import { EmptyState } from '@/components/shared/EmptyState';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { useSheetBackground, KortixBottomSheetModal } from '@/components/kortix/sheet';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 
 // Drawer view states
@@ -784,17 +784,12 @@ export function ConnectionsScreen({ agentId, onUpdate, onUpgradePress }: Connect
       )}
 
       {/* Browse Apps Drawer */}
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={browseAppsSheetRef}
         snapPoints={['90%']}
         enableDynamicSizing={false}
         enablePanDownToClose
         onDismiss={handleCloseBrowseApps}
-        backdropComponent={SheetBackdrop}
-        backgroundStyle={{
-          backgroundColor: sheetBg,
-        }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(colorScheme === 'dark')}
         style={{
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
@@ -959,20 +954,15 @@ export function ConnectionsScreen({ agentId, onUpdate, onUpgradePress }: Connect
             />
           )}
         </View>
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
 
       {/* Custom MCP Drawer */}
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={customMcpSheetRef}
         snapPoints={['90%']}
         enableDynamicSizing={false}
         enablePanDownToClose
         onDismiss={handleCloseCustomMcp}
-        backdropComponent={SheetBackdrop}
-        backgroundStyle={{
-          backgroundColor: sheetBg,
-        }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(colorScheme === 'dark')}
         style={{
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
@@ -1042,20 +1032,15 @@ export function ConnectionsScreen({ agentId, onUpdate, onUpgradePress }: Connect
             </Pressable>
           </View>
         </View>
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
 
       {/* Tools Manager Sheet (for editing existing connections) */}
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={toolsSheetRef}
         snapPoints={['90%']}
         enableDynamicSizing={false}
         enablePanDownToClose
         onDismiss={handleCloseToolsSheet}
-        backdropComponent={SheetBackdrop}
-        backgroundStyle={{
-          backgroundColor: sheetBg,
-        }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(colorScheme === 'dark')}
         style={{
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
@@ -1094,7 +1079,7 @@ export function ConnectionsScreen({ agentId, onUpdate, onUpgradePress }: Connect
             />
           )}
         </View>
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
     </View>
   );
 }

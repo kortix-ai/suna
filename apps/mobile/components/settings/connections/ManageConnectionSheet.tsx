@@ -26,7 +26,7 @@ import { useSandboxContext } from '@/contexts/SandboxContext';
 import { useThemeColors } from '@/lib/theme-colors';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import { log } from '@/lib/logger';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 
 interface ManageConnectionSheetProps {
   connection: ConnectorConnection | null;
@@ -35,7 +35,6 @@ interface ManageConnectionSheetProps {
 }
 
 export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: ManageConnectionSheetProps) {
-  const sheetBg = useSheetBackground();
   const sheetRef = useRef<BottomSheetModal>(null);
   const renameSheetRef = useRef<BottomSheetModal>(null);
   const { colorScheme } = useColorScheme();
@@ -174,18 +173,11 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
 
   return (
     <>
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={sheetRef}
         enableDynamicSizing
         enablePanDownToClose
         onDismiss={onDismiss}
-        backdropComponent={SheetBackdrop}
-        backgroundStyle={{
-          backgroundColor: sheetBg,
-          borderTopLeftRadius: 24,
-          borderTopRightRadius: 24,
-        }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
       >
         <BottomSheetView
           style={{ padding: 20, paddingBottom: insets.bottom + 20 }}
@@ -323,24 +315,17 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
             </>
           )}
         </BottomSheetView>
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
 
       {/* Rename Sub-Sheet */}
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={renameSheetRef}
         enableDynamicSizing
         enablePanDownToClose
-        backdropComponent={SheetBackdrop}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
         android_keyboardInputMode="adjustResize"
         onDismiss={() => setRenameDraft('')}
-        backgroundStyle={{
-          backgroundColor: sheetBg,
-          borderTopLeftRadius: 24,
-          borderTopRightRadius: 24,
-        }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
       >
         <BottomSheetView
           style={{
@@ -417,7 +402,7 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
             )}
           </Pressable>
         </BottomSheetView>
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
     </>
   );
 }

@@ -17,7 +17,7 @@ import { useThemeColors } from '@/lib/theme-colors';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import { updateProjectSession, type ProjectSession } from '@/lib/projects/projects-client';
 import { projectKeys } from '@/lib/projects/hooks';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { SheetBackdrop, KortixBottomSheetModal } from '@/components/kortix/sheet';
 import { useToast } from '@/components/kortix/toast-provider';
 
 const MAX_NAME_LENGTH = 120;
@@ -29,7 +29,6 @@ interface SessionRenameSheetProps {
 
 export const SessionRenameSheet = forwardRef<BottomSheetModal, SessionRenameSheetProps>(
   function SessionRenameSheet({ projectId, session }, ref) {
-    const sheetBg = useSheetBackground();
     const { colorScheme } = useColorScheme();
     const isDark = colorScheme === 'dark';
     const insets = useSafeAreaInsets();
@@ -79,7 +78,7 @@ export const SessionRenameSheet = forwardRef<BottomSheetModal, SessionRenameShee
 
 
     return (
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={sheetRef}
         enableDynamicSizing
         enablePanDownToClose
@@ -93,12 +92,7 @@ export const SessionRenameSheet = forwardRef<BottomSheetModal, SessionRenameShee
           if (from === -1 && to === 0) setValue(session?.custom_name ?? '');
         }}
         onDismiss={() => setValue(session?.custom_name ?? '')}
-        backgroundStyle={{
-          backgroundColor: sheetBg,
-          borderTopLeftRadius: 24,
-          borderTopRightRadius: 24,
-        }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}>
+>
         <BottomSheetView
           style={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: sheetPadding }}>
           {/* Header */}
@@ -160,7 +154,7 @@ export const SessionRenameSheet = forwardRef<BottomSheetModal, SessionRenameShee
             )}
           </Button>
         </BottomSheetView>
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
     );
   }
 );

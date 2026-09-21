@@ -18,7 +18,7 @@ import { useCreateAccount } from '@/lib/projects/hooks';
 import { haptics } from '@/lib/haptics';
 import type { KortixAccount } from '@/lib/projects/projects-client';
 import { InitialsAvatar, PrimaryButton, SheetCloseButton, accountColors } from './account-shared';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 
 interface NewAccountSheetProps {
   open: boolean;
@@ -27,7 +27,6 @@ interface NewAccountSheetProps {
 }
 
 export function NewAccountSheet({ open, onClose, onCreated }: NewAccountSheetProps) {
-  const sheetBg = useSheetBackground();
   const sheetRef = useRef<BottomSheetModal>(null);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -66,22 +65,16 @@ export function NewAccountSheet({ open, onClose, onCreated }: NewAccountSheetPro
   const preview = name.trim();
 
   return (
-    <BottomSheetModal
+    <KortixBottomSheetModal
+      title="New account"
       ref={sheetRef}
       enableDynamicSizing
       enablePanDownToClose
       onDismiss={onClose}
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"
-      backdropComponent={SheetBackdrop}
-      backgroundStyle={{ backgroundColor: sheetBg, borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
-      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
     >
       <BottomSheetView style={{ paddingHorizontal: 20, paddingTop: 6, paddingBottom: insets.bottom + 16 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 18 }}>
-          <Text style={{ flex: 1, fontSize: 20, fontFamily: 'Roobert-Semibold', color: c.fg }}>New account</Text>
-          <SheetCloseButton onPress={() => { haptics.tap(); sheetRef.current?.dismiss(); }} isDark={isDark} />
-        </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 18 }}>
           <InitialsAvatar label={preview || null} isDark={isDark} size={52} />
@@ -115,6 +108,6 @@ export function NewAccountSheet({ open, onClose, onCreated }: NewAccountSheetPro
           />
         </View>
       </BottomSheetView>
-    </BottomSheetModal>
+    </KortixBottomSheetModal>
   );
 }

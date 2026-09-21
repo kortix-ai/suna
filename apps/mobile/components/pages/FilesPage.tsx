@@ -72,7 +72,7 @@ import { PageHeader } from '@/components/kortix/page-header';
 import { PageContent } from '@/components/kortix/page-content';
 import { useThemeColors } from '@/lib/theme-colors';
 import { THEME, withAlpha } from '@/lib/utils/theme';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 
 // `BottomSheetTouchable` used to come from `@gorhom/bottom-sheet`'s re-exported
 // legacy touchable, which itself just proxies react-native-gesture-handler's
@@ -163,7 +163,6 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
   { page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, onFileSelectionChange, onRequestMenu },
   ref,
 ) {
-  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -1168,21 +1167,14 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
       </View>
 
       {/* Create Folder Bottom Sheet */}
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={createFolderSheetRef}
         enableDynamicSizing
         enablePanDownToClose
-        backdropComponent={SheetBackdrop}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
         android_keyboardInputMode="adjustResize"
         onDismiss={() => setNewFolderName('')}
-        backgroundStyle={{
-          backgroundColor: sheetBg,
-          borderTopLeftRadius: 24,
-          borderTopRightRadius: 24,
-        }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
       >
         <BottomSheetView
           style={{
@@ -1298,24 +1290,17 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
             </Text>
           </BottomSheetTouchable>
         </BottomSheetView>
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
 
       {/* Create File Bottom Sheet */}
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={newFileSheetRef}
         enableDynamicSizing
         enablePanDownToClose
-        backdropComponent={SheetBackdrop}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
         android_keyboardInputMode="adjustResize"
         onDismiss={() => setNewFileName('')}
-        backgroundStyle={{
-          backgroundColor: sheetBg,
-          borderTopLeftRadius: 24,
-          borderTopRightRadius: 24,
-        }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
       >
         <BottomSheetView
           style={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: sheetPadding }}
@@ -1422,24 +1407,17 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
             </Text>
           </BottomSheetTouchable>
         </BottomSheetView>
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
 
       {/* Rename Bottom Sheet */}
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={renameSheetRef}
         enableDynamicSizing
         enablePanDownToClose
-        backdropComponent={SheetBackdrop}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
         android_keyboardInputMode="adjustResize"
         onDismiss={() => { setRenameName(''); setRenameFile(null); }}
-        backgroundStyle={{
-          backgroundColor: sheetBg,
-          borderTopLeftRadius: 24,
-          borderTopRightRadius: 24,
-        }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
       >
         <BottomSheetView
           style={{
@@ -1572,7 +1550,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
             );
           })()}
         </BottomSheetView>
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
 
       {/* File Viewer */}
       <FileViewer

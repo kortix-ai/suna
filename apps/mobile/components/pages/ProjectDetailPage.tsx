@@ -96,7 +96,7 @@ import {
   useProjectSessionStats,
   totalTokens as sumTokens,
 } from '@/lib/opencode/hooks/use-project-session-stats';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { SheetBackdrop, KortixBottomSheetModal } from '@/components/kortix/sheet';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -152,7 +152,6 @@ export function ProjectDetailPage({
   isDrawerOpen,
   isRightDrawerOpen,
 }: ProjectDetailPageProps) {
-  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -1392,19 +1391,14 @@ export function ProjectDetailPage({
       )}
 
       {/* Task detail sheet — scrollable for long content (ported from web 54fd0e3) */}
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={taskSheetRef}
         snapPoints={['85%']}
         enableDynamicSizing={false}
         enablePanDownToClose
         backdropComponent={(p) => <SheetBackdrop {...p} opacity={0.35} />}
         onDismiss={() => setSelectedTask(null)}
-        backgroundStyle={{
-          backgroundColor: sheetBg,
-          borderTopLeftRadius: 24,
-          borderTopRightRadius: 24,
-        }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}>
+>
         <BottomSheetScrollView
           contentContainerStyle={{
             paddingHorizontal: 20,
@@ -1837,10 +1831,10 @@ export function ProjectDetailPage({
               );
             })()}
         </BottomSheetScrollView>
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
 
       {/* Edit sheet — matches FilesPage rename sheet pattern */}
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={editSheetRef}
         enableDynamicSizing
         enablePanDownToClose
@@ -1851,12 +1845,7 @@ export function ProjectDetailPage({
         onDismiss={() => {
           setEditValue('');
         }}
-        backgroundStyle={{
-          backgroundColor: sheetBg,
-          borderTopLeftRadius: 24,
-          borderTopRightRadius: 24,
-        }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}>
+>
         <BottomSheetView
           style={{
             paddingHorizontal: 24,
@@ -1953,10 +1942,10 @@ export function ProjectDetailPage({
             );
           })()}
         </BottomSheetView>
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
 
       {/* New task sheet — ported from web new-task-dialog */}
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={newTaskSheetRef}
         snapPoints={['75%', '95%']}
         enablePanDownToClose
@@ -1964,12 +1953,7 @@ export function ProjectDetailPage({
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
         android_keyboardInputMode="adjustResize"
-        backgroundStyle={{
-          backgroundColor: sheetBg,
-          borderTopLeftRadius: 24,
-          borderTopRightRadius: 24,
-        }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}>
+>
         <BottomSheetScrollView
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{
@@ -2360,7 +2344,7 @@ export function ProjectDetailPage({
             );
           })()}
         </BottomSheetScrollView>
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
       </PageContent>
     </View>
   );

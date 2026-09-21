@@ -29,7 +29,7 @@ import { checkInstanceHealth, type SandboxInfo, type SandboxProviderName } from 
 import { setInstanceProgress, useInstanceProgress } from '@/stores/instance-progress';
 import { useThemeColors } from '@/lib/theme-colors';
 import { useGlobalSandboxUpdate } from '@/hooks/useSandboxUpdate';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { SheetBackdrop, KortixBottomSheetModal } from '@/components/kortix/sheet';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -268,7 +268,6 @@ const AddInstanceSheet = React.forwardRef<
   BottomSheetModal,
   { isDark: boolean; onCreated: () => void; onProgress: (p: { percent: number; message: string } | null) => void }
 >(function AddInstanceSheet({ isDark, onCreated, onProgress }, ref) {
-  const sheetBg = useSheetBackground();
   const insets = useSafeAreaInsets();
   const [step, setStep] = React.useState<AddStep>('select');
   const [customUrl, setCustomUrl] = React.useState('');
@@ -314,18 +313,13 @@ const AddInstanceSheet = React.forwardRef<
   }, [customUrl, onCreated, resetState]);
 
   return (
-    <BottomSheetModal
+    <KortixBottomSheetModal
       ref={ref}
       index={0}
       snapPoints={snapPoints}
       enablePanDownToClose={!isCreating}
       backdropComponent={(p) => <SheetBackdrop {...p} opacity={0.35} />}
       onDismiss={resetState}
-      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
-      backgroundStyle={{
-        backgroundColor: sheetBg,
-        borderTopLeftRadius: 24, borderTopRightRadius: 24,
-      }}
     >
       <BottomSheetView style={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: Math.max(insets.bottom, 20) + 16 }}>
         {isCreating && progress ? (
@@ -461,6 +455,6 @@ const AddInstanceSheet = React.forwardRef<
           </View>
         )}
       </BottomSheetView>
-    </BottomSheetModal>
+    </KortixBottomSheetModal>
   );
 });

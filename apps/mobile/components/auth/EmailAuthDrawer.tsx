@@ -17,7 +17,7 @@ import { useLanguage } from '@/contexts';
 import * as Haptics from 'expo-haptics';
 import { useToast } from '@/components/kortix/toast-provider';
 import { log } from '@/lib/logger';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 import { THEME } from '@/lib/utils/theme';
 
 export interface EmailAuthDrawerRef {
@@ -34,7 +34,6 @@ export interface EmailAuthDrawerRef {
 export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
   onSuccess?: () => void;
 }>(({ onSuccess }, ref) => {
-  const sheetBg = useSheetBackground();
   const bottomSheetRef = React.useRef<BottomSheetModal>(null);
   const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
@@ -109,12 +108,11 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
   const isValidEmail = email.includes('@') && email.length > 3;
 
   return (
-    <BottomSheetModal
+    <KortixBottomSheetModal
       ref={bottomSheetRef}
       index={0}
       snapPoints={snapPoints}
       onChange={handleSheetChange}
-      backdropComponent={SheetBackdrop}
       enablePanDownToClose
       onDismiss={handleDismiss}
       enableDynamicSizing={false}
@@ -122,10 +120,6 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"
       android_keyboardInputMode="adjustResize"
-      backgroundStyle={{
-        backgroundColor: sheetBg,
-      }}
-      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
     >
       <BottomSheetScrollView
         contentContainerStyle={{
@@ -338,7 +332,7 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
             )}
         </View>
       </BottomSheetScrollView>
-    </BottomSheetModal>
+    </KortixBottomSheetModal>
   );
 });
 

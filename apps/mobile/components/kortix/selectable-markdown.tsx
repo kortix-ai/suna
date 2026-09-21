@@ -61,7 +61,7 @@ import { FONT_FAMILY } from '@/lib/utils/fonts';
 import * as Clipboard from 'expo-clipboard';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { log } from '@/lib/logger';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
@@ -680,7 +680,6 @@ interface TextSelectionModalProps {
 }
 
 function TextSelectionModal({ sheetRef, text, isDark, onDismiss }: TextSelectionModalProps) {
-  const sheetBg = useSheetBackground();
   const insets = useSafeAreaInsets();
   const snapPoints = useMemo(() => ['70%', '95%'], []);
   const [copied, setCopied] = useState(false);
@@ -717,7 +716,7 @@ function TextSelectionModal({ sheetRef, text, isDark, onDismiss }: TextSelection
   }, [text]);
 
   return (
-    <BottomSheetModal
+    <KortixBottomSheetModal
       ref={sheetRef}
       snapPoints={snapPoints}
       index={0}
@@ -725,13 +724,6 @@ function TextSelectionModal({ sheetRef, text, isDark, onDismiss }: TextSelection
       enableDynamicSizing={false}
       onChange={handleSheetChange}
       onDismiss={onDismiss}
-      backdropComponent={SheetBackdrop}
-      backgroundStyle={{
-        backgroundColor: sheetBg,
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-      }}
-      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
       style={{
         zIndex: 999,
         elevation: Platform.OS === 'android' ? 50 : undefined,
@@ -783,7 +775,7 @@ function TextSelectionModal({ sheetRef, text, isDark, onDismiss }: TextSelection
           />
         </View>
       </BottomSheetView>
-    </BottomSheetModal>
+    </KortixBottomSheetModal>
   );
 }
 

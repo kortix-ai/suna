@@ -18,7 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Avatar } from '@/components/kortix/avatar';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { SheetTextInput } from '@/components/kortix/SheetInput';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground, KortixBottomSheetModal, SheetTitleRow } from '@/components/kortix/sheet';
 import { SettingsGroup, SettingsHeader, SettingsPage, SettingsRow } from '@/components/kortix/settings-list';
 import { haptics } from '@/lib/haptics';
 import {
@@ -182,7 +182,7 @@ export default function GroupDetailScreen() {
         </SettingsPage>
       )}
 
-      <BottomSheetModal ref={editRef} snapPoints={['46%']} keyboardBehavior="interactive" keyboardBlurBehavior="restore" {...sheetProps}>
+      <KortixBottomSheetModal ref={editRef} snapPoints={['46%']} keyboardBehavior="interactive" keyboardBlurBehavior="restore" {...sheetProps}>
         {group ? (
           <EditGroupSheet
             initialName={group.name}
@@ -193,9 +193,9 @@ export default function GroupDetailScreen() {
             onSave={(name, description) => update.mutate({ name, description: description || null })}
           />
         ) : null}
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
 
-      <BottomSheetModal ref={addRef} snapPoints={['72%']} {...sheetProps}>
+      <KortixBottomSheetModal ref={addRef} snapPoints={['72%']} {...sheetProps}>
         <AddMembersSheet
           candidates={candidates.map((m) => ({ user_id: m.user_id, email: m.email }))}
           isDark={isDark}
@@ -212,20 +212,14 @@ export default function GroupDetailScreen() {
             }
           }}
         />
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
     </View>
   );
 }
 
-function SheetTitle({ title, onClose, isDark }: { title: string; onClose: () => void; isDark: boolean }) {
-  return (
-    <View className="flex-row items-center gap-3 px-5 pb-2 pt-1">
-      <Text variant="large" className="flex-1">
-        {title}
-      </Text>
-      <SheetCloseButton onPress={() => { haptics.tap(); onClose(); }} isDark={isDark} />
-    </View>
-  );
+function SheetTitle({ title, onClose }: { title: string; onClose: () => void; isDark?: boolean }) {
+  // The app's one sheet title row: close at the far left, title centred.
+  return <SheetTitleRow title={title} onClose={() => { haptics.tap(); onClose(); }} />;
 }
 
 function EditGroupSheet({ initialName, initialDescription, pending, onSave, onClose, isDark }: {

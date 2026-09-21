@@ -45,7 +45,7 @@ import * as Clipboard from 'expo-clipboard';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { haptics } from '@/lib/haptics';
-import { BottomSheetScrollView, BottomSheetModal, BottomSheetView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetScrollView, BottomSheetView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 
 import { useThemeColors, getToggleTrackBg, getToggleActiveBg } from '@/lib/theme-colors';
 import { THEME, withAlpha } from '@/lib/utils/theme';
@@ -72,7 +72,7 @@ import {
   type UpdateTriggerData,
   type ExecutionStatus,
 } from '@/hooks/useScheduledTasks';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 
 // ─── Tab Page Wrapper ────────────────────────────────────────────────────────
 
@@ -462,7 +462,6 @@ function TaskDetailSheet({
   onRunNow: () => void;
   onOpenSession: (sessionId: string) => void;
 }) {
-  const sheetBg = useSheetBackground();
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<'settings' | 'executions'>('settings');
   const [isRunning, setIsRunning] = useState(false);
@@ -557,14 +556,11 @@ function TaskDetailSheet({
   }, [trigger?.id]);
 
   return (
-    <BottomSheetModal
+    <KortixBottomSheetModal
       ref={sheetRef}
       snapPoints={snapPoints}
       enablePanDownToClose
       onChange={handleSheetChange}
-      backdropComponent={SheetBackdrop}
-      backgroundStyle={{ backgroundColor: sheetBg }}
-      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
     >
       <BottomSheetScrollView
         contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 20 }}
@@ -838,7 +834,7 @@ function TaskDetailSheet({
           </>
         )}
       </BottomSheetScrollView>
-    </BottomSheetModal>
+    </KortixBottomSheetModal>
   );
 }
 
@@ -1159,7 +1155,6 @@ function CreateTaskSheet({
   isDark: boolean;
   theme: ReturnType<typeof useThemeColors>;
 }) {
-  const sheetBg = useSheetBackground();
   const insets = useSafeAreaInsets();
   const sheetPadding = useSheetBottomPadding();
   const createTask = useCreateScheduledTask();
@@ -1270,21 +1265,14 @@ function CreateTaskSheet({
   }, [timezone]);
 
   return (
-    <BottomSheetModal
+    <KortixBottomSheetModal
       ref={sheetRef}
       snapPoints={['85%']}
       enablePanDownToClose
-      backdropComponent={SheetBackdrop}
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"
       android_keyboardInputMode="adjustResize"
       onDismiss={reset}
-      backgroundStyle={{
-        backgroundColor: sheetBg,
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-      }}
-      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
     >
       <BottomSheetScrollView
         contentContainerStyle={{
@@ -1594,6 +1582,6 @@ function CreateTaskSheet({
           </View>
         </>)}
       </BottomSheetScrollView>
-    </BottomSheetModal>
+    </KortixBottomSheetModal>
   );
 }

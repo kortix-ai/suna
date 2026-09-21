@@ -26,7 +26,7 @@ import {
   useProvisionProject,
 } from '@/lib/projects/hooks';
 import type { KortixProject } from '@/lib/projects/projects-client';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 
 // Mirrors the API's PROJECT_NAME_MAX_LENGTH (projects.name is varchar(255)).
@@ -40,7 +40,6 @@ interface NewProjectSheetProps {
 }
 
 export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProjectSheetProps) {
-  const sheetBg = useSheetBackground();
   const sheetRef = useRef<BottomSheetModal>(null);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -179,7 +178,7 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
   }, [repos, repoSearch]);
 
   return (
-    <BottomSheetModal
+    <KortixBottomSheetModal
       ref={sheetRef}
       snapPoints={['88%']}
       enablePanDownToClose
@@ -187,9 +186,6 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
       keyboardBlurBehavior="restore"
       android_keyboardInputMode="adjustResize"
       onDismiss={handleDismiss}
-      backdropComponent={SheetBackdrop}
-      backgroundStyle={{ backgroundColor: sheetBg, borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
-      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
     >
       <BottomSheetScrollView
         contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: insets.bottom + 24 }}
@@ -418,7 +414,7 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
           </>
         )}
       </BottomSheetScrollView>
-    </BottomSheetModal>
+    </KortixBottomSheetModal>
   );
 }
 

@@ -49,7 +49,7 @@ import type { PageTab } from '@/stores/tab-store';
 import { PageHeader } from '@/components/kortix/page-header';
 import { PageContent } from '@/components/kortix/page-content';
 import { THEME, withAlpha } from '@/lib/utils/theme';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 
 // `BottomSheetTouchable` used to come from `@gorhom/bottom-sheet`'s re-exported
 // legacy touchable, which itself just proxies react-native-gesture-handler's
@@ -390,7 +390,6 @@ export function MemoryPage({ page, onOpenDrawer, onOpenRightDrawer, isDrawerOpen
   const bgColor = isDark ? THEME.dark.background : THEME.light.background;
   const borderColor = withAlpha(fgColor, 0.06);
   const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
-  const sheetBg = useSheetBackground();
 
   const { entries, stats, isLoading, error, fetchEntries, fetchStats, deleteEntry } = useMemory(sandboxUrl);
 
@@ -545,14 +544,11 @@ export function MemoryPage({ page, onOpenDrawer, onOpenRightDrawer, isDrawerOpen
       </ScrollView>
 
       {/* Delete Sheet */}
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={deleteSheetRef}
         enableDynamicSizing
         enablePanDownToClose
-        backdropComponent={SheetBackdrop}
         onDismiss={() => setDeleteTarget(null)}
-        backgroundStyle={{ backgroundColor: sheetBg, borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
       >
         <BottomSheetView style={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: sheetPadding }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
@@ -597,7 +593,7 @@ export function MemoryPage({ page, onOpenDrawer, onOpenRightDrawer, isDrawerOpen
             </BottomSheetTouchable>
           </View>
         </BottomSheetView>
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
       </PageContent>
     </View>
   );

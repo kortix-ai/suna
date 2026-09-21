@@ -62,7 +62,7 @@ import type {
   SnapshotErrorCategory,
 } from '@/lib/projects/projects-client';
 import { haptics } from '@/lib/haptics';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal, SheetTitleRow } from '@/components/kortix/sheet';
 
 const MONO = 'Menlo';
 const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
@@ -392,15 +392,10 @@ function SandboxTemplateSheet({
 
   return (
     <View style={{ flex: 1 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08) }}>
-        <Container size={18} color={fg} />
-        <Text style={{ flex: 1, fontSize: 17, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>
-          {isEdit ? `Edit "${template?.name}"` : 'New sandbox template'}
-        </Text>
-        <Pressable onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: closeBg, alignItems: 'center', justifyContent: 'center' }}>
-          <X size={17} color={muted} />
-        </Pressable>
-      </View>
+      <SheetTitleRow
+        title={isEdit ? `Edit "${template?.name}"` : 'New sandbox template'}
+        onClose={() => { haptics.tap(); onClose(); }}
+      />
 
       <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <Text style={{ fontSize: 12.5, color: muted, marginBottom: 16 }}>
@@ -500,7 +495,6 @@ export function SandboxPage({
   isRightDrawerOpen,
   onOpenSession,
 }: SandboxPageProps) {
-  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const theme = useThemeColors();
@@ -725,19 +719,16 @@ export function SandboxPage({
         </ScrollView>
       </PageContent>
 
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={formSheetRef}
         snapPoints={['92%']}
         enableDynamicSizing={false}
         onDismiss={() => setEditing(null)}
-        backgroundStyle={{ backgroundColor: sheetBg }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
-        backdropComponent={SheetBackdrop}
       >
         <SandboxTemplateSheet projectId={projectId} template={editing} onClose={() => formSheetRef.current?.dismiss()} isDark={isDark} />
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
     </View>
   );
 }

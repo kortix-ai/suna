@@ -59,7 +59,7 @@ import { PageHeader } from '@/components/kortix/page-header';
 import { PageContent } from '@/components/kortix/page-content';
 import { useThemeColors, getToggleTrackBg, getToggleActiveBg } from '@/lib/theme-colors';
 import { THEME, withAlpha } from '@/lib/utils/theme';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { sheetHandleIndicatorStyle, useSheetBackground, KortixBottomSheetModal } from '@/components/kortix/sheet';
 
 // `BottomSheetTouchable` used to come from `@gorhom/bottom-sheet`'s re-exported
 // legacy touchable, which itself just proxies react-native-gesture-handler's
@@ -672,11 +672,10 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
       </ScrollView>
 
       {/* ── Connect Sheet ── */}
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={connectSheetRef}
         enableDynamicSizing
         enablePanDownToClose
-        backdropComponent={SheetBackdrop}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
         android_keyboardInputMode="adjustResize"
@@ -730,14 +729,13 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
             </Text>
           </BottomSheetTouchable>
         </BottomSheetView>
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
 
       {/* ── Disconnect Sheet ── */}
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={disconnectSheetRef}
         enableDynamicSizing
         enablePanDownToClose
-        backdropComponent={SheetBackdrop}
         onDismiss={() => setDisconnectTarget(null)}
         {...sheetStyles}
       >
@@ -776,15 +774,14 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
             </BottomSheetTouchable>
           </View>
         </BottomSheetView>
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
 
       {/* ── Custom Provider Sheet ── */}
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={customSheetRef}
         snapPoints={['80%']}
         enableDynamicSizing={false}
         enablePanDownToClose
-        backdropComponent={SheetBackdrop}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
         android_keyboardInputMode="adjustResize"
@@ -937,7 +934,7 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
             </Text>
           </BottomSheetTouchable>
         </BottomSheetScrollView>
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
       </PageContent>
     </View>
   );

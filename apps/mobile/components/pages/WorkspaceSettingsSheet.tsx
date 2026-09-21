@@ -58,7 +58,7 @@ import {
   type OpenCodeConfig,
   type McpStatus,
 } from '@/lib/opencode/hooks/use-opencode-data';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -93,7 +93,6 @@ export interface WorkspaceSettingsSheetRef {
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(function WorkspaceSettingsSheet(_, ref) {
-  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -329,13 +328,10 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
   };
 
   return (
-    <BottomSheetModal
+    <KortixBottomSheetModal
       ref={sheetRef}
       snapPoints={['92%']}
       enablePanDownToClose
-      backdropComponent={SheetBackdrop}
-      backgroundStyle={{ backgroundColor: sheetBg, borderRadius: 24 }}
-      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
     >
       <View style={{ flex: 1 }}>
         {/* Header */}
@@ -934,6 +930,6 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
           </View>
         )}
       </View>
-    </BottomSheetModal>
+    </KortixBottomSheetModal>
   );
 });

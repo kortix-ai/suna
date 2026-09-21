@@ -28,7 +28,7 @@ import type { Session } from '@/lib/opencode/types';
 import { useTabStore, PAGE_TABS } from '@/stores/tab-store';
 import { useTabScreenshotStore } from '@/stores/tab-screenshot-store';
 import { useSyncStore } from '@/lib/opencode/sync-store';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { SheetBackdrop, KortixBottomSheetModal } from '@/components/kortix/sheet';
 import { THEME } from '@/lib/utils/theme';
 
 interface TabsOverviewProps {
@@ -52,7 +52,6 @@ export function TabsOverview({
   onNewSession,
   onDismiss,
 }: TabsOverviewProps) {
-  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -457,17 +456,11 @@ export function TabsOverview({
       </View>
 
       {/* Edit sheet */}
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={editSheetRef}
         enableDynamicSizing
         enablePanDownToClose
         backdropComponent={(p) => <SheetBackdrop {...p} opacity={0.4} />}
-        backgroundStyle={{
-          backgroundColor: sheetBg,
-          borderTopLeftRadius: 20,
-          borderTopRightRadius: 20,
-        }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
       >
         <BottomSheetView style={{ paddingBottom: insets.bottom + 12 }}>
           <Button
@@ -495,7 +488,7 @@ export function TabsOverview({
             </Text>
           </Button>
         </BottomSheetView>
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
     </Reanimated.View>
   );
 }

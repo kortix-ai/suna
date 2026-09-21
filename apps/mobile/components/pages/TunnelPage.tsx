@@ -60,7 +60,7 @@ import {
   type ScopeInfo,
 } from '@/hooks/useTunnel';
 import { API_URL } from '@/api/config';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 
 // ─── Tab Page Wrapper ────────────────────────────────────────────────────────
 
@@ -362,7 +362,6 @@ const CreateTunnelSheet = React.forwardRef<BottomSheetModal, object>(function Cr
   const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
   const muted = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
   const borderColor = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06);
-  const sheetBg = useSheetBackground();
 
   const [copied, setCopied] = useState(false);
 
@@ -376,14 +375,11 @@ const CreateTunnelSheet = React.forwardRef<BottomSheetModal, object>(function Cr
   }, [command]);
 
   return (
-    <BottomSheetModal
+    <KortixBottomSheetModal
       ref={ref}
       enableDynamicSizing
       enablePanDownToClose
-      backdropComponent={SheetBackdrop}
       onDismiss={() => setCopied(false)}
-      backgroundStyle={{ backgroundColor: sheetBg, borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
-      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
     >
       <BottomSheetView style={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: Math.max(insets.bottom, 20) + 16 }}>
         {/* Header */}
@@ -457,7 +453,7 @@ const CreateTunnelSheet = React.forwardRef<BottomSheetModal, object>(function Cr
           )}
         </Pressable>
       </BottomSheetView>
-    </BottomSheetModal>
+    </KortixBottomSheetModal>
   );
 });
 
@@ -481,7 +477,6 @@ const TunnelDetailSheet = React.forwardRef<BottomSheetModal, TunnelDetailSheetPr
     const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
     const muted = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
     const borderColor = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06);
-    const sheetBg = useSheetBackground();
     const accent = theme.primary;
     const accentBg = theme.primaryLight;
     const dangerBg = isDark ? withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.08) : withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.05);
@@ -554,14 +549,11 @@ const TunnelDetailSheet = React.forwardRef<BottomSheetModal, TunnelDetailSheetPr
     ];
 
     return (
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={ref}
         snapPoints={['85%']}
         enablePanDownToClose
-        backdropComponent={SheetBackdrop}
         onDismiss={() => { setActiveTab('permissions'); setAuditPage(1); onDismiss(); }}
-        backgroundStyle={{ backgroundColor: sheetBg, borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
       >
         <View style={{ paddingHorizontal: 24, paddingTop: 4 }}>
           {/* Header */}
@@ -863,7 +855,7 @@ const TunnelDetailSheet = React.forwardRef<BottomSheetModal, TunnelDetailSheetPr
             );
           })()}
         </BottomSheetScrollView>
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
     );
   },
 );

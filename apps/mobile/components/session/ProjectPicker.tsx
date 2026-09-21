@@ -35,7 +35,7 @@ import {
 } from '@/lib/kortix/use-kortix-projects';
 import { useSelectedProjectStore } from '@/stores/selected-project-store';
 import { useSandboxContext } from '@/contexts/SandboxContext';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { SheetBackdrop, useSheetBackground, KortixBottomSheetModal } from '@/components/kortix/sheet';
 
 // ─── Helpers (mirror of web) ─────────────────────────────────────────────────
 
@@ -189,18 +189,13 @@ export function ProjectPicker() {
       </View>
 
       {/* Picker sheet */}
-      <BottomSheetModal
+      <KortixBottomSheetModal
+        title="Project"
         ref={sheetRef}
         enableDynamicSizing
         maxDynamicContentSize={560}
         enablePanDownToClose
         enableOverDrag={false}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
-        backgroundStyle={{
-          backgroundColor: sheetBg,
-          borderTopLeftRadius: 24,
-          borderTopRightRadius: 24,
-        }}
         backdropComponent={(p) => <SheetBackdrop {...p} opacity={0.4} />}
       >
         <BottomSheetScrollView
@@ -212,17 +207,6 @@ export function ProjectPicker() {
           {/* Sticky block: title + search field. Solid bg so rows don't
               bleed through while scrolled. */}
           <View style={{ backgroundColor: bg }}>
-            <View style={{ paddingHorizontal: 20, paddingTop: 6, paddingBottom: 8 }}>
-              <Text
-                style={{
-                  fontSize: 18,
-                  fontFamily: 'Roobert-SemiBold',
-                  color: fgColor,
-                }}
-              >
-                Project
-              </Text>
-            </View>
 
             <View
               style={{
@@ -388,7 +372,7 @@ export function ProjectPicker() {
             </View>
           )}
         </BottomSheetScrollView>
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
     </>
   );
 }

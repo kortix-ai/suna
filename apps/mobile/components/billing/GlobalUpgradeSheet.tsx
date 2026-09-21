@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 import { useLanguage } from '@/contexts';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { useAccountState } from '@/lib/billing/hooks';
@@ -47,7 +47,6 @@ export function SandboxUpgradeGateListener() {
  */
 export function GlobalUpgradeSheet() {
   const { t } = useLanguage();
-  const sheetBg = useSheetBackground();
   const sheetRef = useRef<BottomSheetModal>(null);
   const wasPresentedRef = useRef(false);
   const router = useRouter();
@@ -93,19 +92,13 @@ export function GlobalUpgradeSheet() {
   }, [closeUpgradeSheet, router]);
 
   return (
-    <BottomSheetModal
+    <KortixBottomSheetModal
       ref={sheetRef}
       snapPoints={['88%']}
       enableDynamicSizing={false}
       enablePanDownToClose
       onDismiss={handleDismiss}
-      backdropComponent={SheetBackdrop}
-      backgroundStyle={{
-        backgroundColor: sheetBg,
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-      }}
-      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}>
+>
       <BottomSheetScrollView
         contentContainerStyle={{
           paddingHorizontal: 20,
@@ -168,6 +161,6 @@ export function GlobalUpgradeSheet() {
           </Button>
         </View>
       </BottomSheetScrollView>
-    </BottomSheetModal>
+    </KortixBottomSheetModal>
   );
 }

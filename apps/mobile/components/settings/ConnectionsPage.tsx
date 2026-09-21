@@ -64,7 +64,7 @@ import {
   type ConnectorApp,
   type ConnectorConnection,
 } from '@/hooks/useConnections';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -127,7 +127,6 @@ function ConnectionsContent({
   onNavigate,
   onUpgradePress,
 }: ConnectionsContentProps) {
-  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -479,21 +478,14 @@ function ConnectionsContent({
       />
 
       {/* Pipedream Credentials Sheet */}
-      <BottomSheetModal
+      <KortixBottomSheetModal
         ref={credSheetRef}
         enableDynamicSizing
         enablePanDownToClose
-        backdropComponent={SheetBackdrop}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
         android_keyboardInputMode="adjustResize"
         onDismiss={() => { setCredValues({ client_id: '', client_secret: '', project_id: '' }); setShowSecrets(false); }}
-        backgroundStyle={{
-          backgroundColor: sheetBg,
-          borderTopLeftRadius: 24,
-          borderTopRightRadius: 24,
-        }}
-        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
       >
         <BottomSheetView style={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: sheetPadding }}>
           {/* Header */}
@@ -612,7 +604,7 @@ function ConnectionsContent({
             )}
           </View>
         </BottomSheetView>
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
 
     </>
   );

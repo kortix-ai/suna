@@ -57,7 +57,7 @@ import {
   type APIKeyRegenerateResponse,
   type APIKeyStatus,
 } from '@/hooks/useApiKeys';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 
 // ─── Public Links Types ─────────────────────────────────────────────────────
 
@@ -667,7 +667,6 @@ function CreateApiKeySheet({
   sandboxUuid?: string;
   onCreated: (result: APIKeyCreateResponse) => void;
 }) {
-  const sheetBg = useSheetBackground();
   const insets = useSafeAreaInsets();
   const sheetPadding = useSheetBottomPadding();
   const createKey = useCreateApiKey();
@@ -725,17 +724,14 @@ function CreateApiKeySheet({
   ];
 
   return (
-    <BottomSheetModal
+    <KortixBottomSheetModal
       ref={sheetRef}
       enableDynamicSizing
       enablePanDownToClose
-      backdropComponent={SheetBackdrop}
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"
       android_keyboardInputMode="adjustResize"
       onDismiss={reset}
-      backgroundStyle={{ backgroundColor: sheetBg, borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
-      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
     >
       <BottomSheetView style={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: sheetPadding }}>
         {/* Header */}
@@ -817,7 +813,7 @@ function CreateApiKeySheet({
           )}
         </Pressable>
       </BottomSheetView>
-    </BottomSheetModal>
+    </KortixBottomSheetModal>
   );
 }
 
@@ -836,7 +832,6 @@ function SecretKeySheet({
   createdKey: APIKeyCreateResponse | APIKeyRegenerateResponse | null;
   onDone: () => void;
 }) {
-  const sheetBg = useSheetBackground();
   const insets = useSafeAreaInsets();
   const sheetPadding = useSheetBottomPadding();
   const [copied, setCopied] = useState(false);
@@ -857,13 +852,10 @@ function SecretKeySheet({
   }, [secretKey]);
 
   return (
-    <BottomSheetModal
+    <KortixBottomSheetModal
       ref={sheetRef}
       enableDynamicSizing
       enablePanDownToClose
-      backdropComponent={SheetBackdrop}
-      backgroundStyle={{ backgroundColor: sheetBg, borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
-      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
     >
       <BottomSheetView style={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: sheetPadding }}>
         <Text style={{ fontSize: 18, fontFamily: 'Roobert-Semibold', color: fg, marginBottom: 4 }}>
@@ -925,7 +917,7 @@ function SecretKeySheet({
           <Text style={{ fontSize: 16, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Done</Text>
         </Pressable>
       </BottomSheetView>
-    </BottomSheetModal>
+    </KortixBottomSheetModal>
   );
 }
 
@@ -1037,7 +1029,6 @@ function CreatePublicLinkSheet({
   sandboxId?: string;
   onCreated: () => void;
 }) {
-  const sheetBg = useSheetBackground();
   const insets = useSafeAreaInsets();
   const sheetPadding = useSheetBottomPadding();
 
@@ -1117,17 +1108,14 @@ function CreatePublicLinkSheet({
   };
 
   return (
-    <BottomSheetModal
+    <KortixBottomSheetModal
       ref={sheetRef}
       enableDynamicSizing
       enablePanDownToClose
-      backdropComponent={SheetBackdrop}
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"
       android_keyboardInputMode="adjustResize"
       onDismiss={reset}
-      backgroundStyle={{ backgroundColor: sheetBg, borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
-      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
     >
       <BottomSheetView style={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: sheetPadding }}>
         {/* Header */}
@@ -1223,6 +1211,6 @@ function CreatePublicLinkSheet({
           )}
         </Pressable>
       </BottomSheetView>
-    </BottomSheetModal>
+    </KortixBottomSheetModal>
   );
 }

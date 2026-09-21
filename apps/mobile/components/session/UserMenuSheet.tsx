@@ -21,7 +21,7 @@ import {
 } from '@/lib/icons';
 import { getToggleTrackBg, getToggleActiveBg, useThemeColors } from '@/lib/theme-colors';
 import { THEME, withAlpha } from '@/lib/utils/theme';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { SheetBackdrop, KortixBottomSheetModal } from '@/components/kortix/sheet';
 
 type ThemeOption = 'light' | 'dark' | 'system';
 
@@ -59,7 +59,6 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
   },
   ref,
 ) {
-  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const { height: screenHeight } = useWindowDimensions();
   const isDark = colorScheme === 'dark';
@@ -77,18 +76,12 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
 
 
   return (
-    <BottomSheetModal
+    <KortixBottomSheetModal
       ref={ref}
       enableDynamicSizing
       maxDynamicContentSize={Math.floor(screenHeight * 0.86)}
       enableOverDrag={false}
       enablePanDownToClose
-      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
-      backgroundStyle={{
-        backgroundColor: sheetBg,
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-      }}
       backdropComponent={(p) => <SheetBackdrop {...p} opacity={0.35} />}
     >
       <BottomSheetScrollView
@@ -341,6 +334,6 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
           </Pressable>
         </View>
       </BottomSheetScrollView>
-    </BottomSheetModal>
+    </KortixBottomSheetModal>
   );
 });
