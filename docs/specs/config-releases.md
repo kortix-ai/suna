@@ -76,7 +76,7 @@ Use these terms exactly. Do not use synonyms.
 | config archive | A `tar.gz` of the config dir, stored under its config tree ID. |
 | compiled governance | The OpenCode agent config compiled by the API from `kortix.yaml` and agent files. |
 | config release | One config archive plus one compiled governance. The unit a session runs. |
-| release ID | `sha256(config_tree_id + ":" + compiled_governance_etag)`, hex. |
+| release ID | `sha256((config_tree_id ?? "") + ":" + (compiled_governance_etag ?? ""))`, hex. Null only when both are null. |
 | release descriptor | The JSON document the API returns for a session's desired release. |
 | desired release | The release the API assigns to a session. |
 | running release | The release the daemon serves from. |
@@ -126,6 +126,14 @@ Use these terms exactly. Do not use synonyms.
   governance-only change produces a new release ID with the same archive.
 - A commit that changes neither produces the same release ID. No swap, no stale
   signal.
+- A session without a config archive (no config dir on the base branch, or no
+  repository access) still has a release ID when it has governance:
+  `sha256(":" + etag)`. The daemon compares it like any other, so a
+  governance-only change still converges.
+- The archive route serves any tree object in the project mirror, not only
+  config trees. The caller already needs repository access, and the 4 MiB cap
+  applies (`413` above it). This is deliberate; a narrower check would need a
+  commit-to-tree index and protects nothing a clone does not already expose.
 
 ### Security
 
