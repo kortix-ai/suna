@@ -1,5 +1,5 @@
 {
-  "id": "249466dd-12b0-47ea-9e3c-e1085cfe012e",
+  "id": "0da6add2-cba4-44be-a021-5579a3d5148e",
   "prevId": "a012cfd9-f484-4dc3-b881-843d8b31a389",
   "version": "7",
   "dialect": "postgresql",
@@ -5892,182 +5892,6 @@
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "kortix.config_release_failures": {
-      "name": "config_release_failures",
-      "schema": "kortix",
-      "columns": {
-        "project_id": {
-          "name": "project_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "release_id": {
-          "name": "release_id",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "session_id": {
-          "name": "session_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "config_release_failures_project_id_projects_project_id_fk": {
-          "name": "config_release_failures_project_id_projects_project_id_fk",
-          "tableFrom": "config_release_failures",
-          "tableTo": "projects",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "project_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "config_release_failures_project_id_release_id_session_id_pk": {
-          "name": "config_release_failures_project_id_release_id_session_id_pk",
-          "columns": [
-            "project_id",
-            "release_id",
-            "session_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "kortix.config_releases": {
-      "name": "config_releases",
-      "schema": "kortix",
-      "columns": {
-        "project_id": {
-          "name": "project_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "release_id": {
-          "name": "release_id",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "variant": {
-          "name": "variant",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "source_commit": {
-          "name": "source_commit",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "proven_at": {
-          "name": "proven_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "proven_session_id": {
-          "name": "proven_session_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "idx_config_releases_project_variant_created": {
-          "name": "idx_config_releases_project_variant_created",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "variant",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "config_releases_project_id_projects_project_id_fk": {
-          "name": "config_releases_project_id_projects_project_id_fk",
-          "tableFrom": "config_releases",
-          "tableTo": "projects",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "project_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "config_releases_project_id_release_id_variant_pk": {
-          "name": "config_releases_project_id_release_id_variant_pk",
-          "columns": [
-            "project_id",
-            "release_id",
-            "variant"
-          ]
-        }
-      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
@@ -19396,6 +19220,12 @@
         "end_reason": {
           "name": "end_reason",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "end_error": {
+          "name": "end_error",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },

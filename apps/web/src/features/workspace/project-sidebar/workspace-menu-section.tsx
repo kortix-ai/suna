@@ -57,6 +57,7 @@ import {
   type WorkspaceRowNavigation,
 } from '@/features/workspace/project-sidebar/workspace-grouping';
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
+import { InvitationsMenuGroup } from './invitations-menu-group';
 import { isModifiedClick } from '@/lib/navigation/modified-click';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
@@ -272,6 +273,8 @@ export function WorkspaceMenuSection() {
           <DropdownMenuSeparator />
         </>
       ) : null}
+
+      <InvitationsMenuGroup />
 
       {/* Bounded so a long list scrolls inside the submenu rather than growing
           it past the viewport. `min-h` stops the panel collapsing to a sliver on

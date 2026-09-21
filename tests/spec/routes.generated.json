@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 666,
+  "count": 667,
   "routes": [
     {
       "method": "GET",
@@ -141,6 +141,10 @@
     {
       "method": "GET",
       "path": "/v1/access/signup-status"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/account-invites"
     },
     {
       "method": "GET",

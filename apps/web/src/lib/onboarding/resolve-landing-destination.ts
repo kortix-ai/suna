@@ -1,10 +1,6 @@
 import { type KortixAccount, type KortixProject, listProjectsForAccount } from '@kortix/sdk';
 
-import {
-  type EnsureFirstProjectClient,
-  ensureFirstProject,
-  pickLandingProject,
-} from '@/lib/onboarding/ensure-first-project';
+import { isValidProjectId } from '@/lib/onboarding/landing-destination';
 
 /**
  * The landing door's one decision: which project to open, across EVERY
@@ -17,32 +13,29 @@ import {
  * workspace yet" while the user's personal account, in the same list, held
  * their projects. This resolver only concludes "nothing to open" after it has
  * looked at every membership.
+ *
+ * It never creates a project. With nothing to open, the door renders the
+ * chooser: the user's pending invites and, when allowed, a create action. An
+ * invitee who signed up without the email link used to land in an
+ * auto-created "My First Project" with no sign of the invite.
  */
 export type LandingResolution =
   | { kind: 'project'; project: KortixProject; accountId: string }
-  /** No project anywhere. `canCreate` (of the primary candidate account —
-   *  the user's active workspace context) feeds `classifyLandingTerminal`.
-   *  `suppressed` is scoped to that SAME primary candidate — never "any
-   *  account this user owns" — see the doc comment above `creator` below. */
-  | { kind: 'terminal'; canCreate: boolean; suppressed: boolean };
+  /** No project anywhere. `canCreate` is for the primary candidate account —
+   *  the user's active workspace context — and decides whether the chooser
+   *  offers a create action. */
+  | { kind: 'terminal'; canCreate: boolean };
+
+/** The one network call the resolver makes, injectable for tests. */
+export type LandingClient = {
+  listProjectsForAccount: (accountId: string) => Promise<KortixProject[]>;
+};
 
 export async function resolveLandingDestination(input: {
   accounts: KortixAccount[];
   selectedAccountId: string | null;
   preferredProjectId?: string | null;
-  /**
-   * `isAutoProjectSuppressed` — the user just archived THIS account's last
-   * project. Applied to the ONE `creator` account this resolution actually
-   * evaluates for auto-create (see below), never called for the others: a
-   * flag scoped to account A must not suppress creation in an unrelated
-   * account B just because the same user happens to own both. Pass
-   * `isAutoProjectSuppressed` from `ensure-first-project.ts` directly — its
-   * signature already matches.
-   */
-  isAccountSuppressed: (accountId: string) => boolean;
-  /** `navigationMayCreateProject()` — this navigation proved create intent. */
-  mayCreate: boolean;
-  client?: EnsureFirstProjectClient;
+  client?: LandingClient;
 }): Promise<LandingResolution> {
   const { accounts, selectedAccountId, preferredProjectId, client } = input;
 
@@ -84,31 +77,30 @@ export async function resolveLandingDestination(input: {
     if (picked) return { kind: 'project', project: picked, accountId: entry.account_id };
   }
 
-  // Nothing to open anywhere. Auto-provision ONLY in the primary candidate
-  // account — the selected workspace when it is still a membership, else the
-  // first account the user owns. Reaching across from an explicitly selected
-  // member workspace is forbidden by the flow-08 contract: a member whose
-  // project access was just revoked must see the "No workspace yet" terminal,
-  // not a surprise project minted in their personal account (which on a
-  // self-host without managed git would be a guaranteed 503 anyway).
+  // Nothing to open anywhere. Create permission is judged on the PRIMARY
+  // candidate only — the selected workspace when it is still a membership,
+  // else the first account the user owns. Flow-08 contract: a member whose
+  // project access was just revoked, with that org selected, is told to ask
+  // an admin; the chooser does not offer to create in another account.
   const primary = candidates[0];
-  const creator = primary && canCreateIn(primary) ? primary : undefined;
-  // Evaluated for `creator.account_id` ONLY. `isAccountSuppressed` is
-  // account-bound by design (`ensure-first-project.ts`), and this resolver
-  // itself only ever gates auto-create for this ONE candidate — checking any
-  // OTHER account here would suppress creation for an account nobody
-  // archived anything on, just because the caller happens to own both.
-  const suppressedForCreator = creator ? input.isAccountSuppressed(creator.account_id) : false;
-  if (creator && input.mayCreate && !suppressedForCreator) {
-    const created = await ensureFirstProject(
-      creator.account_id,
-      { preferredProjectId, allowCreate: true },
-      client,
-    );
-    if (created) return { kind: 'project', project: created, accountId: creator.account_id };
-  }
+  return { kind: 'terminal', canCreate: primary !== undefined && canCreateIn(primary) };
+}
 
-  return { kind: 'terminal', canCreate: creator !== undefined, suppressed: suppressedForCreator };
+/**
+ * Pick which existing project to open: the one the browser last had open, else
+ * the first. `preferredProjectId` is untrusted (it comes from a cookie), so it
+ * only ever selects from the list the server already said this account owns.
+ */
+export function pickLandingProject(
+  projects: KortixProject[],
+  preferredProjectId?: string | null,
+): KortixProject | null {
+  if (projects.length === 0) return null;
+  if (isValidProjectId(preferredProjectId)) {
+    const preferred = projects.find((project) => project.project_id === preferredProjectId);
+    if (preferred) return preferred;
+  }
+  return projects[0] ?? null;
 }
 
 /** Owners/admins may create projects (ACCOUNT_ACTIONS.PROJECT_CREATE). */

@@ -123,7 +123,13 @@ const ICON_WIDTH = '2.5rem';
  * picker (or email fallback) sits top-left and a `Log out` control sits
  * top-right, independent of the form below.
  */
-export function NewWorkspacePage() {
+export function NewWorkspacePage({
+  showBack = true,
+}: {
+  /** `false` when the landing door renders this form in place: "Back to
+   *  projects" links to that same door, so it would go nowhere. */
+  showBack?: boolean;
+} = {}) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('newWorkspace');
   const { user, isLoading: authLoading } = useAuth();
@@ -311,17 +317,21 @@ export function NewWorkspacePage() {
             goes to the landing door (the latest project, or create/sign-out
             for an account with none). Log out alone was the only exit on the
             web and read as "you can't leave" (reported on dev, 2026-09-17). */}
-        <Button
-          asChild
-          variant="ghost"
-          size="sm"
-          className="text-muted-foreground hover:text-foreground shrink-0 gap-1.5"
-        >
-          <Link href={PROJECT_LANDING_PATH}>
-            <ArrowLeftIcon className="size-4" />
-            {t('actions.back')}
-          </Link>
-        </Button>
+        {showBack ? (
+          <Button
+            asChild
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-foreground shrink-0 gap-1.5"
+          >
+            <Link href={PROJECT_LANDING_PATH}>
+              <ArrowLeftIcon className="size-4" />
+              {t('actions.back')}
+            </Link>
+          </Button>
+        ) : (
+          <span />
+        )}
         {/* `text-muted-foreground hover:text-foreground` (not the bare `ghost`
             default) so this reads as one quiet secondary row at rest, same
             treatment as `(auth)/auth/phone-verification/page.tsx:223-227` —
@@ -579,7 +589,6 @@ export function NewWorkspacePage() {
                       onChange={(accountId) => setState((s) => ({ ...s, accountId }))}
                       fallbackLabel={user?.email}
                       showAccountLine={showAccountLine}
-                      className="w-full"
                     />
                   </div>
                 ) : null}

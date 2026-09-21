@@ -714,6 +714,123 @@ flow(
   },
 );
 
+// TOK-6 — a plain account member runs `kortix login`: the sign-in page mints a
+// PAT on `token.personal.create`, which every system account role holds. The
+// PAT acts as the member and carries only the member's roles; revoking it needs
+// only `token.personal.revoke`. Another person's token and OAuth-client
+// registration stay behind the admin `token.revoke` / `token.create` leaves.
+flow(
+  'TOK-6',
+  {
+    domain: 'accounts',
+    serial: true,
+    routes: [
+      'POST /v1/accounts/tokens',
+      'DELETE /v1/accounts/tokens/:tokenId',
+      'GET /v1/accounts/me',
+      'PATCH /v1/accounts/:accountId',
+      'POST /v1/accounts/:accountId/iam/oauth-clients',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const member = await team.addMember('member');
+    const account_id = team.id;
+    let memberTokenId = '';
+    let memberSecret = '';
+    let ownerTokenId = '';
+    let ownerSecret = '';
+
+    await ctx.step('MEMBER mints a personal token in the team account → 201 with the secret once', async () => {
+      const r = await ctx.client
+        .as(member)
+        .post('/v1/accounts/tokens', { name: ctx.fixtures.name('member-cli'), account_id });
+      r.status(201).body().exists('$.secret_key').exists('$.token_id').has('$.project_id', null);
+      const j = r.json<any>();
+      memberTokenId = j.token_id;
+      memberSecret = j.secret_key;
+    });
+
+    await ctx.step('the member token authenticates as the member → /accounts/me 200, auth_type pat', async () => {
+      const r = await ctx.client.withBearer(memberSecret).get('/v1/accounts/me');
+      r.status(200).body().has('$.token_context.auth_type', 'pat');
+    });
+
+    await ctx.step('the member token carries only member rights → renaming the account 403', async () => {
+      const r = await ctx.client
+        .withBearer(memberSecret)
+        .patch('/v1/accounts/:accountId', { name: 'nope' }, { params: { accountId: account_id } });
+      r.status(403);
+    });
+
+    await ctx.step('the unscoped member token mints and revokes another personal token (kortix tokens new) → 201, 200', async () => {
+      const minted = await ctx.client
+        .withBearer(memberSecret)
+        .post('/v1/accounts/tokens', { name: ctx.fixtures.name('member-cli-2'), account_id });
+      minted.status(201).body().exists('$.token_id');
+      const revoked = await ctx.client.withBearer(memberSecret).del('/v1/accounts/tokens/:tokenId', {
+        params: { tokenId: minted.json<any>().token_id },
+        query: { account_id },
+      });
+      revoked.status(200).body().has('$.ok', true);
+    });
+
+    await ctx.step('MEMBER cannot register an OAuth client → 403 (token.create stays admin)', async () => {
+      const r = await ctx.client.as(member).post(
+        '/v1/accounts/:accountId/iam/oauth-clients',
+        { name: ctx.fixtures.name('app'), redirect_uris: ['https://app.example.test/cb'] },
+        { params: { accountId: account_id } },
+      );
+      r.status(403);
+    });
+
+    await ctx.step("OWNER mints a token; MEMBER cannot revoke the owner's token → 403", async () => {
+      const minted = await ctx.client
+        .as(ctx.P.OWNER)
+        .post('/v1/accounts/tokens', { name: ctx.fixtures.name('owner-cli'), account_id });
+      minted.status(201);
+      ownerTokenId = minted.json<any>().token_id;
+      ownerSecret = minted.json<any>().secret_key;
+      const r = await ctx.client.as(member).del('/v1/accounts/tokens/:tokenId', {
+        params: { tokenId: ownerTokenId },
+        query: { account_id },
+      });
+      r.status(403);
+    });
+
+    await ctx.step("the owner's token still authenticates after the refused revoke → 200", async () => {
+      const r = await ctx.client.withBearer(ownerSecret).get('/v1/accounts/me');
+      r.status(200);
+    });
+
+    await ctx.step('MEMBER revoking an unknown token id → 403, not 404 (no existence oracle)', async () => {
+      const r = await ctx.client.as(member).del('/v1/accounts/tokens/:tokenId', {
+        params: { tokenId: '00000000-0000-0000-0000-000000000000' },
+        query: { account_id },
+      });
+      r.status(403);
+    });
+
+    await ctx.step('MEMBER revokes their own token → 200; the secret then fails → 401', async () => {
+      const r = await ctx.client.as(member).del('/v1/accounts/tokens/:tokenId', {
+        params: { tokenId: memberTokenId },
+        query: { account_id },
+      });
+      r.status(200).body().has('$.ok', true);
+      const after = await ctx.client.withBearer(memberSecret).get('/v1/accounts/me');
+      after.status(401);
+    });
+
+    await ctx.step("cleanup: OWNER revokes the owner's token → 200", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/accounts/tokens/:tokenId', {
+        params: { tokenId: ownerTokenId },
+        query: { account_id },
+      });
+      r.status(200);
+    });
+  },
+);
+
 // TOK-4 — project-scoped PAT (enforceTokenProjectScope): allowed only on its
 // own project + the `/accounts/me` self-identity probe; every other surface
 // (a different project, project-list, account-level routes) → 403.

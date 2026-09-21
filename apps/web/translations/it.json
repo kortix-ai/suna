@@ -1597,6 +1597,15 @@
       "title": "Questa sessione è arrestata",
       "message": "Il suo computer è stato rilasciato. Riavvia la sessione per ripristinarla."
     },
+    "previousRepository": {
+      "title": "La sessione usa il repository precedente",
+      "message": "Questa sessione conserva l’area di lavoro precedente. Puoi riprenderla, ma Git fetch, push e le richieste di modifica restano disabilitati.",
+      "unavailable": "L’area di lavoro precedente non è più disponibile. Avvia una nuova sessione nel repository corrente.",
+      "resume": "Riprendi area di lavoro precedente",
+      "resuming": "Ripresa in corso…",
+      "newSession": "Avvia nuova sessione",
+      "delete": "Elimina sessione"
+    },
     "lost": {
       "title": "Il computer di questa sessione è andato perso",
       "message": "Il suo sandbox cloud è scomparso dal lato del provider, quindi questa sessione non può essere riavviata né recuperata. È un problema nostro, non dipende da te: è stato segnalato automaticamente. Tutto ciò che è stato sottoposto a commit e inviato da questa sessione è al sicuro nel repository del tuo progetto."
@@ -19444,13 +19453,27 @@
     "managedDescription": "Modelli gestiti addebitati in crediti Kortix. Non serve una chiave API.",
     "textImage": "Testo + immagine",
     "textOnly": "Solo testo",
-    "zdrTitle": "I fornitori dei modelli non conservano i tuoi prompt",
+    "zdrTitle": "Conservazione zero dei dati",
     "zdrDescription": "La conservazione zero dei dati (ZDR) significa che il fornitore elabora testi e immagini, ma non conserva input o risposte dopo la richiesta. Kortix archivia separatamente progetti e conversazioni.",
+    "usProvidersTitle": "Fornitori con sede negli USA",
+    "usProvidersDescription": "Ogni modello Kortix usa un solo fornitore di inferenza fisso con sede negli USA. Le richieste non passano mai a un altro fornitore.",
     "hiddenHint": "Nascosto nel selettore. Le richieste dirette sono ancora consentite; disattivale dal menu del modello.",
     "hidden": "Nascosto nel selettore",
     "disableModel": "Disattiva modello",
     "modelError": "Impossibile aggiornare l’accesso al modello.",
     "hiddenShort": "Nascosto nel selettore. Le richieste dirette sono ancora consentite.",
     "resetError": "Impossibile reimpostare l’elenco dei modelli."
+  },
+  "projectChooser": {
+    "invitations": "Inviti",
+    "invitedBy": "Invitato da {email}",
+    "join": "Unisciti",
+    "joinError": "Impossibile unirsi. Riprova.",
+    "unnamedWorkspace": "Workspace",
+    "noPermissionTitle": "Ancora nessun workspace",
+    "noPermissionBody": "Chiedi a un owner o admin di invitare {email}.",
+    "invitesTitle": "Sei stato invitato",
+    "invitesDescription": "Unisciti a un progetto del tuo team o creane uno tuo.",
+    "createProjectInstead": "Crea invece un nuovo progetto"
   }
 }

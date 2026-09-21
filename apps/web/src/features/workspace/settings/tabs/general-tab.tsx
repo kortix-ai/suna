@@ -96,15 +96,6 @@
  * (`components/projects/schedule-view.tsx`, the Schedules tab). See each
  * file's own header comment for the move.
  *
- * **Ported from `main` at the settings-panel merge: archive suppression.**
- * `main` moved the deleted `/projects` list page's archive handler into
- * `settings-view.tsx` as `runProjectArchive` +
- * `accountProjectCountForArchive`. That file is deleted here, so both
- * functions live below and this tab's archive mutation drives them. Without
- * the port, `suppressAutoProjectAfterDelete()` would have had ZERO callers and
- * `/projects/start` would silently re-provision a workspace the user just
- * deleted. `general-tab.archive.test.ts` carries `main`'s tests for them.
- *
  * `GeneralTabView` is the pure, props-only half — the one stateful piece
  * (`GeneralWorkspaceCard`'s name+icon mutations) owns its own hooks and can't
  * render under `renderToStaticMarkup` with no `QueryClientProvider`, so it is
@@ -148,20 +139,21 @@ import {
   renameOnSettled,
 } from '@/hooks/projects/project-rename-cache';
 import { useDebounce } from '@/hooks/use-debounce';
-import { suppressAutoProjectAfterDelete } from '@/lib/onboarding/ensure-first-project';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { forgetLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCans } from '@/lib/use-project-can';
+import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import {
   archiveProject,
   getProject,
-  listProjectsForAccount,
   updateProject,
   type KortixProject,
   type ProjectInput,
 } from '@kortix/sdk';
 import { contract, invalidateProjectIdentity, qk } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from '@/i18n/use-translations';
 import { SettingsTabHeader } from '../settings-tab-header';
 
@@ -395,64 +387,24 @@ export interface RunProjectArchiveClient {
  * `mock.module('@kortix/sdk', ...)` — process-wide in this monorepo and a
  * hazard for sibling suites.
  *
- * Ported from `main` at the settings-panel merge (`settings-view.tsx`'s
- * `runProjectArchive`), which itself carried it over from the deleted
- * `/projects` list page's archive handler: "Archiving the LAST project must
- * leave the account empty. Without this the auto-provision door would see zero
- * active projects and immediately recreate one, undoing the delete the user
- * just confirmed." Same condition (`<= 1`, against the count from BEFORE this
- * archive lands), same tab-scoped `sessionStorage` guard
- * (`suppressAutoProjectAfterDelete`) — deliberately NOT `localStorage`: a
- * later sign-in or a fresh tab must still auto-provision for an empty account
- * like any other.
- *
- * Without this, `main`'s `/projects/start` landing door is the only consumer of
- * `isAutoProjectSuppressed()` and NOTHING would ever set the flag — deleting
- * `settings-view.tsx` alone would have orphaned the whole mechanism silently.
- *
- * `onSuppress` only runs after `client.archiveProject` resolves — a failed
- * archive must not suppress auto-provision for a project that still exists.
- *
- * `remainingProjectCountBeforeArchive` is `number | null`, NOT the deleted
- * page's plain number: that page's count and its Archive button read the SAME
- * query, so the button could not render before the count existed. Here the
- * count is a separate, dependent query that can still be loading or errored
- * when Delete is confirmed. `null` means "count unknown" and deliberately does
- * NOT suppress — failing closed, because the cost of skipping a suppression is
- * one unwanted auto-create, while the cost of a FALSE suppression is
- * `/projects/start` refusing to auto-create for the next empty account this
- * tab visits.
+ * Archiving the account's last project needs no guard: the landing door
+ * never auto-creates a project, so an empty account lands on the chooser.
  */
 export async function runProjectArchive(
   projectId: string,
-  remainingProjectCountBeforeArchive: number | null,
   client: RunProjectArchiveClient,
-  onSuppress: () => void,
   /** Forget this project as the remembered landing target (JAY-729). Runs
    *  only after the archive lands — a failed archive leaves a project that
-   *  still renders, so its cookie must survive. Unlike `onSuppress` it does
-   *  not depend on the remaining count: forgetting is about THIS project. */
+   *  still renders, so its cookie must survive. */
   onForget?: () => void,
+  /** Leave the deleted project for the id-free landing door. Runs LAST, after
+   *  the cookie is forgotten, so the door opens the next project — or, after
+   *  the account's last one, the create form. */
+  onLeave?: (path: string) => void,
 ): Promise<void> {
   await client.archiveProject(projectId);
   onForget?.();
-  if (remainingProjectCountBeforeArchive !== null && remainingProjectCountBeforeArchive <= 1) {
-    onSuppress();
-  }
-}
-
-/**
- * `accountProjectsQuery.data` -> the count `runProjectArchive` needs, kept as
- * its own exported step so the exact mapping is pinned independently of
- * TanStack Query. The bug this guards against lived in a bare
- * `accountProjectsQuery.data?.length ?? 0` at the call site: `undefined`
- * (still loading, OR the query errored — react-query leaves `data` `undefined`
- * in both) silently became `0`, which reads as "zero projects remain" and
- * fires a false suppression. `undefined` must map to `null` ("unknown"), never
- * to `0` ("confirmed empty"). Ported from `main`.
- */
-export function accountProjectCountForArchive(data: unknown[] | undefined): number | null {
-  return data ? data.length : null;
+  onLeave?.(PROJECT_LANDING_PATH);
 }
 
 /** Workspace name + icon. Moved from `settings-view.tsx`'s
@@ -593,6 +545,7 @@ export function GeneralTab({ projectId }: { projectId: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('settings.workspace');
   const queryClient = useQueryClient();
+  const router = useRouter();
   const { user } = useAuth();
   const [archiveOpen, setArchiveOpen] = useState(false);
 
@@ -611,29 +564,21 @@ export function GeneralTab({ projectId }: { projectId: string }) {
   const canDelete = caps[PROJECT_ACTIONS.PROJECT_DELETE]?.allowed === true;
   const canEdit = caps[PROJECT_ACTIONS.PROJECT_WRITE]?.allowed === true;
 
-  // Same `qk.projects.list(accountId)` cache entry the workspace switcher and
-  // `/new` already fetch with, so this is warm (no extra request) for the
-  // common case. Read, not re-derived from `project`: this is the account's
-  // PROJECT COUNT before the archive commits, which `runProjectArchive` needs
-  // to decide whether this was the last one. Ported from `main`.
-  const accountId = project?.account_id;
-  const accountProjectsQuery = useQuery({
-    queryKey: qk.projects.list(accountId),
-    queryFn: () => listProjectsForAccount(accountId as string),
-    enabled: !!accountId,
-    ...contract('inventory'),
-  });
-
   const archiveMutation = useMutation({
     mutationFn: () =>
       runProjectArchive(
         projectId,
-        accountProjectCountForArchive(accountProjectsQuery.data),
         { archiveProject },
-        suppressAutoProjectAfterDelete,
         // The archived project must stop being where `/` and the settings
         // exit land (JAY-729) — otherwise they redirect into a 404 gate.
         () => forgetLastProjectId(user?.id, projectId),
+        // The overlay's open state is global, so close it first or it would
+        // reopen over the next project. `replace`: Back must not return to
+        // the deleted project.
+        (path) => {
+          useSettingsPanelStore.getState().close();
+          router.replace(path);
+        },
       ),
     onSuccess: () => {
       successToast(tI18nComplete('textdd9e881230eb'));
