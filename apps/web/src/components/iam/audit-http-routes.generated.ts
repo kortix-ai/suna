@@ -37,6 +37,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "POST|v1|access|check-email",
   "POST|v1|access|request-access",
   "GET|v1|access|signup-status",
+  "GET|v1|account-invites",
   "GET|v1|account-invites|:inviteId",
   "POST|v1|account-invites|:inviteId|accept",
   "POST|v1|account-invites|:inviteId|decline",
