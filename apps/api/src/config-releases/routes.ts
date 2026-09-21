@@ -29,7 +29,7 @@ import {
   loadVisibleSession,
   projectCapabilityAllowed,
 } from '../projects/lib/access';
-import { AnyObject, projectsApp } from '../projects/lib/app';
+import { projectsApp } from '../projects/lib/app';
 import { callerKortixSessionId } from '../projects/lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../projects/lib/sandbox-token-session';
 import { repositoryAccessFromSessionMetadata } from '../projects/lib/session-sandbox-metadata';
@@ -153,7 +153,7 @@ projectsApp.openapi(
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } }, required: false },
+      body: { content: { 'application/json': { schema: ConfigReleaseRequestSchema } }, required: false },
     },
     responses: { 200: json(z.any(), 'Release descriptor'), ...errors(400, 403, 404, 409) },
   }),

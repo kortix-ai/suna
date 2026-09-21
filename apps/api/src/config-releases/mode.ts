@@ -7,7 +7,7 @@
  * into the box.
  */
 
-import { z } from 'zod';
+import { z } from '@hono/zod-openapi';
 import type { GitBackedProject } from '../projects/git/types';
 import type { ConfigMode, ConfigRelease } from './builder';
 

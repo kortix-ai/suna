@@ -294,7 +294,7 @@ async function build(
   try {
     governance = await compileGovernance(project, commit, variant);
   } catch (error) {
-    return { ...base, reason: `compiled governance failed: ${(error as Error).message}` };
+    return { ...base, reason: `${COMPILED_GOVERNANCE_FAILED}: ${(error as Error).message}` };
   }
   const etag = agentConfigEtag(governance);
   const withGovernance: ConfigRelease = {
@@ -371,6 +371,7 @@ export async function buildConfigRelease(
 }
 
 export const REPOSITORY_ACCESS_WITHHELD = 'repository access withheld';
+export const COMPILED_GOVERNANCE_FAILED = 'compiled governance failed';
 
 /**
  * Combine a release with the mode the API chose.
@@ -393,7 +394,9 @@ export function toDescriptor(
       config_tree_id: null,
       archive: null,
       files: null,
-      reason: REPOSITORY_ACCESS_WITHHELD,
+      // A governance failure is the more useful reason: it names why the
+      // session gets nothing at all.
+      reason: release.reason?.startsWith(COMPILED_GOVERNANCE_FAILED) ? release.reason : REPOSITORY_ACCESS_WITHHELD,
     };
   }
   if (mode === 'session-files') return { ...release, mode, archive: null, files: null };
