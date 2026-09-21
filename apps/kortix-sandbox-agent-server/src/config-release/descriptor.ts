@@ -127,4 +127,11 @@ export interface WorkspaceReport {
   config_dir: string
   committed_scope: WorkspaceCommittedScope
   changed: WorkspaceChange[]
+  /**
+   * Working-tree text of `<config_dir>/package.json` when that file is in
+   * `changed`; null when it is deleted; absent otherwise or above 256 KiB.
+   * The API needs the text for its plugin-pin rule: an uncommitted or
+   * unpushed blob is not in its mirror.
+   */
+  package_json?: string | null
 }

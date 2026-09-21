@@ -800,3 +800,21 @@ describe('repository replacement: a previous-repository session is frozen', () =
     expect(response.reason).toMatch(/descriptor request answered 409/)
   })
 })
+
+describe('the descriptor request carries package.json text', () => {
+  test('an installer pin edit in /workspace reaches the API as text with a matching blob', async () => {
+    write(origin, `${DIR}/package.json`, '{"dependencies":{"@opencode-ai/plugin":"1.17.11"}}\n')
+    commitAll(origin, 'pin')
+    git(work, 'pull', '-q', 'origin', 'main')
+    const pinned = '{"dependencies":{"@opencode-ai/plugin":"1.18.23"}}\n'
+    write(work, `${DIR}/package.json`, pinned)
+    serveRelease(api, baseRelease())
+    await converge(fakeOpencode())
+    const body = api.descriptorRequests.at(-1)!.body as {
+      workspace: { package_json?: string | null; changed: Array<{ path: string; blob: string | null }> }
+    }
+    expect(body.workspace.package_json).toBe(pinned)
+    const entry = body.workspace.changed.find((change) => change.path === `${DIR}/package.json`)!
+    expect(entry.blob).toBe(git(work, 'hash-object', '--', `${DIR}/package.json`))
+  })
+})

@@ -5,6 +5,7 @@
  */
 import { afterEach, describe, expect, test } from 'bun:test'
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { mkdtempSync, rmSync, symlinkSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -244,5 +245,71 @@ describe('committed work in every checkout shape', () => {
     git(work, 'checkout', '-q', 'ses-1')
     const notAncestor = await buildWorkspaceReport(work, DIR, 'main', { baseSha: side })
     expect(notAncestor!.committed_scope).toBe('remote')
+  })
+})
+
+/**
+ * The API's plugin-pin rule needs the TEXT of `<config dir>/package.json`: an
+ * uncommitted or unpushed blob is not in its mirror, and without the text it
+ * counts the file as session work. Every box that booted from `/workspace` has
+ * the installer's pin edit, so without this no imported sandbox converges.
+ * The API uses the text only when its Git blob ID equals the reported blob.
+ */
+describe('package_json text for the plugin-pin rule', () => {
+  const PKG = `${DIR}/package.json`
+  const gitBlob = (text: string) =>
+    createHash('sha1').update(`blob ${Buffer.byteLength(text)}\0`).update(text).digest('hex')
+
+  test('a pin-only uncommitted edit carries the working-tree text, matching its blob', async () => {
+    const { work } = setup({ shallow: true })
+    const text = '{"dependencies":{"@opencode-ai/plugin":"1.18.23"}}\n'
+    write(work, PKG, text)
+    const report = await buildWorkspaceReport(work, DIR, 'main')
+    const entry = report!.changed.find((change) => change.path === PKG)!
+    expect(entry.status).toBe('modified')
+    expect(report!.package_json).toBe(text)
+    expect(gitBlob(report!.package_json!)).toBe(entry.blob!)
+  })
+
+  test("a pin-only edit swept into a commit by the agent's `git add -A` carries the text", async () => {
+    const { work } = setup({ shallow: false })
+    const text = '{"dependencies":{"@opencode-ai/plugin":"1.18.23"}}\n'
+    write(work, PKG, text)
+    write(work, `${DIR}/agents/kortix.md`, 'SESSION PROMPT\n')
+    commitAll(work, 'agent: git add -A')
+    const report = await buildWorkspaceReport(work, DIR, 'main')
+    const entry = report!.changed.find((change) => change.path === PKG)!
+    expect(entry.status).toBe('modified')
+    expect(report!.package_json).toBe(text)
+    expect(gitBlob(report!.package_json!)).toBe(entry.blob!)
+  })
+
+  test('a real dependency added carries the text too; the API decides', async () => {
+    const { work } = setup({ shallow: false })
+    const text = '{"dependencies":{"@opencode-ai/plugin":"1.17.11","zod":"^3.23.8"}}\n'
+    write(work, PKG, text)
+    const report = await buildWorkspaceReport(work, DIR, 'main')
+    expect(report!.package_json).toBe(text)
+  })
+
+  test('a deleted package.json reports null; an untouched one omits the field', async () => {
+    const { work } = setup({ shallow: false })
+    const untouched = await buildWorkspaceReport(work, DIR, 'main')
+    expect('package_json' in untouched!).toBe(false)
+    write(work, `${DIR}/agents/kortix.md`, 'EDIT\n')
+    const otherEdit = await buildWorkspaceReport(work, DIR, 'main')
+    expect('package_json' in otherEdit!).toBe(false)
+    unlinkSync(join(work, PKG))
+    const deleted = await buildWorkspaceReport(work, DIR, 'main')
+    expect(deleted!.changed.find((change) => change.path === PKG)).toEqual({ path: PKG, status: 'deleted', blob: null })
+    expect(deleted!.package_json).toBeNull()
+  })
+
+  test('a package.json over 256 KiB is omitted', async () => {
+    const { work } = setup({ shallow: false })
+    write(work, PKG, `{"description":"${'x'.repeat(256 * 1024)}"}\n`)
+    const report = await buildWorkspaceReport(work, DIR, 'main')
+    expect(report!.changed.some((change) => change.path === PKG)).toBe(true)
+    expect('package_json' in report!).toBe(false)
   })
 })

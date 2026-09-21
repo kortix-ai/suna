@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { lstat, readFile, readlink } from 'node:fs/promises'
 import { join } from 'node:path'
+import { logger } from '../logger'
 import {
   isPlainConfigDir,
   type WorkspaceChange,
@@ -30,6 +31,8 @@ import {
  */
 
 const GIT_TIMEOUT_MS = 15_000
+/** The API's `MAX_REPORTED_PACKAGE_JSON_BYTES`. */
+export const MAX_PACKAGE_JSON_BYTES = 256 * 1024
 /** The API's `MAX_WORKSPACE_REPORT_ENTRIES`. */
 export const MAX_REPORT_ENTRIES = 5_000
 
@@ -252,5 +255,30 @@ export async function buildWorkspaceReport(
     const statusOut: WorkspaceChangeStatus = blob === null ? 'deleted' : listed === 'deleted' ? 'modified' : listed
     return { path, status: statusOut, blob }
   })
-  return { head: headSha, config_dir: configDir, committed_scope: scope, changed }
+  const report: WorkspaceReport = { head: headSha, config_dir: configDir, committed_scope: scope, changed }
+  const packageJson = changed.find((change) => change.path === `${configDir}/package.json`)
+  if (packageJson) {
+    const text = packageJson.blob === null ? null : await readPackageJsonText(join(repo, packageJson.path))
+    if (text !== undefined) report.package_json = text
+  }
+  return report
+}
+
+/**
+ * The working-tree text of `<config dir>/package.json`, for the API's
+ * plugin-pin rule. `undefined` omits the field: over the cap, not valid
+ * UTF-8 (the API hashes the text and would not match the blob), or unreadable.
+ */
+async function readPackageJsonText(file: string): Promise<string | undefined> {
+  const bytes = await readFile(file).catch(() => null)
+  if (!bytes) return undefined
+  if (bytes.length > MAX_PACKAGE_JSON_BYTES) {
+    logger.warn('[config-release] package.json exceeds the report cap; its text is omitted', {
+      bytes: bytes.length,
+      cap: MAX_PACKAGE_JSON_BYTES,
+    })
+    return undefined
+  }
+  const text = bytes.toString('utf8')
+  return Buffer.from(text, 'utf8').equals(bytes) ? text : undefined
 }
