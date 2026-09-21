@@ -13,7 +13,7 @@ import { projectOpenCodeResourceSnapshot } from './resource-diagnostics'
 import { daemonLogFilePath } from '../../logger'
 import { tailFile } from '../../log-tail'
 
-import { readBootConfigPointer } from '../../boot-config'
+import { readBootConfigPointer } from '../../boot-config-git'
 import type { Config } from '../../config'
 import { readRepoInfo } from '../../git'
 import { runtimeConvergenceReport } from '../../runtime-assets'

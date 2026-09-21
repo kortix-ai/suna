@@ -32,7 +32,7 @@ import { scheduleRuntimeProjectionPush } from './runtime-projection-relay'
 import { repairOpencodeConfigDir } from './apple-double'
 import { ensureOpencodeConfigDeps } from './opencode-config-deps'
 import { resolveActiveOpencodeConfigDir } from './config-dir-converge'
-import { readBootConfigPointer } from '../../boot-config'
+import { readBootConfigPointer } from '../../boot-config-git'
 import { OPENCODE_HOME } from './paths'
 import { ensureInjectedManagedSkills } from '../../managed-skills'
 // Converge `/usr/local/bin/kortix` + the managed-skill overlay on the API this

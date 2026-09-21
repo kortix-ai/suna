@@ -6,7 +6,7 @@ import {
   pruneBootConfigs,
   readBootConfigPointer,
   verifyBootConfig,
-} from '../../boot-config'
+} from '../../boot-config-git'
 import type { Config } from '../../config'
 import { inspectSessionConfigWork, type ConfigDirSyncResult } from '../../git'
 import { logger } from '../../logger'

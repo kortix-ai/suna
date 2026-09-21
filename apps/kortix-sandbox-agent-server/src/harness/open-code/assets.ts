@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { readBootConfigPointer } from '../../boot-config'
+import { readBootConfigPointer } from '../../boot-config-git'
 import { execFile } from 'node:child_process'
 import { readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
