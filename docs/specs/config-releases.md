@@ -64,6 +64,7 @@ identifiers (commit and compiled etag) applied in two steps.
 | 2026-09-21 | The API decides the desired release. The daemon only executes and reports. |
 | 2026-09-21 | Storage default is the Supabase Storage native API. |
 | 2026-09-21 | A session without repository access never receives a config archive. |
+| 2026-09-22 | A session from a previous repository generation keeps its running config. It never receives a release built from the current repository. |
 
 ## Terms
 
@@ -482,6 +483,45 @@ Remove `config_dir_sha` one release after every API reads `config`.
 `boot-config.ts` stays. Its source changes from `git archive` to a downloaded
 archive. Verification reads blob IDs from the descriptor.
 
+## Repository replacement
+
+A project can replace its repository (`repository-replacement.ts`). The
+replacement writes a new `repoUrl`, a new default branch, and a new
+`metadata.repository_generation`, then calls `invalidateProjectMirror`. Every
+existing session keeps the previous generation in its own metadata
+(`sessions.ts`). Such a session is a previous-repository session:
+
+- `/start` rejects it unless the caller passes `repositoryMode: 'previous'` and
+  a preserved runtime exists (`sessionRepositoryStartDecision`).
+- The Git proxy rejects its token with `409 Session belongs to a previous
+  repository` (`checkGitProxySessionGeneration`).
+
+The sandbox side needs no change: the platform never wrote `/workspace`, and a
+box boots from its release store with its local manifest, without the API.
+
+The API side must gate. Releases are built from the project's current
+repository, so an ungated descriptor would give a previous-repository session
+the new repository's config and files. That is wrong behaviour, and it is a
+disclosure the Git proxy already forbids. Rules:
+
+1. `POST .../config-release` answers `409` with body
+   `{ "error": "Session belongs to a previous repository", "code": "session_repository_changed" }`
+   when the session's generation differs from the project's. Use
+   `sessionUsesCurrentRepository`.
+2. `GET .../config-archives/{tree}` answers the same `409` to a session token
+   from a previous generation.
+3. No trigger converges a previous-repository session. This includes the
+   fan-out after the replacement's own `invalidateProjectMirror`, and a resume
+   with `repositoryMode: 'previous'`.
+4. `GET /config` for such a session returns `stale: false` and a `release`
+   block that reports the running state. No update applies to a frozen session.
+5. The daemon treats a `409` with code `session_repository_changed` as outcome
+   `unchanged` with that reason. It sets no `fallback_reason` and quarantines
+   nothing. The running config stays.
+
+A session created after the replacement has the new generation and converges
+normally against the new repository.
+
 ## Convergence triggers
 
 | Trigger | Owner | Notes |
@@ -516,6 +556,7 @@ Load `kortix-brand-guidelines` and `kortix-design-system` before any
 |---|---|
 | Base branch has no config dir | No release. Source `image-default`. |
 | Session without repository access | No archive. Governance only. Source `image-default`. |
+| Project repository replaced | Previous-generation sessions keep their running config. Descriptor and archive routes answer `409`. No trigger reaches them. New sessions converge on the new repository. |
 | `.gitattributes` with `export-ignore` or `export-subst` in the config dir | Neutralised at build. Archive holds every committed file, unmodified. |
 | Manifest changes `opencode.config_dir` | The new path resolves a new tree. New release ID. |
 | Config dir over 4 MiB | No release. `reason` set. Running config kept. |
