@@ -1,4 +1,4 @@
-import { chatChannelBindings, chatInstalls, projects } from '@kortix/db';
+import { chatChannelBindings, chatInstalls, chatThreads, projectSessions, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import type { ChannelCtx } from '../slack/selection';
@@ -190,4 +190,53 @@ export async function setConversationProject(input: {
   projectId: string;
 }): Promise<boolean> {
   return ensureTeamsConversationBinding(input);
+}
+
+export interface TeamsConversationSession {
+  sessionId: string;
+  status: string | null;
+  agentName: string | null;
+  createdAt: Date | null;
+}
+
+/**
+ * The Kortix session this conversation is running, if any.
+ *
+ * A Teams conversation holds exactly one at a time — `chat_threads` is keyed on
+ * the thread — which is what lets `/stop` and `/status` name a run without the
+ * user quoting an id. The session row may be gone while the thread row remains
+ * (a deleted session), so the join is left as two reads and the caller is told
+ * the id even when the row behind it has vanished.
+ */
+export async function conversationSession(
+  tenantId: string,
+  conversationId: string,
+): Promise<TeamsConversationSession | null> {
+  const [thread] = await db
+    .select({ sessionId: chatThreads.sessionId })
+    .from(chatThreads)
+    .where(
+      and(
+        eq(chatThreads.platform, PLATFORM),
+        eq(chatThreads.workspaceId, tenantId),
+        eq(chatThreads.threadId, conversationId),
+      ),
+    )
+    .limit(1);
+  if (!thread?.sessionId) return null;
+  const [row] = await db
+    .select({
+      status: projectSessions.status,
+      agentName: projectSessions.agentName,
+      createdAt: projectSessions.createdAt,
+    })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, thread.sessionId))
+    .limit(1);
+  return {
+    sessionId: thread.sessionId,
+    status: row?.status ?? null,
+    agentName: row?.agentName ?? null,
+    createdAt: row?.createdAt ?? null,
+  };
 }
