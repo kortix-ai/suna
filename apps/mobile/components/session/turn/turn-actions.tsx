@@ -27,7 +27,7 @@ import type { Turn } from '@/lib/opencode/types';
 import { turnDurationMs, turnEndedAt, type TurnMetaCost } from '@/lib/session/turn-meta';
 import { THEME } from '@/lib/utils/theme';
 
-import { SessionTurnMeta, TURN_ACTION_ICON_SIZE } from './session-turn-meta';
+import { SessionTurnMeta, TURN_ACTION_HIT_SLOP, TURN_ACTION_ICON_SIZE } from './session-turn-meta';
 
 /** How long the check stays before it swaps back to Copy (web: 2000ms). */
 const COPIED_MS = 2000;
@@ -77,9 +77,10 @@ export function TurnActions({
   );
 
   return (
-    // `-ml-2 -my-1.5`: the buttons keep their 40pt touch target, and the glyph
-    // lands where web's 26px button puts it (≈4px in from the text edge).
-    <View className="-my-1.5 -ml-2 flex-row items-center gap-0.5" testID="session-turn-actions">
+    // `icon-sm` buttons: a 28pt box (web: 26px), so the pressed highlight and
+    // the spacing between glyphs match web. `-ml-0.5` puts the first glyph
+    // ≈4pt in from the text edge, like web. Hit slop keeps a 44pt-tall target.
+    <View className="-ml-0.5 flex-row items-center gap-0.5" testID="session-turn-actions">
       {response ? <CopyResponseButton response={response} /> : null}
       <SessionTurnMeta endedAt={resolvedEndedAt} durationMs={resolvedDurationMs} cost={costInfo} />
     </View>
@@ -124,7 +125,8 @@ function CopyResponseButton({ response }: { response: string }) {
   return (
     <Button
       variant="ghost"
-      size="icon"
+      size="icon-sm"
+      hitSlop={TURN_ACTION_HIT_SLOP}
       onPress={handleCopy}
       accessibilityLabel={copied ? 'Copied' : 'Copy response'}
       testID="session-turn-copy">

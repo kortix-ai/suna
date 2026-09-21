@@ -122,7 +122,10 @@ children.
 - Variants: `default` `secondary` `destructive` `outline` `ghost` `link`.
   Gone: `secondary-outline` `accent` `card` `transparent` `inverted` `white`
   `black` — do not reintroduce them.
-- Sizes: `default` (`h-10`) `sm` (`h-9`) `lg` (`h-11`) `xl` (`h-12`) `icon` (`h-10 w-10`).
+- Sizes: `default` (`h-10`) `sm` (`h-9`) `lg` (`h-11`) `xl` (`h-12`) `icon` (`h-10 w-10`) `icon-sm` (`h-7 w-7`).
+  `icon-sm` is added to the registry output (Jay, 2026-09-21): the 28pt action under a chat
+  message (Copy, Edit, turn details). Always pair it with `hitSlop` so the touch target
+  stays 44pt tall (`TURN_ACTION_HIT_SLOP`). Every other icon button stays `icon` (40pt).
   `xl` is added to the registry output. Only the auth welcome screen's
   three sign-in pills use it (Jay, 2026-09-17). Every other pill stays `lg`.
 
@@ -341,6 +344,7 @@ that drops props silently breaks the screens that still pass them.
    `native-only-animated-view.tsx` (a cast around an upstream typing gap that
    reproduces against stock), and `button.tsx` (`size="lg"` label is
    `text-base font-medium`, plus an added `xl` size — `h-12`, same label —
+   and an added `icon-sm` size — `h-7 w-7` —
    so no screen sets label or box size by class; no added `variant`s),
    and `input.tsx` (borderless filled field in Roobert — no input has a
    border), and `dialog.tsx` + `alert-dialog.tsx` (no `border` on the

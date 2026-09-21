@@ -417,6 +417,21 @@ Decision: add `size.xl` to `buttonVariants` as `h-12 rounded-md px-6 sm:h-11`
 deviation, not a new forked file. Re-apply after any `add --all --overwrite`.
 Consumers of `size="xl"`: `app/auth/index.tsx` (the three sign-in pills) only.
 
+### button.tsx `icon-sm` size — DEVIATES (2026-09-21)
+
+Stock has one icon size, `icon` (`h-10 w-10`). The action bar under a chat
+message (Copy, Edit message, turn details) used it, so each action was a 40pt
+box: the pressed highlight and the pitch between glyphs read oversized next to
+web's 26px buttons (Jay, 2026-09-21: "the icons are proper, but the button size
+is too big"). Sizing a `Button` by class is banned (CLAUDE.md → Button).
+
+Decision: add `size['icon-sm']` to `buttonVariants` as `h-7 w-7` and an empty
+`'icon-sm'` entry to `buttonTextVariants`. No other change.
+
+Consumers of `size="icon-sm"`: `components/session/turn/turn-actions.tsx`,
+`session-turn-meta.tsx`, `user-message.tsx`. Each passes `TURN_ACTION_HIT_SLOP`
+so the touch target stays 44pt tall.
+
 ### input.tsx chrome — DEVIATES (2026-09-14, supersedes the 2026-09-05 decision below)
 Jay: no input has a border, the placeholder was too small, and input text
 used a different font from the rest of the UI. Stock renders a bordered

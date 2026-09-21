@@ -55,7 +55,8 @@ import { SessionRenameSheet } from '@/components/session/SessionRenameSheet';
 import { SessionShareSheet } from '@/components/session/SessionShareSheet';
 import { SessionStatusMark } from '@/components/session/SessionStatusMark';
 import { haptics } from '@/lib/haptics';
-import { projectKeys, useProjectSessions } from '@/lib/projects/hooks';
+import { projectKeys, useProjectSessionsPaged } from '@/lib/projects/hooks';
+import { shouldLoadMoreSessions } from '@/lib/session/session-pages';
 import {
   deleteProjectSession,
   restartProjectSession,
@@ -164,8 +165,12 @@ export function ProjectSessionsPage() {
   const queryClient = useQueryClient();
 
   // Poll for provisioning rows only while this page is on top.
-  const sessionsQuery = useProjectSessions(projectId, { poll: isFocused });
-  const allSessions = React.useMemo(() => sessionsQuery.data ?? [], [sessionsQuery.data]);
+  // Every session, a page (50) at a time: the list loads the next page as it
+  // nears its end. Search and groups work on the rows loaded so far; a search
+  // with few matches leaves the list short, so it reaches its end at once and
+  // keeps loading pages until the matches fill the screen or the list ends.
+  const sessionsQuery = useProjectSessionsPaged(projectId, { poll: isFocused });
+  const allSessions = sessionsQuery.sessions;
 
   // No haptic on a row tap: ProjectScreen's open handler fires the one tap.
 
@@ -216,6 +221,13 @@ export function ProjectSessionsPage() {
       setRefreshing(false);
     }
   }, [sessionsQuery]);
+
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = sessionsQuery;
+  const onEndReached = React.useCallback(() => {
+    if (shouldLoadMoreSessions({ hasNextPage, isFetchingNextPage, isRefreshing: refreshing })) {
+      void fetchNextPage();
+    }
+  }, [hasNextPage, isFetchingNextPage, refreshing, fetchNextPage]);
 
   // ── Action sheet ──
   const actionSheetRef = React.useRef<SheetRef>(null);
@@ -421,6 +433,15 @@ export function ProjectSessionsPage() {
             keyboardDismissMode="on-drag"
             showsVerticalScrollIndicator={false}
             initialNumToRender={20}
+            onEndReached={onEndReached}
+            onEndReachedThreshold={0.6}
+            ListFooterComponent={
+              isFetchingNextPage ? (
+                <View className="items-center py-4">
+                  <KortixLoader size="small" />
+                </View>
+              ) : null
+            }
             style={{ flex: 1 }}
             contentContainerStyle={{
               flexGrow: 1,

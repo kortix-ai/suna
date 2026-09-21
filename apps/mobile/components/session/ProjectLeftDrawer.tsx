@@ -7,9 +7,10 @@
  *   swipe closes the drawer.
  * - Nav pills: Sessions (→ /projects/[id]/sessions), Files
  *   (→ /projects/[id]/files), All projects (→ Projects list).
- * - The project's 20 most recent sessions (status mark · title, newest
- *   activity first; the session on screen is highlighted), then Previous chats. This list scrolls. The Sessions
- *   pill opens the full list.
+ * - Every session of the project, newest activity first (status mark · title;
+ *   the session on screen is highlighted), then Previous chats. Pages of 50
+ *   load as the list nears its end; a pull refreshes it. The Sessions pill
+ *   opens the same list with search and groups.
  * - Pinned bottom bar over a fade of the drawer surface: New session (large
  *   primary pill) · the user's profile photo (→ the Account page at
  *   /projects/[id]/account).
@@ -26,8 +27,8 @@
  * Layout rules: apps/mobile/design.md → Project sidebar.
  */
 
-import React, { useCallback, useMemo, useRef } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { useIsFocused, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
@@ -60,7 +61,8 @@ import { SessionStatusMark } from '@/components/session/SessionStatusMark';
 import { ProfilePicture } from '@/components/settings/ProfilePicture';
 import { useProfileEditor } from '@/hooks/useProfileEditor';
 import { haptics } from '@/lib/haptics';
-import { useProjectSessions } from '@/lib/projects/hooks';
+import { useProjectSessionsPaged } from '@/lib/projects/hooks';
+import { shouldLoadMoreSessions } from '@/lib/session/session-pages';
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import {
   PROJECT_ACCOUNT_ROUTE,
@@ -92,7 +94,6 @@ const LIST_END_GAP = 16;
  */
 const LIST_TOP_FADE_HEIGHT = 24;
 /** Sessions listed in the drawer. The Sessions pill opens the full list. */
-const DRAWER_RECENT_SESSIONS = 20;
 /** Drawer progress at or below this counts as closed (fully off screen). */
 const DRAWER_CLOSED_PROGRESS = 0.01;
 
@@ -173,6 +174,8 @@ export interface ProjectLeftDrawerProps {
   onClose: () => void;
 }
 
+const sessionKey = (session: ProjectSession) => session.session_id;
+
 export function ProjectLeftDrawer({
   projectId,
   activeProjectSessionId = null,
@@ -190,14 +193,32 @@ export function ProjectLeftDrawer({
   // covers the project.
   // Poll for provisioning rows only while the project screen is focused.
   const isFocused = useIsFocused();
-  const { data: projectSessions = [], isLoading: projectSessionsLoading } = useProjectSessions(
-    projectId,
-    { poll: isFocused }
-  );
+  // Every session of the project, a page (50) at a time: the list loads the
+  // next page as it nears its end, and a pull refetches the loaded pages.
+  const {
+    sessions: projectSessions,
+    isLoading: projectSessionsLoading,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+    refetch,
+  } = useProjectSessionsPaged(projectId, { poll: isFocused });
+  // Newest activity first, over every loaded row.
   const recent = useMemo(
-    () => recentSessions(projectSessions, DRAWER_RECENT_SESSIONS),
+    () => recentSessions(projectSessions, projectSessions.length),
     [projectSessions]
   );
+  // Only a pull shows the refresh spinner; a background poll does not.
+  const [refreshing, setRefreshing] = useState(false);
+  const handleRefresh = useCallback(() => {
+    setRefreshing(true);
+    void refetch().finally(() => setRefreshing(false));
+  }, [refetch]);
+  const handleEndReached = useCallback(() => {
+    if (shouldLoadMoreSessions({ hasNextPage, isFetchingNextPage, isRefreshing: refreshing })) {
+      void fetchNextPage();
+    }
+  }, [hasNextPage, isFetchingNextPage, refreshing, fetchNextPage]);
   // The Account page's photo and name, so both surfaces show the same person.
   const profile = useProfileEditor();
 
@@ -273,6 +294,19 @@ export function ProjectLeftDrawer({
     [onClose, onOpenProjectSession]
   );
 
+  const renderSession = useCallback(
+    ({ item }: { item: ProjectSession }) => (
+      <View className="px-2 -mx-1">
+        <ProjectSessionListItem
+          item={item}
+          active={item.session_id === activeProjectSessionId}
+          onPress={handleOpenProjectSession}
+        />
+      </View>
+    ),
+    [activeProjectSessionId, handleOpenProjectSession]
+  );
+
   const handleNewSession = useCallback(() => {
     haptics.tap();
     onClose();
@@ -318,36 +352,47 @@ export function ProjectLeftDrawer({
       </View>
 
       <View className="flex-1">
-        <Animated.ScrollView
+        <Animated.FlatList
           style={{ flex: 1 }}
+          data={recent}
+          keyExtractor={sessionKey}
+          renderItem={renderSession}
           showsVerticalScrollIndicator={false}
           onScroll={onListScroll}
           scrollEventThrottle={16}
-          contentContainerStyle={{ paddingTop: 4, paddingBottom: listBottomPadding }}>
-          <View className="px-2 -mx-1">
-            {projectSessionsLoading ? (
-              <View className="items-center py-8">
-                <KortixLoader size="small" />
+          contentContainerStyle={{ paddingTop: 4, paddingBottom: listBottomPadding }}
+          // Load the next page about one screen before the end of the list.
+          onEndReached={handleEndReached}
+          onEndReachedThreshold={0.6}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={mutedColor} />
+          }
+          ListEmptyComponent={
+            <View className="px-2 -mx-1">
+              {projectSessionsLoading ? (
+                <View className="items-center py-8">
+                  <KortixLoader size="small" />
+                </View>
+              ) : (
+                <Text variant="muted" className="px-3 py-2">
+                  No sessions yet
+                </Text>
+              )}
+            </View>
+          }
+          ListFooterComponent={
+            <View>
+              {isFetchingNextPage ? (
+                <View className="items-center py-4">
+                  <KortixLoader size="small" />
+                </View>
+              ) : null}
+              <View className="mt-2 px-2">
+                <LegacyChatsSection iconColor={iconColor} mutedColor={mutedColor} isDark={isDark} />
               </View>
-            ) : recent.length === 0 ? (
-              <Text variant="muted" className="px-3 py-2">
-                No sessions yet
-              </Text>
-            ) : (
-              recent.map((ps) => (
-                <ProjectSessionListItem
-                  key={ps.session_id}
-                  item={ps}
-                  active={ps.session_id === activeProjectSessionId}
-                  onPress={handleOpenProjectSession}
-                />
-              ))
-            )}
-          </View>
-          <View className="mt-2 px-2">
-            <LegacyChatsSection iconColor={iconColor} mutedColor={mutedColor} isDark={isDark} />
-          </View>
-        </Animated.ScrollView>
+            </View>
+          }
+        />
         {/* Top fade: rows fade out under the nav pills instead of a hard edge. */}
         <Animated.View
           pointerEvents="none"

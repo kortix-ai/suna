@@ -45,6 +45,7 @@ const buttonVariants = cva(
         lg: cn('h-11 rounded-md px-6 sm:h-10', Platform.select({ web: 'has-[>svg]:px-4' })),
         xl: cn('h-12 rounded-md px-6 sm:h-11', Platform.select({ web: 'has-[>svg]:px-4' })),
         icon: 'h-10 w-10 sm:h-9 sm:w-9',
+        'icon-sm': 'h-7 w-7',
       },
     },
     defaultVariants: {
@@ -81,6 +82,7 @@ const buttonTextVariants = cva(
         lg: 'text-base font-medium',
         xl: 'text-base font-medium',
         icon: '',
+        'icon-sm': '',
       },
     },
     defaultVariants: {

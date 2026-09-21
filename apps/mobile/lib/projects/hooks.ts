@@ -5,6 +5,7 @@
 
 import { useMemo, useRef } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { flattenSessionPages, sessionsNextCursor } from '@/lib/session/session-pages';
 import {
   nextProjectSessionsPollWindow,
   projectSessionsPollInterval,
@@ -56,6 +57,7 @@ import {
   listProjectPolicies,
   listProjectSecrets,
   listProjectSessions,
+  listProjectSessionsPage,
   listProjectTriggers,
   listProjectsForAccount,
   mergeChangeRequest,
@@ -112,6 +114,14 @@ export const projectKeys = {
     ['project-file', projectId, path] as const,
   projectSessions: (projectId: string | null | undefined) =>
     ['project-sessions', projectId] as const,
+  /**
+   * The paged list (`useInfiniteQuery`). A child of `projectSessions`, so every
+   * `invalidateQueries({ queryKey: projectSessions(id) })` refreshes it too. Its
+   * own key: a flat `useQuery` and an infinite query under one key would hand
+   * each other the wrong data shape.
+   */
+  projectSessionsPaged: (projectId: string | null | undefined) =>
+    ['project-sessions', projectId, 'paged'] as const,
   connectors: (projectId: string | null | undefined) => ['project-connectors', projectId] as const,
   secrets: (projectId: string | null | undefined) => ['project-secrets', projectId] as const,
   slackInstall: (projectId: string | null | undefined) => ['slack-install', projectId] as const,
@@ -530,6 +540,38 @@ export function useProjectSessions(projectId: string | null, { poll = true }: Po
       return projectSessionsPollInterval(rows, pollWindow.startedAt, now);
     },
   });
+}
+
+/**
+ * A project's sessions a page at a time, newest activity first — the list the
+ * project drawer and the Sessions page scroll. `useProjectSessions` above is
+ * one page (the first 50): it serves lookups, not browsing.
+ *
+ * `sessions` is every loaded page, flattened and de-duplicated. A refetch
+ * (poll, pull to refresh, invalidation) refetches every loaded page, so the
+ * cost is bounded by what the user scrolled to.
+ */
+export function useProjectSessionsPaged(projectId: string | null, { poll = true }: PollOptions = {}) {
+  const pollWindowRef = useRef<ProjectSessionsPollWindow | null>(null);
+  const query = useInfiniteQuery({
+    queryKey: projectKeys.projectSessionsPaged(projectId),
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) => listProjectSessionsPage(projectId!, { cursor: pageParam }),
+    getNextPageParam: sessionsNextCursor,
+    enabled: !!projectId,
+    staleTime: 10_000,
+    // The same 4-minute provisioning poll as `useProjectSessions`, judged on the rows loaded so far.
+    refetchInterval: (q) => {
+      const rows = flattenSessionPages(q.state.data);
+      const now = Date.now();
+      const pollWindow = nextProjectSessionsPollWindow(pollWindowRef.current, rows, now);
+      pollWindowRef.current = pollWindow;
+      if (!poll || !pollWindow) return false;
+      return projectSessionsPollInterval(rows, pollWindow.startedAt, now);
+    },
+  });
+  const sessions = useMemo(() => flattenSessionPages(query.data), [query.data]);
+  return { ...query, sessions };
 }
 
 export function useCreateProjectSession(projectId: string | null) {

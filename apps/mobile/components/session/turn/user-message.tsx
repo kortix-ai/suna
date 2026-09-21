@@ -18,6 +18,7 @@ import * as Clipboard from 'expo-clipboard';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
+import { TURN_ACTION_HIT_SLOP } from '@/components/session/turn/session-turn-meta';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import {
   CaretDownIcon,
@@ -592,8 +593,8 @@ export function UserMessageActions({
   if (!leadingStatus && items.length === 0 && !copyText) return null;
 
   return (
-    // 40pt touch targets, pulled back to web's 24px row height.
-    <View className="-my-2 flex-row items-center justify-end" style={{ gap: webSpace(2) }}>
+    // 28pt `icon-sm` buttons, pulled back to web's 24px row height.
+    <View className="-my-0.5 flex-row items-center justify-end" style={{ gap: webSpace(2) }}>
       {leadingStatus ? (
         <Text variant="muted" numberOfLines={1} className="shrink" style={[META_TEXT_STYLE, { color: metaColor }]}>
           {leadingStatus}
@@ -618,11 +619,21 @@ export function UserMessageActions({
       {copyText ? (
         <View className="flex-row items-center">
           {onEdit ? (
-            <Button variant="ghost" size="icon" onPress={onEdit} accessibilityLabel="Edit message">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              hitSlop={TURN_ACTION_HIT_SLOP}
+              onPress={onEdit}
+              accessibilityLabel="Edit message">
               <Icon as={PencilSimpleRegularIcon} size={webSpace(4)} className="text-foreground" />
             </Button>
           ) : null}
-          <Button variant="ghost" size="icon" onPress={handleCopy} accessibilityLabel={copied ? 'Copied' : 'Copy message'}>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            hitSlop={TURN_ACTION_HIT_SLOP}
+            onPress={handleCopy}
+            accessibilityLabel={copied ? 'Copied' : 'Copy message'}>
             <Icon as={copied ? CheckIcon : CopyIcon} size={webSpace(4)} className="text-foreground" />
           </Button>
         </View>

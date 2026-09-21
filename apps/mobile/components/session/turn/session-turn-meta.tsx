@@ -27,6 +27,12 @@ const TICK_MS = 15_000;
 
 /** Web `size-[1.05rem]` = 16.8px. */
 export const TURN_ACTION_ICON_SIZE = 17;
+/**
+ * Turn action buttons are `Button size="icon-sm"` (28pt box). 8pt above and
+ * below make the touch target 44pt tall; 4pt at the sides (36pt wide) stops
+ * short of the neighbouring action, which sits 2pt away.
+ */
+export const TURN_ACTION_HIT_SLOP = { top: 8, bottom: 8, left: 4, right: 4 } as const;
 
 /** Web `text-xs`: 13px / 16px. Mobile's stock `text-xs` is 12/16. */
 const TEXT_XS = { fontSize: 13, lineHeight: 16 } as const;
@@ -74,7 +80,8 @@ export function SessionTurnMeta({
     <>
       <Button
         variant="ghost"
-        size="icon"
+        size="icon-sm"
+        hitSlop={TURN_ACTION_HIT_SLOP}
         onPress={handleOpen}
         accessibilityLabel="Turn details"
         testID="session-turn-meta-trigger">
