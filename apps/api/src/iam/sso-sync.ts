@@ -20,6 +20,7 @@ import { db } from '../shared/db';
 import { withDirectoryTransaction } from './directory-transaction';
 import { assignRole, SYSTEM_ACTOR } from './assignments';
 import { invalidateIamCacheForUser } from './cache-invalidation';
+import { reconcileAccountIdentities } from './account-identity';
 import {
   ensureAutoProvisionedGroup,
   getSsoProviderBySupabaseId,
@@ -265,7 +266,51 @@ export async function syncSsoMembership(args: {
     if (directoryUser && (!directoryUser.active || directoryUser.deletedAt)) {
       return { skipped: false, memberCreated: false };
     }
-    if (directoryUser && !directoryUser.userId) {
+    const priorAccountIdentities = await db.execute(sql`
+      WITH account_user_ids AS (
+        SELECT membership.user_id
+        FROM kortix.account_memberships membership
+        WHERE membership.account_id=${provider.accountId}::uuid
+        UNION
+        SELECT session_row.created_by
+        FROM kortix.project_sessions session_row
+        WHERE session_row.account_id=${provider.accountId}::uuid
+        UNION
+        SELECT directory_row.user_id
+        FROM kortix.account_scim_users directory_row
+        WHERE directory_row.account_id=${provider.accountId}::uuid
+          AND directory_row.user_id IS NOT NULL
+      )
+      SELECT auth_user.id::text AS user_id
+      FROM account_user_ids account_user
+      JOIN auth.users auth_user ON auth_user.id=account_user.user_id
+      WHERE lower(trim(auth_user.email))=lower(trim(${args.email}))
+        AND auth_user.id<>${args.userId}::uuid
+      ORDER BY auth_user.id
+    `) as unknown as Array<{ user_id: string }>;
+    const otherProviderIdentities = await db.execute(sql`
+      SELECT id::text AS user_id
+      FROM auth.users
+      WHERE lower(trim(email))=lower(${args.email.trim()})
+        AND id<>${args.userId}::uuid
+        AND (
+          raw_app_meta_data->>'provider'='sso:' || ${provider.supabaseSsoProviderId}::text
+          OR coalesce(raw_app_meta_data->'providers', '[]'::jsonb)
+            ? ('sso:' || ${provider.supabaseSsoProviderId}::text)
+        )
+    `) as unknown as Array<{ user_id: string }>;
+    if (otherProviderIdentities.length > 0) {
+      throw new Error(`Ambiguous SSO identity for ${args.email.trim().toLowerCase()}`);
+    }
+    const candidateIds = new Set([
+      ...(directoryUser?.userId && directoryUser.userId !== args.userId ? [directoryUser.userId] : []),
+      ...priorAccountIdentities.map(row => row.user_id),
+    ]);
+    const priorUserIds = [...candidateIds];
+    const identityReconciled = priorUserIds.length > 0;
+    if (identityReconciled) {
+      await reconcileAccountIdentities(provider.accountId, priorUserIds, args.userId);
+    } else if (directoryUser && !directoryUser.userId) {
       await db.update(accountScimUsers).set({ userId: args.userId })
         .where(and(eq(accountScimUsers.accountId, provider.accountId), eq(accountScimUsers.scimId, directoryUser.scimId)));
     }
@@ -283,9 +328,9 @@ export async function syncSsoMembership(args: {
       )
       .limit(1);
 
-    let memberCreated = false;
+    let memberCreated = identityReconciled;
     if (!existingMember) {
-      if (!provider.autoCreateMembers && !directoryUser?.active) {
+      if (!provider.autoCreateMembers && !directoryUser?.active && !identityReconciled) {
         return { skipped: false, memberCreated: false };
       }
       // IDENTITY, then the ROLE. Two stores since the cutover.

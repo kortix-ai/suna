@@ -115,7 +115,10 @@ const ACTION_VERBS: Record<string, string> = {
   'audit.export': 'export audit events',
   // Tokens
   'token.read': 'view personal access tokens',
-  'token.revoke': 'revoke personal access tokens',
+  'token.create': 'create account tokens',
+  'token.revoke': 'revoke account tokens',
+  'token.personal.create': 'create your own personal access token',
+  'token.personal.revoke': 'revoke your own personal access token',
   // Billing
   'billing.read': 'view billing',
   'billing.write': 'change billing',

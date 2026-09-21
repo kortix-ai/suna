@@ -22,7 +22,6 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
-import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Switch } from '@/components/ui/switch';
 import { Tag } from '@/components/ui/tag';
@@ -40,6 +39,7 @@ import {
 import {
   CheckIcon as Check,
   FolderSimpleIcon as Folder,
+  GlobeHemisphereWestIcon as Globe,
   DotsThreeIcon as MoreHorizontal,
   ShieldCheckIcon as ShieldCheck,
   StarIcon as Star,
@@ -221,14 +221,23 @@ export function ModelsTab({
               </div>
               {group.providerID === 'kortix' &&
                 group.rows.every(({ model }) => isManagedModelId(model.modelID)) && (
-                  <InfoBanner
-                    tone="success"
-                    icon={ShieldCheck}
-                    title={tAccess('zdrTitle')}
-                    className="text-xs"
-                  >
-                    {tAccess('zdrDescription')}
-                  </InfoBanner>
+                  // One quiet line, not a green panel: both facts are
+                  // reassurance, not a warning, and the detail lives one hover
+                  // away. `tabIndex` keeps each hint reachable by keyboard.
+                  <div className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                    <Hint label={tAccess('zdrDescription')} side="top" className="max-w-xs">
+                      <span tabIndex={0} className="inline-flex cursor-help items-center gap-1">
+                        <ShieldCheck className="text-kortix-green size-3.5" weight="fill" />
+                        {tAccess('zdrTitle')}
+                      </span>
+                    </Hint>
+                    <Hint label={tAccess('usProvidersDescription')} side="top" className="max-w-xs">
+                      <span tabIndex={0} className="inline-flex cursor-help items-center gap-1">
+                        <Globe className="size-3.5" />
+                        {tAccess('usProvidersTitle')}
+                      </span>
+                    </Hint>
+                  </div>
                 )}
               <div className="bg-popover overflow-hidden rounded-md border">
                 {group.rows.map(({ model, wireId, isRollingAlias }, i) => {

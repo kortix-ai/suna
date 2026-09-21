@@ -28,7 +28,7 @@ import {
 import { useProjectPicker } from '@/features/marketplace/marketplace-project-picker';
 import { useAuth } from '@/features/providers/auth-provider';
 import { installMarketplaceItemAsSession } from '@/lib/marketplace-client';
-import { isManagedGitUnavailableError } from '@/lib/onboarding/ensure-first-project';
+import { isManagedGitUnavailableError } from '@/lib/onboarding/provision-errors';
 
 // First-party use-case templates ship in the bundled `kortix-starter` registry,
 // so a use-case slug maps to the catalog id the install-session resolves by.

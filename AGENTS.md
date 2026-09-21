@@ -190,8 +190,12 @@ It is not a save point, and it is not how you show someone your work.
    `preview` label. That builds a complete self-host preview for the branch — its
    own PostgreSQL, Supabase, API, gateway, frontend, and HTTPS origin. This is how
    work is shared and reviewed internally. **Sharing never requires merging.**
+   The `preview` label also runs the six-lane `Tests` suite on the PR.
 3. Run the relevant local unit, type, integration, and end-to-end checks with
-   real inputs and outputs. Keep the PR green as you go, not at the end.
+   real inputs and outputs. **CI does not run the local suite on a PR into
+   `main`** — run it yourself (narrowest command first, then `pnpm test`), or
+   add the `test` label to get the six CI lanes (~8 min, no push needed). Keep
+   the PR green as you go, not at the end.
 4. Merge `main` into the canonical branch daily. A branch that diverges for weeks
    detonates on merge exactly like a 1,500-line PR does.
 5. **Never merge to `main` without the user's explicit approval of that merge.**
@@ -211,7 +215,9 @@ It is not a save point, and it is not how you show someone your work.
    if yours was cancelled before it deployed, the next push re-picks-up your
    still-stale surface, or force it with
    `gh workflow run deploy-dev.yml -f surface=all`. Full procedure, surfaces,
-   and verification: `docs/runbooks/deploy-dev.md`.
+   and verification: `docs/runbooks/deploy-dev.md`. The same push runs the
+   `Tests` suite on the merge commit in parallel. It does not gate the deploy.
+   A red run comments on the commit and names the failing lanes — read it.
 8. Re-run the user-visible behavior against `https://dev.kortix.com` and/or
    `https://dev-api.kortix.com`. Prefer the real Kortix CLI configured for the
    dev API for CLI/project/session flows, and direct authenticated HTTP calls for
@@ -383,14 +389,28 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 - Every Linux CI job runs on Blacksmith through `runs-on: ${{ vars.CI_RUNNER_<tier>
   || '<label>' }}`. Tiers, the kill switch back to GitHub-hosted runners, and
   the Docker layer cache: `docs/runbooks/ci-runners.md`.
-- GitHub Actions runs four lanes — `core`, `browser-1`, `browser-2`, `packages` —
-  natively, one Blacksmith runner each (`CI_RUNNER_L`), through
-  `.github/workflows/tests.yml`. The two browser lanes are halves of one sharded
-  run (`--browser-shard=1/2` and `2/2`). The slowest lane defines the gate
-  duration. Each lane is the unchanged root command at the exact PR head SHA;
-  browser lanes install Chromium and prestart Supabase first. Do not add
-  CI-only test logic. (The Platinum/Daytona sandbox-worker path was removed on
-  2026-08-26; only `deploy-preview.yml` still uses a cloud sandbox.)
+- GitHub Actions runs six lanes — `core`, `browser-1` … `browser-4`, `packages`
+  — natively, one Blacksmith runner each (`CI_RUNNER_L`), through
+  `.github/workflows/tests.yml`. The four browser lanes are quarters of one
+  sharded run (`--browser-shard=N/4`, Playwright's native `--shard`). The suite
+  measures 8m17s wall clock; `packages` (~8 min) is the slowest lane, so a fifth
+  browser shard buys nothing and the concurrency settings in
+  `tests/bin/package-quality.ts` must not be raised. Each lane is the unchanged
+  root command at the exact requested SHA; browser lanes install Chromium and
+  prestart Supabase first. Do not add CI-only test logic. (The Platinum/Daytona
+  sandbox-worker path was removed on 2026-08-26; only `deploy-preview.yml` still
+  uses a cloud sandbox.)
+- The suite runs on every push to `main`, on a pull request into `staging`, on a
+  pull request labelled `test` or `preview`, and on manual dispatch. The label
+  re-triggers an open pull request without a push. A plain pull request into
+  `main` skips it, and its check shows as skipped. A push-to-`main` run
+  blocks nothing: a red run comments the failing lanes on the commit, a cancelled
+  run means a newer commit superseded it. A pull request into `prod` runs
+  `tests-release.yml` against deployed staging instead.
+- Run the suite locally before merging into `main`: the narrowest relevant
+  command first, then `pnpm test`. The old per-pull-request gate cost ~11 min
+  median and 68 min worst case and gated nothing, because `main` and `staging`
+  require no status check.
 - Release tests run `pnpm test -- --target-full` against deployed staging. They block
   production when API or gateway health reports a SHA other than
   `RELEASE_SOURCE_SHA`, when any API flow is excluded, or when a configured
@@ -401,8 +421,11 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   Mailpit, and HTTPS origin.
 - Preview CI runs `pnpm test -- --target-full` against that origin. The sticky
   pull request comment links the origin and its `/_tests/` HTML report.
-- A preview head change deletes the sandbox and removes the stale `preview`
-  label. Unlabel, close, and scheduled reconciliation also delete the sandbox.
+- A push to a `preview`-labelled branch redeploys its environment in place; the
+  label stays. Removing the label or deleting the branch tears it down. Closing
+  the pull request does not. A daily reconciler deletes environments whose
+  branch no longer exists (`deploy-preview.yml` `teardown`, `teardown-branch`,
+  `reconcile`).
 - Preview warm images contain dependencies and Docker layers only. They never
   contain a database or runtime secret.
 - Preview Mailpit handles authentication and invite email. The dedicated

@@ -175,7 +175,7 @@ function sorted(set: Iterable<string>): string[] {
 describe('the area table covers the catalog', () => {
   test('the seeded catalog is the shape the matrix expects (drift alarm)', () => {
     expect(PROJECT_LEAVES.length).toBe(45);
-    expect(ACCOUNT_LEAVES.length).toBe(27);
+    expect(ACCOUNT_LEAVES.length).toBe(29);
     // The retired spellings must not come back: `project.cr.*` collapsed into
     // `project.gitops.*` (the same capability named twice), and `trigger.*` was
     // cataloged, validated, in no role and asserted by no route.

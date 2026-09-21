@@ -168,6 +168,46 @@ describe('resolveGitBackend — a stored owner never pairs with an env token', (
     });
   });
 
+  // Production, 2026-09-16 → 2026-09-20: the token AND the installation id were
+  // both set. The token won silently, it could not create a repository, and the
+  // App that could was never consulted. Every project creation failed for days.
+  test('a token set beside an installation id still wins, and says the App is ignored', () => {
+    const errors: string[] = [];
+    const realError = console.error;
+    console.error = (...args: unknown[]) => void errors.push(args.join(' '));
+    try {
+      process.env.MANAGED_GIT_GITHUB_OWNER = 'managed-kortix';
+      process.env.MANAGED_GIT_GITHUB_TOKEN = 'github_pat_env';
+      process.env.MANAGED_GIT_GITHUB_INSTALL_ID = '140097279';
+
+      expect(resolveGitBackend()?.kind).toBe('pat');
+      resolveGitBackend();
+
+      const ambiguity = errors.filter((line) => line.includes('MANAGED_GIT_GITHUB_INSTALL_ID'));
+      expect(ambiguity).toHaveLength(1);
+      expect(ambiguity[0]).toContain('MANAGED_GIT_GITHUB_TOKEN');
+      expect(ambiguity[0]).toContain('ignored');
+    } finally {
+      console.error = realError;
+    }
+  });
+
+  test('an EMPTY token beside an installation id selects the App', () => {
+    // The supported way to switch a deployment to the App without removing a
+    // key its task definition may reference by name.
+    process.env.MANAGED_GIT_GITHUB_OWNER = 'managed-kortix';
+    process.env.MANAGED_GIT_GITHUB_TOKEN = '   ';
+    process.env.MANAGED_GIT_GITHUB_INSTALL_ID = '140097279';
+
+    expect(resolveGitBackend()).toEqual({
+      source: 'env',
+      kind: 'app',
+      owner: 'managed-kortix',
+      ownerType: null,
+      installationId: '140097279',
+    });
+  });
+
   test('env wins entirely over a complete stored row', () => {
     process.env.MANAGED_GIT_GITHUB_OWNER = 'managed-kortix';
     process.env.MANAGED_GIT_GITHUB_TOKEN = 'ghp_env';

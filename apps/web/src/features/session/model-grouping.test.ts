@@ -214,32 +214,50 @@ describe('isPickerGroupOpen', () => {
     groupProviderID: 'codex',
     hasSearch: false,
     containsSelected: false,
-    expanded: new Set<string>(),
+    toggled: new Map<string, boolean>(),
   };
 
   test('a secondary group is collapsed by default', () => {
     expect(isPickerGroupOpen(base)).toBe(false);
   });
 
-  test('the first group — the managed set — is always open', () => {
+  test('the first group — the managed set — starts open', () => {
     expect(isPickerGroupOpen({ ...base, groupIndex: 0 })).toBe(true);
   });
 
-  test('a search reaches every group, or the model reads as missing', () => {
-    expect(isPickerGroupOpen({ ...base, hasSearch: true })).toBe(true);
-  });
-
-  test('the group holding the selected model opens, so the check has a home', () => {
+  test('the group holding the selected model starts open, so the check has a home', () => {
     expect(isPickerGroupOpen({ ...base, containsSelected: true })).toBe(true);
   });
 
+  test('the first group collapses when the user collapses it', () => {
+    expect(
+      isPickerGroupOpen({ ...base, groupIndex: 0, toggled: new Map([['codex', false]]) }),
+    ).toBe(false);
+  });
+
+  test('the selected model group collapses when the user collapses it', () => {
+    expect(
+      isPickerGroupOpen({ ...base, containsSelected: true, toggled: new Map([['codex', false]]) }),
+    ).toBe(false);
+  });
+
+  test('a search reaches every group, even one the user collapsed', () => {
+    expect(
+      isPickerGroupOpen({ ...base, hasSearch: true, toggled: new Map([['codex', false]]) }),
+    ).toBe(true);
+  });
+
   test('what the user expanded stays expanded', () => {
-    expect(isPickerGroupOpen({ ...base, expanded: new Set(['codex']) })).toBe(true);
+    expect(isPickerGroupOpen({ ...base, toggled: new Map([['codex', true]]) })).toBe(true);
   });
 
   test('expanding one group does not open its neighbour', () => {
     expect(
-      isPickerGroupOpen({ ...base, groupProviderID: 'anthropic', expanded: new Set(['codex']) }),
+      isPickerGroupOpen({
+        ...base,
+        groupProviderID: 'anthropic',
+        toggled: new Map([['codex', true]]),
+      }),
     ).toBe(false);
   });
 });

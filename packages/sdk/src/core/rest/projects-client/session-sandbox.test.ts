@@ -168,6 +168,20 @@ test("startProjectSession appends ?wait_ms=<floored ms> when waitMs is given", a
   expect(last().url).toContain("/start?wait_ms=5500");
 });
 
+test("startProjectSession explicitly requests the preserved previous-repository runtime", async () => {
+  nextResponse = {
+    status: 200,
+    body: { stage: "starting", agent_name: "default", retriable: true, sandbox: null, opencode_session_id: null },
+  };
+  await startProjectSession(PROJECT, SESSION, {
+    waitMs: 5_500.9,
+    repositoryMode: "previous",
+  });
+  expect(last().url).toBe(
+    `http://test.local/v1/projects/${PROJECT}/sessions/${SESSION}/start?wait_ms=5500&repository_mode=previous`,
+  );
+});
+
 test("startProjectSession omits the query string for a zero or negative waitMs", async () => {
   nextResponse = {
     status: 200,
