@@ -579,7 +579,6 @@ export function NewWorkspacePage() {
                       onChange={(accountId) => setState((s) => ({ ...s, accountId }))}
                       fallbackLabel={user?.email}
                       showAccountLine={showAccountLine}
-                      className="w-full"
                     />
                   </div>
                 ) : null}
