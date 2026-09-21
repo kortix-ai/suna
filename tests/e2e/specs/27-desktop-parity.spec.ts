@@ -795,7 +795,13 @@ for (const runtime of runtimes) {
         await row.hover();
         await row.getByRole("button", { name: "Edit", exact: true }).click();
         await expect(input).toHaveText(composerText);
-        await expect(row).toHaveCount(0);
+        // Edit is IN PLACE: the row stays in the list, its actions replaced by
+        // an "Editing" label, until the composer saves it. It used to be taken
+        // back out of the queue on click, and a message pulled into the
+        // composer was one stray Escape away from never being sent.
+        await expect(row).toBeVisible();
+        await expect(row).toContainText("Editing");
+        await expect(row.getByRole("button", { name: "Edit", exact: true })).toHaveCount(0);
         await input.press("End");
         const codeLines = [
           "```ts",
