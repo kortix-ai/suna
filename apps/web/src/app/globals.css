@@ -997,10 +997,17 @@
   position: relative;
 }
 
+/* `div` stops at the Streamdown root and its top-level blocks. A descendant
+   `div:last-child` also matched the root of any card rendered inside prose
+   (a setup-link card is the only element in its paragraph), and an inline box
+   around block children splits into empty border fragments. */
 .kortix-markdown.streaming-active p:last-child,
 .kortix-markdown.streaming-active li:last-child,
 .kortix-markdown.streaming-active
-  div:last-child:not(:has(table)):not(:has(.katex)):not(.katex-math-block) {
+  > div:last-child:not(:has(table)):not(:has(.katex)):not(.katex-math-block),
+.kortix-markdown.streaming-active
+  > div
+  > div:last-child:not(:has(table)):not(:has(.katex)):not(.katex-math-block) {
   display: inline;
 }
 
