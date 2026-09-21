@@ -71,7 +71,8 @@ Kortix-specific: 23 files, built on top of `components/ui/`. **There is no
 | `page-header.tsx` | Unified top header (hamburger / title / "···" more button) for every page. |
 | `page-content.tsx` | Content area under `PageHeader` — no card framing, consistent top spacing. |
 | `list-row.tsx` | Standard settings-style row (`title` / `subtitle` / `left` / `right` / divider). |
-| `composer.tsx` | The chat input of the project home and of a thread (`SessionChatInput` wraps it): one card with the text field on top and add · model · send `Button`s below. Page colour (`bg-background`) in both themes, hairline `border-border` in both themes, no shadow. No animated placeholder. Thread-only slots: `header` (queue, staged command), `accessory` (AutoContinue), `busy` (Stop). See design.md → Project home. |
+| `composer.tsx` | The chat input of the project home and of a thread (`SessionChatInput` wraps it): one card with the text field on top and a 36pt row of add · model · send `Button`s below (`icon-md` icon buttons, `sm` model pill). Page colour (`bg-background`) in both themes, hairline `border-border` in both themes, no shadow. No animated placeholder. Thread-only slots: `header` (queue, staged command), `accessory` (AutoContinue), `busy` (Stop). See design.md → Project home. |
+| `pinned-bar.tsx` | `PinnedBar` + `usePinnedBarInset` — controls pinned to the bottom of a scrolling region, floating over a fade of the surface (clear → 85% at 45% → solid), 16pt above the safe area; the content scrolls under it and pads its end by the inset. The project drawer's bottom bar as a component (Jay, 2026-09-22); used by the session file preview sheet (Download · Add to chat). Never a solid footer under a separate fade strip. |
 | `animated-toggle-icon.tsx` | Cross-fade + rotate between an icon and its "X" close state, used by `PageHeader`. |
 | `kortix-loader.tsx` | Lottie brand loading spinner. |
 | `ShimmerText.tsx` | Gradient-sweep shimmer text for "AI is working" status lines. |
@@ -122,10 +123,14 @@ children.
 - Variants: `default` `secondary` `destructive` `outline` `ghost` `link`.
   Gone: `secondary-outline` `accent` `card` `transparent` `inverted` `white`
   `black` — do not reintroduce them.
-- Sizes: `default` (`h-10`) `sm` (`h-9`) `lg` (`h-11`) `xl` (`h-12`) `icon` (`h-10 w-10`) `icon-sm` (`h-7 w-7`).
+- Sizes: `default` (`h-10`) `sm` (`h-9`) `lg` (`h-11`) `xl` (`h-12`) `icon` (`h-10 w-10`) `icon-md` (`h-9 w-9`) `icon-sm` (`h-7 w-7`).
+  `icon-md` is added to the registry output (Jay, 2026-09-21): the 36pt round controls of
+  the composer's row (add, send, Stop, AutoContinue), beside a `sm` model pill. Always pair
+  it with `hitSlop={COMPOSER_CONTROL_HIT_SLOP}` (4pt) so the touch target stays 44pt.
   `icon-sm` is added to the registry output (Jay, 2026-09-21): the 28pt action under a chat
   message (Copy, Edit, turn details). Always pair it with `hitSlop` so the touch target
-  stays 44pt tall (`TURN_ACTION_HIT_SLOP`). Every other icon button stays `icon` (40pt).
+  stays 44pt tall (`TURN_ACTION_HIT_SLOP`). Every icon button outside the composer row and
+  the message actions stays `icon` (40pt).
   `xl` is added to the registry output. Only the auth welcome screen's
   three sign-in pills use it (Jay, 2026-09-17). Every other pill stays `lg`.
 
@@ -173,27 +178,47 @@ change `buttonTextVariants` (and check every consumer), don't patch around it.
 
 ## Bottom sheets
 
-RNR ships no bottom-sheet primitive. `@gorhom/bottom-sheet` is imported
-directly at ~60 screen-level call sites (drawers/sheets across
-`components/*`), each building its own `<BottomSheetModal>` — converting
-these to `<Dialog>` would lose pan-down-to-dismiss, snap points, and
-keyboard-aware sizing, so they stay on gorhom.
+RNR ships no bottom-sheet primitive. The app's sheets are `@gorhom/bottom-sheet`
+modals (74 sites in 50 files): converting them to `<Dialog>` would lose
+pan-down-to-dismiss, snap points, and keyboard-aware sizing, so they stay on
+gorhom. Its content parts (`BottomSheetView`, `BottomSheetScrollView`,
+`BottomSheetTextInput`, `BottomSheetFooter`) are still imported from gorhom.
 
-`components/kortix/sheet.tsx` gives two things:
+**Every sheet renders through `KortixBottomSheetModal`** (`components/kortix/sheet.tsx`;
+Jay, 2026-09-22). It is a drop-in for gorhom's `BottomSheetModal`: the same props
+and the same ref, so `useRef<BottomSheetModal>` (the gorhom type) still types the
+ref. It owns the sheet's look: the backdrop (`SheetBackdrop`), the grab handle,
+the surface colour, the 20pt top corners, and the title row (`SHEET_DEFAULTS`).
+Change a value there and every sheet changes. **Never render a raw
+`<BottomSheetModal>`**, and never pass `backdropComponent`, `handleIndicatorStyle`
+or `backgroundStyle` to restate a default. Pass one only to differ on purpose
+(the 11 sites with a lighter backdrop), and say why.
+
+`title="…"` adds the title row in the handle area, above any content: a close
+button at the far left, the title centred (`Text variant="large"`), a spacer
+that balances the button. `hideClose` drops the button. `titleTrailing` puts one
+40pt icon `Button` (`variant="ghost" size="icon" rounded-full`) at the far right in
+place of that spacer — the file preview's Copy (`SessionFilesSheet`); the slot
+mirrors the close button's, so the title stays centred. One control only: a second
+action belongs in the sheet's content. Do not hand-roll a title
+row inside a sheet's content.
+
+`components/kortix/sheet.tsx` also gives:
 1. `<Sheet>` + `SheetHeader`/`SheetBody`/`SheetFooter` — a ready-made wrapper
-   for a new sheet that doesn't need per-site customization. Prefer this for
-   new sheets.
-2. Shared chrome for sheets that must build their own `<BottomSheetModal>`:
-   `SheetBackdrop` (pass as `backdropComponent={SheetBackdrop}`),
-   `sheetHandleIndicatorStyle(isDark)`, and `useSheetBackground()`. Use these
-   instead of hand-rolling a backdrop opacity, a handle color, or a
-   background color — that duplication (hex/rgba handle colors, redundant
-   `pressBehavior="close"`) is exactly what caused the drift this migration
-   is cleaning up.
+   (built on `KortixBottomSheetModal`) for a new sheet that doesn't scroll.
+   Prefer this for new sheets.
+2. The chrome `KortixBottomSheetModal` applies: `SheetBackdrop`,
+   `sheetHandleIndicatorStyle(isDark)`, and `useSheetBackground()`. A call site
+   needs one only to differ on purpose — a lighter overlay is
+   `backdropComponent={(p) => <SheetBackdrop {...p} opacity={0.4} />}` — or to
+   paint something in the sheet's colour (a pinned footer). Never hand-roll a
+   backdrop opacity, a handle colour, or a background colour: that duplication
+   is the drift `KortixBottomSheetModal` ended.
 
-Adoption is complete and mechanically checked. All four greps return 0:
+Adoption is complete and mechanically checked. All five greps return 0:
 
 ```bash
+grep -rnE "^\s*<BottomSheetModal(\s|$)" components/ app/ --include='*.tsx' | grep -v components/kortix/sheet.tsx
 grep -rn "BottomSheetBackdrop"      components/ app/ --include='*.tsx' | grep -v components/kortix/sheet.tsx
 grep -rn "handleIndicatorStyle={{"  components/ app/ --include='*.tsx'
 grep -rn "backgroundStyle={{"       components/ app/ --include='*.tsx' | grep -i "#\|rgba"
@@ -344,7 +369,7 @@ that drops props silently breaks the screens that still pass them.
    `native-only-animated-view.tsx` (a cast around an upstream typing gap that
    reproduces against stock), and `button.tsx` (`size="lg"` label is
    `text-base font-medium`, plus an added `xl` size — `h-12`, same label —
-   and an added `icon-sm` size — `h-7 w-7` —
+   and added `icon-md` (`h-9 w-9`) and `icon-sm` (`h-7 w-7`) sizes —
    so no screen sets label or box size by class; no added `variant`s),
    and `input.tsx` (borderless filled field in Roobert — no input has a
    border), and `dialog.tsx` + `alert-dialog.tsx` (no `border` on the
