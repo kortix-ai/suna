@@ -1,5 +1,8 @@
 'use client';
 
+import dynamic from 'next/dynamic';
+import { Suspense } from 'react';
+
 import { FaqSection } from '@/features/marketing/faq';
 import Hero from '@/features/marketing/hero';
 import { HowItWorks } from '@/features/marketing/how-it-work/how-it-works';
@@ -7,6 +10,11 @@ import { LogoStrip } from '@/features/marketing/landing/logo-strip';
 import { TrustSection } from '@/features/marketing/landing/trust-section';
 import { UseCaseWheel } from '@/features/marketing/landing/use-case-wheel';
 import { OpenSourceSection } from '@/features/marketing/open-source/open-source-section';
+
+const HeroPrototype =
+  process.env.NODE_ENV === 'development'
+    ? dynamic(() => import('@/features/marketing/hero-prototype'), { ssr: false })
+    : null;
 
 /**
  * The arc, in the order a reader needs it: what it is, what it is made of, what
@@ -26,7 +34,7 @@ export default function Home() {
   return (
     <div className="bg-background relative">
       {/* 1 · What it is — and the product actually running */}
-      <Hero />
+      <Suspense fallback={<Hero />}>{HeroPrototype ? <HeroPrototype /> : <Hero />}</Suspense>
 
       {/* transition: the models it runs and the tools it connects */}
       <LogoStrip />

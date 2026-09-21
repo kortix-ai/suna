@@ -1,0 +1,24 @@
+/* Throwaway prototype motion. Layout changes remain immediate. */
+.hero-prototype-change {
+  animation: hero-prototype-change var(--duration-moderate, 200ms) ease-out;
+}
+@keyframes hero-prototype-change {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-prototype-change {
+    animation: none;
+  }
+  .hero-prototype *,
+  .hero-prototype *::before,
+  .hero-prototype *::after {
+    transition: none !important;
+  }
+}
