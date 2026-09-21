@@ -15,12 +15,12 @@ const execFileAsync = promisify(execFile)
 const BAKED_MANAGED_SKILLS_DIR = '/opt/kortix/managed-skills'
 
 /**
- * Where the managed-skill overlay lives on this box. ONE resolver, because three
- * modules have to agree on it: the injector here, the session-config inspection
- * (git.ts) and the config-copy verification (boot-config.ts). When the last one
- * read "no directory passed" as "no managed skills", every overlay directory
- * counted as a file someone had ADDED to the copy, verification failed on every
- * call, and the copy was silently re-extracted (#7403 preview, 2026-09-18).
+ * Where the managed-skill overlay lives on this box. ONE resolver, because two
+ * modules have to agree on it: the injector here and the config release
+ * verification (boot-config.ts). When verification read "no directory passed"
+ * as "no managed skills", every overlay directory counted as a file someone had
+ * ADDED to the copy, verification failed on every call, and the copy was
+ * silently re-extracted (#7403 preview, 2026-09-18).
  */
 export function managedSkillsDir(): string {
   return (process.env.KORTIX_MANAGED_SKILLS_DIR ?? '').trim() || BAKED_MANAGED_SKILLS_DIR

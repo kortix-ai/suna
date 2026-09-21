@@ -6,37 +6,9 @@ import { loadConfig, readProjectManifest, extractNestedString, type Config as Ho
 type Config = OpenCodeConfig
 
 /**
- * Pick the opencode config dir for this sandbox. Honors `opencode.config_dir` in
- * the project's manifest (kortix.yaml, or legacy kortix.toml) when present,
- * defaulting to `.kortix/opencode` relative to the cloned repo, and falls back
- * to KORTIX_DEFAULT_OPENCODE_CONFIG_DIR if the project doesn't have an
- * opencode.jsonc — that's what keeps a freshly provisioned sandbox bootable
- * before a project has been cloned.
- */
-/**
- * The same directory, but REPO-RELATIVE — the form git pathspecs need.
- *
- * `resolveOpencodeConfigDir` answers "where does opencode read from" (absolute,
- * with a fallback outside the repo when the project has no opencode.jsonc). A
- * git operation needs the other half: the path inside the working tree, or
- * nothing at all when the effective dir is the out-of-repo default and there is
- * therefore nothing in git to sync.
- */
-export async function resolveOpencodeConfigDirRelative(cfg: Config): Promise<string | null> {
-  const fs = await import('node:fs/promises')
-  const rel = await readOpencodeConfigDirFromManifest(fs, cfg.projectTarget)
-  if (!isPlainRelativePath(rel)) return null
-  const absolute = await resolveOpencodeConfigDir(cfg)
-  // Fell back to the out-of-repo default: the project ships no opencode config,
-  // so there is no tracked directory to update.
-  return absolute === `${cfg.projectTarget}/${rel}` ? rel : null
-}
-
-/**
  * The manifest's config dir, repo-relative, when it is a literal path; null
- * otherwise. Unlike `resolveOpencodeConfigDirRelative` it does not require the
- * directory to exist: the workspace report must also describe a session that
- * deleted its `opencode.json`.
+ * otherwise. It does not require the directory to exist: the workspace report
+ * must also describe a session that deleted its `opencode.json`.
  */
 export async function resolveOpencodeConfigDirLiteral(cfg: Config): Promise<string | null> {
   const fs = await import('node:fs/promises')
@@ -50,14 +22,14 @@ export async function resolveOpencodeConfigDirLiteral(cfg: Config): Promise<stri
  * `opencode.config_dir` comes from a repo-controlled manifest and this value
  * becomes a git PATHSPEC. The manifest reader only rejects absolute paths and
  * `..`, so `:(top)*` survives it — and git honours pathspec magic even after
- * `--`, which would let a manifest turn a config-dir sync into a rewrite of the
- * whole working tree. The git calls also run with `GIT_LITERAL_PATHSPECS=1`, so
+ * `--`, which would let a manifest widen the workspace report to the whole
+ * working tree. The git calls also run with `GIT_LITERAL_PATHSPECS=1`, so
  * this is the second of two independent guards rather than the only one; it
  * exists so a magic-looking value is SKIPPED loudly instead of silently
  * resolving to some other directory.
  *
  * Deliberately narrow: only the boot path may keep interpreting whatever the
- * manifest says. This governs the sync alone.
+ * manifest says. This governs the workspace report alone.
  */
 function isPlainRelativePath(value: string): boolean {
   if (!value || value.startsWith('/') || value.startsWith('-')) return false
@@ -66,6 +38,14 @@ function isPlainRelativePath(value: string): boolean {
     .every((segment) => segment.length > 0 && segment !== '.' && segment !== '..' && /^[\w .-]+$/.test(segment))
 }
 
+/**
+ * Pick the opencode config dir for this sandbox. Honors `opencode.config_dir` in
+ * the project's manifest (kortix.yaml, or legacy kortix.toml) when present,
+ * defaulting to `.kortix/opencode` relative to the cloned repo, and falls back
+ * to KORTIX_DEFAULT_OPENCODE_CONFIG_DIR if the project doesn't have an
+ * opencode.jsonc — that's what keeps a freshly provisioned sandbox bootable
+ * before a project has been cloned.
+ */
 export async function resolveOpencodeConfigDir(cfg: Config): Promise<string> {
   const fs = await import('node:fs/promises')
   const relConfigDir = await readOpencodeConfigDirFromManifest(fs, cfg.projectTarget)
