@@ -40,6 +40,8 @@ export {
   projectGitConnections,
   projectGitCredentials,
   projectSnapshotArchives,
+  configReleases,
+  configReleaseFailures,
   projectMembers,
   projectAccessRequests,
   projectSecrets,

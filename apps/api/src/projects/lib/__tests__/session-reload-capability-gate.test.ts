@@ -66,6 +66,7 @@ function fakeDaemon(opts: {
   let healthReads = 0;
   const convergeStatuses = [...(opts.convergeStatus ?? [])];
   const pushes: unknown[] = [];
+  const recorded: unknown[] = [];
   const deps: SessionReloadDeps = {
     endpoint: async () => ({ baseUrl: 'http://box', headers: {} }),
     fetch: async (url, init) => {
@@ -96,8 +97,11 @@ function fakeDaemon(opts: {
     },
     latestEtag: async () => 'ffff',
     sleep: async () => {},
+    recordReport: async (input) => {
+      recorded.push(input.report);
+    },
   };
-  return { deps, requests, pushes };
+  return { deps, requests, pushes, recorded };
 }
 
 describe('reloadSessionConfig capability gate', () => {
@@ -133,6 +137,20 @@ describe('reloadSessionConfig capability gate', () => {
         failed_release_id: null,
       },
     });
+  });
+
+  test('the health report and the converge report both reach the quarantine recorder', async () => {
+    const daemon = fakeDaemon({
+      capable: true,
+      converge: convergeBody('declined', {
+        config: healthConfig({ failed_release_id: RELEASE_B, fallback_reason: 'proven check failed' }),
+      }),
+    });
+    await reloadSessionConfig(INPUT, daemon.deps);
+    expect(daemon.recorded).toEqual([
+      expect.objectContaining({ release_id: RELEASE_A, failed_release_id: null }),
+      expect.objectContaining({ failed_release_id: RELEASE_B }),
+    ]);
   });
 
   test('refresh_repo false skips the pull on a capable daemon, and converge still runs', async () => {

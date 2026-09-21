@@ -15,6 +15,10 @@ import { UUID_V4_REGEX, readBody } from '../lib/serializers';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { mayChangeSessionModel } from '../lib/session-model-change';
+import { configReleaseVariant, resolveDesiredRelease } from '../../config-releases/desired';
+import { recordDaemonConfigReport } from '../../config-releases/quarantine';
+import { isReleaseStale, toSessionConfigRelease } from '../lib/session-config-release';
+import { repositoryAccessFromSessionMetadata } from '../lib/session-sandbox-metadata';
 import {
   combineConfigStaleness,
   isConfigStale,
@@ -56,6 +60,13 @@ projectsApp.openapi(
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
     const baseRef = visible.row.baseRef ?? loaded.row.defaultBranch;
+    const project = {
+      projectId,
+      repoUrl: loaded.row.repoUrl,
+      defaultBranch: loaded.row.defaultBranch,
+      manifestPath: loaded.row.manifestPath ?? 'kortix.yaml',
+      gitAuthToken: null,
+    };
     const [running, latest] = await Promise.all([
       readSandboxConfigState({ sessionId }),
       latestAgentConfigEtag({
@@ -65,18 +76,45 @@ projectsApp.openapi(
         baseRef,
       }),
     ]);
+
+    // ── A daemon with config releases (spec, "`GET /config`, extended") ──
+    if (running.configReleases && running.release) {
+      // Health carries `failed_release_id` and `proven`: the project
+      // quarantine learns from every read, not only from reloads.
+      await recordDaemonConfigReport({ projectId, sessionId, report: running.release });
+      const desired = await resolveDesiredRelease({
+        project,
+        baseRef,
+        variant: configReleaseVariant(visible.row),
+        // No workspace report on a read. The release ID does not depend on
+        // the mode, so the desired ID is exact; `mode` is the daemon's own.
+        report: null,
+        repositoryAccess: repositoryAccessFromSessionMetadata(visible.row.metadata),
+      }).catch(() => null);
+      const release = toSessionConfigRelease(
+        running.release,
+        desired ? desired.descriptor.release_id : undefined,
+      );
+      return c.json({
+        base_ref: baseRef,
+        running_etag: running.etag,
+        latest_etag: latest,
+        commit_sha: running.commitSha,
+        // `running_release_id !== desired_release_id`. `null` when the API
+        // could not build the desired release or neither side has one.
+        stale: isReleaseStale(release, desired !== null),
+        sandbox_reachable: running.reachable,
+        release,
+      });
+    }
+
+    // ── A daemon without config releases: etag and config-dir logic ──
     // The etag cannot see a skill body, a tool or a plugin. A merge that touched
     // only those used to leave `stale: false` and the header never offered the
     // reload, so the config dir is compared as well.
     const filesStale = running.reachable
       ? await isSessionConfigDirStale({
-          project: {
-            projectId,
-            repoUrl: loaded.row.repoUrl,
-            defaultBranch: loaded.row.defaultBranch,
-            manifestPath: loaded.row.manifestPath ?? 'kortix.yaml',
-            gitAuthToken: null,
-          },
+          project,
           baseRef,
           configDirSha: running.configDirSha,
           commitSha: running.commitSha,

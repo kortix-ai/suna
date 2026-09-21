@@ -42,6 +42,7 @@ import {
   resolveCompiledAgentConfigForSession,
   resolveSelectedAgentConfigForSession,
 } from './compile-agent-config';
+import { recordDaemonConfigReport } from '../../config-releases/quarantine';
 import { pushSessionAgentConfigToSandbox } from './sandbox-env-sync';
 import {
   hasConfigReleaseCapability,
@@ -324,6 +325,8 @@ export interface SessionReloadDeps {
   latestEtag: typeof latestAgentConfigEtag;
   /** Wait between busy retries. */
   sleep: (ms: number) => Promise<void>;
+  /** Record a daemon's failed and proven releases for the project quarantine. */
+  recordReport: typeof recordDaemonConfigReport;
 }
 
 function defaultReloadDeps(): SessionReloadDeps {
@@ -333,6 +336,7 @@ function defaultReloadDeps(): SessionReloadDeps {
     pushGovernance: pushSessionAgentConfigToSandbox,
     latestEtag: latestAgentConfigEtag,
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    recordReport: recordDaemonConfigReport,
   };
 }
 
@@ -579,6 +583,7 @@ export async function reloadSessionConfig(input: {
     };
   }
 
+  await deps.recordReport({ projectId: input.projectId, sessionId: input.sessionId, report: before.release });
   // Present for a daemon with `config.release.v1`: the state it reported
   // before this reload.
   const releaseBefore = before.configReleases && before.release ? toSessionConfigRelease(before.release) : null;
@@ -645,6 +650,7 @@ export async function reloadSessionConfig(input: {
         ...releaseFields(releaseBefore, null),
       };
     }
+    await deps.recordReport({ projectId: input.projectId, sessionId: input.sessionId, report: converged.config });
     // Read the etag the box runs now: the release carried the governance.
     const after = converged.reload ? await readSandboxConfigState({ sessionId: input.sessionId }, deps) : null;
     return {

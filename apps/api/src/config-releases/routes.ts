@@ -20,8 +20,7 @@ import type { Context } from 'hono';
 import { PROJECT_ACTIONS } from '../iam';
 import { isSessionSandboxCredential } from '../middleware/session-sandbox-credential';
 import { auth, errors, json } from '../openapi';
-import { resolveCommitSha } from '../projects/git/commits';
-import { invalidateProjectMirror, refreshMirror } from '../projects/git/mirror';
+import { refreshMirror } from '../projects/git/mirror';
 import type { GitBackedProject } from '../projects/git/types';
 import {
   assertProjectCapability,
@@ -35,12 +34,8 @@ import { sandboxTokenMayActOnSession } from '../projects/lib/sandbox-token-sessi
 import { repositoryAccessFromSessionMetadata } from '../projects/lib/session-sandbox-metadata';
 import { UUID_V4_REGEX } from '../projects/lib/serializers';
 import { db } from '../shared/db';
-import {
-  buildConfigRelease,
-  toDescriptor,
-  type ConfigReleaseVariant,
-} from './builder';
-import { ConfigReleaseRequestSchema, explainConfigMode } from './mode';
+import { BaseRefUnresolvedError, configReleaseVariant, resolveDesiredRelease } from './desired';
+import { ConfigReleaseRequestSchema } from './mode';
 import { serveConfigArchive } from './serve-archive';
 
 const HEX40 = /^[0-9a-f]{40}$/;
@@ -136,12 +131,6 @@ async function sandboxSession(
   };
 }
 
-/** Variant selection. Identical to `pushSessionAgentConfigToSandbox`. */
-export function configReleaseVariant(session: SessionRow): ConfigReleaseVariant {
-  return !repositoryAccessFromSessionMetadata(session.metadata) && session.agentName
-    ? `agent:${session.agentName}`
-    : 'project';
-}
 
 // POST /v1/projects/:projectId/sessions/:sessionId/config-release
 projectsApp.openapi(
@@ -222,30 +211,22 @@ projectsApp.openapi(
       );
     }
 
-    const repo = gitProject(project);
     const baseRef = session.baseRef ?? project.defaultBranch;
-    // The reload does the same: a push the warm mirror has not fetched must
-    // not be missed.
-    invalidateProjectMirror(projectId);
-    let baseSha: string;
     try {
-      baseSha = await resolveCommitSha(repo, baseRef);
+      const desired = await resolveDesiredRelease({
+        project: gitProject(project),
+        baseRef,
+        variant: configReleaseVariant(session),
+        report: parsed.data.workspace ?? null,
+        repositoryAccess: repositoryAccessFromSessionMetadata(session.metadata) && humanMayReadFiles,
+        // Only the daemon's own request is an assignment. A human read is not.
+        recordAssignment: isSessionSandboxCredential(c),
+      });
+      return c.json(desired.descriptor);
     } catch (error) {
-      return c.json({ error: `base ref ${baseRef} does not resolve: ${(error as Error).message}` }, 409);
+      if (error instanceof BaseRefUnresolvedError) return c.json({ error: error.message }, 409);
+      throw error;
     }
-
-    const release = await buildConfigRelease(repo, baseSha, configReleaseVariant(session));
-    const decision = await explainConfigMode({
-      project: repo,
-      baseSha,
-      release,
-      report: parsed.data.workspace ?? null,
-    });
-    const repositoryAccess = repositoryAccessFromSessionMetadata(session.metadata) && humanMayReadFiles;
-    const descriptor = toDescriptor(release, decision.mode, { repositoryAccess });
-    // A gap in the report is named, never silent. `reason` stays the "no
-    // release" reason when there is one.
-    return c.json({ ...descriptor, reason: descriptor.reason ?? decision.note });
   },
 );
 
