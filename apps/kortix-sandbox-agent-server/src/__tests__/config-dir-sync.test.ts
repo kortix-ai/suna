@@ -438,93 +438,6 @@ describe('resolveActiveOpencodeConfigDir — which directory a restarted daemon 
   })
 })
 
-/**
- * Preview, 2026-09-18: a merge that touched ONLY a skill body changed nothing the
- * agent saw, while the API answered "the next prompt runs the new config". Same
- * opencode pid before and after. The env push restarts opencode only when the
- * env it carries changed, and a skill body is not in it — so the respawn belongs
- * with the one step that knows the directory moved.
- */
-describe('POST /kortix/refresh?config_dir=1', () => {
-  const TOKEN = 'service-key-under-test'
-  let previousRoot: string | undefined
-  let previousOverlay: string | undefined
-
-  beforeEach(() => {
-    setup({ shallow: true })
-    previousRoot = process.env.KORTIX_BOOT_CONFIG_ROOT
-    process.env.KORTIX_BOOT_CONFIG_ROOT = store
-    // The route passes no overlay dir — production resolves the default. Point
-    // the default at a real overlay so this exercises what a sandbox runs.
-    previousOverlay = process.env.KORTIX_MANAGED_SKILLS_DIR
-    process.env.KORTIX_MANAGED_SKILLS_DIR = overlay
-    write(overlay, 'kortix-system/SKILL.md', 'NOT IN THE REPO\n')
-  })
-  afterEach(() => {
-    if (previousRoot === undefined) delete process.env.KORTIX_BOOT_CONFIG_ROOT
-    else process.env.KORTIX_BOOT_CONFIG_ROOT = previousRoot
-    if (previousOverlay === undefined) delete process.env.KORTIX_MANAGED_SKILLS_DIR
-    else process.env.KORTIX_MANAGED_SKILLS_DIR = previousOverlay
-  })
-
-  function harness() {
-    const oc = fakeOpencode()
-    const opencode = {
-      ...oc.opencode,
-      getState: () => 'starting', // keeps the detached runtime-assets pass out of the test
-      getPid: () => 1,
-    } as unknown as Opencode
-    const config = {
-      ...cfg(),
-      sandboxToken: TOKEN,
-      opencodeInternalPort: 4096,
-      opencodeStandbyPort: 4097,
-      defaultOpencodeConfigDir: join(root, 'default-config'),
-    } as unknown as Config
-    const control = createOpenCodeControlService(
-      opencode,
-      createOpenCodeQuickQueueInterrupt(opencode, config),
-    ).bind({ cfg: config })
-    const post = (query: string) =>
-      createRefreshRouter(config, control).request(`/?${query}`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${TOKEN}` },
-      })
-    return { oc, post }
-  }
-
-  test('reload_if_synced=1 respawns once when the directory moved, and reports it', async () => {
-    const h = harness()
-    const res = await h.post('restart=0&config_dir=1&reload_if_synced=1')
-
-    expect(res.status).toBe(200)
-    const body = (await res.json()) as Record<string, unknown>
-    expect(body.config_dir).toEqual({ synced: true })
-    expect(body.config_dir_reload).toEqual({ how: 'restarted', turn_ended: false })
-    expect(h.oc.state.reloads).toBe(1)
-    expect(workspaceStatus()).toBe('')
-  })
-
-  test('nothing moved → nothing respawned', async () => {
-    const h = harness()
-    await h.post('restart=0&config_dir=1&reload_if_synced=1')
-    const again = await h.post('restart=0&config_dir=1&reload_if_synced=1')
-
-    const body = (await again.json()) as Record<string, unknown>
-    expect(body.config_dir).toEqual({ synced: false, skipped: 'already matches base' })
-    expect(body.config_dir_reload).toBeUndefined()
-    expect(h.oc.state.reloads).toBe(1)
-  })
-
-  test('without the flag the copy is staged and opencode is left alone', async () => {
-    const h = harness()
-    const res = await h.post('restart=0&config_dir=1')
-
-    expect(((await res.json()) as Record<string, unknown>).config_dir).toEqual({ synced: true })
-    expect(h.oc.state.reloads).toBe(0)
-  })
-})
-
 describe('reboot must not reset an existing session branch', () => {
   beforeEach(() => setup({ shallow: false }))
 
@@ -659,7 +572,7 @@ describe('base=1 requires a DIRECT service call', () => {
     // The gate must be specific to the destructive flag. A session owner pulling
     // their own workspace, or the API's reload sending `config_dir=1`, is
     // legitimate and must keep working without the direct-call header.
-    for (const path of ['/', '/?restart=0&config_dir=1']) {
+    for (const path of ['/']) {
       const res = await post(path, { Authorization: `Bearer ${TOKEN}` })
       expect(res.status).not.toBe(403)
     }
