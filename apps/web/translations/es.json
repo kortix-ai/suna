@@ -1598,6 +1598,15 @@
       "title": "Esta sesión está detenida",
       "message": "Se liberó su ordenador. Reinicia la sesión para recuperarla."
     },
+    "previousRepository": {
+      "title": "La sesión usa el repositorio anterior",
+      "message": "Esta sesión conserva su espacio de trabajo anterior. Puedes reanudarlo, pero Git fetch, push y las solicitudes de cambio permanecen deshabilitados.",
+      "unavailable": "El espacio de trabajo anterior ya no está disponible. Inicia una sesión nueva en el repositorio actual.",
+      "resume": "Reanudar espacio anterior",
+      "resuming": "Reanudando…",
+      "newSession": "Iniciar sesión nueva",
+      "delete": "Eliminar sesión"
+    },
     "lost": {
       "title": "Se perdió el ordenador de esta sesión",
       "message": "Su sandbox en la nube desapareció del lado del proveedor, por lo que esta sesión no se puede reiniciar ni recuperar. Es un error nuestro, no algo que hayas hecho tú; se ha notificado automáticamente. Todo lo que se confirmó y envió desde esta sesión está a salvo en el repositorio de tu proyecto."

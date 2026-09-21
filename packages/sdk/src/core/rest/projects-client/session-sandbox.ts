@@ -209,12 +209,20 @@ function classifySessionStartFailure(error?: Error): SessionStartError | null {
 export async function startProjectSession(
   projectId: string,
   sessionId: string,
-  // Optional server-side long-poll budget (ms): the server holds the request
-  // until readiness flips (or its bounded deadline), so we learn `ready` the
-  // instant it happens instead of on a fixed poll tick. Omit = one-shot.
-  waitMs?: number,
+  // Numeric input remains supported for existing SDK consumers.
+  options?: number | {
+    /** Server-side long-poll budget in milliseconds. */
+    waitMs?: number;
+    /** Resume only a preserved runtime from the previous repository generation. */
+    repositoryMode?: "previous";
+  },
 ): Promise<SessionStartResult | null> {
-  const qs = waitMs && waitMs > 0 ? `?wait_ms=${Math.floor(waitMs)}` : "";
+  const waitMs = typeof options === "number" ? options : options?.waitMs;
+  const repositoryMode = typeof options === "number" ? undefined : options?.repositoryMode;
+  const search = new URLSearchParams();
+  if (waitMs && waitMs > 0) search.set("wait_ms", String(Math.floor(waitMs)));
+  if (repositoryMode) search.set("repository_mode", repositoryMode);
+  const qs = search.size > 0 ? `?${search.toString()}` : "";
   const response = await backendApi.post<SessionStartResult>(
     `/projects/${projectId}/sessions/${sessionId}/start${qs}`,
     {},

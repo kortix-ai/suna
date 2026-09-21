@@ -385,6 +385,17 @@ OpenCode query and synchronization controllers to the sandbox runtime. Two
 sandboxes cannot share browser cache state when a snapshot exposes the same
 OpenCode id during adoption.
 
+After a project replaces its repository, `/start` rejects sessions from the
+previous repository by default. A recovery screen can resume an existing
+preserved workspace explicitly:
+
+```tsx
+useSession(projectId, sessionId, { repositoryMode: 'previous' });
+```
+
+This option cannot create a replacement workspace. Project Git access remains
+disabled because the session keeps its previous repository generation.
+
 Message retries keep the originating sandbox URL after navigation. A `404` or
 `410` message read stops automatic retries and preserves the cached transcript.
 An explicit reconciliation can recover the controller when the session returns.

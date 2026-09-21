@@ -8,6 +8,7 @@ import {
   resolveProjectAutomationActor as resolveLifecycleAutomationActor,
 } from '../../projects/session-lifecycle';
 import { currentChannelSelection } from '../slack/selection';
+import { resolveAgentGrant } from '../../projects/agents';
 import { EVENT_DEDUPE_TTL_MS } from './app';
 import { ensureTeamsConversationBinding, teamsChannelCtx } from './binding';
 import { postTeamsIdentityPrompt, resolveTeamsActor, teamsUserId } from './identity';
@@ -23,7 +24,7 @@ import {
   startTurn,
 } from './turn';
 import { sessionWebUrl } from '../slack/util';
-import { channelTurnModel, promptModelOverride } from '../vision-model';
+import { channelTurnModel, modelReadsImages, promptModelOverride } from '../vision-model';
 import {
   extractTeamsAttachments,
   teamsMessageHasImage,
@@ -111,6 +112,26 @@ export async function deliverTeamsFollowUpToSession(input: {
   });
 }
 
+/**
+ * The RUNNING AGENT's granted env names, resolved lazily — a `codex/*` model
+ * needs `CODEX_AUTH_JSON` there or the gateway refuses the turn. Only called
+ * when a codex candidate is actually reached.
+ */
+function agentGrantEnvFor(
+  project: { projectId: string } & Record<string, unknown>,
+  agentName: string | null,
+): () => Promise<readonly string[] | 'all' | null> {
+  return async () => {
+    // A resolution failure is NOT "unrestricted": returning an empty list
+    // makes `grantAllowsCodex` fail closed, so a turn is never pinned to a
+    // ChatGPT-backed model this agent might not be allowed to use.
+    const grant = await resolveAgentGrant(agentName || 'default', project as never).catch(() => undefined);
+    if (grant === undefined) return [];
+    const env = (grant as { env?: readonly string[] | 'all' } | null)?.env;
+    return env ?? null;
+  };
+}
+
 /** The model this session is pinned to, as `createProjectSession` recorded it. */
 function sessionModelOf(metadata: Record<string, unknown> | null | undefined): string | null {
   const value = metadata?.opencode_model;
@@ -187,6 +208,7 @@ function turnIsLive(turn: TeamsLiveTurn | null, sessionStatus: string | null): b
 async function deliverFollowUp(input: {
   projectId: string;
   accountId: string;
+  agentGrantEnv?: () => Promise<readonly string[] | 'all' | null>;
   tenantId: string;
   conversationId: string;
   sessionId: string;
@@ -246,16 +268,24 @@ async function deliverFollowUp(input: {
 
   // An image is unreadable on a text-only model, so THIS turn runs on the
   // configured vision model. The session's own pin is untouched.
+  const hasImage = teamsMessageHasImage(activity);
+  const currentModel = sessionModelOf(input.sessionMetadata);
   const turnModel = await channelTurnModel({
     projectId,
     accountId: input.accountId,
     userId,
-    currentModel: sessionModelOf(input.sessionMetadata),
-    hasImage: teamsMessageHasImage(activity),
+    currentModel,
+    hasImage,
+    agentGrantEnv: input.agentGrantEnv,
   });
+  // Nothing reachable can read the image. Say so in the prompt rather than
+  // letting the agent discover it by calling `read` and finding nothing — that
+  // is what sent it hunting for ImageMagick and tesseract on 2026-09-19.
+  const imagesUnavailable =
+    hasImage && !turnModel && !modelReadsImages(projectId, currentModel || undefined);
   const outcome = await deliverTeamsFollowUpToSession({
     sessionId,
-    text: renderFollowUpPrompt(activity),
+    text: renderFollowUpPrompt(activity, imagesUnavailable),
     userId,
     model: turnModel,
   });
@@ -370,6 +400,7 @@ export async function createOrJoinTeamsConversationSession(input: {
       const next = await deliverFollowUp({
         projectId,
         accountId: project.accountId,
+        agentGrantEnv: agentGrantEnvFor(project, null),
         tenantId,
         conversationId,
         sessionId: existing.sessionId,
@@ -397,6 +428,7 @@ export async function createOrJoinTeamsConversationSession(input: {
       await deliverFollowUp({
         projectId,
         accountId: project.accountId,
+        agentGrantEnv: agentGrantEnvFor(project, null),
         tenantId,
         conversationId,
         sessionId,
@@ -430,6 +462,7 @@ export async function createOrJoinTeamsConversationSession(input: {
       userId,
       currentModel: selection?.opencodeModel,
       hasImage: teamsMessageHasImage(activity),
+      agentGrantEnv: agentGrantEnvFor(project, selection?.agentName ?? null),
     })) ?? selection?.opencodeModel;
 
   const result = await teamsSessionLifecycle.createSession({
@@ -561,6 +594,15 @@ const TURN_INSTRUCTIONS = [
   '- Deliver the final answer with `teams send` (text, or an Adaptive Card via --card-file). One `teams send` per turn — it finalizes the live message.',
 ].join('\n');
 
+const NO_VISION_NOTE = [
+  '',
+  'IMPORTANT: no image-capable model is available in this project, so you',
+  'cannot see the attached image even after downloading it. Do not call `read`',
+  'on it and do not look for OCR tools. Tell the user plainly that you cannot',
+  'view images here, ask them to paste the text or describe it, and mention',
+  'that a project admin can enable an image-capable model.',
+].join('\n');
+
 function renderAttachments(activity: TeamsActivity): string[] {
   const attachments = extractTeamsAttachments(activity);
   if (attachments.length === 0) return [];
@@ -584,7 +626,7 @@ function renderAttachments(activity: TeamsActivity): string[] {
   return lines;
 }
 
-export function renderFollowUpPrompt(activity: TeamsActivity): string {
+export function renderFollowUpPrompt(activity: TeamsActivity, imagesUnavailable = false): string {
   const user = activity.from?.name ?? activity.from?.id ?? 'unknown';
   const text = stripTeamsMentions(activity.text ?? '');
   return [
@@ -592,6 +634,7 @@ export function renderFollowUpPrompt(activity: TeamsActivity): string {
     '',
     text,
     ...renderAttachments(activity),
+    ...(imagesUnavailable ? [NO_VISION_NOTE] : []),
     '',
     TURN_INSTRUCTIONS,
   ].join('\n');

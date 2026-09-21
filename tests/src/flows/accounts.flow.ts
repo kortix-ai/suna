@@ -3,6 +3,7 @@
  * Needs OWNER + NONMEMBER principals (provisioned per run).
  */
 import { flow } from '../core/flow';
+import { enableEnterpriseDemo } from '../fixtures/enterprise-demo';
 
 flow(
   'ME-1',
@@ -222,15 +223,60 @@ flow(
 
 flow(
   'MEM-4',
-  { domain: 'accounts', routes: ['DELETE /v1/accounts/:accountId/members/:userId'] },
+  { domain: 'accounts', routes: [
+    'DELETE /v1/accounts/:accountId/members/:userId',
+    'POST /v1/accounts/:accountId/iam/groups',
+    'POST /v1/accounts/:accountId/iam/groups/:groupId/members',
+    'GET /v1/accounts/:accountId/iam/groups/:groupId/members',
+    'POST /v1/accounts/:accountId/iam/scim/tokens',
+    'GET /scim/v2/accounts/:accountId/Users/:userId',
+  ] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const member = await team.addMember('member');
+    let groupId = '';
+    let scim: ReturnType<typeof ctx.client.withBearer>;
+    await ctx.step('enable groups and add the member to one', async () => {
+      await enableEnterpriseDemo(ctx, team.id);
+      const created = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/iam/groups',
+        { name: ctx.fixtures.name('offboard') },
+        { params: { accountId: team.id } },
+      );
+      created.status(201);
+      groupId = created.json<any>().group_id;
+      const added = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/iam/groups/:groupId/members',
+        { userIds: [member.userId!] },
+        { params: { accountId: team.id, groupId } },
+      );
+      added.status(200).body().has('$.added', 1);
+      const token = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/iam/scim/tokens',
+        { name: ctx.fixtures.name('offboard') },
+        { params: { accountId: team.id } },
+      );
+      token.status(201);
+      scim = ctx.client.withBearer(token.json<any>().secret, 'SCIM');
+    });
     await ctx.step('OWNER removes member → ok', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).del('/v1/accounts/:accountId/members/:userId', {
         params: { accountId: team.id, userId: member.userId! },
       });
       r.status(200).body().has('$.ok', true);
+    });
+    await ctx.step('removed member has no residual group grant', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/iam/groups/:groupId/members', {
+        params: { accountId: team.id, groupId },
+      });
+      r.status(200);
+      if (r.json<any>().members.some((row: any) => row.user_id === member.userId)) {
+        throw new Error('Removed account member remains in the group');
+      }
+      const directoryUser = await scim.get('/scim/v2/accounts/:accountId/Users/:userId', {
+        params: { accountId: team.id, userId: member.userId! },
+      });
+      directoryUser.status(200).body().has('$.active', false);
     });
   },
 );

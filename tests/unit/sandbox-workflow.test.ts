@@ -35,7 +35,10 @@ describe('native test-lane workflow', () => {
     expect(testWorkflow).not.toContain('TEST_MODE');
     expect(testWorkflow).toContain('pnpm install --frozen-lockfile');
     expect(testWorkflow).toContain('bun-version: 1.3.14');
-    expect(testWorkflow).toContain('timeout-minutes: 60');
+    // A hang detector, sized from 57 runs (packages p50 370s, max 570s). A hung
+    // lane used to burn 60 min before the trunk verdict could fire.
+    expect(testWorkflow).toMatch(/^ {4}timeout-minutes: 20$/m);
+    expect(testWorkflow).not.toMatch(/^ {4}timeout-minutes: 60$/m);
   });
 
   test('gives the browser lanes Chromium and a prestarted Supabase, and always stops it', () => {

@@ -356,9 +356,27 @@ setInterval(() => {
         if (!(await claimFinalize(row.sessionId))) continue;
         await finalizeTurn(rowToHandle(row), { error: '_This run ended without a reply._' });
         await deleteTurn(row.sessionId);
+        await abortDeadRuntimeTurn(row.sessionId);
       }
     } catch (err) {
       console.warn('[teams-webhook] gc tick failed', err);
     }
   })();
 }, 5 * 60 * 1000).unref();
+
+/**
+ * Closing the card is not ending the run. A turn this sweep reaps has been
+ * silent for 30 minutes, but OpenCode can still hold its assistant message
+ * OPEN — and while it does, every later prompt in that conversation is
+ * accepted and never runs. Seen on dev 2026-09-19: two messages vanished that
+ * way over two days. Imported lazily so the channel modules keep no static
+ * edge into the session-lifecycle engine.
+ */
+async function abortDeadRuntimeTurn(sessionId: string): Promise<void> {
+  try {
+    const { abortRuntimeTurn } = await import('../../projects/session-lifecycle/abort-runtime-turn');
+    await abortRuntimeTurn(sessionId);
+  } catch {
+    /* housekeeping: a runtime that cannot be reached needs no abort */
+  }
+}

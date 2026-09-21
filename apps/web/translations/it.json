@@ -1598,6 +1598,15 @@
       "title": "Questa sessione è arrestata",
       "message": "Il suo computer è stato rilasciato. Riavvia la sessione per ripristinarla."
     },
+    "previousRepository": {
+      "title": "La sessione usa il repository precedente",
+      "message": "Questa sessione conserva l’area di lavoro precedente. Puoi riprenderla, ma Git fetch, push e le richieste di modifica restano disabilitati.",
+      "unavailable": "L’area di lavoro precedente non è più disponibile. Avvia una nuova sessione nel repository corrente.",
+      "resume": "Riprendi area di lavoro precedente",
+      "resuming": "Ripresa in corso…",
+      "newSession": "Avvia nuova sessione",
+      "delete": "Elimina sessione"
+    },
     "lost": {
       "title": "Il computer di questa sessione è andato perso",
       "message": "Il suo sandbox cloud è scomparso dal lato del provider, quindi questa sessione non può essere riavviata né recuperata. È un problema nostro, non dipende da te: è stato segnalato automaticamente. Tutto ciò che è stato sottoposto a commit e inviato da questa sessione è al sicuro nel repository del tuo progetto."

@@ -112,6 +112,11 @@ pnpm test -- --full
 - [ ] No `.only(` / focused tests committed (the gate rejects them).
 - [ ] Mocks are at the boundary and reset per test; no real production data or credentials.
 
-CI runs core, browser, and package modes in parallel warm Platinum or Daytona
-sandboxes. Release QA proves every configured deployed staging flow with
-`--target-full`. A red required check blocks the merge.
+CI (`.github/workflows/tests.yml`) runs the suite as six parallel lanes on
+Blacksmith runners. It does **not** run on a plain pull request into `main`:
+run `pnpm test` locally, or add the `test` label to the PR to get the six lanes
+(the `preview` label also runs them). The suite always runs on a pull request
+into `staging` and on every push to `main`, where a red run comments on the
+offending commit. The release PR into `prod` runs `tests-release.yml` against
+deployed staging; its `full suite + quality gates` check is the only required
+status check, and it blocks the production merge.

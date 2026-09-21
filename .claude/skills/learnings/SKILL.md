@@ -21,6 +21,91 @@ linked, not inlined.
 
 ## Register
 
+### Exercise expensive Git setup only in the test that owns its contract (2026-09-21)
+
+**Rule:** A shared CLI fixture must not repeat local Git pushes for cases that
+only test request fields. Model a managed repository outside the branch-specific
+case. **Incident:** `sessions.e2e.test.ts` repeated a local push in all 7 cases.
+The second push hung for 30 seconds under package-lane load and failed every PR.
+**Enforcer:** the fixture enables client-side branch creation only in the test
+that asserts its remote ref; the remaining cases use managed-repository metadata.
+
+### Workflow dependency changes must update every contract test (2026-09-21)
+
+**Rule:** Search the repository for every changed workflow dependency list and
+update all matching contract tests in the same commit. Run the full package lane,
+because workflow contracts can live under an application test suite instead of
+`tests/unit`. **Incident:** PR #7448 intentionally removed npm publish jobs from
+`github-release.needs` and added a stronger graph test, but left the older web
+test expecting those jobs. The core lane passed while the package lane failed on
+every PR. **Enforcer:** `apps/web/scripts/validate-production-supabase-env.test.mjs`
+pins the current release prerequisites. The package lane executes that test.
+
+### Runner-policy tests must name intentional GitHub-hosted jobs (2026-09-21)
+
+**Rule:** When a workflow job must use a GitHub-hosted runner, add a job-specific
+exception to the runner-policy test in the same change. Never allow a bare
+GitHub-hosted label for an entire workflow. **Incident:** PR #7448 moved four npm
+publish jobs to `ubuntu-latest` for npm provenance but left the Blacksmith
+kill-switch test unchanged. Every `main`-based PR then failed its core lane.
+**Enforcer:** `tests/unit/image-build-speed-workflow.test.ts` permits only the
+four named npm publish jobs and rejects every other bare Linux runner label.
+
+### A repository replacement retires Git authority, not session history (2026-09-21)
+
+**Rule:** When a repository generation changes, block Git and automatic session
+starts. Give the session owner an explicit action to resume only an existing
+preserved workspace. Never provision the current repository into that session,
+and never route the refusal through provider-failure recovery. **Incident:** a
+repository cutover rendered historical sessions as retryable sandbox failures.
+**Enforcers:** `SESS-33`, browser journey 31, and the SDK start-query test.
+
+### Verify scoped NAS identity with a fresh sandbox boot (2026-09-18)
+
+**Rule:** When copying NAS secrets across projects, select a project-specific
+SSH user and key before validating mounts. Check the remote account's allowed
+shares and read `/tmp/nas-mount.status` after a fresh sandbox boot. A present
+secret and a successful SSH login do not prove every selected share mounted.
+**Near-miss:** one of two requested mounts failed because the sandbox used the
+source project's default NAS account. **Enforcer:** none; add a boot check for
+every selected share to the project cutover procedure.
+
+### Preserve the session-bearing project during repository consolidation (2026-09-18)
+
+**Rule:** Before archiving a project during a repository cutover, count its
+sessions and dependent resources. Keep the project ID that owns the historical
+sessions as the canonical project. Copy Git refs before moving session rows,
+then verify session, connector, transcript, and sandbox reads through the
+canonical API. **Near-miss:** a project with over 16,000 historical sessions was
+archived while a new project with four sessions remained active; restoration
+required a guarded production transfer. **Enforcer:** none; a cutover preflight
+that reports project and session counts remains to be built.
+
+### 2026-09-21 — A capability flag is not a capability: route on what the RUNTIME honours, and never pin a turn to a model you have not proven it can run
+
+**Rule.** When code picks a model on the user's behalf, decide from the field
+the runtime actually reads, and confirm the pick is runnable before committing
+a turn to it. Applies to channel routing, fallback policies and any
+"pick a better model" path.
+
+**Incident.** A pasted image in Teams went unanswered for three days across
+four distinct causes, each of which looked like the fix for the last. (1) The
+session model could not take images, and the gateway's vision reroute is
+structurally unreachable because OpenCode strips the image part first. (2) The
+obvious flag lied: `glm-5.3-flash` is `attachment: true` with text-only
+`modalities`, and OpenCode honours the modalities. (3) `PUT /sessions/:id/model`
+answers `applied_live: true` while the OpenCode session keeps its own model, so
+only a per-prompt `overrides.model` is honoured. (4) `isModelServableForAccount`
+probes with no agent grant, so it approved a `codex/*` model the running agent
+could not use and the turn died `Run failed`. Dev-only; no customer impact.
+
+**Enforcer.** `apps/api/src/channels/vision-model.ts` selects on
+`modalities.input`, probes every candidate, and fails closed when the agent
+grant cannot be resolved; 24 tests pin the exact shapes, including a model that
+is in the catalog and refused upstream. Full trace:
+`docs/runbooks/teams-channel-testing.md`.
+
+
 ### 2026-09-18 — A `bun build --define` substitutes one literal token; a read through an injected `env` object ships `undefined`
 
 **Incident.** The first published `kortix tui` (dev-latest `0.13.25-dev.4589893d`,
@@ -48,7 +133,6 @@ published asset from a clean HOME, never the dev binary beside its dev cache.
 **Enforcement.** `apps/cli/src/tui-bin.test.ts` "cliVersion inside a compiled
 binary" builds through the define and asserts both `cliVersion({})` and
 `cliVersion()` answer the baked value (verified red on the old line).
-
 
 ### A UI assertion on a server-side DELETE must wait for the id to exist, and an element budget must fit the round trips behind it (2026-09-18)
 
@@ -5916,7 +6000,7 @@ the role insert and cleanup delete. The preview journey must observe the grant
 through `/v1/user-roles` and render the admin overview.
 ### Preserve permanent prompt refusals and persist Stop before acknowledging it (2026-09-15)
 
-**Incident.** LibreMax session `5889a055-6bad-42f2-8511-50c573946408`
+**Incident.** A production customer session
 retained a binding to a disabled Gmail connector. The proxy returned `409`,
 but delivery discarded the body and retried until `delivery outcome: pending`.
 The UI displayed Thinking although the model received no prompt. Stop marked
@@ -5937,7 +6021,7 @@ The original hello received an assistant reply, and `GET /prompts` returned `[]`
 
 ### Connector bindings do not declare mandatory prompt dependencies (2026-09-15)
 
-**Incident.** The LibreMax incident above persisted after the agent's Gmail
+**Incident.** The production incident above persisted after the agent's Gmail
 requirement was removed. Prompt preflight promoted every stored binding into a
 mandatory dependency. A disabled optional connector blocked unrelated messages.
 
@@ -6945,7 +7029,6 @@ second labelled account staying on the connection-scoped route, a 403 that must
 not fall back). `packages/sdk/src/core/rest/projects-client/connectors.test.ts`
 pins that `connectorFinalize` sends `owner`/`connection_id` and still sends `{}`
 for the published two-argument callers.
-
 ### 2026-09-18 — A deployed-SHA assertion covers every surface the gate drives, or it certifies the ones it skipped
 
 **When:** adding a surface to a deployed environment, or writing any "is the
@@ -7090,6 +7173,28 @@ with the fix.
 **Unverified.** No real ECS rollout was exercised — no AWS credentials in this
 environment. The poll's behaviour against live ECS is proven only by the next
 real deploy of this script.
+### 2026-09-20 — Customer migration evidence never belongs in a product branch
+
+**Incident.** A customer migration branch included a customer name, account IDs,
+user emails, Auth UUIDs, session IDs, and production verification scripts. The
+same identifiers appeared in the pull request title and description. The pull
+request was closed and its remote branch was deleted.
+
+**Rules.**
+1. Product branches contain generic runtime behavior and synthetic fixtures only.
+2. Customer migration inputs, ledgers, queries, and verification output stay in
+   the ignored migration workspace with mode `0600`.
+3. Pull request titles, bodies, commit messages, branch names, tests, examples,
+   screenshots, and comments use generic tenant names and synthetic identifiers.
+4. Before push, scan the complete branch diff and commit messages for customer
+   names, domains, emails, account IDs, user IDs, project IDs, and session IDs.
+5. If customer data reaches a pull request, close it, delete its remote branch,
+   rebuild from the base branch, and open a clean replacement. Editing the title
+   alone does not remove the exposure.
+
+**Enforcement.** The replacement branch contains only generic SSO reconciliation
+logic and synthetic tests. A full repository scan must return zero occurrences
+of the removed customer name before push.
 
 ### 2026-09-18 — A column default is a population, and a check that debits is not a check
 
@@ -7123,3 +7228,137 @@ no balance), flow `COST-3` (a real sandbox on a legacy-default free account
 opens a compute window), `credit-plans.test.ts` (`accountRowMetersCompute`
 truth table), and `r8-session-prompts.test.ts`, whose `checkBillingActive` mock
 throws. No enforcer yet for rule (1) in general — it is a review habit.
+### A release's RECORD is never gated on an external registry; "shipped but unrecorded" is its own failure mode (2026-09-21)
+
+**When:** wiring `needs:` on any job that writes a release's record — the tag,
+the GitHub Release, its binaries, the `/changelog` entry, the VERSION syncs.
+Ask, per edge: does this job's OUTPUT come from that dependency? If not, the
+edge only imports that dependency's failures.
+
+**Incident.** v0.13.25, `deploy-prod.yml` run `35589361726`, prod merge
+`b902d67fc4`. Production was live and correct — `api.kortix.com`,
+`gateway.kortix.com` and `kortix.com` all served `0.13.25`, images carried
+`0.13.25` + `latest` + `prod`, prod migrations applied. The run still ended
+`failure`: `publish-llm-catalog` and `publish-agent-tunnel` died with
+`npm error code E404` / `404 Not Found - PUT
+https://registry.npmjs.org/@kortix%2fagent-tunnel` — npm answers **404, not
+403**, for an auth failure on a package that exists, so the message names the
+wrong cause. `NPM_TOKEN` was created `2026-06-21`; a 90-day granular token
+expires ~`2026-09-19`. One edge did the damage: `publish-sdk`
+`needs: publish-llm-catalog` skipped, and `github-release` `needs:
+publish-sdk` skipped with it — taking `attach-desktop`, `announce`,
+`sync-main-version` and `sync-staging-version`. Five jobs, one edge. Prod
+shipped 0.13.25 with **no tag, no Release, no CLI or desktop binaries, no
+changelog entry, and both VERSION files still on the old target.**
+
+**Rules.**
+1. **Separate "failed to ship" from "shipped but unrecorded."** They need
+   different alarms and different recoveries. The second looks green from every
+   user-facing probe — `/health` served the new version throughout — and is
+   visible only in the run's job list. A red deploy-prod run whose product is
+   demonstrably live is this class until proven otherwise.
+2. **A release record depends on what produces its bytes.** Here that is
+   `build-cli` and `attach-desktop`, never npm. Keep the edges that are real
+   (`deploy-ecs`, `verify-live-version` — v0.10.0/v0.10.1 announced Releases
+   while the ECS deploy had failed) and delete the ones that only import risk.
+3. **Decoupling is not silencing.** A failed job fails the whole workflow run
+   whatever depends on it, so no `continue-on-error` was needed or added: the
+   run still ends red, it just no longer erases the release record.
+4. **A Release with no assets is worse than no Release.** `scripts/install.sh`
+   resolves `releases/latest` then `releases/download/${VERSION}/${ASSET}`, and
+   `apps/cli/src/update-check.ts` reads the same `latest` — so a partial
+   vX.Y.Z becomes `latest` and 404s every install. Decoupling a release job
+   from a false gate means adding the true one in the same change.
+5. **Read the run's own job list before believing the premise of a report.**
+   Two jobs blamed on npm here were not: `verify-schema` is disabled by a
+   missing `ENABLE_PROD_SCHEMA_GATE` repo variable and an in-file comment, and
+   `deploy-us-shadow` by `ENABLE_US_SHADOW_DEPLOY`. `gh run view <id> --json
+   jobs` plus a transitive-`needs` closure settles it; reasoning from the
+   failure does not.
+
+**Enforcement.** `tests/unit/release-record-workflow.test.ts` walks the whole
+`deploy-prod.yml` `needs:` graph and fails if ANY job transitively reaches an
+npm publish; it also pins `github-release`'s genuine preconditions, that the
+publish jobs carry no `continue-on-error`, and that the asset guard's expected
+list still equals `build-cli`'s `upload-artifact` paths. It EXECUTES the
+guard's real shell against staged fixtures (missing, truncated, unlisted,
+sidecar-less, empty). Proven falsifiable four ways: restoring the npm edge
+reddens 6 cases, deleting the guard step 9, drifting the upload list 2, and one
+`continue-on-error` 1.
+
+**Predecessor.** The 2026-08-26 entry above ("`github-release` needs the npm
+publishes…") named this exact decoupling as a TODO after v0.13.6 hit the same
+class from a different cause (`npm install -g npm@latest` → `EBADENGINE`). It
+was left as prose for four weeks and cost a second release. **A learning whose
+enforcer is a TODO is a scheduled repeat.**
+
+**Follow-up, not done here.** `deploy-prod.yml` already grants `id-token:
+write` on every publish job, so npm Trusted Publishing (OIDC) needs no code
+change — only a per-package Trusted Publisher entry on npmjs.com for
+`@kortix/llm-catalog`, `@kortix/sdk` and `@kortix/agent-tunnel`. That removes
+the stored `NPM_TOKEN` and this expiry failure mode entirely.
+
+
+### 2026-09-21 — A job that hits `timeout-minutes` concludes `cancelled`, not `failure`, so `if: failure()` misses a hang
+
+**When:** writing any job that must react to another job going red — a
+notifier, a reporter, a cleanup — or sizing `timeout-minutes`.
+
+**Rule 1.** Gate the reactor on the result, not on `failure()`:
+`if: github.event_name == 'push' && !cancelled() && needs.<job>.result != 'success'`.
+A job killed by its own `timeout-minutes` concludes `cancelled`. `failure()`
+stays false for it, so a hang reports nothing. `cancelled()` is true only when
+the whole run is cancelled (a superseded commit), which is the one case that
+must stay silent.
+
+**Rule 2.** Size a cap from measured runs, as a hang detector. The test lanes
+had `timeout-minutes: 60` for work whose slowest lane measured p50 370s, max
+570s over 57 runs. Now 20.
+
+**Rule 3.** A `pull_request` run takes its workflow FILES from the merge ref
+(`refs/pull/N/merge` = head merged into the current base), not from the branch
+head. A workflow change on `main` therefore reaches every open PR at its next
+push, with no action. Proven with a probe PR cut from pre-change `main` (#7442):
+it still carried the deleted `tests-pr.yml`, ran 0 of it, and ran the new
+`tests.yml`. A PR with a merge conflict has no merge ref and runs no
+`pull_request` workflow at all.
+
+**Near-miss.** #7415 moved the local suite off every PR and onto every push to
+`main`, with `trunk-report` commenting on a red commit. It shipped with
+`if: failure()`; an adversarial review caught the hole before merge. The first
+real trunk run (35569621180) then hit exactly that case: `@kortix/cli` hung in
+the `packages` lane for the full 60 min, the lane concluded `cancelled`, and
+only the corrected condition posted the verdict. Under `failure()`, `main` would
+have been red for an hour with no signal. The same run's manual re-run failed in
+55s on `npm E404` for a package published 3.5 minutes earlier: two different
+pre-existing flakes, both false alarms against an innocent commit.
+
+**Enforcement.** `tests/unit/sandbox-workflow.test.ts` pins the `trunk-report`
+condition, rejects `failure()` on its `if:` line, and pins
+`timeout-minutes: 20` on the lanes; each was proven to fail on a seeded
+revert. PRs #7415, #7443.
+
+### 2026-09-21 — Two credentials configured for one backend: the silent winner
+
+**Incident.** From 2026-09-16 18:12Z to 2026-09-21 10:49Z, every
+`POST /v1/projects/provision` on production returned `502`: 5 days, every
+Kortix-managed project creation. Production set `MANAGED_GIT_GITHUB_TOKEN` and
+`MANAGED_GIT_GITHUB_INSTALL_ID` together. The resolver picks the token whenever
+one is set, and the token had no `Administration: write`. The App installation
+that could create repositories was never consulted. Nothing logged that choice,
+and the failure log stored GitHub's reason under `message`, the log line's own
+text key, so Better Stack never saw the reason. The fix was config only: empty
+the token in `kortix-prod-env` and restart the API tasks.
+
+**Rule.** When two configured credentials can serve one backend, the one that
+wins must say so at startup, and the one that loses must be named. A structured
+log field must never reuse a key the logger owns (`message`, `level`, `dt`).
+Before calling a credential repair done, exercise the write it exists for on the
+real environment, and read back the log signal that alerts on it.
+
+**Enforcement.** `resolveGitBackend` logs `... are both set: the token is used
+and the App installation <id> is ignored` once per process
+(`instance-git-config.test.ts`). `provision-core.ts` logs the reason as `error`.
+Procedure and verified installation ids: `docs/runbooks/managed-git-config.md`.
+Owed: an alert on the provision 5xx ratio (the stream route answers `200` with
+an `error` frame, so a status alert alone misses it).

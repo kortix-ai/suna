@@ -40,7 +40,10 @@ import { callerKortixSessionId } from '../lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { AnyObject, ChangeRequestSchema, SessionStartResultSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
-import { sessionUsesCurrentRepository } from '../lib/repository-generation';
+import {
+  sessionRepositoryStartDecision,
+  sessionUsesCurrentRepository,
+} from '../lib/repository-generation';
 import { UUID_V4_REGEX, normalizeString, readBody } from '../lib/serializers';
 import {
   continueSession,
@@ -88,10 +91,14 @@ projectsApp.openapi(
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
+      query: z.object({
+        wait_ms: z.string().optional(),
+        repository_mode: z.enum(['previous']).optional(),
+      }),
     },
     responses: {
       200: json(SessionStartResultSchema, 'Session readiness payload'),
-      ...errors(400, 402, 404, 409),
+      ...errors(400, 402, 403, 404, 409),
     },
   }),
   async (c) => {
@@ -119,14 +126,43 @@ projectsApp.openapi(
     // restartable and the UI offers a Restart that can never work. 404, the
     // same answer the read-by-id gives (see sessionIsTombstoned).
     if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
-    if (!sessionUsesCurrentRepository(
-      loaded.row.metadata as Record<string, unknown>,
-      visible.row.metadata as Record<string, unknown>,
-    )) {
+    const projectMetadata = loaded.row.metadata as Record<string, unknown>;
+    const sessionMetadata = visible.row.metadata as Record<string, unknown>;
+    const repositoryMode = c.req.query('repository_mode');
+    const usesCurrentRepository = sessionUsesCurrentRepository(projectMetadata, sessionMetadata);
+    if (!usesCurrentRepository && repositoryMode !== 'previous') {
       return c.json({
-        error: 'This session belongs to a previous repository. Start a new session in the current repository.',
+        error: 'This session uses the previous repository.',
         code: 'session_repository_changed',
+        remedy: 'Resume the preserved workspace without Git access, or start a new session.',
       }, 409);
+    }
+    if (!usesCurrentRepository) {
+      if (!visible.canManageLifecycle) {
+        return c.json({
+          error: 'Only the session owner or an account owner/admin can resume a previous-repository workspace.',
+          code: 'previous_repository_resume_forbidden',
+        }, 403);
+      }
+      const [preservedRuntime] = await db
+        .select({ externalId: sessionSandboxes.externalId })
+        .from(sessionSandboxes)
+        .where(and(
+          eq(sessionSandboxes.sessionId, sessionId),
+          eq(sessionSandboxes.projectId, projectId),
+          eq(sessionSandboxes.accountId, loaded.row.accountId),
+        ))
+        .limit(1);
+      const repositoryDecision = sessionRepositoryStartDecision(projectMetadata, sessionMetadata, {
+        repositoryMode,
+        hasPreservedRuntime: Boolean(preservedRuntime?.externalId),
+      });
+      if (!repositoryDecision.ok) {
+        return c.json({
+          error: 'The previous repository workspace is no longer available. Start a new session in the current repository.',
+          code: repositoryDecision.code,
+        }, 409);
+      }
     }
     // The agent this session will actually run has to still be one the caller
     // may run — grants change after a session is created, and `/start` is what
@@ -182,7 +218,7 @@ projectsApp.openapi(
       waitMs,
     });
     stl.mark(`open-session:${result.start.stage}`);
-    stl.log({ waitMs });
+    stl.log({ waitMs, repositoryMode: usesCurrentRepository ? 'current' : 'previous' });
     return c.json(
       {
         ...result.start,
