@@ -21,6 +21,66 @@ linked, not inlined.
 
 ## Register
 
+### Exercise expensive Git setup only in the test that owns its contract (2026-09-21)
+
+**Rule:** A shared CLI fixture must not repeat local Git pushes for cases that
+only test request fields. Model a managed repository outside the branch-specific
+case. **Incident:** `sessions.e2e.test.ts` repeated a local push in all 7 cases.
+The second push hung for 30 seconds under package-lane load and failed every PR.
+**Enforcer:** the fixture enables client-side branch creation only in the test
+that asserts its remote ref; the remaining cases use managed-repository metadata.
+
+### Workflow dependency changes must update every contract test (2026-09-21)
+
+**Rule:** Search the repository for every changed workflow dependency list and
+update all matching contract tests in the same commit. Run the full package lane,
+because workflow contracts can live under an application test suite instead of
+`tests/unit`. **Incident:** PR #7448 intentionally removed npm publish jobs from
+`github-release.needs` and added a stronger graph test, but left the older web
+test expecting those jobs. The core lane passed while the package lane failed on
+every PR. **Enforcer:** `apps/web/scripts/validate-production-supabase-env.test.mjs`
+pins the current release prerequisites. The package lane executes that test.
+
+### Runner-policy tests must name intentional GitHub-hosted jobs (2026-09-21)
+
+**Rule:** When a workflow job must use a GitHub-hosted runner, add a job-specific
+exception to the runner-policy test in the same change. Never allow a bare
+GitHub-hosted label for an entire workflow. **Incident:** PR #7448 moved four npm
+publish jobs to `ubuntu-latest` for npm provenance but left the Blacksmith
+kill-switch test unchanged. Every `main`-based PR then failed its core lane.
+**Enforcer:** `tests/unit/image-build-speed-workflow.test.ts` permits only the
+four named npm publish jobs and rejects every other bare Linux runner label.
+
+### A repository replacement retires Git authority, not session history (2026-09-21)
+
+**Rule:** When a repository generation changes, block Git and automatic session
+starts. Give the session owner an explicit action to resume only an existing
+preserved workspace. Never provision the current repository into that session,
+and never route the refusal through provider-failure recovery. **Incident:** a
+repository cutover rendered historical sessions as retryable sandbox failures.
+**Enforcers:** `SESS-33`, browser journey 31, and the SDK start-query test.
+
+### Verify scoped NAS identity with a fresh sandbox boot (2026-09-18)
+
+**Rule:** When copying NAS secrets across projects, select a project-specific
+SSH user and key before validating mounts. Check the remote account's allowed
+shares and read `/tmp/nas-mount.status` after a fresh sandbox boot. A present
+secret and a successful SSH login do not prove every selected share mounted.
+**Near-miss:** one of two requested mounts failed because the sandbox used the
+source project's default NAS account. **Enforcer:** none; add a boot check for
+every selected share to the project cutover procedure.
+
+### Preserve the session-bearing project during repository consolidation (2026-09-18)
+
+**Rule:** Before archiving a project during a repository cutover, count its
+sessions and dependent resources. Keep the project ID that owns the historical
+sessions as the canonical project. Copy Git refs before moving session rows,
+then verify session, connector, transcript, and sandbox reads through the
+canonical API. **Near-miss:** a project with over 16,000 historical sessions was
+archived while a new project with four sessions remained active; restoration
+required a guarded production transfer. **Enforcer:** none; a cutover preflight
+that reports project and session counts remains to be built.
+
 ### 2026-09-21 — A capability flag is not a capability: route on what the RUNTIME honours, and never pin a turn to a model you have not proven it can run
 
 **Rule.** When code picks a model on the user's behalf, decide from the field
@@ -73,7 +133,6 @@ published asset from a clean HOME, never the dev binary beside its dev cache.
 **Enforcement.** `apps/cli/src/tui-bin.test.ts` "cliVersion inside a compiled
 binary" builds through the define and asserts both `cliVersion({})` and
 `cliVersion()` answer the baked value (verified red on the old line).
-
 
 ### A UI assertion on a server-side DELETE must wait for the id to exist, and an element budget must fit the round trips behind it (2026-09-18)
 

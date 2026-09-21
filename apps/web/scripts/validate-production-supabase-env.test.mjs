@@ -218,8 +218,6 @@ describe('release wiring', () => {
     assert.match(workflow, /frontend-auth-proof:\n/);
     assert.match(
       workflow,
-      // No npm publish job: an npm failure must not erase the release record
-      // (#7448, tests/unit/release-record-workflow.test.ts).
       /needs: \[version, retag-images, build-cli, deploy-ecs, verify-live-version, frontend-auth-proof\]/,
     );
     assert.match(
