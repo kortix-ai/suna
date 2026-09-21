@@ -937,6 +937,25 @@ updates `pendingDelivery` when the same turn becomes active, without waiting for
 a different turn ID or timestamp.
 
 
+### Why a turn ended
+
+The transcript of an interrupted turn only carries `MessageAbortedError`. The
+control plane records the cause the sandbox reported, for example
+`SandboxMemoryGuard` when box memory passed its guard threshold, in
+`session_turns.end_error`. A stop somebody asked for is recorded there too, as a
+request (`UserStop` for a client abort, `QueueInterrupt` for a prompt sent into a
+busy session), and a request is never reported as a failure.
+
+`GET .../turn` returns the cause in `last_ended.error` and lists the turns that
+died in `recent_failures`, keyed by `message_id`, whether or not a turn is
+running: named causes, and failures with `error: null` when nobody named one.
+`useSessionTurnOutcome(projectId, sessionId)` reads both, plus the read time
+`atMs`, from the cache `useSessionWorking()` keeps fresh and makes no request of
+its own. `turnEndNotice(outcome, messageId, transcript)` turns that into one
+typed notice per turn — `sandbox-memory`, `cause`, `unexplained`, or `null` — so
+a host maps a kind to copy and never parses the sandbox's message.
+`turnEndCause(outcome, messageId)` returns the raw recorded cause.
+
 ### External directory freshness
 
 `contract('directory')` from `@kortix/sdk/react` refreshes mounted group and
