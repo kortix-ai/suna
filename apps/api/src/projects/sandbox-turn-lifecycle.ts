@@ -495,7 +495,26 @@ export function extractTurnIdentity(
   let messageId: string | null = null;
   if (body?.byteLength) {
     try {
-      const parsed = JSON.parse(new TextDecoder().decode(body)) as { messageID?: unknown };
+      const parsed = JSON.parse(new TextDecoder().decode(body)) as {
+        messageID?: unknown;
+        noReply?: unknown;
+      };
+      // A `noReply` POST STARTS NO TURN, so it must not open a turn record.
+      //
+      // OpenCode 1.18.23 accepts `noReply: true` on `/prompt_async`: the user
+      // message is PERSISTED and no reply runs (`SessionPromptAsyncData`). The
+      // Quick Queue group delivery uses it for rows 1..N-1 of a group so that
+      // exactly one reply exists, parented on row N (`quick-queue-group.ts`).
+      //
+      // Recording a turn for one of those rows would write an `activeTurns`
+      // entry and a `session_turns` row that NOTHING can close: no reply runs,
+      // so no `session.idle` / terminal event ever names that token. The inbox
+      // admission gate reads `activeTurns` as "this session is busy", so the
+      // session would hold every later prompt until the reaper swept the
+      // orphan. Returning null here is the whole of "skip turn bookkeeping":
+      // `preview.ts` mints no turn token without an identity, so
+      // `beginSandboxTurn` / `acceptSandboxTurn` are never called.
+      if (parsed.noReply === true) return null;
       if (typeof parsed.messageID === 'string' && parsed.messageID.trim()) {
         messageId = parsed.messageID.trim();
       }

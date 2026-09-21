@@ -6,6 +6,7 @@ import {
   admissionBackoffMs,
   admitInboxPrompt,
   sessionHoldsTurnAuthority,
+  steerTargetTurn,
 } from './inbox-admission';
 import type { SessionLifecycleCommandRow } from './store';
 
@@ -47,6 +48,50 @@ describe('sessionHoldsTurnAuthority', () => {
   });
 });
 
+describe('steerTargetTurn', () => {
+  const turn = (
+    token: string,
+    messageId: string | null,
+    startedAtMs: number | null,
+    state: 'active' | 'delivering' = 'active',
+  ) => ({ token, state, opencodeSessionId: 'ses_1', messageId, startedAtMs });
+
+  test('the NEWEST accepted turn is the response a steer goes into', () => {
+    // A steer is its own `/prompt_async` POST, so the proxy records a second
+    // `activeTurns` entry for it. OpenCode parents every later step on the
+    // newest user message, so that entry — not the turn's original root — is
+    // what the next prompt is read against.
+    expect(
+      steerTargetTurn([turn('a', 'msg_a', 10), turn('b', 'msg_b', 30), turn('c', 'msg_c', 20)]),
+    ).toMatchObject({ token: 'b' });
+  });
+
+  test('a turn with no accepted message, and a DELIVERING turn, are not steer targets', () => {
+    expect(steerTargetTurn([turn('a', null, 10)])).toBeNull();
+    expect(steerTargetTurn([turn('a', 'msg_a', 10, 'delivering')])).toBeNull();
+    expect(steerTargetTurn([])).toBeNull();
+  });
+
+  test('a LEGACY record with no start instant still steers, and loses to one that has a clock', () => {
+    // `promptTypedOverTurn` already refuses to end a turn with no
+    // `startedAtMs`; it must still be steerable, which is what it was before
+    // turn records carried a clock at all.
+    expect(steerTargetTurn([turn('legacy', 'msg_l', null)])).toMatchObject({ token: 'legacy' });
+    expect(
+      steerTargetTurn([turn('legacy', 'msg_l', null), turn('b', 'msg_b', 1)]),
+    ).toMatchObject({ token: 'b' });
+  });
+
+  test('turns stamped in the same millisecond fall back to the newest wire id', () => {
+    // Wire ids are time-ordered (`msg_<hex clock>`), so the greater id is the
+    // later message. A total order here keeps the decision deterministic
+    // instead of depending on jsonb key order.
+    expect(
+      steerTargetTurn([turn('a', 'msg_000000000002b', 5), turn('b', 'msg_000000000001a', 5)]),
+    ).toMatchObject({ token: 'a' });
+  });
+});
+
 const row = (overrides: Partial<SessionLifecycleCommandRow> = {}): SessionLifecycleCommandRow =>
   ({
     commandId: 'cmd-1',
@@ -58,7 +103,12 @@ const row = (overrides: Partial<SessionLifecycleCommandRow> = {}): SessionLifecy
   }) as SessionLifecycleCommandRow;
 
 describe('admitInboxPrompt', () => {
-  test('only the head Quick Queue prompt requests a tool-boundary interrupt', async () => {
+  // WAS: 'only the head Quick Queue prompt requests a tool-boundary interrupt'.
+  // The head Quick Queue prompt now STEERS into the live turn instead of asking
+  // for it to be ended, so the interrupt it used to arm is not armed for it.
+  // The rest of this test is unchanged and still binding: Queue List waits, and
+  // a Quick Queue row behind an older prompt does neither.
+  test('the head Quick Queue prompt steers; the others still wait', async () => {
     const box = { status: 'active', metadata: { activeTurns: activeTurn('t1') } };
     const readSandbox = async () => box;
     const hasInFlightPrompt = async () => false;
@@ -67,12 +117,7 @@ describe('admitInboxPrompt', () => {
       hasInFlightPrompt,
       hasOlderPendingPrompt: async () => false,
     });
-    expect(first).toEqual({
-      admit: false,
-      reason: 'turn_active',
-      retryAfterMs: INBOX_ORDER_BACKOFF_MS,
-      interruptAtBoundary: { opencodeSessionId: 'ses_1', messageId: 'msg_1' },
-    });
+    expect(first).toEqual({ admit: true });
 
     const composer = await admitInboxPrompt(row({ payload: { text: 'later', placement: 'composer' } }), {
       readSandbox,
@@ -93,7 +138,7 @@ describe('admitInboxPrompt', () => {
     expect(behind).not.toHaveProperty('interruptAtBoundary');
   });
 
-  test('a Quick Queue prompt does not interrupt the turn an earlier Quick Queue prompt started', async () => {
+  test('a Quick Queue prompt does not end the turn an earlier Quick Queue prompt started', async () => {
     // Reproduced 2026-09-18 on a real sandbox: a long turn A, then Quick Queue
     // prompts B, C, D. B interrupts A — that is Quick Queue. But C waits behind
     // B, becomes the head once B is delivered, and arms an interrupt against
@@ -101,39 +146,503 @@ describe('admitInboxPrompt', () => {
     // `MessageAbortedError` with zero characters; only D answered. N Quick
     // Queue prompts lost N-1 answers, on this branch and on main.
     //
-    // Contract: a Quick Queue prompt may end the turn it jumped ahead of. It
-    // must not end a turn that is itself a Quick Queue prompt's answer.
+    // WAS guarded by `turnStartedByQuickQueue` ("never end a turn that is a
+    // Quick Queue prompt's answer"). That dep is REMOVED: it also refused the
+    // case the owner requires — B is answering in streamed text, the user
+    // types C OVER that text, and C must end it. What separates the two is not
+    // who started the turn but WHEN the prompt was typed: C above was already
+    // waiting before B's turn began, so it was never a reaction to B's answer.
+    // A prompt created before the active turn started may not end it.
+    const turnStartedAtMs = Date.parse('2026-09-18T10:00:05.000Z');
     const box = {
       status: 'active',
       metadata: {
         activeTurns: {
-          tB: { token: 'tB', state: 'active', opencodeSessionId: 'ses_1', messageId: 'msg_B', startedAtMs: 2 },
+          tB: {
+            token: 'tB',
+            state: 'active',
+            opencodeSessionId: 'ses_1',
+            messageId: 'msg_B',
+            startedAtMs: turnStartedAtMs,
+          },
         },
       },
     };
-    const deps = (quickQueueTurns: string[]) => ({
+    let phaseReads = 0;
+    const deps = (over: Partial<Parameters<typeof admitInboxPrompt>[1]> = {}) => ({
       readSandbox: async () => box,
       hasInFlightPrompt: async () => false,
       hasOlderPendingPrompt: async () => false,
-      turnStartedByQuickQueue: async (_sessionId: string, messageId: string) =>
-        quickQueueTurns.includes(messageId),
+      readLiveTurnPhase: async () => {
+        phaseReads++;
+        return 'text' as const;
+      },
+      ...over,
     });
-    const quickC = row({ commandId: 'cmd-C', payload: { text: 'C', placement: 'transcript' } });
-
-    // Control: the turn is an ordinary answer, so C may interrupt it.
-    expect(await admitInboxPrompt(quickC, deps([]))).toEqual({
-      admit: false,
-      reason: 'turn_active',
-      retryAfterMs: INBOX_ORDER_BACKOFF_MS,
-      interruptAtBoundary: { opencodeSessionId: 'ses_1', messageId: 'msg_B' },
+    // C was typed while A was still running — two seconds BEFORE B's turn began.
+    const quickC = row({
+      commandId: 'cmd-C',
+      createdAt: new Date(turnStartedAtMs - 2_000),
+      payload: { text: 'C', placement: 'transcript' },
     });
 
-    // The defect: the turn is B's Quick Queue answer. C waits for it; it does
-    // not end it.
-    expect(await admitInboxPrompt(quickC, deps(['msg_B']))).toEqual({
-      admit: false,
-      reason: 'turn_active',
-      retryAfterMs: INBOX_ORDER_BACKOFF_MS,
+    // B is streaming text, and C still does not end it: C steers.
+    expect(await admitInboxPrompt(quickC, deps())).toEqual({ admit: true });
+    // The runtime is not even asked — a prompt that cannot end the turn has no
+    // use for the answer, and the read is a network round trip to the box.
+    expect(phaseReads).toBe(0);
+
+    // WAS: "the bound on steering is unchanged: one steer per turn", asserted
+    // through the removed `turnAlreadySteered` dep. Quick Queue messages are
+    // now MERGED INTO ONE ANSWER on purpose (`quick-queue-group.ts`), so the
+    // one-steer bound is gone: a later Quick Queue head steers into the turn a
+    // previous steer recorded, addressed to the NEWEST turn.
+    const steeredTurns = {
+      status: 'active',
+      metadata: {
+        activeTurns: {
+          tB: {
+            token: 'tB',
+            state: 'active',
+            opencodeSessionId: 'ses_1',
+            messageId: 'msg_B',
+            startedAtMs: turnStartedAtMs,
+          },
+          tSteer: {
+            token: 'tSteer',
+            state: 'active',
+            opencodeSessionId: 'ses_1',
+            messageId: 'msg_steer',
+            startedAtMs: turnStartedAtMs + 1_000,
+          },
+        },
+      },
+    };
+    expect(
+      await admitInboxPrompt(quickC, deps({ readSandbox: async () => steeredTurns })),
+    ).toEqual({ admit: true });
+    expect(phaseReads).toBe(0);
+
+    // A LEGACY turn record carries no start instant. "Typed over this
+    // response" cannot be proven against a number nobody measured, so nothing
+    // is ended.
+    const legacyBox = {
+      status: 'active',
+      metadata: {
+        activeTurn: { token: 'tL', state: 'active', opencodeSessionId: 'ses_1', messageId: 'msg_B' },
+      },
+    };
+    expect(
+      await admitInboxPrompt(
+        row({ payload: { text: 'late', placement: 'transcript' } }),
+        deps({ readSandbox: async () => legacyBox }),
+      ),
+    ).toEqual({ admit: true });
+    expect(phaseReads).toBe(0);
+  });
+
+  describe('a prompt typed over STREAMING TEXT ends that response', () => {
+    // THE OWNER'S REPORT, 2026-09-21, reproduced: send "tell me about pigeons",
+    // wait five seconds into the answer, press Enter on "crow vs pigeon". The
+    // steer was accepted and the UI showed it as working — and the pigeon essay
+    // streamed on to its last character. "When I sent two prompts, the first
+    // prompt response should be stopped immediately. This is only happening
+    // with the text response not with the tool call thing."
+    //
+    // A steer is read at a STEP boundary. A tool call ends a step every few
+    // seconds; a streamed markdown answer is ONE step with no boundary inside
+    // it. So the head Quick Queue prompt asks what the turn is doing, and a
+    // text stream gets the refusal that arms the daemon's interrupt — which
+    // aborts at once when no tool is running — instead of `{ admit: true }`.
+    const turnStartedAtMs = Date.parse('2026-09-21T09:00:00.000Z');
+    const box = {
+      status: 'active',
+      metadata: {
+        activeTurns: {
+          t1: {
+            token: 't1',
+            state: 'active',
+            opencodeSessionId: 'ses_1',
+            messageId: 'msg_1',
+            startedAtMs: turnStartedAtMs,
+          },
+        },
+      },
+    };
+    type Deps = NonNullable<Parameters<typeof admitInboxPrompt>[1]>;
+    const deps = (over: Partial<Deps> = {}): Deps => ({
+      readSandbox: async () => box,
+      hasInFlightPrompt: async () => false,
+      hasOlderPendingPrompt: async () => false,
+      ...over,
+    });
+    // Typed five seconds into the answer.
+    const typedOver = (payload: Record<string, unknown> = { placement: 'transcript' }) =>
+      row({
+        commandId: 'cmd-crow',
+        actorUserId: 'user-1',
+        createdAt: new Date(turnStartedAtMs + 5_000),
+        payload: { text: 'crow vs pigeon', ...payload },
+      } as Partial<SessionLifecycleCommandRow>);
+    const plainWait = { admit: false, reason: 'turn_active', retryAfterMs: INBOX_ORDER_BACKOFF_MS } as const;
+
+    test('text phase → refused with the interrupt, addressed to exactly the active turn', async () => {
+      const reads: unknown[][] = [];
+      const admission = await admitInboxPrompt(
+        typedOver(),
+        deps({
+          readLiveTurnPhase: async (...args) => {
+            reads.push(args);
+            return 'text';
+          },
+        }),
+      );
+      expect(admission).toEqual({
+        ...plainWait,
+        interruptAtBoundary: { opencodeSessionId: 'ses_1', messageId: 'msg_1' },
+      });
+      // The read is scoped to the turn admission decided on, as the row's actor.
+      expect(reads).toEqual([['sess-1', { opencodeSessionId: 'ses_1', messageId: 'msg_1' }, 'user-1']]);
+    });
+
+    test('a prompt created in the same millisecond the turn started counts as typed over it', async () => {
+      const admission = await admitInboxPrompt(
+        row({ createdAt: new Date(turnStartedAtMs), payload: { text: 'x', placement: 'transcript' } }),
+        deps({ readLiveTurnPhase: async () => 'text' }),
+      );
+      expect(admission).toHaveProperty('interruptAtBoundary');
+    });
+
+    test('THE EXACT GUARANTEE: a prompt ends only a turn that started before it was typed — a burst loses at most one answer', async () => {
+      // The text abort is IMMEDIATE, so B's turn starts about a second after
+      // B's Enter. C typed two seconds after B is therefore created AFTER B's
+      // turn began, and if B is already writing text, C ends it. That is the
+      // owner's rule applied to B — C was typed over B's answer — and it is
+      // intended. What the guard bounds is the cascade: D was typed before C's
+      // turn began, so D cannot end C. N rapid prompts lose at most the first
+      // successor's partial answer, not N-1 answers (2026-09-18).
+      const turnFor = (token: string, messageId: string, startedAtMs: number) => ({
+        status: 'active',
+        metadata: {
+          activeTurns: { [token]: { token, state: 'active', opencodeSessionId: 'ses_1', messageId, startedAtMs } },
+        },
+      });
+      const text = { readLiveTurnPhase: async () => 'text' as const };
+      const bTurnStartedAtMs = turnStartedAtMs;
+      const quickC = row({
+        commandId: 'cmd-C',
+        createdAt: new Date(bTurnStartedAtMs + 1_000),
+        payload: { text: 'C', placement: 'transcript' },
+      });
+      const quickD = row({
+        commandId: 'cmd-D',
+        createdAt: new Date(bTurnStartedAtMs + 2_000),
+        payload: { text: 'D', placement: 'transcript' },
+      });
+
+      // C, typed one second into B's streamed answer, ends B.
+      expect(
+        await admitInboxPrompt(quickC, deps({ ...text, readSandbox: async () => turnFor('tB', 'msg_B', bTurnStartedAtMs) })),
+      ).toEqual({ ...plainWait, interruptAtBoundary: { opencodeSessionId: 'ses_1', messageId: 'msg_B' } });
+
+      // C's turn begins after D was typed. D does not end C's streamed answer.
+      const cTurn = turnFor('tC', 'msg_C', bTurnStartedAtMs + 3_000);
+      expect(await admitInboxPrompt(quickD, deps({ ...text, readSandbox: async () => cTurn }))).toEqual({
+        admit: true,
+      });
+    });
+
+    test('tool phase and every other phase → steers, exactly as before', async () => {
+      expect(await admitInboxPrompt(typedOver(), deps({ readLiveTurnPhase: async () => 'tool' }))).toEqual({
+        admit: true,
+      });
+      expect(await admitInboxPrompt(typedOver(), deps({ readLiveTurnPhase: async () => 'other' }))).toEqual({
+        admit: true,
+      });
+    });
+
+    test('text phase, but the prompt was waiting BEFORE this turn began → it does not end it', async () => {
+      const waiting = row({
+        createdAt: new Date(turnStartedAtMs - 1),
+        payload: { text: 'queued earlier', placement: 'transcript' },
+      });
+      expect(await admitInboxPrompt(waiting, deps({ readLiveTurnPhase: async () => 'text' }))).toEqual({
+        admit: true,
+      });
+    });
+
+    // WAS: 'a turn that already took a steer is not ended either — the daemon
+    // would refuse the arm as stale', asserted through `turnAlreadySteered`.
+    // The dep is removed with the one-steer bound. The stale-arm concern it
+    // named is now answered by WHICH turn admission addresses: after a steer
+    // the newest `activeTurns` entry IS the steer's own message, so the phase
+    // read and the interrupt are both addressed to the message the daemon
+    // calls newest — never to the turn's stale root.
+    test('after a steer, the phase read and the interrupt address the NEWEST turn', async () => {
+      const steeredTurns = {
+        status: 'active',
+        metadata: {
+          activeTurns: {
+            t1: {
+              token: 't1',
+              state: 'active',
+              opencodeSessionId: 'ses_1',
+              messageId: 'msg_1',
+              startedAtMs: turnStartedAtMs,
+            },
+            t2: {
+              token: 't2',
+              state: 'active',
+              opencodeSessionId: 'ses_1',
+              messageId: 'msg_steer',
+              startedAtMs: turnStartedAtMs + 2_000,
+            },
+          },
+        },
+      };
+      const reads: unknown[][] = [];
+      expect(
+        await admitInboxPrompt(
+          typedOver(),
+          deps({
+            readSandbox: async () => steeredTurns,
+            readLiveTurnPhase: async (...args) => {
+              reads.push(args);
+              return 'text';
+            },
+          }),
+        ),
+      ).toEqual({
+        ...plainWait,
+        interruptAtBoundary: { opencodeSessionId: 'ses_1', messageId: 'msg_steer' },
+      });
+      expect(reads).toEqual([
+        ['sess-1', { opencodeSessionId: 'ses_1', messageId: 'msg_steer' }, 'user-1'],
+      ]);
+    });
+
+    test('the phase read FAILS OPEN — a throw or a rejection steers, it never ends a response', async () => {
+      expect(
+        await admitInboxPrompt(
+          typedOver(),
+          deps({
+            readLiveTurnPhase: () => {
+              throw new Error('sync boom');
+            },
+          }),
+        ),
+      ).toEqual({ admit: true });
+      expect(
+        await admitInboxPrompt(
+          typedOver(),
+          deps({ readLiveTurnPhase: async () => Promise.reject(new Error('box unreachable')) }),
+        ),
+      ).toEqual({ admit: true });
+      // A value outside the contract is not 'text'.
+      expect(
+        await admitInboxPrompt(
+          typedOver(),
+          deps({ readLiveTurnPhase: (async () => 'TEXT') as unknown as Deps['readLiveTurnPhase'] }),
+        ),
+      ).toEqual({ admit: true });
+    });
+
+    test('with no phase read wired at all it steers', async () => {
+      expect(await admitInboxPrompt(typedOver(), deps())).toEqual({ admit: true });
+    });
+
+    test('Queue List and a row with no placement wait — no interrupt, and the phase is never read', async () => {
+      let phaseReads = 0;
+      const readLiveTurnPhase = async () => {
+        phaseReads++;
+        return 'text' as const;
+      };
+      expect(
+        await admitInboxPrompt(typedOver({ placement: 'composer' }), deps({ readLiveTurnPhase })),
+      ).toEqual(plainWait);
+      expect(await admitInboxPrompt(typedOver({ placement: undefined }), deps({ readLiveTurnPhase }))).toEqual(
+        plainWait,
+      );
+      expect(phaseReads).toBe(0);
+    });
+
+    test('a Quick Queue row that is NOT the head neither ends the text nor steers — and reads nothing', async () => {
+      let phaseReads = 0;
+      const readLiveTurnPhase = async () => {
+        phaseReads++;
+        return 'text' as const;
+      };
+      expect(
+        await admitInboxPrompt(
+          typedOver(),
+          deps({ readLiveTurnPhase, hasOlderPendingPrompt: async () => true }),
+        ),
+      ).toEqual(plainWait);
+      expect(
+        await admitInboxPrompt(typedOver(), deps({ readLiveTurnPhase, hasInFlightPrompt: async () => true })),
+      ).toEqual(plainWait);
+      expect(phaseReads).toBe(0);
+    });
+
+    // WAS: 'two live turns are not ONE response — nothing is ended'. Two
+    // recorded turns are now the ORDINARY state of a steered session: the steer
+    // is its own `/prompt_async` POST, so the proxy records a second
+    // `activeTurns` entry for it while OpenCode merges it into the one running
+    // reply. Refusing on `turns.length !== 1` wedged every Quick Queue prompt
+    // sent after the first steer until the turn ended. The newest turn is the
+    // response, and it is what a prompt typed over it ends.
+    test('two live turns: the NEWEST is the response, and it is the one that is ended', async () => {
+      const twoTurns = {
+        status: 'active',
+        metadata: {
+          activeTurns: {
+            ...box.metadata.activeTurns,
+            t2: {
+              token: 't2',
+              state: 'active',
+              opencodeSessionId: 'ses_1',
+              messageId: 'msg_2',
+              startedAtMs: turnStartedAtMs + 1_000,
+            },
+          },
+        },
+      };
+      expect(
+        await admitInboxPrompt(
+          typedOver(),
+          deps({ readSandbox: async () => twoTurns, readLiveTurnPhase: async () => 'text' }),
+        ),
+      ).toEqual({
+        ...plainWait,
+        interruptAtBoundary: { opencodeSessionId: 'ses_1', messageId: 'msg_2' },
+      });
+    });
+
+    test('a turn still DELIVERING is not steered into — only an accepted turn has a message to read', async () => {
+      const delivering = {
+        status: 'active',
+        metadata: {
+          activeTurns: {
+            t9: {
+              token: 't9',
+              state: 'delivering',
+              opencodeSessionId: 'ses_1',
+              messageId: 'msg_9',
+              startedAtMs: turnStartedAtMs + 9_000,
+            },
+          },
+        },
+      };
+      expect(
+        await admitInboxPrompt(
+          typedOver(),
+          deps({ readSandbox: async () => delivering, readLiveTurnPhase: async () => 'text' }),
+        ),
+      ).toEqual(plainWait);
+    });
+  });
+
+  describe('a STEERING prompt is admitted INTO the live turn', () => {
+    // Enter used to end the running response at its next tool boundary: the
+    // in-progress answer came back `MessageAbortedError` with zero characters,
+    // and a long tool call died wherever the boundary fell. A steering prompt
+    // is instead placed INTO that turn, so the model reads it at its own safe
+    // boundary and changes course without losing the work in front of it.
+    //
+    // Quick Queue IS steering; that is what the lane means. Queue List still
+    // queues, and a prompt with no placement is not a correction to work in
+    // flight, so it queues too.
+    const box = { status: 'active', metadata: { activeTurns: activeTurn('t1') } };
+    const deps = (over: Partial<Parameters<typeof admitInboxPrompt>[1]> = {}) => ({
+      readSandbox: async () => box,
+      hasInFlightPrompt: async () => false,
+      hasOlderPendingPrompt: async () => false,
+      ...over,
+    });
+    const steering = (over: Record<string, unknown> = {}) =>
+      row({ payload: { text: 'actually use Postgres', placement: 'transcript', ...over } });
+
+    test('it is admitted, and nothing is armed against the running turn', async () => {
+      expect(await admitInboxPrompt(steering(), deps())).toEqual({ admit: true });
+    });
+
+    // WAS: 'the SECOND steer of one turn waits instead — it never interrupts
+    // either', which asserted the removed one-steer-per-turn bound through
+    // `turnAlreadySteered`. The 2026-09-04 loss that bound was defending
+    // against ("HI"/"bye" merged into one step, only "bye" answered) is now
+    // prevented by the grouped delivery itself: the merge is deliberate, the
+    // hidden hint tells the model to answer every message, and only the last
+    // message of a group opens a reply (`quick-queue-group.ts`).
+    test('the SECOND Quick Queue head of one turn steers too — Quick Queue merges on purpose', async () => {
+      const steeredTurns = {
+        status: 'active',
+        metadata: {
+          activeTurns: {
+            ...box.metadata.activeTurns,
+            tSteer: {
+              token: 'tSteer',
+              state: 'active',
+              opencodeSessionId: 'ses_1',
+              messageId: 'msg_steer',
+              startedAtMs: 2,
+            },
+          },
+        },
+      };
+      expect(
+        await admitInboxPrompt(steering(), deps({ readSandbox: async () => steeredTurns })),
+      ).toEqual({ admit: true });
+    });
+
+    test('the rest of the drain’s own GROUP is not "another delivery on the wire"', async () => {
+      // Every row of a group is CLAIMED (`running`) when the head reaches
+      // admission. Without the exemption the head reads its own group as a
+      // sibling already on the wire and refuses itself for ever.
+      const seen: Array<readonly string[]> = [];
+      expect(
+        await admitInboxPrompt(
+          steering(),
+          deps({
+            hasInFlightPrompt: async (_sessionId, exceptCommandIds) => {
+              seen.push(exceptCommandIds);
+              return false;
+            },
+          }),
+          { groupCommandIds: ['cmd-2', 'cmd-3'] },
+        ),
+      ).toEqual({ admit: true });
+      expect(seen).toEqual([['cmd-1', 'cmd-2', 'cmd-3']]);
+    });
+
+    test('a prompt with NO placement is not a steer — it queues, and never interrupts', async () => {
+      // A first prompt, an automation, an older producer. None of them is a
+      // correction to work already running.
+      expect(await admitInboxPrompt(row({ payload: { text: 'x' } }), deps())).toEqual({
+        admit: false,
+        reason: 'turn_active',
+        retryAfterMs: INBOX_ORDER_BACKOFF_MS,
+      });
+    });
+
+    test('a Queue List row never steers', async () => {
+      expect(
+        await admitInboxPrompt(row({ payload: { text: 'x', placement: 'composer' } }), deps()),
+      ).toEqual({
+        admit: false,
+        reason: 'turn_active',
+        retryAfterMs: INBOX_ORDER_BACKOFF_MS,
+      });
+    });
+
+    test('a steering row BEHIND an older prompt waits its turn in the queue', async () => {
+      // Order still binds. Only the head may be placed into the live turn.
+      expect(
+        await admitInboxPrompt(steering(), deps({ hasOlderPendingPrompt: async () => true })),
+      ).toEqual({
+        admit: false,
+        reason: 'turn_active',
+        retryAfterMs: INBOX_ORDER_BACKOFF_MS,
+      });
     });
   });
 

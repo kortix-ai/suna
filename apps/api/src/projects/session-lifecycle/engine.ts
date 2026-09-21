@@ -93,6 +93,12 @@ import {
 import { claimDueSessionInboxSiblings } from './inbox-rows';
 import { compareInboxSendOrder, inboxFollowsRow } from './inbox-order';
 import {
+  groupEndedResponse,
+  quickQueueGroup,
+  quickQueueGroupHint,
+  quickQueueInterruptNote,
+} from './quick-queue-group';
+import {
   type PlacementTipMessage,
   boxClockSkewMs,
   mintLivePlacement,
@@ -546,6 +552,9 @@ export async function continueSession(
           ? session.projectId : undefined,
         accountId: session.accountId,
         projectId: session.projectId,
+        noReply: command.noReply,
+        groupedMessageCount: command.groupedMessageCount,
+        endedResponse: command.endedResponse,
       },
     );
     // ACCEPTANCE IS NOT DELIVERY. `prompt_async` answers for the request, and
@@ -888,13 +897,16 @@ export async function drainSessionLifecycleQueue(
     else lanes.set(lane, [row]);
   }
 
-  const runRow = async (row: SessionLifecycleCommandRow): Promise<void> => {
+  const runRow = async (
+    row: SessionLifecycleCommandRow,
+    options?: QueuedContinueOptions,
+  ): Promise<'succeeded' | 'queued' | 'failed' | null> => {
     if (row.commandType === 'continue_session') {
       // Contained per row. Every row in this batch is CLAIMED (`running`), and
       // one throw escaping the loop would leave the rest of them there — a
       // state nothing reclaims until the lock expires, and one that blocks
       // every later prompt of the same session behind it.
-      const outcome = await executeQueuedContinue(row).catch(async (err) => {
+      const outcome = await executeQueuedContinue(row, options).catch(async (err) => {
         await markCommandFailed(
           row.commandId,
           `drain failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -903,7 +915,7 @@ export async function drainSessionLifecycleQueue(
         return 'failed' as const;
       });
       out[outcome] += 1;
-      return;
+      return outcome;
     }
     if (row.commandType !== 'create_session') {
       await markCommandFailed(row.commandId, `Unsupported command type: ${row.commandType}`, {
@@ -911,7 +923,7 @@ export async function drainSessionLifecycleQueue(
         attempts: row.attempts,
       });
       out.failed += 1;
-      return;
+      return null;
     }
     const result = await executeQueuedCreate(row);
     if (result.status === 'created' && result.sessionId) {
@@ -935,7 +947,7 @@ export async function drainSessionLifecycleQueue(
           },
         });
         out.queued += 1;
-        return;
+        return null;
       }
       await markCommandSucceeded(
         row.commandId,
@@ -952,16 +964,35 @@ export async function drainSessionLifecycleQueue(
       if (retryable) out.queued += 1;
       else out.failed += 1;
     }
+    return null;
+  };
+
+  /** Put a claimed row this drain is not going to send back in line. */
+  const releaseSibling = async (row: SessionLifecycleCommandRow): Promise<void> => {
+    await requeueForAdmission(
+      row.commandId,
+      'older_prompt_pending',
+      new Date(Date.now() + INBOX_ORDER_BACKOFF_MS),
+    );
+    out.queued += 1;
   };
 
   await Promise.all(
     [...lanes.values()].map(async (lane) => {
-      // One inbox row per session reaches OpenCode in one drain. The legacy
-      // `/prompt_async` route interleaves same-session posts, so batching the
-      // siblings reproduced the exact failure this queue exists to prevent:
-      // both rows reported delivered while the first answer rendered under
-      // the second prompt. Remaining claimed siblings are returned to the
-      // queue. Accepted delivery makes the next one due immediately.
+      // ONE GROUPED ANSWER PER DRAIN, not one message.
+      //
+      // WAS: one inbox row per session reached OpenCode per drain, because
+      // plain `/prompt_async` starts a reply for every message it takes — so
+      // two rows posted back to back produced two replies racing one
+      // transcript, and "both rows reported delivered while the first answer
+      // rendered under the second prompt".
+      //
+      // A Quick Queue GROUP is now sent together (`quick-queue-group.ts`,
+      // the owner's rule of 2026-09-21): rows 1..N-1 with `noReply: true`
+      // (persisted, no reply started) and row N normally. Exactly one reply
+      // exists, so the failure above has no mechanism. Everything else — Queue
+      // List, an unplaced row, a held row — still goes one per drain, and the
+      // rows this drain does not take are returned to the queue in order.
       let i = 0;
       while (i < lane.length) {
         const row = lane[i];
@@ -974,18 +1005,41 @@ export async function drainSessionLifecycleQueue(
         while (j < lane.length && isInboxRow(lane[j])) j += 1;
         const batch = lane.slice(i, j).sort(compareInboxSendOrder);
         i = j;
-        // Claims mark every sibling `running`. Release the tail before the
-        // head reaches admission, or `hasInFlightPrompt` sees that tail and
-        // rejects the head as if another delivery were already on the wire.
-        for (const sibling of batch.slice(1)) {
-          await requeueForAdmission(
-            sibling.commandId,
-            'older_prompt_pending',
-            new Date(Date.now() + INBOX_ORDER_BACKOFF_MS),
-          );
-          out.queued += 1;
+        const group = quickQueueGroup(batch);
+        // Claims mark every sibling `running`. Release everything outside the
+        // group before the head reaches admission — `hasInFlightPrompt` reads
+        // a claimed row as another delivery already on the wire. The group's
+        // own rows stay claimed and are handed to admission as exempt.
+        for (const sibling of batch.slice(group.length)) await releaseSibling(sibling);
+        const endedResponse = groupEndedResponse(group);
+        if (group.length < 2) {
+          await runRow(batch[0], endedResponse ? { endedResponse } : undefined);
+          continue;
         }
-        await runRow(batch[0]);
+        const groupIds = group.map((entry) => entry.commandId);
+        for (let n = 0; n < group.length; n += 1) {
+          const last = n === group.length - 1;
+          const outcome = await runRow(group[n], {
+            // Only the HEAD is gated. The rest of the group is this delivery's
+            // own, already-claimed tail: re-running admission for it would read
+            // its own siblings as in-flight, and the turn state it decided on
+            // has not changed since. Stop is still re-read before every POST
+            // (`assertInboxDeliveryActive`).
+            admitted: n > 0,
+            groupCommandIds: n === 0 ? groupIds.slice(1) : undefined,
+            noReply: !last,
+            groupedMessageCount: last ? group.length : undefined,
+            // Only the row that OPENS the reply can carry a note to the model.
+            endedResponse: last && endedResponse ? true : undefined,
+          });
+          if (outcome === 'succeeded') continue;
+          // ORDER MUST HOLD. Row N is never posted normally after an earlier
+          // row of its group failed — that would open a reply for a group the
+          // user never sent. The rows already persisted stay persisted; the
+          // next group's final post starts the one reply that reads them all.
+          for (const pending of group.slice(n + 1)) await releaseSibling(pending);
+          break;
+        }
       }
     }),
   );
@@ -1611,8 +1665,26 @@ function externalIdFromSandboxUrlField(url: string | null): string | null {
   return match?.[1] ?? null;
 }
 
+/** What the drain tells ONE delivery about the group it belongs to. */
+export interface QueuedContinueOptions {
+  /** Post with `noReply: true`: the message is persisted and no reply starts.
+   *  Set on rows 1..N-1 of a Quick Queue group. */
+  noReply?: boolean;
+  /** Set on row N of a group of N >= 2 — the hidden grouped-answer hint. */
+  groupedMessageCount?: number;
+  /** This delivery follows a response the user stopped by typing over it — the
+   *  row that opens the reply carries `quickQueueInterruptNote`. */
+  endedResponse?: boolean;
+  /** The rest of this delivery's group, claimed by the same drain, so
+   *  admission does not read them as a sibling already on the wire. */
+  groupCommandIds?: readonly string[];
+  /** The group's HEAD already passed admission; this row is its tail. */
+  admitted?: boolean;
+}
+
 export async function executeQueuedContinue(
   row: SessionLifecycleCommandRow,
+  options: QueuedContinueOptions = {},
 ): Promise<'succeeded' | 'queued' | 'failed'> {
   const payload = row.payload as unknown as QueuedContinueSessionPayload;
   const text = typeof payload.text === 'string' ? payload.text : '';
@@ -1665,7 +1737,14 @@ export async function executeQueuedContinue(
   };
   let admission: Awaited<ReturnType<typeof admitInboxPrompt>>;
   try {
-    admission = await admitInboxPrompt(row);
+    // A GROUP IS ADMITTED ONCE, BY ITS HEAD. The tail rows are the same
+    // delivery: they are already claimed, they carry no new decision about the
+    // turn, and asking again would make each of them read its own siblings as
+    // an in-flight prompt. The user's Stop is still honoured per row, inside
+    // the POST (`assertInboxDeliveryActive`).
+    admission = options.admitted
+      ? { admit: true }
+      : await admitInboxPrompt(row, undefined, { groupCommandIds: options.groupCommandIds });
     if (admission.admit) await lifecycleStore.markInboxDeliveryStarted(row.commandId);
     tl.mark('admission');
   } catch (err) {
@@ -1682,6 +1761,7 @@ export async function executeQueuedContinue(
         row.commandId,
         admission.reason,
         new Date(Date.now() + admission.retryAfterMs),
+        { endedResponse: !!admission.interruptAtBoundary },
       );
     } catch (err) {
       await markCommandFailed(
@@ -1982,6 +2062,11 @@ export async function executeQueuedContinue(
           ...(wireMessageId ? { wireMessageId } : {}),
           materializationKey: row.commandId,
           isPendingFirstPrompt,
+          ...(options.noReply ? { noReply: true } : {}),
+          ...(options.groupedMessageCount
+            ? { groupedMessageCount: options.groupedMessageCount }
+            : {}),
+          ...(options.endedResponse ? { endedResponse: true } : {}),
         },
         // F2: stable across every drain-and-retry of THIS row — see
         // `postPrompt`'s F2 note. Two DIFFERENT queued commands (distinct
@@ -2013,7 +2098,22 @@ export async function executeQueuedContinue(
       // body entirely (`postPrompt`), so the ledger has nothing to key its
       // confirmation on and the row would hang for ever. Those close here, as
       // they always did.
-      if (wireMessageId) {
+      if (options.noReply) {
+        // A `noReply` ROW IS FINISHED THE MOMENT OPENCODE HOLDS IT.
+        //
+        // `markCommandForwarded` leaves a row OPEN as `delivering` until the
+        // `session_turns` ledger names its wire id — and for a `noReply` post
+        // no turn ever will: no reply runs, so no terminal event carries that
+        // id, and `confirmInboxPromptConsumed` is never reached. The row would
+        // read `delivering` until the 10-minute sweep force-closed it, and
+        // `listInboxPrompts` would keep serving it, so the web transcript would
+        // dim that bubble as a queued prompt
+        // (`apps/web/src/features/session/turn/working-turn.ts`,
+        // `pendingPromptsByMessageId`) under a message that is in the
+        // transcript. Acceptance IS this row's answer; the group's LAST row
+        // carries the turn.
+        await markCommandSucceeded(row.commandId, { status: 'delivered' }, row.sessionId);
+      } else if (wireMessageId) {
         await markCommandForwarded(row.commandId, row.sessionId, wireMessageId);
       } else {
         await markCommandSucceeded(row.commandId, { status: 'delivered' }, row.sessionId);
@@ -2603,6 +2703,12 @@ async function postPrompt(
     attachmentProjectId?: string;
     accountId?: string;
     projectId?: string;
+    /** Persist the message and start NO reply — see `ContinueSessionCommand`. */
+    noReply?: boolean;
+    /** Row N of a group of N: carries the hidden grouped-answer instruction. */
+    groupedMessageCount?: number;
+    /** The reply this post opens follows a response the user stopped. */
+    endedResponse?: boolean;
   },
 ): Promise<'accepted' | 'deduplicated' | 'failed' | 'unreachable'> {
   const parts: PromptPartWire[] =
@@ -2656,10 +2762,32 @@ async function postPrompt(
       requested_agent: overrides?.agent,
     });
   }
+  // THE HIDDEN GROUPED-ANSWER INSTRUCTION, added HERE and nowhere earlier.
+  //
+  // It must not enter the durable row: `sanitizeInboxPromptParts` maps every
+  // part onto a fixed shape and would drop `synthetic`, and a hint stored in
+  // the payload would be re-sent verbatim by a redelivery whose group no longer
+  // exists. It is a property of THIS delivery, so it is added at the wire.
+  //
+  // `synthetic: true` is wire-internal and never rendered: the API's compact
+  // transcript filters `!p.synthetic`
+  // (`projects/lib/session-transcript-compact.ts`), and so does the web user
+  // bubble (`apps/web/src/features/session/turn/user-message.tsx`, in
+  // `parseAttachmentContent`) and the SDK's markdown transcript
+  // (`packages/sdk/src/transcript.ts`).
+  const groupHint = quickQueueGroupHint(prompt?.groupedMessageCount ?? 0);
+  // Never on a `noReply` post: it opens no reply, so there is nothing to tell.
+  const interruptNote = prompt?.noReply ? null : quickQueueInterruptNote(prompt?.endedResponse === true);
+  const hiddenNotes = [groupHint, interruptNote].filter((note): note is string => !!note);
+  const bodyParts: Array<PromptPartWire | { type: 'text'; text: string; synthetic: true }> = [
+    ...deliverableParts,
+    ...hiddenNotes.map((text) => ({ type: 'text' as const, text, synthetic: true as const })),
+  ];
   const body = new TextEncoder().encode(
     JSON.stringify({
       ...(prompt?.wireMessageId ? { messageID: prompt.wireMessageId } : {}),
-      parts: deliverableParts,
+      parts: bodyParts,
+      ...(prompt?.noReply ? { noReply: true } : {}),
       ...(deliverableAgent.agent ? { agent: deliverableAgent.agent } : {}),
       ...(overrides?.model ? { model: overrides.model } : {}),
       ...(overrides?.variant ? { variant: overrides.variant } : {}),

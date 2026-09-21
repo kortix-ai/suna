@@ -26,7 +26,8 @@ import type { CreateSessionPromptInput, RemovedSessionPrompt } from '@kortix/sdk
  * Queue.
  *
  * `placement: 'transcript'` puts it in the lane that runs ahead of every Queue
- * List row and ends the running response at its next tool boundary. It is sent
+ * List row and steers into the running response, or ends it if it is streaming
+ * text (one steer per turn; the server decides). It is sent
  * NOW (`clientSentAtMs`), so it lines up behind earlier Quick Queue messages,
  * and it is never held: the user asked for this message even if Stop holds the
  * rest.

@@ -14,6 +14,7 @@ import { sql } from 'drizzle-orm';
 import {
   INBOX_ORDER_BACKOFF_MS,
   admitInboxPrompt,
+  liveInboxAdmissionDeps,
   sessionHoldsTurnAuthority,
 } from '../projects/session-lifecycle/inbox-admission';
 import {
@@ -349,9 +350,12 @@ describe('admitInboxPrompt against real rows', () => {
     ).toBe(true);
   });
 
-  test('a Quick Queue entry behind an older Queue List entry heads the queue and arms the interrupt', async () => {
+  test('a Quick Queue entry behind an older Queue List entry heads the queue: it steers, or ends a text stream', async () => {
     // 2026-09-17, local: "stop" (Quick Queue) waited 72 refusals behind an
-    // older Queue List entry, so the response never stopped at its tool boundary.
+    // older Queue List entry, so it never reached the running response. The
+    // lane order is what this pins, against real rows. WHAT the head then does
+    // changed 2026-09-21: it STEERS into the turn, and only a response that is
+    // streaming text is ended (`inbox-admission.ts` header).
     const sentAt = Date.now();
     const queueList = await enqueue('q_list', {
       clientSentAtMs: sentAt,
@@ -369,13 +373,26 @@ describe('admitInboxPrompt against real rows', () => {
       quickQueue.commandId,
       queueList.commandId,
     ]);
-    expect(await admitInboxPrompt(quickQueue)).toEqual({
+
+    // THE LIVE PHASE READ FAILS OPEN. This fixture has no reachable runtime, so
+    // the real `readLiveTurnPhase` cannot read a page — and a read that did not
+    // happen steers, it never ends a response.
+    expect(await admitInboxPrompt(quickQueue)).toEqual({ admit: true });
+
+    // A response that IS streaming text is ended, addressed to exactly the
+    // active turn — every other dep is the live SQL.
+    const streamingText = {
+      ...liveInboxAdmissionDeps,
+      readLiveTurnPhase: async () => 'text' as const,
+    };
+    expect(await admitInboxPrompt(quickQueue, streamingText)).toEqual({
       admit: false,
       reason: 'turn_active',
       retryAfterMs: INBOX_ORDER_BACKOFF_MS,
       interruptAtBoundary: { opencodeSessionId: 'ses_root', messageId: WIRE_ID },
     });
-    expect(await admitInboxPrompt(queueList)).toEqual({
+    // The Queue List row waits either way, and never carries the interrupt.
+    expect(await admitInboxPrompt(queueList, streamingText)).toEqual({
       admit: false,
       reason: 'turn_active',
       retryAfterMs: INBOX_ORDER_BACKOFF_MS,
@@ -387,6 +404,122 @@ describe('admitInboxPrompt against real rows', () => {
              result = '{"admission_reason":"turn_active"}'::jsonb
        WHERE command_id IN (${queueList.commandId}::uuid, ${quickQueue.commandId}::uuid)`);
     expect(await promoteNextInboxRow(SESSION_ID)).toBe(quickQueue.idempotencyKey);
+  });
+
+  test('a Quick Queue prompt that was ALREADY WAITING when the turn began never ends its text', async () => {
+    // Measured 2026-09-18 on a real sandbox: Quick Queue prompts B, C, D behind
+    // a long turn A each ended the turn before it — N prompts lost N-1 answers.
+    // The row here was created before the turn's `startedAtMs`, so it was not
+    // typed over this response. It steers.
+    const startedAtMs = Date.now();
+    const waiting = await enqueue('q_predated', {
+      placement: 'transcript',
+      wireMessageId: 'msg_000000000003PredatedQuickQ',
+      createdAt: new Date(startedAtMs - 60_000).toISOString(),
+    });
+    await setBox('active', { 'turn-1': { ...turn['turn-1'], startedAtMs } });
+
+    expect(
+      await admitInboxPrompt({ ...waiting, createdAt: new Date(startedAtMs - 60_000) }, {
+        ...liveInboxAdmissionDeps,
+          readLiveTurnPhase: async () => 'text' as const,
+      }),
+    ).toEqual({ admit: true });
+  });
+
+  // WAS: 'ONE steer per turn, read from the real rows' — four tests over the
+  // `turnAlreadySteered` dep, which counted a forwarded Quick Queue row against
+  // the turn it entered and refused the next one. The dep is DELETED with the
+  // one-steer bound (owner's rule, 2026-09-21: Quick Queue prompts are merged
+  // into one grouped answer on purpose, and only the last message of a group
+  // opens a reply — `quick-queue-group.ts`). What replaces it against real rows
+  // is the state a steer LEAVES BEHIND: a second `activeTurns` entry, which
+  // used to make `turns.length === 1` refuse everything until the turn ended.
+  describe('a session that has already been steered, read from the real rows', () => {
+    const STEER_ID = 'msg_000000000004FirstSteerEntry';
+    const deps = {
+      ...liveInboxAdmissionDeps,
+      readLiveTurnPhase: async () => 'text' as const,
+    };
+    /** The turn record a steer's own `/prompt_async` POST leaves behind. */
+    const steeredBox = (rootStartedAtMs: number, steerStartedAtMs: number) => ({
+      'turn-1': { ...turn['turn-1'], startedAtMs: rootStartedAtMs },
+      'turn-2': {
+        token: 'turn-2',
+        state: 'active',
+        opencodeSessionId: 'ses_root',
+        messageId: STEER_ID,
+        startedAtMs: steerStartedAtMs,
+      },
+    });
+
+    test('a LATER Quick Queue row steers into the steer’s own turn instead of waiting for the turn to end', async () => {
+      // The refusal this replaces was not theoretical: with two recorded turns
+      // the gate returned `turn_active` for every Quick Queue prompt until the
+      // whole response finished.
+      const now = Date.now();
+      await setBox('active', steeredBox(now - 10_000, now - 5_000));
+      const third = await enqueue('q_third_quick', {
+        placement: 'transcript',
+        wireMessageId: 'msg_000000000005SecondSteerEntr',
+        createdAt: new Date(now - 20_000).toISOString(),
+      });
+      // Created before the steer's turn began, so it steers rather than ends it.
+      expect(
+        await admitInboxPrompt({ ...third, createdAt: new Date(now - 20_000) }, deps),
+      ).toEqual({ admit: true });
+    });
+
+    test('a prompt typed over the steered response ends the NEWEST turn, not the stale root', async () => {
+      // The daemon answers `stale` for anything but the newest user message
+      // (`quick-queue-interrupt.ts`), so an interrupt armed against the root
+      // would be disarmed and the response would stream to its end.
+      const now = Date.now();
+      await setBox('active', steeredBox(now - 10_000, now - 5_000));
+      const typedOver = await enqueue('q_typed_over_steer', {
+        placement: 'transcript',
+        wireMessageId: 'msg_000000000006TypedOverSteer',
+      });
+      expect(await admitInboxPrompt(typedOver, deps)).toEqual({
+        admit: false,
+        reason: 'turn_active',
+        retryAfterMs: INBOX_ORDER_BACKOFF_MS,
+        interruptAtBoundary: { opencodeSessionId: 'ses_root', messageId: STEER_ID },
+      });
+    });
+
+    test('the drain’s own GROUP is not counted as a sibling already on the wire', async () => {
+      // Every row of a group is CLAIMED (`running`) when the head reaches
+      // admission. The live `hasInFlightPrompt` excludes exactly those ids —
+      // proven here against the real statement, not a stub.
+      const head = await enqueue('q_group_head', {
+        placement: 'transcript',
+        wireMessageId: 'msg_000000000007GroupHeadEntry',
+      });
+      const tail = await enqueue('q_group_tail', {
+        placement: 'transcript',
+        wireMessageId: 'msg_000000000008GroupTailEntry',
+      });
+      await db.execute(sql`
+        UPDATE kortix.session_lifecycle_commands
+           SET status = 'running'
+         WHERE command_id IN (${head.commandId}::uuid, ${tail.commandId}::uuid)`);
+      expect(
+        await liveInboxAdmissionDeps.hasInFlightPrompt(SESSION_ID, [head.commandId]),
+      ).toBe(true);
+      expect(
+        await liveInboxAdmissionDeps.hasInFlightPrompt(SESSION_ID, [
+          head.commandId,
+          tail.commandId,
+        ]),
+      ).toBe(false);
+      // With no box the gate admits the head, which is what lets the group go.
+      expect(
+        await admitInboxPrompt({ ...head, status: 'running' }, liveInboxAdmissionDeps, {
+          groupCommandIds: [tail.commandId],
+        }),
+      ).toEqual({ admit: true });
+    });
   });
 
   test('the SAME metadata on a STOPPED box admits — authority dies with the runtime', async () => {

@@ -955,7 +955,22 @@ export interface SessionPromptOverrides {
 export type SessionPromptState = 'queued' | 'delivering' | 'waiting' | 'failed';
 
 export interface SessionPrompt {
-  /** Pending presentation only; both placements use the same automatic FIFO. */
+  /** Where the pending prompt is shown AND how the server treats the active
+   *  response. `transcript` (Quick Queue) runs ahead of every `composer` row;
+   *  its head steers into the running turn, or ends a response that is
+   *  streaming text and runs next. `composer` (Queue List) waits for the
+   *  active response to finish. Both run automatically, in submission order
+   *  within their placement.
+   *
+   *  CONSECUTIVE `transcript` ROWS ARE ANSWERED TOGETHER. The server delivers
+   *  every pending `transcript` row of the session as one group, in submission
+   *  order, and only the last of them starts a reply — so N Quick Queue
+   *  prompts produce N user messages and ONE answer addressing all N. Nothing
+   *  about this row changes: it keeps its own `prompt_id`, its own
+   *  `message_id`, and its own transcript bubble. The reply is parented on the
+   *  LAST message of the group; the earlier ones are ordinary finished user
+   *  messages, not pending ones. A `composer` row, a row with no placement,
+   *  and a held row are never grouped. */
   placement?: 'transcript' | 'composer';
   /** Full accepted text for pending messages after reload. Absent on older servers. */
   full_text?: string;

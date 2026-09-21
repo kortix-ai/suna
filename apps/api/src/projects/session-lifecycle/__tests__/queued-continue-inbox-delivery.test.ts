@@ -148,7 +148,20 @@ mock.module('../../../shared/db', () => ({
             // the same table for a different question, and answering it with a
             // floor row would make every send look like it lost the order race.
             if (table === sessionLifecycleCommands && projection && 'newest' in projection) {
-              return [{ newest: deliveredFloor === null ? null : deliveredFloor.toString() }];
+              // FAITHFUL TO THE REAL QUERY: `readDeliveredWireIdFloor` takes
+              // GREATEST over `payload.redeliveredMessageId` too, and the drain
+              // persists a re-minted id BEFORE its POST. A static floor let two
+              // rows of one group mint inside the same millisecond and collide
+              // on the clock — a harness artefact (3 of 4 runs), since the real
+              // floor always sees the sibling's id.
+              const persisted = persistedWireIds()
+                .map((id) => wireIdTime(id))
+                .filter((clock): clock is bigint => clock !== null);
+              const floor = [deliveredFloor, ...persisted].reduce<bigint | null>(
+                (max, clock) => (clock !== null && (max === null || clock > max) ? clock : max),
+                null,
+              );
+              return [{ newest: floor === null ? null : floor.toString() }];
             }
             if (
               table === sessionLifecycleCommands &&
@@ -552,14 +565,30 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(query.sql).toContain('p.project_id = "kortix"."project_sessions"."project_id"');
   });
 
-  test('Quick Queue arms the active turn boundary after its head is durably queued', async () => {
-    boxRow = {
-      status: 'active',
-      metadata: { activeTurns: {
-        't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID,
-          messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
-      } },
-    };
+  // WAS: 'Quick Queue arms the active turn boundary after its head is durably
+  // queued' — every head Quick Queue prompt ended the running turn. Two
+  // contracts replaced it. A Quick Queue prompt now STEERS into the turn, and
+  // ends it only when the response is STREAMING TEXT, which has no step
+  // boundary a steer could be read at (owner's report, 2026-09-21: the first
+  // answer streamed to its last character with the second prompt "working").
+  const liveTurn = () => ({
+    status: 'active',
+    metadata: { activeTurns: {
+      't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID,
+        messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
+    } },
+  });
+  const openStep = (parts: Array<Record<string, unknown>>) => [
+    { info: { id: 'msg_other', role: 'user' }, parts: [{ type: 'text', text: 'tell me about pigeons' }] },
+    { info: { id: NEWER_TRANSCRIPT_ID, role: 'assistant', parentID: 'msg_other',
+        time: { created: NOW_MS - 29_000 } }, parts },
+  ];
+
+  test('Quick Queue typed over STREAMING TEXT ends that response — armed only after the head is durably queued', async () => {
+    boxRow = liveTurn();
+    // What OpenCode 1.18 serves mid-stream: the text part opened at
+    // `text-start` and nothing persisted since.
+    transcript = openStep([{ type: 'step-start' }, { type: 'text', text: '', time: { start: NOW_MS - 28_000 } }]);
     const row = baseRow({ payload: { ...baseRow().payload, placement: 'transcript' } });
     expect(await executeQueuedContinue(row)).toBe('queued');
     expect(requeues).toHaveLength(1);
@@ -569,7 +598,46 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
       body: { prompt_id: 'cmd-1', opencode_session_id: OC_SESSION_ID,
         turn_message_id: 'msg_other' },
     }]);
+    // Never forwarded into the turn it is ending.
     expect(capturedBodies).toHaveLength(0);
+  });
+
+  test('Quick Queue typed over a RUNNING TOOL steers into the turn and arms nothing', async () => {
+    boxRow = liveTurn();
+    transcript = openStep([
+      { type: 'text', text: 'Let me look.', time: { start: NOW_MS - 28_000, end: NOW_MS - 27_000 } },
+      { type: 'tool', tool: 'bash', state: { status: 'running' } },
+    ]);
+    const row = baseRow({ payload: { ...baseRow().payload, placement: 'transcript' } });
+    expect(await executeQueuedContinue(row)).toBe('succeeded');
+    expect(requeues).toHaveLength(0);
+    expect(quickQueueControlRequests).toHaveLength(0);
+    expect(capturedBodies).toHaveLength(1);
+  });
+
+  test('Quick Queue steers when the runtime cannot say what the turn is doing', async () => {
+    boxRow = liveTurn();
+    let phaseReadFailed = false;
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
+      const href = String(url);
+      // Only the phase read carries this page size; the drain's own reads pass.
+      if (href.includes('/message?') && href.endsWith('&limit=8') && init?.method === 'GET' && !phaseReadFailed) {
+        phaseReadFailed = true;
+        return new Response('bad gateway', { status: 502 });
+      }
+      return realFetch(url, init);
+    }) as typeof fetch;
+    try {
+      const row = baseRow({ payload: { ...baseRow().payload, placement: 'transcript' } });
+      expect(await executeQueuedContinue(row)).toBe('succeeded');
+      expect(phaseReadFailed).toBe(true);
+      expect(quickQueueControlRequests).toHaveLength(0);
+      expect(capturedBodies).toHaveLength(1);
+    } finally {
+      // The wrapper is process-wide; a failed assertion must not leave it on.
+      globalThis.fetch = realFetch;
+    }
   });
 
   test('Queue List waits for the whole turn without arming a boundary interrupt', async () => {
@@ -1681,6 +1749,241 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
   });
 });
 
+
+// THE OWNER'S RULE, 2026-09-21: "However many quick queue prompts are being
+// added, they should all be sent together to the agent, not one by one. If I
+// have 5 prompts in the quick queue they should all be sent together. On the UI
+// there won't be any change — they all look separate — but under the hood the
+// agent responds to them in a grouped format."
+//
+// What makes that safe is `noReply` (OpenCode 1.18.23): the user message is
+// PERSISTED and no reply starts. So rows 1..N-1 go out with `noReply: true` and
+// only row N opens a turn. There is never a second reply to render under the
+// wrong prompt — the failure that made the drain send one row per pass.
+describe('a Quick Queue GROUP is one grouped turn', () => {
+  const wireFor = (offsetMinutes: number, random: number) =>
+    mintWireMessageId({ nowMs: NOW_MS - offsetMinutes * 60_000, random: () => random }).id;
+
+  const quickRow = (
+    commandId: string,
+    text: string,
+    wireMessageId: string,
+    clientSentAtMs: number,
+    extra: { placement?: string | undefined; result?: Record<string, unknown> } = {},
+  ) =>
+    baseRow({
+      commandId,
+      idempotencyKey: `queue-${commandId}`,
+      result: extra.result ?? {},
+      payload: {
+        ...baseRow().payload,
+        text,
+        parts: [{ type: 'text', text }],
+        clientMessageId: `client-${commandId}`,
+        wireMessageId,
+        clientSentAtMs,
+        ...('placement' in extra ? { placement: extra.placement } : { placement: 'transcript' }),
+      },
+    });
+
+  const wireA = wireFor(9, 0.1);
+  const wireB = wireFor(8, 0.2);
+  const wireC = wireFor(7, 0.3);
+  const hintOf = (body: Record<string, unknown>) =>
+    (body.parts as Array<{ type: string; text?: string; synthetic?: boolean }>).filter(
+      (part) => part.synthetic === true,
+    );
+
+  test('three Quick Queue rows: two noReply posts, then ONE reply, all three closed delivered', async () => {
+    // Every row of the group is CLAIMED by this drain, and the real
+    // `hasInFlightPrompt` excludes exactly those ids (`inbox-admission.ts`), so
+    // none of them is "a sibling already on the wire" for the head.
+    claimed = [
+      quickRow('cmd-c', 'PROMPT-C', wireC, NOW_MS - 1_000),
+      quickRow('cmd-a', 'PROMPT-A', wireA, NOW_MS - 3_000),
+      quickRow('cmd-b', 'PROMPT-B', wireB, NOW_MS - 2_000),
+    ];
+    postDelayMs = 5;
+
+    const result = await drainSessionLifecycleQueue({ limit: 10 });
+    expect(result).toMatchObject({ claimed: 3, succeeded: 3, queued: 0 });
+
+    // CANONICAL SEND ORDER, one post at a time, ids strictly increasing.
+    expect(capturedBodies.map((body) => body.messageID)).toEqual([wireA, wireB, wireC]);
+    expect(capturedBodies.map((body) => body.noReply)).toEqual([true, true, undefined]);
+    expect(maxActivePosts).toBe(1);
+
+    // ONE turn is opened, by the LAST row. A `noReply` row can never be
+    // confirmed by the `session_turns` ledger — no turn names its id — so it is
+    // closed `delivered` at acceptance instead of being left `delivering`.
+    expect(forwardedCalls.map((call) => call.commandId)).toEqual(['cmd-c']);
+    expect(forwardedCalls[0]?.wireMessageId).toBe(wireC);
+    expect(succeededCalls).toEqual([
+      { commandId: 'cmd-a', result: { status: 'delivered' } },
+      { commandId: 'cmd-b', result: { status: 'delivered' } },
+    ]);
+    expect(requeues).toEqual([]);
+  });
+
+  test('the hidden hint rides on row N alone, and names the group size', async () => {
+    // Measured 2026-09-04: two user messages merged into one step and only the
+    // last was answered. The merge is deliberate now, so it is stated.
+    claimed = [
+      quickRow('cmd-a', 'PROMPT-A', wireA, NOW_MS - 3_000),
+      quickRow('cmd-b', 'PROMPT-B', wireB, NOW_MS - 2_000),
+      quickRow('cmd-c', 'PROMPT-C', wireC, NOW_MS - 1_000),
+    ];
+    await drainSessionLifecycleQueue({ limit: 10 });
+    expect(hintOf(capturedBodies[0])).toEqual([]);
+    expect(hintOf(capturedBodies[1])).toEqual([]);
+    expect(hintOf(capturedBodies[2])).toHaveLength(1);
+    expect(hintOf(capturedBodies[2])[0]?.text).toContain('3 messages in a row');
+    // The user's own text is untouched and still first.
+    expect((capturedBodies[2].parts as Array<{ text?: string }>)[0]?.text).toBe('PROMPT-C');
+  });
+
+  test('a group whose HEAD ended a streaming response tells the model not to resume it', async () => {
+    // Measured 2026-09-21: five prompts stopped an essay; the grouped reply
+    // answered them, then restarted the essay from "P1:". The row that ended
+    // the response is the FIRST of the group; the note must ride on the LAST,
+    // the only row that opens a reply.
+    claimed = [
+      quickRow('cmd-a', 'PROMPT-A', wireA, NOW_MS - 3_000, { result: { ended_response: true } }),
+      quickRow('cmd-b', 'PROMPT-B', wireB, NOW_MS - 2_000),
+      quickRow('cmd-c', 'PROMPT-C', wireC, NOW_MS - 1_000),
+    ];
+    await drainSessionLifecycleQueue({ limit: 10 });
+    expect(hintOf(capturedBodies[0])).toEqual([]);
+    expect(hintOf(capturedBodies[1])).toEqual([]);
+    const notes = hintOf(capturedBodies[2]).map((part) => part.text ?? '');
+    expect(notes).toHaveLength(2);
+    expect(notes[0]).toContain('3 messages in a row');
+    expect(notes[1]).toContain('Do not resume');
+  });
+
+  test('a single prompt that ended a streaming response carries the note alone', async () => {
+    claimed = [quickRow('cmd-a', 'PROMPT-A', wireA, NOW_MS - 3_000, { result: { ended_response: true } })];
+    await drainSessionLifecycleQueue({ limit: 10 });
+    expect(capturedBodies).toHaveLength(1);
+    expect(capturedBodies[0].noReply).toBeUndefined();
+    const notes = hintOf(capturedBodies[0]).map((part) => part.text ?? '');
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toContain('Do not resume');
+  });
+
+  test('N=1 is the ordinary delivery — no noReply, no hint', async () => {
+    claimed = [quickRow('cmd-a', 'PROMPT-A', wireA, NOW_MS - 3_000)];
+    await drainSessionLifecycleQueue({ limit: 10 });
+    expect(capturedBodies).toHaveLength(1);
+    expect(capturedBodies[0].noReply).toBeUndefined();
+    expect(hintOf(capturedBodies[0])).toEqual([]);
+    expect(forwardedCalls.map((call) => call.commandId)).toEqual(['cmd-a']);
+  });
+
+  test('a Queue List row is never grouped — it keeps its own turn and its own answer', async () => {
+    claimed = [
+      quickRow('cmd-a', 'PROMPT-A', wireA, NOW_MS - 3_000),
+      quickRow('cmd-list', 'PROMPT-LIST', wireB, NOW_MS - 2_000, { placement: 'composer' }),
+    ];
+    simulatedInFlightCommands.add('cmd-list');
+    await drainSessionLifecycleQueue({ limit: 10 });
+    expect(capturedBodies.map((body) => body.messageID)).toEqual([wireA]);
+    expect(capturedBodies[0].noReply).toBeUndefined();
+    expect(requeues.map((entry) => entry.commandId)).toEqual(['cmd-list']);
+  });
+
+  test('a row with NO placement is never grouped either', async () => {
+    claimed = [
+      quickRow('cmd-a', 'PROMPT-A', wireA, NOW_MS - 3_000),
+      quickRow('cmd-plain', 'PROMPT-PLAIN', wireB, NOW_MS - 2_000, { placement: undefined }),
+    ];
+    simulatedInFlightCommands.add('cmd-plain');
+    await drainSessionLifecycleQueue({ limit: 10 });
+    expect(capturedBodies.map((body) => body.messageID)).toEqual([wireA]);
+    expect(capturedBodies[0].noReply).toBeUndefined();
+    expect(requeues.map((entry) => entry.commandId)).toEqual(['cmd-plain']);
+  });
+
+  test('a HELD row is never grouped, and nothing jumps over it', async () => {
+    // The user pressed Stop on cmd-b. Skipping it would put cmd-c on the wire
+    // ahead of a message they still intend to send.
+    claimed = [
+      quickRow('cmd-a', 'PROMPT-A', wireA, NOW_MS - 3_000),
+      quickRow('cmd-b', 'PROMPT-B', wireB, NOW_MS - 2_000, { result: { held: true } }),
+      quickRow('cmd-c', 'PROMPT-C', wireC, NOW_MS - 1_000),
+    ];
+    simulatedInFlightCommands.add('cmd-b');
+    simulatedInFlightCommands.add('cmd-c');
+    await drainSessionLifecycleQueue({ limit: 10 });
+    expect(capturedBodies.map((body) => body.messageID)).toEqual([wireA]);
+    expect(capturedBodies[0].noReply).toBeUndefined();
+    expect(requeues.map((entry) => entry.commandId)).toEqual(['cmd-b', 'cmd-c']);
+  });
+
+  test('a failed noReply post STOPS the group — row N is never posted, the tail goes back in line', async () => {
+    // Order must hold. Posting row N normally after an earlier row of its group
+    // failed would answer a group the user never sent, in the wrong order.
+    promptResponsePlan = ['permanent-refusal'];
+    claimed = [
+      quickRow('cmd-a', 'PROMPT-A', wireA, NOW_MS - 3_000),
+      quickRow('cmd-b', 'PROMPT-B', wireB, NOW_MS - 2_000),
+      quickRow('cmd-c', 'PROMPT-C', wireC, NOW_MS - 1_000),
+    ];
+    const result = await drainSessionLifecycleQueue({ limit: 10 });
+    expect(capturedBodies.map((body) => body.messageID)).toEqual([wireA]);
+    expect(capturedBodies[0].noReply).toBe(true);
+    expect(failedCalls.map((call) => call.commandId)).toEqual(['cmd-a']);
+    expect(forwardedCalls).toEqual([]);
+    expect(requeues.map((entry) => entry.commandId)).toEqual(['cmd-b', 'cmd-c']);
+    expect(result).toMatchObject({ claimed: 3, failed: 1, queued: 2 });
+  });
+
+  test('STEERING a whole group into a live turn: every row placed above the tip, one reply', async () => {
+    // The turn is running a TOOL, so the head steers rather than ending it —
+    // and the whole pending group steers with it.
+    boxRow = {
+      status: 'active',
+      metadata: {
+        activeTurns: {
+          't-1': {
+            token: 't-1',
+            state: 'active',
+            opencodeSessionId: OC_SESSION_ID,
+            messageId: 'msg_other',
+            startedAtMs: NOW_MS - 30_000,
+          },
+        },
+      },
+    };
+    transcript = [
+      { info: { id: 'msg_other', role: 'user' }, parts: [{ type: 'text', text: 'go' }] },
+      {
+        info: {
+          id: NEWER_TRANSCRIPT_ID,
+          role: 'assistant',
+          parentID: 'msg_other',
+          time: { created: NOW_MS - 29_000 },
+        },
+        parts: [{ type: 'tool', tool: 'bash', state: { status: 'running' } }],
+      },
+    ];
+    claimed = [
+      quickRow('cmd-a', 'PROMPT-A', wireA, NOW_MS - 3_000),
+      quickRow('cmd-b', 'PROMPT-B', wireB, NOW_MS - 2_000),
+    ];
+
+    await drainSessionLifecycleQueue({ limit: 10 });
+    expect(quickQueueControlRequests).toHaveLength(0);
+    expect(capturedBodies).toHaveLength(2);
+    expect(capturedBodies.map((body) => body.noReply)).toEqual([true, undefined]);
+    // Both re-minted above the running turn's newest id, in send order.
+    const sent = capturedBodies.map((body) => wireIdTime(String(body.messageID)));
+    expect(sent[0]).toBeGreaterThan(wireIdTime(NEWER_TRANSCRIPT_ID)!);
+    expect(sent[1]).toBeGreaterThan(sent[0]!);
+    expect(hintOf(capturedBodies[1])).toHaveLength(1);
+    expect(forwardedCalls.map((call) => call.commandId)).toEqual(['cmd-b']);
+  });
+});
 
 test('a turn ending during admission requeue immediately wakes the head again', async () => {
   boxRow = { status: 'active', metadata: { activeTurns: {

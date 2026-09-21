@@ -43,8 +43,8 @@ function wireText(parts: readonly SessionPromptPart[]): string {
  *   The server keeps a send time only inside its ten-minute window, so an
  *   older message re-queues at the end of the list.
  * - Send now: removes the row and re-queues it in the Quick Queue
- *   (`sendNowQueuedMessage`), which runs ahead of the list and ends the
- *   running response at its next tool boundary.
+ *   (`sendNowQueuedMessage`), which runs ahead of the list and steers into
+ *   the running response, or ends it if it is streaming text.
  */
 export function useQueueEdit(input: {
   sessionId: string;

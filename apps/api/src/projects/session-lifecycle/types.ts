@@ -125,6 +125,23 @@ export interface ContinueSessionCommand {
   materializationKey?: string;
   /** Skip legacy first-message repair only for the pending-first row itself. */
   isPendingFirstPrompt?: boolean;
+  /**
+   * PERSIST THIS MESSAGE AND START NO REPLY (OpenCode 1.18.23,
+   * `SessionPromptAsyncData.noReply`).
+   *
+   * Set on rows 1..N-1 of a Quick Queue group, so the group's N messages
+   * produce exactly ONE reply — parented on row N, with all N in context. See
+   * `quick-queue-group.ts`.
+   */
+  noReply?: boolean;
+  /**
+   * How many messages the one reply has to address. Set only on row N of a
+   * group of N >= 2; it adds a hidden `synthetic` instruction part.
+   */
+  groupedMessageCount?: number;
+  /** The reply this delivery opens follows a response the user stopped by
+   *  typing over it; the wire post carries a hidden note saying so. */
+  endedResponse?: boolean;
 }
 
 /** JSON metadata used to gate the one-time repair of pre-materialization prompts. */

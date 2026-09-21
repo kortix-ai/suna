@@ -83,6 +83,32 @@ describe('extractTurnIdentity', () => {
       messageId: null,
     });
   });
+
+  test('a noReply prompt starts NO turn, so it gets no turn identity at all', () => {
+    // `noReply: true` (OpenCode 1.18.23) persists the user message and starts
+    // no reply. Recording a turn for it would open an `activeTurns` entry and a
+    // `session_turns` row that nothing can ever close: no reply runs, so no
+    // terminal event names that token, and the inbox admission gate would read
+    // the session as busy until the reaper swept it. Used by the Quick Queue
+    // group delivery (`quick-queue-group.ts`), where rows 1..N-1 are persisted
+    // with no reply and only row N opens the one turn.
+    const body = new TextEncoder().encode(
+      JSON.stringify({ messageID: 'msg_turn_1', noReply: true, parts: [] }),
+    );
+    expect(
+      extractTurnIdentity('/session/ses_root/prompt_async?directory=/workspace', body.buffer),
+    ).toBeNull();
+  });
+
+  test('noReply false or absent still starts a turn', () => {
+    const body = new TextEncoder().encode(
+      JSON.stringify({ messageID: 'msg_turn_2', noReply: false, parts: [] }),
+    );
+    expect(extractTurnIdentity('/session/ses_root/prompt_async', body.buffer)).toEqual({
+      opencodeSessionId: 'ses_root',
+      messageId: 'msg_turn_2',
+    });
+  });
 });
 
 describe('daemon-delivered initial turn authority', () => {

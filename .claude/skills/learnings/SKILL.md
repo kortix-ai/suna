@@ -7123,3 +7123,170 @@ no balance), flow `COST-3` (a real sandbox on a legacy-default free account
 opens a compute window), `credit-plans.test.ts` (`accountRowMetersCompute`
 truth table), and `r8-session-prompts.test.ts`, whose `checkBillingActive` mock
 throws. No enforcer yet for rule (1) in general — it is a review habit.
+
+### 2026-09-21 — A steer is read at a step boundary, and a text stream has none
+
+**When:** changing what a Quick Queue (`placement: transcript`) prompt does to
+a running response, or reading `inbox-admission.ts`.
+
+**Supersedes** the two 2026-09-17 Quick Queue entries ("Queue placement
+controls when the active response ends" and "Quick Queue must not wait behind
+Queue List to interrupt"). Their lane-order rule still holds. Their "the FIFO
+head arms the interrupt" rule does not: do not restore it.
+
+**Incident 1 — the cascade (2026-09-18, real sandbox).** A long turn A, then
+Quick Queue prompts B, C, D. B ended A at a tool boundary. C became head and
+ended B's turn. D ended C's. Replies B and C came back `MessageAbortedError`
+with zero characters. N prompts lost N-1 answers. So the head STEERS instead:
+admission returns `{ admit: true }`, the drain forwards the prompt into the
+live turn, OpenCode reads it at the next step boundary, one steer per turn
+(`turnAlreadySteered` — removed 2026-09-21, see the `noReply` entry below).
+
+**Incident 2 — the owner's report (2026-09-21, reproduced).** "Tell me about
+pigeons", five seconds into the answer, Enter on "crow vs pigeon". The steer
+was accepted, the UI showed it as working, and the pigeon answer streamed to
+its last character. "When I sent two prompts, the first prompt response should
+be stopped immediately. This is only happening with the text response not with
+the tool call thing." A tool call ends a step every few seconds. A streamed
+markdown answer is ONE step from first character to last.
+
+**Rules.**
+
+1. The head Quick Queue row reads what the turn is doing
+   (`live-turn-phase.ts`). Streaming text → admission returns the
+   `interruptAtBoundary` refusal; the drain requeues the row durably, THEN arms
+   the daemon, which aborts at once when no tool runs; the turn-end relay
+   promotes the same row. Anything else → steer.
+2. Only a prompt created at or after the turn's `startedAtMs` may end it. A
+   prompt that was already waiting was not typed over this response. With an
+   immediate abort the guarantee is: a burst loses at most the first
+   successor's partial answer, never N-1.
+3. A read that did not happen steers. Timeout, no endpoint, non-2xx, bad JSON,
+   a throw: all `'other'`. The 2.5s bound covers endpoint resolution and the
+   body, not the GET alone.
+4. OpenCode 1.18 does not persist text deltas. A text part is stored at
+   `text-start` as `{ text: '', time: { start } }` and written only at
+   `text-end`. A polled page shows `textLen: 0` for the whole stream (live:
+   0 chars on 4 of 4 polls while the wire had 120/274/479/709). An open text
+   part with `time.start` and empty text IS a live stream. Measure streaming
+   from the SSE feed, never from a polled transcript.
+5. SQL three-valued logic: `NOT (a OR b)` is NULL when one comparison reads a
+   missing jsonb key, and a NULL predicate drops the row. `turnAlreadySteered`
+   excluded the turn's own starter with a bare `NOT`, so a steer delivered
+   under its original wire id (no `redeliveredMessageId`) was never counted.
+   Write `(...) IS NOT TRUE`.
+
+**Live proof (2026-09-21, real sandbox, SSE-timed).** Text case, 2 of 2 runs:
+last text delta +1.3s and +2.0s after the second prompt's 202, the first
+answer ended `MessageAbortedError` at 863 and 864 chars against a 3013-char
+control, and the second prompt got its own answer parented on its delivered
+id. Tool case: steer delivered mid-`bash`, 0 aborts, the shell loop reached
+`tick-14`. Queue List over text and over tools: waited, 0 aborts.
+
+**Open, by decision — do not "fix" without the owner.**
+
+- Reasoning and the answer text are one step. A prompt sent while the model
+  is still reasoning reads `'other'` and steers; if that step then streams
+  text, the steer is unread until the text ends. A reasoning step is not ended
+  because reasoning also opens every tool step and the page cannot say which
+  one it is.
+- A steer delivery records a second `activeTurns` entry (seen live), so a
+  third Quick Queue prompt in a steered turn takes the plain `turn_active`
+  wait through `turns.length !== 1` before `turnAlreadySteered` is asked.
+  RESOLVED 2026-09-21 by `steerTargetTurn` — see the `noReply` entry below.
+- The turn a Quick Queue prompt ends reports `end_reason: "failed"`. The web
+  chat hides aborts; a consumer that counts `failed` turns counts these.
+- Undo and Send now re-create the row, so its `created_at` is now and it
+  counts as typed over the active turn.
+
+**Enforcement.** `live-turn-phase.test.ts` (classifier, fail-open, whole-read
+bound), `inbox-admission.test.ts` (text ends, pre-dated row steers, burst
+guarantee, Queue List never reads the phase),
+`queued-continue-inbox-delivery.test.ts` (durable requeue before the arm), and
+`integration-prompt-inbox.test.ts` "admitInboxPrompt against real rows" (lane
+order and live fail-open; the `turnAlreadySteered` SQL tests were replaced
+2026-09-21 when that dep was deleted — see the `noReply` entry below). No
+automated flow drives a real text stream:
+`SESS-25` does not exercise steer or text-end against a sandbox.
+
+---
+
+## 2026-09-21 — `noReply` is what makes batching the queue safe; one steer per turn is gone
+
+**Rule.** Deliver a whole pending Quick Queue group in one pass: rows 1..N-1
+with `noReply: true`, row N normally. Never post two ordinary prompts of one
+session back to back. A `noReply` post must never open a turn record.
+
+**Why batching was forbidden before.** Plain `/prompt_async` starts a reply for
+every message it takes. The drain therefore sent ONE inbox row per pass and put
+the claimed siblings back: with two ordinary posts "both rows reported
+delivered while the first answer rendered under the second prompt" (the note on
+the drain's lane loop, `engine.ts`). The same mechanism produced the 2026-09-04
+loss — "tell me HI" and "tell me bye" behind a 13-step turn, exactly one reply,
+"bye" — which is why forwarding was reverted (`4ee30a9c3b`) and why admission
+allowed only ONE steer per turn (`turnAlreadySteered`).
+
+**What changed.** OpenCode 1.18.23 accepts `noReply?: boolean` on
+`/prompt_async` (`SessionPromptAsyncData`): the user message is PERSISTED and no
+reply starts. So N messages can be put on the wire with exactly ONE reply,
+parented on the last of them, with all N in context. Both failures above need a
+second reply to exist. Neither has a mechanism any more, so the owner's rule is
+buildable: "However many quick queue prompts are being added, they should all be
+sent together to the agent, not one by one … under the hood the agent responds
+to them in a grouped format."
+
+**Rules.**
+
+1. `noReply` starts no turn, so it must record none. `extractTurnIdentity`
+   returns `null` for a `noReply` body, which is what stops `preview.ts` minting
+   a turn token at all — no `activeTurns` entry, no `session_turns` row. An
+   entry opened for a `noReply` post could never be closed: no reply runs, so no
+   terminal event names that token, and the inbox gate would read the session as
+   busy until the reaper swept the orphan.
+2. A `noReply` row closes `delivered` at acceptance, never `forwarded`.
+   `markCommandForwarded` leaves a row open until the `session_turns` ledger
+   names its wire id, and for a `noReply` post that never happens. Left open, it
+   stays in `listInboxPrompts` and the web dims that bubble as a queued prompt
+   (`working-turn.ts`, `pendingPromptsByMessageId`) under a message that is
+   already in the transcript.
+3. Order before completeness. If a `noReply` post fails, the group STOPS there:
+   row N is never posted normally, and that row and everything after it go back
+   in line. The rows already persisted stay persisted; the next group's final
+   post starts the one reply that reads them all.
+4. A merge must be STATED to the model. Two messages in one step answered only
+   the last (2026-09-04), so row N of a group of N>=2 carries one extra
+   `synthetic: true` text part naming the group size. `synthetic` is filtered by
+   `session-transcript-compact.ts`, by the web user bubble
+   (`apps/web/src/features/session/turn/user-message.tsx`, `parseAttachmentContent`)
+   and by `packages/sdk/src/transcript.ts` — verified before shipping, not
+   assumed. It is added at the wire, never in the durable row:
+   `sanitizeInboxPromptParts` would drop the flag, and a stored hint would be
+   re-sent by a redelivery whose group no longer exists.
+5. A steered session holds TWO recorded turns, and that is normal. The steer is
+   its own POST, so the proxy opens a second `activeTurns` entry while OpenCode
+   merges it into the one running reply. The previous
+   `turns.length === 1 ? turns[0] : null` therefore refused every Quick Queue
+   prompt sent after the first steer until the whole turn ended (recorded as an
+   open item in the 2026-09-21 steering entry above). `steerTargetTurn` picks the
+   NEWEST accepted turn instead — the message OpenCode parents its next step on,
+   and the only id the daemon's interrupt does not answer `stale` for.
+6. The drain's own group is not "a sibling already on the wire". Every row of a
+   group is CLAIMED when the head reaches admission, so `hasInFlightPrompt` takes
+   the group's ids as an exemption list. Without it the head reads its own tail
+   and refuses itself for ever.
+
+**Enforcement.** `quick-queue-group.test.ts` (group formation; composer,
+unplaced and held rows end a group; the hint), `sandbox-turn-lifecycle.test.ts`
+(`noReply` yields no turn identity), `inbox-admission.test.ts`
+(`steerTargetTurn`, the group exemption, a second head steers),
+`queued-continue-inbox-delivery.test.ts` (3 rows → 2 `noReply` posts + 1 reply,
+one turn opened, all three closed delivered; a failed `noReply` stops the group;
+N=1 unchanged; a whole group steers), `integration-prompt-inbox.test.ts` (the
+two-turn state and the exemption SQL against real rows).
+
+**Unverified, stated plainly.** No sandbox was run for this change. That
+OpenCode 1.18.23's server honours `noReply` by persisting the message and
+starting no reply is read from the pinned SDK type, not measured; the runtime
+bundle is baked into the image and is not in `node_modules`. Verify on a real
+session before this reaches anyone: five Quick Queue prompts, five bubbles, one
+answer addressing all five in order, and no row left `delivering`.

@@ -904,10 +904,24 @@ models remain billable. Subscription coverage does not include sandbox compute.
 
 `createSessionPrompt` and `useSessionPrompts().enqueue` accept an optional
 `placement: 'transcript' | 'composer'`. `transcript` (Quick Queue) runs before
-every `composer` (Queue List) entry and ends the active response after its
-current tool call. `composer` waits for the active response to finish. Each
-placement keeps submission order. A row without placement keeps its submission
-order ahead of `composer` entries and is presented as `composer`.
+every `composer` (Queue List) entry. It steers into a running tool step: the
+model reads it at the next step boundary. If the active response is streaming
+text, which has no step boundary, the server ends that response and runs the
+prompt next, unless the prompt was already waiting when that response started;
+then the prompt waits. `composer` waits for the active response to finish and
+never steers or ends it. Each placement keeps submission order. A row without
+placement keeps its submission order ahead of `composer` entries and is
+presented as `composer`.
+
+Consecutive `transcript` rows are delivered as ONE GROUP and answered once.
+Every pending `transcript` row of the session that is deliverable now goes out
+in submission order, and only the last one starts a reply — so N Quick Queue
+prompts produce N user messages and one answer addressing all N, in order,
+rather than N turns. This is a server-side delivery detail: each row keeps its
+own `prompt_id`, its own `message_id` and its own transcript bubble, the reply
+is parented on the LAST message of the group, and the earlier messages are
+ordinary finished user messages. A `composer` row, an unplaced row, and a held
+row are never grouped.
 
 `SessionPrompt.full_text` preserves complete text for rendering after reload;
 `text` remains the bounded preview. List responses expose attachment names and

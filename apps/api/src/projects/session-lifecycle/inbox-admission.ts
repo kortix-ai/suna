@@ -1,33 +1,111 @@
 import { sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
-import { and, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, eq, inArray, ne, notInArray, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
-import { RUNNING_SANDBOX_STATUSES, storedSandboxTurns } from '../sandbox-turn-lifecycle';
+import {
+  RUNNING_SANDBOX_STATUSES,
+  storedSandboxTurns,
+  type StoredSandboxTurn,
+} from '../sandbox-turn-lifecycle';
 import { reconcileInboxTurn } from './inbox-turn-recovery';
 import { inboxPrecedesRow } from './inbox-order';
+import { readLiveTurnPhase, type LiveTurnPhase } from './live-turn-phase';
 import type { InboxAdmissionReason, SessionLifecycleCommandRow } from './store';
-import { wireMessageIdMatches } from './wire-id-match';
 
 /**
  * The inbox's admission gate.
  *
- * ONE QUEUED MESSAGE RUNS AT A TIME, IN ORDER, AND EACH GETS ITS OWN ANSWER.
+ * A QUEUED MESSAGE RUNS IN ORDER AND GETS ITS OWN ANSWER — unless it steers.
  * A prompt sits in `session_lifecycle_commands` until the session's turn is
- * over AND every older prompt has left the delivery path. The first Quick
- * Queue prompt may end that turn after its current tool call finishes. Queue
- * List prompts wait for natural turn completion.
+ * over AND every older prompt has left the delivery path. Queue List prompts
+ * always wait for natural turn completion. Quick Queue STEERS into the running
+ * turn. The one exception is a response that is STREAMING TEXT: a prompt typed
+ * over it ENDS it and runs next (below).
  *
- * The turn half is not belt-and-braces on the order half — it is the whole
- * feature. OpenCode picks up new user messages at STEP boundaries INSIDE a
- * running turn, and it "parents each step on the newest user message and
- * answers everything before it in that step" (`forwarded-placement.ts`). So
- * every prompt forwarded into a live turn is merged into whatever step reaches
- * it: two queued messages share one answer, and the earlier one is simply
- * never spoken. Measured 2026-09-04 — a 13-step research turn with "tell me
- * HI" and "tell me bye" queued behind it produced exactly one reply, "bye".
+ * WHY THE MERGE IS THE WHOLE QUESTION. OpenCode picks up new user messages at
+ * STEP boundaries INSIDE a running turn, and it "parents each step on the
+ * newest user message and answers everything before it in that step"
+ * (`forwarded-placement.ts`). So a prompt forwarded into a live turn is merged
+ * into whatever step reaches it. Measured 2026-09-04 — a 13-step research turn
+ * with "tell me HI" and "tell me bye" queued behind it produced exactly one
+ * reply, "bye". The first message was never spoken.
  *
- * Forwarding mid-turn was tried (`4ee30a9c3b`) to remove the gap between
- * queued messages. It bought that merge. The gap it was removing is gone by
- * other means: `promoteNextInboxRow` is AWAITED on the daemon's own
+ * That measurement is why forwarding (`4ee30a9c3b`) was reverted, and it still
+ * stands for the Queue List lane. What changed is WHICH PROMPTS ARE FORWARDED.
+ * In 2026-09-04 there were no placement lanes — they arrived 2026-09-17
+ * (`cea48e1b66`) — so two independent QUESTIONS were merged and the user
+ * rightly expected two answers. A merge is the defect for a queue and the point
+ * of steering: a steer is a correction to work already running, and one answer
+ * accounting for it is the outcome asked for. So only the Quick Queue lane
+ * forwards.
+ *
+ * ONE STEER PER TURN WAS THE BOUND, AND IT IS GONE (2026-09-21). It existed so
+ * a second forwarded prompt could not go unspoken inside a shared step. The
+ * owner's rule replaces it: "However many quick queue prompts are being added,
+ * they should all be sent together to the agent, not one by one … under the
+ * hood the agent responds to them in a grouped format." So a whole pending
+ * Quick Queue GROUP steers at once (`quick-queue-group.ts`): rows 1..N-1 are
+ * posted with `noReply: true` — persisted, no reply started — and row N is
+ * posted normally, carrying a hidden `synthetic` instruction to answer every
+ * message of the group in order. Exactly one reply exists, so the "HI / bye"
+ * loss has no mechanism left, and `turnAlreadySteered` (the dep that enforced
+ * the bound) is deleted.
+ *
+ * THAT MEANS A SESSION CAN HOLD MORE THAN ONE RECORDED TURN. A steer is its own
+ * `/prompt_async` POST, so the proxy opens a second `activeTurns` entry for it
+ * even though OpenCode merges it into the one running reply. `turns.length === 1`
+ * used to gate every decision below, which wedged every Quick Queue prompt sent
+ * after the first steer until the turn ended. `steerTargetTurn` picks the
+ * NEWEST accepted turn instead — the message OpenCode parents its next step on,
+ * and the message the daemon's interrupt calls newest.
+ *
+ * A TEXT STREAM HAS NO STEP BOUNDARY, SO A STEER INTO IT IS NEVER READ. A tool
+ * call ends a step every few seconds, which is why steering works during tool
+ * work. A streamed markdown answer is ONE step from its first character to its
+ * last. Reported by the owner and reproduced 2026-09-21: "tell me about
+ * pigeons", five seconds into the answer, Enter on "crow vs pigeon". The steer
+ * was admitted, the UI showed it as working, and the pigeon answer streamed to
+ * its end before anything read it. "When I sent two prompts, the first prompt
+ * response should be stopped immediately. This is only happening with the text
+ * response not with the tool call thing." So the head Quick Queue prompt asks
+ * what the turn is doing (`readLiveTurnPhase`), and for a text stream admission
+ * returns the `interruptAtBoundary` refusal instead of `{ admit: true }`. The
+ * machinery behind that refusal already existed: the drain requeues the row
+ * durably, THEN arms the daemon (`quick-queue-interrupt.ts`), whose check
+ * aborts at once when no tool is running; the turn-end relay promotes this
+ * same row and it runs as the next turn.
+ *
+ * ONLY A PROMPT TYPED OVER THE RESPONSE MAY END IT: the row must have been
+ * created at or after the active turn started. Measured 2026-09-18 on a real
+ * sandbox — a long turn A, then Quick Queue prompts B, C, D: B ended A, C
+ * became head and ended B's turn, D ended C's. Replies B and C came back
+ * `MessageAbortedError` with zero characters; N prompts lost N-1 answers. C
+ * and D were already waiting before the turn they killed began, so they were
+ * never a reaction to it. They steer or wait. This replaces the earlier
+ * `turnStartedByQuickQueue` guard, which refused by WHO started the turn and
+ * so also refused the owner's case (a prompt typed over a Quick Queue
+ * prompt's own streamed answer).
+ *
+ * THE EXACT GUARANTEE, because the abort is now immediate: a prompt can end
+ * only a turn that STARTED BEFORE IT WAS CREATED (`startedAtMs` is stamped when
+ * delivery begins). B ends A's text and B's turn starts about a second later,
+ * so a C typed after that, while B is already writing text, ends B — C was
+ * typed over B's answer, which is the owner's rule. D predates C's turn and
+ * cannot end it. A burst therefore loses at most the first successor's partial
+ * answer, never N-1.
+ *
+ * TWO WINDOWS THIS DOES NOT CLOSE, both by decision, both still the reported
+ * symptom for the prompt inside them:
+ *   • REASONING AND THE ANSWER ARE ONE STEP. A prompt sent while the model is
+ *     still reasoning reads 'other' and steers; if that step goes on to stream
+ *     text, the steer sits unread until the text ends. A reasoning step is not
+ *     ended because reasoning opens every TOOL step as well, and the page
+ *     cannot say which one this is; ending those is the half-finished-work
+ *     loss steering exists to prevent. Open product decision, recorded in the
+ *     learnings register.
+ *   • A PRE-DATED row steered into a text stream is unread until the text ends.
+ *
+ * For every prompt that does NOT steer, the gap forwarding was removing is
+ * gone by other means: `promoteNextInboxRow` is AWAITED on the daemon's own
  * `session.idle` relay (`routes/r4.ts`, "THE TURN ENDED — the session's next
  * queued prompt is admissible NOW"), and the backoff below is now a 2s-capped
  * fallback rather than the 30s ceiling that produced the measured dead air.
@@ -79,7 +157,10 @@ export type InboxAdmission =
       admit: false;
       reason: InboxAdmissionReason;
       retryAfterMs: number;
-      /** Only the first Quick Queue row may end the active turn at a tool boundary. */
+      /** Set only for the head Quick Queue row typed over a response that is
+       *  streaming text: the drain arms the daemon's interrupt against exactly
+       *  this turn AFTER the row is durably requeued. With no tool running the
+       *  daemon aborts at once. */
       interruptAtBoundary?: { opencodeSessionId: string; messageId: string };
     };
 
@@ -135,13 +216,30 @@ export interface InboxAdmissionDeps {
   ) => Promise<boolean>;
   /** Is another prompt of this session ALREADY CLAIMED and mid-delivery?
    *  Separate from the ordering read because it binds even a promoted row. */
-  hasInFlightPrompt: (sessionId: string, exceptCommandId: string) => Promise<boolean>;
-  /** Is this turn the answer to a Quick Queue prompt? Such a turn is never
-   *  interrupted by the next Quick Queue prompt. */
-  turnStartedByQuickQueue?: (sessionId: string, messageId: string) => Promise<boolean>;
+  /** A LIST, not one id: the drain hands the whole Quick Queue GROUP it is
+   *  delivering. Every row of a group is CLAIMED (`running`) when the head
+   *  reaches admission, so without the exemption the head reads its own group
+   *  as a sibling already on the wire and refuses itself for ever. */
+  hasInFlightPrompt: (sessionId: string, exceptCommandIds: readonly string[]) => Promise<boolean>;
+  /** What is the active turn doing right now? A READ, never an action — the
+   *  arm stays in the drain, after the durable requeue. Only `'text'` changes
+   *  the decision, and a throw, a rejection, or an absent dep all steer: a
+   *  read that did not happen must never end someone's response. */
+  readLiveTurnPhase?: (
+    sessionId: string,
+    active: { opencodeSessionId: string; messageId: string },
+    actorUserId?: string | null,
+  ) => Promise<LiveTurnPhase>;
 }
 
-const liveDeps: InboxAdmissionDeps = {
+/** What admission needs to know that is not on the row itself. */
+export interface InboxAdmissionOptions {
+  /** The OTHER rows of this delivery's Quick Queue group, all claimed by the
+   *  same drain — see `hasInFlightPrompt`. */
+  groupCommandIds?: readonly string[];
+}
+
+export const liveInboxAdmissionDeps: InboxAdmissionDeps = {
   reconcileTurn: reconcileInboxTurn,
   async readSandbox(sessionId) {
     const [box] = await db
@@ -174,7 +272,7 @@ const liveDeps: InboxAdmissionDeps = {
       .limit(1);
     return !!older;
   },
-  async hasInFlightPrompt(sessionId, exceptCommandId) {
+  async hasInFlightPrompt(sessionId, exceptCommandIds) {
     const [running] = await db
       .select({ commandId: sessionLifecycleCommands.commandId })
       .from(sessionLifecycleCommands)
@@ -183,37 +281,131 @@ const liveDeps: InboxAdmissionDeps = {
           eq(sessionLifecycleCommands.sessionId, sessionId),
           eq(sessionLifecycleCommands.commandType, 'continue_session'),
           eq(sessionLifecycleCommands.status, 'running'),
-          ne(sessionLifecycleCommands.commandId, exceptCommandId),
+          exceptCommandIds.length > 0
+            ? notInArray(sessionLifecycleCommands.commandId, [...exceptCommandIds])
+            : undefined,
         ),
       )
       .limit(1);
     return !!running;
   },
-  async turnStartedByQuickQueue(sessionId, messageId) {
-    const [quick] = await db
-      .select({ commandId: sessionLifecycleCommands.commandId })
-      .from(sessionLifecycleCommands)
-      .where(
-        and(
-          eq(sessionLifecycleCommands.sessionId, sessionId),
-          eq(sessionLifecycleCommands.commandType, 'continue_session'),
-          wireMessageIdMatches(messageId),
-          sql`${sessionLifecycleCommands.payload}->>'placement' = 'transcript'`,
-        ),
-      )
-      .limit(1);
-    return !!quick;
+  async readLiveTurnPhase(sessionId, active, actorUserId) {
+    // `engine.ts` imports this module, so its endpoint resolution is reached
+    // lazily — the same way `inbox-turn-recovery.ts` reaches `./store` — and
+    // no static cycle exists. Bounded and fail-open inside `readLiveTurnPhase`.
+    return readLiveTurnPhase(sessionId, active, actorUserId, {
+      resolveEndpoint: async (id, actor) => {
+        const { resolveSessionOpencodeEndpoint } = await import('./engine');
+        return resolveSessionOpencodeEndpoint(id, actor);
+      },
+    });
   },
 };
 
+/**
+ * WHICH recorded turn is the response a steer goes into.
+ *
+ * A session can hold more than one `activeTurns` entry, and after 2026-09-21
+ * that is ordinary rather than exotic: a steer is its own `/prompt_async` POST,
+ * so the proxy opens a second entry for it (`preview.ts`'s
+ * `beginTurnLifecycle`) while OpenCode merges it into the one running reply.
+ * The previous `turns.length === 1 ? turns[0] : null` therefore refused every
+ * Quick Queue prompt sent after the first steer until the whole turn ended.
+ *
+ * The NEWEST accepted turn is the right answer for both decisions that use it:
+ * OpenCode parents each later step on the newest user message, so that is the
+ * id `liveTurnPhaseFromPage` must match a step against, and it is the id the
+ * daemon's interrupt calls newest (anything older is answered `stale` and
+ * disarmed — `quick-queue-interrupt.ts`).
+ *
+ *  - `state: 'delivering'` is excluded: that POST has not been accepted, so
+ *    nothing of it exists to read a step against.
+ *  - A turn with no `messageId` is excluded for the same reason.
+ *  - A TOTAL order, so the choice cannot depend on jsonb key order:
+ *    `startedAtMs` first (a legacy record has none and sorts lowest), then the
+ *    wire id, which is time-ordered because `msg_<hex clock>` is minted from a
+ *    clock (`wire-message-id.ts`).
+ */
+export function steerTargetTurn(
+  turns: readonly StoredSandboxTurn[],
+): (StoredSandboxTurn & { messageId: string }) | null {
+  let best: (StoredSandboxTurn & { messageId: string }) | null = null;
+  for (const turn of turns) {
+    if (turn.state !== 'active' || !turn.messageId) continue;
+    const candidate = turn as StoredSandboxTurn & { messageId: string };
+    if (best === null) {
+      best = candidate;
+      continue;
+    }
+    const started = (candidate.startedAtMs ?? -1) - (best.startedAtMs ?? -1);
+    if (started > 0 || (started === 0 && candidate.messageId > best.messageId)) best = candidate;
+  }
+  return best;
+}
+
+/**
+ * Does this row STEER — is it to be placed into the running turn rather than
+ * held behind it?
+ *
+ * Quick Queue IS steering; that is what the lane means. A Queue List entry is a
+ * queue by definition — it waits for the active response and gets its own
+ * answer. A prompt with no placement (a first prompt, an automation, an older
+ * producer) is not a correction to work in flight, so it queues too.
+ */
+export function promptSteers(row: SessionLifecycleCommandRow): boolean {
+  return (row.payload as { placement?: unknown } | null)?.placement === 'transcript';
+}
+
+/**
+ * Was this prompt typed OVER the active response — created at or after the
+ * instant its turn started?
+ *
+ * A prompt that was already waiting when the turn began (rapid-fire B, C, D
+ * behind A) is not a reaction to what this turn is writing, so it may not end
+ * it. A legacy `activeTurn` record has no start instant (`startedAtMs: null`),
+ * and "typed over it" cannot be proven against a number nobody measured.
+ */
+export function promptTypedOverTurn(
+  row: Pick<SessionLifecycleCommandRow, 'createdAt'>,
+  turnStartedAtMs: number | null,
+): boolean {
+  if (turnStartedAtMs === null) return false;
+  const createdAtMs = row.createdAt instanceof Date ? row.createdAt.getTime() : Number.NaN;
+  return Number.isFinite(createdAtMs) && createdAtMs >= turnStartedAtMs;
+}
+
+/** The phase read, FAILED OPEN. Anything that is not a clean `'text'` — no dep,
+ *  a synchronous throw, a rejection — is `'other'`, which steers. */
+async function liveTurnPhase(
+  deps: InboxAdmissionDeps,
+  row: SessionLifecycleCommandRow,
+  active: { opencodeSessionId: string; messageId: string },
+): Promise<LiveTurnPhase> {
+  if (!deps.readLiveTurnPhase || !row.sessionId) return 'other';
+  try {
+    return await deps.readLiveTurnPhase(row.sessionId, active, row.actorUserId);
+  } catch (err) {
+    console.warn('[session-lifecycle] live turn phase read failed — steering instead', {
+      sessionId: row.sessionId,
+      commandId: row.commandId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return 'other';
+  }
+}
+
 export async function admitInboxPrompt(
   row: SessionLifecycleCommandRow,
-  deps: InboxAdmissionDeps = liveDeps,
+  deps: InboxAdmissionDeps = liveInboxAdmissionDeps,
+  options: InboxAdmissionOptions = {},
 ): Promise<InboxAdmission> {
   // A row with no session cannot be ordered or gated. Admit it so the drain
   // reaches its own honest failure instead of requeueing it for ever.
   if (!row.sessionId) return { admit: true };
 
+  /** This row plus the rest of its group: the claims THIS delivery owns, and
+   *  therefore the ones "is a sibling already on the wire?" must not count. */
+  const mine = [row.commandId, ...(options.groupCommandIds ?? [])];
   const refusals = admissionRefusals(row.result);
   const orderBackoffMs = admissionBackoffMs(
     INBOX_ORDER_BACKOFF_MS,
@@ -221,41 +413,61 @@ export async function admitInboxPrompt(
     refusals,
   );
 
-  // A live turn holds delivery for both placements. Quick Queue may request
-  // an interrupt at the next tool boundary, but it is still never forwarded
-  // into that turn: the terminal relay admits it as its own turn afterward.
+  // A live turn holds delivery for Queue List, and for a row with no
+  // placement, always. For the head Quick Queue row it depends on what the
+  // turn is doing:
+  //   • streaming text, and the row was typed over it — held, with the
+  //     interrupt: the response ends NOW and this row runs as the next turn.
+  //   • anything else — the prompt is PLACED INTO the running turn and the
+  //     model reads it at its next step boundary. The whole pending Quick Queue
+  //     GROUP goes in with it (`quick-queue-group.ts`), as one grouped answer.
   let sandbox = await deps.readSandbox(row.sessionId);
   if (sessionHoldsTurnAuthority(sandbox)) {
-    // Only the head may reconcile or arm an interrupt. Quick Queue sorts ahead
-    // of every Queue List row (`inbox-order.ts`), so its head arms the
-    // interrupt even while older Queue List entries wait.
+    // Only the head may reconcile, steer, or end a text stream. Quick Queue
+    // sorts ahead of every Queue List row (`inbox-order.ts`), so its head does
+    // so even while older Queue List entries wait.
     const isHead =
-      !(await deps.hasInFlightPrompt(row.sessionId, row.commandId)) &&
+      !(await deps.hasInFlightPrompt(row.sessionId, mine)) &&
       !(await deps.hasOlderPendingPrompt(row.sessionId, row));
     if (deps.reconcileTurn && isHead) {
       await deps.reconcileTurn(row.sessionId);
       sandbox = await deps.readSandbox(row.sessionId);
     }
     if (sessionHoldsTurnAuthority(sandbox)) {
-      const turns = storedSandboxTurns(sandbox?.metadata);
-      const active = turns.length === 1 ? turns[0] : null;
-      // A Quick Queue prompt ends the turn it jumped ahead of, never the answer
-      // to an earlier Quick Queue prompt. Without this, each of N Quick Queue
-      // prompts ends the previous one's turn and N-1 answers are lost.
-      const interruptAtBoundary =
-        isHead &&
-        (row.payload as { placement?: unknown } | null)?.placement === 'transcript' &&
-        active?.state === 'active' &&
-        active.messageId &&
-        !(await deps.turnStartedByQuickQueue?.(row.sessionId, active.messageId))
-          ? { opencodeSessionId: active.opencodeSessionId, messageId: active.messageId }
-          : undefined;
-      return {
-        admit: false,
-        reason: 'turn_active',
-        retryAfterMs: orderBackoffMs,
-        ...(interruptAtBoundary ? { interruptAtBoundary } : {}),
-      };
+      // The NEWEST accepted turn, not "the only one" — see `steerTargetTurn`.
+      const active = steerTargetTurn(storedSandboxTurns(sandbox?.metadata));
+
+      // Only the head Quick Queue row acts on a live turn, and only on a turn
+      // that has an accepted message to be read against. Everything else —
+      // Queue List, no placement, a row behind another, a turn still
+      // delivering — waits for the turn-end relay and arms nothing.
+      if (isHead && promptSteers(row) && active) {
+        // A TEXT STREAM IS ENDED, NOT STEERED — see the file header. Checked
+        // in cost order: the clock comparison is free, the phase read is a
+        // round trip to the box, so a row that may not end this turn never
+        // pays for the answer.
+        const identity = { opencodeSessionId: active.opencodeSessionId, messageId: active.messageId };
+        if (
+          promptTypedOverTurn(row, active.startedAtMs) &&
+          (await liveTurnPhase(deps, row, identity)) === 'text'
+        ) {
+          return {
+            admit: false,
+            reason: 'turn_active',
+            retryAfterMs: orderBackoffMs,
+            interruptAtBoundary: identity,
+          };
+        }
+
+        // STEERING. The prompt goes INTO this turn: the drain places it above
+        // the transcript's tip (`forwarded-placement.ts`), OpenCode reads it
+        // at its next step boundary, and the work in flight is kept. Ending a
+        // turn in the middle of TOOL work is what threw away a half-written
+        // file or a running migration.
+        return { admit: true };
+      }
+
+      return { admit: false, reason: 'turn_active', retryAfterMs: orderBackoffMs };
     }
   }
 
@@ -265,7 +477,7 @@ export async function admitInboxPrompt(
   // of it. Admitting a second prompt into that window races two deliveries of
   // one session, and OpenCode orders what it receives by ARRIVAL — so the loser
   // of that race is the message the user typed FIRST.
-  if (await deps.hasInFlightPrompt(row.sessionId, row.commandId)) {
+  if (await deps.hasInFlightPrompt(row.sessionId, mine)) {
     return { admit: false, reason: 'older_prompt_pending', retryAfterMs: orderBackoffMs };
   }
 

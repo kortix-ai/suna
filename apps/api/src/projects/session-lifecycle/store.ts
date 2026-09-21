@@ -465,6 +465,11 @@ export async function requeueForAdmission(
   commandId: string,
   reason: InboxAdmissionReason,
   availableAt: Date,
+  /** This refusal ENDS the active response (a prompt typed over streaming
+   *  text). Stamped here, in the same durable write, so the delivery that
+   *  follows can tell the model the stop was deliberate — see
+   *  `quickQueueInterruptNote`. Never cleared: it stays true of this row. */
+  options: { endedResponse?: boolean } = {},
 ): Promise<void> {
   await db
     .update(sessionLifecycleCommands)
@@ -475,7 +480,7 @@ export async function requeueForAdmission(
       lockedUntil: null,
       attempts: sql`GREATEST(${sessionLifecycleCommands.attempts} - 1, 0)`,
       result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb)
-        || ${JSON.stringify({ admission_reason: reason })}::jsonb
+        || ${JSON.stringify({ admission_reason: reason, ...(options.endedResponse ? { ended_response: true } : {}) })}::jsonb
         || jsonb_build_object('admission_refusals',
              COALESCE((${sessionLifecycleCommands.result}->>'admission_refusals')::int, 0) + 1)`,
       payload: sql`${sessionLifecycleCommands.payload} || '{"remintOnDelivery": true}'::jsonb`,

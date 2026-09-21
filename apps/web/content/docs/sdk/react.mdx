@@ -123,13 +123,37 @@ that require the computer become available when the runtime is ready.
 ### Pending prompts
 
 `useSessionPrompts(projectId, sessionId)` submits to the durable session inbox.
-The server runs pending prompts automatically, each as its own turn.
+The server runs pending prompts automatically.
 
 Pass `placement: 'transcript'` to display a pending message in the conversation.
-It runs before every `composer` entry and ends the active response after the
-current tool call completes.
+It runs before every `composer` entry. What it does to the active response
+depends on what that response is doing:
+
+- **Running a tool, reasoning, or between steps.** The prompt steers. The server
+  places it into the running turn and the model reads it at its next step
+  boundary. The work in progress is kept and one answer accounts for both.
+- **Streaming text.** A text stream has no step boundary, so nothing reads a
+  steer until the text finishes. The server ends that response immediately and
+  runs the prompt as the next turn. Only a prompt submitted after the response
+  started ends it; a prompt that was already waiting steers or waits.
+
+Reasoning and the answer text are one step. A prompt that steers while the
+model is still reasoning is read after that step's text finishes.
+
+**Consecutive `transcript` prompts are answered together.** The server delivers
+every pending `transcript` row of one session as one group, in submission
+order, and only the last one of the group starts a reply. So five Quick Queue
+prompts produce five user messages and ONE answer that addresses all five, in
+order, instead of five separate turns. Nothing changes in your client: each
+prompt is still its own row, each keeps its own message id, and each renders as
+its own bubble. The answer is parented on the LAST message of the group, and
+the earlier messages render as ordinary finished user messages — not as pending
+or queued. A `composer` row, a row with no placement, and a held row are never
+grouped.
+
 Pass `placement: 'composer'` to keep it in the editable list above the input.
-It waits for the active response to finish. Each placement keeps submission order.
+It waits for the active response to finish, never steers, never ends a
+response, and receives its own turn. Each placement keeps submission order.
 The web composer uses Enter for transcript placement and Command+Enter
 (Control+Enter on Windows/Linux) for composer placement. Shift+Enter inserts a newline.
 
