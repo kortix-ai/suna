@@ -73,5 +73,8 @@ describe('buildFormCard', () => {
     expect(buildFormCard({ fields: [] })).toBeNull();
     expect(buildFormCard({ fields: [{ id: '  ', label: 'nameless' }] })).toBeNull();
     expect(buildFormCard({ fields: [{ id: 'x', label: 'Pick', type: 'choice', choices: [] }] })).toBeNull();
+    // `fieldIds` is comma-joined on the submit action, so a comma in an id
+    // would split one answer into two when it comes back.
+    expect(buildFormCard({ fields: [{ id: 'a,b', label: 'Comma' }] })).toBeNull();
   });
 });

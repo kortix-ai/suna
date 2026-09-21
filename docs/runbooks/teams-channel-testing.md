@@ -639,10 +639,10 @@ message now carries an explicit model every time, even when the pin already
 reads images. Trusting the recorded pin is what let a stale runtime model
 answer an image turn.
 
-Also this round: the pin is now confirmed with `isModelServableForAccount` on
-every channel message rather than only when it is missing from the in-memory
-catalog, because the two disagree. `deepseek-v4-flash` IS in the catalog and
-still fails upstream:
+Also this round: the pin is confirmed with `isModelServableForAccount` on
+every channel message. Presence in `gatewayModelCatalog` is deliberately NOT
+used as a cheap pre-filter, because the catalog and the gate disagree —
+`deepseek-v4-flash` IS in the catalog and still fails upstream:
 
 ```
 The "deepseek-v4-flash-0731" model requires Kortix's managed provider,
@@ -651,3 +651,134 @@ which is disabled on this deployment.
 
 The probe result is cached for 60 s per account+project+model, so a burst of
 chat messages probes once.
+
+### Round four: a codex model needs the AGENT's secret grant
+
+With the explicit pin in, the reroute did its job — and the turn still failed:
+
+```
+Run failed — The running agent cannot use ChatGPT connections.
+```
+
+`llm-gateway/resolution/resolve-candidates.ts` refuses a `codex/*` model unless
+`CODEX_AUTH_JSON` is on the RUNNING AGENT's grant. `isModelServableForAccount`
+probes with no agent grant, so `Array.isArray(principal.agentGrant?.env)` is
+false, the check is skipped and the probe answers yes. `PUT /sessions/:id/model`
+accepted `codex/gpt-6-astra` for the same reason.
+
+`channelTurnModel` now resolves the agent grant (lazily, only when a codex
+candidate is reached) and skips codex models the agent may not use. Rerouting
+onto a guaranteed failure is worse than not rerouting.
+
+**Where that leaves dev.** For project `40c2e222`, no model is both
+image-capable and runnable:
+
+| model | image input | why it fails |
+|---|---|---|
+| `gpt-5.6-luna` | yes | managed provider disabled on this deployment |
+| `glm-5.3-flash` | **no** | `attachment: true` but text-only modalities |
+| `deepseek-v4-flash` / `-pro-0813` / `v4.1-flash` | no | text-only |
+| `codex/*` (5 models) | yes | agent grant lacks `CODEX_AUTH_JSON` |
+
+So an image message now carries an explicit note telling the agent it cannot
+see the image, to say so plainly and to not go looking for OCR. That is the
+honest outcome until one of these is fixed:
+
+1. Add `CODEX_AUTH_JSON` to the agent's secret grant, and connect a ChatGPT
+   account for the project. The five codex models then work.
+2. Enable Kortix's managed provider on dev, which brings back `gpt-5.6-luna`.
+3. Connect a BYOK vision model (many `qiniu-ai/*`, `modelis/*` and
+   `greenpt/*` entries publish an image modality).
+
+### Resolved: images work once the agent may use a codex model
+
+On dev the fix was one line in the project's own manifest
+(`managed-kortix/kaab-demo-40c2e222…`, `kortix.yaml`):
+
+```yaml
+agents:
+  kortix:
+    secrets:
+      - APIFOX_TEST
+      - GITHUB_TEST
+      - BROKER_PROOF
+      - CODEX_AUTH_JSON   # <- lets the agent use the account's ChatGPT connection
+```
+
+The account already had two active `CODEX_AUTH_JSON` resources; only the agent
+grant was missing. Immediately after, a prompt pinned to `codex/gpt-6-astra`
+read `/workspace/attachment.png` and answered:
+
+> The image shows a dark Microsoft Teams notification from Ivan Bagaric with
+> the message "yo."
+
+which matches the screenshot. The whole chain — download proxy, modality-based
+model choice, explicit per-prompt pin, codex grant — is verified end to end.
+
+### The sandbox CLI is baked into the image
+
+`teams ask`, `teams post` and `teams send --card-file` live in
+`apps/sandbox/slack-cli`, which `packages/shared/src/sandbox/dockerfile-layer.ts`
+COPYs into the snapshot. The snapshot builder reads that tree from the API
+container, so a CLI change ships with the API image and reaches **only
+sandboxes created after that deploy**. An existing sandbox keeps its old CLI
+forever.
+
+Measured on 2026-09-21: a sandbox from 2026-09-18 printed a `teams` help with
+no `--card-file` and no `ask`; a session created after the deploy printed the
+new help. That is why "ask me again, but in the nice UI" produced a step called
+"Building an Adaptive Card" and then nothing.
+
+**Probe before testing any agent-facing CLI change:**
+
+```
+prompt: Run exactly: teams 2>&1 | head -40 ; then paste the raw output.
+read back: GET /v1/p/<ext>/4096/session/<ses_…>/message
+```
+
+To exercise a new CLI command in Teams, start a conversation that has no
+session yet (a new channel, or unbind the existing thread) so a fresh sandbox
+is built.
+
+### The stale-turn sweep now ends the RUN, not just the card
+
+Both channel GC sweeps (`channels/slack/turn.ts`, `channels/teams/turn.ts`)
+close a turn that has been silent for 30 minutes. They now also
+`POST /session/:id/abort` on the runtime.
+
+Closing the card was never enough. On 2026-09-19 the ledger settled the dead
+turn `runtime_gone` and the GC closed the Adaptive Card, while OpenCode kept
+its assistant message OPEN — `time.created` set, `time.completed` absent — for
+two days. `prompt_async` accepted every later message in that conversation and
+ran none of them; two of the user's messages vanished with nothing shown to
+them. Aborting by hand flipped the open message to `MessageAbortedError` and
+the conversation accepted prompts again.
+
+The abort is best effort and imported lazily, so the channel modules keep no
+static edge into the session-lifecycle engine.
+
+### The "ask me in the nice UI" gap was stale skill guidance
+
+The `kortix-teams` skill said:
+
+> Do NOT use the built-in `question` tool on a Teams turn. It's a synchronous
+> web-UI/Slack construct and has no form renderer in Teams — calling it just
+> hangs or fails.
+
+That has not been true for some time. `channels/teams/questions.ts`
+`postTeamsQuestion` finalizes the live card, posts `buildQuestionCard` (a
+button per option, up to six) and returns **immediately** with a sentinel
+telling the agent that Teams questions are async and to end the turn. It
+cannot hang.
+
+So the agent was being told to avoid the one thing that renders controls, and
+it wrote its questions as a numbered list instead — which is exactly what
+"ask me again, but in the nice ui" was reacting to. The skill now says to ask
+with a card: the `question` tool for a quick either/or, `teams ask --form-file`
+for typed input or several answers, prose only when there is genuinely nothing
+to pick.
+
+Managed skills are baked into the image (`/opt/kortix/managed-skills`) and
+overlaid into every session at boot, so this reaches sandboxes built after the
+change — the same rule as the CLI, and the project repo's own copy is
+overridden by the overlay.

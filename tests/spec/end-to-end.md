@@ -1023,6 +1023,7 @@ These contracts use product IDs. They replace the old route-coverage bucket IDs.
 `CHN-T2` A project member reads the Microsoft Teams channel mode.
 `CHN-T3` A project manager starts Microsoft Teams connection. Invalid input and unauthorized callers are rejected.
 `CHN-T4` The Microsoft Teams messages webhook verifies its request before it starts work.
+`CHN-T5` An agent posts into a Microsoft Teams conversation its project is already in. A caller without connector write is refused, and a conversation the project does not own is not found.
 `CONN-16` A project manager deletes a connector credential. Unknown connectors and unauthorized callers are rejected.
 `CONN-17` A project member reads connector policies. Unknown connectors and non-members are rejected.
 `CONN-18` A project manager creates a connector setup request. Missing or unconnected connector slugs are rejected.

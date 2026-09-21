@@ -41,6 +41,25 @@ import { accountMayUseManagedModels } from '../billing/services/entitlements';
  * When nothing qualifies the answer is `null` and the turn runs unchanged.
  */
 
+/**
+ * A `codex/*` model needs `CODEX_AUTH_JSON` on the RUNNING AGENT's secret
+ * grant, not just on the project — `llm-gateway/resolution/resolve-candidates.ts`
+ * throws `The running agent cannot use ChatGPT connections.` otherwise.
+ *
+ * `isModelServableForAccount` does not model that: it probes without an agent
+ * grant, so the check is skipped and the probe says yes. Verified on dev
+ * 2026-09-21 — `PUT /sessions/:id/model` accepted `codex/gpt-6-astra`, and the
+ * turn that actually ran on it failed with exactly that message. So the grant
+ * is checked here, or an image turn gets rerouted onto a guaranteed failure.
+ */
+const CODEX_GRANT_ENV = 'CODEX_AUTH_JSON';
+
+/** `null` / non-array grant = unrestricted, matching the gateway's own test. */
+export function grantAllowsCodex(env: readonly string[] | 'all' | null | undefined): boolean {
+  if (!Array.isArray(env)) return true;
+  return env.some((name) => name.toUpperCase() === CODEX_GRANT_ENV);
+}
+
 /** How many candidates to probe. A probe is a candidate resolution, not an upstream request. */
 const MAX_CANDIDATE_PROBES = 8;
 
@@ -109,6 +128,7 @@ async function replacementCandidates(input: {
   principalUserId: string;
   currentModel: string | null;
   needsVision: boolean;
+  agentGrantEnv?: () => Promise<readonly string[] | 'all' | null>;
 }): Promise<string[]> {
   const { projectId, accountId, principalUserId, currentModel, needsVision } = input;
   const catalog = await servableProjectCatalog({ projectId, accountId, principalUserId }).catch(
@@ -130,11 +150,25 @@ async function replacementCandidates(input: {
 
   const usableIds = new Set(usable.map(([id]) => id));
   const current = currentModel ? wireModelId(currentModel) : null;
+  // Resolved at most once, and only if a codex candidate is actually reached.
+  let codexAllowed: boolean | null = null;
   const seen = new Set<string>();
   const out: string[] = [];
   for (const candidate of [...preferred, ...byCost]) {
     const wire = wireModelId(candidate);
     if (wire === current || seen.has(wire) || !usableIds.has(wire)) continue;
+    if (wire.startsWith('codex/')) {
+      if (codexAllowed === null) {
+        // FAIL CLOSED. If the grant cannot be resolved we do not know whether
+        // this agent may use a ChatGPT connection, and picking one it may not
+        // use turns a degraded answer into `Run failed`. An empty list is the
+        // restrictive answer; `null`/`'all'` genuinely mean unrestricted.
+        codexAllowed = input.agentGrantEnv
+          ? grantAllowsCodex(await input.agentGrantEnv().catch(() => [] as string[]))
+          : true;
+      }
+      if (!codexAllowed) continue;
+    }
     seen.add(wire);
     out.push(wire);
     if (out.length >= MAX_CANDIDATE_PROBES) break;
@@ -162,6 +196,8 @@ export async function channelTurnModel(input: {
   userId: string | null | undefined;
   currentModel: string | null | undefined;
   hasImage: boolean;
+  /** Lazily resolved; only consulted for a `codex/*` candidate. */
+  agentGrantEnv?: () => Promise<readonly string[] | 'all' | null>;
 }): Promise<string | null> {
   const { projectId, accountId, userId, currentModel, hasImage } = input;
   if (!userId) return null;
@@ -169,11 +205,17 @@ export async function channelTurnModel(input: {
   const effective = currentModel || platformDefaultModelId();
   const effectiveReadsImages = modelReadsImages(projectId, effective);
 
-  // A plain text message on a pin we have no reason to doubt costs nothing.
-  // `pinMissing` is the cheap, in-memory signal that a pin may have been
-  // retired; the authoritative probe below decides.
-  const pinMissing = !!currentModel && !gatewayModelCatalog(projectId)[wireModelId(currentModel)];
-  if (!hasImage && !pinMissing) return null;
+  // Nothing pinned and no image: there is nothing to check.
+  //
+  // A pin IS checked on every message, and presence in `gatewayModelCatalog`
+  // is NOT used as a cheap pre-filter, because the catalog and the servability
+  // gate disagree — `deepseek-v4-flash` is in the catalog and still answers
+  // `requires Kortix's managed provider, which is disabled on this deployment`
+  // upstream. Two live Teams sessions were pinned to it on 2026-09-21, failing
+  // every message with nothing shown to the user. A pre-filter on the catalog
+  // would have skipped exactly those. The probe is cached per
+  // account+project+model, so a burst of chat costs one resolution.
+  if (!hasImage && !currentModel) return null;
 
   if (!(await projectLlmGatewayEnabledById(projectId).catch(() => false))) return null;
 
@@ -214,6 +256,7 @@ export async function channelTurnModel(input: {
     principalUserId: userId,
     currentModel: effective,
     needsVision,
+    ...(input.agentGrantEnv ? { agentGrantEnv: input.agentGrantEnv } : {}),
   });
   for (const model of candidates) {
     if (await probe(model)) {

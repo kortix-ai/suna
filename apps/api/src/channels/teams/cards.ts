@@ -408,7 +408,9 @@ function choiceList(field: TeamsFormField): CardElement[] {
 
 function formInput(field: TeamsFormField): CardElement | null {
   const id = field.id?.trim();
-  if (!id) return null;
+  // `fieldIds` travels as a comma-joined string on the submit action, so a
+  // comma in an id would split one field into two on the way back.
+  if (!id || id.includes(',')) return null;
   const common = { id, ...(field.required ? { isRequired: true, errorMessage: `${field.label} is required` } : {}) };
   switch (field.type ?? 'text') {
     case 'textarea':

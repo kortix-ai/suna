@@ -54,6 +54,7 @@ import { buildTeamsManifest } from '../../channels/teams-manifest';
 import { teamsDeepLink, teamsMode } from '../../channels/teams-mode';
 import { teamsOrgConsentUrl } from '../../channels/teams-oauth';
 import { downloadTeamsFile, initiateTeamsUpload } from '../../channels/teams/file-proxy';
+import { listTeamsPostTargets, postToTeamsConversation } from '../../channels/teams/post';
 import {
   relayTurnAnswerDetailed,
   relayTurnEnd,
@@ -1972,6 +1973,75 @@ projectsApp.openapi(
     if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 404);
     c.header('Content-Type', result.contentType);
     return c.body(result.body);
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/channels/teams/conversations',
+    tags: ['channels'],
+    summary: 'GET /:projectId/channels/teams/conversations (proactive-post targets)',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: {
+      200: json(
+        z.object({ conversations: z.array(z.object({ conversationId: z.string(), name: z.string().nullable(), type: z.string().nullable() })) }),
+        'Conversations this project may post into',
+      ),
+      ...errors(403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    if (!teamsChannelEnabled(loaded.row.metadata)) return c.json(featureDisabledBody('teams'), 403);
+    return c.json({ conversations: await listTeamsPostTargets(projectId) });
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/channels/teams/message',
+    tags: ['channels'],
+    summary: 'POST /:projectId/channels/teams/message (proactive post)',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(
+        z.object({ ok: z.boolean(), conversationId: z.string(), delivered: z.string() }).passthrough(),
+        'Message posted',
+      ),
+      ...errors(400, 403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Posting into a customer's Teams conversation is a send primitive, gated
+    // on connector-write exactly like the file upload below.
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    );
+    if (!teamsChannelEnabled(loaded.row.metadata)) return c.json(featureDisabledBody('teams'), 403);
+    const body = await readBody(c);
+    const result = await postToTeamsConversation(projectId, {
+      conversationId: String(body.conversation_id ?? body.conversationId ?? ''),
+      text: typeof body.text === 'string' ? body.text : undefined,
+      card: body.card && typeof body.card === 'object' && !Array.isArray(body.card) ? (body.card as Record<string, unknown>) : undefined,
+    });
+    if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 403 | 404);
+    return c.json(result);
   },
 );
 
