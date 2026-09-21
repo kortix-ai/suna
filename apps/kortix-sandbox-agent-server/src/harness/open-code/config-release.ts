@@ -107,6 +107,15 @@ export function runningSourceCommit(): string | null {
   return running.source === 'release' ? running.source_commit : null
 }
 
+/**
+ * The release directory OpenCode runs from, or null off the release path.
+ * The managed-skill overlay goes there, never into `/workspace`, while a
+ * release runs — proven or not yet proven.
+ */
+export function runningReleaseDir(root: string = bootConfigRoot()): string | null {
+  return running.source === 'release' && running.release_id ? releaseDir(root, running.release_id) : null
+}
+
 /** Boot records what it spawned on. */
 export function recordBootConfig(next: Partial<RunningConfig> & Pick<RunningConfig, 'source'>): void {
   running = { ...INITIAL, ...next }
@@ -558,6 +567,7 @@ export async function fetchBootRelease(input: {
   managedSkillsDir?: string
   prepare?: (dir: string) => Promise<void>
   mark?: (label: string) => void
+  descriptorTimeoutMs?: number
 }): Promise<BootRelease | null> {
   const { cfg } = input
   const root = input.root ?? bootConfigRoot()
@@ -567,7 +577,7 @@ export async function fetchBootRelease(input: {
       : input.api
   if (!api) return null
   try {
-    const descriptor = await fetchConfigReleaseDescriptor(api, null)
+    const descriptor = await fetchConfigReleaseDescriptor(api, null, { timeoutMs: input.descriptorTimeoutMs })
     input.mark?.('config-release-fetched')
     const releaseId = effectiveReleaseId(descriptor)
     if (descriptor.mode !== 'follow-base' || descriptor.archive === null || releaseId === null) return null
