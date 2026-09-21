@@ -1,0 +1,66 @@
+import { describe, expect, test } from 'bun:test';
+import type { ConfigRelease } from './builder';
+import { ConfigReleaseRequestSchema, decideConfigMode, MAX_WORKSPACE_REPORT_ENTRIES } from './mode';
+
+const HEAD = 'a'.repeat(40);
+const BLOB = 'b'.repeat(40);
+
+const report = (changed: unknown[]) => ({ workspace: { head: HEAD, config_dir: '.kortix/opencode', changed } });
+
+describe('ConfigReleaseRequestSchema', () => {
+  test('accepts the spec example, a null report, and an empty body', () => {
+    expect(
+      ConfigReleaseRequestSchema.safeParse(
+        report([
+          { path: '.kortix/opencode/agents/kortix.md', status: 'modified', blob: BLOB },
+          { path: '.kortix/opencode/skills/x/SKILL.md', status: 'deleted', blob: null },
+          { path: '.kortix/opencode/new.md', status: 'untracked', blob: BLOB },
+          { path: '.kortix/opencode/added.md', status: 'added', blob: BLOB },
+        ]),
+      ).success,
+    ).toBe(true);
+    expect(ConfigReleaseRequestSchema.safeParse({ workspace: null }).success).toBe(true);
+    expect(ConfigReleaseRequestSchema.safeParse({}).success).toBe(true);
+  });
+
+  test.each([
+    ['a non-object body', 'report'],
+    ['an unknown top-level key', { workspace: null, descriptor: {} }],
+    ['a short head', { workspace: { head: 'abc', config_dir: '.kortix/opencode', changed: [] } }],
+    ['an absolute config dir', { workspace: { head: HEAD, config_dir: '/etc', changed: [] } }],
+    ['an unknown status', report([{ path: 'a', status: 'renamed', blob: BLOB }])],
+    ['a deleted file with a blob', report([{ path: 'a', status: 'deleted', blob: BLOB }])],
+    ['a modified file without a blob', report([{ path: 'a', status: 'modified', blob: null }])],
+    ['an uppercase blob', report([{ path: 'a', status: 'modified', blob: 'B'.repeat(40) }])],
+    ['a path with ..', report([{ path: '.kortix/../x', status: 'modified', blob: BLOB }])],
+    ['an extra entry key', report([{ path: 'a', status: 'modified', blob: BLOB, mode: '100644' }])],
+  ])('rejects %s', (_label, body) => {
+    expect(ConfigReleaseRequestSchema.safeParse(body).success).toBe(false);
+  });
+
+  test('bounds the number of entries', () => {
+    const many = Array.from({ length: MAX_WORKSPACE_REPORT_ENTRIES + 1 }, (_, i) => ({
+      path: `f${i}`,
+      status: 'modified',
+      blob: BLOB,
+    }));
+    expect(ConfigReleaseRequestSchema.safeParse(report(many)).success).toBe(false);
+  });
+});
+
+describe('decideConfigMode (seam until step 4)', () => {
+  test('follows the base branch for a report and for no report', async () => {
+    const input = {
+      project: { projectId: 'p', repoUrl: '', defaultBranch: 'main', manifestPath: 'kortix.yaml' },
+      baseSha: HEAD,
+      release: {} as ConfigRelease,
+    };
+    expect(await decideConfigMode({ ...input, report: null })).toBe('follow-base');
+    expect(
+      await decideConfigMode({
+        ...input,
+        report: { head: HEAD, config_dir: '.kortix/opencode', changed: [{ path: 'x', status: 'modified', blob: BLOB }] },
+      }),
+    ).toBe('follow-base');
+  });
+});

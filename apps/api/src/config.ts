@@ -577,6 +577,16 @@ const envSchema = z.object({
   KORTIX_PROJECT_SNAPSHOT_DOWNLOAD_TTL_SECONDS: optInt(900),
   KORTIX_PROJECT_SNAPSHOT_MAX_ARCHIVE_BYTES: optInt(512 * 1024 * 1024),
 
+  // ── Config releases (optional) ──────────────────────────────────────────
+  // Config archives live in the private Supabase Storage bucket
+  // `kortix-config-releases` (docs/specs/config-releases.md). They use
+  // SUPABASE_URL and the service-role key, never the snapshot bucket above.
+  // The archive route answers 302 to a signed URL only when the storage host
+  // is public; otherwise it streams the bytes. Set this to a public storage
+  // base URL (the origin that serves `/storage/v1`) when SUPABASE_URL is an
+  // internal host but a public origin proxies it. Unset = classify SUPABASE_URL.
+  KORTIX_CONFIG_ARCHIVE_PUBLIC_URL: optUrl(''),
+
   // ── Platinum — Sandbox provisioning (conditional: required if platinum provider enabled) ──
   // Platinum is our own Cloud Hypervisor microVM API. PLATINUM_API_KEY is a
   // pt_live_… key; PLATINUM_API_URL is the control-plane base
@@ -1213,6 +1223,7 @@ export const config = {
   KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID: env.KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID,
   KORTIX_PROJECT_SNAPSHOT_S3_SECRET_ACCESS_KEY: env.KORTIX_PROJECT_SNAPSHOT_S3_SECRET_ACCESS_KEY,
   KORTIX_PROJECT_SNAPSHOT_DOWNLOAD_TTL_SECONDS: env.KORTIX_PROJECT_SNAPSHOT_DOWNLOAD_TTL_SECONDS,
+  KORTIX_CONFIG_ARCHIVE_PUBLIC_URL: env.KORTIX_CONFIG_ARCHIVE_PUBLIC_URL,
   KORTIX_PROJECT_SNAPSHOT_MAX_ARCHIVE_BYTES: env.KORTIX_PROJECT_SNAPSHOT_MAX_ARCHIVE_BYTES,
 
   // Sandbox lifecycle intervals (minutes) — see schema comment above.

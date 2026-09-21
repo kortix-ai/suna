@@ -148,7 +148,11 @@ async function withScratchRepo<T>(mirror: string, fn: (repo: string, env: Record
     if (init.exitCode !== 0) throw new Error(`git init scratch repo failed: ${init.stderr.trim()}`);
     await mkdir(join(repo, 'info'), { recursive: true });
     await writeFile(join(repo, 'info', 'attributes'), '* -export-ignore -export-subst\n');
-    const env = { GIT_ALTERNATE_OBJECT_DIRECTORIES: join(resolve(mirror), 'objects'), ...ARCHIVE_IDENTITY };
+    // The mirror is bare, so this is `<mirror>/objects`; asking git also
+    // covers a non-bare repository.
+    const objects = await runGitCapture(['rev-parse', '--git-path', 'objects'], mirror);
+    if (objects.exitCode !== 0) throw new Error(`git rev-parse --git-path objects failed: ${objects.stderr.trim()}`);
+    const env = { GIT_ALTERNATE_OBJECT_DIRECTORIES: resolve(mirror, objects.stdout.trim()), ...ARCHIVE_IDENTITY };
     return await fn(repo, env);
   } finally {
     await rm(repo, { recursive: true, force: true });
