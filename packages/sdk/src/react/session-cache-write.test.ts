@@ -118,7 +118,7 @@ describe('upsertIntoCachedSessionShape', () => {
 // under `sessionsScope(projectId)`. They are arrays and objects of OTHER types.
 // A writer that reached them by prefix put a `ProjectSession` into the prompt
 // inbox, and the composer threw `can't access property "match", e is
-// undefined` on every render (prod, LibreMax, 2026-09-22).
+// undefined` on every render (prod, 2026-09-22).
 describe('session cache writers reach session caches only', () => {
   const PID = 'P1';
   const OPEN = 'S-OPEN';

@@ -7490,7 +7490,7 @@ prompt route and App wake called it as a yes/no check: at least 163,280 holds
 labelled them "LLM gateway admission hold". A comment next to one caller read
 "independent read-only checks". Non-gateway callers use `checkBillingAdmission`.
 
-**Incident.** Prod account `9c178b9d` (enterprise trial): 16,909 sandboxes,
+**Incident.** A prod enterprise-trial account: 16,909 sandboxes,
 0 compute rows, $0 compute; 115,810 holds against $1.69 of real LLM spend.
 Found from one screenshot of a $0 compute line. PR #7414.
 
@@ -7662,3 +7662,25 @@ the API instead of naming one.
 **Enforcement.** `SnapshotInUseError` + `rebuildFailureResponse`
 (`provider-actions.test.ts`, `platinum-list-pagination.test.ts`); SNAP-2
 asserts `202` or `409 SNAPSHOT_IN_USE` and fails on `503`. PR #7491.
+
+### 2026-09-22 — Customer data leaked into a commit, a test, and a PR body during an incident fix
+
+**Near-miss.** A customer reported a composer crash. The fix (PR #7508)
+carried the customer's name in its commit message and in a test comment, and
+the prod session id in the PR body. The commit message is on `main` and cannot
+be removed without a force push. A sweep then found the same class of leak
+elsewhere: a customer name in a test fixture, a prod account id in this file,
+committed screenshots of a customer account under `output/`, and one customer
+name in ~120 files.
+
+**Rule.** Customer names, people's names, emails, and real prod IDs never go
+into a commit, a PR, a doc, a comment, a test, or a skill. Write the class:
+"a customer", "a prod session", `<session_id>`. Real evidence stays in the
+gitignored `output/`, the scratchpad, or private agent memory.
+
+**Enforcement.** `scripts/check-blocked-terms.sh` from `pre-commit`,
+`commit-msg`, and `pre-push` refuses added lines, messages, and branch names
+that contain a term from the encrypted `BLOCKED_COMMIT_TERMS` in
+`apps/api/.env` (`scripts/check-blocked-terms.test.mjs`, packages lane).
+`/output/` is gitignored. The PR template carries a checkbox. PR text is not
+covered by the hooks.

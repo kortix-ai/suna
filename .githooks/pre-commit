@@ -70,5 +70,8 @@ if [ -n "$starter_templates" ]; then
   fi
 fi
 
-# (3) Backstop: block any remaining unencrypted, committable .env.
+# (3) No customer data: refuse added lines with a blocked term (AGENTS.md).
+sh scripts/check-blocked-terms.sh staged
+
+# (4) Backstop: block any remaining unencrypted, committable .env.
 exec $DX ext precommit

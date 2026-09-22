@@ -1,0 +1,4 @@
+#!/bin/sh
+# No customer data in commit messages: refuse a message with a blocked term.
+# See scripts/check-blocked-terms.sh and AGENTS.md.
+exec sh scripts/check-blocked-terms.sh message "$1"
