@@ -411,6 +411,23 @@ The `config` object is identical to the health `config` block.
 10. On failure, keep the old process, quarantine the release on this box, and
     report the reason.
 
+Dependency preparation of a release (step 6) leaves OpenCode's own installer
+nothing to do. OpenCode runs on the boot link, a symlink, and npm's Arborist
+re-extracts the whole `node_modules` tree through a symlinked root: +5–7 s to
+`opencode-ready` on the old-starter shape (measured 2026-09-22). So the staged
+`package.json` gets the plugin pin of the OpenCode binary (the baked
+dependency dir records it), the dependencies install offline from the Bun
+cache, and a `package-lock.json` sentinel names every installed dependency.
+A dependency that did not install leaves OpenCode's installer in charge. A
+working-tree config dir is never changed this way.
+
+The runtime-assets overlay pass (write `/opt/kortix/managed-skills`, inject it
+into the running release), release verification, and a release's
+preparation and seal run one at a time. Interleaved, verification read the
+overlay names before the injection and reported an injected skill as an added
+file (DEF-5). Injection into a release restores owner write on a managed
+skill directory that an earlier seal made read-only.
+
 ### Proven check
 
 A replacement OpenCode is proven when all hold:
@@ -451,7 +468,11 @@ On boot, and after a failed convergence:
    `opencode.jsonc`.
 4. The image default config dir (`cfg.defaultOpencodeConfigDir`).
 
-Each step down records `fallback_reason`.
+Each step down records `fallback_reason`. The step that chose the running
+config writes the most complete reason, because it saw every step down. A
+later convergence that keeps the same running config for the same failed
+release keeps that reason. A different failed release replaces it. A proven
+release clears it.
 
 ### Health
 
