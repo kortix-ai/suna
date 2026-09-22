@@ -18619,7 +18619,11 @@
       "text88cfd89168a0": "Stopped admins opening every session",
       "textcbccc00faa36": "Opened a member session as account admin",
       "text798f62f95bed": "Viewed admin session access",
-      "text0814e13d671d": "Changed admin session access"
+      "text0814e13d671d": "Changed admin session access",
+      "textde340d411411": "This diagram is empty.",
+      "textc53147a0d05b": "Couldn't render this diagram",
+      "text91aec62280a3": "Download SVG",
+      "text751dfdcf3878": "Line {value0}"
     }
   },
   "projectOnboarding": {

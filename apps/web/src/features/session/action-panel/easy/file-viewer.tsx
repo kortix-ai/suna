@@ -7,7 +7,7 @@ import { useTranslations } from '@/i18n/use-translations';
  * The view toggle is not a universal control, because "source" only means
  * something for a file whose rendered form differs from its text:
  *
- *   - **HTML and SVG** render to something you can look at AND are code you
+ *   - **HTML, SVG and Mermaid** render to something you can look at AND are code you
  *     might want to read. They are the file types that earn a Preview/Source
  *     toggle, so that toggle lives at the far left of their toolbar.
  *   - **Markdown** is meant to be read as a document. A non-technical user has
@@ -30,6 +30,8 @@ import {
 } from '@/components/markdown/markdown-frontmatter';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ImageRenderer } from '@/features/file-renderers/image-renderer';
+import { MermaidDiagram } from '@/features/file-renderers/mermaid/mermaid-diagram';
+import { isMermaidFile } from '@/features/file-renderers/mermaid/mermaid-utils';
 import { HtmlPreview } from '@/features/file-viewer';
 import { getFileIcon } from '@/features/project-files';
 import { useIsMobile } from '@/hooks/utils';
@@ -71,6 +73,8 @@ const LANGUAGE_BY_EXT: Record<string, string> = {
   // is what it would alias to anyway.
   svg: 'xml',
   sql: 'sql',
+  mmd: 'mermaid',
+  mermaid: 'mermaid',
 };
 
 function extensionOf(fileName: string): string {
@@ -134,10 +138,11 @@ export function FileViewer({
   const html = isHtml(fileName) && !!path;
   const svg = isSvg(fileName);
   const markdown = isMarkdown(fileName);
+  const mermaid = isMermaidFile(fileName);
   // The files whose rendered form and source are both worth seeing — the ones
   // that earn the toggle, and the ones whose preview owns the pane's scrolling
   // instead of the pane owning theirs.
-  const renders = html || svg;
+  const renders = html || svg || mermaid;
   const [view, setView] = useState<View>('preview');
 
   const isMobile = useIsMobile();
@@ -214,8 +219,10 @@ export function FileViewer({
           path={path}
           html={html}
           svg={svg}
+          mermaid={mermaid}
           markdown={markdown}
           view={view}
+          onShowSource={() => setView('source')}
         />
       </div>
     </div>
@@ -255,16 +262,20 @@ function FileBody({
   path,
   html,
   svg,
+  mermaid,
   markdown,
   view,
+  onShowSource,
 }: {
   content: string;
   fileName: string;
   path?: string;
   html: boolean;
   svg: boolean;
+  mermaid: boolean;
   markdown: boolean;
   view: View;
+  onShowSource: () => void;
 }) {
   const svgUrl = useSvgObjectUrl(content, svg && view === 'preview');
 
@@ -297,6 +308,12 @@ function FileBody({
   if (svg && view === 'preview') {
     if (!svgUrl) return null;
     return <ImageRenderer url={svgUrl} fileName={fileName} controls="always" backdrop />;
+  }
+
+  // A Mermaid file previews as its diagram. Same component as the Files viewer
+  // and the `show` card, so the three agree on what a `.mmd` looks like.
+  if (mermaid && view === 'preview') {
+    return <MermaidDiagram source={content} fileName={fileName} onShowSource={onShowSource} />;
   }
 
   if (markdown) {

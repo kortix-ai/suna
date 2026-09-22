@@ -18619,7 +18619,11 @@
       "text88cfd89168a0": "Non più consentito agli admin di aprire ogni sessione",
       "textcbccc00faa36": "Sessione di un membro aperta come admin dell’account",
       "text798f62f95bed": "Visualizzato l’accesso admin alle sessioni",
-      "text0814e13d671d": "Modificato l’accesso admin alle sessioni"
+      "text0814e13d671d": "Modificato l’accesso admin alle sessioni",
+      "textde340d411411": "Questo diagramma è vuoto.",
+      "textc53147a0d05b": "Impossibile visualizzare questo diagramma",
+      "text91aec62280a3": "Scarica SVG",
+      "text751dfdcf3878": "Riga {value0}"
     }
   },
   "projectOnboarding": {
