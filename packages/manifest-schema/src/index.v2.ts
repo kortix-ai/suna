@@ -152,6 +152,16 @@ export interface AgentBlockV2 {
    *  something the author has to express by hand-writing glob rules in the
    *  agent's own frontmatter. */
   skills?: GrantSetV2;
+  /** Which of the project's Kortix Apps (by App slug) an agent-session
+   *  credential may open when the App's access mode is `restricted` or
+   *  `private` (spec 2026-09-22 §2.5). Same grant-set shape as connectors
+   *  (slugs | "all" | "none"), deny-by-default when omitted. A `project`-mode
+   *  App needs only `project.app.read` in `kortix_permissions`; a `public` App
+   *  admits everyone; a `password` App never admits a Kortix credential.
+   *  Enforced by the App gate only while the project's `agent_principal`
+   *  flag is on. The validator cannot see whether the project has Apps
+   *  enabled (a DB feature flag), so it checks shape only. */
+  apps?: GrantSetV2;
   /** The project permissions (`project.*` IAM actions) this agent's session
    *  token may exercise — intersected with the launcher's project role. */
   kortix_permissions?: GrantSetV2;
@@ -566,6 +576,7 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
   // No fixed catalog to check entries against (skill names are project-defined,
   // like connectors) — same shape/validation, no `checkAction`.
   validateGrantList(entry.skills, `${where}.skills`, 'skills', issues, false, 2);
+  validateAppGrantList(entry.apps, `${where}.apps`, issues);
   // v2 clean break: a LEGACY_TOLERATED action is a hard error here, not a
   // warning (see `validateGrantList`'s doc comment).
   validateKortixPermissionFields(entry, where, issues, 2);
@@ -588,6 +599,25 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
       });
     }
   }
+}
+
+/** `agents.<name>.apps` — the grant-set shape rules, plus each entry must be
+ *  an App slug (or the `*` wildcard). App slugs are project-defined, so there
+ *  is no catalog to check membership against here. */
+function validateAppGrantList(value: unknown, where: string, issues: ManifestIssue[]): void {
+  const before = issues.length;
+  validateGrantList(value, where, 'apps', issues, false, 2);
+  if (issues.length !== before || !Array.isArray(value)) return;
+  value.forEach((item, k) => {
+    const slug = typeof item === 'string' ? item.trim() : '';
+    if (slug !== '*' && !SLUG_RE.test(slug)) {
+      issues.push({
+        path: `${where}[${k}]`,
+        message: `"${slug}" is not a valid App slug (lowercase letters, digits, dashes, underscores).`,
+        severity: 'error',
+      });
+    }
+  });
 }
 
 /** Result of scanning the v2 `agents:` map, for cross-validation by callers. */

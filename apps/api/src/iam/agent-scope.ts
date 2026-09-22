@@ -107,6 +107,24 @@ export function agentMayUseConnector(grant: AgentGrant | null, slug: string): bo
   return grant.connectors.includes(slug);
 }
 
+/**
+ * True if the agent-session grant lists the Kortix App `slug` in `apps`
+ * (spec 2026-09-22 §2.5). Unlike the other predicates, a missing `apps` key is
+ * NONE, not "all": the field is new, deny-by-default in both manifest
+ * versions, and the resolver omits it for an agent that declares no Apps.
+ * A null grant (ungoverned project) never reaches this — the App gate keeps
+ * the legacy human decision for it. Slugs compare lowercase (App slugs are).
+ */
+export function agentMayOpenApp(grant: AgentGrant, slug: string | null | undefined): boolean {
+  const apps = grant.apps;
+  if (apps === 'all') return true;
+  if (!Array.isArray(apps) || apps.length === 0) return false;
+  if (apps.includes('*')) return true;
+  if (!slug) return false;
+  const wanted = slug.toLowerCase();
+  return apps.some((entry) => entry.toLowerCase() === wanted);
+}
+
 /** True if the agent may receive/read the project secret with this
  *  IDENTIFIER (or no grant). `env` is the grant's `secrets` allowlist — a list
  *  of secret IDENTIFIERS (not raw env-var keys; see project_secrets.identifier

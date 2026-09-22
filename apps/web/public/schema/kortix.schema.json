@@ -967,6 +967,25 @@
                       ]
                     }
                   ]
+                },
+                "apps": {
+                  "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+                  "oneOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    {
+                      "type": "string",
+                      "enum": [
+                        "all",
+                        "none"
+                      ]
+                    }
+                  ]
                 }
               },
               "additionalProperties": true
@@ -1139,6 +1158,25 @@
                       "items": {
                         "type": "string",
                         "minLength": 1
+                      }
+                    },
+                    {
+                      "type": "string",
+                      "enum": [
+                        "all",
+                        "none"
+                      ]
+                    }
+                  ]
+                },
+                "apps": {
+                  "description": "Kortix Apps (by App slug) this agent may open when the App is restricted or private. Deny by default.",
+                  "oneOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "pattern": "^(?:[a-z0-9][a-z0-9_-]{0,127}|\\*)$"
                       }
                     },
                     {

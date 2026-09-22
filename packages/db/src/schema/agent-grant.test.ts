@@ -35,4 +35,13 @@ describe('readStoredAgentGrant', () => {
     const bare = { agent: 'a', connectors: 'all' } as unknown as StoredAgentGrant;
     expect(readStoredAgentGrant(bare)?.permissions).toEqual([]);
   });
+
+  test('keeps an `apps` grant and leaves it absent on rows written before it existed (absent = none)', () => {
+    const withApps = { agent: 'a', permissions: ['project.app.read'], connectors: [], apps: ['finance-dashboards'] } as StoredAgentGrant;
+    expect(readStoredAgentGrant(withApps)?.apps).toEqual(['finance-dashboards']);
+    const legacy = { agent: 'a', kortixCli: ['project.app.read'], connectors: [] } as StoredAgentGrant;
+    const read = readStoredAgentGrant(legacy) as AgentGrant;
+    expect(read.apps).toBeUndefined();
+    expect('apps' in read).toBe(false);
+  });
 });

@@ -2714,6 +2714,13 @@ export interface AgentGrant {
    *  Optional for back-compat with grants minted before this field existed
    *  (treated as 'all'). */
   env?: string[] | 'all';
+  /** Kortix Apps (by App slug) this agent session may open when the App's
+   *  access mode is `restricted` or `private` (the manifest's
+   *  `agents.<a>.apps`, spec 2026-09-22 §2.5). 'all' = every App in the
+   *  project. ABSENT = none: the resolver omits the key for an agent that
+   *  declares no Apps, and grants minted before this field existed carry none
+   *  — read it through `agentMayOpenApp` (apps/api iam/agent-scope.ts). */
+  apps?: string[] | 'all';
   /**
    * PROVENANCE — which manifest this grant was derived from. Stamped by the
    * resolver (`projects/lib/secret-grant.ts`) and read by the re-mint policy

@@ -98,6 +98,9 @@ const ENV_NAME_PATTERN_CASE_INSENSITIVE = '^[A-Za-z_][A-Za-z0-9_]*$';
 
 const NON_EMPTY_STRING: JsonSchemaFragment = { type: 'string', minLength: 1 };
 
+/** One `agents.<name>.apps` entry: an App slug (`SLUG_RE`) or the `*` wildcard. */
+const APP_GRANT_ENTRY_PATTERN = '^(?:[a-z0-9][a-z0-9_-]{0,127}|\\*)$';
+
 /** The `connectors` / `secrets` / `skills` / `kortix_permissions` grant-set shape:
  *  an allowlist of names, or the "all"/"none" sentinel (spec §2.2/§2.4/§2.5).
  *  `itemSchema` lets `kortix_permissions` additionally constrain each entry to the
@@ -580,6 +583,7 @@ function agentEntryV1Schema(): JsonSchemaFragment {
       kortix_permissions: kortixPermissionsGrantSetSchema(1),
       kortix_cli: deprecatedKortixCliGrantSetSchema(1),
       env: grantSetSchema(),
+      apps: grantSetSchema(),
     },
     additionalProperties: true,
   };
@@ -609,6 +613,11 @@ function agentBlockV2Schema(): JsonSchemaFragment {
       },
       secrets: grantSetSchema(),
       skills: grantSetSchema(),
+      apps: {
+        ...grantSetSchema({ type: 'string', pattern: APP_GRANT_ENTRY_PATTERN }),
+        description:
+          'Kortix Apps (by App slug) this agent may open when the App is restricted or private. Deny by default.',
+      },
       kortix_permissions: kortixPermissionsGrantSetSchema(2),
       kortix_cli: deprecatedKortixCliGrantSetSchema(2),
       repository_access: { type: 'boolean', description: 'Allow new sessions to access the project repository. Defaults to true.' },
