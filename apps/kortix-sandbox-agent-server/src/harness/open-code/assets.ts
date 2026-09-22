@@ -14,6 +14,7 @@ import type {
 } from '../assets'
 import { requireOpenCodeConfig, resolveOpencodeConfigDir } from './config'
 import { ensureInjectedManagedSkills } from '../../managed-skills'
+import { isInReleaseStore } from '../../boot-config'
 import {
   captureProcessOutput,
   OPENCODE_CURRENT_LINK,
@@ -371,7 +372,9 @@ export function createOpenCodeAssetsService(
       if (configReleaseReport().source === 'image-default') return opencodeCfg.defaultOpencodeConfigDir
       return resolveOpencodeConfigDir(opencodeCfg)
     },
-    injectSkills: (configDir, bakedDir) => ensureInjectedManagedSkills(configDir, { bakedDir }),
+    // A release is the platform's own sealed copy; a working tree is not.
+    injectSkills: (configDir, bakedDir) =>
+      ensureInjectedManagedSkills(configDir, { bakedDir, unsealManaged: isInReleaseStore(configDir) }),
     reconcile: (input) => reconcileOpenCodeAssets(input, runtime, options),
   }
 }

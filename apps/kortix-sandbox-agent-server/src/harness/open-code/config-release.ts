@@ -14,6 +14,7 @@ import {
   readReleaseManifest,
   releaseDir,
   verifyRelease,
+  verifyReleaseDetail,
   writeReleaseManifest,
   type ReleaseManifest,
 } from '../../boot-config'
@@ -442,12 +443,16 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
   // 3. Same release, intact copy: nothing to do. A release spawned at boot
   //    before any proof is proven now, on the live process.
   if (running.source === 'release' && running.release_id === releaseId && opencode.getConfigDir() === dir) {
-    if (await verifies()) {
+    const check = await verifyReleaseDetail({ dir, files: manifest.files, managedSkillsDir: deps.managedSkillsDir })
+    if (check.ok) {
       running.mode = 'follow-base'
       if (running.proven) return respond('unchanged', null)
       return proveBootRelease(deps, { root, api, releaseId, manifest, dir })
     }
-    logger.warn('[config-release] the running release no longer verifies; rebuilding', { releaseId })
+    logger.warn('[config-release] the running release no longer verifies; rebuilding', {
+      releaseId,
+      problem: check.problem,
+    })
   }
 
   // 4. Quarantined on this box: keep the running config.

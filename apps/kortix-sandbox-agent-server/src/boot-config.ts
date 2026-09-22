@@ -122,6 +122,29 @@ async function managedSkillNames(dir: string | undefined): Promise<Set<string>> 
   return new Set(entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name))
 }
 
+/**
+ * One writer or reader of the release store's managed-skill state at a time.
+ *
+ * `verifyRelease` reads the overlay's skill names, then walks the release.
+ * The runtime-assets pass rewrites the overlay and injects it into the running
+ * release. Interleaved, a walk sees an injected skill that the names it read
+ * did not include, reports an ADDED file, and the convergence rebuilds the
+ * release and respawns OpenCode (DEF-5, 3 of 20 fresh boots, 2026-09-22).
+ * Everything that reads or writes that state runs under this lock. In-process
+ * only: the daemon is the single writer of `/opt/kortix`.
+ */
+let releaseStoreQueue: Promise<unknown> = Promise.resolve()
+export function withReleaseStoreLock<T>(section: () => Promise<T>): Promise<T> {
+  const run = releaseStoreQueue.then(section, section)
+  releaseStoreQueue = run.catch(() => undefined)
+  return run
+}
+
+/** Is `dir` a release in the store (the platform's own copy)? */
+export function isInReleaseStore(dir: string, root: string = bootConfigRoot()): boolean {
+  return insideRoot(root, dir)
+}
+
 /** A path inside a release the platform writes after extraction. */
 function isPlatformWritten(path: string, managed: Set<string>): boolean {
   const [first, second] = path.split('/')
@@ -304,8 +327,11 @@ export async function materializeRelease(input: {
   const staged = `${dir}.${randomUUID()}.tmp`
   try {
     await extractConfigArchive(input.archive, manifest.files, staged)
-    await input.prepare?.(staged)
-    await seal(staged, manifest.files, await managedSkillNames(input.managedSkillsDir))
+    // The overlay injected by `prepare` and the names `seal` skips must be the same set.
+    await withReleaseStoreLock(async () => {
+      await input.prepare?.(staged)
+      await seal(staged, manifest.files, await managedSkillNames(input.managedSkillsDir))
+    })
     if (existsSync(dir)) await removeTree(dir)
     await rename(staged, dir)
     await writeReleaseManifest(root, manifest)
@@ -342,18 +368,32 @@ async function seal(dir: string, files: readonly ConfigReleaseFile[], managed: S
   }
 }
 
+export interface ReleaseVerifyInput {
+  dir: string
+  files: readonly ConfigReleaseFile[]
+  managedSkillsDir?: string
+}
+
 /**
  * Is every project file in `dir` byte-identical to the release's file list,
  * and is nothing added? Never throws: anything unreadable is "no".
  */
-export async function verifyRelease(input: {
-  dir: string
-  files: readonly ConfigReleaseFile[]
-  managedSkillsDir?: string
-}): Promise<boolean> {
+export async function verifyRelease(input: ReleaseVerifyInput): Promise<boolean> {
+  return (await verifyReleaseDetail(input)).ok
+}
+
+/** `verifyRelease` with the first problem it found, for the log. */
+export function verifyReleaseDetail(input: ReleaseVerifyInput): Promise<{ ok: true } | { ok: false; problem: string }> {
+  return withReleaseStoreLock(() => verifyReleaseUnlocked(input))
+}
+
+async function verifyReleaseUnlocked(
+  input: ReleaseVerifyInput,
+): Promise<{ ok: true } | { ok: false; problem: string }> {
+  let managed = new Set<string>()
   try {
     assertFileList(input.files)
-    const managed = await managedSkillNames(input.managedSkillsDir)
+    managed = await managedSkillNames(input.managedSkillsDir)
     for (const [path, mode, blob] of input.files) {
       if (isPlatformWritten(path, managed)) continue
       const onDisk = join(input.dir, path)
@@ -368,17 +408,20 @@ export async function verifyRelease(input: {
           : stat.isFile()
             ? await readFile(onDisk)
             : null
-      if (content === null || gitBlobId(content, blob.length) !== blob) return false
+      if (content === null) return { ok: false, problem: `${path} has the wrong type` }
+      if (gitBlobId(content, blob.length) !== blob) return { ok: false, problem: `${path} does not match its blob ID` }
     }
     // Nothing may be ADDED either: a new agent, tool or second `opencode.json`
     // beside the listed files would be loaded like any other.
     const listed = new Set(input.files.map(([path]) => path))
     for (const path of await walkFiles(input.dir, managed)) {
-      if (!listed.has(path)) return false
+      if (!listed.has(path)) {
+        return { ok: false, problem: `${path} is not in the release (managed overlay names: ${managed.size})` }
+      }
     }
-    return true
-  } catch {
-    return false
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, problem: `${(err as Error).message} (managed overlay names: ${managed.size})` }
   }
 }
 

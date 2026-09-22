@@ -163,7 +163,16 @@ async function pathExists(p: string): Promise<boolean> {
  */
 export async function ensureInjectedManagedSkills(
   configDir: string,
-  opts: { bakedDir?: string } = {},
+  opts: {
+    bakedDir?: string
+    /**
+     * `configDir` is a sealed config release. A release built before the box
+     * had an overlay seals a tracked copy of a managed skill read-only (the
+     * old-starter shape tracks `skills/kortix-cli`); give the owner write
+     * access back before overwriting it. Never set for a working tree.
+     */
+    unsealManaged?: boolean
+  } = {},
 ): Promise<void> {
   const bakedDir = opts.bakedDir ?? managedSkillsDir()
   try {
@@ -171,13 +180,26 @@ export async function ensureInjectedManagedSkills(
     const skillsDir = join(configDir, 'skills')
     const entries = await readdir(bakedDir, { withFileTypes: true })
     const injectedNames: string[] = []
+    const failed: string[] = []
     for (const entry of entries) {
       if (!entry.isDirectory()) continue
-      await cp(join(bakedDir, entry.name), join(skillsDir, entry.name), {
-        recursive: true,
-        force: true, // overwrite → the injected body always wins over the repo copy
-      })
-      injectedNames.push(entry.name)
+      const target = join(skillsDir, entry.name)
+      try {
+        if (opts.unsealManaged && (await pathExists(target))) {
+          await execFileAsync('chmod', ['-R', 'u+w', target])
+        }
+        await cp(join(bakedDir, entry.name), target, {
+          recursive: true,
+          force: true, // overwrite → the injected body always wins over the repo copy
+        })
+        injectedNames.push(entry.name)
+      } catch (err) {
+        // One unwritable skill must not stop the rest of the family.
+        failed.push(`${entry.name}: ${String(err)}`)
+      }
+    }
+    if (failed.length > 0) {
+      logger.warn('[boot] managed-skill injection skipped', { configDir, err: failed.join('; ') })
     }
     if (injectedNames.length > 0) {
       logger.info('[boot] injected managed kortix skills', {
