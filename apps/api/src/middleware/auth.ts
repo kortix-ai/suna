@@ -620,6 +620,10 @@ async function resolveCombinedAuth(c: Context, next: Next) {
       c.set('sandboxId', patResult.sessionId);
     }
     c.set('agentGrant', patResult.agentGrant ?? null);
+    // Same as supabaseAuth's PAT branch: the fresh on_behalf_of for personal
+    // resources (projects/lib/personal-resources.ts). combinedAuth fronts the
+    // connector gateway, where a foreign prompt's clear must apply at once.
+    c.set('onBehalfOfUserId', patResult.onBehalfOfUserId ?? null);
     setSentryUser({ id: patResult.userId, accountId: patResult.accountId });
     setContextField('userId', patResult.userId);
     if (patResult.accountId) setContextField('accountId', patResult.accountId);

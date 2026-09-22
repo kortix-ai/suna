@@ -195,6 +195,14 @@ export interface ConnectorPrincipal {
    * a connector could hold more than one reachable account.
    */
   requestedConnectorAccount?: string | null;
+  /**
+   * Present when the caller is an agent session under the agent-principal
+   * model (flag `agent_principal` ON, governed grant — spec
+   * docs/specs/2026-09-22-agents-as-principals.md §2.3). Personal resources
+   * (member-owned accounts, own computers) then key on `onBehalfOfUserId` AND
+   * a private session, never on `userId` (the launcher). Absent = legacy.
+   */
+  agentPrincipal?: { onBehalfOfUserId: string | null } | null;
 }
 
 interface CatalogAction {
@@ -478,6 +486,7 @@ export interface ConnectorRouterDeps {
     slug: string;
     userId: string;
     sessionId: string | null;
+    agentPrincipal?: { onBehalfOfUserId: string | null } | null;
   }): Promise<
     Array<{
       connection_id: string;
@@ -937,6 +946,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
                   slug: connectorSlug,
                   userId: p.userId,
                   sessionId: p.sessionId,
+                  agentPrincipal: p.agentPrincipal ?? null,
                 })
                 .then((rows) => rows.map((row) => row.label))
                 .catch(() => [])
@@ -1399,6 +1409,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
         slug,
         userId: p.userId,
         sessionId: p.sessionId,
+        agentPrincipal: p.agentPrincipal ?? null,
       });
       // The pinned account, when exactly one is pinned — the SAME "is a
       // default reachable" question an unnamed `/call` answers. Two or more

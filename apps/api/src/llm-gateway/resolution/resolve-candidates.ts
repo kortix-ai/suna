@@ -120,6 +120,9 @@ export async function resolveCandidates(
   options?: { providerSecretPools?: Record<string, string[]>; probe?: boolean },
 ): Promise<UpstreamDescriptor[]> {
   const effectiveModel = toWireModel(model);
+  // Whose PERSONAL keys apply (spec 2026-09-22 §2.3): absent = the token user
+  // (legacy); null = none (agent-principal session with no on-behalf-of human).
+  const personalUserId = principal.personalUserId === undefined ? principal.userId : principal.personalUserId;
   const access = principal.projectId
     ? await getProjectModelAccess(principal.projectId)
     : { disabledProviders: [], disabledModels: [] };
@@ -148,7 +151,7 @@ export async function resolveCandidates(
           accountId: principal.accountId, projectId: principal.projectId,
           ...(prospectiveIds !== undefined ? { secretIds: prospectiveIds } : { sessionId: principal.sessionId! }),
           ...(options?.probe ? { advanceIndex: false } : {}),
-          userId: principal.userId, providerId: 'codex', name: 'CODEX_AUTH_JSON',
+          userId: principal.userId, grantUserId: personalUserId, providerId: 'codex', name: 'CODEX_AUTH_JSON',
         })
       : null;
     if (selectedPool?.configured) {
@@ -188,8 +191,8 @@ export async function resolveCandidates(
         expired ? 'The selected ChatGPT connections need reconnection.' : 'No ChatGPT connection is available.',
         'Reconnect a selected ChatGPT account or select another granted connection.');
     }
-    if (pooledEnabled && principal.userId && !principal.keyId) {
-      const personal = await resolveDefaultCodexAccountSecret(principal.accountId, principal.projectId, principal.userId);
+    if (pooledEnabled && personalUserId && !principal.keyId) {
+      const personal = await resolveDefaultCodexAccountSecret(principal.accountId, principal.projectId, personalUserId);
       if (personal) {
         if (Array.isArray(principal.agentGrant?.env) &&
           !principal.agentGrant.env.some((name) => name.toUpperCase() === 'CODEX_AUTH_JSON')) {
@@ -217,6 +220,7 @@ export async function resolveCandidates(
       credential = await resolveCodexCredential(principal.projectId, principal.userId, undefined, {
         accountId: principal.accountId,
         sessionId: principal.sessionId,
+        principalUserId: personalUserId,
       });
     } catch (err) {
       if (err instanceof CodexRefreshError) {
@@ -267,6 +271,7 @@ export async function resolveCandidates(
           ...(prospectiveIds !== undefined ? { secretIds: prospectiveIds } : { sessionId: principal.sessionId! }),
           ...(options?.probe ? { advanceIndex: false } : {}),
           userId: principal.userId,
+          grantUserId: personalUserId,
           providerId: provider,
           name: byok.envVar,
         })
