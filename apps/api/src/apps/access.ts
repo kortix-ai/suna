@@ -1,10 +1,12 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { accountGroups, accountMembers, appAccessGrants, apps } from '@kortix/db';
+import { accountGroups, accountMembers, appAccessGrants, apps, type AgentGrant } from '@kortix/db';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { resolveShareSubject, type SecretGrant, type ShareSubject } from '../connectors/share';
 import { config } from '../config';
 import { authorize, PROJECT_ACTIONS } from '../iam';
 import { actorForToken, actorForUser } from '../iam/actor';
+import { agentMayOpenApp } from '../iam/agent-scope';
+import { resolveFeatureFlag, type FeatureFlagKey } from '../feature-flags/registry';
 import { db } from '../shared/db';
 
 export type AppAccessMode = 'private' | 'project' | 'restricted' | 'public' | 'password';
@@ -87,6 +89,170 @@ export function verifyAppAccessToken(
     if (payload.v !== 1 || payload.appId !== appId || payload.exp <= Math.floor(now.getTime() / 1000)) return null;
     if (!['kortix', 'password'].includes(payload.kind)) return null;
     return payload;
+  } catch {
+    return null;
+  }
+}
+
+/* ─── Apps as an agent resource (spec 2026-09-22 §2.5) ──────────────────────
+ *
+ * An agent-session credential (a `kortix_pat_` bound to a session, carrying the
+ * running agent's grant) is judged as the AGENT, not as the human who launched
+ * the session — but only on a project whose `agent_principal` flag is on.
+ * Flag OFF, or a null grant (ungoverned project), keeps today's human
+ * decision (`appAccessibleToUser`) byte for byte.
+ */
+
+/**
+ * The project feature flag that switches governed agents to the §2 model.
+ * Registered by the IAM lane; until it exists `resolveFeatureFlag` answers
+ * false for an unknown key, which is exactly "flag OFF".
+ */
+const AGENT_PRINCIPAL_FLAG = 'agent_principal' as FeatureFlagKey;
+
+export function agentPrincipalEnabled(projectMetadata: unknown): boolean {
+  return resolveFeatureFlag(projectMetadata, AGENT_PRINCIPAL_FLAG);
+}
+
+/**
+ * Pure: may this agent session open the App? The §2.5 table.
+ *
+ * | mode                   | allowed when                                  |
+ * | public                 | always                                        |
+ * | project                | project.app.read effective for the agent      |
+ * | restricted / private   | slug ∈ grant.apps AND project.app.read        |
+ * | password               | never                                         |
+ */
+export function agentAppAccessDecision(input: {
+  mode: AppAccessMode;
+  slug: string | null | undefined;
+  grant: AgentGrant;
+  /** `project.app.read` on the App's project, as the agent's effective authority. */
+  appReadAllowed: boolean;
+}): boolean {
+  switch (input.mode) {
+    case 'public':
+      return true;
+    case 'project':
+      return input.appReadAllowed;
+    case 'restricted':
+    case 'private':
+      return input.appReadAllowed && agentMayOpenApp(input.grant, input.slug);
+    default:
+      return false;
+  }
+}
+
+/** The agent-session credential the App gate resolved. */
+export interface AppAgentSessionPrincipal {
+  userId: string;
+  actingTokenId: string;
+  sessionId: string;
+  /** The token's project binding. Must equal the App's project. */
+  projectId: string | null;
+  agentGrant: AgentGrant;
+}
+
+/**
+ * The §2.5 decision with its one I/O input: `project.app.read` for the
+ * agent. Same project only — an agent session never opens another project's
+ * App, whatever its grant lists.
+ *
+ * SEAM: `authorize(actorForToken(...))` answers with the credential's current
+ * authority. The IAM lane changes that actor so a flagged agent session
+ * authorizes as the agent's service account; this call picks that up unchanged.
+ */
+export async function appAccessibleToAgentSession(
+  app: { appId: string; accountId: string; projectId: string; accessMode: string; slug?: string | null },
+  principal: AppAgentSessionPrincipal,
+): Promise<boolean> {
+  if (!principal.projectId || principal.projectId !== app.projectId) return false;
+  const mode = app.accessMode as AppAccessMode;
+  if (mode === 'public') return true;
+  if (mode === 'password') return false;
+  const verdict = await authorize(
+    await actorForToken(principal.userId, app.accountId, principal.actingTokenId, {
+      sessionId: principal.sessionId,
+    }),
+    PROJECT_ACTIONS.PROJECT_APP_READ,
+    { type: 'project', id: app.projectId },
+  );
+  return agentAppAccessDecision({
+    mode,
+    slug: app.slug,
+    grant: principal.agentGrant,
+    appReadAllowed: verdict.allowed,
+  });
+}
+
+/* ─── Connector → App assertion ───────────────────────────────────────────────
+ *
+ * A connector built from an App's OpenAPI document puts the App's OWN key in
+ * `Authorization` — which the gate reads as a Kortix credential, fails to
+ * validate, and answers `401 app_auth_required`. When the connector gateway
+ * calls an App of this deployment in the caller's own project, it adds this
+ * assertion in `X-Kortix-App-Authorization` instead. It names the calling
+ * session token, is bound to one App and one project, and lives ≤ 60 s. The
+ * gate verifies it, loads that token (it must still be live), and decides as
+ * for the token itself. It is signed in its own MAC domain, so an App access
+ * cookie can never be replayed as one.
+ */
+export const APP_AGENT_ASSERTION_TTL_SECONDS = 60;
+const APP_AGENT_ASSERTION_PREFIX = 'kortix_app_assertion';
+/** Clock skew tolerated between the minting and the verifying replica. */
+const APP_AGENT_ASSERTION_SKEW_SECONDS = 5;
+
+interface AppAgentAssertionPayload {
+  v: 1;
+  appId: string;
+  projectId: string;
+  tokenId: string;
+  exp: number;
+}
+
+function assertionSignature(body: string, secret: string): string {
+  return createHmac('sha256', secret).update('kortix-app-agent-assertion:v1\0').update(body).digest('base64url');
+}
+
+export function isAppAgentAssertion(value: string): boolean {
+  return value.startsWith(`${APP_AGENT_ASSERTION_PREFIX}.`);
+}
+
+export function createAppAgentAssertion(
+  input: { appId: string; projectId: string; tokenId: string; expiresAt?: Date },
+  secret = appAccessSecret(),
+  now = new Date(),
+): string {
+  const expiresAt = input.expiresAt ?? new Date(now.getTime() + APP_AGENT_ASSERTION_TTL_SECONDS * 1000);
+  const payload: AppAgentAssertionPayload = {
+    v: 1,
+    appId: input.appId,
+    projectId: input.projectId,
+    tokenId: input.tokenId,
+    exp: Math.floor(expiresAt.getTime() / 1000),
+  };
+  const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  return `${APP_AGENT_ASSERTION_PREFIX}.${body}.${assertionSignature(body, secret)}`;
+}
+
+export function verifyAppAgentAssertion(
+  value: string,
+  expected: { appId: string; projectId: string },
+  secret = appAccessSecret(),
+  now = new Date(),
+): { tokenId: string } | null {
+  const [prefix, body, mac, extra] = value.split('.');
+  if (prefix !== APP_AGENT_ASSERTION_PREFIX || !body || !mac || extra !== undefined) return null;
+  if (!equal(mac, assertionSignature(body, secret))) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as AppAgentAssertionPayload;
+    const nowSeconds = Math.floor(now.getTime() / 1000);
+    if (payload.v !== 1) return null;
+    if (payload.appId !== expected.appId || payload.projectId !== expected.projectId) return null;
+    if (typeof payload.tokenId !== 'string' || !payload.tokenId) return null;
+    if (typeof payload.exp !== 'number' || payload.exp <= nowSeconds) return null;
+    if (payload.exp > nowSeconds + APP_AGENT_ASSERTION_TTL_SECONDS + APP_AGENT_ASSERTION_SKEW_SECONDS) return null;
+    return { tokenId: payload.tokenId };
   } catch {
     return null;
   }

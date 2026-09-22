@@ -165,7 +165,7 @@ describe('authorizeGitProxy — CLI PAT', () => {
       tokenId: 'tok-1',
       projectId: PROJECT_ID,
       sessionId: 'sandbox-1',
-      agentGrant: { agent: 'main', kortixCli: 'all', connectors: 'all' },
+      agentGrant: { agent: 'main', permissions: 'all', connectors: 'all' },
     };
     sandboxRow = {
       sandboxId: 'sandbox-1',
@@ -178,7 +178,7 @@ describe('authorizeGitProxy — CLI PAT', () => {
 
     expect(res.ok).toBe(true);
     if (res.ok) {
-      expect(res.agentGrant).toEqual({ agent: 'main', kortixCli: 'all', connectors: 'all' });
+      expect(res.agentGrant).toEqual({ agent: 'main', permissions: 'all', connectors: 'all' });
       expect(res.principal).toMatchObject({ kind: 'session', userId: 'user-1', tokenId: 'tok-1' });
     }
   });
@@ -336,13 +336,13 @@ describe('authorizeGitProxy — sandbox token', () => {
       branchName: 'sandbox-1',
       sessionMetadata: { workspace_mode: 'branch' },
     };
-    grantRow = { userId: 'launcher-1', tokenId: 'session-token-1', agentGrant: { agent: 'main', kortixCli: ['project.gitops.ref.any'], connectors: 'all' } };
+    grantRow = { userId: 'launcher-1', tokenId: 'session-token-1', agentGrant: { agent: 'main', permissions: ['project.gitops.ref.any'], connectors: 'all' } };
 
     const res = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'write');
 
     expect(res.ok).toBe(true);
     if (res.ok) {
-      expect(res.agentGrant).toEqual({ agent: 'main', kortixCli: ['project.gitops.ref.any'], connectors: 'all' });
+      expect(res.agentGrant).toEqual({ agent: 'main', permissions: ['project.gitops.ref.any'], connectors: 'all' });
       expect(res.principal).toMatchObject({ kind: 'session', userId: 'launcher-1', tokenId: 'session-token-1' });
     }
   });

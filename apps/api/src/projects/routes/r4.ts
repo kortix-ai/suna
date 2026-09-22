@@ -81,6 +81,7 @@ import {
   rematerializeCatalogAfterCredentialUpdate,
 } from '../../connectors/sync';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { assertMayRunAgent } from '../lib/agent-access';
 import { featureDisabledBody } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
 import { setContextField } from '../../lib/request-context';
@@ -131,6 +132,9 @@ import {
   isTrustedManagedChannelAuthorization,
 } from '../lib/connection-access';
 import { sessionMayEnumerateConnection } from '../lib/connector-connection-visibility';
+import { requestAgentPrincipalReach, requestPersonalOwner } from '../lib/personal-resources';
+
+type AgentPrincipalReach = Awaited<ReturnType<typeof requestAgentPrincipalReach>>;
 import { withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
@@ -272,6 +276,8 @@ function mayReadConnection(
    *  carries the WRAPPER's user id, so without this every end-user's agent could
    *  enumerate every other end-user's connection and then bind it. */
   sessionBoundConnectionIds: ReadonlySet<string> | null,
+  /** Agent-principal reach (spec 2026-09-22 §2.3); null = legacy rule. */
+  agentPrincipal: AgentPrincipalReach | null = null,
 ): boolean {
   if (!sessionMayEnumerateConnection(connection, sessionBoundConnectionIds)) return false;
   return connectionIsReachable({
@@ -279,6 +285,7 @@ function mayReadConnection(
     ownerId: connection.ownerId,
     actingUserId: userId,
     actingPrincipalIsServiceAccount,
+    agentPrincipal,
     trustedManagedSystem: isTrustedManagedChannelAuthorization({
       providerType: connection.providerType,
       platform:
@@ -303,12 +310,15 @@ function mayMutateConnection(
   userId: string,
   actingPrincipalIsServiceAccount: boolean,
   mayManageSystemConnections: boolean,
+  /** Agent-principal reach (spec 2026-09-22 §2.3); null = legacy rule. */
+  agentPrincipal: AgentPrincipalReach | null = null,
 ): boolean {
   const reachable = connectionIsReachable({
     ownerType: connection.ownerType,
     ownerId: connection.ownerId,
     actingUserId: userId,
     actingPrincipalIsServiceAccount,
+    agentPrincipal,
     trustedManagedSystem: isTrustedManagedChannelAuthorization({
       providerType: connection.providerType,
       platform:
@@ -413,6 +423,7 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     const actingPrincipalIsServiceAccount = c.get('authType') === 'service_account';
+    const agentReach = await requestAgentPrincipalReach(c, loaded.actor);
     // A sandbox connector token is bound to ONE session. Load what that session was
     // actually GIVEN so the enumeration below can be narrowed to it. null for
     // every non-session caller, which leaves the operator's view unchanged.
@@ -454,6 +465,7 @@ projectsApp.openapi(
             loaded.userId,
             actingPrincipalIsServiceAccount,
             sessionBoundConnectionIds,
+            agentReach,
           ),
         )
         .map(serializeConnection),
@@ -715,6 +727,7 @@ projectsApp.openapi(
         ownerId: normalizedOwnerId,
         actingUserId: loaded.userId,
         actingPrincipalIsServiceAccount: c.get('authType') === 'service_account',
+        agentPrincipal: await requestAgentPrincipalReach(c, loaded.actor),
       })
     ) {
       return c.json(
@@ -814,6 +827,7 @@ for (const operation of ['credential', 'revoke', 'activate', 'default'] as const
           loaded.userId,
           actingPrincipalIsServiceAccount,
           mayManageSystemConnections,
+          await requestAgentPrincipalReach(c, loaded.actor),
         )
       ) {
         return c.json({ error: 'Not found' }, 404);
@@ -1012,6 +1026,7 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
           loaded.userId,
           actingPrincipalIsServiceAccount,
           mayManageSystemConnections,
+          await requestAgentPrincipalReach(c, loaded.actor),
         )
       ) {
         return c.json({ error: 'Not found' }, 404);
@@ -1191,7 +1206,7 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Leaf-gate the read (a custom role can omit project.trigger.read) — and, via
-    // the central agent-grant fold, an agent token must hold it in its kortixCli.
+    // the central agent-grant fold, an agent token must hold it in its Kortix permissions.
     await assertProjectCapability(
       c,
       loaded.userId,
@@ -3332,7 +3347,8 @@ projectsApp.openapi(
     const catalog = await servableProjectCatalog({
       projectId,
       accountId,
-      principalUserId: loaded.userId,
+      // Spec 2026-09-22 §2.3: personal provider keys of the on-behalf-of human only.
+      principalUserId: await requestPersonalOwner(c, loaded),
     });
     return c.json(catalog);
   },
@@ -4080,6 +4096,24 @@ projectsApp.openapi(
 
     const spec = await findProjectTriggerBySlug(await withProjectGitAuth(loaded.row), slug);
     if (!spec) return c.json({ error: 'Not found' }, 404);
+    // Agents as principals (spec 2026-09-22 §2.2, closes V2): the fired run
+    // acts as the trigger's agent, so the FIRER must be allowed to run that
+    // agent. Under the legacy model (flag off) the fire keeps today's gate.
+    if (resolveFeatureFlag(loaded.row.metadata, 'agent_principal')) {
+      // `default` selects the project's default agent; ask about that agent.
+      const mirroredDefault = (loaded.row.metadata as Record<string, unknown> | null)?.default_agent;
+      const firedAgent =
+        spec.agent === 'default' && typeof mirroredDefault === 'string' && mirroredDefault.trim()
+          ? mirroredDefault.trim()
+          : spec.agent;
+      await assertMayRunAgent(
+        c,
+        loaded.row.accountId,
+        projectId,
+        firedAgent,
+        PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE,
+      );
+    }
 
     const now = new Date();
     const payload = {

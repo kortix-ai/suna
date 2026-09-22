@@ -30,6 +30,26 @@ import { callerKortixSessionId } from '../lib/caller-session';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { resolveSessionAgentGrant } from '../lib/secret-grant';
 
+/**
+ * At most one forced mirror refresh per project per window. A miss is the only
+ * caller, and a burst of misses (a test suite, a retrying client) must not
+ * become a burst of upstream git fetches.
+ */
+const FORCED_REFRESH_COOLDOWN_MS = 10_000;
+const lastForcedRefresh = new Map<string, number>();
+
+export function mayForceMirrorRefresh(projectId: string, now = Date.now()): boolean {
+  const previous = lastForcedRefresh.get(projectId);
+  if (previous !== undefined && now - previous < FORCED_REFRESH_COOLDOWN_MS) return false;
+  lastForcedRefresh.set(projectId, now);
+  return true;
+}
+
+/** @internal tests */
+export function __resetForcedRefreshCooldown(): void {
+  lastForcedRefresh.clear();
+}
+
 // ─── Per-resource (agent/skill) scoping ─────────────────────────────────────
 // Scope a member or group to SPECIFIC agents/skills. A resource with >=1 grant
 // is visible/usable only to granted principals; unscoped resources stay
@@ -265,7 +285,20 @@ projectsApp.openapi(
       );
     }
     if (!projectHasResource(config, resourceType, resourceId)) {
-      return c.json({ error: `no ${resourceType} '${resourceId}' in this project` }, 400);
+      // A just-committed agent can be missing from the timer-refreshed mirror.
+      // Read once more from a forced refresh before calling it absent, at most
+      // once per project per cooldown so a burst of misses cannot turn into a
+      // burst of upstream fetches (same bound as the trigger lookup).
+      if (mayForceMirrorRefresh(loaded.row.projectId)) {
+        try {
+          config = await loadConfigWithFiles(loaded.row, { forceRefresh: true });
+        } catch {
+          // Keep the first read; the answer below stays "not found".
+        }
+      }
+      if (!projectHasResource(config, resourceType, resourceId)) {
+        return c.json({ error: `no ${resourceType} '${resourceId}' in this project` }, 400);
+      }
     }
 
     const { grantId } = await upsertResourceGrant({

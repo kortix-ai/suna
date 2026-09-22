@@ -620,6 +620,8 @@ describe('resolveCandidates — codex + unknown provider', () => {
     expect(resolveCodexCredential).toHaveBeenCalledWith('p1', 'u1', undefined, {
       accountId: 'acct-1',
       sessionId: 'session-1',
+      // Legacy principal (no personalUserId): the personal override owner is the token user.
+      principalUserId: 'u1',
     });
   });
 
@@ -706,7 +708,7 @@ test('a prospective ChatGPT pool validates through the same member-bound resolve
   const actor = principal();
   const candidates = await resolveCandidates(actor, 'codex/gpt-5.5', { providerSecretPools: { codex: ['shared'] } });
   expect(candidates.map(candidate => candidate.poolSecretId)).toEqual(['shared']);
-  expect(resolveSessionProviderSecrets).toHaveBeenCalledWith({ accountId: actor.accountId, projectId: actor.projectId, userId: actor.userId, providerId: 'codex', name: 'CODEX_AUTH_JSON', secretIds: ['shared'] });
+  expect(resolveSessionProviderSecrets).toHaveBeenCalledWith({ accountId: actor.accountId, projectId: actor.projectId, userId: actor.userId, grantUserId: actor.userId, providerId: 'codex', name: 'CODEX_AUTH_JSON', secretIds: ['shared'] });
   expect(resolveCodexAccountCredential).toHaveBeenCalledWith(expect.objectContaining({ sessionId: null }));
 });
 

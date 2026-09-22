@@ -295,7 +295,7 @@ for (const runtime of runtimes) {
           "Skills",
           "Connectors",
           "Secrets",
-          "Project actions",
+          "Kortix permissions",
           "Model",
           "Tools",
           "Workspace",
