@@ -372,8 +372,11 @@ test.describe('21 — Session access UI', () => {
       try {
         await installBrowserSessionDirect(adminPage, adminSession, `/projects/${projectId}`, authOptions);
         await selectAccountForUi(adminPage, accountId);
+        // GET only: on a split origin (staging web → staging-api) the CORS
+        // preflight OPTIONS matches the same URL first and answers 204.
         const inventory = adminPage.waitForResponse(
           (response) =>
+            response.request().method() === 'GET' &&
             response.url().includes(`/v1/projects/${projectId}/sessions`) &&
             response.url().includes('scope=project'),
         );

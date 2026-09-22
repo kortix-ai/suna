@@ -700,9 +700,10 @@ function AttachmentImage({ file, className }: { file: NormalizedAttachment; clas
   return (
     <PreviewImage>
       <PreviewImageTrigger asChild>
+        {/* No `title` here: the inner tile carries it and fills this button, so
+            the tooltip is the same, and one tile answers `[title=…]` once. */}
         <button
           type="button"
-          title={file.filename}
           onClick={(e) => e.stopPropagation()}
           className={cn(TILE_SURFACE, TILE_INTERACTIVE, className)}
         >

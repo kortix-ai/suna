@@ -686,6 +686,18 @@ describe('sent attachment tiles', () => {
     expectFinishedTile(html);
   });
 
+  // The picture tile is a preview button wrapping the tile. Both used to carry
+  // `title=<filename>`, so one tile answered `[title="shot.png"]` twice and
+  // release gate 35744913604 failed spec 28:528 on a strict-mode violation.
+  test('a picture tile names its file once, on the tile', () => {
+    const file = sentImage('upload-title', 'shot.png', 'blob:title');
+    adoptSentAttachmentPreviews([file]);
+    const html = renderText(buildOptimisticPromptTextWithUploads('look', [file]));
+
+    expect(blobImages(html, 'blob:title')).toBe(1);
+    expect(html.split('title="shot.png"').length - 1).toBe(1);
+  });
+
   test('the echo reference keeps the sent picture while the sandbox read is still loading', () => {
     const file = sentImage('upload-echo', 'a.png', 'blob:echo');
     adoptSentAttachmentPreviews([file]);
