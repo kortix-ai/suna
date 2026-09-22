@@ -362,27 +362,19 @@ export interface SessionChatInputProps {
  * narrower than either max-width — every panel-open case — the card's edges
  * land on exactly the same rails as the messages above it.
  *
- * `md:pr-1` is Jay's optical trim and is NOT the old bug returning — do not
- * "clean it up". It trims the RIGHT gutter to 4px from `md` up because on
- * desktop the chat column already ends in the action-panel column's chevron
- * rail (`session-action-panel-column.tsx`: `gap-2` + a `size-7` button + `mr-1`
- * when collapsed, ~40px), so a full 16px on top of that read as a composer
- * pushed left. The distinction that matters: a breakpoint may TRIM this gutter,
- * it may never ZERO it — zero is what let the card touch the panel divider, and
- * `composer-underbar.test.tsx` guards exactly that line.
+ * The gutter is equal on both sides. It used to carry `md:pr-1`, a right-side
+ * trim against the collapsed action-panel chevron rail, which then took ~37px
+ * of the row's width. That rail now takes no width (`COLLAPSED_RAIL_OFFSET` in
+ * `session-action-panel-column.tsx`), so the trim only shifted the card 5.5px
+ * right of center. A breakpoint may never ZERO this gutter — zero is what let
+ * the card touch the panel divider, and `composer-underbar.test.tsx` guards
+ * exactly that line.
  *
- * Known limit of the trim, left as-is on purpose: the chevron rail it
- * compensates for is not always there. The panel column is `hidden` while a
- * detail panel (browser, terminal, files, preview) is up, and it never mounts
- * on project-home / instant-session-shell. In those states the right gutter is
- * 4px against a 16px left. Worth a look if the composer ever reads
- * right-shifted with a browser tab open; harmless otherwise.
- *
- * Beyond that trim, do not add breakpoints. If this needs to respond to width,
+ * Do not add breakpoints. If this needs to respond to width,
  * it has to be a container query on the chat column, not a media query — the
  * media query cannot see the panel, which is the whole reason it broke before.
  */
-export const COMPOSER_SHELL_CLASS = 'relative z-10 mx-auto w-full max-w-210 shrink-0 px-4 md:pr-1';
+export const COMPOSER_SHELL_CLASS = 'relative z-10 mx-auto w-full max-w-210 shrink-0 px-4';
 
 /**
  * The inset strip above the card that hosts `inputSlot` — the queued messages,
@@ -1945,7 +1937,7 @@ function ComposerImpl({
         `mt-2.5` is the same gap the menu's own `mb-2.5` gives the `'above'`
         dock — there the margin faces the card, here it faces away, so the
         gap moves to the dock. The horizontal inset mirrors the shell's
-        `px-4 md:pr-1` gutter so the menu stays flush with the card edges.
+        `px-4` gutter so the menu stays flush with the card edges.
         Empty (menu closed) it has zero height and intercepts nothing.
 
         `z-99` only beats siblings inside THIS shell (the card is
@@ -1955,7 +1947,7 @@ function ComposerImpl({
         would cover the menu again — they must stay unstacked.
       */}
       {slashMenuPlacement === 'below' && (
-        <div id={dockId} className="absolute top-full right-4 left-4 z-99 mt-3.5 md:right-1" />
+        <div id={dockId} className="absolute top-full right-4 left-4 z-99 mt-3.5" />
       )}
     </div>
   );
