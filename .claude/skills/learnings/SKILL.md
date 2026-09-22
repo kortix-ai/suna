@@ -6699,3 +6699,25 @@ to permit a single provisioning check before starting another full run.
 **Enforcement.** The pending queue fixture is verified with the local browser
 runner, which uses local Git. The preview gate stays explicitly blocked until
 GitHub provisioning recovers; a local pass does not replace that gate.
+
+### 2026-09-22 — A provider rehome must rotate runtime credentials before verification
+
+**Incident.** A byte-identical sandbox clone started on the new provider, but
+the restored daemon inherited a revoked credential from the old provider's
+process environment. Direct runtime convergence passed only after the operator
+installed a production-minted session credential. The first database cutover
+also updated the runtime row without updating the session index row.
+
+**Rule.** A provider rehome preserves the stable session and sandbox IDs. It
+updates the runtime row and session index row in one transaction. It rotates the
+session credential before the first normal start. The bootstrap must remove the
+legacy credential name and export the new credential into the relaunched daemon.
+Keep the source sandbox until the target passes archive digest comparison,
+runtime health, history, title, owner, sharing, stop, and archive checks.
+
+**Enforcement.** The production rehome controller uses an idempotent SQLite
+ledger. Each session records source capture, target restore, credential
+rotation, atomic cutover, runtime convergence, content verification, and final
+archive as separate states. Failures retain the source and re-enter the exact
+unfinished state. A canary must pass the public start route before fleet work
+starts.
