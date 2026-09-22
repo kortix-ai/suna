@@ -117,6 +117,12 @@ Heuristic: shared company tool → `project`; a person's own account → `me`.
 shared slot.** If you mint a shared link for a tool the team will share, make
 sure the project has (or first creates) the shared identity to authorize with.
 
+Ownership is a property of the CONNECTION (the account row), not of the
+connector — the connector itself is a project-wide tool. A member-private
+account is reachable only by its owner inside a private session: unattended
+automations (triggers, cron, service accounts) can never run as it, which is
+exactly why the shared slot must hold the project identity.
+
 **Re-scoping a mis-owned account** (no in-place fix exists):
 
 1. `kortix connectors connect <slug> --owner project` (or `me`) → human

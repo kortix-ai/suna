@@ -232,7 +232,7 @@ connectors:
 | `credential`            | no       | `shared` — one server-side credential for the connector. Set the value via `kortix connectors credential` or bind a project secret (`kortix connectors secret`). Never inline in the manifest. |
 | `auth`                  | no       | How the credential is applied: `type` plus placement (`in: header\|query` + `name`).                  |
 | `policies`              | no       | Per-action risk policy: `{ match, action }`. `match` is an action path or wildcard.                  |
-| `authorization_strategy`| no       | `project` (default) \| `user` — see the ownership rules below.                                       |
+| `authorization_strategy`| no       | **Deprecated — do not use.** Kept on the wire and in the parser, but nothing reads it server-side. Ownership is a per-CONNECTION property (see below), not a connector setting. |
 
 Adding/removing entries: `kortix connectors add <slug> --provider <p> …` /
 `kortix connectors rm <slug>` edit the local file (add `--apply` to commit to
@@ -248,7 +248,8 @@ the human authorizes it, and that account is either:
   as; every member's and every agent session's calls run as it (the default
   account for unnamed calls). This is the right choice for shared company tools.
 - **Member-private** (`owner: me`) — bound to the one person who authorized it;
-  only their own sessions may run as it (the `--account me` selector).
+  reachable only by that person inside a private session — never by a service
+  account or an unattended automation (the `--account me` selector).
 
 **The identity that completes the OAuth is the identity the connector acts
 as.** A project-shared account must therefore be authorized under the
@@ -269,9 +270,21 @@ Rules:
   DENIED (`account_required`) rather than guessed — pin one explicitly:
   `kortix connectors accounts <slug> --default <label>`.
 
-Writing `authorization_strategy: project` explicitly on OAuth connectors is
-worthwhile even though it's the default: it encodes the intent in the manifest
-and tells future editors exactly what the shared slot is for.
+> **History note:** the manifest once had an `authorization_strategy:
+> project|user` field that made the two owner types mutually exclusive per
+> connector. It is retired (the manifest parser still accepts it, but nothing
+> reads it) — and it was itself the cause of this bug class: a `user`-strategy
+> connector had NO connect flow anywhere, because three call sites refused
+> anything that wasn't `project`, which pushed people into authorizing
+> personal logins into the shared slot. Ownership now lives on each
+> connection row; do not reach for the old field.
+
+The invariant that matters, now enforced per row: **an unattended automation
+(trigger, cron, webhook, any service-account session) can NEVER run as a
+member-private account** — a `member`-owned connection is reachable only by
+its owner inside a private session, and never by a service account. So shared
+automations use the project-shared account, which is exactly why that slot
+must hold the project identity and not someone's personal login.
 
 **Fixing a connector mis-scoped to a personal login** (audit with
 `kortix connectors accounts <slug>` and the manage-gated roster
