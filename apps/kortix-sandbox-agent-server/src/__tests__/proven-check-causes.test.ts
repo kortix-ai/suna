@@ -55,6 +55,19 @@ describe('describeOpencodeError', () => {
     expect(cause).not.toContain('THIS IS NOT JSON')
   })
 
+  test('a file read through the boot link is named relative to the config dir (not boot/opencode.jsonc)', () => {
+    // The boot-spawned process reads OPENCODE_CONFIG_DIR=/opt/kortix/config/boot,
+    // a link to the release; OpenCode reports the path it read.
+    const viaLink = {
+      ...CONFIG_JSON_ERROR,
+      data: { ...CONFIG_JSON_ERROR.data, path: '/opt/kortix/config/boot/opencode.jsonc' },
+    }
+    const cause = describeOpencodeError(400, JSON.stringify(viaLink), RELEASE)
+    expect(cause.startsWith('ConfigJsonError in opencode.jsonc: ')).toBe(true)
+    const nested = { ...CONFIG_JSON_ERROR, data: { ...CONFIG_JSON_ERROR.data, path: '/opt/kortix/config/boot/agents/x.md' } }
+    expect(describeOpencodeError(400, JSON.stringify(nested), RELEASE).startsWith('ConfigJsonError in agents/x.md')).toBe(true)
+  })
+
   test('another named error keeps its name, first message line and ref, bounded', () => {
     const cause = describeOpencodeError(
       500,

@@ -1,4 +1,5 @@
 import type { ConfigReleaseFile } from '../../config-release/descriptor'
+import { bootLinkPath } from '../../boot-config'
 
 /**
  * The proven check. Spec: docs/specs/config-releases.md, "Proven check".
@@ -101,8 +102,14 @@ export function describeOpencodeError(status: number, bodyText: string, configDi
   const message = typeof data.message === 'string' ? data.message : ''
   if (isConfigErrorName(name)) {
     let file = typeof data.path === 'string' ? data.path : ''
-    if (configDir && file.startsWith(`${configDir.replace(/\/+$/, '')}/`)) {
-      file = file.slice(configDir.replace(/\/+$/, '').length + 1)
+    // A process spawned at boot reads the config through the boot link, and
+    // OpenCode reports the path it read. Both name the same config dir.
+    const base = [configDir, bootLinkPath()]
+      .filter((dir): dir is string => Boolean(dir))
+      .map((dir) => dir.replace(/\/+$/, ''))
+      .find((dir) => file.startsWith(`${dir}/`))
+    if (base) {
+      file = file.slice(base.length + 1)
     } else if (file) {
       file = file.split('/').slice(-2).join('/')
     }
