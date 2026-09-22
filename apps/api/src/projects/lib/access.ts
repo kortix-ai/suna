@@ -12,7 +12,7 @@ import {
 // Straight from the engine + the actor builder, not the barrel: the barrel is
 // replaced wholesale by `mock.module` in several route tests, so every name
 // imported from it is a name those stubs must also declare.
-import { agentEffectiveAllows, authorize, assertAuthorized } from '../../iam/authorize';
+import { authorize, assertAuthorized } from '../../iam/authorize';
 import { actorOf, isAgentPrincipalActor, type Actor } from '../../iam/actor';
 import { agentSessionStanding } from './agent-session-standing';
 export { agentSessionStanding } from './agent-session-standing';
@@ -1114,7 +1114,10 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
   const effectiveRole = deriveEffectiveRole({
     agentPrincipal,
     agentMayWrite: agentPrincipal
-      ? await agentEffectiveAllows(actor, iamActionForProjectAccess('manage'), projectId)
+      ? // `authorize` directly, not `agentEffectiveAllows`: for an agent-principal
+        // actor they are the same verdict, and a new name imported from
+        // iam/authorize is one more export every hand-written mock must list.
+        (await authorize(actor, iamActionForProjectAccess('manage'), { type: 'project', id: projectId })).allowed
       : false,
     callerRole: callerRole as ProjectRole,
   });

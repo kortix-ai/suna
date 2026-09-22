@@ -9,8 +9,6 @@
 export {
   authorize,
   assertAuthorized,
-  agentEffectiveAllows,
-  agentEffectiveVerdict,
   listAccessible,
   filterAccessibleObjects,
   type Obj,
