@@ -11,6 +11,7 @@ import {
   getAppAccess,
   getAppDeployment,
   getAppDeploymentLogs,
+  listAppAgents,
   listAppDeployments,
   listApps,
   registerAppArtifact,
@@ -283,4 +284,18 @@ test('deployment inspection, logs, lifecycle, and rollback use bound identifiers
   await stopApp('project-1', 'app-1');
   await rollbackApp('project-1', 'app-1', 'deployment-1');
   expect(last()).toMatchObject({ method: 'POST', body: { deployment_id: 'deployment-1' } });
+});
+
+test('listAppAgents reads the agents whose kortix.yaml `apps:` grant names the App', async () => {
+  const agents = [
+    { agent_name: 'finance-report', grant: 'listed' as const, path: 'kortix.yaml#agents.finance-report' },
+    { agent_name: 'ops', grant: 'all' as const, path: 'kortix.yaml#agents.ops' },
+  ];
+  responses.push({ body: { agents } });
+
+  expect(await listAppAgents('project-1', 'app-1')).toEqual(agents);
+  expect(last()).toMatchObject({
+    method: 'GET',
+    url: 'http://backend.test/v1/projects/project-1/apps/app-1/agents',
+  });
 });

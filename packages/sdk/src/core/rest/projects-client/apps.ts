@@ -290,6 +290,27 @@ export async function getAppAccess(projectId: string, appId: string): Promise<Ap
   );
 }
 
+/**
+ * One agent whose `kortix.yaml` grant `agents.<name>.apps` names an App.
+ * `grant` is `all` when the agent lists `apps: all`, `listed` when it names the
+ * App's slug. Read-only: the manifest is the source of truth, so an agent's App
+ * access changes through a change to `kortix.yaml`, never through this API.
+ */
+export interface AppAgentAccess {
+  agent_name: string;
+  grant: 'all' | 'listed';
+  /** Where the grant is declared, e.g. `kortix.yaml#agents.finance-report`. */
+  path: string;
+}
+
+/** The agents whose `apps:` grant names this App (or is `all`). */
+export async function listAppAgents(projectId: string, appId: string): Promise<AppAgentAccess[]> {
+  return unwrap(
+    await backendApi.get<{ agents: AppAgentAccess[] }>(`/projects/${projectId}/apps/${appId}/agents`),
+    'Failed to load the agents with access to this App',
+  ).agents;
+}
+
 export async function updateAppAccess(
   projectId: string,
   appId: string,
