@@ -36,8 +36,8 @@ import { Icon } from '@/components/ui/icon';
 import { PageHeader } from '@/components/kortix/page-header';
 import { PageContent } from '@/components/kortix/page-content';
 import { SearchListHeader } from '@/components/kortix/search-list-header';
-import { ListRow } from '@/components/kortix/list-row';
 import { PageList, StatusDot } from '@/components/kortix/page-list';
+import { PinnedBar, usePinnedBarInset } from '@/components/kortix/pinned-bar';
 import { useThemeColors } from '@/lib/theme-colors';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import { AgentPickerField, ModelPickerField } from './TriggerAgentModelFields';
@@ -80,6 +80,8 @@ interface SchedulesPageProps {
 }
 
 const MONO = 'Menlo';
+/** The detail sheet's pinned action row: `Button size="lg"`, 44pt. */
+const ACTION_BAR_HEIGHT = 44;
 
 // ─── Create schedule ──────────────────────────────────────────────────────────
 
@@ -247,8 +249,8 @@ function ScheduleDetailSheet({
   onClose: () => void;
   isDark: boolean;
 }) {
-  const insets = useSafeAreaInsets();
   const sheetBackground = useSheetBackground();
+  const barInset = usePinnedBarInset(ACTION_BAR_HEIGHT);
   const fire = useFireProjectTrigger(projectId);
   const update = useUpdateProjectTrigger(projectId);
   const del = useDeleteProjectTrigger(projectId);
@@ -328,9 +330,10 @@ function ScheduleDetailSheet({
           schedule, and the pause button below says whether it runs. */}
       <SheetTitleRow title={trigger.name || trigger.slug} onClose={() => { haptics.tap(); onClose(); }} />
 
+      <View style={{ flex: 1 }}>
       <BottomSheetScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: 24, gap: 16 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: barInset, gap: 16 }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled">
         <SettingsGroup className="bg-secondary">
@@ -350,11 +353,10 @@ function ScheduleDetailSheet({
         </SettingsGroup>
       </BottomSheetScrollView>
 
-      {/* Pinned action bar: always on screen, whatever the scroll position
-          (Jay, 2026-09-22). Fire now · pause or resume · delete. */}
-      <View
-        className="flex-row items-center gap-3 px-4 pt-3"
-        style={{ backgroundColor: sheetBackground, paddingBottom: Math.max(insets.bottom, 16) + 8 }}>
+      {/* Pinned action bar, floating over a fade of the sheet, the content
+          scrolling under it — the agent and skill detail's fade (Jay,
+          2026-09-22). Fire now · pause or resume · delete. */}
+      <PinnedBar controlHeight={ACTION_BAR_HEIGHT} background={sheetBackground} className="gap-3 px-4">
         <Button size="lg" onPress={handleFire} disabled={fire.isPending} className="flex-1 rounded-full">
           <Icon as={Play} size={16} className="text-primary-foreground" />
           <Text>{fire.isPending ? 'Firing…' : 'Fire now'}</Text>
@@ -378,6 +380,7 @@ function ScheduleDetailSheet({
           accessibilityLabel="Delete schedule">
           <Icon as={Trash2} size={18} className="text-destructive" />
         </Button>
+      </PinnedBar>
       </View>
     </Animated.View>
   );
@@ -463,27 +466,31 @@ export function SchedulesPage({
                 : null
           }
 >
-          {filtered.map((t, i) => (
-            <ListRow
-              key={t.slug}
-              title={t.name || describeCron(t.cron)}
-              subtitle={`${t.run_at ? 'One-off' : describeCron(t.cron)} · ${relativeTime(t.last_fired_at)} · ${t.agent || 'default'}`}
-              divider={i < filtered.length - 1}
-              onPress={() => openRow(t.slug)}
-              right={
-                <View className="flex-row items-center gap-3">
-                  <StatusDot on={!!t.enabled} label={t.enabled ? 'Active' : 'Paused'} />
-                  <Icon as={ChevronRight} size={18} className="text-muted-foreground" />
-                </View>
-              }
-            />
-          ))}
+          {/* Settings rows in a group (Jay, 2026-09-22), the Agents list's layout. */}
+          <View className="px-4 pt-1">
+            <SettingsGroup>
+              {filtered.map((t) => (
+                <SettingsRow
+                  key={t.slug}
+                  label={t.name || describeCron(t.cron)}
+                  description={`${t.run_at ? 'One-off' : describeCron(t.cron)} · ${relativeTime(t.last_fired_at)} · ${t.agent || 'default'}`}
+                  onPress={() => openRow(t.slug)}
+                  right={
+                    <View className="flex-row items-center gap-3">
+                      <StatusDot on={!!t.enabled} label={t.enabled ? 'Active' : 'Paused'} />
+                      <Icon as={ChevronRight} size={16} className="text-muted-foreground/70" />
+                    </View>
+                  }
+                />
+              ))}
+            </SettingsGroup>
+          </View>
         </PageList>
       </PageContent>
 
       <KortixBottomSheetModal
         ref={addSheetRef}
-        snapPoints={['92%']}
+        snapPoints={['100%']}
         enableDynamicSizing={false}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
@@ -493,7 +500,7 @@ export function SchedulesPage({
 
       <KortixBottomSheetModal
         ref={detailSheetRef}
-        snapPoints={['92%']}
+        snapPoints={['100%']}
         enableDynamicSizing={false}
         onDismiss={() => setSelectedSlug(null)}
         keyboardBehavior="interactive"

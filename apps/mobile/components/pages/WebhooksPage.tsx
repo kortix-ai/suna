@@ -40,8 +40,8 @@ import { Icon } from '@/components/ui/icon';
 import { PageHeader } from '@/components/kortix/page-header';
 import { PageContent } from '@/components/kortix/page-content';
 import { SearchListHeader } from '@/components/kortix/search-list-header';
-import { ListRow } from '@/components/kortix/list-row';
 import { PageList, StatusDot } from '@/components/kortix/page-list';
+import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { useThemeColors } from '@/lib/theme-colors';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import { AgentPickerField, ModelPickerField } from './TriggerAgentModelFields';
@@ -498,27 +498,31 @@ export function WebhooksPage({
                 ? all.length === 0 ? 'No webhooks yet' : 'No matching webhooks'
                 : null
           }>
-          {filtered.map((t, i) => (
-            <ListRow
-              key={t.slug}
-              title={t.name || t.slug}
-              subtitle={`${t.secret_env ? 'Signed' : 'Unsigned'} · ${relativeTime(t.last_fired_at)} · ${t.agent || 'default'}`}
-              divider={i < filtered.length - 1}
-              onPress={() => openRow(t.slug)}
-              right={
-                <View className="flex-row items-center gap-3">
-                  <StatusDot on={!!t.enabled} label={t.enabled ? 'Active' : 'Paused'} />
-                  <Icon as={ChevronRight} size={18} className="text-muted-foreground" />
-                </View>
-              }
-            />
-          ))}
+          {/* Settings rows in a group (Jay, 2026-09-22), the Schedules list's layout. */}
+          <View className="px-4 pt-1">
+            <SettingsGroup>
+              {filtered.map((t) => (
+                <SettingsRow
+                  key={t.slug}
+                  label={t.name || t.slug}
+                  description={`${t.secret_env ? 'Signed' : 'Unsigned'} · ${relativeTime(t.last_fired_at)} · ${t.agent || 'default'}`}
+                  onPress={() => openRow(t.slug)}
+                  right={
+                    <View className="flex-row items-center gap-3">
+                      <StatusDot on={!!t.enabled} label={t.enabled ? 'Active' : 'Paused'} />
+                      <Icon as={ChevronRight} size={16} className="text-muted-foreground/70" />
+                    </View>
+                  }
+                />
+              ))}
+            </SettingsGroup>
+          </View>
         </PageList>
       </PageContent>
 
       <KortixBottomSheetModal
         ref={addSheetRef}
-        snapPoints={['92%']}
+        snapPoints={['100%']}
         enableDynamicSizing={false}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
@@ -528,7 +532,7 @@ export function WebhooksPage({
 
       <KortixBottomSheetModal
         ref={detailSheetRef}
-        snapPoints={['92%']}
+        snapPoints={['100%']}
         enableDynamicSizing={false}
         onDismiss={() => setSelectedSlug(null)}
         keyboardBehavior="interactive"

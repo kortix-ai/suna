@@ -6,8 +6,10 @@ import {
   BottomSheetView,
   BottomSheetBackdrop,
   useBottomSheetModal,
+  useBottomSheetInternal,
   type BottomSheetModalProps,
 } from '@gorhom/bottom-sheet';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { getSheetBg } from '@/lib/theme-colors';
@@ -15,8 +17,11 @@ import { THEME } from '@/lib/utils/theme';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
-import { XIcon } from '@/lib/icons';
+import * as Clipboard from 'expo-clipboard';
+import { haptics } from '@/lib/haptics';
+import { CheckIcon, CopyIcon, XIcon } from '@/lib/icons';
 import { cn } from '@/lib/utils/utils';
+import { detentsKey, withFullDetent } from '@/lib/ui/sheet-detents';
 
 /**
  * Shared bottom-sheet backdrop. Every gorhom sheet creator in the app
@@ -195,9 +200,22 @@ export interface KortixBottomSheetModalProps extends BottomSheetModalProps {
 export const KortixBottomSheetModal = React.forwardRef<
   BottomSheetModal,
   KortixBottomSheetModalProps
->(({ title, hideClose = false, backgroundStyle, handleComponent, ...rest }, ref) => {
+>(({ title, hideClose = false, backgroundStyle, handleComponent, snapPoints, topInset, children, ...rest }, ref) => {
   const { titleTrailing, ...props } = rest;
+  // gorhom sizes the content box to the HIGHEST detent, which is now always
+  // 100%. A fixed-detent sheet shown at 92% would lay its content out
+  // full-screen tall and push a bottom Save row off-screen, so its body is
+  // wrapped in `SheetFill`: exactly the visible sheet, growing with a drag.
+  // A content-sized sheet (dynamic sizing) measures its own height instead.
+  const fixedDetents = props.enableDynamicSizing === false;
   const innerRef = React.useRef<BottomSheetModal>(null);
+  // Full screen stops under the status bar, so the container is the safe area.
+  const insets = useSafeAreaInsets();
+  // Every sheet reaches full screen (Jay, 2026-09-22): the call site's detents
+  // stay the ones it opens at, and `'100%'` is added after them, so a drag up
+  // expands any sheet. Keyed by value: most call sites pass an inline array.
+  const key = detentsKey(snapPoints);
+  const detents = React.useMemo(() => withFullDetent(snapPoints), [key]);
   React.useImperativeHandle(ref, () => innerRef.current as BottomSheetModal, []);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -225,6 +243,8 @@ export const KortixBottomSheetModal = React.forwardRef<
       backdropComponent={SheetBackdrop}
       handleIndicatorStyle={indicatorStyle}
       handleComponent={handleComponent ?? (title ? titledHandle : undefined)}
+      snapPoints={detents as BottomSheetModalProps['snapPoints']}
+      topInset={topInset ?? insets.top}
       {...props}
       backgroundStyle={[
         {
@@ -233,11 +253,64 @@ export const KortixBottomSheetModal = React.forwardRef<
           borderTopRightRadius: SHEET_DEFAULTS.radius,
         },
         backgroundStyle,
-      ]}
-    />
+      ]}>
+      {fixedDetents && typeof children !== 'function' ? <SheetFill>{children}</SheetFill> : children}
+    </BottomSheetModal>
   );
 });
 KortixBottomSheetModal.displayName = 'KortixBottomSheetModal';
+
+/**
+ * SheetFill — a box exactly as tall as the sheet's visible content area
+ * (container − sheet position − handle), tracking drags on the UI thread.
+ *
+ * gorhom sizes its content box to the sheet's HIGHEST detent
+ * (`animatedSheetHeight = containerHeight − highestDetentPosition`), and every
+ * sheet's highest detent is 100% (`withFullDetent`). A sheet shown at 92% lays
+ * its content out full-screen tall, `flex: 1` children fill that box, and a
+ * `PinnedBar` at `bottom: 0` lands off-screen (measured 787pt of content for a
+ * 722pt visible area, 2026-09-22). Wrap a sheet body that pins
+ * anything to its bottom edge in `SheetFill`; inside it, `flex: 1` and
+ * `absolute bottom-0` mean the visible sheet. `KortixBottomSheetModal` wraps
+ * every fixed-detent sheet (`enableDynamicSizing={false}`) in it; a
+ * content-sized sheet has no height of its own to fill. Never give it
+ * `flex: 1`: React Native's `flex: 1` sets `flexBasis: 0`, which discards the
+ * height (measured: 787pt again).
+ */
+export function SheetFill({ children, style }: { children: React.ReactNode; style?: Omit<ViewStyle, 'flex' | 'height'> }) {
+  const { animatedLayoutState, animatedPosition } = useBottomSheetInternal();
+  const fill = useAnimatedStyle(() => {
+    const { containerHeight, handleHeight } = animatedLayoutState.get();
+    if (containerHeight <= 0) return {};
+    const height = containerHeight - animatedPosition.get() - Math.max(0, handleHeight);
+    return { height: Math.max(0, height) };
+  }, [animatedLayoutState, animatedPosition]);
+  return <Animated.View style={[style, fill]}>{children}</Animated.View>;
+}
+
+/** Copies `text`; the glyph is a check for 1.5 s after. For `titleTrailing`. */
+export function CopyContentButton({ text }: { text: string }) {
+  const [copied, setCopied] = React.useState(false);
+  const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  React.useEffect(() => () => void (timer.current && clearTimeout(timer.current)), []);
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="rounded-full"
+      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      accessibilityLabel={copied ? 'Copied' : 'Copy file content'}
+      onPress={async () => {
+        await Clipboard.setStringAsync(text);
+        haptics.success();
+        setCopied(true);
+        if (timer.current) clearTimeout(timer.current);
+        timer.current = setTimeout(() => setCopied(false), 1500);
+      }}>
+      <Icon as={copied ? CheckIcon : CopyIcon} size={20} className="text-foreground" />
+    </Button>
+  );
+}
 
 export interface SheetRef {
   open: () => void;
@@ -268,7 +341,6 @@ export const Sheet = React.forwardRef<SheetRef, SheetProps>(
         snapPoints={effectiveSnapPoints}
         enableDynamicSizing={!effectiveSnapPoints}
         enablePanDownToClose={enablePanDownToClose}
-        topInset={fullScreen ? insets.top : 0}
         onDismiss={onDismiss}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
