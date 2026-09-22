@@ -57,7 +57,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Client } from '../core/client';
 import type { FlowContext, Principal } from '../core/types';
-import { waitFor } from '../core/poll';
+import { sleep } from '../core/poll';
 
 export interface Db {
   query<R = any>(sql: string, params?: unknown[]): Promise<{ rows: R[]; rowCount: number | null }>;
@@ -236,39 +236,38 @@ export class AgentPrincipalsWorld {
   async serviceAccountId(agent: string): Promise<string> {
     const cached = this.serviceAccounts.get(agent);
     if (cached) return cached;
-    // `/iam/agent-identities` lists agents from the project's git mirror, which
-    // refreshes on a timer. On a deployed stack an agent committed seconds ago
-    // can be missing for up to one refresh interval, so wait for it.
-    let lastBody = '';
-    const found = await waitFor(
-      async () => {
-        const r = await this.owner.get('/v1/accounts/:accountId/iam/agent-identities', {
-          params: { accountId: this.accountId },
-        });
-        r.status(200);
-        lastBody = r.text();
-        const rows = r.json<{ agents: Array<{ service_account_id: string; project_id: string | null; agent_name: string | null }> }>().agents;
-        for (const row of rows) {
-          if (row.project_id === this.projectId && row.agent_name) {
-            this.serviceAccounts.set(row.agent_name, row.service_account_id);
-          }
-        }
-        return this.serviceAccounts.get(agent) ?? null;
-      },
-      {
-        until: (id) => id !== null,
-        timeoutMs: 120_000,
-        intervalMs: 2_000,
-        description: `service account for agent '${agent}'`,
-      },
-    ).catch(() => null);
-    if (!found) {
-      throw new Error(`agent-identities did not provision a service account for agent '${agent}' in ${this.projectId}: ${lastBody.slice(0, 400)}`);
+    // Read the row the server provisions, not the list route. `GET
+    // /iam/agent-identities` runs `ensureAgentServiceAccount` for every agent
+    // of up to 50 projects, so POLLING it saturates a deployed API — on the
+    // preview it timed out the AGP flows and every flow scheduled after them.
+    // One call provisions; the database answers the retries.
+    const fromDb = async (): Promise<string | null> => {
+      const { rows } = await this.db.query<{ service_account_id: string }>(
+        `SELECT service_account_id FROM kortix.service_accounts
+          WHERE project_id = $1 AND agent_name = $2 AND status = 'active' LIMIT 1`,
+        [this.projectId, agent],
+      );
+      return rows[0]?.service_account_id ?? null;
+    };
+    let id = await fromDb();
+    for (let attempt = 0; !id && attempt < 3; attempt += 1) {
+      const r = await this.owner.get('/v1/accounts/:accountId/iam/agent-identities', {
+        params: { accountId: this.accountId },
+      });
+      r.status(200);
+      id = await fromDb();
+      // The manifest mirror refreshes on a timer, so a just-committed agent can
+      // still be absent. Wait once between provisioning calls.
+      if (!id && attempt < 2) await sleep(5_000);
     }
-    return found;
+    if (!id) {
+      throw new Error(`no service account for agent '${agent}' in project ${this.projectId} after 3 provisioning calls`);
+    }
+    this.serviceAccounts.set(agent, id);
+    return id;
   }
 
-  /** Grant `run(human, agent)` — the agent object grant, closed by default. */
+  /** `run(human, agent)` — the agent object grant, closed by default. */
   async grantRun(agent: string, human: Principal): Promise<string> {
     const r = await this.owner.post(
       '/v1/projects/:projectId/resource-grants',
