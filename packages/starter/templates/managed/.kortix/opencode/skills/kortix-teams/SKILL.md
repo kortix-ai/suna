@@ -21,13 +21,16 @@ automatically. There is no app to create by hand and no token to paste — a
 Microsoft **tenant admin** has to be the one who approves it, so if the user
 isn't an admin, they need to forward that link to someone who is.
 
-Two things that differ from Slack, so don't assume symmetry:
+`kortix channels disconnect --platform teams` removes an installation;
+`kortix channels manifest --platform teams` prints the app manifest and is
+**only** for manual/self-host setup (the consent flow never needs it).
 
-- **Disconnect is not in the CLI for Teams.** `kortix channels disconnect` is
-  Slack-only in this release — send the user to the dashboard
-  (**Customize → Channels**) to remove a Teams installation.
-- `kortix channels manifest --platform teams` prints the Teams app manifest, and
-  is **only** for manual/self-host setup. The consent flow above never needs it.
+**Channels vs personal chats.** In a personal chat every message reaches you.
+In a team channel or group chat, Teams only delivers a message when the bot is
+`@`-mentioned — UNLESS the tenant admin has consented to the "receive all
+channel messages" permission, after which a reply in a thread the bot already
+owns continues the session without a mention. Either way, a new channel post
+needs the mention.
 </connecting>
 
 <overview>
@@ -36,7 +39,8 @@ Once connected, your sandbox is wired into Microsoft Teams. When a teammate `@`-
 The `teams` CLI is on `$PATH` and **just works** — there is no token in your sandbox and nothing to configure. Turn replies are owned and rendered by the Kortix server; vendor reads run through the Kortix connector gateway, which resolves the Microsoft Graph credential **server-side**. Don't look for an app password, don't reach for an MCP/HTTP workaround — just run the commands below. Two patterns matter most:
 
 - **`teams step "..."`** — narrate progress. Repaints the live Adaptive Card in the Teams conversation *as you go*.
-- **`teams send "..."`** — finalize the turn with your answer. This closes the live card and renders the reply.
+- **`teams send "..."`** — finalize the turn with your answer. This closes the live card and renders the reply. Markdown (headings, `code`, ```fenced blocks```, tables, lists) is converted to card elements, so write normally.
+- **`teams send --card-file <path>`** — deliver a full Adaptive Card JSON as the reply instead of text, for rich layouts. The JSON's top-level `type` must be `"AdaptiveCard"`.
 
 Everything else (`teams send --file`, `teams download`, `teams channels`, …) is for when the task explicitly calls for it.
 </overview>
@@ -139,20 +143,68 @@ This finalizes the live card: the plan flips to **Task complete**, your answer r
 
 Teams questions are **async**: ask, stop, and resume when they reply — their reply arrives as a fresh turn with full context. Don't sit waiting for an answer inside a turn.
 
-**Do NOT use the built-in `question` tool on a Teams turn.** It's a synchronous web-UI/Slack construct and has no form renderer in Teams — calling it just hangs or fails. Put your question in `teams send` as plain prose (offer the options inline, e.g. "Reply **prod**, **staging**, or **dev**"), end the turn, and handle their answer next turn.
+### `teams ask --form-file <path>` — ask with real inputs
+
+When you need structured answers, post a **form** instead of prose. Teams
+renders it as a card with actual text boxes, dropdowns, toggles and one Submit
+button — the same shape as asking in the Kortix app. Write a small JSON spec;
+the server builds the card.
+
+```sh
+cat > /tmp/form.json <<'JSON'
+{
+  "title": "Deploy details",
+  "subtitle": "Two things before I start",
+  "submitLabel": "Deploy",
+  "fields": [
+    { "id": "env", "label": "Environment", "type": "choice",
+      "choices": ["prod", "staging"], "required": true },
+    { "id": "notes", "label": "Anything I should know?", "type": "textarea" },
+    { "id": "dry", "label": "Dry run first", "type": "toggle" }
+  ]
+}
+JSON
+teams ask --form-file /tmp/form.json --text "Before I deploy:"
+```
+
+Field `type`: `text`, `textarea`, `number`, `date`, `time`, `choice`,
+`multichoice`, `toggle`. Add `placeholder`, `value` (prefill) and
+`required`. Up to 12 fields, 24 choices each.
+
+`ask` **finalizes the turn**, exactly like `send`. The user's Submit arrives as
+your NEXT turn with their answers, so post the form and then END your turn.
+
+**Ask with a card, not with prose.** Teams renders real controls, so a question
+written as a numbered list in `teams send` is a worse version of what the
+platform already gives you. Reach for prose only when there is genuinely
+nothing to pick or fill in.
+
+The built-in `question` tool DOES work here: the Kortix server renders it as a
+card with a button per option and returns immediately with a note telling you
+to end your turn. It does not block. Use it for a quick either/or; use
+`teams ask --form-file` when you need typed input or several answers at once.
 
 | When you want to… | Use |
 | --- | --- |
-| Ask the user something | `teams send` with the question, then end the turn |
+| Ask a quick either/or | the `question` tool — buttons, one tap |
+| Ask for typed input, or several answers | `teams ask --form-file` |
+| Ask something genuinely open-ended | `teams send` with the question |
 | Deliver the final answer | `teams send` |
 | Show progress along the way | `teams step` |
 | Send a file | `teams send --file` |
+
+Whichever you use, the reply arrives as your NEXT turn. Ask, then END the turn.
 </asking-the-user>
 
 <files-and-artifacts>
-### Sending a file: `teams send --file <path>` (consent-card flow)
+### Sending a file: `teams send --file <path>`
 
-When the work produces an artifact (a PDF, CSV, report, diff, screenshot), offer it with `--file`. Teams files use a **file consent card**: the bot offers the file, the **user clicks Accept**, and only then does Teams hand back an upload slot and the file lands in the conversation. So this is a **two-step, asynchronous** flow — `teams send --file` posts the consent card; the upload completes when the user accepts (the Kortix server handles the accept callback and the actual upload). The conversation context is taken from the env, so you don't pass IDs:
+When the work produces an artifact (a PDF, CSV, report, diff, screenshot), offer it with `--file`. Delivery depends on WHERE the conversation is, and the server picks the right method from the env — you always just run `teams send --file`:
+
+- **Personal chat** → a **file consent card**: you offer the file, the user clicks Accept, and only then does Teams upload it. Two-step and asynchronous; it does NOT finalize the turn.
+- **Team channel / group chat** → an **image** is posted inline instantly; any **other file** is uploaded to the team's SharePoint drive and shared as a link card (needs the bot app's `Files.ReadWrite.All` permission — if it is missing, the command returns a clear error you can relay).
+
+The conversation context is taken from the env, so you don't pass IDs:
 
 ```sh
 teams send --file /workspace/output/report.pdf --text "Incident report — accept to download."
@@ -177,7 +229,43 @@ teams download --url "<downloadUrl from the prompt>" --out /workspace/incoming/d
 ```
 
 The download runs through the Kortix server (the credential stays server-side); you just give the URL and an output path.
+
+### Images: download, then just look at them
+
+A pasted screenshot arrives as an attachment marked `(image)`. Download it and
+open it with the **`read` tool** — you can see images directly.
+
+```sh
+teams download --url "<downloadUrl from the prompt>" --out /workspace/attachment.png
+# then: read /workspace/attachment.png
+```
+
+Kortix runs an image-bearing turn on a model that can see images, so this
+works even when the conversation's usual model is text-only.
+
+**Do not go looking for OCR.** ImageMagick, tesseract, PIL and an image-captioning
+API are all the wrong move — if `read` shows you the image, describe what you
+see. If it genuinely does not, say so in `teams send` rather than ending the
+turn silently.
 </files-and-artifacts>
+
+<posting-somewhere-else>
+### Proactive posting — `teams post`
+
+`teams send` answers the message you are handling. To post somewhere **else**
+— a nightly summary into a team channel, an alert, a hand-off note — use
+`teams post`. It does not touch the current turn.
+
+```sh
+teams conversations                                    # what you may post into
+teams post --conversation "19:...@thread.tacv2" "Nightly build is green."
+teams post --conversation "19:..." --card-file /tmp/report.json
+```
+
+You can only post into a chat or channel the bot is **already in for this
+project**. Anything else returns 403 — list the targets first rather than
+guessing an id.
+</posting-somewhere-else>
 
 <other-surfaces>
 Reach for these only when the task explicitly asks. They run through the connector gateway against Microsoft Graph (read-only).
@@ -209,7 +297,7 @@ Reply like a colleague messaging on Teams:
 - **`teams step` after `teams send` drops silently.** Always send the answer last.
 - **One `teams send` per turn** finalizes the card; a second call is ignored.
 - **Asking → `teams send` + end the turn.** The `question` tool has no Teams renderer; never call it on a Teams turn.
-- **`teams send --file` is a consent card, not an instant upload.** The user must Accept before the file arrives, and it does NOT finalize the turn — follow it with a `teams send "..."`. Limit ~4 MB.
+- **`teams send --file` in a personal chat is a consent card, not an instant upload** — the user must Accept, and it does NOT finalize the turn, so follow it with a `teams send "..."`. In a channel an image posts inline and a document becomes a drive link. Limit ~4 MB.
 - **Downloads come from the prompt.** Attached-file URLs are listed in your prompt; pass them to `teams download`.
 - **Don't go quiet on long work, but don't spam steps either** — Teams throttles card edits. One checkpoint per real phase.
 - **`$MS_TEAMS_*` env vars are pre-injected on Teams turns.** Use them; don't hard-code conversation/tenant IDs.

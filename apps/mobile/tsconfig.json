@@ -16,5 +16,6 @@
     "nativewind-env.d.ts",
     "svg.d.ts",
     "../../packages/shared/src/**/*.ts"
-  ]
+  ],
+  "exclude": ["scratchpad"]
 }

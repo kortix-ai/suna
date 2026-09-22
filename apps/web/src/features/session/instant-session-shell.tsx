@@ -88,6 +88,7 @@ export function InstantSessionShell({
   boundAgentName,
   onSubmit,
   hasTranscript = false,
+  draftActive = true,
 }: {
   projectId: string;
   /** The route's session id (== the pending-prompt namespace the page migrates). */
@@ -111,6 +112,7 @@ export function InstantSessionShell({
    * in for goes.
    */
   hasTranscript?: boolean;
+  draftActive?: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tComposerAttachments = useTranslations('hardcodedUi.composerAttachments');
@@ -498,6 +500,7 @@ export function InstantSessionShell({
       sessionId={sessionId}
       projectId={projectId}
       draftScope={draftScope}
+      draftActive={draftActive}
       prefill={prefill}
       onPrefillApplied={(id) => setPrefill((current) => (current?.id === id ? null : current))}
       boundAgentName={boundAgentName}
@@ -606,7 +609,7 @@ export function InstantSessionShell({
           <div className="scrollbar-hide relative z-10 h-full flex-1 overflow-y-auto">
             {/* One class, imported — not "copied verbatim" as the comment here
                 used to claim. It had stopped being true: this column ran
-                `px-3 py-6 sm:px-6` against the chat's `px-7 pt-6 md:pr-4`. */}
+                `px-3 py-6 sm:px-6` against the chat's `px-7 pt-6`. */}
             <div className={SESSION_TRANSCRIPT_CLASS}>
               {effectiveSubmission && !hasTranscript && (
                 <div

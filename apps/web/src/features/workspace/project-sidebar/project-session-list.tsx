@@ -366,6 +366,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
         order: orderMode,
         reviewCountBySession: reviewSummary.needsYouBySession,
         hiddenSections,
+        ownerLabels: { you: t('filter.ownerValue.you'), unknown: t('filter.ownerValue.unknown') },
       },
       tI18nComplete,
     );
@@ -428,18 +429,45 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
             }
           />
           {children.length > 0 && isActive && (
-            <div className="border-border ml-3.5 border-l-2 pl-2">
+            // `ml-4` puts the trunk's local x=0 exactly under the parent's
+            // icon center (px-2 + half of size-4, both 2 tokens = 4 tokens
+            // total). No padding on this wrapper: padding here would shift an
+            // absolutely-positioned child's own `left:0` inward with it (it
+            // resolves against the padding box), throwing off the trunk.
+            //
+            // The trunk is ONE span for the whole block, not one per row: N
+            // separate `top-4 bottom-0` segments stacked edge-to-edge should
+            // in theory touch with zero gap, but sub-pixel rounding at each
+            // row boundary showed up as visible hairline breaks.
+            //
+            // The trunk stops at the TOP of the last row (each row is a fixed
+            // `h-8`, so that is `(N - 1) * 8` tokens). The last row's own
+            // elbow draws the rest and curves away. Running the trunk to the
+            // last row's center instead leaves a straight tail below the
+            // point where the elbow starts to curve.
+            <div className="relative ml-4">
+              {children.length > 1 && (
+                <span
+                  aria-hidden
+                  className="border-border pointer-events-none absolute top-0 left-0 border-l-2"
+                  style={{ height: `calc(var(--spacing) * ${(children.length - 1) * 8})` }}
+                />
+              )}
               {children.map((child) => {
                 const childHref = `${href}?oc=${encodeURIComponent(child.id)}`;
                 const activeChild = !!isActive && activeOpenCodeSessionId === child.id;
                 return (
-                  <ProjectSubsessionRow
-                    key={child.id}
-                    title={child.title || 'Sub-session'}
-                    href={childHref}
-                    isActive={activeChild}
-                    updatedAt={child.updated_at}
-                  />
+                  <div key={child.id} className="relative h-8">
+                    <SubAgentConnector />
+                    <div style={{ marginLeft: SUB_AGENT_CONNECTOR_RUN }}>
+                      <ProjectSubsessionRow
+                        title={child.title || 'Sub-session'}
+                        href={childHref}
+                        isActive={activeChild}
+                        updatedAt={child.updated_at}
+                      />
+                    </div>
+                  </div>
                 );
               })}
             </div>
@@ -469,8 +497,26 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
               <div key={group.session.session_id} className="space-y-px">
                 {renderSessionNode(group.session, false)}
                 {group.children.length > 0 && (
-                  <div className="border-border ml-3.5 space-y-1 border-l-2 pl-1">
-                    {group.children.map((child) => renderSessionNode(child, true))}
+                  // Same `ml-4` reasoning as the opencode sub-session block
+                  // above. A spawned child can render its own sub-sessions
+                  // beneath its row, so child blocks have no fixed height:
+                  // every child except the last draws a trunk segment down
+                  // its whole block, and the last child's elbow ends the line.
+                  <div className="ml-4">
+                    {group.children.map((child, index) => (
+                      <div key={child.session_id} className="relative">
+                        {index < group.children.length - 1 && (
+                          <span
+                            aria-hidden
+                            className="border-border pointer-events-none absolute top-0 bottom-0 left-0 border-l-2"
+                          />
+                        )}
+                        <SubAgentConnector />
+                        <div style={{ marginLeft: SUB_AGENT_CONNECTOR_RUN }}>
+                          {renderSessionNode(child, true)}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -633,6 +679,7 @@ function SessionListSection({
     chat: 'chat',
     slack: 'slack',
     telegram: 'telegram',
+    teams: 'teams',
     email: 'email',
     schedule: 'scheduled',
     webhook: 'webhook',
@@ -1060,6 +1107,30 @@ function ProjectSessionRow({
   );
 }
 
+// Horizontal reach of a sub-agent connector's elbow, shared with the row it
+// points at (see `SubAgentConnector`). The row is given this exact amount as
+// its own `margin-left`, so its box — including its active/hover fill —
+// starts flush where the curve ends, instead of starting at the trunk and
+// painting over the curve that was supposed to lead into it.
+const SUB_AGENT_CONNECTOR_RUN = 'calc(var(--spacing) * 3.5)';
+
+/**
+ * Rounded elbow branching off the shared trunk span (drawn once by the
+ * caller, spanning the whole block) into one child row. Always meets the row
+ * at exactly half of the marker row's `h-8`, so it stays correct whether or
+ * not the child itself renders anything beneath that row (e.g. its own
+ * active sub-sessions nested one level deeper).
+ */
+function SubAgentConnector() {
+  return (
+    <span
+      aria-hidden
+      className="border-border pointer-events-none absolute top-0 left-0 h-4 rounded-bl-md border-b-2 border-l-2"
+      style={{ width: SUB_AGENT_CONNECTOR_RUN }}
+    />
+  );
+}
+
 function ProjectSubsessionRow({
   title,
   href,
@@ -1085,7 +1156,6 @@ function ProjectSubsessionRow({
           isActive ? 'bg-sidebar-accent text-sidebar-foreground font-medium' : '',
         )}
       >
-        <span className="bg-muted-foreground/40 h-1 w-1 shrink-0 rounded-full" />
         <span title={title} className={cn('flex-1 truncate', isActive && 'font-medium')}>
           {title}
         </span>

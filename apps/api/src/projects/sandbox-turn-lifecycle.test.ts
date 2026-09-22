@@ -345,6 +345,46 @@ describe('terminal turn handling', () => {
     });
   });
 
+  // What `end_error` ends up holding — a cause, a requested stop, and which one
+  // wins — is decided by SQL, so it is asserted against a real Postgres in
+  // `__tests__/integration-sandbox-turn-lifecycle.test.ts`. Here: only what this
+  // mock can prove, which statements run at all.
+  const MEMORY_GUARD = {
+    name: 'SandboxMemoryGuard',
+    message: 'sandbox memory at 97% (opencode 513 MB RSS of 3915 MB): turn stopped',
+    isRetryable: false,
+  };
+
+  test('a late abort never overwrites the reason a turn already has', async () => {
+    executeResults = [
+      [{ ended_turns: [], active_turn_count: 0, completed: true }],
+      [{ already_ended: true }],
+    ];
+
+    await completeSandboxTurn(
+      'sess-1',
+      'error',
+      { opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' },
+      { name: 'MessageAbortedError', message: 'Aborted' },
+    );
+
+    expect(executed.some((query) => query.includes('UPDATE kortix.session_turns'))).toBe(false);
+  });
+
+  test('a retryable error is a retry, not an end: it closes nothing and records nothing', async () => {
+    // The contract the daemon must respect: a guard frame for an ABORTED turn
+    // that still said `error_retryable: true` was dropped right here.
+    const result = await completeSandboxTurn(
+      'sess-1',
+      'error',
+      { opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' },
+      { ...MEMORY_GUARD, isRetryable: true },
+    );
+
+    expect(result.outcome).toBe('non_terminal');
+    expect(executed).toHaveLength(0);
+  });
+
   test('a repeated terminal identity reports already_closed', async () => {
     executeResults = [
       [{ ended_turns: [], active_turn_count: 0, completed: true }],

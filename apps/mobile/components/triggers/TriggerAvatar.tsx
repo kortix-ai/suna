@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { type ViewProps } from 'react-native';
-import { Avatar } from '@/components/ui/Avatar';
+import { Avatar } from '@/components/kortix/avatar';
 import { getTriggerIcon } from '@/lib/utils/trigger-utils';
 import type { TriggerWithAgent } from '@/api/types';
 

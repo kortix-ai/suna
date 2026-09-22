@@ -42,25 +42,93 @@ export interface QuestionRequestWire {
 
 /** `allow` | `ask` | `deny` per tool name, `*` as the default. */
 export type PermissionRule = 'allow' | 'ask' | 'deny'
-export type PermissionPolicy = Record<string, PermissionRule>
+/** OpenCode's `PermissionRuleConfig`: a bare action, or a glob-pattern -> action map. */
+export type PermissionRuleConfig = PermissionRule | Record<string, PermissionRule>
+export type PermissionPolicy = Record<string, PermissionRuleConfig>
+
+const RULES = new Set(['allow', 'ask', 'deny'])
+const isRule = (value: unknown): value is PermissionRule => typeof value === 'string' && RULES.has(value)
 
 /**
  * Compile the manifest's compiled `permission` block (OpenCode's
- * PermissionConfig: `{ [tool]: 'allow'|'ask'|'deny' | { [pattern]: rule } }`)
- * into a per-tool rule. Pattern objects take their `*` entry; anything
- * unrecognised is `allow`, OpenCode's default for a tool without a rule.
+ * PermissionConfig: `{ [tool]: 'allow'|'ask'|'deny' | { [pattern]: rule } }`).
+ * Pattern maps are KEPT whole and matched per call by {@link resolveRule} —
+ * collapsing them to their `*` entry would turn an explicit
+ * `bash: { 'rm -rf *': 'deny', '*': 'allow' }` into an unconditional allow.
+ * A tool with no rule is `allow`, OpenCode's default.
  */
 export function compilePermissionPolicy(raw: unknown): PermissionPolicy {
   const policy: PermissionPolicy = {}
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return policy
   for (const [tool, value] of Object.entries(raw as Record<string, unknown>)) {
-    if (value === 'allow' || value === 'ask' || value === 'deny') policy[tool] = value
+    if (isRule(value)) policy[tool] = value
     else if (value && typeof value === 'object' && !Array.isArray(value)) {
-      const star = (value as Record<string, unknown>)['*']
-      if (star === 'allow' || star === 'ask' || star === 'deny') policy[tool] = star
+      const patterns: Record<string, PermissionRule> = {}
+      for (const [pattern, rule] of Object.entries(value as Record<string, unknown>)) {
+        if (isRule(rule)) patterns[pattern] = rule
+      }
+      if (Object.keys(patterns).length > 0) policy[tool] = patterns
     }
   }
   return policy
+}
+
+/**
+ * OpenCode's `Wildcard.match` (`packages/opencode/src/util/wildcard.ts`):
+ * backslashes normalise to `/`, `*` becomes `.*`, `?` becomes `.`, every other
+ * regex metacharacter is escaped, and the whole pattern is anchored and
+ * dot-all. A pattern ending in ` *` also matches the bare command, so `ls *`
+ * covers a plain `ls`.
+ */
+function wildcardMatch(value: string, pattern: string): boolean {
+  let escaped = pattern
+    .replaceAll('\\', '/')
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '.*')
+    .replace(/\?/g, '.')
+  if (escaped.endsWith(' .*')) escaped = `${escaped.slice(0, -3)}( .*)?`
+  return new RegExp(`^${escaped}$`, 's').test(value.replaceAll('\\', '/'))
+}
+
+/**
+ * OpenCode's `Wildcard.all`: patterns are sorted by length then name and the
+ * LAST match wins, so the most specific pattern decides and the one-character
+ * `*` is the weakest entry in the map.
+ */
+function matchPatterns(subject: string, patterns: Record<string, PermissionRule>): PermissionRule | undefined {
+  let matched: PermissionRule | undefined
+  const sorted = Object.entries(patterns).sort(([a], [b]) => a.length - b.length || a.localeCompare(b))
+  for (const [pattern, rule] of sorted) {
+    if (wildcardMatch(subject, pattern)) matched = rule
+  }
+  return matched
+}
+
+/**
+ * The string a pattern is tested against, per tool — the subject OpenCode sends
+ * as the permission request's pattern: the command line for `bash`, the target
+ * path for the workspace tools.
+ */
+export function permissionSubject(tool: string, args: unknown): string | undefined {
+  if (!args || typeof args !== 'object') return undefined
+  const value = (args as Record<string, unknown>)[tool === 'bash' ? 'command' : 'path']
+  return typeof value === 'string' ? value : undefined
+}
+
+/** Resolve one tool's rule for this call. `undefined` means "no rule applies". */
+function resolveRule(config: PermissionRuleConfig | undefined, tool: string, args: unknown): PermissionRule | undefined {
+  if (config === undefined || typeof config === 'string') return config
+  const subject = permissionSubject(tool, args)
+  if (subject !== undefined) return matchPatterns(subject, config)
+  // No subject to test the specific patterns against. A restriction we cannot
+  // evaluate must never silently degrade to `allow`.
+  if (Object.entries(config).some(([pattern, rule]) => pattern !== '*' && rule !== 'allow')) return 'ask'
+  return config['*']
+}
+
+/** One call's rule under `policy`: the tool's entry, else `*`. `undefined` means the policy says nothing. */
+export function resolvePolicyRule(policy: PermissionPolicy, tool: string, args: unknown): PermissionRule | undefined {
+  return resolveRule(policy[tool] !== undefined ? policy[tool] : policy['*'], tool, args)
 }
 
 export class PermissionBroker {
@@ -77,9 +145,13 @@ export class PermissionBroker {
     this.policy = policy
   }
 
-  rule(tool: string): PermissionRule {
+  rule(tool: string, args?: unknown): PermissionRule {
+    const resolved = resolvePolicyRule(this.policy, tool, args)
+    // A deny outranks an earlier "always": approving `ls` must not unlock the
+    // `rm -rf *` the same pattern map denies.
+    if (resolved === 'deny') return 'deny'
     if (this.alwaysAllowed.has(tool)) return 'allow'
-    return this.policy[tool] ?? this.policy['*'] ?? 'allow'
+    return resolved ?? 'allow'
   }
 
   /** Resolves with the user's reply; never rejects. */

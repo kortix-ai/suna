@@ -210,7 +210,13 @@ describe('account hub — nothing renders into a section the nav hides', () => {
 describe('account hub — the members-list IAM reads need entitlement AND permission', () => {
   const membersCard = code.slice(
     code.indexOf('function MembersCard({'),
-    code.indexOf('const accountPolicyByUser'),
+    code.indexOf('const roleValueFor = (member: AccountMember)'),
+  );
+  // The policies read lives in the shared account-role editor that
+  // MembersCard and the group Members list both use.
+  const roleEditor = readFileSync(
+    join(import.meta.dir, '../../workspace/shared/access/account-role-editor.tsx'),
+    'utf8',
   );
 
   test('the roles read is gated on rbac AND role.read', () => {
@@ -220,11 +226,14 @@ describe('account hub — the members-list IAM reads need entitlement AND permis
   });
 
   test('the policies read is gated on rbac AND policy.read', () => {
-    const query = membersCard.slice(
-      membersCard.indexOf("queryKey: ['iam-policies', account.account_id]"),
-      membersCard.indexOf('staleTime: 30_000'),
+    expect(membersCard).toContain('useAccountRoleEditor({');
+    expect(membersCard).toContain('canReadPolicies,');
+    const query = roleEditor.slice(
+      roleEditor.indexOf("queryKey: ['iam-policies', accountId]"),
+      roleEditor.indexOf('staleTime: 30_000'),
     );
     expect(query).toContain('enabled: rbacEnabled && canReadPolicies === true');
+    expect(roleEditor).not.toContain('enabled: rbacEnabled,');
   });
 
   // Strict `=== true`, NOT the optimistic `!== false` the member list uses:

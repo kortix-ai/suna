@@ -116,6 +116,45 @@ test('catalog returns an empty list when the response omits connectors', async (
   expect(await getConnectorCatalog('project-one')).toEqual([]);
 });
 
+test('catalog entries carry the accounts this caller may run the connector as, default first', async () => {
+  // One connector can hold the project's shared account and each member's
+  // own — the catalog must say so without a second round trip, so the caller
+  // (human or agent) sees there is more than one before ever calling `call`.
+  const withAccounts: { connectors: ConnectorCatalogEntry[] } = {
+    connectors: [
+      {
+        slug: 'gmail',
+        name: 'Gmail',
+        provider: 'composio',
+        status: 'active',
+        actions: [],
+        accounts: [
+          {
+            connection_id: 'conn-personal',
+            label: 'markokraemer.mail@gmail.com',
+            owner_type: 'member',
+            is_default: false,
+          },
+          {
+            connection_id: 'conn-work',
+            label: 'marko@kortix.ai',
+            owner_type: 'member',
+            is_default: true,
+          },
+        ],
+        default_account: 'marko@kortix.ai',
+      },
+    ],
+  };
+  responseBody = withAccounts;
+
+  const result = await getConnectorCatalog('project-one');
+
+  expect(result).toEqual(withAccounts.connectors);
+  expect(result[0]?.accounts).toHaveLength(2);
+  expect(result[0]?.default_account).toBe('marko@kortix.ai');
+});
+
 test('tools flatten the catalog into stable connector.action identifiers', async () => {
   const tools = await listConnectorTools('project-one');
 

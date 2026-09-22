@@ -11,7 +11,7 @@ import { useSessionStateStore } from '@kortix/sdk/react';
 import enMessages from '../../../../translations/en.json';
 import { adoptSentAttachmentPreviews } from '../sent-attachment-previews';
 import { buildOptimisticPromptTextWithUploads, sentAttachmentsOf } from '../uploaded-file-refs';
-import { MessageAttachments, UserMessage, UserMessageBubble } from './user-message';
+import { MessageAttachments, UserMessage, UserMessageBubble, normalizeAttachments } from './user-message';
 
 const message = {
   info: { id: 'message-1', role: 'user' },
@@ -890,4 +890,9 @@ describe('sent attachment tiles', () => {
     expect(html).toMatch(/<button[^>]*type="button"[^>]*>Retry<\/button>/);
     expect(html).not.toContain('Upload failed');
   });
+});
+
+test('saved attachments resolve before a sandbox path exists', () => {
+  const ref = 'kortix-attachment://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333';
+  expect(normalizeAttachments([], [{ path: '', filename: 'a.png', mime: 'image/png', attachment: ref }])[0].src).toBe(ref);
 });

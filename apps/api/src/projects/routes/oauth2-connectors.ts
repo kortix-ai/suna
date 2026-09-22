@@ -28,9 +28,10 @@ import { db } from '../../shared/db';
 import { loadProjectForUser, projectCapabilityAllowed } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import {
-  connectorAuthorizationMatchesStrategy,
+  connectionIsReachable,
   isTrustedManagedChannelAuthorization,
-} from '../lib/connector-authorization-strategy';
+} from '../lib/connection-access';
+import { requestAgentPrincipalReach } from '../lib/personal-resources';
 import { readBody } from '../lib/serializers';
 
 function callbackUrl(requestUrl: string): string {
@@ -72,7 +73,6 @@ async function loadMutableConnection(c: any, projectId: string, connectionId: st
       ownerType: connectorConnections.ownerType,
       ownerId: connectorConnections.ownerId,
       metadata: connectorConnections.metadata,
-      authorizationStrategy: connectors.authorizationStrategy,
       providerType: connectors.providerType,
       connectorConfig: connectors.config,
     })
@@ -102,12 +102,13 @@ async function loadMutableConnection(c: any, projectId: string, connectionId: st
     projectId,
     PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
   );
-  const strategyMatches = connectorAuthorizationMatchesStrategy({
-    strategy: connection.authorizationStrategy,
+  const reachable = connectionIsReachable({
     ownerType: connection.ownerType,
     ownerId: connection.ownerId,
     actingUserId: loaded.userId,
     actingPrincipalIsServiceAccount: serviceAccount,
+    // Spec 2026-09-22 §2.3: an agent-principal session keys on on_behalf_of.
+    agentPrincipal: await requestAgentPrincipalReach(c, loaded.actor),
     trustedManagedSystem: isTrustedManagedChannelAuthorization({
       providerType: connection.providerType,
       platform:
@@ -119,8 +120,9 @@ async function loadMutableConnection(c: any, projectId: string, connectionId: st
       metadata: connection.metadata,
     }),
   });
-  const allowed =
-    strategyMatches && (connection.authorizationStrategy === 'user' || mayManage);
+  // Same rule as `mayMutateConnection` in r4: your own private account is
+  // yours; anything shared with the project needs the manage capability.
+  const allowed = reachable && (connection.ownerType === 'member' || mayManage);
   return allowed ? { loaded, connection } : null;
 }
 
@@ -140,7 +142,6 @@ projectsApp.post('/:projectId/connectors/:slug/oauth2/connection', async (c: any
   const [connector] = await db
     .select({
       connectorId: connectors.connectorId,
-      authorizationStrategy: connectors.authorizationStrategy,
     })
     .from(connectors)
     .where(
@@ -152,15 +153,8 @@ projectsApp.post('/:projectId/connectors/:slug/oauth2/connection', async (c: any
     )
     .limit(1);
   if (!connector) return c.json({ error: 'Connector not found' }, 404);
-  if (connector.authorizationStrategy !== 'project') {
-    return c.json(
-      {
-        error: 'This connector uses member-owned connections',
-        code: 'CONNECTOR_AUTHORIZATION_STRATEGY_MISMATCH',
-      },
-      409,
-    );
-  }
+  // No connector-level gate: every connector may hold a shared project account.
+  // The connections-manage capability asserted above is the whole check.
   const connectionId = await ensureDefaultConnection({
     projectId,
     connectorId: connector.connectorId,

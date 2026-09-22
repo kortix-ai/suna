@@ -17,6 +17,7 @@ import { join } from 'node:path';
  *   bun scripts/migrate.ts fake               mark pending as applied without running (baseline)
  *   bun scripts/migrate.ts bootstrap          fresh-DB: install non-kortix prereqs, then `up`
  *   bun scripts/migrate.ts local-up           loopback-only; tolerate cross-worktree ledger order
+ *   bun scripts/migrate.ts preview-up         preview-only; tolerate persistent branch ledger order
  *
  * DB URL: $DATABASE_URL, or --target=<env> (reads <ENV>_DB_URL / DATABASE_URL
  * from apps/api/.env so secrets never go through the shell).
@@ -24,6 +25,7 @@ import { join } from 'node:path';
 import { runner } from 'node-pg-migrate';
 import pg from 'pg';
 import { repairLocalAuditV2Ledger } from './local-audit-v2-ledger-repair';
+import { repairEarlyAppliedMigrations } from './early-applied-migration-repair';
 import { dropLocalInvalidIndexes } from './local-invalid-index-repair';
 import {
   migrationLedgerRepairConnectorName,
@@ -200,7 +202,7 @@ async function selfHostBootstrapIfFresh(databaseUrl: string): Promise<void> {
 async function main() {
   const [cmd = 'up', ...rest] = process.argv.slice(2);
   const databaseUrl = resolveUrl(rest);
-  const checkOrder = migrationCheckOrder(cmd, databaseUrl);
+  const checkOrder = migrationCheckOrder(cmd, databaseUrl, process.env.KORTIX_PREVIEW_MIGRATION);
   const countArg = rest.find((a) => a.startsWith('--count='))?.slice('--count='.length);
   const runtimeMigrations = materializeMigrationRuntimeDirectory(MIGRATIONS_DIR);
 
@@ -240,6 +242,13 @@ async function main() {
     }
   };
 
+  const releaseEarlyAppliedMigrations = async () => {
+    const released = await repairEarlyAppliedMigrations(databaseUrl, runtimeMigrations.path);
+    for (const name of released) {
+      console.warn(`[migrate] released early-applied ${name}; it re-runs after its predecessors.`);
+    }
+  };
+
   const applyPendingMigrations = () => withMigrationDeadlockRetry(
     () => runner({ ...base, direction: 'up', count: Number.POSITIVE_INFINITY }),
     {
@@ -257,6 +266,7 @@ async function main() {
       case 'up':
         await autoBaselineIfNeeded(base, databaseUrl);
         await repairAppliedMigrationRenames();
+        await releaseEarlyAppliedMigrations();
         await applyPendingMigrations();
         return;
       case 'local-up': {
@@ -277,13 +287,16 @@ async function main() {
           );
         }
         await repairAppliedMigrationRenames();
+        await releaseEarlyAppliedMigrations();
         await applyPendingMigrations();
         return;
       }
+      case 'preview-up':
       case 'bootstrap':
         // Fresh-DB convenience for self-host: prereqs → then `up`.
         await autoBaselineIfNeeded(base, databaseUrl);
         await repairAppliedMigrationRenames();
+        await releaseEarlyAppliedMigrations();
         await applyPendingMigrations();
         return;
       case 'fake':

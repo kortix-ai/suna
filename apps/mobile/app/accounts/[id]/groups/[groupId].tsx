@@ -1,25 +1,26 @@
 /**
- * Group detail (web parity: accounts/[id]/groups/[groupId]). Rename / delete the
- * group, manage its members (add / remove), and view + detach its project access
- * grants.
+ * Group detail (web parity: accounts/[id]/groups/[groupId]). Rename the group,
+ * manage its members, view + detach its project access, delete it.
+ * Settings-list layout: see apps/mobile/design.md.
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Alert } from 'react-native';
+import { Alert, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetScrollView,
-} from '@gorhom/bottom-sheet';
-import { ChevronLeft, Users, UserPlus, Trash2, Check, X, FolderGit2 } from 'lucide-react-native';
+import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import { WarningCircleIcon as AlertCircle, GitBranchIcon as FolderGit2, PencilIcon as Pencil, ArrowClockwiseIcon as RotateCw, TrashIcon as Trash2, UserPlusIcon as UserPlus } from '@/lib/icons';
+
 import { Text } from '@/components/ui/text';
-import { getSheetBg, useThemeColors } from '@/lib/theme-colors';
+import { Button } from '@/components/ui/button';
+import { Avatar } from '@/components/kortix/avatar';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { SheetTextInput } from '@/components/kortix/SheetInput';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground, KortixBottomSheetModal, SheetTitleRow } from '@/components/kortix/sheet';
+import { SettingsGroup, SettingsHeader, SettingsPage, SettingsRow } from '@/components/kortix/settings-list';
 import { haptics } from '@/lib/haptics';
-import { useAuthContext } from '@/contexts';
 import {
   getGroup,
   updateGroup,
@@ -29,24 +30,20 @@ import {
 } from '@/lib/accounts/groups-client';
 import { listAccountMembers, addGroupMembers } from '@/lib/accounts/accounts-client';
 import { detachGroupFromProject, removeGroupMember } from '@/lib/projects/projects-client';
-import { accountColors, InitialsAvatar, Pill, PrimaryButton } from '@/components/accounts/account-shared';
+import { SheetCloseButton } from '@/components/accounts/account-shared';
 
-function formatDate(input: string | null | undefined) {
-  if (!input) return '—';
-  const d = new Date(input);
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+function roleLabel(role: string): string {
+  return role.charAt(0).toUpperCase() + role.slice(1);
 }
 
 export default function GroupDetailScreen() {
+  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams<{ id: string; groupId: string }>();
   const accountId = params.id;
   const groupId = params.groupId;
-  const c = accountColors(isDark);
-  const theme = useThemeColors();
   const queryClient = useQueryClient();
 
   const groupQuery = useQuery({ queryKey: ['account-group', accountId, groupId], queryFn: () => getGroup(accountId, groupId), staleTime: 30_000 });
@@ -61,181 +58,212 @@ export default function GroupDetailScreen() {
     return map;
   }, [accountMembersQuery.data]);
 
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  useEffect(() => { if (group) { setName(group.name); setDescription(group.description ?? ''); } }, [group]);
-
   const update = useMutation({
-    mutationFn: () => updateGroup(accountId, groupId, { name: name.trim(), description: description.trim() || null }),
-    onSuccess: () => { haptics.success(); queryClient.invalidateQueries({ queryKey: ['account-group', accountId, groupId] }); queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] }); },
-    onError: (e: any) => Alert.alert('Failed', e?.message || 'Failed to update group.'),
+    mutationFn: (input: { name: string; description: string | null }) => updateGroup(accountId, groupId, input),
+    onSuccess: () => {
+      haptics.success();
+      queryClient.invalidateQueries({ queryKey: ['account-group', accountId, groupId] });
+      queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] });
+      editRef.current?.dismiss();
+    },
+    onError: (e: any) => Alert.alert('Unable to save group', e?.message || 'Try again in a moment.'),
   });
   const del = useMutation({
     mutationFn: () => deleteGroup(accountId, groupId),
     onSuccess: () => { haptics.success(); queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] }); router.back(); },
-    onError: (e: any) => Alert.alert('Failed', e?.message || 'Failed to delete group.'),
+    onError: (e: any) => Alert.alert('Unable to delete group', e?.message || 'Try again in a moment.'),
   });
   const removeMember = useMutation({
     mutationFn: (userId: string) => removeGroupMember(accountId, groupId, userId),
     onSuccess: () => { haptics.success(); queryClient.invalidateQueries({ queryKey: ['group-members', accountId, groupId] }); queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] }); },
-    onError: (e: any) => Alert.alert('Failed', e?.message || 'Failed to remove member.'),
+    onError: (e: any) => Alert.alert('Unable to remove member', e?.message || 'Try again in a moment.'),
   });
   const detach = useMutation({
     mutationFn: (projectId: string) => detachGroupFromProject(projectId, groupId),
     onSuccess: () => { haptics.success(); queryClient.invalidateQueries({ queryKey: ['group-grants', accountId, groupId] }); queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] }); },
-    onError: (e: any) => Alert.alert('Failed', e?.message || 'Failed to detach group.'),
+    onError: (e: any) => Alert.alert('Unable to detach group', e?.message || 'Try again in a moment.'),
   });
 
   const addRef = React.useRef<BottomSheetModal>(null);
+  const editRef = React.useRef<BottomSheetModal>(null);
   const members = membersQuery.data ?? [];
   const grants = grantsQuery.data ?? [];
   const memberIds = useMemo(() => new Set(members.map((m) => m.user_id)), [members]);
   const candidates = useMemo(() => (accountMembersQuery.data ?? []).filter((m) => !memberIds.has(m.user_id)), [accountMembersQuery.data, memberIds]);
 
-  const dirty = !!group && (name.trim() !== group.name || (description.trim() || '') !== (group.description ?? ''));
-  const bg = isDark ? '#0D0D0D' : '#FFFFFF';
-  const input = { height: 44, borderRadius: 9999, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, paddingHorizontal: 16, fontSize: 14, color: c.fg, fontFamily: 'Roobert' as const };
-  const sectionTitle = { fontSize: 15.5, fontFamily: 'Roobert-Medium' as const, color: c.fg };
-  const divider = { height: 1, backgroundColor: c.border, marginVertical: 22 } as const;
-  const countBadge = { minWidth: 20, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 999, backgroundColor: c.avatarBg, alignItems: 'center' as const };
-  const countText = { fontSize: 11, fontFamily: 'Roobert-Medium' as const, color: c.muted };
-
-  const confirmDelete = () => Alert.alert('Delete group', `Delete "${group?.name}"? Any permission policies attached to this group will be removed.`, [
-    { text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => { haptics.medium(); del.mutate(); } },
+  const confirmDelete = () => Alert.alert(`Delete ${group?.name ?? 'group'}?`, 'Permission policies attached to this group are removed too.', [
+    { text: 'Cancel', style: 'cancel' }, { text: 'Delete group', style: 'destructive', onPress: () => { haptics.medium(); del.mutate(); } },
   ]);
-  const confirmRemove = (userId: string) => Alert.alert('Remove from group', `Remove ${emailByUserId.get(userId) ?? userId} from this group?`, [
+  const confirmRemove = (userId: string) => Alert.alert('Remove from group?', emailByUserId.get(userId) ?? userId, [
     { text: 'Cancel', style: 'cancel' }, { text: 'Remove', style: 'destructive', onPress: () => { haptics.medium(); removeMember.mutate(userId); } },
   ]);
-  const confirmDetach = (projectId: string, projectName: string) => Alert.alert('Detach from project', `Members lose their inherited access to "${projectName}" (unless granted another way).`, [
+  const confirmDetach = (projectId: string, projectName: string) => Alert.alert(`Detach from ${projectName}?`, 'Members lose access they inherit through this group.', [
     { text: 'Cancel', style: 'cancel' }, { text: 'Detach', style: 'destructive', onPress: () => { haptics.medium(); detach.mutate(projectId); } },
   ]);
 
+  const sheetProps = {
+    enableDynamicSizing: false,
+    backgroundStyle: { backgroundColor: sheetBg },
+    handleIndicatorStyle: sheetHandleIndicatorStyle(isDark),
+    backdropComponent: SheetBackdrop,
+  } as const;
+
   return (
-    <View style={{ flex: 1, backgroundColor: bg }}>
+    <View className="flex-1 bg-background">
       <Stack.Screen options={{ headerShown: false }} />
-      <View style={{ paddingTop: insets.top + 6, paddingHorizontal: 16, paddingBottom: 8 }}>
-        <TouchableOpacity onPress={() => { haptics.tap(); router.back(); }} hitSlop={10} style={{ flexDirection: 'row', alignItems: 'center', gap: 2, alignSelf: 'flex-start', marginBottom: 8 }}>
-          <ChevronLeft size={18} color={c.muted} />
-          <Text style={{ fontSize: 13.5, color: c.muted }}>Groups</Text>
-        </TouchableOpacity>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Text style={{ fontSize: 22, fontFamily: 'Roobert-Semibold', color: c.fg }} numberOfLines={1}>{group?.name ?? 'Group'}</Text>
-          {group && <Pill label={group.source} isDark={isDark} />}
-        </View>
-      </View>
+      <SettingsHeader title={group?.name ?? 'Group'} />
 
       {groupQuery.isLoading ? (
-        <View style={{ paddingVertical: 60, alignItems: 'center' }}><ActivityIndicator size="small" color={c.muted} /></View>
-      ) : groupQuery.isError ? (
-        <View style={{ padding: 24, alignItems: 'center', gap: 12 }}>
-          <Text style={{ fontSize: 14, color: '#ef4444', textAlign: 'center' }}>{(groupQuery.error as Error)?.message || 'Failed to load group'}</Text>
-          <TouchableOpacity onPress={() => { haptics.tap(); groupQuery.refetch(); }} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: c.border }}><Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: c.fg }}>Retry</Text></TouchableOpacity>
+        <View className="items-center py-12">
+          <KortixLoader />
         </View>
+      ) : groupQuery.isError || !group ? (
+        <SettingsPage>
+          <SettingsGroup>
+            <SettingsRow icon={AlertCircle} label="Couldn't load group" destructive />
+            <SettingsRow icon={RotateCw} label="Try again" right={null} onPress={() => { haptics.tap(); groupQuery.refetch(); }} />
+          </SettingsGroup>
+        </SettingsPage>
       ) : (
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 6, paddingBottom: insets.bottom + 48 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          {/* ── Group details ── */}
-          <Text style={sectionTitle}>Group details</Text>
-          <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: c.muted, marginTop: 14, marginBottom: 6 }}>Name</Text>
-          <TextInput value={name} onChangeText={setName} maxLength={128} placeholderTextColor={c.muted} style={input} />
-          <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: c.muted, marginTop: 12, marginBottom: 6 }}>Description</Text>
-          <TextInput value={description} onChangeText={setDescription} maxLength={256} placeholder="Optional" placeholderTextColor={c.muted} style={input} />
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 14 }}>
-            <Text style={{ flex: 1, fontSize: 11.5, color: c.muted }}>Created {formatDate(group?.created_at)}</Text>
-            <TouchableOpacity onPress={() => { if (dirty) { haptics.tap(); update.mutate(); } }} disabled={!dirty || update.isPending} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 18, height: 40, borderRadius: 9999, backgroundColor: theme.primary, opacity: dirty && !update.isPending ? 1 : 0.5 }}>
-              {update.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
-              <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Save</Text>
-            </TouchableOpacity>
-          </View>
+        <SettingsPage>
+          <SettingsGroup title="Details">
+            <SettingsRow
+              icon={Pencil}
+              label="Name"
+              value={group.name}
+              onPress={() => { haptics.tap(); editRef.current?.present(); }}
+            />
+          </SettingsGroup>
 
-          <View style={divider} />
+          <SettingsGroup title="Members">
+            <SettingsRow
+              icon={UserPlus}
+              label="Add member"
+              right={null}
+              onPress={() => { haptics.tap(); addRef.current?.present(); }}
+            />
+            {members.map((m) => {
+              const email = emailByUserId.get(m.user_id) ?? m.user_id;
+              return (
+                <SettingsRow
+                  key={m.user_id}
+                  leading={<Avatar variant="custom" size={28} fallbackText={email} />}
+                  label={email}
+                  right={null}
+                  onPress={() => { haptics.selection(); confirmRemove(m.user_id); }}
+                />
+              );
+            })}
+          </SettingsGroup>
 
-          {/* ── Members ── */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Users size={16} color={c.muted} />
-            <Text style={sectionTitle}>Members</Text>
-            <View style={countBadge}><Text style={countText}>{members.length}</Text></View>
-            <View style={{ flex: 1 }} />
-            <TouchableOpacity onPress={() => { haptics.tap(); addRef.current?.present(); }} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingLeft: 11, paddingRight: 13, height: 32, borderRadius: 9999, borderWidth: 1, borderColor: theme.primary }}>
-              <UserPlus size={13} color={theme.primary} />
-              <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: theme.primary }}>Add</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={{ marginTop: 6 }}>
-            {membersQuery.isLoading ? (
-              <View style={{ paddingVertical: 14 }}><ActivityIndicator size="small" color={c.muted} /></View>
-            ) : members.length === 0 ? (
-              <Text style={{ fontSize: 12.5, color: c.muted, paddingVertical: 12 }}>No members yet.</Text>
-            ) : members.map((m, i) => (
-              <View key={m.user_id} style={{ flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 11, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}>
-                <InitialsAvatar label={emailByUserId.get(m.user_id) ?? m.user_id} isDark={isDark} size={32} />
-                <Text style={{ flex: 1, fontSize: 13.5, fontFamily: 'Roobert-Medium', color: c.fg }} numberOfLines={1}>{emailByUserId.get(m.user_id) ?? m.user_id}</Text>
-                <TouchableOpacity onPress={() => { haptics.tap(); confirmRemove(m.user_id); }} hitSlop={8} style={{ width: 32, height: 32, borderRadius: 9999, alignItems: 'center', justifyContent: 'center' }}><Trash2 size={14} color="#ef4444" /></TouchableOpacity>
-              </View>
-            ))}
-          </View>
+          {grants.length > 0 && (
+            <SettingsGroup title="Project access">
+              {grants.map((g) => (
+                <SettingsRow
+                  key={g.project_id}
+                  icon={FolderGit2}
+                  label={g.project_name}
+                  value={roleLabel(g.role)}
+                  right={null}
+                  onPress={() => { haptics.selection(); confirmDetach(g.project_id, g.project_name); }}
+                />
+              ))}
+            </SettingsGroup>
+          )}
 
-          <View style={divider} />
-
-          {/* ── Project access ── */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <FolderGit2 size={16} color={c.muted} />
-            <Text style={sectionTitle}>Project access</Text>
-            <View style={countBadge}><Text style={countText}>{grants.length}</Text></View>
-          </View>
-          <Text style={{ fontSize: 12, color: c.muted, marginTop: 4 }}>Projects this group can access and at what role.</Text>
-          <View style={{ marginTop: 6 }}>
-            {grantsQuery.isLoading ? (
-              <View style={{ paddingVertical: 14 }}><ActivityIndicator size="small" color={c.muted} /></View>
-            ) : grants.length === 0 ? (
-              <Text style={{ fontSize: 12.5, color: c.muted, paddingVertical: 12 }}>Not attached to any project yet.</Text>
-            ) : grants.map((g, i) => (
-              <View key={g.project_id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: c.fg }} numberOfLines={1}>{g.project_name}</Text>
-                  <Text style={{ fontSize: 11, color: c.muted, marginTop: 1 }}>Attached {formatDate(g.created_at)}</Text>
-                </View>
-                <Pill label={g.role.charAt(0).toUpperCase() + g.role.slice(1)} isDark={isDark} />
-                <TouchableOpacity onPress={() => { haptics.tap(); confirmDetach(g.project_id, g.project_name); }} hitSlop={8} style={{ width: 32, height: 32, borderRadius: 9999, alignItems: 'center', justifyContent: 'center' }}><X size={15} color="#ef4444" /></TouchableOpacity>
-              </View>
-            ))}
-          </View>
-
-          <View style={divider} />
-
-          {/* ── Danger ── */}
-          <TouchableOpacity onPress={() => { haptics.tap(); confirmDelete(); }} disabled={del.isPending} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 46, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)' }}>
-            {del.isPending ? <ActivityIndicator size="small" color="#ef4444" /> : <Trash2 size={15} color="#ef4444" />}
-            <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>Delete group</Text>
-          </TouchableOpacity>
-          <Text style={{ fontSize: 11.5, color: c.muted, textAlign: 'center', marginTop: 8 }}>Removes the group and any policies attached to it.</Text>
-        </ScrollView>
+          <SettingsGroup>
+            <SettingsRow
+              icon={Trash2}
+              label={del.isPending ? 'Deleting…' : 'Delete group'}
+              destructive
+              onPress={del.isPending ? undefined : () => { haptics.tap(); confirmDelete(); }}
+            />
+          </SettingsGroup>
+        </SettingsPage>
       )}
 
-      <BottomSheetModal
-        ref={addRef}
-        snapPoints={['72%']}
-        enableDynamicSizing={false}
-        backgroundStyle={{ backgroundColor: getSheetBg(isDark) }}
-        handleIndicatorStyle={{ backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)' }}
-        backdropComponent={(props) => <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />}
-      >
+      <KortixBottomSheetModal ref={editRef} snapPoints={['46%']} keyboardBehavior="interactive" keyboardBlurBehavior="restore" {...sheetProps}>
+        {group ? (
+          <EditGroupSheet
+            initialName={group.name}
+            initialDescription={group.description ?? ''}
+            pending={update.isPending}
+            isDark={isDark}
+            onClose={() => editRef.current?.dismiss()}
+            onSave={(name, description) => update.mutate({ name, description: description || null })}
+          />
+        ) : null}
+      </KortixBottomSheetModal>
+
+      <KortixBottomSheetModal ref={addRef} snapPoints={['72%']} {...sheetProps}>
         <AddMembersSheet
           candidates={candidates.map((m) => ({ user_id: m.user_id, email: m.email }))}
           isDark={isDark}
           onClose={() => addRef.current?.dismiss()}
           onAdd={async (ids) => {
-            try { await addGroupMembers(accountId, groupId, ids); haptics.success(); queryClient.invalidateQueries({ queryKey: ['group-members', accountId, groupId] }); queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] }); addRef.current?.dismiss(); }
-            catch (e: any) { Alert.alert('Failed', e?.message || 'Failed to add members.'); }
+            try {
+              await addGroupMembers(accountId, groupId, ids);
+              haptics.success();
+              queryClient.invalidateQueries({ queryKey: ['group-members', accountId, groupId] });
+              queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] });
+              addRef.current?.dismiss();
+            } catch (e: any) {
+              Alert.alert('Unable to add members', e?.message || 'Try again in a moment.');
+            }
           }}
         />
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
+    </View>
+  );
+}
+
+function SheetTitle({ title, onClose }: { title: string; onClose: () => void; isDark?: boolean }) {
+  // The app's one sheet title row: close at the far left, title centred.
+  return <SheetTitleRow title={title} onClose={() => { haptics.tap(); onClose(); }} />;
+}
+
+function EditGroupSheet({ initialName, initialDescription, pending, onSave, onClose, isDark }: {
+  initialName: string;
+  initialDescription: string;
+  pending: boolean;
+  onSave: (name: string, description: string) => void;
+  onClose: () => void;
+  isDark: boolean;
+}) {
+  const insets = useSafeAreaInsets();
+  const [name, setName] = useState(initialName);
+  const [description, setDescription] = useState(initialDescription);
+  useEffect(() => { setName(initialName); setDescription(initialDescription); }, [initialName, initialDescription]);
+
+  const dirty = name.trim() !== initialName || description.trim() !== initialDescription;
+
+  return (
+    <View style={{ flex: 1 }}>
+      <SheetTitle title="Edit group" onClose={onClose} isDark={isDark} />
+      <BottomSheetScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8, gap: 12 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <SheetTextInput value={name} onChangeText={setName} placeholder="Group name" accessibilityLabel="Group name" maxLength={128} />
+        <SheetTextInput value={description} onChangeText={setDescription} placeholder="Description (optional)" accessibilityLabel="Description" maxLength={256} />
+      </BottomSheetScrollView>
+      <View className="px-5 pt-3" style={{ paddingBottom: insets.bottom + 16 }}>
+        <Button
+          size="lg"
+          className="rounded-full"
+          disabled={!name.trim() || !dirty || pending}
+          onPress={() => { haptics.tap(); onSave(name.trim(), description.trim()); }}
+        >
+          <Text>{pending ? 'Saving…' : 'Save'}</Text>
+        </Button>
+      </View>
     </View>
   );
 }
 
 function AddMembersSheet({ candidates, onAdd, onClose, isDark }: { candidates: { user_id: string; email: string | null }[]; onAdd: (ids: string[]) => void; onClose: () => void; isDark: boolean }) {
-  const c = accountColors(isDark);
-  const theme = useThemeColors();
   const insets = useSafeAreaInsets();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -243,32 +271,40 @@ function AddMembersSheet({ candidates, onAdd, onClose, isDark }: { candidates: {
 
   return (
     <View style={{ flex: 1 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: c.border }}>
-        <UserPlus size={18} color={c.fg} />
-        <Text style={{ flex: 1, fontSize: 17, fontFamily: 'Roobert-Medium', color: c.fg }}>Add members</Text>
-        <TouchableOpacity onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center' }}><X size={17} color={c.muted} /></TouchableOpacity>
-      </View>
-      <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
+      <SheetTitle title="Add members" onClose={onClose} isDark={isDark} />
+      <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8 }} showsVerticalScrollIndicator={false}>
         {candidates.length === 0 ? (
-          <Text style={{ fontSize: 13, color: c.muted, paddingVertical: 8 }}>Every account member is already in this group.</Text>
+          <Text variant="muted" className="py-10 text-center">
+            Everyone in this account is already in the group.
+          </Text>
         ) : (
-          <View style={{ borderRadius: 12, borderWidth: 1, borderColor: c.border, overflow: 'hidden' }}>
-            {candidates.map((m, i) => {
-              const sel = selected.has(m.user_id);
+          <SettingsGroup>
+            {candidates.map((m) => {
+              const email = m.email ?? m.user_id;
               return (
-                <TouchableOpacity key={m.user_id} onPress={() => { haptics.tap(); toggle(m.user_id); }} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border, backgroundColor: sel ? theme.primaryLight : 'transparent' }}>
-                  <InitialsAvatar label={m.email} isDark={isDark} size={30} />
-                  <Text style={{ flex: 1, fontSize: 13.5, fontFamily: 'Roobert-Medium', color: c.fg }} numberOfLines={1}>{m.email ?? m.user_id}</Text>
-                  {sel && <Check size={17} color={theme.primary} />}
-                </TouchableOpacity>
+                <SettingsRow
+                  key={m.user_id}
+                  leading={<Avatar variant="custom" size={28} fallbackText={email} />}
+                  label={email}
+                  checked={selected.has(m.user_id)}
+                  right={null}
+                  onPress={() => { haptics.selection(); toggle(m.user_id); }}
+                />
               );
             })}
-          </View>
+          </SettingsGroup>
         )}
       </BottomSheetScrollView>
       {candidates.length > 0 && (
-        <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: c.border }}>
-          <PrimaryButton label={selected.size > 0 ? `Add ${selected.size}` : 'Add'} onPress={() => { haptics.tap(); setBusy(true); onAdd([...selected]); }} disabled={selected.size === 0 || busy} pending={busy} />
+        <View className="px-5 pt-3" style={{ paddingBottom: insets.bottom + 16 }}>
+          <Button
+            size="lg"
+            className="rounded-full"
+            disabled={selected.size === 0 || busy}
+            onPress={() => { haptics.tap(); setBusy(true); onAdd([...selected]); }}
+          >
+            <Text>{busy ? 'Adding…' : selected.size > 0 ? `Add ${selected.size}` : 'Add'}</Text>
+          </Button>
         </View>
       )}
     </View>

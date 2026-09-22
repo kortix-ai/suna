@@ -1,10 +1,11 @@
 'use client';
 
 import { sessionSource, type SessionSourceKind } from '@/components/projects/session-label';
-import { SessionSharedIcon } from '@/components/projects/session-shared-icon';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
+import Hint from '@/components/ui/hint';
+import { UserAvatar } from '@/components/ui/user-avatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,6 +15,7 @@ import {
 import Loading from '@/components/ui/loading';
 import { TypedTitle } from '@/components/ui/typed-title';
 import { Slack } from '@/features/icon/icons/slack';
+import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
 import { Telegram } from '@/features/icon/icons/telegram';
 import {
   getSessionDisplayTitle,
@@ -37,7 +39,54 @@ import {
 } from '@phosphor-icons/react';
 import { memo, useState, type ComponentType, type ReactNode } from 'react';
 
+import { SESSION_ACCESS_ICONS } from '@/features/workspace/project-sidebar/session-filter-menu';
+
 import { sessionAccessMeta } from './project-sessions-helpers';
+import { sessionAccessKind, sessionOwnerKey, UNKNOWN_OWNER_KEY } from './session-owner-filters';
+
+/**
+ * Whose session this is, and who else can open it — on every row of the
+ * Sessions page. An account admin with session oversight sees every member's
+ * work here, so the owner has to be readable at a glance, not only inside the
+ * expanded detail panel.
+ *
+ * Keeps `data-session-shared` on sessions the viewer does not own: that marker
+ * (formerly `SessionSharedIcon`) is what the browser journeys key on.
+ */
+function SessionOwnerChip({ session }: { session: ProjectSession }) {
+  const t = useTranslations('sidebar.filter');
+  const isViewer = session.is_owner !== false;
+  const ownerLabel = isViewer
+    ? t('ownerValue.you')
+    : sessionOwnerKey(session) === UNKNOWN_OWNER_KEY &&
+        !session.owner_name &&
+        !session.owner_email
+      ? t('ownerValue.unknown')
+      : (session.owner_name ?? session.owner_email ?? t('ownerValue.unknown'));
+  const access = sessionAccessKind(session);
+  const AccessIcon = SESSION_ACCESS_ICONS[access];
+  const accessLabel = t(`accessValue.${access}`);
+  const label = t('ownerAccess', { owner: ownerLabel, access: accessLabel });
+
+  return (
+    <Hint label={label} side="top" sideOffset={6}>
+      <span
+        className="text-muted-foreground flex max-w-48 shrink-0 items-center gap-1.5 text-xs"
+        aria-label={label}
+        data-session-owner={sessionOwnerKey(session)}
+        data-session-shared={isViewer ? undefined : 'true'}
+      >
+        <UserAvatar
+          size="sm"
+          name={isViewer ? undefined : (session.owner_name ?? undefined)}
+          email={session.owner_email ?? ''}
+        />
+        <span className="hidden min-w-0 truncate sm:inline">{ownerLabel}</span>
+        <AccessIcon className="size-3.5 shrink-0" />
+      </span>
+    </Hint>
+  );
+}
 
 /** Fixed slot shared by relative time and the ⋯ trigger — same overlay swap as
  *  the sidebar session list so the row never reflows on hover. */
@@ -48,6 +97,7 @@ const SOURCE_ICONS: Record<SessionSourceKind, ComponentType<{ className?: string
   chat: ChatTeardropTextIcon,
   slack: Slack,
   telegram: Telegram,
+  teams: MicrosoftTeams,
   email: EnvelopeIcon,
   schedule: CalendarDotsIcon,
   webhook: WebhooksLogoIcon,
@@ -221,7 +271,7 @@ function SessionRowImpl({
             <span className="text-muted-foreground"> · {source.triggerSlug}</span>
           ) : null}
         </span>
-        <SessionSharedIcon session={session} />
+        <SessionOwnerChip session={session} />
       </span>
     </>
   );

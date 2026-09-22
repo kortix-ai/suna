@@ -1,5 +1,5 @@
 import { createInterface } from 'node:readline';
-import type { MessageWithParts, OpencodeClient, Part, SessionHandle } from '@kortix/sdk';
+import type { MessageWithParts, Part } from '@kortix/sdk';
 
 import type { Auth } from '../api/auth.ts';
 import { kortixFromAuth, unwrapRuntime, withKortixScope } from '../api/sdk.ts';
@@ -12,25 +12,18 @@ import {
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
+import {
+  resolveSessionRuntime,
+  SessionRuntimeError,
+  type SessionRuntime,
+} from '../session-runtime.ts';
 import { C, help, pad, status } from '../style.ts';
 import { selectFromList } from '../tui-select.ts';
 import { queueSessionPrompt, type CreateSessionPromptResult } from './sessions-queue.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
-export interface ResolvedSession {
-  /** Kortix session row. */
-  session: ProjectSession;
-  /** Auth used for every scoped SDK call. */
-  auth: Auth;
-  /** Session-scoped SDK handle. */
-  handle: SessionHandle;
-  /** Typed OpenCode REST client bound to this session's runtime. */
-  runtime: OpencodeClient;
-  /** SDK-resolved runtime URL used by the local `opencode attach` adapter. */
-  runtimeUrl: string;
-  /** Canonical OpenCode session id resolved by `/start`. */
-  opencodeSessionId: string;
+export interface ResolvedSession extends SessionRuntime {
   /** Kortix-side API client (for PATCH/save-back). */
   ctx: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>;
 }
@@ -69,30 +62,30 @@ export async function loadSessionForChat(
     );
   }
 
-  if (options.requireRunning !== false && session.status !== 'running') {
-    process.stderr.write(
-      `${status.err(`Session ${session.session_id} is ${session.status}, not running.`)}\n` +
-        `  ${C.dim}Run \`kortix sessions restart ${session.session_id}\` first.${C.reset}\n`,
-    );
-    return null;
-  }
-  const handle = kortixFromAuth(auth).session(projectId, session.session_id);
-  let ready: Awaited<ReturnType<SessionHandle['ensureReady']>>;
+  // The state check + `ensureReady()` live in the print-free core so
+  // `attach-opencode.ts` (the library `apps/tui` calls) runs exactly the same
+  // resolution. This function only maps its failures onto the CLI's output.
+  let runtime: SessionRuntime;
   try {
-    ready = await withKortixScope(auth, () => handle.ensureReady());
+    runtime = await resolveSessionRuntime({
+      auth,
+      client,
+      projectId,
+      session,
+      onNotRunning: options.requireRunning === false ? 'ignore' : 'fail',
+    });
   } catch (error) {
-    surfaceApiError(error);
+    if (error instanceof SessionRuntimeError && error.kind === 'not-running') {
+      process.stderr.write(
+        `${status.err(error.message)}\n` +
+          `  ${C.dim}Run \`kortix sessions restart ${session.session_id}\` first.${C.reset}\n`,
+      );
+      return null;
+    }
+    surfaceApiError(error instanceof SessionRuntimeError ? error.cause : error);
     return null;
   }
-  return {
-    session,
-    auth,
-    handle,
-    runtime: handle.runtime,
-    runtimeUrl: ready.runtimeUrl,
-    opencodeSessionId: ready.opencodeSessionId,
-    ctx,
-  };
+  return { ...runtime, ctx };
 }
 
 /**

@@ -8,6 +8,7 @@ export * from './github';
 export * from './git-backend';
 export * from './access';
 export * from './secrets';
+export * from './account-secret-resources';
 export * from './connectors';
 export * from './policies';
 export * from './sandbox';
@@ -34,6 +35,7 @@ export * from './account-lifecycle';
 export * from './admin-providers';
 export * from './presentations';
 export * from './review';
+export * from './review-items';
 export * from './sandbox-shares';
 export * from './public-session-shares';
 export * from './tokens';
@@ -54,3 +56,4 @@ export type {
 } from './shared';
 
 export * from './model-access';
+export * from './session-attachments';

@@ -155,6 +155,58 @@ test('provider and model access persists, keeps credentials, and updates control
     await toggle('Enable ChatGPT subscription', { target: 'provider', id: 'codex', enabled: true });
     await toggle('Enable Kortix Managed Models', { target: 'provider', id: 'kortix', enabled: true });
     await page.screenshot({ path: testInfo.outputPath('provider-access.png'), fullPage: true });
+
+    await api(session.access_token, 'PATCH', `${base}/experimental`, { feature: 'pooled_provider_secrets', enabled: true });
+    await page.reload();
+    const anthropicKeys = page.getByRole('region', { name: 'Anthropic API keys' });
+    await expect(anthropicKeys.getByRole('button', { name: 'Add key' })).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'Anthropic API key' })).toHaveCount(0);
+    for (const label of ['Primary test key', 'Backup test key']) {
+      await anthropicKeys.getByRole('button', { name: 'Add key' }).click();
+      const dialog = page.getByRole('dialog');
+      await dialog.getByRole('textbox', { name: 'Label' }).fill(label);
+      await dialog.getByRole('textbox', { name: 'API key' }).fill(`sk-ant-e2e-${label.replaceAll(' ', '-').toLowerCase()}`);
+      const created = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith(`/accounts/${account.account_id}/secret-resources`));
+      await dialog.getByRole('button', { name: 'Save key' }).click();
+      expect((await created).status()).toBe(201);
+      await expect(anthropicKeys.getByText(label, { exact: true })).toBeVisible();
+    }
+    const listed = await api<{ secrets: Array<{ label: string; provider_id: string }> }>(session.access_token, 'GET', `/accounts/${account.account_id}/secret-resources?project_id=${project.id}`);
+    expect(listed.secrets.filter((secret) => secret.provider_id === 'anthropic').map((secret) => secret.label).sort()).toEqual(['Backup test key', 'Primary test key']);
+    await anthropicKeys.getByRole('button', { name: 'Actions for Primary test key' }).click();
+    await page.getByRole('menuitem', { name: 'Manage access' }).click();
+    const accessDialog = page.getByRole('dialog');
+    await expect(accessDialog.getByRole('heading', { name: 'Access to Primary test key' })).toBeVisible();
+    // The Add dialog creates keys as "Specific members" with the creator
+    // preselected (sharing with the project is an explicit opt-in), so Manage
+    // access opens on that mode rather than "Everyone in this project".
+    await expect(accessDialog.getByRole('radio', { name: /Specific members/ })).toBeChecked();
+    await expect(accessDialog.getByRole('textbox', { name: 'Search members' })).toBeVisible();
+    await expect(accessDialog.getByRole('button', { name: new RegExp(email) })).toBeVisible();
+    await accessDialog.getByRole('button', { name: 'Done' }).click();
+    await expect(accessDialog).toHaveCount(0);
+
+    const googleKeys = page.getByRole('region', { name: 'Google API keys' });
+    await googleKeys.getByRole('button', { name: 'Add key' }).click();
+    const googleDialog = page.getByRole('dialog');
+    await googleDialog.getByRole('textbox', { name: 'Label' }).fill('Gemini test key');
+    await googleDialog.getByRole('textbox', { name: 'API key' }).fill('gemini-e2e-unused');
+    const googleCreated = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith(`/accounts/${account.account_id}/secret-resources`));
+    await googleDialog.getByRole('button', { name: 'Save key' }).click();
+    expect((await googleCreated).status()).toBe(201);
+    await expect(googleKeys.getByText('Gemini test key', { exact: true })).toBeVisible();
+    await googleKeys.getByRole('button', { name: 'Actions for Gemini test key' }).click();
+    await page.getByRole('menuitem', { name: 'Delete key' }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Delete key' }).click();
+    await expect(googleKeys.getByText('Gemini test key', { exact: true })).toHaveCount(0);
+    for (const label of ['Primary test key', 'Backup test key']) {
+      await anthropicKeys.getByRole('button', { name: `Actions for ${label}` }).click();
+      await page.getByRole('menuitem', { name: 'Delete key' }).click();
+      await page.getByRole('alertdialog').getByRole('button', { name: 'Delete key' }).click();
+      await expect(anthropicKeys.getByText(label, { exact: true })).toHaveCount(0);
+    }
+    await page.getByRole('tab', { name: 'Secrets', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Shared provider secrets' })).toHaveCount(0);
   } finally {
     if (projectId) await deleteDatabaseProject(env, projectId);
     await deleteAuthUser(user.id, auth);

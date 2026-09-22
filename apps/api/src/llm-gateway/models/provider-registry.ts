@@ -26,15 +26,10 @@ const ANTHROPIC_BASE_URL = 'https://api.anthropic.com/v1';
 // the single-secret, self-generatable credential this path is built around.
 const BEDROCK_BYOK_ENV_VAR = 'AWS_BEARER_TOKEN_BEDROCK';
 
-// Bedrock has NO single static baseUrl to publish here: the runtime endpoint
-// is region-scoped, and the region is the PROJECT's own AWS_REGION secret —
-// never deployment/operator config (config.AWS_BEDROCK_REGION belongs
-// exclusively to the CLOUD-ONLY managed/credits path; reading it here would
-// silently route every BYOK Bedrock project through the OPERATOR's region
-// regardless of which region a project's own bearer token was actually issued
-// for, re-introducing the exact managed/BYOK conflation this feature exists to
-// remove). So resolveCatalogUpstream — which has no project context — can't
-// resolve a final baseUrl for Bedrock; it publishes the envVar/kind only, and
+// Bedrock has no single static baseUrl to publish here. The runtime endpoint
+// uses the project's own AWS_REGION secret, never deployment config. This
+// function has no project context, so it publishes the envVar/kind only.
+// It cannot resolve a final baseUrl for Bedrock. Instead,
 // resolveCandidates.ts (which DOES have `principal.projectId`) resolves the
 // project's own AWS_REGION secret and builds the regional endpoint per-request.
 // A discriminated union (rather than an optional `baseUrl` on one shape) lets
@@ -53,6 +48,17 @@ export function resolveCatalogUpstream(providerId: string): CatalogUpstream | nu
     .snapshot()
     .providers.find((candidate) => candidate.id === providerId);
   if (!provider) return null;
+
+  // Google's Gemini API accepts OpenAI chat-completions requests with an API
+  // key. Use the same primary key name as the Models connect control.
+  if (providerId === 'google') {
+    return {
+      kind: 'openai-compat',
+      envVar: 'GOOGLE_GENERATIVE_AI_API_KEY',
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+      npm: provider.npm ?? undefined,
+    };
+  }
 
   const kind = providerKindForNpm(provider.npm);
   if (!kind) return null;

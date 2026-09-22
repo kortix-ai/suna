@@ -1,10 +1,5 @@
-import { promptConnectorRefusalBody } from '../lib/prompt-connector-refusal';
-import {
-  missingPromptConnectorConnections,
-  PromptConnectorPreflightUnresolved,
-} from '../lib/prompt-connector-preflight';
-import { DEFAULT_AGENT_SENTINEL } from '../agents';
-import { checkBillingActive } from '../../billing/services/billing-gate';
+import { parseSessionAttachmentRef } from '@kortix/shared';
+import { checkBillingAdmission } from '../../billing/services/billing-gate';
 import { config, type SandboxProviderName } from '../../config';
 import { auth, errors, json } from '../../openapi';
 import { getProvider } from '../../platform/providers';
@@ -38,6 +33,7 @@ import {
   sessionIsTombstoned,
 } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
+import { clearSessionOnBehalfOfForPrompt } from '../lib/on-behalf-of';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { resolveChangeRequestBase, resolveChangeRequestOrigin } from '../change-request-policy';
 import { PROJECT_ACTIONS } from '../../iam';
@@ -45,6 +41,10 @@ import { callerKortixSessionId } from '../lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { AnyObject, ChangeRequestSchema, SessionStartResultSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
+import {
+  sessionUsesCurrentRepository,
+} from '../lib/repository-generation';
+import { backfillSessionTranscriptMirrorOnWake } from '../lib/session-transcript-capture';
 import { UUID_V4_REGEX, normalizeString, readBody } from '../lib/serializers';
 import {
   continueSession,
@@ -92,10 +92,14 @@ projectsApp.openapi(
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
+      query: z.object({
+        wait_ms: z.string().optional(),
+        repository_mode: z.enum(['previous']).optional(),
+      }),
     },
     responses: {
       200: json(SessionStartResultSchema, 'Session readiness payload'),
-      ...errors(400, 402, 404),
+      ...errors(400, 402, 403, 404, 409),
     },
   }),
   async (c) => {
@@ -123,6 +127,10 @@ projectsApp.openapi(
     // restartable and the UI offers a Restart that can never work. 404, the
     // same answer the read-by-id gives (see sessionIsTombstoned).
     if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
+    const projectMetadata = loaded.row.metadata as Record<string, unknown>;
+    const sessionMetadata = visible.row.metadata as Record<string, unknown>;
+    const repositoryMode = c.req.query('repository_mode');
+    const usesCurrentRepository = sessionUsesCurrentRepository(projectMetadata, sessionMetadata);
     // The agent this session will actually run has to still be one the caller
     // may run — grants change after a session is created, and `/start` is what
     // resumes a hibernated box days later. The session's stored `agent_name`
@@ -143,7 +151,7 @@ projectsApp.openapi(
     }
 
     // Same gate as wake/create: resuming or provisioning spends compute.
-    const billing = await checkBillingActive(loaded.row.accountId);
+    const billing = await checkBillingAdmission(loaded.row.accountId);
     stl.mark('billing-checked');
     if (!billing.ok) {
       return c.json(
@@ -177,7 +185,24 @@ projectsApp.openapi(
       waitMs,
     });
     stl.mark(`open-session:${result.start.stage}`);
-    stl.log({ waitMs });
+    // THE RUNTIME IS UP — mirror what is already in it, once.
+    //
+    // Capture otherwise runs only at turn end, so enabling
+    // `session_transcript_history` did nothing for a project's EXISTING
+    // sessions: each one stayed blank on open until somebody sent it another
+    // message. Opening the session is exactly when the user waits and the
+    // feature is supposed to pay off, so that is where the backfill belongs.
+    //
+    // Fire-and-forget and self-limiting: at most one attempt per session per
+    // process, skipped entirely when the flag is off or the mirror already
+    // proves it holds the session's first message. It cannot fail or delay
+    // this response.
+    if (result.start.stage === 'ready') void backfillSessionTranscriptMirrorOnWake(sessionId);
+    stl.log({
+      waitMs,
+      repositoryMode: usesCurrentRepository ? 'current' : 'previous',
+      compatibilityModeRequested: repositoryMode === 'previous',
+    });
     return c.json(
       {
         ...result.start,
@@ -316,8 +341,19 @@ const SessionTurnSchema = z.object({
 
 const SessionTurnLastEndedSchema = z.object({
   turn_token: z.string(),
+  message_id: z.string().optional(),
   end_reason: z.string().nullable(),
   ended_at: z.string().nullable(),
+  error: z
+    .object({ name: z.string().nullable(), message: z.string().nullable() })
+    .optional(),
+});
+
+const SessionTurnFailureSchema = z.object({
+  message_id: z.string(),
+  ended_at: z.string().nullable(),
+  // Null when the turn failed and nobody named why.
+  error: z.object({ name: z.string().nullable(), message: z.string().nullable() }).nullable(),
 });
 
 const SessionTurnResponseSchema = z.object({
@@ -329,6 +365,7 @@ const SessionTurnResponseSchema = z.object({
   // caller reconciling by `message_id`.
   turns: z.array(SessionTurnSchema),
   last_ended: SessionTurnLastEndedSchema.optional(),
+  recent_failures: z.array(SessionTurnFailureSchema).optional(),
 });
 
 // GET /v1/projects/:projectId/sessions/:sessionId/turn
@@ -567,6 +604,12 @@ projectsApp.openapi(
     const sanitized = sanitizeInboxPromptParts(rawParts);
     if ('error' in sanitized) return c.json({ error: sanitized.error }, 400);
     const parts = sanitized.parts;
+    for (const part of parts) {
+      const attachment = parseSessionAttachmentRef(part.url);
+      if (attachment && (attachment.projectId !== projectId || attachment.sessionId !== sessionId)) {
+        return c.json({ error: 'Attachment belongs to another session' }, 400);
+      }
+    }
     const text = flattenPromptText(parts);
 
     const overridesInput = (body.overrides ?? {}) as Record<string, unknown>;
@@ -588,28 +631,32 @@ projectsApp.openapi(
     // back to the session's own agent when the prompt names none.
     await resolveAndAuthorizeAgent(c, loaded, projectId, overrides.agent, visible.row.agentName);
 
-    // Refuse before enqueueing: callers must see the actionable connector
-    // contract rather than a queue that looks like an active model turn.
-    try {
-      const refusal = promptConnectorRefusalBody(
-        await missingPromptConnectorConnections({
-          accountId: loaded.row.accountId,
-          projectId,
-          sessionId,
-          sessionAgent: visible.row.agentName ?? DEFAULT_AGENT_SENTINEL,
-          requestedAgent: overrides.agent,
-        }),
-      );
-      if (refusal) return c.json(refusal, 409);
-    } catch (error) {
-      if (error instanceof PromptConnectorPreflightUnresolved) {
-        return c.json({ error: error.message, code: 'CONNECTOR_REQUIREMENTS_UNRESOLVED' }, 503);
-      }
-      throw error;
+    // Spec 2026-09-22 §2.3 (closes V6): the first prompt from a HUMAN other than
+    // the session's `on_behalf_of` clears it permanently. The agent keeps its
+    // own authority; it loses the creator's personal resources, so the person
+    // prompting never acts through another person's accounts. An agent-session
+    // credential is not a human prompter and clears nothing.
+    if (!isProjectSessionPrincipal(c)) {
+      await clearSessionOnBehalfOfForPrompt({
+        accountId: loaded.row.accountId,
+        sessionId,
+        prompterUserId: loaded.userId,
+      });
     }
 
+    // NO connector pre-flight here. A prompt used to be refused 409
+    // `CONNECTOR_CONNECTION_REQUIRED` when a connector the session declared had
+    // nothing connected. That gate could not be cleared from the product: a
+    // `user`-strategy connector has no project account to offer, so the web
+    // card had no button, and the warm-session path swallowed the 409 and left
+    // the composer on "Thinking" forever.
+    //
+    // The connector CALL denies instead (`connector_not_connected`), naming the
+    // connector and carrying a connect link. The turn runs, the agent reports
+    // what is missing, and the human fixes it in one click.
+
     // Same gate as start/wake: a prompt spends compute.
-    const billing = await checkBillingActive(loaded.row.accountId);
+    const billing = await checkBillingAdmission(loaded.row.accountId);
     if (!billing.ok) {
       return c.json(
         {

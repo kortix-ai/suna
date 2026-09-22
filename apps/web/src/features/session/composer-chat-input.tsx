@@ -12,16 +12,8 @@ import {
 } from '@/features/session/session-chat-input';
 import type { SessionPromptOverrides } from '@kortix/sdk';
 import type { AttachmentSubmission } from './composer/attachment-submission';
-import {
-  type Command,
-  type ModelKey,
-  useProjectConfig,
-  useRuntimeAgents,
-  useRuntimeCommands,
-  useRuntimeConfig,
-  useRuntimeProviders,
-  useSessionModelSelection,
-} from '@kortix/sdk/react';
+import type { ComposerSendReset } from './composer-reset';
+import { type Command, type ModelKey, useProjectConfig, useRuntimeAgents, useRuntimeCommands, useRuntimeConfig, useRuntimeProviders, useSessionModelSelection } from '@kortix/sdk/react';
 import { isMetaAgentName } from '@kortix/shared';
 import { resolveComposerAgent } from './composer/composer-agent-access';
 import type { DraftScope } from './composer/draft/composer-draft';
@@ -32,6 +24,7 @@ export interface ComposerOptions {
   model?: ModelKey;
   variant?: string;
   scope?: SessionScopeCommit;
+  providerSecretPools?: Record<string, string[]>;
 }
 
 /**
@@ -69,6 +62,7 @@ export function ComposerChatInput({
   onAgentSelectionChange,
   sandboxSlot,
   draftScope,
+  draftActive,
   promptAttachments,
 }: {
   onSend: (
@@ -91,9 +85,13 @@ export function ComposerChatInput({
   /** Send in flight, not yet settled — spinner in the send slot (see SessionChatInput.isSending). */
   isSending?: boolean;
   disabled?: boolean;
-  /** Clear the composer optimistically on send. Set false on the project-home
-   *  composer, whose send navigates it away (see SessionChatInput.clearOnSend). */
-  clearOnSend?: boolean;
+  /**
+   * What send does to this composer: clear and revoke (`true`, every in-thread
+   * composer), clear but keep the local preview URLs alive for the surface that
+   * takes over (`'text-only'`, project home), or leave the draft untouched
+   * (`false`). See `composer-reset.ts`.
+   */
+  clearOnSend?: ComposerSendReset;
   autoFocus?: boolean;
   placeholder?: string;
   prefill?: {
@@ -120,6 +118,7 @@ export function ComposerChatInput({
   sandboxSlot?: SessionOverrideSlot;
   /** Persist the unsent draft under this scope — see `composer/draft/`. */
   draftScope?: DraftScope | null;
+  draftActive?: boolean;
   /** Host-owned upload controller. See `SessionChatInputProps.promptAttachments`. */
   promptAttachments?: SessionChatInputProps['promptAttachments'];
 }) {
@@ -181,6 +180,9 @@ export function ComposerChatInput({
     agentName: string | null;
     commit: SessionScopeCommit;
   } | null>(null);
+  const [newProviderSecretPools, setNewProviderSecretPools] = useState<Record<string, string[]>>({});
+
+
   const handleCommittedScope = useCallback(
     (commit: SessionScopeCommit | undefined) => {
       setNewSessionScope(commit ? { agentName: selectedAgentName, commit } : null);
@@ -198,11 +200,13 @@ export function ComposerChatInput({
           projectId={projectId}
           sessionId={sessionId}
           onCommittedDraft={sessionId ? undefined : handleCommittedScope}
+          providerSecretPools={newProviderSecretPools}
+          onProviderSecretPoolsChange={setNewProviderSecretPools}
           selectedAgent={selectedAgentName}
           sandboxSlot={sandboxSlot}
         />
       ) : null,
-    [handleCommittedScope, projectId, sandboxSlot, selectedAgentName, sessionId],
+    [handleCommittedScope, newProviderSecretPools, projectId, sandboxSlot, selectedAgentName, sessionId],
   );
 
   const combinedToolbarSlot = useMemo(
@@ -228,6 +232,7 @@ export function ComposerChatInput({
     if (!sessionId && newSessionScope && newSessionScope.agentName === selectedAgentName) {
       o.scope = newSessionScope.commit;
     }
+    if (!sessionId && Object.keys(newProviderSecretPools).length > 0) o.providerSecretPools = newProviderSecretPools;
     return o;
   };
 
@@ -276,6 +281,7 @@ export function ComposerChatInput({
       onVariantChange={(v) => local.model.variant.set(v ?? undefined)}
       commands={commands || []}
       draftScope={draftScope}
+      draftActive={draftActive}
     />
   );
 }

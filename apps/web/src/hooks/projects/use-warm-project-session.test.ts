@@ -86,8 +86,8 @@ describe('warmSessionFitsSend', () => {
 
   test('per-session connector wiring has no equivalent on an existing session', () => {
     expect(warmSessionFitsSend(warm(), { connector_bindings: {} })).toBe(false);
+    expect(warmSessionFitsSend(warm(), { provider_secret_pools: { anthropic: ['primary', 'backup'] } })).toBe(false);
     expect(warmSessionFitsSend(warm(), { inherit_unbound: false })).toBe(false);
-    expect(warmSessionFitsSend(warm(), { require_connectors: ['slack'] })).toBe(false);
   });
 });
 

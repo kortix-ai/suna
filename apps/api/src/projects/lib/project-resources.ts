@@ -15,6 +15,7 @@ import type { ProjectConfigSummary } from '../git/types';
 import { filterAccessibleObjects, hasAnyResourceGrants } from '../../iam';
 import { actorForToken } from '../../iam/actor';
 import { loadProjectConfig, listRepoFiles } from '../git';
+import { refreshMirror } from '../git/mirror';
 import { withProjectGitAuth } from './git';
 
 /**
@@ -25,8 +26,14 @@ import { withProjectGitAuth } from './git';
  */
 export async function loadConfigWithFiles(
   row: Parameters<typeof withProjectGitAuth>[0] & { defaultBranch: string },
+  opts: { forceRefresh?: boolean } = {},
 ): Promise<ProjectConfigSummary> {
   const gitProject = await withProjectGitAuth(row);
+  // The mirror refreshes on a timer, so a resource committed seconds ago can
+  // be missing from it. A caller about to answer "not found" asks for a fresh
+  // read first (see the learnings entry "An action endpoint must refresh a
+  // replicated mirror before returning 404").
+  if (opts.forceRefresh) await refreshMirror(gitProject, true);
   let files: Awaited<ReturnType<typeof listRepoFiles>> = [];
   try {
     files = await listRepoFiles(gitProject, row.defaultBranch);

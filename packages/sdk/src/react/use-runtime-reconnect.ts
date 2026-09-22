@@ -44,6 +44,20 @@ export const POLL_CONNECTED = 30_000; // 30s when healthy
 // tracking actual daemon readiness tightly; the health probe is a cheap GET.
 export const POLL_FAILING = 150;
 export const POLL_UNREACHABLE = 5_000; // 5s when confirmed unreachable
+/**
+ * 15s while the box is PARKED.
+ *
+ * Deliberately the slowest cadence here, because parking is the only state in
+ * this set that is not a fault: it is the expected resting state of an idle
+ * session, and it ends when the user sends — which resets this store directly
+ * rather than waiting for a probe to notice. The poll stays alive only so a
+ * wake from somewhere else (another tab, another client) still surfaces.
+ *
+ * Before this existed, a parked box matched `connected` + `healthy: false` and
+ * inherited POLL_FAILING: a health request every 150ms, forever, per open tab,
+ * against a state that cannot change on its own.
+ */
+export const POLL_PARKED = 15_000;
 
 export const CHECK_TIMEOUT = 20_000;
 
@@ -233,8 +247,17 @@ export function computeFailureStatus(
  * pair — fast while anything is unresolved or unhealthy, slow once truly
  * settled into "connected and healthy".
  */
-export function nextPollDelay(status: SandboxConnectionStatus, healthy: boolean | null): number {
-  if (status === 'connected' && healthy === false) return POLL_FAILING;
+export function nextPollDelay(
+  status: SandboxConnectionStatus,
+  healthy: boolean | null,
+  parked = false,
+): number {
+  // Parked and booting present identically (`connected` + not healthy) and need
+  // opposite cadences. Booting resolves on its own in seconds and the fast poll
+  // is what makes the runtime appear promptly; parked resolves only on a send.
+  if (status === 'connected' && healthy === false) {
+    return parked ? POLL_PARKED : POLL_FAILING;
+  }
   if (status === 'connected') return POLL_CONNECTED;
   if (status === 'unreachable') return POLL_UNREACHABLE;
   // Initial "connecting" phase (sandbox just went active, opencode still
@@ -434,8 +457,8 @@ export function useRuntimeReconnect() {
     function scheduleNext() {
       if (!alive) return;
       if (timerRef.current) clearTimeout(timerRef.current);
-      const { status, healthy } = useSandboxConnectionStore.getState();
-      timerRef.current = setTimeout(check, nextPollDelay(status, healthy));
+      const { status, healthy, parked } = useSandboxConnectionStore.getState();
+      timerRef.current = setTimeout(check, nextPollDelay(status, healthy, parked));
     }
 
     check();

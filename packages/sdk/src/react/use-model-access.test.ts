@@ -59,3 +59,51 @@ test('changing the default invalidates the access policy that locks its provider
   await act(async () => root!.unmount());
   client.clear();
 });
+
+/**
+ * A DISABLED react-query never leaves `status: 'pending'` — with no fetch to
+ * settle it, `isPending` stays true forever. `useModelAccess` is disabled
+ * whenever `projectId` is null/undefined, which `provider-connect.tsx` does on
+ * purpose, so the exported `isLoading` must read the enabled-aware half of the
+ * state (`fetchStatus`) and not `isPending` alone.
+ *
+ * This is the 2026-09-17 composer-model-picker defect class (PR #7380, and the
+ * `learnings` entry "A disabled react-query is `isPending` forever"): a spinner
+ * that outlives every request, because the gate is reading a flag that is
+ * waiting for a fetch which was never scheduled.
+ *
+ * The second half is load-bearing: it stops "always false" from passing.
+ */
+test('a null projectId reports settled, not an endless load, while a real one still reports its first fetch', async () => {
+  configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'token' });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const policy = { disabledProviders: [] as string[], disabledModels: [] as string[], enforced: true };
+  const fetchMock = mock(async () => Response.json(policy));
+  globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+  const whileDisabled: boolean[] = [];
+  function Disabled() { whileDisabled.push(useModelAccess(null).isLoading); return null; }
+  let disabledRoot: ReturnType<typeof create>;
+  await act(async () => {
+    disabledRoot = create(React.createElement(QueryClientProvider, { client }, React.createElement(Disabled)));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(whileDisabled.length).toBeGreaterThan(0);
+  expect(whileDisabled).toEqual(whileDisabled.map(() => false));
+  await act(async () => disabledRoot!.unmount());
+
+  const whileEnabled: boolean[] = [];
+  let value: ReturnType<typeof useModelAccess>;
+  function Enabled() { value = useModelAccess('p1'); whileEnabled.push(value.isLoading); return null; }
+  let enabledRoot: ReturnType<typeof create>;
+  await act(async () => {
+    enabledRoot = create(React.createElement(QueryClientProvider, { client }, React.createElement(Enabled)));
+  });
+  expect(whileEnabled[0]).toBe(true);
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+  expect(value!.isLoading).toBe(false);
+  expect(value!.data?.enforced).toBe(true);
+  await act(async () => enabledRoot!.unmount());
+  client.clear();
+});

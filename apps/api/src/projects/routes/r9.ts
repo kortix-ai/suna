@@ -2,17 +2,23 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { changeRequests } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../../iam';
-import { agentMayPerform, assertAgentScope, getAgentGrant } from '../../iam/agent-scope';
-import { refusesSelfMerge } from '../change-request-policy';
+import { agentMayPerform, assertAgentScope, getAgentGrant, isProjectSessionPrincipal } from '../../iam/agent-scope';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { manifestGovernanceChanged, refusesSelfMerge } from '../change-request-policy';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { getCrById, serializeChangeRequest } from '../change-requests';
+// Imported from its own module, not the `../git` barrel: several route suites
+// replace the barrel wholesale with `mock.module`, and the guard below runs
+// only with the agent_principal flag on.
+import { getMergeBase } from '../git/merge';
 import {
   invalidateProjectMirror,
   MergeConflictError,
   mergeBranches,
   readManifestFromRepo,
+  type GitBackedProject,
 } from '../git';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
@@ -94,6 +100,16 @@ projectsApp.openapi(
     const customMessage = normalizeString(body.message);
     const projectForGit = await withProjectGitAuth(loaded.row);
 
+    // Governance guard (spec 2026-09-22 §2.4). Under the agent-principal model
+    // kortix.yaml `agents` and `triggers` ARE agent authority, so an agent must
+    // not widen itself (or plant an unattended run) by merging its own edit. A
+    // human with project.gitops.merge merges such a change request. Compared
+    // against the merge base, so only the CR's own changes count.
+    if (resolveFeatureFlag(loaded.row.metadata, 'agent_principal') && isProjectSessionPrincipal(c)) {
+      const refusal = await agentGovernanceMergeRefusal(projectForGit, cr);
+      if (refusal) return c.json(refusal, 403);
+    }
+
     // Manifest gate: a CR cannot merge if the would-be-merged manifest doesn't
     // validate against the canonical schema. We read the manifest from the HEAD
     // branch (what's about to be merged), preferring kortix.yaml over kortix.toml.
@@ -101,14 +117,30 @@ projectsApp.openapi(
     // `.kortix/`-only layout still merge. The same validator runs in the CLI's
     // `kortix ship` pre-flight, so CLI users see the same diagnostic before push.
     try {
-      const { validateManifest, manifestFormatForPath, manifestCandidatePaths } = await import(
-        '@kortix/manifest-schema'
-      );
+      const { validateManifest, manifestFormatForPath, manifestCandidatePaths, ManifestImportError } =
+        await import('@kortix/manifest-schema');
+      // `found.content` is the MERGED document when the head declares
+      // `imports:`, so the gate validates what the platform will actually run.
+      // A broken import (missing file, duplicate name, cycle) blocks the merge
+      // with the same 422 a schema violation gets.
       const found = await readManifestFromRepo(
         projectForGit,
         manifestCandidatePaths(projectForGit.manifestPath).map((cand) => cand.path),
         cr.headRef,
-      );
+      ).catch((err: unknown) => {
+        if (err instanceof ManifestImportError) return { importError: err.message } as const;
+        throw err;
+      });
+      if (found && 'importError' in found) {
+        return c.json(
+          {
+            error: 'Manifest validation failed — merge blocked.',
+            code: 'MANIFEST_INVALID',
+            issues: [{ path: 'imports', message: found.importError, severity: 'error' }],
+          },
+          422,
+        );
+      }
       if (found && found.content.trim()) {
         const verdict = validateManifest(found.content, manifestFormatForPath(found.path));
         if (!verdict.valid) {
@@ -321,3 +353,42 @@ projectsApp.openapi(
     return c.json(serializeChangeRequest(row));
   },
 );
+
+/**
+ * The 403 body when an agent-session merge would change kortix.yaml `agents`
+ * or `triggers`; null when it would not. Reads the manifest at the merge base
+ * and at the CR head. A read failure refuses (fail closed): the guard must not
+ * turn a mirror hiccup into an ungoverned merge.
+ */
+async function agentGovernanceMergeRefusal(
+  project: GitBackedProject,
+  cr: { number: number; baseRef: string; headRef: string },
+): Promise<Record<string, unknown> | null> {
+  const refusal = {
+    error:
+      `Change request #${cr.number} changes agents or triggers in the project manifest. ` +
+      'An agent cannot merge that; a person with project.gitops.merge must.',
+    code: 'CR_AGENT_GOVERNANCE_CHANGE',
+    action: PROJECT_ACTIONS.PROJECT_GITOPS_MERGE,
+  };
+  try {
+    const { manifestCandidatePaths, manifestFormatForPath } = await import('@kortix/manifest-schema');
+    const candidates = manifestCandidatePaths(project.manifestPath).map((cand) => cand.path);
+    const mergeBase = await getMergeBase(project, cr.baseRef, cr.headRef);
+    const [before, after] = await Promise.all([
+      readManifestFromRepo(project, candidates, mergeBase ?? cr.baseRef, { strictRef: true }),
+      readManifestFromRepo(project, candidates, cr.headRef, { strictRef: true }),
+    ]);
+    const baseFormat = manifestFormatForPath(before?.path ?? after?.path ?? 'kortix.yaml');
+    const headFormat = manifestFormatForPath(after?.path ?? before?.path ?? 'kortix.yaml');
+    return manifestGovernanceChanged(before?.content ?? null, after?.content ?? null, baseFormat, headFormat)
+      ? refusal
+      : null;
+  } catch (err) {
+    console.warn('[cr-merge] governance guard could not read the manifest; refusing the agent merge', {
+      cr: cr.number,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return refusal;
+  }
+}

@@ -104,6 +104,7 @@ Reached by invite token alone — the invitee may not be a member yet.
 
 | method | what |
 | --- | --- |
+| `listMine()` | every pending, unexpired invite addressed to your email, with the workspace and any projects it grants |
 | `describe(inviteId)` · `accept(inviteId)` · `decline(inviteId)` | preview · accept · decline an invite |
 
 ### Projects — `kortix.projects`
@@ -151,6 +152,7 @@ Account-scoped GitHub App install and repo linking, not project-scoped.
 | `listLinkableInstallations(input)` | installs the authorized GitHub user may link; each entry carries `linked_to_other_accounts`, a count of other Kortix accounts holding it — never their names |
 | `listRepositories(accountId, installationId?)` · `listRepositoryBranches(...)` | repos the install can see · branches and the GitHub default |
 | `linkRepository(input)` | import a repo as a project. `source: 'managed'` imports one the instance git backend holds (self-host operator only, 403 otherwise) and is mutually exclusive with `installation_id` (400) |
+| `replaceProjectRepository({ project_id, repo_url, expected_repo_url, github_token })` | replace an existing project's GitHub repository. Use either `github_token` with Contents read/write access, or `installation_id` plus temporary `github_user_token` to verify organization admin access and grant only this repository through the GitHub App. `copy_shared_secrets_from_project_id` plus `copy_shared_secret_identifiers` copies selected shared runtime secrets in the same transaction. A stale `expected_repo_url` returns 409. The old repository remains on GitHub. New sessions use the replacement repository; existing sessions retain their checkout. |
 
 This list holds real account connections only. "Kortix managed" is not one of
 them — it is the instance backend below.
@@ -304,14 +306,15 @@ project manager as much as a member.
 | --- | --- |
 | `catalog()` · `tools()` | callable Connector catalog · flattened `<connector>.<action>` tools |
 | `search(query, options?)` · `describe(tool)` | find · inspect one callable tool |
-| `call(tool, args?)` | call one `<connector>.<action>` tool through the server-side gateway |
+| `call(tool, args?, options?)` | call one `<connector>.<action>` tool through the server-side gateway. `options.account` names which account to run as — see below. |
+| `accounts(slug)` | the accounts this caller may call `slug` as, default first — what `options.account` matches against |
 | `uploadAttachment(content, input)` | upload bytes and receive an opaque attachment handle for a later call |
 | `list()` · `config(connectorId)` | configured connectors · one connector's config |
 | `create(input)` | add a connector |
 | `auth.discover(input)` | preview auth from an OpenAPI spec, Postman collection, or endpoint |
 | `remove(connectorId)` · `sync()` | delete a connector · re-sync connectors |
 | `setName(connectorId, name)` · `setSensitive(connectorId, sensitive)` | rename · mark it sensitive (extra approval gating) |
-| `setAuthorizationStrategy(slug, strategy)` | select `project` or `user` connection ownership |
+| `setAuthorizationStrategy(slug, strategy)` | @deprecated. Still calls the route; the route is a no-op that answers `{ok:true, deprecated:true}` and changes nothing. `owner_type` on each connection is the whole access rule now. |
 | `setCredentialMode(connectorId, mode)` · `setCredential(connectorId, input)` | switch source · set the credential value |
 | `policies.get(connectorId)` · `policies.set(connectorId, policies)` | read · replace its tool policies |
 | `connections.list()` · `connections.reconcile(input)` | list · create/update connected accounts |
@@ -331,13 +334,49 @@ returns OAuth apps only. Connect API-key apps directly instead.
 | --- | --- |
 | `pipedream.listApps(params?)` · `pipedream.connect(input)` · `pipedream.finalize(input)` | browse the app catalog · start a connect flow · finalize it |
 
-A connector defines the tool, provider app, authorization strategy, and
-policies. `connections` stores its connected accounts. A session can select
-one with `connector_bindings: { alias: { connection_id } }`. Credentials
-stay encrypted and resolve per request.
+A connector defines the tool, provider app, and policies. `connections`
+stores its connected **accounts** — a connector can hold several side by side.
+A session can pin one for every call with
+`connector_bindings: { alias: { connection_id } }`, or a single call can name
+one with `call(tool, args, { account })`. Credentials stay encrypted and
+resolve per request.
 
 `connections` is the only active authorization facade. The retired
 `authorizations` and `profiles` names are not part of the current SDK surface.
+
+#### Accounts and the call-time gate
+
+Each connection has an `owner_type`: `project` (shared — reachable by anyone
+the connector is granted to, human or service account) or `member` (private —
+reachable only by its own owner, and only in a private session; never by a
+service account). `p.connectors.accounts(slug)` lists every account this
+caller may reach, default first:
+
+```ts
+const accounts = await kortix.project(projectId).connectors.accounts('stripe-read');
+// [{ connection_id, label, owner_type, is_default }, ...]
+
+await kortix.project(projectId).connectors.call(
+  'stripe-read.get_balance',
+  {},
+  { account: 'My Stripe' }, // a connection id, a label, or the words `me` / `project`
+);
+```
+
+A call that names no account resolves to the caller's own default private
+account first, then the project's default shared account. A named account
+that does not resolve is **denied** with `connector_not_connected` — never
+silently substituted — and the denial lists `requested_account` and
+`available_accounts`. Every successful call echoes which account it ran as:
+`result.account = { connection_id, label, owner_type }`.
+
+There is no session-create-time connector gate any more. A session used to be
+refused `409 CONNECTOR_CONNECTION_REQUIRED` when a required connector had no
+usable connection; that refusal is gone (`require_connectors` is inert — see
+[`p.sessions`](#psessions--and-the-session-handle)). The gate moved to the
+call: a denied `connector_not_connected` carries `connect_url`, a hosted
+authorization link, whenever one can be minted for the caller — the whole
+remedy is one click, surfaced by the transcript's connect button.
 
 #### `p.policies` — project policies
 
@@ -435,8 +474,11 @@ The session handle is the heart of the runtime — see
 
 `create(input)` accepts `connector_bindings` keyed by connector-connection slug.
 Each value names a `connection_id`. It also accepts `secrets` for
-backend-origin secret narrowing and `require_connectors` for mandatory
-connectors.
+backend-origin secret narrowing. `require_connectors` is deprecated and
+inert: the field is still accepted (an old client is never rejected for
+sending it), but nothing reads it — a session is never refused at create time
+for a connector with no usable account. See [Accounts and the call-time
+gate](#accounts-and-the-call-time-gate).
 
 #### `p.approvals` — the connector approval inbox
 

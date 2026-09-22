@@ -52,8 +52,9 @@ import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-stor
 import { useSyncStore } from '../browser/stores/sync-store';
 import { BillingError } from '../core/http/api/errors';
 import { clearSessionFresh, markSessionFresh } from '../core/http/fresh-sessions';
-import { SessionStartError } from '../core/rest/projects-client';
+import { SessionStartError, type SessionStartResult } from '../core/rest/projects-client';
 import { setCurrentRuntime } from '../core/session/current-runtime';
+import type { ModelKey } from './use-model-store';
 import { promptOpenCodeMessage } from './use-opencode-sessions/messages';
 import {
   SESSION_START_FRESH_MS,
@@ -71,6 +72,8 @@ import {
   markDispatchedForPartIds,
   nextInconclusiveSince,
   rejectQuestion,
+  resolveSendOptions,
+  resolveSessionRuntimeUrl,
   sendReceiptId,
   sendStateOnError,
   sendStateOnStart,
@@ -1063,5 +1066,124 @@ describe('classifySendError — connector refusals', () => {
     expect(classifySendError(refusal({ code: 'CONNECTOR_CONNECTION_REQUIRED' })).kind).not.toBe(
       'billing',
     );
+  });
+});
+
+// ── resolveSessionRuntimeUrl — the runtime URL `useSession` now returns ──────
+//
+// `/start` carries `runtime_url`, and `startProjectSession` already derives the
+// same absolute URL for the session-runtime registry — but `useSession`
+// returned only `sandbox`, so a host that needed the URL (a TUI PTY attach, a
+// file read, anything below the hook's own actions) had to rebuild it. These
+// pin the resolution, including the part the raw field cannot be used for:
+// `runtime_url` is a RELATIVE path (`/p/<ext>/8000`, see
+// `apps/api/src/projects/routes/shared.ts:526`), never an absolute URL.
+
+describe('resolveSessionRuntimeUrl', () => {
+  const sandbox = (externalId: string | null) =>
+    ({ external_id: externalId }) as NonNullable<SessionStartResult['sandbox']>;
+
+  test('is null until /start answers', () => {
+    expect(resolveSessionRuntimeUrl(null)).toBeNull();
+    expect(resolveSessionRuntimeUrl(undefined)).toBeNull();
+  });
+
+  test('is null while the box is still booting', () => {
+    // A sandbox row exists from `provisioning` onward. Handing its URL out
+    // before `stage==='ready'` would invite a host to dial a box that is not
+    // serving yet — the exact class of bug `SessionNotReadyError` exists for.
+    for (const stage of ['provisioning', 'starting', 'stopped', 'failed'] as const) {
+      expect(
+        resolveSessionRuntimeUrl({ stage, sandbox: sandbox('ext-1'), runtime_url: '/p/ext-1/8000' }),
+      ).toBeNull();
+    }
+  });
+
+  test('derives the absolute proxy URL from the sandbox external id', () => {
+    expect(
+      resolveSessionRuntimeUrl({ stage: 'ready', sandbox: sandbox('ext-1'), runtime_url: null }),
+    ).toBe('http://localhost:8008/v1/p/ext-1/8000');
+  });
+
+  test('composes the relative runtime_url against the backend when no external id is known', () => {
+    // The server sends `/p/<ext>/8000`, a PATH. Returning it verbatim would
+    // hand the host a string it cannot fetch.
+    expect(
+      resolveSessionRuntimeUrl({ stage: 'ready', sandbox: null, runtime_url: '/p/ext-9/8000' }),
+    ).toBe('http://localhost:8008/v1/p/ext-9/8000');
+  });
+
+  test('passes an absolute runtime_url through unchanged', () => {
+    expect(
+      resolveSessionRuntimeUrl({
+        stage: 'ready',
+        sandbox: null,
+        runtime_url: 'https://box.example.com/p/ext-9/8000',
+      }),
+    ).toBe('https://box.example.com/p/ext-9/8000');
+  });
+
+  test('is null when a ready payload carries neither an external id nor a path', () => {
+    expect(
+      resolveSessionRuntimeUrl({ stage: 'ready', sandbox: sandbox(null), runtime_url: null }),
+    ).toBeNull();
+  });
+});
+
+// ── resolveSendOptions — picks vs per-send override ─────────────────────────
+//
+// `variant` (reasoning effort) is new in `SessionPicks`. Every host kept it in
+// a store of its own and passed it on every call, so the ONE thing that must
+// not change is the payload for a caller that never sets a variant: the key
+// has to stay absent, not become `undefined` or `null`.
+
+describe('resolveSendOptions', () => {
+  const none = { model: null, agent: null, variant: null };
+  const M: ModelKey = { providerID: 'anthropic', modelID: 'claude' };
+  const M2: ModelKey = { providerID: 'openai', modelID: 'gpt' };
+
+  test('no selection and no override sends no options at all', () => {
+    expect(resolveSendOptions(none)).toEqual({});
+    expect(resolveSendOptions(none, {})).toEqual({});
+  });
+
+  test('an unset variant never reaches the wire as a key', () => {
+    // The regression this guards: `{ variant: undefined }` is not `{}` to a
+    // JSON body builder that iterates keys.
+    const opts = resolveSendOptions({ model: M, agent: 'a', variant: null });
+    expect('variant' in opts).toBe(false);
+    expect(opts).toEqual({ model: M, agent: 'a' });
+  });
+
+  test('picks are applied when the call carries no override', () => {
+    expect(resolveSendOptions({ model: M, agent: 'a', variant: 'high' })).toEqual({
+      model: M,
+      agent: 'a',
+      variant: 'high',
+    });
+  });
+
+  test('a per-send override wins over the session pick, for all three', () => {
+    expect(
+      resolveSendOptions(
+        { model: M, agent: 'a', variant: 'high' },
+        { model: M2, agent: 'a2', variant: 'low' },
+      ),
+    ).toEqual({ model: M2, agent: 'a2', variant: 'low' });
+  });
+
+  test('variant falls back to the pick exactly like model and agent do', () => {
+    expect(resolveSendOptions({ model: null, agent: null, variant: 'high' }, {})).toEqual({
+      variant: 'high',
+    });
+    expect(
+      resolveSendOptions({ model: null, agent: null, variant: 'high' }, { variant: null }),
+    ).toEqual({ variant: 'high' });
+  });
+
+  test('directory is a per-send concern only — never a session pick', () => {
+    expect(resolveSendOptions(none, { directory: '/workspace/x' })).toEqual({
+      directory: '/workspace/x',
+    });
   });
 });

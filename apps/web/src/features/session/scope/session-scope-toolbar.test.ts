@@ -84,7 +84,6 @@ describe('createNewSessionScopeInitialization', () => {
           mail: { connection_id: 'connection-mail' },
         },
         connector_bindings_inherited: true,
-        require_connectors: [],
       },
       commit: {
         draft: {
@@ -93,7 +92,6 @@ describe('createNewSessionScopeInitialization', () => {
             mail: { connection_id: 'connection-mail' },
           },
           connector_bindings_inherited: true,
-          require_connectors: [],
         },
         availability: {
           secrets: true,
@@ -116,7 +114,6 @@ describe('createNewSessionScopeInitialization', () => {
           mail: { connection_id: 'connection-mail' },
         },
         connector_bindings_inherited: true,
-        require_connectors: [],
       },
       commit: {
         draft: {
@@ -124,7 +121,6 @@ describe('createNewSessionScopeInitialization', () => {
             mail: { connection_id: 'connection-mail' },
           },
           connector_bindings_inherited: true,
-          require_connectors: [],
         },
         availability: {
           secrets: false,
@@ -164,7 +160,6 @@ describe('commitSessionScopeDraft', () => {
       connector_bindings: {
         mail: { connection_id: 'connection-mail' },
       },
-      require_connectors: [],
     });
     expect(result?.retroactive).toBeFalse();
   });
@@ -211,6 +206,29 @@ describe('commitSessionScopeDraft', () => {
     expect(replacement?.connector_bindings).toBeNull();
   });
 
+  test('an empty replacement sends no request and keeps the current scope', async () => {
+    // Secrets unavailable + connectors inheriting leaves nothing to replace.
+    // The API refuses `{}` ("Supply `secrets`, `connector_bindings`, or both"),
+    // so a Save that only changed provider keys failed with "Validation failed".
+    let calls = 0;
+    const previous = scope({ connector_bindings_configured: false });
+    const unavailableSecrets = catalog({ secrets: { status: 'unavailable' } });
+
+    const result = await commitSessionScopeDraft({
+      sessionId: 'session-1',
+      draft: createSessionScopeDraft(previous, unavailableSecrets),
+      catalog: unavailableSecrets,
+      previousScope: previous,
+      replaceScope: async () => {
+        calls += 1;
+        return previous;
+      },
+    });
+
+    expect(calls).toBe(0);
+    expect(result).toBe(previous);
+  });
+
   test('omits an unavailable catalog axis from active-session replacement', async () => {
     let replacement: SessionScopeInput | undefined;
 
@@ -220,7 +238,6 @@ describe('commitSessionScopeDraft', () => {
         connector_bindings: {
           mail: { connection_id: 'connection-mail-2' },
         },
-        require_connectors: [],
       },
       catalog: catalog({
         secrets: { status: 'unavailable' },
@@ -236,7 +253,6 @@ describe('commitSessionScopeDraft', () => {
       connector_bindings: {
         mail: { connection_id: 'connection-mail-2' },
       },
-      require_connectors: [],
     });
   });
 
@@ -250,7 +266,6 @@ describe('commitSessionScopeDraft', () => {
         connector_bindings: {
           mail: { connection_id: 'connection-mail' },
         },
-        require_connectors: [],
       },
       catalog: catalog(),
       replaceScope: async () => {
@@ -268,7 +283,6 @@ describe('commitSessionScopeDraft', () => {
           connector_bindings: {
             mail: { connection_id: 'connection-mail' },
           },
-          require_connectors: [],
         },
         availability: {
           secrets: true,

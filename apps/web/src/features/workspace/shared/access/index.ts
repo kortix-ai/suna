@@ -10,6 +10,7 @@ export * from './access-detail-shell';
 export * from './access-dialog';
 export * from './access-row';
 export * from './access-shared';
+export * from './account-role-editor';
 export * from './copy-row';
 export * from './principal-picker';
 export * from './project-select';

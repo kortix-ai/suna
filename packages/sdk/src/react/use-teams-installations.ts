@@ -2,6 +2,15 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backendApi } from '../core/http/api-client';
+import { teamsInstallRefetchInterval } from './teams-install-polling';
+
+/**
+ * Outcome of the one-click install's org-catalog publish. `publishing` means
+ * the API is still talking to Microsoft Graph in the background; `review`
+ * means a non-admin submitted the app and a Teams admin must approve it in
+ * the Teams admin center; `failed` carries the Graph reason in `publishError`.
+ */
+export type TeamsPublishState = 'publishing' | 'published' | 'review' | 'failed';
 
 export interface TeamsInstallation {
   tenantId: string;
@@ -12,6 +21,10 @@ export interface TeamsInstallation {
   byo: boolean;
   orgInstalled: boolean;
   catalogAppId: string | null;
+  /** Null for manual and bring-your-own installs, which never publish. */
+  publishState?: TeamsPublishState | null;
+  /** Set when `publishState === 'failed'`. */
+  publishError?: string | null;
   installedAt: string;
 }
 
@@ -39,6 +52,9 @@ export function useTeamsInstall(projectId: string | null) {
     queryKey: key(projectId),
     enabled: !!projectId,
     staleTime: 30_000,
+    // The one-click install redirects back while its catalog publish may still
+    // be running server-side; keep the row live until the outcome lands.
+    refetchInterval: (query) => teamsInstallRefetchInterval(query.state.data),
     queryFn: async () => {
       if (!projectId) return null;
       const res = await backendApi.get<TeamsInstallation | null>(

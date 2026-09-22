@@ -32,13 +32,13 @@ agent works on.
 
 ## The manifest
 
-Every project has a manifest at its repo root, `kortix.yaml` by default. The
+Every project has a manifest at its repo root, `kortix.yaml` by default. A large manifest can [split across files with `imports:`](/docs/project/manifest#imports). The
 platform reads these top-level keys:
 
 | Key | Configures |
 |---|---|
 | `default_agent` | which agent runs by default |
-| `agents` | per-agent grants: connectors, secrets, skills, Kortix CLI permissions |
+| `agents` | per-agent grants: connectors, secrets, skills, Kortix permissions |
 | `sandbox` | the sandbox image and hardware |
 | `triggers` | scheduled and webhook automation |
 | `connectors` | which external tools the project can reach |

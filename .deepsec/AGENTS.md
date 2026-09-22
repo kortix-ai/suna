@@ -21,3 +21,9 @@ asked to set a project up.
 The deepsec skill is at `node_modules/deepsec/SKILL.md` (after
 `pnpm install`). The full docs ship at
 `node_modules/deepsec/dist/docs/`.
+
+## Customer data
+
+Never write customer names, people's names, emails, or real prod IDs into code,
+commits, PRs, docs, or comments. The full rule and the commit guard are in the
+root `AGENTS.md` → "NEVER write customer data or PII".

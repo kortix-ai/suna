@@ -37,6 +37,9 @@ import {
 import { shellExitCode, stripAnsi } from '@/ui';
 import { TerminalIcon } from '@phosphor-icons/react';
 import { useContext, useMemo } from 'react';
+import { ChannelBrandMark } from '@/features/session/turn/channel-brand';
+import { parseChannelSendCommand } from './channel-send';
+import { ChannelSendCard, channelSendTitle } from './channel-send-card';
 
 /** The row title never runs past this; a trigger is one line, not a sentence. */
 const TITLE_MAX = 60;
@@ -417,7 +420,15 @@ export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
     return shellExitCode(part.state.output ?? '');
   }, [part.state]);
   const failed = typeof exitCode === 'number' && exitCode !== 0;
-  const title = bashRowTitle(input.description, failed);
+
+  // `teams send "…"` / `slack send …` / `telegram send …` IS the reply the
+  // person in the channel received. It renders as that message — badge, text,
+  // attachment — with the shell call kept underneath for the record. A failed
+  // send stays a failed command: the reply never left.
+  // No manual memo: the parser is a one-line scan, and a hand-written memo
+  // here makes the React Compiler skip the whole component (see `command`).
+  const send = failed ? null : parseChannelSendCommand(command);
+  const title = send ? channelSendTitle(send.platform, tI18nComplete) : bashRowTitle(input.description, failed);
 
   const { commandPreview, extraLines } = useMemo(() => {
     const lines = command.split('\n');
@@ -426,7 +437,13 @@ export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   return (
     <BasicTool
-      icon={<TerminalIcon className="size-4 shrink-0" />}
+      icon={
+        send ? (
+          <ChannelBrandMark platform={send.platform} className="size-4 shrink-0" />
+        ) : (
+          <TerminalIcon className="size-4 shrink-0" />
+        )
+      }
       trigger={
         isStalePending ? (
           <div className="flex min-w-0 flex-1 items-center gap-1.5">
@@ -439,16 +456,22 @@ export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
             title={title}
             failed={failed}
             command={command}
-            commandPreview={commandPreview}
-            extraLines={extraLines}
+            commandPreview={send ? (send.text ?? send.file ?? '') : commandPreview}
+            extraLines={send ? 0 : extraLines}
             live={running && status !== 'completed' && status !== 'error'}
           />
         ) : null
       }
-      defaultOpen={defaultOpen}
+      // The reply is the point of the row, so it opens showing it.
+      defaultOpen={defaultOpen || Boolean(send)}
       forceOpen={forceOpen}
       locked={locked}
     >
+      {send && (
+        <div className={cn('mb-1.5', indent && 'mt-1.5', indent)}>
+          <ChannelSendCard send={send} />
+        </div>
+      )}
       {command && (
         // `CommandBlock` is a bordered card like the shared three, so it takes
         // the same gate: the seam belongs to the inline row it hangs under, not

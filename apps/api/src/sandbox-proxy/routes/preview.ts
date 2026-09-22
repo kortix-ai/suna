@@ -1,4 +1,5 @@
-import { promptConnectorRefusalBody } from '../../projects/lib/prompt-connector-refusal';
+import { clientAbortTarget } from '../client-abort';
+import { markTurnStopRequested } from '../../projects/sandbox-turn-lifecycle';
 import { stripInlineAttachmentBytes } from '../inline-attachments';
 import { timeUpstream } from '../../middleware/upstream-timing';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
@@ -8,11 +9,6 @@ import { PROJECT_ACTIONS, authorize } from '../../iam';
 import { actorForUser } from '../../iam/actor';
 import { getTraceHeaders, setContextField } from '../../lib/request-context';
 import { callerKortixSessionId } from '../../projects/lib/caller-session';
-import {
-  PromptConnectorPreflightUnresolved,
-  type PromptConnectorVerdict,
-  missingPromptConnectorConnections,
-} from '../../projects/lib/prompt-connector-preflight';
 import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
 import {
   agentLaunchableInProject,
@@ -554,53 +550,6 @@ async function agentSwitchRefusal(
   );
 }
 
-/**
- * The refusal body, or null to let the turn through.
- *
- * The shape is byte-identical to what session CREATE returns for the same two
- * codes (projects/routes/project-sessions.ts). That is a contract, not a coincidence: one
- * client classifier has to read both, and a renamed field here degrades to a
- * card that says "a connector is missing" without naming which.
- */
-async function connectorGateRefusal(
-  record: {
-    accountId: string;
-    projectId: string;
-    sessionId: string;
-    agentName?: string | null;
-  },
-  requestedAgent: string | null,
-  origin?: string,
-): Promise<Response | null> {
-  let verdict: PromptConnectorVerdict;
-  try {
-    verdict = await missingPromptConnectorConnections({
-      accountId: record.accountId,
-      projectId: record.projectId,
-      sessionId: record.sessionId,
-      sessionAgent: record.agentName ?? DEFAULT_AGENT_SENTINEL,
-      requestedAgent,
-    });
-  } catch (err) {
-    if (err instanceof PromptConnectorPreflightUnresolved) {
-      // 503, never 409. We failed to ESTABLISH the answer; saying "connect your
-      // Gmail" off a transient git read would be a confident lie, and the client
-      // retries a 503 while it never retries a 4xx.
-      console.warn(
-        `[PREVIEW] Connector pre-flight unresolved for ${record.sessionId}: ${err.message}`,
-      );
-      return jsonProxyError(
-        { error: err.message, code: 'CONNECTOR_REQUIREMENTS_UNRESOLVED' },
-        503,
-        origin,
-      );
-    }
-    throw err;
-  }
-  const refusal = promptConnectorRefusalBody(verdict);
-  return refusal ? jsonProxyError(refusal, 409, origin) : null;
-}
-
 // A prompt's explicit `agent` only constitutes a prohibited switch when it would
 // run a DIFFERENT *concrete* agent than the one this session's connector token was
 // minted for. That — and only that — is the escalation the policy prevents (see
@@ -973,6 +922,19 @@ export async function forwardToSandbox(
   // then sees the session's own agent. Sandbox-authored turns included: they
   // skip the authorization gate, which is exactly why the name must be gone
   // before the re-mint reads it. See `undeclared-prompt-agent.ts`.
+  // A client asking OpenCode to abort is a stop somebody REQUESTED. Record it on
+  // the open turn before the abort is forwarded: the end frame that follows is
+  // the same "Aborted" as an abort nobody asked for. A sandbox-authored call is
+  // the agent acting, not a person, so it is left to read as what it is.
+  const abortedOpencodeSessionId = sandboxAuthored
+    ? null
+    : clientAbortTarget(upstreamPort, method, remainingPath);
+  if (abortedOpencodeSessionId) {
+    await markTurnStopRequested(record.sessionId, 'UserStop', {
+      opencodeSessionId: abortedOpencodeSessionId,
+    });
+  }
+
   if (shouldSyncProjectEnvBeforeProxy(upstreamPort, method, remainingPath)) {
     const guardProjectId = record.projectId;
     const checked = await dropUndeclaredPromptAgent({
@@ -1000,8 +962,10 @@ export async function forwardToSandbox(
     const unauthorized = await agentSwitchRefusal(record, promptAgent, userId, sandboxId, origin);
     ptl.mark('agent-switch');
     if (unauthorized) return unauthorized;
-    const refusal = await connectorGateRefusal(record, promptAgent, origin);
-    if (refusal) return refusal;
+    // The connector pre-flight that used to run here is gone. See
+    // `SessionScopeInputSchema` in @kortix/api-contract: a turn is never refused
+    // for an unconnected connector, because the refusal was unclearable from the
+    // product. The connector call denies and hands back a connect link instead.
   }
   if (record.status !== 'active') {
     // A stopped-but-resumable box wakes only on explicit user intent. Session

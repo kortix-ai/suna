@@ -13,6 +13,7 @@ import {
 } from '../../connectors/share';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
+import { isAgentPrincipalActor } from '../../iam/actor';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 
@@ -33,6 +34,9 @@ import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { sendSessionCreateError } from '../lib/sessions';
 import { sessionHasMemberConnectorBinding } from '../lib/session-connector-bindings';
 import { createSession, deleteSession } from '../session-lifecycle';
+import { validateProviderSecretPool } from './provider-secret-pools';
+import { requireFeatureFlag } from '../../feature-flags/gate';
+import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { callerKortixSessionId } from '../lib/caller-session';
 import type { ProjectSessionListScope } from '../lib/session-inventory';
 import { loadProjectSessionInventory } from '../lib/session-list';
@@ -48,6 +52,12 @@ const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   'trigger_slug',
   'name',
   'title_source',
+  // Agents as principals (spec 2026-09-22 §2.3): the mint reads these to decide
+  // `on_behalf_of`. A client that could set `spawned_by_session` would inherit
+  // another session's human; one that could forge the cleared stamp is harmless
+  // but still not the client's to write.
+  'spawned_by_session',
+  'on_behalf_of_cleared_at',
 ] as const;
 
 const PATCH_SERVER_MANAGED_SESSION_METADATA_KEYS = [
@@ -145,6 +155,22 @@ projectsApp.openapi(
   // approved. Managers and owners keep the manifest default untouched.
   if (!launchAgent && agentAccess.memberTier && agentAccess.agentName) {
     body.agent_name = agentAccess.agentName;
+  }
+  if (body.provider_secret_pools !== undefined) {
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'pooled_provider_secrets');
+    if (gate) return gate;
+    if (!projectLlmGatewayEnabled(loaded.row.metadata)) {
+      return c.json({ error: 'Provider pools require the LLM gateway' }, 409);
+    }
+    for (const [providerId, ids] of Object.entries(body.provider_secret_pools as Record<string, string[]>)) {
+      const invalid = await validateProviderSecretPool({
+        accountId: loaded.row.accountId, projectId, repoUrl: loaded.row.repoUrl,
+        defaultBranch: loaded.row.defaultBranch, manifestPath: loaded.row.manifestPath,
+        agentName: normalizeString(body.agent_name) ?? agentAccess.agentName ?? 'default', userId: loaded.userId,
+        providerId, ids,
+      });
+      if (invalid) return c.json({ error: invalid.error }, invalid.status);
+    }
   }
   // Bound the client-supplied idempotency key at intake. It's stored in a unique
   // btree (index entry limit ~2704 bytes), so an oversized header would surface
@@ -272,6 +298,7 @@ projectsApp.openapi(
     limit: query.limit,
     cursor: query.cursor ?? null,
     boundCredentialSessionId: callerKortixSessionId(c),
+    agentPrincipal: loaded.actor ? isAgentPrincipalActor(loaded.actor) : false,
     probeManageCapability: () =>
       projectCapabilityAllowed(
         c,

@@ -43,6 +43,9 @@ export {
   projectMembers,
   projectAccessRequests,
   projectSecrets,
+  accountSecretResources,
+  accountSecretGrants,
+  sessionProviderSecretPools,
   projectSessionSecretHandles,
   projectSecretHandleStatusEnum,
   projectSecretConsumerEnum,
@@ -233,7 +236,8 @@ export {
   connectorProjectPoliciesRelations,
   connectorProjectSettingsRelations,
 } from './schema/kortix';
-export type { AgentGrant } from './schema/kortix';
+export type { AgentGrant, StoredAgentGrant } from './schema/kortix';
+export { readStoredAgentGrant } from './schema/kortix';
 export type { AccountBrandingRecord } from './schema/kortix';
 export type { SecretEgressPolicy, SecretEgressRule, SecretInjectionSlot } from './schema/kortix';
 

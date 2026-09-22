@@ -125,11 +125,13 @@ export function deserializeDraft(raw: unknown, currentUserId: string): StoredDra
  * deliberately emptied.
  */
 export function shouldRestoreDraft(input: {
+  active?: boolean;
   editorReady: boolean;
   editorIsEmpty: boolean;
   hasPrefill: boolean;
   alreadyRestored: boolean;
 }): boolean {
+  if (input.active === false) return false;
   if (!input.editorReady) return false;
   if (input.alreadyRestored) return false;
   if (input.hasPrefill) return false;

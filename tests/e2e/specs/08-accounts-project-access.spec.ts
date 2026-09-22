@@ -806,7 +806,8 @@ test.describe("08 — Accounts, invites, and project access", { tag: "@quarantin
       page.getByRole("heading", { name: "Members", exact: true }),
     ).toBeVisible();
     await selectAccountForUi(page, account.account_id);
-    await page.goto("/projects", { waitUntil: "domcontentloaded" });
+    // The landing door opens the project this browser last had open.
+    await page.goto("/projects/start", { waitUntil: "domcontentloaded" });
     await dismissOnboarding(page);
     await expect(page).toHaveURL(
       new RegExp(`/projects/${project.project_id}$`),
@@ -827,13 +828,15 @@ test.describe("08 — Accounts, invites, and project access", { tag: "@quarantin
     await expect
       .poll(
         async () => {
-          await page.goto("/projects", { waitUntil: "domcontentloaded" });
+          await page.goto("/projects/start", { waitUntil: "domcontentloaded" });
+          await page.waitForURL(/\/projects(\/[0-9a-f-]{36})?$/);
           return page.url();
         },
         { timeout: IAM_PROPAGATION_MS },
       )
-      .toMatch(/\/projects\/start/);
-    await expect(page.getByText("No workspace yet")).toBeVisible();
+      .toMatch(/\/projects$/);
+    // The selector keeps the account and says why it is empty.
+    await expect(page.getByTestId("selector-empty-member")).toBeVisible();
     await expect(page.getByText(`${initialProjectName} Admin`)).toHaveCount(0);
 
     const invitedUser = await createAuthUser(invitedEmail, authOptions);

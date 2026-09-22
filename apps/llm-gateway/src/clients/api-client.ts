@@ -47,6 +47,7 @@ export interface ApiClient {
     input: ModelRouteInput,
   ) => Promise<ModelRoutePlan | null>;
   resolveUpstream: (principal: AuthedPrincipal, model: string) => Promise<UpstreamDescriptor[]>;
+  notePoolRateLimit: (principal: AuthedPrincipal, secretId: string, seconds: number) => Promise<void>;
   assertBillingActive: (accountId: string) => Promise<{ holdUsd?: number } | void>;
   assertBudget: (principal: AuthedPrincipal) => Promise<void>;
   recordUsage: (event: UsageEvent) => Promise<void>;
@@ -147,7 +148,7 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
       return result.principal ?? null;
     },
     authorize: async (token) => {
-      return post<AuthorizeResult>('/internal/gateway/authorize', { token }, RETRY_SLOW);
+      return post<AuthorizeResult>('/internal/gateway/authorize', { token, deferBilling: true }, RETRY_SLOW);
     },
     resolveRoute: async (principal, input) => {
       const result = await post<{ route: ModelRoutePlan | null }>(
@@ -164,6 +165,7 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
           code: NoUpstreamReasonCode;
           message: string;
           suggestion: string;
+          retryAfterSeconds?: number;
         };
       }>('/internal/gateway/resolve-upstream', { principal, model }, RETRY_SLOW);
       // The API catches GatewayResolutionError in /resolve-upstream and returns
@@ -175,19 +177,24 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
       // a clean 400 with the actionable suggestion, rather than a generic
       // ApiUnavailableError 5xx.
       if (result.resolutionError) {
-        const { code, message, suggestion } = result.resolutionError;
-        throw new GatewayResolutionError(code, message, suggestion);
+        const { code, message, suggestion, retryAfterSeconds } = result.resolutionError;
+        throw new GatewayResolutionError(code, message, suggestion, retryAfterSeconds);
       }
       return result.candidates ?? [];
     },
+    notePoolRateLimit: async (principal, secretId, seconds) => {
+      await post<{ ok: boolean }>('/internal/gateway/pool-rate-limit', { principal, secretId, seconds });
+    },
     assertBillingActive: async (accountId) => {
-      const result = await post<{ active: boolean; message?: string; holdUsd?: number }>(
+      const result = await post<{ active: boolean; reason?: string; message?: string; holdUsd?: number }>(
         '/internal/gateway/billing',
         { accountId },
         RETRY_SLOW,
       );
       if (!result.active) {
-        throw new Error(result.message ?? 'subscription required');
+        const error = new Error(result.message ?? 'subscription required') as Error & { reason?: string };
+        error.reason = result.reason ?? 'subscription_required';
+        throw error;
       }
       return result.holdUsd ? { holdUsd: result.holdUsd } : undefined;
     },

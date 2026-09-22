@@ -6,10 +6,10 @@
 // `reconcileStoredSessionAgentGrant` does the same before a connector call.
 // Both go through `grantFromLoadedAgents`, which reads the PROJECT MANIFEST —
 // and `meta` is never declared in one. So the coordinator's token was minted
-// with `kortixCli: 'all'` and then rewritten on its first turn:
+// with `permissions: 'all'` and then rewritten on its first turn:
 //
 //   governed project (declares agents:)  -> unlisted -> default-DENY, and the
-//     re-mint WROTE `kortixCli: []` over the real grant. Every later `kortix`
+//     re-mint WROTE `permissions: []` over the real grant. Every later `kortix`
 //     call 403'd with `agent_scope_insufficient`.
 //   ungoverned project (declares none)   -> UNRESTRICTED null, and the re-mint
 //     refuses rather than widen, failing the prompt outright.
@@ -30,14 +30,14 @@ const GOVERNED: LoadedAgents = {
     {
       name: 'kortix',
       enabled: true,
-      kortixCli: 'all',
+      permissions: 'all',
       connectors: 'all',
       env: 'all',
     },
     {
       name: 'worker',
       enabled: true,
-      kortixCli: ['project.session.read'],
+      permissions: ['project.session.read'],
       connectors: [],
       env: [],
     },
@@ -54,7 +54,7 @@ const UNREADABLE: LoadedAgents = {
 
 describe('grantFromLoadedAgents — the reserved meta coordinator', () => {
   test('resolves to the platform grant on a GOVERNED project', () => {
-    // Was: { agent: 'meta', kortixCli: [], connectors: [], env: [] } — the
+    // Was: { agent: 'meta', permissions: [], connectors: [], env: [] } — the
     // unlisted-agent default-deny, which the per-prompt re-mint then wrote onto
     // the session token.
     expect(grantFromLoadedAgents('meta', GOVERNED)).toEqual(platformMetaAgentGrant());
@@ -92,7 +92,7 @@ describe('grantFromLoadedAgents — the reserved meta coordinator', () => {
     // The exact decision the old resolution produced. Kept as an explicit
     // statement of what must never happen again.
     const stored = platformMetaAgentGrant();
-    const oldResolution = { agent: 'meta', kortixCli: [], connectors: [], env: [] };
+    const oldResolution = { agent: 'meta', permissions: [], connectors: [], env: [] };
     expect(remintDecisionFor(stored, oldResolution)).toEqual({
       action: 'write',
       grant: oldResolution,
@@ -101,10 +101,10 @@ describe('grantFromLoadedAgents — the reserved meta coordinator', () => {
 });
 
 describe('grantFromLoadedAgents — no other principal is widened', () => {
-  test('a declared narrow agent keeps exactly its declared kortix_cli', () => {
+  test('a declared narrow agent keeps exactly its declared kortix_permissions', () => {
     expect(grantFromLoadedAgents('worker', GOVERNED)).toEqual({
       agent: 'worker',
-      kortixCli: ['project.session.read'],
+      permissions: ['project.session.read'],
       connectors: [],
       env: [],
     });
@@ -113,7 +113,7 @@ describe('grantFromLoadedAgents — no other principal is widened', () => {
   test('an UNDECLARED non-meta agent still default-denies on a governed project', () => {
     expect(grantFromLoadedAgents('not-declared', GOVERNED)).toEqual({
       agent: 'not-declared',
-      kortixCli: [],
+      permissions: [],
       connectors: [],
       env: [],
     });
@@ -124,13 +124,13 @@ describe('grantFromLoadedAgents — no other principal is widened', () => {
     // through to ordinary manifest resolution.
     expect(grantFromLoadedAgents('meta-worker', GOVERNED)).toEqual({
       agent: 'meta-worker',
-      kortixCli: [],
+      permissions: [],
       connectors: [],
       env: [],
     });
     expect(grantFromLoadedAgents('Meta', GOVERNED)).toEqual({
       agent: 'Meta',
-      kortixCli: [],
+      permissions: [],
       connectors: [],
       env: [],
     });

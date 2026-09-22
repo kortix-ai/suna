@@ -23,8 +23,23 @@ export function quickQueueSnapshotFromPage(
 ): QuickQueueSnapshot {
   if (inFlight === false) return { state: 'idle', runningTool: false }
   if (inFlight === null || !messages) return { state: 'unknown', runningTool: false }
-  // Not `findLast`: apps/api's typecheck program reaches this file and its lib is ES2022.
-  const latestUser = [...messages].reverse().find((message) => message.info.role === 'user')
+  // A reverse scan, not `findLast`. This file compiles under TWO programs: the
+  // sandbox agent's own tsconfig (`lib: ['ESNext']`, where `findLast` exists)
+  // and `apps/api`'s, which extends `tsconfig.base.json` at `target: ES2022`
+  // and therefore gets ES2022 libs where `Array.prototype.findLast` does NOT
+  // exist. The API typechecks this file through a cross-package import, so
+  // `findLast` passed the agent's own check and broke `API typecheck` on main
+  // (TS2550, plus TS7006 as the callback param fell to implicit any). Widening
+  // the API's `lib` to accommodate one call would move a whole program's
+  // assumptions; a reverse scan is valid under both and allocates nothing.
+  let latestUser: MessageWithTools | undefined
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const candidate = messages[i]
+    if (candidate && candidate.info.role === 'user') {
+      latestUser = candidate
+      break
+    }
+  }
   if (latestUser && latestUser.info.id !== expectedMessageId) {
     return { state: 'stale', runningTool: false }
   }

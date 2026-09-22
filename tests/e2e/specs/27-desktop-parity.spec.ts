@@ -29,6 +29,10 @@ import {
   signIn,
 } from "../helpers/session-auth";
 import {
+  SESSION_READY_TIMEOUT_MS,
+  waitForSessionReady,
+} from "../helpers/session-ready";
+import {
   dismissOnboarding,
   dismissWelcomeCard,
   selectAccountForUi,
@@ -166,6 +170,7 @@ for (const runtime of runtimes) {
       const user = await createAuthUser(email, authOptions);
       const session = await signIn(email, authOptions);
       let project: ManifestProject | undefined;
+      let pooledResource: { accountId: string; secretId: string } | undefined;
       try {
         const accounts = await api<{ account_id: string }[]>(
           session.access_token,
@@ -290,7 +295,7 @@ for (const runtime of runtimes) {
           "Skills",
           "Connectors",
           "Secrets",
-          "Project actions",
+          "Kortix permissions",
           "Model",
           "Tools",
           "Workspace",
@@ -426,8 +431,61 @@ for (const runtime of runtimes) {
             },
           );
           expect(denied).toContain("Unauthorized IPC sender");
+
+          await resize(720, 480);
+          await page.goto(`${baseURL}/projects/${project.id}/settings/repositories`);
+          const changeRepository = page.getByRole('button', { name: 'Change', exact: true });
+          await expect(changeRepository).toBeVisible();
+          await changeRepository.click();
+          const repositoryDialog = page.getByRole('dialog', { name: 'Change repository' });
+          await expect(repositoryDialog.getByRole('textbox', { name: 'New GitHub repository URL' })).toBeVisible();
+          const confirmRepository = repositoryDialog.getByRole('button', { name: 'Change repository', exact: true });
+          await expect(confirmRepository).toBeVisible();
+          await expect.poll(() => confirmRepository.evaluate((button) => {
+            const bounds = button.getBoundingClientRect();
+            return bounds.bottom <= window.innerHeight;
+          })).toBe(true);
+          const cancelRepository = repositoryDialog.getByRole('button', { name: 'Cancel' });
+          await expect.poll(() => cancelRepository.evaluate((button) => {
+            const bounds = button.getBoundingClientRect();
+            const hit = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
+            return hit === button || button.contains(hit);
+          })).toBe(true);
+          await page.screenshot({ path: test.info().outputPath('desktop-repository-change.png'), scale: 'css' });
+          await cancelRepository.click();
+          await expect(repositoryDialog).toBeHidden();
         }
+        for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
+          await api(session.access_token, 'PATCH', `/projects/${project.id}/features`, {
+            feature, enabled: true,
+          });
+        }
+        const key = await api<{ secret_id: string }>(
+          session.access_token, 'POST', `/accounts/${accountId}/secret-resources`, {
+            label: 'Desktop pooled key', provider_id: 'anthropic', name: 'ANTHROPIC_API_KEY',
+            value: 'fake-desktop-key', consumer: 'llm_gateway', strategy: 'broker',
+          }, 201,
+        );
+        pooledResource = { accountId, secretId: key.secret_id };
+        await resize(720, 480);
+        await page.goto(`${baseURL}/projects/${project.id}/customize/models`);
+        const providerKeys = page.getByRole('region', { name: 'Anthropic API keys' });
+        await expect(providerKeys.getByText('Desktop pooled key')).toBeVisible();
+        const welcome = page.getByRole('complementary', { name: 'Welcome from Marko' });
+        if (await welcome.isVisible().catch(() => false)) {
+          await welcome.getByRole('button', { name: 'Dismiss' }).click();
+        }
+        await providerKeys.getByRole('button', { name: 'Actions for Desktop pooled key' }).click();
+        await expect(page.getByRole('menuitem', { name: 'Manage access' })).toBeVisible();
+        await page.keyboard.press('Escape');
+        await page.goto(`${baseURL}/projects/${project.id}`);
+        await page.getByRole('button', { name: 'Session overrides' }).click();
+        await page.getByRole('button', { name: /Provider keys/ }).click();
+        await expect(page.getByRole('checkbox', { name: 'Desktop pooled key' })).toBeVisible();
       } finally {
+        if (pooledResource) {
+          await api(session.access_token, 'DELETE', `/accounts/${pooledResource.accountId}/secret-resources/${pooledResource.secretId}`).catch(() => {});
+        }
         await project?.dispose();
         await deleteAuthUser(user.id, authOptions);
       }
@@ -438,7 +496,10 @@ for (const runtime of runtimes) {
       baseURL,
       desktopApp,
     }) => {
-      test.setTimeout(180_000);
+      // A deployed target provisions a real sandbox first (see below).
+      test.setTimeout(
+        isDeployedTarget() ? 180_000 + SESSION_READY_TIMEOUT_MS : 180_000,
+      );
       const databaseUrl =
         process.env.KE2E_DATABASE_URL || process.env.E2E_DATABASE_URL;
       if (!databaseUrl)
@@ -451,6 +512,7 @@ for (const runtime of runtimes) {
       let project: ManifestProject | undefined;
       let sessionId = "";
       let bootSessionId = "";
+      const deliveryFixtureId = randomUUID();
       try {
         const accounts = await api<{ account_id: string }[]>(
           auth.access_token,
@@ -622,27 +684,39 @@ for (const runtime of runtimes) {
             timeout: 60_000,
           });
           sessionId = new URL(page.url()).pathname.split("/").at(-1)!;
+          // Stop is enabled only while a turn runs, and the turn starts only
+          // once the sandbox is ready. A fresh preview builds the default
+          // image for ~9 min first, so a flat 60 s wait on Stop failed 11 of
+          // 13 previews with the session still in `provisioning`.
+          await waitForSessionReady(api, auth.access_token, project.id, sessionId);
+          await expect(page.getByRole("button", { name: "Stop", exact: true }))
+            .toBeEnabled({ timeout: 60_000 });
           await expect(input).toBeEmpty();
         } else {
           await expect(
             page.getByText("Previous response", { exact: true }),
           ).toBeVisible();
         }
-        const send = async (
+        await runDatabaseSql(
+          `INSERT INTO kortix.session_lifecycle_commands
+           (command_id, command_type, source, status, project_id, session_id,
+            account_id, actor_user_id, payload, locked_by, locked_until)
+           VALUES ($1, 'continue_session', 'ui', 'running', $2, $3, $4, $5,
+             $6::jsonb, 'browser-queue-fixture', now() + interval '10 minutes')`,
+          [deliveryFixtureId, project.id, sessionId, accounts[0].account_id, user.id,
+            JSON.stringify({ text: "Pending delivery fixture", clientMessageId: `msg_${deliveryFixtureId.replaceAll("-", "")}` })],
+          databaseUrl,
+        );
+        const promptRequest = () => page.waitForRequest(
+          (request) =>
+            request.method() === "POST" &&
+            new URL(request.url()).pathname.endsWith(`/sessions/${sessionId}/prompts`),
+        );
+        const verifySend = async (
+          request: Promise<import("@playwright/test").Request>,
           text: string,
-          key: string,
           placement: string,
-          fill = true,
         ) => {
-          const request = page.waitForRequest(
-            (request) =>
-              request.method() === "POST" &&
-              new URL(request.url()).pathname.endsWith(
-                `/sessions/${sessionId}/prompts`,
-              ),
-          );
-          if (fill) await input.fill(text);
-          await input.press(key);
           const sent = await request;
           const outgoing = sent.postDataJSON();
           expect(outgoing.placement).toBe(placement);
@@ -651,6 +725,12 @@ for (const runtime of runtimes) {
           );
           await expect(input).toBeEmpty();
           expect([200, 202]).toContain((await sent.response())?.status());
+        };
+        const send = async (text: string, key: string, placement: string, fill = true) => {
+          const request = promptRequest();
+          if (fill) await input.fill(text);
+          await input.press(key);
+          await verifySend(request, text, placement);
         };
         const transcriptText = "Enter pending placement";
         const composerText = "Command pending placement";
@@ -679,7 +759,10 @@ for (const runtime of runtimes) {
           await acceptanceGate;
           await route.fulfill({ response });
         });
-        const firstSend = send(transcriptText, "Enter", "transcript");
+        const firstRequest = promptRequest();
+        await input.fill(transcriptText);
+        await input.press("Enter");
+        const firstSend = verifySend(firstRequest, transcriptText, "transcript");
         let nextRequest: Promise<import("@playwright/test").Request> | undefined;
         try {
           await expect(pending).toBeVisible({ timeout: 1_000 });
@@ -888,6 +971,10 @@ for (const runtime of runtimes) {
             "DELETE",
             `/projects/${project.id}/sessions/${sessionId}`,
           ).catch(() => undefined);
+        await runDatabaseSql(
+          "DELETE FROM kortix.session_lifecycle_commands WHERE command_id = $1",
+          [deliveryFixtureId], databaseUrl,
+        );
         await project?.dispose();
         await deleteAuthUser(user.id, authOptions);
       }
@@ -915,6 +1002,8 @@ for (const runtime of runtimes) {
             name: "Invalid authorization request",
           });
         await installBrowserSessionDirect(page, session, deadEnd, authOptions);
+        await page.goto(`${baseURL}/dashboard`, { waitUntil: "domcontentloaded" });
+        await page.goto(deadEnd, { waitUntil: "domcontentloaded" });
         await expect(heading(page)).toBeVisible({ timeout: 60_000 });
         const back = page.getByRole("button", { name: "Back", exact: true });
         if (!desktop) {
@@ -932,8 +1021,8 @@ for (const runtime of runtimes) {
           box!.y + box!.height,
           "Back must sit inside the title-bar band",
         ).toBeLessThanOrEqual(43);
-        // installBrowserSessionDirect lands on /favicon.png first, so an
-        // in-app entry is behind the dead end and Back is history.back().
+        // The dashboard is a real in-app history entry behind this frame.
+        // Back returns there without relying on the favicon bootstrap.
         await back.click();
         await expect(page).not.toHaveURL(/\/oauth\/authorize/);
         if (desktopApp) return;

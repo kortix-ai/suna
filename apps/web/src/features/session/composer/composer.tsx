@@ -33,7 +33,7 @@ import {
 } from 'react';
 import { extractClipboardFiles } from '../clipboard-files';
 import { mergeFailedSubmissionFiles } from '../composer-draft-recovery';
-import { resolveComposerResetOnSend } from '../composer-reset';
+import { resolveComposerResetOnSend, type ComposerSendReset } from '../composer-reset';
 import { disownSentAttachmentPreviews, revokeUnsentPreview } from '../sent-attachment-previews';
 import {
   isModelRequiredButUnavailable,
@@ -210,6 +210,7 @@ export interface SessionChatInputProps {
    * marketing-demo composers rely on.
    */
   draftScope?: DraftScope | null;
+  draftActive?: boolean;
   disabled?: boolean;
   /**
    * A line shown in a bar directly ABOVE the composer card. Used for "this
@@ -227,7 +228,8 @@ export interface SessionChatInputProps {
    * shortly.
    */
   onNoticeRetry?: () => void;
-  clearOnSend?: boolean;
+  /** What send does to this composer — see `ComposerSendReset`. */
+  clearOnSend?: ComposerSendReset;
   modelRequired?: boolean;
   modelsLoading?: boolean;
   autoFocus?: boolean;
@@ -360,27 +362,19 @@ export interface SessionChatInputProps {
  * narrower than either max-width — every panel-open case — the card's edges
  * land on exactly the same rails as the messages above it.
  *
- * `md:pr-1` is Jay's optical trim and is NOT the old bug returning — do not
- * "clean it up". It trims the RIGHT gutter to 4px from `md` up because on
- * desktop the chat column already ends in the action-panel column's chevron
- * rail (`session-action-panel-column.tsx`: `gap-2` + a `size-7` button + `mr-1`
- * when collapsed, ~40px), so a full 16px on top of that read as a composer
- * pushed left. The distinction that matters: a breakpoint may TRIM this gutter,
- * it may never ZERO it — zero is what let the card touch the panel divider, and
- * `composer-underbar.test.tsx` guards exactly that line.
+ * The gutter is equal on both sides. It used to carry `md:pr-1`, a right-side
+ * trim against the collapsed action-panel chevron rail, which then took ~37px
+ * of the row's width. That rail now takes no width (`COLLAPSED_RAIL_OFFSET` in
+ * `session-action-panel-column.tsx`), so the trim only shifted the card 5.5px
+ * right of center. A breakpoint may never ZERO this gutter — zero is what let
+ * the card touch the panel divider, and `composer-underbar.test.tsx` guards
+ * exactly that line.
  *
- * Known limit of the trim, left as-is on purpose: the chevron rail it
- * compensates for is not always there. The panel column is `hidden` while a
- * detail panel (browser, terminal, files, preview) is up, and it never mounts
- * on project-home / instant-session-shell. In those states the right gutter is
- * 4px against a 16px left. Worth a look if the composer ever reads
- * right-shifted with a browser tab open; harmless otherwise.
- *
- * Beyond that trim, do not add breakpoints. If this needs to respond to width,
+ * Do not add breakpoints. If this needs to respond to width,
  * it has to be a container query on the chat column, not a media query — the
  * media query cannot see the panel, which is the whole reason it broke before.
  */
-export const COMPOSER_SHELL_CLASS = 'relative z-10 mx-auto w-full max-w-210 shrink-0 px-4 md:pr-1';
+export const COMPOSER_SHELL_CLASS = 'relative z-10 mx-auto w-full max-w-210 shrink-0 px-4';
 
 /**
  * The inset strip above the card that hosts `inputSlot` — the queued messages,
@@ -460,6 +454,7 @@ function ComposerImpl({
   sessionId,
   projectId,
   draftScope = null,
+  draftActive = true,
   disabled = false,
   notice = null,
   onNoticeRetry,
@@ -566,6 +561,7 @@ function ComposerImpl({
   }, []);
 
   const { handleDocChange, clearSavedDraft } = useComposerDraft({
+    active: draftActive,
     scope: draftScope,
     editorRef,
     editorReady: editorElement != null,
@@ -909,6 +905,12 @@ function ComposerImpl({
     modelRequired,
     selectedModel: availableSelectedModel,
     lockForQuestion,
+    // The same two "not in yet" flags `noModelsConnected` below reads. Without
+    // them this refused every send made before the catalog landed — project
+    // home paints a focusable composer ~1.1s after navigation, while
+    // `/model-picker`, `/detail` and `/model-defaults` are all still in flight.
+    modelsLoading,
+    entitlementsPending,
   });
   const noModelsConnected =
     modelRequired &&
@@ -1292,14 +1294,15 @@ function ComposerImpl({
         // 'refuse'`, `blocker`) — those keep the text in the editor on
         // purpose, so its draft has to survive with it.
         clearSavedDraft();
-        if (clearOnSend && !stash) {
+        // The same reset rule the message path uses, so a `'text-only'` host
+        // (project home) empties its box here too WITHOUT revoking preview URLs
+        // the next surface still draws from.
+        const commandReset = resolveComposerResetOnSend(clearOnSend, attachedFilesRef.current);
+        if (commandReset.clear && !stash) {
           editorRef.current?.clear();
-          setAttachedFiles((prev) => {
-            for (const file of prev) {
-              if (file.kind === 'local') revokeUnsentPreview(file.localUrl);
-            }
-            return [];
-          });
+          for (const url of commandReset.urlsToRevoke) revokeUnsentPreview(url);
+          attachedFilesRef.current = [];
+          setAttachedFiles([]);
         }
         return 'sent';
       }
@@ -1343,9 +1346,9 @@ function ComposerImpl({
 
       // At hand-off, BEFORE the host runs: a send with uploads posts later, and a
       // reload in that window must not restore the sent draft. Explicit, NOT
-      // derived from `reset.clear`: the project-home composer passes
-      // `clearOnSend={false}` (`composer-reset.ts`). A refused send saves the
-      // draft again in `onFailed`.
+      // derived from `reset.clear`: a composer can hand a send off without
+      // emptying itself (`clearOnSend={false}`) and its saved draft still has
+      // to go. A refused send saves the draft again in `onFailed`.
       clearSavedDraft();
       // The host paints the message, then returns. A send with uploads returns
       // right after the paint (`deliverAfterPaint`), so the next Send never waits
@@ -1369,7 +1372,12 @@ function ComposerImpl({
           const sentFiles = filesToSend ?? [];
 
           const plan = planFailedSendRecovery({
-            clearOnSend,
+            // `reset.clear`, not `clearOnSend`: recovery is owed to every
+            // composer that EMPTIED itself, and `'text-only'` (project home)
+            // now does while still being neither `true` nor `false`. Keying it
+            // on the raw prop returned `null` there and left a refused send
+            // with an empty box and no draft to get back.
+            clearOnSend: reset.clear,
             submittedDoc,
             submittedIsEmpty,
             currentDoc,
@@ -1387,10 +1395,11 @@ function ComposerImpl({
           // The tray draws these files again, so the sent cache no longer owns their pictures.
           disownSentAttachmentPreviews(sentFiles);
           // The draft was cleared at hand-off; the editor holds it again, so save it. Only where
-          // Send clears the editor: project home (`clearOnSend={false}`) keeps its draft on screen,
-          // and a connector-gate Retry that sends it later must not bring it back as a saved draft.
+          // Send cleared the editor — a composer that kept its draft on screen (`clearOnSend`
+          // false) never lost it, and a connector-gate Retry that sends it later must not bring
+          // it back as a saved draft.
           const restoredDoc = editorRef.current?.getDocument();
-          if (clearOnSend && restoredDoc)
+          if (reset.clear && restoredDoc)
             handleDocChange(restoredDoc, editorRef.current?.isEmpty() ?? true);
         },
       });
@@ -1928,7 +1937,7 @@ function ComposerImpl({
         `mt-2.5` is the same gap the menu's own `mb-2.5` gives the `'above'`
         dock — there the margin faces the card, here it faces away, so the
         gap moves to the dock. The horizontal inset mirrors the shell's
-        `px-4 md:pr-1` gutter so the menu stays flush with the card edges.
+        `px-4` gutter so the menu stays flush with the card edges.
         Empty (menu closed) it has zero height and intercepts nothing.
 
         `z-99` only beats siblings inside THIS shell (the card is
@@ -1938,7 +1947,7 @@ function ComposerImpl({
         would cover the menu again — they must stay unstacked.
       */}
       {slashMenuPlacement === 'below' && (
-        <div id={dockId} className="absolute top-full right-4 left-4 z-99 mt-3.5 md:right-1" />
+        <div id={dockId} className="absolute top-full right-4 left-4 z-99 mt-3.5" />
       )}
     </div>
   );

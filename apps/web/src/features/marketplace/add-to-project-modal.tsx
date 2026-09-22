@@ -45,7 +45,7 @@ import { startTemplateSetupSession } from '@/features/projects/modal/template-se
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { useInstallMarketplaceItemAsSession } from '@/hooks/marketplace';
 import type { MarketplaceItem, MarketplaceItemDetail } from '@/lib/marketplace-client';
-import { isManagedGitUnavailableError } from '@/lib/onboarding/ensure-first-project';
+import { isManagedGitUnavailableError } from '@/lib/onboarding/provision-errors';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import { getManagedGitStatus, listAccounts, provisionProject } from '@kortix/sdk';

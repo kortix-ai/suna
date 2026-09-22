@@ -286,9 +286,24 @@ export function isProjectSessionVisibleTo(
   grants: SecretGrant[],
   subject: ShareSubject,
   ownership: SessionOwnershipContext,
-  context: { metadata: unknown; canManageProject: boolean },
+  context: {
+    metadata: unknown;
+    canManageProject: boolean;
+    /**
+     * The account's "admins can open every session" policy, already resolved
+     * for THIS caller: the flag is on AND the caller holds the account owner or
+     * admin role. See `hasAccountSessionOversight` (iam/authorize.ts).
+     */
+    accountSessionOversight?: boolean;
+  },
 ): boolean {
   if (!isSessionTargetVisibleToCaller(ownership)) return false;
+  // Oversight is a HUMAN admin's power. A sandbox/agent token launched by an
+  // admin must not read every other member's session through it, for the same
+  // reason as the trigger-session manager override below.
+  if (ownership.boundCredentialSessionId === null && context.accountSessionOversight === true) {
+    return true;
+  }
   // The manager override is for callers that are NOT a session-bound agent
   // credential. A sandbox/agent token whose launching user happens to hold
   // `manage` would otherwise read every OTHER trigger-created private session

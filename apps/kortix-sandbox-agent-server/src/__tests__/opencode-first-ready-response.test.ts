@@ -19,7 +19,21 @@ function reservePort(): number {
   return port
 }
 
-async function waitFor(check: () => boolean, timeoutMs = 5_000): Promise<void> {
+/**
+ * Every step this gates is a REAL process transition — spawn, SIGKILL, respawn,
+ * then an HTTP readiness probe. 5_000 ms was too tight for that on a loaded
+ * runner: the packages lane runs this suite with `--parallel=4 --isolate`
+ * alongside the other package suites, and on run 35305122951 the final wait
+ * expired 19 ms BEFORE `[opencode] ready` was logged — a correct respawn
+ * reported as a failure, twice in a row, at 5_340 ms.
+ *
+ * The invariant these waits sequence is `reports === 1` (the first ready
+ * response is reported exactly once), which is timing-independent; the deadline
+ * only decides how long we tolerate a slow machine. The learnings register's
+ * rule is a 5x margin over the observed event, so budget 25 s per wait against
+ * an observed ~5 s, and raise the test's own cap to fit three of them.
+ */
+async function waitFor(check: () => boolean, timeoutMs = 25_000): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     if (check()) return
@@ -161,7 +175,7 @@ console.log('opencode server listening on http://127.0.0.1:' + port)
     writeFileSync(readyFile, 'ready')
     await waitFor(() => lifecycle?.getState() === 'ok')
     expect(reports).toBe(1)
-  }, 15_000)
+  }, 90_000)
 
   test('wires the first ready response to its own de-duplicated boot mark', () => {
     const harnessAt = MAIN.indexOf('const harness = createOpenCodeHarnessService(')

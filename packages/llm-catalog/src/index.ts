@@ -433,27 +433,14 @@ export const CATALOG = catalogJson as Catalog;
 export interface ManagedModel {
   id: string;
   name: string;
-  // The upstream's own model id, interpreted per `transport`:
-  //   'bedrock'      → a Bedrock id (`us.anthropic.claude-opus-4-8`)
-  //   'openrouter'   → an OpenRouter slug (`deepseek/deepseek-v4-flash`)
+  // OpenAI-compatible upstream model ID.
   upstreamModelId: string;
-  // Which upstream + wire format carries it:
-  //   'bedrock'      → Anthropic-on-Bedrock InvokeModel payload (Claude only)
-  //   'openrouter'   → OpenRouter openai-compatible chat completions
-  transport: 'bedrock' | 'openrouter';
-  // Optional provider id used for model-picker branding. Routing still uses
-  // `transport`; this field does not select or authenticate an upstream.
+  transport: 'openrouter';
+  // Omit this to keep the model grouped under Kortix in the picker.
   providerBrand?: string;
-  // models.dev id for live pricing — upstream ids don't always match the catalog.
-  // Must be the model's REAL models.dev id (dashes, e.g. `claude-opus-4-8`) —
-  // Kortix's own managed `id` above is dotted for display (`claude-opus-4.8`)
-  // but models.dev never uses dots in a Claude id. See
-  // `pricingRefLookupCandidates` below, which normalizes dot→dash as a safety
-  // net for consumers, but this field itself should always be the correct
-  // dashed id so pricing/capability lookups hit on the first try.
+  // Catalog lookup hint. Managed pricing below is the routing authority.
   pricingRef: string;
-  // Explicit upstream pricing for providers that do not return cost metadata
-  // and whose direct price differs from models.dev's provider entry.
+  // Explicit upstream per-million-token prices for credit billing.
   pricing?: {
     inputPerMillion: number;
     outputPerMillion: number;
@@ -468,20 +455,11 @@ export interface ManagedModel {
     };
   };
   tier: 'flagship' | 'balanced' | 'fast';
-  // Vision (image input). Curated explicitly: managed slugs don't all exist on
-  // models.dev (z-ai≠zhipuai, qwen≠alibaba, dotted vs dashed Claude ids), so
-  // unlike BYOK models these can't derive it from the generated catalog.
+  // Image input supported by the upstream model.
   vision: boolean;
-  // Context/output token window. Lives here (same reason as `vision`: managed
-  // slugs aren't reliably on models.dev) and is served verbatim so OpenCode can
-  // size the conversation and fire auto-compaction. This is the CANONICAL home —
-  // it used to be backfilled from a hardcoded table in the sandbox agent server.
+  // A conservative OpenCode output ceiling inside the upstream context window.
   limit: { context: number; output: number };
-  // OpenRouter request-level provider routing preferences (their `provider`
-  // body field), for 'openrouter'-transport models only. Without this,
-  // OpenRouter load-balances across every host serving the slug — including
-  // low-uptime fp4 requantizations that stall mid-generation until OpenRouter
-  // kills the stream with "Upstream idle timeout exceeded".
+  // OpenRouter endpoint pin and privacy constraints.
   openrouterProvider?: Record<string, unknown>;
 }
 
@@ -505,345 +483,32 @@ export function pricingRefLookupCandidates(pricingRef: string): string[] {
   return candidates;
 }
 
-// Managed model ids are single-segment (no `provider/` prefix). They are served
-// to opencode under the `kortix` provider, so opencode references them as
-// `kortix/<id>` (e.g. `kortix/claude-opus-4.8`) and sends `<id>` as the wire
-// model. A bare, slash-free id is what lets the gateway tell a managed request
-// (`claude-opus-4.8` → our keys, credits-billed) apart from a BYOK one
-// (`anthropic/claude-...` → the user's own key) without the two ever colliding.
-//
-// Every managed model runs through OUR keys and is billed as Kortix credits with
-// markup, so the gateway enforces budgets/logging/spend on all of them.
-//
-// 2026-08-10: Claude Opus 4.8 / Claude Sonnet 4.6 (Bedrock) are deactivated —
-// their entries are kept below, commented out, so
-// reactivation is a diff-review away. Consequences of a removed id:
-// stored account/project/agent defaults pointing at one degrade to the
-// platform default via `degradeUnservableDefault` (the servability probe
-// throws `model_not_found`), and an explicit request errors with
-// `model_not_found`.
-//
-// Same day, three cheap near-frontier models were added (all OpenRouter
-// transport): Muse Spark 1.2, MiniMax M3, and GPT-5.6 Luna. All three carry
-// vision, which restores an image-input path after the Claude removal
-// (LLM_GATEWAY_VISION_MODEL defaults to gpt-5.6-luna, the cheapest vision
-// model), and DeepSeek V4 Flash became the platform default (cheapest
-// credible agentic coder).
-//
-// 2026-08-27: GLM 5.3 Flash added (OpenRouter transport, Z.ai first-party
-// endpoint). Cheapest managed model with vision ($0.075/$0.25 vs Luna's
-// $0.20/$1.20); LLM_GATEWAY_VISION_MODEL deliberately stays on gpt-5.6-luna
-// until the reroute target is re-evaluated on quality, not price alone.
+// Managed IDs are bare gateway model IDs. OpenCode uses `kortix/<id>` so the
+// picker shows Kortix while the gateway routes through ZDR OpenRouter endpoints.
+// Vision is explicit per model so the picker and runtime reject image input for text-only models.
 export const MANAGED_MODELS: ManagedModel[] = [
   {
-    // Grok 4.6 through OpenRouter's first-party xAI endpoint. The explicit
-    // xAI preference keeps routing on the model owner while fallbacks preserve
-    // availability. The pricingRef supplies its context tier: $2/$6 per
-    // million input/output tokens, doubled above a 200k-token prompt.
-    id: 'grok-4.6',
-    name: 'Grok 4.6',
-    upstreamModelId: 'x-ai/grok-4.6',
-    transport: 'openrouter',
-    pricingRef: 'openrouter/x-ai/grok-4.6',
-    pricing: {
-      inputPerMillion: 2,
-      cachedInputPerMillion: 0.5,
-      outputPerMillion: 6,
-      contextOver200k: {
-        inputPerMillion: 4,
-        cachedInputPerMillion: 1,
-        outputPerMillion: 12,
-        contextThreshold: 200_000,
-      },
-    },
-    tier: 'flagship',
-    vision: true,
-    limit: { context: 500_000, output: 500_000 },
-    openrouterProvider: {
-      order: ['xai'],
-      allow_fallbacks: true,
-    },
+    id: 'deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', upstreamModelId: 'deepseek/deepseek-v4.1-flash',
+    transport: 'openrouter', pricingRef: 'openrouter/deepseek/deepseek-v4.1-flash',
+    pricing: { inputPerMillion: 0.2, cachedInputPerMillion: 0.006, outputPerMillion: 0.6 },
+    tier: 'balanced', vision: true, limit: { context: 1_048_576, output: 16_384 },
+    openrouterProvider: { only: ['deepinfra/fp8'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
   },
-  // {
-  //   id: 'claude-opus-4.8',
-  //   name: 'Claude Opus 4.8',
-  //   upstreamModelId: 'us.anthropic.claude-opus-4-8',
-  //   transport: 'bedrock',
-  //   pricingRef: 'anthropic/claude-opus-4-8',
-  //   pricing: {
-  //     inputPerMillion: 5,
-  //     cachedInputPerMillion: 0.5,
-  //     cacheWritePerMillion: 6.25,
-  //     outputPerMillion: 25,
-  //   },
-  //   tier: 'flagship',
-  //   vision: true,
-  //   limit: { context: 1_000_000, output: 64_000 },
-  // },
-  // {
-  //   id: 'claude-sonnet-4.6',
-  //   name: 'Claude Sonnet 4.6',
-  //   upstreamModelId: 'us.anthropic.claude-sonnet-4-6',
-  //   transport: 'bedrock',
-  //   pricingRef: 'anthropic/claude-sonnet-4-6',
-  //   pricing: {
-  //     inputPerMillion: 3,
-  //     cachedInputPerMillion: 0.3,
-  //     cacheWritePerMillion: 3.75,
-  //     outputPerMillion: 15,
-  //   },
-  //   tier: 'balanced',
-  //   vision: true,
-  //   limit: { context: 1_000_000, output: 64_000 },
-  // },
   {
-    id: 'deepseek-v4-flash',
-    name: 'DeepSeek V4 Flash',
-    upstreamModelId: 'deepseek/deepseek-v4-flash',
-    transport: 'openrouter',
-    pricingRef: 'openrouter/deepseek/deepseek-v4-flash',
-    pricing: {
-      inputPerMillion: 0.0938,
-      cachedInputPerMillion: 0.01876,
-      cacheWritePerMillion: 0.0938,
-      outputPerMillion: 0.1876,
-    },
-    tier: 'balanced',
-    vision: false,
-    limit: { context: 1_048_576, output: 64_000 },
-    // 21 OpenRouter endpoints serve this slug and they are NOT interchangeable.
-    // Unpinned, OpenRouter picks freely and prompt-cache locality is luck:
-    // replaying a BYTE-IDENTICAL body measured 0% then 99% cached on
-    // consecutive calls, and identical input tokenizes differently per endpoint
-    // (7041 / 7066 / 7081 / 7127 / 7361 prompt_tokens), which is the direct
-    // proof that turns land on different hosts. Landing on `coreweave/fp8`
-    // measured 0/0/99/5/0% cached across five calls (it also publishes a p99
-    // latency of 107_688ms); landing on `alibaba/fp8` or `streamlake/fp8`
-    // measured a stable 99%. In the production logs the difference is 4.4x on
-    // cost alone: $0.0032832 for a 0%-cached turn vs $0.0007499 for the same
-    // turn at 97%.
-    //
-    // Order rationale:
-    //  - `deepseek` first: the ONLY endpoint reporting
-    //    `supports_implicit_caching: true`, with the best published stats
-    //    (p50 848ms / 79 tok/s / 100% uptime) and a cache-read price ~10x below
-    //    the community hosts. NOTE it is currently REJECTED for our account
-    //    ("No allowed providers are available for the selected model" — an
-    //    OpenRouter account data-policy setting, not something code can fix),
-    //    so today it is skipped and the next entry serves. It is listed first
-    //    so the pin becomes optimal the moment that account setting is changed.
-    //  - then `alibaba`, `baidu`, `novita`: reachable today, fp8 (never an fp4
-    //    requantization), the full 1_048_576 context this entry advertises, and
-    //    >=99.8% 30m uptime with the best measured p50 latency of the reachable
-    //    set. Verified live: this order lands 6/6 calls on one endpoint.
-    // Excluded by construction: `io-net/fp8` (32_768 context) and
-    // `akashml/fp8` (131_072) cannot hold a session this model advertises as
-    // 1M-context, and `morph`/`mancer` publish no cache-read price at all.
-    //
-    // `allow_fallbacks` stays TRUE on purpose: this is a cache-locality and
-    // quality preference, not a hard pin, so an outage across the listed hosts
-    // degrades to the rest of the pool exactly like today instead of failing
-    // the platform's fallback model outright.
+    id: 'glm-5.3-flash', name: 'GLM 5.3 Flash', upstreamModelId: 'z-ai/glm-5.3-flash',
+    transport: 'openrouter', pricingRef: 'openrouter/z-ai/glm-5.3-flash',
+    pricing: { inputPerMillion: 0.15, cachedInputPerMillion: 0.05, outputPerMillion: 0.5 },
+    tier: 'fast', vision: true, limit: { context: 1_048_576, output: 16_384 },
     openrouterProvider: {
-      order: ['deepseek', 'alibaba', 'baidu', 'novita'],
-      allow_fallbacks: true,
+      only: ['coreweave/nvfp4'], allow_fallbacks: false, zdr: true, data_collection: 'deny',
     },
   },
   {
-    // DeepSeek V4 Pro's 2026-08-13 GA snapshot through OpenRouter. The
-    // immutable upstream slug prevents a future `latest` alias from changing
-    // behavior without a catalog review. OpenRouter currently exposes two
-    // endpoints: first-party DeepSeek at $0.435/$0.87 per million tokens, and
-    // GMICloud at exactly 4x that price. The Kortix OpenRouter account cannot
-    // use the first-party endpoint under its current data policy (live canary:
-    // HTTP 404 `No endpoints available matching your guardrail restrictions
-    // and data policy`). Pin GMICloud and bill its actual price. Do not add the
-    // first-party endpoint without changing both the account policy and price.
-    id: 'deepseek-v4-pro-0813',
-    name: 'DeepSeek V4 Pro 0813',
-    upstreamModelId: 'deepseek/deepseek-v4-pro-0813',
-    transport: 'openrouter',
-    pricingRef: 'openrouter/deepseek/deepseek-v4-pro-0813',
-    pricing: {
-      inputPerMillion: 1.74,
-      cachedInputPerMillion: 0.145,
-      outputPerMillion: 3.48,
-    },
-    tier: 'balanced',
-    vision: false,
-    limit: { context: 1_048_575, output: 384_000 },
-    openrouterProvider: {
-      order: ['gmicloud'],
-      allow_fallbacks: true,
-    },
-  },
-  {
-    // Meta's Muse Spark 1.2 via OpenRouter. Exactly ONE endpoint serves the
-    // standard slug (Meta first-party: 1_048_576 ctx, tools, 100% 30m uptime
-    // measured 2026-08-10), so the pin is trivial. NEVER switch this to the
-    // `meta/muse-spark-1.2-contributor` slug — its 10x-cheaper tier grants
-    // Meta training rights over prompts and completions, which is
-    // disqualifying for customer sessions. `pricingRef` is the model's REAL
-    // models.dev id (live api.json has it as of 2026-08-10; the committed
-    // catalog.generated.json snapshot predates the 2026-08-05 release, so
-    // snapshot-only consumers fall back to the synthetic capability record
-    // until the next snapshot regen — the served runtime catalog fetches
-    // live models.dev and resolves it).
-    id: 'muse-spark-1.2',
-    name: 'Muse Spark 1.2',
-    upstreamModelId: 'meta/muse-spark-1.2',
-    transport: 'openrouter',
-    pricingRef: 'meta/muse-spark-1.2',
-    pricing: {
-      inputPerMillion: 1.25,
-      cachedInputPerMillion: 0.15,
-      outputPerMillion: 4.25,
-    },
-    tier: 'balanced',
-    vision: true,
-    limit: { context: 1_048_576, output: 131_072 },
-    openrouterProvider: {
-      order: ['meta'],
-      allow_fallbacks: true,
-    },
-  },
-  {
-    // MiniMax M3 via OpenRouter. 9 endpoints serve the slug (measured
-    // 2026-08-10) and they are NOT interchangeable:
-    //  - `gmicloud` (the cheapest, $0.24/$0.96) advertises NO tool support —
-    //    routing there breaks the agent harness outright, hence the explicit
-    //    `ignore`;
-    //  - `parasail` caps max_completion_tokens at 32_768 and `venice` at
-    //    65_536 against the 131_072 this entry advertises;
-    //  - context spans 256_000 (morph) to 1_048_576 (parasail).
-    // Order: `minimax` first (first-party, 524_288 ctx, 512_000 max out,
-    // 99.85% uptime), then `novita` (1_000_000 ctx, 131_072 max out, 99.88%).
-    // The advertised limit is the SAFE INTERSECTION of the two pinned hosts
-    // (ctx 524_288, output 131_072) so a session sized to this entry can land
-    // on either without truncation.
-    id: 'minimax-m3',
-    name: 'MiniMax M3',
-    upstreamModelId: 'minimax/minimax-m3',
-    transport: 'openrouter',
-    pricingRef: 'openrouter/minimax/minimax-m3',
-    pricing: {
-      inputPerMillion: 0.3,
-      cachedInputPerMillion: 0.06,
-      outputPerMillion: 1.2,
-    },
-    tier: 'balanced',
-    vision: true,
-    limit: { context: 524_288, output: 131_072 },
-    openrouterProvider: {
-      order: ['minimax', 'novita'],
-      ignore: ['gmicloud'],
-      allow_fallbacks: true,
-    },
-  },
-  {
-    // OpenAI's GPT-5.6 Luna via OpenRouter. First-party OpenAI endpoints plus
-    // Azure and Bedrock all advertise tools + 1_050_000 ctx / 128_000 max out
-    // (measured 2026-08-10); pin `openai` for cache locality. `pricingRef`
-    // resolves to the REAL models.dev openrouter entry — temperature:false
-    // (Luna rejects a client-sent temperature; advertising support would 400
-    // the turn) and the none→max effort ladder. `pricing` is OpenAI's
-    // published post-2026-07-30 rate ($0.20/$1.20, $0.02 cache read).
-    // KNOWN CAVEAT: measured TTFT at MAX reasoning effort is ~144s (median
-    // 1.87s at defaults) — fine for background agents, poor for interactive
-    // max-effort use.
-    id: 'gpt-5.6-luna',
-    name: 'GPT-5.6 Luna',
-    upstreamModelId: 'openai/gpt-5.6-luna',
-    transport: 'openrouter',
-    pricingRef: 'openrouter/openai/gpt-5.6-luna',
-    pricing: {
-      inputPerMillion: 0.2,
-      cachedInputPerMillion: 0.02,
-      outputPerMillion: 1.2,
-    },
-    tier: 'balanced',
-    vision: true,
-    limit: { context: 1_050_000, output: 128_000 },
-    openrouterProvider: {
-      order: ['openai'],
-      allow_fallbacks: true,
-    },
-  },
-  {
-    // GPT-6 Astra uses OpenAI's standard OpenRouter endpoint. Verified against
-    // https://developers.openai.com/api/docs/models/gpt-6-astra and OpenRouter
-    // on 2026-09-15. Its pricingRef includes the low-to-max effort ladder and
-    // temperature:false; prompts above 272k tokens use the higher price tier.
-    id: 'gpt-6-astra',
-    name: 'GPT-6 Astra',
-    upstreamModelId: 'openai/gpt-6-astra',
-    transport: 'openrouter',
-    pricingRef: 'openrouter/openai/gpt-6-astra',
-    pricing: {
-      inputPerMillion: 10,
-      cachedInputPerMillion: 1,
-      cacheWritePerMillion: 12.5,
-      outputPerMillion: 50,
-      contextOver200k: {
-        contextThreshold: 272_000,
-        inputPerMillion: 20,
-        cachedInputPerMillion: 2,
-        cacheWritePerMillion: 25,
-        outputPerMillion: 75,
-      },
-    },
-    tier: 'flagship',
-    vision: true,
-    limit: { context: 1_050_000, output: 128_000 },
-    openrouterProvider: {
-      order: ['openai'],
-      allow_fallbacks: true,
-    },
-  },
-  {
-    // Z.ai's GLM 5.3 Flash (released 2026-08-26) via OpenRouter. 12 endpoints
-    // serve the slug (measured 2026-08-27) and they are NOT interchangeable:
-    //  - `z-ai` (first-party) and `novita`: $0.075/$0.25, cache read $0.015,
-    //    1_048_576 ctx / 131_072 max out, tools + reasoning_effort, 99.1% /
-    //    99.8% 30m uptime. Pinned in that order. Verified live: a tool-call
-    //    request with this exact `provider` block landed on Z.AI (HTTP 200,
-    //    4.95s, finish_reason:tool_calls, cost 1.49e-5 USD = this entry's
-    //    rate to the cent); `z-ai` alone with allow_fallbacks:false also 200s,
-    //    which proves the slug. Novita was 429 "rate-limited upstream" on the
-    //    shared pool at measurement time — a second choice, not a first.
-    //  - `gmicloud`: same price but status -2 / 86.9% uptime → explicit `ignore`.
-    //  - `reka/fp8` and `io-net/fp8` cap context at 262_144 and `reka` caps
-    //    output at 48_000 — they cannot hold a session this entry advertises.
-    //  - every other host (venice, modal, parasail, together, cloudflare,
-    //    deepinfra, baseten) bills 2x ($0.15/$0.50): the fallback pool.
-    // The advertised limit is the SAFE INTERSECTION of the two pinned hosts.
-    // `pricingRef` resolves on LIVE models.dev (openrouter/z-ai/glm-5.3-flash:
-    // effort low/high/max, image+video input, temperature:true,
-    // structured_output:true); the committed catalog.generated.json predates
-    // the release, so snapshot-only consumers use the synthetic record until
-    // the weekly regen (same as muse-spark-1.2 on 2026-08-10).
-    // PRICE NOTE: $0.075/$0.25 is OpenRouter's current rate on the pinned
-    // hosts, shown there as a 50% launch discount off $0.15/$0.50. If the
-    // discount ends, or a turn falls back off the pinned hosts, upstream cost
-    // is 2x this entry — bump `pricing` (or overlay LLM_GATEWAY_MANAGED_MODELS).
-    id: 'glm-5.3-flash',
-    name: 'GLM 5.3 Flash',
-    upstreamModelId: 'z-ai/glm-5.3-flash',
-    transport: 'openrouter',
-    pricingRef: 'openrouter/z-ai/glm-5.3-flash',
-    pricing: {
-      inputPerMillion: 0.075,
-      cachedInputPerMillion: 0.015,
-      outputPerMillion: 0.25,
-    },
-    tier: 'fast',
-    vision: true,
-    limit: { context: 1_048_576, output: 131_072 },
-    openrouterProvider: {
-      order: ['z-ai', 'novita'],
-      ignore: ['gmicloud'],
-      allow_fallbacks: true,
-    },
+    id: 'kimi-k3', name: 'Kimi K3 2.8T', upstreamModelId: 'moonshotai/kimi-k3',
+    transport: 'openrouter', pricingRef: 'openrouter/moonshotai/kimi-k3',
+    pricing: { inputPerMillion: 2.5, cachedInputPerMillion: 0.25, outputPerMillion: 10.95 },
+    tier: 'flagship', vision: true, limit: { context: 1_048_576, output: 16_384 },
+    openrouterProvider: { only: ['wafer'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
   },
 ];
 
@@ -864,7 +529,7 @@ export const MANAGED_FLAGSHIP_MODEL_ID = (
 ).id;
 
 /** Concrete Kortix-managed default used when no account or project default exists. */
-export const PLATFORM_DEFAULT_MODEL_ID = 'deepseek-v4-flash';
+export const PLATFORM_DEFAULT_MODEL_ID = 'deepseek-v4.1-flash';
 
 function modelsByWireId(catalog: Catalog): Map<string, CatalogModel> {
   const byId = new Map<string, CatalogModel>();
@@ -943,7 +608,7 @@ export const MODEL_SELECTOR_PROVIDER_IDS = [
 export const PROVIDER_LABELS: Record<string, string> = {
   anthropic: 'Anthropic',
   openai: 'OpenAI',
-  codex: 'ChatGPT',
+  codex: 'ChatGPT subscription',
   google: 'Google',
   xai: 'xAI',
   moonshotai: 'Moonshot',

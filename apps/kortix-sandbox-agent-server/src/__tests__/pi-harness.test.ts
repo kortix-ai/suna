@@ -130,6 +130,18 @@ describe('pi harness', () => {
     expect(after.model).toBe('faux/faux-1')
   })
 
+  test('a failed pi start is a boot_error, not a silent down', async () => {
+    // The web paints its session error card only from boot_error. runtime() is
+    // null until start() resolves, so a failed start used to leave the box
+    // "down" with boot_error null and the session spinning forever.
+    const r = await boot({ script: [], env: { KORTIX_PI_MODEL_MODE: 'real' }, start: false })
+    await expect(r.service.lifecycle.start()).rejects.toThrow('KORTIX_LLM_BASE_URL')
+    const health = (await r.bearer('/kortix/health').then((res) => res.json())) as Record<string, unknown>
+    expect(health.runtimeReady).toBe(false)
+    expect(health.status).toBe('error')
+    expect(health.boot_error).toBe('pi harness needs KORTIX_LLM_BASE_URL and KORTIX_TOKEN (the Kortix LLM gateway)')
+  })
+
   test('a prompt runs the agent with a real bash tool and lands on the OpenCode wire', async () => {
     const r = await boot({
       script: [{ tool: 'bash', args: { command: 'printf hello-from-pi > note.txt && cat note.txt' } }, { text: 'Wrote the note.' }],
@@ -208,6 +220,97 @@ describe('pi harness', () => {
     expect(await again.json()).toEqual({ deduplicated: true })
   })
 
+  test('every raw /event frame carries the id the SDK dedupes deltas on', async () => {
+    const r = await boot({ script: [{ text: 'Streamed answer.' }] })
+    const root = r.service.runtime()!.rootId
+    const stream = await r.user('/event')
+    expect(stream.headers.get('content-type')).toContain('text/event-stream')
+    await r.user(`/session/${root}/prompt_async`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        messageID: 'msg_0198e2a4b0c1ABCDEFGHIJKLMN',
+        parts: [{ type: 'text', text: 'say something' }],
+      }),
+    })
+    const text = await readSse(stream, (t) => t.includes('"type":"session.idle"'))
+
+    const frames = text
+      .split('\n\n')
+      .map((chunk) => chunk.replace(/^data: /, '').trim())
+      .filter((chunk) => chunk.startsWith('{'))
+      .map((chunk) => JSON.parse(chunk) as { id?: string; type: string })
+
+    const deltas = frames.filter((f) => f.type === 'message.part.delta')
+    expect(deltas.length).toBeGreaterThan(0)
+    /*
+      The SDK store keys `message.part.delta` idempotency on the envelope's
+      `id` and says so: "a delta with no id gets no protection here". Without
+      one, a redelivered delta APPENDS its text again and the reply renders
+      twice inside the assistant message.
+    */
+    for (const delta of deltas) {
+      expect(typeof delta.id).toBe('string')
+      expect(delta.id!.length).toBeGreaterThan(0)
+    }
+    // Distinct events must not collide, or the guard drops real deltas.
+    const ids = frames.filter((f) => f.id !== undefined).map((f) => f.id!)
+    expect(new Set(ids).size).toBe(ids.length)
+    // Epoch-prefixed, so a daemon restart cannot reissue an id already applied.
+    expect(ids[0]).toMatch(/^b[a-z0-9]+:\d+$/)
+  })
+
+  test('the raw message list pages older windows and only omits the cursor at the head', async () => {
+    const r = await boot({
+      script: [{ tool: 'bash', args: { command: 'printf paged > note.txt' } }, { text: 'Done.' }],
+    })
+    const root = r.service.runtime()!.rootId
+    const messageID = 'msg_0198e2a4b0c1ABCDEFGHIJKLMN'
+    await r.user(`/session/${root}/prompt_async`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ messageID, parts: [{ type: 'text', text: 'write a note' }] }),
+    })
+    await waitFor(() => !r.service.runtime()!.busy())
+
+    const all = (await r.user(`/session/${root}/message`).then((res) => res.json())) as Array<{ info: { id: string } }>
+    expect(all).toHaveLength(3)
+    const ids = all.map((m) => m.info.id)
+
+    // Walk the whole history one message at a time, exactly as
+    // `readTranscriptPages` does: follow `x-next-cursor` until it stops coming.
+    const walk = async (param: 'before' | 'cursor') => {
+      const seen: string[] = []
+      let cursor: string | null = null
+      for (let page = 0; page < 10; page++) {
+        const query = `limit=1${cursor ? `&${param}=${encodeURIComponent(cursor)}` : ''}`
+        const res = await r.user(`/session/${root}/message?${query}`)
+        expect(res.status).toBe(200)
+        const rows = (await res.json()) as Array<{ info: { id: string } }>
+        seen.unshift(...rows.map((m) => m.info.id))
+        cursor = res.headers.get('x-next-cursor')
+        if (!cursor) return seen
+      }
+      throw new Error('cursor never terminated')
+    }
+
+    // The API's capture spells it `cursor`; the SDK's page loader spells it
+    // `before`. Both must walk the same history.
+    expect(await walk('before')).toEqual(ids)
+    expect(await walk('cursor')).toEqual(ids)
+
+    // A window that already reaches the first message must NOT advertise more:
+    // an absent cursor is what every reader treats as "this walk is complete".
+    const whole = await r.user(`/session/${root}/message?limit=99`)
+    expect(whole.headers.get('x-next-cursor')).toBeNull()
+    expect(((await whole.json()) as unknown[]).length).toBe(3)
+
+    // A window that stops short MUST advertise the next one, naming its oldest
+    // row — the exclusive upper bound the next request passes back.
+    const newest = await r.user(`/session/${root}/message?limit=2`)
+    expect(newest.headers.get('x-next-cursor')).toBe(ids[1]!)
+  })
+
   test('the catalog reads the composer needs answer from the runtime', async () => {
     const r = await boot({ script: [{ text: 'ok' }], env: { KORTIX_AGENT_NAME: 'coder', KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { coder: { prompt: 'You code.', description: 'Writes code' } } }) } })
     const config = (await r.user('/config').then((res) => res.json())) as Record<string, unknown>
@@ -268,6 +371,35 @@ describe('pi harness', () => {
     const tool = page.messages.flatMap((m) => m.parts).find((p) => p.type === 'tool')!
     expect(tool.state).toMatchObject({ status: 'error' })
     expect(String((tool.state as { error: string }).error)).toContain('rejected')
+  })
+
+  test('a per-pattern deny blocks the command it names and lets the rest run', async () => {
+    // `bash: { 'rm -rf *': 'deny', '*': 'allow' }` is a valid manifest rule.
+    // Compiling it down to its `*` entry would run the denied command.
+    const permission = { bash: { 'rm -rf *': 'deny', '*': 'allow' } }
+    const denied = await boot({
+      script: [{ tool: 'bash', args: { command: 'rm -rf /workspace' } }, { text: 'blocked' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission } } }) },
+    })
+    const deniedRoot = denied.service.runtime()!.rootId
+    expect((await denied.user(`/session/${deniedRoot}/prompt_async`, { method: 'POST', body: JSON.stringify({ parts: [{ type: 'text', text: 'go' }] }) })).status).toBe(204)
+    await waitFor(() => !denied.service.runtime()!.busy())
+    expect(denied.service.runtime()!.permissions.list()).toHaveLength(0)
+    const deniedPage = (await denied.bearer(`/kortix/opencode/messages/${deniedRoot}`).then((res) => res.json())) as { messages: Array<{ parts: Array<Record<string, unknown>> }> }
+    const deniedTool = deniedPage.messages.flatMap((m) => m.parts).find((p) => p.type === 'tool')!
+    expect(deniedTool.state).toMatchObject({ status: 'error' })
+    expect(String((deniedTool.state as { error: string }).error)).toContain('denies')
+
+    const allowed = await boot({
+      script: [{ tool: 'bash', args: { command: 'echo fine' } }, { text: 'done' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission } } }) },
+    })
+    const allowedRoot = allowed.service.runtime()!.rootId
+    expect((await allowed.user(`/session/${allowedRoot}/prompt_async`, { method: 'POST', body: JSON.stringify({ parts: [{ type: 'text', text: 'go' }] }) })).status).toBe(204)
+    await waitFor(() => !allowed.service.runtime()!.busy())
+    const allowedPage = (await allowed.bearer(`/kortix/opencode/messages/${allowedRoot}`).then((res) => res.json())) as { messages: Array<{ parts: Array<Record<string, unknown>> }> }
+    const allowedTool = allowedPage.messages.flatMap((m) => m.parts).find((p) => p.type === 'tool')!
+    expect(allowedTool.state).toMatchObject({ status: 'completed', output: expect.stringContaining('fine') })
   })
 
   test('abort stops a running tool and ends the turn as aborted', async () => {
@@ -493,6 +625,13 @@ describe('pi subagents extension', () => {
     expect(toolParts(child, 'bash')[0]!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('from-subagent') })
     const raw = (await r.user(`/session/${childId}/message`).then((res) => res.json())) as Array<{ info: { id: string } }>
     expect(raw.map((m) => m.info.id)).toEqual(child.messages.map((m) => String(m.info.id)))
+    // A child transcript pages like the root's: `x-next-cursor` while older messages remain.
+    const newestPage = await r.user(`/session/${childId}/message?limit=1`)
+    const newest = (await newestPage.json()) as Array<{ info: { id: string } }>
+    expect(newestPage.headers.get('x-next-cursor')).toBe(newest[0]!.info.id)
+    const olderPage = await r.user(`/session/${childId}/message?limit=10&cursor=${newest[0]!.info.id}`)
+    expect(((await olderPage.json()) as unknown[]).length).toBe(2)
+    expect(olderPage.headers.get('x-next-cursor')).toBeNull()
     expect(await r.user(`/session/${childId}`).then((res) => res.json())).toMatchObject({ id: childId, parentID: root, title: expect.stringContaining('Write the note') })
     expect(((await r.user(`/session/${root}/children`).then((res) => res.json())) as Array<{ id: string }>).map((s) => s.id)).toEqual([childId])
     expect(((await r.user('/session').then((res) => res.json())) as Array<{ id: string }>).map((s) => s.id)).toEqual([root, childId])
@@ -575,6 +714,41 @@ describe('pi subagents extension', () => {
     page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage
     expect(toolParts(page, 'task')[1]!.state.output).toContain('<task_result>\nstill good\n</task_result>')
     expect(((await r.user(`/session/${root}/children`).then((res) => res.json())) as unknown[]).length).toBe(1)
+  })
+
+  test('a subagent cannot run a call the session denies, even when its own rules allow it', async () => {
+    const compiled = {
+      agent: {
+        build: { mode: 'primary', permission: { bash: { 'rm -rf *': 'deny', '*': 'allow' } } },
+        cleaner: { mode: 'subagent', description: 'Cleans up', prompt: 'You clean.', permission: { '*': 'allow' } },
+      },
+    }
+    const r = await boot({
+      script: [
+        TASK({ subagent_type: 'cleaner', prompt: 'delete keep' }),
+        { tool: 'bash', args: { command: 'rm -rf keep' } },
+        { text: 'tried as cleaner' },
+        TASK({ subagent_type: 'general', prompt: 'delete keep' }),
+        { tool: 'bash', args: { command: 'rm -rf keep' } },
+        { text: 'tried as general' },
+        { text: 'parent done' },
+      ],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify(compiled) },
+    })
+    require('node:fs').mkdirSync(join(r.workspace, 'keep'))
+    writeFileSync(join(r.workspace, 'keep', 'file'), 'x')
+    await promptAndSettle(r, 'clean up')
+    expect(readFileSync(join(r.workspace, 'keep', 'file'), 'utf8')).toBe('x')
+    const root = r.service.runtime()!.rootId
+    const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage
+    const tasks = toolParts(page, 'task')
+    expect(tasks.map((t) => t.state.status)).toEqual(['completed', 'completed'])
+    for (const task of tasks) {
+      const child = (await r.bearer(`/kortix/opencode/messages/${task.state.metadata.sessionId}`).then((res) => res.json())) as WirePage
+      const bash = toolParts(child, 'bash')[0]!
+      expect(bash.state.status).toBe('error')
+      expect(String(bash.state.error)).toContain('denies')
+    }
   })
 
   test('a live agent-config change re-lists the subagent types in the task tool', async () => {

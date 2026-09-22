@@ -193,4 +193,9 @@ describe('shouldRestoreDraft — precedence', () => {
   test('waits for the editor to be ready', () => {
     expect(shouldRestoreDraft({ ...ready, editorReady: false })).toBe(false);
   });
+
+  test('waits for the replacement composer to own the draft', () => {
+    expect(shouldRestoreDraft({ ...ready, active: false })).toBe(false);
+    expect(shouldRestoreDraft({ ...ready, active: true })).toBe(true);
+  });
 });

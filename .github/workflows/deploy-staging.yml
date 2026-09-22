@@ -576,6 +576,13 @@ jobs:
       - name: Deploy and alias staging.kortix.com
         env:
           VERSION: ${{ needs.preflight.outputs.version }}
+          # The release gate compares this value against RELEASE_SOURCE_SHA
+          # (tests/src/core/target-smoke.ts). Pass it explicitly: without it
+          # `apps/web/next.config.ts` falls back to VERCEL_GIT_COMMIT_SHA, which
+          # Vercel infers from the CLI tarball's checkout metadata. That
+          # inference happens to be correct today but is not a contract, and the
+          # gate now hard-fails on the value, so it must be one we set.
+          SOURCE_SHA: ${{ needs.preflight.outputs.sha }}
         run: |
           set -euo pipefail
           if [ -z "${VERCEL_TOKEN:-}" ] || [ -z "${VERCEL_PROJECT_ID:-}" ] || [ -z "${VERCEL_TEAM_ID:-}" ]; then
@@ -613,6 +620,7 @@ jobs:
             -e NEXT_PUBLIC_AUTH_METHODS="magic,password" \
             -e KORTIX_PUBLIC_AUTH_METHODS="magic,password" \
             -b NEXT_PUBLIC_KORTIX_VERSION="$VERSION" \
+            -b NEXT_PUBLIC_KORTIX_COMMIT="$SOURCE_SHA" \
             | tail -n1)"
           echo "Vercel deployment: ${url}"
           npx vercel alias set "$url" "$WEB_HOST" --token "$VERCEL_TOKEN"

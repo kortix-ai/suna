@@ -289,6 +289,20 @@ removed and blocked by ESLint (`no-restricted-imports`).
   `DEFAULT_ICON_WEIGHT` — that is why `@/lib/icons/ssr` exists and why the raw
   entry is ESLint-blocked outside it.
 
+**apps/mobile uses Phosphor too** (`phosphor-react-native`, the community React
+Native port with the same 1,512 glyphs and names). Its rules differ from web in
+two places, both caused by Metro:
+
+- Import icons only from `@/lib/icons`. That registry is the only file that
+  imports the package, one icon file at a time: Metro tree shaking is off, so
+  the package barrel would ship every icon in all six weights.
+- The registry binds `DEFAULT_ICON_WEIGHT` (`apps/mobile/lib/icons/icon-config.ts`,
+  `bold`) onto each icon, because `IconContext` is exported only from that
+  barrel. `weight="fill"` is still the only weight prop.
+- `apps/mobile/lib/icons/icon-imports.test.ts` fails on a retired icon library,
+  a direct package import, an unused registry entry, a non-`fill` weight, or a
+  spinner glyph.
+
 ## Motion in components
 
 **Budget and easings live in [`kortix-brand-guidelines` → Motion](../kortix-brand-guidelines/SKILL.md).**

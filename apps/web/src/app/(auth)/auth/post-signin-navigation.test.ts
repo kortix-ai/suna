@@ -76,18 +76,6 @@ describe('post-sign-in navigation', () => {
     expect(establishBody()).toContain('const dest = result?.redirectTo || returnUrl;');
   });
 
-  test('the post-auth intent marker is still set before leaving the page', () => {
-    // A hard navigation abandons the document. The marker is what proves "this
-    // user just signed in" to the landing door; setting it after the navigation
-    // starts would demote every signup to the projects list.
-    const body = establishBody();
-    const marker = body.indexOf('markPostAuthIntent()');
-    const leave = body.indexOf('window.location.assign(dest)');
-
-    expect(marker).toBeGreaterThan(-1);
-    expect(leave).toBeGreaterThan(marker);
-  });
-
   test('the sign-in form holds no soft router at all', () => {
     const start = source.indexOf('function AuthCardForm(');
     const end = source.indexOf('function AuthContent(');

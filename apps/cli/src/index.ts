@@ -4,14 +4,16 @@ import { runAccess } from './commands/access.ts';
 import { runAccounts } from './commands/accounts.ts';
 import { runAgents } from './commands/agents.ts';
 import { runApps } from './commands/apps.ts';
+import { runAudit } from './commands/audit.ts';
 import { runBilling } from './commands/billing.ts';
 import { runChannels } from './commands/channels.ts';
 import { runConnectors } from './commands/connectors.ts';
 import { runCr } from './commands/cr.ts';
+import { runDoctor } from './commands/doctor.ts';
 import { runEnv } from './commands/env.ts';
 import { runFiles } from './commands/files.ts';
-import { runGitCredential } from './commands/git-credential.ts';
 import { runGateway } from './commands/gateway.ts';
+import { runGitCredential } from './commands/git-credential.ts';
 import { runGrants } from './commands/grants.ts';
 import { runGroups } from './commands/groups.ts';
 import { runHosts } from './commands/hosts.ts';
@@ -21,12 +23,11 @@ import { runLogout } from './commands/logout.ts';
 import { runMarketplace } from './commands/marketplace.ts';
 import { runMembers } from './commands/members.ts';
 import { runModels } from './commands/models.ts';
+import { runPermissions } from './commands/permissions.ts';
 import { runProjects } from './commands/projects.ts';
 import { runProviders } from './commands/providers.ts';
 import { runRegistry } from './commands/registry.ts';
 import { runReview } from './commands/review.ts';
-import { runAudit } from './commands/audit.ts';
-import { runPermissions } from './commands/permissions.ts';
 import { runRoles } from './commands/roles.ts';
 import { runSandboxes } from './commands/sandboxes.ts';
 import { runSchema } from './commands/schema.ts';
@@ -39,15 +40,15 @@ import { runShip } from './commands/ship.ts';
 import { SYSTEM_SKILLS_COMMAND, runSystemSkills } from './commands/system-skills.ts';
 import { runTokens } from './commands/tokens.ts';
 import { runTriggers } from './commands/triggers.ts';
+import { runTui } from './commands/tui.ts';
 import { runUninstall } from './commands/uninstall.ts';
 import { runUpdate } from './commands/update.ts';
 import { runValidate } from './commands/validate.ts';
 import { runWhoami } from './commands/whoami.ts';
-import { runDoctor } from './commands/doctor.ts';
 import { renderContext, renderHostNotice } from './host-notice.ts';
-import { printPermissionDenialIdentity } from './token-denial.ts';
-import { C, header, pad, rule, visibleWidth } from './style.ts';
 import { confirm } from './prompts.ts';
+import { C, header, pad, rule, visibleWidth } from './style.ts';
+import { printPermissionDenialIdentity } from './token-denial.ts';
 import {
   getUpdateNotice,
   isUpdateSnoozed,
@@ -118,7 +119,10 @@ const TIERS: readonly CommandTier[] = [
           { name: 'login', blurb: 'Sign in to the active host (shortcut for `hosts login`)' },
           { name: 'logout', blurb: 'Sign out of the active host (shortcut for `hosts logout`)' },
           { name: 'whoami', blurb: 'Inspect the active host — signed-in user + account' },
-          { name: 'token', blurb: 'Inspect the active token context (project/session/agent grants)' },
+          {
+            name: 'token',
+            blurb: 'Inspect the active token context (project/session/agent grants)',
+          },
           {
             name: 'self-host',
             args: '<subcommand>',
@@ -167,7 +171,8 @@ const TIERS: readonly CommandTier[] = [
           {
             name: 'projects',
             args: '<subcommand>',
-            blurb: 'List, link, use, open, rename and configure projects (features, cli-tokens, upgrade)',
+            blurb:
+              'List, link, use, open, rename and configure projects (features, cli-tokens, upgrade)',
           },
         ],
       },
@@ -188,6 +193,11 @@ const TIERS: readonly CommandTier[] = [
             name: 'chat',
             args: '[session-id]',
             blurb: "Talk to a session's agent (REPL or --prompt)",
+          },
+          {
+            name: 'tui',
+            args: '[options]',
+            blurb: 'Experimental: the whole Kortix product as a terminal app',
           },
         ],
       },
@@ -347,9 +357,7 @@ function tierBand(label: string): string {
 
 function renderHelp(): string {
   const visibleCommands = (commands: readonly Command[]) => commands;
-  const allCommands = TIERS.flatMap((t) =>
-    t.sections.flatMap((s) => visibleCommands(s.commands)),
-  );
+  const allCommands = TIERS.flatMap((t) => t.sections.flatMap((s) => visibleCommands(s.commands)));
   const labelWidth = Math.max(
     ...allCommands.map((c) => (c.args ? `${c.name} ${c.args}` : c.name).length),
   );
@@ -450,7 +458,9 @@ async function offerInteractiveUpdate(): Promise<boolean> {
 
   process.stdout.write('\n');
   if ((await runUpdate([])) !== 0) return false;
-  process.stdout.write(`  ${C.dim}Run ${C.reset}${C.cyan}kortix${C.reset}${C.dim} again to pick it up.${C.reset}\n\n`);
+  process.stdout.write(
+    `  ${C.dim}Run ${C.reset}${C.cyan}kortix${C.reset}${C.dim} again to pick it up.${C.reset}\n\n`,
+  );
   return true;
 }
 
@@ -579,6 +589,9 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'connect' || argv[0] === 'attach') {
     return runSessionsConnect(argv.slice(1));
   }
+  if (argv[0] === 'tui') {
+    return runTui(argv.slice(1));
+  }
   if (argv[0] === 'files') {
     return runFiles(argv.slice(1));
   }
@@ -675,6 +688,7 @@ const KNOWN_COMMANDS = [
   'chat',
   'connect',
   'attach',
+  'tui',
   'files',
   'cr',
   'review',

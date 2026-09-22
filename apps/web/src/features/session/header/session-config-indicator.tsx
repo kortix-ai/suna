@@ -10,9 +10,9 @@ import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
  * the condition and carries the one button that fixes it.
  *
  * It is in the HEADER rather than inline in the transcript because staleness is
- * ambient session state, not a reply to a message. The inline slot next to
- * `ConnectorRequiredNotice` is bound to the last send's error — a card there
- * would scroll away, then re-anchor under an unrelated message.
+ * ambient session state, not a reply to a message — unlike a send failure,
+ * which `TurnErrorDisplay` renders inline, bound to the message that
+ * triggered it.
  *
  * Like the changes chip, it renders NOTHING when there is nothing to say. A
  * permanent "config up to date" badge would be chrome on every session, forever,

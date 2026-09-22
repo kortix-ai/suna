@@ -16,9 +16,7 @@
 // TypeScript re-description of it — against a disposable server.
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { resolve } from 'node:path';
-
-const dockerAvailable =
-  Bun.spawnSync(['docker', 'version'], { stdout: 'ignore', stderr: 'ignore' }).exitCode === 0;
+import { dockerAvailable } from './docker-available';
 
 setDefaultTimeout(60_000);
 

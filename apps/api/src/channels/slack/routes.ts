@@ -20,7 +20,7 @@ import {
   resolveOauthProject,
 } from './dispatch';
 import { publishHomeForUser } from './home';
-import { handleBlockAction, handleMessageShortcut } from './interactivity';
+import { handleBlockAction, handleMessageShortcut, handleViewSubmission } from './interactivity';
 import { handleSlashCommand } from './commands';
 import type { SlackInteractionPayload, SlashResponse } from './types';
 
@@ -61,15 +61,22 @@ async function runSlashCommandBody(rawBody: string, projectScopedProjectId?: str
   }
 }
 
-/** Parse an interactivity form body and fire the right handler (best-effort). */
-function runInteractivityBody(rawBody: string): void {
+/**
+ * Parse an interactivity form body and fire the right handler (best-effort).
+ *
+ * Returns the payload type, because the ACK Slack expects differs by it. For a
+ * `view_submission` the 200 body is read as a `response_action`: anything that
+ * is not one — `{"ok":true"}` included — shows the reviewer an error instead of
+ * closing the modal. An empty body is the "accepted, close it" answer.
+ */
+function runInteractivityBody(rawBody: string): string | null {
   const payloadRaw = new URLSearchParams(rawBody).get('payload');
-  if (!payloadRaw) return;
+  if (!payloadRaw) return null;
   let payload: SlackInteractionPayload;
   try {
     payload = JSON.parse(payloadRaw) as SlackInteractionPayload;
   } catch {
-    return;
+    return null;
   }
   if (payload.type === 'block_actions') {
     void handleBlockAction(payload).catch((err) =>
@@ -79,7 +86,14 @@ function runInteractivityBody(rawBody: string): void {
     void handleMessageShortcut(payload).catch((err) =>
       console.error('[slack-webhook] message shortcut failed', err),
     );
+  } else if (payload.type === 'view_submission') {
+    // Without this the "Request changes" modal's Send button closes the view
+    // and drops the reviewer's note on the floor.
+    void handleViewSubmission(payload).catch((err) =>
+      console.error('[slack-webhook] view submission failed', err),
+    );
   }
+  return payload.type ?? null;
 }
 
 slackWebhookApp.openapi(
@@ -190,7 +204,9 @@ slackWebhookApp.openapi(
   if (!verifySlackSignature(rawBody, timestamp, signature, mode.signingSecret)) {
     return c.json({ error: 'Invalid signature' }, 401);
   }
-  runInteractivityBody(rawBody);
+  // An empty body closes a modal; `{ok:true}` would be read as a malformed
+  // `response_action` and show the reviewer an error.
+  if (runInteractivityBody(rawBody) === 'view_submission') return c.body('', 200);
   return c.json({ ok: true });
 },
 );
@@ -271,7 +287,7 @@ slackWebhookApp.openapi(
     if (envelope.event && (await maybeHandleDmCommand(teamId, envelope.event, projectId))) {
       return;
     }
-    await dispatchSlackEvent(projectId, envelope);
+    await dispatchSlackEvent(projectId, envelope, { ownThreadsOnly: true });
   })().catch((err) => console.error('[slack-webhook] byo handler failed', err));
   return c.json({ ok: true });
 },

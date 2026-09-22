@@ -9,6 +9,7 @@ export const PREVIEW_RUNTIME_SECRET_ALLOWLIST = [
   'MANAGED_GIT_GITHUB_OWNER',
   'MANAGED_GIT_GITHUB_TOKEN',
   'OPENROUTER_API_KEY',
+  'MORPH_API_KEY',
   'PLATINUM_API_KEY',
 ] as const;
 
@@ -178,6 +179,13 @@ export function buildPreviewComposeOverlay(
   validatedValue(reportPath, 'reportPath');
   validatedValue(caddyfilePath, 'caddyfilePath');
   return `services:
+  # A branch preview keeps its database across pushes. A migration added on
+  # main can predate one already applied by this branch, so use the scoped
+  # preview command without changing self-host, staging, or production rules.
+  kortix-migrate:
+    command: ["bun", "/app/packages/db/scripts/migrate.ts", "preview-up"]
+    environment:
+      KORTIX_PREVIEW_MIGRATION: "1"
   preview-edge:
     image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
     ports:
@@ -277,6 +285,12 @@ export function applyPreviewEnvironment(
       'preview target-full requires MANAGED_GIT_GITHUB_OWNER plus either the complete GitHub App configuration or MANAGED_GIT_GITHUB_TOKEN',
     );
   }
+  // Sessions in a preview run on Platinum only. Without its key the preview
+  // could run no session at all, so fail before boot rather than fall back.
+  const platinumApiKey = rawSecrets.PLATINUM_API_KEY?.trim() ?? '';
+  if (!platinumApiKey) {
+    throw new Error('preview sessions run on Platinum only; PLATINUM_API_KEY is required');
+  }
 
   Object.assign(runtime, {
     API_IMAGE: input.apiImage,
@@ -323,19 +337,14 @@ export function applyPreviewEnvironment(
     SMTP_USER: 'unused',
     SMTP_PASS: 'unused',
     ENABLE_EMAIL_AUTOCONFIRM: 'false',
-    // Daytona stays FIRST: the API takes the first allowed provider for an
-    // unpinned session, so the preview gate's behaviour does not change.
-    // Platinum is offered when its key is present so a session can be pinned
-    // to it ({"provider":"platinum"} on create) for provider-parity checks.
-    ALLOWED_SANDBOX_PROVIDERS: rawSecrets.PLATINUM_API_KEY ? 'daytona,platinum' : 'daytona',
-    ...(rawSecrets.PLATINUM_API_KEY
-      ? {
-          PLATINUM_API_URL: input.platinumApiUrl?.trim() || 'https://api.platinum.dev',
-          PLATINUM_API_KEY: rawSecrets.PLATINUM_API_KEY,
-        }
-      : {}),
+    // Preview sessions run on Platinum only, never on Daytona. Daytona used to
+    // be first (the default for an unpinned session) from 2026-08-10. On
+    // 2026-09-21 the shared Daytona org hit its snapshot quota and every
+    // preview session failed with "Snapshot quota exceeded".
+    ALLOWED_SANDBOX_PROVIDERS: 'platinum',
+    PLATINUM_API_URL: input.platinumApiUrl?.trim() || 'https://api.platinum.dev',
+    PLATINUM_API_KEY: platinumApiKey,
     DATABASE_URL: `postgresql://postgres:${postgresPassword}@supabase-db:5432/postgres`,
-    DAYTONA_API_KEY: rawSecrets.DAYTONA_API_KEY ?? '',
     MANAGED_GIT_PROVIDER: 'github',
     MANAGED_GIT_GITHUB_OWNER: rawSecrets.MANAGED_GIT_GITHUB_OWNER ?? '',
     MANAGED_GIT_GITHUB_INSTALL_ID: rawSecrets.MANAGED_GIT_GITHUB_INSTALL_ID ?? '',
@@ -345,6 +354,7 @@ export function applyPreviewEnvironment(
       rawSecrets.KORTIX_GITHUB_APP_PRIVATE_KEY?.replace(/\r?\n/g, '\\n') ?? '',
     KORTIX_GITHUB_APP_SLUG: rawSecrets.KORTIX_GITHUB_APP_SLUG ?? '',
     OPENROUTER_API_KEY: rawSecrets.OPENROUTER_API_KEY ?? '',
+    MORPH_API_KEY: rawSecrets.MORPH_API_KEY ?? '',
     STRIPE_SECRET_KEY: rawSecrets.KE2E_STRIPE_SECRET_KEY ?? '',
     STRIPE_WEBHOOK_SECRET: rawSecrets.KE2E_STRIPE_WEBHOOK_SECRET ?? '',
   });

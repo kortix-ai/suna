@@ -24,7 +24,7 @@ import { SECRET_CAPABILITIES_INSTRUCTION_PATH } from '../../secret-capabilities'
 import type { PiConfig } from './config'
 import { resolvePiSkillDirectories } from './config'
 import type { ExtensionRunner, KortixHost, SpawnSessionInput, SpawnSessionResult, SystemExtension } from './extensions/runner'
-import { PermissionBroker, QuestionBroker, compilePermissionPolicy, type PermissionPolicy, type PermissionRule, type QuestionRequestWire } from './interactions'
+import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, type PermissionPolicy, type PermissionRule, type QuestionRequestWire } from './interactions'
 import type { CatalogModel, PiModels, SelectedModel } from './model'
 import { nativeModelId } from './model'
 import { WireTranscript, type WireFrame, type WireMessage } from './transcript'
@@ -359,7 +359,7 @@ export class PiRuntime {
         },
         ...this.extensions.agentHooks(),
       })
-      this.agent.beforeToolCall = this.toolGate((tool) => this.permissions.rule(tool), true)
+      this.agent.beforeToolCall = this.toolGate((tool, args) => this.permissions.rule(tool, args), true)
       this.agent.subscribe((event) => this.onAgentEvent(event))
       this.state = 'ok'
       logger.info('[pi] runtime ready', {
@@ -574,11 +574,11 @@ export class PiRuntime {
   }
 
   /** Permission policy first, then extension `tool_call` handlers. Root and child agents share it. */
-  private toolGate(rule: (tool: string) => PermissionRule, attachToPart: boolean) {
+  private toolGate(rule: (tool: string, args: unknown) => PermissionRule, attachToPart: boolean) {
     return async (context: BeforeToolCallContext, signal?: AbortSignal): Promise<BeforeToolCallResult | undefined> => {
       const tool = context.toolCall.name
-      const decided = rule(tool)
-      if (decided === 'deny') return { block: true, reason: `The project policy denies the ${tool} tool.` }
+      const decided = rule(tool, context.args)
+      if (decided === 'deny') return { block: true, reason: `The project policy denies this ${tool} call.` }
       if (decided === 'ask') {
         const reply = await this.permissions.ask({
           tool,
@@ -660,7 +660,14 @@ export class PiRuntime {
       },
       ...(this.extensions?.agentHooks() ?? {}),
     })
-    agent.beforeToolCall = this.toolGate((tool) => policy[tool] ?? policy['*'] ?? this.permissions.rule(tool), false)
+    // The subagent's own rules first, the session's rules otherwise. A deny from
+    // either wins: delegating must never unlock a call the session denies.
+    agent.beforeToolCall = this.toolGate((tool, args) => {
+      const own = resolvePolicyRule(policy, tool, args)
+      const session = this.permissions.rule(tool, args)
+      if (own === 'deny' || session === 'deny') return 'deny'
+      return own ?? session
+    }, false)
     agent.subscribe((event) => {
       for (const frame of adapter.translate(event)) this.publish(frame, frame.transcriptOnly ? { transcriptOnly: true } : undefined)
     })
@@ -1143,6 +1150,21 @@ export class PiRuntime {
         })),
       }
       const tmp = `${this.dumpPath()}.tmp`
+      // CodeQL js/http-to-file-access (alert 6571) flags the CONTENT argument
+      // below, because `dump.transcript` carries the first-turn prompt that
+      // relay.ts fetched from the Kortix API. Only the content is network-derived;
+      // the PATH is not. `dumpPath()` is built from `cfg.piStateDir`
+      // (KORTIX_PI_STATE_DIR, else <runtime-state-dir>/pi) and `sessionId`
+      // (KORTIX_SESSION_ID) — both process env, and the /kortix/env route cannot
+      // set either one (project-env.ts skips every KORTIX_-prefixed key, and the
+      // control.ts allowlist does not contain them). So no response can redirect
+      // this write. `JSON.stringify` escapes the content into one JSON document,
+      // `restore()` reads it back with `JSON.parse` behind a version + rootId
+      // check, and the result is consumed as transcript data — never executed,
+      // and never a config the agent trusts. The dir is 0o700, the file 0o600,
+      // and piStateDir lives outside /workspace, so it is not in the project
+      // repo or snapshot. Keep the path env-derived; do not take it from a
+      // request or a response body.
       writeFileSync(tmp, JSON.stringify(dump), { mode: 0o600 })
       renameSync(tmp, this.dumpPath())
     } catch (err) {

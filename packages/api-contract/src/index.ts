@@ -62,7 +62,10 @@ export const FeatureFlagMapSchema = z.object({
   warm_sessions: z.boolean(),
   secrets_egress: z.boolean(),
   pi_worker: z.boolean(),
+  session_transcript_history: z.boolean(),
+  pooled_provider_secrets: z.boolean(),
   pi_harness: z.boolean(),
+  agent_principal: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 
@@ -311,19 +314,20 @@ export type SessionSecretsAllowlist = z.infer<typeof SessionSecretsAllowlistSche
 export const ConnectorAuthorizationStrategySchema = z.enum(['project', 'user']);
 export type ConnectorAuthorizationStrategy = z.infer<typeof ConnectorAuthorizationStrategySchema>;
 
-/**
- * Connector aliases a session REQUIRES, whether or not anything is connected.
+/*
+ * A session no longer declares connectors it REQUIRES.
  *
- * Distinct from `connector_bindings`, which says "use THIS connection for that
- * alias" and therefore cannot express the case that matters most: a session that
- * needs Gmail and has no Gmail connected yet. Naming an alias here is what makes
- * the pre-flight refuse the next turn with a connect prompt instead of letting
- * the agent discover it mid-answer.
+ * `require_connectors` used to name aliases with nothing connected, which made
+ * the pre-flight refuse the turn until someone connected them. The refusal was
+ * unreachable in practice: a `user`-strategy connector has no project-wide
+ * account to offer, so the web card rendered prose with no button, the warm
+ * session path swallowed the 409, and the composer span forever on "Thinking".
+ * A session that names a requirement nobody can satisfy is a dead end.
+ *
+ * The connector CALL is the gate now. It denies with `connector_not_connected`,
+ * names the connector, and carries a connect link the agent surfaces — so the
+ * turn runs, the agent says what is missing, and the remedy is one click.
  */
-export const SessionRequiredConnectorsSchema = z
-  .array(z.string().min(1).max(128))
-  .max(64, 'require_connectors may contain at most 64 aliases');
-export type SessionRequiredConnectors = z.infer<typeof SessionRequiredConnectorsSchema>;
 
 export const SessionScopeInputSchema = z
   .object({
@@ -340,7 +344,8 @@ export const SessionScopeInputSchema = z
      *   connector at all, project defaults included. The opposite of `null`.
      */
     connector_bindings: SessionConnectorBindingsInputSchema.nullable().optional(),
-    require_connectors: SessionRequiredConnectorsSchema.nullable().optional(),
+    /** @deprecated INERT. Accepted and ignored — see `SessionCreateInputSchema`. */
+    require_connectors: z.array(z.string()).nullable().optional(),
   })
   .strict()
   .refine(
@@ -348,14 +353,21 @@ export const SessionScopeInputSchema = z
       Object.hasOwn(value, 'secrets') ||
       Object.hasOwn(value, 'connector_bindings') ||
       Object.hasOwn(value, 'require_connectors'),
-    'Supply `secrets`, `connector_bindings`, `require_connectors`, or any combination',
+    'Supply `secrets`, `connector_bindings`, or both',
   );
 export type SessionScopeInput = z.input<typeof SessionScopeInputSchema>;
 
 export const SessionScopeSchema = z
   .object({
     secrets_allowlist: SessionSecretsAllowlistSchema.nullable(),
-    required_connectors: SessionRequiredConnectorsSchema.nullable(),
+    /**
+     * @deprecated Always `null`. No session requires connectors any more.
+     *
+     * Kept on the response because `SessionScope` is a published `@kortix/sdk`
+     * type and removing a field breaks every consumer that reads it. `null` is
+     * the truthful value for "nothing is required", which is now always so.
+     */
+    required_connectors: z.null(),
     connector_bindings: SessionConnectorBindingsSchema,
     dropped_secrets: z.array(z.string()),
     added_secrets: z.array(z.string()),
@@ -403,6 +415,13 @@ export const SessionScopeSchema = z
   .strict();
 export type SessionScope = z.infer<typeof SessionScopeSchema>;
 
+/**
+ * @deprecated Shape of one entry in the retired `CONNECTOR_CONNECTION_REQUIRED`
+ * error (see the comment above `SessionScopeInputSchema`). No route constructs
+ * this any more — the connector call is the gate now, not session preflight.
+ * Kept on the wire: this is a published `@kortix/sdk` type and removing it
+ * breaks every consumer that imports it.
+ */
 export const RequiredConnectorConnectionSchema = z
   .object({
     id: z.string().uuid(),
@@ -413,6 +432,12 @@ export const RequiredConnectorConnectionSchema = z
   .strict();
 export type RequiredConnectorConnection = z.infer<typeof RequiredConnectorConnectionSchema>;
 
+/**
+ * @deprecated The required-connector session gate is retired — no route
+ * returns this error any more (its 409 came from session create/preflight,
+ * which no longer checks required connectors). Kept on the wire for the same
+ * reason as `RequiredConnectorConnectionSchema` above.
+ */
 export const ConnectorConnectionRequiredErrorSchema = z
   .object({
     code: z.literal('CONNECTOR_CONNECTION_REQUIRED'),
@@ -845,6 +870,10 @@ export const SessionCreateInputSchema = z
     sandbox_slug: z.string().min(1).optional(),
     initial_prompt: z.string().optional(),
     pending_prompt: PendingSessionPromptSchema.optional(),
+    provider_secret_pools: z.record(
+      z.string().min(1).max(100),
+      z.array(z.string().uuid()).max(10),
+    ).refine((pools) => Object.keys(pools).length <= 20, 'Too many provider pools').optional(),
     // The clean text auto-titling derives from, when `initial_prompt` is a
     // rendered envelope (channel scaffolding, a coordinator's session
     // contract, a --with-file manifest) rather than the user's own words.
@@ -866,15 +895,16 @@ export const SessionCreateInputSchema = z
     // When `connector_bindings` is set, unbound aliases fail closed.
     // `inherit_unbound: true` keeps strategy-based default resolution for them.
     inherit_unbound: z.boolean().optional(),
-    // Require each named connector to resolve a connection that matches its
-    // project-or-user strategy. Missing connections return the
-    // structured CONNECTOR_CONNECTION_REQUIRED response before provisioning.
-    require_connectors: z
-      .array(
-        z.string().regex(/^[a-z][a-z0-9_-]{0,127}$/, 'connector alias must be a lower-case slug'),
-      )
-      .max(SESSION_CONNECTOR_BINDINGS_MAX_KEYS)
-      .optional(),
+    /**
+     * @deprecated INERT. Accepted and ignored.
+     *
+     * A session no longer declares connectors it requires. The field stays in
+     * the schema because this object is `.strict()` and `@kortix/sdk` is
+     * published: dropping the key would turn an old client's create into a 400
+     * on a field that simply no longer does anything. The connector CALL
+     * denies instead, with a connect link.
+     */
+    require_connectors: z.array(z.string()).optional(),
     // Backend-only: narrow which project secrets (by identifier) this session's
     // sandbox receives, from the default agent-grant set down to this list. `[]`
     // means inject zero project secrets. Backend origin required — a non-backend

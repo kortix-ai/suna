@@ -270,7 +270,8 @@ describe('scopeBarConnectors', () => {
     expect(row!.unavailable).toBe('private_only');
     expect(row!.notice!.detail).toContain('teammate');
     // A wrapper has no personal upstream identity, so "connect it yourself"
-    // could only ever lead to 403 REQUIRE_CONNECTORS_INTERACTIVE_ONLY.
+    // could only ever lead to a call-time `connector_not_connected` denial it
+    // can never clear itself.
     expect(row!.notice!.selfServiceAction).toBeNull();
   });
 

@@ -145,6 +145,28 @@ describe('sandbox daemon -> CLI MCP contract', () => {
     expect(finalize.inputSchema.properties.request_id.type).toBe('string');
   });
 
+  // An account is owned by the project (shared) or by one member (private).
+  // The agent must be able to say which one a connect link creates, and must
+  // be told the two selector words a call accepts.
+  test('the accounts model is on the wire: connect owner + me|project selectors', async () => {
+    const result = await runMcp(daemonMcpArgv().slice(1), TOOLS_LIST);
+    expect(result.code).toBe(0);
+    const tools = JSON.parse(result.stdout.trim()).result.tools as Array<any>;
+    const connect = tools.find((tool) => tool.name === 'connect');
+    const accounts = tools.find((tool) => tool.name === 'accounts');
+    const call = tools.find((tool) => tool.name === 'call');
+
+    expect(connect.inputSchema.properties.owner.enum).toEqual(['me', 'project']);
+    expect(connect.inputSchema.properties.owner.description).toContain('the default');
+    expect(connect.inputSchema.properties.owner.description).toContain(
+      'project.connector.write',
+    );
+    expect(accounts.description).toContain('`me`');
+    expect(accounts.description).toContain('`project`');
+    expect(call.inputSchema.properties.account.description).toContain('`me`');
+    expect(call.inputSchema.properties.account.description).toContain('`project`');
+  });
+
   test('agent MCP rejects accidental Pipedream selection before any API call', async () => {
     const request = `${JSON.stringify({
       jsonrpc: '2.0',
