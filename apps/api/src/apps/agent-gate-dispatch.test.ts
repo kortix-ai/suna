@@ -210,6 +210,21 @@ describe('flag OFF — today’s model byte for byte', () => {
   });
 });
 
+describe('flag OFF — X-Kortix-App-Authorization is ignored', () => {
+  test('a plain bearer there is not read; the human verifier is never asked', async () => {
+    humanAllowed = true;
+    await expectRefused(await open({ 'x-kortix-app-authorization': 'Bearer kortix_pat_reporter' }, { agentPrincipal: false }));
+    expect(humanCalls).toEqual([]);
+  });
+
+  test('a valid assertion is ignored → today’s 401', async () => {
+    humanAllowed = true;
+    const assertion = createAppAgentAssertion({ appId: app().appId, projectId: PROJECT, tokenId: TOKENS.kortix_pat_reporter!.tokenId });
+    await expectRefused(await open({ 'x-kortix-app-authorization': `Bearer ${assertion}` }, { agentPrincipal: false }));
+    expect(humanCalls).toEqual([]);
+  });
+});
+
 describe('connector → App assertion in X-Kortix-App-Authorization', () => {
   const assertion = (tokenId: string, over: { appId?: string; projectId?: string } = {}) =>
     createAppAgentAssertion({

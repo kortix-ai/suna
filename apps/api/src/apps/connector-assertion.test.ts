@@ -18,16 +18,16 @@ const TOKEN = 'a0000000-0000-4000-8000-000000000001';
 const ROUTE_KEY = 'cccccccccccccccc';
 const HOST = `https://dev-dashboards-${ROUTE_KEY}.apps.kortix.com`;
 
-const loader = (projectId: string | null) => {
+const loader = (projectId: string | null, agentPrincipal = true) => {
   const seen: string[] = [];
   const load = async (routeKey: string) => {
     seen.push(routeKey);
-    return projectId ? { appId: APP_ID, projectId } : null;
+    return projectId ? { appId: APP_ID, projectId, agentPrincipal } : null;
   };
   return { load, seen };
 };
 
-const call = (baseUrl: string, load: (k: string) => Promise<{ appId: string; projectId: string } | null>, localMode = false) =>
+const call = (baseUrl: string, load: (k: string) => Promise<{ appId: string; projectId: string; agentPrincipal: boolean } | null>, localMode = false) =>
   appAuthorizationForConnectorCall({ projectId: PROJECT, baseUrl, sessionId: 'sess', tokenId: TOKEN }, { loadAppByRouteKey: load, localMode });
 
 describe('appAuthorizationForConnectorCall', () => {
@@ -37,6 +37,12 @@ describe('appAuthorizationForConnectorCall', () => {
     expect(seen).toEqual([ROUTE_KEY]);
     expect(value?.startsWith('Bearer kortix_app_assertion.')).toBe(true);
     expect(verifyAppAgentAssertion(value!.slice(7), { appId: APP_ID, projectId: PROJECT })).toEqual({ tokenId: TOKEN });
+  });
+
+  test('flag OFF on the calling project → null (today’s behaviour, no assertion)', async () => {
+    const { load, seen } = loader(PROJECT, false);
+    expect(await call(`${HOST}/api`, load)).toBeNull();
+    expect(seen).toEqual([ROUTE_KEY]);
   });
 
   test('an App of ANOTHER project → null', async () => {

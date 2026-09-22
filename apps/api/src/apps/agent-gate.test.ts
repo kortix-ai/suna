@@ -158,13 +158,34 @@ describe('header carriage', () => {
     const both = new Request(`https://${host}/`, {
       headers: { authorization: 'Bearer app-own-write-key', 'x-kortix-app-authorization': 'Bearer kortix_pat_a' },
     });
-    expect(appCredentialFromRequest(both)).toEqual([
+    const on = { agentPrincipal: true };
+    expect(appCredentialFromRequest(both, on)).toEqual([
       { token: 'kortix_pat_a', via: 'x-kortix-app-authorization' },
       { token: 'app-own-write-key', via: 'authorization' },
     ]);
     const onlyAuth = new Request(`https://${host}/`, { headers: { authorization: 'Bearer kortix_pat_b' } });
-    expect(appCredentialFromRequest(onlyAuth)).toEqual([{ token: 'kortix_pat_b', via: 'authorization' }]);
+    expect(appCredentialFromRequest(onlyAuth, on)).toEqual([{ token: 'kortix_pat_b', via: 'authorization' }]);
     const basic = new Request(`https://${host}/`, { headers: { authorization: 'Basic abc' } });
-    expect(appCredentialFromRequest(basic)).toEqual([]);
+    expect(appCredentialFromRequest(basic, on)).toEqual([]);
+  });
+
+  test('flag OFF: X-Kortix-App-Authorization is not read at all (today’s gate)', () => {
+    const both = new Request(`https://${host}/`, {
+      headers: { authorization: 'Bearer app-own-write-key', 'x-kortix-app-authorization': 'Bearer kortix_pat_a' },
+    });
+    expect(appCredentialFromRequest(both, { agentPrincipal: false })).toEqual([
+      { token: 'app-own-write-key', via: 'authorization' },
+    ]);
+  });
+
+  test('flag OFF: the header is still deleted upstream', () => {
+    const request = new Request(`https://${host}/`, { headers: { 'x-kortix-app-authorization': 'Bearer x' } });
+    expect(appUpstreamHeaders(request, {}, host).get('x-kortix-app-authorization')).toBeNull();
+  });
+
+  test('an unknown flag key (L2 not registered yet) reads as OFF', async () => {
+    const { agentPrincipalEnabled } = await import('./access');
+    expect(agentPrincipalEnabled({ experimental: { agent_principal: true } })).toBe(false);
+    expect(agentPrincipalEnabled(null)).toBe(false);
   });
 });

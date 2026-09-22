@@ -493,9 +493,16 @@ export const APP_AUTHORIZATION_HEADER = 'x-kortix-app-authorization';
  */
 export function appCredentialFromRequest(
   request: Request,
+  opts: { agentPrincipal: boolean },
 ): Array<{ token: string; via: 'x-kortix-app-authorization' | 'authorization' }> {
   const out: Array<{ token: string; via: 'x-kortix-app-authorization' | 'authorization' }> = [];
-  for (const via of [APP_AUTHORIZATION_HEADER, 'authorization'] as const) {
+  // Flag OFF = today's gate byte for byte: only `Authorization` is read, so a
+  // bearer or a connector assertion in `X-Kortix-App-Authorization` is ignored
+  // (the header is still deleted before the request reaches the App).
+  const headers = opts.agentPrincipal
+    ? ([APP_AUTHORIZATION_HEADER, 'authorization'] as const)
+    : (['authorization'] as const);
+  for (const via of headers) {
     const header = request.headers.get(via) ?? '';
     if (!/^bearer /i.test(header)) continue;
     const token = header.slice(7).trim();
@@ -521,12 +528,13 @@ function principalFromTokenResult(
 async function resolveOneCredential(
   token: string,
   via: 'x-kortix-app-authorization' | 'authorization',
-  app: Pick<AppAccessRow, 'appId' | 'projectId'>,
+  app: Pick<AppAccessRow, 'appId' | 'projectId' | 'agentPrincipal'>,
 ): Promise<AppBearerPrincipal | null> {
   try {
     if (isAppAgentAssertion(token)) {
-      // Minted only by the connector gateway, only for this header.
-      if (via !== APP_AUTHORIZATION_HEADER) return null;
+      // Minted only by the connector gateway, only for this header, and
+      // honoured only on an `agent_principal` project.
+      if (via !== APP_AUTHORIZATION_HEADER || !app.agentPrincipal) return null;
       const verified = verifyAppAgentAssertion(token, { appId: app.appId, projectId: app.projectId });
       if (!verified) return null;
       const principal = principalFromTokenResult(await validateAccountTokenById(verified.tokenId));
@@ -553,9 +561,9 @@ async function resolveOneCredential(
 
 async function kortixCredentialUser(
   request: Request,
-  app: Pick<AppAccessRow, 'appId' | 'projectId'>,
+  app: Pick<AppAccessRow, 'appId' | 'projectId' | 'agentPrincipal'>,
 ): Promise<AppBearerPrincipal | null> {
-  for (const { token, via } of appCredentialFromRequest(request)) {
+  for (const { token, via } of appCredentialFromRequest(request, { agentPrincipal: Boolean(app.agentPrincipal) })) {
     const principal = await resolveOneCredential(token, via, app);
     if (principal) return principal;
   }
