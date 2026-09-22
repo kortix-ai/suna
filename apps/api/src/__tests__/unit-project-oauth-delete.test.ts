@@ -9,6 +9,7 @@ const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
 const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
 const AUTHORIZED_USER_ID = '11111111-1111-4111-8111-111111111111';
 const UNAUTHORIZED_USER_ID = '22222222-2222-4222-8222-222222222222';
+const OTHER_MEMBER_USER_ID = '55555555-5555-4555-8555-555555555555';
 
 const PROJECT_ACTIONS = {
   PROJECT_CONNECTOR_READ: 'project.connector.read',
@@ -23,6 +24,9 @@ const deleteCalls: Array<{ table: unknown; where: unknown }> = [];
 const propagateCalls: Array<{ projectId: string; opts: unknown }> = [];
 const capabilityChecks: Array<{ userId: string; accountId: string; projectId: string; action: string }> = [];
 const auditEvents: Array<Record<string, unknown>> = [];
+// The caller's project role label. `roleAllows(role, 'manage')` is true only
+// for 'manager'; the GET secrets route uses the same test for `canManageShared`.
+let effectiveRole: 'manager' | 'member' = 'manager';
 
 mock.module('../shared/db', () => ({
   hasDatabase: true,
@@ -45,8 +49,8 @@ mock.module('../projects/lib/access', () => ({
     row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID },
     userId: c.get('userId'),
     accountRole: 'owner',
-    projectRole: 'owner',
-    effectiveRole: 'owner',
+    projectRole: effectiveRole,
+    effectiveRole,
     adminBypass: false,
   }),
   assertProjectCapability: async (_c: any, userId: string, accountId: string, projectId: string, action: string) => {
@@ -101,6 +105,7 @@ describe('DELETE /v1/projects/:projectId/oauth/:provider', () => {
     propagateCalls.length = 0;
     capabilityChecks.length = 0;
     auditEvents.length = 0;
+    effectiveRole = 'manager';
   });
 
   test('authorized principal deletes the backing secret and propagates to sandboxes', async () => {
@@ -131,6 +136,7 @@ describe('DELETE /v1/projects/:projectId/oauth/:provider', () => {
       metadata: {
         identifier: 'CODEX_AUTH_JSON',
         consumer: 'llm_gateway',
+        scope: 'own_private_and_shared',
       },
     });
   });
@@ -151,6 +157,64 @@ describe('DELETE /v1/projects/:projectId/oauth/:provider', () => {
     expect(params).toContain('CODEX_AUTH_JSON');
     expect(params).toContain('OPENCODE_AUTH_JSON');
     expect(sql).toContain('"project_id" = ');
+  });
+
+  // CODEX_AUTH_JSON / OPENCODE_AUTH_JSON can be per-user PRIVATE rows
+  // (`owner_user_id` set). The delete used to filter on project + name only, so
+  // one member's disconnect also deleted every other member's private login.
+  // The delete must cover exactly the rows the caller sees as "connected": the
+  // caller's own private rows, plus the shared row when the caller may manage it.
+  describe('owner scoping', () => {
+    async function disconnect() {
+      const res = await buildApp(AUTHORIZED_USER_ID).request(`/v1/projects/${PROJECT_ID}/oauth/openai`, {
+        method: 'DELETE',
+      });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true });
+      expect(deleteCalls).toHaveLength(1);
+      return new PgDialect().sqlToQuery(deleteCalls[0].where as any);
+    }
+
+    test("keeps another member's private row: every delete branch is bound to the caller or to the shared row", async () => {
+      const { sql, params } = await disconnect();
+      expect(params).not.toContain(OTHER_MEMBER_USER_ID);
+      // No unscoped branch: the owner column is constrained in the WHERE clause.
+      expect(sql).toMatch(/"owner_user_id" = \$\d+/);
+      expect(sql).toMatch(/\(.*"owner_user_id" = \$\d+ or .*"owner_user_id" is null\)/);
+    });
+
+    test("deletes the caller's own private row", async () => {
+      const { sql, params } = await disconnect();
+      expect(params).toContain(AUTHORIZED_USER_ID);
+      const ownerParamIndex = params.indexOf(AUTHORIZED_USER_ID) + 1;
+      expect(sql).toContain(`"owner_user_id" = $${ownerParamIndex}`);
+    });
+
+    test('deletes the shared row when the caller can manage shared secrets', async () => {
+      effectiveRole = 'manager';
+      const { sql } = await disconnect();
+      expect(sql).toContain('"owner_user_id" is null');
+      expect(auditEvents[0]).toMatchObject({ metadata: { scope: 'own_private_and_shared' } });
+    });
+
+    test('keeps the shared row when the caller cannot manage shared secrets', async () => {
+      effectiveRole = 'member';
+      const { sql, params } = await disconnect();
+      expect(sql).not.toContain('is null');
+      expect(params).toContain(AUTHORIZED_USER_ID);
+      expect(auditEvents[0]).toMatchObject({ metadata: { scope: 'own_private' } });
+    });
+
+    test('legacy OPENCODE_AUTH_JSON follows the same owner scoping', async () => {
+      const { sql, params } = await disconnect();
+      expect(params).toContain('CODEX_AUTH_JSON');
+      expect(params).toContain('OPENCODE_AUTH_JSON');
+      expect(params).toContain(AUTHORIZED_USER_ID);
+      expect(params).not.toContain(OTHER_MEMBER_USER_ID);
+      // The name filter and the owner filter are ANDed, so the owner scope binds
+      // both names; there is no per-name branch that skips it.
+      expect(sql).toMatch(/"name" in \(\$\d+, \$\d+\) and \(/);
+    });
   });
 
   test('unauthorized principal is denied and no delete is issued', async () => {
