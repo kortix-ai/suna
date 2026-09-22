@@ -21,6 +21,37 @@ linked, not inlined.
 
 ## Register
 
+### Reporting a thing and unblocking on it are different code paths — check the one that unblocks (2026-09-22)
+
+**Rule:** Before telling an agent to use a BLOCKING tool on a new surface,
+find the code that RELEASES the block and confirm that surface satisfies its
+gate. A relay that reports the event is not the relay that resumes the caller,
+and the two are gated differently. **Trigger surface:** enabling an
+opencode/agent tool for a channel, or any "this works on platform A, so
+recommend it on platform B".
+
+**Incident:** #7493 changed the Teams turn prompt to recommend opencode's
+built-in `question` tool, on the strength of reading `POST /turn-question` —
+which persists the question, posts the card, and returns a finish-now sentinel.
+That is the REPORTING path, and it is ungated. The path that actually releases
+opencode's blocking `question` call is a separate POST to
+`/question/:id/reply`, gated on `slackRelayContext()` — `SLACK_THREAD_TS` /
+`SLACK_CHANNEL_ID`. A Teams session carries `MS_TEAMS_*`;
+`harness/open-code/boot.ts` had zero `MS_TEAMS` references. So a Teams agent
+posted the card and then hung until its box parked — strictly worse than the
+prose it replaced, because the user sees the question and answers a turn that
+never finishes. Caught while verifying a claim in the PR description, after
+merge, before anyone hit it. **Enforcers:** `channelRelayContext()` now accepts
+either platform, asserted by `question-relay-scope.test.ts` (a Teams session
+must count as a channel; the sentinel must come from `channelLabel()`), and
+`unit-channel-question-guidance.test.ts` asserts the two platforms differ ON
+PURPOSE until sandboxes carry the fixed daemon.
+
+**Second rule:** a server-side prompt change reaches every running session on
+the next API deploy; the sandbox agent server is IMAGE-BAKED and reaches only
+sandboxes built after it. When a feature needs both, ship the prompt LAST.
+Shipping it first is what made this live before its daemon half existed.
+
 ### Check a port with a bind, never with `ss -l` (2026-09-22)
 
 **Rule:** To decide whether a host port is free for a container, ATTEMPT THE
@@ -53,6 +84,39 @@ inside each `run: |` is indented past its key.
 evidence of clean until you have proved the diagnostic can report dirty. This
 one was run against four genuinely-held ports and warned on all four; the `ss`
 version, run the same way, would have said they were free.
+
+### A PR into `main` shows all-green with the whole suite skipped (2026-09-22)
+
+**Rule:** before merging any PR into `main`, read the CHECK NAMES, not the
+pass count. `tests.yml` gates its lane matrix on
+`contains(labels, 'test') || contains(labels, 'preview')` for pull requests
+into `main`, so an unlabelled PR skips all six lanes — core, browser-1..4,
+packages — and still reports every remaining check green. `${{ matrix.lane }}
+lane: skipping` beside `9 pass / 0 fail` is a PR that ran CodeQL, gitleaks and
+a typecheck, and nothing else. Add the `test` label and wait, or merge knowing
+only lint ran. **Near-miss:** PR #7483 (transcript mirror paging, apps/api +
+packages/sdk) was `MERGEABLE`/`CLEAN` with zero lanes run; labelled, the core
+lane then failed and four browser lanes passed. **Gotcha within the gotcha:**
+`gh pr edit --add-label` can fail on a Projects-classic GraphQL error and
+apply NOTHING while exiting noisily — check
+`gh pr view --json labels`, or use
+`gh api -X POST repos/<owner>/<repo>/issues/<n>/labels -f 'labels[]=test'`.
+*Enforcer:* none — the skip is by design, so nothing will ever fail for it.
+The check-name read is the control.
+
+### A local-stack CI failure is the stack, not the diff (2026-09-22)
+
+**Rule:** when a `core` or `browser` lane fails, find the first error before
+the test list. `local Supabase start exited with code 1` at
+`tests/src/core/local-stack.ts` with `failed to set up container networking`
+is the runner's docker, and the flows it gates never ran — nothing asserted
+false. Re-run that lane; do not touch the code, and do not report the re-run
+as a fix. If it fails the same way twice, that is a signal about the runner
+and belongs in a report, not in a third re-run. **Near-miss:** PR #7483's core
+lane failed exactly this way while `sdk`, `flow-runner-unit`,
+`route-coverage` and `worktree-unit` passed in the same lane; the re-run went
+green with no change. *Enforcer:* none.
+
 
 ### Port a guard with the feature, or the second platform ships without it (2026-09-22)
 

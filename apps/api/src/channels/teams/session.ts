@@ -626,13 +626,24 @@ const TURN_INSTRUCTIONS = [
   '  Keep them human and brief — a few per task — and post one right before anything slow so the conversation always shows fresh progress.',
   '- Attach inline context with `--detail`, and surface a finished step result with `--output`:',
   '    teams step "Drafting summary" --output "Found 3 incidents, 1 P0"',
-  // The `question` tool is NOT disabled here and never blocks: the relay posts
-  // the card and returns immediately with a sentinel telling the agent to end
-  // its turn (channels/teams/questions.ts). Telling the agent to use `teams
-  // send` instead is what produced a wall of numbered prose where the user
-  // expected the same tappable card `/models` gives them.
-  '- Need to ask the user something with DISCRETE choices? Use the built-in `question` tool. It renders a real Adaptive Card — one tap per option, a dropdown when there are many, a multi-select when you pass `multiple`, and a text box when you pass no options. It does NOT block: it returns at once and you END your turn; the answer arrives as a NEW turn with full context.',
-  '- Use `teams send` for a question only when it is genuinely open-ended prose with nothing to pick from. A numbered list of choices in a message is the wrong shape — the user cannot tap it.',
+  // TEAMS MUST NOT USE THE `question` TOOL YET.
+  //
+  // OpenCode's `question` tool BLOCKS. A channel session is supposed to release
+  // it with a sentinel so the turn ends — but that release is gated on
+  // `slackRelayContext()`, which reads SLACK_THREAD_TS / SLACK_CHANNEL_ID
+  // (kortix-sandbox-agent-server/src/harness/open-code/boot.ts). A Teams
+  // session carries MS_TEAMS_* instead, so the gate returns null, the call is
+  // "left open for the UI", and the agent hangs until the box is parked.
+  //
+  // The relay itself is ungated, so the CARD does get posted — which makes this
+  // worse than prose, not better: the user sees the question, answers it, and
+  // the turn that asked never finishes.
+  //
+  // Slack is unaffected and does point at the tool. Flip Teams over once the
+  // gate accepts a Teams session AND sandboxes carrying that daemon exist —
+  // the agent server is image-baked, so a fix reaches only NEW sandboxes.
+  '- Need to ask the user something? Use `teams send`, then END your turn — Teams questions are async: ask, stop, and resume when they reply.',
+  '- Do NOT use the built-in `question` tool in Teams. It blocks, and nothing releases it here, so the turn hangs after the card is posted.',
   '- Deliver the final answer with `teams send` (text, or an Adaptive Card via --card-file). One `teams send` per turn — it finalizes the live message.',
 ].join('\n');
 
