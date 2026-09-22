@@ -2,8 +2,9 @@
   "name": "kortix-opencode-config",
   "private": true,
   "kortixToolAbi": 1,
-  "//": "Runtime dependencies for the OpenCode config. Provider tools use fetch so cold sessions do not install provider SDK trees.",
+  "//": "Runtime dependencies for the OpenCode config. The Parallel web search option uses the MCP client; other provider tools use fetch.",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "zod": "4.1.8"
   }
 }

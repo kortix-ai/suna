@@ -151,13 +151,16 @@ describe('the starter is OpenCode-native', () => {
     );
   });
 
-  test('keeps optional tools independent of provider SDKs', () => {
+  test('keeps most optional tools independent of provider SDKs', () => {
     const packageJson = JSON.parse(readFileSync(join(OPENCODE_ROOT, 'package.json'), 'utf8')) as {
       dependencies?: Record<string, string>;
     };
     const lock = readFileSync(join(OPENCODE_ROOT, 'bun.lock'), 'utf8');
 
-    expect(packageJson.dependencies).toEqual({ zod: '4.1.8' });
+    expect(packageJson.dependencies).toEqual({
+      '@modelcontextprotocol/sdk': '^1.30.0',
+      zod: '4.1.8',
+    });
     for (const dependency of ['@mendable/firecrawl-js', '@tavily/core', 'replicate']) {
       expect(lock).not.toContain(`\"${dependency}\"`);
     }

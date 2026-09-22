@@ -8,6 +8,7 @@ const originalFetch = globalThis.fetch;
 const originalEnv = {
   KORTIX_API_URL: process.env.KORTIX_API_URL,
   KORTIX_TOKEN: process.env.KORTIX_TOKEN,
+  TAVILY_API_KEY: process.env.TAVILY_API_KEY,
 };
 
 function configureRouterEnv() {
@@ -83,6 +84,117 @@ describe('OpenCode provider tools', () => {
     });
   });
 
+  test('explicit Parallel selection uses MCP discovery and returns cited excerpts without Tavily credentials', async () => {
+    delete process.env.TAVILY_API_KEY;
+    delete process.env.KORTIX_API_URL;
+    delete process.env.KORTIX_TOKEN;
+    const methods: string[] = [];
+    globalThis.fetch = (async (input, init) => {
+      expect(String(input)).toBe('https://search.parallel.ai/mcp');
+      expect(init?.redirect).toBe('error');
+      expect(new Headers(init?.headers).get('User-Agent')).toBe('Kortix');
+      expect(new Headers(init?.headers).get('Authorization')).toBeNull();
+      const request = JSON.parse(String(init?.body));
+      methods.push(request.method);
+      if (request.method === 'notifications/initialized')
+        return new Response(null, { status: 202 });
+      const result =
+        request.method === 'initialize'
+          ? {
+              protocolVersion: '2025-03-26',
+              capabilities: { tools: {} },
+              serverInfo: { name: 'parallel-fixture', version: '1' },
+            }
+          : request.method === 'tools/list'
+            ? { tools: [{ name: 'web_search', inputSchema: { type: 'object' } }] }
+            : (() => {
+                expect(request.method).toBe('tools/call');
+                expect(request.params).toEqual({
+                  name: 'web_search',
+                  arguments: {
+                    objective: 'Kortix release',
+                    search_queries: ['Kortix release'],
+                    session_id: 'ses_test_123',
+                  },
+                });
+                return {
+                  structuredContent: {
+                    results: [
+                      {
+                        title: 'Release notes',
+                        url: 'https://kortix.test/release',
+                        excerpts: ['Version details'],
+                        publish_date: '2026-09-01',
+                      },
+                    ],
+                  },
+                  content: [],
+                };
+              })();
+      return Response.json({ jsonrpc: '2.0', id: request.id, result });
+    }) as typeof fetch;
+
+    const output = await webSearch.execute({ query: 'Kortix release', provider: 'parallel' }, {
+      sessionID: 'ses_test_123',
+    } as never);
+    expect(JSON.parse(String(output))).toEqual({
+      query: 'Kortix release',
+      provider: 'parallel',
+      success: true,
+      results: [
+        {
+          title: 'Release notes',
+          url: 'https://kortix.test/release',
+          snippet: 'Version details',
+          published_date: '2026-09-01',
+        },
+      ],
+      warnings: [],
+    });
+    expect(methods).toEqual([
+      'initialize',
+      'notifications/initialized',
+      'tools/list',
+      'tools/call',
+    ]);
+  });
+
+  test('Parallel rejects Tavily-only controls before making a request', async () => {
+    globalThis.fetch = (() => {
+      throw new Error('unexpected fetch');
+    }) as unknown as typeof fetch;
+    expect(
+      await webSearch.execute(
+        { query: 'Kortix', provider: 'parallel', topic: 'news' },
+        {} as never,
+      ),
+    ).toContain('Parallel does not support topic or search_depth');
+  });
+
+  test('Parallel reports MCP tool errors instead of empty search results', async () => {
+    globalThis.fetch = (async (_input, init) => {
+      const request = JSON.parse(String(init?.body));
+      if (request.method === 'notifications/initialized')
+        return new Response(null, { status: 202 });
+      const result =
+        request.method === 'initialize'
+          ? {
+              protocolVersion: '2025-03-26',
+              capabilities: { tools: {} },
+              serverInfo: { name: 'parallel-fixture', version: '1' },
+            }
+          : request.method === 'tools/list'
+            ? { tools: [{ name: 'web_search', inputSchema: { type: 'object' } }] }
+            : { isError: true, content: [{ type: 'text', text: 'rate limited' }] };
+      return Response.json({ jsonrpc: '2.0', id: request.id, result });
+    }) as typeof fetch;
+    const output = JSON.parse(
+      String(await webSearch.execute({ query: 'Kortix', provider: 'parallel' }, {} as never)),
+    );
+    expect(output).toMatchObject({ success: false, provider: 'parallel' });
+    expect(output.error).toContain('rate limited');
+  });
+
   test('scrape preserves the Firecrawl v2 router contract', async () => {
     configureRouterEnv();
     globalThis.fetch = (async (input, init) => {
@@ -142,10 +254,7 @@ describe('OpenCode provider tools', () => {
       throw new Error(`unexpected image-search request: ${String(input)}`);
     }) as typeof fetch;
 
-    const output = await imageSearch.execute(
-      { query: 'Kortix', num_results: 1 },
-      {} as never,
-    );
+    const output = await imageSearch.execute({ query: 'Kortix', num_results: 1 }, {} as never);
     const result = JSON.parse(String(output));
 
     expect(call).toBe(1);
