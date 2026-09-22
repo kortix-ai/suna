@@ -73,7 +73,9 @@ const accountRowMetersComputeSql = () =>
     notInArray(sql`coalesce(${creditAccounts.tier}, '')`, [...LEGACY_PAID_TIERS_UNMETERED]),
   );
 
-const PARTIAL_BILL_INTERVAL_MS = 60 * 60 * 1000; // 1h
+// Match the project-maintenance cadence so active compute appears on Billing
+// without waiting for a stop hook or a full hour.
+const PARTIAL_BILL_INTERVAL_MS = 5 * 60 * 1000;
 // Bounded like every other periodic sweep in this codebase (REAP_BATCH_SIZE in
 // sandbox-reaper.ts, findStaleActiveSessions' default) so one pass can never
 // stampede a large backlog of reconcile candidates into a burst of provider/DB
@@ -667,8 +669,8 @@ export async function reconcileMissingComputeSessions(
 }
 
 /**
- * Cron entry point. Every 15 minutes: find sessions that have been billing for
- * over an hour without a hook firing, settle a partial window. Prevents a
+ * Maintenance entry point. Every 5 minutes: settle active sessions whose
+ * current billing window is at least one maintenance interval old. Prevents a
  * missed close from accumulating uncharged compute indefinitely. Also runs the
  * missing-compute-session reconciler (see `reconcileMissingComputeSessions`)
  * in the same pass — the natural periodic hook for both safety nets.

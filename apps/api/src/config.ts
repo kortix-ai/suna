@@ -1396,15 +1396,11 @@ export const config = {
 
 // ─── Billing Markup Constants ────────────────────────────────────────────────
 //
-// Two pricing modes based on whose API key is used:
-//   * Kortix keys (user uses our keys):  1.2x provider cost (20% markup)
-//   * User's own keys (passthrough):     0.1x provider cost (10% platform fee)
+// Kortix-managed inference uses 1.2x provider cost (20% markup).
+// BYOK inference always has a zero Kortix charge.
 
 /** Markup when Kortix provides the API key. */
 export const KORTIX_MARKUP = 1.2;
-
-/** Platform fee when user provides their own API key. */
-export const PLATFORM_FEE_MARKUP = 0.1;
 
 // ─── Tool Pricing (Router) ──────────────────────────────────────────────────
 
