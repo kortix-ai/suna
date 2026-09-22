@@ -123,6 +123,7 @@ export function SessionPage({ projectId, sessionId, onBack, onOpenDrawer, onOpen
   const listHeightRef = useRef(0);           // visible list viewport height
   const contentHeightRef = useRef(0);        // total scrollable content height
   const AT_BOTTOM_THRESHOLD = 80;            // px from bottom considered "at bottom"
+  const LOAD_OLDER_THRESHOLD = 240;          // px from top that pulls the previous page
 
 
 
@@ -463,6 +464,15 @@ export function SessionPage({ projectId, sessionId, onBack, onOpenDrawer, onOpen
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       const offset = Math.max(0, event.nativeEvent.contentOffset.y || 0);
 
+      // Near the top and there is more behind this window — pull the previous
+      // page. The transcript opens on a bounded tail (the newest 40 from the
+      // mirror), and `loadOlder` walks the `before=` cursor backwards through
+      // the history the mirror retains in full. Without this the rest of a long
+      // session is stored and unreachable.
+      if (offset <= LOAD_OLDER_THRESHOLD && session.hasOlder && !session.isLoadingOlder) {
+        void session.loadOlder();
+      }
+
       // Determine if user is near the bottom
       const distanceFromBottom = contentHeightRef.current - offset - listHeightRef.current;
       const atBottom = distanceFromBottom <= AT_BOTTOM_THRESHOLD;
@@ -481,7 +491,7 @@ export function SessionPage({ projectId, sessionId, onBack, onOpenDrawer, onOpen
       lastSavedOffsetRef.current = offset;
       setTabState(sessionId, { scrollOffset: offset });
     },
-    [sessionId, setTabState],
+    [sessionId, setTabState, session],
   );
 
   // Auto-scroll to bottom while AI is typing, if user hasn't scrolled up
@@ -753,6 +763,17 @@ export function SessionPage({ projectId, sessionId, onBack, onOpenDrawer, onOpen
           keyExtractor={(item, index) => `${item.userMessage.info.id}:${index}`}
           contentContainerStyle={{ paddingTop: 16 }}
           showsVerticalScrollIndicator={false}
+          // Older messages prepend ABOVE the viewport. Without this the list
+          // keeps its scroll OFFSET rather than its position, so every page-in
+          // would yank the reader backwards through the text they were reading.
+          maintainVisibleContentPosition={{ minIndexForVisible: 1 }}
+          ListHeaderComponent={
+            session.isLoadingOlder ? (
+              <View style={{ paddingVertical: 16, alignItems: 'center' }}>
+                <ActivityIndicator size="small" color={isDark ? '#71717a' : '#a1a1aa'} />
+              </View>
+            ) : null
+          }
           scrollEventThrottle={16}
           onScroll={handleListScroll}
           onContentSizeChange={handleContentSizeChange}
