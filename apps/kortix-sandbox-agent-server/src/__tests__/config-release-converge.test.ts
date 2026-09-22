@@ -21,7 +21,9 @@ import {
   convergeConfigRelease,
   fetchBootRelease,
   proveBootConfig,
+  proveBootFallback,
   recordBootConfig,
+  resolveBootConfig,
   resetConfigReleaseStateForTests,
   runningSourceCommit,
   type BootRelease,
@@ -936,6 +938,77 @@ describe('boot proof: a broken release at boot steps down the fallback chain', (
       failed_release_id: null,
     })
     expect(readFileSync(join(oc.state.dir, 'agents/kortix.md'), 'utf8')).toBe('PROMPT fixed\n')
+  })
+
+  test('DEF-4b: a restart after the quarantine proves the workspace config and steps down to the image default', async () => {
+    const boot = await brokenMain()
+    await bootOn(boot).run()
+    resetConfigReleaseStateForTests()
+
+    // The daemon restarts: the desired release is quarantined on this box.
+    const quarantined: Array<[string, string]> = []
+    const again = await fetchBootRelease({
+      cfg: cfg(),
+      api: client(),
+      root: store,
+      prepare: async () => undefined,
+      onQuarantined: (id, reason) => quarantined.push([id, reason]),
+    })
+    expect(again).toBeNull()
+    expect(quarantined.map(([id]) => id)).toEqual([boot.releaseId])
+    const choice = await resolveBootConfig({ cfg: cfg(), root: store, api: client() })
+    expect(choice.source).toBe('workspace')
+    recordBootConfig({ source: choice.source })
+    const oc = fakeOpencode()
+    served.dir = choice.dir
+    const spawned: string[] = []
+
+    const result = await proveBootFallback({
+      cfg: cfg(),
+      opencode: oc.opencode,
+      current: { dir: choice.dir, source: 'workspace' },
+      prior: {
+        reason: `release ${boot.releaseId.slice(0, 12)} is quarantined on this box: ${quarantined[0]![1]}`,
+        failedReleaseId: boot.releaseId,
+      },
+      root: store,
+      prepare: async () => undefined,
+      proofBudgetMs: 5_000,
+      proofOptions: { requestTimeoutMs: 300, hangLimit: 2, pollMs: 50 },
+      spawnOn: async (dir) => {
+        spawned.push(dir)
+        served.dir = dir
+      },
+    })
+
+    expect(result).toMatchObject({ source: 'image-default', proven: true, dir: defaultDir })
+    expect(spawned).toEqual([defaultDir])
+    const cause = 'ConfigJsonError in opencode.jsonc: InvalidSymbol at line 1, column 20'
+    expect(configReleaseReport()).toMatchObject({
+      source: 'image-default',
+      proven: true,
+      failed_release_id: boot.releaseId,
+      fallback_reason: `release ${boot.releaseId.slice(0, 12)} is quarantined on this box: ${cause}; workspace config failed: ${cause}`,
+    })
+  })
+
+  test('a healthy workspace boot is proven in place with no fallback reason', async () => {
+    const oc = fakeOpencode()
+    served.dir = join(work, DIR)
+    recordBootConfig({ source: 'workspace' })
+    const result = await proveBootFallback({
+      cfg: cfg(),
+      opencode: oc.opencode,
+      current: { dir: join(work, DIR), source: 'workspace' },
+      root: store,
+      prepare: async () => undefined,
+      proofBudgetMs: 5_000,
+      spawnOn: async () => {
+        throw new Error('no restart expected')
+      },
+    })
+    expect(result).toMatchObject({ source: 'workspace', proven: true })
+    expect(configReleaseReport()).toMatchObject({ source: 'workspace', fallback_reason: null, failed_release_id: null })
   })
 
   test('broken release with an intact last proven release → back on the proven release', async () => {

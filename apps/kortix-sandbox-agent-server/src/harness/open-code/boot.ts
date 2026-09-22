@@ -37,6 +37,7 @@ import {
   deliverGovernance,
   fetchBootRelease,
   proveBootConfig,
+  proveBootFallback,
   provenReleaseForEarlySpawn,
   recordBootConfig,
   resolveBootConfig,
@@ -291,8 +292,17 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
 
   // The desired release, fetched and extracted while the clone runs. The
   // descriptor wait is short: an early spawn on the hint waits for it.
+  let quarantinedAtBoot: { releaseId: string; reason: string } | null = null
   const bootReleasePromise: Promise<BootRelease | null> | null = releaseApi
-    ? fetchBootRelease({ cfg, api: releaseApi, mark: bootMark, descriptorTimeoutMs: BOOT_DESCRIPTOR_TIMEOUT_MS })
+    ? fetchBootRelease({
+        cfg,
+        api: releaseApi,
+        mark: bootMark,
+        descriptorTimeoutMs: BOOT_DESCRIPTOR_TIMEOUT_MS,
+        onQuarantined: (releaseId, reason) => {
+          quarantinedAtBoot = { releaseId, reason }
+        },
+      })
     : null
 
   // Every gateway session routes OpenCode through the localhost LLM proxy.
@@ -574,6 +584,41 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
       },
     }).catch((err) => {
       logger.error('[boot] the boot release proof failed to run', {
+        err: err instanceof Error ? err.message : String(err),
+      })
+    })
+  } else if (
+    !bootState.repoMaterializationError &&
+    !opencodeStartedFromCompiledConfig &&
+    activeConfig.source === 'workspace'
+  ) {
+    // A workspace boot is proven too: after a restart the desired release may
+    // be quarantined, and the workspace holds the same broken config. It steps
+    // down to the image default so the box becomes ready (verification DEF-4b).
+    const quarantined = quarantinedAtBoot as { releaseId: string; reason: string } | null
+    await proveBootFallback({
+      cfg,
+      opencode,
+      current: { dir: activeConfig.dir, source: 'workspace' },
+      prior: {
+        reason: [
+          quarantined
+            ? `release ${quarantined.releaseId.slice(0, 12)} is quarantined on this box: ${quarantined.reason}`
+            : null,
+          activeConfig.fallback_reason,
+        ]
+          .filter(Boolean)
+          .join('; ') || null,
+        failedReleaseId: quarantined?.releaseId ?? null,
+      },
+      mark: bootMark,
+      spawnOn: async (dir) => {
+        harness.configuration.reconfigure(cfg, dir, projectEnv)
+        await opencode.restart()
+        await opencode.waitForCurrentListening()
+      },
+    }).catch((err) => {
+      logger.error('[boot] the workspace config proof failed to run', {
         err: err instanceof Error ? err.message : String(err),
       })
     })

@@ -90,4 +90,13 @@ describe('boot from a config release', () => {
     // A compiled-config process never runs the fetched release.
     expect(BOOT).toContain('const bootRelease: BootRelease | null = opencodeStartedFromCompiledConfig')
   })
+
+  test('DEF-4b: a workspace boot is proven too, with the quarantined release as its prior reason', () => {
+    const proof = BOOT.indexOf('await proveBootFallback({')
+    const runtime = BOOT.indexOf('void startSessionRuntime(harness, cfg, bootState, bootMark)')
+    expect(proof).toBeGreaterThan(BOOT.indexOf('await proveBootConfig({'))
+    expect(runtime).toBeGreaterThan(proof)
+    expect(BOOT).toContain("activeConfig.source === 'workspace'")
+    expect(BOOT).toContain('quarantinedAtBoot = { releaseId, reason }')
+  })
 })
