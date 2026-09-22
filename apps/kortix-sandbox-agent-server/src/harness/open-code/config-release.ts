@@ -129,6 +129,22 @@ export function releaseGovernanceActive(): boolean {
 }
 
 /** Boot records what it spawned on. */
+/**
+ * Record why the box keeps its running config instead of release `releaseId`.
+ *
+ * Rule: the step that chose the running config (the boot proof or the
+ * fallback chain) saw every step down, so its reason is the most complete
+ * one. A later convergence that keeps the same running config for the SAME
+ * failed release re-derives only its own step ("is quarantined on this box",
+ * one candidate failure), so the existing reason stays. A different failed
+ * release, or no reason yet, takes the new reason. A proven release clears it.
+ */
+function recordKeptConfigFailure(releaseId: string, reason: string): void {
+  if (running.failed_release_id === releaseId && running.fallback_reason) return
+  running.failed_release_id = releaseId
+  running.fallback_reason = reason
+}
+
 export function recordBootConfig(next: Partial<RunningConfig> & Pick<RunningConfig, 'source'>): void {
   running = { ...INITIAL, ...next }
   sessionFilesFingerprint = null
@@ -458,8 +474,7 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
   // 4. Quarantined on this box: keep the running config.
   const quarantined = (await readQuarantine(root))[releaseId]
   if (quarantined) {
-    running.failed_release_id = releaseId
-    running.fallback_reason = `release ${releaseId.slice(0, 12)} is quarantined on this box: ${quarantined.reason}`
+    recordKeptConfigFailure(releaseId, `release ${releaseId.slice(0, 12)} is quarantined on this box: ${quarantined.reason}`)
     return respond('quarantined', null, running.fallback_reason)
   }
 
@@ -496,8 +511,7 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
   if (result.outcome === 'kept-old') {
     // 10. Keep the old process. Quarantine only a release whose candidate failed.
     if (result.candidateFailed) await quarantineRelease(root, releaseId, result.reason)
-    running.failed_release_id = releaseId
-    running.fallback_reason = result.reason
+    recordKeptConfigFailure(releaseId, result.reason)
     logger.warn('[config-release] release declined; the running config stays', { releaseId, reason: result.reason })
     return respond('declined', null, result.reason)
   }

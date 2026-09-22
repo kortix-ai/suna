@@ -940,6 +940,35 @@ describe('boot proof: a broken release at boot steps down the fallback chain', (
     expect(readFileSync(join(oc.state.dir, 'agents/kortix.md'), 'utf8')).toBe('PROMPT fixed\n')
   })
 
+  test('a later convergence on the same failed release keeps the step-down reason (the whole chain)', async () => {
+    // Rule: the step that chose the running config saw every step of the
+    // fallback chain, so its reason is the most complete one. A convergence
+    // that keeps the running config for the SAME failed release re-derives
+    // only its own step and keeps that reason. A different failed release
+    // replaces it; a proven release clears it.
+    const boot = await brokenMain()
+    const { oc, run } = bootOn(boot)
+    await run()
+    const chain =
+      `release ${boot.releaseId.slice(0, 12)} failed: ConfigJsonError in opencode.jsonc: InvalidSymbol at line 1, column 20; ` +
+      'workspace config failed: ConfigJsonError in opencode.jsonc: InvalidSymbol at line 1, column 20'
+    expect(configReleaseReport().fallback_reason).toBe(chain)
+
+    const again = await converge(oc)
+    expect(again.outcome).toBe('quarantined')
+    expect(again.config).toMatchObject({ failed_release_id: boot.releaseId, fallback_reason: chain })
+
+    // Another broken release is a new failure with its own reason.
+    write(origin, `${DIR}/opencode.jsonc`, '{ "default_agent": "kortix",,, STILL NOT JSON {{\n}\n')
+    commitAll(origin, 'still broken')
+    const second = baseRelease()
+    serveRelease(api, second)
+    const next = await converge(oc)
+    expect(next.config.failed_release_id).toBe(second.descriptor.release_id)
+    expect(next.config.fallback_reason).not.toBe(chain)
+    expect(next.config.fallback_reason).toContain('ConfigJsonError in opencode.jsonc')
+  })
+
   test('DEF-4b: a restart after the quarantine proves the workspace config and steps down to the image default', async () => {
     const boot = await brokenMain()
     await bootOn(boot).run()
