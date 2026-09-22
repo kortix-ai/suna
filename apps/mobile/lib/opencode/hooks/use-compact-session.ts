@@ -9,7 +9,6 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { opencodeFetch } from './use-opencode-data';
-import { platformKeys } from '@/lib/platform/hooks';
 import { getAuthToken } from '@/api/config';
 import { log } from '@/lib/logger';
 import { useCompactionStore } from '@/stores/compaction-store';
@@ -130,11 +129,9 @@ export function useCompactSession() {
     onError: (_err, { sessionId }) => {
       stopCompaction(sessionId);
     },
-    onSuccess: (sessionId) => {
-      // SSE session.compacted event handles message/session rehydration + stopCompaction.
-      // Invalidate as a safety net.
-      queryClient.invalidateQueries({ queryKey: platformKeys.sessionMessages(sessionId) });
-      queryClient.invalidateQueries({ queryKey: platformKeys.session(sessionId) });
-    },
+    // No invalidation here any more. This used to clear two react-query
+    // entries that held the session row and its messages; both are gone with
+    // the host session stack. The SDK's `session.compacted` handler rehydrates
+    // the transcript in its own store, which is now the only copy.
   });
 }
