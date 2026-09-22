@@ -1118,6 +1118,10 @@
         "pi_harness": {
           "name": "Pi 运行框架（沙箱内）",
           "description": "在会话沙箱内使用 Pi 运行框架而不是 OpenCode 来运行会话。关闭时，清单中的 `runtime: pi` 仍会选择 Pi。"
+        },
+        "agent_principal": {
+          "name": "代理作为主体",
+          "description": "代理以自身身份执行操作：使用其 Kortix 权限，并受其角色上限约束。运行代理的人只会提供自己的账户。"
         }
       }
     },
