@@ -21,6 +21,15 @@ linked, not inlined.
 
 ## Register
 
+### Never enumerate decrypted dotenv files to discover variable names (2026-09-22)
+
+**Rule:** Inspect encrypted dotenv key names from ciphertext or source schema.
+Never run an unscoped `dotenvx get`; it emits every decrypted value before a
+downstream text filter can redact it. **Incident:** a production environment
+discovery command printed the decrypted dotenv JSON into the private agent
+transcript. **Enforcement:** use `dotenvx get KEY -f FILE` only for one known
+key, and keep command output suppressed when only presence is required.
+
 ### Restore the original lifecycle state after every provider probe (2026-09-22)
 
 **Rule:** Record the provider state before a migration probe. On every exit,
