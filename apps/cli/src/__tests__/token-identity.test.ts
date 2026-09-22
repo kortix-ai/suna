@@ -217,6 +217,44 @@ describe('permission-denial identity footer', () => {
     expect(out).toContain('agents.osp-vision-route-agent.kortix_permissions');
   });
 
+  async function footerFor(detail: { code?: string; action?: string }): Promise<string> {
+    process.env.KORTIX_API_URL = 'https://api.kortix.com';
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
+    rememberTokenIdentity('kortix_pat_session', agentMe());
+    recordPermissionDenial(403, undefined, detail);
+    const cap = captureStderr();
+    try {
+      await printPermissionDenialIdentity();
+    } finally {
+      cap.restore();
+    }
+    return cap.output();
+  }
+
+  test('agent_scope_insufficient names the action and the manifest key to change', async () => {
+    const out = await footerFor({ code: 'agent_scope_insufficient', action: 'project.file.read' });
+    expect(out).toContain('project.file.read');
+    expect(out).toContain('agents.osp-vision-route-agent.kortix_permissions');
+  });
+
+  test('agent_ceiling_insufficient asks an admin to raise the agent role, never the manifest', async () => {
+    const out = await footerFor({ code: 'agent_ceiling_insufficient', action: 'project.file.read' });
+    expect(out).toMatch(/ask an admin/i);
+    expect(out).toContain('osp-vision-route-agent');
+    expect(out).not.toContain('kortix_permissions');
+  });
+
+  test('agent_human_only_action says a human must do it', async () => {
+    const out = await footerFor({ code: 'agent_human_only_action', action: 'project.delete' });
+    expect(out).toMatch(/a human must do this/i);
+    expect(out).not.toContain('kortix_permissions');
+  });
+
+  test('any other code keeps the existing manifest hint', async () => {
+    const out = await footerFor({ code: 'project_role_insufficient', action: 'project.file.read' });
+    expect(out).toContain('agents.osp-vision-route-agent.kortix_permissions');
+  });
+
   test('prints nothing when no call was refused', async () => {
     process.env.KORTIX_API_URL = 'https://api.kortix.com';
     process.env.KORTIX_TOKEN = 'kortix_pat_session';

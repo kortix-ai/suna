@@ -26,6 +26,16 @@ import { C } from './style.ts';
 interface RecordedDenial {
   status: number;
   hostArg?: string;
+  /** The server's verdict reason and action (spec 2026-09-22 §4). Absent on
+   *  an older server; the hint then falls back to the manifest remedy. */
+  code?: string;
+  action?: string;
+}
+
+/** The fields of a 403 body the hint reads. */
+export interface DenialDetail {
+  code?: string;
+  action?: string;
 }
 
 let denial: RecordedDenial | null = null;
@@ -35,12 +45,52 @@ let denial: RecordedDenial | null = null;
  * `surfaceApiError` is synchronous and resolving the identity may need a
  * request; the footer is emitted once, from the CLI's async tail.
  */
-export function recordPermissionDenial(status: number, hostArg?: string): void {
+export function recordPermissionDenial(status: number, hostArg?: string, detail?: DenialDetail): void {
   if (status !== 401 && status !== 403) return;
   // Keep the FIRST denial: a command that probes several projects reports the
   // one that actually stopped it, not the last probe to fail.
   if (denial) return;
-  denial = { status, ...(hostArg ? { hostArg } : {}) };
+  denial = {
+    status,
+    ...(hostArg ? { hostArg } : {}),
+    ...(typeof detail?.code === 'string' ? { code: detail.code } : {}),
+    ...(typeof detail?.action === 'string' ? { action: detail.action } : {}),
+  };
+}
+
+/** Pull `code` / `action` out of an API error body, if it carries them. */
+export function denialDetailFromBody(body: unknown): DenialDetail {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return {};
+  const record = body as Record<string, unknown>;
+  return {
+    ...(typeof record.code === 'string' ? { code: record.code } : {}),
+    ...(typeof record.action === 'string' ? { action: record.action } : {}),
+  };
+}
+
+/**
+ * The remedy line for an agent-session denial, chosen by the server's code.
+ * Only a grant miss is fixed in kortix.yaml; a ceiling miss is fixed by an
+ * admin; a human-only action is not an agent's at all.
+ */
+function agentFixLine(agent: string, pending: RecordedDenial): string {
+  const actionText = pending.action ? `${C.cyan}${pending.action}${C.reset}` : 'the action';
+  switch (pending.code) {
+    case 'agent_ceiling_insufficient':
+      return `${actionText} is outside agent ${C.bold}${agent}${C.reset}'s role — ask an admin to raise agent ${agent}'s role`;
+    case 'agent_human_only_action':
+      return `${actionText} is reserved for people — a human must do this`;
+    case 'agent_scope_insufficient':
+      return (
+        `add ${actionText} to ${C.cyan}agents.${agent}.kortix_permissions${C.reset}` +
+        `${C.dim} in kortix.yaml, then merge${C.reset}`
+      );
+    default:
+      return (
+        `add the action to ${C.cyan}agents.${agent}.kortix_permissions${C.reset}` +
+        `${C.dim} in kortix.yaml, then merge${C.reset}`
+      );
+  }
 }
 
 /** Test seam — clears state between cases. */
@@ -88,10 +138,7 @@ export async function printPermissionDenialIdentity(): Promise<void> {
   const lines = [`  ${C.dim}acting as ${C.reset}${C.bold}${tokenKindLabel(identity)}${C.reset}`];
   if (identity.agent) {
     lines.push(`  ${C.dim}granted   ${C.reset}${formatGrantList(identity.permissions)}`);
-    lines.push(
-      `  ${C.dim}fix       ${C.reset}add the action to ` +
-        `${C.cyan}agents.${identity.agent}.kortix_permissions${C.reset}${C.dim} in kortix.yaml, then merge${C.reset}`,
-    );
+    lines.push(`  ${C.dim}fix       ${C.reset}${agentFixLine(identity.agent, pending)}`);
   } else if (identity.userEmail) {
     lines.push(`  ${C.dim}user      ${C.reset}${identity.userEmail}`);
   }
