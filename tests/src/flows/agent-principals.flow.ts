@@ -868,6 +868,80 @@ flow(
         }
       });
       await enableFlag(ctx, world);
+    } finally {
+      if (appId) {
+        await world.owner.del('/v1/projects/:projectId/apps/:appId', { params: { projectId: project.id, appId } }).catch(() => {});
+      }
+      await world.close();
+    }
+  },
+);
+
+// ── AGP-13 — the App gate admits the listed agent, at the App's own host ────
+//
+// Split from AGP-9 because these steps need the App's PUBLIC hostname. Local
+// Apps answer under `*.apps.localhost`; a deployed preview has no DNS for its
+// Apps domain and runs the API in direct-edge mode, where `x-kortix-app-host`
+// is ignored. `requires: ['appHost']` states that instead of hiding it.
+flow(
+  'AGP-13',
+  {
+    domain: 'agent-principals',
+    requires: ['database', 'appHost'],
+    timeoutMs: 180_000,
+    routes: [
+      'PATCH /v1/projects/:projectId/features',
+      'POST /v1/projects/:projectId/apps',
+      'PATCH /v1/projects/:projectId/apps/:appId/access',
+      'GET /v1/projects/:projectId/apps/:appId/agents',
+      'DELETE /v1/projects/:projectId/apps/:appId',
+      'POST /v1/projects/:projectId/resource-grants',
+      'POST /v1/accounts/tokens',
+      'GET /v1/accounts/:accountId/iam/agent-identities',
+      'GET /v1/connectors/projects/:projectId/catalog',
+    ],
+  },
+  async (ctx) => {
+    const { team, project, world } = await governedWorld(ctx);
+    const human = await projectMember(team, project.id);
+    const appSlug = ctx.fixtures.name('dashboards').toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 50);
+    let appId = '';
+    let appUrl = '';
+    try {
+      await ctx.step('enable Apps; create an App restricted to the owner', async () => {
+        await world.setFeature('apps', true);
+        const created = await world.owner.post('/v1/projects/:projectId/apps', { slug: appSlug, name: 'Example Org dashboards' },
+          { params: { projectId: project.id } });
+        created.status(201);
+        appId = created.json<any>().app_id;
+        appUrl = created.json<any>().url;
+        const restricted = await world.owner.patch('/v1/projects/:projectId/apps/:appId/access',
+          { mode: 'restricted', member_ids: [ctx.P.OWNER.userId] },
+          { params: { projectId: project.id, appId } });
+        restricted.status(200).body().has('$.mode', 'restricted');
+      });
+      await ctx.step('commit `reporter` with apps [the App] and `bystander` without it; the human may run both', async () => {
+        await world.writeManifest(manifest({
+          reporter: { kortix_permissions: ['project.app.read'], apps: [appSlug] },
+          bystander: { kortix_permissions: ['project.app.read'] },
+        }));
+        await world.grantRun('reporter', human);
+        await world.grantRun('bystander', human);
+      });
+      await ctx.step('GET /apps/:appId/agents lists `reporter` (grant `listed`) and omits `bystander`', async () => {
+        const r = await world.owner.get('/v1/projects/:projectId/apps/:appId/agents',
+          { params: { projectId: project.id, appId } });
+        r.status(200);
+        const agents = r.json<{ agents: Array<{ agent_name: string; grant: string; path: string }> }>().agents;
+        const names = agents.map((a) => a.agent_name);
+        if (JSON.stringify(names) !== JSON.stringify(['reporter'])) {
+          throw new Error(`expected exactly [reporter], got ${JSON.stringify(agents)}`);
+        }
+        if (agents[0]!.grant !== 'listed' || !agents[0]!.path.endsWith('#agents.reporter')) {
+          throw new Error(`unexpected grant row ${JSON.stringify(agents[0])}`);
+        }
+      });
+      await enableFlag(ctx, world);
       const reporter = await world.mintAgentSession({ agent: 'reporter', launcher: human });
       const bystander = await world.mintAgentSession({ agent: 'bystander', launcher: human });
 
