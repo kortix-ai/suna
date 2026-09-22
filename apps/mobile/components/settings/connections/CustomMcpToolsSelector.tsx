@@ -2,6 +2,7 @@ import * as React from 'react';
 import { View, ScrollView, Pressable, ActivityIndicator, FlatList } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { Button } from '@/components/ui/button';
 import {
   ArrowLeftIcon as ArrowLeft,
   GlobeIcon as Globe,
@@ -13,13 +14,6 @@ import {
 import { log } from '@/lib/logger';
 import { useLanguage } from '@/contexts';
 import * as Haptics from 'expo-haptics';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring
-} from 'react-native-reanimated';
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 interface CustomMcpToolsContentProps {
   serverName: string;
@@ -381,41 +375,16 @@ const ContinueButton = React.memo(({
   disabled = false,
   label,
   isLoading = false,
-  rounded = 'full'
 }: ContinueButtonProps) => {
-  const scale = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const handlePressIn = React.useCallback(() => {
-    if (!disabled) {
-      scale.value = withSpring(0.97, { damping: 15, stiffness: 400 });
-    }
-  }, [scale, disabled]);
-
-  const handlePressOut = React.useCallback(() => {
-    scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-  }, [scale]);
-
   return (
-    <AnimatedPressable
-      onPress={onPress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      style={animatedStyle}
+    <Button
+      size="lg"
+      className="w-full rounded-full bg-foreground active:bg-foreground/90"
       disabled={disabled}
-      className={`w-full py-4 items-center rounded-full ${disabled ? 'bg-muted/20' : 'bg-foreground'
-        }`}
+      onPress={onPress}
     >
-      <View className="flex-row items-center gap-2">
-        {isLoading && <ActivityIndicator size="small" color="white" />}
-        <Text className={`text-base font-roobert-semibold ${disabled ? 'text-muted-foreground' : 'text-background'
-          }`}>
-          {label}
-        </Text>
-      </View>
-    </AnimatedPressable>
+      {isLoading && <ActivityIndicator size="small" color="white" />}
+      <Text className="text-background">{label}</Text>
+    </Button>
   );
 });

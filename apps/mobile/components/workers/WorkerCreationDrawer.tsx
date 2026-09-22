@@ -7,10 +7,11 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { View, TextInput, Alert, ScrollView, Pressable } from 'react-native';
+import { View, Alert, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
 import {
@@ -314,36 +315,14 @@ export function WorkerCreationDrawer({
 
             {/* Textarea */}
             <View className="mb-6">
-              <ScrollView
-                keyboardShouldPersistTaps="handled"
-                keyboardDismissMode="on-drag"
-                showsVerticalScrollIndicator={true}
-                style={{
-                  borderRadius: 16,
-                  borderWidth: 1.5,
-                  borderColor: colorScheme === 'dark' ? THEME.dark.border : THEME.light.border,
-                  backgroundColor: colorScheme === 'dark' ? THEME.dark.card : THEME.light.card,
-                  maxHeight: 200,
-                }}
-                contentContainerStyle={{
-                  padding: 16,
-                }}>
-                <TextInput
-                  value={chatDescription}
-                  onChangeText={setChatDescription}
-                  placeholder="e.g., A worker that monitors competitor prices and sends me daily reports..."
-                  placeholderTextColor={colorScheme === 'dark' ? THEME.dark.mutedForeground : THEME.light.mutedForeground}
-                  multiline
-                  scrollEnabled={false}
-                  style={{
-                    minHeight: 120,
-                    fontSize: 16,
-                    color: colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground,
-                    textAlignVertical: 'top',
-                  }}
-                  autoFocus
-                />
-              </ScrollView>
+              <Textarea
+                value={chatDescription}
+                onChangeText={setChatDescription}
+                placeholder="e.g., A worker that monitors competitor prices and sends me daily reports..."
+                numberOfLines={8}
+                className="min-h-[120px] text-base"
+                autoFocus
+              />
             </View>
 
             {/* Actions */}

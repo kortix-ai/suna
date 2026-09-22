@@ -20,7 +20,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { TextInput, View } from 'react-native';
+import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { CheckIcon as Check, CaretUpIcon as ChevronUp, MagnifyingGlassIcon as SearchIcon } from '@/lib/icons';
@@ -28,6 +28,7 @@ import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
+import { SheetTextInput } from '@/components/kortix/SheetInput';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import {
   useKortixProjects,
@@ -136,7 +137,6 @@ export function ProjectPicker() {
   const fgColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
   const mutedColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
   const selectedBg = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.05);
-  const inputBg = isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04);
   const dividerColor = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08);
   const pillBg = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.05);
 
@@ -208,34 +208,20 @@ export function ProjectPicker() {
               bleed through while scrolled. */}
           <View style={{ backgroundColor: bg }}>
 
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 8,
-                marginHorizontal: 20,
-                marginBottom: 10,
-                paddingHorizontal: 12,
-                paddingVertical: 8,
-                borderRadius: 10,
-                backgroundColor: inputBg,
-              }}
-            >
-              <Icon as={SearchIcon} size={14} color={mutedColor} />
-              <TextInput
+            <View style={{ marginHorizontal: 20, marginBottom: 10 }}>
+              <View
+                pointerEvents="none"
+                style={{ position: 'absolute', left: 14, top: 0, bottom: 0, justifyContent: 'center', zIndex: 1 }}
+              >
+                <Icon as={SearchIcon} size={14} color={mutedColor} />
+              </View>
+              <SheetTextInput
                 value={search}
                 onChangeText={setSearch}
                 placeholder="Search projects..."
-                placeholderTextColor={mutedColor}
                 autoCapitalize="none"
                 autoCorrect={false}
-                style={{
-                  flex: 1,
-                  color: fgColor,
-                  fontSize: 14,
-                  fontFamily: 'Roobert',
-                  padding: 0,
-                }}
+                style={{ height: 40, paddingLeft: 36 }}
               />
             </View>
           </View>

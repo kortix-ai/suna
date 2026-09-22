@@ -1,14 +1,10 @@
 import * as React from 'react';
-import { View, TextInput, Alert, Keyboard, ScrollView } from 'react-native';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-} from 'react-native-reanimated';
-import { Pressable } from 'react-native';
+import { View, Alert, Keyboard, ScrollView } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useAuthContext, useLanguage } from '@/contexts';
 import { useRouter } from 'expo-router';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { FloppyDiskIcon as Save, EnvelopeIcon as Mail, WarningIcon as AlertTriangle } from '@/lib/icons';
@@ -18,12 +14,8 @@ import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { ProfilePicture } from '@/components/settings/ProfilePicture';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { log } from '@/lib/logger';
-import { THEME } from '@/lib/utils/theme';
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export default function NameEditScreen() {
-  const { colorScheme } = useColorScheme();
   const { user } = useAuthContext();
   const { t } = useLanguage();
   const router = useRouter();
@@ -116,15 +108,14 @@ export default function NameEditScreen() {
             fallbackText={name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'}
           />
           <View className="mt-4 w-full">
-            <TextInput
+            <Input
               value={name}
               onChangeText={(text) => {
                 setName(text);
                 setError(null);
               }}
               placeholder={t('nameEdit.yourNamePlaceholder')}
-              placeholderTextColor={colorScheme === 'dark' ? THEME.dark.mutedForeground : THEME.light.mutedForeground}
-              className="text-[34px] font-roobert-semibold text-foreground text-center tracking-tight"
+              className="h-auto bg-transparent px-0 py-0 text-center text-[34px] font-roobert-semibold tracking-tight"
               editable={!isLoading}
               maxLength={100}
               autoCapitalize="words"
@@ -184,48 +175,20 @@ interface SaveButtonProps {
 function SaveButton({ onPress, disabled, isLoading }: SaveButtonProps) {
   const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
-  const scale = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const handlePressIn = () => {
-    if (!disabled) {
-      scale.value = withSpring(0.98, { damping: 15, stiffness: 400 });
-    }
-  };
-
-  const handlePressOut = () => {
-    scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-  };
 
   return (
-    <AnimatedPressable
-      onPress={onPress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      style={animatedStyle}
-      disabled={disabled}
-      className={`rounded-full items-center justify-center flex-row gap-2 px-6 py-4 ${
-        disabled ? 'bg-muted/50' : 'bg-primary'
-      }`}
-    >
+    <Button size="lg" className="rounded-full" disabled={disabled} onPress={onPress}>
       {isLoading ? (
         <>
           <KortixLoader size="small" forceTheme={colorScheme === 'dark' ? 'dark' : 'light'} />
-          <Text className="text-primary-foreground text-sm font-roobert-medium">
-            {t('nameEdit.saving')}
-          </Text>
+          <Text>{t('nameEdit.saving')}</Text>
         </>
       ) : (
         <>
           <Icon as={Save} size={16} className="text-primary-foreground" />
-          <Text className="text-primary-foreground text-sm font-roobert-medium">
-            {t('nameEdit.saveChanges')}
-          </Text>
+          <Text>{t('nameEdit.saveChanges')}</Text>
         </>
       )}
-    </AnimatedPressable>
+    </Button>
   );
 }

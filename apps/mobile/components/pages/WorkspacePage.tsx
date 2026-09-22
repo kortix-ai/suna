@@ -21,6 +21,7 @@ import {
 } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Text as RNText } from 'react-native';
+import { Button } from '@/components/ui/button';
 import {
   MagnifyingGlassIcon as Search,
   XIcon as X,
@@ -557,7 +558,7 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
                   {contentLabel}
                 </RNText>
               </View>
-              <CopyButton text={content} fg={fg} muted={muted} chipBg={chipBg} />
+              <CopyButton text={content} />
             </View>
             <View style={{ backgroundColor: cardBg, borderWidth: 1, borderColor, borderRadius: 12, padding: 14, maxHeight: 260 }}>
               <ScrollView nestedScrollEnabled showsVerticalScrollIndicator>
@@ -758,7 +759,7 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
 
 // ─── Small components ───────────────────────────────────────────────────────
 
-function CopyButton({ text, fg, muted, chipBg }: { text: string; fg: string; muted: string; chipBg: string }) {
+function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(async () => {
@@ -769,14 +770,9 @@ function CopyButton({ text, fg, muted, chipBg }: { text: string; fg: string; mut
   }, [text]);
 
   return (
-    <Pressable
-      onPress={handleCopy}
-      style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: chipBg, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 }}
-    >
-      {copied ? <Check size={12} color={fg} /> : <Copy size={12} color={muted} />}
-      <RNText style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: copied ? fg : muted }}>
-        {copied ? 'Copied' : 'Copy'}
-      </RNText>
-    </Pressable>
+    <Button variant="ghost" size="sm" onPress={handleCopy}>
+      <Icon as={copied ? Check : Copy} size={12} className="text-foreground" />
+      <Text>{copied ? 'Copied' : 'Copy'}</Text>
+    </Button>
   );
 }

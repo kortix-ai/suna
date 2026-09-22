@@ -4,10 +4,11 @@
  * Allows editing the system prompt/instructions for a worker
  */
 
-import React, { useState, useEffect, useRef } from 'react';
-import { View, TextInput, ScrollView, Keyboard } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Keyboard } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { Textarea } from '@/components/ui/textarea';
 import { useColorScheme } from 'nativewind';
 import { useAgent, useUpdateAgent } from '@/lib/agents/hooks';
 import { FloppyDiskIcon as Save, WarningCircleIcon as AlertCircle } from '@/lib/icons';
@@ -29,9 +30,6 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
   const [systemPrompt, setSystemPrompt] = useState('');
   const [hasChanges, setHasChanges] = useState(false);
   const { t } = useLanguage();
-
-  // TextInput ref to control focus manually
-  const inputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     if (agent?.system_prompt !== undefined) {
@@ -122,38 +120,13 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
 
       {/* Scrollable text input */}
       <View style={{ flex: 1, marginBottom: isEditable ? 84 : 0 }}>
-        <ScrollView
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          showsVerticalScrollIndicator={true}
-          style={{
-            flex: 1,
-            borderRadius: 16,
-            borderWidth: 1.5,
-            borderColor: colorScheme === 'dark' ? THEME.dark.border : THEME.light.border,
-            backgroundColor: colorScheme === 'dark' ? THEME.dark.card : THEME.light.card,
-            opacity: isEditable ? 1 : 0.6,
-          }}
-          contentContainerStyle={{
-            padding: 16,
-          }}>
-          <TextInput
-            ref={inputRef}
-            value={systemPrompt}
-            onChangeText={handleTextChange}
-            placeholder={t('workers.instructions.placeholder')}
-            placeholderTextColor={colorScheme === 'dark' ? THEME.dark.mutedForeground : THEME.light.mutedForeground}
-            multiline
-            scrollEnabled={false}
-            editable={isEditable}
-            style={{
-              fontSize: 16,
-              color: colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground,
-              textAlignVertical: 'top',
-              minHeight: 300,
-            }}
-          />
-        </ScrollView>
+        <Textarea
+          value={systemPrompt}
+          onChangeText={handleTextChange}
+          placeholder={t('workers.instructions.placeholder')}
+          editable={isEditable}
+          className="min-h-[300px] flex-1 text-base"
+        />
       </View>
 
       {/* Sticky Save Button */}

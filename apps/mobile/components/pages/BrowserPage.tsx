@@ -1,5 +1,5 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, View } from 'react-native';
 import { WebView, type WebViewNavigation } from 'react-native-webview';
 import { useColorScheme } from 'nativewind';
 import { haptics } from '@/lib/haptics';
@@ -13,6 +13,7 @@ import {
 } from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { Input } from '@/components/ui/input';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { getSandboxPortUrl } from '@/lib/platform/client';
 import { useTabStore, type PageTab } from '@/stores/tab-store';
@@ -21,7 +22,7 @@ import * as Linking from 'expo-linking';
 import { PageHeader } from '@/components/kortix/page-header';
 import { PageContent } from '@/components/kortix/page-content';
 import { ViewStyle } from 'react-native';
-import { THEME, withAlpha } from '@/lib/utils/theme';
+import { THEME } from '@/lib/utils/theme';
 import { allowBrowserNavigation } from '@/lib/utils/html-embed';
 
 interface BrowserPageProps {
@@ -176,7 +177,6 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
 
   const fgColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
   const mutedColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
-  const inputBg = withAlpha(fgColor, isDark ? 0.06 : 0.04);
 
   // URL bar + inline nav buttons, passed into PageHeader's title slot so
   // the browser toolbar inherits the standard `bg-muted` header chrome
@@ -191,29 +191,18 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
       </Pressable>
 
       <View
-        style={{
-          flex: 1,
-          flexDirection: 'row',
-          alignItems: 'center',
-          backgroundColor: inputBg,
-          height: 32,
-          maxHeight: 32,
-          borderRadius: 8,
-          paddingHorizontal: 10,
-          marginHorizontal: 4,
-          overflow: 'hidden',
-        }}
+        className="flex-1 flex-row items-center gap-1.5 rounded-lg bg-secondary px-2.5"
+        style={{ height: 32, maxHeight: 32, marginHorizontal: 4, overflow: 'hidden' }}
       >
         {!isLoading && <Icon as={Globe} size={12} style={{ color: mutedColor } as ViewStyle} />}
         {isLoading && <ActivityIndicator size={10} color={mutedColor} />}
-        <TextInput
+        <Input
           value={urlInput}
           onChangeText={setUrlInput}
           onFocus={() => { setIsEditing(true); setUrlInput(currentUrl); }}
           onBlur={() => setIsEditing(false)}
           onSubmitEditing={handleUrlSubmit}
           placeholder="Enter URL or port..."
-          placeholderTextColor={mutedColor}
           autoCapitalize="none"
           autoCorrect={false}
           keyboardType="url"
@@ -221,16 +210,7 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
           selectTextOnFocus
           numberOfLines={1}
           multiline={false}
-          style={{
-            flex: 1,
-            marginLeft: 6,
-            fontSize: 12,
-            fontFamily: 'Roobert',
-            color: fgColor,
-            paddingVertical: 0,
-            height: 32,
-            includeFontPadding: false,
-          }}
+          className="h-8 flex-1 rounded-none bg-transparent px-0 py-0 text-xs leading-4"
         />
       </View>
     </View>

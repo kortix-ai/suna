@@ -83,7 +83,7 @@ interface ChangesPageProps {
 
 const MONO = 'Menlo';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const shortRef = (ref: string) => (UUID_RE.test(ref) ? ref.slice(0, 8) : ref);
+export const shortRef = (ref: string) => (UUID_RE.test(ref) ? ref.slice(0, 8) : ref);
 const shortSha = (sha: string | null) => (sha ? sha.slice(0, 7) : '');
 
 function getStatusMeta(status: ChangeRequestStatus, isDark: boolean): { label: string; color: string; icon: AppIcon } {

@@ -7,9 +7,11 @@
  */
 
 import React from 'react';
-import { View, TextInput, Pressable, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Pressable, ActivityIndicator } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { InfoIcon as Info, PlusIcon as Plus, CheckIcon as Check, CheckCircleIcon as CheckCircle2 } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import { SelectableMarkdownText } from '@/components/kortix/selectable-markdown';
@@ -316,20 +318,10 @@ export function TriggerConfigStep({
                   }}>
                   {t('triggers.triggerName')} *
                 </Text>
-                <TextInput
+                <Input
                   value={triggerName}
                   onChangeText={onTriggerNameChange}
                   placeholder={`${app.name} → Worker`}
-                  placeholderTextColor={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground}
-                  style={{
-                    padding: 12,
-                    borderRadius: 12,
-                    borderWidth: 1.5,
-                    borderColor: isDark ? THEME.dark.border : THEME.light.border,
-                    backgroundColor: isDark ? THEME.dark.card : THEME.light.card,
-                    fontSize: 16,
-                    color: isDark ? THEME.dark.foreground : THEME.light.foreground,
-                  }}
                 />
               </View>
 
@@ -344,35 +336,13 @@ export function TriggerConfigStep({
                   }}>
                   {t('triggers.agentInstructions')} *
                 </Text>
-                <ScrollView
-                  keyboardShouldPersistTaps="handled"
-                  keyboardDismissMode="on-drag"
-                  showsVerticalScrollIndicator={true}
-                  style={{
-                    borderRadius: 12,
-                    borderWidth: 1.5,
-                    borderColor: isDark ? THEME.dark.border : THEME.light.border,
-                    backgroundColor: isDark ? THEME.dark.card : THEME.light.card,
-                    maxHeight: 200,
-                  }}
-                  contentContainerStyle={{
-                    padding: 12,
-                  }}>
-                  <TextInput
-                    value={agentPrompt}
-                    onChangeText={onAgentPromptChange}
-                    placeholder={t('triggers.instructionsPlaceholder')}
-                    placeholderTextColor={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground}
-                    multiline
-                    scrollEnabled={false}
-                    style={{
-                      minHeight: 120,
-                      fontSize: 16,
-                      color: isDark ? THEME.dark.foreground : THEME.light.foreground,
-                      textAlignVertical: 'top',
-                    }}
-                  />
-                </ScrollView>
+                <Textarea
+                  value={agentPrompt}
+                  onChangeText={onAgentPromptChange}
+                  placeholder={t('triggers.instructionsPlaceholder')}
+                  numberOfLines={8}
+                  className="min-h-[120px]"
+                />
                 <Text
                   className="font-roobert text-xs text-muted-foreground"
                   style={{ marginTop: 8 }}>

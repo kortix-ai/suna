@@ -3,18 +3,16 @@ import { View, ScrollView, Pressable, ActivityIndicator, Alert } from 'react-nat
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { ArrowLeftIcon as ArrowLeft, GlobeIcon as Globe, CheckCircleIcon as CheckCircle2, WarningCircleIcon as AlertCircle, InfoIcon as Info } from '@/lib/icons';
 import { useLanguage } from '@/contexts';
 import { useDiscoverCustomMcpTools, type CustomMcpResponse } from '@/hooks/useCustomMcp';
 import * as Haptics from 'expo-haptics';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { CustomMcpToolsSelector } from './CustomMcpToolsSelector';
 import { log } from '@/lib/logger';
 import { useColorScheme } from 'nativewind';
 import { THEME } from '@/lib/utils/theme';
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 interface CustomMcpDialogProps {
   open: boolean;
@@ -486,51 +484,26 @@ const ContinueButton = React.memo(
     rounded = 'full',
   }: ContinueButtonProps) => {
     const { colorScheme } = useColorScheme();
-    const scale = useSharedValue(1);
-
-    const animatedStyle = useAnimatedStyle(() => ({
-      transform: [{ scale: scale.value }],
-    }));
-
-    const handlePressIn = React.useCallback(() => {
-      if (!disabled) {
-        scale.value = withSpring(0.97, { damping: 15, stiffness: 400 });
-      }
-    }, [scale, disabled]);
-
-    const handlePressOut = React.useCallback(() => {
-      scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-    }, [scale]);
 
     return (
-      <AnimatedPressable
-        onPress={onPress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        style={animatedStyle}
+      <Button
+        size="lg"
+        className={`w-full ${rounded === 'full' ? 'rounded-full' : 'rounded-2xl'} bg-foreground active:bg-foreground/90`}
         disabled={disabled}
-        className={`w-full items-center py-4 ${rounded === 'full' ? 'rounded-full' : 'rounded-2xl'} ${
-          disabled ? 'bg-muted/20' : 'bg-foreground'
-        }`}>
-        <View className="flex-row items-center gap-2">
-          {/* The button fill is `bg-foreground`, which is near-black in light mode and
-              near-white in dark mode. A hardcoded white spinner vanished in dark mode.
-              `background` is the token that inverts with it, matching the label's
-              `text-background` below. */}
-          {isLoading && (
-            <ActivityIndicator
-              size="small"
-              color={colorScheme === 'dark' ? THEME.dark.background : THEME.light.background}
-            />
-          )}
-          <Text
-            className={`font-roobert-semibold text-base ${
-              disabled ? 'text-muted-foreground' : 'text-background'
-            }`}>
-            {label}
-          </Text>
-        </View>
-      </AnimatedPressable>
+        onPress={onPress}
+      >
+        {/* The button fill is `bg-foreground`, which is near-black in light mode and
+            near-white in dark mode. A hardcoded white spinner vanished in dark mode.
+            `background` is the token that inverts with it, matching the label's
+            `text-background` below. */}
+        {isLoading && (
+          <ActivityIndicator
+            size="small"
+            color={colorScheme === 'dark' ? THEME.dark.background : THEME.light.background}
+          />
+        )}
+        <Text className="text-background">{label}</Text>
+      </Button>
     );
   }
 );

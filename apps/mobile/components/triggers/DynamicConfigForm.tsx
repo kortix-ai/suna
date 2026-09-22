@@ -7,9 +7,10 @@
  */
 
 import React from 'react';
-import { View, TextInput } from 'react-native';
+import { View } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { InfoIcon as Info } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
@@ -32,9 +33,6 @@ export function DynamicConfigForm({ schema, value, onChange }: DynamicConfigForm
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const textColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
-  const mutedTextColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
-  const borderColor = isDark ? THEME.dark.border : THEME.light.border;
-  const bgColor = isDark ? THEME.dark.card : THEME.light.card;
   const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
 
   if (!schema || !schema.properties || Object.keys(schema.properties).length === 0) {
@@ -81,7 +79,7 @@ export function DynamicConfigForm({ schema, value, onChange }: DynamicConfigForm
             </Text>
 
             {type === 'number' || type === 'integer' ? (
-              <TextInput
+              <Input
                 value={current === '' ? '' : String(current)}
                 onChangeText={(text) => {
                   if (text === '') {
@@ -94,36 +92,16 @@ export function DynamicConfigForm({ schema, value, onChange }: DynamicConfigForm
                   }
                 }}
                 placeholder={examples[0] ? String(examples[0]) : ''}
-                placeholderTextColor={mutedTextColor}
                 keyboardType="numeric"
-                style={{
-                  padding: 12,
-                  borderRadius: 12,
-                  borderWidth: 1.5,
-                  borderColor,
-                  backgroundColor: bgColor,
-                  fontSize: 16,
-                  color: textColor,
-                }}
               />
             ) : type === 'array' ? (
-              <TextInput
+              <Input
                 value={Array.isArray(current) ? current.join(',') : String(current || '')}
                 onChangeText={(text) => {
                   const items = text.split(',').map((x) => x.trim()).filter(Boolean);
                   handleChange(items);
                 }}
                 placeholder={examples[0] ? String(examples[0]) : 'comma,separated,values'}
-                placeholderTextColor={mutedTextColor}
-                style={{
-                  padding: 12,
-                  borderRadius: 12,
-                  borderWidth: 1.5,
-                  borderColor,
-                  backgroundColor: bgColor,
-                  fontSize: 16,
-                  color: textColor,
-                }}
               />
             ) : type === 'boolean' ? (
               <View className="flex-row items-center gap-3">
@@ -136,20 +114,10 @@ export function DynamicConfigForm({ schema, value, onChange }: DynamicConfigForm
                 </Text>
               </View>
             ) : (
-              <TextInput
+              <Input
                 value={String(current || '')}
                 onChangeText={handleChange}
                 placeholder={examples[0] ? String(examples[0]) : ''}
-                placeholderTextColor={mutedTextColor}
-                style={{
-                  padding: 12,
-                  borderRadius: 12,
-                  borderWidth: 1.5,
-                  borderColor,
-                  backgroundColor: bgColor,
-                  fontSize: 16,
-                  color: textColor,
-                }}
               />
             )}
 

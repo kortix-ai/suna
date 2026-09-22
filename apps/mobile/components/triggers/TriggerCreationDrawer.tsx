@@ -7,9 +7,11 @@
  */
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { View, Pressable, TextInput, Alert, Image, ScrollView, Platform } from 'react-native';
+import { View, Pressable, Alert, Image, ScrollView, Platform } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
 import {
@@ -964,20 +966,10 @@ export function TriggerCreationDrawer({
                     }}>
                     {t('triggers.nameRequired')}
                   </Text>
-                  <TextInput
+                  <Input
                     value={triggerName}
                     onChangeText={setTriggerName}
                     placeholder={t('triggers.dailyAt9Am')}
-                    placeholderTextColor={colorScheme === 'dark' ? THEME.dark.mutedForeground : THEME.light.mutedForeground}
-                    style={{
-                      padding: 12,
-                      borderRadius: 12,
-                      borderWidth: 1.5,
-                      borderColor: colorScheme === 'dark' ? THEME.dark.border : THEME.light.border,
-                      backgroundColor: colorScheme === 'dark' ? THEME.dark.card : THEME.light.card,
-                      fontSize: 16,
-                      color: colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground,
-                    }}
                   />
                 </View>
 
@@ -1075,44 +1067,22 @@ export function TriggerCreationDrawer({
                       </View>
 
                       <View className="mt-4 flex-row items-center gap-4">
-                        <TextInput
+                        <Input
                           value={selectedHour}
                           onChangeText={setSelectedHour}
                           placeholder="09"
                           keyboardType="number-pad"
                           maxLength={2}
-                          placeholderTextColor={colorScheme === 'dark' ? THEME.dark.mutedForeground : THEME.light.mutedForeground}
-                          style={{
-                            width: 80,
-                            padding: 12,
-                            borderRadius: 12,
-                            borderWidth: 1.5,
-                            borderColor: colorScheme === 'dark' ? THEME.dark.border : THEME.light.border,
-                            backgroundColor: colorScheme === 'dark' ? THEME.dark.card : THEME.light.card,
-                            fontSize: 18,
-                            color: colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground,
-                            textAlign: 'center',
-                          }}
+                          className="w-20 text-center text-lg"
                         />
                         <Text className="text-2xl text-foreground">:</Text>
-                        <TextInput
+                        <Input
                           value={selectedMinute}
                           onChangeText={setSelectedMinute}
                           placeholder="00"
                           keyboardType="number-pad"
                           maxLength={2}
-                          placeholderTextColor={colorScheme === 'dark' ? THEME.dark.mutedForeground : THEME.light.mutedForeground}
-                          style={{
-                            width: 80,
-                            padding: 12,
-                            borderRadius: 12,
-                            borderWidth: 1.5,
-                            borderColor: colorScheme === 'dark' ? THEME.dark.border : THEME.light.border,
-                            backgroundColor: colorScheme === 'dark' ? THEME.dark.card : THEME.light.card,
-                            fontSize: 18,
-                            color: colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground,
-                            textAlign: 'center',
-                          }}
+                          className="w-20 text-center text-lg"
                         />
                       </View>
 
@@ -1150,22 +1120,11 @@ export function TriggerCreationDrawer({
 
                   {/* Advanced Cron Input */}
                   {scheduleMode === 'advanced' && (
-                    <TextInput
+                    <Input
                       value={cronExpression}
                       onChangeText={setCronExpression}
                       placeholder="0 9 * * 1-5"
-                      placeholderTextColor={colorScheme === 'dark' ? THEME.dark.mutedForeground : THEME.light.mutedForeground}
-                      style={{
-                        padding: 12,
-                        borderRadius: 12,
-                        borderWidth: 1.5,
-                        borderColor: colorScheme === 'dark' ? THEME.dark.border : THEME.light.border,
-                        backgroundColor: colorScheme === 'dark' ? THEME.dark.card : THEME.light.card,
-                        fontSize: 16,
-                        color: colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground,
-                        fontFamily: 'monospace',
-                        marginTop: 16,
-                      }}
+                      className="mt-4 font-mono"
                     />
                   )}
                 </View>
@@ -1181,35 +1140,13 @@ export function TriggerCreationDrawer({
                     }}>
                     {t('triggers.descriptionOptional')}
                   </Text>
-                  <ScrollView
-                    keyboardShouldPersistTaps="handled"
-                    keyboardDismissMode="on-drag"
-                    showsVerticalScrollIndicator={true}
-                    style={{
-                      borderRadius: 12,
-                      borderWidth: 1.5,
-                      borderColor: colorScheme === 'dark' ? THEME.dark.border : THEME.light.border,
-                      backgroundColor: colorScheme === 'dark' ? THEME.dark.card : THEME.light.card,
-                      maxHeight: 150,
-                    }}
-                    contentContainerStyle={{
-                      padding: 12,
-                    }}>
-                    <TextInput
-                      value={description}
-                      onChangeText={setDescription}
-                      placeholder={t('triggers.describePlaceholder')}
-                      placeholderTextColor={colorScheme === 'dark' ? THEME.dark.mutedForeground : THEME.light.mutedForeground}
-                      multiline
-                      scrollEnabled={false}
-                      style={{
-                        minHeight: 100,
-                        fontSize: 16,
-                        color: colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground,
-                        textAlignVertical: 'top',
-                      }}
-                    />
-                  </ScrollView>
+                  <Textarea
+                    value={description}
+                    onChangeText={setDescription}
+                    placeholder={t('triggers.describePlaceholder')}
+                    numberOfLines={6}
+                    className="min-h-[100px]"
+                  />
                 </View>
 
                 {/* Agent Instructions */}
@@ -1223,35 +1160,13 @@ export function TriggerCreationDrawer({
                     }}>
                     {t('triggers.instructionsRequired')}
                   </Text>
-                  <ScrollView
-                    keyboardShouldPersistTaps="handled"
-                    keyboardDismissMode="on-drag"
-                    showsVerticalScrollIndicator={true}
-                    style={{
-                      borderRadius: 12,
-                      borderWidth: 1.5,
-                      borderColor: colorScheme === 'dark' ? THEME.dark.border : THEME.light.border,
-                      backgroundColor: colorScheme === 'dark' ? THEME.dark.card : THEME.light.card,
-                      maxHeight: 200,
-                    }}
-                    contentContainerStyle={{
-                      padding: 12,
-                    }}>
-                    <TextInput
-                      value={agentPrompt}
-                      onChangeText={setAgentPrompt}
-                      placeholder={t('triggers.instructionsLabel')}
-                      placeholderTextColor={colorScheme === 'dark' ? THEME.dark.mutedForeground : THEME.light.mutedForeground}
-                      multiline
-                      scrollEnabled={false}
-                      style={{
-                        minHeight: 120,
-                        fontSize: 16,
-                        color: colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground,
-                        textAlignVertical: 'top',
-                      }}
-                    />
-                  </ScrollView>
+                  <Textarea
+                    value={agentPrompt}
+                    onChangeText={setAgentPrompt}
+                    placeholder={t('triggers.instructionsLabel')}
+                    numberOfLines={8}
+                    className="min-h-[120px]"
+                  />
                 </View>
               </View>
             )}

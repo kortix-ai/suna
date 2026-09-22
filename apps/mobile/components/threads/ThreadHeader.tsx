@@ -51,6 +51,8 @@ export function ThreadHeader({
   const [editedTitle, setEditedTitle] = React.useState(threadTitle || '');
   const [isUpdating, setIsUpdating] = React.useState(false);
   const [isActionsDrawerOpen, setIsActionsDrawerOpen] = React.useState(false);
+  // A raw `TextInput`, not `Input`: tapping the title must focus it via ref
+  // (`handleTitlePress` below), and `Input` is not `forwardRef`.
   const titleInputRef = React.useRef<TextInput>(null);
 
   const backScale = useSharedValue(1);

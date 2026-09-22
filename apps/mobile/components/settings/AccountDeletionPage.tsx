@@ -1,26 +1,20 @@
 import * as React from 'react';
 import { Pressable, View, Alert, ScrollView } from 'react-native';
-import Animated, { 
-  useAnimatedStyle, 
-  useSharedValue, 
-  withSpring 
-} from 'react-native-reanimated';
 import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { TrashIcon as Trash2, CalendarIcon as Calendar, XCircleIcon as XCircle, WarningIcon as AlertTriangle, CheckCircleIcon as CheckCircle } from '@/lib/icons';
 import { SettingsHeader } from './SettingsHeader';
 import * as Haptics from 'expo-haptics';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
-import { 
-  useAccountDeletionStatus, 
-  useRequestAccountDeletion, 
-  useCancelAccountDeletion 
+import {
+  useAccountDeletionStatus,
+  useRequestAccountDeletion,
+  useCancelAccountDeletion
 } from '@/hooks/useAccountDeletion';
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 interface AccountDeletionPageProps {
   visible: boolean;
@@ -288,65 +282,29 @@ interface ActionButtonProps {
 function ActionButton({ onPress, disabled, isLoading, icon: IconComponent, label, variant }: ActionButtonProps) {
   const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
-  const scale = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const handlePressIn = () => {
-    if (!disabled) {
-      scale.value = withSpring(0.98, { damping: 15, stiffness: 400 });
-    }
-  };
-
-  const handlePressOut = () => {
-    scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-  };
-
-  const bgClass = disabled
-    ? 'bg-muted/50'
-    : variant === 'destructive'
-      ? 'bg-destructive'
-      : 'bg-primary';
-
-  const textColor = disabled
-    ? 'text-muted-foreground'
-    : variant === 'destructive'
-      ? 'text-destructive-foreground'
-      : 'text-primary-foreground';
 
   return (
-    <AnimatedPressable
-      onPress={onPress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      style={animatedStyle}
+    <Button
+      variant={variant === 'destructive' ? 'destructive' : 'default'}
+      size="lg"
+      className="rounded-full"
       disabled={disabled}
-      className={`rounded-full items-center justify-center flex-row gap-2 px-6 py-4 ${bgClass}`}
+      onPress={onPress}
     >
       {isLoading ? (
         <>
-          <KortixLoader 
-            size="small" 
+          <KortixLoader
+            size="small"
             forceTheme={colorScheme === 'dark' ? 'dark' : 'light'}
           />
-          <Text className={`${textColor} text-sm font-roobert-medium`}>
-            {t('accountDeletion.processing')}
-          </Text>
+          <Text>{t('accountDeletion.processing')}</Text>
         </>
       ) : (
         <>
-          <Icon 
-            as={IconComponent} 
-            size={16} 
-            className={textColor} 
-          />
-          <Text className={`${textColor} text-sm font-roobert-medium`}>
-            {label}
-          </Text>
+          <Icon as={IconComponent} size={16} />
+          <Text>{label}</Text>
         </>
       )}
-    </AnimatedPressable>
+    </Button>
   );
 }

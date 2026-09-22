@@ -25,6 +25,7 @@ import {
 } from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { Button } from '@/components/ui/button';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import {
   getSandboxServices,
@@ -458,7 +459,6 @@ function ServiceCard({
               onPress={() => onAction(service, 'stop')}
               disabled={!!pendingAction}
               variant="destructive"
-              isDark={isDark}
             />
           ) : (
             <ActionButton
@@ -467,8 +467,6 @@ function ServiceCard({
               onPress={() => onAction(service, 'start')}
               disabled={!!pendingAction}
               variant="primary"
-              isDark={isDark}
-              themeColors={themeColors}
             />
           )}
 
@@ -479,7 +477,6 @@ function ServiceCard({
             onPress={() => onAction(service, 'restart')}
             disabled={!!pendingAction}
             variant="default"
-            isDark={isDark}
           />
 
           {/* Logs */}
@@ -489,7 +486,6 @@ function ServiceCard({
             onPress={() => onToggleLogs(service.id)}
             disabled={false}
             variant={showLogs ? 'active' : 'default'}
-            isDark={isDark}
           />
 
           <View className="flex-1" />
@@ -502,7 +498,6 @@ function ServiceCard({
               onPress={() => onAction(service, 'delete')}
               disabled={!!pendingAction}
               variant="ghost-destructive"
-              isDark={isDark}
             />
           )}
 
@@ -561,65 +556,34 @@ function ActionButton({
   onPress,
   disabled,
   variant,
-  isDark,
-  themeColors,
 }: {
   icon: any;
   label: string;
   onPress: () => void;
   disabled: boolean;
   variant: 'primary' | 'destructive' | 'default' | 'active' | 'ghost-destructive';
-  isDark: boolean;
-  themeColors?: { primary: string; primaryForeground: string };
 }) {
-  let bgColor: string;
-  let textColor: string;
-
-  const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
-  const foregroundColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
-  const mutedForegroundColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
-
-  switch (variant) {
-    case 'primary':
-      bgColor = themeColors?.primary ?? (isDark ? THEME.dark.foreground : THEME.light.primary);
-      textColor = themeColors?.primaryForeground ?? (isDark ? THEME.dark.primaryForeground : THEME.light.primaryForeground);
-      break;
-    case 'destructive':
-      bgColor = withAlpha(destructiveColor, isDark ? 0.12 : 0.1);
-      textColor = destructiveColor;
-      break;
-    case 'active':
-      bgColor = withAlpha(foregroundColor, isDark ? 0.1 : 0.08);
-      textColor = foregroundColor;
-      break;
-    case 'ghost-destructive':
-      bgColor = 'transparent';
-      textColor = withAlpha(destructiveColor, isDark ? 0.6 : 0.7);
-      break;
-    default:
-      bgColor = withAlpha(foregroundColor, isDark ? 0.06 : 0.04);
-      textColor = mutedForegroundColor;
-  }
+  const iconOnly = !label;
+  const buttonVariant =
+    variant === 'primary'
+      ? 'default'
+      : variant === 'destructive'
+        ? 'destructive'
+        : variant === 'active'
+          ? 'secondary'
+          : 'ghost';
+  const destructiveText = variant === 'ghost-destructive';
 
   return (
-    <Pressable
-      onPress={onPress}
+    <Button
+      variant={buttonVariant}
+      size={iconOnly ? 'icon-sm' : 'sm'}
+      className="rounded-full"
       disabled={disabled}
-      className="flex-row items-center rounded-full active:opacity-70"
-      style={{
-        backgroundColor: bgColor,
-        paddingHorizontal: label ? 12 : 8,
-        paddingVertical: 6,
-        opacity: disabled ? 0.5 : 1,
-        gap: label ? 4 : 0,
-      }}
+      onPress={onPress}
     >
-      <Icon as={IconComponent} size={12} color={textColor} />
-      {label ? (
-        <Text className="text-[11px] font-roobert-medium" style={{ color: textColor }}>
-          {label}
-        </Text>
-      ) : null}
-    </Pressable>
+      <Icon as={IconComponent} size={12} className={destructiveText ? 'text-destructive' : undefined} />
+      {label ? <Text className={destructiveText ? 'text-destructive' : undefined}>{label}</Text> : null}
+    </Button>
   );
 }

@@ -6,15 +6,17 @@
  */
 
 import React, { useState } from 'react';
-import { View, TextInput, ScrollView } from 'react-native';
+import { View, ScrollView } from 'react-native';
 import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { Input } from '@/components/ui/input';
 import { useColorScheme } from 'nativewind';
 import { getCronPresets, isValidCronExpression, formatCronExpression } from '@/lib/utils/trigger-utils';
 import { ClockIcon as Clock, CheckIcon as Check, WarningCircleIcon as AlertCircle } from '@/lib/icons';
 import * as Haptics from 'expo-haptics';
 import { THEME, withAlpha } from '@/lib/utils/theme';
+import { cn } from '@/lib/utils/index';
 
 interface CronExpressionPickerProps {
   value?: string;
@@ -138,24 +140,13 @@ export function CronExpressionPicker({
           </Text>
           
           <View style={{ position: 'relative' }}>
-            <TextInput
+            <Input
               value={customCron}
               onChangeText={handleCustomCronChange}
               placeholder="0 9 * * 1-5"
-              placeholderTextColor={mutedTextColor}
-              style={{
-                paddingHorizontal: 16,
-                paddingVertical: 16,
-                borderRadius: 16,
-                borderWidth: 1.5,
-                borderColor: error || !isValid ? destructiveColor : borderColor,
-                backgroundColor: error || !isValid ? withAlpha(destructiveColor, 0.1) : bgColor,
-                fontFamily: 'monospace',
-                fontSize: 16,
-                color: textColor,
-              }}
               autoCapitalize="none"
               autoCorrect={false}
+              className={cn('pr-10 font-mono', (error || !isValid) && 'bg-destructive/10')}
             />
 
             {customCron && (

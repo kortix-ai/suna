@@ -12,7 +12,7 @@
  */
 
 import React, { useMemo, useState } from 'react';
-import { View, ScrollView, ActivityIndicator, TextInput, Alert } from 'react-native';
+import { View, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation } from '@tanstack/react-query';
@@ -21,6 +21,7 @@ import { CopyIcon as Copy, CheckIcon as Check, UserPlusIcon as UserPlus, GithubL
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
+import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/kortix/page-header';
 import { PageContent } from '@/components/kortix/page-content';
 import { useThemeColors } from '@/lib/theme-colors';
@@ -171,15 +172,14 @@ function RepoAccessForm({ projectId, isDark }: { projectId: string; isDark: bool
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
       <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, height: 44, borderRadius: 11, borderWidth: 1, borderColor: border, backgroundColor: inputBg, paddingHorizontal: 12 }}>
         <Github size={15} color={muted} />
-        <TextInput
+        <Input
           value={username}
           onChangeText={setUsername}
           placeholder="Your GitHub username"
-          placeholderTextColor={muted}
           autoCapitalize="none"
           autoCorrect={false}
           spellCheck={false}
-          style={{ flex: 1, fontSize: 14, color: fg, fontFamily: 'Roobert', padding: 0 }}
+          className="h-auto flex-1 bg-transparent px-0 py-0 text-sm"
         />
       </View>
       <Button

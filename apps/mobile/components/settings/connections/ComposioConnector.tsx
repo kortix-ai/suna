@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { BottomSheetFlatList, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { Text } from '@/components/ui/text';
+import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import {
   ArrowLeftIcon as ArrowLeft,
@@ -1083,15 +1084,15 @@ const ContinueButton = React.memo(
     rounded = 'full',
   }: ContinueButtonProps) => {
     return (
-      <Pressable
-        onPress={onPress}
+      <Button
+        size="lg"
+        className={rounded === 'full' ? 'rounded-full' : 'rounded-2xl'}
         disabled={disabled}
-        className={`flex-row items-center justify-center gap-2 rounded-xl p-4 ${
-          disabled ? 'bg-primary/50 opacity-50' : 'bg-primary active:opacity-80'
-        }`}>
+        onPress={onPress}
+      >
         {isLoading ? <ActivityIndicator size="small" color="white" /> : null}
-        <Text className="font-roobert-semibold text-base text-primary-foreground">{label}</Text>
-      </Pressable>
+        <Text>{label}</Text>
+      </Button>
     );
   }
 );

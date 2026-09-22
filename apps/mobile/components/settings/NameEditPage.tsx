@@ -1,15 +1,11 @@
 import * as React from 'react';
 import { Pressable, View, Alert, Keyboard, ScrollView, type TextInput } from 'react-native';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring
-} from 'react-native-reanimated';
 import { useColorScheme } from 'nativewind';
 import { useAuthContext, useLanguage } from '@/contexts';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { FloppyDiskIcon as Save, EnvelopeIcon as Mail, WarningIcon as AlertTriangle } from '@/lib/icons';
 import { SettingsHeader } from './SettingsHeader';
 import { supabase } from '@/api/supabase';
@@ -18,8 +14,6 @@ import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { ProfilePicture } from './ProfilePicture';
 import { log } from '@/lib/logger';
 
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-  
 interface NameEditPageProps {
   visible: boolean;
   currentName: string;
@@ -243,59 +237,24 @@ interface SaveButtonProps {
 function SaveButton({ onPress, disabled, isLoading, hasChanges }: SaveButtonProps) {
   const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
-  const scale = useSharedValue(1);
-  
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-  
-  const handlePressIn = () => {
-    if (!disabled) {
-      scale.value = withSpring(0.98, { damping: 15, stiffness: 400 });
-    }
-  };
-  
-  const handlePressOut = () => {
-    scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-  };
-  
+
   if (!hasChanges && !isLoading) {
     return null;
   }
-  
+
   return (
-    <AnimatedPressable
-      onPress={onPress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      style={animatedStyle}
-      disabled={disabled}
-      className={`rounded-full items-center justify-center flex-row gap-2 px-6 py-4 ${
-        disabled ? 'bg-muted/50' : 'bg-primary'
-      }`}
-    >
+    <Button size="lg" className="rounded-full" disabled={disabled} onPress={onPress}>
       {isLoading ? (
         <>
-          <KortixLoader 
-            size="small" 
-            forceTheme={colorScheme === 'dark' ? 'dark' : 'light'}
-          />
-          <Text className="text-primary-foreground text-sm font-roobert-medium">
-            {t('nameEdit.saving')}
-          </Text>
+          <KortixLoader size="small" forceTheme={colorScheme === 'dark' ? 'dark' : 'light'} />
+          <Text>{t('nameEdit.saving')}</Text>
         </>
       ) : (
         <>
-          <Icon 
-            as={Save} 
-            size={16} 
-            className="text-primary-foreground" 
-          />
-          <Text className="text-primary-foreground text-sm font-roobert-medium">
-            {t('nameEdit.saveChanges')}
-          </Text>
+          <Icon as={Save} size={16} className="text-primary-foreground" />
+          <Text>{t('nameEdit.saveChanges')}</Text>
         </>
       )}
-    </AnimatedPressable>
+    </Button>
   );
 }
