@@ -15,6 +15,7 @@ export const SHOW_XLSX_EXT_RE = /\.xlsx?$/i;
 export const SHOW_DOCX_EXT_RE = /\.docx$/i;
 export const SHOW_PPTX_EXT_RE = /\.(pptx|ppt)$/i;
 export const SHOW_HTML_EXT_RE = /\.(html?|htm)$/i;
+export const SHOW_MERMAID_EXT_RE = /\.(mmd|mermaid)$/i;
 
 /** Auto-detect file category from extension — used when type='file'. */
 export function getShowFileCategory(filePath: string): string {
@@ -27,6 +28,7 @@ export function getShowFileCategory(filePath: string): string {
   if (SHOW_DOCX_EXT_RE.test(filePath)) return 'docx';
   if (SHOW_PPTX_EXT_RE.test(filePath)) return 'pptx';
   if (SHOW_HTML_EXT_RE.test(filePath)) return 'html-file';
+  if (SHOW_MERMAID_EXT_RE.test(filePath)) return 'mermaid';
   return 'file';
 }
 
@@ -46,6 +48,7 @@ const RICH_SHOW_CATEGORIES = new Set([
   'docx',
   'pptx',
   'html-file',
+  'mermaid',
 ]);
 
 /**
@@ -59,7 +62,7 @@ const TEXTISH_SHOW_TYPES = new Set(['file', 'text', 'markdown', 'code']);
  * Resolve the effective render type for a show item.
  *
  * - When the declared `type` is textish AND the `path` extension maps to a rich
- *   category (image/video/audio/pdf/csv/xlsx/docx/pptx/html-file), the
+ *   category (image/video/audio/pdf/csv/xlsx/docx/pptx/html-file/mermaid), the
  *   extension wins.
  * - `type: 'file'` keeps its existing auto-detect behaviour (a bare `file` with
  *   no rich extension stays `file`, so it still routes to the generic file
@@ -96,7 +99,7 @@ export function resolveShowType(type: string, path: string): string {
  * detection and binary fallback, so it is always the right destination.
  *
  * Call this only AFTER the rich branches (image/video/audio/pdf/csv/xlsx/
- * docx/pptx/html) have had their turn — those have real viewers of their own
+ * docx/pptx/html/mermaid) have had their turn — those have real viewers of their own
  * and must keep them.
  */
 export function shouldRenderFromSandboxFile(sandboxPath: string | null, content: string): boolean {
