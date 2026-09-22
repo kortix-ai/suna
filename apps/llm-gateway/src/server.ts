@@ -115,9 +115,7 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
   const gateway = createGateway(
     {
       authenticate: api.authenticate,
-      // Combined gate: one RPC for auth + billing + budget on the chat hot path
-      // (vs three sequential round-trips). authenticate/assertBillingActive/
-      // assertBudget remain for the /models path and the interface contract.
+      // Combined authentication + budget gate. Billing runs after model resolution.
       authorize: api.authorize,
       resolveRoute: api.resolveRoute,
       resolveUpstream: api.resolveUpstream,

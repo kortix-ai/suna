@@ -309,8 +309,8 @@ export async function runProjectMaintenance(): Promise<void> {
         return { listed: 0, orphans: 0, stopped: 0, errors: 0 };
       }),
       sweepExpiredSessionBranches(),
-      // Billing v2 — partial-bill any active compute sessions that haven't
-      // settled in > 1h, so a missed stop hook can't accrue uncharged compute.
+      // Partial-bill active compute once its window reaches the maintenance
+      // interval, so running-session charges appear before the stop hook.
       // Also reconciles `active` sandboxes left with no open compute row (the
       // close-without-reopen defect — see reconcileMissingComputeSessions).
       tickRunningComputeCharges().catch((err) => {

@@ -22,8 +22,7 @@ export interface GatewayLogRow {
   cached_tokens: number;
   cache_write_tokens: number;
   /**
-   * What Kortix debited from your wallet — managed inference, or the platform
-   * fee on a BYOK route.
+   * What Kortix debited from your wallet. Current BYOK requests always report 0.
    */
   kortix_cost: number;
   /**
@@ -63,8 +62,7 @@ export interface GatewayOverview {
   /** Total LLM spend in the window: `kortix_cost + provider_cost`. */
   total_cost: number;
   /**
-   * What Kortix debited from your wallet — managed inference, or the platform
-   * fee on a BYOK route.
+   * What Kortix debited from your wallet. Current BYOK requests always report 0.
    */
   kortix_cost: number;
   /**
@@ -84,8 +82,7 @@ export interface GatewaySeriesPoint {
   /** Total LLM spend on this day: `kortix_cost + provider_cost`. */
   cost: number;
   /**
-   * What Kortix debited from your wallet — managed inference, or the platform
-   * fee on a BYOK route.
+   * What Kortix debited from your wallet. Current BYOK requests always report 0.
    */
   kortix_cost: number;
   /**
@@ -124,8 +121,7 @@ export interface GatewayModelStat {
   /** Total spend on this model: `kortix_cost + provider_cost`. */
   cost: number;
   /**
-   * What Kortix debited from your wallet — managed inference, or the platform
-   * fee on a BYOK route.
+   * What Kortix debited from your wallet. Current BYOK requests always report 0.
    */
   kortix_cost: number;
   /**

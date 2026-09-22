@@ -125,8 +125,9 @@ describe('ApiClient', () => {
   });
 
   test('assertBillingActive throws when inactive', async () => {
-    const c = client(async () => jsonResponse({ active: false, message: 'no subscription' }));
-    await expect(c.assertBillingActive('a1')).rejects.toThrow('no subscription');
+    const c = client(async () => jsonResponse({ active: false, reason: 'insufficient_credits', message: 'no credits' }));
+    const error = await c.assertBillingActive('a1').catch((caught) => caught);
+    expect(error).toMatchObject({ message: 'no credits', reason: 'insufficient_credits' });
   });
 
   test('assertBillingActive resolves when active', async () => {
@@ -228,12 +229,15 @@ describe('ApiClient', () => {
 
   test('authorize returns the combined gate result (ok)', async () => {
     let seenPath: string | undefined;
-    const c = client(async (url) => {
+    let seenBody: unknown;
+    const c = client(async (url, init) => {
       seenPath = new URL(url).pathname;
+      seenBody = JSON.parse(String(init?.body));
       return jsonResponse({ ok: true, principal });
     });
     const result = await c.authorize('tok');
     expect(seenPath).toBe('/internal/gateway/authorize');
+    expect(seenBody).toEqual({ token: 'tok', deferBilling: true });
     expect(result).toEqual({ ok: true, principal });
   });
 
