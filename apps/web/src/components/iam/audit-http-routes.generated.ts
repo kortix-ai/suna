@@ -117,6 +117,8 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "POST|v1|accounts|:accountId|iam|service-accounts",
   "DELETE|v1|accounts|:accountId|iam|service-accounts|:saId",
   "POST|v1|accounts|:accountId|iam|service-accounts|:saId|disable",
+  "GET|v1|accounts|:accountId|iam|session-oversight",
+  "PATCH|v1|accounts|:accountId|iam|session-oversight",
   "GET|v1|accounts|:accountId|iam|session-policy",
   "PATCH|v1|accounts|:accountId|iam|session-policy",
   "GET|v1|accounts|:accountId|iam|sessions",

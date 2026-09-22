@@ -424,11 +424,16 @@ describe('the composer submits through the latch', () => {
       'controller: promptAttachments, active: activeSubmissionIdsRef.current, send: () => onSend(trimmed, filesToSend, mentionsToSend, attachmentSubmission, placement),',
     );
     const failed = send.slice(send.indexOf('onFailed: () => {')).replace(/\s+/g, ' ');
-    // A refused send saves the restored draft again, only where Send clears the draft. Project
-    // home (`clearOnSend={false}`) keeps it in the editor, and a connector-gate Retry that sends
-    // it must not bring it back as a saved draft.
+    // Both recovery calls read `reset.clear` — what the composer ACTUALLY did to
+    // itself — not the raw `clearOnSend` prop. `'text-only'` (project home) is a
+    // truthy value that clears the box but revokes nothing, so a prop-keyed
+    // recovery returned `null` there and a refused send kept an empty box with
+    // no draft to get back. A composer that never cleared (`false`) still skips
+    // both: its draft is on screen, and a connector-gate Retry sending it later
+    // must not resurrect it as a saved draft.
+    expect(failed).toContain('clearOnSend: reset.clear,');
     expect(failed).toContain(
-      'if (clearOnSend && restoredDoc) handleDocChange(restoredDoc, editorRef.current?.isEmpty() ?? true);',
+      'if (reset.clear && restoredDoc) handleDocChange(restoredDoc, editorRef.current?.isEmpty() ?? true);',
     );
     // The tray shows the refused files again: the sent cache lets go of their pictures, unrevoked.
     expect(failed).toContain('disownSentAttachmentPreviews(sentFiles);');

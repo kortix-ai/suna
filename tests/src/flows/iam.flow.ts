@@ -17,6 +17,7 @@
  */
 import { flow } from '../core/flow';
 import { enableEnterpriseDemo } from '../fixtures/enterprise-demo';
+import { createDatabaseSession } from '../fixtures/database-project';
 
 // ─── Groups ──────────────────────────────────────────────────────────────
 
@@ -1837,6 +1838,175 @@ flow(
         .as(ctx.P.NONMEMBER)
         .get('/v1/accounts/:accountId/iam/resource-grants', { params: { accountId: team.id } });
       r.status(403);
+    });
+  },
+);
+
+// ── IAM-40: account session oversight ────────────────────────────────────────
+// One owner-controlled account policy: while it is on, account owners and
+// admins open EVERY session in the account, members' private ones included.
+// Off by default. Plain members never gain anything from it. Every flip and
+// every read that only the policy allowed is audited.
+flow(
+  'IAM-40',
+  {
+    domain: 'iam',
+    routes: [
+      'GET /v1/accounts/:accountId/iam/session-oversight',
+      'PATCH /v1/accounts/:accountId/iam/session-oversight',
+      'GET /v1/projects/:projectId/sessions',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'GET /v1/accounts/:accountId/audit',
+    ],
+    timeoutMs: 240_000,
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const project = await team.project();
+    const admin = await team.addMember('admin');
+    const author = await team.addMember('member');
+    const bystander = await team.addMember('member');
+    if (!author.userId || !bystander.userId) throw new Error('IAM-40 member fixtures have no user id');
+    await team.grantProjectRole(project.id, author.userId, 'user');
+    await team.grantProjectRole(project.id, bystander.userId, 'user');
+
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const asAdmin = ctx.client.as(admin);
+    const asBystander = ctx.client.as(bystander);
+    const accountParams = { accountId: team.id };
+
+    // The author's private session: the one oversight exists to reach.
+    const privateSessionId = await createDatabaseSession(ctx.env, {
+      projectId: project.id,
+      accountId: team.id,
+      userId: author.userId,
+      visibility: 'private',
+    });
+
+    const readSession = (as: typeof owner) =>
+      as.get('/v1/projects/:projectId/sessions/:sessionId', {
+        params: { projectId: project.id, sessionId: privateSessionId },
+      });
+    const inventoryIds = async (as: typeof owner, scope?: 'project') => {
+      const r = await as.get('/v1/projects/:projectId/sessions', {
+        params: { projectId: project.id },
+        ...(scope ? { query: { scope } } : {}),
+      });
+      r.status(200);
+      const body = r.json<unknown>();
+      const rows = (Array.isArray(body) ? body : (body as { sessions?: unknown[] }).sessions ?? []) as Array<{
+        session_id: string;
+      }>;
+      return new Set(rows.map((row) => row.session_id));
+    };
+    // A flip clears the verdict cache on the replica that wrote it; another
+    // replica converges within the 15 s IAM cache window. Poll past it.
+    const eventually = async (label: string, check: () => Promise<boolean>) => {
+      const deadline = Date.now() + 25_000;
+      while (Date.now() < deadline) {
+        if (await check()) return;
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
+      }
+      throw new Error(`IAM-40: ${label} did not hold within 25 s`);
+    };
+
+    await ctx.step('the policy is off by default; only the owner may change it', async () => {
+      const asOwner = await owner.get('/v1/accounts/:accountId/iam/session-oversight', { params: accountParams });
+      asOwner.status(200).body().has('$.enabled', false).has('$.can_change', true);
+      const asAdminRead = await asAdmin.get('/v1/accounts/:accountId/iam/session-oversight', { params: accountParams });
+      asAdminRead.status(200).body().has('$.enabled', false).has('$.can_change', false);
+      const asMemberRead = await asBystander.get('/v1/accounts/:accountId/iam/session-oversight', {
+        params: accountParams,
+      });
+      asMemberRead.status(200).body().has('$.enabled', false).has('$.can_change', false);
+    });
+
+    await ctx.step('with the policy off, an admin can neither open nor list a member\'s private session', async () => {
+      (await readSession(asAdmin)).status(404);
+      if ((await inventoryIds(asAdmin, 'project')).has(privateSessionId)) {
+        throw new Error('manager inventory listed a private session while oversight is off');
+      }
+    });
+
+    await ctx.step('an admin cannot turn the policy on for themselves (403 account_owner_required)', async () => {
+      const r = await asAdmin.patch('/v1/accounts/:accountId/iam/session-oversight', { enabled: true }, {
+        params: accountParams,
+      });
+      r.status(403).body().has('$.code', 'account_owner_required');
+      const readBack = await owner.get('/v1/accounts/:accountId/iam/session-oversight', { params: accountParams });
+      readBack.status(200).body().has('$.enabled', false);
+    });
+
+    await ctx.step('a plain member cannot change the policy (403)', async () => {
+      const r = await asBystander.patch('/v1/accounts/:accountId/iam/session-oversight', { enabled: true }, {
+        params: accountParams,
+      });
+      r.status(403);
+    });
+
+    await ctx.step('a PATCH without an explicit boolean is refused (400) and changes nothing', async () => {
+      const r = await owner.patch('/v1/accounts/:accountId/iam/session-oversight', {}, { params: accountParams });
+      r.status(400);
+      const readBack = await owner.get('/v1/accounts/:accountId/iam/session-oversight', { params: accountParams });
+      readBack.status(200).body().has('$.enabled', false);
+    });
+
+    await ctx.step('the owner turns the policy on; read-back reports it on', async () => {
+      const r = await owner.patch('/v1/accounts/:accountId/iam/session-oversight', { enabled: true }, {
+        params: accountParams,
+      });
+      r.status(200).body().has('$.enabled', true);
+      const readBack = await asBystander.get('/v1/accounts/:accountId/iam/session-oversight', {
+        params: accountParams,
+      });
+      readBack.status(200).body().has('$.enabled', true);
+    });
+
+    await ctx.step('with the policy on, the admin opens the private session and finds it in the Sessions inventory', async () => {
+      await eventually('admin opens the private session', async () => (await readSession(asAdmin)).statusCode === 200);
+      (await readSession(asAdmin)).status(200).body().has('$.session_id', privateSessionId);
+      if (!(await inventoryIds(asAdmin, 'project')).has(privateSessionId)) {
+        throw new Error('manager inventory did not list the private session while oversight is on');
+      }
+    });
+
+    await ctx.step('the policy never widens the admin\'s default sidebar list', async () => {
+      if ((await inventoryIds(asAdmin)).has(privateSessionId)) {
+        throw new Error('default session list exposed another member\'s private session');
+      }
+    });
+
+    await ctx.step('a plain member still cannot open another member\'s private session', async () => {
+      (await readSession(asBystander)).status(404);
+    });
+
+    await ctx.step('the audit log records the flip and the oversight read', async () => {
+      const actions = async () => {
+        const r = await owner.get('/v1/accounts/:accountId/audit', {
+          params: accountParams,
+          query: { limit: '200' },
+        });
+        r.status(200);
+        return r.json<{ events: Array<{ action: string; resource_id?: string | null }> }>().events;
+      };
+      await eventually('audit rows present', async () => {
+        const events = await actions();
+        return (
+          events.some((e) => e.action === 'iam.session_oversight.enable') &&
+          events.some((e) => e.action === 'project.admin_oversight_session_read' && e.resource_id === privateSessionId)
+        );
+      });
+    });
+
+    await ctx.step('the owner turns the policy off; the admin loses access again', async () => {
+      const r = await owner.patch('/v1/accounts/:accountId/iam/session-oversight', { enabled: false }, {
+        params: accountParams,
+      });
+      r.status(200).body().has('$.enabled', false);
+      await eventually('admin refused again', async () => (await readSession(asAdmin)).statusCode === 404);
+      if ((await inventoryIds(asAdmin, 'project')).has(privateSessionId)) {
+        throw new Error('manager inventory still listed the private session after oversight was turned off');
+      }
     });
   },
 );

@@ -239,7 +239,12 @@ flow(
            tier = 'free'`,
         [team.id],
       );
-      const project = await team.project();
+      // `managedGit: true` is load-bearing. With the `database` capability a
+      // plain `project()` is database-only, and `session()` then writes the
+      // session row directly: no session create, no sandbox, no compute window.
+      // Every preview failed here with `no sandbox_compute_sessions row opened:
+      // []` after 240 s — `[]` is the absent `session_sandboxes` row.
+      const project = await team.project({ managedGit: true });
       const session = await ctx.fixtures.session(project);
 
       await ctx.step('the session account carries the legacy default on the free tier', async () => {

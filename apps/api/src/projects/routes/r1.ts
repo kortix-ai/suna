@@ -425,7 +425,7 @@ projectsApp.openapi(
     // here on purpose — /provision's response shape is depended on by the CLI
     // (`kortix ship`) and the SDK and must not change.
   });
-  return c.json(result.body, result.status);
+  return c.json(result.body, result.status, result.headers);
 },
 );
 

@@ -11,6 +11,7 @@ import {
   installBrowserSessionDirect,
   signIn,
 } from '../helpers/session-auth';
+import { waitForSessionReady } from '../helpers/session-ready';
 import {
   dismissOnboarding,
   dismissWelcomeCard,
@@ -257,6 +258,26 @@ test('30 — saved session history paints while sandbox start and the open bundl
   }
 });
 
+/**
+ * The first model the project picker offers that accepts attachments, in the
+ * picker's own order. Throws with the offered ids when none qualifies, so a
+ * catalog change reads as a catalog change and not as a transcript failure.
+ */
+function firstAttachmentModel(
+  models: Record<string, { attachment?: boolean; enabled?: boolean }>,
+): string {
+  const offered = Object.entries(models).filter(([, model]) => model.enabled !== false);
+  const match = offered.find(([, model]) => model.attachment === true);
+  if (!match) {
+    throw new Error(
+      `the model picker offers no enabled model with attachment support; offered: ${
+        offered.map(([id]) => id).join(', ') || '(none)'
+      }`,
+    );
+  }
+  return match[0];
+}
+
 interface SavedHistory {
   source: string;
   messages: Array<{
@@ -351,13 +372,13 @@ if (process.env.E2E_ENABLE_SDK_ONLY_SESSION === '1') {
         feature: 'session_transcript_history',
         enabled: true,
       });
-      const imageModel = 'gpt-5.6-luna';
-      const picker = await api<{ models: Record<string, { attachment?: boolean }> }>(
-        auth.access_token,
-        'GET',
-        `/projects/${projectId}/model-picker`,
-      );
-      expect(picker.models[imageModel]?.attachment).toBe(true);
+      // The picker is the contract, not a model name. A hard-coded
+      // `gpt-5.6-luna` failed 13 of 13 previews: a preview's picker offers
+      // deepseek-v4.1-flash, glm-5.3-flash, and kimi-k3 instead.
+      const picker = await api<{
+        models: Record<string, { attachment?: boolean; enabled?: boolean }>;
+      }>(auth.access_token, 'GET', `/projects/${projectId}/model-picker`);
+      const imageModel = firstAttachmentModel(picker.models);
       await api(auth.access_token, 'PUT', `/projects/${projectId}/model-defaults`, {
         scope: 'project',
         model: imageModel,
@@ -411,18 +432,10 @@ if (process.env.E2E_ENABLE_SDK_ONLY_SESSION === '1') {
             textOf(message).trim().replace(/^`([^`\n]+)`$/, '$1') === text,
         );
       await test.step('a real cloud sandbox reaches ready', async () => {
-        await expect
-          .poll(
-            async () => {
-              const result = await api<{
-                stage: string;
-                sandbox?: { status?: string };
-              }>(auth.access_token, 'POST', `${sessionPath}/start?wait_ms=8000`, {});
-              return `${result.stage}:${result.sandbox?.status}`;
-            },
-            { timeout: 12 * 60_000, intervals: [2_000, 5_000] },
-          )
-          .toBe('ready:active');
+        await waitForSessionReady(api, auth.access_token, projectId, sessionId, {
+          timeoutMs: 12 * 60_000,
+          intervalMs: 5_000,
+        });
       });
       page.on('request', (request) => {
         if (request.method() === 'POST' && request.url().endsWith(`${sessionPath}/prompts`)) {

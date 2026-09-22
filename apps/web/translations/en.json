@@ -1441,7 +1441,8 @@
         "status": "Status",
         "activity": "Activity",
         "source": "Source",
-        "none": "None"
+        "none": "None",
+        "owner": "Owner"
       },
       "order": {
         "activity": "Last activity",
@@ -1475,7 +1476,19 @@
       "sourceValue": {
         "mine": "My chats",
         "shared": "Shared"
-      }
+      },
+      "owner": "Owner",
+      "access": "Access",
+      "ownerValue": {
+        "you": "You",
+        "unknown": "Unknown owner"
+      },
+      "accessValue": {
+        "private": "Only the owner",
+        "restricted": "Specific people",
+        "project": "Whole project"
+      },
+      "ownerAccess": "{owner} · {access}"
     },
     "loadingMore": "Loading…",
     "loadMoreSessions": "Load more sessions"
@@ -18279,7 +18292,7 @@
       "textf9cfe2f2d411": "installs",
       "textf9d35d43770d": "tools",
       "textf9d46c1722ea": "Push Immediately",
-      "textf9d52abc1fb8": "Account-wide sign-in requirements.",
+      "textf9d52abc1fb8": "Account-wide sign-in and session access rules.",
       "textf9dcbb55deba": "Automate",
       "textf9debe3e14a5": "Enable Create Users, Update User Attributes, and Deactivate Users → Save.",
       "textf9e0dab461a6": "grep your whole company.",
@@ -18601,7 +18614,12 @@
       "textd9692dea50e7": "Add the app to a chat or channel, then paste your tenant ID below to bind it to this project.",
       "text8dd795841572": "The client secret is encrypted. Only this workspace's agent can read it.",
       "text5cb103d6008c": "Channel thread",
-      "text31d248c44579": "Untitled conversation"
+      "text31d248c44579": "Untitled conversation",
+      "text3ea5efedf114": "Let admins open every session",
+      "text88cfd89168a0": "Stopped admins opening every session",
+      "textcbccc00faa36": "Opened a member session as account admin",
+      "text798f62f95bed": "Viewed admin session access",
+      "text0814e13d671d": "Changed admin session access"
     }
   },
   "projectOnboarding": {
@@ -19544,5 +19562,20 @@
     "noAccessBody": "Ask an owner or admin to invite {email}.",
     "loadErrorTitle": "Could not load your projects",
     "loadErrorBody": "Check your connection and try again."
+  },
+  "sessionOversight": {
+    "label": "Admins can open every session",
+    "description": "Account owners and admins can open any session in this account, including private ones. Every session opened this way is in the audit log.",
+    "ownerOnlyDescription": "Account owners and admins can open any session in this account, including private ones. Only an account owner can change this.",
+    "enableTitle": "Let admins open every session?",
+    "enableDescription": "Account owners and admins will be able to open every session in this account, including sessions members kept private. Members see a notice in the share dialog. Each session opened this way is recorded in the audit log.",
+    "enableConfirm": "Turn on",
+    "disableTitle": "Stop admins opening every session?",
+    "disableDescription": "Private sessions go back to owner-only. Admins keep access only to sessions shared with them.",
+    "disableConfirm": "Turn off",
+    "enabledToast": "Admins can now open every session",
+    "disabledToast": "Private sessions are owner-only again",
+    "failedToast": "Could not update this setting",
+    "shareDisclosure": "Account owners and admins can open every session in this account, whatever you choose here."
   }
 }

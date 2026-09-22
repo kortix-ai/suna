@@ -183,6 +183,11 @@ export const accounts = kortixSchema.table('accounts', {
   /** When set, PATs not used in this many days are auto-revoked on
    *  next validate. NULL = no idle gate. Units: days. */
   patIdleRevokeDays: integer('pat_idle_revoke_days'),
+  /** When true, account owners and admins can open EVERY session in the
+   *  account, including members' private ones. Off by default; only an owner
+   *  may change it (`PATCH /accounts/:id/iam/session-oversight`). Members see
+   *  a disclosure in the share dialog while it is on. */
+  adminsSeeAllSessions: boolean('admins_see_all_sessions').default(false).notNull(),
   /** Organization branding (enterprise `branding` entitlement): the product
    *  name plus the Storage URLs of the logo / icon / favicon (light + optional
    *  dark) that replace the Kortix marks for this account's members. `{}` = default Kortix branding. The

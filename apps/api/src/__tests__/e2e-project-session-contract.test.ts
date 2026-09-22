@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test';
 import {
   accountMembers,
   projectGitConnections,
@@ -44,6 +44,7 @@ let branchCreateCalls = 0;
 let sandboxProvisionCalls = 0;
 let providerStartCalls = 0;
 let providerStopCalls = 0;
+let providerStopHook: (() => void) | null = null;
 let providerStatus = 'stopped';
 let providerStatusSequence: string[] = [];
 let providerStatusAfterStart: string | null = null;
@@ -116,6 +117,7 @@ function resetState() {
   sandboxProvisionCalls = 0;
   providerStartCalls = 0;
   providerStopCalls = 0;
+  providerStopHook = null;
   providerStatus = 'stopped';
   providerStatusSequence = [];
   providerStatusAfterStart = null;
@@ -456,6 +458,7 @@ mock.module('../platform/providers', () => ({
     },
     stop: async () => {
       providerStopCalls += 1;
+      providerStopHook?.();
     },
     remove: async () => undefined,
     ...(providerRecoveryEnabled
@@ -3846,6 +3849,68 @@ describe('project session API contract', () => {
       externalId: 'box-restarted-status-unknown',
       status: 'active',
     });
+  });
+
+  test('a restart that loses its claim mid-flight stops and says so in a warning', async () => {
+    // SESS-9 (2026-09): a concurrent writer overwrote `metadata` without the
+    // restart claim. The detached restart then returned without starting the
+    // box and without a log line, so the row sat in `provisioning` for minutes
+    // with nothing to diagnose it by.
+    const { logger } = await import('../lib/logger');
+    const warn = spyOn(logger, 'warn');
+    try {
+      const app = createApp();
+      sessionRow = { ...sessionRow!, status: 'running', opencodeSessionId: 'ses_root_existing' };
+      sessionSandboxRows = [
+        {
+          sandboxId: SESSION_ID,
+          sessionId: SESSION_ID,
+          accountId: ACCOUNT_ID,
+          projectId: PROJECT_ID,
+          provider: 'platinum',
+          externalId: 'box-restart-claim-lost',
+          baseUrl: null,
+          status: 'active',
+          config: {},
+          metadata: {},
+          lastUsedAt: null,
+          createdAt: new Date('2026-01-02T00:00:00Z'),
+          updatedAt: new Date('2026-01-02T00:00:00Z'),
+        },
+      ];
+      providerStatus = 'running';
+      providerStopHook = () => {
+        const { runtimeRestartId: _lost, ...rest } = (sessionSandboxRows[0]!.metadata ?? {}) as Record<
+          string,
+          unknown
+        >;
+        sessionSandboxRows[0] = { ...sessionSandboxRows[0]!, metadata: rest };
+      };
+
+      const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`, {
+        method: 'POST',
+      });
+      expect(res.status).toBe(202);
+      const operationId = (await res.json()).operation_id;
+      await flushUntil(() =>
+        warn.mock.calls.some(([message]) => String(message).includes('lost the restart claim')),
+      );
+
+      const abandon = warn.mock.calls.find(([message]) =>
+        String(message).includes('lost the restart claim'),
+      );
+      expect(abandon?.[1]).toMatchObject({
+        session_id: SESSION_ID,
+        external_id: 'box-restart-claim-lost',
+        restart_id: operationId,
+        step: 'after_stop',
+        current_restart_id: null,
+      });
+      expect(providerStopCalls).toBe(1);
+      expect(providerStartCalls).toBe(0);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   test('restart preserves identity when provider accepts start but then reports removed', async () => {

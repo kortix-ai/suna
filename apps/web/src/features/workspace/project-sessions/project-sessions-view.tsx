@@ -32,6 +32,8 @@ import {
   selectHiddenSections,
   selectOrderMode,
   selectSourceFilters,
+  selectAccessFilters,
+  selectOwnerFilters,
   selectStatusFilters,
   useSessionFilterStore,
 } from '@/stores/session-filter-store';
@@ -257,6 +259,8 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const orderMode = useSessionFilterStore(selectOrderMode(projectId, SURFACE));
   const statusFilters = useSessionFilterStore(selectStatusFilters(projectId, SURFACE));
   const sourceFilters = useSessionFilterStore(selectSourceFilters(projectId, SURFACE));
+  const ownerFilters = useSessionFilterStore(selectOwnerFilters(projectId, SURFACE));
+  const accessFilters = useSessionFilterStore(selectAccessFilters(projectId, SURFACE));
   const hiddenSections = useSessionFilterStore(selectHiddenSections(projectId, SURFACE));
   const collapsedSections = useSessionFilterStore(selectCollapsedSections(projectId, SURFACE));
   const collapsedSectionSet = useMemo(() => new Set(collapsedSections), [collapsedSections]);
@@ -276,8 +280,18 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
         deferredSearch,
         tI18nComplete,
         searchIndex,
+        { owners: ownerFilters, access: accessFilters },
       ),
-    [sessions, statusFilters, sourceFilters, deferredSearch, tI18nComplete, searchIndex],
+    [
+      sessions,
+      statusFilters,
+      sourceFilters,
+      ownerFilters,
+      accessFilters,
+      deferredSearch,
+      tI18nComplete,
+      searchIndex,
+    ],
   );
 
   const grouped = useMemo(
@@ -289,10 +303,15 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
           order: orderMode,
           reviewCountBySession: reviewSummary.needsYouBySession,
           hiddenSections,
+          ownerLabels: {
+            you: tSidebar('filter.ownerValue.you'),
+            unknown: tSidebar('filter.ownerValue.unknown'),
+          },
         },
         tI18nComplete,
       ),
     [
+      tSidebar,
       visibleSessions,
       groupMode,
       orderMode,

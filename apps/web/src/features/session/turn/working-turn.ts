@@ -136,6 +136,11 @@ export function turnIsConfirmedActive(input: {
  * no id, when a finished answer yields it to the queue, or when its reply
  * reported an error that is not being retried. Then the fallback row draws, so
  * a busy session (Stop visible) never shows zero rows.
+ *
+ * `awaitingUser` is the one input that must NOT hand the row to the fallback:
+ * a turn parked on a question draws no row anywhere, because the session is
+ * not working. The caller gates its fallback on the same fact — see
+ * `showFallbackBusyRow` in `session-chat.tsx`.
  */
 export function workingTurnDrawsBusyRow(input: {
   lastTurnWorking: boolean;
@@ -143,12 +148,15 @@ export function workingTurnDrawsBusyRow(input: {
   suppressed: boolean;
   workingTurnHasError: boolean;
   isRetrying: boolean;
+  /** The runtime is parked on a question or a permission prompt. */
+  awaitingUser?: boolean;
 }): boolean {
   if (!input.lastTurnWorking || input.workingTurnId === null || input.suppressed) return false;
   return showTurnBusyIndicator({
     working: true,
     hasError: input.workingTurnHasError,
     isRetrying: input.isRetrying,
+    awaitingUser: input.awaitingUser,
   });
 }
 

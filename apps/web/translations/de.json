@@ -1441,7 +1441,8 @@
         "status": "Status",
         "activity": "Aktivität",
         "source": "Quelle",
-        "none": "Keine"
+        "none": "Keine",
+        "owner": "Inhaber"
       },
       "order": {
         "activity": "Letzte Aktivität",
@@ -1475,7 +1476,19 @@
       "sourceValue": {
         "mine": "Meine Chats",
         "shared": "Geteilt"
-      }
+      },
+      "owner": "Inhaber",
+      "access": "Zugriff",
+      "ownerValue": {
+        "you": "Du",
+        "unknown": "Unbekannter Inhaber"
+      },
+      "accessValue": {
+        "private": "Nur der Inhaber",
+        "restricted": "Bestimmte Personen",
+        "project": "Ganzes Projekt"
+      },
+      "ownerAccess": "{owner} · {access}"
     },
     "loadingMore": "Wird geladen …",
     "loadMoreSessions": "Weitere Sitzungen laden"
@@ -18279,7 +18292,7 @@
       "textf9cfe2f2d411": "Installationen",
       "textf9d35d43770d": "tools",
       "textf9d46c1722ea": "Sofort übertragen",
-      "textf9d52abc1fb8": "Anmeldeanforderungen für das gesamte Konto.",
+      "textf9d52abc1fb8": "Anmelde- und Sitzungszugriffsregeln für das gesamte Konto.",
       "textf9dcbb55deba": "Automatisieren",
       "textf9debe3e14a5": "Aktivieren Sie Create Users, Update User Attributes und Deactivate Users → Save.",
       "textf9e0dab461a6": "grep dein ganzes Unternehmen.",
@@ -18601,7 +18614,12 @@
       "textd9692dea50e7": "Füge die App einem Chat oder Kanal hinzu und füge unten deine Mandanten-ID ein, um sie mit diesem Projekt zu verknüpfen.",
       "text8dd795841572": "Das Clientgeheimnis ist verschlüsselt. Nur der Agent dieses Workspaces kann es lesen.",
       "text5cb103d6008c": "Kanal-Thread",
-      "text31d248c44579": "Unbenannte Unterhaltung"
+      "text31d248c44579": "Unbenannte Unterhaltung",
+      "text3ea5efedf114": "Admins dürfen jede Sitzung öffnen",
+      "text88cfd89168a0": "Admins dürfen nicht mehr jede Sitzung öffnen",
+      "textcbccc00faa36": "Sitzung eines Mitglieds als Konto-Admin geöffnet",
+      "text798f62f95bed": "Admin-Sitzungszugriff angesehen",
+      "text0814e13d671d": "Admin-Sitzungszugriff geändert"
     }
   },
   "projectOnboarding": {
@@ -19544,5 +19562,20 @@
     "noAccessBody": "Bitte einen Inhaber oder Admin, {email} einzuladen.",
     "loadErrorTitle": "Deine Projekte konnten nicht geladen werden",
     "loadErrorBody": "Prüfe deine Verbindung und versuche es erneut."
+  },
+  "sessionOversight": {
+    "label": "Admins können jede Sitzung öffnen",
+    "description": "Kontoinhaber und Admins können jede Sitzung in diesem Konto öffnen, auch private. Jede so geöffnete Sitzung steht im Audit-Log.",
+    "ownerOnlyDescription": "Kontoinhaber und Admins können jede Sitzung in diesem Konto öffnen, auch private. Nur ein Kontoinhaber kann das ändern.",
+    "enableTitle": "Admins jede Sitzung öffnen lassen?",
+    "enableDescription": "Kontoinhaber und Admins können dann jede Sitzung in diesem Konto öffnen, auch Sitzungen, die Mitglieder privat halten. Mitglieder sehen einen Hinweis im Teilen-Dialog. Jede so geöffnete Sitzung wird im Audit-Log erfasst.",
+    "enableConfirm": "Einschalten",
+    "disableTitle": "Admins nicht mehr jede Sitzung öffnen lassen?",
+    "disableDescription": "Private Sitzungen sind wieder nur für ihre Inhaber. Admins behalten nur Zugriff auf Sitzungen, die mit ihnen geteilt sind.",
+    "disableConfirm": "Ausschalten",
+    "enabledToast": "Admins können jetzt jede Sitzung öffnen",
+    "disabledToast": "Private Sitzungen sind wieder nur für Inhaber",
+    "failedToast": "Diese Einstellung konnte nicht geändert werden",
+    "shareDisclosure": "Kontoinhaber und Admins können jede Sitzung in diesem Konto öffnen, unabhängig von deiner Auswahl hier."
   }
 }

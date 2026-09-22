@@ -30,7 +30,7 @@ import { sendSessionCreateError } from '../lib/sessions';
 import { createSession } from '../session-lifecycle';
 import { resolveManifestValidateFormat } from '../lib/manifest-format';
 import { resolveConfiguredProjectProviderPin } from '../../snapshots/provider-coverage';
-import { runProviderActions } from '../../snapshots/provider-actions';
+import { rebuildFailureResponse, runProviderActions } from '../../snapshots/provider-actions';
 import { getCatalogItemDetail } from '../../marketplace/catalog';
 
 function templateProviderObservation(metadata: unknown) {
@@ -805,7 +805,7 @@ projectsApp.openapi(
       },
     responses: {
         202: json(z.any(), 'OK'),
-        ...errors(404, 502, 503),
+        ...errors(404, 409, 502, 503),
     },
   }),
   async (c: any) => {
@@ -856,8 +856,15 @@ projectsApp.openapi(
     if (notFound?.error instanceof TemplateNotFoundError) {
       return c.json({ error: notFound.error.message, code: 'TEMPLATE_NOT_FOUND' }, 404);
     }
+    for (const failure of attempts.failed) {
+      console.warn(
+        `[snapshots/rebuild] project=${projectId} provider=${failure.provider} failed:`,
+        failure.error instanceof Error ? failure.error.message : String(failure.error),
+      );
+    }
     if (attempts.started.length === 0) {
-      return c.json({ error: 'Could not start a rebuild on any sandbox provider' }, 503);
+      const failure = rebuildFailureResponse(attempts.failed);
+      return c.json(failure.body, failure.status);
     }
     const target = attempts.started[0]!.result;
     return c.json(
