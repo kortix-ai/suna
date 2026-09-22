@@ -158,7 +158,7 @@ function parallelPayload(result: { structuredContent?: unknown; content?: unknow
   };
 }
 
-async function searchParallel(queries: string[], maxResults: number, signal?: AbortSignal, sessionID?: string) {
+async function searchParallel(queries: string[], maxResults: number, signal?: AbortSignal) {
   // Identify this project so Parallel can measure aggregate free MCP usage.
   // Keep the value project-wide; do not add user or installation identifiers.
   const transport = new StreamableHTTPClientTransport(new URL(PARALLEL_MCP_URL), {
@@ -185,7 +185,6 @@ async function searchParallel(queries: string[], maxResults: number, signal?: Ab
           arguments: {
             objective: query,
             search_queries: [query],
-            ...(sessionID && sessionID.length <= 100 ? { session_id: sessionID } : {}),
           },
         }, undefined, { signal, timeout: SEARCH_TIMEOUT_MS });
         if (response.isError) {
@@ -202,7 +201,7 @@ async function searchParallel(queries: string[], maxResults: number, signal?: Ab
         }
         results.push({
           query,
-          success: true,
+          success: data.results.length > 0,
           provider: "parallel",
           results: data.results.slice(0, maxResults).map((item) => ({
             title: item.title ?? "",
@@ -271,9 +270,16 @@ export default tool({
         return "Error: Parallel does not support topic or search_depth. Remove these options or select Tavily.";
       }
       try {
-        return await searchParallel(queries, maxResults, context?.abort, context?.sessionID);
+        return await searchParallel(queries, maxResults, context?.abort);
       } catch (error) {
-        return JSON.stringify({ query: args.query, success: false, provider: "parallel", error: String(error) }, null, 2);
+        const results = queries.map((query) => ({
+          query, success: false, provider: "parallel", error: String(error),
+        }));
+        return JSON.stringify(queries.length === 1 ? results[0] : {
+          batch_mode: true,
+          total_queries: queries.length,
+          results,
+        }, null, 2);
       }
     }
 

@@ -114,7 +114,6 @@ describe('OpenCode provider tools', () => {
                   arguments: {
                     objective: 'Kortix release',
                     search_queries: ['Kortix release'],
-                    session_id: 'ses_test_123',
                   },
                 });
                 return {
@@ -193,6 +192,48 @@ describe('OpenCode provider tools', () => {
     );
     expect(output).toMatchObject({ success: false, provider: 'parallel' });
     expect(output.error).toContain('rate limited');
+  });
+
+  test('Parallel reports an empty response as no result', async () => {
+    globalThis.fetch = (async (_input, init) => {
+      const request = JSON.parse(String(init?.body));
+      if (request.method === 'notifications/initialized')
+        return new Response(null, { status: 202 });
+      const result =
+        request.method === 'initialize'
+          ? {
+              protocolVersion: '2025-03-26',
+              capabilities: { tools: {} },
+              serverInfo: { name: 'parallel-fixture', version: '1' },
+            }
+          : request.method === 'tools/list'
+            ? { tools: [{ name: 'web_search', inputSchema: { type: 'object' } }] }
+            : { structuredContent: { results: [] }, content: [] };
+      return Response.json({ jsonrpc: '2.0', id: request.id, result });
+    }) as typeof fetch;
+
+    const output = JSON.parse(
+      String(await webSearch.execute({ query: 'unfindable', provider: 'parallel' }, {} as never)),
+    );
+    expect(output).toMatchObject({ query: 'unfindable', success: false, results: [] });
+  });
+
+  test('Parallel batch connection failure preserves the batch response shape', async () => {
+    globalThis.fetch = (async () => {
+      throw new Error('connection unavailable');
+    }) as typeof fetch;
+
+    const output = JSON.parse(
+      String(await webSearch.execute({ query: 'first ||| second', provider: 'parallel' }, {} as never)),
+    );
+    expect(output).toMatchObject({
+      batch_mode: true,
+      total_queries: 2,
+      results: [
+        { query: 'first', success: false, provider: 'parallel' },
+        { query: 'second', success: false, provider: 'parallel' },
+      ],
+    });
   });
 
   test('scrape preserves the Firecrawl v2 router contract', async () => {
