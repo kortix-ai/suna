@@ -12,8 +12,8 @@ import {
 // Straight from the engine + the actor builder, not the barrel: the barrel is
 // replaced wholesale by `mock.module` in several route tests, so every name
 // imported from it is a name those stubs must also declare.
-import { authorize, assertAuthorized } from '../../iam/authorize';
-import { actorOf, type Actor } from '../../iam/actor';
+import { agentEffectiveAllows, authorize, assertAuthorized } from '../../iam/authorize';
+import { actorOf, isAgentPrincipalActor, type Actor } from '../../iam/actor';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
 import { projectRoleForUser } from '../../iam/read-models';
 // Straight from `iam/denial-message`, not the `iam` barrel: the barrel and the
@@ -947,6 +947,27 @@ export function isAdminBypassEligible(input: {
   return input.action === 'read' && !input.isServiceAccount && input.bypassHeaderPresent;
 }
 
+/**
+ * The `effectiveRole` label manage-tier branches read (`roleAllows(…,
+ * 'manage')`: share management, `can_manage`, the serialized
+ * `effective_project_role`).
+ *
+ * Legacy callers keep the caller's own role. An agent-principal session (spec
+ * docs/specs/2026-09-22-agents-as-principals.md §2.1) never inherits its
+ * launcher's role: it is `manager` only when the AGENT's effective permissions
+ * hold `project.write` (the IAM action behind the `manage` tier,
+ * `iamActionForProjectAccess('manage')`), else `member`. Pure; exported for
+ * unit tests.
+ */
+export function deriveEffectiveRole(input: {
+  agentPrincipal: boolean;
+  agentMayWrite: boolean;
+  callerRole: ProjectRole;
+}): ProjectRole {
+  if (!input.agentPrincipal) return input.callerRole;
+  return input.agentMayWrite ? 'manager' : 'member';
+}
+
 export async function loadProjectForUser(c: Context, projectId: string, action: ProjectAccessAction) {
   const userId = c.get('userId') as string;
   if (!isUuid(projectId)) return null;
@@ -1071,8 +1092,16 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
   // For a service account there's no account role; capabilities come purely from
   // its policies (already enforced by `verdict`). Use the safe-minimum 'member'
   // label, exactly as for a member granted access via a policy with no role tier.
-  const effectiveRole =
+  const callerRole =
     (accountRole ? effectiveProjectRole(accountRole, projectRole) : projectRole) ?? 'member';
+  const agentPrincipal = isAgentPrincipalActor(actor);
+  const effectiveRole = deriveEffectiveRole({
+    agentPrincipal,
+    agentMayWrite: agentPrincipal
+      ? await agentEffectiveAllows(actor, iamActionForProjectAccess('manage'), projectId)
+      : false,
+    callerRole: callerRole as ProjectRole,
+  });
   (c as any).set('accountId', row.accountId);
 
   return {

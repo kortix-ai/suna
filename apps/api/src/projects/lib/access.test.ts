@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  deriveEffectiveRole,
   callerHasManagerStanding,
   isAdminBypassEligible,
   sessionIsTombstoned,
@@ -192,5 +193,22 @@ describe('sessionIsTombstoned — a deleted session refuses every runtime verb',
     const src = await Bun.file(new URL('../routes/r8.ts', import.meta.url)).text();
     const occurrences = src.split('sessionIsTombstoned(visible.row)').length - 1;
     expect(occurrences).toBe(2);
+  });
+});
+
+// Spec docs/specs/2026-09-22-agents-as-principals.md §2.1: under the
+// agent-principal model the launcher's role is not an input. The
+// `effectiveRole` label every manage-tier branch reads is derived from the
+// agent's own effective permissions.
+describe('deriveEffectiveRole', () => {
+  test('legacy (human, flag OFF): the launcher/member role label, unchanged', () => {
+    expect(deriveEffectiveRole({ agentPrincipal: false, agentMayWrite: false, callerRole: 'manager' })).toBe('manager');
+    expect(deriveEffectiveRole({ agentPrincipal: false, agentMayWrite: true, callerRole: 'member' })).toBe('member');
+  });
+  test("agent principal: a manager launcher's role never leaks", () => {
+    expect(deriveEffectiveRole({ agentPrincipal: true, agentMayWrite: false, callerRole: 'manager' })).toBe('member');
+  });
+  test('agent principal: manager tier only when the agent itself holds project.write', () => {
+    expect(deriveEffectiveRole({ agentPrincipal: true, agentMayWrite: true, callerRole: 'member' })).toBe('manager');
   });
 });
