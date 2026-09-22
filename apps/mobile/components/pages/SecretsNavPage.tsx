@@ -31,14 +31,12 @@ import {
   XIcon as X,
   ShieldWarningIcon as ShieldAlert,
   type AppIcon,
-  CubeIcon,
 } from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { PageHeader } from '@/components/kortix/page-header';
 import { PageContent } from '@/components/kortix/page-content';
 import { SearchListHeader } from '@/components/kortix/search-list-header';
 import Animated from 'react-native-reanimated';
-import { ListRow } from '@/components/kortix/list-row';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { SheetTextInput } from '@/components/kortix/SheetInput';
@@ -46,8 +44,6 @@ import { POP_IN, PUSH_IN, SheetBackButton } from '@/components/kortix/sheet-push
 import { Icon } from '@/components/ui/icon';
 import { PageList } from '@/components/kortix/page-list';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
-import { MODELS_PAGE_ID } from '@/lib/session/dock-menu';
-import { useTabStore } from '@/stores/tab-store';
 import { useThemeColors } from '@/lib/theme-colors';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import {
@@ -721,43 +717,34 @@ export function SecretsNavPage({
           errorMessage={isError && rows.length === 0 ? ((error as Error)?.message ?? 'Unable to load secrets') : null}
           onRetry={() => void refetch()}
           onRefresh={() => refetch()}
-          emptyLabel={filtered.length === 0 ? (rows.length === 0 ? 'No secrets yet' : 'No matching secrets') : null}
-          footer={
-            // A provider API key is a project secret. The Models page is where a
-            // provider is connected, so this page links to it.
-            <View className="px-4 pt-6">
-              <SettingsGroup>
-                <SettingsRow
-                  icon={CubeIcon}
-                  label="Manage providers"
-                  onPress={() => { haptics.tap(); useTabStore.getState().navigateToPage(MODELS_PAGE_ID); }}
-                />
-              </SettingsGroup>
-            </View>
-          }>
-          {filtered.map((row, i) => {
-            const s = row.secret;
-            const scope = sharingScopeLabel(s?.sharing);
-            const need = row.required ? 'Required' : row.optional ? 'Optional' : null;
-            return (
-              <ListRow
-                key={row.name}
-                title={row.name}
-                subtitle={[need, statusText(s), scope].filter(Boolean).join(' · ')}
-                divider={i < filtered.length - 1}
-                onPress={() => openRow(row.name)}
-                right={
-                  <View className="flex-row items-center gap-3">
-                    {/* A required secret with no value: the one state that blocks a run. */}
-                    {row.required && (s?.effective_source ?? 'none') === 'none' ? (
-                      <View accessibilityLabel="Not set" className="size-1.5 rounded-full bg-kortix-orange" />
-                    ) : null}
-                    <Icon as={ChevronRight} size={18} className="text-muted-foreground" />
-                  </View>
-                }
-              />
-            );
-          })}
+          emptyLabel={filtered.length === 0 ? (rows.length === 0 ? 'No secrets yet' : 'No matching secrets') : null}>
+          {/* Settings rows in a group (Jay, 2026-09-22), the Agents list's layout. */}
+          <View className="px-4 pt-1">
+            <SettingsGroup>
+              {filtered.map((row) => {
+                const s = row.secret;
+                const scope = sharingScopeLabel(s?.sharing);
+                const need = row.required ? 'Required' : row.optional ? 'Optional' : null;
+                return (
+                  <SettingsRow
+                    key={row.name}
+                    label={row.name}
+                    description={[need, statusText(s), scope].filter(Boolean).join(' · ')}
+                    onPress={() => openRow(row.name)}
+                    right={
+                      <View className="flex-row items-center gap-3">
+                        {/* A required secret with no value: the one state that blocks a run. */}
+                        {row.required && (s?.effective_source ?? 'none') === 'none' ? (
+                          <View accessibilityLabel="Not set" className="size-1.5 rounded-full bg-kortix-orange" />
+                        ) : null}
+                        <Icon as={ChevronRight} size={16} className="text-muted-foreground/70" />
+                      </View>
+                    }
+                  />
+                );
+              })}
+            </SettingsGroup>
+          </View>
         </PageList>
       </PageContent>
 

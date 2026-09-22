@@ -2,26 +2,35 @@
  * PageHeader — the header of every project tool page (Agents, Skills,
  * Schedules, Review, Secrets, Webhooks, Channels, Terminal, …).
  *
- * The Sessions page's layout (`SettingsHeader largeTitle`, design.md §7), so
- * every project page reads the same (Jay, 2026-09-21):
+ * One row, three equal-width columns (Jay, 2026-09-22):
  *
- *   control row   hamburger · · · · · · · · · actions · + · ···
- *   title row     Title                       (`Text variant="h3"`)
+ *   hamburger / back      Title, centred            actions · + · ···
  *
- * The title is the page's largest text, in the foreground colour: 24pt Roobert
- * semibold, the size of the Account tab's and the Sessions page's title. It is
- * not a grey 16pt label beside the hamburger any more.
+ * The left and right columns are each `flex-1`, so they take equal width
+ * regardless of how many buttons either one holds; the title sits between
+ * them and is centred in the column that remains, which is centred in the
+ * row. A string title renders as `Text variant="h3"`, centred and truncated
+ * to one line. A node title (an inline-editable field, a search input) is
+ * rendered as passed and keeps whatever layout it already declares — it now
+ * has a column's worth of width, not the whole row, so a wide custom title
+ * truncates sooner than it used to.
  *
- * `onAdd` puts the page's one create action in the control row, before `···`.
- * The search field below the title then takes the full width
- * (`SearchListHeader` without `onAdd`). Every control is a 40pt `icon` ghost
- * button; the first and the last sit on the 16pt padding edge (`-ml-2.5` on
- * the hamburger, `-mr-2.5` on the last button), like the floating header.
+ * Before 2026-09-22 this was two rows — a control row of buttons, then a
+ * full-width title row below it, left-aligned to the hamburger. That
+ * `pageChrome` doc reference is now history; the layout below is the current
+ * shape, not the size of an older Sessions-page title row.
+ *
+ * `onAdd` puts the page's one create action in the right column, before
+ * `···`. Every control is a 40pt `icon` ghost button; the first and the last
+ * sit on the 16pt padding edge (`-ml-2.5` on the hamburger, `-mr-2.5` on the
+ * last button), like the floating header.
  *
  * Project pages show the hamburger: the project drawer opens from every
- * project page (see ProjectRoutes). `onBack` is for a detail shown inside a
- * page (an agent, a skill): the app's Go back button (`PlatformButton`, the one
- * `SettingsHeader` uses) takes the hamburger's place, back to the page's list.
+ * project page (see ProjectRoutes), and **nothing ever takes its place** (Jay,
+ * 2026-09-22). `onBack` is for a detail shown inside a page (an agent, a
+ * skill): the app's Go back button (`PlatformButton`, the one `SettingsHeader`
+ * uses) sits beside the hamburger, back to the page's list. A folder view
+ * passes no `onBack`: its breadcrumb goes up.
  */
 
 import * as React from 'react';
@@ -38,12 +47,12 @@ import { MenuButton } from '@/components/kortix/menu-button';
 import { THEME } from '@/lib/utils/theme';
 
 export interface PageHeaderProps {
-  /** The page title, below the control row. A string renders as
-   *  `Text variant="h3"` on one line; a node replaces it (an inline-editable
-   *  input). */
+  /** The page title, centred between the left and right columns. A string
+   *  renders as `Text variant="h3"`, centred, one line; a node replaces it
+   *  (an inline-editable input) and keeps its own layout. */
   title: string | React.ReactNode;
 
-  /** The page's create action: a `+` button in the control row, before `···`. */
+  /** The page's create action: a `+` button in the right column, before `···`. */
   onAdd?: () => void;
   /** Its accessibility label, e.g. "New agent". */
   addLabel?: string;
@@ -61,14 +70,14 @@ export interface PageHeaderProps {
   /** Right-drawer state — the "···" icon rotates to X when true. */
   isRightDrawerOpen?: boolean;
 
-  /** Extra `icon` ghost buttons in the control row, before `+` and `···`. */
+  /** Extra `icon` ghost buttons in the right column, before `+` and `···`. */
   rightActions?: React.ReactNode;
   /** Hide the default apps-grid right button (for pages that don't have a
    *  right drawer, or that want to fully control the right side via
    *  `rightActions`). */
   hideRightDrawerToggle?: boolean;
 
-  /** Bottom padding below the title row. `PageContent` adds 4pt more. */
+  /** Bottom padding below the row. `PageContent` adds 4pt more. */
   paddingBottom?: number;
 
   /** Optional className passed to the outer View (e.g. to override bg). */
@@ -101,7 +110,7 @@ export function PageHeader({
 
   const titleNode =
     typeof title === 'string' ? (
-      <Text variant="h3" accessibilityRole="header" numberOfLines={1}>
+      <Text variant="h4" accessibilityRole="header" numberOfLines={1} className="text-center">
         {title}
       </Text>
     ) : (
@@ -112,60 +121,63 @@ export function PageHeader({
 
   return (
     <View style={{ paddingBottom }} className={`bg-background ${className ?? ''}`}>
-      {/* Control row: `SettingsHeader`'s metrics (56pt min height, 12pt below). */}
+      {/* `SettingsHeader`'s metrics (56pt min height, 12pt below). Three
+          flex-1 columns: the outer two take equal width no matter how many
+          buttons either holds, so the title is centred in the row, not in
+          whichever space happened to be left over. */}
       <View
-        className="flex-row items-center justify-between px-4 pb-3"
+        className="flex-row items-center px-4 pb-3"
         style={{ paddingTop: Math.max(insets.top, 10) + 6, minHeight: 56 }}>
-        {onBack ? (
-          <PlatformButton
-            systemImage="chevron.left"
-            icon={CaretLeftIcon}
-            fallbackVariant="secondary"
-            accessibilityLabel="Go back"
-            onPress={onBack}
-          />
-        ) : onOpenDrawer ? (
-          <MenuButton onPress={onOpenDrawer} />
-        ) : (
-          <View />
-        )}
+        <View className="flex-1 flex-row items-center gap-2">
+          {onOpenDrawer ? <MenuButton onPress={onOpenDrawer} /> : null}
+          {onBack ? (
+            <PlatformButton
+              systemImage="chevron.left"
+              icon={CaretLeftIcon}
+              fallbackVariant="secondary"
+              accessibilityLabel="Go back"
+              onPress={onBack}
+            />
+          ) : null}
+        </View>
+
+        <View className="flex-1 items-center px-1">{titleNode}</View>
 
         {/* The last button holds the padding edge: -mr-2.5 mirrors the
             hamburger's -ml-2.5. */}
-        <View className="-mr-2.5 flex-row items-center">
-          {rightActions}
-          {onAdd ? (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="rounded-full"
-              onPress={onAdd}
-              accessibilityLabel={addLabel}
-              hitSlop={{ top: 10, bottom: 10 }}>
-              <Icon as={PlusIcon} size={ICON_SIZE} className="text-foreground" />
-            </Button>
-          ) : null}
-          {showRightDrawer ? (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="rounded-full"
-              onPress={onOpenRightDrawer}
-              accessibilityLabel="Project sections"
-              hitSlop={{ top: 10, bottom: 10, right: 10 }}>
-              <AnimatedToggleIcon
-                open={!!isRightDrawerOpen}
-                color={iconColor}
-                icon={DotsThreeIcon}
-                size={ICON_SIZE}
-              />
-            </Button>
-          ) : null}
+        <View className="flex-1 flex-row items-center justify-end">
+          <View className="-mr-2.5 flex-row items-center">
+            {rightActions}
+            {onAdd ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="rounded-full"
+                onPress={onAdd}
+                accessibilityLabel={addLabel}
+                hitSlop={{ top: 10, bottom: 10 }}>
+                <Icon as={PlusIcon} size={ICON_SIZE} className="text-foreground" />
+              </Button>
+            ) : null}
+            {showRightDrawer ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="rounded-full"
+                onPress={onOpenRightDrawer}
+                accessibilityLabel="Project sections"
+                hitSlop={{ top: 10, bottom: 10, right: 10 }}>
+                <AnimatedToggleIcon
+                  open={!!isRightDrawerOpen}
+                  color={iconColor}
+                  icon={DotsThreeIcon}
+                  size={ICON_SIZE}
+                />
+              </Button>
+            ) : null}
+          </View>
         </View>
       </View>
-
-      {/* Title row: the Sessions page's and the Account tab's 40pt title row. */}
-      <View className="h-10 justify-center px-4 pb-1">{titleNode}</View>
     </View>
   );
 }

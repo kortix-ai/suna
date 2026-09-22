@@ -269,6 +269,15 @@ export interface SettingsRowProps {
   /** Custom leading content instead of `icon` (flag emoji, avatar). */
   leading?: React.ReactNode;
   label: string;
+  /** Extra classes on the label `Text` (e.g. `font-semibold` for a name that
+   *  should read heavier than the row's default weight). */
+  labelClassName?: string;
+  /**
+   * One muted line under the label (an agent's mode and description, a
+   * skill's description; Jay, 2026-09-22). List rows only: a settings row
+   * stays icon · label · trailing.
+   */
+  description?: string;
   /** Read-only value shown on the right, e.g. the account email. */
   value?: string;
   /** Shows a check mark — the selected option in a picker list. */
@@ -302,6 +311,8 @@ export function SettingsRow({
   icon,
   leading,
   label,
+  labelClassName,
+  description,
   value,
   checked = false,
   onPress,
@@ -365,16 +376,27 @@ export function SettingsRow({
           <View className="mr-3 min-w-5 items-center">{leadingContent}</View>
         ) : null}
 
-        <View className="flex-1 flex-row items-center">
-          <Text
-            className={cn(destructive ? 'text-destructive' : 'text-foreground', multiline && 'flex-1')}
-            numberOfLines={multiline ? undefined : 1}>
-            {label}
-          </Text>
-          {badge ? (
-            <View className="ml-2 rounded-full bg-destructive/15 px-2 py-0.5">
-              <Text className="font-roobert-medium text-[10px] text-destructive">{badge}</Text>
-            </View>
+        <View className="flex-1">
+          <View className="flex-row items-center">
+            <Text
+              className={cn(
+                destructive ? 'text-destructive' : 'text-foreground',
+                multiline && 'flex-1',
+                labelClassName,
+              )}
+              numberOfLines={multiline ? undefined : 1}>
+              {label}
+            </Text>
+            {badge ? (
+              <View className="ml-2 rounded-full bg-destructive/15 px-2 py-0.5">
+                <Text className="font-roobert-medium text-[10px] text-destructive">{badge}</Text>
+              </View>
+            ) : null}
+          </View>
+          {description ? (
+            <Text variant="muted" className="mt-0.5" numberOfLines={1}>
+              {description}
+            </Text>
           ) : null}
         </View>
 

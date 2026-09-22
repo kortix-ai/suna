@@ -610,9 +610,8 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
   );
   const modelsLoading = catalogLoading || (!modelCatalog && !providers);
   const handleConnectModel = useCallback(() => {
-    if (modelCatalog && projectId) openProjectModelsOnWeb(projectId);
-    else useTabStore.getState().navigateToPage('page:llm-providers');
-  }, [modelCatalog, projectId]);
+    if (projectId) openProjectModelsOnWeb(projectId);
+  }, [projectId]);
   const defaults = providers?.default ?? EMPTY_DEFAULTS;
   const { data: config } = useOpenCodeConfig(sandboxUrl);
   const { data: commands = EMPTY_COMMANDS } = useOpenCodeCommands(sandboxUrl);

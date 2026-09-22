@@ -89,6 +89,8 @@ export interface ProjectRouteValue {
   openDrawer: () => void;
   /** The project drawer is open: a hamburger shows its X. */
   isDrawerOpen: boolean;
+  /** Open the project sheet (`CustomizeSheet`). Stable. Every project page's `···` calls it. */
+  openCustomizeSheet: () => void;
 }
 
 const ProjectRouteContext = React.createContext<ProjectRouteValue | null>(null);

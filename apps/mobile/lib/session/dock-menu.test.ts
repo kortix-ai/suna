@@ -5,7 +5,7 @@ import { PAGE_TABS } from '@/stores/tab-store';
 import { CUSTOMIZE_SHEET_GROUPS } from './dock-menu';
 
 describe('CUSTOMIZE_SHEET_GROUPS', () => {
-  test('the first group is the six core sections, in order, with no title', () => {
+  test('the first group is the five core sections, in order, with no title', () => {
     const [core] = CUSTOMIZE_SHEET_GROUPS;
     expect(core.title).toBeNull();
     expect(core.items.map((item) => item.label)).toEqual([
@@ -13,7 +13,6 @@ describe('CUSTOMIZE_SHEET_GROUPS', () => {
       'Skills',
       'Schedules',
       'Review',
-      'Models',
       'Secrets',
     ]);
   });
@@ -23,11 +22,10 @@ describe('CUSTOMIZE_SHEET_GROUPS', () => {
     expect(CUSTOMIZE_SHEET_GROUPS).toHaveLength(2);
     expect(more.title).toBe('More');
     expect(more.items.map((item) => item.label)).toEqual([
+      'Files',
       'Webhooks',
-      'Channels',
       'Members',
       'Terminal',
-      'Sandbox',
     ]);
   });
 

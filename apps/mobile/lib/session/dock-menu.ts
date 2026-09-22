@@ -20,10 +20,9 @@ export type DockIconKey =
   // page context menu rows (PageContextMenuSheet)
   | 'files' | 'settings' | 'rename' | 'delete'
   // project sheet, core sections
-  | 'agents' | 'skills' | 'schedules' | 'review' | 'models' | 'secrets'
+  | 'agents' | 'skills' | 'schedules' | 'review' | 'secrets'
   // project sheet, more
-  | 'webhooks' | 'channels' | 'members'
-  | 'terminal' | 'sandbox';
+  | 'webhooks' | 'members' | 'terminal';
 
 export interface DockMenuItem {
   kind: 'item';
@@ -42,8 +41,6 @@ export interface CustomizeSheetGroup {
 /** The page the Review row opens. It carries the row's badge. */
 export const REVIEW_PAGE_ID = 'page:review';
 /** The page the Models row opens. The Secrets page links to it ("Manage providers"). */
-export const MODELS_PAGE_ID = 'page:llm-providers';
-
 export const CUSTOMIZE_SHEET_GROUPS: CustomizeSheetGroup[] = [
   {
     title: null,
@@ -52,18 +49,16 @@ export const CUSTOMIZE_SHEET_GROUPS: CustomizeSheetGroup[] = [
       { kind: 'item', label: 'Skills', icon: 'skills', pageId: 'page:skills' },
       { kind: 'item', label: 'Schedules', icon: 'schedules', pageId: 'page:schedules' },
       { kind: 'item', label: 'Review', icon: 'review', pageId: REVIEW_PAGE_ID },
-      { kind: 'item', label: 'Models', icon: 'models', pageId: MODELS_PAGE_ID },
       { kind: 'item', label: 'Secrets', icon: 'secrets', pageId: 'page:secrets-nav' },
     ],
   },
   {
     title: 'More',
     items: [
+      { kind: 'item', label: 'Files', icon: 'files', pageId: 'page:files-nav' },
       { kind: 'item', label: 'Webhooks', icon: 'webhooks', pageId: 'page:webhooks' },
-      { kind: 'item', label: 'Channels', icon: 'channels', pageId: 'page:channels-nav' },
       { kind: 'item', label: 'Members', icon: 'members', pageId: 'page:members' },
       { kind: 'item', label: 'Terminal', icon: 'terminal', pageId: 'page:terminal' },
-      { kind: 'item', label: 'Sandbox', icon: 'sandbox', pageId: 'page:sandbox' },
     ],
   },
 ];

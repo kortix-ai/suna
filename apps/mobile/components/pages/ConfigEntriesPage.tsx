@@ -11,30 +11,30 @@
  * before the chevron.
  *
  * Detail: the entry's name is the page title, and the header's Go back returns
- * to the list (Android back too). Copy and Edit are header buttons. No file
- * path. The mode is a `Badge`. "Set as default agent" is a settings row under
- * the description; the default agent shows it checked.
+ * to the list (Android back too). No file path. The mode is a `Badge`.
+ * "Set as default agent" is a settings row under the description; the
+ * default agent shows it checked.
  *
- * Both scroll views fade at both ends (`scroll-fade`): `BottomFade` always,
- * `TopFade` once the content has scrolled under the header.
+ * Edit and Copy sit over the scrolling source in the file preview sheet's
+ * pinned bar exactly (Jay, 2026-09-22), not header buttons: `PinnedBar`, two
+ * equal `flex-1` pills (Edit secondary on the left, Copy primary/default on
+ * the right, icon + label), same fade of the page background as
+ * `SessionFilesSheet`'s Download / Add to chat. The list's scroll view fades
+ * at both ends (`scroll-fade`): `BottomFade` always, `TopFade` once the
+ * content has scrolled under the header. The detail's scroll view takes only
+ * `TopFade`; `PinnedBar` supplies its own bottom fade behind Edit and Copy.
  */
 import * as React from 'react';
 import { BackHandler, Platform, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 import * as Clipboard from 'expo-clipboard';
 import { useColorScheme } from 'nativewind';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import {
-  BOTTOM_FADE_HEIGHT,
-  BottomFade,
-  TopFade,
-  useScrollFade,
-} from '@/components/kortix/scroll-fade';
-import { ListRow } from '@/components/kortix/list-row';
+import { TopFade, useScrollFade } from '@/components/kortix/scroll-fade';
 import { PageContent } from '@/components/kortix/page-content';
 import { PageList } from '@/components/kortix/page-list';
 import { PageHeader } from '@/components/kortix/page-header';
+import { PinnedBar, usePinnedBarInset } from '@/components/kortix/pinned-bar';
 import { SearchListHeader } from '@/components/kortix/search-list-header';
 import { SelectableMarkdownText } from '@/components/kortix/selectable-markdown';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
@@ -77,6 +77,9 @@ interface ConfigEntriesPageProps {
   onOpenRightDrawer?: () => void;
   isRightDrawerOpen?: boolean;
 }
+
+/** Height of the detail's floating Copy/Edit buttons: `Button size="icon"`. */
+const BAR_CONTROL_HEIGHT = 40;
 
 /** Strip a leading YAML frontmatter block: the body is what reads as a prompt. */
 function stripFrontmatter(source: string): string {
@@ -144,8 +147,8 @@ export function ConfigEntriesPage({
         isDefault={selected.name === defaultName}
         onSetDefault={onSetDefault}
         settingDefault={settingDefault}
-        onBack={() => setSelectedPath(null)}
         onConfigure={onConfigure}
+        onOpenDrawer={onOpenDrawer}
         onOpenRightDrawer={onOpenRightDrawer}
         isRightDrawerOpen={isRightDrawerOpen}
       />
@@ -174,26 +177,30 @@ export function ConfigEntriesPage({
           emptyLabel={
             filtered.length === 0 ? (entries.length === 0 ? `No ${noun} yet` : `No matching ${noun}`) : null
           }>
-          {filtered.map((entry, index) => (
-            <ListRow
-              key={entry.path}
-              title={entry.name}
-              subtitle={[modeLabel(entry.mode), entry.description].filter(Boolean).join(' · ')}
-              divider={index < filtered.length - 1}
-              onPress={() => {
-                haptics.tap();
-                setSelectedPath(entry.path);
-              }}
-              right={
-                <View className="flex-row items-center gap-2">
-                  {entry.name === defaultName ? (
-                    <StarIcon size={14} color={THEME.accent.orange} weight="fill" />
-                  ) : null}
-                  <Icon as={CaretRightIcon} size={18} className="text-muted-foreground" />
-                </View>
-              }
-            />
-          ))}
+          {/* Settings rows in a group (Jay, 2026-09-22): the app's list, not `ListRow`. */}
+          <View className="px-4 pt-1">
+            <SettingsGroup>
+              {filtered.map((entry) => (
+                <SettingsRow
+                  key={entry.path}
+                  label={entry.name}
+                  description={[modeLabel(entry.mode), entry.description].filter(Boolean).join(' · ')}
+                  onPress={() => {
+                    haptics.tap();
+                    setSelectedPath(entry.path);
+                  }}
+                  right={
+                    <View className="flex-row items-center gap-2">
+                      {entry.name === defaultName ? (
+                        <StarIcon size={14} color={THEME.accent.orange} weight="fill" />
+                      ) : null}
+                      <Icon as={CaretRightIcon} size={16} className="text-muted-foreground/70" />
+                    </View>
+                  }
+                />
+              ))}
+            </SettingsGroup>
+          </View>
         </PageList>
       </PageContent>
     </View>
@@ -207,8 +214,8 @@ function EntryDetail({
   isDefault,
   onSetDefault,
   settingDefault,
-  onBack,
   onConfigure,
+  onOpenDrawer,
   onOpenRightDrawer,
   isRightDrawerOpen,
 }: {
@@ -218,14 +225,15 @@ function EntryDetail({
   isDefault: boolean;
   onSetDefault?: (name: string) => void;
   settingDefault: boolean;
-  onBack: () => void;
   onConfigure: (prompt: string) => void;
+  onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
   isRightDrawerOpen?: boolean;
 }) {
-  const insets = useSafeAreaInsets();
   const scrollFade = useScrollFade();
   const { colorScheme } = useColorScheme();
+  const pageBackground = THEME[colorScheme === 'dark' ? 'dark' : 'light'].background;
+  const contentInset = usePinnedBarInset(BAR_CONTROL_HEIGHT);
   const toast = useToast();
   const [copied, setCopied] = React.useState(false);
   const fileQuery = useProjectFile(projectId, entry.path);
@@ -251,36 +259,9 @@ function EntryDetail({
     <View className="flex-1 bg-background">
       <PageHeader
         title={entry.name}
-        onBack={() => {
-          haptics.tap();
-          onBack();
-        }}
+        onOpenDrawer={onOpenDrawer}
         onOpenRightDrawer={onOpenRightDrawer}
         isRightDrawerOpen={isRightDrawerOpen}
-        rightActions={
-          <>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="rounded-full"
-              disabled={!source}
-              onPress={handleCopy}
-              accessibilityLabel={copied ? 'Copied' : `Copy ${kind} source`}>
-              <Icon as={copied ? CheckIcon : CopyIcon} size={20} className="text-foreground" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="rounded-full"
-              onPress={() => {
-                haptics.tap();
-                onConfigure(editConfigPrompt(kind, entry.name, entry.path));
-              }}
-              accessibilityLabel={`Edit ${kind}`}>
-              <Icon as={PencilIcon} size={20} className="text-foreground" />
-            </Button>
-          </>
-        }
       />
       <PageContent>
         <View className="flex-1">
@@ -291,7 +272,7 @@ function EntryDetail({
             contentContainerStyle={{
               paddingHorizontal: 16,
               paddingTop: 4,
-              paddingBottom: BOTTOM_FADE_HEIGHT + insets.bottom,
+              paddingBottom: contentInset,
               gap: 16,
             }}
             showsVerticalScrollIndicator={false}>
@@ -343,8 +324,32 @@ function EntryDetail({
             )}
           </Animated.ScrollView>
           <TopFade style={scrollFade.topFadeStyle} />
-          <BottomFade />
         </View>
+        {/* The file preview sheet's pinned bar exactly (Jay, 2026-09-22):
+            two equal `flex-1` pills, same gap and side padding, icon + label,
+            over a fade of the page background — Download/Add to chat's own
+            layout, not the drawer's icon-only bottom-right. */}
+        <PinnedBar controlHeight={BAR_CONTROL_HEIGHT} background={pageBackground} className="gap-2 px-4">
+          <Button
+            variant="secondary"
+            className="flex-1 rounded-full"
+            onPress={() => {
+              haptics.tap();
+              onConfigure(editConfigPrompt(kind, entry.name, entry.path));
+            }}
+            accessibilityLabel={`Edit ${kind}`}>
+            <Icon as={PencilIcon} size={18} />
+            <Text>Edit</Text>
+          </Button>
+          <Button
+            className="flex-1 rounded-full"
+            disabled={!source}
+            onPress={handleCopy}
+            accessibilityLabel={copied ? 'Copied' : `Copy ${kind} source`}>
+            <Icon as={copied ? CheckIcon : CopyIcon} size={18} />
+            <Text>{copied ? 'Copied' : 'Copy'}</Text>
+          </Button>
+        </PinnedBar>
       </PageContent>
     </View>
   );

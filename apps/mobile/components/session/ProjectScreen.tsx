@@ -139,9 +139,6 @@ const Pages = {
   get ApiKeysTabPage(): typeof import('@/components/pages/ApiKeysPage').ApiKeysTabPage {
     return require('@/components/pages/ApiKeysPage').ApiKeysTabPage;
   },
-  get ChannelsTabPage(): typeof import('@/components/pages/ChannelsPage').ChannelsTabPage {
-    return require('@/components/pages/ChannelsPage').ChannelsTabPage;
-  },
   get TunnelTabPage(): typeof import('@/components/pages/TunnelPage').TunnelTabPage {
     return require('@/components/pages/TunnelPage').TunnelTabPage;
   },
@@ -166,9 +163,6 @@ const Pages = {
   get SecretsNavPage(): typeof import('@/components/pages/SecretsNavPage').SecretsNavPage {
     return require('@/components/pages/SecretsNavPage').SecretsNavPage;
   },
-  get ChannelsNavPage(): typeof import('@/components/pages/ChannelsNavPage').ChannelsNavPage {
-    return require('@/components/pages/ChannelsNavPage').ChannelsNavPage;
-  },
   get SchedulesPage(): typeof import('@/components/pages/SchedulesPage').SchedulesPage {
     return require('@/components/pages/SchedulesPage').SchedulesPage;
   },
@@ -184,9 +178,6 @@ const Pages = {
   get FilesNavPage(): typeof import('@/components/pages/FilesNavPage').FilesNavPage {
     return require('@/components/pages/FilesNavPage').FilesNavPage;
   },
-  get SandboxPage(): typeof import('@/components/pages/SandboxPage').SandboxPage {
-    return require('@/components/pages/SandboxPage').SandboxPage;
-  },
   get DevPage(): typeof import('@/components/pages/DevPage').DevPage {
     return require('@/components/pages/DevPage').DevPage;
   },
@@ -198,9 +189,6 @@ const Pages = {
   },
   get MemoryPage(): typeof import('@/components/pages/MemoryPage').MemoryPage {
     return require('@/components/pages/MemoryPage').MemoryPage;
-  },
-  get LlmProvidersPage(): typeof import('@/components/pages/LlmProvidersPage').LlmProvidersPage {
-    return require('@/components/pages/LlmProvidersPage').LlmProvidersPage;
   },
   get TerminalPage(): typeof import('@/components/pages/TerminalPage').TerminalPage {
     return require('@/components/pages/TerminalPage').TerminalPage;
@@ -1010,6 +998,14 @@ export function ProjectScreen() {
   );
 
   // The left drawer. It mounts through renderDrawerContent, so it stays mounted while visually closed.
+  // The drawer's gear button (top right of the logo): opens the project
+  // settings page. `navigateToPage` alone is enough regardless of which
+  // project route is focused — leaving the store's home state pushes or
+  // replaces the covering route with `view` (ProjectHomeRoute / useCoveringRoute).
+  const openProjectSettings = useCallback(() => {
+    useTabStore.getState().navigateToPage('page:settings');
+  }, []);
+
   const renderDrawer = useCallback(
     () => (
       <ProjectLeftDrawer
@@ -1019,10 +1015,11 @@ export function ProjectScreen() {
         onNewSession={returnHome}
         onOpenProjectSession={openSessionFromDrawer}
         onNavigateRoute={navigateProjectRoute}
+        onOpenSettings={openProjectSettings}
         onClose={closeDrawer}
       />
     ),
-    [projectId, shownSessionId, returnHome, openSessionFromDrawer, navigateProjectRoute, closeDrawer]
+    [projectId, shownSessionId, returnHome, openSessionFromDrawer, navigateProjectRoute, openProjectSettings, closeDrawer]
   );
 
   // Tool pages keep PageHeader: its hamburger opens the drawer, and its "···"
@@ -1106,12 +1103,6 @@ export function ProjectScreen() {
             />
           ) : activePageId === 'page:memory' && PAGE_TABS[activePageId] ? (
             <Pages.MemoryPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
-          ) : activePageId === 'page:llm-providers' && PAGE_TABS[activePageId] ? (
-            <Pages.LlmProvidersPage
-              page={PAGE_TABS[activePageId]}
-              onBack={handlePageBack}
-              {...pageChrome}
-            />
           ) : activePageId === 'page:secrets' && PAGE_TABS[activePageId] ? (
             <Pages.SecretsPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
           ) : activePageId === 'page:agents' && PAGE_TABS[activePageId] ? (
@@ -1132,8 +1123,6 @@ export function ProjectScreen() {
             <Pages.ConnectorsPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
           ) : activePageId === 'page:secrets-nav' && PAGE_TABS[activePageId] ? (
             <Pages.SecretsNavPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
-          ) : activePageId === 'page:channels-nav' && PAGE_TABS[activePageId] ? (
-            <Pages.ChannelsNavPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
           ) : activePageId === 'page:schedules' && PAGE_TABS[activePageId] ? (
             <Pages.SchedulesPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
           ) : activePageId === 'page:webhooks' && PAGE_TABS[activePageId] ? (
@@ -1149,13 +1138,6 @@ export function ProjectScreen() {
             />
           ) : activePageId === 'page:files-nav' && PAGE_TABS[activePageId] ? (
             <Pages.FilesNavPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
-          ) : activePageId === 'page:sandbox' && PAGE_TABS[activePageId] ? (
-            <Pages.SandboxPage
-              page={PAGE_TABS[activePageId]}
-              projectId={projectId}
-              {...pageChrome}
-              onOpenSession={handleOpenSessionById}
-            />
           ) : activePageId === 'page:dev' && PAGE_TABS[activePageId] ? (
             <Pages.DevPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
           ) : activePageId === 'page:members' && PAGE_TABS[activePageId] ? (
@@ -1196,12 +1178,6 @@ export function ProjectScreen() {
             />
           ) : activePageId === 'page:api' && PAGE_TABS[activePageId] ? (
             <Pages.ApiKeysTabPage
-              page={PAGE_TABS[activePageId]}
-              onBack={handlePageBack}
-              {...pageChrome}
-            />
-          ) : activePageId === 'page:channels' && PAGE_TABS[activePageId] ? (
-            <Pages.ChannelsTabPage
               page={PAGE_TABS[activePageId]}
               onBack={handlePageBack}
               {...pageChrome}
@@ -1293,6 +1269,7 @@ export function ProjectScreen() {
     openProjectSession: handleOpenProjectSession,
     openDrawer,
     isDrawerOpen: drawerOpen,
+    openCustomizeSheet,
   };
 
   // ── Render ──
