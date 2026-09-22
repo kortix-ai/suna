@@ -182,6 +182,112 @@ fetches the server-side registered agent list rather than querying
 sandbox OpenCode directly. Model pickers similarly come from the
 server/LLM-gateway catalog rather than a sandbox-local provider list.
 
+## `connectors:`
+
+An optional list of connector definitions — the external systems agents call
+as tools (Composio apps, MCP servers, OpenAPI/Postman/GraphQL/HTTP endpoints,
+channels). Mirrors the dashboard's Customize → Connectors. Connectors are
+project-wide visible; the only access gate is which agents may call one
+(`agents.<name>.connectors` above).
+
+```yaml
+connectors:
+  # Managed SaaS app via Composio — OAuth/API handled by Composio
+  - slug: gmail
+    provider: composio
+    name: Gmail
+    app: gmail
+
+  # Generic REST API from an OpenAPI spec, shared API-key credential
+  - slug: smartlead
+    provider: openapi
+    name: SmartLead API
+    spec: .kortix/smartlead.openapi.json     # repo path or URL
+    credential: shared
+    auth:
+      type: custom                           # bearer|basic|api_key|custom|hmac|…
+      in: query
+      name: api_key
+    policies:
+      - match: "*"                           # action path or wildcard
+        action: always_run                   # always_run|require_approval|block
+
+  # Built-in channel connector (one-click install link, e.g. Slack)
+  - slug: kortix_slack
+    provider: channel
+    platform: slack
+```
+
+| Field                   | Required | Notes                                                                                              |
+| ----------------------- | -------- | -------------------------------------------------------------------------------------------------- |
+| `slug`                  | yes      | `[a-z0-9][a-z0-9_-]{0,127}`, unique among connectors (and apps).                                      |
+| `provider`              | yes      | `composio` \| `openapi` \| `mcp` \| `graphql` \| `http` \| `postman` \| `channel` \| `pipedream` (legacy rollback only — never select it automatically). |
+| `app`                   | composio | The Composio toolkit slug (e.g. `gmail`, `linear`). Find one: `kortix connectors apps <query>`.      |
+| `spec`                  | openapi/postman | URL or repo-relative path to the spec.                                                       |
+| `url` + `transport`     | mcp      | MCP server URL; transport `http` (default) or `sse`.                                                |
+| `endpoint`              | graphql  | GraphQL endpoint URL.                                                                               |
+| `base_url`              | http     | HTTP base URL.                                                                                      |
+| `name`                  | no       | Human display name (also set live with `kortix connectors rename`).                                  |
+| `platform`              | channel  | `slack` \| `teams` \| `email`.                                                                       |
+| `credential`            | no       | `shared` — one server-side credential for the connector. Set the value via `kortix connectors credential` or bind a project secret (`kortix connectors secret`). Never inline in the manifest. |
+| `auth`                  | no       | How the credential is applied: `type` plus placement (`in: header\|query` + `name`).                  |
+| `policies`              | no       | Per-action risk policy: `{ match, action }`. `match` is an action path or wildcard.                  |
+| `authorization_strategy`| no       | `project` (default) \| `user` — see the ownership rules below.                                       |
+
+Adding/removing entries: `kortix connectors add <slug> --provider <p> …` /
+`kortix connectors rm <slug>` edit the local file (add `--apply` to commit to
+main + sync instantly, like the dashboard); plain edits need `kortix ship` then
+`kortix connectors sync`.
+
+### Connector accounts: project-shared vs member-private
+
+A connector is a project-wide TOOL, but the ACCOUNT it runs as is bound when
+the human authorizes it, and that account is either:
+
+- **Project-shared** (`owner: project`) — one identity the WHOLE project acts
+  as; every member's and every agent session's calls run as it (the default
+  account for unnamed calls). This is the right choice for shared company tools.
+- **Member-private** (`owner: me`) — bound to the one person who authorized it;
+  only their own sessions may run as it (the `--account me` selector).
+
+**The identity that completes the OAuth is the identity the connector acts
+as.** A project-shared account must therefore be authorized under the
+project's shared agent identity (e.g. `agent@kortix.ai`) — **never a personal
+login**. A personal login in the shared slot means every agent session
+(support, sales, engineering) silently acts AS that person: their inbox,
+their calendar, their Linear identity, their files.
+
+Rules:
+
+- Shared company tool (company inbox / calendar / Linear / Docs) →
+  `kortix connectors connect <slug> --owner project`, and the human completes
+  the OAuth **signed in as the project identity**.
+- A person's own login → `kortix connectors connect <slug> --owner me`.
+- Ambiguous? Ask the human. Never silently default a personal login into the
+  shared slot.
+- With several accounts on one connector and none named or pinned, calls are
+  DENIED (`account_required`) rather than guessed — pin one explicitly:
+  `kortix connectors accounts <slug> --default <label>`.
+
+Writing `authorization_strategy: project` explicitly on OAuth connectors is
+worthwhile even though it's the default: it encodes the intent in the manifest
+and tells future editors exactly what the shared slot is for.
+
+**Fixing a connector mis-scoped to a personal login** (audit with
+`kortix connectors accounts <slug>` and the manage-gated roster
+`kortix connectors connections ls --all`):
+
+1. Mint a fresh shared link — `kortix connectors connect <slug> --owner
+   project` — and have a human complete the OAuth **as the project identity**.
+2. Pin it: `kortix connectors accounts <slug> --default <label>`.
+3. Revoke the stray personal binding: `kortix connectors connections revoke
+   <connection-id>`.
+4. Optionally re-add the person's own account with `--owner me` so they keep
+   private access from their own sessions.
+
+There is no in-place owner change — an account's owner is fixed at
+authorization. Re-scoping always means: authorize-new → re-pin → revoke-old.
+
 ## Schema versioning
 
 `kortix_version` is the schema version. Version 2 is YAML-only and requires
@@ -205,6 +311,7 @@ self-describing at a glance.
 | Session bootstrap      | `env:` (advisory — surfaced to dashboard, not enforced)              |
 | Apps CLI               | `apps:` (local deployment defaults; deploy remains explicit)          |
 | Session token mint     | `agents:` (per-agent connectors/secrets/skills/kortix_cli scope)     |
+| Connector catalog      | `connectors:` (definitions; account ownership is cloud-side)         |
 | Agent/model UI         | Server-side agent registry + LLM-gateway model catalog                |
 | Dashboard UI           | All of the above + `project:` + the raw manifest                     |
 
