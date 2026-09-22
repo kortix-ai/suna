@@ -21,6 +21,146 @@ linked, not inlined.
 
 ## Register
 
+### Never write back a JSONB column you read earlier: merge in SQL (2026-09-22)
+
+**Rule:** A writer of shared JSONB state (`session_sandboxes.metadata`) never
+builds `{ ...row.metadata, key }` from a read and writes the object back. Merge
+with `coalesce(metadata,'{}'::jsonb) || $patch::jsonb`, strip with the literal
+`-` chain from `stripMetadataKeys`, and put "only if unset" checks in the
+WHERE clause, which Postgres re-evaluates on the locked row. **Trigger
+surface:** any `.update(sessionSandboxes).set({ metadata: … })`, and any new
+lifecycle fence stored in metadata.
+
+**Incident:** SESS-9 failed on every PR preview (restart stuck in
+`provisioning` ~350 s). `pinSandboxEgressIp` read metadata; a restart claimed
+the row ~0.2 s later (`runtimeRestartId`); the pin wrote its stale copy back.
+`ownsRestart()` then returned false and the detached restart returned with no
+log line. The audit found the same shape in the restart claim itself and two
+`/start` clock writers. **Enforcers:** `e2e-sandbox-metadata-race.test.ts`
+(real PostgreSQL row-lock interleaving; runs only with `TEST_DATABASE_URL` —
+not in CI yet, which is the open TODO), `sandbox-egress-pin.test.ts` (hermetic
+shape guard), and the `restart abandoned: lost the restart claim` warning.
+Remaining whole-object writers: `deleteSession`, the provisioning IIFE in
+`session-sandbox.ts`, and the recovery fences in `runtime-identity.ts`.
+
+### Account membership is not project access — a check keyed on account ownership skips project roles (2026-09-22)
+
+**When:** writing any credential check that compares a token's account with a
+resource's account. `authorizeGitProxy` (`apps/api/src/projects/lib/git.ts`)
+evaluated the project role only when a personal token came from a DIFFERENT
+account. A token minted in the project's own account skipped the role for clone
+and push, so account membership stood in for project access. Once members could
+mint their own tokens (#7455, `token.personal.create`), a member with no role on
+a project could write its default branch. A unit test pinned the shortcut as
+intended ("allowed without an IAM round-trip").
+
+**Rule:** a personal credential is checked against the resource's own role
+every time. Account ownership may select WHICH check runs; it never replaces it.
+Ask of every early `return ok`: which principal reaches it without a role check?
+
+*Enforcer:* flow `GH-19` (real `git` processes: an account member with no
+project role is refused clone and push; a project `member` reads but cannot push
+the default branch; `ls-remote` proves the branch unchanged). It fails on the
+old code. `unit-git-proxy-authz.test.ts` pins the role check for same-account
+tokens.
+
+### Reporting a thing and unblocking on it are different code paths — check the one that unblocks (2026-09-22)
+
+**Rule:** Before telling an agent to use a BLOCKING tool on a new surface,
+find the code that RELEASES the block and confirm that surface satisfies its
+gate. A relay that reports the event is not the relay that resumes the caller,
+and the two are gated differently. **Trigger surface:** enabling an
+opencode/agent tool for a channel, or any "this works on platform A, so
+recommend it on platform B".
+
+**Incident:** #7493 changed the Teams turn prompt to recommend opencode's
+built-in `question` tool, on the strength of reading `POST /turn-question` —
+which persists the question, posts the card, and returns a finish-now sentinel.
+That is the REPORTING path, and it is ungated. The path that actually releases
+opencode's blocking `question` call is a separate POST to
+`/question/:id/reply`, gated on `slackRelayContext()` — `SLACK_THREAD_TS` /
+`SLACK_CHANNEL_ID`. A Teams session carries `MS_TEAMS_*`;
+`harness/open-code/boot.ts` had zero `MS_TEAMS` references. So a Teams agent
+posted the card and then hung until its box parked — strictly worse than the
+prose it replaced, because the user sees the question and answers a turn that
+never finishes. Caught while verifying a claim in the PR description, after
+merge, before anyone hit it. **Enforcers:** `channelRelayContext()` now accepts
+either platform, asserted by `question-relay-scope.test.ts` (a Teams session
+must count as a channel; the sentinel must come from `channelLabel()`), and
+`unit-channel-question-guidance.test.ts` asserts the two platforms differ ON
+PURPOSE until sandboxes carry the fixed daemon.
+
+**Second rule:** a server-side prompt change reaches every running session on
+the next API deploy; the sandbox agent server is IMAGE-BAKED and reaches only
+sandboxes built after it. When a feature needs both, ship the prompt LAST.
+Shipping it first is what made this live before its daemon half existed.
+
+### Check a port with a bind, never with `ss -l` (2026-09-22)
+
+**Rule:** To decide whether a host port is free for a container, ATTEMPT THE
+BIND. `ss -ltn` lists LISTENING sockets only and reports a port free while
+`bind()` still returns EADDRINUSE, so a wait built on it passes instantly on a
+port that is not free. **Trigger surface:** any CI step that frees ports before
+starting a service. **Incident:** the Supabase port failure was "fixed" three
+times — teardown on every lane, then removal by published port, then a wait on
+`ss -ltnH`. It recurred a fifth time on browser-2: `supabase stop` returned at
+09:19:26.710, the `ss` wait cleared all four ports by 09:19:27.448 (0.74s,
+first poll), and `supabase start` still failed to bind 54324 twenty-five
+seconds later. The check was passing on a port that was not free, and two
+fixes rested on that reading. **Enforcers:** the SO_REUSEADDR bind loop in
+`tests.yml`'s "Free the local Supabase ports" (SO_REUSEADDR to match
+docker-proxy, or a lingering TIME_WAIT makes it wait the full 30s), pinned by
+`tests/unit/sandbox-workflow.test.ts`, which now also forbids the
+`ss -ltnH | grep -q` shape.
+
+**Second rule from the same change:** keep embedded scripts inside a workflow
+`run: |` block to ONE LINE, or indent every line past the block's own indent.
+A multi-line `python3 -c "` whose body starts at column 0 ENDS the block
+scalar, and GitHub then fails to parse the whole workflow. The symptom is
+silent and misleading: the run completes with **zero jobs**, and the pull
+request reads `CLEAN` with **no lane checks at all** — a green that means
+"nothing ran". Check with `gh run view <id> --json jobs`; an empty list is a
+parse failure, not a pass. Verified locally by asserting every non-blank line
+inside each `run: |` is indented past its key.
+
+**Meta-rule, earned the hard way:** a diagnostic that reports "clean" is not
+evidence of clean until you have proved the diagnostic can report dirty. This
+one was run against four genuinely-held ports and warned on all four; the `ss`
+version, run the same way, would have said they were free.
+
+### A PR into `main` shows all-green with the whole suite skipped (2026-09-22)
+
+**Rule:** before merging any PR into `main`, read the CHECK NAMES, not the
+pass count. `tests.yml` gates its lane matrix on
+`contains(labels, 'test') || contains(labels, 'preview')` for pull requests
+into `main`, so an unlabelled PR skips all six lanes — core, browser-1..4,
+packages — and still reports every remaining check green. `${{ matrix.lane }}
+lane: skipping` beside `9 pass / 0 fail` is a PR that ran CodeQL, gitleaks and
+a typecheck, and nothing else. Add the `test` label and wait, or merge knowing
+only lint ran. **Near-miss:** PR #7483 (transcript mirror paging, apps/api +
+packages/sdk) was `MERGEABLE`/`CLEAN` with zero lanes run; labelled, the core
+lane then failed and four browser lanes passed. **Gotcha within the gotcha:**
+`gh pr edit --add-label` can fail on a Projects-classic GraphQL error and
+apply NOTHING while exiting noisily — check
+`gh pr view --json labels`, or use
+`gh api -X POST repos/<owner>/<repo>/issues/<n>/labels -f 'labels[]=test'`.
+*Enforcer:* none — the skip is by design, so nothing will ever fail for it.
+The check-name read is the control.
+
+### A local-stack CI failure is the stack, not the diff (2026-09-22)
+
+**Rule:** when a `core` or `browser` lane fails, find the first error before
+the test list. `local Supabase start exited with code 1` at
+`tests/src/core/local-stack.ts` with `failed to set up container networking`
+is the runner's docker, and the flows it gates never ran — nothing asserted
+false. Re-run that lane; do not touch the code, and do not report the re-run
+as a fix. If it fails the same way twice, that is a signal about the runner
+and belongs in a report, not in a third re-run. **Near-miss:** PR #7483's core
+lane failed exactly this way while `sdk`, `flow-runner-unit`,
+`route-coverage` and `worktree-unit` passed in the same lane; the re-run went
+green with no change. *Enforcer:* none.
+
+
 ### Port a guard with the feature, or the second platform ships without it (2026-09-22)
 
 **Rule:** When a channel/platform copies an interaction from another, copy its
@@ -7497,3 +7637,28 @@ and the App installation <id> is ignored` once per process
 Procedure and verified installation ids: `docs/runbooks/managed-git-config.md`.
 Owed: an alert on the provision 5xx ratio (the stream route answers `200` with
 an `error` frame, so a status alert alone misses it).
+
+### 2026-09-22 — A provider fan-out that folds refusals into a silent 503
+
+**Near-miss.** PR previews moved to Platinum-only sessions (#7482). The first
+tested run (35708105773) failed SNAP-2: `POST /v1/projects/:id/snapshots/rebuild`
+answered `503 Could not start a rebuild on any sandbox provider` with no log
+line. Platinum refuses `DELETE /v1/templates/:id` while any sandbox pins the
+template (`409 template_in_use`, reproduced live with a probe sandbox). Daytona
+deletes a snapshot under live sandboxes. The shared default image is in use
+whenever a session runs, so Rebuild failed every time on a Platinum-only
+deployment. The same run also exposed two tests that passed only because
+Daytona answered a fabricated `external_id` non-definitively (spec 26) or was
+the hard-coded pin target (PROJ-31, spec 12).
+
+**Rule.** A route that fans an action out to providers and folds the results
+into one status must log each provider's error, and must map an expected
+provider state (in use, not found) to a typed error with its own status. A
+generic 5xx means "a provider failed", never "the provider said no". A test
+fixture must never depend on a provider's answer about an id the test made up;
+put the state the test needs in the fixture, and read enabled providers from
+the API instead of naming one.
+
+**Enforcement.** `SnapshotInUseError` + `rebuildFailureResponse`
+(`provider-actions.test.ts`, `platinum-list-pagination.test.ts`); SNAP-2
+asserts `202` or `409 SNAPSHOT_IN_USE` and fails on `503`. PR #7491.

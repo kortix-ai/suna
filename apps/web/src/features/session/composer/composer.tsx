@@ -33,7 +33,7 @@ import {
 } from 'react';
 import { extractClipboardFiles } from '../clipboard-files';
 import { mergeFailedSubmissionFiles } from '../composer-draft-recovery';
-import { resolveComposerResetOnSend } from '../composer-reset';
+import { resolveComposerResetOnSend, type ComposerSendReset } from '../composer-reset';
 import { disownSentAttachmentPreviews, revokeUnsentPreview } from '../sent-attachment-previews';
 import {
   isModelRequiredButUnavailable,
@@ -228,7 +228,8 @@ export interface SessionChatInputProps {
    * shortly.
    */
   onNoticeRetry?: () => void;
-  clearOnSend?: boolean;
+  /** What send does to this composer — see `ComposerSendReset`. */
+  clearOnSend?: ComposerSendReset;
   modelRequired?: boolean;
   modelsLoading?: boolean;
   autoFocus?: boolean;
@@ -1301,14 +1302,15 @@ function ComposerImpl({
         // 'refuse'`, `blocker`) — those keep the text in the editor on
         // purpose, so its draft has to survive with it.
         clearSavedDraft();
-        if (clearOnSend && !stash) {
+        // The same reset rule the message path uses, so a `'text-only'` host
+        // (project home) empties its box here too WITHOUT revoking preview URLs
+        // the next surface still draws from.
+        const commandReset = resolveComposerResetOnSend(clearOnSend, attachedFilesRef.current);
+        if (commandReset.clear && !stash) {
           editorRef.current?.clear();
-          setAttachedFiles((prev) => {
-            for (const file of prev) {
-              if (file.kind === 'local') revokeUnsentPreview(file.localUrl);
-            }
-            return [];
-          });
+          for (const url of commandReset.urlsToRevoke) revokeUnsentPreview(url);
+          attachedFilesRef.current = [];
+          setAttachedFiles([]);
         }
         return 'sent';
       }
@@ -1352,9 +1354,9 @@ function ComposerImpl({
 
       // At hand-off, BEFORE the host runs: a send with uploads posts later, and a
       // reload in that window must not restore the sent draft. Explicit, NOT
-      // derived from `reset.clear`: the project-home composer passes
-      // `clearOnSend={false}` (`composer-reset.ts`). A refused send saves the
-      // draft again in `onFailed`.
+      // derived from `reset.clear`: a composer can hand a send off without
+      // emptying itself (`clearOnSend={false}`) and its saved draft still has
+      // to go. A refused send saves the draft again in `onFailed`.
       clearSavedDraft();
       // The host paints the message, then returns. A send with uploads returns
       // right after the paint (`deliverAfterPaint`), so the next Send never waits
@@ -1378,7 +1380,12 @@ function ComposerImpl({
           const sentFiles = filesToSend ?? [];
 
           const plan = planFailedSendRecovery({
-            clearOnSend,
+            // `reset.clear`, not `clearOnSend`: recovery is owed to every
+            // composer that EMPTIED itself, and `'text-only'` (project home)
+            // now does while still being neither `true` nor `false`. Keying it
+            // on the raw prop returned `null` there and left a refused send
+            // with an empty box and no draft to get back.
+            clearOnSend: reset.clear,
             submittedDoc,
             submittedIsEmpty,
             currentDoc,
@@ -1396,10 +1403,11 @@ function ComposerImpl({
           // The tray draws these files again, so the sent cache no longer owns their pictures.
           disownSentAttachmentPreviews(sentFiles);
           // The draft was cleared at hand-off; the editor holds it again, so save it. Only where
-          // Send clears the editor: project home (`clearOnSend={false}`) keeps its draft on screen,
-          // and a connector-gate Retry that sends it later must not bring it back as a saved draft.
+          // Send cleared the editor — a composer that kept its draft on screen (`clearOnSend`
+          // false) never lost it, and a connector-gate Retry that sends it later must not bring
+          // it back as a saved draft.
           const restoredDoc = editorRef.current?.getDocument();
-          if (clearOnSend && restoredDoc)
+          if (reset.clear && restoredDoc)
             handleDocChange(restoredDoc, editorRef.current?.isEmpty() ?? true);
         },
       });

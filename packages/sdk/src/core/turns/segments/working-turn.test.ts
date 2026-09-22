@@ -386,6 +386,16 @@ describe('a busy session always draws exactly one Thinking row', () => {
     expect(workingTurnDrawsBusyRow({ ...base, workingTurnHasError: false, workingTurnId: null })).toBe(false);
     expect(workingTurnDrawsBusyRow({ ...base, workingTurnHasError: false, lastTurnWorking: false })).toBe(false);
   });
+
+  test('a turn parked on a question draws no row, even during a retry', () => {
+    // 2026-09-22, local (session 8d807956): the agent asked a 2-option
+    // question; the row stayed `active` for 12m22s and the transcript shimmered
+    // "Working on it" above the card asking the reader to act.
+    const base = { lastTurnWorking: true, workingTurnId: 'turn', suppressed: false, workingTurnHasError: false };
+    expect(workingTurnDrawsBusyRow({ ...base, isRetrying: false, awaitingUser: true })).toBe(false);
+    expect(workingTurnDrawsBusyRow({ ...base, isRetrying: true, awaitingUser: true })).toBe(false);
+    expect(workingTurnDrawsBusyRow({ ...base, isRetrying: false, awaitingUser: false })).toBe(true);
+  });
 });
 
 describe('only a confirmed active turn drops its pending presentation', () => {

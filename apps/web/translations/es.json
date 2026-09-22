@@ -1441,7 +1441,8 @@
         "status": "Estado",
         "activity": "Actividad",
         "source": "Origen",
-        "none": "Ninguno"
+        "none": "Ninguno",
+        "owner": "Propietario"
       },
       "order": {
         "activity": "Última actividad",
@@ -1475,7 +1476,19 @@
       "sourceValue": {
         "mine": "Mis chats",
         "shared": "Compartidas"
-      }
+      },
+      "owner": "Propietario",
+      "access": "Acceso",
+      "ownerValue": {
+        "you": "Tú",
+        "unknown": "Propietario desconocido"
+      },
+      "accessValue": {
+        "private": "Solo el propietario",
+        "restricted": "Personas concretas",
+        "project": "Todo el proyecto"
+      },
+      "ownerAccess": "{owner} · {access}"
     },
     "loadingMore": "Cargando…",
     "loadMoreSessions": "Cargar más sesiones"
@@ -18279,7 +18292,7 @@
       "textf9cfe2f2d411": "instalaciones",
       "textf9d35d43770d": "tools",
       "textf9d46c1722ea": "Enviar inmediatamente",
-      "textf9d52abc1fb8": "Requisitos de inicio de sesión para toda la cuenta.",
+      "textf9d52abc1fb8": "Reglas de inicio de sesión y de acceso a sesiones para toda la cuenta.",
       "textf9dcbb55deba": "Automatizar",
       "textf9debe3e14a5": "Activa Create Users, Update User Attributes y Deactivate Users → Save.",
       "textf9e0dab461a6": "haz grep en toda tu empresa.",
@@ -18601,7 +18614,12 @@
       "textd9692dea50e7": "Añade la app a un chat o canal y pega abajo el ID de tu inquilino para vincularla a este proyecto.",
       "text8dd795841572": "El secreto de cliente está cifrado. Solo el agente de este espacio de trabajo puede leerlo.",
       "text5cb103d6008c": "Hilo de canal",
-      "text31d248c44579": "Conversación sin título"
+      "text31d248c44579": "Conversación sin título",
+      "text3ea5efedf114": "Se permitió a los administradores abrir cualquier sesión",
+      "text88cfd89168a0": "Se dejó de permitir a los administradores abrir cualquier sesión",
+      "textcbccc00faa36": "Se abrió la sesión de un miembro como administrador de la cuenta",
+      "text798f62f95bed": "Se consultó el acceso de administradores a sesiones",
+      "text0814e13d671d": "Se cambió el acceso de administradores a sesiones"
     }
   },
   "projectOnboarding": {
@@ -19544,5 +19562,20 @@
     "noAccessBody": "Pide a un propietario o admin que invite a {email}.",
     "loadErrorTitle": "No se pudieron cargar tus proyectos",
     "loadErrorBody": "Revisa tu conexión e inténtalo de nuevo."
+  },
+  "sessionOversight": {
+    "label": "Los administradores pueden abrir cualquier sesión",
+    "description": "Los propietarios y administradores de la cuenta pueden abrir cualquier sesión de esta cuenta, incluidas las privadas. Cada sesión abierta así queda en el registro de auditoría.",
+    "ownerOnlyDescription": "Los propietarios y administradores de la cuenta pueden abrir cualquier sesión de esta cuenta, incluidas las privadas. Solo un propietario de la cuenta puede cambiarlo.",
+    "enableTitle": "¿Permitir que los administradores abran cualquier sesión?",
+    "enableDescription": "Los propietarios y administradores podrán abrir todas las sesiones de esta cuenta, incluidas las que los miembros mantienen privadas. Los miembros verán un aviso en el diálogo de compartir. Cada sesión abierta así se registra en el registro de auditoría.",
+    "enableConfirm": "Activar",
+    "disableTitle": "¿Dejar de permitir que los administradores abran cualquier sesión?",
+    "disableDescription": "Las sesiones privadas vuelven a ser solo del propietario. Los administradores solo conservan acceso a las sesiones compartidas con ellos.",
+    "disableConfirm": "Desactivar",
+    "enabledToast": "Los administradores ya pueden abrir cualquier sesión",
+    "disabledToast": "Las sesiones privadas vuelven a ser solo del propietario",
+    "failedToast": "No se pudo actualizar este ajuste",
+    "shareDisclosure": "Los propietarios y administradores de la cuenta pueden abrir cualquier sesión de esta cuenta, elijas lo que elijas aquí."
   }
 }

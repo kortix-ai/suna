@@ -99,10 +99,10 @@ test("28 — eager composer uploads before Send and reuses handles after refusal
   const events: NetworkEvent[] = [];
   let uploadRequests = 0;
   let failUploads = false;
-  // The next upload request waits at the gate until the test releases it.
-  type UploadHold = { observed: Promise<void>; gate: Promise<void>; observe: () => void; release: () => void };
-  let hold: UploadHold | undefined;
-  const holdNextUpload = (): UploadHold => {
+  // A request the route handler parks until the test releases it: `observed`
+  // settles when it arrives, `gate` when the test lets it through.
+  type RequestHold = { observed: Promise<void>; gate: Promise<void>; observe: () => void; release: () => void };
+  const makeHold = (): RequestHold => {
     let observe = () => {};
     let release = () => {};
     const observed = new Promise<void>((resolve) => {
@@ -111,9 +111,16 @@ test("28 — eager composer uploads before Send and reuses handles after refusal
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    hold = { observed, gate, observe: () => observe(), release: () => release() };
+    return { observed, gate, observe: () => observe(), release: () => release() };
+  };
+  let hold: RequestHold | undefined;
+  const holdNextUpload = (): RequestHold => {
+    hold = makeHold();
     return hold;
   };
+  // The refused create below is held the same way, so the composer's in-flight
+  // surface can be asserted while the request is still open.
+  let createHold: RequestHold | undefined;
   let failFirstSend = true;
   // Refuses the session create that a Send with a held upload makes at once.
   // A deployed target would accept it and navigate away; a refusal keeps the
@@ -268,6 +275,12 @@ test("28 — eager composer uploads before Send and reuses handles after refusal
         path === `/v1/projects/${project.id}/sessions`
       ) {
         failHeldCreate = false;
+        if (createHold) {
+          const current = createHold;
+          createHold = undefined;
+          current.observe();
+          await current.gate;
+        }
         await route.fulfill({
           status: 500,
           contentType: "application/json",
@@ -446,15 +459,39 @@ test("28 — eager composer uploads before Send and reuses handles after refusal
     // no prompt, because the held upload has no handle yet.
     await expect(send).toBeEnabled();
     failHeldCreate = true;
+    createHold = makeHold();
+    const heldCreateHold = createHold;
     const heldCreate = page.waitForRequest(
       (request) =>
         request.method() === "POST" &&
         pathname(request) === `/v1/projects/${project.id}/sessions`,
     );
     await input.press("Enter");
+
+    // THE SEND IS REAL FROM THE KEYPRESS, not from the create's answer. The
+    // create is parked open below, so everything asserted here is the surface
+    // the user is looking at while the round trip runs — the window that used
+    // to show the typed sentence frozen in a locked box behind a spinner
+    // (measured 1165ms end to end on localhost, `POST .../sessions` 908ms of
+    // it). The box is empty and the message is on screen as its own bubble,
+    // with the picture it carries, exactly as the session it is about to open
+    // will draw it.
+    await heldCreateHold.observed;
+    const optimisticTurn = page.locator("[data-turn-id='optimistic']");
+    await expect(optimisticTurn).toBeVisible();
+    await expect(optimisticTurn).toContainText("Eager attachment first prompt");
+    await expect(input).toHaveText("");
+    // The project-home heading is gone: the column is a thread now, and the
+    // composer has left the hero position for the dock under it.
+    await expect(page.getByRole("heading", { level: 1 })).toHaveCount(0);
+    heldCreateHold.release();
+
     expect(attachmentIds((await heldCreate).postDataJSON())).toEqual([]);
     expect(promptBodies).toHaveLength(0);
     // The injected create refusal keeps the draft and returns every upload.
+    // NOTHING was created and nothing navigated, so the bubble goes back to
+    // being an editable draft rather than staying on screen as a lie.
+    await expect(optimisticTurn).toHaveCount(0, { timeout: 10_000 });
     await expect(input).toHaveText("Eager attachment first prompt", {
       timeout: 10_000,
     });

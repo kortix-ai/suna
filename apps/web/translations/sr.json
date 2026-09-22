@@ -1441,7 +1441,8 @@
         "status": "Статус",
         "activity": "Активност",
         "source": "Извор",
-        "none": "Без груписања"
+        "none": "Без груписања",
+        "owner": "Власник"
       },
       "order": {
         "activity": "Последња активност",
@@ -1475,7 +1476,19 @@
       "sourceValue": {
         "mine": "Моја ћаскања",
         "shared": "Дељено"
-      }
+      },
+      "owner": "Власник",
+      "access": "Приступ",
+      "ownerValue": {
+        "you": "Ти",
+        "unknown": "Непознат власник"
+      },
+      "accessValue": {
+        "private": "Само власник",
+        "restricted": "Одређене особе",
+        "project": "Цео пројекат"
+      },
+      "ownerAccess": "{owner} · {access}"
     },
     "loadingMore": "Учитавање…",
     "loadMoreSessions": "Учитајте још сесија"
@@ -18279,7 +18292,7 @@
       "textf9cfe2f2d411": "инсталација",
       "textf9d35d43770d": "tools",
       "textf9d46c1722ea": "Шаљи одмах",
-      "textf9d52abc1fb8": "Захтеви за пријављивање на нивоу налога.",
+      "textf9d52abc1fb8": "Правила за пријављивање и приступ сесијама на нивоу налога.",
       "textf9dcbb55deba": "аутоматизуј",
       "textf9debe3e14a5": "Омогућите Create Users, Update User Attributes и Deactivate Users → Save.",
       "textf9e0dab461a6": "претражите целу компанију помоћу grep-а.",
@@ -18601,7 +18614,12 @@
       "textd9692dea50e7": "Dodajte aplikaciju u ćaskanje ili kanal, pa ispod nalepite ID zakupca da biste je povezali sa ovim projektom.",
       "text8dd795841572": "Tajna klijenta je šifrovana. Može je pročitati samo agent ovog radnog prostora.",
       "text5cb103d6008c": "Nit kanala",
-      "text31d248c44579": "Razgovor bez naslova"
+      "text31d248c44579": "Razgovor bez naslova",
+      "text3ea5efedf114": "Администраторима дозвољено да отворе сваку сесију",
+      "text88cfd89168a0": "Администраторима забрањено да отворе сваку сесију",
+      "textcbccc00faa36": "Сесија члана отворена као администратор налога",
+      "text798f62f95bed": "Прегледан приступ администратора сесијама",
+      "text0814e13d671d": "Промењен приступ администратора сесијама"
     }
   },
   "projectOnboarding": {
@@ -19544,5 +19562,20 @@
     "noAccessBody": "Zamolite vlasnika ili admina da pozove {email}.",
     "loadErrorTitle": "Vaši projekti nisu mogli da se učitaju",
     "loadErrorBody": "Proverite vezu i pokušajte ponovo."
+  },
+  "sessionOversight": {
+    "label": "Администратори могу да отворе сваку сесију",
+    "description": "Власници и администратори налога могу да отворе било коју сесију у овом налогу, укључујући приватне. Свака сесија отворена на овај начин уписује се у дневник ревизије.",
+    "ownerOnlyDescription": "Власници и администратори налога могу да отворе било коју сесију у овом налогу, укључујући приватне. Само власник налога може ово да промени.",
+    "enableTitle": "Дозволити администраторима да отворе сваку сесију?",
+    "enableDescription": "Власници и администратори моћи ће да отворе сваку сесију у овом налогу, укључујући сесије које чланови држе приватним. Чланови виде обавештење у дијалогу за дељење. Свака сесија отворена на овај начин уписује се у дневник ревизије.",
+    "enableConfirm": "Укључи",
+    "disableTitle": "Забранити администраторима да отворе сваку сесију?",
+    "disableDescription": "Приватне сесије поново припадају само власнику. Администратори задржавају приступ само сесијама које су подељене са њима.",
+    "disableConfirm": "Искључи",
+    "enabledToast": "Администратори сада могу да отворе сваку сесију",
+    "disabledToast": "Приватне сесије поново припадају само власнику",
+    "failedToast": "Подешавање није могло да се ажурира",
+    "shareDisclosure": "Власници и администратори налога могу да отворе сваку сесију у овом налогу, без обзира на избор овде."
   }
 }

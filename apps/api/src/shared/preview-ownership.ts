@@ -22,6 +22,7 @@ import {
 } from '../connectors/share';
 import { authorize } from '../iam';
 import { actorForUser } from '../iam/actor';
+import { hasAccountSessionOversight } from '../iam/session-oversight';
 import { accountMembers, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, or, sql } from 'drizzle-orm';
 import type { KortixUserContext } from './kortix-user-context';
@@ -117,19 +118,31 @@ export async function canAccessSandboxSession(input: {
       callerSessionId: input.callerSessionId,
       boundCredentialSessionId: input.boundCredentialSessionId,
     };
-    allowed = isProjectSessionVisibleTo(
-      row.visibility as 'private' | 'project' | 'restricted',
-      row.createdBy,
-      grants,
-      subject,
-      {
-        origin: row.origin ?? null,
-        sessionId: input.sessionId,
-        callerSessionId: input.callerSessionId,
-        boundCredentialSessionId: input.boundCredentialSessionId,
-      },
-      { metadata: row.metadata, canManageProject: managerVerdict.allowed },
-    );
+    const ownership = {
+      origin: row.origin ?? null,
+      sessionId: input.sessionId,
+      callerSessionId: input.callerSessionId,
+      boundCredentialSessionId: input.boundCredentialSessionId,
+    };
+    const visibility = row.visibility as 'private' | 'project' | 'restricted';
+    allowed = isProjectSessionVisibleTo(visibility, row.createdBy, grants, subject, ownership, {
+      metadata: row.metadata,
+      canManageProject: managerVerdict.allowed,
+    });
+    // Account session oversight — the same rule `loadVisibleSession` applies,
+    // so an admin who may open a session's transcript may also reach its
+    // runtime. Human credentials only.
+    if (
+      !allowed &&
+      input.boundCredentialSessionId === null &&
+      (await hasAccountSessionOversight(input.userId, input.accountId))
+    ) {
+      allowed = isProjectSessionVisibleTo(visibility, row.createdBy, grants, subject, ownership, {
+        metadata: row.metadata,
+        canManageProject: managerVerdict.allowed,
+        accountSessionOversight: true,
+      });
+    }
   }
   sessionVisibilityCache.set(key, { allowed, expiresAt: Date.now() + SESSION_VISIBILITY_TTL_MS });
   if (!allowed && lastRefusalContext) refusalContexts.set(key, lastRefusalContext);

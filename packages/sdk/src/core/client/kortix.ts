@@ -70,6 +70,45 @@ function runtime(): OpencodeClient {
  */
 const inFlightSessionStarts = new Map<string, Promise<SessionRuntimeEntry>>();
 
+/**
+ * Build the `RUNTIME_UNAVAILABLE` message from a not-ready `/start` result.
+ *
+ * The server already earns a concrete reason on a terminal `stage:"failed"` —
+ * `failure.category`/`failure.message`, its `failure.evidence.error`, or a
+ * plain `reason` (see `SessionStartResultSchema` in `@kortix/api-contract`).
+ * Before this, the caller threw only `(stage: <stage>)` and dropped all of it,
+ * so `kortix sessions log`/`sessions new --wait` surfaced a bare
+ * `Session runtime not ready (stage: failed)` with no cause — the operator
+ * could not tell a provider-capacity failure from a git-auth failure
+ * (incident-20260922T140537Z-kxhourly). Keep the stage for continuity and
+ * append the concrete reason when the result carries one.
+ */
+function runtimeNotReadyMessage(
+  started:
+    | {
+        stage?: string;
+        reason?: string;
+        failure?: {
+          category?: string;
+          message?: string;
+          evidence?: { error?: string | null } | null;
+        } | null;
+      }
+    | null
+    | undefined,
+): string {
+  const base = `Session runtime not ready (stage: ${started?.stage ?? 'unknown'})`;
+  const failure = started?.failure;
+  const parts: string[] = [];
+  if (failure?.category) parts.push(failure.category);
+  if (failure?.message) parts.push(failure.message);
+  const providerError = failure?.evidence?.error;
+  if (providerError && providerError !== failure?.message) parts.push(providerError);
+  // `reason` is the coarser fallback the server sends without a `failure` block.
+  if (parts.length === 0 && started?.reason) parts.push(started.reason);
+  return parts.length > 0 ? `${base}: ${parts.join(' — ')}` : base;
+}
+
 export class SessionNotReadyError extends Error {
   constructor(action: string) {
     super(
@@ -1022,7 +1061,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           !started.sandbox ||
           !started.opencode_session_id
         ) {
-          throw new ApiError(`Session runtime not ready (stage: ${started?.stage ?? 'unknown'})`, {
+          throw new ApiError(runtimeNotReadyMessage(started), {
             code: 'RUNTIME_UNAVAILABLE',
           });
         }

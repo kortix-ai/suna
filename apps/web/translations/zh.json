@@ -1441,7 +1441,8 @@
         "status": "状态",
         "activity": "活动",
         "source": "来源",
-        "none": "不分组"
+        "none": "不分组",
+        "owner": "所有者"
       },
       "order": {
         "activity": "最近活动",
@@ -1475,7 +1476,19 @@
       "sourceValue": {
         "mine": "我的聊天",
         "shared": "共享"
-      }
+      },
+      "owner": "所有者",
+      "access": "访问权限",
+      "ownerValue": {
+        "you": "你",
+        "unknown": "未知所有者"
+      },
+      "accessValue": {
+        "private": "仅所有者",
+        "restricted": "特定成员",
+        "project": "整个项目"
+      },
+      "ownerAccess": "{owner} · {access}"
     },
     "loadingMore": "加载中…",
     "loadMoreSessions": "加载更多会话"
@@ -18279,7 +18292,7 @@
       "textf9cfe2f2d411": "次安装",
       "textf9d35d43770d": "工具",
       "textf9d46c1722ea": "立即推送",
-      "textf9d52abc1fb8": "账户级登录要求。",
+      "textf9d52abc1fb8": "账户级登录与会话访问规则。",
       "textf9dcbb55deba": "自动化",
       "textf9debe3e14a5": "启用 Create Users、Update User Attributes 和 Deactivate Users → Save。",
       "textf9e0dab461a6": "grep 整个公司。",
@@ -18601,7 +18614,12 @@
       "textd9692dea50e7": "将应用添加到聊天或频道，然后在下方粘贴租户 ID，以将其绑定到此项目。",
       "text8dd795841572": "客户端密码已加密。只有此工作区的智能体可以读取。",
       "text5cb103d6008c": "频道会话",
-      "text31d248c44579": "未命名会话"
+      "text31d248c44579": "未命名会话",
+      "text3ea5efedf114": "允许管理员打开所有会话",
+      "text88cfd89168a0": "不再允许管理员打开所有会话",
+      "textcbccc00faa36": "以账户管理员身份打开了成员的会话",
+      "text798f62f95bed": "查看了管理员会话访问设置",
+      "text0814e13d671d": "更改了管理员会话访问设置"
     }
   },
   "projectOnboarding": {
@@ -19544,5 +19562,20 @@
     "noAccessBody": "请让所有者或管理员邀请 {email}。",
     "loadErrorTitle": "无法加载你的项目",
     "loadErrorBody": "请检查网络连接后重试。"
+  },
+  "sessionOversight": {
+    "label": "管理员可打开所有会话",
+    "description": "账户所有者和管理员可以打开此账户中的任何会话，包括私密会话。以此方式打开的每个会话都会记入审计日志。",
+    "ownerOnlyDescription": "账户所有者和管理员可以打开此账户中的任何会话，包括私密会话。只有账户所有者可以更改此设置。",
+    "enableTitle": "允许管理员打开所有会话？",
+    "enableDescription": "账户所有者和管理员将能够打开此账户中的所有会话，包括成员设为私密的会话。成员会在共享对话框中看到提示。以此方式打开的每个会话都会记入审计日志。",
+    "enableConfirm": "开启",
+    "disableTitle": "不再允许管理员打开所有会话？",
+    "disableDescription": "私密会话恢复为仅所有者可见。管理员只保留对与其共享的会话的访问权限。",
+    "disableConfirm": "关闭",
+    "enabledToast": "管理员现在可以打开所有会话",
+    "disabledToast": "私密会话已恢复为仅所有者可见",
+    "failedToast": "无法更新此设置",
+    "shareDisclosure": "无论你在这里如何选择，账户所有者和管理员都可以打开此账户中的所有会话。"
   }
 }

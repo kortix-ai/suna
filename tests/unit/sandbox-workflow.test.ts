@@ -75,15 +75,30 @@ describe('native test-lane workflow', () => {
     expect(free).toContain('54321 54322 54323 54324');
     expect(free).not.toContain('if:');
 
-    // Removing the container is not the same as getting the port back. On run
-    // 35630898515 (browser-1, main @ 3c67a5e0b6) the stop ran, the container
-    // filter matched nothing, 54322 bound fine, and 54324 still refused — the
-    // binding simply had not been released yet. So the sweep also WAITS, and
-    // names the holder if the wait runs out, because the three occurrences so
-    // far were each diagnosed by inference rather than evidence.
-    expect(free).toContain('ss -ltnH "sport = :$port"');
+    // Removing the container is not the same as getting the port back, so the
+    // sweep also WAITS — by attempting a real bind.
+    //
+    // It used to wait on `ss -ltnH`, which lists LISTENING sockets only and so
+    // reports a port free while `bind()` still returns EADDRINUSE. Measured on
+    // browser-2: `supabase stop` returned at 09:19:26.710, the loop cleared all
+    // four ports by 09:19:27.448 — 0.74s, first poll — and `supabase start`
+    // still failed to bind 54324 twenty-five seconds later. A bind cannot
+    // disagree with Docker, because it is what Docker does.
+    expect(free).toContain('SO_REUSEADDR');
+    expect(free).toContain("s.bind(('0.0.0.0',int(sys.argv[1])))");
+    // A ONE-LINER on purpose: multi-line python inside this block scalar sits
+    // at column 0, which ends the scalar and makes the whole workflow fail to
+    // parse — a run with zero jobs, and a pull request that reads CLEAN with no
+    // lane checks at all. That is how this shipped broken the first time.
+    expect(free).toContain('bindable() {');
+    expect(free).not.toMatch(/^import socket/m);
+    expect(free).not.toMatch(/ss -ltnH[^\n]*\|\s*grep -q/);
+    expect(free).toMatch(/::warning::port \$port still refuses a bind/);
+    // The diagnostic still names the holder, and now reads ALL socket states —
+    // the listening-only view is what hid this for two rounds of fixes.
     expect(free).toContain('ss -ltnp "sport = :$port"');
-    expect(free).toMatch(/::warning::port \$port is still bound/);
+    expect(free).toContain('ss -tanH "sport = :$port"');
+    expect(free).toContain('docker ps -a --filter "publish=$port"');
   });
 
   test('has no cloud-sandbox worker path left', () => {
@@ -291,5 +306,57 @@ describe('native test-lane workflow', () => {
         source.includes('pnpm test -- --target-browser-full'),
     );
     expect(shardedTargetCallers.map(({ name }) => name).sort()).toEqual(['tests-release.yml']);
+  });
+});
+
+/**
+ * The preview comment and its deployment status must not claim a test run that
+ * did not happen.
+ *
+ * A labelled preview is a persistent branch environment, and a redeploy from a
+ * push deliberately SKIPS the suite (`PREVIEW_RUN_TESTS`). Both surfaces branched
+ * on the deploy's outcome alone, so every such redeploy published "Preview
+ * environment - live and tested" and "`pnpm test -- --target-full` passed" —
+ * the most reassuring sentence on the pull request, over a deploy that ran
+ * nothing. Observed on #7506, whose last deploy carried `PREVIEW_RUN_TESTS: 0`.
+ */
+describe('the preview status tells the truth about the suite', () => {
+  const previewWorkflow = readFileSync(
+    resolve(root, '.github/workflows/deploy-preview.yml'),
+    'utf8',
+  );
+  const deployScript = readFileSync(resolve(root, 'tests/bin/sandbox-preview.ts'), 'utf8');
+
+  test('the deploy reports whether it tested, from the value it decided with', () => {
+    // One authority. Re-deriving `PREVIEW_RUN_TESTS === '1'` in YAML would be a
+    // second copy of a rule that is really `... || !branchEnv`.
+    expect(deployScript).toContain("const runTests = process.env.PREVIEW_RUN_TESTS?.trim() === '1' || !branchEnv;");
+    expect(deployScript).toContain("await writeOutput('tests_ran', runTests ? '1' : '0');");
+  });
+
+  test('a skipped suite links no report — the persistent box still holds the last one', () => {
+    // Asserted on the CONDITION, not the whole call: the formatter wraps this
+    // line and a byte-exact expectation would fail on its wrapping rather than
+    // on the rule.
+    const report = deployScript.slice(deployScript.indexOf("await writeOutput(\n    'report_url'"));
+    expect(report.slice(0, 200)).toContain(
+      "runTests && result.previewUrl ? `${result.previewUrl}/_tests/` : ''",
+    );
+  });
+
+  test('both surfaces read it, and neither says "tested" without it', () => {
+    for (const surface of ['TESTS_RAN: ${{ steps.preview.outputs.tests_ran }}']) {
+      // Once for the deployment status, once for the sticky comment.
+      expect(previewWorkflow.split(surface).length - 1).toBe(2);
+    }
+    expect(previewWorkflow).toContain(
+      'if [ "$PREVIEW_OUTCOME" = success ] && [ "$TESTS_RAN" = 1 ]; then',
+    );
+    expect(previewWorkflow).toContain("title='## Preview environment - live; NOT tested'");
+    expect(previewWorkflow).toContain("description='Full self-host preview deployed; target-full did not run'");
+    // The old collapse: success alone meant tested.
+    expect(previewWorkflow).not.toContain(
+      "if [ \"$PREVIEW_OUTCOME\" = success ]; then\n            title='## Preview environment - live and tested'",
+    );
   });
 });

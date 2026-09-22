@@ -419,3 +419,45 @@ describe('groupSessions — hidden sections and invariants', () => {
     expect(input.map((s) => s.session_id)).toEqual(['a', 'b']);
   });
 });
+
+describe('groupSessions — owner mode', () => {
+  const t = testUiTranslator;
+  const at = '2026-09-22T08:00:00.000Z';
+
+  test('one section per owner: the viewer first, then by name, unknown owner last', () => {
+    const sessions = [
+      makeSession({ session_id: 'b1', created_by: 'u-bob', owner_name: 'Bob', is_owner: false, updated_at: at }),
+      makeSession({ session_id: 'm1', created_by: 'u-me', owner_name: 'Marko', is_owner: true, updated_at: at }),
+      makeSession({ session_id: 'a1', created_by: 'u-alice', owner_email: 'alice@example.test', is_owner: false, updated_at: at }),
+      makeSession({ session_id: 'x1', created_by: null, is_owner: false, updated_at: at }),
+      makeSession({ session_id: 'b2', created_by: 'u-bob', owner_name: 'Bob', is_owner: false, updated_at: at }),
+    ];
+    const grouped = groupSessions(
+      sessions,
+      { mode: 'owner', order: 'activity', reviewCountBySession: {} },
+      t,
+    );
+    expect(grouped.sections.map((s) => [s.id, s.sessions.map((x) => x.session_id)])).toEqual([
+      ['owner:u-me', ['m1']],
+      ['owner:u-alice', ['a1']],
+      ['owner:u-bob', ['b1', 'b2']],
+      ['owner:__unknown__', ['x1']],
+    ]);
+    expect(grouped.sections[1]?.label).toBe('alice@example.test');
+    expect(grouped.sections[2]?.label).toBe('Bob');
+    expect(grouped.showHeaders).toBe(true);
+  });
+
+  test('a hidden owner section is dropped', () => {
+    const sessions = [
+      makeSession({ session_id: 'b1', created_by: 'u-bob', owner_name: 'Bob', is_owner: false }),
+      makeSession({ session_id: 'm1', created_by: 'u-me', is_owner: true }),
+    ];
+    const grouped = groupSessions(
+      sessions,
+      { mode: 'owner', order: 'activity', reviewCountBySession: {}, hiddenSections: ['owner:u-bob'] },
+      t,
+    );
+    expect(grouped.sections.map((s) => s.id)).toEqual(['owner:u-me']);
+  });
+});

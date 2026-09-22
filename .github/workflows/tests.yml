@@ -148,14 +148,32 @@ jobs:
               docker rm -f $ids || true
             fi
           done
+          # Wait by ATTEMPTING A BIND, not by reading `ss`.
+          #
+          # `ss -ltn` lists LISTENING sockets only, so it reports a port free
+          # while `bind()` still returns EADDRINUSE — a closing docker-proxy is
+          # not "listening". Measured on browser-2: `supabase stop` returned at
+          # 09:19:26.710, the old `ss` loop cleared all four ports by
+          # 09:19:27.448 (0.74s, first poll), and `supabase start` still failed
+          # to bind 54324 twenty-five seconds later. The check was passing on a
+          # port that was not free, and two earlier fixes rested on that.
+          #
+          # A bind cannot disagree with Docker, because it is what Docker does.
+          # An uncaught OSError exits 1, so no try/except is needed — which
+          # keeps this a ONE-LINER. Multi-line python here would sit at column 0
+          # inside this block scalar and break the YAML.
+          # SO_REUSEADDR matches docker-proxy: without it a lingering TIME_WAIT
+          # would make this wait the full 30s on a healthy runner.
+          bindable() { python3 -c "import socket,sys; s=socket.socket(); s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1); s.bind(('0.0.0.0',int(sys.argv[1])))" "$1" 2>/dev/null; }
           for port in 54321 54322 54323 54324; do
             for _ in $(seq 1 30); do
-              ss -ltnH "sport = :$port" | grep -q . || break
+              bindable "$port" && break
               sleep 1
             done
-            if ss -ltnH "sport = :$port" | grep -q .; then
-              echo "::warning::port $port is still bound after the sweep; supabase start may fail"
+            if ! bindable "$port"; then
+              echo "::warning::port $port still refuses a bind after the sweep; supabase start will fail"
               ss -ltnp "sport = :$port" || true
+              ss -tanH "sport = :$port" || true
               docker ps -a --filter "publish=$port" --format '{{.ID}} {{.Image}} {{.Status}} {{.Ports}}' || true
             fi
           done

@@ -88,6 +88,13 @@ export function selectSessionRowsForViewer(input: {
   boundCredentialSessionId: string | null;
   grantsBySession: Map<string, SecretGrant[]>;
   runtimeStatusBySession: Map<string, RuntimeStatus>;
+  /**
+   * The caller holds account session oversight (see iam/session-oversight.ts).
+   * Applied to the `project` scope only: that is the manager inventory (the
+   * Sessions page). The default `visible` scope feeds the sidebar, and an admin
+   * must not get every member's private session there.
+   */
+  accountSessionOversight?: boolean;
 }): { authorized: boolean; items: SessionInventoryItem[] } {
   if (input.scope === 'project' && !input.canManageProject) {
     return { authorized: false, items: [] };
@@ -112,7 +119,11 @@ export function selectSessionRowsForViewer(input: {
         callerSessionId: input.callerSessionId,
         boundCredentialSessionId: input.boundCredentialSessionId,
       },
-      { metadata: row.metadata, canManageProject: input.canManageProject },
+      {
+        metadata: row.metadata,
+        canManageProject: input.canManageProject,
+        accountSessionOversight: input.scope === 'project' && input.accountSessionOversight === true,
+      },
     );
     return { row, canAccess, runtimeStatus, deletedAt, deletedBy };
   });
