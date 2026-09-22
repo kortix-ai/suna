@@ -221,10 +221,12 @@ describe('OpenCode provider tools', () => {
   test('Parallel batch connection failure preserves the batch response shape', async () => {
     globalThis.fetch = (async () => {
       throw new Error('connection unavailable');
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     const output = JSON.parse(
-      String(await webSearch.execute({ query: 'first ||| second', provider: 'parallel' }, {} as never)),
+      String(
+        await webSearch.execute({ query: 'first ||| second', provider: 'parallel' }, {} as never),
+      ),
     );
     expect(output).toMatchObject({
       batch_mode: true,
