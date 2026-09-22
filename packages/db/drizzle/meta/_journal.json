@@ -547,6 +547,13 @@
       "when": 1790085063114,
       "tag": "20260922135103_agent_session_on_behalf_of",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1790088460441,
+      "tag": "20260922144740_audit_events_on_behalf_of",
+      "breakpoints": true
     }
   ]
 }

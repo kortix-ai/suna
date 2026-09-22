@@ -32,8 +32,10 @@ import {
   encodeReportStatus,
   parseReceivePackCommands,
   wantsSideband,
+  type RefUpdate,
 } from './receive-pack';
 import { evaluateRefUpdates, principalLabel } from './ref-policy';
+import { gitAuditOutcome, gitPushRefSummary, recordGitProxyAudit } from './audit';
 import { denialsAfterScopes } from './ref-scopes';
 import {
   FORWARD_REQUEST_HEADERS,
@@ -406,7 +408,7 @@ async function forwardAuthorized(
 async function gateReceivePack(
   c: any,
   auth: Extract<GitProxyAuth, { ok: true }>,
-): Promise<Response | { body: ReadableStream<Uint8Array> }> {
+): Promise<Response | { body: ReadableStream<Uint8Array>; updates: RefUpdate[] }> {
   // git never content-encodes a receive-pack body (it gzips upload-pack
   // requests only, verified against git 2.39.1). If one ever arrives encoded we
   // cannot read the commands, so we refuse instead of forwarding unexamined.
@@ -458,6 +460,15 @@ async function gateReceivePack(
       principal: principalLabel(auth.principal),
       refs: denials.map((d) => d.ref),
     });
+    void recordGitProxyAudit({
+      action: 'git.push',
+      project: auth.project,
+      principal: auth.principal,
+      httpStatus: 200,
+      outcome: gitAuditOutcome(200, true),
+      refs: gitPushRefSummary(parsed.updates, denied),
+      ...gitAuditClient(c),
+    });
     const report = encodeReportStatus(
       parsed.updates.map((u) => ({ ref: u.ref, reason: denied.get(u.ref) })),
       { sideband: wantsSideband(parsed.capabilities) },
@@ -472,6 +483,7 @@ async function gateReceivePack(
   // through. The pack itself is never buffered.
   const prefix = concatChunks(chunks, buffered);
   return {
+    updates: parsed.updates,
     body: new ReadableStream<Uint8Array>({
       start(controller) {
         if (prefix.length > 0) controller.enqueue(prefix);
@@ -537,7 +549,24 @@ gitProxyApp.openapi(
   async (c) => {
     const projectId = validProjectIdOrResponse(c, c.req.param('project'));
     if (projectId instanceof Response) return projectId;
-    return forward(c, projectId, 'read', '/git-upload-pack');
+    const startedAt = Date.now();
+    const auth = await authorize(c, projectId, 'read');
+    if (!auth.ok) {
+      if (auth.status === 401) return unauthorized(c, auth.message);
+      return c.text(auth.message, auth.status as 403 | 404);
+    }
+    const res = await forwardAuthorized(c, auth, 'read', '/git-upload-pack', c.req.raw.body);
+    // One audit row per clone/fetch transfer (ref discovery is not recorded).
+    void recordGitProxyAudit({
+      action: 'git.clone',
+      project: auth.project,
+      principal: auth.principal,
+      httpStatus: res.status,
+      outcome: gitAuditOutcome(res.status, false),
+      durationMs: Date.now() - startedAt,
+      ...gitAuditClient(c),
+    });
+    return res;
   },
 );
 
@@ -992,10 +1021,32 @@ gitProxyApp.openapi(
     // default-denied beyond its own branch regardless of `project.gitops.ref.any`
     // / `kortix_permissions: all` — see projects/lib/git.ts.
     c.set('agentGrant', auth.agentGrant ?? null);
+    const startedAt = Date.now();
     // Ref policy runs HERE, between authorization and transmission — the only
     // point where both the principal and the refs it wants to move are known.
     const gated = await gateReceivePack(c, auth);
     if (gated instanceof Response) return gated;
-    return forwardAuthorized(c, auth, 'write', '/git-receive-pack', gated.body);
+    const res = await forwardAuthorized(c, auth, 'write', '/git-receive-pack', gated.body);
+    // One audit row per push with every ref's old → new sha. An HTTP 2xx means
+    // the upstream accepted the transfer; its per-ref report-status is not
+    // parsed here.
+    void recordGitProxyAudit({
+      action: 'git.push',
+      project: auth.project,
+      principal: auth.principal,
+      httpStatus: res.status,
+      outcome: gitAuditOutcome(res.status, false),
+      refs: gitPushRefSummary(gated.updates),
+      durationMs: Date.now() - startedAt,
+      ...gitAuditClient(c),
+    });
+    return res;
   },
 );
+
+function gitAuditClient(c: any): { ip: string | null; userAgent: string | null } {
+  return {
+    ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip') || null,
+    userAgent: c.req.header('user-agent') || null,
+  };
+}

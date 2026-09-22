@@ -1028,15 +1028,28 @@ flow(
       'GET /v1/connectors/projects/:projectId/catalog',
       'GET /v1/projects/:projectId/files',
       'GET /v1/accounts/:accountId/audit',
+      'GET /v1/git/:project/info/refs',
+      'POST /v1/git/:project/git-upload-pack',
+      'POST /v1/git/:project/git-receive-pack',
     ],
   },
   async (ctx) => {
+    const { mkdtemp, rm, writeFile } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
     const { team, project, world } = await governedWorld(ctx, { enterprise: true });
     const human = await projectMember(team, project.id);
+    const work = await mkdtemp(join(tmpdir(), 'ke2e-agp11-'));
+    let server: import('node:http').Server | null = null;
     try {
-      await ctx.step('commit `reader` [project.file.read]; the human may run it', async () => {
-        await world.writeManifest(manifest({ reader: { kortix_permissions: ['project.file.read'] } }));
+      await ctx.step('commit `reader` [project.file.read] and `shipper` [gitops read+push]; the human may run both', async () => {
+        await world.localRepoPath();
+        await world.writeManifest(manifest({
+          reader: { kortix_permissions: ['project.file.read'] },
+          shipper: { kortix_permissions: ['project.gitops.read', 'project.gitops.push'] },
+        }));
         await world.grantRun('reader', human);
+        await world.grantRun('shipper', human);
       });
       await enableFlag(ctx, world);
       const auditedFiles = async (s: AgentSession, label: string) => {
@@ -1080,7 +1093,50 @@ flow(
           if (humans.includes(e[key])) throw new Error(`trigger run names a human in ${key}: ${e[key]}`);
         }
       });
+
+      await ctx.step("the human's `shipper` run clones and pushes its branch through the Git proxy: git.clone + git.push name the agent, on_behalf_of, and the ref's old → new sha", async () => {
+        const run = await world.mintAgentSession({ agent: 'shipper', launcher: human });
+        server = await serveFixtureRepoLocally(ctx, world.db, project.id, 'AGP-11');
+        const remote = `${ctx.env.apiUrl.replace(/\/v1$/, '')}/v1/git/${project.id}`;
+        const env = { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'http.extraHeader', GIT_CONFIG_VALUE_0: `Authorization: Bearer ${run.secret}` };
+        const agentGit = (args: string[]) => git(args, { cwd: work, env });
+        await agentGit(['clone', remote, '.']);
+        await writeFile(join(work, 'NOTES.md'), 'agent audit note\n');
+        await agentGit(['add', '-A']);
+        await agentGit(['-c', 'user.name=shipper', '-c', 'user.email=shipper@example.test', 'commit', '-m', 'docs: audit note']);
+        await agentGit(['push', 'origin', `HEAD:refs/heads/${run.sessionId}`]);
+        const pushed = (await agentGit(['rev-parse', 'HEAD'])).trim();
+
+        let events: Array<Record<string, any>> = [];
+        await eventually('git audit rows for the shipper run', async () => {
+          const page = await world.owner.get('/v1/accounts/:accountId/audit', {
+            params: { accountId: team.id },
+            query: { project_id: project.id, session_id: run.sessionId, action: 'git' },
+          });
+          events = page.statusCode === 200 ? page.json<{ events: Array<Record<string, any>> }>().events : [];
+          const actions = new Set(events.map((e) => e.action));
+          return { ok: actions.has('git.clone') && actions.has('git.push'), detail: `${page.statusCode} ${[...actions].join(',')}` };
+        });
+        for (const action of ['git.clone', 'git.push']) {
+          const e = events.find((row) => row.action === action)!;
+          const expected = {
+            actor_type: 'agent', agent_name: 'shipper', on_behalf_of_user_id: human.userId,
+            initiator_actor_type: 'human', initiator_actor_id: human.userId, outcome: 'success',
+            resource_type: 'git_repository',
+          };
+          for (const [key, value] of Object.entries(expected)) {
+            if (e[key] !== value) throw new Error(`${action}: ${key} = ${JSON.stringify(e[key])}, expected ${value}: ${JSON.stringify(e).slice(0, 800)}`);
+          }
+        }
+        const push = events.find((row) => row.action === 'git.push')!;
+        const ref = (push.metadata?.refs ?? []).find((r: any) => r.ref === `refs/heads/${run.sessionId}`);
+        if (!ref || ref.kind !== 'create' || ref.new_sha !== pushed || !/^0+$/.test(ref.old_sha)) {
+          throw new Error(`git.push refs do not record the branch create → ${pushed}: ${JSON.stringify(push.metadata).slice(0, 600)}`);
+        }
+      });
     } finally {
+      if (server) await new Promise<void>((resolve) => server!.close(() => resolve()));
+      await rm(work, { recursive: true, force: true });
       await world.close();
     }
   },

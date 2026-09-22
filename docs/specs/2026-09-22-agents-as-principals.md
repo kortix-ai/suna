@@ -141,6 +141,44 @@ App keeps `Authorization` for its own key. When a connector call targets an App
 of the same deployment and project, the connector layer attaches a short-lived
 signed assertion for the calling session in `X-Kortix-App-Authorization`.
 
+### 2.6 Audit fields
+
+Every audit row an agent-session credential produces carries:
+
+| Field | Value |
+|---|---|
+| `actor_type` | `agent` |
+| `agent_id` / `agent_name` | the agent's service account / agent name |
+| `on_behalf_of_user_id` | the human (column added by migration `20260922144740453`), else `null` |
+| `initiator_actor_type` / `initiator_actor_id` | `human` + user id (on_behalf_of set, or the creator of a cleared private session); `trigger` + trigger slug; `channel` + platform; `system` (+ service-account id for a backend session) |
+| `actor_user_id` | flag ON: `on_behalf_of_user_id` (never the owner stand-in of a trigger run). Flag OFF: the token user, unchanged. |
+
+One resolver writes these fields for API requests (`auditApiRequest`), sandbox
+OpenCode ingestion, and the Git proxy (`shared/agent-audit-attribution.ts`).
+The Git proxy records `git.clone` (each `git-upload-pack` transfer) and
+`git.push` (each `git-receive-pack`, with `metadata.refs[] = {ref, old_sha,
+new_sha, kind, denied_reason?}`; a push the ref policy refuses is `outcome:
+denied`). The integrity digest includes `on_behalf_of_user_id` only when it is
+not null, so rows written before the column existed keep their stored hash.
+
+### 2.7 Where the personal-resource rule is enforced
+
+`projects/lib/personal-resources.ts` holds the one rule. Readers:
+
+- connector connections: `connectionIsReachable({ agentPrincipal })` through
+  session resolution, the catalog, `.../connectors/:slug/accounts`, and the
+  project connections list/mutate routes;
+- own computers: the Computer Tunnel owner filter in the connector gateway;
+- personal project secrets: sandbox env build, env hot-push, network boundary,
+  secret relay/broker, the secrets list, and personal-override writes
+  (`403 personal_resource_unreachable` for an agent session without the right
+  on-behalf-of human);
+- personal provider keys: `AuthedPrincipal.personalUserId` in the LLM gateway
+  (pools, the default ChatGPT connection, the Codex override, the model picker).
+
+`effectiveRole` for an agent-principal session is `manager` only when the agent
+itself holds `project.write`, never the launcher's role.
+
 ## 3. Terminology
 
 | Old | New |

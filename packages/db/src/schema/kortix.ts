@@ -3148,6 +3148,11 @@ export const auditEvents = kortixSchema.table(
     agentName: text('agent_name'),
     initiatorActorType: text('initiator_actor_type'),
     initiatorActorId: text('initiator_actor_id'),
+    /** The human an agent session acted on behalf of (spec
+     *  docs/specs/2026-09-22-agents-as-principals.md §2). NULL for a human
+     *  actor, an unattended run (trigger, channel, system), or a session whose
+     *  on_behalf_of another human's prompt cleared. No FK: forensic history. */
+    onBehalfOfUserId: uuid('on_behalf_of_user_id'),
     parentEventId: uuid('parent_event_id'),
     delegationDepth: integer('delegation_depth').default(0).notNull(),
     source: text('source'),
