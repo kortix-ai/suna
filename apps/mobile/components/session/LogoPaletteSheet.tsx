@@ -1,14 +1,17 @@
 /**
- * LogoPaletteSheet — the hidden control for the Kortix symbol's colours. It
- * opens only from a 10-second press on the project home symbol (`ProjectHero`).
+ * LogoPaletteSheet — the hidden control for the Kortix symbol's style and
+ * colours. It opens only from a 5-second press on the project home symbol
+ * (`ProjectHero`).
  *
- * A list, the settings screens' layout: one `SettingsGroup` per finish (Metal,
- * Pastel), one `SettingsRow` per predefined palette (`lib/effects/logo-palette`):
- * swatch · name · check on the active one. There is no free colour picker. A tap
- * applies the palette at once (`useLogoPaletteStore`, kept on the device) and
- * the sheet stays open, so the symbol behind it changes while the user
- * compares. For that reason the sheet takes at most half the screen and its
- * backdrop is lighter than the default: the symbol must stay visible above it.
+ * A list, the settings screens' layout: a `SettingsGroup` of styles (Dither,
+ * the default, then Heatmap: `lib/effects/logo-style`), then one `SettingsGroup`
+ * of predefined colours (`lib/effects/logo-palette`; metal finish only, Jay,
+ * 2026-09-22 — pastel removed): swatch · name · check on the active one.
+ * There is no free colour picker. A tap applies the choice at once
+ * (`useLogoPaletteStore`, kept on the device) and the sheet stays open, so
+ * the symbol behind it changes while the user compares. For that reason the
+ * sheet takes at most half the screen and its backdrop is lighter than the
+ * default: the symbol must stay visible above it.
  */
 import * as React from 'react';
 import { View, useWindowDimensions } from 'react-native';
@@ -18,7 +21,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { KortixBottomSheetModal, SheetBackdrop, type SheetRef } from '@/components/kortix/sheet';
-import { LOGO_PALETTE_GROUPS, logoPaletteSwatch } from '@/lib/effects/logo-palette';
+import { LOGO_PALETTES, logoPaletteSwatch } from '@/lib/effects/logo-palette';
+import { LOGO_STYLES } from '@/lib/effects/logo-style';
 import { haptics } from '@/lib/haptics';
 import { THEME } from '@/lib/utils/theme';
 import { useLogoPaletteStore } from '@/stores/logo-palette-store';
@@ -36,6 +40,8 @@ export const LogoPaletteSheet = React.forwardRef<SheetRef>((_props, ref) => {
   const { height } = useWindowDimensions();
   const { colorScheme } = useColorScheme();
   const tone = colorScheme === 'dark' ? 'dark' : 'light';
+  const styleId = useLogoPaletteStore((s) => s.styleId);
+  const setStyleId = useLogoPaletteStore((s) => s.setStyleId);
   const paletteId = useLogoPaletteStore((s) => s.paletteId);
   const setPaletteId = useLogoPaletteStore((s) => s.setPaletteId);
 
@@ -47,7 +53,7 @@ export const LogoPaletteSheet = React.forwardRef<SheetRef>((_props, ref) => {
   return (
     <KortixBottomSheetModal
       ref={modalRef}
-      title="Logo colour"
+      title="Kortix"
       enableDynamicSizing
       maxDynamicContentSize={Math.floor(height * 0.5)}
       enablePanDownToClose
@@ -61,38 +67,45 @@ export const LogoPaletteSheet = React.forwardRef<SheetRef>((_props, ref) => {
           paddingBottom: Math.max(insets.bottom, 16) + 8,
           gap: 16,
         }}>
-        {LOGO_PALETTE_GROUPS.map((group) => (
-          // `bg-secondary`: in dark mode `card` equals the sheet's `popover`.
-          <SettingsGroup key={group.title} title={group.title} className="bg-secondary">
-            {group.palettes.map((palette) => (
-              <SettingsRow
-                key={palette.id}
-                leading={
-                  <Swatch
-                    colors={
-                      logoPaletteSwatch(
-                        palette.accent ? THEME.accent[palette.accent] : null,
-                        tone,
-                        palette.finish
-                      ) ?? {
-                        // The default metal: the page's foreground over its border tone.
-                        highlight: THEME[tone].foreground,
-                        body: THEME[tone].border,
-                      }
+        <SettingsGroup title="Style" className="bg-secondary">
+          {LOGO_STYLES.map((style) => (
+            <SettingsRow
+              key={style.id}
+              label={style.label}
+              checked={style.id === styleId}
+              right={null}
+              onPress={() => {
+                haptics.selection();
+                setStyleId(style.id);
+              }}
+            />
+          ))}
+        </SettingsGroup>
+        <SettingsGroup title="Colour" className="bg-secondary">
+          {LOGO_PALETTES.map((palette) => (
+            <SettingsRow
+              key={palette.id}
+              leading={
+                <Swatch
+                  colors={
+                    logoPaletteSwatch(palette.accent ? THEME.accent[palette.accent] : null, tone) ?? {
+                      // The default metal: the page's foreground over its border tone.
+                      highlight: THEME[tone].foreground,
+                      body: THEME[tone].border,
                     }
-                  />
-                }
-                label={palette.label}
-                checked={palette.id === paletteId}
-                right={null}
-                onPress={() => {
-                  haptics.selection();
-                  setPaletteId(palette.id);
-                }}
-              />
-            ))}
-          </SettingsGroup>
-        ))}
+                  }
+                />
+              }
+              label={palette.label}
+              checked={palette.id === paletteId}
+              right={null}
+              onPress={() => {
+                haptics.selection();
+                setPaletteId(palette.id);
+              }}
+            />
+          ))}
+        </SettingsGroup>
       </BottomSheetScrollView>
     </KortixBottomSheetModal>
   );

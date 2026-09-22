@@ -5,6 +5,7 @@
   "scripts": {
     "postinstall": "patch-package || true",
     "bake:heatmap": "bun scripts/bake-heatmap.ts",
+    "bake:liquid-metal": "bun scripts/bake-liquid-metal.ts",
     "dev": "expo start -c",
     "android": "expo start -c --android",
     "android:dev": "./scripts/start-android.sh",
