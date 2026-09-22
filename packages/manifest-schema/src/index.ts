@@ -570,6 +570,9 @@ function validateAgents(node: unknown, path: string, issues: ManifestIssue[], fo
     // NEW dimension must not starve existing agents), so absence is not an
     // error here either; validateGrantList already no-ops on undefined/null.
     validateGrantList(entry.env, `${where}.env`, 'env', issues, false);
+    // `apps` (spec 2026-09-22 §2.5): App slugs an agent session may open when
+    // the App is restricted/private. Omitted = none.
+    validateGrantList(entry.apps, `${where}.apps`, 'apps', issues, false);
   });
 }
 

@@ -82,7 +82,7 @@ describe('project config agent discovery', () => {
         source: 'kortix.yaml',
         enabled: true,
         sandbox: null,
-        scope: { env: 'all', connectors: 'all', kortix_permissions: 'all', kortix_cli: 'all' },
+        scope: { env: 'all', connectors: 'all', kortix_permissions: 'all', kortix_cli: 'all', apps: [] },
       },
       {
         name: 'triage',
@@ -93,7 +93,7 @@ describe('project config agent discovery', () => {
         source: 'kortix.yaml',
         enabled: true,
         sandbox: null,
-        scope: { env: 'all', connectors: [], kortix_permissions: [], kortix_cli: [] },
+        scope: { env: 'all', connectors: [], kortix_permissions: [], kortix_cli: [], apps: [] },
       },
     ]);
   });
@@ -124,6 +124,7 @@ describe('project config agent discovery', () => {
       connectors: ['stripe'],
       kortix_permissions: ['project.read'],
       kortix_cli: ['project.read'],
+      apps: [],
     });
   });
 

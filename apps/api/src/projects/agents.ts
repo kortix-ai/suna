@@ -105,6 +105,11 @@ export interface AgentSpec {
    *  omitted — a NEW dimension, so omitting it must not starve existing
    *  agents); an explicit list narrows it; `[]` = none. */
   env: GrantSet;
+  /** Kortix Apps (by App slug) this agent may open when the App is
+   *  `restricted`/`private` (spec 2026-09-22 §2.5). `[]` = none (default, both
+   *  manifest versions). Optional so hand-built specs (tests, fixtures) need
+   *  not set it; absent reads as none. */
+  apps?: GrantSet;
   /** Optional behavior-file path override (defaults to the conventional `.md` by name). */
   file: string | null;
   /**
@@ -389,6 +394,18 @@ export function isLaunchableAgentName(agentName: string, loaded: LoadedAgents): 
   return loaded.specs.some((s) => s.name === name && s.enabled);
 }
 
+/**
+ * The `apps` part of a grant built from a spec: present only when the agent
+ * declares at least one App (or `all`). An agent that declares none gets a
+ * grant WITHOUT the key, identical to every grant minted before the field
+ * existed — `agentMayOpenApp` reads absent as none.
+ */
+function appsGrantOf(spec: AgentSpec): Pick<AgentGrant, 'apps'> {
+  const apps = spec.apps;
+  if (apps === 'all') return { apps: 'all' };
+  return apps && apps.length > 0 ? { apps: [...apps] } : {};
+}
+
 /** Pure resolution rule (no I/O) — see `resolveAgentGrant`. Exported for tests. */
 export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): AgentGrant | null {
   // The reserved platform coordinator is injected by the platform and is NEVER
@@ -422,6 +439,7 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
         permissions: spec.permissions,
         connectors: spec.connectors,
         env: spec.env,
+        ...appsGrantOf(spec),
       }),
     );
   }
@@ -456,6 +474,7 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
             permissions: declared.permissions,
             connectors: declared.connectors,
             env: declared.env,
+            ...appsGrantOf(declared),
           }),
         );
       }
@@ -609,7 +628,7 @@ export function resolveGovernedAgentGrant(
     }
     return {
       ok: true,
-      grant: { agent: declaredDefault, permissions: spec.permissions, connectors: spec.connectors, env: spec.env },
+      grant: { agent: declaredDefault, permissions: spec.permissions, connectors: spec.connectors, env: spec.env, ...appsGrantOf(spec) },
     };
   }
 
@@ -621,7 +640,7 @@ export function resolveGovernedAgentGrant(
       error: `Agent "${agentName}" is not declared in this project's \`agents\` manifest — this project requires every session/trigger to name a declared agent.`,
     };
   }
-  return { ok: true, grant: { agent: agentName, permissions: spec.permissions, connectors: spec.connectors, env: spec.env } };
+  return { ok: true, grant: { agent: agentName, permissions: spec.permissions, connectors: spec.connectors, env: spec.env, ...appsGrantOf(spec) } };
 }
 
 /**
@@ -641,6 +660,9 @@ export function agentSpecToTomlEntry(spec: AgentSpec): Record<string, unknown> {
   else if (spec.permissions.length > 0) entry.kortix_permissions = spec.permissions;
   // 'all' is the env default, so only emit when narrowed (a list or explicit none).
   if (spec.env !== 'all') entry.env = spec.env;
+  // none is the default → omit; 'all'/a list is explicit.
+  if (spec.apps === 'all') entry.apps = 'all';
+  else if (spec.apps && spec.apps.length > 0) entry.apps = spec.apps;
   return entry;
 }
 
@@ -689,6 +711,9 @@ export function manifestHashForAgent(spec: AgentSpec): string {
     connectorsRequired: spec.connectorsRequired,
     permissions: spec.permissions,
     env: spec.env,
+    // Only when declared, so the hash of every agent that never mentions Apps
+    // is unchanged by this field's introduction.
+    ...(spec.apps && (spec.apps === 'all' || spec.apps.length > 0) ? { apps: spec.apps } : {}),
     file: spec.file,
     repositoryAccess: spec.repositoryAccess,
     legacyReadWorkspace: spec.legacyReadWorkspace,
@@ -736,6 +761,10 @@ function parseAgentEntry(entry: unknown, index: number, filename: string = MANIF
       : parseGrantSet(name, 'env', row.env, null, filename);
   if (!envParsed.ok) return envParsed;
 
+  // `apps` (spec 2026-09-22 §2.5): omitted = none, like connectors.
+  const appsParsed = parseGrantSet(name, 'apps', row.apps, null, filename);
+  if (!appsParsed.ok) return appsParsed;
+
   return {
     ok: true,
     spec: {
@@ -745,6 +774,7 @@ function parseAgentEntry(entry: unknown, index: number, filename: string = MANIF
       connectors: connectorsParsed.value,
       permissions: kortixParsed.value,
       env: envParsed.value,
+      apps: appsParsed.value,
       file,
       model,
       sandbox: null,
@@ -846,6 +876,8 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string): Pars
   // onto AgentSpec's `env` field, which the rest of the pipeline (secret
   // scoping in sessions.ts, `agentMayUseEnv`) already consumes.
   const secretsResolved = resolveGrantSet(normalizedRow.secrets, 'none');
+  // `apps` (spec 2026-09-22 §2.5): same shape, deny-by-default.
+  const appsResolved = resolveGrantSet(normalizedRow.apps, 'none');
 
   return {
     ok: true,
@@ -857,6 +889,7 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string): Pars
       connectorsRequired,
       permissions: toGrantSet(kortixResolved),
       env: toGrantSet(secretsResolved),
+      apps: toGrantSet(appsResolved),
       file,
       model,
       sandbox,

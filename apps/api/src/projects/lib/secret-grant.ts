@@ -128,6 +128,16 @@ function grantListKey(list: string[] | 'all' | undefined): string {
 }
 
 /**
+ * The same collapse for `apps`, whose ABSENT value means none (not all — see
+ * `agentMayOpenApp`). A null grant carries no App restriction at all, which is
+ * its own key. Lowercased, because the gate compares App slugs lowercase.
+ */
+function grantAppsKey(apps: string[] | 'all' | undefined): string {
+  if (apps === 'all' || apps?.includes('*')) return '*all*';
+  return [...new Set((apps ?? []).map((slug) => slug.toLowerCase()))].sort().join(',');
+}
+
+/**
  * True when running `requestedAgent` instead of `sessionAgent` would change ANY
  * part of the authorization grant — secrets, connectors, or Kortix permissions.
  *
@@ -164,7 +174,8 @@ export function agentGrantDiffers(
   return (
     secretGrantEnvDiffers(sessionGrant?.env, requestedGrant?.env) ||
     grantListKey(sessionGrant?.connectors) !== grantListKey(requestedGrant?.connectors) ||
-    grantListKey(sessionGrant?.permissions) !== grantListKey(requestedGrant?.permissions)
+    grantListKey(sessionGrant?.permissions) !== grantListKey(requestedGrant?.permissions) ||
+    grantAppsKey(sessionGrant?.apps) !== grantAppsKey(requestedGrant?.apps)
   );
 }
 

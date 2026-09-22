@@ -132,6 +132,25 @@
               }
             ]
           },
+          "apps": {
+            "description": "Kortix Apps (by App slug) this agent may open when the App is restricted or private. Deny by default.",
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^(?:[a-z0-9][a-z0-9_-]{0,127}|\\*)$"
+                }
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "all",
+                  "none"
+                ]
+              }
+            ]
+          },
           "kortix_permissions": {
             "description": "Kortix permissions: the project.* IAM actions this agent may exercise, or \"all\" / \"none\".",
             "oneOf": [

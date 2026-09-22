@@ -944,6 +944,25 @@
                 ]
               }
             ]
+          },
+          "apps": {
+            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "all",
+                  "none"
+                ]
+              }
+            ]
           }
         },
         "additionalProperties": true

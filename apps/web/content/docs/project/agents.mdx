@@ -31,8 +31,9 @@ every governance field.
 
 ## Governance is deny-by-default
 
-An agent with no `connectors`, `secrets`, `skills`, or `kortix_permissions` key gets
-none of that access. This grant is the second of the two bindings: the agent
+An agent with no `connectors`, `secrets`, `skills`, `apps`, or `kortix_permissions` key gets
+none of that access. `apps` lists the [Kortix Apps](/docs/feature-flags/apps#agents-and-apps)
+the agent may open when an App is restricted or private. This grant is the second of the two bindings: the agent
 also holds roles as a `service_account` principal, and a session can only do
 what both allow — see
 [One vocabulary, two bindings](/docs/accounts#one-vocabulary-two-bindings). Set a field to `all` to grant full access, or list

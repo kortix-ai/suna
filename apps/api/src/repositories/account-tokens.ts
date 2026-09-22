@@ -1,4 +1,4 @@
-import { eq, and, desc, inArray, isNull } from 'drizzle-orm';
+import { eq, and, desc, inArray, isNull, type SQL } from 'drizzle-orm';
 import { accountTokens, accounts, readStoredAgentGrant, sessionSandboxes } from '@kortix/db';
 import { db } from '../shared/db';
 import {
@@ -401,9 +401,33 @@ export async function validateAccountToken(
     return { isValid: false, error: 'Invalid PAT format — expected kortix_pat_ prefix' };
   }
 
-  try {
-    const secretKeyHashes = candidateSecretKeyHashes(secretKey);
+  return validateAccountTokenMatching(() =>
+    inArray(accountTokens.secretKeyHash, candidateSecretKeyHashes(secretKey)),
+  );
+}
 
+const TOKEN_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Validate a token row by its id, with EXACTLY the checks
+ * `validateAccountToken` applies to a presented secret: active, not revoked,
+ * not expired, a session token only while its sandbox is live, idle-revoke.
+ *
+ * For callers that received a server-signed reference to a token instead of
+ * the secret — the connector → App assertion (apps/access.ts). Never expose
+ * this to a client-supplied id without such a signature.
+ */
+export async function validateAccountTokenById(
+  tokenId: string,
+): Promise<AccountTokenValidationResult> {
+  if (!TOKEN_ID_RE.test(tokenId)) return { isValid: false, error: 'Invalid token id' };
+  return validateAccountTokenMatching(() => eq(accountTokens.tokenId, tokenId));
+}
+
+async function validateAccountTokenMatching(
+  match: () => SQL,
+): Promise<AccountTokenValidationResult> {
+  try {
     // Join the owning account so we can apply idle-revoke without a
     // second round-trip on the hot path.
     const [row] = await db
@@ -425,7 +449,7 @@ export async function validateAccountToken(
       .innerJoin(accounts, eq(accounts.accountId, accountTokens.accountId))
       .where(
         and(
-          inArray(accountTokens.secretKeyHash, secretKeyHashes),
+          match(),
           eq(accountTokens.status, 'active'),
           // `revoked_at` is the SECOND half of the revocation invariant and it
           // must be checked here, not only `status`. Nothing in the database

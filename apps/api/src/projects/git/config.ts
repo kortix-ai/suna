@@ -198,6 +198,8 @@ export function resolveConfigAgents(
             connectors: spec.connectors,
             kortix_permissions: spec.permissions,
             kortix_cli: spec.permissions,
+            // Kortix Apps this agent may open when restricted/private (§2.5).
+            apps: spec.apps ?? [],
           },
         };
       }),

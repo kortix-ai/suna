@@ -730,6 +730,30 @@ connectors:
     input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    skills: everything\n',
   },
   {
+    name: 'v2: apps explicit slug list accepted',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    apps: [finance-dashboards]\n',
+  },
+  {
+    name: 'v2: apps "none" sentinel accepted',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    apps: none\n',
+  },
+  {
+    name: 'v2: apps non-string entry rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    apps: [42]\n',
+  },
+  {
+    name: 'v2: apps invalid sentinel rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    apps: everything\n',
+  },
+  {
     name: 'v2: unknown runtime rejected',
     format: 'yaml',
     valid: false,

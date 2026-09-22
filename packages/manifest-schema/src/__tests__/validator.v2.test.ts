@@ -1000,6 +1000,67 @@ agents:
   });
 });
 
+describe('validateManifest — kortix_version 2 `apps` governance grant (spec 2.5)', () => {
+  test('an explicit App slug list is accepted', () => {
+    const { valid, errorPaths } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    kortix_permissions: [project.app.read]
+    apps: [finance-dashboards]
+`);
+    expect(valid).toBe(true);
+    expect(errorPaths).toEqual([]);
+  });
+
+  test('"all" and "none" string sentinels are accepted', () => {
+    for (const v of ['all', 'none']) {
+      const { valid } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    apps: ${v}
+`);
+      expect(valid).toBe(true);
+    }
+  });
+
+  test('a non-string entry is rejected', () => {
+    const { errorPaths } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    apps: [42]
+`);
+    expect(errorPaths).toContain('agents.w.apps[0]');
+  });
+
+  test('an invalid sentinel string is rejected', () => {
+    const { errorPaths } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    apps: everything
+`);
+    expect(errorPaths).toContain('agents.w.apps');
+  });
+
+  test('an entry that is not an App slug is rejected', () => {
+    const { errorPaths } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    apps: ["Finance Dashboards"]
+`);
+    expect(errorPaths).toContain('agents.w.apps[0]');
+  });
+});
+
 describe('validateManifest — version above known max still rejected', () => {
   test('kortix_version 3 is rejected as unsupported', () => {
     const { errorPaths, issues } = summarize(`
