@@ -31,7 +31,7 @@ import { ensureInjectedManagedSkills } from '../../managed-skills'
 import { resolveOpencodeConfigDir, resolveOpencodeConfigDirLiteral, type OpenCodeConfig } from './config'
 import { VERIFY_READY_TIMEOUT_MS, type Opencode, type VerifiedReloadResult } from './lifecycle'
 import { ensureOpencodeConfigDeps } from './opencode-config-deps'
-import { provenCheck, toolNamesFromFiles } from './proven-check'
+import { pluginFilesFrom, provenCheck, toolNamesFromFiles } from './proven-check'
 
 /**
  * Convergence: the daemon applies the release the API assigns.
@@ -231,6 +231,11 @@ function manifestFrom(descriptor: ConfigReleaseDescriptor, releaseId: string): R
   }
 }
 
+async function pluginFilesInDir(dir: string): Promise<string[]> {
+  const entries = await readdir(join(dir, 'plugins'), { withFileTypes: true }).catch(() => [])
+  return pluginFilesFrom(entries.filter((entry) => entry.isFile()).map((entry) => `plugins/${entry.name}`))
+}
+
 async function toolNamesInDir(dir: string): Promise<string[]> {
   const entries = await readdir(join(dir, 'tools'), { withFileTypes: true }).catch(() => [])
   return toolNamesFromFiles(entries.filter((entry) => entry.isFile()).map((entry) => `tools/${entry.name}`))
@@ -317,7 +322,7 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
     return null
   }
 
-  const swap = async (dir: string, toolNames: readonly string[]) => {
+  const swap = async (dir: string, toolNames: readonly string[], pluginFiles: readonly string[] = []) => {
     const previousDir = opencode.useConfigDir(dir)
     const restoreGovernance = deliverGovernance(descriptor.compiled_governance, descriptor.compiled_governance_etag)
     const result = await opencode.reloadVerified({
@@ -325,6 +330,8 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
         (deps.prove ?? provenCheck)(baseUrl, deadline, {
           directory: cfg.projectTarget,
           toolNames,
+          pluginFiles,
+          configDir: dir,
           fetchImpl: deps.proveFetch,
         }),
     })
@@ -351,7 +358,7 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
     const notRunning = await requireRunning()
     if (notRunning) return notRunning
     await (deps.prepare ?? ((target) => prepareConfigDir(target, deps.managedSkillsDir)))(dir)
-    const result = await swap(dir, await toolNamesInDir(dir))
+    const result = await swap(dir, await toolNamesInDir(dir), await pluginFilesInDir(dir))
     if (result.outcome === 'kept-old') {
       running.fallback_reason = result.reason
       return respond('declined', null, result.reason)
@@ -456,7 +463,7 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
   }
 
   // 7–9. Governance, replacement on the standby port, proven check, promotion.
-  const result = await swap(dir, toolNamesFromFiles(manifest.files))
+  const result = await swap(dir, toolNamesFromFiles(manifest.files), pluginFilesFrom(manifest.files))
   if (result.outcome === 'kept-old') {
     // 10. Keep the old process. Quarantine only a release whose candidate failed.
     if (result.candidateFailed) await quarantineRelease(root, releaseId, result.reason)
@@ -508,6 +515,8 @@ async function proveBootRelease(
   const proof = await (deps.prove ?? provenCheck)(opencode.getInternalUrl(), Date.now() + budget, {
     directory: cfg.projectTarget,
     toolNames: toolNamesFromFiles(manifest.files),
+    pluginFiles: pluginFilesFrom(manifest.files),
+    configDir: dir,
     fetchImpl: deps.proveFetch,
   })
   if (proof.ok) {
