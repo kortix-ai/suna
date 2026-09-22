@@ -20,6 +20,7 @@
 import type { ToolPart } from '../../runtime/client';
 import { getToolPrimaryArg, normalizeName } from '../tools/tool-meta';
 import { parseWebSearchOutput, wsDomain } from '../tools/web-helpers';
+import { stripTrailingSlashes } from '../text-scan';
 
 /** An absolute http(s) URL, normalised, or `null` for anything else. */
 function safeHttpUrl(value: unknown): string | null {
@@ -471,7 +472,7 @@ const PRESENTATION_GEN_ACTION_SENTENCE: Record<string, string> = {
  * private helper `tool-meta.ts`/`derive-panels.ts` each keep their own copy
  * of, rather than exporting one from the off-limits `tool/` directory. */
 function basename(p: string): string {
-  const cleaned = p.replace(/\\/g, '/').replace(/\/+$/, '');
+  const cleaned = stripTrailingSlashes(p.replace(/\\/g, '/'));
   const idx = cleaned.lastIndexOf('/');
   return idx >= 0 ? cleaned.slice(idx + 1) : cleaned;
 }

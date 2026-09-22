@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 /**
@@ -84,11 +84,11 @@ export function findIconViolations(files: SourceFile[]): string[] {
 function readSourceTree(): SourceFile[] {
   const files: SourceFile[] = [];
   const walk = (dir: string) => {
-    for (const entry of readdirSync(dir)) {
-      if (entry === 'node_modules') continue;
-      const path = join(dir, entry);
-      if (statSync(path).isDirectory()) walk(path);
-      else if (/\.(tsx?|jsx?)$/.test(entry) && !entry.endsWith('.test.ts')) {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === 'node_modules') continue;
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else if (/\.(tsx?|jsx?)$/.test(entry.name) && !entry.name.endsWith('.test.ts')) {
         files.push({ path: relative(MOBILE_ROOT, path), source: readFileSync(path, 'utf8') });
       }
     }

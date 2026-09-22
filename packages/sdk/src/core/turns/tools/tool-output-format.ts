@@ -1,3 +1,5 @@
+import { jsonTail } from '../text-scan';
+
 /**
  * Shared formatting for raw tool input/output blobs so oversized, truncated, or
  * JSON-heavy payloads render as tidy, capped content instead of a garbled wall
@@ -114,11 +116,11 @@ export function parseEmbeddedFailure(output: string | undefined): EmbeddedFailur
   // Unwrap `... : {json}` tails: proxy errors often wrap an upstream error
   // object. Walk a few levels deep so a doubly-wrapped message still resolves.
   for (let i = 0; i < 3; i++) {
-    const nestedMatch = message.match(/:\s*(\{[\s\S]*\})\s*$/);
-    if (!nestedMatch) break;
+    const nestedJson = jsonTail(message);
+    if (nestedJson === null) break;
     let nested: Record<string, unknown>;
     try {
-      nested = JSON.parse(nestedMatch[1]);
+      nested = JSON.parse(nestedJson);
     } catch {
       break;
     }

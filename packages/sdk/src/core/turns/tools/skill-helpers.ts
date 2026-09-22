@@ -1,18 +1,14 @@
+import { labelledValue, stripEdgeSlashes, stripTrailingSlashes, tagAttributes, tagBody, textBetween, textItems } from '../text-scan';
+
 export function extractSkillContent(output: string): string {
-  const match = output.match(/<skill_content[^>]*>([\s\S]*?)<\/skill_content>/);
-  return match ? match[1].trim() : output;
+  const body = tagBody(output, 'skill_content');
+  return body !== null ? body.trim() : output;
 }
 
 export function extractSkillFiles(output: string): string[] {
-  const filesMatch = output.match(/<skill_files>([\s\S]*?)<\/skill_files>/);
-  if (!filesMatch) return [];
-  const fileRegex = /<file>(.*?)<\/file>/g;
-  const files: string[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = fileRegex.exec(filesMatch[1])) !== null) {
-    files.push(m[1].trim());
-  }
-  return files;
+  const listing = textBetween(output, '<skill_files>', '</skill_files>');
+  if (listing === null) return [];
+  return textItems(listing, '<file>', '</file>').map((file) => file.trim());
 }
 
 /**
@@ -28,10 +24,10 @@ export function extractSkillFiles(output: string): string[] {
  * writes `[^>]*` for a tag that has no attributes.
  */
 function attributeDir(output: string): string {
-  const tag = output.match(/<skill_content([^>]*)>/);
-  if (!tag) return '';
+  const attributes = tagAttributes(output, 'skill_content');
+  if (attributes === null) return '';
   for (const key of ['dir', 'directory', 'path', 'base', 'baseDir', 'base_dir']) {
-    const found = tag[1].match(new RegExp(`\\b${key}\\s*=\\s*["']([^"']+)["']`, 'i'));
+    const found = attributes.match(new RegExp(`\\b${key}\\s*=\\s*["']([^"']+)["']`, 'i'));
     if (found?.[1]?.trim()) return found[1].trim();
   }
   return '';
@@ -39,15 +35,14 @@ function attributeDir(output: string): string {
 
 /** The `Base directory:` line the component already strips out of the markdown. */
 function labelledDir(output: string): string {
-  const match = output.match(/^\s*(?:Base directory|Directory|Skill directory)\s*:\s*(.+?)\s*$/im);
-  return match ? match[1].trim() : '';
+  return labelledValue(output, ['Base directory', 'Directory', 'Skill directory'])?.trim() ?? '';
 }
 
 /**
  * The skill's base directory, from wherever the tool happened to put it.
  */
 export function extractSkillBaseDir(output: string): string {
-  return (attributeDir(output) || labelledDir(output)).replace(/\/+$/, '');
+  return stripTrailingSlashes(attributeDir(output) || labelledDir(output));
 }
 
 /**
@@ -57,7 +52,7 @@ export function extractSkillBaseDir(output: string): string {
 export function skillInputDir(input: Record<string, unknown>): string {
   for (const key of ['dir', 'directory', 'path', 'skillPath', 'location']) {
     const value = input[key];
-    if (typeof value === 'string' && value.trim()) return value.trim().replace(/\/+$/, '');
+    if (typeof value === 'string' && value.trim()) return stripTrailingSlashes(value.trim());
   }
   return '';
 }
@@ -85,7 +80,7 @@ const SKILLS_DIR = '.kortix/opencode/skills';
  * is no reading of `..` under which it still does that.
  */
 function conventionalSkillDir(skillName?: string): string {
-  const raw = skillName?.trim().replace(/^\/+|\/+$/g, '') ?? '';
+  const raw = stripEdgeSlashes(skillName?.trim() ?? '');
   // `SkillTool` renders `input.name || 'skill'`, so the placeholder reaches here
   // meaning "no name was sent" and must not resolve to a directory called that.
   if (!raw || raw.toLowerCase() === 'skill') return '';
@@ -126,7 +121,7 @@ export function skillDocumentPath(
   inputDir?: string,
   skillName?: string,
 ): string | null {
-  const stated = inputDir?.trim().replace(/\/+$/, '') || extractSkillBaseDir(output);
+  const stated = stripTrailingSlashes(inputDir?.trim() ?? '') || extractSkillBaseDir(output);
   const base = stated || conventionalSkillDir(skillName);
 
   const listed = extractSkillFiles(output).find((f) => /(^|\/)SKILL\.md$/i.test(f));

@@ -113,7 +113,7 @@ function sameColor(actual: string, expected: string): void {
  * '.dark:root' (the '.' before "dark:root" blocks the ':root'-only match).
  */
 function extractBlock(selector: ':root' | '.dark:root'): string {
-  const escaped = selector.replace(/\./g, '\\.');
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const selectorRegex = new RegExp(`(^|\\n)[ \\t]*${escaped}[ \\t]*\\{`);
   const m = selectorRegex.exec(css);
   if (!m) throw new Error(`selector not found: ${selector}`);
@@ -568,7 +568,7 @@ function stripComments(source: string): string {
  */
 function webDeclarations(selector: ':root' | '.dark'): Map<string, string> {
   const css = stripComments(webCss);
-  const escaped = selector.replace(/\./g, '\\.');
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const selectorRegex = new RegExp(`(^|\\n)[ \\t]*${escaped}[ \\t]*\\{`, 'g');
   const out = new Map<string, string>();
   for (let m = selectorRegex.exec(css); m; m = selectorRegex.exec(css)) {

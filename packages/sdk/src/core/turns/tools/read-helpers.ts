@@ -1,3 +1,5 @@
+import { tagBodyTrimNewline, textBetween } from '../text-scan';
+
 export interface ParsedReadOutput {
   path?: string;
   type?: 'file' | 'directory';
@@ -7,21 +9,21 @@ export interface ParsedReadOutput {
 
 export function parseReadOutput(output: string): ParsedReadOutput | null {
   if (!output) return null;
-  const pathMatch = output.match(/<path>([\s\S]*?)<\/path>/);
-  const path = pathMatch ? pathMatch[1].trim() : undefined;
+  const pathText = textBetween(output, '<path>', '</path>');
+  const path = pathText !== null ? pathText.trim() : undefined;
 
-  const contentMatch = output.match(/<content>\n?([\s\S]*?)\n?<\/content>/);
-  if (contentMatch) {
-    const content = contentMatch[1]
+  const contentText = tagBodyTrimNewline(output, 'content');
+  if (contentText !== null) {
+    const content = contentText
       .split('\n')
       .map((l) => l.replace(/^\s*\d+:\s?/, ''))
       .join('\n');
     return { path, type: 'file', content };
   }
 
-  const entriesMatch = output.match(/<entries>\n?([\s\S]*?)\n?<\/entries>/);
-  if (entriesMatch) {
-    const entries = entriesMatch[1]
+  const entriesText = tagBodyTrimNewline(output, 'entries');
+  if (entriesText !== null) {
+    const entries = entriesText
       .split('\n')
       .map((l) => l.trim())
       .filter((l) => l && !/^\(\d+\s+entr/i.test(l));

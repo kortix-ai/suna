@@ -8,6 +8,7 @@
 
 import type { ToolPart } from '../../runtime/client';
 import { humanizeSearchQuery } from './search-query';
+import { stripTrailingSlashes } from '../text-scan';
 
 // ─── Context tool grouping ───────────────────────────────────────────────
 
@@ -48,7 +49,7 @@ export function contextToolSummary(parts: ToolPart[]): {
 
 function basename(p: string): string {
   if (!p) return '';
-  const cleaned = p.replace(/\\/g, '/').replace(/\/+$/, '');
+  const cleaned = stripTrailingSlashes(p.replace(/\\/g, '/'));
   const idx = cleaned.lastIndexOf('/');
   return idx >= 0 ? cleaned.slice(idx + 1) : cleaned;
 }

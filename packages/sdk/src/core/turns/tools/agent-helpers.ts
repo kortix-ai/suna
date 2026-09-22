@@ -1,3 +1,5 @@
+import { removeTagBlocks, taskRow } from '../text-scan';
+
 export function cleanWorkerOutput(raw: string): string {
   if (!raw) return '';
   let text = raw;
@@ -9,7 +11,7 @@ export function cleanWorkerOutput(raw: string): string {
   text = text.replace(/^\*\*Session:\*\*.*\n?/m, '');
   text = text.replace(/^\*\*Duration:\*\*.*\n?/m, '');
 
-  text = text.replace(/<kortix_goal_system[^>]*>[\s\S]*?<\/kortix_goal_system>/g, '');
+  text = removeTagBlocks(text, 'kortix_goal_system');
 
   text = text.replace(/^Task \*\*task-[a-z0-9]+\*\* created and started\..*$/gm, '');
   text = text.replace(/^Task \*\*task-[a-z0-9]+\*\* created:.*$/gm, '');
@@ -48,10 +50,10 @@ export function parseTaskRows(
 
   const lines = output.split('\n').filter((l) => l.trim());
   for (const line of lines) {
-    const m = line.match(/\*\*(task-[a-z0-9]+)\*\*\s+(.+?)\s+—\s+(\w+)/);
-    if (m) {
+    const row = taskRow(line);
+    if (row) {
       const sessionMatch = line.match(/\bses_[a-zA-Z0-9]+/);
-      rows.push({ id: m[1], title: m[2], status: m[3], sessionId: sessionMatch?.[0] });
+      rows.push({ ...row, sessionId: sessionMatch?.[0] });
     }
   }
   return rows;

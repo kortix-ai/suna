@@ -1,3 +1,5 @@
+import { hasPhrasePair } from '../text-scan';
+
 export const MEMORY_VERBS: Record<string, string> = {
   view: 'View',
   create: 'Create',
@@ -28,7 +30,7 @@ export function parseMemoryView(
   const header = nl === -1 ? output : output.slice(0, nl);
   const body = nl === -1 ? '' : output.slice(nl + 1);
 
-  if (/content of .* with line numbers/i.test(header)) {
+  if (hasPhrasePair(header, 'content of ', ' with line numbers')) {
     // `(\t|$)`, not `\t`. A file that ends with a newline — nearly every one —
     // makes `memory view` emit a final entry with an EMPTY body: `28\t`. The
     // output then passes through `partOutput`, which trims it, and the trim

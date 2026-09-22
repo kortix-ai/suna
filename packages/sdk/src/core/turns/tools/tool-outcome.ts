@@ -11,6 +11,7 @@
  */
 
 import type { ToolPart } from '../../runtime/client';
+import { jsonTail, stripErrorPrefixes } from '../text-scan';
 
 /** The `{success:false,error,hint?}` failure contract, parsed. */
 export interface ParsedJsonFailure {
@@ -189,11 +190,11 @@ export function parseJsonFailure(output: string): ParsedJsonFailure | null {
     hint: typeof parsed.hint === 'string' ? parsed.hint.trim() : undefined,
   };
 
-  const nestedMatch = result.errorSummary.match(/:\s*(\{[\s\S]*\})\s*$/);
-  if (!nestedMatch) return result;
+  const nestedJson = jsonTail(result.errorSummary);
+  if (nestedJson === null) return result;
 
   try {
-    const nested = JSON.parse(nestedMatch[1]) as Record<string, unknown>;
+    const nested = JSON.parse(nestedJson) as Record<string, unknown>;
     if (typeof nested.message === 'string' && nested.message.trim()) {
       result.nestedMessage = nested.message.trim();
     }
@@ -215,11 +216,7 @@ export function parseJsonFailure(output: string): ParsedJsonFailure | null {
  * Falls back to the trimmed original if cleaning would empty the string.
  */
 export function cleanErrorMessage(raw: string): string {
-  const cleaned = raw
-    .replace(/^(?:\s*Error:\s*)+/i, '')
-    .replace(/(?:\bError:\s*){2,}/gi, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const cleaned = stripErrorPrefixes(raw).replace(/\s+/g, ' ').trim();
   return cleaned || raw.trim();
 }
 
@@ -251,10 +248,10 @@ export function formatJsonFailureOutput(output: string): string | null {
   const lines: string[] = [];
   lines.push(error.trim());
 
-  const nestedMatch = error.match(/:\s*(\{[\s\S]*\})\s*$/);
-  if (nestedMatch) {
+  const nestedJson = jsonTail(error);
+  if (nestedJson !== null) {
     try {
-      const nested = JSON.parse(nestedMatch[1]) as Record<string, unknown>;
+      const nested = JSON.parse(nestedJson) as Record<string, unknown>;
       const nestedMessage = nested.message;
       if (typeof nestedMessage === 'string' && nestedMessage.trim()) {
         lines.push(`Details: ${nestedMessage.trim()}`);
