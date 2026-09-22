@@ -538,18 +538,36 @@ flow(
           const chunks: Buffer[] = [];
           req.pipe(child.stdin);
           child.stdout.on('data', (chunk: Buffer) => chunks.push(chunk));
-          child.stderr.resume();
+          // git http-backend explains every refusal on STDERR. Discarding it is
+          // why three CI failures of this flow (2026-09-21 run 35625012282,
+          // 2026-09-22 run 35701044493, and one re-run in between) produced a
+          // bare `400` and no cause: the proxy forwards the upstream status, so
+          // the failing request reads as "the API returned 400" when the API is
+          // only relaying what this server said. Keep it, and print it with the
+          // request that earned it.
+          let stderr = '';
+          child.stderr.on('data', (chunk: Buffer) => {
+            stderr += chunk.toString();
+          });
           child.on('error', () => { res.writeHead(502); res.end(); });
           child.on('close', () => {
             const body = Buffer.concat(chunks);
             const split = body.indexOf('\r\n\r\n');
-            if (split < 0) { res.writeHead(502); res.end(); return; }
+            if (split < 0) {
+              console.error(`[GH-17] http-backend produced no headers for ${req.method} ${req.url}${stderr ? ` — stderr: ${stderr.trim()}` : ''}`);
+              res.writeHead(502);
+              res.end();
+              return;
+            }
             for (const line of body.subarray(0, split).toString().split('\r\n')) {
               const colon = line.indexOf(':');
               if (colon < 0) continue;
               const name = line.slice(0, colon); const value = line.slice(colon + 1).trim();
               if (name.toLowerCase() === 'status') res.statusCode = Number(value.split(' ')[0]);
               else res.setHeader(name, value);
+            }
+            if (res.statusCode >= 400) {
+              console.error(`[GH-17] http-backend answered ${res.statusCode} for ${req.method} ${req.url}${stderr ? ` — stderr: ${stderr.trim()}` : ''}`);
             }
             res.end(body.subarray(split + 4));
           });

@@ -1598,13 +1598,19 @@
       "message": "其计算机已被释放。重启会话即可恢复。"
     },
     "previousRepository": {
-      "title": "会话使用先前的仓库",
-      "message": "此工作区基于项目先前的仓库创建。Git 现在连接到当前仓库。请在 push 前检查更改。",
+      "title": "此会话已过时",
+      "message": "此会话开始后项目已更改。请更新以继续在最新版本上工作。",
       "unavailable": "先前的工作区已不可用。请在当前仓库中启动新会话。",
       "resume": "恢复先前的工作区",
       "resuming": "正在恢复…",
       "newSession": "启动新会话",
-      "delete": "删除会话"
+      "delete": "删除会话",
+      "update": "更新到最新",
+      "updating": "正在更新…",
+      "dismiss": "关闭",
+      "updateHint": "让智能体更新此会话",
+      "updateSent": "已在此会话中开始更新",
+      "updateFailed": "无法发送更新提示。"
     },
     "lost": {
       "title": "此会话的计算机已丢失",

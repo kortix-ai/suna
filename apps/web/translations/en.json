@@ -1598,13 +1598,19 @@
       "message": "Its computer was released. Restart the session to bring it back."
     },
     "previousRepository": {
-      "title": "Session uses previous repository",
-      "message": "This workspace started from the project's previous repository. Git now connects to the current repository. Review changes before you push.",
+      "title": "This session is out of date",
+      "message": "The project changed after this session started. Update it to keep working on the latest version.",
       "unavailable": "The previous workspace is no longer available. Start a new session in the current repository.",
       "resume": "Resume previous workspace",
       "resuming": "Resuming…",
       "newSession": "Start new session",
-      "delete": "Delete session"
+      "delete": "Delete session",
+      "update": "Update to latest",
+      "updating": "Updating…",
+      "dismiss": "Dismiss",
+      "updateHint": "Asks the agent to update this session",
+      "updateSent": "Update started in this session",
+      "updateFailed": "Could not send the update prompt."
     },
     "lost": {
       "title": "This session's computer was lost",

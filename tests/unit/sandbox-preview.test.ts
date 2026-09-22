@@ -370,33 +370,36 @@ describe('provider-neutral preview lifecycle', () => {
     expect(script).not.toContain('ecs-preview');
   });
 
-  it('falls back only after a Platinum infrastructure failure', async () => {
+  it('runs on Platinum only: an infrastructure failure fails the preview, never falls back', async () => {
+    // Previews never run on Daytona. The shared Daytona org hit its snapshot
+    // quota on 2026-09-21 and every preview session failed there.
     const platinum = vi.fn().mockRejectedValue(new PreviewInfrastructureError('restore timeout'));
-    const daytona = vi.fn().mockResolvedValue({ exitCode: 0, provider: 'daytona' });
-    await expect(runSandboxPreview(input, { platinum, daytona })).resolves.toEqual({
-      exitCode: 0,
-      provider: 'daytona',
-    });
-    expect(daytona).toHaveBeenCalledOnce();
+    await expect(runSandboxPreview(input, { platinum })).rejects.toThrow('restore timeout');
+    expect(platinum).toHaveBeenCalledOnce();
   });
 
-  it('does not fall back after a product test failure', async () => {
+  it('treats `auto` as Platinum', async () => {
+    const platinum = vi.fn().mockResolvedValue({ exitCode: 0, provider: 'platinum' });
+    await expect(runSandboxPreview({ ...input, provider: 'auto' }, { platinum })).resolves.toEqual({
+      exitCode: 0,
+      provider: 'platinum',
+    });
+  });
+
+  it('returns a product test failure unchanged', async () => {
     const platinum = vi.fn().mockResolvedValue({ exitCode: 9, provider: 'platinum' });
-    const daytona = vi.fn();
-    await expect(runSandboxPreview(input, { platinum, daytona })).resolves.toEqual({
+    await expect(runSandboxPreview(input, { platinum })).resolves.toEqual({
       exitCode: 9,
       provider: 'platinum',
     });
-    expect(daytona).not.toHaveBeenCalled();
   });
 
-  it('does not hide an arbitrary controller bug behind fallback', async () => {
-    const platinum = vi.fn().mockRejectedValue(new Error('invalid preview config'));
-    const daytona = vi.fn();
-    await expect(runSandboxPreview(input, { platinum, daytona })).rejects.toThrow(
-      'invalid preview config',
-    );
-    expect(daytona).not.toHaveBeenCalled();
+  it('rejects a Daytona request', async () => {
+    const platinum = vi.fn();
+    await expect(
+      runSandboxPreview({ ...input, provider: 'daytona' as never }, { platinum }),
+    ).rejects.toThrow(/Platinum only/);
+    expect(platinum).not.toHaveBeenCalled();
   });
 
   it('selects only stale or unlabeled preview sandboxes for teardown', () => {

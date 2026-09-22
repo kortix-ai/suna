@@ -224,19 +224,37 @@ async function buildStatusCard(
   });
 }
 
-const SESSION_STATUS_GLYPH: Record<string, string> = {
-  running: '⏳',
-  idle: '✓',
-  stopped: '•',
-  failed: '✗',
+/**
+ * Every value of `project_session_status`, as a glyph and a word a user reads.
+ *
+ * The first cut of this map keyed on `idle`, which is not one of them — so it
+ * never matched, and `queued`, `branching`, `provisioning` and `completed` all
+ * fell through to a bare `•`. The enum is the contract
+ * (packages/db/src/schema/kortix.ts): queued, branching, provisioning, running,
+ * stopped, failed, completed.
+ *
+ * `branching` and `provisioning` are how the sandbox is built, not something a
+ * user asked about; both read as "starting". A status outside the enum still
+ * renders, verbatim, rather than being swallowed.
+ */
+const SESSION_STATUS: Record<string, { glyph: string; label: string }> = {
+  queued: { glyph: '•', label: 'queued' },
+  branching: { glyph: '•', label: 'starting' },
+  provisioning: { glyph: '•', label: 'starting' },
+  running: { glyph: '⏳', label: 'working' },
+  completed: { glyph: '✓', label: 'done' },
+  stopped: { glyph: '•', label: 'stopped' },
+  failed: { glyph: '✗', label: 'failed' },
 };
 
 function describeConversationSession(session: TeamsConversationSession | null): string {
   if (!session) return 'none yet — @-mention me with a task';
-  const status = session.status ?? 'unknown';
-  const glyph = SESSION_STATUS_GLYPH[status] ?? '•';
+  const raw = session.status ?? '';
+  const known = SESSION_STATUS[raw];
+  const glyph = known?.glyph ?? '•';
+  const label = known?.label ?? raw ?? 'unknown';
   const when = session.createdAt ? ` · started ${formatRelativeTime(session.createdAt)}` : '';
-  return `${glyph} ${status}${when}`;
+  return `${glyph} ${label}${when}`;
 }
 
 async function buildWhoamiCard(
@@ -421,5 +439,5 @@ async function switchProject(tenantId: string, conversationId: string, arg: stri
     : null;
   if (!match) return buildProjectsCard(tenantId, (await resolveConversationProject(tenantId, conversationId)) ?? '');
   await setConversationProject({ tenantId, conversationId, projectId: match.projectId });
-  return buildNoticeCard(`This conversation now runs *${match.name}*.`);
+  return buildNoticeCard(`This conversation now runs **${match.name}**.`);
 }

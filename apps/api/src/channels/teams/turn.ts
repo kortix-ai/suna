@@ -8,6 +8,7 @@ import type { StreamTaskChunk } from '../slack-api';
 import { sendCard, updateCard } from '../teams-api';
 import { saveTeamsServiceUrl } from '../install-store';
 import { buildAnswerCard, buildFinalCard, buildNoticeCard, buildPlanCard } from './cards';
+import { mrkdwnToTeamsMarkdown } from './markdown';
 import { STREAM_TTL_MS, STALE_AFTER_MS } from './app';
 import type { TeamsActivity, TeamsChannelRef, TeamsConversationRef, TeamsLiveTurn } from './types';
 import { conversationScope } from './util';
@@ -292,7 +293,14 @@ export async function relayTurnEnd(
   if (!(await claimFinalize(sessionId))) return false;
   if (status === 'error') {
     const classified = classifyTurnError(errorInfo);
-    await finalizeTurn(handle, classified.aborted ? {} : { error: classified.text, title: classified.title });
+    // The classifier is Slack's, so its copy is Slack's dialect. Translate at
+    // the boundary rather than forking the copy — see mrkdwnToTeamsMarkdown.
+    await finalizeTurn(
+      handle,
+      classified.aborted
+        ? {}
+        : { error: mrkdwnToTeamsMarkdown(classified.text), title: classified.title },
+    );
   } else {
     await finalizeTurn(handle, {});
   }
@@ -307,8 +315,12 @@ export async function finalizeTurn(
     error?: string;
     title?: string;
     card?: Record<string, unknown>;
-    /** A deliberate stop: the step in flight neither finished nor failed. */
-    stopped?: boolean;
+    /**
+     * The step in flight neither finished nor failed — a deliberate Stop, or a
+     * turn that ended by ASKING rather than answering. Both get the neutral
+     * glyph; `complete` would claim work that never happened.
+     */
+    unfinished?: boolean;
   },
 ): Promise<void> {
   if (handle.finalized && handle.messageActivityId === '' && !opts.answer && !opts.error && !opts.card) return;
@@ -328,10 +340,10 @@ export async function finalizeTurn(
     } else if (handle.messageActivityId) {
       const last = handle.steps[handle.steps.length - 1];
       if (last && last.status === 'in_progress') {
-        // A stopped step gets the neutral glyph. `complete` would claim work
-        // that never finished, and `error` paints a red ✗ over something the
-        // user chose to end.
-        last.status = opts.stopped ? 'pending' : opts.error ? 'error' : 'complete';
+        // An unfinished step gets the neutral glyph. `complete` would claim
+        // work that never finished, and `error` paints a red ✗ over something
+        // the user chose to end, or over a question waiting on them.
+        last.status = opts.unfinished ? 'pending' : opts.error ? 'error' : 'complete';
       }
       await updateCard(
         refOf(handle),

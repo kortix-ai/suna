@@ -122,6 +122,16 @@ per-resource setting on one channel, not a role. It grants no permission the
 role verdict denies — see
 [Accounts & access](/docs/accounts#per-feature-access-settings).
 
+## Stopping a run
+
+While the agent works, its live message carries a **Stop** button. It ends the
+run at the runtime, not just on the message — a run left open swallows the next
+message in the thread instead of answering it.
+
+The person who sent the message being answered can stop it, as can anyone
+already working in that session. A bystander in the channel cannot; they get a
+private note saying so.
+
 ## What does not work
 
 - Slash commands do not fire inside the Assistant DM pane. Type

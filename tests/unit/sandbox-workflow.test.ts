@@ -74,6 +74,16 @@ describe('native test-lane workflow', () => {
     expect(free).toContain('docker ps -aq --filter "publish=$port"');
     expect(free).toContain('54321 54322 54323 54324');
     expect(free).not.toContain('if:');
+
+    // Removing the container is not the same as getting the port back. On run
+    // 35630898515 (browser-1, main @ 3c67a5e0b6) the stop ran, the container
+    // filter matched nothing, 54322 bound fine, and 54324 still refused — the
+    // binding simply had not been released yet. So the sweep also WAITS, and
+    // names the holder if the wait runs out, because the three occurrences so
+    // far were each diagnosed by inference rather than evidence.
+    expect(free).toContain('ss -ltnH "sport = :$port"');
+    expect(free).toContain('ss -ltnp "sport = :$port"');
+    expect(free).toMatch(/::warning::port \$port is still bound/);
   });
 
   test('has no cloud-sandbox worker path left', () => {

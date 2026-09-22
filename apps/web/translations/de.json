@@ -1598,13 +1598,19 @@
       "message": "Der zugehörige Computer wurde freigegeben. Starte die Sitzung neu, um sie wiederherzustellen."
     },
     "previousRepository": {
-      "title": "Sitzung verwendet das vorherige Repository",
-      "message": "Dieser Arbeitsbereich stammt aus dem vorherigen Repository des Projekts. Git verbindet sich jetzt mit dem aktuellen Repository. Prüfe die Änderungen vor dem Push.",
+      "title": "Diese Sitzung ist veraltet",
+      "message": "Das Projekt hat sich seit dem Start dieser Sitzung geändert. Aktualisiere sie, um mit der neuesten Version weiterzuarbeiten.",
       "unavailable": "Der vorherige Arbeitsbereich ist nicht mehr verfügbar. Starte eine neue Sitzung im aktuellen Repository.",
       "resume": "Vorherigen Arbeitsbereich fortsetzen",
       "resuming": "Wird fortgesetzt…",
       "newSession": "Neue Sitzung starten",
-      "delete": "Sitzung löschen"
+      "delete": "Sitzung löschen",
+      "update": "Auf neuesten Stand bringen",
+      "updating": "Wird aktualisiert…",
+      "dismiss": "Schließen",
+      "updateHint": "Bittet den Agenten, diese Sitzung zu aktualisieren",
+      "updateSent": "Aktualisierung in dieser Sitzung gestartet",
+      "updateFailed": "Der Aktualisierungs-Prompt konnte nicht gesendet werden."
     },
     "lost": {
       "title": "Der Computer dieser Sitzung ist verloren gegangen",

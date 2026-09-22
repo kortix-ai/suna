@@ -1598,13 +1598,19 @@
       "message": "O computador dela foi liberado. Reinicie a sessão para reativá-la."
     },
     "previousRepository": {
-      "title": "A sessão usa o repositório anterior",
-      "message": "Este espaço de trabalho começou no repositório anterior do projeto. O Git agora se conecta ao repositório atual. Revise as alterações antes do push.",
+      "title": "Esta sessão está desatualizada",
+      "message": "O projeto mudou depois que esta sessão começou. Atualize-a para continuar trabalhando na versão mais recente.",
       "unavailable": "O espaço de trabalho anterior não está mais disponível. Inicie uma nova sessão no repositório atual.",
       "resume": "Retomar espaço anterior",
       "resuming": "Retomando…",
       "newSession": "Iniciar nova sessão",
-      "delete": "Excluir sessão"
+      "delete": "Excluir sessão",
+      "update": "Atualizar para o mais recente",
+      "updating": "Atualizando…",
+      "dismiss": "Dispensar",
+      "updateHint": "Pede ao agente para atualizar esta sessão",
+      "updateSent": "Atualização iniciada nesta sessão",
+      "updateFailed": "Não foi possível enviar o prompt de atualização."
     },
     "lost": {
       "title": "O computador desta sessão foi perdido",

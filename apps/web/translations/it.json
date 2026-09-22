@@ -1598,13 +1598,19 @@
       "message": "Il suo computer è stato rilasciato. Riavvia la sessione per ripristinarla."
     },
     "previousRepository": {
-      "title": "La sessione usa il repository precedente",
-      "message": "Questa area di lavoro proviene dal repository precedente del progetto. Git ora si collega al repository corrente. Controlla le modifiche prima del push.",
+      "title": "Questa sessione non è aggiornata",
+      "message": "Il progetto è cambiato dopo l’avvio di questa sessione. Aggiornala per continuare a lavorare sull’ultima versione.",
       "unavailable": "L’area di lavoro precedente non è più disponibile. Avvia una nuova sessione nel repository corrente.",
       "resume": "Riprendi area di lavoro precedente",
       "resuming": "Ripresa in corso…",
       "newSession": "Avvia nuova sessione",
-      "delete": "Elimina sessione"
+      "delete": "Elimina sessione",
+      "update": "Aggiorna all’ultima versione",
+      "updating": "Aggiornamento…",
+      "dismiss": "Ignora",
+      "updateHint": "Chiede all’agente di aggiornare questa sessione",
+      "updateSent": "Aggiornamento avviato in questa sessione",
+      "updateFailed": "Impossibile inviare il prompt di aggiornamento."
     },
     "lost": {
       "title": "Il computer di questa sessione è andato perso",

@@ -340,7 +340,11 @@ async function deliverFollowUp(input: {
           error: `This conversation's session hit an error and couldn't start. [Open it in Kortix](${url}) to see what happened.`,
         });
       } else {
-        await finalizeTurn(handle, {});
+        // The notice is suppressed so a jammed conversation does not repeat
+        // the same error line on every message — but the CARD must not then
+        // claim "Task complete" over a session that failed to start. Title
+        // only: honest, and still silent.
+        await finalizeTurn(handle, { title: "Couldn't start", unfinished: true });
       }
     }
     return 'done';

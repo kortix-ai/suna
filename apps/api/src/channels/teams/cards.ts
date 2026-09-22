@@ -302,22 +302,126 @@ export function buildPanelCard(opts: {
   return card(body, actions);
 }
 
-export function buildQuestionCard(
-  questions: Array<{ question: string; options?: Array<{ label: string }> }>,
-): Record<string, unknown> {
-  const body: CardElement[] = [...headerBlock('💬', 'A quick question')];
-  for (const q of questions) body.push(text(q.question, { weight: 'bolder', wrap: true, spacing: 'small' }));
-  const seen = new Set<string>();
-  const actions: CardElement[] = [];
-  for (const o of questions.flatMap((q) => q.options ?? [])) {
-    if (!o.label || seen.has(o.label)) continue;
-    seen.add(o.label);
-    actions.push(executeAction(o.label, 'teams_answer', { answer: o.label }));
-    if (actions.length >= 6) break;
-  }
-  body.push(text('Tap an option, or just reply in the chat.', { isSubtle: true, size: 'small', spacing: 'medium' }));
-  return card(body, actions.length ? actions : undefined);
+export interface TeamsQuestion {
+  question: string;
+  header?: string;
+  options?: Array<{ label: string; description?: string }>;
+  /** Several answers allowed. */
+  multiple?: boolean;
+  /** An answer outside the listed options is allowed. */
+  custom?: boolean;
 }
+
+const MAX_BUTTON_OPTIONS = 6;
+
+/**
+ * An `Input.*` id doubles as the label the agent reads back, because
+ * `handleForm` relays `- <id>: <value>` and a `q1` would tell it nothing. Ids
+ * cannot contain a comma — `fieldIds` travels comma-joined — so strip those
+ * and keep it short enough to stay readable in the relayed message.
+ */
+function questionFieldId(question: string, index: number): string {
+  const cleaned = question.replace(/[,\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!cleaned) return `Question ${index + 1}`;
+  return cleaned.length > 60 ? `${cleaned.slice(0, 59)}…` : cleaned;
+}
+
+/**
+ * The card that asks. Two shapes, picked by what the question actually is.
+ *
+ * ONE question, a handful of options, one answer, no free text → a button per
+ * option. It is one tap, and that is the common case.
+ *
+ * Anything else → a real form. The old card flattened EVERY option of EVERY
+ * question into a single deduped button row: two questions offering "Yes"
+ * showed one button, nothing said which question a button belonged to, and a
+ * tap sent back a single bare label for what were several questions. It also
+ * dropped `header`, `multiple`, `custom` and every option `description` on the
+ * floor. A form answers all of them — one `Input.ChoiceSet` per question,
+ * multi-select when asked, a text box when free-form answers are allowed — and
+ * `handleForm` relays the answers back labelled with their questions.
+ */
+export function buildQuestionCard(questions: TeamsQuestion[]): Record<string, unknown> {
+  const list = (questions ?? []).filter((q) => q?.question?.trim());
+  if (list.length === 0) return buildNoticeCard('The agent asked a question, but it arrived empty.', '💬');
+
+  const single = list.length === 1 ? list[0] : null;
+  const options = single?.options?.filter((o) => o?.label?.trim()) ?? [];
+  // `custom` deliberately does NOT force the form. The relay route defaults it
+  // to true (`obj.custom === false ? false : true`, projects/routes/r4.ts), so
+  // gating on it would turn every plain yes/no into a form with a Submit
+  // button. In Teams the free-text path already exists and always has: the
+  // card says "or just reply in the chat", and a reply arrives as the next
+  // turn. The form's own "(other)" box is for when the user is in a form
+  // anyway.
+  const oneTap = single && options.length > 0 && options.length <= MAX_BUTTON_OPTIONS && !single.multiple;
+
+  if (oneTap && single) {
+    const body: CardElement[] = [...headerBlock('💬', single.header?.trim() || 'A quick question')];
+    body.push(text(single.question, { weight: 'bolder', wrap: true, spacing: 'small' }));
+    // An Action has no room for a subtitle, so a described option explains
+    // itself above the buttons instead of losing the description entirely.
+    for (const o of options) {
+      if (o.description?.trim()) {
+        body.push(text(`**${o.label}** — ${o.description.trim()}`, { isSubtle: true, size: 'small', spacing: 'small', wrap: true }));
+      }
+    }
+    body.push(text('Tap an option, or just reply in the chat.', { isSubtle: true, size: 'small', spacing: 'medium' }));
+    return card(
+      body,
+      // The question rides along with the answer. `Action.Execute` REPLACES
+      // the card, so without it the conversation is left showing a bare
+      // "Answer received: Yes" — no context for anyone reading the channel
+      // later, and a bare label for the agent. Truncated because action data
+      // travels on every tap.
+      options.map((o) =>
+        executeAction(o.label, 'teams_answer', {
+          answer: o.label,
+          question: single.question.slice(0, 200),
+        }),
+      ),
+    );
+  }
+
+  const fields: TeamsFormField[] = [];
+  for (const [i, q] of list.entries()) {
+    const id = questionFieldId(q.question, i);
+    const opts = q.options?.filter((o) => o?.label?.trim()) ?? [];
+    if (opts.length > 0) {
+      fields.push({
+        id,
+        label: q.question,
+        type: q.multiple ? 'multichoice' : 'choice',
+        // A description belongs on the choice itself, where the user reads it.
+        choices: opts.map((o) => ({
+          title: o.description?.trim() ? `${o.label} — ${o.description.trim()}` : o.label,
+          value: o.label,
+        })),
+        placeholder: q.multiple ? 'Pick one or more' : 'Pick one',
+      });
+      // `custom` means the listed options are not exhaustive. Give that its own
+      // box rather than pretending the list is closed.
+      if (q.custom) {
+        fields.push({ id: `${id} (other)`, label: 'Something else', type: 'text', placeholder: 'Your own answer' });
+      }
+    } else {
+      fields.push({ id, label: q.question, type: 'textarea', placeholder: 'Your answer' });
+    }
+  }
+
+  const form = buildFormCard({
+    title: single?.header?.trim() || (list.length > 1 ? `${list.length} questions` : 'A quick question'),
+    subtitle: 'Answer here, or just reply in the chat.',
+    submitLabel: 'Send answers',
+    fields,
+  });
+  // `buildFormCard` returns null only when nothing usable survived; the
+  // questions still have to reach the user, so fall back to plain text.
+  return form ?? buildNoticeCard(list.map((q) => q.question).join('\n\n'), '💬');
+}
+
+/** The id the review card's feedback box reports under. */
+export const REVIEW_FEEDBACK_INPUT = 'reviewFeedback';
 
 export function buildReviewCard(opts: {
   reviewItemId: string;
@@ -335,6 +439,21 @@ export function buildReviewCard(opts: {
       ]),
     );
   }
+  // `Action.Execute` returns EVERY input on the card, whichever button was
+  // pressed — so one optional box serves all three verdicts. Without it
+  // `applyVerdict` was always called with `feedback: null` and the agent was
+  // told to "ask what to change", asking the reviewer for something they
+  // already knew when they clicked. The column has always existed
+  // (review_items.feedback); nothing ever filled it.
+  body.push(
+    text('Feedback (optional)', { weight: 'bolder', size: 'small', spacing: 'medium' }),
+    {
+      type: 'Input.Text',
+      id: REVIEW_FEEDBACK_INPUT,
+      isMultiline: true,
+      placeholder: 'What should change, or why — sent to the agent with your decision',
+    },
+  );
   const actions: CardElement[] = [
     { type: 'Action.Execute', title: 'Approve', verb: 'teams_review', data: { verb: 'teams_review', reviewItemId: opts.reviewItemId, verdict: 'approve' }, style: 'positive' },
     executeAction('Request changes', 'teams_review', { reviewItemId: opts.reviewItemId, verdict: 'changes' }),

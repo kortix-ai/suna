@@ -1598,13 +1598,19 @@
       "message": "Son ordinateur a été libéré. Redémarrez la session pour le récupérer."
     },
     "previousRepository": {
-      "title": "La session utilise le dépôt précédent",
-      "message": "Cet espace de travail provient du dépôt précédent du projet. Git se connecte maintenant au dépôt actuel. Vérifiez les modifications avant le push.",
+      "title": "Cette session n’est pas à jour",
+      "message": "Le projet a changé depuis le début de cette session. Mettez-la à jour pour continuer sur la dernière version.",
       "unavailable": "L’espace de travail précédent n’est plus disponible. Démarrez une nouvelle session dans le dépôt actuel.",
       "resume": "Reprendre l’espace précédent",
       "resuming": "Reprise…",
       "newSession": "Démarrer une nouvelle session",
-      "delete": "Supprimer la session"
+      "delete": "Supprimer la session",
+      "update": "Mettre à jour",
+      "updating": "Mise à jour…",
+      "dismiss": "Ignorer",
+      "updateHint": "Demande à l’agent de mettre à jour cette session",
+      "updateSent": "Mise à jour lancée dans cette session",
+      "updateFailed": "Impossible d’envoyer le prompt de mise à jour."
     },
     "lost": {
       "title": "L’ordinateur de cette session a été perdu",

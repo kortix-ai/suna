@@ -115,7 +115,7 @@ describe('stopTeamsTurn', () => {
 
     expect(outcome).toEqual({ stopped: true, stoppedRuntime: true });
     expect(aborted).toEqual([SESSION_ID]);
-    expect(finalized).toEqual([{ title: 'Stopped', answer: 'Stopped by Ivan.', stopped: true }]);
+    expect(finalized).toEqual([{ title: 'Stopped', answer: 'Stopped by Ivan.', unfinished: true }]);
     expect(deleted).toEqual([SESSION_ID]);
   });
 
@@ -268,6 +268,6 @@ describe('stopTeamsTurn', () => {
 
     await stopTeamsTurn({ sessionId: SESSION_ID, teamsUserId: '29:owner', byName: '   ' });
 
-    expect(finalized[0]).toEqual({ title: 'Stopped', answer: 'Stopped.', stopped: true });
+    expect(finalized[0]).toEqual({ title: 'Stopped', answer: 'Stopped.', unfinished: true });
   });
 });

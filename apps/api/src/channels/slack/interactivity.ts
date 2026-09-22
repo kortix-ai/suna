@@ -9,6 +9,7 @@ import { backfillChannelName, dispatchSlackEvent, pendingPickers, spawnAgentTurn
 import { createSlackAccessRequest, notifyAdminsOfAccessRequest, resolveSlackActor } from './identity';
 import { parseReviewActionId, reviewVerbToVerdict, type ReviewVerb } from './review-cards';
 import { applyVerdict, getReviewItemById } from '../../projects/review-items';
+import { SLACK_STOP_ACTION, stopSlackTurn } from './stop';
 import { isAdaptedId } from '../../projects/review-adapters';
 import { decideSlackThreadJoin } from './participants';
 import { attachPendingSlackAuthResponseUrl } from './auth-resume';
@@ -666,9 +667,53 @@ async function handleSlackLoginConnect(
   });
 }
 
+/**
+ * Stop the run behind the live plan message.
+ *
+ * The button carries its session id in `value`; nothing about the payload
+ * names a turn. `stopSlackTurn` decides whether this person may end it and
+ * settles the message, so the reply here is only what the presser is told —
+ * ephemeral, because a refusal is nobody else's business.
+ */
+async function handleStop(
+  payload: SlackInteractionPayload,
+  action: { value?: string },
+): Promise<void> {
+  const sessionId = (action.value ?? '').trim();
+  const responseUrl = payload.response_url;
+  if (!responseUrl) return;
+  if (!sessionId) {
+    await respondViaUrl(responseUrl, { response_type: 'ephemeral', text: 'That run is no longer available.' });
+    return;
+  }
+  const slackUserId = payload.user?.id ?? '';
+  const outcome = await stopSlackTurn({
+    sessionId,
+    slackUserId,
+    // `<@U…>` renders as the member's display name in the thread, and it is
+    // the only identity the interaction payload carries here.
+    byName: slackUserId ? `<@${slackUserId}>` : undefined,
+  });
+  await respondViaUrl(responseUrl, {
+    response_type: 'ephemeral',
+    text: outcome.stopped
+      ? outcome.stoppedRuntime
+        ? 'Stopped. The agent is no longer working on this.'
+        : // The ledger is closed either way; do not claim a reach we did not
+          // have. A parked or already-finished sandbox is the usual case.
+          'Stopped. The run was already closing on its own.'
+      : outcome.notice,
+  });
+}
+
 export async function handleBlockAction(payload: SlackInteractionPayload): Promise<void> {
   const action = payload.actions?.[0];
   if (!action?.action_id) return;
+
+  if (action.action_id === SLACK_STOP_ACTION) {
+    await handleStop(payload, action);
+    return;
+  }
 
   if (action.action_id.startsWith('qa_')) {
     await handleQuestionAnswer(payload, action);

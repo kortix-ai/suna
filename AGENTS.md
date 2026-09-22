@@ -416,9 +416,11 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   `RELEASE_SOURCE_SHA`, when any API flow is excluded, or when a configured
   Playwright journey fails.
 - The `preview` label creates one full self-host preview in a persistent warm
-  Platinum sandbox. `auto` uses Daytona only for a Platinum infrastructure
-  failure. The preview has its own PostgreSQL, Supabase, API, gateway, frontend,
-  Mailpit, and HTTPS origin.
+  Platinum sandbox. Previews run on Platinum only: the preview host and every
+  session inside it. A Platinum failure fails the preview; there is no Daytona
+  fallback. Daytona code remains only to delete previews created before
+  2026-09-22. The preview has its own PostgreSQL, Supabase, API, gateway,
+  frontend, Mailpit, and HTTPS origin.
 - Preview CI runs `pnpm test -- --target-full` against that origin. The sticky
   pull request comment links the origin and its `/_tests/` HTML report.
 - A push to a `preview`-labelled branch redeploys its environment in place; the

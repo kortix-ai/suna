@@ -18,7 +18,13 @@ import {
   normalizeConversationPolicy,
   rememberSlackThreadOwner,
 } from './participants';
-import { buildSlackTurnEnv, finalizeTurn, saveTurn, startTurn } from './turn';
+import {
+  buildSlackTurnEnv,
+  finalizeTurn,
+  saveTurn,
+  showStopOnLivePlan,
+  startTurn,
+} from './turn';
 import type { SlackEnvelope, SlackEvent } from './types';
 import { channelTurnModel, promptModelOverride } from '../vision-model';
 
@@ -296,6 +302,8 @@ export async function createOrJoinThreadSession(input: {
   if (result.sessionId && handle) {
     handle.sessionId = result.sessionId;
     await saveTurn(handle);
+    // Stop is only paintable once the message knows which session it would end.
+    await showStopOnLivePlan(handle);
   }
   if (result.sessionId && teamId && threadId && event.user) {
     await rememberSlackThreadOwner({
