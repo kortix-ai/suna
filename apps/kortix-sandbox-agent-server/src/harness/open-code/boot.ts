@@ -36,6 +36,7 @@ import {
   convergeConfigRelease,
   deliverGovernance,
   fetchBootRelease,
+  proveBootConfig,
   provenReleaseForEarlySpawn,
   recordBootConfig,
   resolveBootConfig,
@@ -330,6 +331,9 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
   if (earlyCandidatePossible) bootState.workspaceReady = false
   let opencodeStartedEarly = false
   const early: { dir: string | null; release: BootRelease | null } = { dir: null, release: null }
+  // Puts back the governance the box booted with, if the boot proof has to
+  // step below a fetched release.
+  let restoreBootGovernance: (() => void) | undefined
   const earlyOpencodeStartPromise: Promise<void> | null =
     earlyCandidatePossible && !(process.env.KORTIX_COMPILED_OPENCODE_CONFIG_DIR ?? '').trim()
       ? (async () => {
@@ -342,7 +346,10 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
             if (first === 'checkout') return // the clone won; the serial path decides
             if (first) {
               early.release = first
-              deliverGovernance(first.manifest.compiled_governance, first.manifest.compiled_governance_etag)
+              restoreBootGovernance = deliverGovernance(
+                first.manifest.compiled_governance,
+                first.manifest.compiled_governance_etag,
+              )
               dir = first.dir
             } else {
               dir = hintedConfigDir // no release path: today's behaviour
@@ -412,17 +419,22 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
   // read back from disk here; the convergence after ready moves the box onto
   // the desired release.
   // The desired release wins when it arrived: early, or within a short wait
-  // after the clone. Its proof runs in the convergence after ready.
-  const bootRelease: BootRelease | null =
-    early.release ??
-    (bootReleasePromise && !bootState.repoMaterializationError
-      ? await Promise.race([
-          bootReleasePromise,
-          new Promise<null>((resolve) => setTimeout(() => resolve(null), BOOT_RELEASE_WAIT_MS)),
-        ])
-      : null)
+  // after the clone. It is unproven; the boot proof below runs before the
+  // session runtime starts. A compiled-config process does not run it.
+  const bootRelease: BootRelease | null = opencodeStartedFromCompiledConfig
+    ? null
+    : (early.release ??
+      (bootReleasePromise && !bootState.repoMaterializationError
+        ? await Promise.race([
+            bootReleasePromise,
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), BOOT_RELEASE_WAIT_MS)),
+          ])
+        : null))
   if (bootRelease && !early.release) {
-    deliverGovernance(bootRelease.manifest.compiled_governance, bootRelease.manifest.compiled_governance_etag)
+    restoreBootGovernance = deliverGovernance(
+      bootRelease.manifest.compiled_governance,
+      bootRelease.manifest.compiled_governance_etag,
+    )
   }
   const activeConfig: BootConfigChoice = bootState.repoMaterializationError
     ? await (async () => {
@@ -449,7 +461,7 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
     release_id: activeConfig.release_id,
     source_commit: activeConfig.source_commit,
     // A release from the store's pointer was proven on this box; a freshly
-    // fetched one is proven by the convergence after ready.
+    // fetched one is proven by the boot proof below.
     proven: activeConfig.source === 'release' && !bootRelease,
     fallback_reason: activeConfig.fallback_reason,
   })
@@ -541,6 +553,30 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
       })
       bootMark('opencode-spawned')
     }
+  }
+
+  // Prove a fetched release BEFORE the session runtime starts (spec "Boot",
+  // "Fallback chain"). The initial session cannot be created on a config
+  // OpenCode refuses to load, so a proof that waited for readiness never ran
+  // and the box never became ready (verification DEF-4). On failure the box
+  // steps down the fallback chain and reports why in health.
+  if (!bootState.repoMaterializationError && bootRelease && activeConfig.source === 'release') {
+    await proveBootConfig({
+      cfg,
+      boot: bootRelease,
+      opencode,
+      restoreGovernance: restoreBootGovernance,
+      mark: bootMark,
+      spawnOn: async (dir) => {
+        harness.configuration.reconfigure(cfg, dir, projectEnv)
+        await opencode.restart()
+        await opencode.waitForCurrentListening()
+      },
+    }).catch((err) => {
+      logger.error('[boot] the boot release proof failed to run', {
+        err: err instanceof Error ? err.message : String(err),
+      })
+    })
   }
 
   // If the image shipped without its baked catalog, opencode just booted on the

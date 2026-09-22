@@ -31,7 +31,7 @@ import { ensureInjectedManagedSkills } from '../../managed-skills'
 import { resolveOpencodeConfigDir, resolveOpencodeConfigDirLiteral, type OpenCodeConfig } from './config'
 import { VERIFY_READY_TIMEOUT_MS, type Opencode, type VerifiedReloadResult } from './lifecycle'
 import { ensureOpencodeConfigDeps } from './opencode-config-deps'
-import { pluginFilesFrom, provenCheck, toolNamesFromFiles } from './proven-check'
+import { pluginFilesFrom, provenCheck, toolNamesFromFiles, type ProvenCheckInput } from './proven-check'
 
 /**
  * Convergence: the daemon applies the release the API assigns.
@@ -570,6 +570,156 @@ async function proveBootRelease(
     source_commit: fallback.source_commit,
   }
   return respond('declined', result, proof.reason)
+}
+
+const MAX_FALLBACK_REASON = 1_000
+
+/**
+ * Prove the release OpenCode was spawned on at boot, BEFORE the session
+ * runtime starts (spec "Boot", "Fallback chain"; verification DEF-4).
+ *
+ * A release that is not the proven pointer is unproven. The initial session
+ * cannot be created on a config OpenCode refuses to load, so readiness never
+ * comes and a proof that waits for readiness never runs. This proof waits for
+ * the session API itself, fails fast on a config error, and on failure:
+ *   1. quarantines the release on this box;
+ *   2. walks the fallback chain — last proven release, workspace config dir
+ *      with opencode.json(c), image default — restarting OpenCode on each and
+ *      proving it;
+ *   3. reports `fallback_reason` and `failed_release_id` in health, which is
+ *      how the API learns of the failure.
+ * The image default is the floor: OpenCode runs there even if it fails too.
+ */
+export async function proveBootConfig(input: {
+  cfg: OpenCodeConfig
+  boot: BootRelease
+  opencode: Pick<Opencode, 'getInternalUrl'>
+  /** Reconfigure and restart OpenCode on `dir`; resolves once it listens. */
+  spawnOn: (dir: string) => Promise<void>
+  /** Put back the governance the box booted with (before the release's). */
+  restoreGovernance?: () => void
+  root?: string
+  managedSkillsDir?: string
+  api?: ConfigReleaseApi | null
+  prepare?: (dir: string) => Promise<void>
+  prove?: typeof provenCheck
+  proofBudgetMs?: number
+  proofOptions?: Partial<Pick<ProvenCheckInput, 'requestTimeoutMs' | 'hangLimit' | 'pollMs' | 'fetchImpl'>>
+  mark?: (label: string) => void
+}): Promise<{ proven: boolean; dir: string; source: ConfigSource }> {
+  const { cfg, boot } = input
+  const root = input.root ?? bootConfigRoot()
+  const budget = input.proofBudgetMs ?? VERIFY_READY_TIMEOUT_MS
+  const proveDir = (dir: string, toolNames: readonly string[], pluginFiles: readonly string[]) =>
+    (input.prove ?? provenCheck)(input.opencode.getInternalUrl(), Date.now() + budget, {
+      directory: cfg.projectTarget,
+      toolNames,
+      pluginFiles,
+      configDir: dir,
+      waitForSessionApi: true,
+      ...input.proofOptions,
+    })
+
+  const proof = await proveDir(boot.dir, toolNamesFromFiles(boot.manifest.files), pluginFilesFrom(boot.manifest.files))
+  if (proof.ok) {
+    const previous = await readBootConfigPointer(root)
+    await activateBootConfig(root, {
+      release_id: boot.releaseId,
+      source_commit: boot.sourceCommit,
+      config_dir: boot.manifest.config_dir,
+      dir: boot.dir,
+      proven: true,
+    })
+    await pruneBootConfigs(root, previous ? [boot.releaseId, previous.release_id] : [boot.releaseId])
+    running = {
+      release_id: boot.releaseId,
+      desired_release_id: boot.releaseId,
+      source: 'release',
+      mode: 'follow-base',
+      proven: true,
+      fallback_reason: null,
+      failed_release_id: null,
+      source_commit: boot.sourceCommit,
+    }
+    input.mark?.('config-release-proven')
+    logger.info('[config-release] the boot release is proven', { releaseId: boot.releaseId })
+    return { proven: true, dir: boot.dir, source: 'release' }
+  }
+
+  await quarantineRelease(root, boot.releaseId, proof.reason)
+  const reasons = [`release ${boot.releaseId.slice(0, 12)} failed: ${proof.reason}`]
+  logger.warn('[config-release] the boot release failed its proof; walking the fallback chain', {
+    releaseId: boot.releaseId,
+    reason: proof.reason,
+  })
+
+  type Candidate = {
+    dir: string
+    source: ConfigSource
+    label: string
+    manifest?: ReleaseManifest
+    releaseId?: string
+    sourceCommit?: string
+  }
+  const candidates: Candidate[] = []
+  const pointer = await readBootConfigPointer(root)
+  if (pointer?.proven && pointer.release_id !== boot.releaseId) {
+    const manifest = await readReleaseManifest(root, pointer.release_id)
+    if (
+      manifest &&
+      (await verifyRelease({ dir: pointer.dir, files: manifest.files, managedSkillsDir: input.managedSkillsDir }))
+    ) {
+      candidates.push({
+        dir: pointer.dir,
+        source: 'release',
+        label: `last proven release ${pointer.release_id.slice(0, 12)}`,
+        manifest,
+        releaseId: pointer.release_id,
+        sourceCommit: pointer.source_commit,
+      })
+    } else {
+      reasons.push(`last proven release ${pointer.release_id.slice(0, 12)} no longer verifies`)
+    }
+  }
+  const workspaceDir = await resolveOpencodeConfigDir(cfg)
+  if (workspaceDir !== cfg.defaultOpencodeConfigDir) {
+    candidates.push({ dir: workspaceDir, source: 'workspace', label: 'workspace config' })
+  }
+  candidates.push({ dir: cfg.defaultOpencodeConfigDir, source: 'image-default', label: 'image default config' })
+
+  for (const [index, candidate] of candidates.entries()) {
+    const last = index === candidates.length - 1
+    if (candidate.manifest) {
+      deliverGovernance(candidate.manifest.compiled_governance, candidate.manifest.compiled_governance_etag)
+    } else {
+      input.restoreGovernance?.()
+      await (input.prepare ?? ((dir) => prepareConfigDir(dir, input.managedSkillsDir)))(candidate.dir)
+    }
+    await input.spawnOn(candidate.dir)
+    const files = candidate.manifest?.files
+    const result = await proveDir(
+      candidate.dir,
+      files ? toolNamesFromFiles(files) : await toolNamesInDir(candidate.dir),
+      files ? pluginFilesFrom(files) : await pluginFilesInDir(candidate.dir),
+    )
+    if (!result.ok) reasons.push(`${candidate.label} failed: ${result.reason}`)
+    if (result.ok || last) {
+      const reason = reasons.join('; ')
+      running = {
+        release_id: candidate.releaseId ?? null,
+        desired_release_id: boot.releaseId,
+        source: candidate.source,
+        mode: 'follow-base',
+        proven: result.ok,
+        fallback_reason: reason.length > MAX_FALLBACK_REASON ? `${reason.slice(0, MAX_FALLBACK_REASON - 1)}…` : reason,
+        failed_release_id: boot.releaseId,
+        source_commit: candidate.sourceCommit ?? null,
+      }
+      logger.warn('[config-release] boot fell back', { dir: candidate.dir, source: candidate.source, reason })
+      return { proven: result.ok, dir: candidate.dir, source: candidate.source }
+    }
+  }
+  throw new Error('unreachable: the image default is always the last candidate')
 }
 
 export interface BootRelease {

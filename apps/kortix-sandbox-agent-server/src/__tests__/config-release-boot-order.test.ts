@@ -76,4 +76,18 @@ describe('boot from a config release', () => {
     expect(body).toContain('turnInFlight: () => opencodeTurnInFlight(opencode.getInternalUrl(), cfg.workspace)')
     expect(body).toContain("bootMark('config-release-proven')")
   })
+
+  test('DEF-4: a fetched release is proven before the session runtime starts, after the workspace gate opens', () => {
+    const gate = BOOT.indexOf('opencode.markWorkspaceReady()', BOOT.indexOf('const runsRelease'))
+    const proof = BOOT.indexOf('await proveBootConfig({')
+    const runtime = BOOT.indexOf('void startSessionRuntime(harness, cfg, bootState, bootMark)')
+    expect(gate).toBeGreaterThan(-1)
+    expect(proof).toBeGreaterThan(gate)
+    expect(runtime).toBeGreaterThan(proof)
+    const call = BOOT.slice(proof, BOOT.indexOf('})', BOOT.indexOf('spawnOn:', proof)))
+    expect(call).toContain('restoreGovernance: restoreBootGovernance')
+    expect(call).toContain('await opencode.restart()')
+    // A compiled-config process never runs the fetched release.
+    expect(BOOT).toContain('const bootRelease: BootRelease | null = opencodeStartedFromCompiledConfig')
+  })
 })

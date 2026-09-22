@@ -38,11 +38,22 @@ export interface ProvenCheckInput {
   requestTimeoutMs?: number
   /** Unanswered requests in a row that end the check. */
   hangLimit?: number
+  /**
+   * Wait for the session API first. Used on a process that is still starting
+   * (the boot proof); a candidate from `reloadVerified` already serves it.
+   */
+  waitForSessionApi?: boolean
 }
 
 export type ProvenCheckResult = { ok: true } | { ok: false; reason: string; fatal?: boolean }
 
 const MAX_REASON = 300
+/**
+ * A healthy Instance answers /config in well under a second once the session
+ * API serves. Three unanswered 10 s requests (30 s) is a config load that
+ * will not finish.
+ */
+const DEFAULT_REQUEST_TIMEOUT_MS = 10_000
 
 function bounded(text: string): string {
   return text.length > MAX_REASON ? `${text.slice(0, MAX_REASON - 1)}…` : text
@@ -153,7 +164,7 @@ interface Attempt {
 async function checkOnce(baseUrl: string, input: ProvenCheckInput, deadline: number): Promise<Attempt> {
   const fetchImpl = input.fetchImpl ?? fetch
   const scope = `directory=${encodeURIComponent(input.directory)}`
-  const timeoutMs = input.requestTimeoutMs ?? 5_000
+  const timeoutMs = input.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
   const get = async (path: string) => {
     try {
       return await readJson(fetchImpl, `${baseUrl}${path}?${scope}`, deadline, timeoutMs)
@@ -230,6 +241,10 @@ export async function provenCheck(
   input: ProvenCheckInput,
 ): Promise<ProvenCheckResult> {
   const hangLimit = input.hangLimit ?? 3
+  if (input.waitForSessionApi) {
+    const serving = await waitForSessionApi(baseUrl, deadline, input)
+    if (!serving.ok) return serving
+  }
   let last: ProvenCheckResult = { ok: false, reason: 'the proven check did not run' }
   let hangs = 0
   let lastServerError: string | null = null
@@ -266,4 +281,30 @@ export async function provenCheck(
     await new Promise((resolve) => setTimeout(resolve, input.pollMs ?? 500))
   } while (Date.now() < deadline)
   return last
+}
+
+/** Poll `GET /session` until it serves, a config error answers, or `deadline` passes. */
+async function waitForSessionApi(baseUrl: string, deadline: number, input: ProvenCheckInput): Promise<ProvenCheckResult> {
+  const fetchImpl = input.fetchImpl ?? fetch
+  const url = `${baseUrl}/session?directory=${encodeURIComponent(input.directory)}`
+  let lastReason = 'the session API did not serve'
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetchImpl(url, { signal: AbortSignal.timeout(Math.max(250, Math.min(2_000, deadline - Date.now()))) })
+      if (res.status >= 200 && res.status < 400) return { ok: true }
+      const text = await res.text().catch(() => '')
+      let name: unknown = null
+      try {
+        name = (JSON.parse(text) as { name?: unknown }).name
+      } catch {}
+      if (isConfigErrorName(name)) {
+        return { ok: false, fatal: true, reason: describeOpencodeError(res.status, text, input.configDir) }
+      }
+      lastReason = `the session API answered ${describeOpencodeError(res.status, text, input.configDir)}`
+    } catch {
+      lastReason = 'the session API did not answer'
+    }
+    await new Promise((resolve) => setTimeout(resolve, input.pollMs ?? 500))
+  }
+  return { ok: false, reason: lastReason }
 }

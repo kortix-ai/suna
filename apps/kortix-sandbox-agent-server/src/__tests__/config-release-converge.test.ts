@@ -20,9 +20,11 @@ import {
   configReleaseReport,
   convergeConfigRelease,
   fetchBootRelease,
+  proveBootConfig,
   recordBootConfig,
   resetConfigReleaseStateForTests,
   runningSourceCommit,
+  type BootRelease,
 } from '../harness/open-code/config-release'
 import type { Opencode, VerifiedReloadOptions, VerifiedReloadResult } from '../harness/open-code/lifecycle'
 import { provenCheck, toolNamesFromFiles } from '../harness/open-code/proven-check'
@@ -65,13 +67,35 @@ beforeAll(() => {
     fetch(req) {
       const url = new URL(req.url)
       const dir = served.dir
-      if (url.pathname === '/config') {
-        let config: Record<string, unknown> = {}
-        try {
-          config = JSON.parse(readFileSync(join(dir, 'opencode.jsonc'), 'utf8'))
-        } catch {}
-        return Response.json(config)
+      // As real OpenCode 1.18.31 answers (measured 2026-09-22): a syntax error
+      // in opencode.jsonc → 400 ConfigJsonError on every directory route; a
+      // plugin that throws at import → the session API serves, the config
+      // routes never answer.
+      let config: Record<string, unknown> = {}
+      let configText = ''
+      try {
+        configText = readFileSync(join(dir, 'opencode.jsonc'), 'utf8')
+        config = JSON.parse(configText)
+      } catch {
+        if (configText) {
+          return Response.json(
+            {
+              name: 'ConfigJsonError',
+              data: {
+                path: join(dir, 'opencode.jsonc'),
+                message: `\n--- JSONC Input ---\n${configText}\n--- Errors ---\nInvalidSymbol at line 1, column 20\n   Line 1: x\n--- End ---`,
+              },
+            },
+            { status: 400 },
+          )
+        }
       }
+      if (url.pathname === '/session') return Response.json([])
+      const throwingPlugin =
+        existsSync(join(dir, 'plugins')) &&
+        readdirSync(join(dir, 'plugins')).some((f) => readFileSync(join(dir, 'plugins', f), 'utf8').includes('throw'))
+      if (throwingPlugin) return new Promise<Response>(() => undefined)
+      if (url.pathname === '/config') return Response.json(config)
       if (url.pathname === '/agent') {
         const names = existsSync(join(dir, 'agents'))
           ? readdirSync(join(dir, 'agents')).filter((f) => f.endsWith('.md')).map((f) => basename(f, '.md'))
@@ -820,5 +844,142 @@ describe('the descriptor request carries package.json text', () => {
     expect(body.workspace.package_json).toBe(pinned)
     const entry = body.workspace.changed.find((change) => change.path === `${DIR}/package.json`)!
     expect(entry.blob).toBe(git(work, 'hash-object', '--', `${DIR}/package.json`))
+  })
+})
+
+/**
+ * DEF-4 (verification 2026-09-21): a fresh session created while the base
+ * branch held a broken opencode.jsonc never became ready. OpenCode started on
+ * the unproven release, every session create failed with ConfigJsonError, the
+ * proof waited for a readiness that never came, and nothing was reported.
+ * Goal 4: a bad base config never makes a session unbootable.
+ */
+describe('boot proof: a broken release at boot steps down the fallback chain', () => {
+  function bootOn(boot: BootRelease) {
+    const oc = fakeOpencode()
+    oc.opencode.useConfigDir(boot.dir)
+    served.dir = boot.dir
+    recordBootConfig({ source: 'release', release_id: boot.releaseId, source_commit: boot.sourceCommit, proven: false })
+    const spawned: string[] = []
+    return {
+      oc,
+      spawned,
+      run: (extra: Partial<Parameters<typeof proveBootConfig>[0]> = {}) =>
+        proveBootConfig({
+          cfg: cfg(),
+          boot,
+          opencode: oc.opencode,
+          root: store,
+          managedSkillsDir: overlay,
+          api: client(),
+          prepare: async () => undefined,
+          proofBudgetMs: 5_000,
+          proofOptions: { requestTimeoutMs: 300, hangLimit: 2, pollMs: 50 },
+          spawnOn: async (dir) => {
+            spawned.push(dir)
+            oc.opencode.useConfigDir(dir)
+            served.dir = dir
+          },
+          ...extra,
+        }),
+    }
+  }
+
+  async function brokenMain(): Promise<BootRelease> {
+    write(origin, `${DIR}/opencode.jsonc`, '{ "default_agent": "kortix",,, NOT JSON {{\n}\n')
+    commitAll(origin, 'broken config on main')
+    git(work, 'pull', '-q', 'origin', 'main') // a fresh session checks out the broken main too
+    serveRelease(api, baseRelease())
+    return (await fetchBootRelease({ cfg: cfg(), api: client(), root: store, prepare: async () => undefined }))!
+  }
+
+  test('broken release and broken workspace → image default, cause reported, release quarantined; a fixed main then converges', async () => {
+    const boot = await brokenMain()
+    const { oc, spawned, run } = bootOn(boot)
+    const restored: string[] = []
+
+    const started = Date.now()
+    const result = await run({ restoreGovernance: () => restored.push('restored') })
+
+    expect(Date.now() - started).toBeLessThan(4_000)
+    expect(spawned).toEqual([join(work, DIR), defaultDir])
+    expect(result).toMatchObject({ proven: true, source: 'image-default', dir: defaultDir })
+    const health = configReleaseReport()
+    expect(health).toEqual({
+      release_id: null,
+      desired_release_id: boot.releaseId,
+      source: 'image-default',
+      mode: 'follow-base',
+      proven: true,
+      fallback_reason:
+        `release ${boot.releaseId.slice(0, 12)} failed: ConfigJsonError in opencode.jsonc: InvalidSymbol at line 1, column 20; ` +
+        'workspace config failed: ConfigJsonError in opencode.jsonc: InvalidSymbol at line 1, column 20',
+      failed_release_id: boot.releaseId,
+    })
+    expect(Object.keys(await readQuarantine(store))).toEqual([boot.releaseId])
+    expect(await readBootConfigPointer(store)).toBeNull()
+    expect(restored.length).toBeGreaterThan(0)
+
+    // The box is up on the fallback. Main is fixed: the next trigger heals it.
+    write(origin, `${DIR}/opencode.jsonc`, '{"default_agent":"kortix"}\n')
+    write(origin, `${DIR}/agents/kortix.md`, 'PROMPT fixed\n')
+    commitAll(origin, 'fix config')
+    const fixed = baseRelease()
+    serveRelease(api, fixed)
+    const healed = await converge(oc)
+    expect(healed.outcome).toBe('applied')
+    expect(healed.config).toMatchObject({
+      release_id: fixed.descriptor.release_id,
+      source: 'release',
+      proven: true,
+      fallback_reason: null,
+      failed_release_id: null,
+    })
+    expect(readFileSync(join(oc.state.dir, 'agents/kortix.md'), 'utf8')).toBe('PROMPT fixed\n')
+  })
+
+  test('broken release with an intact last proven release → back on the proven release', async () => {
+    serveRelease(api, baseRelease())
+    await converge(fakeOpencode()) // a proven release and its pointer exist
+    const proven = (await readBootConfigPointer(store))!
+    const boot = await brokenMain()
+    const { spawned, run } = bootOn(boot)
+    const result = await run()
+    expect(spawned).toEqual([proven.dir])
+    expect(result).toMatchObject({ source: 'release', proven: true })
+    expect(configReleaseReport()).toMatchObject({
+      release_id: proven.release_id,
+      failed_release_id: boot.releaseId,
+      fallback_reason: `release ${boot.releaseId.slice(0, 12)} failed: ConfigJsonError in opencode.jsonc: InvalidSymbol at line 1, column 20`,
+    })
+    expect((await readBootConfigPointer(store))!.release_id).toBe(proven.release_id)
+  })
+
+  test('a plugin that throws at import fails the proof by its hang and names the plugin', async () => {
+    write(origin, `${DIR}/plugins/boom.ts`, 'throw new Error("plugin boom at import")\nexport const P = async () => ({})\n')
+    commitAll(origin, 'throwing plugin')
+    git(work, 'pull', '-q', 'origin', 'main')
+    serveRelease(api, baseRelease())
+    const boot = (await fetchBootRelease({ cfg: cfg(), api: client(), root: store, prepare: async () => undefined }))!
+    const { spawned, run } = bootOn(boot)
+    await run()
+    expect(spawned).toEqual([join(work, DIR), defaultDir])
+    expect(configReleaseReport().fallback_reason).toBe(
+      `release ${boot.releaseId.slice(0, 12)} failed: GET /config did not answer in 2 attempts; a plugin that fails at import stops the config load (plugins: plugins/boom.ts); ` +
+        'workspace config failed: GET /config did not answer in 2 attempts; a plugin that fails at import stops the config load (plugins: plugins/boom.ts)',
+    )
+  })
+
+  test('a healthy boot release is proven in place: pointer written, mode follow-base, no respawn', async () => {
+    serveRelease(api, baseRelease())
+    const boot = (await fetchBootRelease({ cfg: cfg(), api: client(), root: store, prepare: async () => undefined }))!
+    const marks: string[] = []
+    const { spawned, run } = bootOn(boot)
+    const result = await run({ mark: (label) => marks.push(label) })
+    expect(result).toMatchObject({ proven: true, source: 'release', dir: boot.dir })
+    expect(spawned).toEqual([])
+    expect(marks).toEqual(['config-release-proven'])
+    expect(configReleaseReport()).toMatchObject({ release_id: boot.releaseId, proven: true, mode: 'follow-base', fallback_reason: null })
+    expect((await readBootConfigPointer(store))!.release_id).toBe(boot.releaseId)
   })
 })
