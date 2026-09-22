@@ -1178,8 +1178,11 @@ projectsApp.openapi(
 
 // Kortix provider id → the secret we persist the resulting auth.json under.
 // Only OpenAI (ChatGPT) is wired today; the shape generalizes to others.
-const OAUTH_PROVIDERS: Record<string, { secretName: string }> = {
-  openai: { secretName: CODEX_AUTH_JSON_SECRET_NAME },
+// `legacySecretNames` are older names for the same login. Nothing writes them
+// any more, but clients and the gateway still count them as connected, so a
+// disconnect must delete them too.
+const OAUTH_PROVIDERS: Record<string, { secretName: string; legacySecretNames?: string[] }> = {
+  openai: { secretName: CODEX_AUTH_JSON_SECRET_NAME, legacySecretNames: ['OPENCODE_AUTH_JSON'] },
 };
 
 // How long the encrypted flow handle stays valid (OpenAI expires the device
@@ -1625,7 +1628,10 @@ projectsApp.openapi(
       await tx
         .delete(projectSecrets)
         .where(
-          and(eq(projectSecrets.projectId, projectId), eq(projectSecrets.name, cfg.secretName)),
+          and(
+            eq(projectSecrets.projectId, projectId),
+            inArray(projectSecrets.name, [cfg.secretName, ...(cfg.legacySecretNames ?? [])]),
+          ),
         );
     },
     () => ({

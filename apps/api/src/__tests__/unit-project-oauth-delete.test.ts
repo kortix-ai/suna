@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { projectSecrets } from '@kortix/db';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import * as realAccess from '../projects/lib/access';
 
 const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
@@ -132,6 +133,24 @@ describe('DELETE /v1/projects/:projectId/oauth/:provider', () => {
         consumer: 'llm_gateway',
       },
     });
+  });
+
+  // The web counts a legacy OPENCODE_AUTH_JSON row as a connected ChatGPT
+  // subscription and offers "Disconnect ChatGPT" over it. This route deleted
+  // only CODEX_AUTH_JSON, returned 200, and left the legacy row in place, so
+  // such a project could never be disconnected from the product.
+  test('openai disconnect also deletes the legacy OPENCODE_AUTH_JSON credential', async () => {
+    const res = await buildApp(AUTHORIZED_USER_ID).request(`/v1/projects/${PROJECT_ID}/oauth/openai`, {
+      method: 'DELETE',
+    });
+
+    expect(res.status).toBe(200);
+    expect(deleteCalls).toHaveLength(1);
+    const { sql, params } = new PgDialect().sqlToQuery(deleteCalls[0].where as any);
+    expect(params).toContain(PROJECT_ID);
+    expect(params).toContain('CODEX_AUTH_JSON');
+    expect(params).toContain('OPENCODE_AUTH_JSON');
+    expect(sql).toContain('"project_id" = ');
   });
 
   test('unauthorized principal is denied and no delete is issued', async () => {
