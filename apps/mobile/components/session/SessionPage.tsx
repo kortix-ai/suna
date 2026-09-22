@@ -17,6 +17,7 @@ import {
   Animated,
   Easing,
   Platform,
+  RefreshControl,
   type LayoutChangeEvent,
   type NativeSyntheticEvent,
   type NativeScrollEvent,
@@ -49,7 +50,7 @@ import { Text as RNText } from 'react-native';
 import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
 
 import { useSyncStore } from '@/lib/opencode/sync-store';
-import { useSessionSync } from '@/lib/opencode/session-sync';
+import { reconcileLiveSession, useSessionSync } from '@/lib/opencode/session-sync';
 import { compactionTurnInfo, groupMessagesIntoTurns, resolveWorkingTurn } from '@kortix/sdk';
 import type { Turn, QuestionRequest, MessageWithParts, PermissionRequest } from '@/lib/opencode/types';
 import {
@@ -246,6 +247,16 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
 
   // Hydrate messages from REST on mount; SSE keeps store updated after
   useSessionSync(sandboxUrl, sessionId);
+
+  // Pull to refresh (Jay, 2026-09-23): re-reads this session's transcript
+  // through its sync controller (`reconcile('manual')`) — the chat refreshes,
+  // the page does not remount. Only a pull shows the spinner.
+  const [pulling, setPulling] = useState(false);
+  const handlePullRefresh = useCallback(() => {
+    haptics.tap();
+    setPulling(true);
+    void reconcileLiveSession(sessionId, 'manual').finally(() => setPulling(false));
+  }, [sessionId]);
 
   // Read messages from sync store
   const messages = useSyncStore((s) => s.messages[sessionId]);
@@ -1677,6 +1688,15 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
           // falls back to 'on-drag' (closes once the user starts scrolling).
           keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           keyboardShouldPersistTaps="handled"
+          refreshControl={
+            <RefreshControl
+              refreshing={pulling}
+              onRefresh={handlePullRefresh}
+              // Android draws the spinner over the list: start it below the
+              // floating header and its fade, not under them.
+              progressViewOffset={listTopInset}
+            />
+          }
           ListFooterComponent={
             <View>
               {/* Footer content above the spacer — part of the anchor span. */}
