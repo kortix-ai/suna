@@ -111,7 +111,7 @@ export async function tryAuthenticate(c: any): Promise<AuthResult> {
   // --- Mode 2: User's own key + Kortix token in X-Kortix-Token ---
   // The user's own API key is in Authorization (Bearer) or a provider-specific
   // header (e.g. Anthropic's x-api-key). The Kortix token rides in
-  // X-Kortix-Token so we can identify the account for platform-fee billing.
+  // X-Kortix-Token so we can identify and authorize the Kortix account.
   // If X-Kortix-Token looks like a Kortix token but fails → hard reject.
 
   if (config.DATABASE_URL) {

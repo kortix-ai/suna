@@ -31,4 +31,6 @@ export interface AuthedPrincipal {
   billingHold?: { amountUsd: number };
 }
 
+// `platform-fee` remains readable for historical gateway rows. New BYOK
+// requests always use `none`.
 export type BillingMode = 'credits' | 'platform-fee' | 'none';
