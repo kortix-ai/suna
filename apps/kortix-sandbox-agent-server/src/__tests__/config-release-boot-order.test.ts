@@ -33,16 +33,29 @@ describe('boot from a config release', () => {
     expect(BOOT.slice(fetch, wait)).toContain('fetchBootRelease({')
   })
 
-  test('the early spawn races the release against the clone and starts OpenCode before the checkout wait', () => {
+  test('OpenCode spawns at once on the boot link; nothing before the spawn waits for the release', () => {
     const early = BOOT.indexOf('const earlyOpencodeStartPromise')
-    const wait = BOOT.indexOf('await repoMaterializePromise')
-    const body = BOOT.slice(early, wait)
-    expect(body).toContain('let dir = earlyPointer?.dir ?? null')
-    expect(body).toContain('Promise.race([')
-    expect(body).toContain('bootReleasePromise,')
-    expect(body).toContain("repoMaterializePromise.then(() => 'checkout' as const)")
-    // The release's governance reaches the spawn.
-    expect(body.indexOf('deliverGovernance(')).toBeLessThan(body.indexOf('await opencode.start()'))
+    const end = BOOT.indexOf('const compiledOpencodeConfigDir', early)
+    const body = BOOT.slice(early, end)
+    // Verification 2026-09-21: waiting for the descriptor and the extraction
+    // before the spawn cost +1,609 ms to opencode-spawned.
+    expect(body).not.toContain('bootReleasePromise,')
+    expect(body).not.toContain('await bootReleasePromise')
+    expect(body).toContain('await pointBootLink(earlyPointer?.dir ?? cfg.defaultOpencodeConfigDir)')
+    expect(body.indexOf('pointBootLink(')).toBeLessThan(body.indexOf('await opencode.start()'))
+  })
+
+  test('the boot link is repointed to the chosen config before the workspace gate opens', () => {
+    const repoint = BOOT.indexOf('await pointBootLink(opencodeConfigDir)')
+    const decided = BOOT.indexOf('const opencodeConfigDir = activeConfig.dir')
+    const gate = BOOT.indexOf('opencode.markWorkspaceReady()', repoint)
+    const reload = BOOT.indexOf('harness.configuration.reloadForWorkspace()', gate)
+    expect(decided).toBeGreaterThan(-1)
+    expect(repoint).toBeGreaterThan(decided)
+    expect(gate).toBeGreaterThan(repoint)
+    expect(reload).toBeGreaterThan(gate)
+    // The release governance is delivered before the composed config is rewritten.
+    expect(BOOT.indexOf('restoreBootGovernance = deliverGovernance(')).toBeLessThan(reload)
   })
 
   test('a fetched release runs unproven; the pointer is not trusted for it', () => {
@@ -88,7 +101,7 @@ describe('boot from a config release', () => {
     expect(call).toContain('restoreGovernance: restoreBootGovernance')
     expect(call).toContain('await opencode.restart()')
     // A compiled-config process never runs the fetched release.
-    expect(BOOT).toContain('const bootRelease: BootRelease | null = opencodeStartedFromCompiledConfig')
+    expect(BOOT).toContain('opencodeStartedFromCompiledConfig || !bootReleasePromise || bootState.repoMaterializationError')
   })
 
   test('DEF-4b: a workspace boot is proven too, with the quarantined release as its prior reason', () => {

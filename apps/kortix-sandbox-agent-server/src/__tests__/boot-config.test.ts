@@ -26,9 +26,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   activateBootConfig,
+  bootLinkPath,
   deactivateBootConfig,
   extractConfigArchive,
   materializeRelease,
+  pointBootLink,
   pruneBootConfigs,
   quarantineRelease,
   readBootConfigPointer,
@@ -301,5 +303,29 @@ describe('quarantine and pruning', () => {
     expect(existsSync(third.dir)).toBe(true)
     expect(await readBootConfigPointer(store)).not.toBeNull()
     expect(Object.keys(await readQuarantine(store))).toEqual(['d'.repeat(64)])
+  })
+})
+
+/**
+ * The boot link: OpenCode spawns at once with OPENCODE_CONFIG_DIR = this fixed
+ * path, and it is repointed to the chosen config before the workspace gate
+ * opens. OpenCode reads the directory at Instance init, on the first
+ * directory-scoped request (verified on real OpenCode 1.18.31: a repointed
+ * link was honoured).
+ */
+describe('the boot link', () => {
+  test('is repointed atomically and survives pruning', async () => {
+    const first = await materialize(release('v1'))
+    const second = join(root, 'workspace-config')
+    mkdirSync(second, { recursive: true })
+    const link = await pointBootLink(first.dir, store)
+    expect(link).toBe(bootLinkPath(store))
+    expect(readlinkSync(link)).toBe(first.dir)
+    expect(readFileSync(join(link, 'agents/kortix.md'), 'utf8')).toBe('PROMPT v1\n')
+    await pointBootLink(second, store)
+    expect(readlinkSync(link)).toBe(second)
+    expect(spawnSync('ls', [store]).stdout.toString().split('\n').filter((name) => name.includes('.tmp'))).toEqual([])
+    await pruneBootConfigs(store, [])
+    expect(readlinkSync(link)).toBe(second)
   })
 })

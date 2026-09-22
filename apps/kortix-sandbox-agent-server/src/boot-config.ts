@@ -428,6 +428,33 @@ export async function readBootConfigPointer(root: string = bootConfigRoot()): Pr
   }
 }
 
+/**
+ * `<root>/boot`: the fixed `OPENCODE_CONFIG_DIR` of the process spawned at
+ * boot. It is spawned at once, before the checkout and the release exist, and
+ * the link is repointed to the chosen config before the workspace gate opens.
+ * OpenCode reads the directory at Instance init, on the first
+ * directory-scoped request, so the repointed target is what it loads.
+ */
+export function bootLinkPath(root: string = bootConfigRoot()): string {
+  return join(root, 'boot')
+}
+
+/** Point the boot link at `target` with one atomic rename. Returns the link path. */
+export async function pointBootLink(target: string, root: string = bootConfigRoot()): Promise<string> {
+  await mkdir(root, { recursive: true })
+  const link = bootLinkPath(root)
+  const staged = `${link}.${randomUUID()}.tmp`
+  await symlink(resolve(target), staged)
+  try {
+    // rename(2) replaces the link itself; it never follows it.
+    await rename(staged, link)
+  } catch (err) {
+    await rm(staged, { force: true }).catch(() => undefined)
+    throw err
+  }
+  return link
+}
+
 /** Written only after a proven promotion. */
 export async function activateBootConfig(root: string, pointer: BootConfigPointer): Promise<void> {
   await mkdir(root, { recursive: true })

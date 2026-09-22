@@ -45,6 +45,7 @@ import {
   type BootRelease,
 } from './config-release'
 import { configReleaseApiFrom } from '../../config-release/api-client'
+import { pointBootLink } from '../../boot-config'
 import { OPENCODE_HOME } from './paths'
 import { ensureInjectedManagedSkills } from '../../managed-skills'
 // Converge `/usr/local/bin/kortix` + the managed-skill overlay on the API this
@@ -323,50 +324,48 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
   }
 
   // ── Spawn OpenCode BEFORE the checkout exists ──────────────────────────
-  // OpenCode's process boot (bun start, module load, ~3–4 s on a 2-vCPU box)
-  // does not read the repo; only its per-directory Instance does, and that is
-  // created lazily by the first directory-scoped request. So OpenCode can
-  // spawn on a config dir that does not need the checkout:
-  //   1. the last proven release, when it still verifies;
-  //   2. the desired release, when it is extracted before the clone ends;
-  //   3. without a release path (no API, an API that predates releases): the
-  //      config dir the API resolved at the base tip
-  //      (KORTIX_OPENCODE_CONFIG_DIR_HINT).
-  // After the repo lands the instances are disposed in place (~50 ms) so the
-  // next request re-detects the git root. No candidate → the serial boot.
+  // OpenCode's process boot (bun start, module load, ~3–7 s on a 2-vCPU box)
+  // does not read the config dir; only its per-directory Instance does, and
+  // that is created lazily by the first directory-scoped request, which the
+  // workspace gate holds. So OpenCode spawns at once, and the config it will
+  // read is decided while it starts:
+  //   - with a release path (a proven release, or an API to fetch the desired
+  //     release from), OpenCode spawns on the fixed boot link
+  //     (`/opt/kortix/config/boot`). The link is repointed to the chosen
+  //     config — release, workspace or image default — before the gate opens.
+  //     Verified on real OpenCode 1.18.31: a repointed link is what the
+  //     Instance loads. Waiting for the release before the spawn cost
+  //     +1,609 ms to `opencode-spawned` (verification 2026-09-21).
+  //   - without one (an API that predates releases, no API): the config dir
+  //     the API resolved at the base tip (KORTIX_OPENCODE_CONFIG_DIR_HINT).
+  // After the repo lands the composed config is rewritten, the gate opens, and
+  // the next request re-detects the git root. No candidate → the serial boot.
   const earlyCandidatePossible =
     cfg.autoClone && (earlyPointer !== null || bootReleasePromise !== null || hintedConfigDir !== null)
   // Only the early-spawn path can expose a half-built workspace; every other
   // boot leaves this undefined and the proxy gate below is inert.
   if (earlyCandidatePossible) bootState.workspaceReady = false
   let opencodeStartedEarly = false
-  const early: { dir: string | null; release: BootRelease | null } = { dir: null, release: null }
+  // The directory the early process reads, and whether it is the boot link.
+  const early: { dir: string | null; viaLink: boolean } = { dir: null, viaLink: false }
   // Puts back the governance the box booted with, if the boot proof has to
   // step below a fetched release.
   let restoreBootGovernance: (() => void) | undefined
   const earlyOpencodeStartPromise: Promise<void> | null =
     earlyCandidatePossible && !(process.env.KORTIX_COMPILED_OPENCODE_CONFIG_DIR ?? '').trim()
       ? (async () => {
-          let dir = earlyPointer?.dir ?? null
-          if (!dir && bootReleasePromise) {
-            const first = await Promise.race([
-              bootReleasePromise,
-              repoMaterializePromise.then(() => 'checkout' as const),
-            ])
-            if (first === 'checkout') return // the clone won; the serial path decides
-            if (first) {
-              early.release = first
-              restoreBootGovernance = deliverGovernance(
-                first.manifest.compiled_governance,
-                first.manifest.compiled_governance_etag,
-              )
-              dir = first.dir
-            } else {
-              dir = hintedConfigDir // no release path: today's behaviour
-            }
-          } else if (!dir) {
-            dir = hintedConfigDir
+          let dir: string | null = null
+          if (earlyPointer || bootReleasePromise) {
+            // An existing directory for now; repointed before the gate opens.
+            dir = await pointBootLink(earlyPointer?.dir ?? cfg.defaultOpencodeConfigDir).catch((err) => {
+              logger.warn('[boot] boot link unavailable; spawning on a direct config dir', {
+                err: err instanceof Error ? err.message : String(err),
+              })
+              return null
+            })
+            early.viaLink = dir !== null
           }
+          dir ??= earlyPointer?.dir ?? hintedConfigDir
           if (!dir) return
           early.dir = dir
           harness.configuration.reconfigure(cfg, dir, projectEnv)
@@ -376,7 +375,7 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
             bootMark('opencode-spawned')
             logger.info('[boot] opencode spawned before checkout', {
               opencodeConfigDir: dir,
-              source: earlyPointer ? 'proven release' : early.release ? 'desired release' : 'config-dir hint',
+              source: early.viaLink ? 'boot link' : earlyPointer ? 'proven release' : 'config-dir hint',
             })
           }
         })().catch((err) => {
@@ -428,19 +427,18 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
   // else the image default. A resume restarts this process, so the choice is
   // read back from disk here; the convergence after ready moves the box onto
   // the desired release.
-  // The desired release wins when it arrived: early, or within a short wait
-  // after the clone. It is unproven; the boot proof below runs before the
-  // session runtime starts. A compiled-config process does not run it.
-  const bootRelease: BootRelease | null = opencodeStartedFromCompiledConfig
-    ? null
-    : (early.release ??
-      (bootReleasePromise && !bootState.repoMaterializationError
-        ? await Promise.race([
-            bootReleasePromise,
-            new Promise<null>((resolve) => setTimeout(() => resolve(null), BOOT_RELEASE_WAIT_MS)),
-          ])
-        : null))
-  if (bootRelease && !early.release) {
+  // The desired release wins when it is extracted by now or within a short
+  // wait after the clone; OpenCode is already starting meanwhile. It is
+  // unproven; the boot proof below runs before the session runtime starts. A
+  // compiled-config process does not run it.
+  const bootRelease: BootRelease | null =
+    opencodeStartedFromCompiledConfig || !bootReleasePromise || bootState.repoMaterializationError
+      ? null
+      : await Promise.race([
+          bootReleasePromise,
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), BOOT_RELEASE_WAIT_MS)),
+        ])
+  if (bootRelease) {
     restoreBootGovernance = deliverGovernance(
       bootRelease.manifest.compiled_governance,
       bootRelease.manifest.compiled_governance_etag,
@@ -486,6 +484,19 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
   // An early spawn on a WRONG dir (hint stale vs. the checkout) is not
   // reusable: OPENCODE_CONFIG_DIR is process env. Fall through to the serial
   // path, which reconfigures and starts a fresh process below.
+  // The boot link now names the chosen config. The early process has not read
+  // it yet: the workspace gate is still closed.
+  if (opencodeStartedEarly && early.viaLink && !bootState.repoMaterializationError) {
+    await pointBootLink(opencodeConfigDir)
+      .then(() => {
+        early.dir = opencodeConfigDir
+      })
+      .catch((err) => {
+        logger.warn('[boot] could not repoint the boot link; restarting OpenCode', {
+          err: err instanceof Error ? err.message : String(err),
+        })
+      })
+  }
   if (opencodeStartedEarly && !bootState.repoMaterializationError && opencodeConfigDir !== early.dir) {
     logger.warn('[boot] config-dir hint did not match the checkout; restarting OpenCode', {
       hinted: early.dir,
