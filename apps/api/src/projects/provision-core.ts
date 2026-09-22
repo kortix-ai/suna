@@ -29,6 +29,7 @@ import {
   pushVerifiedSeed,
 } from './managed-repo-seed';
 import { normalizeStarterTemplateId } from './starter';
+import { GitHubApiError } from './github';
 import {
   buildProjectSeedFiles,
   buildProjectSeedFilesFromItem,
@@ -103,6 +104,28 @@ export type ProvisionResultStatus = 201 | 400 | 403 | 409 | 502 | 503;
 export interface ProvisionResult {
   status: ProvisionResultStatus;
   body: unknown;
+  /** Response headers the route must send, e.g. `Retry-After`. */
+  headers?: Record<string, string>;
+}
+
+/**
+ * Map a managed repository create failure to the provision answer.
+ *
+ * A GitHub rate limit (secondary limits block repository creation for minutes)
+ * is `503` + `Retry-After` + `code: GITHUB_RATE_LIMITED`, so a caller can back
+ * off for the time GitHub asked. Every other failure stays `502` with the
+ * provider's reason, as before.
+ */
+export function createRepoFailureResult(error: unknown): ProvisionResult {
+  const message = (error as Error)?.message || 'Failed to provision managed repo';
+  if (error instanceof GitHubApiError && error.retryAfterSeconds !== undefined) {
+    return {
+      status: 503,
+      body: { error: message, code: 'GITHUB_RATE_LIMITED', retry_after_seconds: error.retryAfterSeconds },
+      headers: { 'Retry-After': String(error.retryAfterSeconds) },
+    };
+  }
+  return { status: 502, body: { error: message } };
 }
 
 export interface ProvisionContext {
@@ -342,8 +365,11 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
       // NOT `message`: that key is the log line's own text, so the provider's
       // reason was overwritten and never reached Better Stack (2026-09-16).
       error: message,
+      ...(error instanceof GitHubApiError && error.retryAfterSeconds !== undefined
+        ? { retry_after_seconds: error.retryAfterSeconds }
+        : {}),
     });
-    return { status: 502, body: { error: message } };
+    return createRepoFailureResult(error);
   }
 
   const authMethod = provider === 'github' ? 'github_app' : 'managed';

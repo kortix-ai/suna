@@ -349,7 +349,7 @@ URLs, signed download URLs, or upload handles.
 ## 8. Sandbox lifecycle + snapshots
 
 `SNAP-1` `GET /projects/:id/snapshots` → `read` → list `kortix-snap-…` images per baseRef. **Session boot requires a `ready` snapshot of baseRef** (no shared fallback → session `failed` if none).
-`SNAP-2` `POST /projects/:id/snapshots/rebuild` → **`manage` AND account `ACCOUNT_WRITE` (owner/admin)** → rebuild image. A project `manager` who is not owner/admin → 403; M_EDITOR → 403.
+`SNAP-2` `POST /projects/:id/snapshots/rebuild` → **`manage` AND account `ACCOUNT_WRITE` (owner/admin)** → rebuild image: `202` with the started providers, or `409 SNAPSHOT_IN_USE` with `in_use > 0` when running sandboxes still use the image (Platinum refuses that delete; Daytona does not). Any other provider failure is `503` and fails the flow. A project `manager` who is not owner/admin → 403; M_EDITOR → 403.
 **No standalone sandbox create/stop routes exist.** Sandbox create/start is implicit
 on session create (`provisionSessionSandbox`), asserted transitively by `RUN-1` /
 `GOLD-1`. Manual stop = `SESS-12` (pauses in place, resumable); destructive teardown =
@@ -1063,7 +1063,7 @@ These contracts use product IDs. They replace the old route-coverage bucket IDs.
 `PROJ-27` A project member reads model choices and a project manager sets, reads, and clears model defaults.
 `PROJ-28` The Suna migration eligibility, status, and start routes enforce authentication and current migration state.
 `PROJ-30` A project manager changes the default agent. Invalid agents and unauthorized callers are rejected.
-`PROJ-31` A project manager changes the sandbox provider. Invalid transitions and unauthorized callers are rejected.
+`PROJ-31` A project manager changes the sandbox provider. The pin target comes from the project's `available_sandbox_providers` (the deployment's enabled set), never from a hard-coded provider. Unknown providers, known but disabled providers, and unauthorized callers are rejected.
 `PROJ-32` A project member reads the provider catalog. Unknown projects and non-members are rejected.
 `PROJ-33` A project member reads the current sandbox-provider transition state.
 `PROJ-35` A project manager changes model enablement and reads back the persisted result.

@@ -29,6 +29,10 @@ import {
   signIn,
 } from "../helpers/session-auth";
 import {
+  SESSION_READY_TIMEOUT_MS,
+  waitForSessionReady,
+} from "../helpers/session-ready";
+import {
   dismissOnboarding,
   dismissWelcomeCard,
   selectAccountForUi,
@@ -492,7 +496,10 @@ for (const runtime of runtimes) {
       baseURL,
       desktopApp,
     }) => {
-      test.setTimeout(180_000);
+      // A deployed target provisions a real sandbox first (see below).
+      test.setTimeout(
+        isDeployedTarget() ? 180_000 + SESSION_READY_TIMEOUT_MS : 180_000,
+      );
       const databaseUrl =
         process.env.KE2E_DATABASE_URL || process.env.E2E_DATABASE_URL;
       if (!databaseUrl)
@@ -677,6 +684,11 @@ for (const runtime of runtimes) {
             timeout: 60_000,
           });
           sessionId = new URL(page.url()).pathname.split("/").at(-1)!;
+          // Stop is enabled only while a turn runs, and the turn starts only
+          // once the sandbox is ready. A fresh preview builds the default
+          // image for ~9 min first, so a flat 60 s wait on Stop failed 11 of
+          // 13 previews with the session still in `provisioning`.
+          await waitForSessionReady(api, auth.access_token, project.id, sessionId);
           await expect(page.getByRole("button", { name: "Stop", exact: true }))
             .toBeEnabled({ timeout: 60_000 });
           await expect(input).toBeEmpty();

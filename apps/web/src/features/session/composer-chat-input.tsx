@@ -12,6 +12,7 @@ import {
 } from '@/features/session/session-chat-input';
 import type { SessionPromptOverrides } from '@kortix/sdk';
 import type { AttachmentSubmission } from './composer/attachment-submission';
+import type { ComposerSendReset } from './composer-reset';
 import { type Command, type ModelKey, useProjectConfig, useRuntimeAgents, useRuntimeCommands, useRuntimeConfig, useRuntimeProviders, useSessionModelSelection } from '@kortix/sdk/react';
 import { isMetaAgentName } from '@kortix/shared';
 import { resolveComposerAgent } from './composer/composer-agent-access';
@@ -84,9 +85,13 @@ export function ComposerChatInput({
   /** Send in flight, not yet settled — spinner in the send slot (see SessionChatInput.isSending). */
   isSending?: boolean;
   disabled?: boolean;
-  /** Clear the composer optimistically on send. Set false on the project-home
-   *  composer, whose send navigates it away (see SessionChatInput.clearOnSend). */
-  clearOnSend?: boolean;
+  /**
+   * What send does to this composer: clear and revoke (`true`, every in-thread
+   * composer), clear but keep the local preview URLs alive for the surface that
+   * takes over (`'text-only'`, project home), or leave the draft untouched
+   * (`false`). See `composer-reset.ts`.
+   */
+  clearOnSend?: ComposerSendReset;
   autoFocus?: boolean;
   placeholder?: string;
   prefill?: {

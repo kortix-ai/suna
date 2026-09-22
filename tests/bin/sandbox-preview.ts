@@ -175,7 +175,22 @@ if (action === 'deploy') {
   await writeOutput('provider', result.provider);
   await writeOutput('sandbox_id', result.sandboxId ?? '');
   await writeOutput('preview_url', result.previewUrl ?? '');
-  await writeOutput('report_url', result.previewUrl ? `${result.previewUrl}/_tests/` : '');
+  // WHETHER THE SUITE RAN, from the one place that decided it. The workflow's
+  // status line and its sticky comment both used to assume it always did, and
+  // said `pnpm test -- --target-full` passed over every redeploy that skipped
+  // it — the reassuring half of the sentence on a deploy that proved nothing.
+  // Emitted rather than re-derived from PREVIEW_RUN_TESTS in YAML: the rule is
+  // `PREVIEW_RUN_TESTS === '1' || !branchEnv`, and a second copy of it in the
+  // workflow is a second copy that can drift.
+  await writeOutput('tests_ran', runTests ? '1' : '0');
+  // A branch environment is PERSISTENT, so `/_tests/` keeps whatever the last
+  // run that did test left there. Linking it from a deploy that skipped the
+  // suite presents an older run's report — or an empty directory — as this
+  // deploy's result.
+  await writeOutput(
+    'report_url',
+    runTests && result.previewUrl ? `${result.previewUrl}/_tests/` : '',
+  );
   process.exitCode = result.exitCode;
 } else if (action === 'teardown') {
   // A persistent environment's sandbox is named after the BRANCH, so teardown

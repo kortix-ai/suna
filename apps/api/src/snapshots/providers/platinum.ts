@@ -47,6 +47,7 @@ import {
   retryAfterMsFromError,
 } from './platinum-poll-classify';
 import { config } from '../../config';
+import { SnapshotInUseError } from './errors';
 
 const ACTIVATE_DEADLINE_MS = 12 * 60 * 1000; // build + activate ceiling
 const POLL_MS = 3_000;
@@ -572,6 +573,17 @@ export class UploadUrlRejectedError extends Error {
   }
 }
 
+/**
+ * Parse Platinum's `409 {"code":"template_in_use","in_use":N}` refusal from a
+ * client error message. Returns the sandbox count (at least 1), or null when
+ * the error is anything else.
+ */
+function templateInUseCount(message: string): number | null {
+  if (!/ -> 409(?:\s|$)/.test(message) || !message.includes('template_in_use')) return null;
+  const count = Number(/"in_use"\s*:\s*(\d+)/.exec(message)?.[1]);
+  return Number.isFinite(count) && count > 0 ? count : 1;
+}
+
 export class PlatinumAdapter implements SandboxProviderAdapter {
   readonly id = 'platinum' as const;
 
@@ -821,17 +833,26 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
     observeTemplates.invalidate();
     try {
       const matches = (await fetchAllTemplates(this.client)).filter((template) => template.name === snapshotName);
+      let inUse = 0;
       for (const template of matches) {
         try {
           await this.client.json(`/v1/templates/${template.id}`, { method: 'DELETE' });
         } catch (err) {
-          // A lookup/delete race is equivalent to already gone. Provider
-          // outages must propagate so fan-out reports this provider as failed.
-          if (!/ -> 404(?:\s|$)/.test(err instanceof Error ? err.message : String(err))) {
-            throw err;
+          const message = err instanceof Error ? err.message : String(err);
+          // A lookup/delete race is equivalent to already gone.
+          if (/ -> 404(?:\s|$)/.test(message)) continue;
+          // Platinum refuses while sandboxes still pin the rootfs. Keep deleting
+          // free duplicates, then report the refusal as a typed error.
+          const pinned = templateInUseCount(message);
+          if (pinned !== null) {
+            inUse += pinned;
+            continue;
           }
+          // Provider outages must propagate so fan-out reports this provider as failed.
+          throw err;
         }
       }
+      if (inUse > 0) throw new SnapshotInUseError(snapshotName, inUse);
     } finally {
       observeTemplates.invalidate();
     }

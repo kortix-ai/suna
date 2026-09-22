@@ -22,3 +22,42 @@ describe('showTurnBusyIndicator', () => {
     expect(showTurnBusyIndicator({ working: false, hasError: true, isRetrying: true })).toBe(false);
   });
 });
+
+describe('showTurnBusyIndicator — waiting on the user', () => {
+  test('hides it while a question or permission is pending', () => {
+    expect(
+      showTurnBusyIndicator({
+        working: true,
+        hasError: false,
+        isRetrying: false,
+        awaitingUser: true,
+      }),
+    ).toBe(false);
+  });
+
+  test('outranks a retry countdown: nothing bounds an unanswered question', () => {
+    expect(
+      showTurnBusyIndicator({
+        working: true,
+        hasError: true,
+        isRetrying: true,
+        awaitingUser: true,
+      }),
+    ).toBe(false);
+  });
+
+  test('comes back the moment the answer lands', () => {
+    expect(
+      showTurnBusyIndicator({
+        working: true,
+        hasError: false,
+        isRetrying: false,
+        awaitingUser: false,
+      }),
+    ).toBe(true);
+  });
+
+  test('an absent flag is the old behaviour, unchanged', () => {
+    expect(showTurnBusyIndicator({ working: true, hasError: false, isRetrying: false })).toBe(true);
+  });
+});

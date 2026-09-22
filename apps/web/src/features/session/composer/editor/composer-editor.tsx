@@ -669,12 +669,17 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
        * if the user had just typed it.
        *
        * That is what put a SENT message back in the project-home composer. Its
-       * send flips `disabled` and deliberately keeps the text in the box
-       * (`clearOnSend={false}`, project-home.tsx), so in a production build the
-       * phantom change landed AFTER the send's `clearSavedDraft()` and its
-       * 400ms debounce re-saved the message as the project's unsent draft —
-       * measured on dev.kortix.com: clear at T, phantom write at T+406ms, and
-       * the next visit to project home restored "Hi" into the composer.
+       * send flips `disabled`, and at the time it also kept the text in the box
+       * (`clearOnSend={false}`), so in a production build the phantom change
+       * landed AFTER the send's `clearSavedDraft()` and its 400ms debounce
+       * re-saved the message as the project's unsent draft — measured on
+       * dev.kortix.com: clear at T, phantom write at T+406ms, and the next
+       * visit to project home restored "Hi" into the composer.
+       *
+       * That composer clears now (`clearOnSend="text-only"`), so its phantom
+       * write would carry an empty document. The guard stays: it is about
+       * `setEditable`, and every composer that flips `disabled` mid-send is one
+       * debounce away from the same bug.
        *
        * The view still refreshes — `setOptions` calls `view.updateState`
        * whether or not the event is emitted.

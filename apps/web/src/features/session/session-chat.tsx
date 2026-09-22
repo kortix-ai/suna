@@ -694,6 +694,17 @@ interface SessionTurnProps {
    */
   suppressBusyIndicator: boolean;
   /**
+   * The runtime is parked on an answer only the user can give — a pending
+   * `question` request or a tool-permission prompt for this session. Resolved
+   * once by the parent, beside the two lists it already passes down, because
+   * the fallback waiting row has to make the same call.
+   *
+   * Distinct from `suppressBusyIndicator`, which is about WHERE the one row
+   * belongs when a queue is waiting. This one is about whether any row belongs
+   * on screen at all: see `showTurnBusyIndicator`.
+   */
+  awaitingUser: boolean;
+  /**
    * A user message the agent has not reached yet — after the working turn,
    * with no assistant content. Drawn dimmed, like a queued prompt (it IS one:
    * the server forwarded it and OpenCode holds it until the next step), and
@@ -849,6 +860,7 @@ function SessionTurnImpl({
   sessionWorking,
   isWorkingTurn,
   suppressBusyIndicator,
+  awaitingUser,
   pending,
   pendingPrompt,
   onRetryQueued,
@@ -913,6 +925,18 @@ function SessionTurnImpl({
   // and it is what removes the "last turn shimmers for ever" symptom the raw
   // slot's dropped end-of-turn frames caused here.
   const working = isWorkingTurn && sessionWorking;
+  /**
+   * The same turn, minus the stretch where the next move is the READER's.
+   *
+   * `working` stays the honest answer about the turn — it is still open, the
+   * server still holds its row, and every structural decision below (which
+   * steps render, where answered questions go) reads it unchanged. This is the
+   * narrower question the waiting row and its clock ask: is the AGENT working?
+   * While a question or a permission prompt is parked on screen it is not, and
+   * a shimmer with a ticking duration over an unanswered card is a progress
+   * claim about the reader — see `showTurnBusyIndicator`.
+   */
+  const agentWorking = working && !awaitingUser;
   // A compaction turn's message-state — `inFlight` (summary open: not
   // completed, not errored) is the half of "is this compaction running" the
   // working projection cannot see, because it deliberately knows nothing
@@ -1337,15 +1361,20 @@ function SessionTurnImpl({
   // How long the status has read the same thing. Past STATUS_STALL_AFTER_MS
   // the label carries the elapsed time, so a slow model step or a long tool
   // call reads as "still working, this long" instead of a frozen screen.
+  // `agentWorking`, not `working`: the clock measures how long the AGENT has
+  // been on this step, so it stops (and clears) the moment the turn parks on a
+  // question and starts again from zero when the answer resumes it. Left on
+  // `working` it kept counting behind the hidden row and came back reading the
+  // time the reader took to reply.
   const [statusElapsedState, setStatusElapsedState] = useState(() =>
     statusElapsedFrame(undefined, {
       status: throttledStatus,
-      working,
+      working: agentWorking,
       nowMs: Date.now(),
     }),
   );
   const statusElapsedMs =
-    statusElapsedState.status === throttledStatus && statusElapsedState.working === working
+    statusElapsedState.status === throttledStatus && statusElapsedState.working === agentWorking
       ? statusElapsedState.elapsedMs
       : 0;
   useEffect(() => {
@@ -1353,24 +1382,24 @@ function SessionTurnImpl({
       setStatusElapsedState((previous) =>
         statusElapsedFrame(previous, {
           status: throttledStatus,
-          working,
+          working: agentWorking,
           nowMs: Date.now(),
         }),
       );
     update();
-    if (!working) return;
+    if (!agentWorking) return;
     const timer = setInterval(update, 1000);
     return () => clearInterval(timer);
-  }, [working, throttledStatus]);
+  }, [agentWorking, throttledStatus]);
   /** The phrase alone — never the elapsed time. Folding the ticking duration in
    *  here changed the busy indicator's animation key once a second, which
    *  replayed its roll-swap forever during any long tool call. */
   const statusPhrase =
-    throttledStatus && working && statusElapsedMs >= STATUS_STALL_AFTER_MS
+    throttledStatus && agentWorking && statusElapsedMs >= STATUS_STALL_AFTER_MS
       ? throttledStatus.replace(/(\.\.\.|…)$/, '')
       : throttledStatus;
   const statusElapsedLabel =
-    throttledStatus && working && statusElapsedMs >= STATUS_STALL_AFTER_MS
+    throttledStatus && agentWorking && statusElapsedMs >= STATUS_STALL_AFTER_MS
       ? formatDuration(statusElapsedMs)
       : undefined;
 
@@ -1863,6 +1892,7 @@ function SessionTurnImpl({
         working: working && !suppressBusyIndicator,
         hasError: !!turnError,
         isRetrying: !!retryInfo,
+        awaitingUser,
       }) && (
         <div className="space-y-2">
           {retryInfo && retryMessage && (
@@ -3215,6 +3245,22 @@ export function SessionChat({
       ).filter((q) => !isQuestionSuppressed(q.id)),
     [sessionState?.questions, allQuestions, sessionId, isQuestionSuppressed],
   );
+  /**
+   * The runtime is parked on an answer only the user can give.
+   *
+   * Both lists are already session-scoped above. Either one means OpenCode has
+   * stopped inside the turn and is blocked on a reply — the `question` tool, or
+   * a tool asking for permission — so the turn row stays `active` and every
+   * observer keeps reporting `working` with nothing to bound it but the reader.
+   * The shimmer and its clock read that as progress; see
+   * `showTurnBusyIndicator` for the measurement.
+   *
+   * The RAW question list, not `renderedQuestion`: that one is held an extra
+   * 320ms past the answer to let the card fade out, and the waiting row must
+   * come back the instant the agent is running again, not a third of a second
+   * later.
+   */
+  const awaitingUserInput = pendingQuestions.length > 0 || pendingPermissions.length > 0;
   const QUESTION_PROMPT_ANIMATION_MS = 320;
   const activePendingQuestion = pendingQuestions[0] ?? null;
   const [renderedQuestion, setRenderedQuestion] = useState<QuestionRequest | null>(null);
@@ -3632,10 +3678,16 @@ export function SessionChat({
     suppressed: suppressWorkingTurnBusy,
     workingTurnHasError,
     isRetrying: !!getRetryInfo(sessionStatus),
+    awaitingUser: awaitingUserInput,
   });
   const showFallbackBusyRow =
     lastTurnWorking &&
     !someTurnDrawsBusyRow &&
+    // The fallback exists so a busy session never shows zero rows. A session
+    // parked on a question is the one case where zero rows is the right
+    // answer, so it is excluded here rather than catching the row the working
+    // turn just declined to draw.
+    !awaitingUserInput &&
     !(
       showFirstPromptPreview &&
       firstPromptSource &&
@@ -5877,6 +5929,7 @@ export function SessionChat({
                                     turn.userMessage.info.id === workingTurn.workingTurnId
                                   }
                                   suppressBusyIndicator={suppressWorkingTurnBusy}
+                                  awaitingUser={awaitingUserInput}
                                   pending={
                                     !confirmedActive &&
                                     (Boolean(pendingPrompt) ||
