@@ -13,7 +13,8 @@
  * near the top of `index.ts`.
  *
  * Dependency direction: this file imports the small set of leaf helpers it
- * needs (`isTable`, `expectStringOrAbsent`, `validateGrantList`, the
+ * needs (`isTable`, `expectStringOrAbsent`, `validateGrantList`,
+ * `validateKortixPermissionFields`, the
  * `ManifestIssue` type) from `./index`, and every enum/regex from
  * `./constants`. `index.ts` in turn imports this file's v2 dispatch
  * functions (`validateRuntimeV2`, `validateAgentsV2`, `validateDefaultAgentV2`,
@@ -40,7 +41,7 @@ import {
   V2_RUNTIME_VALUES,
   WORKSPACE_MODES_V2,
 } from './constants';
-import { expectStringOrAbsent, isTable, type ManifestIssue, validateGrantList } from './index';
+import { expectStringOrAbsent, isTable, type ManifestIssue, validateGrantList, validateKortixPermissionFields } from './index';
 
 // ─── kortix_version 2 types ───────────────────────────────────────────────
 //
@@ -143,7 +144,7 @@ export interface AgentBlockV2 {
   secrets?: GrantSetV2;
   /** Which of the project's `.kortix/opencode/skills/*` this agent may invoke —
    *  same grant-set shape as connectors/secrets (names | "all" | "none"), v2
-   *  deny-by-default when omitted. Unlike connectors/secrets/kortix_cli (pure
+   *  deny-by-default when omitted. Unlike connectors/secrets/kortix_permissions (pure
    *  Kortix governance with no runtime representation), `skills` DOES compile
    *  to something OpenCode understands: the runtime compiler
    *  (compile-agent-config.ts) maps it onto the agent's `permission.skill`, so
@@ -151,6 +152,11 @@ export interface AgentBlockV2 {
    *  something the author has to express by hand-writing glob rules in the
    *  agent's own frontmatter. */
   skills?: GrantSetV2;
+  /** The project permissions (`project.*` IAM actions) this agent's session
+   *  token may exercise — intersected with the launcher's project role. */
+  kortix_permissions?: GrantSetV2;
+  /** @deprecated Input alias for `kortix_permissions` (the pre-rename key).
+   *  Accepted with a validation warning; must match when both are set. */
   kortix_cli?: GrantSetV2;
   /** Whether new sessions receive repository access. Defaults to true. */
   repository_access?: boolean;
@@ -562,7 +568,7 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
   validateGrantList(entry.skills, `${where}.skills`, 'skills', issues, false, 2);
   // v2 clean break: a LEGACY_TOLERATED action is a hard error here, not a
   // warning (see `validateGrantList`'s doc comment).
-  validateGrantList(entry.kortix_cli, `${where}.kortix_cli`, 'kortix_cli', issues, true, 2);
+  validateKortixPermissionFields(entry, where, issues, 2);
 
   if (entry.repository_access !== undefined && typeof entry.repository_access !== 'boolean') {
     issues.push({ path: `${where}.repository_access`, message: 'must be a boolean.', severity: 'error' });

@@ -66,7 +66,7 @@ this target?** Five concepts cover the whole system:
 6. **Per-resource grants** — if the target is a *scoped* agent/skill, the caller must be
    one of its assignees (owners/admins bypass).
 7. **Agent-grant fold** — if the caller is an agent session, the verdict is intersected
-   with the agent's `kortix_cli` grant (section 8).
+   with the agent's `kortix_permissions` grant (section 8).
 
 ### Caching and revocation
 
@@ -515,21 +515,23 @@ An agent session's effective power is an **intersection** — never wider than a
 
 ```
 effective = (launching user's role  |  agent's standing role)
-          ∩ the agent's kortix_cli grant
+          ∩ the agent's kortix_permissions grant
           ∩ the session token's project scope
 ```
 
-- The **`kortix_cli` grant** is declared per agent in the project manifest
-  (`kortix.yaml`):
+- The **`kortix_permissions` grant** (Kortix permissions) is declared per agent in
+  the project manifest (`kortix.yaml`). `kortix_cli` is its deprecated spelling:
+  still accepted with a validation warning; both keys with different values is a
+  validation error.
 
   ```yaml
   agents:
     kortix:
       connectors: all          # which integrations it may call
       secrets: all             # which project secrets it may read ($ENV)
-      kortix_cli: all          # which Kortix platform actions it may perform
+      kortix_permissions: all  # which Kortix platform actions it may perform
     release-bot:
-      kortix_cli: [project.cr.open, project.trigger.create]   # exactly two powers
+      kortix_permissions: [project.cr.open, project.trigger.create]   # exactly two powers
       connectors: [github]
       secrets: [DEPLOY_KEY]
   ```
@@ -540,15 +542,15 @@ effective = (launching user's role  |  agent's standing role)
   its own powers in a change request, but the change only takes effect after a
   caller with merge authority merges it. A session can merge its own change
   request only when its current agent grant explicitly includes
-  `project.gitops.merge` or `kortix_cli: all`. The launching user's role must
+  `project.gitops.merge` or `kortix_permissions: all`. The launching user's role must
   also permit merge. An ungoverned session with a null agent grant cannot
   self merge.
-- Grantable `kortix_cli` actions are the project action catalog (§12); `'all'` and
+- Grantable `kortix_permissions` actions are the project action catalog (§12); `'all'` and
   `'*'` mean unrestricted. `project.cr.open`/`project.cr.merge` and
   `project.gitops.push`/`project.gitops.merge` are alias pairs — either spelling works.
 - **Secrets and connectors** can be scoped from the dashboard without touching YAML:
   **Customize → Agents → Access scope** (needs `project.agent.write`; saves as a
-  manifest commit). `kortix_cli` is deliberately **not** editable in the UI — platform
+  manifest commit). `kortix_permissions` is deliberately **not** editable in the UI — platform
   powers are a sharper escalation and stay a reviewed manifest change.
 
 ### Standing agent identities (agents as teammates)
@@ -682,7 +684,7 @@ audit log records both the grant and the expiry event.
 ```yaml
 agents:
   release-bot:
-    kortix_cli: [project.cr.open, project.trigger.create]
+    kortix_permissions: [project.cr.open, project.trigger.create]
     connectors: [github]
     secrets: [DEPLOY_KEY]
 ```
@@ -787,7 +789,7 @@ GET /v1/accounts/{id}/audit (+ /export)                     GET|POST …/audit/w
 | User keeps access ~seconds after revoke | The 15 s cache TTL across replicas — by design; writes bust the local replica immediately |
 | Okta "Test Connector" fails | Wrong base URL (must be `https://<api-origin>/scim/v2/accounts/{accountId}`) or missing bearer token |
 | Member can't see the Files page | Floor `member` lacks `project.file.read` — raise to editor or grant a custom role with the leaf |
-| Agent gets 403 on a platform action | Its `kortix_cli` grant lacks the action (or its standing role does) → widen the manifest grant via CR |
+| Agent gets 403 on a platform action | Its `kortix_permissions` grant lacks the action (or its standing role does) → widen the manifest grant via CR |
 
 ---
 

@@ -78,7 +78,7 @@
  *        OpenCode `bun install`s at startup.
  *      · The GRANT covers more than tools. `AgentBlockV2` fields: `sandbox`
  *        (which machine it boots), `connectors` + `connectors_required`,
- *        `secrets`, `skills`, `kortix_cli`, `workspace`, `enabled`. CHANNELS
+ *        `secrets`, `skills`, `kortix_permissions`, `workspace`, `enabled`. CHANNELS
  *        are covered by `connectors` because a connected channel IS a connector
  *        with `provider: 'channel'` (`apps/api/src/projects/connectors.ts:61`).
  *  - TRIGGERS are exactly two kinds. A webhook with no `secret_env` is rejected

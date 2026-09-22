@@ -75,7 +75,7 @@ export async function principalHoldsRefScope(
     case 'session': {
       const grant = getAgentGrant(c);
       if (!grant) return false; // Default-deny — see the header note.
-      if (grant.kortixCli !== 'all' && !grant.kortixCli.includes(scope)) return false;
+      if (grant.permissions !== 'all' && !grant.permissions.includes(scope)) return false;
       if (!principal.userId || !principal.tokenId) return false;
       // actorForToken selects the activated service account or launcher. The
       // manifest can narrow that identity's role; it cannot widen it.

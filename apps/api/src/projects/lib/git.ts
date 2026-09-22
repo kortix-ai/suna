@@ -12,7 +12,7 @@ import {
   getProjectSecretValueForConsumer,
 } from '../secrets';
 import { recordAuditEvent } from '../../shared/audit';
-import { accountGithubInstallationStates, accountGithubInstallations, accountTokens, projectGitConnections, projectGitCredentials, projectSessions, projects, sessionSandboxes } from '@kortix/db';
+import { accountGithubInstallationStates, accountGithubInstallations, accountTokens, readStoredAgentGrant, projectGitConnections, projectGitCredentials, projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import type { AgentGrant } from '@kortix/db';
 import { and, asc, countDistinct, eq, gt, inArray, isNull, ne } from 'drizzle-orm';
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
@@ -853,7 +853,7 @@ export type GitProxyAuth =
       /**
        * The resolved agent grant for a session principal (null otherwise). The
        * receive-pack route places this on the request context so the ref-scope
-       * resolver can honor `project.gitops.ref.any` / `kortix_cli: all` for the
+       * resolver can honor `project.gitops.ref.any` / `kortix_permissions: all` for the
        * session pushing. Without it a session is default-denied beyond its own
        * branch no matter what its manifest grants — the exact failure behind the
        * 2026-09-07 monitoring-metadata persistence incident.
@@ -1135,7 +1135,7 @@ async function authorizeGitProxyUncached(
         return { ok: false, status: 403, message: 'session has no branch to push' };
       }
       // Resolve the session's agent grant so the ref-scope resolver can widen a
-      // session that deliberately holds `project.gitops.ref.any` / `kortix_cli:
+      // session that deliberately holds `project.gitops.ref.any` / `kortix_permissions:
       // all`. The grant lives on the session's connector token(s) in
       // `account_tokens`; a sandbox key carries no grant of its own. Missing row
       // (or a project with no per-agent governance) reads null = default-deny.
@@ -1165,7 +1165,7 @@ async function authorizeGitProxyUncached(
           userId: grantRow?.userId ?? null,
           tokenId: grantRow?.tokenId ?? null,
         },
-        agentGrant: grantRow?.agentGrant ?? null,
+        agentGrant: readStoredAgentGrant(grantRow?.agentGrant),
       };
     }
     // Account-scoped user API key. No per-project fallback here: an API key

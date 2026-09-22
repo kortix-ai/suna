@@ -16,7 +16,7 @@ const MFA_DENIAL_MESSAGE =
  *
  * This exists because a denial's reason is the only thing that can distinguish
  * WHICH constraint fired. `authorizeV2` folds three independent limits into one
- * boolean — the human's project role, the agent session's `kortix_cli` grant,
+ * boolean — the human's project role, the agent session's `kortix_permissions` grant,
  * and an activated service account's assigned role — and a caller that
  * re-derives the cause from a second `authorize()` probe cannot separate them.
  * Guessing "your role is too low" at an account owner whose AGENT grant denied
@@ -34,7 +34,7 @@ export function denialReasonMessage(action: string, reason?: string): string | n
     case 'agent_scope_insufficient':
       // The agent-session token's own grant denied it, at any role. Mirrors the
       // wording assertAgentScope already uses for the same constraint.
-      return `This agent session is not granted "${action}". Add it to the agent's kortix_cli in kortix.yaml and merge the change.`;
+      return `This agent session is not granted "${action}". Add it to the agent's kortix_permissions in kortix.yaml and merge the change.`;
     case 'service_account_scope_insufficient':
       // The session authorizes AS the agent's service account (an admin gave it
       // a standing role), so the launching user's role is irrelevant here.

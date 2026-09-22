@@ -17,7 +17,7 @@
  */
 import type { Context } from 'hono';
 import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
-import { accountTokens, roleAssignments, serviceAccounts, type AgentGrant } from '@kortix/db';
+import { accountTokens, readStoredAgentGrant, roleAssignments, serviceAccounts, type AgentGrant } from '@kortix/db';
 import { createHash } from 'node:crypto';
 import { db } from '../shared/db';
 import { ttlMemo } from '../shared/ttl-memo';
@@ -193,7 +193,7 @@ const loadTokenBinding = ttlMemo({
     return row
       ? {
           projectId: row.projectId,
-          agentGrant: row.agentGrant ?? null,
+          agentGrant: readStoredAgentGrant(row.agentGrant),
           serviceAccountId: row.serviceAccountId ?? null,
         }
       : null;

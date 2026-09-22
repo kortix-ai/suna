@@ -792,8 +792,8 @@
                     }
                   ]
                 },
-                "kortix_cli": {
-                  "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+                "kortix_permissions": {
+                  "description": "Kortix permissions: the project.* IAM actions this agent may exercise, or \"all\" / \"none\".",
                   "oneOf": [
                     {
                       "type": "array",
@@ -869,6 +869,85 @@
                       ]
                     }
                   ]
+                },
+                "kortix_cli": {
+                  "description": "Deprecated alias for kortix_permissions.",
+                  "oneOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "project.read",
+                          "project.write",
+                          "project.delete",
+                          "project.session.read",
+                          "project.session.start",
+                          "project.session.stop",
+                          "project.session.bindings.write",
+                          "project.members.read",
+                          "project.members.manage",
+                          "project.trigger.read",
+                          "project.trigger.create",
+                          "project.trigger.update",
+                          "project.trigger.delete",
+                          "project.trigger.fire",
+                          "project.gateway.logs.read",
+                          "project.gateway.spend.read",
+                          "project.gateway.budget.set",
+                          "project.gateway.keys.manage",
+                          "project.agent.read",
+                          "project.agent.write",
+                          "project.skill.read",
+                          "project.skill.write",
+                          "project.command.read",
+                          "project.command.write",
+                          "project.file.read",
+                          "project.file.write",
+                          "project.customize.read",
+                          "project.customize.write",
+                          "project.gitops.read",
+                          "project.gitops.push",
+                          "project.gitops.merge",
+                          "project.gitops.ref.any",
+                          "project.gitops.ref.delete",
+                          "project.secret.read",
+                          "project.secret.write",
+                          "project.connector.read",
+                          "project.connector.connections.manage",
+                          "project.connector.write",
+                          "project.app.read",
+                          "project.app.write",
+                          "project.app.deploy",
+                          "project.review.read",
+                          "project.review.submit",
+                          "project.review.act",
+                          "project.credentials.issue",
+                          "project.cr.open",
+                          "project.cr.merge",
+                          "project.session.exec",
+                          "project.gateway.routing.edit",
+                          "project.schedule.read",
+                          "project.schedule.write",
+                          "project.webhook.read",
+                          "project.webhook.write",
+                          "channel.read",
+                          "channel.connect",
+                          "channel.send",
+                          "channel.disconnect",
+                          "*"
+                        ]
+                      }
+                    },
+                    {
+                      "type": "string",
+                      "enum": [
+                        "all",
+                        "none"
+                      ]
+                    }
+                  ],
+                  "deprecated": true
                 },
                 "env": {
                   "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
@@ -1071,8 +1150,8 @@
                     }
                   ]
                 },
-                "kortix_cli": {
-                  "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+                "kortix_permissions": {
+                  "description": "Kortix permissions: the project.* IAM actions this agent may exercise, or \"all\" / \"none\".",
                   "oneOf": [
                     {
                       "type": "array",
@@ -1138,6 +1217,75 @@
                       ]
                     }
                   ]
+                },
+                "kortix_cli": {
+                  "description": "Deprecated alias for kortix_permissions.",
+                  "oneOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "project.read",
+                          "project.write",
+                          "project.delete",
+                          "project.session.read",
+                          "project.session.start",
+                          "project.session.stop",
+                          "project.session.bindings.write",
+                          "project.members.read",
+                          "project.members.manage",
+                          "project.trigger.read",
+                          "project.trigger.create",
+                          "project.trigger.update",
+                          "project.trigger.delete",
+                          "project.trigger.fire",
+                          "project.gateway.logs.read",
+                          "project.gateway.spend.read",
+                          "project.gateway.budget.set",
+                          "project.gateway.keys.manage",
+                          "project.agent.read",
+                          "project.agent.write",
+                          "project.skill.read",
+                          "project.skill.write",
+                          "project.command.read",
+                          "project.command.write",
+                          "project.file.read",
+                          "project.file.write",
+                          "project.customize.read",
+                          "project.customize.write",
+                          "project.gitops.read",
+                          "project.gitops.push",
+                          "project.gitops.merge",
+                          "project.gitops.ref.any",
+                          "project.gitops.ref.delete",
+                          "project.secret.read",
+                          "project.secret.write",
+                          "project.connector.read",
+                          "project.connector.connections.manage",
+                          "project.connector.write",
+                          "project.app.read",
+                          "project.app.write",
+                          "project.app.deploy",
+                          "project.review.read",
+                          "project.review.submit",
+                          "project.review.act",
+                          "project.credentials.issue",
+                          "project.cr.open",
+                          "project.cr.merge",
+                          "*"
+                        ]
+                      }
+                    },
+                    {
+                      "type": "string",
+                      "enum": [
+                        "all",
+                        "none"
+                      ]
+                    }
+                  ],
+                  "deprecated": true
                 },
                 "repository_access": {
                   "type": "boolean",

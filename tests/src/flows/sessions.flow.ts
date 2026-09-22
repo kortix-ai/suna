@@ -1193,7 +1193,7 @@ flow(
       await ctx.step(`create repository_access=${access} session and prove checkout plus session-token authorization`, async () => {
         const config = await owner.put('/v1/projects/:projectId/agents/:agentName/config', {
           repository_access: access,
-          kortix_cli: ['project.file.read', 'project.gitops.read'],
+          kortix_permissions: ['project.file.read', 'project.gitops.read'],
         }, { params: { projectId: project.id, agentName: 'kortix' } });
         config.status(200);
         const created = await owner.post('/v1/projects/:projectId/sessions', {
@@ -1305,7 +1305,7 @@ flow(
         async () => {
           const config = await owner.put(
             '/v1/projects/:projectId/agents/:agentName/config',
-            { connectors: 'all', secrets: 'none', skills: 'all', kortix_cli: 'all' },
+            { connectors: 'all', secrets: 'none', skills: 'all', kortix_permissions: 'all' },
             { params: { projectId: project.id, agentName: 'kortix' } },
           );
           config.status(200);

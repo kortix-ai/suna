@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -45,6 +46,7 @@ function agentMe(): MeResponse {
       session_id: 'ea985b87-d12c-4ba4-aa12-ee0711dab6f6',
       agent: 'osp-vision-route-agent',
       connectors: [],
+      kortix_permissions: ['project.secret.read', 'project.secret.write'],
       kortix_cli: ['project.secret.read', 'project.secret.write'],
     },
     accounts: [],
@@ -82,7 +84,39 @@ describe('token identity cache', () => {
     const identity = cachedTokenIdentity('kortix_pat_session');
     expect(identity?.agent).toBe('osp-vision-route-agent');
     expect(identity?.sessionId).toBe('ea985b87-d12c-4ba4-aa12-ee0711dab6f6');
-    expect(identity?.kortixCli).toEqual(['project.secret.read', 'project.secret.write']);
+    expect(identity?.permissions).toEqual(['project.secret.read', 'project.secret.write']);
+  });
+
+  test('reads the grant from a pre-rename API that only sends kortix_cli', () => {
+    const me = agentMe();
+    delete (me.token_context as { kortix_permissions?: unknown }).kortix_permissions;
+    expect(identityFromMe(me).permissions).toEqual(['project.secret.read', 'project.secret.write']);
+  });
+
+  test('reads a cache entry written before the rename (kortixCli key)', () => {
+    writeFileSync(
+      join(dir, 'token-identity.json'),
+      JSON.stringify({
+        entries: {
+          [createHash('sha256').update('kortix_pat_legacy').digest('hex').slice(0, 16)]: {
+            fetchedAt: Date.now(),
+            identity: {
+              authType: 'pat',
+              agent: 'a',
+              projectId: 'p',
+              sessionId: 's',
+              kortixCli: 'all',
+              userId: 'u',
+              userEmail: 'e',
+            },
+          },
+        },
+      }),
+    );
+    clearTokenIdentityCache();
+    const identity = cachedTokenIdentity('kortix_pat_legacy');
+    expect(identity?.permissions).toBe('all');
+    expect(identity).not.toHaveProperty('kortixCli');
   });
 
   test('never writes the token itself to disk, and keeps the file 0600', () => {
@@ -136,7 +170,7 @@ describe('token identity cache', () => {
         agent: null,
         projectId: null,
         sessionId: null,
-        kortixCli: null,
+        permissions: null,
         userId: 'u',
         userEmail: 'a@b.c',
       }),
@@ -180,7 +214,7 @@ describe('permission-denial identity footer', () => {
 
     expect(out).toContain('session token · agent osp-vision-route-agent');
     expect(out).toContain('project.secret.read, project.secret.write');
-    expect(out).toContain('agents.osp-vision-route-agent.kortix_cli');
+    expect(out).toContain('agents.osp-vision-route-agent.kortix_permissions');
   });
 
   test('prints nothing when no call was refused', async () => {

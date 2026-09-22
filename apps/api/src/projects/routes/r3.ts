@@ -481,7 +481,7 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Leaf-gate the read (a custom role can omit project.secret.read) — and, via
-  // the central agent-grant fold, an agent token must hold it in its kortixCli.
+  // the central agent-grant fold, an agent token must hold it in its Kortix permissions.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_READ);
 
   const canManageShared = roleAllows(loaded.effectiveRole, 'manage');

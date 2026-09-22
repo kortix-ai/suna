@@ -565,6 +565,9 @@ flow(
       [sessionId, team.id, project.id]);
       // Bind the API-minted credential to the fixture session. The test never
       // needs the server's token-hash secret on local, preview, or staging.
+      // The grant is written in the PRE-RENAME stored shape (`kortixCli`, not
+      // `permissions`) on purpose: rows minted before 2026-09-22 carry it, and
+      // the push below only succeeds if `readStoredAgentGrant` still honors it.
       await db.query(`UPDATE kortix.account_tokens
         SET project_id = $2, session_id = $3, agent_grant = $4::jsonb, account_id = $5, user_id = $6 WHERE token_id = $1`,
       [tokenId, project.id, sessionId,

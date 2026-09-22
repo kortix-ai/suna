@@ -25,11 +25,11 @@ agents:
   support:
     connectors: [github, slack]
     secrets: [STRIPE_KEY, GH_TOKEN]
-    kortix_cli: [project.session.start, project.cr.open]
+    kortix_permissions: [project.session.start, project.cr.open]
     workspace: runtime
   pr-bot:
     connectors: [github]
-    kortix_cli: [project.cr.open, project.cr.merge, project.review.submit]
+    kortix_permissions: [project.cr.open, project.cr.merge, project.review.submit]
 
 triggers:
   - slug: nightly-digest
@@ -104,13 +104,13 @@ platform = "slack"
 [[agents]]
 name = "support"
 connectors = ["github"]
-kortix_cli = ["project.read", "project.session.start"]
+kortix_permissions = ["project.read", "project.session.start"]
 env = ["STRIPE_KEY"]
 
 [[agents]]
 name = "pr-bot"
 connectors = "all"
-kortix_cli = ["*"]
+kortix_permissions = ["*"]
 
 [[channels]]
 platform = "slack"
@@ -166,11 +166,11 @@ connectors:
 agents:
   - name: support
     connectors: [github]
-    kortix_cli: [project.read, project.session.start]
+    kortix_permissions: [project.read, project.session.start]
     env: [STRIPE_KEY]
   - name: pr-bot
     connectors: all
-    kortix_cli: ["*"]
+    kortix_permissions: ["*"]
 channels:
   - platform: slack
     enabled: true
@@ -575,15 +575,15 @@ connectors:
 // still parseable in an existing v1 manifest (warning only — the audit
 // found nothing asserts them on any route, so tolerating them is a no-op).
 // v2 is a NEW schema version, so it gets the clean break: no tolerance.
-describe('validateManifest — kortix_cli LEGACY_TOLERATED_KORTIX_CLI_ACTIONS clean break', () => {
+describe('validateManifest — kortix_permissions LEGACY_TOLERATED_KORTIX_PERMISSIONS clean break', () => {
   test('v1 tolerates a legacy-removed action as a warning, still valid', () => {
     const { valid, errorPaths, warningPaths } = summarize(
-      'kortix_version = 1\n[[agents]]\nname = "w"\nkortix_cli = ["project.schedule.read"]\n',
+      'kortix_version = 1\n[[agents]]\nname = "w"\nkortix_permissions = ["project.schedule.read"]\n',
       'toml',
     );
     expect(valid).toBe(true);
-    expect(errorPaths).not.toContain('agents[0].kortix_cli[0]');
-    expect(warningPaths).toContain('agents[0].kortix_cli[0]');
+    expect(errorPaths).not.toContain('agents[0].kortix_permissions[0]');
+    expect(warningPaths).toContain('agents[0].kortix_permissions[0]');
   });
 
   test('v2 hard-rejects the same legacy-removed action', () => {
@@ -592,10 +592,10 @@ kortix_version: 2
 default_agent: w
 agents:
   w:
-    kortix_cli: [project.schedule.read]
+    kortix_permissions: [project.schedule.read]
 `);
     expect(valid).toBe(false);
-    expect(errorPaths).toContain('agents.w.kortix_cli[0]');
+    expect(errorPaths).toContain('agents.w.kortix_permissions[0]');
   });
 
   test('v2 still hard-rejects a truly unknown (never-was-valid) action, same as before', () => {
@@ -604,10 +604,10 @@ kortix_version: 2
 default_agent: w
 agents:
   w:
-    kortix_cli: [project.frobnicate]
+    kortix_permissions: [project.frobnicate]
 `);
     expect(valid).toBe(false);
-    expect(errorPaths).toContain('agents.w.kortix_cli[0]');
+    expect(errorPaths).toContain('agents.w.kortix_permissions[0]');
   });
 });
 
@@ -818,7 +818,7 @@ agents:
 });
 
 describe('validateManifest — kortix_version 2 grant sets are shape-optional', () => {
-  test('omitting connectors, secrets, and kortix_cli on an agent is still valid shape', () => {
+  test('omitting connectors, secrets, and kortix_permissions on an agent is still valid shape', () => {
     const { valid } = summarize(`
 kortix_version: 2
 default_agent: w
@@ -828,15 +828,15 @@ agents:
     expect(valid).toBe(true);
   });
 
-  test('kortix_cli rejects a non-grantable action, same enum as v1', () => {
+  test('kortix_permissions rejects a non-grantable action, same enum as v1', () => {
     const { errorPaths } = summarize(`
 kortix_version: 2
 default_agent: w
 agents:
   w:
-    kortix_cli: [billing.read]
+    kortix_permissions: [billing.read]
 `);
-    expect(errorPaths).toContain('agents.w.kortix_cli[0]');
+    expect(errorPaths).toContain('agents.w.kortix_permissions[0]');
   });
 
   test('workspace accepts the declared enum', () => {

@@ -2695,12 +2695,15 @@ export const kortixApiKeys = kortixSchema.table(
 /**
  * Per-agent authorization grant stored on a session's account token. The single
  * canonical shape — imported by the resolution, enforcement, and context layers
- * so it's never re-declared. `kortixCli`/`connectors` are `"all"` (everything,
+ * so it's never re-declared. `permissions`/`connectors` are `"all"` (everything,
  * capped at the launching user) or an explicit list; `[]` = deny.
  */
 export interface AgentGrant {
   agent: string;
-  kortixCli: string[] | 'all';
+  /** Kortix permissions: the `project.*` IAM actions this agent may exercise
+   *  (the manifest's `kortix_permissions`). Stored as `kortixCli` before the
+   *  2026-09-22 rename — read rows through `readStoredAgentGrant`. */
+  permissions: string[] | 'all';
   connectors: string[] | 'all';
   /** Project-secret IDENTIFIERS (not env-var keys — see project_secrets.identifier)
    *  this agent may receive as sandbox env (and read via the secrets API). 'all'
@@ -2731,6 +2734,32 @@ export interface AgentGrant {
   resolvedAt?: string;
 }
 
+/**
+ * The JSON actually stored in `account_tokens.agent_grant`. Rows written
+ * before the `kortixCli` → `permissions` rename (2026-09-22) carry the legacy
+ * key; no migration rewrites them. The column is typed as this union so a
+ * read cannot reach `.permissions` without going through
+ * `readStoredAgentGrant`.
+ */
+export type StoredAgentGrant =
+  | AgentGrant
+  | (Omit<AgentGrant, 'permissions'> & { kortixCli: string[] | 'all'; permissions?: undefined });
+
+/**
+ * Normalize a stored agent grant to the current shape. `permissions` wins
+ * when both keys are present; the legacy `kortixCli` key is dropped. A row
+ * with neither key resolves to `[]` (deny) — the same fail-closed outcome
+ * the gates give a malformed grant.
+ */
+export function readStoredAgentGrant(raw: StoredAgentGrant | null | undefined): AgentGrant | null {
+  if (!raw) return null;
+  const { kortixCli, permissions, ...rest } = raw as Omit<AgentGrant, 'permissions'> & {
+    kortixCli?: string[] | 'all';
+    permissions?: string[] | 'all';
+  };
+  return { ...rest, permissions: permissions ?? kortixCli ?? [] };
+}
+
 export const accountTokens = kortixSchema.table(
   'account_tokens',
   {
@@ -2755,12 +2784,12 @@ export const accountTokens = kortixSchema.table(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     /** Per-agent authorization grant for a sandbox session token: which Kortix
-     *  CLI/API actions + connectors the running agent may use. Resolved
+     *  permissions (`project.*` actions) + connectors the running agent may use. Resolved
      *  from the kortix.yaml `agents` map at session birth. The launching
      *  user's role is still enforced by route IAM, so effective access is
      *  user role ∩ agentGrant. Null for non-agent tokens (laptop CLI PATs,
      *  etc.) — which keep role-only access. */
-    agentGrant: jsonb('agent_grant').$type<AgentGrant>(),
+    agentGrant: jsonb('agent_grant').$type<StoredAgentGrant>(),
     /** Session this token belongs to (sandbox connector token, session_id =
      *  sandbox_id). Lets the LLM gateway attribute usage_events per-session —
      *  the reaper's reliable activity signal + precise billing. Null for

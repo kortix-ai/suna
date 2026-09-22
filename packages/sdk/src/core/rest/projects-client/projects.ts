@@ -175,6 +175,10 @@ export interface ProjectConfigSummary {
     scope?: {
       env: string[] | 'all';
       connectors: string[] | 'all';
+      /** Kortix permissions (`project.*` actions). Absent on servers released
+       *  before 2026-09-22 — fall back to `kortix_cli`. */
+      kortix_permissions?: string[] | 'all';
+      /** @deprecated Renamed to `kortix_permissions` (same value). Removed in the next major. */
       kortix_cli: string[] | 'all';
     };
   }>;

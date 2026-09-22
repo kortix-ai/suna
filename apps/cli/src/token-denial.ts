@@ -19,7 +19,7 @@ import { C } from './style.ts';
 // `kortix whoami --token-only`.
 //
 // So after a 401/403 the CLI answers it unprompted: the token kind, the agent,
-// and that agent's `kortix_cli` grant — which is exactly the list a manifest
+// and that agent's `kortix_permissions` grant — which is exactly the list a manifest
 // author has to change. One `/accounts/me` at most, and only on the error path.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -87,10 +87,10 @@ export async function printPermissionDenialIdentity(): Promise<void> {
 
   const lines = [`  ${C.dim}acting as ${C.reset}${C.bold}${tokenKindLabel(identity)}${C.reset}`];
   if (identity.agent) {
-    lines.push(`  ${C.dim}granted   ${C.reset}${formatGrantList(identity.kortixCli)}`);
+    lines.push(`  ${C.dim}granted   ${C.reset}${formatGrantList(identity.permissions)}`);
     lines.push(
       `  ${C.dim}fix       ${C.reset}add the action to ` +
-        `${C.cyan}agents.${identity.agent}.kortix_cli${C.reset}${C.dim} in kortix.yaml, then merge${C.reset}`,
+        `${C.cyan}agents.${identity.agent}.kortix_permissions${C.reset}${C.dim} in kortix.yaml, then merge${C.reset}`,
     );
   } else if (identity.userEmail) {
     lines.push(`  ${C.dim}user      ${C.reset}${identity.userEmail}`);

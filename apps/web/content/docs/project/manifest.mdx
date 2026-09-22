@@ -73,13 +73,13 @@ agents:
   kortix:
     connectors: all
     secrets: all
-    kortix_cli: all
+    kortix_permissions: all
     skills: all
 
   release-bot:
     sandbox: ml
     connectors: [github]
-    kortix_cli: [project.gitops.push]
+    kortix_permissions: [project.gitops.push]
     secrets: [GITHUB_AGENT_TOKEN]
 
 triggers:
@@ -350,7 +350,7 @@ v2 removes `channels:` from the schema. Channel-to-agent routing (Slack, Microso
 
 A name-to-block map, keyed by agent name. This map is governance only — it grants what an agent may touch, never what it says or does.
 
-This block is the **second of the two bindings**: a principal gets roles from Kortix, and an agent additionally carries the Kortix CLI scopes declared here. A session can only do what both allow. See [One vocabulary, two bindings](/docs/accounts#one-vocabulary-two-bindings).
+This block is the **second of the two bindings**: a principal gets roles from Kortix, and an agent additionally carries the Kortix permissions declared here. A session can only do what both allow. See [One vocabulary, two bindings](/docs/accounts#one-vocabulary-two-bindings).
 
 ```yaml
 default_agent: kortix
@@ -359,13 +359,13 @@ agents:
   kortix:
     connectors: all
     secrets: all
-    kortix_cli: all
+    kortix_permissions: all
     skills: all
 
   release-bot:
     connectors: [github]
     connectors_required: [github]
-    kortix_cli: [project.gitops.push]
+    kortix_permissions: [project.gitops.push]
     secrets: [GITHUB_AGENT_TOKEN]
 ```
 
@@ -376,18 +376,18 @@ agents:
 | `connectors`          | `none`  | Which connector slugs this agent may call. `all` means every connector.                                                                                                                                   |
 | `connectors_required` | `none`  | Deprecated: parsed and ignored. Nothing gates sandbox startup on a connector any more; a call to a connector with nothing connected returns `connector_not_connected` with a connect link. Must still be a subset of `connectors` when present. |
 | `secrets`             | `none`  | Which project secrets this agent receives as sandbox env vars. Renamed from v1's `env`.                                                                                                                   |
-| `kortix_cli`          | `none`  | Which Kortix CLI and API permissions this agent may exercise. `all` means everything the launching user's roles allow — an agent can never exceed its launcher.                                            |
+| `kortix_permissions`  | `none`  | Which Kortix permissions (project actions) this agent may exercise, through the CLI, the API, or git. `all` means everything the launching user's roles allow — an agent can never exceed its launcher. `kortix_cli` is the deprecated spelling: still accepted, with a validation warning; setting both to different values is an error. |
 | `skills`              | `none`  | Which skills this agent may load.                                                                                                                                                                         |
 | `repository_access` | `true` | Whether new sessions receive the project repository. `false` disables repository delivery and repository access through session credentials. Existing sessions keep their saved policy. |
 
-v2 is deny-by-default: an omitted `connectors`, `secrets`, `kortix_cli`, or `skills` on a declared agent resolves to `none`. Grant every permission an agent needs explicitly, as the starter's `kortix` agent does above. A project migrating from v1 must re-grant everything by hand — v1 defaults `env` (secrets) to `all` when omitted, the opposite of v2.
+v2 is deny-by-default: an omitted `connectors`, `secrets`, `kortix_permissions`, or `skills` on a declared agent resolves to `none`. Grant every permission an agent needs explicitly, as the starter's `kortix` agent does above. A project migrating from v1 must re-grant everything by hand — v1 defaults `env` (secrets) to `all` when omitted, the opposite of v2.
 
 `connectors_personal` remains a deprecated input alias for
 `connectors_required`. New manifests must use `connectors_required`. The
 connector's `authorization_strategy` decides whether the authorization
 is project-owned or member-owned.
 
-`kortix_cli` grants come from a fixed set of project-scoped permissions (`project.read`, `project.gitops.push`, `project.gitops.merge`, `project.gitops.ref.any`, `project.trigger.*`, `project.secret.*`, `project.connector.*`, and more). Account-scoped permissions — `member.*`, `billing.*`, `project.create` — can never be granted to an agent. Run `kortix validate --scopes` from inside a session to print the live, grantable list.
+`kortix_permissions` grants come from a fixed set of project-scoped permissions (`project.read`, `project.gitops.push`, `project.gitops.merge`, `project.gitops.ref.any`, `project.trigger.*`, `project.secret.*`, `project.connector.*`, and more). Account-scoped permissions — `member.*`, `billing.*`, `project.create` — can never be granted to an agent. Run `kortix validate --scopes` from inside a session to print the live, grantable list.
 
 ## When config changes take effect
 

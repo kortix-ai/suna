@@ -1,5 +1,5 @@
 import { eq, and, desc, inArray, isNull } from 'drizzle-orm';
-import { accountTokens, accounts, sessionSandboxes } from '@kortix/db';
+import { accountTokens, accounts, readStoredAgentGrant, sessionSandboxes } from '@kortix/db';
 import { db } from '../shared/db';
 import {
   hashSecretKey,
@@ -496,7 +496,7 @@ export async function validateAccountToken(
       tokenId: row.tokenId,
       projectId: row.projectId,
       sessionId: row.sessionId ?? null,
-      agentGrant: row.agentGrant ?? null,
+      agentGrant: readStoredAgentGrant(row.agentGrant),
     };
   } catch (err) {
     console.error('Account token validation error:', err);

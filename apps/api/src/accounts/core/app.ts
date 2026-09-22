@@ -141,6 +141,8 @@ export const MeSchema = z
         session_id: z.string().nullable(),
         agent: z.string().nullable(),
         connectors: z.union([z.literal('all'), z.array(z.string())]).nullable(),
+        kortix_permissions: z.union([z.literal('all'), z.array(z.string())]).nullable(),
+        /** @deprecated Same value as kortix_permissions; kept for pre-rename CLIs. */
         kortix_cli: z.union([z.literal('all'), z.array(z.string())]).nullable(),
         env: z.union([z.literal('all'), z.array(z.string())]).nullable(),
       })

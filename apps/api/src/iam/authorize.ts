@@ -131,7 +131,7 @@ const deny = (reason: Reason): Verdict => ({ allowed: false, reason });
  * The coarse project actions `loadProjectForUser` maps onto. An agent session's
  * kortix.yaml grant must NOT gate them: a route doing
  * `loadProjectForUser('write')` is asking a membership-tier question, and a
- * leaf-scoped agent (e.g. kortixCli=['project.gitops.push']) still has to pass
+ * leaf-scoped agent (e.g. permissions=['project.gitops.push']) still has to pass
  * it — the route's own leaf assertion is what the grant gates. Every OTHER
  * project action is a specific capability the agent must hold.
  */
@@ -244,7 +244,7 @@ export async function authorize(actor: Actor, action: string, obj: Obj = { type:
 
   // 10. role ∩ agent grant. Enforced HERE, centrally, so a new route cannot
   // forget it — the 23 per-route `assertAgentScope` calls are the duplicate.
-  // No-op for non-agent tokens (null grant) and for `kortixCli: all`.
+  // No-op for non-agent tokens (null grant) and for `permissions: all`.
   if (tokenId && !AGENT_GRANT_EXEMPT_ACTIONS.has(action)) {
     if (!agentMayPerform(binding?.agentGrant ?? null, action)) {
       return deny('agent_scope_insufficient');

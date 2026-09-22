@@ -190,11 +190,14 @@ export function resolveConfigAgents(
           enabled: spec.enabled,
           sandbox: spec.sandbox ?? null,
           // Surface the per-agent allowlists so the UI can show (read-only) what
-          // secrets/connectors/CLI powers each declared agent is scoped to.
+          // secrets/connectors/Kortix permissions each declared agent is scoped to.
+          // `kortix_cli` is the deprecated wire alias of `kortix_permissions`,
+          // kept so clients released before the rename still read it.
           scope: {
             env: spec.env,
             connectors: spec.connectors,
-            kortix_cli: spec.kortixCli,
+            kortix_permissions: spec.permissions,
+            kortix_cli: spec.permissions,
           },
         };
       }),
