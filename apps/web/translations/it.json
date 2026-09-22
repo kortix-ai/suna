@@ -1441,7 +1441,8 @@
         "status": "Stato",
         "activity": "Attività",
         "source": "Origine",
-        "none": "Nessuno"
+        "none": "Nessuno",
+        "owner": "Proprietario"
       },
       "order": {
         "activity": "Ultima attività",
@@ -1475,7 +1476,19 @@
       "sourceValue": {
         "mine": "Le mie chat",
         "shared": "Condivise"
-      }
+      },
+      "owner": "Proprietario",
+      "access": "Accesso",
+      "ownerValue": {
+        "you": "Tu",
+        "unknown": "Proprietario sconosciuto"
+      },
+      "accessValue": {
+        "private": "Solo il proprietario",
+        "restricted": "Persone specifiche",
+        "project": "Tutto il progetto"
+      },
+      "ownerAccess": "{owner} · {access}"
     },
     "loadingMore": "Caricamento…",
     "loadMoreSessions": "Carica altre sessioni"
@@ -18279,7 +18292,7 @@
       "textf9cfe2f2d411": "installazioni",
       "textf9d35d43770d": "tools",
       "textf9d46c1722ea": "Push Immediately",
-      "textf9d52abc1fb8": "Requisiti di accesso a livello di account.",
+      "textf9d52abc1fb8": "Regole di accesso e di accesso alle sessioni a livello di account.",
       "textf9dcbb55deba": "Automatizza",
       "textf9debe3e14a5": "Abilita Create Users, Update User Attributes e Deactivate Users → Save.",
       "textf9e0dab461a6": "grep in tutta la tua azienda.",
@@ -18601,7 +18614,12 @@
       "textd9692dea50e7": "Aggiungi l'app a una chat o a un canale, poi incolla qui sotto l'ID del tuo tenant per collegarla a questo progetto.",
       "text8dd795841572": "Il segreto client è cifrato. Solo l'agente di questo spazio di lavoro può leggerlo.",
       "text5cb103d6008c": "Thread del canale",
-      "text31d248c44579": "Conversazione senza titolo"
+      "text31d248c44579": "Conversazione senza titolo",
+      "text3ea5efedf114": "Consentito agli admin di aprire ogni sessione",
+      "text88cfd89168a0": "Non più consentito agli admin di aprire ogni sessione",
+      "textcbccc00faa36": "Sessione di un membro aperta come admin dell’account",
+      "text798f62f95bed": "Visualizzato l’accesso admin alle sessioni",
+      "text0814e13d671d": "Modificato l’accesso admin alle sessioni"
     }
   },
   "projectOnboarding": {
@@ -19544,5 +19562,20 @@
     "noAccessBody": "Chiedi a un proprietario o admin di invitare {email}.",
     "loadErrorTitle": "Impossibile caricare i tuoi progetti",
     "loadErrorBody": "Controlla la connessione e riprova."
+  },
+  "sessionOversight": {
+    "label": "Gli admin possono aprire ogni sessione",
+    "description": "Proprietari e admin dell’account possono aprire qualsiasi sessione di questo account, comprese quelle private. Ogni sessione aperta così è nel registro di audit.",
+    "ownerOnlyDescription": "Proprietari e admin dell’account possono aprire qualsiasi sessione di questo account, comprese quelle private. Solo un proprietario dell’account può modificarlo.",
+    "enableTitle": "Consentire agli admin di aprire ogni sessione?",
+    "enableDescription": "Proprietari e admin potranno aprire tutte le sessioni di questo account, comprese quelle che i membri mantengono private. I membri vedranno un avviso nella finestra di condivisione. Ogni sessione aperta così viene registrata nel registro di audit.",
+    "enableConfirm": "Attiva",
+    "disableTitle": "Non consentire più agli admin di aprire ogni sessione?",
+    "disableDescription": "Le sessioni private tornano visibili solo al proprietario. Gli admin mantengono l’accesso solo alle sessioni condivise con loro.",
+    "disableConfirm": "Disattiva",
+    "enabledToast": "Ora gli admin possono aprire ogni sessione",
+    "disabledToast": "Le sessioni private sono di nuovo solo del proprietario",
+    "failedToast": "Impossibile aggiornare questa impostazione",
+    "shareDisclosure": "Proprietari e admin dell’account possono aprire ogni sessione di questo account, qualunque sia la tua scelta qui."
   }
 }

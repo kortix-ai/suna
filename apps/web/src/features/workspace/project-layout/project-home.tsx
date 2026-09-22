@@ -7,7 +7,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
+import { OptimisticTurn } from '@/features/session/optimistic-turn';
 import type { AttachedFile } from '@/features/session/session-chat-input';
+import {
+  buildOptimisticPromptTextWithUploads,
+  sentAttachmentsOf,
+} from '@/features/session/uploaded-file-refs';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
@@ -65,6 +70,25 @@ export function ProjectHome({
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [prefill, setPrefill] = useState<{ text: string; id: number } | null>(null);
+  /**
+   * The message this screen has just sent, painted here until the navigation
+   * lands — the "fake send" every other composer in the app already does.
+   *
+   * Send on this screen used to leave the sentence sitting in a locked box
+   * behind a spinner for the whole create round trip, because the composer was
+   * told not to clear (`clearOnSend={false}`, for the attachment previews the
+   * instant shell needs). Measured on localhost: 1165ms from click to the
+   * session route, `POST .../sessions` alone 908ms, all of it with nothing on
+   * screen to say the message had gone anywhere.
+   *
+   * Cleared only by a REFUSED send. A successful one navigates this component
+   * away, and the instant shell re-paints this same `OptimisticTurn` on the
+   * other side (`useFirstPromptPreviewStore`), so the bubble never blinks out.
+   */
+  const [sentPreview, setSentPreview] = useState<{
+    text: string;
+    files: AttachedFile[] | undefined;
+  } | null>(null);
 
   // The sandbox TEMPLATE catalog, not live sandbox health (that is
   // `useSandboxHealth`, its own key and its own polling). Changed only by this
@@ -123,25 +147,37 @@ export function ProjectHome({
     : null;
 
   const handleSend = useCallback(
-    (
+    async (
       text: string,
       files: AttachedFile[] | undefined,
       options: ComposerOptions,
       attachments?: AttachmentSubmission,
     ) => {
-      return onSend(
-        text,
-        files,
-        {
-          ...options,
-          ...(metaSelected
-            ? { sandbox_slug: META_SANDBOX_SLUG }
-            : selectedSlug
-              ? { sandbox_slug: selectedSlug }
-              : {}),
-        },
-        attachments,
-      );
+      // BEFORE the host runs, in the same tick as the composer's own clear, so
+      // the message is on screen from the frame the box empties.
+      setSentPreview({ text, files });
+      try {
+        await onSend(
+          text,
+          files,
+          {
+            ...options,
+            ...(metaSelected
+              ? { sandbox_slug: META_SANDBOX_SLUG }
+              : selectedSlug
+                ? { sandbox_slug: selectedSlug }
+                : {}),
+          },
+          attachments,
+        );
+      } catch (error) {
+        // Refused: no session was created and nothing navigated. Take the
+        // bubble back and rethrow, so the composer restores the draft and the
+        // uploads that produced it (`planFailedSendRecovery`) — which it can,
+        // because it never left its slot. See the layout note below.
+        setSentPreview(null);
+        throw error;
+      }
     },
     [metaSelected, selectedSlug, onSend],
   );
@@ -212,15 +248,50 @@ export function ProjectHome({
         }
       : undefined;
 
+
   return (
     <div className="bg-background relative flex min-h-0 flex-1 flex-col overflow-hidden lg:px-4.5">
-      <ProjectHomeWallpaper />
+      {/* Gone the moment a message is sent, exactly as the instant session
+          shell drops its own copy at the same instant: a thread sits on a solid
+          background, and leaving the dots up here would make the navigation a
+          visible dotted → plain swap under a bubble that otherwise does not
+          move. */}
+      {!sentPreview && <ProjectHomeWallpaper />}
       <SidebarToggle placement="floating" />
       <AccessRequestsBell count={pendingAccessCount} to={accessRequestsTo} />
 
+      {/* ONE layout, in both states, and that is the constraint — not a
+          preference. The composer owns its upload registry
+          (`usePromptAttachments`, composer.tsx), its editor, its draft and its
+          submit latch, so moving it to a different parent unmounts it and
+          takes all of that with it. A version of this screen that docked the
+          composer under the thread did exactly that, and the e2e journey
+          caught what it cost: after a refused send the tray showed its three
+          tiles and the text was back, but the handles behind them were gone,
+          so the next Send silently did nothing
+          (`captureAttachmentSubmission` no longer recognised the ids).
+
+          So the turn takes the HEADING's slot and everything else holds still.
+          The bubble travels once, at the navigation, when the instant shell
+          re-paints it at the top of a real thread. */}
       <ProjectHomeWelcomeBody
         projectId={projectId}
         onPickSuggestion={applySuggestion}
+        sentTurn={
+          sentPreview ? (
+            // The instant shell's own component, given the same inputs it gives
+            // itself, so the bubble is identical across the navigation — see
+            // `OptimisticTurn`'s doc comment on why there is exactly one of
+            // these in the codebase. `deferPreview`: there is no sandbox yet,
+            // so a file mention has no path to resolve and renders as a static
+            // chip.
+            <OptimisticTurn
+              text={buildOptimisticPromptTextWithUploads(sentPreview.text, sentPreview.files)}
+              attachments={sentPreview.files ? sentAttachmentsOf(sentPreview.files) : undefined}
+              deferPreview
+            />
+          ) : undefined
+        }
         composer={
           <ComposerChatInput
             onSend={handleSend}
@@ -232,12 +303,17 @@ export function ProjectHome({
             // semantics, which leave the composer with no button at all here).
             isSending={busy}
             disabled={busy}
-            // The home composer navigates to the new session on send — don't
-            // clear it first (that only flashes an empty box before the route
-            // swaps, and would drop the text on a gated send). The message
-            // rides across via the start-stash and reappears as the instant
-            // shell's optimistic turn.
-            clearOnSend={false}
+            // Clear the box, revoke nothing (`composer-reset.ts`). The text
+            // has to LEAVE the composer at the keypress — it used to sit there
+            // locked under the spinner for the whole create round trip, which
+            // reads as a send that did not happen — while the local object URLs
+            // behind any attachments stay alive, because the instant shell
+            // draws its previews from those same URLs after the navigation.
+            // The sentence itself is not lost by clearing: it is already in
+            // this send's closure, in the durable `create.pending_prompt` row,
+            // and in `sentPreview` above; a refused send puts it back in the
+            // editor (`planFailedSendRecovery`).
+            clearOnSend="text-only"
             autoFocus
             // A hero composer floating mid-page has no column for a second
             // rail to align to, so the attach/agent/context controls ride on

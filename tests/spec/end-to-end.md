@@ -217,6 +217,8 @@ The human-in-the-loop surface an agent's write/destructive tool calls gate on, p
 
 `IAM-39` Every access screen reads `role_assignments`, so it can no longer disagree with the gate that runs a moment later: `GET /projects/:id/access` (members, `group_access`, `custom_role_policies`, `resource_grants`, `effective_project_role`/`effective_source`), `GET /accounts/:id/members` (`account_role`, `explicit_project_count`, `projects[]`), `GET …/iam/members/:userId/project-access`, `GET …/iam/policies`, `GET …/iam/resource-grants`, `GET /projects` (`effective_role`), `GET …/iam/groups/:gid/project-grants`, `GET /projects/:id/group-grants`, `GET /projects/:id/resource-grants`. Response shapes are unchanged. TWO changes are deliberate and observable: (a) an EXPIRED grant is no longer listed — the legacy queries filtered nothing, so a lapsed grant kept rendering as live access and kept counting towards the effective role, while the engine had already stopped honouring it; (b) `policy_id` and `grant_id` ARE the assignment id — one id space, because `iam_policies` and `iam_resource_grants` are views whose primary key is `role_assignments.assignment_id`. A genuinely pre-cutover id (held by a page rendered before the migration ran) no longer resolves and gets a 404; reloading the page yields the current id.
 
+`IAM-40` **Account session oversight** — `GET/PATCH …/iam/session-oversight`. One account policy (`accounts.admins_see_all_sessions`, default off) that lets account owners and admins open EVERY session in the account, members' private and restricted sessions included. `GET` (`ACCOUNT_READ`, any member) → `{enabled, can_change}`; `can_change` is true only for an account owner. `PATCH {enabled}` needs `ACCOUNT_WRITE` AND the owner role: an admin → 403 `code:account_owner_required`, a member → 403, a body without a boolean → 400, and none of them change the read-back. While off, an admin opening a member's private session → 404 and `scope=project` omits it. While on, the admin → 200 on `GET /projects/:id/sessions/:sid`, the `scope=project` inventory lists it, the default `visible` list still omits it (the sidebar is not flooded), and a plain member still → 404. The audit log records `iam.session_oversight.enable` and one `project.admin_oversight_session_read` for the opened session (deduped to one per admin+session per hour). Turning it off restores the 404 within the 15 s IAM cache window. Session-bound agent/sandbox credentials never inherit oversight (unit-pinned in `unit-connector-share.test.ts`).
+
 ---
 
 ## 6. Projects — CRUD + access
@@ -347,7 +349,7 @@ URLs, signed download URLs, or upload handles.
 ## 8. Sandbox lifecycle + snapshots
 
 `SNAP-1` `GET /projects/:id/snapshots` → `read` → list `kortix-snap-…` images per baseRef. **Session boot requires a `ready` snapshot of baseRef** (no shared fallback → session `failed` if none).
-`SNAP-2` `POST /projects/:id/snapshots/rebuild` → **`manage` AND account `ACCOUNT_WRITE` (owner/admin)** → rebuild image. A project `manager` who is not owner/admin → 403; M_EDITOR → 403.
+`SNAP-2` `POST /projects/:id/snapshots/rebuild` → **`manage` AND account `ACCOUNT_WRITE` (owner/admin)** → rebuild image: `202` with the started providers, or `409 SNAPSHOT_IN_USE` with `in_use > 0` when running sandboxes still use the image (Platinum refuses that delete; Daytona does not). Any other provider failure is `503` and fails the flow. A project `manager` who is not owner/admin → 403; M_EDITOR → 403.
 **No standalone sandbox create/stop routes exist.** Sandbox create/start is implicit
 on session create (`provisionSessionSandbox`), asserted transitively by `RUN-1` /
 `GOLD-1`. Manual stop = `SESS-12` (pauses in place, resumable); destructive teardown =
@@ -1061,7 +1063,7 @@ These contracts use product IDs. They replace the old route-coverage bucket IDs.
 `PROJ-27` A project member reads model choices and a project manager sets, reads, and clears model defaults.
 `PROJ-28` The Suna migration eligibility, status, and start routes enforce authentication and current migration state.
 `PROJ-30` A project manager changes the default agent. Invalid agents and unauthorized callers are rejected.
-`PROJ-31` A project manager changes the sandbox provider. Invalid transitions and unauthorized callers are rejected.
+`PROJ-31` A project manager changes the sandbox provider. The pin target comes from the project's `available_sandbox_providers` (the deployment's enabled set), never from a hard-coded provider. Unknown providers, known but disabled providers, and unauthorized callers are rejected.
 `PROJ-32` A project member reads the provider catalog. Unknown projects and non-members are rejected.
 `PROJ-33` A project member reads the current sandbox-provider transition state.
 `PROJ-35` A project manager changes model enablement and reads back the persisted result.

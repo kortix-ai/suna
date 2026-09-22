@@ -53,6 +53,7 @@ import { KeyRulesCard } from '@/components/iam/key-rules-card';
 import { ManagedGitNotice } from '@/components/iam/managed-git-notice';
 import { MemberAccessPanel } from '@/components/iam/member-access-panel';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
+import { SessionOversightCard } from '@/components/iam/session-oversight-card';
 import { OAuthAppsCard } from '@/components/iam/oauth-apps-card';
 import { RolesTab } from '@/components/iam/roles-tab';
 import { ScimCard } from '@/components/iam/scim-card';
@@ -573,6 +574,10 @@ export function AccountHubContent() {
                 <SettingsRowGroup>
                   <MfaRequiredCard accountId={account.account_id} canManage={canWriteAccount} />
                   <SessionControlsCard accountId={account.account_id} canManage={canWriteAccount} />
+                  {/* Who may open whose work. Owner-only toggle; the row
+                      reads `can_change` from the API and explains itself to
+                      everyone else. See `session-oversight-card.tsx`. */}
+                  <SessionOversightCard accountId={account.account_id} />
                 </SettingsRowGroup>
                 <AccountSessionsPanel accountId={account.account_id} canManage={canWriteAccount} />
               </SettingsGroup>

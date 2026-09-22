@@ -21,6 +21,28 @@ linked, not inlined.
 
 ## Register
 
+### Never write back a JSONB column you read earlier: merge in SQL (2026-09-22)
+
+**Rule:** A writer of shared JSONB state (`session_sandboxes.metadata`) never
+builds `{ ...row.metadata, key }` from a read and writes the object back. Merge
+with `coalesce(metadata,'{}'::jsonb) || $patch::jsonb`, strip with the literal
+`-` chain from `stripMetadataKeys`, and put "only if unset" checks in the
+WHERE clause, which Postgres re-evaluates on the locked row. **Trigger
+surface:** any `.update(sessionSandboxes).set({ metadata: … })`, and any new
+lifecycle fence stored in metadata.
+
+**Incident:** SESS-9 failed on every PR preview (restart stuck in
+`provisioning` ~350 s). `pinSandboxEgressIp` read metadata; a restart claimed
+the row ~0.2 s later (`runtimeRestartId`); the pin wrote its stale copy back.
+`ownsRestart()` then returned false and the detached restart returned with no
+log line. The audit found the same shape in the restart claim itself and two
+`/start` clock writers. **Enforcers:** `e2e-sandbox-metadata-race.test.ts`
+(real PostgreSQL row-lock interleaving; runs only with `TEST_DATABASE_URL` —
+not in CI yet, which is the open TODO), `sandbox-egress-pin.test.ts` (hermetic
+shape guard), and the `restart abandoned: lost the restart claim` warning.
+Remaining whole-object writers: `deleteSession`, the provisioning IIFE in
+`session-sandbox.ts`, and the recovery fences in `runtime-identity.ts`.
+
 ### Account membership is not project access — a check keyed on account ownership skips project roles (2026-09-22)
 
 **When:** writing any credential check that compares a token's account with a
@@ -7615,3 +7637,28 @@ and the App installation <id> is ignored` once per process
 Procedure and verified installation ids: `docs/runbooks/managed-git-config.md`.
 Owed: an alert on the provision 5xx ratio (the stream route answers `200` with
 an `error` frame, so a status alert alone misses it).
+
+### 2026-09-22 — A provider fan-out that folds refusals into a silent 503
+
+**Near-miss.** PR previews moved to Platinum-only sessions (#7482). The first
+tested run (35708105773) failed SNAP-2: `POST /v1/projects/:id/snapshots/rebuild`
+answered `503 Could not start a rebuild on any sandbox provider` with no log
+line. Platinum refuses `DELETE /v1/templates/:id` while any sandbox pins the
+template (`409 template_in_use`, reproduced live with a probe sandbox). Daytona
+deletes a snapshot under live sandboxes. The shared default image is in use
+whenever a session runs, so Rebuild failed every time on a Platinum-only
+deployment. The same run also exposed two tests that passed only because
+Daytona answered a fabricated `external_id` non-definitively (spec 26) or was
+the hard-coded pin target (PROJ-31, spec 12).
+
+**Rule.** A route that fans an action out to providers and folds the results
+into one status must log each provider's error, and must map an expected
+provider state (in use, not found) to a typed error with its own status. A
+generic 5xx means "a provider failed", never "the provider said no". A test
+fixture must never depend on a provider's answer about an id the test made up;
+put the state the test needs in the fixture, and read enabled providers from
+the API instead of naming one.
+
+**Enforcement.** `SnapshotInUseError` + `rebuildFailureResponse`
+(`provider-actions.test.ts`, `platinum-list-pagination.test.ts`); SNAP-2
+asserts `202` or `409 SNAPSHOT_IN_USE` and fails on `503`. PR #7491.

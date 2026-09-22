@@ -549,3 +549,56 @@ describe('isSessionTargetVisibleToCaller — the binding, not the login id', () 
     ).toBe(true);
   });
 });
+
+/**
+ * Account session oversight: an account-level flag (owner-controlled) that lets
+ * account owners/admins open EVERY session in the account, private ones
+ * included. `accountSessionOversight` is the already-resolved verdict (flag ON
+ * and caller is an account owner/admin); the predicate only decides where it
+ * may apply.
+ */
+describe('account session oversight', () => {
+  const HUMAN = { origin: 'user', sessionId: 'sess-1', callerSessionId: 'supabase-login', boundCredentialSessionId: null };
+
+  test('oversight opens another member\'s private session', () => {
+    expect(isProjectSessionVisibleTo(
+      'private', BOB, [], { userId: ALICE, groupIds: [] }, HUMAN,
+      { metadata: {}, canManageProject: true, accountSessionOversight: true },
+    )).toBe(true);
+  });
+
+  test('oversight opens a restricted session the admin is not granted', () => {
+    expect(isProjectSessionVisibleTo(
+      'restricted', BOB, [{ principalType: 'member', principalId: 'user-carol' }],
+      { userId: ALICE, groupIds: [] }, HUMAN,
+      { metadata: {}, canManageProject: true, accountSessionOversight: true },
+    )).toBe(true);
+  });
+
+  test('without oversight a private session stays owner-only, even for a manager', () => {
+    expect(isProjectSessionVisibleTo(
+      'private', BOB, [], { userId: ALICE, groupIds: [] }, HUMAN,
+      { metadata: {}, canManageProject: true, accountSessionOversight: false },
+    )).toBe(false);
+    expect(isProjectSessionVisibleTo(
+      'private', BOB, [], { userId: ALICE, groupIds: [] }, HUMAN,
+      { metadata: {}, canManageProject: true },
+    )).toBe(false);
+  });
+
+  test('a session-bound credential never inherits oversight', () => {
+    expect(isProjectSessionVisibleTo(
+      'private', BOB, [], { userId: ALICE, groupIds: [] },
+      { origin: 'user', sessionId: 'sess-1', callerSessionId: 'sess-other', boundCredentialSessionId: 'sess-other' },
+      { metadata: {}, canManageProject: true, accountSessionOversight: true },
+    )).toBe(false);
+  });
+
+  test('oversight does not bypass the sibling backend-session narrowing', () => {
+    expect(isProjectSessionVisibleTo(
+      'private', BOB, [], { userId: ALICE, groupIds: [] },
+      { origin: 'backend', sessionId: 'sess-1', callerSessionId: 'sess-2', boundCredentialSessionId: 'sess-2' },
+      { metadata: {}, canManageProject: true, accountSessionOversight: true },
+    )).toBe(false);
+  });
+});

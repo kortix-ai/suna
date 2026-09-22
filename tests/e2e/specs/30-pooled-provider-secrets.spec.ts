@@ -404,6 +404,26 @@ test.describe('30 — pooled provider secrets', () => {
       await expect(page.getByRole('alert').filter({ hasText: 'Selected key access changed' })).toBeVisible();
       await expect(page.getByRole('checkbox', { name: 'Backup test key for shared research and development sessions' })).not.toBeChecked();
       rejectSave = false;
+      // The forced 403 also raises the global "Failed to perform action" toast.
+      // At 1440x900 that toast sits on top of Save changes and swallows the
+      // click for its whole lifetime (preview runs 35707181258, 35709014601,
+      // 35709807756, 35708105773: `<section aria-label="Notifications alt+T">
+      // subtree intercepts pointer events`). The inline alert above is the
+      // asserted error surface, so dismiss the toast before retrying the save.
+      for (const close of await page.getByRole('button', { name: 'Close notification' }).all()) {
+        await close.click().catch(() => {});
+      }
+      await expect(page.getByRole('region', { name: /Notifications/ }).getByRole('listitem')).toHaveCount(0);
+      // A click on the toast is outside the popover, so Radix may dismiss it.
+      // The unsaved selection survives a close (asserted above); reopen it.
+      if (!(await saveChanges.isVisible().catch(() => false))) {
+        if (!(await overrides.isVisible().catch(() => false))) {
+          await page.getByRole('button', { name: 'Session overrides' }).click();
+          await expect(overrides).toBeVisible();
+        }
+        await page.getByRole('button', { name: /Provider keys/ }).click();
+      }
+      await expect(page.getByRole('checkbox', { name: 'Backup test key for shared research and development sessions' })).not.toBeChecked();
       const saveResponse = page.waitForResponse((response) => response.request().method() === 'PUT'
         && response.url().endsWith(`${poolPath}/anthropic`) && response.status() === 200);
       await saveChanges.click();

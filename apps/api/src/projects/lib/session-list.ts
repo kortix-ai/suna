@@ -38,6 +38,7 @@ import {
   type ShareSubject,
 } from '../../connectors/share';
 import { db } from '../../shared/db';
+import { hasAccountSessionOversight } from '../../iam/session-oversight';
 
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq, inArray, lt, or } from 'drizzle-orm';
@@ -130,6 +131,13 @@ export async function loadProjectSessionInventory(input: {
 
   // The manager-only scope is refused before any row is read: an unauthorized
   // caller must not cost a page scan.
+  // Oversight widens only the manager inventory; see selectSessionRowsForViewer.
+  const accountSessionOversight =
+    input.scope === 'project' &&
+    canManageProject &&
+    input.boundCredentialSessionId === null &&
+    (await hasAccountSessionOversight(input.userId, input.accountId));
+
   if (input.scope === 'project' && !canManageProject) {
     return {
       authorized: false,
@@ -237,6 +245,7 @@ export async function loadProjectSessionInventory(input: {
       runtimeStatusBySession: chunkRuntime,
       callerSessionId: input.boundCredentialSessionId,
       boundCredentialSessionId: input.boundCredentialSessionId,
+      accountSessionOversight,
     });
 
     for (const item of selected.items) {

@@ -79,6 +79,44 @@ under the trigger agent's identity. Project managers govern those. Set the
 policy for all of them on the trigger itself, under **Session access** on the
 trigger — saving there also updates the sessions that trigger already created.
 
+### Admins can open every session
+
+An account owner can let account owners and admins open **every** session in
+the account, including sessions members keep private. Turn it on under
+**Account → Settings → Security → Admins can open every session**. It is off by
+default.
+
+- **Only an account owner changes it.** An admin sees the switch but cannot
+  flip it, so no admin can grant themselves access to everyone's work.
+- **Admins find these sessions on the project's Sessions page.** The sidebar
+  still lists only the sessions you started or that are shared with you.
+- **Access is full access.** An admin opens, reads, and continues the session,
+  the same as a session shared with the whole project.
+- **Members see it.** While it is on, the Session access dialog says that
+  owners and admins can open every session.
+- **Everything is audited.** Each flip is recorded as
+  `iam.session_oversight.enable` or `iam.session_oversight.disable`, and each
+  session an admin opens through it as `project.admin_oversight_session_read`
+  (at most once per admin and session per hour).
+- Agent and sandbox tokens never gain this access, even when an admin launched
+  them.
+
+### Find a session by owner or access
+
+The project's **Sessions** page shows each session's owner and access on its
+row: the owner's avatar and name (**You** for your own), then an icon for who
+can open it: a lock for **Only the owner**, people for **Specific people**, a
+globe for **Whole project**.
+
+Open **Filter** on the Sessions page to narrow the list:
+
+- **Owner** — one entry per person, with a count.
+- **Access** — Only the owner, Specific people, or Whole project.
+- **Grouping → Owner** — one section per person, yours first.
+
+The filters combine with **Status**, **Source**, and search. **Reset** clears
+them all.
+
 :::warning[A session keeps its owner]
 Removing someone from the account does not move their sessions to anyone else.
 Their access policy freezes as it was. A project manager can still stop or
