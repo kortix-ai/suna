@@ -540,6 +540,13 @@
       "when": 1790063929219,
       "tag": "20260922075849_admins_see_all_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1790085063114,
+      "tag": "20260922135103_agent_session_on_behalf_of",
+      "breakpoints": true
     }
   ]
 }

@@ -2809,6 +2809,16 @@ export const accountTokens = kortixSchema.table(
         onDelete: 'cascade',
       },
     ),
+    /** The human this agent-session token acts ON BEHALF OF (spec
+     *  docs/specs/2026-09-22-agents-as-principals.md §2.3). Set at mint to the
+     *  launching human for a human-initiated session; NULL for an unattended
+     *  run (trigger, cron, webhook, channel without a linked user, owner
+     *  fallback). It decides ONLY that human's personal resources, never the
+     *  agent's shared authority. The first prompt from any other human clears
+     *  it permanently for the session (r8 prompt route). FK to auth.users
+     *  (ON DELETE SET NULL) is added NOT VALID by the migration; auth.users is
+     *  outside this Drizzle schema. */
+    onBehalfOfUserId: uuid('on_behalf_of_user_id'),
   },
   (table) => [
     uniqueIndex('idx_account_tokens_public_key').on(table.publicKey),
