@@ -158,9 +158,11 @@ export default function ProjectsTab() {
   const handleCreated = React.useCallback(
     (project: KortixProject) => {
       setNewProjectOpen(false);
+      // The sheet can create in another account: the list follows the project.
+      if (project.account_id) setSelectedAccountId(project.account_id);
       router.replace(`/projects/${project.project_id}`);
     },
-    [router],
+    [router, setSelectedAccountId],
   );
 
   const onRefresh = React.useCallback(async () => {
@@ -358,6 +360,7 @@ export default function ProjectsTab() {
         <NewProjectSheet
           open
           accountId={activeAccountId}
+          accounts={accountsQuery.data ?? []}
           onClose={() => setNewProjectOpen(false)}
           onCreated={handleCreated}
         />

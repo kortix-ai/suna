@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { KortixAccount, KortixProject } from '@/lib/projects/projects-client';
-import { orderLandingAccounts, resolveLandingProject } from './landing';
+import { creatableAccounts, orderLandingAccounts, resolveLandingProject } from './landing';
 
 function account(account_id: string, account_role: string): KortixAccount {
   return { account_id, account_role } as KortixAccount;
@@ -22,6 +22,15 @@ function lists(byAccount: Record<string, KortixProject[] | Error>) {
     return value ?? [];
   };
 }
+
+describe('creatableAccounts', () => {
+  test('keeps owner and admin accounts in order, drops member-only accounts', () => {
+    expect(creatableAccounts([member, personal, team]).map((a) => a.account_id)).toEqual(['acc-personal', 'acc-team']);
+  });
+  test('an account with no role is not creatable', () => {
+    expect(creatableAccounts([{ account_id: 'x' } as KortixAccount])).toEqual([]);
+  });
+});
 
 describe('orderLandingAccounts', () => {
   test('selected account first, then owned or admin accounts, then member-only accounts', () => {

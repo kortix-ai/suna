@@ -1,21 +1,39 @@
 /**
- * NewProjectSheet — create a project, ported from web's ProjectCreateModal.
+ * NewProjectSheet — create a project (web's ProjectCreateModal), in the
+ * app's sheet shape (Jay, 2026-09-22): `KortixBottomSheetModal`, a
+ * `SheetTitleRow`, `SheetTextInput`, `SettingsGroup` picker rows, one `lg`
+ * pill. No description lines, no info cards, no Cancel button (the title
+ * row's X closes).
  *
- * Two modes (same as web):
- *  - managed: provision a private Kortix-managed repo (name; starter skills always included)
- *  - github:  import an existing GitHub repo via the GitHub App installation
+ * Three views, one sheet:
+ *  - New project (default): the name field, an Account row (only with two or
+ *    more accounts the user can create in — web's `AccountPicker` rule), an
+ *    "Import from GitHub" row, and Create project. A managed project always
+ *    gets the starter skills.
+ *  - Account: pushed in; picker rows of the creatable accounts. A tap picks
+ *    and returns.
+ *  - Import from GitHub: pushed in over the first view (`sheet-push`, the
+ *    Secrets sheet's motion), Back in the close button's slot. GitHub
+ *    account rows, a repository search, the repository rows, an optional
+ *    name, and Import repository. With no GitHub App installation: a
+ *    Connect GitHub pill that opens the install page in the browser.
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Pressable, ActivityIndicator, Linking } from 'react-native';
+import { Linking, View } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
-import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SparkleIcon as Sparkles, GithubLogoIcon as Github, PlusIcon as Plus, CheckIcon as Check, GitBranchIcon as GitBranch, ArrowSquareOutIcon as ExternalLink } from '@/lib/icons';
+
+import { GithubLogoIcon, PlusIcon, UserIcon } from '@/lib/icons';
+import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
-import { Icon } from '@/components/ui/icon';
+import { Avatar } from '@/components/kortix/avatar';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { SheetTextInput } from '@/components/kortix/SheetInput';
-import { useThemeColors } from '@/lib/theme-colors';
+import { KortixBottomSheetModal, SheetTitleRow } from '@/components/kortix/sheet';
+import { POP_IN, PUSH_IN, SheetBackButton } from '@/components/kortix/sheet-push';
 import { haptics } from '@/lib/haptics';
 import { useToast } from '@/components/kortix/toast-provider';
 import { starterTemplateForManagedProject } from './project-starter-template';
@@ -25,53 +43,56 @@ import {
   useLinkRepository,
   useProvisionProject,
 } from '@/lib/projects/hooks';
-import type { KortixProject } from '@/lib/projects/projects-client';
-import { KortixBottomSheetModal } from '@/components/kortix/sheet';
-import { THEME, withAlpha } from '@/lib/utils/theme';
+import { creatableAccounts } from '@/lib/projects/landing';
+import type { KortixAccount, KortixProject } from '@/lib/projects/projects-client';
 
 // Mirrors the API's PROJECT_NAME_MAX_LENGTH (projects.name is varchar(255)).
 const PROJECT_NAME_MAX_LENGTH = 120;
 
 interface NewProjectSheetProps {
   open: boolean;
+  /** The account the sheet opens on: the Projects page's active account. */
   accountId: string | null;
+  /** Every account of the user. The sheet offers the ones a project can be created in. */
+  accounts: KortixAccount[];
   onClose: () => void;
   onCreated: (project: KortixProject) => void;
 }
 
-export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProjectSheetProps) {
+export function NewProjectSheet({ open, accountId: initialAccountId, accounts, onClose, onCreated }: NewProjectSheetProps) {
   const sheetRef = useRef<BottomSheetModal>(null);
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
-  const theme = useThemeColors();
   const toast = useToast();
 
-  const [mode, setMode] = useState<'managed' | 'github'>('managed');
+  const [view, setView] = useState<'managed' | 'account' | 'github'>('managed');
+  // The first view slides back in only after another view was open.
+  const [returning, setReturning] = useState(false);
+  const [pickedAccountId, setPickedAccountId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [selectedInstallationId, setSelectedInstallationId] = useState('');
   const [selectedRepo, setSelectedRepo] = useState('');
   const [repoSearch, setRepoSearch] = useState('');
 
+  const creatable = useMemo(() => creatableAccounts(accounts), [accounts]);
+  // The pick wins; else the account the sheet opened on, when a project can
+  // be created in it; else the first creatable account.
+  const accountId =
+    pickedAccountId ??
+    (creatable.some((a) => a.account_id === initialAccountId) ? initialAccountId : (creatable[0]?.account_id ?? null));
+  const account = creatable.find((a) => a.account_id === accountId) ?? null;
+
   const provision = useProvisionProject();
   const link = useLinkRepository();
-  const installationsQuery = useGitHubInstallations(accountId, open && mode === 'github');
-  const reposQuery = useGitHubRepositories(accountId, selectedInstallationId || null, open && mode === 'github');
+  const github = open && view === 'github';
+  const installationsQuery = useGitHubInstallations(accountId, github);
+  const reposQuery = useGitHubRepositories(accountId, selectedInstallationId || null, github);
 
   const installations = useMemo(
     () => installationsQuery.data?.installations ?? [],
-    [installationsQuery.data?.installations],
+    [installationsQuery.data?.installations]
   );
   const repos = reposQuery.data?.repositories ?? [];
   const submitting = provision.isPending || link.isPending;
-
-  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
-  const muted = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
-  const border = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06);
-  const fieldBg = isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04);
-  const amberBg = isDark ? withAlpha(THEME.accent.orange, 0.10) : withAlpha(THEME.accent.orange, 0.08);
-  const amberBorder = isDark ? withAlpha(THEME.accent.orange, 0.28) : withAlpha(THEME.accent.orange, 0.30);
-  const amberIcon = THEME.accent.orange;
 
   useEffect(() => {
     if (!open) {
@@ -84,19 +105,21 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
     return () => cancelAnimationFrame(frame);
   }, [open]);
 
-  // Default to the first installation when entering GitHub mode.
+  // Default to the first installation when entering the GitHub view.
   useEffect(() => {
-    if (!open || mode !== 'github') return;
+    if (!github) return;
     if (selectedInstallationId && installations.some((i) => i.installation_id === selectedInstallationId)) return;
     setSelectedInstallationId(installations[0]?.installation_id ?? '');
-  }, [installations, mode, open, selectedInstallationId]);
+  }, [github, installations, selectedInstallationId]);
 
   useEffect(() => {
     setSelectedRepo('');
   }, [selectedInstallationId]);
 
   const reset = useCallback(() => {
-    setMode('managed');
+    setView('managed');
+    setReturning(false);
+    setPickedAccountId(null);
     setName('');
     setSelectedInstallationId('');
     setSelectedRepo('');
@@ -108,6 +131,26 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
     onClose();
   }, [reset, onClose]);
 
+  const close = useCallback(() => {
+    haptics.tap();
+    sheetRef.current?.dismiss();
+  }, []);
+
+  const openGitHub = useCallback(() => {
+    haptics.tap();
+    setView('github');
+  }, []);
+
+  const openAccount = useCallback(() => {
+    haptics.tap();
+    setView('account');
+  }, []);
+
+  const back = useCallback(() => {
+    haptics.tap();
+    setReturning(true);
+    setView('managed');
+  }, []);
 
   const handleCreateManaged = useCallback(async () => {
     if (!accountId) return toast.error('Select an account first');
@@ -157,6 +200,7 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
 
   const handleConnectGitHub = useCallback(async () => {
     try {
+      haptics.tap();
       const result = await installationsQuery.refetch();
       const url = result.data?.install_url;
       if (!url) {
@@ -173,283 +217,187 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
     const q = repoSearch.trim().toLowerCase();
     if (!q) return repos;
     return repos.filter((r) =>
-      [r.full_name, r.name, r.default_branch, r.description ?? ''].join(' ').toLowerCase().includes(q),
+      [r.full_name, r.name, r.default_branch, r.description ?? ''].join(' ').toLowerCase().includes(q)
     );
   }, [repos, repoSearch]);
+
+  const canCreate = !submitting && !!accountId && name.trim().length > 0;
+  const canImport = !submitting && !!accountId && !!selectedInstallationId && !!selectedRepo;
+  const contentStyle = { paddingHorizontal: 16, paddingTop: 4, paddingBottom: insets.bottom + 24, gap: 16 };
 
   return (
     <KortixBottomSheetModal
       ref={sheetRef}
-      snapPoints={['88%']}
+      snapPoints={['70%']}
+      enableDynamicSizing={false}
       enablePanDownToClose
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"
       android_keyboardInputMode="adjustResize"
-      onDismiss={handleDismiss}
-    >
-      <BottomSheetScrollView
-        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: insets.bottom + 24 }}
-        keyboardShouldPersistTaps="handled"
-      >
-        <Text style={{ fontSize: 20, fontFamily: 'Roobert-SemiBold', color: fg, marginBottom: 2 }}>New project</Text>
-        <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted, marginBottom: 20, lineHeight: 18 }}>
-          A dedicated space for one company, product, or idea — set up for you.
-        </Text>
-
-        {mode === 'managed' ? (
-          <>
-            {/* Managed info */}
-            <View style={{ flexDirection: 'row', gap: 12, padding: 14, borderRadius: 14, backgroundColor: fieldBg, marginBottom: 18 }}>
-              <Icon as={Sparkles} size={18} color={theme.primary} style={{ marginTop: 1 }} />
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>Start fresh</Text>
-                <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted, lineHeight: 18, marginTop: 2 }}>
-                  We set up your project with starter skills, ready to use. Nothing to configure.
-                </Text>
-              </View>
-            </View>
-
-            <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg, marginBottom: 8 }}>Project name</Text>
-            <SheetTextInput
-              value={name}
-              onChangeText={setName}
-              placeholder="my-agi-company"
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={{ marginBottom: 16 }}
-            />
-
-            {/* Every project ships with the full Kortix starter skill kit. */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14, borderWidth: 1, borderColor: border, marginBottom: 20 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>Starter skills included</Text>
-                <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted, marginTop: 2, lineHeight: 16 }}>
-                  Comes with ready-made skills for research, writing, documents, slides, data, and the web.
-                </Text>
-              </View>
-            </View>
-
-            <Pressable onPress={() => setMode('github')} disabled={submitting} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginBottom: 20 }}>
-              <Icon as={Github} size={14} color={muted} />
-              <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: muted }}>Already have code on GitHub? Import it</Text>
-            </Pressable>
-
-            <PrimaryButton
-              label="Create project"
-              icon={<Icon as={Plus} size={18} color={theme.primaryForeground} />}
-              loading={provision.isPending}
-              disabled={submitting || !accountId}
-              onPress={handleCreateManaged}
-              theme={theme}
-            />
-            <Pressable
-              onPress={() => sheetRef.current?.dismiss()}
-              disabled={submitting}
-              style={{ height: 48, alignItems: 'center', justifyContent: 'center', marginTop: 6 }}
-            >
-              <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: muted }}>Cancel</Text>
-            </Pressable>
-          </>
-        ) : (
-          <>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <Text style={{ fontSize: 15, fontFamily: 'Roobert-SemiBold', color: fg }}>Import GitHub repository</Text>
-              <Pressable onPress={() => setMode('managed')} disabled={submitting} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Icon as={GitBranch} size={14} color={muted} />
-                <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: muted }}>Managed repo</Text>
-              </Pressable>
-            </View>
-
+      onDismiss={handleDismiss}>
+      {view === 'account' ? (
+        <Animated.View key="account" entering={PUSH_IN} style={{ flex: 1 }}>
+          <SheetTitleRow title="Account" onClose={close} leading={<SheetBackButton onPress={back} />} />
+          <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
+            <SettingsGroup className="bg-secondary">
+              {creatable.map((a) => (
+                <SettingsRow
+                  key={a.account_id}
+                  leading={<Avatar variant="custom" size={28} fallbackText={a.name} />}
+                  label={a.name}
+                  checked={a.account_id === accountId}
+                  right={null}
+                  onPress={() => {
+                    haptics.selection();
+                    setPickedAccountId(a.account_id);
+                    setReturning(true);
+                    setView('managed');
+                  }}
+                />
+              ))}
+            </SettingsGroup>
+          </BottomSheetScrollView>
+        </Animated.View>
+      ) : view === 'github' ? (
+        <Animated.View key="github" entering={PUSH_IN} style={{ flex: 1 }}>
+          <SheetTitleRow title="Import from GitHub" onClose={close} leading={<SheetBackButton onPress={back} />} />
+          <BottomSheetScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={contentStyle}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}>
             {installationsQuery.isLoading ? (
-              <View style={{ paddingVertical: 28, alignItems: 'center' }}>
-                <ActivityIndicator color={muted} />
+              <View className="items-center py-8">
+                <KortixLoader size="small" />
               </View>
             ) : installations.length === 0 ? (
-              <View
-                style={{
-                  flexDirection: 'row',
-                  gap: 12,
-                  padding: 16,
-                  borderRadius: 16,
-                  borderWidth: 1,
-                  borderColor: amberBorder,
-                  backgroundColor: amberBg,
-                }}
-              >
-                <View
-                  style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: 10,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: isDark ? withAlpha(THEME.accent.orange, 0.16) : withAlpha(THEME.accent.orange, 0.14),
-                  }}
-                >
-                  <Icon as={Github} size={17} color={amberIcon} />
-                </View>
-                <View style={{ flex: 1, alignItems: 'flex-start', gap: 8 }}>
-                  <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>
-                    Connect the Kortix GitHub App
-                  </Text>
-                  <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted, lineHeight: 18 }}>
-                    Kortix uses the GitHub App to list repositories you can import.
-                  </Text>
-                  <Pressable
-                    onPress={handleConnectGitHub}
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 8,
-                      paddingHorizontal: 16,
-                      height: 38,
-                      borderRadius: 9999,
-                      backgroundColor: theme.primary,
-                      marginTop: 2,
-                    }}
-                  >
-                    <Icon as={Github} size={15} color={theme.primaryForeground} />
-                    <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>
-                      Connect
-                    </Text>
-                  </Pressable>
-                </View>
+              <View className="items-center py-8">
+                <Text variant="large">Connect GitHub</Text>
+                <Button size="lg" className="mt-6 rounded-full" onPress={handleConnectGitHub}>
+                  <Text>Connect GitHub</Text>
+                </Button>
               </View>
             ) : (
               <>
-                {/* Installation chips */}
-                {installations.length > 1 && (
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
-                    {installations.map((inst) => {
-                      const active = inst.installation_id === selectedInstallationId;
-                      return (
-                        <Pressable
-                          key={inst.installation_id ?? inst.owner_login ?? ''}
-                          onPress={() => setSelectedInstallationId(inst.installation_id ?? '')}
-                          style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 9999, borderWidth: 1, borderColor: active ? theme.primary : border }}
-                        >
-                          <Icon as={Github} size={14} color={active ? theme.primary : muted} />
-                          <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: active ? fg : muted }}>{inst.owner_login}</Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                )}
+                <SettingsGroup className="bg-secondary">
+                  {installations.map((inst) => (
+                    <SettingsRow
+                      key={inst.installation_id ?? inst.owner_login ?? ''}
+                      icon={GithubLogoIcon}
+                      label={inst.owner_login ?? 'GitHub'}
+                      checked={inst.installation_id === selectedInstallationId}
+                      right={null}
+                      onPress={
+                        submitting
+                          ? undefined
+                          : () => {
+                              haptics.selection();
+                              setSelectedInstallationId(inst.installation_id ?? '');
+                            }
+                      }
+                    />
+                  ))}
+                  <SettingsRow icon={PlusIcon} label="Add GitHub account" external onPress={handleConnectGitHub} />
+                </SettingsGroup>
 
-                {/* Repo search */}
                 <SheetTextInput
                   value={repoSearch}
                   onChangeText={setRepoSearch}
                   placeholder="Search repositories"
+                  accessibilityLabel="Search repositories"
                   autoCapitalize="none"
                   autoCorrect={false}
-                  style={{ marginBottom: 10 }}
+                  returnKeyType="search"
                 />
 
                 {reposQuery.isLoading ? (
-                  <View style={{ paddingVertical: 24, alignItems: 'center' }}>
-                    <ActivityIndicator color={muted} />
+                  <View className="items-center py-8">
+                    <KortixLoader size="small" />
                   </View>
                 ) : filteredRepos.length === 0 ? (
-                  <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted, textAlign: 'center', paddingVertical: 20 }}>
+                  <Text variant="muted" className="py-5 text-center">
                     No repositories found
                   </Text>
                 ) : (
-                  <View style={{ marginBottom: 16 }}>
-                    {filteredRepos.map((repo) => {
-                      const selected = repo.full_name === selectedRepo;
-                      return (
-                        <Pressable
-                          key={repo.id}
-                          onPress={() => setSelectedRepo(repo.full_name)}
-                          style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, borderColor: selected ? theme.primary : border, marginBottom: 8 }}
-                        >
-                          <Icon as={Check} size={16} color={selected ? theme.primary : 'transparent'} style={{ marginRight: 8 }} />
-                          <View style={{ flex: 1, minWidth: 0 }}>
-                            <Text numberOfLines={1} style={{ fontSize: 14, fontFamily: 'Menlo', color: fg }}>{repo.full_name}</Text>
-                            <Text numberOfLines={1} style={{ fontSize: 12, fontFamily: 'Roobert', color: muted, marginTop: 2 }}>
-                              {repo.default_branch}{repo.private ? ' · Private' : ''}
-                            </Text>
-                          </View>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
+                  <SettingsGroup className="bg-secondary">
+                    {filteredRepos.map((repo) => (
+                      <SettingsRow
+                        key={repo.id}
+                        label={repo.full_name}
+                        description={`${repo.default_branch}${repo.private ? ' · Private' : ''}`}
+                        checked={repo.full_name === selectedRepo}
+                        right={null}
+                        onPress={
+                          submitting
+                            ? undefined
+                            : () => {
+                                haptics.selection();
+                                setSelectedRepo(repo.full_name);
+                              }
+                        }
+                      />
+                    ))}
+                  </SettingsGroup>
                 )}
 
-                <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg, marginBottom: 8 }}>Project name (optional)</Text>
                 <SheetTextInput
                   value={name}
                   onChangeText={setName}
-                  placeholder="Use repository name"
+                  placeholder="Project name (optional)"
+                  accessibilityLabel="Project name"
                   autoCapitalize="none"
                   autoCorrect={false}
-                  style={{ marginBottom: 20 }}
+                  returnKeyType="done"
+                  editable={!submitting}
                 />
 
-                <PrimaryButton
-                  label="Import repo"
-                  icon={<Icon as={Github} size={16} color={theme.primaryForeground} />}
-                  loading={link.isPending}
-                  disabled={submitting || !accountId || !selectedInstallationId || !selectedRepo}
-                  onPress={handleLinkGitHub}
-                  theme={theme}
-                />
-                <Pressable
-                  onPress={() => sheetRef.current?.dismiss()}
-                  disabled={submitting}
-                  style={{ height: 48, alignItems: 'center', justifyContent: 'center', marginTop: 6 }}
-                >
-                  <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: muted }}>Cancel</Text>
-                </Pressable>
-
-                {installationsQuery.data?.install_url ? (
-                  <Pressable onPress={handleConnectGitHub} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 14 }}>
-                    <Icon as={ExternalLink} size={13} color={muted} />
-                    <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted }}>Add another GitHub account</Text>
-                  </Pressable>
-                ) : null}
+                <Button size="lg" className="rounded-full" disabled={!canImport} onPress={handleLinkGitHub}>
+                  <Text>{link.isPending ? 'Importing…' : 'Import repository'}</Text>
+                </Button>
               </>
             )}
-          </>
-        )}
-      </BottomSheetScrollView>
-    </KortixBottomSheetModal>
-  );
-}
+          </BottomSheetScrollView>
+        </Animated.View>
+      ) : (
+        <Animated.View key="managed" entering={returning ? POP_IN : undefined} style={{ flex: 1 }}>
+          <SheetTitleRow title="New project" onClose={close} />
+          <BottomSheetScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={contentStyle}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}>
+            <SheetTextInput
+              value={name}
+              onChangeText={setName}
+              placeholder="Project name"
+              accessibilityLabel="Project name"
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoFocus
+              maxLength={PROJECT_NAME_MAX_LENGTH}
+              returnKeyType="done"
+              onSubmitEditing={canCreate ? handleCreateManaged : undefined}
+              editable={!submitting}
+            />
 
-function PrimaryButton({
-  label,
-  icon,
-  loading,
-  disabled,
-  onPress,
-  theme,
-}: {
-  label: string;
-  icon: React.ReactNode;
-  loading: boolean;
-  disabled: boolean;
-  onPress: () => void;
-  theme: { primary: string; primaryForeground: string };
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 8,
-        height: 52,
-        borderRadius: 9999,
-        backgroundColor: theme.primary,
-        opacity: disabled ? 0.5 : 1,
-      }}
-    >
-      {loading ? <ActivityIndicator size="small" color={theme.primaryForeground} /> : icon}
-      <Text style={{ fontSize: 16, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>{label}</Text>
-    </Pressable>
+            <SettingsGroup className="bg-secondary">
+              {creatable.length > 1 && (
+                <SettingsRow
+                  icon={UserIcon}
+                  label="Account"
+                  value={account?.name ?? ''}
+                  onPress={submitting ? undefined : openAccount}
+                />
+              )}
+              <SettingsRow icon={GithubLogoIcon} label="Import from GitHub" onPress={submitting ? undefined : openGitHub} />
+            </SettingsGroup>
+
+            <Button size="lg" className="rounded-full" disabled={!canCreate} onPress={handleCreateManaged}>
+              <Text>{provision.isPending ? 'Creating…' : 'Create project'}</Text>
+            </Button>
+          </BottomSheetScrollView>
+        </Animated.View>
+      )}
+    </KortixBottomSheetModal>
   );
 }

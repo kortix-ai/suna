@@ -23,6 +23,14 @@ function canCreateIn(account: KortixAccount): boolean {
 }
 
 /**
+ * The accounts a project can be created in: owner or admin, in the given
+ * order. Web's `filterCreatableAccounts` (`features/workspace/new`).
+ */
+export function creatableAccounts(accounts: KortixAccount[]): KortixAccount[] {
+  return accounts.filter(canCreateIn);
+}
+
+/**
  * Accounts in the order they are searched: the selected account, then the
  * accounts the user owns or administers, then member-only accounts.
  */
