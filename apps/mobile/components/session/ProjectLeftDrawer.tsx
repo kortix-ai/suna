@@ -37,6 +37,7 @@ import { CustomizeIcon } from '@/components/icons/customize-icon';
 import {
   ChatsTeardropIcon,
   FoldersIcon,
+  GearSixIcon,
   NavigationArrowIcon,
   type AppIcon,
 } from '@/lib/icons';
@@ -170,6 +171,8 @@ export interface ProjectLeftDrawerProps {
   onOpenProjectSession: (session: ProjectSession) => void;
   /** Sessions, Files, or Account: push over home, or replace the covering screen. */
   onNavigateRoute: (route: ProjectDrawerRoute) => void;
+  /** The project settings page's gear button, top right of the logo. */
+  onOpenSettings: () => void;
   /** Close the drawer. Every action calls this before it navigates. */
   onClose: () => void;
 }
@@ -182,6 +185,7 @@ export function ProjectLeftDrawer({
   onNewSession,
   onOpenProjectSession,
   onNavigateRoute,
+  onOpenSettings,
   onClose,
 }: ProjectLeftDrawerProps): React.ReactElement {
   const router = useRouter();
@@ -335,7 +339,7 @@ export function ProjectLeftDrawer({
     // One straight left line at 20pt: the logo header is px-5; every row
     // (nav, sessions, Previous chats) is px-3 inside a px-2 column.
     <View className="flex-1 bg-chrome-background" style={{ paddingTop: insets.top }}>
-      <View className="flex-row items-center px-5 py-2">
+      <View className="flex-row items-center justify-between px-5 py-2">
         <View
           className="h-11 justify-center"
           accessible
@@ -343,6 +347,20 @@ export function ProjectLeftDrawer({
           accessibilityLabel="Kortix">
           <KortixLogo variant="logomark" size={18} color={isDark ? 'dark' : 'light'} />
         </View>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="-mr-2.5 rounded-full"
+          onPress={() => {
+            haptics.tap();
+            onClose();
+            onOpenSettings();
+          }}
+          accessibilityLabel="Project settings"
+          accessibilityHint="Opens the project settings page"
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Icon as={GearSixIcon} size={20} className="text-foreground" />
+        </Button>
       </View>
 
       <View className="px-2 -mx-1 space-y-1">
