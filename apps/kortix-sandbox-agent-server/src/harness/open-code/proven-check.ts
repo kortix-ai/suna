@@ -128,6 +128,11 @@ export function describeOpencodeError(status: number, bodyText: string, configDi
 
 class RequestHang extends Error {}
 
+/** A 5xx reason without OpenCode's per-answer `(ref err_…)` tag. */
+function withoutRef(reason: string): string {
+  return reason.replace(/ \(ref [^)]*\)/g, '')
+}
+
 async function readJson(
   fetchImpl: typeof fetch,
   url: string,
@@ -272,11 +277,15 @@ export async function provenCheck(
     } else {
       hangs = 0
     }
-    // The same 5xx twice in a row is the config, not a start-up race.
-    if (attempt.serverError && attempt.serverError === lastServerError) {
-      return { ok: false, fatal: true, reason: attempt.serverError }
+    // The same 5xx twice in a row is the config, not a start-up race. Real
+    // OpenCode gives every error answer a new `ref`, so compare without it
+    // (verification DEF-3c: with the ref the check never matched and ran the
+    // full 90 s budget).
+    const serverErrorKey = attempt.serverError ? withoutRef(attempt.serverError) : null
+    if (serverErrorKey && serverErrorKey === lastServerError) {
+      return { ok: false, fatal: true, reason: attempt.serverError as string }
     }
-    lastServerError = attempt.serverError ?? null
+    lastServerError = serverErrorKey
     if (Date.now() + (input.pollMs ?? 500) >= deadline) break
     await new Promise((resolve) => setTimeout(resolve, input.pollMs ?? 500))
   } while (Date.now() < deadline)

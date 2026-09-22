@@ -126,4 +126,37 @@ describe('provenCheck fails fast with the cause', () => {
         'tools failed to load: HTTP 500 UnknownError: Unexpected server error. Check server logs for details. (ref err_a81809a9) (tool files: tools/broken_tool.ts, tools/scrape.ts)',
     })
   })
+
+  test('DEF-3c: the repeated 500 is recognised although every answer carries a new ref', async () => {
+    // Re-verification 2026-09-22 on a real box: OpenCode answers each failed
+    // /experimental/tool/ids with a NEW ref (err_38725039, err_4e007df1, ...).
+    // The reason carried the ref, so "the same 5xx twice" never matched: the
+    // check ran the full 90 s budget, and a deadline-cut /config request then
+    // replaced the reason with "GET /config did not answer".
+    let n = 0
+    const url = fakeOpencode({
+      '/config': () => Response.json({ default_agent: 'kortix' }),
+      '/agent': () => Response.json([{ name: 'kortix', mode: 'primary' }]),
+      '/experimental/tool/ids': () =>
+        Response.json(
+          {
+            name: 'UnknownError',
+            data: { message: 'Unexpected server error. Check server logs for details.', ref: `err_${(0x10000000 + n++).toString(16)}` },
+          },
+          { status: 500 },
+        ),
+    })
+    const started = Date.now()
+    const result = await provenCheck(url, Date.now() + 30_000, {
+      directory: '/workspace',
+      toolNames: ['broken_tool', 'scrape'],
+      pollMs: 100,
+    })
+    expect(Date.now() - started).toBeLessThan(3_000)
+    expect(result.ok).toBe(false)
+    expect(result.ok ? null : result.fatal).toBe(true)
+    const reason = result.ok ? '' : result.reason
+    expect(reason.startsWith('tools failed to load: HTTP 500 UnknownError: Unexpected server error.')).toBe(true)
+    expect(reason).toContain('(tool files: tools/broken_tool.ts, tools/scrape.ts)')
+  })
 })
