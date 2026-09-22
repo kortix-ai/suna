@@ -12,6 +12,7 @@ import { getTemplateById } from '../../snapshots/templates';
 import { roleAllows } from '../access';
 import { loadProjectConfig } from '../git';
 import { pollCodexDeviceAuth, startCodexDeviceAuth } from '../codex-device-auth';
+import { requestPersonalOwner } from '../lib/personal-resources';
 import { decryptProjectSecret, encryptProjectSecret, identifierKeyConflicts, isValidIdentifier, isValidSecretName, resolveProjectSecretForConsumer } from '../secrets';
 import {
   propagateProjectSecretsToActiveSandboxes,
@@ -481,7 +482,7 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Leaf-gate the read (a custom role can omit project.secret.read) — and, via
-  // the central agent-grant fold, an agent token must hold it in its kortixCli.
+  // the central agent-grant fold, an agent token must hold it in its Kortix permissions.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_READ);
 
   const canManageShared = roleAllows(loaded.effectiveRole, 'manage');
@@ -526,7 +527,9 @@ projectsApp.openapi(
 
   const items = (await loadSecretViewsForUser({
     projectId,
-    userId: loaded.userId,
+    // Spec 2026-09-22 §2.3: an agent-principal session sees personal
+    // overrides of its on-behalf-of human in a private session only.
+    userId: await requestPersonalOwner(c, loaded),
     canManageShared,
     agentGrants,
   }))
@@ -1582,7 +1585,7 @@ projectsApp.openapi(
       projectId,
       accountId: loaded.row.accountId,
       actorUserId: loaded.userId,
-      principalUserId: loaded.userId,
+      principalUserId: await requestPersonalOwner(c, loaded),
       name: cfg.secretName,
       consumer: 'llm_gateway',
     });
@@ -1814,6 +1817,14 @@ projectsApp.openapi(
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Spec 2026-09-22 §2.3: an agent-principal session writes a personal
+  // override only for its on-behalf-of human, inside a private session.
+  if ((await requestPersonalOwner(c, loaded)) !== loaded.userId) {
+    return c.json(
+      { error: 'This session cannot change a personal secret', code: 'personal_resource_unreachable' },
+      403,
+    );
+  }
 
   const name = c.req.param('name')?.trim().toUpperCase();
   if (!name || !isValidSecretName(name)) {
@@ -1922,6 +1933,14 @@ projectsApp.openapi(
     return c.json(
       { error: `${CODEX_AUTH_JSON_SECRET_NAME} must be disconnected as an OAuth provider` },
       400,
+    );
+  }
+  // Spec 2026-09-22 §2.3: an agent-principal session writes a personal
+  // override only for its on-behalf-of human, inside a private session.
+  if ((await requestPersonalOwner(c, loaded)) !== loaded.userId) {
+    return c.json(
+      { error: 'This session cannot change a personal secret', code: 'personal_resource_unreachable' },
+      403,
     );
   }
 

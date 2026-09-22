@@ -69,7 +69,7 @@ const HELP = help`Usage: kortix access <subcommand> [options]
 
 Who can do what. People, groups and service accounts get ROLES — on the
 account, on one project, or on a single object inside a project. Agents get
-Kortix CLI scopes in kortix.yaml; a session can only do what both allow.
+Kortix permissions in kortix.yaml; a session can only do what both allow.
 
 Role assignments:
   assignments [--project <id>|--account|--all]   List role assignments.

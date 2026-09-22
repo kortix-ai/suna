@@ -77,7 +77,7 @@ describe('buildProjectSeedFiles — the seeded manifest satisfies its own requir
     expect(governed.grant).toEqual({
       agent: 'kortix',
       connectors: 'all',
-      kortixCli: 'all',
+      permissions: 'all',
       env: 'all',
     });
   });

@@ -279,6 +279,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Kortix Gateway': 'text88099e99f545',
   'Kortix OpenAPI document': 'texte84ccb2c62c8',
   'Kortix Public Content': 'textcc9a80a16e3c',
+  'Kortix permissions': 'text8f12a6e05e6d',
   'kortix-ai/kortix · since Mon': 'textc4736485c745',
   Latency: 'texte0e7d293043c',
   Legacy: 'text1432897a6136',
@@ -822,8 +823,8 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'What every user is seeing right now.': 'text8070bf46e184',
   'What is wrong right now. Zero is the expected value for all three counts.': 'text75779b882b3d',
   'What this account has left to spend, and what it spent this period.': 'textb091005190d7',
-  'What this agent may do to the project itself — sessions, triggers, secrets, members — through the Kortix CLI inside a session.':
-    'text59e679e041ce',
+  'What this agent may do to the project itself — sessions, triggers, secrets, members — from inside a session.':
+    'text15365eb45e29',
   'Whatever the project default is, now and after it changes.': 'textb23625948eee',
   'When this agent starts on its own.': 'text1a1e4d549e85',
   'Where each kind of support request gets resolved.': 'textb3feb3946ecf',

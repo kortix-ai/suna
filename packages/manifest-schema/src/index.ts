@@ -28,10 +28,10 @@ import {
   CONNECTOR_PROVIDERS,
   type ConnectorProvider,
   ENV_NAME_RE,
-  GRANTABLE_KORTIX_CLI_ACTIONS,
+  GRANTABLE_KORTIX_PERMISSIONS,
   LEGACY_SANDBOX_KEYS,
-  LEGACY_TOLERATED_KORTIX_CLI_ACTIONS,
-  DEPRECATED_KORTIX_CLI_ALIASES,
+  LEGACY_TOLERATED_KORTIX_PERMISSIONS,
+  DEPRECATED_KORTIX_PERMISSION_ALIASES,
   reservedEnvNameReason,
   MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS,
   MONITOR_MIN_INTERVAL_SECONDS,
@@ -121,11 +121,11 @@ export {
   CONNECTOR_PROVIDERS,
   type ConnectorProvider,
   ENV_NAME_RE,
-  GRANTABLE_KORTIX_CLI_ACTIONS,
+  GRANTABLE_KORTIX_PERMISSIONS,
   HEX_COLOR_RE_V2,
   LEGACY_SANDBOX_KEYS,
-  LEGACY_TOLERATED_KORTIX_CLI_ACTIONS,
-  DEPRECATED_KORTIX_CLI_ALIASES,
+  LEGACY_TOLERATED_KORTIX_PERMISSIONS,
+  DEPRECATED_KORTIX_PERMISSION_ALIASES,
   isReservedEnvName,
   NEVER_DELIVERED_ENV_NAMES,
   PERMISSION_ACTION_ONLY_KEYS_V2,
@@ -179,7 +179,7 @@ export {
  * Maximum manifest schema version this validator understands.
  *
  * v1 = `[[agents]]` array overlay, TOML or YAML, `[[channels]]` allowed.
- * v2 = `agents:` map — GOVERNANCE ONLY (connectors/secrets/skills/kortix_cli/
+ * v2 = `agents:` map — GOVERNANCE ONLY (connectors/secrets/skills/kortix_permissions/
  * workspace/enabled); OpenCode behavior (mode/model/temperature/top_p/steps/
  * variant/color/hidden/permission/prompt) lives entirely in the agent's own
  * native `.kortix/opencode/agents/<name>.md` frontmatter + body, never in
@@ -386,10 +386,10 @@ function listSectionHint(key: string, format: ManifestFormat = 'toml'): string {
 // ─── Section validators ───────────────────────────────────────────────────
 
 /**
- * Validate a `connectors` / `kortix_cli` grant value (array | "all" | "none").
+ * Validate a `connectors` / `kortix_permissions` grant value (array | "all" | "none").
  *
- * `version` only changes how a `kortix_cli` entry from
- * `LEGACY_TOLERATED_KORTIX_CLI_ACTIONS` is treated (only reachable when
+ * `version` only changes how a `kortix_permissions` entry from
+ * `LEGACY_TOLERATED_KORTIX_PERMISSIONS` is treated (only reachable when
  * `checkAction` is true): v1 keeps it a warning (these actions were REMOVED
  * from enforcement, not from v1's manifest shape — an existing manifest that
  * still lists one must keep validating, just with a deprecation nudge). v2 is
@@ -439,8 +439,8 @@ export function validateGrantList(
       return;
     }
     const s = item.trim();
-    if (checkAction && s !== '*' && !GRANTABLE_KORTIX_CLI_ACTIONS.includes(s)) {
-      const renamedTo = DEPRECATED_KORTIX_CLI_ALIASES[s];
+    if (checkAction && s !== '*' && !GRANTABLE_KORTIX_PERMISSIONS.includes(s)) {
+      const renamedTo = DEPRECATED_KORTIX_PERMISSION_ALIASES[s];
       if (renamedTo) {
         // A RENAMED action, not a dead one: it still resolves to a real
         // capability (`canonicalizeGrantActions` rewrites it), so this is a
@@ -453,19 +453,19 @@ export function validateGrantList(
           message: `"${s}" was renamed to "${renamedTo}" — the grant still applies, but update the manifest.`,
           severity: 'warning',
         });
-      } else if (LEGACY_TOLERATED_KORTIX_CLI_ACTIONS.includes(s)) {
+      } else if (LEGACY_TOLERATED_KORTIX_PERMISSIONS.includes(s)) {
         issues.push({
           path: `${where}[${k}]`,
           message:
             version === 2
-              ? `"${s}" is a deprecated, no-op kortix_cli action (removed from enforcement) and is not tolerated in kortix_version 2 — remove it from the manifest.`
-              : `"${s}" is a deprecated, no-op kortix_cli action (removed from enforcement — granting or omitting it has no effect). Remove it from the manifest.`,
+              ? `"${s}" is a deprecated, no-op Kortix permission (removed from enforcement) and is not tolerated in kortix_version 2 — remove it from the manifest.`
+              : `"${s}" is a deprecated, no-op Kortix permission (removed from enforcement — granting or omitting it has no effect). Remove it from the manifest.`,
           severity: version === 2 ? 'error' : 'warning',
         });
       } else {
         issues.push({
           path: `${where}[${k}]`,
-          message: `"${s}" is not a grantable kortix_cli action (allowed: project.*; account-scoped actions can never be granted to an agent).`,
+          message: `"${s}" is not a grantable Kortix permission (allowed: project.*; account-scoped actions can never be granted to an agent).`,
           severity: 'error',
         });
       }
@@ -473,7 +473,60 @@ export function validateGrantList(
   });
 }
 
-/** `[[agents]]` — the per-agent scoping overlay (name + connectors + kortix_cli). */
+/**
+ * Validate an agent's project-permission grant. `kortix_permissions` is the
+ * canonical key. `kortix_cli` is its deprecated alias (the pre-rename name —
+ * the list never had anything to do with the CLI): still accepted, always
+ * flagged with a warning. Both keys on one agent must resolve to the same
+ * grant; different values are an error because the parser could only honor
+ * one of them silently.
+ */
+export function validateKortixPermissionFields(
+  entry: Record<string, unknown>,
+  where: string,
+  issues: ManifestIssue[],
+  version: 1 | 2,
+): void {
+  const canonical = entry.kortix_permissions;
+  const legacy = entry.kortix_cli;
+  validateGrantList(canonical, `${where}.kortix_permissions`, 'kortix_permissions', issues, true, version);
+  validateGrantList(legacy, `${where}.kortix_cli`, 'kortix_cli', issues, true, version);
+  if (legacy === undefined || legacy === null) return;
+  const hasCanonical = canonical !== undefined && canonical !== null;
+  if (hasCanonical && !sameGrantValue(canonical, legacy)) {
+    issues.push({
+      path: `${where}.kortix_cli`,
+      message: 'kortix_cli is the deprecated alias of kortix_permissions and must match it when both are present — remove kortix_cli.',
+      severity: 'error',
+    });
+    return;
+  }
+  issues.push({
+    path: `${where}.kortix_cli`,
+    message: hasCanonical
+      ? 'kortix_cli is deprecated and duplicates kortix_permissions — remove kortix_cli.'
+      : 'kortix_cli is deprecated — rename it to kortix_permissions (same value).',
+    severity: 'warning',
+  });
+}
+
+/** Grant-set equality: "all"/"none" case-insensitive, lists as trimmed sets. */
+function sameGrantValue(a: unknown, b: unknown): boolean {
+  const norm = (v: unknown): string => {
+    if (typeof v === 'string') {
+      const t = v.trim().toLowerCase();
+      return t === '' ? 'none' : t;
+    }
+    if (Array.isArray(v)) {
+      const items = v.map((x) => (typeof x === 'string' ? x.trim() : JSON.stringify(x)));
+      return JSON.stringify([...new Set(items)].sort());
+    }
+    return JSON.stringify(v);
+  };
+  return norm(a) === norm(b);
+}
+
+/** `[[agents]]` — the per-agent scoping overlay (name + connectors + kortix_permissions). */
 function validateAgents(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
@@ -510,13 +563,16 @@ function validateAgents(node: unknown, path: string, issues: ManifestIssue[], fo
       seen.add(name);
     }
     validateGrantList(entry.connectors, `${where}.connectors`, 'connectors', issues, false);
-    validateGrantList(entry.kortix_cli, `${where}.kortix_cli`, 'kortix_cli', issues, true);
+    validateKortixPermissionFields(entry, where, issues, 1);
     // `env` (project-secret allowlist) shares the same array | "all" | "none"
-    // shape as connectors/kortix_cli (runtime parseGrantSet, no per-entry
+    // shape as connectors/kortix_permissions (runtime parseGrantSet, no per-entry
     // action check). Omitted defaults to "all" at runtime (back-compat — a
     // NEW dimension must not starve existing agents), so absence is not an
     // error here either; validateGrantList already no-ops on undefined/null.
     validateGrantList(entry.env, `${where}.env`, 'env', issues, false);
+    // `apps` (spec 2026-09-22 §2.5): App slugs an agent session may open when
+    // the App is restricted/private. Omitted = none.
+    validateGrantList(entry.apps, `${where}.apps`, 'apps', issues, false);
   });
 }
 
@@ -1723,7 +1779,7 @@ function expectBoundedIntOrAbsent(
 }
 
 // The canonical, public JSON Schema (`./json-schema.ts`) is built FROM the
-// constants above (GRANTABLE_KORTIX_CLI_ACTIONS, CONNECTOR_PROVIDERS,
+// constants above (GRANTABLE_KORTIX_PERMISSIONS, CONNECTOR_PROVIDERS,
 // AGENT_MODES_V2, …), so it imports this module — this re-export must stay
 // the LAST statement in the file: json-schema.ts's own top-level code calls
 // its builder functions eagerly (`export const KORTIX_V1_JSON_SCHEMA =

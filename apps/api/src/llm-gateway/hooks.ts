@@ -26,6 +26,7 @@ import { checkBudget } from './budgets';
 import { validateGatewayKey } from './gateway-keys';
 import { resolveDefaultModelForPrincipal } from './resolution/default-model';
 import { resolveCandidates } from './resolution/resolve-candidates';
+import { resolveSessionPersonalOwner } from '../projects/lib/personal-resources';
 import { resolveGatewayRoute } from './routing';
 
 // ─── Canonical gateway control plane ────────────────────────────────────────
@@ -54,12 +55,25 @@ async function resolvePrincipal(token: string): Promise<AuthedPrincipal | null> 
     // projectId/sessionId attribute usage to the calling session (the sandbox
     // connector token is minted per-session with session_id = sandbox_id) — the
     // reaper's activity signal + precise per-session billing.
+    // Personal provider keys follow the session's on-behalf-of human in a
+    // private session under the agent-principal model (spec 2026-09-22 §2.3).
+    // Flag OFF returns `userId`, and the field stays absent (legacy).
+    const personalUserId =
+      account.projectId && account.sessionId
+        ? await resolveSessionPersonalOwner({
+            projectId: account.projectId,
+            sessionId: account.sessionId,
+            accountId: account.accountId,
+            legacyUserId: account.userId,
+          })
+        : account.userId;
     return {
       userId: account.userId,
       accountId: account.accountId,
       projectId: account.projectId ?? undefined,
       sessionId: account.sessionId ?? undefined,
       agentGrant: account.agentGrant ?? null,
+      ...(personalUserId !== account.userId ? { personalUserId } : {}),
     };
   }
   return null;

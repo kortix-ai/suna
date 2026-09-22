@@ -26,7 +26,7 @@ import { ArrowRightIcon, CaretDownIcon, CubeIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { EditorSection, SettingRow } from './agent-editor-primitives';
 import { pruneRequiredConnectors } from './connectors-personal';
-import { type GrantOption, GrantSetField, KortixCliField, grantSummary } from './grant-mode-field';
+import { type GrantOption, GrantSetField, KortixPermissionsField, grantSummary } from './grant-mode-field';
 
 type SetKortix = <K extends keyof AgentConfigBlock>(key: K, value: AgentConfigBlock[K]) => void;
 
@@ -236,21 +236,26 @@ export function SecretsSection({ draft, set, options }: GrantSectionProps) {
   );
 }
 
-/** Was "Kortix CLI" — the name of the tool, not of what it grants. What the
- *  user is choosing is which project operations the agent may perform; the
- *  CLI is only how it performs them. */
+/** Kortix permissions (`kortix_permissions` in kortix.yaml): which project
+ *  operations the agent may perform, through any surface. A block read from a
+ *  pre-rename server may still carry `kortix_cli`; an edit writes the canonical
+ *  key and drops the alias so the two can never disagree. */
 export function ProjectActionsSection({ draft, set }: Omit<GrantSectionProps, 'options'>) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const permissions = draft.kortix_permissions ?? draft.kortix_cli;
   return (
     <EditorSection
-      title={tI18nComplete.raw('text5d4ef7cc3bec')}
-      description={tI18nComplete.raw('text59e679e041ce')}
-      trailing={<GrantChip value={draft.kortix_cli} />}
+      title={tI18nComplete.raw('text8f12a6e05e6d')}
+      description={tI18nComplete.raw('text15365eb45e29')}
+      trailing={<GrantChip value={permissions} />}
     >
       <div className="py-4">
-        <KortixCliField
-          value={draft.kortix_cli}
-          onChange={(v: AgentGrantSetV2) => set('kortix_cli', v)}
+        <KortixPermissionsField
+          value={permissions}
+          onChange={(v: AgentGrantSetV2) => {
+            set('kortix_cli', undefined);
+            set('kortix_permissions', v);
+          }}
         />
       </div>
     </EditorSection>

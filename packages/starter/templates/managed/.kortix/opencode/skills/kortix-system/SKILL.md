@@ -552,7 +552,7 @@ name a declared agent).
 write-up, and `docs/specs/2026-07-05-agent-first-config-unification.md` for
 the design rationale): `agents:` is a name→block MAP (not the v1 `[[agents]]` array),
 and every block is **governance only** —
-`enabled`/`sandbox`/`connectors`/`secrets`/`skills`/`kortix_cli`/`workspace`. `env` was
+`enabled`/`sandbox`/`connectors`/`secrets`/`skills`/`kortix_permissions`/`workspace`. `env` was
 renamed `secrets`. There is no `model`/`mode`/`description`/`permission`/
 `prompt` on the manifest side at all in v2 — every one of those is OpenCode
 behavior and lives in that agent's own `.kortix/opencode/agents/<name>.md`
@@ -561,7 +561,7 @@ agents both work this way — open their `.md` files to see what they
 actually do). `default_agent` is required and must resolve to a declared,
 enabled agent. `[[channels]]` is removed outright (channel↔agent routing is
 dashboard-managed, not git). v2 is YAML-only and deny-by-default on every
-grant set (an omitted `connectors`/`secrets`/`skills`/`kortix_cli` resolves
+grant set (an omitted `connectors`/`secrets`/`skills`/`kortix_permissions` resolves
 to `none`, not `all`).
 
 </canonical-schema>
@@ -578,7 +578,7 @@ agents:
   release-bot:                          # = the agent's .md name (.kortix/opencode/agents/release-bot.md)
     sandbox: ml                         # default environment for this agent
     connectors: [github]                # which connectors it may call   (default: none)
-    kortix_cli: [project.write, project.cr.open]    # what it may do via the Kortix CLI/API (default: none)
+    kortix_permissions: [project.write, project.cr.open]    # what it may do to the project — CLI, API, git (default: none)
 ```
 
 **Which file owns what — never duplicate across the boundary:**
@@ -586,12 +586,17 @@ agents:
 | Setting | Lives in |
 | --- | --- |
 | v2 system prompt, `model`, `mode`, tools, and `permission` | `.kortix/opencode/agents/<name>.md` and `opencode.jsonc` |
-| connectors, secrets, skills, `kortix_cli`, workspace, enabled | manifest `agents:` map |
+| connectors, secrets, skills, `kortix_permissions`, workspace, enabled | manifest `agents:` map |
 
 **How the grant resolves at session start:**
-- v2 (`kortix.yaml`) is **deny-by-default**: an omitted `connectors`/`secrets`/`skills`/`kortix_cli` on a declared agent resolves to `none`, not `all`. `default_agent` is required and must resolve to a declared, enabled agent — give it `connectors: all`, `secrets: all`, `kortix_cli: all`, `skills: all` explicitly if it should keep full access.
-- v1 (`kortix.toml`, legacy) is **backward-compatible** instead: manifest has **no `[[agents]]`** at all → no agent-grant restriction, agents discovered straight from OpenCode. Agent **is listed** → its `connectors`/`kortix_cli` (default each = none if omitted). Manifest **has `[[agents]]` but this agent isn't listed** → default-deny for Kortix grants. The v1 default agent keeps **full access** only while `[[agents]]` is unadopted — the moment you add `[[agents]]`, declare the default agent too or it falls under the unlisted-deny rule.
-- The effective grant is always **∩ the launching user's role** — an agent can never exceed the human who launched it. Editing the manifest only takes effect once the **CR is merged** (read from the default branch).
+- v2 (`kortix.yaml`) is **deny-by-default**: an omitted `connectors`/`secrets`/`skills`/`kortix_permissions` on a declared agent resolves to `none`, not `all`. `default_agent` is required and must resolve to a declared, enabled agent — give it `connectors: all`, `secrets: all`, `kortix_permissions: all`, `skills: all` explicitly if it should keep full access.
+- v1 (`kortix.toml`, legacy) is **backward-compatible** instead: manifest has **no `[[agents]]`** at all → no agent-grant restriction, agents discovered straight from OpenCode. Agent **is listed** → its `connectors`/`kortix_permissions` (default each = none if omitted). Manifest **has `[[agents]]` but this agent isn't listed** → default-deny for Kortix grants. The v1 default agent keeps **full access** only while `[[agents]]` is unadopted — the moment you add `[[agents]]`, declare the default agent too or it falls under the unlisted-deny rule.
+- **Your authority depends on the project flag `agent_principal`** (Settings → Feature flags, default off):
+  - **Off:** effective = the launching user's project role ∩ your `kortix_permissions`. You never exceed the human who launched you.
+  - **On:** you are the acting principal. Effective = your `kortix_permissions` ∩ your **ceiling** (the IAM role an admin binds to your service account; with none bound, every grantable project permission) − **HUMAN_ONLY** (`project.members.manage`, `project.delete`, `project.credentials.issue`). The launcher's role is not an input. The human contributes "may run this agent" and their own personal resources (their connector connections, personal secrets, their computer) — only in their own **private** session, and only until someone else prompts it. Trigger and channel runs have no human behind them.
+  - `project.read` in your own project is always granted.
+  - When a call returns 403, read `code`: `agent_scope_insufficient` → the action is missing from your `kortix_permissions` (propose a CR); `agent_ceiling_insufficient` → an admin must raise your ceiling role; `agent_not_accessible` → the human may not run that agent. Never claim an authority the code says you lack.
+- Editing the manifest only takes effect once the **CR is merged** (read from the default branch). With `agent_principal` on, you cannot merge a CR that changes `kortix.yaml` `agents.*` or `triggers` yourself (`403 CR_AGENT_GOVERNANCE_CHANGE`) — a human merges it.
 - Session environment precedence is explicit `sandbox_slug`, agent `sandbox`, project `sandbox.default`, then platform `default`. Triggers, schedules, and channels use the target agent's environment.
 
 **Discovery contract:**
@@ -603,11 +608,12 @@ agents:
 - New projects use v2 declarative discovery. Older `kortix.toml` (v1)
   projects stay in legacy mode until they migrate.
 
-**`kortix_cli` — the grantable enum** (project-scoped only; account-level admin actions
-like `member.*` / `billing.*` / `project.create` can NEVER be granted to an agent — nor can
-`project.delete` / `project.members.manage` / `project.gateway.keys.manage`: the project-role
-collapse promoted those three to ACCOUNT owner/admin authority even though they still target a
-specific project). Run `kortix validate --scopes` to print this list:
+**`kortix_permissions` — the grantable enum** (`kortix_cli` is the deprecated spelling, still accepted with a validation warning; project-scoped only; account-level admin actions
+like `member.*` / `billing.*` / `project.create` can NEVER be granted to an agent. Three project
+actions are **HUMAN_ONLY** — `project.members.manage`, `project.delete`,
+`project.credentials.issue`: they validate in the manifest, but an agent never holds them when
+`agent_principal` is on, and with it off the credential routes refuse an agent session anyway).
+Run `kortix validate --scopes` to print this list:
 
 ```
 project.read  project.write

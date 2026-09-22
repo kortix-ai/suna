@@ -66,7 +66,9 @@ this target?** Five concepts cover the whole system:
 6. **Per-resource grants** — if the target is a *scoped* agent/skill, the caller must be
    one of its assignees (owners/admins bypass).
 7. **Agent-grant fold** — if the caller is an agent session, the verdict is intersected
-   with the agent's `kortix_cli` grant (section 8).
+   with the agent's `kortix_permissions` grant. With the project flag
+   `agent_principal` on, steps 4–5 evaluate the AGENT's ceiling role instead of
+   the launcher's role, and the HUMAN_ONLY actions are removed (section 8).
 
 ### Caching and revocation
 
@@ -511,55 +513,108 @@ Humans are half the picture. Kortix agents act with **contained**, auditable aut
 
 ### The containment model
 
-An agent session's effective power is an **intersection** — never wider than any factor:
+Two models exist. The project feature flag **`agent_principal`** (Settings →
+Feature flags, default **off**) selects one per project.
+
+**Flag off (the default today): the launcher caps the agent.**
 
 ```
-effective = (launching user's role  |  agent's standing role)
-          ∩ the agent's kortix_cli grant
+effective = launching user's project role
+          ∩ the agent's kortix_permissions
           ∩ the session token's project scope
 ```
 
-- The **`kortix_cli` grant** is declared per agent in the project manifest
-  (`kortix.yaml`):
+**Flag on: the agent is the acting principal.**
+
+```
+effective = the agent's kortix_permissions        (kortix.yaml, source of truth)
+          ∩ the agent's ceiling                   (IAM role bound to its service account)
+          − HUMAN_ONLY                            (project.members.manage, project.delete,
+                                                   project.credentials.issue)
+          ∩ the session token's project scope
+```
+
+With the flag on, the launcher's role is **not** an input. The launcher
+contributes two things only:
+
+1. **"May run this agent"** — the agent object grant (Customize → the agent →
+   People, or the Access hub). It is closed by default and is checked at every
+   entry point: session create/start/prompt/agent switch, a manual trigger
+   fire, and a child session spawned from an agent session. Running an agent
+   lends its authority, so this grant is the delegation.
+2. **Their own personal resources** — member-owned connector connections,
+   personal secrets and provider keys, their own computer — and only in their
+   own **private** session (`on_behalf_of`). A shared session, a trigger or
+   channel session, and a private session after another person prompts it
+   never reach personal resources.
+
+`project.read` is always granted inside the agent's own project. A project
+with no `agents:` map (ungoverned) keeps the flag-off model until it declares
+agents.
+
+- The **`kortix_permissions` grant** (Kortix permissions) is declared per agent in
+  the project manifest (`kortix.yaml`). `kortix_cli` is its deprecated spelling:
+  still accepted with a validation warning; both keys with different values is a
+  validation error.
 
   ```yaml
   agents:
     kortix:
       connectors: all          # which integrations it may call
       secrets: all             # which project secrets it may read ($ENV)
-      kortix_cli: all          # which Kortix platform actions it may perform
+      kortix_permissions: all  # which Kortix platform actions it may perform
     release-bot:
-      kortix_cli: [project.cr.open, project.trigger.create]   # exactly two powers
+      kortix_permissions: [project.gitops.push, project.trigger.create]   # exactly two powers
       connectors: [github]
       secrets: [DEPLOY_KEY]
+    report-writer:
+      kortix_permissions: [project.file.read, project.app.read]
+      apps: [reports-dashboard]   # restricted/private Apps this agent may open
   ```
 
   v2 manifests are **deny-by-default**: an agent declared without a grant field gets
   *none* of that dimension. An agent absent from an adopted `agents:` map gets nothing
   at all. Grants are read from the **default branch** — an agent can propose widening
   its own powers in a change request, but the change only takes effect after a
-  caller with merge authority merges it. A session can merge its own change
-  request only when its current agent grant explicitly includes
-  `project.gitops.merge` or `kortix_cli: all`. The launching user's role must
-  also permit merge. An ungoverned session with a null agent grant cannot
-  self merge.
-- Grantable `kortix_cli` actions are the project action catalog (§12); `'all'` and
-  `'*'` mean unrestricted. `project.cr.open`/`project.cr.merge` and
-  `project.gitops.push`/`project.gitops.merge` are alias pairs — either spelling works.
-- **Secrets and connectors** can be scoped from the dashboard without touching YAML:
-  **Customize → Agents → Access scope** (needs `project.agent.write`; saves as a
-  manifest commit). `kortix_cli` is deliberately **not** editable in the UI — platform
-  powers are a sharper escalation and stay a reviewed manifest change.
+  caller with merge authority merges it. With `agent_principal` on, an agent-session
+  credential cannot merge a change request whose diff touches `kortix.yaml`
+  `agents.*` or `triggers` (`403 CR_AGENT_GOVERNANCE_CHANGE`); a human with
+  `project.gitops.merge` merges it.
+- Grantable `kortix_permissions` actions are the project action catalog (§12); `'all'` and
+  `'*'` mean unrestricted. `project.cr.open`/`project.cr.merge` are the deprecated
+  spellings of `project.gitops.push`/`project.gitops.merge`. The three HUMAN_ONLY
+  actions validate in the manifest, but with the flag on an agent never holds them.
+- **Edit in the dashboard:** Customize → Agents → the agent → **Kortix permissions**
+  edits `kortix_permissions` (v2 manifests; needs `project.agent.write`; saves as a
+  manifest commit). The same tab shows **What this agent can do**: the declared
+  list, the ceiling role, the human-only set, and the effective permissions.
+  **Skills, Connectors and Secrets** are their own tabs on the same page.
+  v1 (`kortix.toml`) projects show the grant read-only.
 
-### Standing agent identities (agents as teammates)
+### The agent ceiling (agents as principals)
 
-Every declared agent gets an auto-provisioned **agent identity** (a service account that
-cannot be used as a bearer credential). By default it stays dormant and agent sessions
-act as *launching user ∩ grant*. To give an agent **standing** authority independent of
-who launched it: `/accounts/{id}?tab=roles` → bind a custom role to the agent identity
-(principal type *Agent*, project-scoped — account-wide agent policies are rejected).
-From then on its sessions authorize as *standing role ∩ grant*. Bind an empty role to
-hard-lock an agent regardless of who runs it.
+Every declared agent has an auto-provisioned **agent identity**: a service
+account, one per `(account, project, agent)`, that cannot be used as a bearer
+credential. Binding a project role to it sets the agent's **ceiling**.
+
+- **Set it:** Access hub → Projects → the project → **Add** → pick the agent
+  under **Agents** → choose a role (built-in `member`/`manager` or a custom
+  role). Only admins who can manage roles see agents in the picker. The
+  project panel lists agent ceilings under **Agents** with an Agent badge;
+  edit or remove them there.
+- **No role bound:** the built-in default ceiling applies — every grantable
+  project permission except HUMAN_ONLY. So a new agent does exactly what its
+  `kortix_permissions` say, minus the human-only set.
+- **A ceiling never widens the manifest.** An agent whose `kortix_permissions`
+  lists `project.file.read` does not gain `project.file.write` from a `manager`
+  ceiling. A `member` ceiling on an agent that lists `project.file.write`
+  denies the write with `403 agent_ceiling_insufficient`.
+- **Denials name their reason.** Every 403 carries `code` and `action`:
+  `agent_scope_insufficient` (add the action to `kortix_permissions`),
+  `agent_ceiling_insufficient` (an admin raises the ceiling),
+  `agent_not_accessible` (the human may not run this agent).
+- **Audit** records each agent action with `actor = agent`,
+  `on_behalf_of = human | null`, and `initiator = human | trigger | channel`.
 
 ### Assigning agents to people (resource grants + inheritance)
 
@@ -581,7 +636,7 @@ hard-lock an agent regardless of who runs it.
 | Personal access token | `kortix_pat_` | CLI / scripts as *you* | Your roles; optionally **project-scoped** (hard-fenced to that project); exempt from the MFA gate |
 | Service account | `kortix_sa_` | Headless automation with its **own** identity | *Only* its bound policies — no roles means every call is denied (fail-closed) |
 | SCIM token | `kortix_scim_` | Your IdP's provisioning credential | The SCIM API only, one account |
-| Session connector token | (internal) | Minted per sandbox for the agent | launching-user/standing role ∩ agent grant ∩ project |
+| Session connector token | (internal) | Minted per sandbox for the agent | Flag off: launching user's role ∩ agent grant ∩ project. Flag on: agent grant ∩ agent ceiling − HUMAN_ONLY ∩ project |
 
 - **PATs:** user menu → Settings → **API keys** (name, optional project scope, optional
   expiry; secret shown once). Admins set an account-wide **PAT policy** —
@@ -682,7 +737,7 @@ audit log records both the grant and the expiry event.
 ```yaml
 agents:
   release-bot:
-    kortix_cli: [project.cr.open, project.trigger.create]
+    kortix_permissions: [project.cr.open, project.trigger.create]
     connectors: [github]
     secrets: [DEPLOY_KEY]
 ```
@@ -787,7 +842,7 @@ GET /v1/accounts/{id}/audit (+ /export)                     GET|POST …/audit/w
 | User keeps access ~seconds after revoke | The 15 s cache TTL across replicas — by design; writes bust the local replica immediately |
 | Okta "Test Connector" fails | Wrong base URL (must be `https://<api-origin>/scim/v2/accounts/{accountId}`) or missing bearer token |
 | Member can't see the Files page | Floor `member` lacks `project.file.read` — raise to editor or grant a custom role with the leaf |
-| Agent gets 403 on a platform action | Its `kortix_cli` grant lacks the action (or its standing role does) → widen the manifest grant via CR |
+| Agent gets 403 on a platform action | Its `kortix_permissions` grant lacks the action (or its standing role does) → widen the manifest grant via CR |
 
 ---
 

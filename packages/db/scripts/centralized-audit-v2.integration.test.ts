@@ -81,12 +81,15 @@ describe.skipIf(!databaseUrl)('centralized audit v2 — migrated PostgreSQL', ()
       await Promise.all(
         ['one', 'two', 'three'].map((id, index) =>
           writers[index]!.query(
+            // The third row carries on_behalf_of_user_id, so the chain below
+            // proves the digest covers it when set and omits it when NULL.
             `INSERT INTO kortix.audit_events
              (account_id, project_id, session_id, action, resource_type,
-              source_ledger, source_record_id, phase, authoritative_source)
+              source_ledger, source_record_id, phase, authoritative_source,
+              on_behalf_of_user_id)
            VALUES ($1, $2, $3, 'test.sequence', 'project_session',
-                   'audit_v2_test', $4, 'completed', 'system')`,
-            [ACCOUNT, PROJECT, SESSION, id],
+                   'audit_v2_test', $4, 'completed', 'system', $5::uuid)`,
+            [ACCOUNT, PROJECT, SESSION, id, index === 2 ? 'a7300000-0000-4000-a000-0000000000b1' : null],
           ),
         ),
       );
@@ -100,8 +103,14 @@ describe.skipIf(!databaseUrl)('centralized audit v2 — migrated PostgreSQL', ()
       recomputed_hash: string;
     }>(
       `SELECT session_sequence, integrity_previous_hash, integrity_hash,
+              -- The digest rule: the row minus integrity_hash, and minus
+              -- on_behalf_of_user_id when it is NULL (migration
+              -- 20260922144740453_audit_events_on_behalf_of).
               encode(extensions.digest(
-                convert_to((to_jsonb(a) - 'integrity_hash')::text, 'UTF8'), 'sha256'
+                convert_to((
+                  to_jsonb(a) - 'integrity_hash'
+                    - (CASE WHEN a.on_behalf_of_user_id IS NULL THEN 'on_behalf_of_user_id' ELSE '' END)
+                )::text, 'UTF8'), 'sha256'
               ), 'hex') AS recomputed_hash
        FROM kortix.audit_events
        AS a
