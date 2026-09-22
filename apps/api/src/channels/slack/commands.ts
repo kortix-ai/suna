@@ -22,8 +22,7 @@ import { loadSlackTokenForProject } from '../install-store';
 import { linkSlackIdentity, lookupSlackIdentity, resolveSlackActor, revokeSlackIdentity } from './identity';
 import { conversationPolicyLabel, normalizeConversationPolicy } from './participants';
 import { lookupEmailsByUserIds } from '../../accounts/core/app';
-import { filterAccessibleObjects, unscopedResourceIds } from '../../iam';
-import { actorForUser } from '../../iam/actor';
+import { scopedProjectAgents } from '../scoped-agents';
 import type { SlashResponse } from './types';
 
 export interface SlashCtx {
@@ -120,7 +119,7 @@ function slashHelp(ctx: SlashCtx): SlashResponse {
   // Everything lives behind the one `/kortix` panel; the rest are power-user
   // shortcuts for people who'd rather type than click.
   const advanced: Array<{ cmd: string; desc: string }> = [
-    { cmd: `${command} model <id>`, desc: 'Set the channel model directly, e.g. `kortix/glm-5.3-flash` or `anthropic/claude-sonnet-4.6` (`default` to reset).' },
+    { cmd: `${command} model <id>`, desc: 'Set the channel model directly, e.g. `kortix/deepseek-v4.1-flash` or `anthropic/claude-sonnet-4.6` (`default` to reset).' },
     { cmd: `${command} agent <name>`, desc: 'Set the channel agent directly (`default` to reset).' },
     ...(isProjectScoped ? [] : [{ cmd: `${command} switch`, desc: 'Connect this channel to a different project.' }]),
     { cmd: `${command} policy`,   desc: 'Show or change who can join Slack-started sessions here.' },
@@ -958,39 +957,8 @@ export async function loadScopedChannelAgents(input: {
   projectId: string;
   slackUserId?: string;
 }): Promise<Array<{ name: string; description: string | null }>> {
-  let agents: Awaited<ReturnType<typeof listProjectAgents>> = [];
-  try {
-    agents = await listProjectAgents(input.projectId);
-  } catch (err) {
-    console.warn('[slack-webhook] listProjectAgents failed', err);
-  }
-  try {
-    const names = agents.map((a) => a.name);
-    const identity = input.slackUserId ? await lookupSlackIdentity(input.teamId, input.slackUserId) : null;
-    let allowedNames: string[];
-    if (identity) {
-      const [proj] = await db
-        .select({ accountId: projects.accountId })
-        .from(projects)
-        .where(eq(projects.projectId, input.projectId))
-        .limit(1);
-      allowedNames = proj
-        ? await filterAccessibleObjects(
-            actorForUser(identity.userId, proj.accountId),
-            input.projectId,
-            'agent',
-            names,
-          )
-        : await unscopedResourceIds(input.projectId, 'agent', names);
-    } else {
-      allowedNames = await unscopedResourceIds(input.projectId, 'agent', names);
-    }
-    const allow = new Set(allowedNames);
-    agents = agents.filter((a) => allow.has(a.name));
-  } catch (err) {
-    console.warn('[slack-webhook] agent scoping filter failed', err);
-  }
-  return agents;
+  const identity = input.slackUserId ? await lookupSlackIdentity(input.teamId, input.slackUserId) : null;
+  return scopedProjectAgents(input.projectId, identity?.userId ?? null);
 }
 
 export function buildAgentPickerBlocks(
@@ -1202,7 +1170,7 @@ async function slashSetModel(ctx: SlashCtx, arg: string): Promise<SlashResponse>
     return { response_type: 'ephemeral', text: 'Model reset to the project default.' };
   }
   if (/\s/.test(id)) {
-    return { response_type: 'ephemeral', text: `\`${escapeMrkdwn(id)}\` doesn't look like a model id. Use \`provider/model\` (e.g. \`anthropic/claude-sonnet-4.6\`) or a managed id (e.g. \`kortix/glm-5.3-flash\` or \`glm-5.3-flash\`).` };
+    return { response_type: 'ephemeral', text: `\`${escapeMrkdwn(id)}\` doesn't look like a model id. Use \`provider/model\` (e.g. \`anthropic/claude-sonnet-4.6\`) or a managed id (e.g. \`kortix/deepseek-v4.1-flash\` or \`deepseek-v4.1-flash\`).` };
   }
   // Two paths on the project's `llm_gateway` flag (same fork as session
   // create). Gateway OFF: OpenCode owns the catalog — enforce the native

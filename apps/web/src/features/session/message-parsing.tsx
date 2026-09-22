@@ -1,5 +1,7 @@
 'use client';
 
+import { isSessionAttachmentRef } from '@kortix/sdk';
+
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { SystemMessage } from '@/components/ui/system-message';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
@@ -47,7 +49,7 @@ export function parseFileReferences(text: string): {
         path: path ?? '',
         mime: pick('mime') ?? '',
         filename: filename ?? '',
-        ...(attachment ? { attachment } : {}),
+        ...(attachment && (isSessionAttachmentRef(attachment) || /^[A-Za-z0-9_-]+$/.test(attachment)) ? { attachment } : {}),
       });
       return '';
     })

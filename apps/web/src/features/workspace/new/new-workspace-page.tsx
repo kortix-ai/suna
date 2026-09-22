@@ -41,7 +41,6 @@ import {
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { isBillingEnabled } from '@/lib/config';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { cn } from '@/lib/utils';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 
@@ -118,8 +117,7 @@ const ICON_WIDTH = '2.5rem';
  * check to run. This component holds no validation rules of its own; both the
  * charset/length check and the submit gate come from the shared form model.
  *
- * `/new` is also where `/projects` sends an account with zero workspaces
- * (Task 8), so a user must never be trapped here — the create-into account
+ * `/projects` links here for every create, so a user must never be trapped here — the create-into account
  * picker (or email fallback) sits top-left and a `Log out` control sits
  * top-right, independent of the form below.
  */
@@ -305,19 +303,17 @@ export function NewWorkspacePage() {
           desktop, clear of the macOS traffic lights and the Win/Linux window
           controls. */}
       <div className="kx-desktop-band-row absolute inset-x-0 top-3 z-10 flex items-center justify-between gap-3 px-4 sm:top-4 sm:px-6">
-        {/* The way OUT. `/new` is also where `/projects` sends an account with
-            zero workspaces, so a user must never be trapped here: this link
-            sits ahead of the <form>, reachable regardless of form state, and
-            goes to the landing door (the latest project, or create/sign-out
-            for an account with none). Log out alone was the only exit on the
-            web and read as "you can't leave" (reported on dev, 2026-09-17). */}
+        {/* The way OUT, to the project selector (`/projects`). It sits ahead
+            of the <form>, so it is reachable regardless of form state. Log out
+            alone was the only exit on the web and read as "you can't leave"
+            (reported on dev, 2026-09-17). */}
         <Button
           asChild
           variant="ghost"
           size="sm"
           className="text-muted-foreground hover:text-foreground shrink-0 gap-1.5"
         >
-          <Link href={PROJECT_LANDING_PATH}>
+          <Link href="/projects">
             <ArrowLeftIcon className="size-4" />
             {t('actions.back')}
           </Link>
@@ -352,7 +348,7 @@ export function NewWorkspacePage() {
               `push`: `/new` is where the user left, not somewhere to return
               to. The landing door resolves the latest project, or offers
               create and sign-out to an account with none. */}
-          <DesktopCloseButton onClose={() => router.replace(PROJECT_LANDING_PATH)} />
+          <DesktopCloseButton onClose={() => router.replace('/projects')} />
         </div>
       </div>
 
@@ -579,7 +575,6 @@ export function NewWorkspacePage() {
                       onChange={(accountId) => setState((s) => ({ ...s, accountId }))}
                       fallbackLabel={user?.email}
                       showAccountLine={showAccountLine}
-                      className="w-full"
                     />
                   </div>
                 ) : null}

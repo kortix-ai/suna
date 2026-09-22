@@ -1451,7 +1451,16 @@ flow(
           .as(ctx.P.OWNER)
           .post(
             '/v1/connectors/projects/:projectId/call',
-            { connector: slug, action, args: { query: 'Kortix' } },
+            // NAME THE ACCOUNT. Since #7326 an unnamed call is DENIED
+            // `account_required` whenever more than one account is reachable
+            // and none is pinned as default — the deliberate replacement for
+            // silently guessing a mailbox. This flow's own setup leaves two
+            // reachable ("Private connection" plus this connector's own), so
+            // the unnamed form correctly returned 403 on the v0.13.24 gate:
+            //   {"ok":false,"status":"denied","reason":"account_required",
+            //    "available_accounts":["Private connection","ke2e-composio-…"]}
+            // `account` takes a connection label or id; the id is unambiguous.
+            { connector: slug, action, args: { query: 'Kortix' }, account: connectionId },
             { params: { projectId: p.id }, timeoutMs: 60_000 },
           );
         r.status(200)
@@ -1519,7 +1528,10 @@ flow(
             };
           }>(
             await cli.run(
-              ['connectors', 'call', `${slug}.${action}`, JSON.stringify({ query: 'Kortix' })],
+              // Same `account_required` contract through the real CLI process:
+              // `--account` is the CLI's spelling of the REST `account` field.
+              ['connectors', 'call', `${slug}.${action}`, JSON.stringify({ query: 'Kortix' }),
+                '--account', connectionId],
               {
                 env,
                 timeoutMs: 60_000,
@@ -2075,7 +2087,7 @@ flow(
     // repository) so the gateway has something to derive the grant from.
     const declare = await ctx.client.as(ctx.P.OWNER).put(
       '/v1/projects/:projectId/agents/:agentName/config',
-      { connectors: 'all', secrets: 'all', kortix_cli: 'all', skills: 'all' },
+      { connectors: 'all', secrets: 'all', kortix_permissions: 'all', skills: 'all' },
       { params: { projectId: p.id, agentName: 'kortix' }, timeoutMs: 60_000 },
     );
     declare.status(200);
@@ -2151,7 +2163,7 @@ flow(
             ownerUserId,
             p.id,
             sessionId,
-            JSON.stringify({ agent: 'kortix', connectors: ['stripe'], kortixCli: [], env: [] }),
+            JSON.stringify({ agent: 'kortix', connectors: ['stripe'], permissions: [], env: [] }),
           ],
         );
         // A declared openapi connector with bearer auth and NO credential
@@ -2233,7 +2245,7 @@ flow(
         'a glitched deny-all grant on the SAME manifest blob is repaired by two consistent reads',
         async () => {
           const before = await readGrant();
-          const glitched = { ...(before ?? {}), connectors: [], kortixCli: [], env: [] };
+          const glitched = { ...(before ?? {}), connectors: [], permissions: [], env: [] };
           await db.query(`UPDATE kortix.account_tokens SET agent_grant = $1::jsonb WHERE session_id = $2`, [
             JSON.stringify(glitched),
             sessionId,
@@ -2254,7 +2266,7 @@ flow(
         async () => {
           const put = await ctx.client.as(ctx.P.OWNER).put(
             '/v1/projects/:projectId/agents/:agentName/config',
-            { connectors: ['stripe'], secrets: 'all', kortix_cli: 'all', skills: 'all' },
+            { connectors: ['stripe'], secrets: 'all', kortix_permissions: 'all', skills: 'all' },
             { params: { projectId: p.id, agentName: 'kortix' }, timeoutMs: 60_000 },
           );
           put.status(200);
@@ -2422,7 +2434,7 @@ flow(
     const declareAgent = (connectorsGrant: 'all' | string[]) =>
       ctx.client.as(ctx.P.OWNER).put(
         '/v1/projects/:projectId/agents/:agentName/config',
-        { connectors: connectorsGrant, secrets: 'all', kortix_cli: 'all', skills: 'all' },
+        { connectors: connectorsGrant, secrets: 'all', kortix_permissions: 'all', skills: 'all' },
         { params: { projectId: p.id, agentName: 'kortix' }, timeoutMs: 60_000 },
       );
 
@@ -2465,7 +2477,7 @@ flow(
               ownerUserId,
               p.id,
               sessionId,
-              JSON.stringify({ agent: 'kortix', connectors: 'all', kortixCli: [], env: [] }),
+              JSON.stringify({ agent: 'kortix', connectors: 'all', permissions: [], env: [] }),
             ],
           );
           // `auth: {type:'none'}` is the fixture's whole point: the connector

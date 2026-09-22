@@ -144,6 +144,8 @@ export function createPromptAttachmentController(
     abort?: AbortController;
     generation: number;
     removed?: boolean;
+    /** This entry's removal already issued its one DELETE. */
+    removalDeleted?: boolean;
     /** Held by a send: unlisted, outside the limits, and alive after dispose. */
     handedOff?: boolean;
   };
@@ -156,6 +158,14 @@ export function createPromptAttachmentController(
   let snapshot: PromptAttachmentSnapshot = { attachments: [] };
 
   const listed = () => [...entries.values()].filter((entry) => !entry.handedOff);
+
+  /** A removal deletes its server upload exactly once, whenever the id becomes known. */
+  function deleteAfterRemoval(entry: Entry, attachmentId: string) {
+    if (entry.removalDeleted) return;
+    entry.removalDeleted = true;
+    // Best-effort: the entry is already gone, and an unbound upload expires after 24 hours.
+    void deletePromptAttachment(projectId!, attachmentId).catch(() => {});
+  }
 
   function emit() {
     if (expiryTimer) clearTimeout(expiryTimer);
@@ -252,9 +262,13 @@ export function createPromptAttachmentController(
         signal: abort.signal,
         onUpload: (upload) => {
           entry.upload = upload;
-          // An initiation response can race explicit removal before its handle was known.
-          if (entry.removed)
-            void deletePromptAttachment(projectId!, upload.attachment_id).catch(() => {});
+          // An initiation response can race explicit removal before its handle was
+          // known. `remove` deliberately left that request running so this id would
+          // arrive: stop the transfer before a byte is sent, and delete the row.
+          if (entry.removed) {
+            abort.abort();
+            deleteAfterRemoval(entry, upload.attachment_id);
+          }
         },
         onProgress: (receivedBytes) => {
           if (!current() || percent(receivedBytes) === percent(entry.item.receivedBytes)) return;
@@ -423,13 +437,18 @@ export function createPromptAttachmentController(
       if (!entry) return;
       entry.removed = true;
       entry.generation++;
-      entry.abort?.abort();
       entries.delete(id);
+      const attachmentId = entry.upload?.attachment_id ?? entry.item.attachment?.attachment_id;
+      // The initiation POST is the ONLY answer that names the row the server has
+      // already created. Aborting it while it is in flight strands that row until
+      // its 24-hour expiry, against a budget of 40 unfinished handles per user —
+      // so leave it running and let `onUpload` abort and delete once the id lands.
+      // Bounded by the initiation's own request timeout and retry budget; no file
+      // bytes are sent, because the abort happens before the first transfer.
+      if (attachmentId) entry.abort?.abort();
       emit();
       pump();
-      const attachmentId = entry.upload?.attachment_id ?? entry.item.attachment?.attachment_id;
-      // Best-effort: the entry is already gone, and an unbound upload expires after 24 hours.
-      if (attachmentId) void deletePromptAttachment(projectId!, attachmentId).catch(() => {});
+      if (attachmentId) deleteAfterRemoval(entry, attachmentId);
     },
     abort,
     submit(ids: readonly string[]): void {

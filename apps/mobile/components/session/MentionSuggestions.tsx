@@ -13,23 +13,17 @@
 import React from 'react';
 import {
   View,
-  Pressable,
   Platform,
   ScrollView,
 } from 'react-native';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
-import { MessageSquare, Folder, Loader } from 'lucide-react-native';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withTiming,
-  Easing,
-  cancelAnimation,
-} from 'react-native-reanimated';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { ChatIcon as MessageSquare, FolderIcon as Folder } from '@/lib/icons';
 import { getFileIconComponent } from '@/components/files/FileItem';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import type { MentionItem } from './useMentions';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -61,37 +55,15 @@ export function MentionSuggestions({
   const isDark = colorScheme === 'dark';
 
   // Theme tokens — mirror web's bg-popover / border-border/60 / bg-accent / muted-foreground
-  const bgColor = isDark ? '#1F1F1F' : '#FFFFFF';
-  const borderColor = isDark ? 'rgba(58,58,58,0.6)' : 'rgba(220,221,222,0.6)';
-  const fgColor = isDark ? '#EBEBEB' : '#121215';
-  const mutedFg = isDark ? 'rgba(235,235,235,0.5)' : 'rgba(18,18,21,0.5)';
-  const mutedFg35 = isDark ? 'rgba(235,235,235,0.35)' : 'rgba(18,18,21,0.35)';
-  const accentBg = isDark ? '#212121' : '#E5E7EB';
-  const iconMuted = isDark ? 'rgba(235,235,235,0.5)' : 'rgba(18,18,21,0.5)';
-  const agentBadgeBg = isDark ? 'rgba(235,235,235,0.1)' : 'rgba(18,18,21,0.08)';
-  const agentBadgeFg = isDark ? 'rgba(235,235,235,0.6)' : 'rgba(18,18,21,0.6)';
-
-  // Hooks must run on every render — declare before any early return.
-  const spin = useSharedValue(0);
-  React.useEffect(() => {
-    if (!isLoading) {
-      cancelAnimation(spin);
-      spin.value = 0;
-      return;
-    }
-    spin.value = 0;
-    spin.value = withRepeat(
-      withTiming(1, { duration: 900, easing: Easing.linear }),
-      -1,
-      false,
-    );
-    return () => {
-      cancelAnimation(spin);
-    };
-  }, [isLoading, spin]);
-  const spinnerStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${spin.value * 360}deg` }],
-  }));
+  const bgColor = isDark ? THEME.dark.popover : THEME.light.popover;
+  const borderColor = isDark ? withAlpha(THEME.dark.border, 0.6) : withAlpha(THEME.light.border, 0.6);
+  const fgColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const mutedFg = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
+  const mutedFg35 = isDark ? withAlpha(THEME.dark.foreground, 0.35) : withAlpha(THEME.light.foreground, 0.35);
+  const accentBg = isDark ? THEME.dark.accent : THEME.light.accent;
+  const iconMuted = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
+  const agentBadgeBg = isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.08);
+  const agentBadgeFg = isDark ? withAlpha(THEME.dark.foreground, 0.6) : withAlpha(THEME.light.foreground, 0.6);
 
   if (items.length === 0 && !isLoading) return null;
 
@@ -122,7 +94,7 @@ export function MentionSuggestions({
         marginHorizontal: 16,
         marginBottom: 8,
         maxHeight: 288,
-        shadowColor: '#000',
+        shadowColor: '#000', // hex-allowlist: universal shadow ink, not a themed surface color
         shadowOffset: { width: 0, height: -4 },
         shadowOpacity: isDark ? 0.3 : 0.08,
         shadowRadius: 12,
@@ -185,9 +157,7 @@ export function MentionSuggestions({
               paddingVertical: 8,
             }}
           >
-            <Animated.View style={spinnerStyle}>
-              <Icon as={Loader} size={14} color={mutedFg} strokeWidth={2} />
-            </Animated.View>
+            <KortixLoader customSize={14} />
             <Text style={{ color: mutedFg, fontSize: 12, fontFamily: 'Roobert' }}>
               Searching…
             </Text>
@@ -224,7 +194,7 @@ function MentionRow({
   agentBadgeFg: string;
 }) {
   return (
-    <Pressable
+    <PressableSurface
       onPress={onPress}
       style={({ pressed }) => ({
         flexDirection: 'row',
@@ -237,7 +207,7 @@ function MentionRow({
     >
       {renderLeadingIcon(item, iconMuted, agentBadgeBg, agentBadgeFg)}
       {renderLabel(item, fgColor, mutedFg35)}
-    </Pressable>
+    </PressableSurface>
   );
 }
 
@@ -279,7 +249,7 @@ function renderLeadingIcon(
 
   if (item.kind === 'session') {
     return (
-      <Icon as={MessageSquare} size={16} color={iconMuted} strokeWidth={2} />
+      <Icon as={MessageSquare} size={16} color={iconMuted} />
     );
   }
 
@@ -290,7 +260,7 @@ function renderLeadingIcon(
   const fileName = cleanPath.split('/').pop() || cleanPath;
 
   if (isDir) {
-    return <Icon as={Folder} size={16} color={iconMuted} strokeWidth={2} />;
+    return <Icon as={Folder} size={16} color={iconMuted} />;
   }
 
   const IconComponent = getFileIconComponent({
@@ -298,7 +268,7 @@ function renderLeadingIcon(
     path: cleanPath,
     type: 'file',
   } as any);
-  return <Icon as={IconComponent} size={16} color={iconMuted} strokeWidth={2} />;
+  return <Icon as={IconComponent} size={16} color={iconMuted} />;
 }
 
 // ─── Label / description (matches web layout per kind) ───────────────────────

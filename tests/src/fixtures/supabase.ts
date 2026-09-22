@@ -56,7 +56,7 @@ export async function ssoFixtureToken(
   const res = await supaFetch(`${env.supabaseUrl}/auth/v1/admin/users/${user.userId}`, {
     method: 'PUT',
     headers: supabaseAdminHeaders(env.supabaseServiceRoleKey, {
-      anonKey: env.supabaseAnonKey,
+      anonKey: env.supabaseAnonKey ?? undefined,
       json: true,
     }),
     body: JSON.stringify({
@@ -76,7 +76,7 @@ export async function adminCreateUser(env: Env, email: string, password: string)
   const res = await supaFetch(`${env.supabaseUrl}/auth/v1/admin/users`, {
     method: "POST",
     headers: supabaseAdminHeaders(env.supabaseServiceRoleKey, {
-      anonKey: env.supabaseAnonKey,
+      anonKey: env.supabaseAnonKey ?? undefined,
       json: true,
     }),
     body: JSON.stringify({ email, password, email_confirm: true }),
@@ -91,7 +91,7 @@ export async function adminDeleteUser(env: Env, userId: string): Promise<void> {
   const res = await supaFetch(`${env.supabaseUrl}/auth/v1/admin/users/${userId}`, {
     method: "DELETE",
     headers: supabaseAdminHeaders(env.supabaseServiceRoleKey, {
-      anonKey: env.supabaseAnonKey,
+      anonKey: env.supabaseAnonKey ?? undefined,
     }),
   });
   if (!res.ok && res.status !== 404) {

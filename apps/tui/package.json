@@ -1,0 +1,40 @@
+{
+  "name": "@kortix/tui",
+  "version": "0.0.0",
+  "description": "Kortix TUI \u2014 experimental terminal client for Kortix, built on OpenTUI over @kortix/sdk.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run src/index.tsx",
+    "typecheck": "tsc --noEmit",
+    "keymap": "bun run scripts/print-keymap.ts",
+    "bundle": "bash bundle/bundle-host.sh",
+    "bundle:all": "bash bundle/bundle-all.sh",
+    "bundle:darwin-arm64": "bash bundle/bundle-darwin-arm64.sh",
+    "bundle:darwin-x64": "bash bundle/bundle-darwin-x64.sh",
+    "bundle:linux-x64": "bash bundle/bundle-linux-x64.sh",
+    "bundle:linux-arm64": "bash bundle/bundle-linux-arm64.sh",
+    "bundle:clean": "rm -f bundle/kortix-tui bundle/kortix-tui-darwin-* bundle/kortix-tui-linux-*",
+    "test": "bun test --timeout ${KORTIX_TUI_TEST_TIMEOUT_MS:-20000}"
+  },
+  "dependencies": {
+    "@kortix/cli": "workspace:*",
+    "@kortix/sdk": "workspace:*",
+    "@opentui/core": "0.5.11",
+    "@opentui/core-darwin-arm64": "0.5.11",
+    "@opentui/core-darwin-x64": "0.5.11",
+    "@opentui/core-linux-arm64": "0.5.11",
+    "@opentui/core-linux-arm64-musl": "0.5.11",
+    "@opentui/core-linux-x64": "0.5.11",
+    "@opentui/core-linux-x64-musl": "0.5.11",
+    "@opentui/react": "0.5.11",
+    "@tanstack/react-query": "^5.75.2",
+    "react": "^19.2.0"
+  },
+  "devDependencies": {
+    "@tsconfig/bun": "^1.0.7",
+    "@types/bun": "^1.1.0",
+    "@types/react": "^19.2.0",
+    "typescript": "^5.4.0"
+  }
+}

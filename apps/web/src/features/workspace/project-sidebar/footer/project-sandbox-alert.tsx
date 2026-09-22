@@ -64,6 +64,32 @@ const SEVERITY_LABEL: Record<SandboxAlertSeverity, string> = {
   building: 'Sandbox build running…',
 };
 
+/**
+ * The member view: what a viewer who can neither open the sandbox settings
+ * (`project.customize.read`) nor rebuild (`project.write`) is told.
+ *
+ * The operator card names the build category, its age and its cause
+ * ("Runtime artifact missing · 1m ago"). None of that is actionable for a
+ * member, and a red "Sandbox build failing" in their sidebar reads as
+ * something THEY broke. They get the one fact that matters to them: whether
+ * sessions can start, and who can fix it. A partial outage (`warning`) still
+ * routes sessions, so it is not shown to them at all.
+ */
+const MEMBER_LABEL: Partial<Record<SandboxAlertSeverity, string>> = {
+  critical: 'Sessions unavailable',
+  building: 'Preparing sandbox…',
+};
+
+const MEMBER_TEXT: Partial<Record<SandboxAlertSeverity, string>> = {
+  critical: 'New sessions can’t start right now. An owner or admin of this project can fix it.',
+  building: 'Sessions can start once it’s ready.',
+};
+
+const MEMBER_TONE: Partial<Record<SandboxAlertSeverity, SidebarAlertTone>> = {
+  critical: 'warning',
+  building: 'neutral',
+};
+
 const CATEGORY_LABEL: Record<string, string> = {
   quota: 'Snapshot quota reached',
   dockerfile: 'Dockerfile build failed',
@@ -371,8 +397,42 @@ function SandboxAlertContent({
 export function ProjectSandboxAlert({ projectId }: { projectId: string }) {
   const [isOpen, setIsOpen] = useState(false);
   const { data } = useSandboxHealth(projectId);
+  const caps = useProjectPageCans(projectId);
   const severity = resolveSandboxAlertSeverity(data);
   if (!severity || !data) return null;
+
+  const details = caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ];
+  const write = caps[PROJECT_ACTIONS.PROJECT_WRITE];
+  // Wait for the verdict: a member must never see the operator card flash
+  // before it swaps to the member one.
+  if (details?.isLoading || write?.isLoading) return null;
+  const isOperator = details?.allowed !== false || write?.allowed !== false;
+
+  if (!isOperator) {
+    const label = MEMBER_LABEL[severity];
+    const text = MEMBER_TEXT[severity];
+    const tone = MEMBER_TONE[severity];
+    if (!label || !text || !tone) return null;
+    return (
+      <SidebarAlert
+        tone={tone}
+        icon={
+          severity === 'building' ? (
+            <Loading className="in-[button]:text-foreground size-4 shrink-0" variant="spokes" />
+          ) : (
+            <DangerTriangleSolid weight="fill" className="size-4 shrink-0" />
+          )
+        }
+        label={label}
+        open={isOpen}
+        onOpenChange={setIsOpen}
+      >
+        <SidebarAlertBody>
+          <SidebarAlertText>{text}</SidebarAlertText>
+        </SidebarAlertBody>
+      </SidebarAlert>
+    );
+  }
 
   return (
     <SidebarAlert

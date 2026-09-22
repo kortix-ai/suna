@@ -34,7 +34,11 @@ mock.module('../shared/db', () => ({
 mock.module('../config', () => ({ SANDBOX_VERSION: 'test', config: { FRONTEND_URL: 'https://dev.kortix.com' } }));
 mock.module('../feature-flags/for-project', () => ({ projectFeatureFlagEnabled: async () => true }));
 mock.module('../channels/teams-api', () => ({ sendCard: async () => 'card-1' }));
-mock.module('../channels/teams/binding', () => ({ resolveConversationProject: async () => PROJECT_ID }));
+mock.module('../channels/teams/binding', () => ({
+  resolveConversationProject: async () => PROJECT_ID,
+  resolveConversationProjectDetailed: async () => ({ kind: 'project', projectId: PROJECT_ID }),
+}));
+mock.module('../channels/teams/auth-resume', () => ({ createPendingTeamsPickerMessage: async () => null }));
 mock.module('../channels/teams/commands', () => ({
   parseTeamsCommand: realParse,
   handleTeamsCommand: async (input: { command: { verb: string } }) => {

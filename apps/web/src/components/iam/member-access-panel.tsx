@@ -98,7 +98,7 @@ import {
   removeAccountMember,
   type IamPolicy,
 } from '@kortix/sdk';
-import { invalidatePermissionProbes, qk } from '@kortix/sdk/react';
+import { contract, invalidatePermissionProbes, qk } from '@kortix/sdk/react';
 import { areaLabel, permissionLabel } from './role-capability-matrix';
 
 const PANEL = 'bg-popover rounded-md border';
@@ -179,7 +179,7 @@ export function MemberAccessPanel({
   const membersQuery = useQuery({
     queryKey: ['account-members', accountId],
     queryFn: () => listAccountMembers(accountId),
-    staleTime: 20_000,
+    ...contract('directory'),
   });
 
   // Server-side derivation of this member's group memberships. Drives the
@@ -188,7 +188,7 @@ export function MemberAccessPanel({
   const memberGroupsQuery = useQuery({
     queryKey: ['member-groups', accountId, memberUserId],
     queryFn: () => listMemberGroups(accountId, memberUserId),
-    staleTime: 30_000,
+    ...contract('directory'),
   });
 
   // Which projects this member reaches, at what role, and how. Lifted to the
@@ -198,7 +198,7 @@ export function MemberAccessPanel({
   const projectAccessQuery = useQuery({
     queryKey: ['iam-member-project-access', accountId, memberUserId],
     queryFn: () => listMemberProjectAccess(accountId, memberUserId),
-    staleTime: 30_000,
+    ...contract('directory'),
   });
 
   // The member's ACCOUNT role is one value: a built-in role, or a custom role

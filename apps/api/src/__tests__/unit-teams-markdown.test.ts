@@ -78,3 +78,10 @@ describe('markdownToCardElements — structure', () => {
     expect(markdownToCardElements('  \n\n ')).toEqual([]);
   });
 });
+
+describe('markdownToCardElements — HTML entities', () => {
+  test('entities that leak into the text are decoded, not shown literally (dev: "I&#39;ll take a look")', () => {
+    const [p] = markdownToCardElements("Once it&#39;s attached, I&#39;ll take a look &amp; reply &lt;soon&gt; &quot;ok&quot;") as El[];
+    expect(p.text).toBe(`Once it's attached, I'll take a look & reply <soon> "ok"`);
+  });
+});

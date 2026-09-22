@@ -19,6 +19,8 @@ const COMMAND_VERBS = new Set([
   'whoami',
   'who',
   'help',
+  'stop',
+  'cancel',
   'status',
   'config',
   'settings',
@@ -29,6 +31,7 @@ const COMMAND_VERBS = new Set([
   'projects',
   'use',
   'switch',
+  'policy',
 ]);
 
 export function parseTeamsCommand(text: string | undefined): TeamsCommand | null {
@@ -70,4 +73,26 @@ export function conversationScope(activity: {
   if (t === 'channel') return 'channel';
   if (t === 'groupchat') return 'groupChat';
   return 'personal';
+}
+
+/**
+ * What to call this conversation in the bindings table. Teams conversation ids
+ * (`19:…@thread.tacv2;messageid=…`, `a:1FQyR…`) mean nothing to a person; the
+ * team + channel name, "Group chat", or the person's name do.
+ */
+export function describeTeamsConversation(activity: {
+  conversation?: { conversationType?: string; name?: string };
+  channelData?: { team?: { name?: string }; channel?: { name?: string } };
+  from?: { name?: string };
+}): { channelName: string; channelType: TeamsConversationScope } {
+  const scope = conversationScope(activity);
+  if (scope === 'channel') {
+    const team = activity.channelData?.team?.name?.trim();
+    const channel = activity.channelData?.channel?.name?.trim() || activity.conversation?.name?.trim() || 'General';
+    return { channelName: team ? `${team} › ${channel}` : channel, channelType: scope };
+  }
+  if (scope === 'groupChat') {
+    return { channelName: activity.conversation?.name?.trim() || 'Group chat', channelType: scope };
+  }
+  return { channelName: activity.from?.name?.trim() || 'Personal chat', channelType: scope };
 }

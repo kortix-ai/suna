@@ -27,6 +27,7 @@ import {
   repositoryAccessFromSessionMetadata,
 } from './session-sandbox-metadata';
 import { resolveSessionNetworkBoundary } from './network-secret-boundary';
+import { resolveSessionPersonalOwner } from './personal-resources';
 import { sandboxBelongsToThisInstance } from '../instance-scope';
 import type { NetworkBoundarySecretBinding } from '../../secrets/network-boundary';
 
@@ -417,9 +418,17 @@ async function resolveOwnerRawEnv(
   // every secret-CRUD fan-out) would re-push the full agent-grant set into a
   // narrowed sandbox, silently widening it back. null allowlist → passthrough.
   const grantEnvForSession = intersectSecretGrants(grantEnv, row.secretsAllowlist ?? null);
+  // Spec 2026-09-22 §2.3: the personal-override owner is the session's
+  // on-behalf-of human in a private session under the agent-principal model
+  // (null after a foreign prompt clears it); the creator otherwise (legacy).
+  const personalUserId = await resolveSessionPersonalOwner({
+    projectId,
+    sessionId,
+    legacyUserId: row.createdBy,
+  });
   const snapshot = await listProjectSecretsSnapshotForUser(
     projectId,
-    row.createdBy,
+    personalUserId,
     grantEnvForSession,
     // Same session the boot path built for — boot and hot push must agree on
     // delivery or a prompt would re-push a value boot deliberately withheld.

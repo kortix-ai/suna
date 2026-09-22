@@ -134,3 +134,32 @@ describe('interactive cards', () => {
     expect(a.some((x) => x.type === 'Action.OpenUrl' && x.url === 'https://app/r')).toBe(true);
   });
 });
+
+describe('step citations + answer card', () => {
+  test('a completed step renders its sources as a footer of links', () => {
+    const card = buildPlanCard('Working on it…', [
+      step({
+        status: 'complete',
+        title: 'Reading the incident logs',
+        sources: [
+          { type: 'url', url: 'https://kortix.com/a', text: 'incident 42' },
+          { type: 'url', url: 'https://kortix.com/b', text: 'deploy log' },
+        ],
+      }),
+    ]);
+    const flat = JSON.stringify(card);
+    expect(flat).toContain('[incident 42](https://kortix.com/a)');
+    expect(flat).toContain('[deploy log](https://kortix.com/b)');
+  });
+
+  test('buildAnswerCard renders a provided Adaptive Card verbatim instead of the text body', () => {
+    const custom = { type: 'AdaptiveCard', version: '1.5', body: [{ type: 'TextBlock', text: 'Custom!' }] };
+    const card = buildAnswerCard('fallback text', 'https://app/s', custom) as { type: string; body: unknown[] };
+    expect(card.type).toBe('AdaptiveCard');
+    const flat = JSON.stringify(card);
+    expect(flat).toContain('Custom!');
+    expect(flat).not.toContain('fallback text');
+    // The session link is still appended so the reader can open the run.
+    expect(flat).toContain('https://app/s');
+  });
+})

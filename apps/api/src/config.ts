@@ -385,10 +385,10 @@ const envSchema = z.object({
 
   // ── LLM Providers (optional — only needed in cloud mode) ─────────────────
   OPENROUTER_API_URL: optUrl('https://openrouter.ai/api/v1'),
-  // Single OpenRouter key for BOTH the router (/v1/router) and the managed LLM
-  // gateway (/v1/llm). The gateway used to read a separate KORTIX_OPENROUTER_API_KEY
-  // — consolidated onto this one var.
+  // OpenRouter remains available for the router and project BYOK connections.
   OPENROUTER_API_KEY: optStr,
+  MORPH_API_URL: optUrl('https://api.morphllm.com/v1'),
+  MORPH_API_KEY: optStr,
   // Whether a session's sandbox gets the `kortix-connectors` OpenCode MCP
   // server (KORTIX_CONNECTORS_MCP_ENABLED in the guest). It exposes the
   // connector meta-tools plus `secret_call`, the only way to use an
@@ -444,14 +444,8 @@ const envSchema = z.object({
   // constant baked into the gateway binary. Operators can replace the default
   // and define any number of exact-match fallback policies without code changes.
   LLM_GATEWAY_DEFAULT_MODEL: optStrDefault(PLATFORM_DEFAULT_MODEL_ID),
-  // Target when a DEFAULT-model request carries image input and the default
-  // model lacks vision. Empty = no reroute (the request goes to the default
-  // model as-is). gpt-5.6-luna ($0.20/$1.20) is the vision reroute target —
-  // the default platform model (deepseek-v4-flash) is text-only. Since
-  // 2026-08-27 glm-5.3-flash ($0.075/$0.25) is the cheaper vision-capable
-  // managed model; switching the reroute target is a quality decision that
-  // has not been made yet, so the default stays on Luna.
-  LLM_GATEWAY_VISION_MODEL: optStrDefault('gpt-5.6-luna'),
+  // Image-capable managed model used when the default receives an image.
+  LLM_GATEWAY_VISION_MODEL: optStrDefault('deepseek-v4.1-flash'),
   LLM_GATEWAY_FALLBACK_POLICIES: optFallbackPolicies,
   // Optional JSON array replacing the platform managed-model overlay (transport,
   // upstream id, pricing ref, capabilities). Empty uses the bundled last-known
@@ -463,7 +457,7 @@ const envSchema = z.object({
   // BYOK resilience: when a user's own provider key hits a rate-limit / quota /
   // billing error (429/402/403), fall over to THIS managed model (billed as
   // Kortix credits) so the turn survives instead of erroring. Empty disables.
-  LLM_GATEWAY_BYOK_FALLBACK_MODEL: optStrDefault('deepseek-v4-flash'),
+  LLM_GATEWAY_BYOK_FALLBACK_MODEL: optStrDefault('deepseek-v4.1-flash'),
   // Dev: reverse-proxy /v1/llm-gateway/* to a standalone gateway on this port,
   // so sandboxes reach it through the API's own tunnel (no separate tunnel).
   LLM_GATEWAY_PROXY_PORT: optInt(0),
@@ -472,11 +466,6 @@ const envSchema = z.object({
   // the in-cluster gateway service, e.g. http://kortix-gateway:8090, so the
   // gateway stays internal and sandboxes reach it via the API's public origin.
   LLM_GATEWAY_PROXY_TARGET: optStr,
-  // AWS Bedrock — the managed ("Kortix") models route here via a Bedrock API key
-  // (bearer). Region selects the bedrock-runtime endpoint; the key is an IAM
-  // service-specific credential for bedrock.amazonaws.com.
-  AWS_BEDROCK_REGION: optStr,
-  AWS_BEDROCK_API_KEY: optStr,
   OPENAI_API_URL: optUrl('https://api.openai.com/v1'),
   OPENAI_API_KEY: optStr,
   // xAI / Gemini / Groq route their TEXT models through OpenRouter (see
@@ -998,17 +987,16 @@ function validateEnv(): z.infer<typeof envSchema> {
   if (!raw.OPENROUTER_API_KEY) {
     issues.push({
       var: 'OPENROUTER_API_KEY',
-      message: 'Not set — primary LLM route will fail with silent 401 errors',
+      message: 'Not set — the optional OpenRouter router is unavailable',
       level: 'warn',
     });
-    if (raw.LLM_GATEWAY_ENABLED === 'true') {
-      issues.push({
-        var: 'LLM_GATEWAY_ENABLED',
-        message:
-          'Gateway is on but OPENROUTER_API_KEY is unset — /v1/llm will 500 "openrouterApiKey missing"',
-        level: 'warn',
-      });
-    }
+  }
+  if (raw.LLM_GATEWAY_ENABLED === 'true' && raw.KORTIX_MANAGED_PROVIDER_ENABLED === 'true' && !raw.OPENROUTER_API_KEY) {
+    issues.push({
+      var: 'OPENROUTER_API_KEY',
+      message: 'Gateway is on but OPENROUTER_API_KEY is unset — Kortix managed models are unavailable',
+      level: 'warn',
+    });
   }
 
   // ── Print results ─────────────────────────────────────────────────────
@@ -1168,6 +1156,8 @@ export const config = {
   // ─── LLM Providers ────────────────────────────────────────────────────────
   OPENROUTER_API_URL: env.OPENROUTER_API_URL,
   OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
+  MORPH_API_URL: env.MORPH_API_URL,
+  MORPH_API_KEY: env.MORPH_API_KEY,
   CONNECTORS_MCP_ENABLED: env.CONNECTORS_MCP_ENABLED,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
   // Unset → follow billing (cloud keeps its revenue lineup even if the env
@@ -1184,8 +1174,6 @@ export const config = {
   LLM_GATEWAY_BYOK_FALLBACK_MODEL: env.LLM_GATEWAY_BYOK_FALLBACK_MODEL,
   LLM_GATEWAY_PROXY_PORT: env.LLM_GATEWAY_PROXY_PORT,
   LLM_GATEWAY_PROXY_TARGET: env.LLM_GATEWAY_PROXY_TARGET,
-  AWS_BEDROCK_REGION: env.AWS_BEDROCK_REGION,
-  AWS_BEDROCK_API_KEY: env.AWS_BEDROCK_API_KEY,
   OPENAI_API_URL: env.OPENAI_API_URL,
   OPENAI_API_KEY: env.OPENAI_API_KEY,
   XAI_API_URL: env.XAI_API_URL,
@@ -1408,15 +1396,11 @@ export const config = {
 
 // ─── Billing Markup Constants ────────────────────────────────────────────────
 //
-// Two pricing modes based on whose API key is used:
-//   * Kortix keys (user uses our keys):  1.2x provider cost (20% markup)
-//   * User's own keys (passthrough):     0.1x provider cost (10% platform fee)
+// Kortix-managed inference uses 1.2x provider cost (20% markup).
+// BYOK inference always has a zero Kortix charge.
 
 /** Markup when Kortix provides the API key. */
 export const KORTIX_MARKUP = 1.2;
-
-/** Platform fee when user provides their own API key. */
-export const PLATFORM_FEE_MARKUP = 0.1;
 
 // ─── Tool Pricing (Router) ──────────────────────────────────────────────────
 

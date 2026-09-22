@@ -20,7 +20,15 @@ export interface TokenRetryOptions {
 	invalidateBetweenAttempts?: boolean;
 }
 
-const CLIENT_SOURCES = new Set(['api', 'cli', 'mobile', 'web']);
+/**
+ * The surfaces a host may report in `X-Kortix-Client`. Kept in lockstep with
+ * `KortixPlatformConfig['clientSource']` (`core/http/config.ts`) — a value in
+ * one and not the other is either an unreachable union member or a header the
+ * SDK silently drops. The backend stores whatever arrives in
+ * `kortix.session_audit_events.client_reported_source` (a plain `text` column)
+ * after its own format check, so this set is the only allowlist in the path.
+ */
+const CLIENT_SOURCES = new Set(['api', 'cli', 'mobile', 'tui', 'web']);
 
 export function normalizeClientSource(value?: string): string | null {
 	const normalized = value?.trim().toLowerCase();

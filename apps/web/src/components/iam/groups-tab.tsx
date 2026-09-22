@@ -12,7 +12,7 @@ import { useTranslations } from '@/i18n/use-translations';
 // access surface renders. Only `CreateGroupDialog` stays local: it DEFINES a
 // group, it does not grant access, so it is not an `AccessDialog` mode.
 
-import { invalidatePermissionProbes } from '@kortix/sdk/react';
+import { contract, invalidatePermissionProbes } from '@kortix/sdk/react';
 import {
   ArrowRightIcon,
   MagnifyingGlassIcon,
@@ -79,6 +79,14 @@ interface GroupsTabProps {
    * batched probe, so this thread costs no extra request. */
   canReadRoles: boolean;
   canReadPolicies: boolean;
+  /** Group member rows: account name for the role dialog copy. */
+  accountName?: string;
+  /** Group member rows hide "Edit access" on the caller's own row. */
+  currentUserId: string;
+  /** `member.update` — group member rows offer "Edit access" (account role). */
+  canUpdateRole: boolean;
+  /** Group member rows: "View access" opens that member's panel. */
+  onSelectMember: (userId: string) => void;
   /** null = show the group list. A group id = show that group's access panel.
    *  Controlled by the account page's `?group=` param, exactly like
    *  `AccessProjectsTab`'s `?project=`. */
@@ -92,6 +100,10 @@ export function GroupsTab({
   rbacEnabled,
   canReadRoles,
   canReadPolicies,
+  accountName,
+  currentUserId,
+  canUpdateRole,
+  onSelectMember,
   selectedGroupId,
   onSelectGroup,
 }: GroupsTabProps) {
@@ -104,6 +116,10 @@ export function GroupsTab({
         rbacEnabled={rbacEnabled}
         canReadRoles={canReadRoles}
         canReadPolicies={canReadPolicies}
+        accountName={accountName}
+        currentUserId={currentUserId}
+        canUpdateRole={canUpdateRole}
+        onSelectMember={onSelectMember}
         onBack={() => onSelectGroup(null)}
       />
     );
@@ -139,7 +155,7 @@ function GroupsList({
   const groupsQuery = useQuery({
     queryKey: ['account-groups', accountId],
     queryFn: () => listGroups(accountId),
-    staleTime: 30_000,
+    ...contract('directory'),
   });
 
   const deleteMutation = useMutation({

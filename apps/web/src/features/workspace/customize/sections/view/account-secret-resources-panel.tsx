@@ -45,7 +45,8 @@ export function AccountSecretResourcesPanel({ accountId, projectId, providerId, 
   const [value, setValue] = useState('');
   const [rotating, setRotating] = useState<AccountSecretResource | null>(null);
   const [sharing, setSharing] = useState<AccountSecretResource | null>(null);
-  const [createMode, setCreateMode] = useState<'project' | 'members'>('project');
+  // New keys default to "Specific members" with the creator preselected: sharing is opt-in.
+  const [createMode, setCreateMode] = useState<'project' | 'members'>('members');
   const [sharingMode, setSharingMode] = useState<'project' | 'members'>('project');
   const [selectedMembers, setSelectedMembers] = useState<PrincipalSelection>({ memberIds: [], groupIds: [], inviteEmails: [] });
   const [deleting, setDeleting] = useState<AccountSecretResource | null>(null);
@@ -56,6 +57,10 @@ export function AccountSecretResourcesPanel({ accountId, projectId, providerId, 
   const members = useQuery({ queryKey: ['account-members', accountId], queryFn: () => listAccountMembers(accountId) });
   const actorRole = members.data?.find((member) => member.user_id === user?.id)?.account_role;
   const keys = (resources.data?.secrets ?? []).filter((secret) => secret.provider_id === providerId);
+  const resetCreateSharing = () => {
+    setCreateMode('members');
+    setSelectedMembers({ memberIds: user?.id ? [user.id] : [], groupIds: [], inviteEmails: [] });
+  };
   const refresh = async () => {
     await queryClient.invalidateQueries({ queryKey });
     refreshProjectProviderState(queryClient, projectId);
@@ -120,7 +125,7 @@ export function AccountSecretResourcesPanel({ accountId, projectId, providerId, 
     },
     onSuccess: async () => {
       await refresh();
-      setCreating(false); setRotating(null); setLabel(''); setValue(''); setCreateMode('project');
+      setCreating(false); setRotating(null); setLabel(''); setValue(''); resetCreateSharing();
       successToast(t('saved'));
     },
     onError: (error) => errorToast(error instanceof Error ? error.message : t('saveError')),
@@ -148,7 +153,7 @@ export function AccountSecretResourcesPanel({ accountId, projectId, providerId, 
     <section className="min-w-0 space-y-2" aria-label={oauth ? t('chatGptAccounts') : t('providerKeysFor', { provider: providerName })}>
       <div className="flex items-center justify-between gap-3">
         <p className="text-muted-foreground text-xs">{oauth ? t('accountCount', { count: keys.length }) : t('keyCount', { count: keys.length })}</p>
-        {canWrite && <Button size="sm" variant="secondary" onClick={() => { setCreateMode('project'); setSelectedMembers({ memberIds: [], groupIds: [], inviteEmails: [] }); setLabel(''); save.reset(); setCreating(true); }}>{oauth ? t('addAccount') : t('addKey')}</Button>}
+        {canWrite && <Button size="sm" variant="secondary" onClick={() => { resetCreateSharing(); setLabel(''); save.reset(); setCreating(true); }}>{oauth ? t('addAccount') : t('addKey')}</Button>}
       </div>
       {resources.isLoading ? <div role="status" aria-label={t('loadingKeys')}><Loading /></div> : resources.isError ? (
         <ErrorState size="sm" title={t('loadError')} action={<Button size="sm" variant="secondary" disabled={resources.isFetching} onClick={() => void resources.refetch()}>{common('retry')}</Button>} />

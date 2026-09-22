@@ -6,7 +6,7 @@ const source = readFileSync(resolve(import.meta.dir, 'page.tsx'), 'utf8');
 
 /**
  * `/projects` is a redirect back to THIS route (`page.tsx`, Task 21). Before
- * this fix, the terminal "nothing to open, nothing to auto-create" case
+ * this fix, the terminal "nothing to open" case
  * bounced there via `router.replace(withCurrentQuery('/projects'))`, which
  * looped forever the moment `/projects` stopped rendering a real list.
  *
@@ -15,21 +15,23 @@ const source = readFileSync(resolve(import.meta.dir, 'page.tsx'), 'utf8');
  * survives a regression that guts the fix while dodging the literal string
  * that was removed.
  */
-describe('/projects/start does not bounce to /projects', () => {
-  test('the terminal branch renders inline instead of redirecting to /projects', () => {
-    expect(source).not.toContain("withCurrentQuery('/projects')");
-    expect(source).not.toContain("'/projects'");
-    expect(source).toMatch(/setTerminal\(\s*classifyLandingTerminal\(/);
-    expect(source).toContain('<ProjectStartEmpty');
+describe('/projects/start hands off to a project or the selector', () => {
+  test('with no single obvious project it replaces the URL with the selector', () => {
+    expect(source).toContain("decided.current = withCurrentQuery('/projects');");
+    expect(source).toContain('router.replace(decided.current);');
+    expect(source).toContain('decideDoor({');
   });
 
-  test("the failure screen's secondary action does not point back at /projects either", () => {
-    expect(source).not.toContain('href="/projects"');
+  test('an obvious project opens directly, carrying the query string', () => {
+    expect(source).toContain('decided.current = withCurrentQuery(`/projects/${decision.projectId}`);');
+  });
+
+  test('a dropped navigation is re-issued instead of stranding the loading frame', () => {
+    expect(source).toContain('setTimeout(() => setNudge((n) => n + 1), 3000)');
+  });
+
+  test("the failure screen's secondary action goes to /new, not back into the door", () => {
     expect(source).toContain('href="/new"');
-  });
-
-  test('the only /projects destination left is a real project id, never the bare list', () => {
-    expect(source).toContain('withCurrentQuery(`/projects/${project.project_id}`)');
   });
 });
 
@@ -60,52 +62,20 @@ function signOutButton(): string {
  * escape hatch; the transient skeleton must not (it is a loading frame, not
  * a destination).
  */
-/**
- * JAY: symptom 5. `isAutoProjectSuppressed()` used to be called with no
- * argument — a process-wide flag with no owner. It now takes an account id
- * and this route must never call it with a bare, unbound check.
- *
- * Review round 1 found the FIRST fix here (`accounts.some((account) =>
- * isAutoProjectSuppressed(account.account_id))`) too broad: it suppressed
- * auto-create on ANY account the caller owns if ANY of them had a live flag,
- * while `resolveLandingDestination` only ever gates creation for ONE primary
- * candidate account. The scoping now lives THERE
- * (`resolve-landing-destination.ts` — see its own tests for the behavioral
- * proof), and this route just passes `isAutoProjectSuppressed` straight
- * through as a per-account predicate.
- */
-describe('/projects/start binds the suppression check to real accounts', () => {
-  test('never calls isAutoProjectSuppressed() with zero arguments', () => {
-    expect(source).not.toContain('isAutoProjectSuppressed()');
-  });
-
-  test('passes isAutoProjectSuppressed straight through, not pre-reduced to a single boolean here', () => {
-    expect(source).toContain('isAccountSuppressed: isAutoProjectSuppressed,');
-    // The bug this guards against: computing `.some(...)` over every account
-    // the caller owns HERE would let a flag on one account suppress creation
-    // on an unrelated one owned by the same user. Scoping to the actual
-    // primary candidate is resolveLandingDestination's job now, not this
-    // route's — so this route must never itself reduce the check to a
-    // single account-agnostic boolean.
-    expect(source).not.toContain('accounts.some((account) => isAutoProjectSuppressed');
+describe('/projects/start never creates a project on its own', () => {
+  // The auto-created "My First Project" hid pending invites from anyone who
+  // signed up without the email link. The door now only OPENS projects; with
+  // nothing obvious to open it hands off to the selector.
+  test('the page holds no provisioning path', () => {
+    expect(source).not.toContain('provisionProject');
+    expect(source).not.toContain('ensureFirstProject');
+    expect(source).not.toContain('NewWorkspacePage');
   });
 });
 
 describe('/projects/start stuck states offer a sign-out escape hatch', () => {
-  test('terminal AND error branches mount StartSignOutButton', () => {
-    const mounts = source.split('<StartSignOutButton />').length - 1;
-    expect(mounts).toBe(2);
-  });
-
-  // `resolve()` returns early on an empty list, so neither `terminal` nor
-  // `failed` was ever set: the loading frame stayed up forever with no control.
-  // On desktop, with no browser Back, that was a hard lock.
-  test('an empty account list renders the terminal with sign-out, not an endless loading frame', () => {
-    expect(source).toContain('const noAccounts = accountsQuery.isSuccess && accountsQuery.data.length === 0;');
-    expect(source).toContain("const shownTerminal = terminal ?? (noAccounts ? 'no-permission' : null);");
-    expect(source).toContain('if (shownTerminal) {');
-    expect(source).toContain('<ProjectStartEmpty reason={shownTerminal} />');
-    expect(source).not.toContain('if (terminal) {');
+  test('the error branch mounts StartSignOutButton', () => {
+    expect(source.split('<StartSignOutButton />').length - 1).toBe(1);
   });
 
   // The button used to sit at `top-4 right-4`. On Win/Linux the web-drawn

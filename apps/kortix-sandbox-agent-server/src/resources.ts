@@ -30,9 +30,17 @@ export interface MemorySnapshot {
 }
 
 export interface CgroupMemorySnapshot {
+  /** Everything charged to the cgroup, page cache included. */
   currentMb: number | null
+  /**
+   * `currentMb` minus inactive file pages: the memory the kernel cannot reclaim
+   * before it OOM-kills. The same figure kubelet evicts on. Equals `currentMb`
+   * when `memory.stat` is unreadable.
+   */
+  workingSetMb: number | null
   /** null = unlimited ("max") or unreadable. */
   maxMb: number | null
+  /** 0..100 of the working set against the limit. */
   usedPct: number | null
   /** cgroup v2 `memory.events` oom_kill counter; v1 has no cheap equivalent. */
   oomKills: number | null
@@ -122,21 +130,40 @@ export function parseCgroupOomKills(text: string | null): number | null {
   return m ? Number(m[1]) : null
 }
 
+/** Inactive file pages from `memory.stat`: `inactive_file` (v2) or `total_inactive_file` (v1). */
+export function parseCgroupInactiveFile(text: string | null): number | null {
+  if (text === null) return null
+  const m = text.match(/^(?:total_)?inactive_file\s+(\d+)/m)
+  return m ? Number(m[1]) : null
+}
+
+/**
+ * The cgroup's memory, judged as the kernel judges it.
+ *
+ * `memory.current` counts the page cache. On prod 2026-09-22 a `tsc --noEmit`
+ * filled it: 11315 of 12288 MB charged, under 1 GB anon, 5 GB inactive file.
+ * The guard read 92 % and aborted the turn twice; the kernel would have
+ * reclaimed the cache and killed nothing (`oom_kill 0`).
+ */
 export function cgroupSnapshot(
   current: string | null,
   max: string | null,
   events: string | null,
+  stat: string | null = null,
 ): CgroupMemorySnapshot {
   const currentBytes = parseCgroupBytes(current)
   const maxBytes = parseCgroupBytes(max)
+  const inactiveFile = parseCgroupInactiveFile(stat) ?? 0
+  const workingSetBytes = currentBytes === null ? null : Math.max(0, currentBytes - inactiveFile)
   const currentMb = currentBytes === null ? null : Math.round(currentBytes / MB)
   const maxMb = maxBytes === null ? null : Math.round(maxBytes / MB)
   return {
     currentMb,
+    workingSetMb: workingSetBytes === null ? null : Math.round(workingSetBytes / MB),
     maxMb,
     usedPct:
-      currentBytes !== null && maxBytes !== null && maxBytes > 0
-        ? Math.round((currentBytes / maxBytes) * 100)
+      workingSetBytes !== null && maxBytes !== null && maxBytes > 0
+        ? Math.round((workingSetBytes / maxBytes) * 100)
         : null,
     oomKills: parseCgroupOomKills(events),
   }
@@ -181,7 +208,7 @@ export interface SnapshotInputs {
 }
 
 export async function readResourceSnapshot(inputs: SnapshotInputs): Promise<ResourceSnapshot> {
-  const [meminfo, loadavg, uptime, cgCurrent, cgMax, cgEvents, cgV1Usage, cgV1Limit, daemon, runtime, disks, runtimePids] =
+  const [meminfo, loadavg, uptime, cgCurrent, cgMax, cgEvents, cgStat, cgV1Usage, cgV1Limit, cgV1Stat, daemon, runtime, disks, runtimePids] =
     await Promise.all([
       readText('/proc/meminfo'),
       readText('/proc/loadavg'),
@@ -189,8 +216,10 @@ export async function readResourceSnapshot(inputs: SnapshotInputs): Promise<Reso
       readText('/sys/fs/cgroup/memory.current'),
       readText('/sys/fs/cgroup/memory.max'),
       readText('/sys/fs/cgroup/memory.events'),
+      readText('/sys/fs/cgroup/memory.stat'),
       readText('/sys/fs/cgroup/memory/memory.usage_in_bytes'),
       readText('/sys/fs/cgroup/memory/memory.limit_in_bytes'),
+      readText('/sys/fs/cgroup/memory/memory.stat'),
       processSnapshot(inputs.daemonPid),
       processSnapshot(inputs.runtimePid),
       Promise.all(inputs.diskPaths.map(diskSnapshot)),
@@ -198,8 +227,8 @@ export async function readResourceSnapshot(inputs: SnapshotInputs): Promise<Reso
     ])
   const cgroup =
     cgCurrent !== null || cgMax !== null
-      ? cgroupSnapshot(cgCurrent, cgMax, cgEvents)
-      : cgroupSnapshot(cgV1Usage, cgV1Limit, null)
+      ? cgroupSnapshot(cgCurrent, cgMax, cgEvents, cgStat)
+      : cgroupSnapshot(cgV1Usage, cgV1Limit, null, cgV1Stat)
   let cpus: number | null = null
   try {
     cpus = (await import('node:os')).cpus().length || null

@@ -7,6 +7,8 @@ import { normalizeAuditClientSource } from './audit-client-source';
 import { type AuditRow, getAuditQueue } from './audit-queue';
 import { db } from './db';
 import { auditDb } from './audit-db';
+import type { Actor } from '../iam/actor';
+import { type AgentAuditAttribution, resolveAgentAuditAttribution } from './agent-audit-attribution';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SKIPPED_PATHS = new Set(['/v1/health', '/v1/openapi.json', '/v1/docs']);
@@ -29,6 +31,9 @@ export interface AuditEventInput {
   agentName?: string | null;
   initiatorActorType?: string | null;
   initiatorActorId?: string | null;
+  /** The human an agent session acted on behalf of (spec
+   *  docs/specs/2026-09-22-agents-as-principals.md §2). Null otherwise. */
+  onBehalfOfUserId?: string | null;
   parentEventId?: string | null;
   delegationDepth?: number;
   /** Compatibility alias. New writers should use authoritativeSource. */
@@ -325,6 +330,7 @@ function buildAuditRow(input: AuditEventInput): AuditRow {
     agentName: input.agentName ?? null,
     initiatorActorType: input.initiatorActorType ?? null,
     initiatorActorId: input.initiatorActorId ?? null,
+    onBehalfOfUserId: uuidOrNull(input.onBehalfOfUserId),
     parentEventId: uuidOrNull(input.parentEventId),
     delegationDepth: input.delegationDepth ?? 0,
     source: authoritativeSource,
@@ -439,6 +445,37 @@ export async function runAuditedTransaction<T>(
   return committed;
 }
 
+/**
+ * Agent attribution for this request's credential, or null when the request
+ * did not authenticate with an agent-session token. Never throws: audit
+ * enrichment must not fail the audited request.
+ */
+async function agentAttributionFor(
+  c: AuditContext,
+  tokenUserId: string | null,
+): Promise<AgentAuditAttribution | null> {
+  const actor = (c as unknown as { get(key: string): unknown }).get('actor') as Actor | undefined;
+  const credential = actor?.credential;
+  if (!credential || credential.kind !== 'agent_session') return null;
+  try {
+    const fresh = (c as unknown as { get(key: string): unknown }).get('onBehalfOfUserId') as
+      | string
+      | null
+      | undefined;
+    return await resolveAgentAuditAttribution({
+      sessionId: credential.sessionId ?? c.get('sessionId') ?? null,
+      serviceAccountId: credential.serviceAccountId,
+      agentName: credential.agentGrant?.agent ?? null,
+      agentPrincipal: credential.agentPrincipal === true,
+      tokenUserId,
+      onBehalfOfUserId: fresh !== undefined ? fresh : (credential.onBehalfOfUserId ?? null),
+    });
+  } catch (error) {
+    console.error('[audit] agent attribution failed:', error);
+    return null;
+  }
+}
+
 export async function auditApiRequest(c: AuditContext, next: Next): Promise<void> {
   if (c.req.method === 'OPTIONS' || SKIPPED_PATHS.has(c.req.path)) {
     await next();
@@ -454,21 +491,36 @@ export async function auditApiRequest(c: AuditContext, next: Next): Promise<void
     throw error;
   } finally {
     const request = getRequestContext();
-    const actorUserId = c.get('userId') ?? request?.userId ?? null;
+    const tokenUserId = c.get('userId') ?? request?.userId ?? null;
     const accountId = inferAccountId(c);
-    if (actorUserId || accountId) {
+    if (tokenUserId || accountId) {
       const status = thrown ? errorStatus(thrown) : c.res.status;
       const inferred = inferResource(c.req.path);
       const ids = pathIds(c.req.path);
-      const actorType = inferActorType(c, actorUserId);
+      const actorType = inferActorType(c, tokenUserId);
       const auditPath = c.req.routePath || c.req.path;
       try {
+        // An agent-session credential names the agent, the human it acts on
+        // behalf of, and the initiator (spec 2026-09-22 §2). Under the
+        // agent-principal model `actor_user_id` is that human or nobody —
+        // never the owner stand-in a trigger run's token carries.
+        const agent = await agentAttributionFor(c, tokenUserId);
+        const actorUserId = agent ? agent.actorUserId : tokenUserId;
         await recordAuditEvent({
           accountId,
           projectId: ids.projectId ?? request?.projectId ?? null,
           sessionId: projectSessionId(c, ids.sessionId ?? request?.sessionId ?? null),
           actorUserId,
           actorType,
+          ...(agent
+            ? {
+                agentId: agent.agentId,
+                agentName: agent.agentName,
+                onBehalfOfUserId: agent.onBehalfOfUserId,
+                initiatorActorType: agent.initiatorActorType,
+                initiatorActorId: agent.initiatorActorId,
+              }
+            : {}),
           authoritativeSource: inferAuditSource(c, actorType),
           clientReportedSource: clientReportedAuditSource(c),
           outcome: outcomeForStatus(status),

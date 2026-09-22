@@ -1,5 +1,5 @@
-import { eq, and, desc, inArray, isNull } from 'drizzle-orm';
-import { accountTokens, accounts, sessionSandboxes } from '@kortix/db';
+import { eq, and, desc, inArray, isNull, type SQL } from 'drizzle-orm';
+import { accountTokens, accounts, readStoredAgentGrant, sessionSandboxes } from '@kortix/db';
 import { db } from '../shared/db';
 import {
   hashSecretKey,
@@ -27,6 +27,11 @@ export interface AccountTokenValidationResult {
    *  authorization (which Kortix CLI/API actions + connectors it may use,
    *  already ∩ the launching user). Null = full access (laptop CLI PAT). */
   agentGrant?: AgentGrant | null;
+  /** The human an agent-session token acts on behalf of (spec
+   *  2026-09-22-agents-as-principals §2.3). Null for an unattended run, a
+   *  session another human prompted, and every non-session token. Read fresh
+   *  on every request (this query is not memoized). */
+  onBehalfOfUserId?: string | null;
   error?: string;
 }
 
@@ -48,6 +53,9 @@ export interface CreateAccountTokenParams {
    *  authorizes this session AS the SA (its own policies) ∩ agentGrant, not the
    *  launching user. Null = legacy (authorize as the user). */
   serviceAccountId?: string | null;
+  /** Agent-session tokens only: the human the session acts on behalf of
+   *  (spec 2026-09-22-agents-as-principals §2.3). Null = unattended. */
+  onBehalfOfUserId?: string | null;
 }
 
 export interface CreateAccountTokenResult {
@@ -167,6 +175,7 @@ export async function createAccountToken(
       expiresAt: params.expiresAt ?? null,
       agentGrant: params.agentGrant ?? null,
       serviceAccountId: params.serviceAccountId ?? null,
+      onBehalfOfUserId: params.onBehalfOfUserId ?? null,
     })
     .returning();
 
@@ -263,6 +272,32 @@ export async function listPersonalAccountTokens(
 }
 
 /** Revoke a token (soft-delete — sets status='revoked' + revoked_at). */
+/**
+ * Who minted an account token, and whether it is a hand-minted personal token
+ * (not a session, service-account or agent-grant bearer). The revoke route
+ * decides between `token.personal.revoke` and `token.revoke` on this.
+ */
+export async function getAccountTokenOwner(
+  tokenId: string,
+  accountId: string,
+): Promise<{ userId: string | null; personal: boolean } | null> {
+  const [row] = await db
+    .select({
+      userId: accountTokens.userId,
+      sessionId: accountTokens.sessionId,
+      serviceAccountId: accountTokens.serviceAccountId,
+      agentGrant: accountTokens.agentGrant,
+    })
+    .from(accountTokens)
+    .where(and(eq(accountTokens.tokenId, tokenId), eq(accountTokens.accountId, accountId)))
+    .limit(1);
+  if (!row) return null;
+  return {
+    userId: row.userId ?? null,
+    personal: !row.sessionId && !row.serviceAccountId && !row.agentGrant,
+  };
+}
+
 export async function revokeAccountToken(
   tokenId: string,
   accountId: string,
@@ -366,9 +401,33 @@ export async function validateAccountToken(
     return { isValid: false, error: 'Invalid PAT format — expected kortix_pat_ prefix' };
   }
 
-  try {
-    const secretKeyHashes = candidateSecretKeyHashes(secretKey);
+  return validateAccountTokenMatching(() =>
+    inArray(accountTokens.secretKeyHash, candidateSecretKeyHashes(secretKey)),
+  );
+}
 
+const TOKEN_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Validate a token row by its id, with EXACTLY the checks
+ * `validateAccountToken` applies to a presented secret: active, not revoked,
+ * not expired, a session token only while its sandbox is live, idle-revoke.
+ *
+ * For callers that received a server-signed reference to a token instead of
+ * the secret — the connector → App assertion (apps/access.ts). Never expose
+ * this to a client-supplied id without such a signature.
+ */
+export async function validateAccountTokenById(
+  tokenId: string,
+): Promise<AccountTokenValidationResult> {
+  if (!TOKEN_ID_RE.test(tokenId)) return { isValid: false, error: 'Invalid token id' };
+  return validateAccountTokenMatching(() => eq(accountTokens.tokenId, tokenId));
+}
+
+async function validateAccountTokenMatching(
+  match: () => SQL,
+): Promise<AccountTokenValidationResult> {
+  try {
     // Join the owning account so we can apply idle-revoke without a
     // second round-trip on the hot path.
     const [row] = await db
@@ -383,13 +442,14 @@ export async function validateAccountToken(
         lastUsedAt: accountTokens.lastUsedAt,
         createdAt: accountTokens.createdAt,
         agentGrant: accountTokens.agentGrant,
+        onBehalfOfUserId: accountTokens.onBehalfOfUserId,
         patIdleRevokeDays: accounts.patIdleRevokeDays,
       })
       .from(accountTokens)
       .innerJoin(accounts, eq(accounts.accountId, accountTokens.accountId))
       .where(
         and(
-          inArray(accountTokens.secretKeyHash, secretKeyHashes),
+          match(),
           eq(accountTokens.status, 'active'),
           // `revoked_at` is the SECOND half of the revocation invariant and it
           // must be checked here, not only `status`. Nothing in the database
@@ -470,7 +530,8 @@ export async function validateAccountToken(
       tokenId: row.tokenId,
       projectId: row.projectId,
       sessionId: row.sessionId ?? null,
-      agentGrant: row.agentGrant ?? null,
+      agentGrant: readStoredAgentGrant(row.agentGrant),
+      onBehalfOfUserId: row.onBehalfOfUserId ?? null,
     };
   } catch (err) {
     console.error('Account token validation error:', err);

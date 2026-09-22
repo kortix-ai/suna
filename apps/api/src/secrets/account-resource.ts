@@ -41,6 +41,15 @@ export function secretUsableInProject(row: { projectId: string | null; accessMod
   return (row.projectId === null || row.projectId === projectId) && (row.accessMode === 'project' || granted);
 }
 
+/**
+ * Is a `private` provider key granted to the personal-key owner? Spec
+ * 2026-09-22 §2.3: `grantUserId` null (an agent-principal session with no
+ * on-behalf-of human) matches no grant, so only `project`-mode keys remain.
+ */
+export function personalKeyGranted(rowGrantUserId: string | null, grantUserId: string | null): boolean {
+  return grantUserId !== null && rowGrantUserId === grantUserId;
+}
+
 export async function memberMayReadProject(accountId: string, projectId: string, userId: string): Promise<boolean> {
   const [{ actorForUser }, { authorize }, { PROJECT_ACTIONS }] = await Promise.all([
     import('../iam/actor'), import('../iam/authorize'), import('../iam/actions'),
@@ -94,10 +103,16 @@ export async function resolveSessionProviderSecrets(input: {
   accountId: string;
   projectId: string;
   userId: string;
+  /**
+   * Whose PERSONAL key grants count (spec 2026-09-22 §2.3). Absent = `userId`
+   * (legacy). `null` = none: only project-mode keys are usable.
+   */
+  grantUserId?: string | null;
   providerId: string;
   name: string;
   advanceIndex?: boolean;
 } & ({ sessionId: string; secretIds?: never } | { secretIds: string[]; sessionId?: never })): Promise<{ configured: boolean; coolingDown: boolean; retryAfterSeconds?: number; secrets: { secretId: string; label: string; value: string }[] }> {
+  const grantUserId = input.grantUserId === undefined ? input.userId : input.grantUserId;
   let pool: { secretIds: string[]; nextIndex: number } | undefined;
   if (input.secretIds !== undefined) {
     pool = { secretIds: input.secretIds, nextIndex: 1 };
@@ -123,7 +138,10 @@ export async function resolveSessionProviderSecrets(input: {
     accessMode: accountSecretResources.accessMode,
     grantUserId: accountSecretGrants.userId,
   }).from(accountSecretResources)
-    .leftJoin(accountSecretGrants, and(eq(accountSecretGrants.secretId, accountSecretResources.secretId), eq(accountSecretGrants.userId, input.userId)))
+    .leftJoin(accountSecretGrants, and(
+      eq(accountSecretGrants.secretId, accountSecretResources.secretId),
+      grantUserId ? eq(accountSecretGrants.userId, grantUserId) : sql`false`,
+    ))
     .innerJoin(accountMembers, and(eq(accountMembers.accountId, input.accountId), eq(accountMembers.userId, input.userId)))
     .where(and(
       eq(accountSecretResources.accountId, input.accountId),
@@ -133,7 +151,9 @@ export async function resolveSessionProviderSecrets(input: {
       eq(accountSecretResources.active, true),
       inArray(accountSecretResources.secretId, pool.secretIds),
     ));
-  const byId = new Map(rows.filter((row) => secretUsableInProject(row, input.projectId, row.grantUserId === input.userId)).map((row) => [row.secretId, row]));
+  const byId = new Map(rows.filter((row) => secretUsableInProject(
+    row, input.projectId, personalKeyGranted(row.grantUserId, grantUserId),
+  )).map((row) => [row.secretId, row]));
   const ordered = pool.secretIds.flatMap((id) => {
     const row = byId.get(id);
     return row ? [row] : [];

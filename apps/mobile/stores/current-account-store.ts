@@ -9,6 +9,8 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 interface CurrentAccountState {
   selectedAccountId: string | null;
   setSelectedAccountId: (id: string | null) => void;
+  /** Sign-out: forget the selected account. */
+  reset: () => void;
 }
 
 export const useCurrentAccountStore = create<CurrentAccountState>()(
@@ -16,6 +18,7 @@ export const useCurrentAccountStore = create<CurrentAccountState>()(
     (set) => ({
       selectedAccountId: null,
       setSelectedAccountId: (selectedAccountId) => set({ selectedAccountId }),
+      reset: () => set({ selectedAccountId: null }),
     }),
     {
       name: 'kortix.currentAccount',

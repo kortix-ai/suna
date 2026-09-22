@@ -120,6 +120,15 @@ export const qk = {
      */
     list: (userId: string | null | undefined) =>
       [...qk.accounts.scope(), userId ?? 'anonymous'] as const,
+
+    /**
+     * The invites pending for one user's email (`listMyAccountInvites`).
+     * Under `scope()` on purpose: joining an invite changes the account
+     * list, and that invalidation targets `scope()`, so the joined invite
+     * drops out of this list in the same refetch.
+     */
+    myInvites: (userId: string | null | undefined) =>
+      [...qk.accounts.scope(), 'my-invites', userId ?? 'anonymous'] as const,
   },
 
   projects: {

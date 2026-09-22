@@ -24,17 +24,15 @@ const catalogSource = new URL('../../../../packages/llm-catalog/src/index.ts', i
 const { MANAGED_MODELS } = (await import(catalogSource)) as { MANAGED_MODELS: CatalogManagedModel[] }
 
 describe('BUNDLED_MANAGED_MODELS mirrors @kortix/llm-catalog MANAGED_MODELS', () => {
-  test('Astra remains usable when the live catalog is unavailable', () => {
-    expect(BUNDLED_MANAGED_MODELS['gpt-6-astra']).toMatchObject({
-      name: 'GPT-6 Astra',
+  test('the default remains usable when the live catalog is unavailable', () => {
+    expect(BUNDLED_MANAGED_MODELS['deepseek-v4.1-flash']).toMatchObject({
+      name: 'DeepSeek V4.1 Flash',
       provider: 'kortix',
       reasoning: true,
-      reasoning_options: [{ type: 'effort', values: ['low', 'medium', 'high', 'xhigh', 'max'] }],
-      temperature: false,
+      temperature: true,
       attachment: true,
       tool_call: true,
-      structured_output: true,
-      limit: { context: 1_050_000, output: 128_000 },
+      limit: { context: 1_048_576, output: 16_384 },
     })
   })
 

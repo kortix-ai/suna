@@ -350,6 +350,17 @@ describe('qk.projects.scope', () => {
 // what a stale single-account list from another user produces. Only the KEY
 // the list was cached under carries the answer. Hence this family.
 describe('qk.accounts', () => {
+  // The caller's pending invites. Joining one changes the account list, and
+  // every "an account changed" invalidation targets `scope()` — so the invite
+  // list must sit under that same prefix, or a joined invite stays listed.
+  test('myInvites partitions by user and sits under scope()', () => {
+    expect(qk.accounts.myInvites('user_a')).not.toEqual(qk.accounts.myInvites('user_b') as never);
+    expect(qk.accounts.myInvites('user_a')).toContain('user_a');
+    expect(startsWith(qk.accounts.myInvites('user_a'), qk.accounts.scope())).toBe(true);
+    expect(qk.accounts.myInvites('user_a')).not.toEqual(qk.accounts.list('user_a') as never);
+    expect(startsWith(qk.accounts.myInvites('user_a'), qk.accounts.list('user_a'))).toBe(false);
+  });
+
   test('the account list partitions by USER', () => {
     expect(qk.accounts.list('user_a')).not.toEqual(qk.accounts.list('user_b') as never);
   });

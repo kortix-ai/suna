@@ -261,7 +261,12 @@ export function extractConnectors(manifest: ParsedManifest): LoadedConnectors {
   const seenSlugs = new Set<string>();
 
   raw.forEach((entry, index) => {
-    const result = parseConnectorEntry(entry, index, filename);
+    // With `imports:`, attribute the connector to the file that declares it.
+    const slug = (entry as { slug?: unknown } | null)?.slug;
+    const declaredIn =
+      (typeof slug === 'string' ? manifest.imports?.origins.connectors[slug] : undefined) ??
+      filename;
+    const result = parseConnectorEntry(entry, index, declaredIn);
     if (!result.ok) {
       errors.push(result.error);
       return;

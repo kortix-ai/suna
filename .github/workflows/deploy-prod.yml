@@ -368,6 +368,22 @@ jobs:
               --outfile="artifacts/kortix-$t" \
               apps/cli/src/index.ts
           done
+          # The TUI is NOT in the `kortix` binary — `kortix tui` downloads
+          # kortix-tui from this same release on first use
+          # (apps/cli/src/tui-bin.ts). Same targets, same VERSION string, so the
+          # launcher's <version> lookup always finds its match.
+          # OPENTUI_LIBC is baked so a Linux target embeds one libc variant
+          # instead of both (-6.3 MB on linux-x64); see apps/tui/bundle/_build.sh.
+          for t in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
+            echo "↻ building kortix-tui-$t (cli $VERSION)"
+            bun build \
+              --compile \
+              --minify \
+              --target="bun-$t" \
+              --define="process.env.OPENTUI_LIBC=\"glibc\"" \
+              --outfile="artifacts/kortix-tui-$t" \
+              apps/tui/src/index.tsx
+          done
           cd artifacts
           chmod +x kortix-*
           ls -lh
@@ -384,6 +400,10 @@ jobs:
             artifacts/kortix-darwin-x64
             artifacts/kortix-linux-x64
             artifacts/kortix-linux-arm64
+            artifacts/kortix-tui-darwin-arm64
+            artifacts/kortix-tui-darwin-x64
+            artifacts/kortix-tui-linux-x64
+            artifacts/kortix-tui-linux-arm64
           if-no-files-found: error
 
   # ── Publish the public npm packages ─────────────────────────────────────────
@@ -418,7 +438,10 @@ jobs:
   publish-llm-catalog:
     name: Publish @kortix/llm-catalog to npm
     needs: version
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    # npm rejects sigstore provenance built on a non-GitHub-hosted runner
+    # (E422 'Unsupported GitHub Actions runner environment', v0.13.25,
+    # run 35589361726). Trusted Publishing needs a GitHub-hosted runner.
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
@@ -454,7 +477,10 @@ jobs:
   publish-sdk:
     name: Publish @kortix/sdk to npm
     needs: [version, publish-llm-catalog]
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    # npm rejects sigstore provenance built on a non-GitHub-hosted runner
+    # (E422 'Unsupported GitHub Actions runner environment', v0.13.25,
+    # run 35589361726). Trusted Publishing needs a GitHub-hosted runner.
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
@@ -490,7 +516,10 @@ jobs:
   publish-agent-tunnel:
     name: Publish @kortix/agent-tunnel to npm
     needs: version
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    # npm rejects sigstore provenance built on a non-GitHub-hosted runner
+    # (E422 'Unsupported GitHub Actions runner environment', v0.13.25,
+    # run 35589361726). Trusted Publishing needs a GitHub-hosted runner.
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
@@ -525,7 +554,10 @@ jobs:
     name: Publish and deprecate final @kortix/executor-sdk
     needs: [version, publish-sdk]
     if: ${{ needs.version.outputs.version == '0.12.5' }}
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    # npm rejects sigstore provenance built on a non-GitHub-hosted runner
+    # (E422 'Unsupported GitHub Actions runner environment', v0.13.25,
+    # run 35589361726). Trusted Publishing needs a GitHub-hosted runner.
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
@@ -684,19 +716,32 @@ jobs:
           if-no-files-found: error
 
   # ── Cut a single GitHub Release vX.Y.Z (CLI + desktop) ──────────────────────
-  # HARD-GATED on the required npm publications, ECS backend deploy (deploy-ecs),
-  # and verify-live-version proving the public endpoints serve exactly X.Y.Z.
+  # HARD-GATED on the ECS backend deploy (deploy-ecs) and verify-live-version
+  # proving the public endpoints serve exactly X.Y.Z.
   # The vX.Y.Z tag + Release are the public
   # announcement — they must never exist for a version prod isn't running
   # (v0.10.0/v0.10.1 shipped Releases while deploy-ecs failed on IAM and
   # api.kortix.com kept serving the old build; that is now impossible).
+  #
+  # DELIBERATELY NOT gated on the npm publish jobs. The Release's contents come
+  # from build-cli (and attach-desktop) — not from the registry — so an npm
+  # outage or an expired NPM_TOKEN must not cost this release its tag, its
+  # Release, its binaries, its changelog, or the two VERSION syncs that follow
+  # it. v0.13.25 (run 35589361726, prod b902d67fc4) is the incident: prod served
+  # 0.13.25 correctly while publish-llm-catalog and publish-agent-tunnel failed
+  # `npm error 404 Not Found - PUT https://registry.npmjs.org/@kortix%2f…`
+  # (npm's auth signature), which skipped publish-sdk, and that skipped
+  # github-release, attach-desktop, announce, sync-main-version and
+  # sync-staging-version — shipped but unrecorded. A failed publish still turns
+  # the whole run red on its own; it no longer takes the release record with it.
+  #
   # It still does NOT wait on desktop: desktop builds on slow, scarce, signed
   # macOS/Windows runners that can get stuck queued for ~50min (or fail on a cert
   # problem). Desktop installers are attached afterward by the separate
   # `attach-desktop` job, best-effort — a desktop problem can never block a release.
   github-release:
     name: GitHub Release v${{ needs.version.outputs.version }}
-    needs: [version, retag-images, build-cli, publish-sdk, publish-agent-tunnel, deploy-ecs, verify-live-version, frontend-auth-proof]
+    needs: [version, retag-images, build-cli, deploy-ecs, verify-live-version, frontend-auth-proof]
     runs-on: ${{ vars.CI_RUNNER_M_2204 || 'blacksmith-4vcpu-ubuntu-2204' }}
     permissions:
       contents: write
@@ -718,7 +763,78 @@ jobs:
           cp -v ./artifacts/kortix-* release/
           cd release
           sha256sum ./* > SHA256SUMS
+          # One `.sha256` beside each TUI asset: `kortix tui` verifies its
+          # download against it before the file becomes executable, and fetching
+          # 100 bytes beats fetching the whole SHA256SUMS list. Written AFTER
+          # SHA256SUMS so the checksum files are not themselves listed in it.
+          for f in kortix-tui-*; do sha256sum "$f" > "$f.sha256"; done
           ls -lh
+
+      # ── Refuse to publish an assetless or partial Release ────────────────────
+      # A Release with no binaries is WORSE than no Release: scripts/install.sh
+      # resolves `releases/latest` and then downloads
+      # `releases/download/${VERSION}/${ASSET}`, and apps/cli/src/update-check.ts
+      # reads the same `releases/latest`. So an empty or partial vX.Y.Z would
+      # become `latest` and 404 every CLI install and every update check until a
+      # human noticed. Assert the exact set build-cli uploads BEFORE the Release
+      # is created. Keep EXPECTED in lockstep with build-cli's upload-artifact
+      # path list — tests/unit/release-record-workflow.test.ts fails if they drift.
+      - name: Assert the release carries every expected binary
+        run: |
+          set -euo pipefail
+          cd release
+          EXPECTED="
+            kortix-darwin-arm64
+            kortix-darwin-x64
+            kortix-linux-x64
+            kortix-linux-arm64
+            kortix-tui-darwin-arm64
+            kortix-tui-darwin-x64
+            kortix-tui-linux-x64
+            kortix-tui-linux-arm64
+          "
+          # A compiled bun binary is tens of MB; 1 MiB only catches a truncated
+          # or placeholder file, never a legitimately smaller build.
+          MIN_BYTES=1048576
+          missing=0
+          present=0
+          for asset in $EXPECTED; do
+            if [ ! -f "$asset" ]; then
+              echo "::error::release asset missing: $asset"
+              missing=1
+              continue
+            fi
+            size="$(wc -c < "$asset")"
+            if [ "$size" -lt "$MIN_BYTES" ]; then
+              echo "::error::release asset truncated: $asset is ${size}B (< ${MIN_BYTES}B)"
+              missing=1
+              continue
+            fi
+            if ! grep -q " \./${asset}\$" SHA256SUMS; then
+              echo "::error::release asset not listed in SHA256SUMS: $asset"
+              missing=1
+              continue
+            fi
+            case "$asset" in
+              kortix-tui-*)
+                if [ ! -s "${asset}.sha256" ]; then
+                  echo "::error::missing sidecar checksum: ${asset}.sha256 (kortix tui verifies it before exec)"
+                  missing=1
+                fi
+                ;;
+            esac
+            present=$((present + 1))
+            echo "✔ $asset (${size}B)"
+          done
+          if [ ! -s SHA256SUMS ]; then
+            echo "::error::SHA256SUMS is missing or empty"
+            missing=1
+          fi
+          if [ "$missing" = 1 ]; then
+            echo "::error::Refusing to publish an incomplete Release. A partial vX.Y.Z becomes 'latest' and 404s every CLI install (scripts/install.sh, apps/cli/src/update-check.ts). Re-run build-cli, then re-run this job."
+            exit 1
+          fi
+          echo "✅ all ${present} expected binaries present, non-empty, and checksummed."
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

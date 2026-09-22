@@ -12,7 +12,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG, PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
-import { checkBillingActive } from '../../billing/services/billing-gate';
+import { checkBillingAdmission } from '../../billing/services/billing-gate';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { type SandboxProviderName, config } from '../../config';
 import { consumeProjectSessionCreateBudget } from '../../shared/rate-limit';
@@ -73,6 +73,7 @@ import {
   selectSessionHarness,
 } from './compile-agent-config';
 import { withProjectGitAuth } from './git';
+import { repositoryGeneration } from './repository-generation';
 import { resolveFastBootGitHintWithCache } from './fast-boot-git-hint';
 import { resolveSessionProvider, sessionProviderIsLocked } from './provider-precedence';
 import { RESERVED_SANDBOX_ENV_NAMES, isReservedSandboxEnvName } from './sandbox-env-names';
@@ -119,6 +120,7 @@ import {
   resolvePlatformMetaSandbox,
 } from './platform-meta-agent';
 import { prebuildCompiledBootArtifacts } from '../../git-proxy/compiled-prebuild';
+import { resolveSessionPersonalOwner } from './personal-resources';
 import {
   resolveProjectSnapshotMode,
   resolveProjectSnapshotPinForSession,
@@ -587,7 +589,16 @@ export async function buildSessionSandboxEnvVars(input: {
   // `input.userId` only if the row somehow isn't found (create races its own row
   // in some callers). The agent grant — not the human — remains the authority on
   // WHICH identifiers are eligible; this only picks the per-user override owner.
-  const secretsPrincipalUserId = sessionPolicyRow?.createdBy ?? input.userId;
+  //
+  // Spec 2026-09-22 §2.3 (agent-principal model, flag ON): the override owner
+  // is the session's on-behalf-of human, and only in a private session. A
+  // trigger/channel run or a shared session gets shared values only.
+  const secretsPrincipalUserId = await resolveSessionPersonalOwner({
+    projectId: input.projectId,
+    sessionId: input.sessionId,
+    accountId: input.accountId,
+    legacyUserId: sessionPolicyRow?.createdBy ?? input.userId,
+  });
 
   let runtimeSecrets: {
     env: Record<string, string>;
@@ -1413,7 +1424,8 @@ export async function createProjectSession(input: {
 
   let responseHeaders: Record<string, string> | undefined;
 
-  // The concurrency cap and the billing gate are independent read-only checks —
+  // The concurrency cap and the billing gate are independent read-only checks
+  // (`checkBillingAdmission` debits nothing; see its note on the hold leak) —
   // run them concurrently so a warmed create pays a single DB round-trip instead
   // of two serial ones. Error precedence is preserved exactly: the cap (429) is
   // still evaluated/returned before billing (402).
@@ -1427,7 +1439,7 @@ export async function createProjectSession(input: {
           projectId,
         )
       : Promise.resolve(null),
-    checkBillingActive(accountId),
+    checkBillingAdmission(accountId),
   ]);
   if (capResult) {
     responseHeaders = capResult.headers;
@@ -1543,6 +1555,7 @@ export async function createProjectSession(input: {
     // tight grace so finished workers don't idle at full compute.
     ...(input.callerSessionId ? { spawned_by_session: input.callerSessionId } : {}),
     repository_access: repositoryAccess,
+    repository_generation: repositoryGeneration(project.metadata as Record<string, unknown>),
     // Rollback compatibility: older API replicas must also enforce this restriction.
     workspace_mode: repositoryAccess ? 'branch' : 'runtime',
     sandbox_slug: sandboxSlug,

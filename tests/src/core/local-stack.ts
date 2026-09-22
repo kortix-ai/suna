@@ -194,6 +194,67 @@ function localSupabaseCommand(topology: LocalTopology): string[] {
   return args;
 }
 
+/**
+ * One probe's output as a single reportable line, or null when it found
+ * nothing. `ss` always prints its `State Recv-Q …` header, so a lone header
+ * means the port is free — reporting it would be noise that reads like a
+ * holder.
+ */
+export function formatPortProbe(port: number, tool: string, out: string): string | null {
+  const rows = out
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !/^State\s+Recv-Q/.test(line));
+  return rows.length > 0 ? `  ${port} ${tool}: ${rows.join(" | ")}` : null;
+}
+
+/** The host ports the local Supabase stack binds. */
+const SUPABASE_PORTS = [54321, 54322, 54323, 54324] as const;
+
+/**
+ * Who holds the Supabase ports, read at the moment `supabase start` fails.
+ *
+ * `supabase start` reports only `address already in use` and the container it
+ * could not bind — never what already had the port. That is why this failure
+ * has been diagnosed three times by inference and fixed twice without
+ * evidence:
+ *
+ *  - 2026-09-21, four runs: stale containers from a lane that skipped its
+ *    teardown. Fixed by stopping on every lane (`tests.yml`).
+ *  - 2026-09-21, run 35630898515: nothing left to delete — the binding simply
+ *    had not been released yet. Fixed by waiting for it (`tests.yml`).
+ *  - 2026-09-22, run 35701536921: the workflow's own sweep ran clean and its
+ *    `::warning::` did NOT fire, so the ports were free when the job started —
+ *    and `supabase start` inside `ke2e` still failed on 54322, 3.1s in.
+ *
+ * The workflow guards the OUTER start. This is the inner one, and nothing has
+ * ever looked at the port here. Read it where it breaks rather than guessing a
+ * fourth time.
+ *
+ * Best effort by design: this runs on an already-failing path, so a missing
+ * `ss`, a missing `docker`, or a slow probe must add nothing but silence.
+ */
+async function describePortHolders(): Promise<string> {
+  const lines: string[] = [];
+  for (const port of SUPABASE_PORTS) {
+    for (const argv of [
+      ["ss", "-ltnp", `sport = :${port}`],
+      ["docker", "ps", "-a", "--filter", `publish=${port}`, "--format", "{{.ID}} {{.Image}} {{.Status}} {{.Ports}}"],
+    ]) {
+      try {
+        const probe = Bun.spawn(argv, { stdin: "ignore", stdout: "pipe", stderr: "ignore" });
+        const out = (await new Response(probe.stdout).text()).trim();
+        await probe.exited;
+        const row = formatPortProbe(port, argv[0]!, out);
+        if (row) lines.push(row);
+      } catch {
+        /* the probe is not available here; the failure message stands alone */
+      }
+    }
+  }
+  return lines.length > 0 ? `\nports still held:\n${lines.join("\n")}` : "\nports: nothing is listening on 54321-54324";
+}
+
 export async function ensureLocalSupabase(
   topology: LocalTopology,
   options: { autoStart: boolean },
@@ -221,7 +282,9 @@ export async function ensureLocalSupabase(
   });
   const exitCode = await started.exited;
   if (exitCode !== 0) {
-    throw new Error(`local Supabase start exited with code ${exitCode}`);
+    throw new Error(
+      `local Supabase start exited with code ${exitCode}${await describePortHolders()}`,
+    );
   }
   const environment = await readLocalSupabaseEnvironment(topology);
   return {

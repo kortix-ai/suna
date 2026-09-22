@@ -63,3 +63,62 @@ export async function consumePendingTeamsAuthMessage(input: {
     return null;
   }
 }
+
+/**
+ * Park a message that arrived before its conversation was routed to a project
+ * (the project-picker flow). Unlike the auth-resume pending message, there is
+ * no project yet — it is chosen when the user clicks. Reuses the same table.
+ */
+export async function createPendingTeamsPickerMessage(input: {
+  tenantId: string;
+  teamsUserId: string;
+  activity: TeamsActivity;
+}): Promise<string | null> {
+  if (!input.tenantId) return null;
+  try {
+    await db.delete(chatPendingAuthMessages).where(lt(chatPendingAuthMessages.expiresAt, new Date()));
+    const rows = await db
+      .insert(chatPendingAuthMessages)
+      .values({
+        projectId: '',
+        platform: 'teams',
+        workspaceId: input.tenantId,
+        platformUserId: input.teamsUserId || '',
+        envelope: { picker: true },
+        event: input.activity as unknown as Record<string, unknown>,
+        expiresAt: new Date(Date.now() + PENDING_AUTH_TTL_MS),
+      })
+      .returning({ pendingId: chatPendingAuthMessages.pendingId });
+    return rows[0]?.pendingId ?? null;
+  } catch (err) {
+    console.warn('[teams-webhook] failed to store pending picker message', err);
+    return null;
+  }
+}
+
+/** Consume a parked picker message by id + tenant (anyone in the conversation may pick). */
+export async function consumePendingTeamsPickerMessage(input: {
+  pendingId: string | undefined;
+  tenantId: string;
+}): Promise<TeamsActivity | null> {
+  if (!input.pendingId || !input.tenantId) return null;
+  try {
+    const [row] = await db
+      .select({ event: chatPendingAuthMessages.event })
+      .from(chatPendingAuthMessages)
+      .where(
+        and(
+          eq(chatPendingAuthMessages.pendingId, input.pendingId),
+          eq(chatPendingAuthMessages.workspaceId, input.tenantId),
+          gt(chatPendingAuthMessages.expiresAt, new Date()),
+        ),
+      )
+      .limit(1);
+    if (!row) return null;
+    await db.delete(chatPendingAuthMessages).where(eq(chatPendingAuthMessages.pendingId, input.pendingId));
+    return row.event as unknown as TeamsActivity;
+  } catch (err) {
+    console.warn('[teams-webhook] failed to consume pending picker message', err);
+    return null;
+  }
+}

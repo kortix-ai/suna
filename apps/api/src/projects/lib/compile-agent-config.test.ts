@@ -77,11 +77,11 @@ agents:
   support:
     connectors: [github, slack]
     secrets: [STRIPE_KEY, GH_TOKEN]
-    kortix_cli: [project.session.start, project.cr.open]
+    kortix_permissions: [project.session.start, project.cr.open]
     workspace: runtime
   pr-bot:
     connectors: [github]
-    kortix_cli: [project.cr.open, project.cr.merge, project.review.submit]
+    kortix_permissions: [project.cr.open, project.cr.merge, project.review.submit]
 `;
 
 const V1_FIXTURE_TOML = `
@@ -207,12 +207,12 @@ describe('compileAgentConfig — behavior comes from the agent .md, not the mani
     });
   });
 
-  test('never copies governance fields (connectors/secrets/kortix_cli/workspace) — no runtime representation', () => {
+  test('never copies governance fields (connectors/secrets/kortix_permissions/workspace) — no runtime representation', () => {
     const compiled = compileAgentConfig(manifest, 'opencode', agentMdFiles) as OpencodeConfig;
     for (const agentConfig of Object.values(compiled.agent)) {
       expect(agentConfig).not.toHaveProperty('connectors');
       expect(agentConfig).not.toHaveProperty('secrets');
-      expect(agentConfig).not.toHaveProperty('kortix_cli');
+      expect(agentConfig).not.toHaveProperty('kortix_permissions');
       expect(agentConfig).not.toHaveProperty('workspace');
     }
   });
@@ -229,7 +229,7 @@ kortix_version: 2
 default_agent: pr-bot
 agents:
   pr-bot:
-    kortix_cli: []
+    kortix_permissions: []
 `);
     const compiled = compileAgentConfig(noModelManifest, 'opencode', {
       '.kortix/opencode/agents/pr-bot.md': supportMd('mode: subagent', 'Reviews PRs'),

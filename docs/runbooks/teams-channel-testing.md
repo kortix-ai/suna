@@ -420,3 +420,365 @@ repeat the "dev" column on `https://dev.kortix.com` for the ones marked ★.
 7. `POST /identity/bind` returns `hasAccess` from account membership only, not project write, so the page can say "linked" to a user who will still get the Request-access card.
 8. `MICROSOFT_APP_TENANT` on dev is pinned to one tenant; if the dev app registration is single-tenant, no external customer tenant can use the dev bot.
 9. `ChannelMessage.Read.All` app-only needs Microsoft protected-API approval; three connector actions will 403 until then.
+
+
+## 5. Slack → Teams parity gaps (2026-09-18)
+
+**Update (later same day):** the batch below was worked through in priority
+order. Now CLOSED: the sandbox connector slug (E2), pasted-image attachments,
+follow-up outcomes + dead-session revive (C9, C10), the Teams bindings table
+(F1), join policies (A1), channel/group file delivery (D1), step source
+citations (C2), `teams send --card-file` (C3), the project picker (B1), and the
+docs + skill (F4, F5). Still open or platform-limited: identity/access DMs
+(A2/A3 — Teams has no ephemeral; the prompt replaces the live card instead),
+native streaming (C1), proactive send to arbitrary channels (E1),
+`slack edit/delete` twins (C4), App Home / `sessions` / `rebind`/`unbind`
+(B2–B4), and the platform limits (reactions, ephemeral, search).
+
+
+Everything Slack does that Teams does not, from `apps/api/src/channels/slack/*` (8.9k lines) vs `teams/*` (3.9k), the sandbox CLIs, the connector catalogs, the web, the CLI, tests and docs. **P1** = a user hits it in normal use; **P2** = noticeable; **P3** = nice-to-have; **PL** = Microsoft platform limit, not fixable 1:1.
+
+### Access, identity, and who may talk to a session
+
+| # | Slack | Teams today | Pri |
+|---|---|---|---|
+| A1 | **Conversation policies** per channel: `project_open` / `owner_only` / `owner_approval` (`slack/participants.ts`, `chat_channel_bindings.conversationPolicy`, `chat_thread_participants`). A second person replying in a thread is admitted, refused ("owner-only"), or held while the owner gets an ephemeral **Approve / Deny** card; requester gets an ephemeral "waiting" note. `/kortix policy` sets it. | None. Any linked member with `project.write` continues anyone's session; the policy column exists on Teams bindings but nothing reads it. | P1 |
+| A2 | Identity prompt is posted **both** in-thread (ephemeral) and as a **DM** (`postIdentityPrompt`). | Card replaces the live card in the conversation only. No DM. | P2 |
+| A3 | **Access request → admins are DM'd in Slack** with a "Review in Kortix" button (`notifyAdminsOfAccessRequest`, `slack_open_access_review`). | Managers get the Kortix in-app/email notification only; nothing in Teams. | P2 |
+| A4 | Requester sees "already pending" when re-requesting. | Same (`pending` outcome) ✓ | – |
+| A5 | `link-bot` command for BYO installs whose bot user id is unknown. | N/A (Teams knows the bot id from the manifest). | – |
+
+### Multiple projects / workspaces
+
+| # | Slack | Teams today | Pri |
+|---|---|---|---|
+| B1 | A workspace connected to **several projects** and a channel bound to none → a **project picker** is posted (`maybePostPicker`, `pendingPickers`, 10-min TTL). | `resolveConversationProject` silently takes the first `chat_installs` row. `/projects` and `/use` exist, but nothing tells the user a choice was made for them. | P1 |
+| B2 | `/kortix rebind` / `/kortix unbind` a channel. | `/use` rebinds; no unbind. | P3 |
+| B3 | `/kortix sessions` lists recent sessions for the channel; `session_open` button. | None. | P3 |
+| B4 | **App Home** tab (`home.ts`, `app_home_opened`) listing connected projects. | None. Teams equivalent would be a personal tab or the `/status` card. | P3 |
+
+### Delivery inside a turn
+
+| # | Slack | Teams today | Pri |
+|---|---|---|---|
+| C1 | Native **streaming** answer (`chat.startStream` / `appendStream` / `stopStream`): the reply text grows token by token. | Card updated per `teams step`; the answer lands whole at `teams send`. Teams has a bot streaming API (`channelData.streamType`, 2024) that could be used. | P2 |
+| C2 | Steps carry **`--source URL\|TITLE` citations** rendered as a footer. | `relayTurnStep` stores `sources` but `cards.ts stepElements` never renders them. | P2 |
+| C3 | `slack send --blocks-file` for Block Kit answers (cards, carousels). | `teams send --card-file` for a raw Adaptive Card exists in the skill text but `teams.ts` has no `--card-file` handling (only text and `--file`). | P2 |
+| C4 | `slack edit` / `slack delete` a posted message. | No `edit`/`delete` in the CLI; `updateActivity` exists in `teams-api.ts`, `deleteActivity` does not. | P3 |
+| C5 | `slack react --emoji` (👀 on receipt, ✅ on done). | Bots cannot add reactions in Teams. | PL |
+| C6 | `slack typing`. | `sendTyping` exists server-side; no CLI command (and the auto-indicator was removed on purpose). | P3 |
+| C7 | Ephemeral (only-you-can-see) messages. | Not available to bots in Teams. | PL |
+| C8 | Rich **start-error classification** (`slack/errors.ts`, 352 lines: balance parsing, abort patterns, provider errors, "revived thread" note). | `startErrorMessage` covers 402/429/404/other; turn errors reuse `classifyTurnError` ✓; no balance/provider detail in the copy. | P3 |
+| C9 | A thread whose session was **deleted** is **revived**: stale `chat_threads` row dropped, new session created with a NOTE that history is gone. | `continueSession` on a deleted session returns `unreachable`; nothing is posted and the row stays. | P1 |
+| C10 | Follow-up delivery failure → error rendered in the live message. | `deliverTeamsFollowUpToSession` result is ignored; a failed continue leaves "Working on it…" until the 30-min GC. | P1 |
+| C11 | Keep-alive rules documented (5-min idle timeout). | 15-min `STREAM_TTL` + 30-min GC ✓ | – |
+
+### Files and content
+
+| # | Slack | Teams today | Pri |
+|---|---|---|---|
+| D1 | Outbound file to any channel/thread (`slack send --file --channel`). | Consent-card upload works **in personal chats only** (Teams limitation for `file.consent`). In channels/group chats the bot must upload to the team's SharePoint via Graph (`/drives`) or send an inline image. Not implemented. | P1 |
+| D2 | Inbound files: `file_share` subtype, `file-info`, `download` through the proxy. | Inbound attachments listed in the prompt + `teams download` ✓; `--file-info` n/a. | – |
+| D3 | `history` / `thread` reads via bot token. | `list_messages` / `get_message` / `list_replies` need the protected `ChannelMessage.Read.All` app permission → 403 until Microsoft approves; with RSC `ChannelMessage.Read.Group` consented, Graph allows them for that team. | P2 |
+| D4 | `search` messages. | No Graph equivalent for app-only. | PL |
+
+### Connector catalog and the sandbox CLI
+
+| # | Slack | Teams today | Pri |
+|---|---|---|---|
+| E1 | 14 actions incl. **writes** (`send_message`, `update_message`, `delete_message`, `add_reaction`, `join_channel`). The agent can post to any channel proactively. | 9 **read** actions only. No proactive send (Bot Framework `createConversation` / proactive messaging not implemented). | P2 |
+| E2 | Sandbox CLI resolves the connector as `kortix_slack` with a `slack` fallback. | Sandbox CLI calls `teams.<action>`; the materialized slug is `kortix_teams` and the router has no alias → **every `teams team/channels/members/user` call from a sandbox most likely 404s.** Verify live, then fix the slug. | P1 |
+| E3 | `me` (`auth_test`), `channel-info`, `join`, `users`, `manifest`. | none / `channel` / – / `members` / – | P3 |
+| E4 | Group chats: un-mentioned messages need RSC `ChatMessage.Read.Chat`. | Only `ChannelMessage.Read.Group` requested → group-chat threads still need a mention. | P2 |
+| E5 | Inbound `message_changed` / `message_deleted` ignored on purpose. | `messageUpdate` / `messageDelete` / `messageReaction` activities arrive with RSC and are ignored ✓ (could drive "edit = resend"). | – |
+
+### Web, CLI, tests, docs
+
+| # | Slack | Teams today | Pri |
+|---|---|---|---|
+| F1 | **Bindings table** (agent / model / join policy per channel) on the Channels page, and `channel-bindings.ts` fills channel names for Slack. | Table renders only under the Slack install; Teams bindings are invisible in the UI and would show raw conversation ids (`…@thread.tacv2;messageid=…`). `kortix channels bindings/bind` works for both. | P1 |
+| F2 | Three-step **BYO wizard** (`slack-byo-wizard.tsx`), connect hero card with preview. | Manual/BYO panel is a form; no wizard, no preview. | P3 |
+| F3 | 28 REST flows (`CHN-1…28`) incl. dispatch, OAuth, interactivity, commands, thread bind, file download boundary. | 4 flows (`CHN-T1…T4`). Missing: OAuth callback statuses, interactivity invoke auth, identity bind, file proxy boundary, BYO endpoint, dispatch. | P2 |
+| F4 | `docs/connect/slack.mdx`. | No `teams.mdx`. | P2 |
+| F5 | `kortix-slack` skill: keep-alive rules, Block Kit cheat-sheet, carousel, question tool section, file section. | `kortix-teams` skill lacks the Adaptive Card cheat-sheet, the RSC/mention rules, the personal-chat-only file caveat, and still says disconnect is not in the CLI. | P2 |
+
+### Already at parity (for the record)
+
+Welcome card on install; `/login` + pending-message resume; `/whoami`, `/logout`; `/status`, `/models`, `/model`, `/agents`, `/agent`, `/projects`, `/use`; per-conversation agent+model selection; question tool (`relayTurnQuestion` → platform); Review Center approve/changes/deny cards; live step card; 5-min event dedup; identity/membership/`project.write` gate; OAuth-style one-click install; BYO bot; inbound attachments + download proxy; session badge/facet + incoming/outgoing cards in the web.
+
+## 6. Pasted images: the model, not the channel (2026-09-21)
+
+The Teams download path was never broken. Evidence from the live dev session
+`196a99f5-8d4d-4d48-988e-cec7152e0d10`, read back from OpenCode through the
+sandbox proxy:
+
+| Step the agent ran | Result |
+|---|---|
+| `teams download --url https://smba.trafficmanager.net/emea/…/views/original --out /workspace/ivan-image.png` | `{"ok":true,"size":28740}` |
+| `file /workspace/ivan-image.png` | `PNG image data, 844 x 281, 8-bit/color RGBA` |
+| `read /workspace/ivan-image.png` | `Image read successfully` |
+| then | `which identify` → no ImageMagick; `which tesseract`; `REPLICATE_API_TOKEN set: yes` |
+| finally | assistant message with **zero parts** — the turn ended with no `teams send` |
+
+The session ran on `kortix/deepseek-v4-flash`. Its served catalog entry (read
+from the sandbox at `/v1/p/<ext>/4096/config/providers`) says
+`capabilities.attachment: false` and `capabilities.input.image: false`, so
+OpenCode never sends the image upstream. The agent held a valid PNG that the
+model could not look at, went hunting for OCR tooling, and gave up.
+
+`LLM_GATEWAY_VISION_MODEL` (`gpt-5.6-luna`, `input.image: true`) already
+encodes the intended answer, but the gateway rule in
+`llm-gateway/routing/resolve-route.ts` only fires when an image part reaches
+the gateway — and OpenCode strips it before that, precisely because the model
+declares it cannot take one.
+
+**Fix:** the channel picks the model, because the channel is what knows the
+inbound message has an image. `channels/vision-model.ts` resolves the target;
+Teams and Slack both use it. A follow-up gets a per-prompt
+`overrides.model` (the session's pin is untouched); a conversation that opens
+with an image is created on the vision model. Off-gateway deployments are a
+no-op.
+
+**The configured target is not always servable.** Probed live on dev with a
+real prompt override:
+
+| model | result |
+|---|---|
+| `gpt-5.6-luna` (the `LLM_GATEWAY_VISION_MODEL` default) | `APIError`: *requires Kortix's managed provider, which is disabled on this deployment* |
+| `glm-5.3-flash` | answered `probe ok` |
+
+So the selector walks candidates — configured target, platform default, then
+the catalog's vision-capable models cheapest-first — and takes the first that
+passes `isModelServableForAccount`. Pinning a prompt to an unservable model
+turns a degraded answer into a failed turn, which is worse than not routing at
+all; when no candidate qualifies the turn runs unchanged and logs why.
+
+Also fixed here: Teams sends inline images as the wildcard type `image/*`, so
+the prompt used to name the file `image.*`.
+
+### How to check it live
+
+1. Paste a screenshot into the personal chat with the bot and ask about it.
+2. `select metadata->>'opencode_model' from kortix.project_sessions where session_id = '<id>';`
+   — an image-opened conversation reads `kortix/gpt-5.6-luna`.
+3. For a follow-up in an existing conversation the pin does NOT change; look
+   for `[teams-webhook] routing an image-bearing turn to the vision model` and
+   for the answer itself describing the image.
+
+### A retired model pin kills a conversation just as quietly
+
+Probed on dev 2026-09-21 with `PUT /v1/projects/:pid/sessions/:sid/model`,
+which runs the same `isModelServableForAccount` check a session create does:
+
+| model | result |
+|---|---|
+| `deepseek-v4-flash` — what the Teams session had been pinned to since 2026-09-18 | `400 INVALID_SESSION_MODEL`, *not available for this account* |
+| `deepseek-v4.1-flash` — the current platform default, vision-capable | `200 applied_live` |
+| `glm-5.3-flash` — cheapest vision-capable | `200 applied_live` |
+| `deepseek-v4-pro-0813` — servable, `attachment: false` | `200 applied_live` |
+| `gpt-5.6-luna` | `400 INVALID_SESSION_MODEL` |
+
+Nothing re-validates a session's pin after creation, so a model retired from
+the catalog leaves the conversation answering nothing, forever, with no
+message to the user. `channelTurnModel` now replaces an unservable pin as well
+as a vision-incapable one. The cheap signal is absence from
+`gatewayModelCatalog`; the decision is always confirmed with
+`isModelServableForAccount` before anything is replaced.
+
+`deepseek-v4-pro-0813` is the fixture for testing the vision path by hand: it
+serves, and it cannot read images.
+
+### Round two: `attachment` is not the vision flag
+
+The first fix routed the image turn away from `deepseek-v4-flash` correctly —
+and landed on `glm-5.3-flash`, which also cannot see images. The agent replied
+*"the model I'm running on right now can't process images"*.
+
+Read from the sandbox at `/v1/p/<ext>/4096/config/providers`:
+
+| model | `attachment` | `input.image` | servable on dev |
+|---|---|---|---|
+| `glm-5.3-flash` | true | **false** | yes |
+| `deepseek-v4-flash` | false | false | **no** (retired) |
+| `gpt-5.6-luna` | true | true | **no** (managed provider off) |
+| `codex/gpt-6-astra`, `codex/gpt-5.6-sol`, `codex/gpt-5.6-terra`, `codex/gpt-5.6-luna`, `codex/gpt-5.5` | true | true | yes |
+
+`glm-5.3-flash` is `vision: true` by hand in `packages/llm-catalog` while its
+`pricingRef` record on models.dev carries text-only modalities. OpenCode
+honours the modalities, so `attachment` is the wrong predicate. The selector
+now uses `modalities.input` containing `image`, and falls back to `attachment`
+only when a model publishes no modalities at all.
+
+Two more things this round:
+
+- Candidates now come from `servableProjectCatalog` — the same list the
+  sandbox registers and the picker shows — instead of the whole org catalog,
+  so the probe loop cannot exhaust itself on BYOK models this project cannot
+  run.
+- `promptModelOverride` must NOT split the model id on its slash. Every served
+  model is registered under the one synthetic `kortix` OpenCode provider, so
+  `codex/gpt-6-astra` is a model on `kortix`, not a model on a provider
+  `codex`. Splitting it addressed a provider the runtime does not have and the
+  override was dropped silently.
+
+**On dev, the image-capable models are the five `codex/*` ones.**
+
+### Round three: the session's recorded model is not what OpenCode runs
+
+With the modality fix in, session `196a99f5` had
+`metadata.opencode_model = kortix/codex/gpt-6-astra` and the sandbox's
+`/v1/p/<ext>/4096/config` reported `model: kortix/codex/gpt-6-astra` — and the
+next turn still answered on `deepseek-v4-pro-0813`. `PUT /sessions/:id/model`
+returns `applied_live: true` and updates the config, but the OpenCode session
+keeps its own model, so the config is not a reliable statement about the next
+turn.
+
+The per-prompt `overrides.model` IS always honoured — proved twice, with
+`glm-5.3-flash` and with the Teams image turn. So an image-bearing channel
+message now carries an explicit model every time, even when the pin already
+reads images. Trusting the recorded pin is what let a stale runtime model
+answer an image turn.
+
+Also this round: the pin is confirmed with `isModelServableForAccount` on
+every channel message. Presence in `gatewayModelCatalog` is deliberately NOT
+used as a cheap pre-filter, because the catalog and the gate disagree —
+`deepseek-v4-flash` IS in the catalog and still fails upstream:
+
+```
+The "deepseek-v4-flash-0731" model requires Kortix's managed provider,
+which is disabled on this deployment.
+```
+
+The probe result is cached for 60 s per account+project+model, so a burst of
+chat messages probes once.
+
+### Round four: a codex model needs the AGENT's secret grant
+
+With the explicit pin in, the reroute did its job — and the turn still failed:
+
+```
+Run failed — The running agent cannot use ChatGPT connections.
+```
+
+`llm-gateway/resolution/resolve-candidates.ts` refuses a `codex/*` model unless
+`CODEX_AUTH_JSON` is on the RUNNING AGENT's grant. `isModelServableForAccount`
+probes with no agent grant, so `Array.isArray(principal.agentGrant?.env)` is
+false, the check is skipped and the probe answers yes. `PUT /sessions/:id/model`
+accepted `codex/gpt-6-astra` for the same reason.
+
+`channelTurnModel` now resolves the agent grant (lazily, only when a codex
+candidate is reached) and skips codex models the agent may not use. Rerouting
+onto a guaranteed failure is worse than not rerouting.
+
+**Where that leaves dev.** For project `40c2e222`, no model is both
+image-capable and runnable:
+
+| model | image input | why it fails |
+|---|---|---|
+| `gpt-5.6-luna` | yes | managed provider disabled on this deployment |
+| `glm-5.3-flash` | **no** | `attachment: true` but text-only modalities |
+| `deepseek-v4-flash` / `-pro-0813` / `v4.1-flash` | no | text-only |
+| `codex/*` (5 models) | yes | agent grant lacks `CODEX_AUTH_JSON` |
+
+So an image message now carries an explicit note telling the agent it cannot
+see the image, to say so plainly and to not go looking for OCR. That is the
+honest outcome until one of these is fixed:
+
+1. Add `CODEX_AUTH_JSON` to the agent's secret grant, and connect a ChatGPT
+   account for the project. The five codex models then work.
+2. Enable Kortix's managed provider on dev, which brings back `gpt-5.6-luna`.
+3. Connect a BYOK vision model (many `qiniu-ai/*`, `modelis/*` and
+   `greenpt/*` entries publish an image modality).
+
+### Resolved: images work once the agent may use a codex model
+
+On dev the fix was one line in the project's own manifest
+(`managed-kortix/kaab-demo-40c2e222…`, `kortix.yaml`):
+
+```yaml
+agents:
+  kortix:
+    secrets:
+      - APIFOX_TEST
+      - GITHUB_TEST
+      - BROKER_PROOF
+      - CODEX_AUTH_JSON   # <- lets the agent use the account's ChatGPT connection
+```
+
+The account already had two active `CODEX_AUTH_JSON` resources; only the agent
+grant was missing. Immediately after, a prompt pinned to `codex/gpt-6-astra`
+read `/workspace/attachment.png` and answered:
+
+> The image shows a dark Microsoft Teams notification from Ivan Bagaric with
+> the message "yo."
+
+which matches the screenshot. The whole chain — download proxy, modality-based
+model choice, explicit per-prompt pin, codex grant — is verified end to end.
+
+### The sandbox CLI is baked into the image
+
+`teams ask`, `teams post` and `teams send --card-file` live in
+`apps/sandbox/slack-cli`, which `packages/shared/src/sandbox/dockerfile-layer.ts`
+COPYs into the snapshot. The snapshot builder reads that tree from the API
+container, so a CLI change ships with the API image and reaches **only
+sandboxes created after that deploy**. An existing sandbox keeps its old CLI
+forever.
+
+Measured on 2026-09-21: a sandbox from 2026-09-18 printed a `teams` help with
+no `--card-file` and no `ask`; a session created after the deploy printed the
+new help. That is why "ask me again, but in the nice UI" produced a step called
+"Building an Adaptive Card" and then nothing.
+
+**Probe before testing any agent-facing CLI change:**
+
+```
+prompt: Run exactly: teams 2>&1 | head -40 ; then paste the raw output.
+read back: GET /v1/p/<ext>/4096/session/<ses_…>/message
+```
+
+To exercise a new CLI command in Teams, start a conversation that has no
+session yet (a new channel, or unbind the existing thread) so a fresh sandbox
+is built.
+
+### The stale-turn sweep now ends the RUN, not just the card
+
+Both channel GC sweeps (`channels/slack/turn.ts`, `channels/teams/turn.ts`)
+close a turn that has been silent for 30 minutes. They now also
+`POST /session/:id/abort` on the runtime.
+
+Closing the card was never enough. On 2026-09-19 the ledger settled the dead
+turn `runtime_gone` and the GC closed the Adaptive Card, while OpenCode kept
+its assistant message OPEN — `time.created` set, `time.completed` absent — for
+two days. `prompt_async` accepted every later message in that conversation and
+ran none of them; two of the user's messages vanished with nothing shown to
+them. Aborting by hand flipped the open message to `MessageAbortedError` and
+the conversation accepted prompts again.
+
+The abort is best effort and imported lazily, so the channel modules keep no
+static edge into the session-lifecycle engine.
+
+### The "ask me in the nice UI" gap was stale skill guidance
+
+The `kortix-teams` skill said:
+
+> Do NOT use the built-in `question` tool on a Teams turn. It's a synchronous
+> web-UI/Slack construct and has no form renderer in Teams — calling it just
+> hangs or fails.
+
+That has not been true for some time. `channels/teams/questions.ts`
+`postTeamsQuestion` finalizes the live card, posts `buildQuestionCard` (a
+button per option, up to six) and returns **immediately** with a sentinel
+telling the agent that Teams questions are async and to end the turn. It
+cannot hang.
+
+So the agent was being told to avoid the one thing that renders controls, and
+it wrote its questions as a numbered list instead — which is exactly what
+"ask me again, but in the nice ui" was reacting to. The skill now says to ask
+with a card: the `question` tool for a quick either/or, `teams ask --form-file`
+for typed input or several answers, prose only when there is genuinely nothing
+to pick.
+
+Managed skills are baked into the image (`/opt/kortix/managed-skills`) and
+overlaid into every session at boot, so this reaches sandboxes built after the
+change — the same rule as the CLI, and the project repo's own copy is
+overridden by the overlay.

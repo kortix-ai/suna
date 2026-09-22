@@ -87,3 +87,68 @@ export function splitModelLabel(modelName: string | undefined): {
   if (!match) return { lead: trimmed, trail: '' };
   return { lead: match[1], trail: match[2].trim() };
 }
+
+/**
+ * Whether a provider section renders its models or a single "expand" row.
+ *
+ * The picker opened as one long list: 8 managed models, then every connected
+ * provider's, then one row per subscription model — and with two ChatGPT
+ * accounts connected that list doubles again. Almost every session uses a
+ * managed model, so the rest is scrolling the user pays for on every open.
+ *
+ * Every section is a collapsible group with the same header. Search opens
+ * all of them. Without a search, the user's toggle wins. Without a toggle,
+ * two defaults apply:
+ *
+ *  1. SEARCH. A query must reach every provider — a collapsed group that hides
+ *     a match reads as "the model is gone", which is the bug this picker had
+ *     once already. It overrides a collapse the user made.
+ *  2. THE USER'S TOGGLE, this time the popover was open. It overrides both
+ *     defaults below. They used to be unconditional, so the managed group and
+ *     the selected model's group had a header that did nothing.
+ *  3. THE FIRST GROUP starts open. `MODEL_SELECTOR_PROVIDER_IDS` puts `kortix`
+ *     first, so this is the managed set most sessions use. On a BYOK-only
+ *     project it keeps the picker from opening fully collapsed.
+ *  4. THE SELECTED MODEL'S GROUP starts open, so opening the picker shows what
+ *     you are currently on.
+ */
+export function isPickerGroupOpen(input: {
+  groupIndex: number;
+  groupProviderID: string;
+  hasSearch: boolean;
+  containsSelected: boolean;
+  /** Open (true) or collapsed (false) by the user; absent = not toggled. */
+  toggled: ReadonlyMap<string, boolean>;
+}): boolean {
+  if (input.hasSearch) return true;
+  const toggled = input.toggled.get(input.groupProviderID);
+  if (toggled !== undefined) return toggled;
+  return input.groupIndex === 0 || input.containsSelected;
+}
+
+/** One collapsible section in the picker: a heading and the models under it. */
+export interface PickerSection {
+  /** Stable key for expand state and for cmdk values. */
+  id: string;
+  /** The RESOLVED provider (`pickerGroupId`) — what the row's logo keys on.
+   *  Never `model.providerID`, which is `kortix` for every gateway model. */
+  providerID: string;
+  /** The heading: the provider's name. */
+  label: string;
+  models: FlatModel[];
+}
+
+/**
+ * Provider sections for the picker. Which credential a session bills to is
+ * chosen in Session overrides -> Provider keys (a rotating pool), not here.
+ */
+export function buildPickerSections(
+  groups: readonly { providerID: string; providerName: string; models: FlatModel[] }[],
+): PickerSection[] {
+  return groups.map((group) => ({
+    id: group.providerID,
+    providerID: group.providerID,
+    label: group.providerName,
+    models: group.models,
+  }));
+}

@@ -27,7 +27,13 @@ interface DeclaredAgent {
   mode: string | null;
   enabled?: boolean;
   sandbox?: string | null;
-  scope?: { env: string[] | 'all'; connectors: string[] | 'all'; kortix_cli: string[] | 'all' };
+  scope?: {
+    env: string[] | 'all';
+    connectors: string[] | 'all';
+    kortix_permissions?: string[] | 'all';
+    /** @deprecated Same value as `kortix_permissions`. */
+    kortix_cli: string[] | 'all';
+  };
 }
 
 interface ProjectDetail {
@@ -50,6 +56,8 @@ interface AgentConfigBlock {
   connectors_required?: string[];
   secrets?: GrantSet;
   skills?: GrantSet;
+  kortix_permissions?: GrantSet;
+  /** @deprecated Pre-rename name of `kortix_permissions`. */
   kortix_cli?: GrantSet;
   workspace?: 'runtime' | 'read' | 'branch';
   opencode?: Record<string, unknown>;
@@ -85,7 +93,7 @@ kortix.yaml on the project's default branch.
 Subcommands:
   ls [--json]                     Show every agent's pinned model + the fallback
                                   default. (Alias: \`models\`.)
-  model <agent> <model-id>        Pin an agent to a plain model id (e.g. glm-5.3-flash).
+  model <agent> <model-id>        Pin an agent to a plain model id (e.g. deepseek-v4.1-flash).
   model <agent> --clear           Clear the pin — the agent follows the default again.
   default <agent>                 Make this the project's default agent.
   default --show [--json]         Print the current default agent.
@@ -330,6 +338,7 @@ async function agentsScope(
       `/projects/${ctx.projectId}/agents/${encodeURIComponent(agent)}/config`,
     );
     const block = cfg.block ?? {};
+    const permissions = block.kortix_permissions ?? block.kortix_cli;
     if (opts.json) {
       emitJson({
         agent: cfg.agent,
@@ -337,7 +346,9 @@ async function agentsScope(
         connectors: block.connectors ?? [],
         connectors_required: block.connectors_required ?? [],
         skills: block.skills ?? 'all',
-        kortix_cli: block.kortix_cli ?? 'all',
+        kortix_permissions: permissions ?? 'all',
+        /** @deprecated Same value as kortix_permissions; kept for scripts written before the rename. */
+        kortix_cli: permissions ?? 'all',
       });
       return 0;
     }
@@ -347,7 +358,7 @@ async function agentsScope(
         `  ${C.dim}${pad('connectors', 20)}${C.reset} ${renderGrantSet(block.connectors, 'none (default)')}\n` +
         `  ${C.dim}${pad('required connectors', 20)}${C.reset} ${block.connectors_required?.join(', ') || 'none'}\n` +
         `  ${C.dim}${pad('skills', 20)}${C.reset} ${renderGrantSet(block.skills, 'all (default)')}\n` +
-        `  ${C.dim}${pad('kortix_cli', 20)}${C.reset} ${renderGrantSet(block.kortix_cli, 'all (default)')}\n\n`,
+        `  ${C.dim}${pad('kortix permissions', 20)}${C.reset} ${renderGrantSet(permissions, 'all (default)')}\n\n`,
     );
     if (!opts.show) {
       process.stdout.write(

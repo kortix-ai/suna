@@ -26,6 +26,7 @@ import {
   FilePlusIcon as FilePlus,
   FolderOpenIcon as FolderOpen,
   FolderPlusIcon as FolderPlus,
+  MoonIcon,
   UploadIcon as Upload,
 } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
@@ -116,7 +117,12 @@ export function DriveExplorer({
   // Plain <div> unless a tabbed host claims the listing as its panel.
   const ListingRegion = listingAs ?? 'div';
   const source = useFileExplorerSource();
-  const { capabilities } = source;
+  // Asleep: the listing comes from the git mirror instead. Writing and search
+  // both run INSIDE the box, so they are withheld rather than left to fail.
+  const parked = source.useReadinessParked();
+  const capabilities = parked
+    ? { ...source.capabilities, write: false, search: false }
+    : source.capabilities;
   const canWrite = capabilities.write;
 
   const currentPath = useFilesStore((s) => s.currentPath);
@@ -144,9 +150,9 @@ export function DriveExplorer({
     refetch: refetchFiles,
   } = source.useFileList(currentPath);
 
-  // A readiness 503 means the sandbox is parked or booting — a pending state,
-  // never a failure. Keep polling until the box is up so the listing appears
-  // on its own.
+  // A readiness 503 means the sandbox is BOOTING — it becomes healthy on its
+  // own, so keep polling. A parked box never reaches here: `parked` switches
+  // the source to the git mirror, whose errors are never readiness 503s.
   const sandboxWaking = !!error && isSandboxNotReadyError(error);
   useEffect(() => {
     if (!sandboxWaking) return;
@@ -895,7 +901,14 @@ export function DriveExplorer({
               />
             ))}
 
-          {isEmpty && (
+          {/* The mirror had nothing, but the branch push is best-effort, so the
+              files may exist and simply be unreachable. "Empty folder" is the one
+              thing this cannot state as fact. Same words as the Terminal panel. */}
+          {isEmpty && parked && (
+            <EmptyState icon={MoonIcon} title={tHardcodedUi.raw('i18nComplete.text3915f5ca49b3')} />
+          )}
+
+          {isEmpty && !parked && (
             <EmptyState
               icon={FolderOpen}
               title={tHardcodedUi.raw(

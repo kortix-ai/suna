@@ -32,6 +32,7 @@ import {
 } from '@/features/workspace/new/repository-options';
 import { newWorkspaceReturnPath } from '@/features/workspace/new/source-param';
 import { useDebounce } from '@/hooks/use-debounce';
+import { useTranslations } from '@/i18n/use-translations';
 import {
   gitHubInstallationUnreachable,
   githubInstallationLabel,
@@ -47,7 +48,6 @@ import {
 } from '@kortix/sdk';
 import { GithubLogoIcon as Github, PlusIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 /**
@@ -228,7 +228,7 @@ export function AdvancedFields({
                 {options.map((option) => {
                   const typeLabel = ownerTypeLabel(option);
                   return (
-                    <SelectItem key={option.value} value={option.value}>
+                    <SelectItem key={option.value} size="sm" value={option.value}>
                       <span className="flex items-baseline gap-2">
                         <span>
                           {option.kind === 'managed'
@@ -245,7 +245,7 @@ export function AdvancedFields({
                 {accountId ? (
                   <>
                     <SelectSeparator />
-                    <SelectItem value={ADD_ACCOUNT_VALUE}>
+                    <SelectItem size="sm" value={ADD_ACCOUNT_VALUE}>
                       <span className="flex items-center gap-2">
                         <PlusIcon className="size-3.5" />
                         {t('repository.addGitHubAccount')}
@@ -275,7 +275,9 @@ export function AdvancedFields({
           <Tabs
             id="workspace-action"
             value={action}
-            onValueChange={(value) => onChange(withRepositoryAction(state, value as RepositoryAction))}
+            onValueChange={(value) =>
+              onChange(withRepositoryAction(state, value as RepositoryAction))
+            }
           >
             <TabsList className="w-full">
               <TabsTrigger value="create" size="sm" className="flex-1">
@@ -407,7 +409,9 @@ function ImportRepositoryField({
       />
       {reposQuery.isError ? (
         <p className="text-destructive text-xs">
-          {unreachable ? t('repository.installationUnreachable') : t('repository.loadRepositoriesError')}{' '}
+          {unreachable
+            ? t('repository.installationUnreachable')
+            : t('repository.loadRepositoriesError')}{' '}
           {unreachable && accountId ? (
             <HubLink
               to={hubTarget(accountId, { tab: 'git' })}

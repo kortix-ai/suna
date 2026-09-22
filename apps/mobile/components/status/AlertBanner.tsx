@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Pressable, Linking } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { X, ExternalLink, LucideIcon } from 'lucide-react-native';
+import { XIcon as X, ArrowSquareOutIcon as ExternalLink, type AppIcon } from '@/lib/icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 
@@ -12,7 +12,7 @@ interface AlertBannerProps {
   title: string;
   message?: string;
   variant?: AlertBannerVariant;
-  icon: LucideIcon;
+  icon: AppIcon;
   dismissKey: string;
   statusUrl?: string;
   countdown?: string;
@@ -29,19 +29,19 @@ const variantStyles: Record<AlertBannerVariant, {
     bg: 'bg-muted',
     border: 'border-muted-foreground/20',
     textColor: 'text-foreground',
-    iconColor: 'text-amber-500',
+    iconColor: 'text-kortix-orange',
   },
   error: {
     bg: 'bg-muted',
     border: 'border-muted-foreground/20',
     textColor: 'text-foreground',
-    iconColor: 'text-red-500',
+    iconColor: 'text-destructive',
   },
   info: {
     bg: 'bg-muted',
     border: 'border-muted-foreground/20',
     textColor: 'text-foreground',
-    iconColor: 'text-blue-500',
+    iconColor: 'text-kortix-blue',
   },
 };
 

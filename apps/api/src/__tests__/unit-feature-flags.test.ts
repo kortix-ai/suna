@@ -71,6 +71,12 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(resolveFeatureFlag({ experimental: { meta_agent: false } }, 'meta_agent')).toBe(false);
   });
 
+  test('agent_principal is off by default and follows an explicit choice (spec 2026-09-22 §5)', () => {
+    expect(resolveFeatureFlag({}, 'agent_principal')).toBe(false);
+    expect(resolveFeatureFlag({ experimental: { agent_principal: true } }, 'agent_principal')).toBe(true);
+    expect(resolveFeatureFlag({ experimental: { agent_principal: false } }, 'agent_principal')).toBe(false);
+  });
+
   test('agent_tunnel respects an explicit choice but stays AND-gated on availability', () => {
     const available = findCatalogFlag('agent_tunnel').available;
     expect(resolveFeatureFlag({ experimental: { agent_tunnel: true } }, 'agent_tunnel')).toBe(

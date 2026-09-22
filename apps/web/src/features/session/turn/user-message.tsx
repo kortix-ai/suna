@@ -1,5 +1,8 @@
 'use client';
 
+import { toast } from 'sonner';
+import { fetchSessionAttachment, isSessionAttachmentRef } from '@kortix/sdk';
+
 /** Moved from session-chat.tsx (`UserMessageRow`) so the turn module owns the
  *  user-message card. Full-width card, no reference chips. */
 
@@ -439,12 +442,6 @@ export const BUBBLE_TEXT = cn(
 
 export const BUBBLE_SURFACE = cn(
   'bg-sidebar dark:bg-muted text-foreground flex max-w-full flex-col px-3.5 py-2.5 select-none rounded-lg',
-  // Queue tone comes from the nearest `data-queue-tone` wrapper. The ring is
-  // inset so the transcript's overflow clip never cuts its right edge.
-  'ring-inset transition-[box-shadow] duration-(--duration-moderate) ease-(--ease-out)',
-  ' in-data-[queue-tone=pending]:bg-kortix-yellow/40!',
-  ' in-data-[queue-tone=held]:bg-kortix-orange/40!',
-  ' in-data-[queue-tone=failed]:bg-kortix-red/40!',
 );
 
 export interface NormalizedAttachment {
@@ -556,10 +553,10 @@ export function normalizeAttachments(
   const addUpload = (file: (typeof uploads)[number], index: number) => {
     normalized.push({
       key: file.attachment ? `attachment:${file.attachment}` : `upload:${index}:${file.path}`,
-      ...(file.attachment ? { id: file.attachment } : {}),
+      ...(file.attachment && !isSessionAttachmentRef(file.attachment) ? { id: file.attachment } : {}),
       filename: file.filename || getFilename(file.path),
       mime: file.mime,
-      src: file.path || undefined,
+      src: isSessionAttachmentRef(file.attachment) ? file.attachment : file.path || undefined,
       path: file.path || undefined,
     });
   };
@@ -775,6 +772,40 @@ export interface AttachmentUploadStatus {
   onRetry?: () => void;
 }
 
+function StoredAttachmentFile({ file }: { file: NormalizedAttachment }) {
+  const [downloading, setDownloading] = useState(false);
+  const download = async () => {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      const stored = isSessionAttachmentRef(file.src);
+      const url = stored ? URL.createObjectURL(await fetchSessionAttachment(file.src!)) : sentAttachmentPreview(file.id);
+      if (!url) return;
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = file.filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      if (stored) setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not download attachment');
+    } finally {
+      setDownloading(false);
+    }
+  };
+  return (
+    <div aria-busy={downloading}>
+      <AttachmentTile
+        filename={file.filename}
+        mime={file.mime}
+        className={downloading ? 'cursor-wait' : undefined}
+        onOpen={() => void download()}
+      />
+    </div>
+  );
+}
+
 export function MessageAttachments({
   attachments,
   status,
@@ -840,6 +871,9 @@ export function MessageAttachments({
               );
             }
 
+            if (isSessionAttachmentRef(file.src) || sentAttachmentPreview(file.id)) {
+              return <li key={file.key} className="contents"><StoredAttachmentFile file={file} /></li>;
+            }
             const canOpen = Boolean(file.path);
             return (
               <li key={file.key} className="contents">

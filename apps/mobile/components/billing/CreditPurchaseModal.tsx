@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import { View, Pressable, Modal, ScrollView, ActivityIndicator } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { AlertCircle } from 'lucide-react-native';
+import { WarningCircleIcon as AlertCircle } from '@/lib/icons';
 import { formatCredits } from '@kortix/shared';
 import { startUnifiedCreditPurchase, invalidateCreditsAfterPurchase } from '@/lib/billing';
 import * as Haptics from 'expo-haptics';
 import { useQueryClient } from '@tanstack/react-query';
 import { log } from '@/lib/logger';
+import { useColorScheme } from 'nativewind';
+import { THEME } from '@/lib/utils/theme';
 
 interface CreditPurchaseModalProps {
   open: boolean;
@@ -44,6 +46,7 @@ export function CreditPurchaseModal({
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
+  const { colorScheme } = useColorScheme();
 
   const handlePurchase = async (amount: number) => {
     if (amount < 10) {
@@ -134,7 +137,7 @@ export function CreditPurchaseModal({
             </Text>
             <View className="bg-destructive/10 border border-destructive/20 rounded-lg p-4 mb-4">
               <View className="flex-row items-start gap-2">
-                <Icon as={AlertCircle} size={16} className="text-destructive mt-0.5" strokeWidth={2} />
+                <Icon as={AlertCircle} size={16} className="text-destructive mt-0.5" />
                 <Text className="flex-1 text-sm font-roobert text-destructive">
                   Please upgrade your subscription to the $200/month tier to unlock credit purchases for unlimited usage.
                 </Text>
@@ -205,12 +208,18 @@ export function CreditPurchaseModal({
                     <Text className="text-xl font-roobert-semibold text-foreground">
                       ${pkg.amount}
                     </Text>
-                    <Text className="text-xs font-roobert text-muted-foreground mt-1">
+                    <Text
+                      className="font-roobert text-muted-foreground mt-1"
+                      style={{ fontSize: 12, lineHeight: 16 }}
+                    >
                       Credits
                     </Text>
                     {pkg.popular && (
                       <View className="mt-1 bg-primary/10 px-2 py-0.5 rounded-full">
-                        <Text className="text-[10px] font-roobert-medium text-primary">
+                        <Text
+                          className="font-roobert-medium text-primary"
+                          style={{ fontSize: 10 }}
+                        >
                           Popular
                         </Text>
                       </View>
@@ -224,7 +233,7 @@ export function CreditPurchaseModal({
             {error && (
               <View className="mb-4 bg-destructive/10 border border-destructive/20 rounded-lg p-4">
                 <View className="flex-row items-start gap-2">
-                  <Icon as={AlertCircle} size={16} className="text-destructive mt-0.5" strokeWidth={2} />
+                  <Icon as={AlertCircle} size={16} className="text-destructive mt-0.5" />
                   <Text className="flex-1 text-sm font-roobert text-destructive">
                     {error}
                   </Text>
@@ -245,7 +254,15 @@ export function CreditPurchaseModal({
               >
                 {isProcessing ? (
                   <View className="flex-row items-center gap-2">
-                    <ActivityIndicator size="small" color="#fff" />
+                    {/* Button fill is `bg-primary`, near-white in dark mode, so a
+                        hardcoded white spinner was invisible there. `primaryForeground`
+                        is the token that pairs with it -- white in light mode
+                        (hsl(0 0% 100%)), near-black in dark (hsl(0 0% 3.5%)) -- and it
+                        matches the `text-primary-foreground` label beside it. */}
+                    <ActivityIndicator
+                      size="small"
+                      color={colorScheme === 'dark' ? THEME.dark.primaryForeground : THEME.light.primaryForeground}
+                    />
                     <Text className="text-sm font-roobert-medium text-primary-foreground">
                       Processing...
                     </Text>

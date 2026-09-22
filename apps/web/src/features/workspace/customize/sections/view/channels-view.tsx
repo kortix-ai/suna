@@ -114,6 +114,7 @@ import {
 import { SlackConnectCard } from '@/features/workspace/customize/sections/component/slack-connect-card';
 import { EmailConnectForm } from '@/features/workspace/customize/sections/connectors-view';
 import { TeamsChannelPanel } from '@/features/workspace/customize/sections/teams-channel-panel';
+import { ChannelBrandMark } from '@/features/session/turn/channel-brand';
 import {
   type ChannelBinding,
   useChannelBindings,
@@ -178,6 +179,7 @@ export function ChannelsSection({ projectId }: { projectId: string }) {
   const teamsChannelEnabled = teamsFlag.enabled;
   const { data: install, isLoading: loadingInstall } = useSlackInstall(projectId);
   const { data: mode, isLoading: loadingMode } = useSlackMode(projectId);
+  const { data: teamsInstall } = useTeamsInstall(teamsChannelEnabled ? projectId : null);
   const { data: emailInstall, isLoading: loadingEmail } = useEmailInstall(
     emailChannelEnabled ? projectId : null,
     EMAIL_CONNECTOR_SLUG,
@@ -263,6 +265,13 @@ export function ChannelsSection({ projectId }: { projectId: string }) {
           ) : null}
 
           {install ? <SlackFollowUp projectId={projectId} canWrite={canWrite} /> : null}
+          {/* Bindings are per conversation on EVERY platform (Slack channels, Teams
+              chats/channels). The table used to hang off the Slack nudge, so a
+              Teams-only project could not see or change its agent / model /
+              join policy at all. */}
+          {!install && teamsInstall ? (
+            <ChannelBindingsSection projectId={projectId} canWrite={canWrite} />
+          ) : null}
 
           {teamsChannelEnabled ? <TeamsChannelPanel projectId={projectId} /> : null}
         </>
@@ -495,9 +504,20 @@ function ChannelBindingTableRow({
   return (
     <TableRow className="hover:bg-transparent">
       <TableCell>
-        <div className="min-w-0">
-          <p className="text-sm font-medium">{binding.channelName ?? binding.channelId}</p>
-          <p className="text-muted-foreground text-xs">{binding.workspaceId}</p>
+        <div className="flex min-w-0 items-center gap-2">
+          {binding.platform === 'teams' || binding.platform === 'slack' ? (
+            <ChannelBrandMark platform={binding.platform === 'teams' ? 'Teams' : 'Slack'} />
+          ) : null}
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium" title={binding.channelId}>
+              {binding.channelName ?? bindingFallbackName(binding, tI18nComplete)}
+            </p>
+            <p className="text-muted-foreground text-xs">
+              {binding.platform === 'teams'
+                ? bindingScopeLabel(binding.channelType, tI18nComplete)
+                : binding.workspaceId}
+            </p>
+          </div>
         </div>
       </TableCell>
       <TableCell>
@@ -591,6 +611,31 @@ function ChannelBindingTableRow({
       </TableCell>
     </TableRow>
   );
+}
+
+/**
+ * A binding with no captured name.
+ *
+ * Teams conversation ids are ~100 characters
+ * (`19:…@thread.tacv2;messageid=…`), so falling back to the raw id filled the
+ * name column with an opaque string that told a reader nothing — seen on dev
+ * for channels bound before the name was read off the activity. The scope
+ * reads better, and the full id is still on the row's `title`.
+ */
+function bindingFallbackName(
+  binding: { platform: string; channelId: string; channelType: string | null },
+  tI18nComplete: UiTranslator,
+): string {
+  if (binding.platform !== 'teams') return binding.channelId;
+  if (binding.channelType === 'channel') return tI18nComplete.raw('text5cb103d6008c');
+  return tI18nComplete.raw('text31d248c44579');
+}
+
+/** Teams rows: the conversation scope reads better than a tenant GUID underneath the name. */
+function bindingScopeLabel(channelType: string | null, tI18nComplete: UiTranslator): string {
+  if (channelType === 'personal') return tI18nComplete.raw('text895ce927db2e');
+  if (channelType === 'groupChat') return tI18nComplete.raw('text28c7d3f8b75d');
+  return tI18nComplete.raw('textce4683e7013a');
 }
 
 function errorToastFallback(error: unknown, tI18nComplete: UiTranslator) {

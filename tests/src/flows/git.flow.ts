@@ -17,8 +17,10 @@
  *  - upstream credentials remain inside the Git proxy.
  */
 import { flow } from "../core/flow";
+import { serveFixtureRepoLocally } from "../fixtures/local-git";
 
 const UNKNOWN = "00000000-0000-4000-a000-000000000000";
+
 
 // ── Git smart-HTTP proxy (token auth, not JWT) ─────────────────────────────
 
@@ -497,6 +499,9 @@ flow(
       [sessionId, team.id, project.id]);
       // Bind the API-minted credential to the fixture session. The test never
       // needs the server's token-hash secret on local, preview, or staging.
+      // The grant is written in the PRE-RENAME stored shape (`kortixCli`, not
+      // `permissions`) on purpose: rows minted before 2026-09-22 carry it, and
+      // the push below only succeeds if `readStoredAgentGrant` still honors it.
       await db.query(`UPDATE kortix.account_tokens
         SET project_id = $2, session_id = $3, agent_grant = $4::jsonb, account_id = $5, user_id = $6 WHERE token_id = $1`,
       [tokenId, project.id, sessionId,
@@ -521,44 +526,7 @@ flow(
       return output;
     };
     try {
-      if (ctx.env.target === 'local') {
-        // Serve the fixture's real bare repository through Git's CGI backend.
-        // The API proxy speaks HTTP; a filesystem repo_url is not an HTTP origin.
-        const { createServer } = await import('node:http');
-        const { spawn } = await import('node:child_process');
-        const { rows } = await db.query('SELECT repo_url FROM kortix.projects WHERE project_id = $1', [project.id]);
-        const repo = rows[0].repo_url as string;
-        localGitServer = createServer((req, res) => {
-          const url = new URL(req.url!, 'http://localhost');
-          const child = spawn('git', ['http-backend'], { env: { ...process.env,
-            GIT_PROJECT_ROOT: repo, GIT_HTTP_EXPORT_ALL: '1',
-            PATH_INFO: url.pathname, QUERY_STRING: url.search.slice(1),
-            REQUEST_METHOD: req.method!, CONTENT_TYPE: req.headers['content-type'] ?? '',
-            REMOTE_USER: 'ke2e', REMOTE_ADDR: '127.0.0.1' } });
-          const chunks: Buffer[] = [];
-          req.pipe(child.stdin);
-          child.stdout.on('data', (chunk: Buffer) => chunks.push(chunk));
-          child.stderr.resume();
-          child.on('error', () => { res.writeHead(502); res.end(); });
-          child.on('close', () => {
-            const body = Buffer.concat(chunks);
-            const split = body.indexOf('\r\n\r\n');
-            if (split < 0) { res.writeHead(502); res.end(); return; }
-            for (const line of body.subarray(0, split).toString().split('\r\n')) {
-              const colon = line.indexOf(':');
-              if (colon < 0) continue;
-              const name = line.slice(0, colon); const value = line.slice(colon + 1).trim();
-              if (name.toLowerCase() === 'status') res.statusCode = Number(value.split(' ')[0]);
-              else res.setHeader(name, value);
-            }
-            res.end(body.subarray(split + 4));
-          });
-        });
-        await new Promise<void>((resolve) => localGitServer!.listen(0, '127.0.0.1', resolve));
-        const port = (localGitServer.address() as import('node:net').AddressInfo).port;
-        await db.query('UPDATE kortix.projects SET repo_url = $1 WHERE project_id = $2',
-          [`http://127.0.0.1:${port}`, project.id]);
-      }
+      localGitServer = await serveFixtureRepoLocally(ctx, db, project.id, 'GH-17');
       const owner = await mint(ctx.P.OWNER);
       const memberSession = await mint(member);
       const remote = `${ctx.env.apiUrl.replace(/\/v1$/, '')}/v1/git/${project.id}`;
@@ -779,5 +747,106 @@ flow(
         managed.status([403, 409, 400]);
       },
     );
+  },
+);
+
+// Account membership is not project access. A personal token minted in the
+// project's own account used to skip the project role in the Git proxy, so an
+// account member with no role on a project could clone it and push `main`.
+flow(
+  'GH-19',
+  {
+    domain: 'git',
+    requires: ['database'],
+    routes: [
+      'POST /v1/accounts/tokens',
+      'GET /v1/git/:project/info/refs',
+      'POST /v1/git/:project/git-upload-pack',
+      'POST /v1/git/:project/git-receive-pack',
+    ],
+  },
+  async (ctx) => {
+    const { mkdtemp, rm, writeFile } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { execFile } = await import('node:child_process');
+    const { promisify } = await import('node:util');
+    const { Client: PgClient } = await import('pg');
+    const exec = promisify(execFile);
+    const team = await ctx.fixtures.team();
+    const outsider = await team.addMember('member');
+    const projectMember = await team.addMember('member');
+    const project = await team.project({ managedGit: true });
+    await team.grantProjectRole(project.id, projectMember.userId!, 'member');
+    const databaseUrl = ctx.env.databaseUrl!;
+    const db = new PgClient({ connectionString: databaseUrl,
+      ssl: /localhost|127\.0\.0\.1/.test(databaseUrl) ? false : { rejectUnauthorized: false } });
+    await db.connect();
+    const root = await mkdtemp(join(tmpdir(), 'ke2e-account-member-git-'));
+    const tokenIds: string[] = [];
+    let localGitServer: import('node:http').Server | null = null;
+    const personalToken = async (identity: typeof ctx.P.OWNER, label: string) => {
+      const created = await ctx.client.as(identity).post('/v1/accounts/tokens', {
+        name: `GH-19 ${label}`, account_id: team.id,
+      });
+      created.status(201);
+      const body = created.json<{ token_id: string; secret_key: string }>();
+      tokenIds.push(body.token_id);
+      return body.secret_key;
+    };
+    const git = async (secret: string, args: string[], expected: 'ok' | 'rejected') => {
+      let code = 0;
+      let output = '';
+      try {
+        const result = await exec('git', args, { cwd: root, timeout: 60_000,
+          env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_COUNT: '1',
+            GIT_CONFIG_KEY_0: 'http.extraHeader', GIT_CONFIG_VALUE_0: `Authorization: Bearer ${secret}` } });
+        output = result.stdout + result.stderr;
+      } catch (error: any) {
+        code = typeof error.code === 'number' ? error.code : -1;
+        output = String(error.stdout ?? '') + String(error.stderr ?? '');
+      }
+      if ((expected === 'ok') !== (code === 0)) {
+        throw new Error(`git ${args[0]}: expected ${expected}, got exit ${code}: ${output.replaceAll(secret, '[redacted]')}`);
+      }
+      return output;
+    };
+    try {
+      localGitServer = await serveFixtureRepoLocally(ctx, db, project.id, 'GH-19');
+      const remote = `${ctx.env.apiUrl.replace(/\/v1$/, '')}/v1/git/${project.id}`;
+      const owner = await personalToken(ctx.P.OWNER, 'owner');
+      const outsiderSecret = await personalToken(outsider, 'account member');
+      const memberSecret = await personalToken(projectMember, 'project member');
+      const mainSha = async () => (await git(owner, ['ls-remote', remote, 'refs/heads/main'], 'ok')).split(/\s/)[0];
+
+      await ctx.step('owner PAT clones through the proxy and reads main', async () => {
+        await git(owner, ['clone', remote, '.'], 'ok');
+        if (!/^[0-9a-f]{40}$/.test(await mainSha())) throw new Error('main has no commit');
+      });
+      const before = await mainSha();
+      await writeFile(join(root, 'gh19.txt'), 'must never reach main\n');
+      await git(owner, ['add', 'gh19.txt'], 'ok');
+      await git(owner, ['-c', 'user.name=KE2E', '-c', 'user.email=ke2e@kortix.ai', 'commit', '-m', 'GH-19 probe'], 'ok');
+
+      await ctx.step('account member with no project role cannot clone or push main; main is unchanged', async () => {
+        const read = await git(outsiderSecret, ['ls-remote', remote], 'rejected');
+        if (!/403|not authorized/i.test(read)) throw new Error(`expected a 403 refusal, got: ${read}`);
+        await git(outsiderSecret, ['push', remote, 'HEAD:refs/heads/main'], 'rejected');
+        if ((await mainSha()) !== before) throw new Error('an account member without a project role changed main');
+      });
+
+      await ctx.step('project member PAT may read but not push main; main is unchanged', async () => {
+        await git(memberSecret, ['ls-remote', remote, 'refs/heads/main'], 'ok');
+        await git(memberSecret, ['push', remote, 'HEAD:refs/heads/main'], 'rejected');
+        if ((await mainSha()) !== before) throw new Error('a project member without gitops.push changed main');
+      });
+    } finally {
+      for (const tokenId of tokenIds) {
+        await db.query('DELETE FROM kortix.account_tokens WHERE token_id = $1', [tokenId]);
+      }
+      if (localGitServer) await new Promise<void>((resolve) => localGitServer!.close(() => resolve()));
+      await db.end();
+      await rm(root, { recursive: true, force: true });
+    }
   },
 );

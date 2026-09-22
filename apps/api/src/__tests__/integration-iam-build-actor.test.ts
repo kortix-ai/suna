@@ -21,7 +21,7 @@ const SA = crypto.randomUUID();
 const PAT_TOKEN = crypto.randomUUID();
 const AGENT_TOKEN = crypto.randomUUID();
 
-const GRANT = { agent: 'builder', kortixCli: ['project.gitops.push'], connectors: 'all' as const };
+const GRANT = { agent: 'builder', permissions: ['project.gitops.push'], connectors: 'all' as const };
 
 async function raw(text: string): Promise<void> {
   await db.execute(sql.raw(text));

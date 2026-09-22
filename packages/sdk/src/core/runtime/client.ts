@@ -51,7 +51,10 @@ export {
 	removeKortixPty,
 	getKortixPtyWebSocketUrl,
 	kortixPty,
+	classifyPtyClose,
+	sanitizePtyChunk,
 	type KortixPty,
+	type PtyCloseAction,
 } from "./pty";
 export * from "./kortix-master";
 

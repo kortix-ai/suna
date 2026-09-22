@@ -179,6 +179,19 @@ export interface AccountInviteDescribeRedacted {
 
 export type AccountInviteDescribe = AccountInviteDescribeFull | AccountInviteDescribeRedacted;
 
+/** A pending invite addressed to the caller's own email. */
+export interface MyAccountInvite {
+  invite_id: string;
+  account_id: string;
+  account_name: string | null;
+  initial_role: AccountRole;
+  inviter_email: string | null;
+  created_at: string;
+  expires_at: string;
+  /** Projects the invite grants on accept. Empty for a plain workspace invite. */
+  projects: Array<{ project_id: string; name: string; role: string }>;
+}
+
 export async function listAccounts() {
   return unwrap(await backendApi.get<KortixAccount[]>('/accounts'));
 }
@@ -290,6 +303,17 @@ export async function resendAccountInvite(accountId: string, inviteId: string) {
   );
 }
 
+/**
+ * The unexpired, unaccepted invites addressed to the caller's email — so an
+ * invitee who signed up without the email link can still find and accept them.
+ */
+export async function listMyAccountInvites() {
+  const res = unwrap(
+    await backendApi.get<{ invites: MyAccountInvite[] }>('/account-invites', { showErrors: false }),
+  );
+  return res.invites;
+}
+
 export async function describeAccountInvite(inviteId: string) {
   return unwrap(
     await backendApi.get<AccountInviteDescribe>(`/account-invites/${inviteId}`, {
@@ -355,6 +379,11 @@ export interface AccountIdentity {
     session_id: string | null;
     agent: string | null;
     connectors: 'all' | string[] | null;
+    /** The agent's Kortix permissions (`project.*` actions): `'all'`, a list,
+     *  or null (not an agent token). Absent on servers released before
+     *  2026-09-22 — fall back to `kortix_cli`. */
+    kortix_permissions?: 'all' | string[] | null;
+    /** @deprecated Renamed to `kortix_permissions` (same value). Removed in the next major. */
     kortix_cli: 'all' | string[] | null;
   };
   accounts: Array<{ account_id: string; slug: string; name: string; role: string }>;

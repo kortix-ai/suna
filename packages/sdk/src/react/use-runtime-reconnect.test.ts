@@ -8,6 +8,7 @@ import {
   isImmediateOfflineSignal,
   isImmediateOfflineStatus,
   nextPollDelay,
+  POLL_PARKED,
   runtimeErrorFromHealth,
   RUNTIME_EVIDENCE_FRESH_MS,
   shouldCountProbeFailure,
@@ -115,6 +116,35 @@ describe('nextPollDelay', () => {
 
   test('polls fast while still connecting (initial phase)', () => {
     expect(nextPollDelay('connecting', null)).toBe(POLL_FAILING);
+  });
+
+  /**
+   * A PARKED box reads as `connected` + `healthy: false`, the same pair a
+   * booting one does — so it inherited the 150ms boot cadence and kept it
+   * forever. A booting box becomes healthy in seconds and the fast poll is what
+   * makes it appear promptly; a parked box resumes only on the next SEND, so
+   * that same cadence is ~400 requests a minute, per open tab, against a state
+   * that cannot change on its own.
+   *
+   * It still has to be CHECKED — a send from another tab, or a wake from
+   * anywhere else, should surface here — so this is a slower heartbeat, not a
+   * stop.
+   */
+  test('a parked box checks back slowly instead of inheriting the boot cadence', () => {
+    expect(nextPollDelay('connected', false, true)).toBe(POLL_PARKED);
+  });
+
+  test('parked is slower than every fault cadence, because it is not a fault', () => {
+    expect(POLL_PARKED).toBeGreaterThan(POLL_UNREACHABLE);
+    expect(POLL_PARKED).toBeGreaterThan(POLL_FAILING);
+  });
+
+  test('a booting box keeps the fast cadence it needs', () => {
+    expect(nextPollDelay('connected', false, false)).toBe(POLL_FAILING);
+  });
+
+  test('a healthy box is never treated as parked', () => {
+    expect(nextPollDelay('connected', true, true)).toBe(POLL_CONNECTED);
   });
 });
 

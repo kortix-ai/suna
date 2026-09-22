@@ -20,6 +20,31 @@ export type ProjectSessionStatus =
   | 'failed'
   | 'completed';
 
+/**
+ * The session's `metadata` jsonb bag.
+ *
+ * Open by design — the API writes many keys and adds more over time, so the
+ * index signature stays. Keys the SDK has verified against the API and that
+ * hosts read back are declared, so a reader gets a type instead of `unknown`.
+ * Declaring a key here is NOT breaking: a `Record<string, unknown>` still
+ * assigns to this in both directions (an optional property is not satisfied by
+ * a source index signature, so TypeScript skips it).
+ */
+export interface ProjectSessionMetadata {
+  /**
+   * The session that spawned this one — an agent starting a sub-session from
+   * inside a turn. Written at create time by
+   * `apps/api/src/projects/lib/sessions.ts:1566` and deliberately retained on
+   * the list payload (`LIST_OMITTED_SESSION_METADATA_KEYS`,
+   * `apps/api/src/projects/lib/serializers.ts:84`). Absent on a root session.
+   *
+   * Read it through {@link sessionParentId}, which also rejects a malformed or
+   * self-referential value.
+   */
+  spawned_by_session?: string;
+  [key: string]: unknown;
+}
+
 export interface ProjectSession {
   session_id: string;
   account_id: string;
@@ -46,7 +71,7 @@ export interface ProjectSession {
   agent_name: string | null;
   status: ProjectSessionStatus;
   error: string | null;
-  metadata: Record<string, unknown>;
+  metadata: ProjectSessionMetadata;
   opencode_sessions: ProjectOpenCodeSession[];
   // Ownership + org-visibility (Phase 2 session sharing).
   created_by?: string | null;
@@ -86,6 +111,28 @@ export interface ProjectSession {
   deleted_by?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * The session that spawned `session`, or `null` when it is a root session.
+ *
+ * Three hosts hand-rolled the identical `typeof meta.spawned_by_session ===
+ * 'string'` cast over an `unknown` bag
+ * (`apps/web/src/components/projects/session-label.ts:61`,
+ * `apps/web/src/features/workspace/project-sidebar/project-session-list-helpers.ts:359`,
+ * `apps/tui/src/lib/session-groups.ts:145`). `metadata` is jsonb, so a
+ * malformed row is possible and a non-string must never escape as a session
+ * id. A self-referential link is rejected too: a session that is its own
+ * parent makes any tree walk loop forever.
+ */
+export function sessionParentId(
+  session: Pick<ProjectSession, 'session_id'> & { metadata?: ProjectSessionMetadata },
+): string | null {
+  const parent = session.metadata?.spawned_by_session;
+  if (typeof parent !== 'string') return null;
+  const trimmed = parent.trim();
+  if (!trimmed || trimmed === session.session_id) return null;
+  return trimmed;
 }
 
 export type SessionRuntimeContextScalar = string | number | boolean | null;
@@ -643,7 +690,20 @@ export interface SessionTranscriptSyncEnvelope {
   complete: boolean;
   captured_at: string | null;
   opencode_session_id: string | null;
+  /** How many messages are in THIS window of the transcript. */
   message_count: number;
+  /**
+   * Messages the mirror holds for this session, across every window.
+   * `complete === false` says a window is partial; this says by how much.
+   *
+   * Optional because an older API does not send it — a self-hosted or staging
+   * backend behind this client answers without these two fields, and reading
+   * them as required would make a correct response look malformed.
+   */
+  total?: number;
+  /** Pass as `before` to read the window OLDER than this one. Null when this
+   *  window already reaches the oldest message the mirror holds. */
+  next_cursor?: string | null;
   messages: SessionTranscriptSyncMessage[];
 }
 
@@ -677,14 +737,27 @@ export async function getSessionTranscript(
 export async function getSessionTranscriptSync(
   projectId: string,
   sessionId: string,
-  options?: { limit?: number; signal?: AbortSignal },
+  options?: {
+    limit?: number;
+    signal?: AbortSignal;
+    history?: boolean;
+    /**
+     * A previous window's `next_cursor`. Returns the window of messages
+     * strictly OLDER than it, so a client can walk back through a history the
+     * mirror retains in full. A cursor naming no mirrored message answers 400
+     * rather than silently returning the newest window again.
+     */
+    before?: string | null;
+  },
 ) {
   const search = new URLSearchParams({ shape: 'sync' });
   if (options?.limit != null) search.set('limit', String(options.limit));
+  if (options?.history) search.set('history', 'true');
+  if (options?.before) search.set('before', options.before);
   return unwrap(
     await backendApi.get<SessionTranscriptSyncEnvelope>(
       `/projects/${projectId}/sessions/${sessionId}/transcript?${search.toString()}`,
-      { showErrors: false },
+      { showErrors: false, signal: options?.signal },
     ),
   );
 }
@@ -708,13 +781,33 @@ export interface SessionTurn {
   accepted_at: string | null;
 }
 
+/** Why a `failed` turn ended: the name and message of the cause the sandbox
+ *  reported. A stop somebody asked for is never reported here. */
+export interface SessionTurnEndError {
+  name: string | null;
+  message: string | null;
+}
+
+/** One recent turn that failed, keyed by its user message. A turn the user
+ *  stopped is not a failure and is never listed. */
+export interface SessionTurnFailure {
+  message_id: string;
+  ended_at: string | null;
+  /** Null when the turn failed and nobody named why. */
+  error: SessionTurnEndError | null;
+}
+
 /** How the most recent turn ended. Present only when no turn is running —
  *  it is what separates "this session has never run a turn" from "the last
  *  one just finished". */
 export interface SessionTurnEnded {
   turn_token: string;
+  /** The user message the turn answered. Absent for a turn nobody named. */
+  message_id?: string;
   end_reason: string | null;
   ended_at: string | null;
+  /** Absent when nobody named the failure. */
+  error?: SessionTurnEndError;
 }
 
 export interface SessionTurnStatus {
@@ -723,6 +816,10 @@ export interface SessionTurnStatus {
    *  prompt, say), so this is a list and never a single turn. */
   turns: SessionTurn[];
   last_ended?: SessionTurnEnded;
+  /** Recent turns that failed, newest first, with the cause when one was named. Reported whether
+   *  or not a turn is running — `last_ended` is one row and vanishes when the
+   *  next turn starts. Absent when there are none. */
+  recent_failures?: SessionTurnFailure[];
 }
 
 /** Server truth about this session's running turns (`GET .../turn`), answered

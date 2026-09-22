@@ -45,7 +45,7 @@
  * dimmed to "Queued". `use-session-sync.ts` states the acceptance criterion for
  * any replacement: it must read the MESSAGE, not its shape. This does.
  *
- * ATTACHMENT BYTES NEVER LEAVE THE BOX. `sanitizeParts` strips a file part's
+ * ATTACHMENT BYTES NEVER ENTER TRANSCRIPT ROWS. `sanitizeParts` strips a file part's
  * `url` (base64 data URLs are what made those bodies 7-19 MB) and a tool part's
  * `state.input`/`state.output`.
  *
@@ -55,7 +55,8 @@
  */
 
 import { sessionTranscriptMessages, sessionTranscriptMirrors } from '@kortix/db';
-import { count, eq, sql } from 'drizzle-orm';
+import { parseSessionAttachmentRef } from '@kortix/shared';
+import { and, count, eq, sql } from 'drizzle-orm';
 
 import { db } from '../../shared/db';
 
@@ -64,7 +65,8 @@ import { db } from '../../shared/db';
  *  older is already mirrored by the captures that preceded it. */
 export const MIRROR_CAPTURE_LIMIT = 80;
 
-/** Retained rows per session, matching the transcript route's own `limit`
+/** Legacy retained rows per session. Opted-in history is retained without this cap.
+ *  The legacy limit matches the transcript route's own `limit`
  *  ceiling (500) — the mirror can never be asked for more than it keeps.
  *  Pruning clears `head_complete`: losing the head is what that bit records. */
 export const MIRROR_MAX_MESSAGES = 500;
@@ -92,6 +94,17 @@ export interface MirrorSnapshot {
   /** The mirror has PROVEN it holds the session's first message. */
   head_complete: boolean;
   messages: MirrorMessage[];
+  /**
+   * The message id to pass as `before` to read the page OLDER than this one,
+   * or null when this window already reaches the oldest row the mirror holds.
+   *
+   * A window without this is a dead end: the mirror retains a flagged
+   * project's whole history and every reader asks for a tail (the startup
+   * view asks for 40), so without a cursor everything before that tail is
+   * stored and unreachable. 25 of 375 mirrored dev sessions already hold more
+   * than 40 messages.
+   */
+  next_cursor: string | null;
 }
 
 /** Fields whose size is unbounded and whose content is already represented by
@@ -116,7 +129,7 @@ export function sanitizeParts(raw: unknown): Array<Record<string, unknown>> {
 
     if (type === 'file') {
       // A base64 `data:` url here is the entire 7-19 MB transcript incident.
-      delete part.url;
+      if (!parseSessionAttachmentRef(part.url)) delete part.url;
       delete part.source;
     }
 
@@ -200,56 +213,203 @@ export function headCompleteAfterCapture(input: {
 }
 
 /**
+ * The "have I already got this page?" test a full-history walk stops on, or
+ * `undefined` when stopping would be unsound.
+ *
+ * TWO CONDITIONS, both load-bearing.
+ *
+ * 1. THE PREVIOUS CAPTURE REACHED THE HEAD (`headComplete`). Pages run
+ *    newest-first, so "I hold this page" only implies "I hold everything below
+ *    it" when a previous walk actually got to the session's first message.
+ *    Without the gate, a mirror that never got past page three would catch up
+ *    on page three forever and the head would never be captured at all.
+ * 2. THE MESSAGE IS COMPLETED, and its completion time matches what is stored.
+ *    An uncompleted message can still grow, so it is never evidence of
+ *    anything; `time.completed` is the field OpenCode stamps when the turn
+ *    ends, which is why the mirror denormalizes it.
+ */
+export function capturedPageGate(input: {
+  fullHistory: boolean;
+  headComplete: boolean;
+  /** message id -> stored `message_completed_at` in epoch ms, null when the
+   *  message is stored but not completed. */
+  completedById: ReadonlyMap<string, number | null>;
+}): ((rows: Array<{ info: Record<string, unknown> }>) => boolean) | undefined {
+  if (!input.fullHistory || !input.headComplete) return undefined;
+  return (rows) =>
+    rows.every((row) => {
+      const id = String(row.info.id);
+      if (!input.completedById.has(id)) return false;
+      const time = row.info.time;
+      const completed =
+        time && typeof time === 'object' && !Array.isArray(time)
+          ? (time as Record<string, unknown>).completed
+          : undefined;
+      if (typeof completed !== 'number' || !Number.isFinite(completed) || completed <= 0) {
+        return false;
+      }
+      return input.completedById.get(id) === completed;
+    });
+}
+
+/**
+ * What ONE capture reads, and what it may prune.
+ *
+ * `fullHistory` decides whether the read paginates the whole session or takes
+ * one bounded page. It is the project flag — EXCEPT when the caller asks for a
+ * tail, which manual stop does: stop AWAITS this read before powering the box
+ * off, and a full-history read there is a 60s pagination with three retries
+ * standing between the user and a Stop button. The full copy is already
+ * maintained at every turn end (fire-and-forget, box definitionally up), so
+ * the only gap a stop can close is the turn that just ended — one page.
+ *
+ * `retainHistory` is NEVER derived from `fullHistory`. If it were, a forced
+ * tail would re-enable pruning and a single Stop would cut a retained history
+ * down to {@link MIRROR_MAX_MESSAGES} — the feature deleting exactly what it
+ * exists to keep. It follows the flag and the project's sticky marker, both of
+ * which say "this project keeps its history", whatever this one read does.
+ */
+export function captureScope(input: {
+  flagEnabled: boolean;
+  everRetained: boolean;
+  requested?: 'auto' | 'tail';
+}): { fullHistory: boolean; retainHistory: boolean } {
+  return {
+    fullHistory: input.requested === 'tail' ? false : input.flagEnabled,
+    retainHistory: input.flagEnabled || input.everRetained,
+  };
+}
+
+/**
+ * A `before` cursor that names no message this session has mirrored.
+ *
+ * Distinct from "no mirror" on purpose. Serving the newest window instead
+ * would answer a question the caller did not ask, and a client paging older
+ * would ask again with the same rejected cursor and loop forever on page one.
+ */
+export class UnknownTranscriptCursorError extends Error {
+  constructor(public readonly cursor: string) {
+    super('Unknown transcript cursor');
+    this.name = 'UnknownTranscriptCursorError';
+  }
+}
+
+/**
  * Serve the mirror. Returns null when nothing was ever captured — the caller
  * must then say "unavailable" rather than paint an empty thread as a complete
  * one.
+ *
+ * `before` walks BACKWARDS by keyset on the stored order
+ * (`message_created_at`, `message_id`) — the same order OpenCode's own
+ * `MessageV2.page()` uses, so a mirrored page and a live read never disagree
+ * about sequence. Never OFFSET: capture rewrites rows under the reader, and an
+ * offset page would skip and repeat across requests.
  */
 export async function readSessionTranscriptMirror(input: {
   sessionId: string;
   limit: number;
+  /** A message id from a previous window's `next_cursor`. Rows STRICTLY older
+   *  than it are returned. */
+  before?: string | null;
 }): Promise<MirrorSnapshot | null> {
-  const [state] = await db
-    .select({
-      opencodeSessionId: sessionTranscriptMirrors.opencodeSessionId,
-      headComplete: sessionTranscriptMirrors.headComplete,
-      capturedAt: sessionTranscriptMirrors.capturedAt,
-    })
-    .from(sessionTranscriptMirrors)
-    .where(eq(sessionTranscriptMirrors.sessionId, input.sessionId))
-    .limit(1);
-  if (!state) return null;
+  return db.transaction(
+    async (tx) => {
+      const [state] = await tx
+        .select({
+          opencodeSessionId: sessionTranscriptMirrors.opencodeSessionId,
+          headComplete: sessionTranscriptMirrors.headComplete,
+          capturedAt: sessionTranscriptMirrors.capturedAt,
+        })
+        .from(sessionTranscriptMirrors)
+        .where(eq(sessionTranscriptMirrors.sessionId, input.sessionId))
+        .limit(1);
+      if (!state) return null;
 
-  const [totals] = await db
-    .select({ total: count() })
-    .from(sessionTranscriptMessages)
-    .where(eq(sessionTranscriptMessages.sessionId, input.sessionId));
-  const total = totals?.total ?? 0;
-  if (total === 0) return null;
+      const [totals] = await tx
+        .select({ total: count() })
+        .from(sessionTranscriptMessages)
+        .where(eq(sessionTranscriptMessages.sessionId, input.sessionId));
+      const total = totals?.total ?? 0;
+      if (total === 0) return null;
 
-  // Newest `limit` rows, then flipped back into transcript order. Ordering is
-  // (message_created_at, message_id) — the order OpenCode's own
-  // `MessageV2.page()` uses, so the mirror and the live read never disagree.
-  const tail = await db
-    .select({
-      info: sessionTranscriptMessages.info,
-      parts: sessionTranscriptMessages.parts,
-    })
-    .from(sessionTranscriptMessages)
-    .where(eq(sessionTranscriptMessages.sessionId, input.sessionId))
-    .orderBy(
-      sql`${sessionTranscriptMessages.messageCreatedAt} DESC NULLS LAST`,
-      sql`${sessionTranscriptMessages.messageId} DESC`,
-    )
-    .limit(input.limit);
+      let anchor: { messageCreatedAt: Date | null; messageId: string } | null = null;
+      if (input.before) {
+        const [row] = await tx
+          .select({
+            messageCreatedAt: sessionTranscriptMessages.messageCreatedAt,
+            messageId: sessionTranscriptMessages.messageId,
+          })
+          .from(sessionTranscriptMessages)
+          .where(
+            and(
+              eq(sessionTranscriptMessages.sessionId, input.sessionId),
+              eq(sessionTranscriptMessages.messageId, input.before),
+            ),
+          )
+          .limit(1);
+        // The cursor is a message id this session mirrored, so a miss means the
+        // row was pruned or the caller invented it. Both are the caller's to
+        // handle; neither may be answered with the newest page.
+        if (!row) throw new UnknownTranscriptCursorError(input.before);
+        anchor = row;
+      }
 
-  return {
-    opencode_session_id: state.opencodeSessionId ?? null,
-    captured_at: new Date(state.capturedAt).toISOString(),
-    total,
-    head_complete: state.headComplete,
-    messages: tail.reverse().map((row) => ({
-      info: (row.info ?? {}) as Record<string, unknown>,
-      parts: (Array.isArray(row.parts) ? row.parts : []) as Array<Record<string, unknown>>,
-    })),
-  };
+      // Written out rather than as a row comparison `(a, b) < (c, d)`: the
+      // expanded form takes the (session_id, message_created_at, message_id)
+      // index without depending on how the driver types a Date inside a row
+      // constructor. NULL `message_created_at` sorts last under DESC NULLS
+      // LAST — i.e. oldest — so it is older than any timestamped row.
+      // `::timestamptz` on an ISO STRING, never a bound `Date`: inside a raw
+      // `sql` fragment the parameter bypasses drizzle's column typing and
+      // postgres.js rejects a Date outright ("The \"string\" argument must be of
+      // type string ... Received an instance of Date"). Caught against the real
+      // dev mirror, not by a test with an injected reader.
+      const anchorCreatedAt = anchor?.messageCreatedAt
+        ? new Date(anchor.messageCreatedAt).toISOString()
+        : null;
+      const older = anchor
+        ? anchorCreatedAt === null
+          ? sql`${sessionTranscriptMessages.messageCreatedAt} IS NULL AND ${sessionTranscriptMessages.messageId} < ${anchor.messageId}`
+          : sql`(${sessionTranscriptMessages.messageCreatedAt} IS NULL OR ${sessionTranscriptMessages.messageCreatedAt} < ${anchorCreatedAt}::timestamptz OR (${sessionTranscriptMessages.messageCreatedAt} = ${anchorCreatedAt}::timestamptz AND ${sessionTranscriptMessages.messageId} < ${anchor.messageId}))`
+        : undefined;
+
+      // `limit + 1` is the has-older probe: one extra row costs one row and
+      // answers "is there a page behind this one" without a second query.
+      const window = await tx
+        .select({
+          messageId: sessionTranscriptMessages.messageId,
+          info: sessionTranscriptMessages.info,
+          parts: sessionTranscriptMessages.parts,
+        })
+        .from(sessionTranscriptMessages)
+        .where(
+          older
+            ? and(eq(sessionTranscriptMessages.sessionId, input.sessionId), older)
+            : eq(sessionTranscriptMessages.sessionId, input.sessionId),
+        )
+        .orderBy(
+          sql`${sessionTranscriptMessages.messageCreatedAt} DESC NULLS LAST`,
+          sql`${sessionTranscriptMessages.messageId} DESC`,
+        )
+        .limit(input.limit + 1);
+
+      const hasOlder = window.length > input.limit;
+      const kept = hasOlder ? window.slice(0, input.limit) : window;
+
+      return {
+        opencode_session_id: state.opencodeSessionId ?? null,
+        captured_at: new Date(state.capturedAt).toISOString(),
+        total,
+        head_complete: state.headComplete,
+        // The oldest row IN this window, so the next request starts strictly
+        // behind it. Null when this window already reaches the oldest row.
+        next_cursor: hasOlder ? (kept.at(-1)?.messageId ?? null) : null,
+        messages: kept.reverse().map((row) => ({
+          info: (row.info ?? {}) as Record<string, unknown>,
+          parts: (Array.isArray(row.parts) ? row.parts : []) as Array<Record<string, unknown>>,
+        })),
+      };
+    },
+    { isolationLevel: 'repeatable read', accessMode: 'read only' },
+  );
 }

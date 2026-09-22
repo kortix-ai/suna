@@ -13,6 +13,7 @@ import { onMemberAdded, onMemberRemoved } from '../../billing/services/seat-mana
 import { ACCOUNT_ACTIONS, assertAuthorized, authorize } from '../../iam';
 import { actorOf } from '../../iam/actor';
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
+import { resolveAccountIdentityByEmail } from '../../iam/account-identity';
 import { parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR, type ProjectRole } from '../../iam/roles';
 import { auth, errors, json } from '../../openapi';
 import { grantProjectRole } from '../../projects/lib/access';
@@ -30,7 +31,6 @@ import {
 } from '../../iam/assignments';
 import { revokeAllAccountTokensForUser } from '../../repositories/account-tokens';
 import { db } from '../../shared/db';
-import { lookupUserIdByEmail } from '../../shared/users';
 import { buildInviteUrl, sendAccountInviteEmail } from '../email';
 import { canSeeSensitiveMemberColumns } from './member-visibility';
 import {
@@ -453,7 +453,11 @@ export function registerMemberRoutes(): void {
         .limit(1);
       if (!accountRow) return c.json({ error: 'Account not found' }, 404);
 
-      const targetUserId = await lookupUserIdByEmail(email);
+      const identity = await resolveAccountIdentityByEmail(accountId, email);
+      if (identity.ambiguous) {
+        return c.json({ error: 'Multiple account identities use this email', code: 'account_identity_ambiguous' }, 409);
+      }
+      const targetUserId = identity.userId;
 
       if (targetUserId) {
         const existing = await getMembership(targetUserId, accountId);
@@ -469,6 +473,14 @@ export function registerMemberRoutes(): void {
         // both hold and no custom role can (both are non-delegable).
         await db.insert(accountMemberships).values({ userId: targetUserId, accountId });
         await grantAccountRole(await actorOf(c, accountId), accountId, targetUserId, role);
+        // An account admin explicitly re-adding the same account-scoped person
+        // clears the manual-removal tombstone. Future SAML logins may now sync
+        // this identity again; SCIM can still deactivate it later.
+        await db.execute(sql`
+          UPDATE kortix.account_scim_users
+          SET user_id=${targetUserId}::uuid, active=true, deleted_at=NULL, updated_at=now()
+          WHERE account_id=${accountId}::uuid AND lower(user_name)=lower(${email})
+        `);
 
         // Billing v2 — mint YOLO + push +1 seat to Stripe (no-op for legacy).
         void onMemberAdded(accountId, targetUserId).catch(() => {});
@@ -772,6 +784,15 @@ export function registerMemberRoutes(): void {
       // without access rather than with access and no identity.
       await deleteProjectScopeAssignments(accountId, targetUserId);
       await deleteAccountScopeAssignments(accountId, targetUserId);
+      // Group grants are independent rows. Leaving them behind makes a later
+      // re-invite restore access to groups the owner already removed this user from.
+      await db.delete(accountGroupMembers).where(and(
+        eq(accountGroupMembers.userId, targetUserId),
+        inArray(accountGroupMembers.groupId, db
+          .select({ groupId: accountGroups.groupId })
+          .from(accountGroups)
+          .where(eq(accountGroups.accountId, accountId))),
+      ));
       await db
         .delete(accountMemberships)
         .where(
@@ -780,6 +801,21 @@ export function registerMemberRoutes(): void {
             eq(accountMemberships.userId, targetUserId),
           ),
         );
+      // A manual removal is an account-scoped deprovisioning decision. Keep the
+      // directory row as an inactive tombstone so the next SAML login cannot
+      // recreate this member. A later SCIM active:true update is the explicit
+      // IdP action that may restore access.
+      await db.execute(sql`
+        INSERT INTO kortix.account_scim_users
+          (scim_id, account_id, user_id, user_name, active, profile, created_at, updated_at)
+        SELECT gen_random_uuid(), ${accountId}::uuid, target.id, lower(target.email), false, '{}'::jsonb, now(), now()
+        FROM auth.users target
+        WHERE target.id=${targetUserId}::uuid AND target.email IS NOT NULL
+        ON CONFLICT (account_id, user_name) DO UPDATE SET
+          user_id=excluded.user_id,
+          active=false,
+          updated_at=now()
+      `);
       invalidateIamCacheForUser(targetUserId);
       // Offboarding is immediate: kill their PATs + live sandbox session tokens so a
       // removed member (and their running agents) can't keep acting on their bearer.

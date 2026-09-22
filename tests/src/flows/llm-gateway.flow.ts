@@ -50,7 +50,7 @@ flow(
   async (ctx) => {
     const body = {
       principal: { accountId: '00000000-0000-4000-a000-000000000000' },
-      input: { requestedModel: 'glm-5.3-flash' },
+      input: { requestedModel: 'morph-dsv41flash' },
     };
     await ctx.step('no internal token → 401', async () => {
       const r = await ctx.client.as(ctx.P.ANON).post('/internal/gateway/resolve-route', body);
@@ -312,12 +312,12 @@ flow(
     const params = { projectId: project.id };
     const policy = {
       defaultModel: 'codex/gpt-5.6-sol',
-      visionModel: 'glm-5.3-flash',
-      defaultFallback: { models: ['glm-5.3-flash'], fallbackOn: 'any-error' },
+      visionModel: 'morph-dsv41flash',
+      defaultFallback: { models: ['morph-dsv41flash'], fallbackOn: 'any-error' },
       rules: [
         {
           model: 'openai/gpt-5.5',
-          fallbackModels: ['glm-5.3-flash'],
+          fallbackModels: ['morph-dsv41flash'],
           fallbackOn: 'transient',
         },
       ],
@@ -374,7 +374,7 @@ flow(
         .body()
         .has('$.project', savedProject)
         .has('$.effective.defaultModel', 'codex/gpt-5.6-sol')
-        .has('$.effective.defaultFallback.models', ['glm-5.3-flash']);
+        .has('$.effective.defaultFallback.models', ['morph-dsv41flash']);
 
       const read = await ctx.client
         .as(ctx.P.OWNER)
@@ -395,10 +395,10 @@ flow(
         .body()
         .has('$.route.policyId', 'project:default')
         .has('$.route.primaryModel', 'codex/gpt-5.6-sol')
-        .has('$.route.fallbackModels', ['glm-5.3-flash'])
+        .has('$.route.fallbackModels', ['morph-dsv41flash'])
         .has('$.route.fallbackOn', 'any-error')
         .has('$.models[0].model', 'codex/gpt-5.6-sol')
-        .has('$.models[1].model', 'glm-5.3-flash')
+        .has('$.models[1].model', 'morph-dsv41flash')
         .exists('$.models[0].available')
         .exists('$.models[1].available');
 
@@ -414,7 +414,7 @@ flow(
         .body()
         .has('$.route.policyId', 'project:exact:openai/gpt-5.5')
         .has('$.route.primaryModel', 'openai/gpt-5.5')
-        .has('$.route.fallbackModels', ['glm-5.3-flash'])
+        .has('$.route.fallbackModels', ['morph-dsv41flash'])
         .has('$.route.fallbackOn', 'transient');
     });
 
@@ -519,7 +519,7 @@ flow('GW-ACCESS-1', {
   await ctx.step('managed disable persists and blocks a direct managed request', async () => {
     (await set('provider', 'kortix', false)).status(200).body().has('$.disabledProviders', ['kortix']);
     (await owner.get(path, { params })).status(200).body().has('$.disabledProviders', ['kortix']);
-    (await request('glm-5.3-flash')).status(400).body().has('$.error.code', 'provider_disabled');
+    (await request('morph-dsv41flash')).status(400).body().has('$.error.code', 'provider_disabled');
     const picker = await owner.get('/v1/projects/:projectId/model-picker', { params });
     picker.status(200);
     for (const [id, model] of Object.entries(picker.json<any>().models)) {

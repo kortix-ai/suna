@@ -1,7 +1,8 @@
 'use client';
 
+import type { SessionTranscriptSyncEnvelope } from '../core/rest/projects-client/sessions';
 import type { SessionStatus, Todo } from '@opencode-ai/sdk/v2/client';
-import { useCallback, useEffect, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   claimSessionCacheOwnership,
   getSessionCacheOwnership,
@@ -16,10 +17,12 @@ import {
   retainSessionSyncController,
 } from '../browser/session-sync/session-sync-registry';
 import {
+  loadOlderSessionTranscriptMirror,
   loadSessionTranscriptMirror,
   mirrorMessagesForHydrate,
   shouldHydrateFromMirror,
 } from '../browser/session-sync/server-transcript-mirror';
+import { chooseOlderSource, mirrorCursorAfter } from '../browser/session-sync/mirror-paging';
 import { transcriptIsFragment } from '../core/session-sync/fragment';
 import { onTabVisible } from '../browser/session-sync/visibility';
 import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
@@ -51,6 +54,7 @@ const IDLE_STATUS = { type: 'idle' } as SessionStatus;
  * Network synchronization lives in the framework-free SessionSyncController.
  */
 interface UseSessionSyncOptions {
+  mirror?: SessionTranscriptSyncEnvelope | null;
   /**
    * Stable Kortix `(projectId, sessionId)` scope for disk transcript ownership.
    * This prevents equal OpenCode ids in different sandboxes from sharing data.
@@ -137,7 +141,7 @@ export function livenessBusy(input: {
 }
 
 export function useSessionSync(sessionId: string, options: UseSessionSyncOptions = {}) {
-  const { kortixSessionScope, networkEnabled = true, working, serverHoldsTurn } = options;
+  const { kortixSessionScope, networkEnabled = true, working, serverHoldsTurn, mirror } = options;
   const runtimeHealthy = useSandboxConnectionStore((state) => state.healthy === true);
   const runtimeScope = useCurrentRuntime((state) => state.sandboxId) ?? 'none';
   const cacheOwnerScope = resolveSessionCacheOwnerScope(runtimeScope, kortixSessionScope);
@@ -204,12 +208,12 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     if (!canQueryOpenCodeSession(sessionId) || !kortixSessionScope) return;
     // Already have the thread (a warm remount, or the runtime beat us): the
     // live read outranks a snapshot and must never be overwritten by one.
-    if ((useSyncStore.getState().messages[sessionId]?.length ?? 0) > 0) return;
+    if (sessionId in useSyncStore.getState().messages) return;
     const abort = new AbortController();
-    void loadSessionTranscriptMirror({
-      kortixSessionScope,
-      signal: abort.signal,
-    }).then((envelope) => {
+    const read = mirror !== undefined
+      ? Promise.resolve(mirror)
+      : loadSessionTranscriptMirror({ kortixSessionScope, signal: abort.signal });
+    void read.then((envelope) => {
       if (abort.signal.aborted || !envelope) return;
       const state = useSyncStore.getState();
       if (
@@ -217,14 +221,18 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
           envelope,
           runtimeSessionId: sessionId,
           hasMessages: (state.messages[sessionId]?.length ?? 0) > 0,
+          hasLoadedTranscript: sessionId in state.messages,
         })
       ) {
         return;
       }
       state.hydrate(sessionId, mirrorMessagesForHydrate(envelope), { source: 'cache' });
+      // ONLY on a hydrate that actually painted. Offering to page back through
+      // a thread this tab refused to show would load rows nothing renders.
+      setMirrorCursor(mirrorCursorAfter(envelope));
     });
     return () => abort.abort();
-  }, [kortixSessionScope, sessionId]);
+  }, [kortixSessionScope, sessionId, mirror]);
 
   // NO DISK PAINT. The transcript renders from the runtime and from this tab's
   // own optimistic writes — nothing else.
@@ -357,6 +365,75 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     );
   }, [controller, streamBusy, networkEnabled, runtimeHealthy, working, serverHoldsTurn]);
 
+  /*
+    PAGING THE DURABLE TRANSCRIPT.
+
+    `controller.loadOlder` reads the runtime, and every one of its reads throws
+    `RuntimeNotReadyError` while the sandbox is stopped or still starting —
+    exactly the window the mirror exists to cover. So in that window the
+    controller holds no cursor, `hasOlder` is false, and the saved history
+    stops at its first page however much more the server kept.
+
+    The web transcript's scroll sentinel and the print drain
+    (`load-entire-history.ts`) both already drive `loadOlder`/`hasOlder`, so
+    routing the mirror through the same two values is what makes saved history
+    scrollable and printable without either of them learning a second concept.
+
+    Older windows hydrate with `source: 'cache'`, which is what keeps them
+    safe: the store settles cache rows against the runtime's bounded tail and
+    drops only the ones that tail COVERS. Rows older than it — everything paged
+    in here — are kept.
+  */
+  const [mirrorCursor, setMirrorCursor] = useState<string | null>(null);
+  const [isLoadingOlderMirror, setIsLoadingOlderMirror] = useState(false);
+  const mirrorPageInFlight = useRef<Promise<void> | null>(null);
+
+  // A different session is a different history. Without this the next session
+  // inherits this one's cursor and pages rows that belong to another thread.
+  useEffect(() => {
+    setMirrorCursor(null);
+    setIsLoadingOlderMirror(false);
+    mirrorPageInFlight.current = null;
+  }, [kortixSessionScope, sessionId]);
+
+  const loadOlder = useCallback((): Promise<void> => {
+    const source = chooseOlderSource({
+      runtimeHasOlder: sync.hasOlder,
+      mirrorCursor,
+    });
+    if (source === 'runtime') return controller.loadOlder();
+    if (source !== 'mirror' || !mirrorCursor) return Promise.resolve();
+    // One request per cursor. The scroll sentinel and the print drain can both
+    // ask at once, and a second request for the same cursor would hydrate the
+    // same window twice and then advance the cursor past a page nobody read.
+    if (mirrorPageInFlight.current) return mirrorPageInFlight.current;
+    setIsLoadingOlderMirror(true);
+    const pending = loadOlderSessionTranscriptMirror({
+      kortixSessionScope,
+      before: mirrorCursor,
+    })
+      .then((envelope) => {
+        if (!envelope?.available || envelope.source !== 'mirror') {
+          // No older window came back. Stop offering one rather than leaving
+          // `hasOlder` true against a cursor that answers nothing — that is
+          // what spins the print drain on "Preparing…".
+          setMirrorCursor(null);
+          return;
+        }
+        const rows = mirrorMessagesForHydrate(envelope);
+        if (rows.length > 0) {
+          useSyncStore.getState().hydrate(sessionId, rows, { source: 'cache' });
+        }
+        setMirrorCursor(mirrorCursorAfter(envelope));
+      })
+      .finally(() => {
+        mirrorPageInFlight.current = null;
+        setIsLoadingOlderMirror(false);
+      });
+    mirrorPageInFlight.current = pending;
+    return pending;
+  }, [controller, kortixSessionScope, mirrorCursor, sessionId, sync.hasOlder]);
+
   // Re-read the tail on demand. The transcript body renders this behind its
   // "couldn't load" state so `freshness === 'error'` is recoverable without a
   // page reload or a full sandbox restart — it just asks the controller to
@@ -372,9 +449,9 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     retryTranscript,
     isBusy,
     isLoading,
-    hasOlder: sync.hasOlder,
-    isLoadingOlder: sync.isLoadingOlder,
-    loadOlder: controller.loadOlder,
+    hasOlder: sync.hasOlder || Boolean(mirrorCursor),
+    isLoadingOlder: sync.isLoadingOlder || isLoadingOlderMirror,
+    loadOlder,
     diffs: diffs ?? EMPTY_DIFFS,
     todos: todos ?? EMPTY_TODOS,
   };

@@ -49,7 +49,8 @@ export function UsagePage({ visible, onClose }: UsagePageProps) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       onClose();
       if (projectId) {
-        router.push(`/projects/${projectId}`);
+        // A project replaces, never stacks: back must not leave it.
+        router.replace(`/projects/${projectId}`);
       }
     },
     [onClose, router]

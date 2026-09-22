@@ -1,4 +1,4 @@
-import type { LucideIcon } from 'lucide-react-native';
+import { type AppIcon } from '@/lib/icons';
 
 /**
  * OAuth provider configuration
@@ -6,7 +6,7 @@ import type { LucideIcon } from 'lucide-react-native';
 export interface OAuthProviderConfig {
   id: 'google' | 'github' | 'apple';
   name: string;
-  icon: LucideIcon | React.ComponentType<any>;
+  icon: AppIcon | React.ComponentType<any>;
   iconSource?: any; // For custom SVG/PNG icons
 }
 

@@ -435,3 +435,134 @@ for (const selection of ['selected', 'all'] as const) {
     }
   });
 }
+
+test('directory pages refresh external SCIM group and member changes without reloading', async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  const runId = crypto.randomUUID();
+  const ownerEmail = `e2e-directory-owner-${runId}@example.test`;
+  const memberEmail = `e2e-directory-member-${runId}@example.test`;
+  const owner = await createAuthUser(ownerEmail, authOptions);
+  const member = await createAuthUser(memberEmail, authOptions);
+  const session = await signIn(ownerEmail, authOptions);
+  let project: ManifestProject | undefined;
+  try {
+    const accounts = await api<AccountSummary[]>(
+      session.access_token,
+      'GET',
+      '/accounts',
+    );
+    const accountId = accounts.find((item) => item.account_role === 'owner')!.account_id;
+    await fundAccount(databaseUrl!, accountId);
+    await setDatabaseEnterpriseDemo(loadEnv(), accountId, true);
+    project = await createManifestProject({
+      api,
+      accessToken: session.access_token,
+      accountId,
+      userId: owner.id,
+      name: `Directory refresh ${runId}`,
+      databaseUrl: databaseUrl!,
+    });
+    const { secret } = await api<{ secret: string }>(
+      session.access_token,
+      'POST',
+      `/accounts/${accountId}/iam/scim/tokens`,
+      { name: 'Directory refresh browser test' },
+      201,
+    );
+    const scim = createApiJsonClient(
+      `${new URL(apiBase).origin}/scim/v2/accounts/${accountId}`,
+    );
+    const user = await scim<{ id: string }>(
+      secret,
+      'POST',
+      '/Users',
+      { userName: memberEmail, active: true },
+      201,
+    );
+    const path = `/projects/${project.id}?accountId=${accountId}&accountTab=groups`;
+    await installBrowserSessionDirect(page, session, path, authOptions);
+    await selectAccountForUi(page, accountId);
+    await page.goto(path);
+    await dismissOnboarding(page);
+    await expect(
+      page.getByRole('button', { name: 'Create a group', exact: true }),
+    ).toBeVisible();
+    const groupName = `SCIM live ${runId}`;
+    const groupsRead = page.waitForResponse(
+      (r) =>
+        r.url().endsWith(`/accounts/${accountId}/iam/groups`) &&
+        r.request().method() === 'GET' &&
+        r.status() === 200,
+    );
+    const group = await scim<{ id: string }>(
+      secret,
+      'POST',
+      '/Groups',
+      { displayName: groupName, members: [{ value: user.id }] },
+      201,
+    );
+    await expect(page.getByText(groupName, { exact: true })).toBeVisible({
+      timeout: 20_000,
+    });
+    expect((await (await groupsRead).json()).groups).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ group_id: group.id, member_count: 1 }),
+      ]),
+    );
+    await page.getByText(groupName, { exact: true }).click();
+    await expect(page.getByText(memberEmail, { exact: true })).toBeVisible();
+    const groupReadPath = `/accounts/${accountId}/iam/groups/${group.id}/members`;
+    const removedRead = page.waitForResponse(
+      async (r) =>
+        r.url().endsWith(groupReadPath) &&
+        r.status() === 200 &&
+        (await r.json()).members.length === 0,
+    );
+    await scim(secret, 'PATCH', `/Groups/${group.id}`, {
+      Operations: [{ op: 'Remove', path: 'members', value: [{ value: user.id }] }],
+    });
+    await expect(page.getByText(memberEmail, { exact: true })).toHaveCount(0, {
+      timeout: 20_000,
+    });
+    expect((await (await removedRead).json()).members).toEqual([]);
+    const renamed = `${groupName} renamed`;
+    await scim(secret, 'PATCH', `/Groups/${group.id}`, {
+      Operations: [
+        { op: 'Replace', path: 'displayName', value: renamed },
+        { op: 'Add', path: 'members', value: [{ value: user.id }] },
+      ],
+    });
+    await expect(page.getByRole('heading', { name: renamed, exact: true })).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(page.getByText(memberEmail, { exact: true })).toBeVisible({
+      timeout: 20_000,
+    });
+    await page.getByRole('link', { name: /^Members \d+$/ }).click();
+    await expect(page.getByText(memberEmail, { exact: true })).toBeVisible();
+    await scim(secret, 'PATCH', `/Users/${user.id}`, {
+      Operations: [{ op: 'Replace', path: 'active', value: false }],
+    });
+    await expect(page.getByText(memberEmail, { exact: true })).toHaveCount(0, {
+      timeout: 20_000,
+    });
+    await scim(secret, 'PATCH', `/Users/${user.id}`, {
+      Operations: [{ op: 'Replace', path: 'active', value: true }],
+    });
+    await expect(page.getByText(memberEmail, { exact: true })).toBeVisible({
+      timeout: 20_000,
+    });
+    await page.getByRole('link', { name: 'Groups', exact: true }).click();
+    await expect(page.getByText(renamed, { exact: true })).toBeVisible();
+    await scim(secret, 'DELETE', `/Groups/${group.id}`, undefined, 204);
+    await expect(page.getByText(renamed, { exact: true })).toHaveCount(0, {
+      timeout: 20_000,
+    });
+  } finally {
+    if (project) await project.dispose().catch(() => {});
+    await deleteAuthUser(member.id, authOptions).catch(() => {});
+    await deleteAuthUser(owner.id, authOptions).catch(() => {});
+  }
+});

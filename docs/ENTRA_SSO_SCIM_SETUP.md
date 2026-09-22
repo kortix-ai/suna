@@ -256,9 +256,17 @@ new tab (**Provisioning**) to configure.
 5. **Start provisioning** ([screenshot 6](#screenshots)) — click **Start
    provisioning** on the Provisioning overview page for the regular ~40-minute
    cycles, or **Provision on demand** (P1/P2) to push one assigned user
-   instantly so you can watch it complete. Success looks like all four stages
+   without waiting for the next scheduled cycle. Completion can still be delayed. Success looks like all four stages
    — Import, Scope, Match, Perform action — reporting **Success**
    ([screenshot 7](#screenshots)).
+
+Kortix applies each accepted SCIM request before returning success. The account
+Groups and Members pages refresh every 10 seconds while visible and when the tab
+regains focus. This refresh interval starts after Entra delivers the change; it
+does not make Entra provisioning immediate. Background tabs wait until focused.
+If on-demand provisioning reports a timeout, check the provisioning log and
+Kortix's read-back state before retrying: the export can complete after the
+portal times out.
 
 SCIM behavior worth knowing:
 

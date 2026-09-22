@@ -256,6 +256,66 @@ test('command payload and reference commit together; retries do not add referenc
   ).rejects.toThrow('unavailable');
 });
 
+// Guard ORDER, not just the two guards. A wrong part index is a permanent
+// caller error; the command's status is a transient server state. Resolving the
+// status first made the permanent 404 unreachable whenever the command had left
+// `running`, so the same wrong index answered 404 or 409 purely on timing.
+// SESS-30 asserts the 404 and saw both. Assert the code, not only the status,
+// so a caller can still tell "wrong index" from "wrong time".
+test('a wrong part index reports 404 whether or not the command is running', async () => {
+  const id = await ready();
+  const clientMessageId = crypto.randomUUID();
+  // SESS-30's shape: a text part at index 0, the file part at index 1.
+  const command = await enqueueContinueSessionCommand({
+    source: 'ui',
+    ...scope,
+    actorUserId: scope.userId,
+    sessionId,
+    text: 'proof',
+    clientMessageId,
+    idempotencyKey: `prompt:${sessionId}:${clientMessageId}`,
+    parts: [
+      { type: 'text', text: 'proof' },
+      { type: 'file', attachment_id: id, filename: 'spoof.txt' },
+    ],
+  });
+  const commandId = command.row.commandId;
+  const handle = (partIndex: number) => ({
+    attachmentId: id,
+    commandId,
+    projectId: scope.projectId,
+    accountId: scope.accountId,
+    sessionId,
+    partIndex,
+  });
+  const setStatus = (status: 'queued' | 'running') =>
+    db
+      .update(sessionLifecycleCommands)
+      .set({ status })
+      .where(eq(sessionLifecycleCommands.commandId, commandId));
+
+  await setStatus('running');
+  expect(await resolvePromptAttachment(handle(1))).toMatchObject({ filename: 'proof.txt' });
+  // Index 0 names the text part: permanently wrong for this attachment.
+  await expect(resolvePromptAttachment(handle(0))).rejects.toMatchObject({
+    status: 404,
+    code: 'attachment_not_found',
+  });
+
+  await setStatus('queued');
+  // A valid index keeps the transient answer: retrying once the command runs works.
+  await expect(resolvePromptAttachment(handle(1))).rejects.toMatchObject({
+    status: 409,
+    code: 'attachment_command_not_running',
+  });
+  // The same wrong index stays permanently wrong. No retry can fix it, so the
+  // transient 409 must not mask it.
+  await expect(resolvePromptAttachment(handle(0))).rejects.toMatchObject({
+    status: 404,
+    code: 'attachment_not_found',
+  });
+});
+
 test('runtime descriptor requires the live sandbox and exact running command part', async () => {
   const id = await ready();
   const command = await enqueue(id);

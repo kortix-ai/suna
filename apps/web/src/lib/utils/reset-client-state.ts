@@ -8,7 +8,6 @@ import { withTimeBudget } from '@/lib/utils/time-budget';
 // The internal subpath is its canonical address; the four zustand stores
 // beside it stay forbidden. See CANONICAL_SDK_ENTRIES in
 // scripts/sdk-boundary.mjs.
-import { clearAutoProjectSuppression } from '@/lib/onboarding/ensure-first-project';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { resetAllRegisteredPersistedStores } from '@/stores/persisted-store-registry';
 import { clearImpersonationSession } from '@kortix/sdk';
@@ -97,12 +96,6 @@ export async function resetClientState({
     clearImpersonationSession();
   } catch (error) {
     console.error('Failed to clear impersonation session:', error);
-  }
-
-  try {
-    clearAutoProjectSuppression();
-  } catch (error) {
-    console.error('Failed to clear auto-project suppression:', error);
   }
 
   try {

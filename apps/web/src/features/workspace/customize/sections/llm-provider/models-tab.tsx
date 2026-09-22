@@ -28,6 +28,7 @@ import { Tag } from '@/components/ui/tag';
 import { errorToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import { cn } from '@/lib/utils';
+import { isManagedModelId } from '@kortix/llm-catalog';
 import {
   useModelAccess,
   useModelDefaults,
@@ -38,7 +39,9 @@ import {
 import {
   CheckIcon as Check,
   FolderSimpleIcon as Folder,
+  GlobeHemisphereWestIcon as Globe,
   DotsThreeIcon as MoreHorizontal,
+  ShieldCheckIcon as ShieldCheck,
   StarIcon as Star,
 } from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
@@ -170,9 +173,7 @@ export function ModelsTab({
                 void enablement
                   .resetToDefaults()
                   .catch((error: unknown) =>
-                    errorToast(
-                      error instanceof Error ? error.message : tAccess('resetError'),
-                    ),
+                    errorToast(error instanceof Error ? error.message : tAccess('resetError')),
                   )
               }
             >
@@ -218,12 +219,36 @@ export function ModelsTab({
                   canWrite={canWrite}
                 />
               </div>
+              {group.providerID === 'kortix' &&
+                group.rows.every(({ model }) => isManagedModelId(model.modelID)) && (
+                  // One quiet line, not a green panel: both facts are
+                  // reassurance, not a warning, and the detail lives one hover
+                  // away. `tabIndex` keeps each hint reachable by keyboard.
+                  <div className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                    <Hint label={tAccess('zdrDescription')} side="top" className="max-w-xs">
+                      <span tabIndex={0} className="inline-flex cursor-help items-center gap-1">
+                        <ShieldCheck className="text-kortix-green size-3.5" weight="fill" />
+                        {tAccess('zdrTitle')}
+                      </span>
+                    </Hint>
+                    <Hint label={tAccess('usProvidersDescription')} side="top" className="max-w-xs">
+                      <span tabIndex={0} className="inline-flex cursor-help items-center gap-1">
+                        <Globe className="size-3.5" />
+                        {tAccess('usProvidersTitle')}
+                      </span>
+                    </Hint>
+                  </div>
+                )}
               <div className="bg-popover overflow-hidden rounded-md border">
                 {group.rows.map(({ model, wireId, isRollingAlias }, i) => {
+                  const isManaged =
+                    group.providerID === 'kortix' && isManagedModelId(model.modelID);
                   const enabled = !!model.enabled;
-                  const providerDisabled = access.data?.disabledProviders.includes(group.providerID) ?? false;
+                  const providerDisabled =
+                    access.data?.disabledProviders.includes(group.providerID) ?? false;
                   const modelDisabled = access.data?.disabledModels.includes(wireId) ?? false;
-                  const hiddenFromPicker = !!access.data && !enabled && !providerDisabled && !modelDisabled;
+                  const hiddenFromPicker =
+                    !!access.data && !enabled && !providerDisabled && !modelDisabled;
                   // `auto` resolves to this one, so turning it off would break
                   // every default request — the server refuses it with a 409.
                   // Lock the switch and say why instead of letting the click
@@ -292,8 +317,15 @@ export function ModelsTab({
                           )}
                         </div>
 
-                        {(ctx || (priceIn && priceOut)) && (
+                        {(isManaged || ctx || (priceIn && priceOut)) && (
                           <InlineMeta>
+                            {isManaged && (
+                              <span>
+                                {model.capabilities?.vision
+                                  ? tAccess('textImage')
+                                  : tAccess('textOnly')}
+                              </span>
+                            )}
                             {ctx && (
                               <span className="tabular-nums">
                                 {ctx} {tI18nComplete.raw('text0230c6b1d833')}
@@ -350,7 +382,11 @@ export function ModelsTab({
                                   void access
                                     .setEnabled({ target: 'model', id: wireId, enabled: false })
                                     .catch((error: unknown) =>
-                                      errorToast(error instanceof Error ? error.message : tAccess('modelError')),
+                                      errorToast(
+                                        error instanceof Error
+                                          ? error.message
+                                          : tAccess('modelError'),
+                                      ),
                                     )
                                 }
                               >
@@ -407,15 +443,19 @@ export function ModelsTab({
                             ? tI18nComplete('texta931b0c34b16', { value0: model.modelName })
                             : `Enable ${model.modelName}`
                         }
-                        title={isProjectDefault ? tI18nComplete.raw('textecb89227d17e') : hiddenFromPicker ? tAccess('hiddenShort') : undefined}
+                        title={
+                          isProjectDefault
+                            ? tI18nComplete.raw('textecb89227d17e')
+                            : hiddenFromPicker
+                              ? tAccess('hiddenShort')
+                              : undefined
+                        }
                         onCheckedChange={(next) =>
                           void access
                             .setEnabled({ target: 'model', id: wireId, enabled: next })
                             .catch((error: unknown) =>
                               errorToast(
-                                error instanceof Error
-                                  ? error.message
-                                  : tAccess('modelError'),
+                                error instanceof Error ? error.message : tAccess('modelError'),
                               ),
                             )
                         }
