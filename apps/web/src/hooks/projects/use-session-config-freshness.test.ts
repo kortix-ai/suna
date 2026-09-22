@@ -5,6 +5,7 @@ import { join } from 'node:path';
 
 import {
   CONFIG_FRESHNESS_STALE_TIME_MS,
+  fallbackCopyKeys,
   reloadNotAppliedCopy,
   reloadResultTone,
   sessionConfigNotice,
@@ -363,5 +364,26 @@ describe('the freshness answer expires fast enough to be re-asked on focus', () 
     // Each check drops the project's git-mirror TTL, recompiles the manifest and
     // reaches into the sandbox. Zero would make focus a hot path.
     expect(CONFIG_FRESHNESS_STALE_TIME_MS).toBeGreaterThanOrEqual(10_000);
+  });
+});
+
+describe('fallbackCopyKeys', () => {
+  const en = JSON.parse(readFileSync(join(import.meta.dir, '../../../translations/en.json'), 'utf8'))
+    .hardcodedUi.i18nComplete as Record<string, string>;
+
+  test('the image default is named as the platform default config, never "an earlier config"', () => {
+    const keys = fallbackCopyKeys('image-default');
+    expect(en[keys.runs]).toBe(
+      'The platform default config runs this session. The failed config is not retried until the base branch changes.',
+    );
+    expect(en[keys.toast]).toBe('The new agent config failed to load. The platform default config runs this session.');
+  });
+
+  test('a release or the workspace keeps the earlier-config copy', () => {
+    for (const source of ['release', 'workspace'] as const) {
+      const keys = fallbackCopyKeys(source);
+      expect(en[keys.runs]).toContain('An earlier config runs this session.');
+      expect(en[keys.toast]).toContain('An earlier config still runs this session.');
+    }
   });
 });

@@ -248,7 +248,14 @@ function withTurnNotice(sentence: string, result: SessionReloadResult): string {
 function fallbackSentence(result: SessionReloadResult): string | null {
   const reason = result.release?.fallback_reason;
   if (!reason) return null;
-  return `The new config failed to load: ${reason.replace(/\.$/, '')}. An earlier config still runs this session.`;
+  return `The new config failed to load: ${reason.replace(/\.$/, '')}. ${fallbackRunsSentence(result.release?.source)}`;
+}
+
+/** What serves the session after a fallback, named the way the web header names it. */
+function fallbackRunsSentence(source: string | undefined): string {
+  if (source === 'image-default') return 'The platform default config runs this session.';
+  if (source === 'workspace') return "This session's workspace config runs this session.";
+  return 'An earlier config still runs this session.';
 }
 
 const SESSION_FILES_SENTENCE =

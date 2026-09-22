@@ -18586,6 +18586,8 @@
       "text00ed4c71dc2b": "Letztes funktionierendes Release",
       "textd0cd78619cce": "Die Konfigurationsdateien dieser Sitzung",
       "textbd7a1a3b4141": "Die Standardkonfiguration der Plattform",
+      "text643df05476ab": "Die Standardkonfiguration der Plattform läuft in dieser Sitzung. Die fehlerhafte Konfiguration wird erst nach einer Änderung am Basis-Branch erneut versucht.",
+      "text40652e008fc9": "Die neue Agent-Konfiguration konnte nicht geladen werden. Diese Sitzung läuft mit der Standardkonfiguration der Plattform.",
       "text3312ddb06c1d": "Registriere einen Bot in Azure, verbinde ihn hier und lade dann das App-Paket in Teams hoch.",
       "text7f1b55a356b0": "Bot in Azure registrieren",
       "text91004edf8b30": "Mit diesem Projekt verbinden",

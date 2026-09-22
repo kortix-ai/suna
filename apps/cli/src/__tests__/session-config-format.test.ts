@@ -131,7 +131,7 @@ describe('describeConfigStatus — with a `release` block', () => {
       },
       REF,
     );
-    expect(image.text).toContain('the image default config');
+    expect(image.text).toContain('This session runs the platform default config.');
   });
 
   test('session-files mode is not a warning and does not suggest a reload', () => {

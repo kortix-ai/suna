@@ -326,6 +326,23 @@ describe('reloadDetail and reloadNeedsAttention with a release', () => {
     expect(reloadNeedsAttention(result)).toBe(true);
   });
 
+  test('a fallback names what runs: the platform default config, or the workspace config', () => {
+    const image = reloadResult({
+      applied: false,
+      agent_files: 'unknown',
+      reason: 'x',
+      release: releaseState({ source: 'image-default', running_release_id: null, fallback_reason: 'boom', failed_release_id: RELEASE_B }),
+    });
+    expect(reloadDetail(image)).toBe('The new config failed to load: boom. The platform default config runs this session.');
+    const workspace = reloadResult({
+      applied: false,
+      agent_files: 'unknown',
+      reason: 'x',
+      release: releaseState({ source: 'workspace', running_release_id: null, fallback_reason: 'boom', failed_release_id: RELEASE_B }),
+    });
+    expect(reloadDetail(workspace)).toBe("The new config failed to load: boom. This session's workspace config runs this session.");
+  });
+
   test('a fallback needs attention even on an otherwise applied result', () => {
     const result = reloadResult({ release: releaseState({ fallback_reason: 'disk full.' }) });
     expect(reloadNeedsAttention(result)).toBe(true);

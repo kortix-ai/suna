@@ -45,7 +45,8 @@ function short(id: string): string {
 
 function runningLabel(release: SessionConfigRelease, bold: Bold): string {
   if (release.source === 'workspace') return 'its workspace config';
-  if (release.source === 'image-default') return 'the image default config';
+  // The web header names it the same way ("The platform default config").
+  if (release.source === 'image-default') return 'the platform default config';
   return release.running_release_id
     ? `release ${bold(short(release.running_release_id))}`
     : 'an earlier config';

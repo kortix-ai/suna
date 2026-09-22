@@ -127,6 +127,20 @@ export function sessionConfigNotice(state: SessionConfigState | undefined): Sess
 }
 
 /**
+ * The copy that says what serves the session after a fallback. The image
+ * default is the platform's config, not an earlier one of this project, so it
+ * is named as the platform default config (as the popover's "Now running" row
+ * and the CLI name it).
+ */
+export function fallbackCopyKeys(source: SessionConfigRelease['source'] | undefined): {
+  runs: string;
+  toast: string;
+} {
+  if (source === 'image-default') return { runs: 'text643df05476ab', toast: 'text40652e008fc9' };
+  return { runs: 'text4e62b29dd3b6', toast: 'text931cb67e2af7' };
+}
+
+/**
  * How a finished reload is announced.
  *
  * A reload that ends on a fallback kept an earlier config: that is an error,
@@ -251,7 +265,7 @@ export function useReloadSessionConfig(projectId: string, sessionId: string) {
       if (tone === 'error') {
         // The box declined the new config and kept an earlier one. The header
         // shows the same reason until the next convergence.
-        errorToast(tI18nComplete.raw('text931cb67e2af7'), {
+        errorToast(tI18nComplete.raw(fallbackCopyKeys(result.release?.source).toast), {
           description: result.release?.fallback_reason ?? undefined,
         });
       } else if (!result.applied) {

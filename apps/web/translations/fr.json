@@ -18586,6 +18586,8 @@
       "text00ed4c71dc2b": "Dernière version fonctionnelle",
       "textd0cd78619cce": "Les fichiers de configuration de cette session",
       "textbd7a1a3b4141": "La configuration par défaut de la plateforme",
+      "text643df05476ab": "La configuration par défaut de la plateforme est utilisée dans cette session. La configuration en échec n'est pas réessayée avant une modification de la branche de base.",
+      "text40652e008fc9": "La nouvelle configuration de l'agent n'a pas pu être chargée. Cette session utilise la configuration par défaut de la plateforme.",
       "text3312ddb06c1d": "Enregistrez un bot dans Azure, connectez-le ici, puis téléversez le package de l'application dans Teams.",
       "text7f1b55a356b0": "Enregistrer le bot dans Azure",
       "text91004edf8b30": "Le connecter à ce projet",

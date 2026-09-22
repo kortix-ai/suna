@@ -18586,6 +18586,8 @@
       "text00ed4c71dc2b": "Última versión que funcionó",
       "textd0cd78619cce": "Los archivos de configuración de esta sesión",
       "textbd7a1a3b4141": "La configuración predeterminada de la plataforma",
+      "text643df05476ab": "Esta sesión usa la configuración predeterminada de la plataforma. La configuración fallida no se reintenta hasta que cambie la rama base.",
+      "text40652e008fc9": "No se pudo cargar la nueva configuración del agente. Esta sesión usa la configuración predeterminada de la plataforma.",
       "text3312ddb06c1d": "Registra un bot en Azure, conéctalo aquí y luego sube el paquete de la app a Teams.",
       "text7f1b55a356b0": "Registrar el bot en Azure",
       "text91004edf8b30": "Conectarlo a este proyecto",

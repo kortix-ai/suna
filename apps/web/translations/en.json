@@ -18586,6 +18586,8 @@
       "text00ed4c71dc2b": "Last working release",
       "textd0cd78619cce": "This session's config files",
       "textbd7a1a3b4141": "The platform default config",
+      "text643df05476ab": "The platform default config runs this session. The failed config is not retried until the base branch changes.",
+      "text40652e008fc9": "The new agent config failed to load. The platform default config runs this session.",
       "text3312ddb06c1d": "Register a bot in Azure, connect it here, then upload the app package to Teams.",
       "text7f1b55a356b0": "Register the bot in Azure",
       "text91004edf8b30": "Connect it to this project",

@@ -18586,6 +18586,8 @@
       "text00ed4c71dc2b": "Ultima release funzionante",
       "textd0cd78619cce": "I file di configurazione di questa sessione",
       "textbd7a1a3b4141": "La configurazione predefinita della piattaforma",
+      "text643df05476ab": "Questa sessione usa la configurazione predefinita della piattaforma. La configurazione non riuscita non viene ritentata finché il branch di base non cambia.",
+      "text40652e008fc9": "Impossibile caricare la nuova configurazione dell'agente. Questa sessione usa la configurazione predefinita della piattaforma.",
       "text3312ddb06c1d": "Registra un bot in Azure, collegalo qui e poi carica il pacchetto dell'app su Teams.",
       "text7f1b55a356b0": "Registra il bot in Azure",
       "text91004edf8b30": "Collegalo a questo progetto",

@@ -29,6 +29,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { buildAgentGitReconciliationPrompt } from '@/features/session/agent-git-reconciliation';
 import { reloadProgressText } from '@/hooks/projects/session-reload-progress';
 import {
+  fallbackCopyKeys,
   type ReloadBusyReason,
   type SessionConfigNotice,
   useSessionConfigFreshness,
@@ -310,7 +311,7 @@ function SessionConfigFallbackChip({
             </h3>
           </div>
           <p className="text-muted-foreground mt-2.5 text-xs leading-relaxed">
-            {tI18nComplete.raw('text4e62b29dd3b6')}
+            {tI18nComplete.raw(fallbackCopyKeys(notice.source).runs)}
           </p>
         </div>
 

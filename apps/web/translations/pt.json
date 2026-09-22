@@ -18586,6 +18586,8 @@
       "text00ed4c71dc2b": "Última release funcional",
       "textd0cd78619cce": "Os arquivos de configuração desta sessão",
       "textbd7a1a3b4141": "A configuração padrão da plataforma",
+      "text643df05476ab": "A configuração padrão da plataforma está em uso nesta sessão. A configuração com falha só será tentada novamente quando o branch base mudar.",
+      "text40652e008fc9": "Não foi possível carregar a nova configuração do agente. Esta sessão usa a configuração padrão da plataforma.",
       "text3312ddb06c1d": "Registe um bot no Azure, ligue-o aqui e depois carregue o pacote da aplicação no Teams.",
       "text7f1b55a356b0": "Registar o bot no Azure",
       "text91004edf8b30": "Ligá-lo a este projeto",
