@@ -400,7 +400,10 @@ export class AgentPrincipalsWorld {
   async syncGrant(tokenId: string, resolverSecret: string, agent: string): Promise<Record<string, unknown>> {
     const expectedCommit = this.lastManifestCommit;
     const resolver = this.ctx.client.withBearer(resolverSecret, 'AGENT_GRANT_RESOLVER');
-    const deadline = Date.now() + 20_000;
+    // A deployed target runs several API replicas, each with its own git
+    // mirror and its own 15 s token-binding memo, so the grant of a fresh
+    // manifest commit can take far longer to appear than it does locally.
+    const deadline = Date.now() + (this.ctx.env.target === 'local' ? 20_000 : 90_000);
     let last: Record<string, unknown> | null = null;
     let lastCatalog = '';
     while (Date.now() < deadline) {
