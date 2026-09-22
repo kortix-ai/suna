@@ -814,6 +814,7 @@ flow(
       'PATCH /v1/projects/:projectId/features',
       'POST /v1/projects/:projectId/apps',
       'PATCH /v1/projects/:projectId/apps/:appId/access',
+      'GET /v1/projects/:projectId/apps/:appId/agents',
       'DELETE /v1/projects/:projectId/apps/:appId',
       'POST /v1/projects/:projectId/resource-grants',
       'POST /v1/accounts/tokens',
@@ -847,6 +848,19 @@ flow(
         }));
         await world.grantRun('reporter', human);
         await world.grantRun('bystander', human);
+      });
+      await ctx.step('GET /apps/:appId/agents lists `reporter` (grant `listed`) and omits `bystander`', async () => {
+        const r = await world.owner.get('/v1/projects/:projectId/apps/:appId/agents',
+          { params: { projectId: project.id, appId } });
+        r.status(200);
+        const agents = r.json<{ agents: Array<{ agent_name: string; grant: string; path: string }> }>().agents;
+        const names = agents.map((a) => a.agent_name);
+        if (JSON.stringify(names) !== JSON.stringify(['reporter'])) {
+          throw new Error(`expected exactly [reporter], got ${JSON.stringify(agents)}`);
+        }
+        if (agents[0]!.grant !== 'listed' || !agents[0]!.path.endsWith('#agents.reporter')) {
+          throw new Error(`unexpected grant row ${JSON.stringify(agents[0])}`);
+        }
       });
       await enableFlag(ctx, world);
       const reporter = await world.mintAgentSession({ agent: 'reporter', launcher: human });
