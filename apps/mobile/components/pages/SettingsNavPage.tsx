@@ -42,6 +42,16 @@ import {
 import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { PageHeader } from '@/components/kortix/page-header';
 import { PageContent } from '@/components/kortix/page-content';
 import { PageList } from '@/components/kortix/page-list';
@@ -351,26 +361,19 @@ export function SettingsNavPage({
       },
     });
 
-  // Step 2 of the delete flow: a native "are you sure", after the typed-name
-  // sheet already confirmed (Jay, 2026-09-22).
-  const confirmDeleteFinal = (current: KortixProject) => {
-    Alert.alert('Are you sure?', `This deletes "${current.name}" permanently. This cannot be undone.`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => {
-          haptics.medium();
-          archive.mutate(current.project_id, {
-            onSuccess: () => {
-              haptics.success();
-              router.replace('/projects');
-            },
-            onError: (e: any) => Alert.alert('Failed', e?.message || 'Failed to delete project.'),
-          });
-        },
+  // Step 2 of the delete flow: the app's AlertDialog (never Alert.alert —
+  // Jay, 2026-09-22), opened after the typed-name sheet already confirmed.
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const handleDeleteConfirmed = () => {
+    if (!project) return;
+    haptics.medium();
+    archive.mutate(project.project_id, {
+      onSuccess: () => {
+        haptics.success();
+        router.replace('/projects');
       },
-    ]);
+      onError: (e: any) => Alert.alert('Failed', e?.message || 'Failed to delete project.'),
+    });
   };
 
   const githubUrl = githubRepoWebUrl(project?.repo_url);
@@ -450,9 +453,30 @@ export function SettingsNavPage({
         <DeleteProjectSheet
           project={project}
           modalRef={deleteModalRef}
-          onConfirmed={() => confirmDeleteFinal(project)}
+          onConfirmed={() => setConfirmDeleteOpen(true)}
         />
       ) : null}
+
+      <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This deletes "{project?.name}" permanently. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>
+              <Text>Cancel</Text>
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive active:bg-destructive/90 dark:bg-destructive/60 text-white"
+              onPress={handleDeleteConfirmed}>
+              <Text>Delete</Text>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </View>
   );
 }
