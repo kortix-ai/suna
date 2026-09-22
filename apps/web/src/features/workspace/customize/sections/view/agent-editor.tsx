@@ -332,6 +332,7 @@ export function AgentConfigSections({
   skills,
   connectors,
   secrets,
+  authority,
 }: {
   section: AgentConfigSectionKey;
   editor: AgentDraft;
@@ -349,6 +350,9 @@ export function AgentConfigSections({
   skills?: React.ReactNode;
   connectors?: React.ReactNode;
   secrets?: React.ReactNode;
+  /** What the agent can do once its Kortix permissions meet its IAM ceiling —
+   *  a page-owned card under the Kortix permissions checklist. */
+  authority?: React.ReactNode;
 }) {
   const { draft, oc, set, setOc } = editor;
   // Every section is a card (`EditorSectionStyle` 'panel'), so a tab holding
@@ -372,7 +376,12 @@ export function AgentConfigSections({
           secrets ?? <SecretsSection draft={draft} set={set} options={options.secretOptions} />
         );
       case 'actions':
-        return <ProjectActionsSection draft={draft} set={set} />;
+        return (
+          <>
+            <ProjectActionsSection draft={draft} set={set} />
+            {authority}
+          </>
+        );
       case 'triggers':
         return <>{triggers}</>;
       case 'model':

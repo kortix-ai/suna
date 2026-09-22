@@ -591,7 +591,12 @@ agents:
 **How the grant resolves at session start:**
 - v2 (`kortix.yaml`) is **deny-by-default**: an omitted `connectors`/`secrets`/`skills`/`kortix_permissions` on a declared agent resolves to `none`, not `all`. `default_agent` is required and must resolve to a declared, enabled agent — give it `connectors: all`, `secrets: all`, `kortix_permissions: all`, `skills: all` explicitly if it should keep full access.
 - v1 (`kortix.toml`, legacy) is **backward-compatible** instead: manifest has **no `[[agents]]`** at all → no agent-grant restriction, agents discovered straight from OpenCode. Agent **is listed** → its `connectors`/`kortix_permissions` (default each = none if omitted). Manifest **has `[[agents]]` but this agent isn't listed** → default-deny for Kortix grants. The v1 default agent keeps **full access** only while `[[agents]]` is unadopted — the moment you add `[[agents]]`, declare the default agent too or it falls under the unlisted-deny rule.
-- The effective grant is always **∩ the launching user's role** — an agent can never exceed the human who launched it. Editing the manifest only takes effect once the **CR is merged** (read from the default branch).
+- **Your authority depends on the project flag `agent_principal`** (Settings → Feature flags, default off):
+  - **Off:** effective = the launching user's project role ∩ your `kortix_permissions`. You never exceed the human who launched you.
+  - **On:** you are the acting principal. Effective = your `kortix_permissions` ∩ your **ceiling** (the IAM role an admin binds to your service account; with none bound, every grantable project permission) − **HUMAN_ONLY** (`project.members.manage`, `project.delete`, `project.credentials.issue`). The launcher's role is not an input. The human contributes "may run this agent" and their own personal resources (their connector connections, personal secrets, their computer) — only in their own **private** session, and only until someone else prompts it. Trigger and channel runs have no human behind them.
+  - `project.read` in your own project is always granted.
+  - When a call returns 403, read `code`: `agent_scope_insufficient` → the action is missing from your `kortix_permissions` (propose a CR); `agent_ceiling_insufficient` → an admin must raise your ceiling role; `agent_not_accessible` → the human may not run that agent. Never claim an authority the code says you lack.
+- Editing the manifest only takes effect once the **CR is merged** (read from the default branch). With `agent_principal` on, you cannot merge a CR that changes `kortix.yaml` `agents.*` or `triggers` yourself (`403 CR_AGENT_GOVERNANCE_CHANGE`) — a human merges it.
 - Session environment precedence is explicit `sandbox_slug`, agent `sandbox`, project `sandbox.default`, then platform `default`. Triggers, schedules, and channels use the target agent's environment.
 
 **Discovery contract:**
@@ -604,10 +609,11 @@ agents:
   projects stay in legacy mode until they migrate.
 
 **`kortix_permissions` — the grantable enum** (`kortix_cli` is the deprecated spelling, still accepted with a validation warning; project-scoped only; account-level admin actions
-like `member.*` / `billing.*` / `project.create` can NEVER be granted to an agent — nor can
-`project.delete` / `project.members.manage` / `project.gateway.keys.manage`: the project-role
-collapse promoted those three to ACCOUNT owner/admin authority even though they still target a
-specific project). Run `kortix validate --scopes` to print this list:
+like `member.*` / `billing.*` / `project.create` can NEVER be granted to an agent. Three project
+actions are **HUMAN_ONLY** — `project.members.manage`, `project.delete`,
+`project.credentials.issue`: they validate in the manifest, but an agent never holds them when
+`agent_principal` is on, and with it off the credential routes refuse an agent session anyway).
+Run `kortix validate --scopes` to print this list:
 
 ```
 project.read  project.write

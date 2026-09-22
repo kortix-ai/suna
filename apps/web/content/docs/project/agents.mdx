@@ -21,7 +21,7 @@ Each agent has two parts:
   frontmatter sets the model, mode, and tools. Its body is the system prompt.
 - **Governance** — an entry in `kortix.yaml`'s `agents` map, keyed by the same
   name. It sets what the agent may access on Kortix: connectors, secrets,
-  skills, and CLI actions.
+  skills, Apps, and Kortix permissions.
   The map can live in a file the manifest lists under
   [`imports:`](/docs/project/manifest#imports); `default_agent` stays in `kortix.yaml`.
 
@@ -34,8 +34,9 @@ every governance field.
 An agent with no `connectors`, `secrets`, `skills`, `apps`, or `kortix_permissions` key gets
 none of that access. `apps` lists the [Kortix Apps](/docs/feature-flags/apps#agents-and-apps)
 the agent may open when an App is restricted or private. This grant is the second of the two bindings: the agent
-also holds roles as a `service_account` principal, and a session can only do
-what both allow — see
+also holds a role as a `service_account` principal — its ceiling — and a
+session can only do what both allow. See
+[Agent permissions](/docs/project/permissions) and
 [One vocabulary, two bindings](/docs/accounts#one-vocabulary-two-bindings). Set a field to `all` to grant full access, or list
 specific names. `default_agent` in `kortix.yaml` names the agent a session
 starts when you request no agent.
@@ -59,8 +60,10 @@ Set the default agent from the dashboard, the API, or the SDK. Each writes
 `default_agent` to `kortix.yaml` and commits the change to the project's
 default branch.
 
-An agent never exceeds the access of the person or token that started the
-session.
+With the project flag `agent_principal` off, an agent never exceeds the
+access of the person or token that started the session. With it on, the agent
+acts as itself: its Kortix permissions within its ceiling role, whoever runs
+it. See [Agent permissions](/docs/project/permissions).
 
 New or changed agents and skills reach future sessions only after a
 [change request](/docs/work/change-requests) merges them into the default

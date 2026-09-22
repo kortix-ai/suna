@@ -149,6 +149,7 @@ must name a declared, enabled agent.
 | `skills`     | Skill names the agent may load. Same shape (default: `none`).                                   |
 | `kortix_permissions` | Kortix permissions: what it may do to the project (project-scoped iam actions), through the CLI, the API, or git. Same shape (default: `none`). `kortix_cli` is the deprecated spelling — still accepted with a validation warning. |
 | `workspace`  | `"runtime"` \| `"read"` \| `"branch"` — the git workspace mode granted to the agent.              |
+| `apps`       | Restricted or private Apps this agent may open, by slug. `["slug", …]` \| `"all"` \| `"none"` (default: `none`). The App gate also requires `project.app.read` in the agent's effective permissions. |
 
 ```yaml
 agents:
@@ -159,7 +160,9 @@ agents:
 ```
 
 **Grantable `kortix_permissions`** (project-scoped only — account-level admin
-actions can never be granted to an agent; run `kortix validate --scopes`):
+actions can never be granted to an agent; `project.members.manage`,
+`project.delete` and `project.credentials.issue` are HUMAN_ONLY and never
+effective for an agent under `agent_principal`; run `kortix validate --scopes`):
 `project.read|write|delete`, `project.cr.open|merge`,
 `project.session.read|start|stop|bindings.write`, `project.members.read|manage`,
 `project.trigger.read|create|update|delete|fire`,
@@ -170,9 +173,13 @@ actions can never be granted to an agent; run `kortix validate --scopes`):
 `agents:`; an undeclared or disabled agent cannot be launched by the
 platform. `default_agent` must resolve to a declared, enabled agent —
 give it `connectors: all`, `secrets: all`, `kortix_permissions: all`,
-`skills: all` explicitly if it should keep full access. The grant is
-always intersected with the launching user's role (agent ≤ user) and
+`skills: all` explicitly if it should keep full access. The grant
 takes effect only once a CR is merged (read from the default branch).
+With the project flag `agent_principal` off, it is intersected with the
+launching user's role (agent ≤ user). With it on, the agent is the acting
+principal: `kortix_permissions` ∩ its ceiling role (IAM, bound to the
+agent's service account; default = every grantable permission) − the
+HUMAN_ONLY set. The launcher only needs "may run this agent".
 
 **Discovery direction:** declaring `agents:` is server-side, declarative
 agent discovery — it is not a rule that every native OpenCode agent file

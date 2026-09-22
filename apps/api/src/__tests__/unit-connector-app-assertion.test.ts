@@ -21,7 +21,7 @@ const APP_BASE = 'https://dev-dashboards-cccccccccccccccc.apps.kortix.com';
 
 const APP_CONNECTOR: GatewayConnector = {
   connectorId: 'conn-dash',
-  slug: 'finance-dashboards-api',
+  slug: 'reports-dashboard-api',
   provider: 'openapi',
   baseUrl: APP_BASE,
   auth: { type: 'bearer', in: 'header', name: null, prefix: null },
@@ -31,7 +31,7 @@ const APP_CONNECTOR: GatewayConnector = {
 };
 
 const LIST: GatewayAction = {
-  path: 'finance-dashboards-api.reports.list',
+  path: 'reports-dashboard-api.reports.list',
   relPath: 'reports.list',
   inputSchema: { type: 'object', properties: {} },
   risk: 'read',
@@ -65,7 +65,7 @@ const input: CallInput = {
   subject: { userId: 'user-1', groupIds: [] },
   sessionId: 'sess-1',
   actingTokenId: 'tok-1',
-  connectorSlug: 'finance-dashboards-api',
+  connectorSlug: 'reports-dashboard-api',
   actionPath: 'reports.list',
 };
 

@@ -118,11 +118,11 @@ New per-agent grant `apps:` (array of App slugs | `all` | `none`, default
 
 ```yaml
 agents:
-  finance-report:
+  report-writer:
     kortix_permissions: [project.file.read, project.connector.read, project.app.read]
-    connectors: [finance-dashboards-api]
-    secrets: [FINANCE_DASHBOARDS_WRITE_KEY]
-    apps: [finance-dashboards]
+    connectors: [reports-dashboard-api]
+    secrets: [REPORTS_API_KEY]
+    apps: [reports-dashboard]
 ```
 
 App gate decision for an agent-session credential (same project only):

@@ -503,6 +503,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
             P.updateAppAccess(projectId, ...a),
           session: (...a: DropFirst<Parameters<typeof P.createAppAccessSession>>) =>
             P.createAppAccessSession(projectId, ...a),
+          /** Agents whose `kortix.yaml` `apps:` grant names this App. Read-only. */
+          agents: (appId: string) => P.listAppAgents(projectId, appId),
         },
         remove: (appId: string) => P.deleteApp(projectId, appId),
         artifacts: {
