@@ -21,6 +21,7 @@ import Loading from '@/components/ui/loading';
 import {
   type FileCategory,
   FileContentRenderer,
+  type FileContentRendererHandle,
   FileSourceProvider,
   PreviewFitProvider,
   getFileCategory,
@@ -35,7 +36,7 @@ import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { isSandboxNotReadyError } from '@kortix/sdk';
 import { useRuntimeConnectionStore } from '@kortix/sdk/react';
 import { FileXIcon as FileWarning, PresentationIcon as Presentation } from '@phosphor-icons/react';
-import { useCallback, useEffect, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
 import { FileViewer, isSvg } from './file-viewer';
 import {
@@ -75,6 +76,7 @@ function PreviewShell({
   onClose,
   onPresent,
   copy,
+  onRefresh,
   children,
 }: {
   /** The display name shown in the toolbar text — a human title when one
@@ -99,6 +101,8 @@ function PreviewShell({
    *  binary-image branch, copying the picture itself. Omitted everywhere else,
    *  which promotes `Copy link` to the split button's primary. */
   copy?: ViewerCopy;
+  /** Re-read the file in place — the toolbar's Refresh button. */
+  onRefresh: () => Promise<unknown>;
   children: React.ReactNode;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -136,6 +140,7 @@ function PreviewShell({
             shareContext={shareContext}
             shareInput={fileShareInput(path, fileName)}
             download={{ path, fileName }}
+            refresh={onRefresh}
           />
           <PanelWidthButton isMobile={isMobile} />
           <CloseButton onClose={onClose} />
@@ -323,7 +328,16 @@ export function FilePreview({
 
   // The rich renderers fetch their own bytes (and stream the big ones), so
   // pulling the whole file into a string here first would be wasted work.
-  const { data, isLoading, isError, error } = useFileContent(path, { enabled: !rich });
+  const { data, isLoading, isError, error, refetch } = useFileContent(path, { enabled: !rich });
+
+  // Refresh. A rich file is fetched inside `FileContentRenderer`, so the
+  // toolbar asks the renderer to re-read; every other state (text, loading,
+  // failed, binary) is this component's own query.
+  const rendererRef = useRef<FileContentRendererHandle | null>(null);
+  const refresh = useCallback(
+    () => (rich ? (rendererRef.current?.refresh() ?? Promise.resolve()) : refetch()),
+    [rich, refetch],
+  );
 
   // A readiness 503 means the sandbox is parked or booting — a pending state,
   // never a failure. `useFileContent` keeps polling while this is true, so the
@@ -360,6 +374,7 @@ export function FilePreview({
         path={path}
         onClose={onClose}
         onPresent={onPresent}
+        onRefresh={refresh}
       >
         <FileSourceProvider value={workspaceFileSource}>
           {/* Inside the source provider, not around it: a renderer that
@@ -377,6 +392,7 @@ export function FilePreview({
             onUnmeasurable={() => setPanelAspect(null)}
           >
             <FileContentRenderer
+              controllerRef={rendererRef}
               filePath={path}
               showHeader={false}
               className="h-full"
@@ -398,6 +414,7 @@ export function FilePreview({
         path={path}
         onClose={onClose}
         onPresent={onPresent}
+        onRefresh={refresh}
       >
         <Centered>
           <Loading />
@@ -415,6 +432,7 @@ export function FilePreview({
         path={path}
         onClose={onClose}
         onPresent={onPresent}
+        onRefresh={refresh}
       >
         <Centered>
           {sandboxWaking ? (
@@ -450,6 +468,7 @@ export function FilePreview({
         path={path}
         onClose={onClose}
         onPresent={onPresent}
+        onRefresh={refresh}
         copy={
           isImage && canCopyImages()
             ? {
@@ -494,6 +513,7 @@ export function FilePreview({
       path={path}
       shareContext={shareContext}
       onClose={onClose}
+      onRefresh={refetch}
     />
   );
 }

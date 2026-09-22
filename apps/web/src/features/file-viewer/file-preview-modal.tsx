@@ -33,7 +33,12 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { FileContentRenderer, getLanguageFromExt } from './file-content-renderer';
+import { ViewerRefreshButton } from '@/features/file-renderers/shared/viewer-refresh-button';
+import {
+  FileContentRenderer,
+  type FileContentRendererHandle,
+  getLanguageFromExt,
+} from './file-content-renderer';
 import { FileSourceProvider, type FileSource } from './file-source';
 
 /** Tabbable elements used by the focus trap below. */
@@ -253,6 +258,8 @@ export function FilePreviewModal({
   // preventDefault it. Native listener (not React onWheel) so it fires during
   // real DOM bubbling, ahead of the document-level listener.
   const contentRef = useRef<HTMLDivElement | null>(null);
+  // The mounted renderer, so the toolbar's Refresh can re-read the file.
+  const rendererRef = useRef<FileContentRendererHandle | null>(null);
   useEffect(() => {
     if (!isOpen || !fullscreen) return;
     const el = contentRef.current;
@@ -357,6 +364,12 @@ export function FilePreviewModal({
             <History className="h-4 w-4" />
           </Button>
         </Hint>
+        {/* Refresh sits beside Download, never in a menu: an agent may rewrite
+            this file while it is open, and this re-reads it in place. */}
+        <ViewerRefreshButton
+          className="text-muted-foreground hover:text-foreground size-8"
+          onRefresh={() => rendererRef.current?.refresh() ?? Promise.resolve()}
+        />
         <Button
           variant="outline"
           size="sm"
@@ -453,6 +466,7 @@ export function FilePreviewModal({
       <div className="h-full w-full overflow-hidden">
         <FileSourceProvider value={source}>
           <FileContentRenderer
+            controllerRef={rendererRef}
             filePath={selectedFilePath!}
             showHeader={false}
             readOnly

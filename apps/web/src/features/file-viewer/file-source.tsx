@@ -45,6 +45,9 @@ export interface BinaryBlobResult {
   blob: Blob | null;
   isLoading: boolean;
   error: string | null;
+  /** Re-read the bytes (the viewer's Refresh button). Optional: a source whose
+   *  blobs never change, or are stubbed, can omit it. */
+  refetch?: () => Promise<unknown>;
 }
 
 /**

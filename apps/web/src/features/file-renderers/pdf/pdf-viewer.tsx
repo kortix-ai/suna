@@ -54,7 +54,6 @@ import {
   CaretRightIcon as ChevronRight,
   MinusCircleIcon as CircleMinus,
   PlusCircleIcon as CirclePlus,
-  DownloadIcon as Download,
   DotsThreeIcon as Ellipsis,
   SidebarSimpleIcon as PanelLeft,
   ArrowClockwiseIcon as RotateCw,
@@ -90,6 +89,7 @@ import {
   SelectValue,
 } from '@/features/file-renderers/shared/select-compat';
 import { Spinner } from '@/features/file-renderers/shared/spinner';
+import { ViewerDownloadButton } from '@/features/file-renderers/shared/viewer-download-button';
 // Imported directly (not via the `@/features/file-viewer` barrel) to avoid a
 // module cycle: that barrel re-exports FileContentRenderer, which lazy-loads
 // PdfRenderer, which renders this file.
@@ -518,45 +518,40 @@ function ToolbarTooltip({ label, children }: { label: string; children: React.Re
   );
 }
 
+/**
+ * Upload is the only action left behind a menu here. Download is a visible
+ * button (`ViewerDownloadButton`) in the toolbar itself, so a menu that would
+ * hold nothing but Download is not rendered at all.
+ */
 function PDFViewerFileActionsMenu({
-  downloadDisabled,
-  isPreparingDownload = false,
-  onDownload,
   onUploadFile,
-  showDownload = false,
   showUpload = false,
 }: {
-  downloadDisabled?: boolean;
-  isPreparingDownload?: boolean;
-  onDownload?: () => void;
   onUploadFile?: (file: File) => void;
-  showDownload?: boolean;
   showUpload?: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const inputRef = React.useRef<HTMLInputElement>(null);
 
-  if (!showDownload && !showUpload) return null;
+  if (!showUpload || !onUploadFile) return null;
 
   return (
     <>
-      {showUpload && onUploadFile ? (
-        <input
-          ref={inputRef}
-          type="file"
-          accept="application/pdf,.pdf"
-          className="sr-only"
-          tabIndex={-1}
-          onChange={(event) => {
-            const nextFile = event.target.files?.[0];
+      <input
+        ref={inputRef}
+        type="file"
+        accept="application/pdf,.pdf"
+        className="sr-only"
+        tabIndex={-1}
+        onChange={(event) => {
+          const nextFile = event.target.files?.[0];
 
-            if (nextFile) {
-              onUploadFile(nextFile);
-              event.currentTarget.value = '';
-            }
-          }}
-        />
-      ) : null}
+          if (nextFile) {
+            onUploadFile(nextFile);
+            event.currentTarget.value = '';
+          }
+        }}
+      />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -570,22 +565,10 @@ function PDFViewerFileActionsMenu({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-40">
-          {showDownload && onDownload ? (
-            <DropdownMenuItem disabled={downloadDisabled} onClick={onDownload}>
-              {isPreparingDownload ? (
-                <Spinner className="size-4" />
-              ) : (
-                <Download className="size-4" />
-              )}
-              {tI18nComplete.raw('textd6eafe823591')}
-            </DropdownMenuItem>
-          ) : null}
-          {showUpload && onUploadFile ? (
-            <DropdownMenuItem onClick={() => inputRef.current?.click()}>
-              <Upload className="size-4" />
-              {tI18nComplete.raw('text865e89de78d9')}
-            </DropdownMenuItem>
-          ) : null}
+          <DropdownMenuItem onClick={() => inputRef.current?.click()}>
+            <Upload className="size-4" />
+            {tI18nComplete.raw('text865e89de78d9')}
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     </>
@@ -1796,7 +1779,6 @@ function PDFViewerInner({
   const numPages = pdfDocument?.pageCount ?? 0;
   const isLoading = !pdfDocument;
   const controlsDisabled = !numPages;
-  const downloadDisabled = controlsDisabled || isPreparingDownload;
   const thumbnailSidebarVisible = sidebarOpen && !isLoading;
   const currentZoomLevel = zoomState.currentZoomLevel;
   const alignedThumbnailSidebarDocumentRef = React.useRef<string | null>(null);
@@ -2321,14 +2303,14 @@ function PDFViewerInner({
               {showDownload || showUpload ? (
                 <>
                   <Separator orientation="vertical" className="mx-1 h-4 self-center" />
-                  <PDFViewerFileActionsMenu
-                    downloadDisabled={downloadDisabled}
-                    isPreparingDownload={isPreparingDownload}
-                    onDownload={handleDownload}
-                    onUploadFile={handleUpload}
-                    showDownload={showDownload}
-                    showUpload={showUpload}
-                  />
+                  <PDFViewerFileActionsMenu onUploadFile={handleUpload} showUpload={showUpload} />
+                  {showDownload ? (
+                    <ViewerDownloadButton
+                      disabled={controlsDisabled}
+                      pending={isPreparingDownload}
+                      onDownload={() => void handleDownload()}
+                    />
+                  ) : null}
                 </>
               ) : null}
             </div>

@@ -38,9 +38,15 @@ function renderShareable(fileName: string, content = 'x'): string {
         fileName={fileName}
         path={`/workspace/${fileName}`}
         shareContext={SHARE_CONTEXT}
+        onRefresh={() => Promise.resolve()}
       />
     </Wrapped>,
   );
+}
+
+/** How many times `needle` occurs in `haystack`. */
+function count(haystack: string, needle: string): number {
+  return haystack.split(needle).length - 1;
 }
 
 describe('file kind predicates', () => {
@@ -229,14 +235,35 @@ describe('FileViewer actions', () => {
     expect(button.endsWith('>Copy')).toBe(true);
   });
 
-  test('Copy link and Download file are behind the caret, not beside it', () => {
+  test('Copy link is behind the caret, not beside it', () => {
     const md = renderShareable('notes.txt', 'hi');
     expect(md).toContain('aria-label="More actions"');
-    // Radix renders menu content only once opened, so the items themselves
-    // cannot appear in static markup — their absence here is the proof they
-    // are not sitting in the toolbar row.
+    // Radix renders menu content only once opened, so the item itself cannot
+    // appear in static markup — its absence here is the proof it is not
+    // sitting in the toolbar row.
     expect(md).not.toContain('title="Copy public link"');
-    expect(md).not.toContain('aria-label="Download"');
+  });
+
+  test('Refresh and Download are visible buttons, exactly one of each', () => {
+    // Download used to hide behind the caret. It is now a first-class icon
+    // button, and Refresh sits beside it, so neither needs a menu opened.
+    const md = renderShareable('notes.txt', 'hi');
+    expect(count(md, 'aria-label="Download"')).toBe(1);
+    expect(count(md, 'aria-label="Refresh"')).toBe(1);
+    expect(count(md, 'data-viewer-download=""')).toBe(1);
+    expect(count(md, 'data-viewer-refresh=""')).toBe(1);
+    // Order: split button, then Refresh, then Download, then the panel controls.
+    const copy = md.indexOf('aria-label="Copy file contents"');
+    const refresh = md.indexOf('aria-label="Refresh"');
+    const download = md.indexOf('aria-label="Download"');
+    const fullScreen = md.indexOf('aria-label="Full screen"');
+    expect(copy).toBeLessThan(refresh);
+    expect(refresh).toBeLessThan(download);
+    expect(download).toBeLessThan(fullScreen);
+  });
+
+  test('no refresh handler, no Refresh button', () => {
+    expect(render('notes.txt', 'hi')).not.toContain('aria-label="Refresh"');
   });
 
   test('the removed icon peers stay removed', () => {
@@ -276,8 +303,12 @@ describe('FileViewer actions', () => {
     expect(noPath).not.toContain('aria-label="More actions"');
   });
 
-  test('a path with no share context still earns the caret — Download lives there', () => {
-    expect(render('notes.txt', 'hi')).toContain('aria-label="More actions"');
+  test('a path with no share context shows Download, and no caret for it', () => {
+    // Download is never a menu item, so without Copy link there is nothing
+    // left for a menu: Copy stands alone and Download is visible beside it.
+    const md = render('notes.txt', 'hi');
+    expect(md).not.toContain('aria-label="More actions"');
+    expect(count(md, 'aria-label="Download"')).toBe(1);
   });
 });
 
