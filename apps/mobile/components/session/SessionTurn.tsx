@@ -5,7 +5,7 @@
  */
 
 import React, { useMemo, useCallback, useState, useRef, useEffect } from 'react';
-import { View, TouchableOpacity, Animated, StyleSheet, LayoutAnimation, Platform, UIManager, ScrollView, Image } from 'react-native';
+import { View, TouchableOpacity, Animated, StyleSheet, LayoutAnimation, Platform, UIManager, ScrollView, Image, ActivityIndicator } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { useColorScheme } from 'nativewind';
 import { Ionicons } from '@expo/vector-icons';
@@ -54,6 +54,9 @@ import * as Haptics from 'expo-haptics';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { getSandboxPortUrl } from '@/lib/platform/client';
 import { getAuthToken } from '@/api/config';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
+import { fetchSessionAttachment, isSessionAttachmentRef } from '@kortix/sdk';
 import { FileViewer } from '@/components/files/FileViewer';
 import type { SandboxFile } from '@/api/types';
 import { useTabStore } from '@/stores/tab-store';
@@ -3295,6 +3298,48 @@ export function SessionTurn({
 
 const IMAGE_MIME_RE = /^image\//;
 
+/**
+ * Turns an attachment reference or a sandbox path into something `<Image>` can
+ * show, and a blob a user can share.
+ *
+ * Two sources, and the distinction is the point. A `kortix-attachment://` ref
+ * is SERVER-side storage addressed by (project, session, attachment), so it
+ * resolves with the sandbox stopped — which is exactly when a user scrolling
+ * saved history wants to see the image they sent. A plain path is a file inside
+ * the running sandbox and can only be read while it is up.
+ *
+ * React Native has no `URL.createObjectURL`, so the blob becomes a data URI via
+ * `FileReader` rather than an object url the way apps/web does it.
+ */
+async function loadAttachmentDataUri(
+  src: string,
+  sandboxUrl: string | undefined,
+): Promise<string | null> {
+  const blob = await loadAttachmentBlob(src, sandboxUrl);
+  if (!blob) return null;
+  return await new Promise<string | null>((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(typeof reader.result === 'string' ? reader.result : null);
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function loadAttachmentBlob(
+  src: string,
+  sandboxUrl: string | undefined,
+): Promise<Blob | null> {
+  if (!src) return null;
+  if (isSessionAttachmentRef(src)) return await fetchSessionAttachment(src);
+  if (!sandboxUrl) return null;
+  const token = await getAuthToken();
+  const res = await fetch(`${sandboxUrl}/file/raw?path=${encodeURIComponent(src)}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) return null;
+  return await res.blob();
+}
+
 function UserFileCard({
   file,
   isDark,
@@ -3305,30 +3350,49 @@ function UserFileCard({
 }) {
   const isImage = IMAGE_MIME_RE.test(file.mime);
   const { sandboxUrl: ctxSandboxUrl } = useSandboxContext();
+  const isStored = isSessionAttachmentRef(file.path);
 
-  // For images, try to load from sandbox
   const [imageUri, setImageUri] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
-    if (!isImage || !ctxSandboxUrl || !file.path) return;
+    // A stored attachment needs no sandbox; a sandbox path does.
+    if (!isImage || !file.path) return;
+    if (!isStored && !ctxSandboxUrl) return;
     let cancelled = false;
-    (async () => {
+    void (async () => {
       try {
-        const token = await getAuthToken();
-        const res = await fetch(`${ctxSandboxUrl}/file/raw?path=${encodeURIComponent(file.path)}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        if (!res.ok || cancelled) return;
-        const blob = await res.blob();
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          if (!cancelled && typeof reader.result === 'string') setImageUri(reader.result);
-        };
-        reader.readAsDataURL(blob);
-      } catch {}
+        const uri = await loadAttachmentDataUri(file.path, ctxSandboxUrl);
+        if (!cancelled && uri) setImageUri(uri);
+      } catch {
+        // Leave the card without a preview — the filename row still renders.
+      }
     })();
-    return () => { cancelled = true; };
-  }, [isImage, ctxSandboxUrl, file.path]);
+    return () => {
+      cancelled = true;
+    };
+  }, [isImage, isStored, ctxSandboxUrl, file.path]);
+
+  /** Write the bytes to a cache file and hand them to the OS share sheet. */
+  const handleDownload = useCallback(async () => {
+    if (downloading || !file.path) return;
+    setDownloading(true);
+    try {
+      const uri = await loadAttachmentDataUri(file.path, ctxSandboxUrl);
+      if (!uri) return;
+      const base64 = uri.slice(uri.indexOf(',') + 1);
+      const name = file.filename || 'attachment';
+      const target = `${FileSystem.cacheDirectory}${name}`;
+      await FileSystem.writeAsStringAsync(target, base64, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      await Sharing.shareAsync(target, { mimeType: file.mime, dialogTitle: name });
+    } catch {
+      // User cancelled the share sheet, or the bytes could not be read.
+    } finally {
+      setDownloading(false);
+    }
+  }, [downloading, file.path, file.filename, file.mime, ctxSandboxUrl]);
 
   return (
     <View
@@ -3367,6 +3431,23 @@ function UserFileCard({
         >
           {file.filename || file.path.split('/').pop() || 'File'}
         </Text>
+        <TouchableOpacity
+          onPress={handleDownload}
+          disabled={downloading}
+          hitSlop={8}
+          accessibilityLabel={`Download ${file.filename || 'attachment'}`}
+          activeOpacity={0.6}
+        >
+          {downloading ? (
+            <ActivityIndicator size="small" color={isDark ? '#71717a' : '#a1a1aa'} />
+          ) : (
+            <Ionicons
+              name="download-outline"
+              size={15}
+              color={isDark ? '#71717a' : '#a1a1aa'}
+            />
+          )}
+        </TouchableOpacity>
       </View>
     </View>
   );

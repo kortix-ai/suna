@@ -38,13 +38,7 @@ import { Text as RNText } from 'react-native';
 
 import { groupMessagesIntoTurns, updateProjectSession } from '@kortix/sdk';
 import { toSessionPickerItems } from '@/lib/sessions/session-picker-item';
-import {
-  useSession,
-  useProjectSession,
-  useProjectSessions,
-  flattenProjectSessionPages,
-  qk,
-} from '@kortix/sdk/react';
+import { useSession, useProjectSession, useProjectSessions, qk } from '@kortix/sdk/react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Turn, QuestionRequest } from '@/lib/opencode/types';
 import { useTabStore } from '@/stores/tab-store';
@@ -141,13 +135,13 @@ export function SessionPage({ projectId, sessionId, onBack, onOpenDrawer, onOpen
   // (`handleCreateSessionWithPrompt`), so the SDK must not also replay a stash.
   const session = useSession(projectId, sessionId, { replayStartStash: false });
   const { data: sessionRow } = useProjectSession(projectId, sessionId);
-  const projectSessionsQuery = useProjectSessions(projectId);
-  // `useProjectSessions` pages. `flattenProjectSessionPages` is the SDK's own
-  // flattener — it also de-duplicates by session_id, which matters because a
-  // session prompted between two page fetches legitimately appears on both.
+  // `enabled` is not optional here: the hook defaults it to true, so an empty
+  // project id would issue `GET /projects//sessions`. The hook's own `sessions`
+  // field is already flattened and de-duplicated across loaded pages.
+  const projectSessionsQuery = useProjectSessions(projectId, { enabled: !!projectId });
   const sessionPickerItems = useMemo(
-    () => toSessionPickerItems(flattenProjectSessionPages(projectSessionsQuery.data)),
-    [projectSessionsQuery.data],
+    () => toSessionPickerItems(projectSessionsQuery.sessions),
+    [projectSessionsQuery.sessions],
   );
 
   const safeMessages = session.messages;

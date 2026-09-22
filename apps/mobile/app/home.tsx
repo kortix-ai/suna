@@ -32,7 +32,7 @@ import { BottomSheetModal } from '@gorhom/bottom-sheet';
 
 import { useAuthContext } from '@/contexts';
 import { useSandboxContext } from '@/contexts/SandboxContext';
-import { useProjectSessions, flattenProjectSessionPages } from '@kortix/sdk/react';
+import { useProjectSessions } from '@kortix/sdk/react';
 import { deleteProjectSession } from '@kortix/sdk';
 import { useCreateProjectSession } from '@/lib/projects/hooks';
 import { toSessionPickerItems, type SessionPickerItem } from '@/lib/sessions/session-picker-item';
@@ -599,15 +599,14 @@ export default function HomeScreen() {
   // Data — the project's Kortix sessions, not the sandbox's OpenCode ones. A
   // stopped session is still a session, so it still appears here; the old list
   // came from the running sandbox and could not show one.
-  const projectSessionsQuery = useProjectSessions(projectId ?? '');
+  // `enabled` is not optional: the hook defaults it to true, so an empty
+  // project id would issue `GET /projects//sessions` before the sandbox row
+  // has resolved which project this is.
+  const projectSessionsQuery = useProjectSessions(projectId ?? '', { enabled: !!projectId });
   const sessionsLoading = projectSessionsQuery.isLoading;
-  const projectSessions = useMemo(
-    () => flattenProjectSessionPages(projectSessionsQuery.data),
-    [projectSessionsQuery.data],
-  );
   const sessionPickerItems = useMemo(
-    () => toSessionPickerItems(projectSessions),
-    [projectSessions],
+    () => toSessionPickerItems(projectSessionsQuery.sessions),
+    [projectSessionsQuery.sessions],
   );
   const { data: kortixProjects } = useKortixProjects(sandboxUrl);
   const sortedProjects = useMemo(() => {
