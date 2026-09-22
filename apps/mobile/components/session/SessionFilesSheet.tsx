@@ -27,7 +27,6 @@
  */
 import * as React from 'react';
 import { View } from 'react-native';
-import * as Clipboard from 'expo-clipboard';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -40,7 +39,7 @@ import {
 import { useFilePreviewData } from '@/components/files/use-file-preview-data';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { PinnedBar, usePinnedBarInset } from '@/components/kortix/pinned-bar';
-import { KortixBottomSheetModal, type SheetRef } from '@/components/kortix/sheet';
+import { CopyContentButton, KortixBottomSheetModal, type SheetRef } from '@/components/kortix/sheet';
 import { SheetTextInput } from '@/components/kortix/SheetInput';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { useToast } from '@/components/kortix/toast-provider';
@@ -52,7 +51,7 @@ import { openFileOnDevice } from '@/lib/files/open-on-device';
 import { previewFailure } from '@/lib/files/preview-failure';
 import { haptics } from '@/lib/haptics';
 import { THEME } from '@/lib/utils/theme';
-import { CheckIcon, CopyIcon, DownloadSimpleIcon, PlusIcon } from '@/lib/icons';
+import { DownloadSimpleIcon, PlusIcon } from '@/lib/icons';
 import { useSyncStore } from '@/lib/opencode/sync-store';
 import {
   deriveSessionFiles,
@@ -68,7 +67,6 @@ const SNAP_POINTS = ['100%'];
 /** `Button` default size (`h-10`): the pinned bar's controls. */
 const BAR_CONTROL_HEIGHT = 40;
 /** How long Copy shows its check. */
-const COPIED_MS = 1500;
 
 export interface SessionFilesSheetProps {
   sessionId: string | null | undefined;
@@ -170,29 +168,6 @@ function toSandboxFile(file: SessionFile): SandboxFile {
 }
 
 /** The title row's Copy: the file's text to the clipboard, a check for 1.5 s. */
-function CopyContentButton({ text }: { text: string }) {
-  const [copied, setCopied] = React.useState(false);
-  const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  React.useEffect(() => () => void (timer.current && clearTimeout(timer.current)), []);
-
-  return (
-    <Button
-      variant="ghost"
-      size="icon"
-      className="rounded-full"
-      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-      accessibilityLabel={copied ? 'Copied' : 'Copy file content'}
-      onPress={async () => {
-        await Clipboard.setStringAsync(text);
-        haptics.success();
-        setCopied(true);
-        if (timer.current) clearTimeout(timer.current);
-        timer.current = setTimeout(() => setCopied(false), COPIED_MS);
-      }}>
-      <Icon as={copied ? CheckIcon : CopyIcon} size={20} className="text-foreground" />
-    </Button>
-  );
-}
 
 function FilePreviewBody({
   file,

@@ -2,81 +2,85 @@
  * FilesNavPage — the project's repo files (web parity: features/project-files).
  * A READ-ONLY git-repo browser: the `/files` endpoint returns a FLAT recursive
  * file list, so folders are derived client-side from the paths. Browse by
- * version (branch), view file content, see a file's history, and download a
- * file or a subtree zip. No write/rename/delete (project files come from git).
+ * version (branch), open a file, see its history, and download a file or a
+ * folder as a zip. No write, rename or delete: project files come from git.
  *
- * Mobile branding: reuses the old files page's FileItem rows + preview
- * renderers, with PageHeader + PageContent chrome.
+ * Layout (Jay, 2026-09-22):
+ * - `PageHeader` with the large title and the `···`; no controls beside it.
+ * - Search, then the breadcrumb (chips, never clipped). Inside a folder the
+ *   hamburger stays (Jay, 2026-09-22: no Go back in its place, on any page);
+ *   a crumb, or Android back, goes up one folder, never to home.
+ * - List: `SettingsGroup`s titled "Folders" and "Files", rows of `SettingsRow`.
+ *   Grid: 2-up tiles.
+ * - The pinned bar (`PinnedBar`, the project drawer's bottom bar): version ·
+ *   sort · list/grid `Tabs` · download, floating over a fade of the page.
+ *   Refresh is a pull on the list; there is no button.
+ * - No scale, no opacity, no spring on a press: rows use `SettingsRow`'s
+ *   pressed fill; tiles use `active:bg-accent`.
+ *
+ * A file opens in `FileSheet`, a `KortixBottomSheetModal` at full height: the
+ * file name as the title, `FilePreview` as the body (the recent-files sheet's
+ * layout), and a pinned bar with Download · History. History pushes in
+ * (`sheet-push`) and a checkpoint pushes its diff in after it.
  */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  View,
-  Pressable,
-  ScrollView,
-  ActivityIndicator,
-  Alert,
-  Modal,
-  Dimensions,
-  Animated,
-  Easing,
-  RefreshControl,
-} from 'react-native';
-import { useColorScheme } from 'nativewind';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { BackHandler, Platform, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
-import {
-  GitBranchIcon as GitBranch,
-  CaretDownIcon as ChevronDown,
-  CaretLeftIcon as ChevronLeft,
-  CaretRightIcon as ChevronRight,
-  ArrowsDownUpIcon as ArrowDownUp,
-  DownloadIcon as Download,
-  ArrowClockwiseIcon as RefreshCw,
-  FolderIcon as Folder,
-  FolderOpenIcon as FolderOpen,
-  CheckIcon as Check,
-  XIcon as X,
-  ClockCounterClockwiseIcon as History,
-  GitCommitIcon as GitCommitHorizontal,
-  SquaresFourIcon as LayoutGrid,
-  ListIcon as List,
-} from '@/lib/icons';
-import { PressableSurface } from '@/components/kortix/pressable-surface';
-import { Text } from '@/components/ui/text';
+import { useColorScheme } from 'nativewind';
+import Animated from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { getAuthToken } from '@/api/config';
+import type { SandboxFile } from '@/api/types';
+import { PatchDiffView } from '@/components/diff/PatchDiffView';
+import { FilePreview, FilePreviewBottomInsetContext, getFilePreviewType } from '@/components/files/FilePreviewRenderers';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { PageContent } from '@/components/kortix/page-content';
+import { PageHeader } from '@/components/kortix/page-header';
+import { PinnedBar, usePinnedBarInset } from '@/components/kortix/pinned-bar';
+import { TopFade, useScrollFade } from '@/components/kortix/scroll-fade';
+import { SearchListHeader } from '@/components/kortix/search-list-header';
+import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
+import { CopyContentButton, KortixBottomSheetModal, SheetTitleRow } from '@/components/kortix/sheet';
+import { POP_IN, PUSH_IN, SheetBackButton } from '@/components/kortix/sheet-push';
+import { useToast } from '@/components/kortix/toast-provider';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
-import { PageHeader } from '@/components/kortix/page-header';
-import { PageContent } from '@/components/kortix/page-content';
-import { useThemeColors } from '@/lib/theme-colors';
-import { THEME, withAlpha } from '@/lib/utils/theme';
-import { FileItem, getFileIconComponent, getMutedIconColor } from '@/components/files/FileItem';
-import { FilePreview, getFilePreviewType } from '@/components/files/FilePreviewRenderers';
-import { PatchDiffView } from '@/components/diff/PatchDiffView';
-import { relativeTime } from '@/lib/projects/triggers-format';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Text } from '@/components/ui/text';
+import { FileGlyph } from '@/components/files/file-icons';
+import { displayNames } from '@/lib/files/file-icon';
+import { folderTone } from '@/lib/files/folder-tone';
+import { haptics } from '@/lib/haptics';
+import {
+  ArrowsDownUpIcon,
+  CaretRightIcon,
+  ClockCounterClockwiseIcon,
+  DownloadSimpleIcon,
+  FolderIcon,
+  GitBranchIcon,
+  GitCommitIcon,
+  ListIcon,
+  SquaresFourIcon,
+} from '@/lib/icons';
 import {
   useProjectBranches,
-  useProjectFiles,
+  useProjectCommitDiff,
   useProjectFileContent,
   useProjectFileHistory,
-  useProjectCommitDiff,
+  useProjectFiles,
 } from '@/lib/projects/hooks';
 import { projectArchiveUrl } from '@/lib/projects/projects-client';
-import type { ProjectFileEntry, ProjectBranch, ProjectCommit } from '@/lib/projects/projects-client';
-import type { SandboxFile } from '@/api/types';
-import { getAuthToken } from '@/api/config';
-import { haptics } from '@/lib/haptics';
-import { SheetBackdrop, useSheetBackground, KortixBottomSheetModal, SheetTitleRow } from '@/components/kortix/sheet';
-
-interface PageTabLike {
-  id: string;
-  label: string;
-}
+import type { ProjectBranch, ProjectCommit, ProjectFileEntry } from '@/lib/projects/projects-client';
+import { relativeTime } from '@/lib/projects/triggers-format';
+import { THEME } from '@/lib/utils/theme';
 
 interface FilesNavPageProps {
-  page: PageTabLike;
+  page: { id: string; label: string };
   projectId: string;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
@@ -92,14 +96,16 @@ const ext = (name: string) => {
   return i > 0 ? name.slice(i + 1).toLowerCase() : '';
 };
 
-// Pinned, described config dirs (web parity).
-const ELEVATED: Record<string, string> = {
-  '.kortix': 'Project config, tasks, context',
-  '.opencode': 'Agents, skills, commands',
-};
+/** Pinned config dirs: always first (web parity). */
+const ELEVATED = new Set(['.kortix', '.opencode']);
 
 type SortBy = 'name' | 'type';
 type SortOrder = 'asc' | 'desc';
+type ViewMode = 'list' | 'grid';
+
+/** The pinned bar's controls are 40pt `icon` buttons. */
+const BAR_CONTROL_HEIGHT = 40;
+const SHEET_SNAP_POINTS = ['100%'];
 
 /** Immediate children of `dir` derived from the flat file list. */
 function childrenOf(entries: ProjectFileEntry[], dir: string): { dirs: string[]; files: ProjectFileEntry[] } {
@@ -121,10 +127,9 @@ async function downloadAndShare(url: string, filename: string, withAuth: boolean
   const target = `${FileSystem.cacheDirectory}${filename}`;
   if (withAuth) {
     const token = await getAuthToken();
-    const res = await FileSystem.downloadAsync(url, target, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    });
-    if (res.status >= 400) throw new Error(`Download failed (${res.status})`);
+    await FileSystem.downloadAsync(url, target, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  } else {
+    await FileSystem.downloadAsync(url, target);
   }
   if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(target);
 }
@@ -135,416 +140,272 @@ async function saveTextAndShare(content: string, filename: string) {
   if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(target);
 }
 
-// ─── Version selector sheet ───────────────────────────────────────────────────
+/**
+ * A folder is a filled folder glyph in the folder's own tone. A file is its
+ * type's glyph (`FileGlyph`: one per web language, the Kortix symbol on the
+ * Kortix files, git on git's dotfiles), filled, in the muted foreground.
+ */
+function EntryIcon({ file, size }: { file: SandboxFile; size: number }) {
+  if (file.type === 'directory') {
+    return <FolderIcon size={size} weight="fill" color={THEME.accent[folderTone(file.name)]} />;
+  }
+  return <FileGlyph name={file.name} size={size} />;
+}
+
+function fileSizeLabel(size: number | undefined): string | undefined {
+  if (size == null) return undefined;
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(size < 10 * 1024 ? 1 : 0)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// ─── Version sheet ────────────────────────────────────────────────────────────
 
 function VersionSheet({
   branches,
   defaultBranch,
   value,
-  onSelect,
-  onClose,
-  onRetry,
   isLoading,
-  isDark,
+  onSelect,
 }: {
   branches: ProjectBranch[];
   defaultBranch: string;
   value: string;
+  isLoading: boolean;
   onSelect: (ref: string) => void;
-  onClose: () => void;
-  onRetry?: () => void;
-  isLoading?: boolean;
-  isDark: boolean;
 }) {
-  const theme = useThemeColors();
-  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
-  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
-  const border = withAlpha(fg, 0.08);
-
-  const sorted = useMemo(() => {
-    const def = branches.filter((b) => b.is_default);
-    const rest = branches.filter((b) => !b.is_default);
-    return [...def, ...rest];
-  }, [branches]);
-
+  const insets = useSafeAreaInsets();
+  const sorted = useMemo(
+    () =>
+      [...branches].sort((a, b) => {
+        if (a.name === defaultBranch) return -1;
+        if (b.name === defaultBranch) return 1;
+        return (b.committed_at ?? '').localeCompare(a.committed_at ?? '');
+      }),
+    [branches, defaultBranch],
+  );
   return (
-    <View style={{ flex: 1 }}>
-      <SheetTitleRow title="Version" onClose={() => { haptics.tap(); onClose(); }} />
-      <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingVertical: 6, flexGrow: 1 }} showsVerticalScrollIndicator={false}>
-        {sorted.length > 0 ? (
-          sorted.map((b) => {
-            const on = b.name === value;
-            return (
-              <Pressable
-                key={b.name}
-                onPress={() => { haptics.selection(); onSelect(b.name); }}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12 }}
-              >
-                <Icon as={GitBranch} size={18} color={on ? theme.primary : muted} />
-                <View style={{ flex: 1 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={{ fontSize: 14.5, fontFamily: 'Menlo', color: on ? theme.primary : fg }} numberOfLines={1}>{shortRef(b.name)}</Text>
-                    {b.is_default && <Text style={{ fontSize: 10.5, fontFamily: 'Roobert-Medium', color: muted }}>MAIN</Text>}
-                  </View>
-                  <Text style={{ fontSize: 12.5, color: muted, marginTop: 1 }} numberOfLines={1}>
-                    {b.subject || 'No commits'}{b.committed_at ? ` · ${relativeTime(b.committed_at)}` : ''}
-                  </Text>
-                </View>
-                {on && <Icon as={Check} size={17} color={theme.primary} />}
-              </Pressable>
-            );
-          })
-        ) : isLoading ? (
-          <View style={{ paddingVertical: 48, alignItems: 'center' }}>
-            <ActivityIndicator size="small" color={muted} />
-          </View>
-        ) : (
-          // Branch listing came back empty (the repo's git mirror is unavailable —
-          // the API returns the default branch but no list). Never show a blank
-          // sheet: keep the current version as a normal list row up top, then a
-          // proper empty state for the rest.
-          <View style={{ flex: 1 }}>
-            {value ? (
-              <>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12 }}>
-                  <Icon as={GitBranch} size={18} color={theme.primary} />
-                  <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Text style={{ fontSize: 14.5, fontFamily: 'Menlo', color: theme.primary }} numberOfLines={1}>{shortRef(value)}</Text>
-                      {value === defaultBranch && <Text style={{ fontSize: 10.5, fontFamily: 'Roobert-Medium', color: muted }}>MAIN</Text>}
-                    </View>
-                    <Text style={{ fontSize: 12.5, color: muted, marginTop: 1 }}>Current version</Text>
-                  </View>
-                  <Icon as={Check} size={17} color={theme.primary} />
-                </View>
-                <View style={{ height: 1, backgroundColor: border, marginHorizontal: 16 }} />
-              </>
-            ) : null}
-            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 36, paddingVertical: 32, gap: 6 }}>
-              <View
-                style={{
-                  width: 64,
-                  height: 64,
-                  borderRadius: 20,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  marginBottom: 10,
-                  backgroundColor: withAlpha(fg, isDark ? 0.05 : 0.04),
-                }}
-              >
-                <Icon
-                  as={GitBranch}
-                  size={26}
-                  color={withAlpha(fg, 0.25)}
-                />
-              </View>
-              <Text style={{ fontSize: 15.5, fontFamily: 'Roobert-Medium', color: fg, textAlign: 'center' }}>
-                No other versions yet
-              </Text>
-              <Text style={{ fontSize: 13, color: muted, textAlign: 'center', lineHeight: 19 }}>
-                Branches couldn’t be loaded — the repository may still be preparing.
-              </Text>
-              {onRetry ? (
-                <Button
-                  onPress={() => { haptics.tap(); onRetry(); }}
-                  className="mt-3.5 rounded-full"
-                >
-                  <Text>
-                    Try again
-                  </Text>
-                </Button>
-              ) : null}
-            </View>
-          </View>
-        )}
-      </BottomSheetScrollView>
-    </View>
+    <BottomSheetScrollView
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: Math.max(insets.bottom, 16) + 8 }}>
+      {isLoading && sorted.length === 0 ? (
+        <View className="gap-3">
+          <Skeleton className="h-12 w-full rounded-2xl" />
+          <Skeleton className="h-12 w-full rounded-2xl" />
+        </View>
+      ) : sorted.length === 0 ? (
+        <Text variant="muted" className="px-2 py-6">
+          No versions yet
+        </Text>
+      ) : (
+        <SettingsGroup className="bg-secondary">
+          {sorted.map((b) => (
+            <SettingsRow
+              key={b.name}
+              icon={GitBranchIcon}
+              label={shortRef(b.name)}
+              value={b.name === defaultBranch ? 'Default' : b.committed_at ? relativeTime(b.committed_at) : undefined}
+              checked={b.name === value}
+              right={null}
+              onPress={() => {
+                haptics.selection();
+                onSelect(b.name);
+              }}
+            />
+          ))}
+        </SettingsGroup>
+      )}
+    </BottomSheetScrollView>
   );
 }
 
-// ─── File viewer (full-screen modal) ──────────────────────────────────────────
+// ─── File sheet: preview · history · checkpoint diff ─────────────────────────
 
-function FileViewerModal({
+type FileSheetView = { kind: 'preview' } | { kind: 'history' } | { kind: 'commit'; commit: ProjectCommit };
+
+function FileSheetBody({
   projectId,
   ref_,
-  files,
-  index,
-  onNavigate,
-  onClose,
-  isDark,
+  file,
+  onCopyTextChange,
 }: {
   projectId: string;
   ref_: string;
-  files: { name: string; path: string }[];
-  index: number;
-  onNavigate: (i: number) => void;
-  onClose: () => void;
-  isDark: boolean;
+  file: { name: string; path: string };
+  /** The file's text once it has loaded, else ''. */
+  onCopyTextChange: (text: string) => void;
 }) {
-  const theme = useThemeColors();
-  const insets = useSafeAreaInsets();
-  const file = files[index];
-  const [view, setView] = useState<'content' | 'history'>('content');
-  const [historyCommit, setHistoryCommit] = useState<ProjectCommit | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const pageBackground = THEME[isDark ? 'dark' : 'light'].background;
+  const contentInset = usePinnedBarInset(BAR_CONTROL_HEIGHT);
+  const toast = useToast();
+  const [view, setView] = useState<FileSheetView>({ kind: 'preview' });
+  const [returning, setReturning] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
-  const content = useProjectFileContent(projectId, file?.path ?? null, ref_);
-  const history = useProjectFileHistory(projectId, view === 'history' ? (file?.path ?? null) : null, ref_);
+  const content = useProjectFileContent(projectId, file.path, ref_);
+  const copyText = !content.isError && typeof content.data?.content === 'string' ? content.data.content : '';
+  useEffect(() => {
+    onCopyTextChange(copyText);
+  }, [copyText, onCopyTextChange]);
+  const history = useProjectFileHistory(projectId, view.kind === 'preview' ? null : file.path, ref_);
 
-  const bg = isDark ? THEME.dark.background : THEME.light.background;
-  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
-  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
-  const border = withAlpha(fg, 0.08);
-
-  // Reset to content when navigating files.
-  useEffect(() => { setView('content'); setHistoryCommit(null); }, [file?.path]);
-
-  if (!file) return null;
-  const previewType = getFilePreviewType(file.name);
+  const goTo = useCallback((next: FileSheetView, back: boolean) => {
+    haptics.tap();
+    setReturning(back);
+    setView(next);
+  }, []);
 
   const download = async () => {
-    if (busy) return;
-    setBusy(true);
+    if (downloading) return;
+    haptics.tap();
+    setDownloading(true);
     try {
-      const text = content.data?.content ?? '';
-      await saveTextAndShare(text, basename(file.name));
-      haptics.tap();
+      await saveTextAndShare(content.data?.content ?? '', basename(file.name));
     } catch (e: any) {
-      Alert.alert('Download failed', e?.message || 'Could not download the file.');
+      haptics.warning();
+      toast.error(e?.message || 'Unable to download the file. Try again.');
     } finally {
-      setBusy(false);
+      setDownloading(false);
     }
   };
 
-  return (
-    <Modal visible animationType="slide" onRequestClose={onClose} presentationStyle="fullScreen">
-      <View style={{ flex: 1, backgroundColor: bg, paddingTop: insets.top }}>
-        {/* Header */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: border }}>
-          <Button variant="ghost" size="icon" onPress={() => { haptics.tap(); onClose(); }} hitSlop={8}>
-            <Icon as={ChevronLeft} size={22} color={fg} />
-          </Button>
-          <Text style={{ flex: 1, fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>{file.name}</Text>
-          {files.length > 1 && view === 'content' && (
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Button variant="ghost" size="icon" disabled={index === 0} onPress={() => onNavigate(index - 1)} hitSlop={6}>
-                <Icon as={ChevronLeft} size={18} color={fg} />
-              </Button>
-              <Text style={{ fontSize: 12, color: muted, minWidth: 30, textAlign: 'center' }}>{index + 1}/{files.length}</Text>
-              <Button variant="ghost" size="icon" disabled={index === files.length - 1} onPress={() => onNavigate(index + 1)} hitSlop={6}>
-                <Icon as={ChevronRight} size={18} color={fg} />
-              </Button>
-            </View>
-          )}
-          <Button variant="secondary" size="icon" className="rounded-full" onPress={() => { haptics.tap(); setHistoryCommit(null); setView(view === 'history' ? 'content' : 'history'); }} hitSlop={8}>
-            <Icon as={History} size={16} color={view === 'history' ? theme.primary : muted} />
-          </Button>
-          <Button variant="secondary" size="icon" className="rounded-full" onPress={download} disabled={busy} hitSlop={8}>
-            {busy ? <ActivityIndicator size="small" color={muted} /> : <Icon as={Download} size={16} color={muted} />}
-          </Button>
-        </View>
-
-        {/* Body */}
-        {view === 'history' ? (
-          <FileHistoryView historyQuery={history} onSelectCommit={setHistoryCommit} isDark={isDark} />
-        ) : content.isLoading ? (
-          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><ActivityIndicator size="small" color={muted} /></View>
-        ) : content.isError ? (
-          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 10 }}>
-            <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>This file can't be shown as text. Download it to view.</Text>
-            <Button variant="outline" size="sm" className="rounded-full" onPress={download}>
-              <Icon as={Download} size={15} color={fg} />
-              <Text>Download</Text>
-            </Button>
-          </View>
-        ) : (
-          <View style={{ flex: 1 }}>
-            <FilePreview content={content.data?.content ?? ''} fileName={file.name} previewType={previewType} filePath={file.path} />
-          </View>
-        )}
-
-        {/* Checkpoint changes — animated bottom sheet */}
-        <CheckpointSheet commit={historyCommit} projectId={projectId} path={file.path} isDark={isDark} onClose={() => setHistoryCommit(null)} />
-      </View>
-    </Modal>
-  );
-}
-
-function CheckpointSheet({
-  commit,
-  projectId,
-  path,
-  isDark,
-  onClose,
-}: {
-  commit: ProjectCommit | null;
-  projectId: string;
-  path: string;
-  isDark: boolean;
-  onClose: () => void;
-}) {
-  const sheetBg = useSheetBackground();
-  const insets = useSafeAreaInsets();
-  const H = Dimensions.get('window').height;
-  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
-  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
-  const border = withAlpha(fg, 0.08);
-
-  // Keep the last commit rendered while the close animation plays out.
-  const [rendered, setRendered] = useState<ProjectCommit | null>(commit);
-  const translateY = useRef(new Animated.Value(H)).current;
-  const backdrop = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (commit) {
-      setRendered(commit);
-      Animated.parallel([
-        Animated.spring(translateY, { toValue: 0, useNativeDriver: true, damping: 24, stiffness: 260, mass: 0.9 }),
-        Animated.timing(backdrop, { toValue: 1, duration: 200, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-      ]).start();
-    } else {
-      Animated.parallel([
-        Animated.timing(translateY, { toValue: H, duration: 220, easing: Easing.in(Easing.quad), useNativeDriver: true }),
-        Animated.timing(backdrop, { toValue: 0, duration: 180, useNativeDriver: true }),
-      ]).start(({ finished }) => { if (finished) setRendered(null); });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [commit]);
-
-  if (!rendered) return null;
-
-  return (
-    <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, justifyContent: 'flex-end' }} pointerEvents="box-none">
-      <Animated.View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)' /* hex-allowlist: fixed modal scrim, matches gorhom's own SheetBackdrop default (opacity 0.5 black), not a themed surface */, opacity: backdrop }}>
-        <Pressable style={{ flex: 1 }} onPress={onClose} />
-      </Animated.View>
-      <Animated.View style={{ transform: [{ translateY }], backgroundColor: sheetBg, borderTopLeftRadius: 20, borderTopRightRadius: 20, overflow: 'hidden', paddingBottom: insets.bottom }}>
-        <View style={{ alignItems: 'center', paddingTop: 8 }}>
-          <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: withAlpha(fg, 0.2) }} />
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: border }}>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 }}>Checkpoint changes</Text>
-            <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={2}>{rendered.subject || '(no message)'}</Text>
-            <Text style={{ fontSize: 12, color: muted, marginTop: 2 }} numberOfLines={1}>
-              {rendered.author_name || 'Unknown'} · {relativeTime(rendered.committed_at || rendered.authored_at)} · <Text style={{ fontFamily: 'Menlo' }}>{rendered.short_hash}</Text>
+  if (view.kind === 'commit') {
+    return (
+      <Animated.View key={view.commit.hash} entering={PUSH_IN} style={{ flex: 1 }}>
+        <SheetTitleRow title={view.commit.short_hash} leading={<SheetBackButton onPress={() => goTo({ kind: 'history' }, true)} />} />
+        <BottomSheetScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: contentInset, gap: 12 }}
+          showsVerticalScrollIndicator={false}>
+          <View className="gap-1 px-2">
+            <Text numberOfLines={3}>{view.commit.subject || '(no message)'}</Text>
+            <Text variant="muted" numberOfLines={1}>
+              {view.commit.author_name || 'Unknown'} · {relativeTime(view.commit.committed_at || view.commit.authored_at)}
             </Text>
           </View>
-          <Button variant="secondary" size="icon" className="rounded-full" onPress={() => { haptics.tap(); onClose(); }} hitSlop={8}>
-            <Icon as={X} size={17} color={muted} />
-          </Button>
-        </View>
-        <ScrollView style={{ maxHeight: H * 0.58 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
-          <CommitDiff projectId={projectId} sha={rendered.hash} path={path} isDark={isDark} />
-        </ScrollView>
+          <CommitDiff projectId={projectId} sha={view.commit.hash} path={file.path} isDark={isDark} />
+        </BottomSheetScrollView>
       </Animated.View>
-    </View>
-  );
-}
-
-function FileHistoryView({
-  historyQuery,
-  onSelectCommit,
-  isDark,
-}: {
-  historyQuery: ReturnType<typeof useProjectFileHistory>;
-  onSelectCommit: (c: ProjectCommit) => void;
-  isDark: boolean;
-}) {
-  const insets = useSafeAreaInsets();
-  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
-  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
-  const border = withAlpha(fg, 0.08);
-  const commits = historyQuery.data?.commits ?? [];
-
-  if (historyQuery.isLoading) {
-    return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><ActivityIndicator size="small" color={muted} /></View>;
-  }
-  if (historyQuery.isError || commits.length === 0) {
-    return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-        <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>{historyQuery.isError ? "Couldn't load history." : 'No checkpoints for this file yet.'}</Text>
-      </View>
     );
   }
+
+  if (view.kind === 'history') {
+    const commits = history.data?.commits ?? [];
+    return (
+      <Animated.View key="history" entering={returning ? POP_IN : PUSH_IN} style={{ flex: 1 }}>
+        <SheetTitleRow title="History" leading={<SheetBackButton onPress={() => goTo({ kind: 'preview' }, true)} />} />
+        <BottomSheetScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: contentInset }}
+          showsVerticalScrollIndicator={false}>
+          {history.isLoading ? (
+            <View className="gap-3">
+              <Skeleton className="h-12 w-full rounded-2xl" />
+              <Skeleton className="h-12 w-full rounded-2xl" />
+              <Skeleton className="h-12 w-full rounded-2xl" />
+            </View>
+          ) : history.isError ? (
+            <Text variant="muted" className="px-2 py-6 text-center">
+              Unable to load the history
+            </Text>
+          ) : commits.length === 0 ? (
+            <Text variant="muted" className="px-2 py-6 text-center">
+              No checkpoints for this file yet
+            </Text>
+          ) : (
+            <SettingsGroup className="bg-secondary">
+              {commits.map((c) => (
+                <SettingsRow
+                  key={c.hash}
+                  icon={GitCommitIcon}
+                  label={c.subject || '(no message)'}
+                  value={relativeTime(c.committed_at || c.authored_at)}
+                  onPress={() => goTo({ kind: 'commit', commit: c }, false)}
+                />
+              ))}
+            </SettingsGroup>
+          )}
+        </BottomSheetScrollView>
+      </Animated.View>
+    );
+  }
+
+  const previewType = getFilePreviewType(file.name);
   return (
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: insets.bottom + 20 }} showsVerticalScrollIndicator={false}>
-      <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: muted, textTransform: 'uppercase', letterSpacing: 0.5, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 8 }}>
-        {commits.length} {commits.length === 1 ? 'checkpoint' : 'checkpoints'} · tap to see changes
-      </Text>
-      {commits.map((c, i) => (
-        <Pressable
-          key={c.hash}
-          onPress={() => { haptics.tap(); onSelectCommit(c); }}
-          style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingVertical: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: border }}
-        >
-          <Icon as={GitCommitHorizontal} size={18} color={muted} style={{ marginTop: 1 }} />
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={2}>{c.subject || '(no message)'}</Text>
-            <Text style={{ fontSize: 12.5, color: muted, marginTop: 3 }} numberOfLines={1}>
-              {c.author_name || 'Unknown'} · {relativeTime(c.committed_at || c.authored_at)} · <Text style={{ fontFamily: 'Menlo' }}>{c.short_hash}</Text>
+    <Animated.View key="preview" entering={returning ? POP_IN : undefined} style={{ flex: 1 }}>
+      {/* The document fills the sheet and scrolls under the pinned bar; the
+          renderers end their content `contentInset` above the edge. */}
+      <FilePreviewBottomInsetContext.Provider value={contentInset}>
+        {content.isLoading ? (
+          <View className="flex-1 items-center justify-center" style={{ paddingBottom: contentInset }}>
+            <KortixLoader size="large" />
+          </View>
+        ) : content.isError ? (
+          <View className="flex-1 items-center justify-center gap-3 px-8" style={{ paddingBottom: contentInset }}>
+            <Text variant="muted" className="text-center">
+              This file cannot be shown as text. Download it to view.
             </Text>
           </View>
-          <Icon as={ChevronRight} size={18} color={muted} style={{ marginTop: 1 }} />
-        </Pressable>
-      ))}
-      {historyQuery.data?.hasMore && (
-        <Text style={{ fontSize: 12, color: muted, textAlign: 'center', marginTop: 12 }}>Showing the most recent {commits.length} checkpoints.</Text>
-      )}
-    </ScrollView>
+        ) : (
+          <FilePreview content={content.data?.content ?? ''} fileName={file.name} previewType={previewType} filePath={file.path} />
+        )}
+      </FilePreviewBottomInsetContext.Provider>
+
+      {/* The project drawer's pinned bar: Download · History, over a fade. */}
+      <PinnedBar controlHeight={BAR_CONTROL_HEIGHT} background={pageBackground} className="gap-2 px-4">
+        <Button variant="secondary" className="flex-1 rounded-full" onPress={download} disabled={downloading || content.isLoading}>
+          <Icon as={DownloadSimpleIcon} size={18} className="text-foreground" />
+          <Text>{downloading ? 'Downloading…' : 'Download'}</Text>
+        </Button>
+        <Button variant="secondary" className="flex-1 rounded-full" onPress={() => goTo({ kind: 'history' }, false)}>
+          <Icon as={ClockCounterClockwiseIcon} size={18} className="text-foreground" />
+          <Text>History</Text>
+        </Button>
+      </PinnedBar>
+    </Animated.View>
   );
 }
 
 function CommitDiff({ projectId, sha, path, isDark }: { projectId: string; sha: string; path: string; isDark: boolean }) {
-  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
   const diff = useProjectCommitDiff(projectId, sha, path);
-  if (diff.isLoading) {
-    return <View style={{ paddingVertical: 18, alignItems: 'center' }}><ActivityIndicator size="small" color={muted} /></View>;
-  }
+  if (diff.isLoading) return <Skeleton className="h-24 w-full rounded-xl" />;
   if (diff.isError || !diff.data) {
-    return <Text style={{ fontSize: 13, color: muted, paddingVertical: 8 }}>Couldn't load this checkpoint's diff.</Text>;
+    return (
+      <Text variant="muted" className="px-2">
+        Unable to load this checkpoint's changes
+      </Text>
+    );
   }
   return <PatchDiffView patch={diff.data.patch} isDark={isDark} />;
 }
 
-// ─── File row ─────────────────────────────────────────────────────────────────
+// ─── Grid tile ────────────────────────────────────────────────────────────────
 
-// Grid card — identical chrome to the old Files page's FileRowCard (bordered
-// rounded card, monochrome icon, 2-up wrap) so both Files surfaces look alike.
-function FileCard({
-  file,
-  isDark,
-  onPress,
-}: {
-  file: SandboxFile;
-  isDark: boolean;
-  onPress: (f: SandboxFile) => void;
-}) {
-  const FileIcon = getFileIconComponent(file);
-  const iconColor = getMutedIconColor(isDark);
-  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+function FileTile({ file, label, onPress }: { file: SandboxFile; label: string; onPress: (file: SandboxFile) => void }) {
   return (
-    <PressableSurface
-      onPress={() => { haptics.tap(); onPress(file); }}
-      style={({ pressed }) => [
-        {
-          flexDirection: 'row',
-          alignItems: 'center',
-          borderRadius: 12,
-          borderWidth: 1,
-          borderColor: withAlpha(fg, 0.1),
-          backgroundColor: isDark ? THEME.dark.surface : THEME.light.background,
-          paddingHorizontal: 12,
-          paddingVertical: 10,
-        },
-        pressed && { opacity: 0.7 },
-      ]}
-    >
-      <FileIcon size={18} color={iconColor} style={{ marginRight: 8 }} />
-      <Text style={{ flex: 1, fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>
-        {file.name}
-      </Text>
-    </PressableSurface>
+    <Pressable
+      onPress={() => onPress(file)}
+      accessibilityRole="button"
+      accessibilityLabel={file.name}
+      className="gap-3 overflow-hidden rounded-2xl bg-card p-4 active:bg-accent">
+      {/* The glyph's visible left edge sits ~3pt inside its box: pull it back so it
+          lines up with the name below. */}
+      <View style={{ marginLeft: -3 }}>
+        <EntryIcon file={file} size={36} />
+      </View>
+      <View className="gap-0.5">
+        <Text variant="small" numberOfLines={1}>
+          {label}
+        </Text>
+        {file.type === 'file' && fileSizeLabel(file.size) ? (
+          <Text variant="muted" className="text-xs" numberOfLines={1}>
+            {fileSizeLabel(file.size)}
+          </Text>
+        ) : null}
+      </View>
+    </Pressable>
   );
 }
 
@@ -558,24 +419,28 @@ export function FilesNavPage({
   isDrawerOpen,
   isRightDrawerOpen,
 }: FilesNavPageProps) {
-  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const pageBackground = THEME[isDark ? 'dark' : 'light'].background;
   const insets = useSafeAreaInsets();
+  const toast = useToast();
+  const scrollFade = useScrollFade();
+  const contentInset = usePinnedBarInset(BAR_CONTROL_HEIGHT);
 
-  const [ref_, setRef] = useState<string>('');
-  const [path, setPath] = useState<string>('');
+  const [ref_, setRef] = useState('');
+  const [path, setPath] = useState('');
+  const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<SortBy>('name');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
-  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('grid'); // the grid is the default (Jay, 2026-09-22)
+  const [openFile, setOpenFile] = useState<{ name: string; path: string } | null>(null);
+  const [copyText, setCopyText] = useState('');
   const [downloadingDir, setDownloadingDir] = useState(false);
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid');
   const versionSheetRef = React.useRef<BottomSheetModal>(null);
+  const fileSheetRef = React.useRef<BottomSheetModal>(null);
 
   const branchesQuery = useProjectBranches(projectId);
   const defaultBranch = branchesQuery.data?.default_branch ?? '';
-
-  // Default to the project's default branch once branches resolve.
   useEffect(() => {
     if (!ref_ && defaultBranch) setRef(defaultBranch);
   }, [defaultBranch, ref_]);
@@ -583,11 +448,6 @@ export function FilesNavPage({
   const filesQuery = useProjectFiles(projectId, ref_);
   const entries = filesQuery.data ?? [];
 
-  const bgColor = isDark ? THEME.dark.background : THEME.light.background;
-  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
-  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
-
-  // Build the current directory's rows.
   const rows = useMemo<SandboxFile[]>(() => {
     const { dirs, files } = childrenOf(entries, path);
     const cmp = (a: string, b: string) => {
@@ -598,11 +458,14 @@ export function FilesNavPage({
       const n = a.toLowerCase().localeCompare(b.toLowerCase());
       return sortOrder === 'asc' ? n : -n;
     };
-    const elevated = dirs.filter((d) => d in ELEVATED).sort();
-    const otherDirs = dirs.filter((d) => !(d in ELEVATED)).sort(cmp);
+    const elevated = dirs.filter((d) => ELEVATED.has(d)).sort();
+    const otherDirs = dirs.filter((d) => !ELEVATED.has(d)).sort(cmp);
     const fileNodes = [...files].sort((a, b) => cmp(basename(a.path), basename(b.path)));
     const mk = (name: string, full: string, type: 'directory' | 'file', size?: number | null): SandboxFile => ({
-      name, path: full, type, size: size ?? undefined,
+      name,
+      path: full,
+      type,
+      size: size ?? undefined,
     });
     return [
       ...elevated.map((d) => mk(d, path ? `${path}/${d}` : d, 'directory')),
@@ -611,254 +474,311 @@ export function FilesNavPage({
     ];
   }, [entries, path, sortBy, sortOrder]);
 
-  const fileRows = useMemo(() => rows.filter((r) => r.type === 'file').map((r) => ({ name: r.name, path: r.path })), [rows]);
-  // FOLDERS / FILES sections, same as the sandbox Files page.
-  const folderEntries = useMemo(() => rows.filter((r) => r.type === 'directory'), [rows]);
-  const fileEntries = useMemo(() => rows.filter((r) => r.type === 'file'), [rows]);
-
+  const visible = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return q ? rows.filter((r) => r.name.toLowerCase().includes(q)) : rows;
+  }, [rows, search]);
+  const folders = useMemo(() => visible.filter((r) => r.type === 'directory'), [visible]);
+  // Extensions dropped, unless two names in this folder would then collide.
+  const labels = useMemo(() => displayNames(visible.map((r) => r.name)), [visible]);
+  const files = useMemo(() => visible.filter((r) => r.type === 'file'), [visible]);
   const segments = path ? path.split('/').filter(Boolean) : [];
 
-  // Loading/empty/error all render a single centered block — give the scroll
-  // content flexGrow so it sits in the middle instead of clipped at the top.
   const listLoading = filesQuery.isLoading || (!ref_ && branchesQuery.isLoading);
-  const listEmpty = !listLoading && !filesQuery.isError && rows.length === 0;
-  const centerContent = listLoading || filesQuery.isError || listEmpty;
 
-  const openFile = (file: SandboxFile) => {
-    const idx = fileRows.findIndex((f) => f.path === file.path);
-    if (idx >= 0) { haptics.tap(); setViewerIndex(idx); }
-  };
+  // Back inside a folder goes up one folder, not to project home (Jay,
+  // 2026-09-22). Registered after ProjectScreen's handler, so it runs first.
+  const goUp = useCallback(() => {
+    haptics.tap();
+    setPath((current) => current.split('/').filter(Boolean).slice(0, -1).join('/'));
+    setSearch('');
+  }, []);
+  useEffect(() => {
+    if (Platform.OS !== 'android' || !path) return undefined;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      goUp();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [path, goUp]);
 
   const onRowPress = (file: SandboxFile) => {
-    if (file.type === 'directory') { haptics.tap(); setPath(file.path); }
-    else openFile(file);
+    haptics.tap();
+    if (file.type === 'directory') {
+      setPath(file.path);
+      setSearch('');
+      return;
+    }
+    setOpenFile({ name: file.name, path: file.path });
+    fileSheetRef.current?.present();
   };
 
   const cycleSort = () => {
     haptics.selection();
-    if (sortBy === 'name' && sortOrder === 'asc') { setSortOrder('desc'); }
-    else if (sortBy === 'name' && sortOrder === 'desc') { setSortBy('type'); setSortOrder('asc'); }
-    else if (sortBy === 'type' && sortOrder === 'asc') { setSortOrder('desc'); }
-    else { setSortBy('name'); setSortOrder('asc'); }
+    if (sortBy === 'name' && sortOrder === 'asc') setSortOrder('desc');
+    else if (sortBy === 'name') {
+      setSortBy('type');
+      setSortOrder('asc');
+    } else if (sortOrder === 'asc') setSortOrder('desc');
+    else {
+      setSortBy('name');
+      setSortOrder('asc');
+    }
   };
-  const sortLabel = `${sortBy === 'name' ? 'Name' : 'Type'} ${sortOrder === 'asc' ? '↑' : '↓'}`;
+  const sortLabel = `Sorted by ${sortBy}, ${sortOrder === 'asc' ? 'ascending' : 'descending'}`;
 
   const downloadDir = async () => {
     if (downloadingDir || !ref_) return;
+    haptics.tap();
     setDownloadingDir(true);
     try {
-      const name = (path ? basename(path) : (projectId ? 'workspace' : 'repo')) || 'workspace';
+      const name = (path ? basename(path) : 'workspace') || 'workspace';
       await downloadAndShare(projectArchiveUrl(projectId, ref_, path || undefined), `${name}.zip`, true);
-      haptics.tap();
     } catch (e: any) {
-      Alert.alert('Download failed', e?.message || 'Could not download the archive.');
+      haptics.warning();
+      toast.error(e?.message || 'Unable to download the folder. Try again.');
     } finally {
       setDownloadingDir(false);
     }
   };
 
+  const [pulling, setPulling] = useState(false);
+  const refresh = () => {
+    setPulling(true);
+    void Promise.all([filesQuery.refetch(), branchesQuery.refetch()]).finally(() => setPulling(false));
+  };
+
+  const emptyLabel = listLoading
+    ? null
+    : filesQuery.isError
+      ? ((filesQuery.error as Error)?.message ?? 'Unable to load the files')
+      : visible.length === 0
+        ? search
+          ? 'No matching files'
+          : path
+            ? 'This folder is empty'
+            : 'No files in this version'
+        : null;
+
   return (
-    <View style={{ flex: 1, backgroundColor: bgColor }}>
+    <View className="flex-1 bg-background">
+      {/* Inside a folder, Go back takes the hamburger's place and goes up one
+          folder; the title is the folder's name. */}
       <PageHeader
-        title={page.label}
+        title={path ? basename(path) : page.label}
         onOpenDrawer={onOpenDrawer}
         onOpenRightDrawer={onOpenRightDrawer}
         isDrawerOpen={isDrawerOpen}
         isRightDrawerOpen={isRightDrawerOpen}
-        rightActions={
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-            <Button
-              variant="ghost"
-              size="icon"
-              onPress={() => { haptics.selection(); setViewMode((v) => (v === 'list' ? 'grid' : 'list')); }}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Icon as={viewMode === 'list' ? LayoutGrid : List} size={18} color={fg} />
-            </Button>
-            <Button variant="ghost" size="icon" className="mr-1" onPress={() => filesQuery.refetch()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              {filesQuery.isFetching ? <ActivityIndicator size="small" color={muted} /> : <Icon as={RefreshCw} size={18} color={fg} />}
-            </Button>
-          </View>
-        }
       />
 
       <PageContent>
-        {/* Toolbar: version · sort · download */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingTop: 10 }}>
-          <Button
-            variant="outline"
-            size="sm"
-            className="rounded-full"
-            onPress={() => { haptics.tap(); versionSheetRef.current?.present(); }}
-          >
-            <Icon as={GitBranch} size={14} color={muted} />
-            <Text style={{ maxWidth: 120 }} numberOfLines={1}>{ref_ ? shortRef(ref_) : '—'}</Text>
-            {ref_ === defaultBranch && defaultBranch ? <Text>MAIN</Text> : null}
-            <Icon as={ChevronDown} size={14} color={muted} />
-          </Button>
-          <View style={{ flex: 1 }} />
-          <Button variant="outline" size="sm" className="rounded-full" onPress={cycleSort}>
-            <Icon as={ArrowDownUp} size={13} color={muted} />
-            <Text>{sortLabel}</Text>
-          </Button>
-          <Button variant="secondary" size="icon" className="rounded-full" onPress={downloadDir} disabled={downloadingDir} hitSlop={6}>
-            {downloadingDir ? <ActivityIndicator size="small" color={muted} /> : <Icon as={Download} size={16} color={muted} />}
-          </Button>
-        </View>
+        <SearchListHeader value={search} onChangeText={setSearch} placeholder="Search files" />
 
-        {/* Breadcrumb */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, maxHeight: 40 }} contentContainerStyle={{ alignItems: 'center', paddingHorizontal: 16, paddingTop: 10, paddingBottom: 6, gap: 2 }}>
-          <Pressable onPress={() => { if (path) { haptics.tap(); setPath(''); } }} disabled={!path} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 4, paddingRight: 4 }}>
-            <Icon as={Folder} size={15} color={path ? muted : fg} />
-            <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: path ? muted : fg }}>Files</Text>
-          </Pressable>
-          {segments.map((seg, i) => {
-            const segPath = segments.slice(0, i + 1).join('/');
-            const last = i === segments.length - 1;
-            return (
-              <React.Fragment key={segPath}>
-                <Icon as={ChevronRight} size={14} color={muted} />
-                <Pressable onPress={() => { if (!last) { haptics.tap(); setPath(segPath); } }} disabled={last} style={{ paddingVertical: 4, paddingHorizontal: 2 }}>
-                  <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: last ? fg : muted }} numberOfLines={1}>{seg}</Text>
-                </Pressable>
-              </React.Fragment>
-            );
-          })}
-        </ScrollView>
+        {/* Breadcrumb: chips on one 40pt line, never clipped. The current
+            folder is the last chip; every earlier chip goes back to it. */}
+        {segments.length > 0 ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ flexGrow: 0 }}
+            contentContainerStyle={{ alignItems: 'center', paddingHorizontal: 16, paddingBottom: 8, gap: 4, minHeight: 40 }}>
+            <Pressable
+              onPress={() => {
+                haptics.tap();
+                setPath('');
+              }}
+              className="flex-row items-center gap-1.5 rounded-full px-2 py-1.5 active:bg-accent">
+              <Text variant="muted">Files</Text>
+            </Pressable>
+            {segments.map((seg, i) => {
+              const segPath = segments.slice(0, i + 1).join('/');
+              const last = i === segments.length - 1;
+              return (
+                <React.Fragment key={segPath}>
+                  <Icon as={CaretRightIcon} size={14} className="text-muted-foreground/60" />
+                  <Pressable
+                    disabled={last}
+                    onPress={() => {
+                      haptics.tap();
+                      setPath(segPath);
+                    }}
+                    className="rounded-full px-2 py-1.5 active:bg-accent">
+                    <Text variant={last ? 'default' : 'muted'} numberOfLines={1}>
+                      {seg}
+                    </Text>
+                  </Pressable>
+                </React.Fragment>
+              );
+            })}
+          </ScrollView>
+        ) : null}
 
-        {/* File list */}
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={{ paddingBottom: insets.bottom + 40, paddingTop: 4, ...(centerContent ? { flexGrow: 1, justifyContent: 'center' } : null) }}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl refreshing={filesQuery.isRefetching} onRefresh={() => filesQuery.refetch()} />
-          }
-        >
-          {listLoading ? (
-            <View style={{ paddingVertical: 48, alignItems: 'center' }}><ActivityIndicator size="small" color={muted} /></View>
-          ) : filesQuery.isError ? (
-            <View style={{ padding: 24, alignItems: 'center', gap: 12 }}>
-              <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>{(filesQuery.error as Error)?.message ?? 'Failed to load files'}</Text>
-              <Button variant="outline" size="sm" className="rounded-full" onPress={() => filesQuery.refetch()}>
-                <Text>Retry</Text>
-              </Button>
-            </View>
-          ) : listEmpty ? (
-            <View style={{ paddingHorizontal: 36, paddingVertical: 40, alignItems: 'center', gap: 10 }}>
-              <Icon as={FolderOpen} size={30} color={muted} />
-              <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg, textAlign: 'center' }}>{path ? 'This folder is empty' : 'No files in this version'}</Text>
-              {!path && (
-                <Text style={{ fontSize: 13, color: muted, textAlign: 'center', lineHeight: 19 }}>
-                  These are the project’s git files — they’re read-only here. To add or edit files, ask the agent in a session, or open a different version.
+        <View className="flex-1">
+          <Animated.ScrollView
+            className="flex-1"
+            onScroll={scrollFade.onScroll}
+            scrollEventThrottle={16}
+            contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: contentInset, gap: 18 }}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            refreshControl={
+              <RefreshControl
+                refreshing={pulling}
+                onRefresh={refresh}
+                tintColor={THEME[isDark ? 'dark' : 'light'].mutedForeground}
+              />
+            }>
+            {listLoading ? (
+              <View className="gap-3 pt-3">
+                <Skeleton className="h-12 w-full rounded-2xl" />
+                <Skeleton className="h-12 w-full rounded-2xl" />
+                <Skeleton className="h-12 w-full rounded-2xl" />
+              </View>
+            ) : emptyLabel ? (
+              <View className="items-center gap-4 px-6 pt-16">
+                <Text variant="muted" className="text-center">
+                  {emptyLabel}
                 </Text>
-              )}
-              <Button variant="outline" size="sm" className="mt-1 rounded-full" onPress={() => { haptics.tap(); filesQuery.refetch(); branchesQuery.refetch(); }}>
-                <Text>Refresh</Text>
-              </Button>
-            </View>
-          ) : viewMode === 'grid' ? (
-            /* ── Grid view — FOLDERS / FILES sections of 2-up cards (old Files page UI) ── */
-            <>
-              {folderEntries.length > 0 && (
-                <View className="px-4 pt-3">
-                  <Text
-                    className="text-xs font-roobert-medium mb-3 uppercase tracking-wider"
-                    style={{ color: withAlpha(fg, 0.4) }}
-                  >
-                    Folders
-                  </Text>
-                  <View className="flex-row flex-wrap" style={{ marginHorizontal: -4 }}>
-                    {folderEntries.map((file) => (
-                      <View key={file.path} style={{ width: '50%', paddingHorizontal: 4, marginBottom: 8 }}>
-                        <FileCard file={file} isDark={isDark} onPress={onRowPress} />
-                      </View>
-                    ))}
+                {filesQuery.isError ? (
+                  <Button variant="secondary" size="lg" className="rounded-full" onPress={refresh}>
+                    <Text>Try again</Text>
+                  </Button>
+                ) : null}
+              </View>
+            ) : viewMode === 'grid' ? (
+              <>
+                {folders.length > 0 ? (
+                  <View className="gap-2">
+                    <Text variant="muted" className="px-4">
+                      Folders
+                    </Text>
+                    <View className="flex-row flex-wrap" style={{ marginHorizontal: -4 }}>
+                      {folders.map((file) => (
+                        <View key={file.path} style={{ width: '50%', paddingHorizontal: 4, marginBottom: 8 }}>
+                          <FileTile file={file} label={labels[file.name]} onPress={onRowPress} />
+                        </View>
+                      ))}
+                    </View>
                   </View>
-                </View>
-              )}
-              {fileEntries.length > 0 && (
-                <View className="px-4 pt-2">
-                  <Text
-                    className="text-xs font-roobert-medium mb-3 uppercase tracking-wider"
-                    style={{ color: withAlpha(fg, 0.4) }}
-                  >
-                    Files
-                  </Text>
-                  <View className="flex-row flex-wrap" style={{ marginHorizontal: -4 }}>
-                    {fileEntries.map((file) => (
-                      <View key={file.path} style={{ width: '50%', paddingHorizontal: 4, marginBottom: 8 }}>
-                        <FileCard file={file} isDark={isDark} onPress={onRowPress} />
-                      </View>
-                    ))}
+                ) : null}
+                {files.length > 0 ? (
+                  <View className="gap-2">
+                    <Text variant="muted" className="px-4">
+                      Files
+                    </Text>
+                    <View className="flex-row flex-wrap" style={{ marginHorizontal: -4 }}>
+                      {files.map((file) => (
+                        <View key={file.path} style={{ width: '50%', paddingHorizontal: 4, marginBottom: 8 }}>
+                          <FileTile file={file} label={labels[file.name]} onPress={onRowPress} />
+                        </View>
+                      ))}
+                    </View>
                   </View>
-                </View>
-              )}
-            </>
-          ) : (
-            /* ── List view — FOLDERS / FILES sections of FileItem rows (old Files page UI) ── */
-            <View className="px-4 pt-2">
-              {folderEntries.length > 0 && (
-                <View className="mb-2">
-                  <Text
-                    className="text-xs font-roobert-medium mb-2 uppercase tracking-wider px-1"
-                    style={{ color: withAlpha(fg, 0.4) }}
-                  >
-                    Folders
-                  </Text>
-                  {folderEntries.map((file) => (
-                    <FileItem key={file.path} file={file} onPress={onRowPress} />
+                ) : null}
+              </>
+            ) : (
+              <>
+                <SettingsGroup title={files.length > 0 ? 'Folders' : undefined}>
+                  {folders.map((file) => (
+                    <SettingsRow key={file.path} leading={<EntryIcon file={file} size={22} />} label={labels[file.name]} onPress={() => onRowPress(file)} />
                   ))}
-                </View>
-              )}
-              {fileEntries.length > 0 && (
-                <View>
-                  <Text
-                    className="text-xs font-roobert-medium mb-2 uppercase tracking-wider px-1"
-                    style={{ color: withAlpha(fg, 0.4) }}
-                  >
-                    Files
-                  </Text>
-                  {fileEntries.map((file) => (
-                    <FileItem key={file.path} file={file} onPress={onRowPress} />
+                </SettingsGroup>
+                <SettingsGroup title={folders.length > 0 ? 'Files' : undefined}>
+                  {files.map((file) => (
+                    <SettingsRow
+                      key={file.path}
+                      leading={<EntryIcon file={file} size={22} />}
+                      label={labels[file.name]}
+                      value={fileSizeLabel(file.size)}
+                      onPress={() => onRowPress(file)}
+                    />
                   ))}
-                </View>
-              )}
-            </View>
-          )}
-        </ScrollView>
+                </SettingsGroup>
+              </>
+            )}
+          </Animated.ScrollView>
+          <TopFade style={scrollFade.topFadeStyle} />
+
+          {/* The project drawer's pinned bar: version · sort · view · refresh ·
+              download, floating over a fade of the page. */}
+          <PinnedBar controlHeight={BAR_CONTROL_HEIGHT} background={pageBackground} className="gap-2 px-4">
+            <Button
+              variant="secondary"
+              className="shrink rounded-full"
+              onPress={() => {
+                haptics.tap();
+                versionSheetRef.current?.present();
+              }}
+              accessibilityLabel={`Version, ${ref_ ? shortRef(ref_) : 'none'}`}>
+              <Icon as={GitBranchIcon} size={16} className="text-foreground" />
+              <Text numberOfLines={1}>{ref_ ? shortRef(ref_) : '…'}</Text>
+            </Button>
+            <View className="flex-1" />
+            <Button variant="secondary" size="icon" className="rounded-full" onPress={cycleSort} accessibilityLabel={sortLabel}>
+              <Icon as={ArrowsDownUpIcon} size={18} className="text-foreground" />
+            </Button>
+            {/* The list / grid toggle: the app's Tabs, as a 40pt pill. */}
+            <Tabs
+              value={viewMode}
+              onValueChange={(value) => {
+                haptics.selection();
+                setViewMode(value as ViewMode);
+              }}>
+              <TabsList className="h-10 rounded-full bg-secondary p-1">
+                <TabsTrigger value="list" className="h-8 w-9 rounded-full px-0" accessibilityLabel="Show as list">
+                  <Icon as={ListIcon} size={16} className="text-foreground" />
+                </TabsTrigger>
+                <TabsTrigger value="grid" className="h-8 w-9 rounded-full px-0" accessibilityLabel="Show as grid">
+                  <Icon as={SquaresFourIcon} size={16} className="text-foreground" />
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <Button
+              variant="secondary"
+              size="icon"
+              className="rounded-full"
+              onPress={downloadDir}
+              disabled={downloadingDir || !ref_}
+              accessibilityLabel={path ? 'Download this folder' : 'Download the project'}>
+              <Icon as={DownloadSimpleIcon} size={18} className="text-foreground" />
+            </Button>
+          </PinnedBar>
+        </View>
       </PageContent>
 
-      {/* Version selector */}
-      <KortixBottomSheetModal
-        ref={versionSheetRef}
-        snapPoints={['65%']}
-        enableDynamicSizing={false}
-      >
+      {/* Version picker */}
+      <KortixBottomSheetModal ref={versionSheetRef} title="Version" enableDynamicSizing maxDynamicContentSize={Math.floor(insets.top + 600)} enablePanDownToClose>
         <VersionSheet
           branches={branchesQuery.data?.branches ?? []}
           defaultBranch={defaultBranch}
           value={ref_}
-          onSelect={(r) => { setRef(r); setPath(''); versionSheetRef.current?.dismiss(); }}
-          onClose={() => versionSheetRef.current?.dismiss()}
-          onRetry={() => branchesQuery.refetch()}
           isLoading={branchesQuery.isLoading || branchesQuery.isFetching}
-          isDark={isDark}
+          onSelect={(r) => {
+            setRef(r);
+            setPath('');
+            versionSheetRef.current?.dismiss();
+          }}
         />
       </KortixBottomSheetModal>
 
-      {/* File viewer */}
-      {viewerIndex != null && (
-        <FileViewerModal
-          projectId={projectId}
-          ref_={ref_}
-          files={fileRows}
-          index={viewerIndex}
-          onNavigate={setViewerIndex}
-          onClose={() => setViewerIndex(null)}
-          isDark={isDark}
-        />
-      )}
+      {/* File: preview, history, checkpoint diff. The recent-files sheet's layout. */}
+      <KortixBottomSheetModal
+        ref={fileSheetRef}
+        title={openFile?.name}
+        titleTrailing={copyText ? <CopyContentButton text={copyText} /> : undefined}
+        snapPoints={SHEET_SNAP_POINTS}
+        enableDynamicSizing={false}
+        topInset={insets.top}
+        enablePanDownToClose
+        enableContentPanningGesture={false}
+        backgroundStyle={{ backgroundColor: pageBackground }}
+        onDismiss={() => {
+          setOpenFile(null);
+          setCopyText('');
+        }}>
+        {openFile ? <FileSheetBody projectId={projectId} ref_={ref_} file={openFile} onCopyTextChange={setCopyText} /> : null}
+      </KortixBottomSheetModal>
     </View>
   );
 }
