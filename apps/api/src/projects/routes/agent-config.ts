@@ -3,7 +3,7 @@
 // 2026-07-05: "one home per concern").
 //
 // TWO homes, ONE wire contract: kortix.yaml carries governance ONLY
-// (connectors/secrets/skills/kortix_cli/repository_access/enabled); the agent's own
+// (connectors/secrets/skills/kortix_permissions/repository_access/enabled); the agent's own
 // native `.kortix/opencode/agents/<name>.md` frontmatter + body carries every
 // OpenCode-behavioral field (mode/model/temperature/top_p/steps/variant/
 // color/hidden/permission) plus the prompt itself. This route is the ONE
@@ -67,7 +67,7 @@ import { loadManifestForEdit } from '../lib/triggers';
 import { MANIFEST_FILENAME, manifestWrites } from '../triggers';
 
 // A grant set on the wire: an allowlist, or the "all"/"none" sentinels. The
-// deep per-entry validation (grantable kortix_cli actions, etc.) happens in
+// deep per-entry validation (grantable kortix_permissions actions, etc.) happens in
 // validateManifest via applyAgentBlockV2 — this schema only guards the shape.
 const GrantSetSchema = z.union([
   z.literal('all'),
@@ -90,6 +90,9 @@ const AgentBlockSchema = z
     connectors_personal: z.array(z.string().min(1).max(200)).max(500).optional(),
     secrets: GrantSetSchema.optional(),
     skills: GrantSetSchema.optional(),
+    kortix_permissions: GrantSetSchema.optional(),
+    // Deprecated request alias of kortix_permissions. The handler normalizes it
+    // (normalizeKortixPermissionAliases) before serialization.
     kortix_cli: GrantSetSchema.optional(),
     repository_access: z.boolean().optional(),
     // Deprecated input alias for older clients.

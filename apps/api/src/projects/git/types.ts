@@ -50,6 +50,9 @@ export interface ProjectConfigSummary {
     scope?: {
       env: string[] | 'all';
       connectors: string[] | 'all';
+      /** Kortix permissions (`project.*` actions) the agent may exercise. */
+      kortix_permissions: string[] | 'all';
+      /** @deprecated Wire alias of `kortix_permissions` for pre-rename clients. */
       kortix_cli: string[] | 'all';
     };
   }>;

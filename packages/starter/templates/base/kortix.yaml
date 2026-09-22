@@ -4,7 +4,7 @@
 # lives in git alongside the code. `kortix_version` pins the schema so
 # the platform can evolve safely. v2 manifests are YAML-only, with one
 # `agents:` map per project — GOVERNANCE ONLY (connectors/secrets/
-# kortix_cli/skills/workspace/enabled). OpenCode BEHAVIOR (description,
+# kortix_permissions/skills/workspace/enabled). OpenCode BEHAVIOR (description,
 # model, mode, temperature, permission, the prompt itself, …) lives
 # entirely in each agent's own native `.kortix/opencode/agents/<name>.md`
 # frontmatter + body — a stock OpenCode agent file, no Kortix-specific
@@ -74,13 +74,13 @@ opencode:
   config_dir: .kortix/opencode
 
 # ─── Agents ──────────────────────────────────────────────────────────────
-# One map per project, GOVERNANCE ONLY — connectors/secrets/kortix_cli/
+# One map per project, GOVERNANCE ONLY — connectors/secrets/kortix_permissions/
 # skills grants the runtime itself can't express, plus workspace (the git
 # boundary) and enabled. Everything else (description, mode, permission,
 # temperature, the prompt itself, …) lives in the matching
 # `.kortix/opencode/agents/<name>.md` — open those files to see/change what
 # each agent actually does. v2 is deny-by-default: an omitted connectors/
-# secrets/kortix_cli/skills grant resolves to "none", so a scoped specialist
+# secrets/kortix_permissions/skills grant resolves to "none", so a scoped specialist
 # starts locked down. The starter's own `kortix` agent is deliberately
 # granted "all" across the board so a fresh project is capable out of the
 # box — narrow it once you know what this project actually needs.
@@ -88,7 +88,7 @@ agents:
   kortix:
     connectors: all
     secrets: all
-    kortix_cli: all
+    kortix_permissions: all
     skills: all
     # sandbox: python # Must name an available project template, or "default".
 
@@ -97,11 +97,11 @@ agents:
     # sub-agents, skills/tools, memory — memory curation is its fourth
     # pass) from session evidence. Fans out session-reviewer sub-agents,
     # one per recent session, then opens — never merges — a harness CR.
-    # Runs unattended on a cron: a scoped kortix_cli grant 403s the CLI
+    # Runs unattended on a cron: a scoped kortix_permissions grant 403s the CLI
     # reads it needs (skills, agents, triggers) with nobody present to
     # widen it, so it gets `all`. It reads untrusted transcripts, so it
     # gets NO connectors and NO project secrets — nothing to exfiltrate.
-    kortix_cli: all
+    kortix_permissions: all
     skills: all
 
   session-reviewer:
@@ -109,7 +109,7 @@ agents:
     # history and reports failure-signature findings. "Read-only" (never
     # edits, never opens CRs) is its prompt discipline; it runs inside the
     # reflector's session with the same grant, so it mirrors it here.
-    kortix_cli: all
+    kortix_permissions: all
     skills: all
 
 # ─── Triggers ────────────────────────────────────────────────────────────

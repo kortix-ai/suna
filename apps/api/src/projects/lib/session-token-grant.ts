@@ -40,7 +40,7 @@
  * week before the incident.
  */
 
-import { type AgentGrant, accountTokens, projectSessions, projects } from '@kortix/db';
+import { type AgentGrant, accountTokens, readStoredAgentGrant, projectSessions, projects } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
@@ -236,7 +236,7 @@ async function loadStoredSessionGrant(sessionId: string): Promise<AgentGrant | n
         ),
       )
       .limit(1);
-    return token?.agentGrant ?? null;
+    return readStoredAgentGrant(token?.agentGrant);
   } catch (err) {
     throw new SessionGrantRemintError(sessionId, err);
   }
@@ -306,7 +306,7 @@ function describeGrant(grant: AgentGrant | null): Record<string, unknown> {
   return {
     agent: grant.agent,
     connectors: grant.connectors,
-    kortixCli: grant.kortixCli,
+    permissions: grant.permissions,
     env: grant.env ?? 'all',
     manifestRevision: grant.manifestRevision ?? null,
     manifestCommit: grant.manifestCommit ?? null,
@@ -422,7 +422,7 @@ export async function remintGrantForAgentSwitch(
   // was right to refuse it: generic Kortix CLI/API authorization reads
   // `account_tokens.agent_grant` straight from the token row (`middleware/
   // auth.ts` → `requireScope`), so a `kortix.yaml` that NARROWED the running
-  // agent's `kortixCli` in the previous turn was still enforced with the old,
+  // agent's `permissions` in the previous turn was still enforced with the old,
   // broader grant for the first calls of the next turn. Only the connector
   // gateway reconciles at call time (`reconcileStoredSessionAgentGrant`).
   // The prompt must not be forwarded before the row is rewritten.

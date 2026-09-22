@@ -11,8 +11,9 @@ import { canonicalizeGrantActions, canonicalizeGrantConnectors } from '../iam/ag
  *
  *   1. `connectors` — which connectors (by `connectors[].slug`) the
  *      agent may call. Default: none.
- *   2. `kortix_cli` — what the agent may do to Kortix itself via the `kortix`
- *      CLI/API (project-scoped iam actions: deploy, open CRs, triggers, …).
+ *   2. `kortix_permissions` — what the agent may do to Kortix itself
+ *      (project-scoped iam actions: deploy, open CRs, triggers, …), through
+ *      any surface — CLI, API, git. `kortix_cli` is the deprecated alias.
  *      Default: none. Account-scoped admin actions are NEVER grantable.
  *
  * The effective grant at session birth is `declared ∩ launching-user role`
@@ -22,10 +23,10 @@ import { canonicalizeGrantActions, canonicalizeGrantConnectors } from '../iam/ag
  * Example (kortix.yaml, v2):
  *
  *   agents:
- *     kortix: {}                          # default GP agent — connectors/kortix_cli = "all" (∩ user)
+ *     kortix: {}                          # default GP agent — connectors/kortix_permissions = "all" (∩ user)
  *     release-bot:
  *       connectors: ["github"]            # which connectors
- *       kortix_cli: ["project.trigger.create", "project.cr.open"]   # Kortix CLI/API powers
+ *       kortix_permissions: ["project.trigger.create", "project.gitops.push"]   # Kortix permissions
  *
  * Parser mirrors `projects/connectors.ts`: never throws on a bad entry, collects
  * them in `errors` so the UI can render them next to the good ones.
@@ -36,7 +37,7 @@ import { PROJECT_ACTIONS, VALID_ACTIONS } from '../iam/actions';
 import type { GitBackedProject } from './git';
 import type { AgentGrant } from '@kortix/db';
 import {
-  DEPRECATED_KORTIX_CLI_ALIASES,
+  DEPRECATED_KORTIX_PERMISSION_ALIASES,
   resolveGrantSet,
   SLUG_RE,
   WORKSPACE_MODES_V2,
@@ -58,7 +59,7 @@ const MANIFEST_FILENAME = 'kortix.toml';
 export const DEFAULT_AGENT_SENTINEL = 'default';
 
 /**
- * The actions an agent's `kortix_cli` may grant — the project-scoped surface,
+ * The actions an agent's `kortix_permissions` may grant — the project-scoped surface,
  * including the manager-tier project leaves (`project.delete`,
  * `project.members.manage`, `project.gateway.keys.manage`) — these are still
  * reachable via a project's `manager` role, so an agent can be granted them
@@ -74,13 +75,13 @@ export const DEFAULT_AGENT_SENTINEL = 'default';
  * (`iam/engine-v2.ts` `computeTokenScope`) refuses ANY account-scope action
  * for a project-bound token BEFORE this grant is even loaded. This set is a
  * curation/UX surface (the CLI/editor's offered catalog, and what
- * `validateKortixAction` below flags as a bad `kortix_cli` entry), not the
+ * `validateKortixAction` below flags as a bad `kortix_permissions` entry), not the
  * enforcement boundary itself.
  */
-export const GRANTABLE_KORTIX_CLI: ReadonlySet<string> = new Set(Object.values(PROJECT_ACTIONS));
+export const GRANTABLE_KORTIX_PERMISSIONS: ReadonlySet<string> = new Set(Object.values(PROJECT_ACTIONS));
 
 /** Sorted list for `kortix validate` / error messages / the UI picker. */
-export const GRANTABLE_KORTIX_CLI_LIST: readonly string[] = [...GRANTABLE_KORTIX_CLI].sort();
+export const GRANTABLE_KORTIX_PERMISSIONS_LIST: readonly string[] = [...GRANTABLE_KORTIX_PERMISSIONS].sort();
 
 /** `"all"` = every grantable action / every project connector (capped at the user). */
 export type GrantSet = string[] | 'all';
@@ -96,8 +97,8 @@ export interface AgentSpec {
   connectors: GrantSet;
   /** Connectors that must resolve before the session starts. */
   connectorsRequired?: string[];
-  /** Kortix CLI/API powers (project-scoped iam actions). `[]` = none (default). */
-  kortixCli: GrantSet;
+  /** Kortix permissions (project-scoped iam actions). `[]` = none (default). */
+  permissions: GrantSet;
   /** Project-secret IDENTIFIERS (project_secrets.identifier, not raw env-var
    *  keys) this agent receives as sandbox env + may read via the secrets API.
    *  `'all'` = every secret in the project (default when the `env` key is
@@ -214,7 +215,7 @@ export function extractAgents(manifest: ParsedManifest): LoadedAgents {
 /**
  * v2's `agents:` map reader (spec §2.1/§2.2). Maps each `AgentBlockV2` onto
  * the same `AgentSpec` shape the rest of the grant pipeline already consumes:
- *   - `connectors` / `kortix_cli` / `secrets` (v2's rename of v1's `env`) are
+ *   - `connectors` / `kortix_permissions` / `secrets` (v2's rename of v1's `env`) are
  *     resolved via `resolveGrantSet` with v2's deny-by-default default
  *     (an omitted grant → `'none'`), the opposite of v1's `env: 'all'`
  *     back-compat default.
@@ -325,10 +326,10 @@ export async function loadProjectAgents(
  *   - Manifest declares NO `[[agents]]` at all → returns `null` (no restriction;
  *     full access, capped at the launching user by the route's own role check).
  *     Every existing project keeps working exactly as today.
- *   - Agent IS listed → its declared overlay (connectors + kortix_cli).
+ *   - Agent IS listed → its declared overlay (connectors + kortix_permissions).
  *   - Project adopted `[[agents]]` but the agent is NOT listed → default-DENY
  *     (the agent still runs its `.md` behavior, but with no connectors and no
- *     Kortix-CLI powers).
+ *     Kortix permissions).
  *
  * The `∩ launching-user role` is NOT applied here — it's enforced for free at
  * the route layer (the account token resolves to the user, whose role is
@@ -411,14 +412,14 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
     // canonical to canonical:
     //   * connectors — a manifest may say `email` or `kortix_email` and both
     //     must mean the same connector (catalog / call / session-create);
-    //   * kortix_cli actions — `project.cr.open` / `project.cr.merge` were
+    //   * kortix_permissions actions — `project.cr.open` / `project.cr.merge` were
     //     collapsed into the gitops leaves (spec §2.4) and are no longer in the
     //     catalog, so a manifest written before that must be rewritten, not
     //     aliased at every check.
     return canonicalizeGrantActions(
       canonicalizeGrantConnectors({
         agent: agentName,
-        kortixCli: spec.kortixCli,
+        permissions: spec.permissions,
         connectors: spec.connectors,
         env: spec.env,
       }),
@@ -448,11 +449,11 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
       if (declared) {
         // Canonicalize here for the SAME reasons the concrete-agent branch does
         // (see above): every gate compares canonical spellings, for connectors
-        // and for kortix_cli actions alike.
+        // and for kortix_permissions actions alike.
         return canonicalizeGrantActions(
           canonicalizeGrantConnectors({
             agent: loaded.defaultAgent,
-            kortixCli: declared.kortixCli,
+            permissions: declared.permissions,
             connectors: declared.connectors,
             env: declared.env,
           }),
@@ -475,7 +476,7 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
     // allowed to use gets nothing, which is the same rule the secrets path
     // already follows (secret-grant.ts passes rethrowReadErrors for this).
     if (loaded.errors.length > 0) {
-      return { agent: agentName, kortixCli: [], connectors: [], env: [] };
+      return { agent: agentName, permissions: [], connectors: [], env: [] };
     }
     return null;
   }
@@ -483,7 +484,7 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
   // Governance adopted but this concrete agent is unlisted → default-deny
   // everything, including secrets/env (an unlisted agent receives no project
   // secrets).
-  return { agent: agentName, kortixCli: [], connectors: [], env: [] };
+  return { agent: agentName, permissions: [], connectors: [], env: [] };
 }
 
 /** Resolve the selected agent's sandbox template without repository I/O. */
@@ -608,7 +609,7 @@ export function resolveGovernedAgentGrant(
     }
     return {
       ok: true,
-      grant: { agent: declaredDefault, kortixCli: spec.kortixCli, connectors: spec.connectors, env: spec.env },
+      grant: { agent: declaredDefault, permissions: spec.permissions, connectors: spec.connectors, env: spec.env },
     };
   }
 
@@ -620,7 +621,7 @@ export function resolveGovernedAgentGrant(
       error: `Agent "${agentName}" is not declared in this project's \`agents\` manifest — this project requires every session/trigger to name a declared agent.`,
     };
   }
-  return { ok: true, grant: { agent: agentName, kortixCli: spec.kortixCli, connectors: spec.connectors, env: spec.env } };
+  return { ok: true, grant: { agent: agentName, permissions: spec.permissions, connectors: spec.connectors, env: spec.env } };
 }
 
 /**
@@ -636,8 +637,8 @@ export function agentSpecToTomlEntry(spec: AgentSpec): Record<string, unknown> {
   if (spec.model) entry.model = spec.model;
   if (spec.connectors === 'all') entry.connectors = 'all';
   else if (spec.connectors.length > 0) entry.connectors = spec.connectors;
-  if (spec.kortixCli === 'all') entry.kortix_cli = 'all';
-  else if (spec.kortixCli.length > 0) entry.kortix_cli = spec.kortixCli;
+  if (spec.permissions === 'all') entry.kortix_permissions = 'all';
+  else if (spec.permissions.length > 0) entry.kortix_permissions = spec.permissions;
   // 'all' is the env default, so only emit when narrowed (a list or explicit none).
   if (spec.env !== 'all') entry.env = spec.env;
   return entry;
@@ -648,7 +649,7 @@ export function agentSpecToTomlEntry(spec: AgentSpec): Record<string, unknown> {
  * `[[agents]]` array-of-tables shape; the dashboard "Access scope" editor's
  * write step), returning a new array. Pure — the route wraps it with
  * load/commit. Preserves every other field on the entry (name, model, file,
- * kortix_cli, enabled) and omits a key when it equals the parser default so
+ * kortix_permissions, enabled) and omits a key when it equals the parser default so
  * the emitted manifest matches hand-authored files:
  *   - env:        'all' is the default → omit; a list/`[]` narrows it.
  *   - connectors: none is the default → omit `[]`; 'all'/a list is explicit.
@@ -686,7 +687,7 @@ export function manifestHashForAgent(spec: AgentSpec): string {
     enabled: spec.enabled,
     connectors: spec.connectors,
     connectorsRequired: spec.connectorsRequired,
-    kortixCli: spec.kortixCli,
+    permissions: spec.permissions,
     env: spec.env,
     file: spec.file,
     repositoryAccess: spec.repositoryAccess,
@@ -721,7 +722,9 @@ function parseAgentEntry(entry: unknown, index: number, filename: string = MANIF
   const connectorsParsed = parseGrantSet(name, 'connectors', row.connectors, null, filename);
   if (!connectorsParsed.ok) return connectorsParsed;
 
-  const kortixParsed = parseGrantSet(name, 'kortix_cli', row.kortix_cli, validateKortixAction, filename);
+  const permissionsRaw = resolvePermissionsKey(name, row, filename);
+  if (!permissionsRaw.ok) return permissionsRaw;
+  const kortixParsed = parseGrantSet(name, permissionsRaw.key, permissionsRaw.value, validateKortixAction, filename);
   if (!kortixParsed.ok) return kortixParsed;
 
   // `env` is a NEW dimension — default to 'all' when omitted so existing
@@ -740,7 +743,7 @@ function parseAgentEntry(entry: unknown, index: number, filename: string = MANIF
       path: `${filename}#agents.${name}`,
       enabled,
       connectors: connectorsParsed.value,
-      kortixCli: kortixParsed.value,
+      permissions: kortixParsed.value,
       env: envParsed.value,
       file,
       model,
@@ -756,7 +759,7 @@ function parseAgentEntry(entry: unknown, index: number, filename: string = MANIF
  * v2's deny-by-default default (an omitted grant → `'none'`) is shared, not
  * re-derived — the opposite default from v1's `parseGrantSet` above, which
  * defaults `env` to `'all'` (adopt-to-govern back-compat for an existing
- * dimension). `kortix_cli` actions are still validated against the grantable
+ * dimension). `kortix_permissions` actions are still validated against the grantable
  * project-action set here (not just at `kortix validate` time), so a manifest
  * that reached this reader without going through the CR-merge gate (a raw git
  * push / out-of-band edit) can't smuggle an ungrantable action into a grant.
@@ -828,7 +831,9 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string): Pars
     }
   }
 
-  const kortixResolved = resolveGrantSet(normalizedRow.kortix_cli, 'none');
+  const permissionsRaw = resolvePermissionsKey(name, normalizedRow, filename);
+  if (!permissionsRaw.ok) return permissionsRaw;
+  const kortixResolved = resolveGrantSet(permissionsRaw.value, 'none');
   if (Array.isArray(kortixResolved)) {
     for (const action of kortixResolved) {
       const problem = validateKortixAction(action);
@@ -837,7 +842,7 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string): Pars
   }
 
   // v2 renamed the grant-set key `env` → `secrets` (spec §2.2/§2.4); same
-  // shape as connectors/kortix_cli, same deny-by-default resolution — mapped
+  // shape as connectors/kortix_permissions, same deny-by-default resolution — mapped
   // onto AgentSpec's `env` field, which the rest of the pipeline (secret
   // scoping in sessions.ts, `agentMayUseEnv`) already consumes.
   const secretsResolved = resolveGrantSet(normalizedRow.secrets, 'none');
@@ -850,7 +855,7 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string): Pars
       enabled,
       connectors: toGrantSet(connectorsResolved),
       connectorsRequired,
-      kortixCli: toGrantSet(kortixResolved),
+      permissions: toGrantSet(kortixResolved),
       env: toGrantSet(secretsResolved),
       file,
       model,
@@ -869,7 +874,7 @@ function toGrantSet(value: GrantSetV2): GrantSet {
 }
 
 /**
- * Parse a `connectors` / `kortix_cli` value, which may be:
+ * Parse a `connectors` / `kortix_permissions` value, which may be:
  *   - omitted / null          → [] (default-deny)
  *   - the string "all"        → 'all'
  *   - the string "none"       → []
@@ -914,19 +919,58 @@ function parseGrantSet(
   return { ok: true, value: out };
 }
 
+/**
+ * Pick the raw project-permission grant from an agent entry. `kortix_permissions`
+ * is canonical; `kortix_cli` is the deprecated alias (the pre-rename key). Both
+ * present with different values is an error — the validator rejects it too
+ * (`validateKortixPermissionFields`), and picking one silently would let a
+ * manifest mean two things.
+ */
+function resolvePermissionsKey(
+  name: string,
+  row: Record<string, unknown>,
+  filename: string,
+): { ok: true; key: string; value: unknown } | ParseErr {
+  const canonical = row.kortix_permissions;
+  const legacy = row.kortix_cli;
+  const has = (v: unknown) => v !== undefined && v !== null;
+  if (has(canonical) && has(legacy) && grantValueKey(canonical) !== grantValueKey(legacy)) {
+    return makeAgentError(
+      name,
+      '`kortix_cli` is the deprecated alias of `kortix_permissions` and must match it when both are present — remove `kortix_cli`',
+      filename,
+    );
+  }
+  if (has(canonical)) return { ok: true, key: 'kortix_permissions', value: canonical };
+  if (has(legacy)) return { ok: true, key: 'kortix_cli', value: legacy };
+  return { ok: true, key: 'kortix_permissions', value: undefined };
+}
+
+/** Order-insensitive comparison key for a raw grant-set value. */
+function grantValueKey(v: unknown): string {
+  if (typeof v === 'string') {
+    const t = v.trim().toLowerCase();
+    return t === '' ? 'none' : t;
+  }
+  if (Array.isArray(v)) {
+    return JSON.stringify([...new Set(v.map((x) => (typeof x === 'string' ? x.trim() : JSON.stringify(x))))].sort());
+  }
+  return JSON.stringify(v);
+}
+
 /** Returns an error message if the action is not grantable to an agent, else null. */
 function validateKortixAction(action: string): string | null {
-  if (GRANTABLE_KORTIX_CLI.has(action)) return null;
+  if (GRANTABLE_KORTIX_PERMISSIONS.has(action)) return null;
   // A RENAMED action still resolves — `canonicalizeGrantActions` rewrites it to
   // the live leaf. Accept it here: rejecting it would push the spec into
   // `loaded.errors`, and an agent whose manifest failed to parse is given an
   // EMPTY grant (see grantFromLoadedAgents), which strips every capability it
   // holds over one outdated string.
-  if (action in DEPRECATED_KORTIX_CLI_ALIASES) return null;
+  if (action in DEPRECATED_KORTIX_PERMISSION_ALIASES) return null;
   if (VALID_ACTIONS.has(action)) {
-    return `\`kortix_cli\` action "${action}" is account-scoped and can never be granted to an agent — only project-scoped actions are allowed`;
+    return `\`kortix_permissions\` action "${action}" is account-scoped and can never be granted to an agent — only project-scoped actions are allowed`;
   }
-  return `\`kortix_cli\` has unknown action "${action}" — see the grantable list (project.*)`;
+  return `\`kortix_permissions\` has unknown action "${action}" — see the grantable list (project.*)`;
 }
 
 function coerceBool(value: unknown, fallback: boolean): boolean {

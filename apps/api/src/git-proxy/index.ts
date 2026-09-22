@@ -990,7 +990,7 @@ gitProxyApp.openapi(
     // route authenticates with its own token (git Basic/Bearer), so it must
     // place the grant `authorizeGitProxy` resolved. Without it a session is
     // default-denied beyond its own branch regardless of `project.gitops.ref.any`
-    // / `kortix_cli: all` — see projects/lib/git.ts.
+    // / `kortix_permissions: all` — see projects/lib/git.ts.
     c.set('agentGrant', auth.agentGrant ?? null);
     // Ref policy runs HERE, between authorization and transmission — the only
     // point where both the principal and the refs it wants to move are known.

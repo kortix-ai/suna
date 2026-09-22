@@ -214,7 +214,7 @@ mock.module('../middleware/auth', () => ({
       c.set('agentGrant', {
         agent: 'contract-agent',
         connectors: 'all',
-        kortixCli: 'all',
+        permissions: 'all',
         env: 'all',
       });
       await next();

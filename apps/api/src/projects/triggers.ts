@@ -460,7 +460,7 @@ export function synthesizeBlankManifest(project: {
         [SYNTHESIZED_DEFAULT_AGENT_NAME]: {
           connectors: 'all',
           secrets: 'all',
-          kortix_cli: 'all',
+          kortix_permissions: 'all',
           skills: 'all',
         },
       },

@@ -103,6 +103,10 @@ mock.module('@kortix/db', () => ({
   accountTokens: {},
   objectPolicies: {},
   permissions: {},
+  // iam/actor.ts imports this pure reader; a partial mock without it fails
+  // the whole import chain at module load. Identity is enough — no stored
+  // grant is read in this file.
+  readStoredAgentGrant: (raw: unknown) => raw ?? null,
 }));
 
 mock.module('../shared/db', () => ({ db: fakeDb }));

@@ -68,7 +68,7 @@ Give an assignment an `expires_at` and it stops granting at that instant. The en
 
 ## One vocabulary, two bindings
 
-A person, a group, or an agent gets access from Kortix as **roles** — the assignments described above. An agent carries a **second, separate binding**: the Kortix CLI scopes its manifest declares in `kortix.yaml` under `agents.<name>.kortix_cli`. A session can only do what both allow. The two never widen each other. An agent whose manifest lists `project.secret.read` still reads nothing when the role verdict denies it, and an agent launched by an owner still reads nothing when its manifest does not list the action. Roles are account state; CLI scopes are repository state in the manifest. See [Manifest reference](/docs/project/manifest#agents).
+A person, a group, or an agent gets access from Kortix as **roles** — the assignments described above. An agent carries a **second, separate binding**: the Kortix permissions its manifest declares in `kortix.yaml` under `agents.<name>.kortix_permissions`. A session can only do what both allow. The two never widen each other. An agent whose manifest lists `project.secret.read` still reads nothing when the role verdict denies it, and an agent launched by an owner still reads nothing when its manifest does not list the action. Roles are account state; Kortix permissions are repository state in the manifest. See [Manifest reference](/docs/project/manifest#agents).
 
 ## Custom roles
 

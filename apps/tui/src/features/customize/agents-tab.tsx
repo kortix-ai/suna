@@ -31,7 +31,9 @@ export interface AgentRowData {
   scope: {
     env: string[] | 'all';
     connectors: string[] | 'all';
-    kortix_cli: string[] | 'all';
+    kortix_permissions?: string[] | 'all';
+    /** @deprecated Same value as `kortix_permissions`; the only key before 2026-09-22. */
+    kortix_cli?: string[] | 'all';
   } | null;
 }
 
@@ -141,7 +143,10 @@ export function AgentsTabView({
         <Field label="Defined in" value={current.path} />
         <Field label="Env scope" value={scopeText(current.scope?.env)} />
         <Field label="Connectors" value={scopeText(current.scope?.connectors)} />
-        <Field label="kortix CLI" value={scopeText(current.scope?.kortix_cli)} />
+        <Field
+          label="Permissions"
+          value={scopeText(current.scope?.kortix_permissions ?? current.scope?.kortix_cli)}
+        />
         <Paragraph text={current.description ?? ''} width={Math.max(width - 2, 20)} maxLines={4} />
       </DetailPane>
     );
