@@ -14,7 +14,7 @@ import { canonicalConnectorAlias } from '../shared/connector-alias';
  * A null grant (non-agent token: laptop CLI PAT, dashboard session, or a project
  * that hasn't adopted `[[agents]]`) imposes no restriction.
  */
-import { HTTPException } from 'hono/http-exception';
+import { buildDenialError } from './denial-message';
 import type { Context } from 'hono';
 import type { AgentGrant } from '@kortix/db';
 
@@ -132,7 +132,9 @@ export function agentMayUseEnv(grant: AgentGrant | null, identifier: string): bo
 export function assertAgentScope(c: Context, action: string): void {
   const grant = getAgentGrant(c);
   if (agentMayPerform(grant, action)) return;
-  throw new HTTPException(403, {
-    message: `Agent "${grant!.agent}" is not granted "${action}". Add it to this agent's kortix_permissions in kortix.yaml (CR-merged).`,
-  });
+  throw buildDenialError(
+    action,
+    'agent_scope_insufficient',
+    `Agent "${grant!.agent}" is not granted "${action}". Add it to this agent's kortix_permissions in kortix.yaml (CR-merged).`,
+  );
 }

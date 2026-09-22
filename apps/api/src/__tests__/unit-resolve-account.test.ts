@@ -103,6 +103,9 @@ mock.module('@kortix/db', () => ({
   accountTokens: {},
   objectPolicies: {},
   permissions: {},
+  // iam/agent-principal.ts (imported by iam/actor.ts) reads the project's
+  // `agent_principal` flag from this table.
+  projects: {},
   // iam/actor.ts imports this pure reader; a partial mock without it fails
   // the whole import chain at module load. Identity is enough — no stored
   // grant is read in this file.

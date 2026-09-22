@@ -1052,12 +1052,14 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
           throw buildDenialError(iamAction, verdict.reason);
         }
         const verb = action === 'manage' ? 'manage this project' : 'change this project';
-        throw new HTTPException(403, {
-          message: `Your role on this project doesn't let you ${verb}. Ask an account owner or admin to grant you a higher role.`,
-        });
+        throw buildDenialError(
+          iamAction,
+          verdict.reason,
+          `Your role on this project doesn't let you ${verb}. Ask an account owner or admin to grant you a higher role.`,
+        );
       }
     }
-    throw new HTTPException(403, { message: 'You do not have access to this project' });
+    throw buildDenialError(iamAction, verdict.reason, 'You do not have access to this project');
   }
 
   // effectiveRole label for the UI / downstream helpers. The engine

@@ -9,6 +9,8 @@
 export {
   authorize,
   assertAuthorized,
+  agentEffectiveAllows,
+  agentEffectiveVerdict,
   listAccessible,
   filterAccessibleObjects,
   type Obj,
@@ -23,6 +25,8 @@ export {
   actorForUser,
   actorForToken,
   actorForServiceAccount,
+  isAgentPrincipalActor,
+  credentialOnBehalfOf,
   pendingPrincipalId,
   type Actor,
   type Credential,
@@ -55,6 +59,12 @@ export {
   type ScopeType,
   type PermissionEntry,
 } from './catalog';
+export {
+  HUMAN_ONLY_ACTIONS,
+  AGENT_DEFAULT_CEILING,
+  agentPrincipalModeFor,
+  isGovernedAgentGrant,
+} from './agent-principal';
 export {
   RESOURCE_GRANT_TYPES,
   isResourceType,
