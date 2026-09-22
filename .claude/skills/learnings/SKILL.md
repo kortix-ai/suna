@@ -6721,3 +6721,27 @@ rotation, atomic cutover, runtime convergence, content verification, and final
 archive as separate states. Failures retain the source and re-enter the exact
 unfinished state. A canary must pass the public start route before fleet work
 starts.
+
+The controller also rewrites the restored runtime's project, session, sandbox,
+and account bindings. A new project-scoped credential cannot operate with a
+project ID copied from the source runtime. Runtime health must pass with the
+new credential and all four destination bindings before content verification.
+
+### 2026-09-22 — Migration throughput changes require lifecycle-safe draining
+
+**Near miss.** A migration controller loaded its concurrency once per batch.
+Restarting it to increase throughput could interrupt source capture while the
+source daemon was paused. Completed targets also waited for the batch boundary
+before archive confirmation, which made the reported completion rate stale.
+
+**Rule.** Do not terminate an active transfer controller until every interrupted
+source and target has a known lifecycle state. Reconcile asynchronous archive
+completion independently from transfer admission. Apply provider admission
+limits with a shared rate gate and bounded retries.
+
+**Enforcement.** The provider rehome supervisor keeps source normalization in a
+separate idempotent operation. It resumes paused processes, restores each source
+to its initial stopped or archived state, stops the target, and requeues the
+session before a controller restart. A separate worker confirms target archives.
+The fleet uses a shared Platinum create budget and retries transient create
+responses with bounded exponential backoff.
