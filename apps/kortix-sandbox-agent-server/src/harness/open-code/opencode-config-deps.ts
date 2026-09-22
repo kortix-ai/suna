@@ -73,32 +73,33 @@ function isLocalToolAbiPackage(value: ConfigPackageJson): value is ConfigPackage
   return Object.keys(dependencies).length === 1 && dependencies.zod === '4.1.8'
 }
 
-async function writeInstallSentinel(configDir: string): Promise<boolean> {
-  const packagePath = join(configDir, 'package.json')
-  const packageLockPath = join(configDir, 'package-lock.json')
-  const packageJson = JSON.parse(await readFile(packagePath, 'utf8')) as ConfigPackageJson
-  if (!isLocalToolAbiPackage(packageJson)) return false
+const OPENCODE_PLUGIN_PACKAGE = '@opencode-ai/plugin'
+const PLUGIN_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?$/
+const DEPENDENCY_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'] as const
 
-  if (await pathExists(packageLockPath)) {
-    try {
-      const existing = JSON.parse(await readFile(packageLockPath, 'utf8')) as {
-        kortixOpenCodeInstallSentinel?: unknown
-      }
-      if (existing.kortixOpenCodeInstallSentinel !== INSTALL_SENTINEL_VERSION) return false
-    } catch {
-      return false
+function dependencyMap(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
+}
+
+/** May the sentinel be written? Only when no user-owned npm lock is there. */
+async function lockIsReplaceable(packageLockPath: string): Promise<boolean> {
+  if (!(await pathExists(packageLockPath))) return true
+  try {
+    const existing = JSON.parse(await readFile(packageLockPath, 'utf8')) as {
+      kortixOpenCodeInstallSentinel?: unknown
     }
+    return existing.kortixOpenCodeInstallSentinel === INSTALL_SENTINEL_VERSION
+  } catch {
+    return false
   }
+}
 
-  // OpenCode 1.18.19 adds @opencode-ai/plugin through npm's Arborist before
-  // loading config. Arborist skips the reify when every declared name exists
-  // in packages[""].dependencies. The local ABI does not import the plugin, so
-  // this runtime-only lock prevents a redundant 55 MB install without claiming
-  // that the plugin exists in node_modules.
-  const dependencies = {
-    '@opencode-ai/plugin': '*',
-    zod: '4.1.8',
-  }
+async function writeSentinelLock(
+  configDir: string,
+  packageJson: ConfigPackageJson,
+  dependencies: Record<string, string>,
+): Promise<void> {
+  const packageLockPath = join(configDir, 'package-lock.json')
   const sentinel = {
     name: typeof packageJson.name === 'string' ? packageJson.name : 'kortix-opencode-config',
     version: typeof packageJson.version === 'string' ? packageJson.version : '0.0.0',
@@ -118,6 +119,76 @@ async function writeInstallSentinel(configDir: string): Promise<boolean> {
   } finally {
     await rm(temporaryPath, { force: true }).catch(() => undefined)
   }
+}
+
+/**
+ * A config release is the platform's own copy, so its `package.json` may carry
+ * the plugin pin OpenCode would write at spawn anyway: the binary's version,
+ * which the baked dependency dir records (runtime-assets keeps it current).
+ * Rewriting it BEFORE the install gets the matching plugin from the warm Bun
+ * cache instead of from npm inside OpenCode. Returns the pin it wrote, or null.
+ */
+async function normalizeReleasePluginPin(configDir: string, bakedDir: string): Promise<string | null> {
+  try {
+    const baked = JSON.parse(await readFile(join(bakedDir, 'package.json'), 'utf8')) as ConfigPackageJson
+    const pin = dependencyMap(baked.dependencies)[OPENCODE_PLUGIN_PACKAGE]
+    if (typeof pin !== 'string' || !PLUGIN_VERSION.test(pin)) return null
+    const packagePath = join(configDir, 'package.json')
+    const packageJson = JSON.parse(await readFile(packagePath, 'utf8')) as ConfigPackageJson
+    const dependencies = dependencyMap(packageJson.dependencies)
+    const declared = dependencies[OPENCODE_PLUGIN_PACKAGE]
+    if (typeof declared !== 'string' || declared === pin) return null
+    dependencies[OPENCODE_PLUGIN_PACKAGE] = pin
+    await writeFile(packagePath, `${JSON.stringify({ ...packageJson, dependencies }, null, 2)}\n`)
+    return pin
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The sentinel for a release copy whose dependency set is not the local tool
+ * ABI. OpenCode's installer runs Arborist whenever a declared name, or the
+ * plugin it adds, is missing from `package-lock.json`. The release was just
+ * installed offline, so the sentinel names every declared dependency plus the
+ * plugin, and only when each one is really in node_modules. Anything missing
+ * leaves OpenCode's installer in charge.
+ */
+async function writeReleaseInstallSentinel(configDir: string): Promise<boolean> {
+  const packageJson = JSON.parse(await readFile(join(configDir, 'package.json'), 'utf8')) as ConfigPackageJson &
+    Record<string, unknown>
+  if (!(await lockIsReplaceable(join(configDir, 'package-lock.json')))) return false
+  const dependencies: Record<string, string> = {}
+  for (const field of DEPENDENCY_FIELDS) {
+    for (const [name, spec] of Object.entries(dependencyMap(packageJson[field]))) {
+      dependencies[name] = typeof spec === 'string' ? spec : '*'
+    }
+  }
+  dependencies[OPENCODE_PLUGIN_PACKAGE] ??= '*'
+  for (const name of Object.keys(dependencies)) {
+    if (!(await pathExists(join(configDir, 'node_modules', name, 'package.json')))) return false
+  }
+  await writeSentinelLock(configDir, packageJson, dependencies)
+  return true
+}
+
+async function writeInstallSentinel(configDir: string, platformOwned = false): Promise<boolean> {
+  const packagePath = join(configDir, 'package.json')
+  const packageLockPath = join(configDir, 'package-lock.json')
+  const packageJson = JSON.parse(await readFile(packagePath, 'utf8')) as ConfigPackageJson
+  if (!isLocalToolAbiPackage(packageJson)) return platformOwned ? writeReleaseInstallSentinel(configDir) : false
+
+  if (!(await lockIsReplaceable(packageLockPath))) return false
+
+  // OpenCode 1.18.19 adds @opencode-ai/plugin through npm's Arborist before
+  // loading config. Arborist skips the reify when every declared name exists
+  // in packages[""].dependencies. The local ABI does not import the plugin, so
+  // this runtime-only lock prevents a redundant 55 MB install without claiming
+  // that the plugin exists in node_modules.
+  await writeSentinelLock(configDir, packageJson, {
+    '@opencode-ai/plugin': '*',
+    zod: '4.1.8',
+  })
   return true
 }
 
@@ -176,14 +247,26 @@ async function offlineInstall(stagingDir: string): Promise<void> {
  */
 export async function ensureOpencodeConfigDeps(
   configDir: string,
-  opts: { bakedDir?: string; install?: InstallDeps } = {},
+  opts: {
+    bakedDir?: string
+    install?: InstallDeps
+    /**
+     * `configDir` is a config release, the platform's own copy: the plugin pin
+     * is normalized and any fully installed dependency set gets the sentinel.
+     * Never set for a working tree: its package.json is a tracked user file.
+     */
+    platformOwned?: boolean
+  } = {},
 ): Promise<void> {
   const bakedDir = opts.bakedDir ?? BAKED_DEPS_DIR
   const install = opts.install ?? offlineInstall
+  const platformOwned = opts.platformOwned === true
   const targetModules = join(configDir, 'node_modules')
   let stagingDir: string | null = null
   try {
     if (!(await pathExists(join(configDir, 'package.json')))) return // no deps declared
+    const pluginPin = platformOwned ? await normalizeReleasePluginPin(configDir, bakedDir) : null
+    if (pluginPin) logger.info('[boot] release plugin pin set to the binary version', { configDir, pin: pluginPin })
 
     const bakedModules = join(bakedDir, 'node_modules')
     const bakedLock = join(bakedDir, 'bun.lock')
@@ -196,7 +279,7 @@ export async function ensureOpencodeConfigDeps(
       const stagedLink = join(configDir, `.node_modules-link-${randomUUID()}`)
       await symlink(bakedModules, stagedLink)
       await replaceNodeModules(configDir, stagedLink)
-      const installSentinel = await writeInstallSentinel(configDir)
+      const installSentinel = await writeInstallSentinel(configDir, platformOwned)
       logger.info('[boot] linked baked opencode config deps', {
         configDir,
         from: bakedModules,
@@ -228,7 +311,7 @@ export async function ensureOpencodeConfigDeps(
     // writes @opencode-ai/plugin into the config dir's package.json — a TRACKED
     // file in the user's repository. Convergence must never dirty a working
     // tree (see runtime-assets.ts `readPluginPin`).
-    const installSentinel = await writeInstallSentinel(configDir)
+    const installSentinel = await writeInstallSentinel(configDir, platformOwned)
     logger.info('[boot] staged opencode config deps installed', { configDir, installSentinel })
   } catch (err) {
     // A stale tree is unsafe after a failed replacement. Remove it so

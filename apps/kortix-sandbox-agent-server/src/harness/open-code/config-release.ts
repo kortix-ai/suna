@@ -168,9 +168,31 @@ export interface ConvergeDeps {
   proofBudgetMs?: number
 }
 
+type ConfigDepsOptions = Omit<NonNullable<Parameters<typeof ensureOpencodeConfigDeps>[1]>, 'platformOwned'>
+
 /** Dependencies and the managed-skill overlay, the preparation every config dir gets. */
-export async function prepareConfigDir(dir: string, managedSkillsDir?: string): Promise<void> {
-  await ensureOpencodeConfigDeps(dir)
+export async function prepareConfigDir(
+  dir: string,
+  managedSkillsDir?: string,
+  depsOptions: ConfigDepsOptions = {},
+): Promise<void> {
+  await ensureOpencodeConfigDeps(dir, depsOptions)
+  await ensureInjectedManagedSkills(dir, managedSkillsDir ? { bakedDir: managedSkillsDir } : {})
+}
+
+/**
+ * The preparation of a release staging dir. The release is the platform's own
+ * copy, so its dependencies are prepared until OpenCode's installer has nothing
+ * to do: OpenCode runs on the boot link, a symlink, and npm's Arborist
+ * re-extracts the whole node_modules tree through a symlinked root (+5–7 s to
+ * opencode-ready on the old-starter shape, measured 2026-09-22).
+ */
+export async function prepareReleaseDir(
+  dir: string,
+  managedSkillsDir?: string,
+  depsOptions: ConfigDepsOptions = {},
+): Promise<void> {
+  await ensureOpencodeConfigDeps(dir, { ...depsOptions, platformOwned: true })
   await ensureInjectedManagedSkills(dir, managedSkillsDir ? { bakedDir: managedSkillsDir } : {})
 }
 
@@ -451,7 +473,7 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
         manifest,
         archive,
         managedSkillsDir: deps.managedSkillsDir,
-        prepare: deps.prepare ?? ((staged) => prepareConfigDir(staged, deps.managedSkillsDir)),
+        prepare: deps.prepare ?? ((staged) => prepareReleaseDir(staged, deps.managedSkillsDir)),
       })
     }
   } catch (err) {
@@ -865,7 +887,7 @@ export async function fetchBootRelease(input: {
         manifest,
         archive,
         managedSkillsDir: input.managedSkillsDir,
-        prepare: input.prepare ?? ((staged) => prepareConfigDir(staged, input.managedSkillsDir)),
+        prepare: input.prepare ?? ((staged) => prepareReleaseDir(staged, input.managedSkillsDir)),
       })
     }
     input.mark?.('config-release-extracted')
@@ -955,7 +977,7 @@ export async function resolveBootConfig(input: {
                 manifest,
                 archive,
                 managedSkillsDir: input.managedSkillsDir,
-                prepare: input.prepare ?? ((staged) => prepareConfigDir(staged, input.managedSkillsDir)),
+                prepare: input.prepare ?? ((staged) => prepareReleaseDir(staged, input.managedSkillsDir)),
               })
             ).dir
           } catch (err) {
