@@ -85,7 +85,10 @@ export async function prepareAppWsUpgrade(
   }
   const loaded = await dependencies.loadPublicApp(matched.routeKey);
   if (!loaded) return { ok: false, status: 404, message: 'App not found' };
-  const accessResponse = await dependencies.authorizeAppRequest(request, url, loaded.app);
+  const accessResponse = await dependencies.authorizeAppRequest(request, url, {
+    ...loaded.app,
+    agentPrincipal: loaded.agentPrincipal ?? false,
+  });
   if (accessResponse) {
     return { ok: false, status: accessResponse.status, message: 'App authentication required' };
   }
