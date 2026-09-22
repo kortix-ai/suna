@@ -573,9 +573,9 @@ flow(
           [run.sessionId],
         )).rows;
 
-      await ctx.step('a member without run(nightly) fires the trigger → 403 no_agent_access; nothing is queued', async () => {
+      await ctx.step('a member without run(nightly) fires the trigger → 403 agent_not_accessible; nothing is queued', async () => {
         const r = await fire();
-        assertDenial(r, 'no_agent_access');
+        assertDenial(r, 'agent_not_accessible');
         if (typeof r.json<any>().action !== 'string') throw new Error(`denial has no action: ${r.text()}`);
         const rows = await queued();
         if (rows.length) throw new Error(`a denied fire queued ${rows.length} command(s)`);
@@ -663,8 +663,8 @@ flow(
       });
 
       const humanRun = await world.mintAgentSession({ agent: 'coordinator', launcher: member });
-      await ctx.step("the member's coordinator run spawns `vault` → 403 no_agent_access; no vault session exists", async () => {
-        assertDenial(await spawn(humanRun, 'vault'), 'no_agent_access');
+      await ctx.step("the member's coordinator run spawns `vault` → 403 agent_not_accessible; no vault session exists", async () => {
+        assertDenial(await spawn(humanRun, 'vault'), 'agent_not_accessible');
         if ((await vaultSessions()) !== 0) throw new Error('a denied spawn created a vault session');
       });
       await ctx.step("the member's coordinator run spawns `coordinator` → passes the run gate", async () => {
@@ -672,8 +672,8 @@ flow(
       });
 
       const triggerRun = await world.mintAgentSession({ agent: 'coordinator', launcher: null });
-      await ctx.step('a trigger run of coordinator (no human) spawns `vault` → 403 no_agent_access', async () => {
-        assertDenial(await spawn(triggerRun, 'vault'), 'no_agent_access');
+      await ctx.step('a trigger run of coordinator (no human) spawns `vault` → 403 agent_not_accessible', async () => {
+        assertDenial(await spawn(triggerRun, 'vault'), 'agent_not_accessible');
         if ((await vaultSessions()) !== 0) throw new Error('a denied spawn created a vault session');
       });
       await ctx.step('a trigger run of coordinator spawns `coordinator` (Y == X) → passes the run gate', async () => {
@@ -1133,10 +1133,10 @@ flow(
         });
         assertDenial(await filesOf(capped, project.id), 'agent_ceiling_insufficient', 'project.file.read');
       });
-      await ctx.step('no_agent_access: `scoped` starting `capped` for a human who may not run it → 403 {code, action}', async () => {
+      await ctx.step('agent_not_accessible: `scoped` starting `capped` for a human who may not run it → 403 {code, action}', async () => {
         const r = await scoped.client.post('/v1/projects/:projectId/sessions', { agent_name: 'capped' },
           { params: { projectId: project.id } });
-        assertDenial(r, 'no_agent_access');
+        assertDenial(r, 'agent_not_accessible');
         if (typeof r.json<any>().action !== 'string' || !r.json<any>().action) throw new Error(`no action: ${r.text()}`);
       });
 

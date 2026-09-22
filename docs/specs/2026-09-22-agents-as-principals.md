@@ -157,7 +157,7 @@ types gain the new name; the old stays as a `@deprecated` alias.
 
 Every 403 from `authorize` carries `code` = the verdict reason
 (`agent_scope_insufficient`, `agent_ceiling_insufficient`,
-`project_role_insufficient`, `token_out_of_scope`, `no_agent_access`, …) and
+`project_role_insufficient`, `token_out_of_scope`, `agent_not_accessible`, …) and
 `action`. The CLI hint is chosen from the code: "add `<action>` to
 `agents.<a>.kortix_permissions`" only for `agent_scope_insufficient`; "ask an
 admin to raise agent `<a>`'s role" for the ceiling.
@@ -178,7 +178,7 @@ Real HTTP and real CLI/git processes, local profile, each with read-back:
 - AGP-3 flag OFF: identical requests reproduce today's launcher ∩ grant results.
 - AGP-4 ceiling: an admin binds system role `member` to X's service account → an action outside `member` is 403 `agent_ceiling_insufficient`; `project.read` still 200 (the trap is gone).
 - AGP-5 HUMAN_ONLY: `project.members.manage` in the list → denied.
-- AGP-6 trigger fire by a member without `run(X)` → 403 `no_agent_access`; with it → the session's token authorizes as X, `on_behalf_of` null.
+- AGP-6 trigger fire by a member without `run(X)` → 403 `agent_not_accessible`; with it → the session's token authorizes as X, `on_behalf_of` null.
 - AGP-7 child spawn: agent X session starts agent Y the human may not run → 403.
 - AGP-8 personal connector: private session of human H reaches H's member-owned connection; a shared session, a trigger session, and the same private session after an admin prompts it do not.
 - AGP-9 restricted App: agent listed in `apps` → 200 through `Authorization` and through `X-Kortix-App-Authorization`; unlisted agent → 401 `app_auth_required`; the App upstream never receives `X-Kortix-App-Authorization`.
