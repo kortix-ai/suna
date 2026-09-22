@@ -8,6 +8,8 @@ import {
   resolveProjectAutomationActor as resolveLifecycleAutomationActor,
 } from '../../projects/session-lifecycle';
 import { currentChannelSelection } from '../slack/selection';
+import { startErrorMessage, TEAMS_START_ERROR_COMMANDS } from '../start-error';
+import { buildAgentUnavailableCard } from './agent-picker';
 import { resolveAgentGrant } from '../../projects/agents';
 import { EVENT_DEDUPE_TTL_MS } from './app';
 import { ensureTeamsConversationBinding, teamsChannelCtx } from './binding';
@@ -21,6 +23,7 @@ import {
   noticeOnLiveCard,
   persistServiceUrl,
   saveTurn,
+  showStopOnLiveCard,
   startTurn,
 } from './turn';
 import { sessionWebUrl } from '../slack/util';
@@ -142,6 +145,8 @@ async function bindTurnToSession(handle: TeamsLiveTurn | null, sessionId: string
   if (!handle) return;
   handle.sessionId = sessionId;
   await saveTurn(handle);
+  // Stop is only paintable once the card knows which session it would end.
+  await showStopOnLiveCard(handle);
 }
 
 const ERROR_NOTICE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -268,6 +273,18 @@ async function deliverFollowUp(input: {
 
   // An image is unreadable on a text-only model, so THIS turn runs on the
   // configured vision model. The session's own pin is untouched.
+  // Backfill the conversation's display name on every message, not only at
+  // session creation: a channel bound before the name was read off the
+  // activity showed a raw `19:…@thread.tacv2;messageid=…` in the bindings
+  // table forever. The binding helper keeps its own per-process cache, so a
+  // settled conversation costs nothing.
+  void ensureTeamsConversationBinding({
+    projectId,
+    tenantId,
+    conversationId,
+    ...describeTeamsConversation(activity),
+  }).catch((err) => console.warn('[teams-webhook] binding backfill failed', err));
+
   const hasImage = teamsMessageHasImage(activity);
   const currentModel = sessionModelOf(input.sessionMetadata);
   const turnModel = await channelTurnModel({
@@ -323,7 +340,11 @@ async function deliverFollowUp(input: {
           error: `This conversation's session hit an error and couldn't start. [Open it in Kortix](${url}) to see what happened.`,
         });
       } else {
-        await finalizeTurn(handle, {});
+        // The notice is suppressed so a jammed conversation does not repeat
+        // the same error line on every message — but the CARD must not then
+        // claim "Task complete" over a session that failed to start. Title
+        // only: honest, and still silent.
+        await finalizeTurn(handle, { title: "Couldn't start", unfinished: true });
       }
     }
     return 'done';
@@ -444,7 +465,7 @@ export async function createOrJoinTeamsConversationSession(input: {
         tenantId,
         conversationId,
       });
-      if (handle) await finalizeTurn(handle, { error: startErrorMessage(undefined) });
+      if (handle) await finalizeTurn(handle, { error: startError(undefined, undefined) });
     }
     return;
   }
@@ -503,7 +524,27 @@ export async function createOrJoinTeamsConversationSession(input: {
 
   if (result.error) {
     console.error('[teams-webhook] createProjectSession failed', { status: result.error.status, body: result.error.body });
-    if (handle) await finalizeTurn(handle, { error: startErrorMessage(result.error.status) });
+    if (handle) {
+      // A deleted / renamed / disabled agent is rejected up front as
+      // `400 AGENT_NOT_DECLARED`, and no amount of retrying revives it. Hand
+      // over the picker instead of a line of text, so one tap re-points the
+      // conversation at a live agent.
+      const code = (result.error.body as { code?: string } | undefined)?.code;
+      if (code === 'AGENT_NOT_DECLARED' && tenantId && conversationId) {
+        await finalizeTurn(handle, {
+          title: "Couldn't start — pick an agent",
+          card: await buildAgentUnavailableCard({
+            tenantId,
+            conversationId,
+            projectId,
+            badAgent: selection?.agentName ?? null,
+            teamsUserId: teamsUserId(activity),
+          }),
+        });
+      } else {
+        await finalizeTurn(handle, { error: startError(result.error.status, result.error.body) });
+      }
+    }
     return;
   }
 
@@ -527,17 +568,12 @@ export async function createOrJoinTeamsConversationSession(input: {
   }
 }
 
-function startErrorMessage(status: number | undefined): string {
-  if (status === 402) {
-    return "This workspace is out of credits, so I can't start a session. Top up in the Kortix dashboard and send your message again.";
-  }
-  if (status === 429) {
-    return 'This workspace is at its concurrent-session limit right now. Close or finish a running session, then send your message again.';
-  }
-  if (status === 404) {
-    return "I couldn't find this project to start a session — it may have been moved or deleted. Reconnect Kortix to this team and try again.";
-  }
-  return "I couldn't start a session just now. Give it a moment and send your message again — I'll reply right here.";
+// Teams' binding of the shared channel start-error classifier. It used to map
+// only 402 / 429 / 404: every error CODE and every 400, 403, 409 and 5xx
+// collapsed into "give it a moment and send your message again", which is the
+// wrong instruction for a dead sandbox template or an unlinked account.
+function startError(status: number | undefined, body: unknown): string {
+  return startErrorMessage(status, body, TEAMS_START_ERROR_COMMANDS);
 }
 
 function queuedMessage(reason?: string): string {
@@ -590,7 +626,24 @@ const TURN_INSTRUCTIONS = [
   '  Keep them human and brief — a few per task — and post one right before anything slow so the conversation always shows fresh progress.',
   '- Attach inline context with `--detail`, and surface a finished step result with `--output`:',
   '    teams step "Drafting summary" --output "Found 3 incidents, 1 P0"',
+  // TEAMS MUST NOT USE THE `question` TOOL YET.
+  //
+  // OpenCode's `question` tool BLOCKS. A channel session is supposed to release
+  // it with a sentinel so the turn ends — but that release is gated on
+  // `slackRelayContext()`, which reads SLACK_THREAD_TS / SLACK_CHANNEL_ID
+  // (kortix-sandbox-agent-server/src/harness/open-code/boot.ts). A Teams
+  // session carries MS_TEAMS_* instead, so the gate returns null, the call is
+  // "left open for the UI", and the agent hangs until the box is parked.
+  //
+  // The relay itself is ungated, so the CARD does get posted — which makes this
+  // worse than prose, not better: the user sees the question, answers it, and
+  // the turn that asked never finishes.
+  //
+  // Slack is unaffected and does point at the tool. Flip Teams over once the
+  // gate accepts a Teams session AND sandboxes carrying that daemon exist —
+  // the agent server is image-baked, so a fix reaches only NEW sandboxes.
   '- Need to ask the user something? Use `teams send`, then END your turn — Teams questions are async: ask, stop, and resume when they reply.',
+  '- Do NOT use the built-in `question` tool in Teams. It blocks, and nothing releases it here, so the turn hangs after the card is posted.',
   '- Deliver the final answer with `teams send` (text, or an Adaptive Card via --card-file). One `teams send` per turn — it finalizes the live message.',
 ].join('\n');
 

@@ -38,8 +38,15 @@ describe('the kortix-api suite actually runs on pull requests', () => {
   });
 
   test('the lane job always stops its local Supabase and always uploads results', () => {
-    expect(laneJob).toContain("if: always() && matrix.mode == 'browser'");
-    expect(laneJob).toContain('pnpm exec supabase stop --no-backup || true');
+    // On EVERY lane. The stop used to be `if: always() && matrix.mode ==
+    // 'browser'`, but core and packages start Supabase too (through
+    // `pnpm test`), so a lane that skipped the stop stranded 54321-54324 on
+    // the reused Blacksmith runner and the next `supabase start` died with
+    // `address already in use` — four runs on 2026-09-21.
+    const stop = laneJob.slice(laneJob.indexOf('- name: Stop the local Supabase stack'));
+    expect(stop).toContain('pnpm exec supabase stop --no-backup || true');
+    expect(stop.slice(0, stop.indexOf('- name: Guard'))).toContain('if: always()');
+    expect(laneJob).not.toContain("if: always() && matrix.mode == 'browser'");
     expect(laneJob).toContain('actions/upload-artifact@v7');
   });
 

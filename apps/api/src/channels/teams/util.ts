@@ -19,6 +19,8 @@ const COMMAND_VERBS = new Set([
   'whoami',
   'who',
   'help',
+  'stop',
+  'cancel',
   'status',
   'config',
   'settings',

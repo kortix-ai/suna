@@ -19,14 +19,13 @@ on:
         required: true
         type: number
       provider:
-        description: Preview sandbox provider
+        description: Preview sandbox provider (Platinum only; `auto` means Platinum)
         required: true
         default: auto
         type: choice
         options:
           - auto
           - platinum
-          - daytona
   schedule:
     - cron: "17 6 * * *"
 
@@ -109,7 +108,9 @@ jobs:
             echo "::error::Pull request head is not a full Git SHA."
             exit 1
           }
-          case "$provider" in auto|platinum|daytona) ;; *) exit 1 ;; esac
+          # Previews run on Platinum only, host and sessions (2026-09-22). The
+          # shared Daytona org hit its snapshot quota on 2026-09-21.
+          case "$provider" in auto|platinum) ;; *) echo "::error::Previews run on Platinum only."; exit 1 ;; esac
 
           current="$(gh api "repos/${REPO}/pulls/${num}" --jq .head.sha)"
           [ "$current" = "$sha" ] || {
@@ -131,10 +132,9 @@ jobs:
           }
 
           branch="$(gh api "repos/${REPO}/pulls/${num}" --jq .head.ref)"
-          # A manual Daytona run verifies the exact PR SHA on an ephemeral
-          # origin after Platinum fails. It must not claim or replace the
-          # branch's persistent Platinum identity.
-          persistent_branch=$([ "$EVENT_NAME" = workflow_dispatch ] && [ "$provider" = daytona ] && printf '' || printf '%s' "$branch")
+          # Every run is a Platinum run, so every run owns the branch's
+          # persistent Platinum identity.
+          persistent_branch="$branch"
 
           {
             echo "pr_number=$num"

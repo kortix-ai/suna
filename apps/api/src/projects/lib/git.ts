@@ -1047,7 +1047,13 @@ async function authorizeGitProxyUncached(
         tokenId: result.tokenId ?? null,
       };
     }
-    if (result.accountId !== project.accountId) {
+    // A user PAT is checked against the PROJECT role, whatever account it was
+    // minted in. Account membership is not project access: this check used to
+    // run only for a foreign-account token, so any member of the owning account
+    // could mint a personal PAT and clone or push `main` of a project they hold
+    // no role on. A session PAT keeps its own-branch ref policy
+    // (git-proxy/ref-policy.ts); a cross-account session still needs the role.
+    if (!sessionPrincipal || result.accountId !== project.accountId) {
       // Thread the acting token so the agent-grant fold fires (userRole ∩ grant)
       // — a bare authorize() would silently skip it.
       if (!(await grantedByProjectRole(result.userId, result.tokenId))) {

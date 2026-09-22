@@ -59,6 +59,11 @@ export interface SessionOverridesControlProps {
    * only secrets/connectors wait for Save.
    */
   onSave: () => boolean | Promise<boolean>;
+  /**
+   * Hide Save when no row writes through it. Only secrets and provider keys
+   * wait for Save; the pre-create sandbox choice applies with the next prompt.
+   */
+  hideSave?: boolean;
 }
 
 /**
@@ -84,6 +89,7 @@ export function SessionOverridesControlContent({
   pendingNote,
   error,
   onSave,
+  hideSave = false,
 }: SessionOverridesControlProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('threads');
@@ -169,15 +175,17 @@ export function SessionOverridesControlContent({
         <p className="text-muted-foreground text-xs leading-relaxed text-pretty" aria-live="polite">
           {pendingNote ?? tI18nComplete.raw('text26ee1166df63')}
         </p>
-        <Button
-          type="button"
-          disabled={controlsDisabled || saveDisabled}
-          onClick={onSave}
-          size="sm"
-        >
-          {saving ? <Loading className="size-3.5 shrink-0" /> : null}
-          {saving ? tPooled('saving') : tPooled('saveChanges')}
-        </Button>
+        {hideSave ? null : (
+          <Button
+            type="button"
+            disabled={controlsDisabled || saveDisabled}
+            onClick={onSave}
+            size="sm"
+          >
+            {saving ? <Loading className="size-3.5 shrink-0" /> : null}
+            {saving ? tPooled('saving') : tPooled('saveChanges')}
+          </Button>
+        )}
       </div>
     </div>
   );

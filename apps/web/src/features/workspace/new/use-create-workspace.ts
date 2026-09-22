@@ -357,8 +357,7 @@ export function isRetryableError(error: unknown): boolean {
  * The network calls `runCreateAttempt` and `runProvisionAttempt` need,
  * injectable so their logic is unit-tested with a plain fake instead of
  * `mock.module('@kortix/sdk', ...)` — process-wide in this monorepo and a
- * hazard for sibling test suites (see `resolve-landing-destination.ts`'s
- * `LandingClient` for the same pattern). `wait` is injected too, so
+ * hazard for sibling test suites. `wait` is injected too, so
  * a test exercises the FULL retry budget without sleeping the real
  * 400ms/1200ms.
  */
@@ -520,8 +519,7 @@ export async function runProvisionAttempt(
  * `mock.module('@kortix/sdk', ...)`, which is process-wide in this monorepo.
  *
  * `attemptKeyFor`/`clearAttemptKey`/`writeLastProjectId`/`now` don't depend on
- * React and could be given real module-level defaults (as `LandingClient`
- * does in `resolve-landing-destination.ts`); the other
+ * React and could be given real module-level defaults ; the other
  * three (`primeProjectCache`, `invalidateProjects`, `enterOnboarding`) are
  * inherently render-scoped — they close over the live `queryClient`/`router`
  * a hook only has inside a component — so there is no single "no-args"

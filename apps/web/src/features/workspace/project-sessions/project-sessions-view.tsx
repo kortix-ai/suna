@@ -1,5 +1,7 @@
 'use client';
 
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
@@ -192,14 +194,22 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   );
   const creatingSession = useIsCreatingProjectSession(projectId);
 
+  // The 'project' scope is manager-only: the API answers 403 "Project manager
+  // access is required to list every session" unless the caller holds
+  // `project.members.manage`. A plain member opened this page onto that error
+  // while the sidebar listed their sessions fine. They read the default
+  // 'visible' scope — the same list the sidebar shows. The request waits for
+  // the probe so a manager does not fetch both scopes.
+  const manage = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
   const sessionsQuery = useProjectSessions(projectId, {
+    enabled: !manage.isLoading,
     // 'project' scope: the manager-only lifecycle inventory — a
     // DIFFERENT server request than the default 'visible' scope every other
     // reader uses. It includes accessible warm and soft-deleted rows, but never
     // sessions the manager cannot open. It MUST carry its own scope segment in
     // the key (see qk.project.sessionsPaged' doc comment). Sharing the
     // default-scope key here is the exact bug this file existed to fix.
-    scope: 'project',
+    scope: manage.allowed ? 'project' : 'visible',
     // The shared policy, not a local copy of the provisioning rule. This view
     // stopped polling the moment every session settled, so a title written
     // seconds later (server-side, with no event — see `sessionTitleHasLanded`)

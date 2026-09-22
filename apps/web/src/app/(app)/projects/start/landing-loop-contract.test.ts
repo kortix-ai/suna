@@ -15,21 +15,23 @@ const source = readFileSync(resolve(import.meta.dir, 'page.tsx'), 'utf8');
  * survives a regression that guts the fix while dodging the literal string
  * that was removed.
  */
-describe('/projects/start does not bounce to /projects', () => {
-  test('the chooser branch renders inline instead of redirecting to /projects', () => {
-    expect(source).not.toContain("withCurrentQuery('/projects')");
-    expect(source).not.toContain("'/projects'");
-    expect(source).toContain('setChooser({ canCreate: resolution.canCreate });');
-    expect(source).toContain('<ProjectChooser');
+describe('/projects/start hands off to a project or the selector', () => {
+  test('with no single obvious project it replaces the URL with the selector', () => {
+    expect(source).toContain("decided.current = withCurrentQuery('/projects');");
+    expect(source).toContain('router.replace(decided.current);');
+    expect(source).toContain('decideDoor({');
   });
 
-  test("the failure screen's secondary action does not point back at /projects either", () => {
-    expect(source).not.toContain('href="/projects"');
+  test('an obvious project opens directly, carrying the query string', () => {
+    expect(source).toContain('decided.current = withCurrentQuery(`/projects/${decision.projectId}`);');
+  });
+
+  test('a dropped navigation is re-issued instead of stranding the loading frame', () => {
+    expect(source).toContain('setTimeout(() => setNudge((n) => n + 1), 3000)');
+  });
+
+  test("the failure screen's secondary action goes to /new, not back into the door", () => {
     expect(source).toContain('href="/new"');
-  });
-
-  test('the only /projects destination left is a real project id, never the bare list', () => {
-    expect(source).toContain('withCurrentQuery(`/projects/${project.project_id}`)');
   });
 });
 
@@ -63,32 +65,17 @@ function signOutButton(): string {
 describe('/projects/start never creates a project on its own', () => {
   // The auto-created "My First Project" hid pending invites from anyone who
   // signed up without the email link. The door now only OPENS projects; with
-  // nothing to open it renders the chooser.
+  // nothing obvious to open it hands off to the selector.
   test('the page holds no provisioning path', () => {
     expect(source).not.toContain('provisionProject');
     expect(source).not.toContain('ensureFirstProject');
-    expect(source).toContain('<ProjectChooser');
+    expect(source).not.toContain('NewWorkspacePage');
   });
 });
 
 describe('/projects/start stuck states offer a sign-out escape hatch', () => {
-  test('the error branch mounts StartSignOutButton; the chooser carries its own Log out row', () => {
-    const mounts = source.split('<StartSignOutButton />').length - 1;
-    expect(mounts).toBe(1);
-    const chooser = readFileSync(resolve(import.meta.dir, 'project-chooser.tsx'), 'utf8');
-    expect(chooser).toContain("tNew('actions.logOut')");
-    expect(chooser).toContain('void performSignOut();');
-  });
-
-  // `resolve()` returns early on an empty list, so neither `chooser` nor
-  // `failed` was ever set: the loading frame stayed up forever with no control.
-  // On desktop, with no browser Back, that was a hard lock.
-  test('an empty account list renders the chooser, not an endless loading frame', () => {
-    expect(source).toContain('const noAccounts = accountsQuery.isSuccess && accountsQuery.data.length === 0;');
-    expect(source).toContain('const shownChooser = chooser ?? (noAccounts ? { canCreate: false } : null);');
-    expect(source).toContain('if (shownChooser) {');
-    expect(source).toContain('canCreate={shownChooser.canCreate}');
-    expect(source).not.toContain('if (chooser) {');
+  test('the error branch mounts StartSignOutButton', () => {
+    expect(source.split('<StartSignOutButton />').length - 1).toBe(1);
   });
 
   // The button used to sit at `top-4 right-4`. On Win/Linux the web-drawn
