@@ -49,6 +49,41 @@ function row(
 const subject = { userId: VIEWER_ID, groupIds: [] };
 
 describe('selectSessionRowsForViewer', () => {
+  test('account session oversight widens the manager inventory to other members\' private sessions', () => {
+    const privateOther = row('private-other', { createdBy: OTHER_ID });
+    const restrictedOther = row('restricted-other', { createdBy: OTHER_ID, visibility: 'restricted' });
+    const base = {
+      rows: [privateOther, restrictedOther],
+      canManageProject: true,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      boundCredentialSessionId: null,
+      runtimeStatusBySession: new Map(),
+    };
+
+    const withOversight = selectSessionRowsForViewer({ ...base, scope: 'project', accountSessionOversight: true });
+    expect(withOversight.items.map((item) => item.row.sessionId)).toEqual(['private-other', 'restricted-other']);
+
+    const withoutOversight = selectSessionRowsForViewer({ ...base, scope: 'project', accountSessionOversight: false });
+    expect(withoutOversight.items).toEqual([]);
+  });
+
+  test('account session oversight never widens the default sidebar scope', () => {
+    const selected = selectSessionRowsForViewer({
+      rows: [row('private-other', { createdBy: OTHER_ID })],
+      scope: 'visible',
+      canManageProject: true,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      boundCredentialSessionId: null,
+      runtimeStatusBySession: new Map(),
+      accountSessionOversight: true,
+    });
+    expect(selected.items).toEqual([]);
+  });
+
   test('manager project scope hides inaccessible rows and keeps accessible unavailable and soft-deleted rows', () => {
     const privateOther = row('private-other', { createdBy: OTHER_ID });
     const stoppedWithoutRuntime = row('stopped-lost', { status: 'stopped' });

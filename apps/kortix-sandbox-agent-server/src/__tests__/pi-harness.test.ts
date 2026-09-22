@@ -219,6 +219,57 @@ describe('pi harness', () => {
     expect(await again.json()).toEqual({ deduplicated: true })
   })
 
+  test('the raw message list pages older windows and only omits the cursor at the head', async () => {
+    const r = await boot({
+      script: [{ tool: 'bash', args: { command: 'printf paged > note.txt' } }, { text: 'Done.' }],
+    })
+    const root = r.service.runtime()!.rootId
+    const messageID = 'msg_0198e2a4b0c1ABCDEFGHIJKLMN'
+    await r.user(`/session/${root}/prompt_async`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ messageID, parts: [{ type: 'text', text: 'write a note' }] }),
+    })
+    await waitFor(() => !r.service.runtime()!.busy())
+
+    const all = (await r.user(`/session/${root}/message`).then((res) => res.json())) as Array<{ info: { id: string } }>
+    expect(all).toHaveLength(3)
+    const ids = all.map((m) => m.info.id)
+
+    // Walk the whole history one message at a time, exactly as
+    // `readTranscriptPages` does: follow `x-next-cursor` until it stops coming.
+    const walk = async (param: 'before' | 'cursor') => {
+      const seen: string[] = []
+      let cursor: string | null = null
+      for (let page = 0; page < 10; page++) {
+        const query = `limit=1${cursor ? `&${param}=${encodeURIComponent(cursor)}` : ''}`
+        const res = await r.user(`/session/${root}/message?${query}`)
+        expect(res.status).toBe(200)
+        const rows = (await res.json()) as Array<{ info: { id: string } }>
+        seen.unshift(...rows.map((m) => m.info.id))
+        cursor = res.headers.get('x-next-cursor')
+        if (!cursor) return seen
+      }
+      throw new Error('cursor never terminated')
+    }
+
+    // The API's capture spells it `cursor`; the SDK's page loader spells it
+    // `before`. Both must walk the same history.
+    expect(await walk('before')).toEqual(ids)
+    expect(await walk('cursor')).toEqual(ids)
+
+    // A window that already reaches the first message must NOT advertise more:
+    // an absent cursor is what every reader treats as "this walk is complete".
+    const whole = await r.user(`/session/${root}/message?limit=99`)
+    expect(whole.headers.get('x-next-cursor')).toBeNull()
+    expect(((await whole.json()) as unknown[]).length).toBe(3)
+
+    // A window that stops short MUST advertise the next one, naming its oldest
+    // row — the exclusive upper bound the next request passes back.
+    const newest = await r.user(`/session/${root}/message?limit=2`)
+    expect(newest.headers.get('x-next-cursor')).toBe(ids[1]!)
+  })
+
   test('the catalog reads the composer needs answer from the runtime', async () => {
     const r = await boot({ script: [{ text: 'ok' }], env: { KORTIX_AGENT_NAME: 'coder', KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { coder: { prompt: 'You code.', description: 'Writes code' } } }) } })
     const config = (await r.user('/config').then((res) => res.json())) as Record<string, unknown>

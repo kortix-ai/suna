@@ -366,6 +366,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
         order: orderMode,
         reviewCountBySession: reviewSummary.needsYouBySession,
         hiddenSections,
+        ownerLabels: { you: t('filter.ownerValue.you'), unknown: t('filter.ownerValue.unknown') },
       },
       tI18nComplete,
     );

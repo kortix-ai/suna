@@ -47,7 +47,7 @@
  * diagnose. The mismatch case — a pin exists and does not match — is the one
  * that blocks, and it is the one that means what it says.
  */
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
@@ -79,21 +79,30 @@ export function requestEgressIp(c: Context): string | null {
  *
  * First write wins: re-pinning on every daemon callback would let a later call
  * move the pin, which is exactly the property the boot-time pin exists to deny.
+ *
+ * ONE statement, merged in SQL. This used to read `metadata`, then write the
+ * whole object back. A restart claims the row by writing `runtimeRestartId`
+ * into the same column ~0.2 s after the boot-timeline POST that calls this.
+ * The stale write-back erased the claim, `ownsRestart()` returned false, and
+ * the restart abandoned the row in `provisioning` (SESS-9 on every preview,
+ * 2026-09). `||` merges into the row version the UPDATE finally locks, so a
+ * concurrent writer's keys survive. The "first write wins" check is in the
+ * WHERE clause for the same reason: Postgres re-evaluates it against that
+ * row version after a lock wait.
  */
 export async function pinSandboxEgressIp(sandboxId: string, ip: string | null): Promise<void> {
   if (!ip) return;
-  const [row] = await db
-    .select({ metadata: sessionSandboxes.metadata })
-    .from(sessionSandboxes)
-    .where(eq(sessionSandboxes.sandboxId, sandboxId))
-    .limit(1);
-  if (!row) return;
-  const metadata = (row.metadata ?? {}) as Record<string, unknown>;
-  if (typeof metadata[EGRESS_IP_KEY] === 'string' && metadata[EGRESS_IP_KEY]) return;
   await db
     .update(sessionSandboxes)
-    .set({ metadata: { ...metadata, [EGRESS_IP_KEY]: ip } })
-    .where(eq(sessionSandboxes.sandboxId, sandboxId));
+    .set({
+      metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || jsonb_build_object(${sql.raw(`'${EGRESS_IP_KEY}'`)}, ${ip}::text)`,
+    })
+    .where(
+      and(
+        eq(sessionSandboxes.sandboxId, sandboxId),
+        sql`coalesce(${sessionSandboxes.metadata}->>${sql.raw(`'${EGRESS_IP_KEY}'`)}, '') = ''`,
+      ),
+    );
 }
 
 export type EgressPinVerdict =

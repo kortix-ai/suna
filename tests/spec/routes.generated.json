@@ -464,6 +464,14 @@
     },
     {
       "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/session-oversight"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/accounts/:accountId/iam/session-oversight"
+    },
+    {
+      "method": "GET",
       "path": "/v1/accounts/:accountId/iam/session-policy"
     },
     {

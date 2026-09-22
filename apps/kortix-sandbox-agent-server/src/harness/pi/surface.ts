@@ -170,10 +170,31 @@ export function createPiSurface(runtime: () => PiRuntime | null): PiSurface {
           if (method === 'GET' && !messageId) {
             const limitRaw = Number(search.get('limit') ?? 0)
             const limit = Number.isInteger(limitRaw) && limitRaw > 0 ? limitRaw : Math.max(rt.transcript.count, 1)
-            const before = search.get('before')?.trim() || null
+            // ONE PROTOCOL, TWO SPELLINGS. The SDK's page loader sends
+            // `before`; the API's transcript capture sends `cursor`
+            // (session-transcript-capture.ts). Reading only `before` made
+            // every capture re-read the newest page — see the header note on
+            // `x-next-cursor` for why that was worse than it sounds.
+            const before = (search.get('before') ?? search.get('cursor'))?.trim() || null
             const page = rt.transcript.page({ limit, before })
             const stripped = stripInlineAttachmentBytes(page.messages, partRef(root))
-            return json(200, stripped.value)
+            /*
+              THE ABSENT CURSOR IS A CLAIM, SO IT MUST BE EARNED.
+
+              Every pager in the fleet reads "no `x-next-cursor`" as "this page
+              reached the session's first message". `readTranscriptPages` turns
+              that into `headComplete`, the capture turns THAT into
+              `complete`, and a complete read licenses the writer's
+              "DELETE what disappeared" branch. pi never sent the header, so a
+              flagged session longer than one page mirrored its newest window,
+              declared itself whole, and deleted every older row it had.
+
+              `page()` already knows: `hasMore`. The cursor is the window's
+              OLDEST id, because `page({before})` is an exclusive upper bound
+              on the id order — the same contract OpenCode's list serves.
+            */
+            const older = page.hasMore ? String(page.messages[0]?.info.id ?? '') : ''
+            return json(200, stripped.value, older ? { 'x-next-cursor': older } : {})
           }
           if (method === 'GET' && messageId && !partId) {
             const found = rt.transcript.messageById(messageId)

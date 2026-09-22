@@ -75,15 +75,30 @@ describe('native test-lane workflow', () => {
     expect(free).toContain('54321 54322 54323 54324');
     expect(free).not.toContain('if:');
 
-    // Removing the container is not the same as getting the port back. On run
-    // 35630898515 (browser-1, main @ 3c67a5e0b6) the stop ran, the container
-    // filter matched nothing, 54322 bound fine, and 54324 still refused — the
-    // binding simply had not been released yet. So the sweep also WAITS, and
-    // names the holder if the wait runs out, because the three occurrences so
-    // far were each diagnosed by inference rather than evidence.
-    expect(free).toContain('ss -ltnH "sport = :$port"');
+    // Removing the container is not the same as getting the port back, so the
+    // sweep also WAITS — by attempting a real bind.
+    //
+    // It used to wait on `ss -ltnH`, which lists LISTENING sockets only and so
+    // reports a port free while `bind()` still returns EADDRINUSE. Measured on
+    // browser-2: `supabase stop` returned at 09:19:26.710, the loop cleared all
+    // four ports by 09:19:27.448 — 0.74s, first poll — and `supabase start`
+    // still failed to bind 54324 twenty-five seconds later. A bind cannot
+    // disagree with Docker, because it is what Docker does.
+    expect(free).toContain('SO_REUSEADDR');
+    expect(free).toContain("s.bind(('0.0.0.0',int(sys.argv[1])))");
+    // A ONE-LINER on purpose: multi-line python inside this block scalar sits
+    // at column 0, which ends the scalar and makes the whole workflow fail to
+    // parse — a run with zero jobs, and a pull request that reads CLEAN with no
+    // lane checks at all. That is how this shipped broken the first time.
+    expect(free).toContain('bindable() {');
+    expect(free).not.toMatch(/^import socket/m);
+    expect(free).not.toMatch(/ss -ltnH[^\n]*\|\s*grep -q/);
+    expect(free).toMatch(/::warning::port \$port still refuses a bind/);
+    // The diagnostic still names the holder, and now reads ALL socket states —
+    // the listening-only view is what hid this for two rounds of fixes.
     expect(free).toContain('ss -ltnp "sport = :$port"');
-    expect(free).toMatch(/::warning::port \$port is still bound/);
+    expect(free).toContain('ss -tanH "sport = :$port"');
+    expect(free).toContain('docker ps -a --filter "publish=$port"');
   });
 
   test('has no cloud-sandbox worker path left', () => {

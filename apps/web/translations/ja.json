@@ -1441,7 +1441,8 @@
         "status": "ステータス",
         "activity": "アクティビティ",
         "source": "ソース",
-        "none": "なし"
+        "none": "なし",
+        "owner": "オーナー"
       },
       "order": {
         "activity": "最終アクティビティ",
@@ -1475,7 +1476,19 @@
       "sourceValue": {
         "mine": "自分のチャット",
         "shared": "共有"
-      }
+      },
+      "owner": "オーナー",
+      "access": "アクセス",
+      "ownerValue": {
+        "you": "あなた",
+        "unknown": "不明なオーナー"
+      },
+      "accessValue": {
+        "private": "オーナーのみ",
+        "restricted": "特定のユーザー",
+        "project": "プロジェクト全体"
+      },
+      "ownerAccess": "{owner} · {access}"
     },
     "loadingMore": "読み込み中…",
     "loadMoreSessions": "セッションをさらに読み込む"
@@ -1629,11 +1642,11 @@
     "connectProvider": "プロバイダーに接続",
     "manageModels": "モデルを管理",
     "loading": "モデルを読み込み中",
-    "yourDefault": "デフォルト",
-    "defaultAria": "{model} はデフォルトモデルです",
-    "setDefaultAria": "{model} をデフォルトモデルに設定",
-    "defaultTitle": "デフォルトモデル",
-    "setDefaultTitle": "デフォルトモデルに設定",
+    "yourDefault": "アカウントのデフォルト",
+    "defaultAria": "{model} はこのアカウントのデフォルトモデルです",
+    "setDefaultAria": "{model} をアカウントのデフォルトモデルに設定",
+    "defaultTitle": "アカウントのデフォルトモデル",
+    "setDefaultTitle": "アカウントのデフォルトモデルに設定",
     "upgrade": "アップグレード",
     "noMatch": {
       "title": "一致するモデルがありません",
@@ -18279,7 +18292,7 @@
       "textf9cfe2f2d411": "インストール",
       "textf9d35d43770d": "tools",
       "textf9d46c1722ea": "Push Immediately",
-      "textf9d52abc1fb8": "アカウント全体のサインイン要件。",
+      "textf9d52abc1fb8": "アカウント全体のサインインとセッションアクセスのルール。",
       "textf9dcbb55deba": "自動化",
       "textf9debe3e14a5": "Create Users、Update User Attributes、Deactivate Users を有効にして「Save」をクリックします。",
       "textf9e0dab461a6": "会社全体を grep できます。",
@@ -18615,7 +18628,12 @@
       "textd9692dea50e7": "アプリをチャットまたはチャネルに追加し、下にテナント ID を貼り付けてこのプロジェクトに紐付けます。",
       "text8dd795841572": "クライアント シークレットは暗号化されています。読み取れるのはこのワークスペースのエージェントだけです。",
       "text5cb103d6008c": "チャネルのスレッド",
-      "text31d248c44579": "無題の会話"
+      "text31d248c44579": "無題の会話",
+      "text3ea5efedf114": "管理者がすべてのセッションを開けるように設定",
+      "text88cfd89168a0": "管理者によるすべてのセッションへのアクセスを停止",
+      "textcbccc00faa36": "アカウント管理者としてメンバーのセッションを開いた",
+      "text798f62f95bed": "管理者のセッションアクセスを表示",
+      "text0814e13d671d": "管理者のセッションアクセスを変更"
     }
   },
   "projectOnboarding": {
@@ -19521,5 +19539,57 @@
     "invitesTitle": "招待されています",
     "invitesDescription": "チームが共有したプロジェクトに参加するか、自分のプロジェクトを作成してください。",
     "createProjectInstead": "代わりに新しいプロジェクトを作成"
+  },
+  "projectSelector": {
+    "welcome": "Kortix へようこそ",
+    "welcomeBack": "おかえりなさい",
+    "descriptionNew": "最初のプロジェクトを作成するか、チームが共有したプロジェクトに参加してください。",
+    "descriptionReturning": "プロジェクトを開くか、新しく作成してください。",
+    "signedInAs": "{email} でサインイン中",
+    "createTitle": "新しいプロジェクトを作成",
+    "createBody": "プロジェクトにはエージェント、ファイル、セッションが入ります。",
+    "orContinue": "または既存のプロジェクトを開く",
+    "invitations": "招待",
+    "sentTo": "{email} 宛て",
+    "invitedBy": "{email} からの招待",
+    "join": "参加",
+    "joinError": "参加できませんでした。もう一度お試しください。",
+    "unnamedWorkspace": "ワークスペース",
+    "search": "プロジェクトを検索",
+    "noMatches": "「{query}」に一致するプロジェクトはありません。",
+    "projectCount": "{count, plural, other {# 件のプロジェクト}}",
+    "role": {
+      "owner": "オーナー",
+      "admin": "管理者",
+      "member": "メンバー"
+    },
+    "openedAgo": "{time}に開いた",
+    "neverOpened": "まだ開いていません",
+    "showAll": "すべて表示（{count}）",
+    "showFewer": "表示を減らす",
+    "createIn": "プロジェクトを作成",
+    "emptyCreatable": "このワークスペースにはまだプロジェクトがありません。",
+    "emptyMember": "ここではまだ共有されたプロジェクトがありません。オーナーまたは管理者にアクセスを依頼してください。",
+    "failed": "これらのプロジェクトを読み込めませんでした。",
+    "retry": "再試行",
+    "noAccessTitle": "まだプロジェクトがありません",
+    "noAccessBody": "オーナーまたは管理者に {email} の招待を依頼してください。",
+    "loadErrorTitle": "プロジェクトを読み込めませんでした",
+    "loadErrorBody": "接続を確認して、もう一度お試しください。"
+  },
+  "sessionOversight": {
+    "label": "管理者はすべてのセッションを開けます",
+    "description": "アカウントのオーナーと管理者は、非公開を含むこのアカウントのすべてのセッションを開けます。この方法で開いたセッションは監査ログに記録されます。",
+    "ownerOnlyDescription": "アカウントのオーナーと管理者は、非公開を含むこのアカウントのすべてのセッションを開けます。この設定を変更できるのはアカウントのオーナーだけです。",
+    "enableTitle": "管理者がすべてのセッションを開けるようにしますか？",
+    "enableDescription": "アカウントのオーナーと管理者は、メンバーが非公開にしているセッションを含め、このアカウントのすべてのセッションを開けるようになります。メンバーには共有ダイアログに通知が表示されます。この方法で開いたセッションはすべて監査ログに記録されます。",
+    "enableConfirm": "オンにする",
+    "disableTitle": "管理者がすべてのセッションを開けないようにしますか？",
+    "disableDescription": "非公開セッションは再びオーナーのみになります。管理者は共有されたセッションにのみアクセスできます。",
+    "disableConfirm": "オフにする",
+    "enabledToast": "管理者はすべてのセッションを開けるようになりました",
+    "disabledToast": "非公開セッションは再びオーナーのみになりました",
+    "failedToast": "この設定を更新できませんでした",
+    "shareDisclosure": "ここでの選択にかかわらず、アカウントのオーナーと管理者はこのアカウントのすべてのセッションを開けます。"
   }
 }

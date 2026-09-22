@@ -537,8 +537,15 @@
     {
       "idx": 76,
       "version": "7",
-      "when": 1789998697217,
-      "tag": "20260921135137_config_release_quarantine",
+      "when": 1790063929219,
+      "tag": "20260922075849_admins_see_all_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1790085396853,
+      "tag": "20260922135636_config_release_quarantine",
       "breakpoints": true
     }
   ]

@@ -122,6 +122,21 @@ per-resource setting on one channel, not a role. It grants no permission the
 role verdict denies — see
 [Accounts & access](/docs/accounts#per-feature-access-settings).
 
+## Approvals
+
+When an agent needs a human decision before it proceeds, it files a review item.
+If the session was started from this thread, the decision lands here as a card:
+the title, a summary, a risk level, and **Approve**, **Request changes** and
+**Deny**.
+
+**Request changes** opens a box for what should change. Whatever you type is
+stored with the decision and passed to the agent with it, so it does not have to
+ask you a second time. It is optional — send it empty and the agent is told to
+ask. Approve and Deny stay one click.
+
+Acting on a review needs a linked Kortix account with write access to the
+project.
+
 ## Stopping a run
 
 While the agent works, its live message carries a **Stop** button. It ends the

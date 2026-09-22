@@ -1441,7 +1441,8 @@
         "status": "État",
         "activity": "Activité",
         "source": "Source",
-        "none": "Aucun"
+        "none": "Aucun",
+        "owner": "Propriétaire"
       },
       "order": {
         "activity": "Dernière activité",
@@ -1475,7 +1476,19 @@
       "sourceValue": {
         "mine": "Mes discussions",
         "shared": "Partagées"
-      }
+      },
+      "owner": "Propriétaire",
+      "access": "Accès",
+      "ownerValue": {
+        "you": "Vous",
+        "unknown": "Propriétaire inconnu"
+      },
+      "accessValue": {
+        "private": "Propriétaire uniquement",
+        "restricted": "Personnes choisies",
+        "project": "Tout le projet"
+      },
+      "ownerAccess": "{owner} · {access}"
     },
     "loadingMore": "Chargement…",
     "loadMoreSessions": "Charger plus de sessions"
@@ -1629,11 +1642,11 @@
     "connectProvider": "Connecter un fournisseur",
     "manageModels": "Gérer les modèles",
     "loading": "Chargement des modèles",
-    "yourDefault": "Votre modèle par défaut",
-    "defaultAria": "{model} est votre modèle par défaut",
-    "setDefaultAria": "Définir {model} comme modèle par défaut",
-    "defaultTitle": "Votre modèle par défaut",
-    "setDefaultTitle": "Définir comme modèle par défaut",
+    "yourDefault": "Par défaut du compte",
+    "defaultAria": "{model} est le modèle par défaut de ce compte",
+    "setDefaultAria": "Définir {model} comme modèle par défaut du compte",
+    "defaultTitle": "Modèle par défaut du compte",
+    "setDefaultTitle": "Définir comme modèle par défaut du compte",
     "upgrade": "Mettre à niveau",
     "noMatch": {
       "title": "Aucun modèle correspondant",
@@ -18279,7 +18292,7 @@
       "textf9cfe2f2d411": "installations",
       "textf9d35d43770d": "tools",
       "textf9d46c1722ea": "Envoyer immédiatement",
-      "textf9d52abc1fb8": "Exigences de connexion applicables à tout le compte.",
+      "textf9d52abc1fb8": "Règles de connexion et d’accès aux sessions applicables à tout le compte.",
       "textf9dcbb55deba": "Automatiser",
       "textf9debe3e14a5": "Activez Create Users, Update User Attributes et Deactivate Users → Save.",
       "textf9e0dab461a6": "faites un grep dans toute votre entreprise.",
@@ -18615,7 +18628,12 @@
       "textd9692dea50e7": "Ajoutez l'application à une conversation ou un canal, puis collez ci-dessous votre ID de locataire pour la lier à ce projet.",
       "text8dd795841572": "Le secret client est chiffré. Seul l'agent de cet espace de travail peut le lire.",
       "text5cb103d6008c": "Fil de canal",
-      "text31d248c44579": "Conversation sans titre"
+      "text31d248c44579": "Conversation sans titre",
+      "text3ea5efedf114": "Admins autorisés à ouvrir toutes les sessions",
+      "text88cfd89168a0": "Admins non autorisés à ouvrir toutes les sessions",
+      "textcbccc00faa36": "Session d’un membre ouverte en tant qu’admin du compte",
+      "text798f62f95bed": "Accès admin aux sessions consulté",
+      "text0814e13d671d": "Accès admin aux sessions modifié"
     }
   },
   "projectOnboarding": {
@@ -19521,5 +19539,57 @@
     "invitesTitle": "Vous êtes invité",
     "invitesDescription": "Rejoignez un projet partagé par votre équipe, ou créez le vôtre.",
     "createProjectInstead": "Créer plutôt un nouveau projet"
+  },
+  "projectSelector": {
+    "welcome": "Bienvenue sur Kortix",
+    "welcomeBack": "Bon retour",
+    "descriptionNew": "Créez votre premier projet ou rejoignez un projet partagé par votre équipe.",
+    "descriptionReturning": "Ouvrez un projet ou créez-en un nouveau.",
+    "signedInAs": "Connecté en tant que {email}",
+    "createTitle": "Créer un nouveau projet",
+    "createBody": "Un projet contient vos agents, fichiers et sessions.",
+    "orContinue": "ou ouvrir un projet existant",
+    "invitations": "Invitations",
+    "sentTo": "Envoyée à {email}",
+    "invitedBy": "Invité par {email}",
+    "join": "Rejoindre",
+    "joinError": "Impossible de rejoindre. Réessayez.",
+    "unnamedWorkspace": "Espace de travail",
+    "search": "Rechercher un projet",
+    "noMatches": "Aucun projet ne correspond à « {query} ».",
+    "projectCount": "{count, plural, one {# projet} other {# projets}}",
+    "role": {
+      "owner": "Propriétaire",
+      "admin": "Admin",
+      "member": "Membre"
+    },
+    "openedAgo": "Ouvert {time}",
+    "neverOpened": "Jamais ouvert",
+    "showAll": "Tout afficher ({count})",
+    "showFewer": "Afficher moins",
+    "createIn": "Créer un projet",
+    "emptyCreatable": "Aucun projet dans cet espace pour l’instant.",
+    "emptyMember": "Aucun projet n’est encore partagé avec vous ici. Demandez l’accès à un propriétaire ou un admin.",
+    "failed": "Impossible de charger ces projets.",
+    "retry": "Réessayer",
+    "noAccessTitle": "Aucun projet pour l’instant",
+    "noAccessBody": "Demandez à un propriétaire ou un admin d’inviter {email}.",
+    "loadErrorTitle": "Impossible de charger vos projets",
+    "loadErrorBody": "Vérifiez votre connexion et réessayez."
+  },
+  "sessionOversight": {
+    "label": "Les admins peuvent ouvrir toutes les sessions",
+    "description": "Les propriétaires et admins du compte peuvent ouvrir n’importe quelle session de ce compte, y compris les sessions privées. Chaque session ouverte ainsi figure dans le journal d’audit.",
+    "ownerOnlyDescription": "Les propriétaires et admins du compte peuvent ouvrir n’importe quelle session de ce compte, y compris les sessions privées. Seul un propriétaire du compte peut modifier ce réglage.",
+    "enableTitle": "Autoriser les admins à ouvrir toutes les sessions ?",
+    "enableDescription": "Les propriétaires et admins pourront ouvrir toutes les sessions de ce compte, y compris celles que les membres gardent privées. Les membres verront un avis dans la fenêtre de partage. Chaque session ouverte ainsi est enregistrée dans le journal d’audit.",
+    "enableConfirm": "Activer",
+    "disableTitle": "Ne plus autoriser les admins à ouvrir toutes les sessions ?",
+    "disableDescription": "Les sessions privées redeviennent réservées à leur propriétaire. Les admins gardent l’accès uniquement aux sessions partagées avec eux.",
+    "disableConfirm": "Désactiver",
+    "enabledToast": "Les admins peuvent désormais ouvrir toutes les sessions",
+    "disabledToast": "Les sessions privées sont de nouveau réservées à leur propriétaire",
+    "failedToast": "Impossible de modifier ce réglage",
+    "shareDisclosure": "Les propriétaires et admins du compte peuvent ouvrir toutes les sessions de ce compte, quel que soit votre choix ici."
   }
 }

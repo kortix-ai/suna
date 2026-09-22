@@ -55,22 +55,36 @@ function parseTimestampMs(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+/**
+ * Every key an explicit in-place restart removes: the readiness clocks plus the
+ * restart-cleared keys above. `runtimeWakeStartedAt` and
+ * `runtimeWakeProviderStatus` are in the list and come straight back through
+ * {@link inPlaceRestartWakePatch}.
+ */
+export const IN_PLACE_RESTART_CLEARED_KEYS = [
+  ...RUNTIME_READINESS_CLOCK_KEYS,
+  ...RUNTIME_RESTART_CLEARED_KEYS,
+] as const;
+
+/** The wake clock an explicit in-place restart starts. */
+export function inPlaceRestartWakePatch(now = new Date()): RuntimeReadinessMetadata {
+  return {
+    runtimeWakeStartedAt: now.toISOString(),
+    runtimeWakeProviderStatus: 'starting',
+  };
+}
+
 export function prepareInPlaceRestartMetadata(
   metadata: RuntimeReadinessMetadata | null | undefined,
   now = new Date(),
 ): RuntimeReadinessMetadata {
   const next = { ...(metadata ?? {}) };
-  for (const key of RUNTIME_READINESS_CLOCK_KEYS) delete next[key];
   // A human pressing Restart is an explicit "start this episode over": the
   // consecutive-failure accounting that escalates the automatic retry cooldown
   // (runtime-wake-fence.ts) resets with it, and no stale stop reason survives
   // to be replayed as a verdict about the new attempt.
-  for (const key of RUNTIME_RESTART_CLEARED_KEYS) delete next[key];
-  return {
-    ...next,
-    runtimeWakeStartedAt: now.toISOString(),
-    runtimeWakeProviderStatus: 'starting',
-  };
+  for (const key of IN_PLACE_RESTART_CLEARED_KEYS) delete next[key];
+  return { ...next, ...inPlaceRestartWakePatch(now) };
 }
 
 /**

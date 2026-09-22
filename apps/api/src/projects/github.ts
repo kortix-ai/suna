@@ -9,10 +9,43 @@ export class GitHubApiError extends Error {
     message: string,
     readonly status: number,
     readonly path: string,
+    /**
+     * Seconds GitHub asked the caller to wait, when the failure is a rate
+     * limit (primary or secondary). Undefined for every other failure.
+     */
+    readonly retryAfterSeconds?: number,
   ) {
     super(message);
     this.name = 'GitHubApiError';
   }
+}
+
+/**
+ * The wait GitHub asks for on a rate-limited response, in seconds, or null
+ * when the response is not a rate limit.
+ *
+ * Order follows GitHub's REST guidance
+ * (docs.github.com/rest/using-the-rest-api/rate-limits-for-the-rest-api):
+ * `retry-after` first; then `x-ratelimit-reset` when `x-ratelimit-remaining`
+ * is 0; otherwise a secondary rate limit waits at least one minute.
+ */
+export function githubRetryAfterSeconds(
+  status: number,
+  responseHeaders: Headers,
+  message: string,
+  nowMs: number = Date.now(),
+): number | null {
+  if (status !== 403 && status !== 429) return null;
+  const retryAfter = Number(responseHeaders.get('retry-after'));
+  if (responseHeaders.has('retry-after') && Number.isFinite(retryAfter) && retryAfter >= 0) {
+    return Math.ceil(retryAfter);
+  }
+  if (responseHeaders.get('x-ratelimit-remaining') === '0') {
+    const reset = Number(responseHeaders.get('x-ratelimit-reset'));
+    if (Number.isFinite(reset) && reset > 0) return Math.max(1, Math.ceil(reset - nowMs / 1000));
+  }
+  if (status === 429 || /rate limit/i.test(message)) return 60;
+  return null;
 }
 
 /**
@@ -592,6 +625,7 @@ async function ghFetch<T>(
       `GitHub ${path} failed (${res.status}): ${detail || res.statusText}`,
       res.status,
       path,
+      githubRetryAfterSeconds(res.status, res.headers, detail) ?? undefined,
     );
   }
   return res.json() as Promise<T>;

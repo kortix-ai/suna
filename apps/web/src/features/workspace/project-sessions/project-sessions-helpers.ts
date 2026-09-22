@@ -14,6 +14,12 @@ import {
   sortSessionsByLastActivity,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 
+import {
+  matchesAccessFilters,
+  matchesOwnerFilters,
+  type SessionAccessFilter,
+} from './session-owner-filters';
+
 export function sessionOwnerLabel(session: ProjectSession): string {
   if (session.owner_name) return session.owner_name;
   if (session.owner_email) return session.owner_email;
@@ -106,11 +112,15 @@ export function filterProjectSessions(
   /** Omit and the haystack is computed inline, which is fine for one-off calls
    *  and for tests; the view always passes its memoised index. */
   searchIndex?: SessionSearchIndex,
+  /** The page-only facets: whose session, and who else can open it. */
+  facets: { owners?: readonly string[]; access?: readonly SessionAccessFilter[] } = {},
 ): ProjectSession[] {
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const matches = sessions.filter((session) => {
     if (!matchesStatusFilters(session, statusFilters)) return false;
     if (!matchesSourceFilters(session, sourceFilters, tI18nComplete)) return false;
+    if (!matchesOwnerFilters(session, facets.owners ?? [])) return false;
+    if (!matchesAccessFilters(session, facets.access ?? [])) return false;
     if (!normalizedQuery) return true;
     const haystack =
       searchIndex?.get(session.session_id) ?? sessionSearchText(session, tI18nComplete);

@@ -4,10 +4,16 @@ import { chatChannelBindings, chatInstalls, chatThreads, projects } from '@korti
 import { db } from '../../shared/db';
 import { config } from '../../config';
 import { loadSlackTokenForProject } from '../install-store';
-import { updateMessage } from '../slack-api';
+import { openModal, updateMessage } from '../slack-api';
 import { backfillChannelName, dispatchSlackEvent, pendingPickers, spawnAgentTurn } from './dispatch';
 import { createSlackAccessRequest, notifyAdminsOfAccessRequest, resolveSlackActor } from './identity';
 import { parseReviewActionId, reviewVerbToVerdict, type ReviewVerb } from './review-cards';
+import {
+  REVIEW_FEEDBACK_CALLBACK,
+  buildReviewFeedbackView,
+  decodeReviewMetadata,
+  readReviewFeedback,
+} from './review-modal';
 import { applyVerdict, getReviewItemById } from '../../projects/review-items';
 import { SLACK_STOP_ACTION, stopSlackTurn } from './stop';
 import { isAdaptedId } from '../../projects/review-adapters';
@@ -211,6 +217,41 @@ async function handleReviewAction(
     ))
     .limit(1);
   if (!thread) return;
+
+  // "Request changes" is useless without saying what to change, and Slack has
+  // no way to put a box on the posted message — only a modal. Open it here and
+  // apply the verdict on submit instead.
+  //
+  // ORDERING: `trigger_id` expires in ~3 seconds. Everything before
+  // `views.open` spends that budget, so the item lookup and the authorization
+  // check deliberately happen on SUBMIT, not here — a refusal the reviewer
+  // reads after typing is far better than a button that silently does nothing
+  // for everyone. The submit path re-resolves and re-authorizes from scratch.
+  if (verdict === 'changes' && payload.trigger_id) {
+    const token = await loadSlackTokenForProject(thread.projectId);
+    if (token) {
+      const opened = await openModal(
+        token,
+        payload.trigger_id,
+        buildReviewFeedbackView({
+          title: parsed.id,
+          metadata: {
+            reviewItemId: parsed.id,
+            projectId: thread.projectId,
+            teamId,
+            threadTs,
+            channelId,
+            messageTs,
+            responseUrl: payload.response_url,
+          },
+        }),
+      );
+      if (opened) return;
+      // The modal could not open (expired trigger, missing scope). Fall through
+      // and apply the verdict without feedback — the old behaviour — rather
+      // than dropping the reviewer's decision on the floor.
+    }
+  }
 
   const item = await getReviewItemById(parsed.id, thread.projectId);
   if (!item) {
@@ -704,6 +745,73 @@ async function handleStop(
           'Stopped. The run was already closing on its own.'
       : outcome.notice,
   });
+}
+
+/**
+ * The "Request changes" modal came back.
+ *
+ * This is a SEPARATE signed request from the button press, so nothing is
+ * carried over: the item is re-resolved and the actor re-authorized here, at
+ * the same bar the button path applies. `private_metadata` is Slack echoing
+ * back what we wrote — it names the item, it does not vouch for anyone.
+ */
+export async function handleViewSubmission(payload: SlackInteractionPayload): Promise<void> {
+  if (payload.view?.callback_id !== REVIEW_FEEDBACK_CALLBACK) return;
+  const meta = decodeReviewMetadata(payload.view?.private_metadata);
+  const slackUserId = payload.user?.id ?? '';
+  if (!meta || !slackUserId) return;
+
+  const notify = async (text: string) => {
+    if (meta.responseUrl) await respondViaUrl(meta.responseUrl, { response_type: 'ephemeral', text });
+  };
+
+  const item = await getReviewItemById(meta.reviewItemId, meta.projectId);
+  if (!item) {
+    await notify('That review item is no longer available.');
+    return;
+  }
+
+  const actor = await resolveSlackActor(meta.teamId, slackUserId, item.accountId, meta.projectId);
+  if ('reason' in actor) {
+    await notify(
+      actor.reason === 'unlinked'
+        ? 'Connect your Kortix account first (`/kortix login`) to act on reviews.'
+        : "You don't have access to act on this project's reviews.",
+    );
+    return;
+  }
+
+  const feedback = readReviewFeedback(payload.view ?? {});
+  await applyVerdict(meta.reviewItemId, meta.projectId, {
+    verdict: 'changes',
+    feedback,
+    actingUserId: actor.userId,
+  });
+
+  await notify(
+    feedback
+      ? `Changes requested on *${escapeMrkdwn(item.title)}* — your note went to the agent.`
+      : `Changes requested on *${escapeMrkdwn(item.title)}*.`,
+  );
+
+  // Only tell the agent to go asking when there is nothing to read.
+  const decisionLine = feedback
+    ? `Changes were requested on the review "${item.title}".\n\nReviewer's feedback:\n${feedback}`
+    : `Changes were requested on the review "${item.title}". Ask what to change, then revise.`;
+  // Resume the agent exactly as the button path does — same synthetic
+  // in-thread message, same spawnAgentTurn, which re-checks the clicker's
+  // access from event.user so this cannot run as anyone but them.
+  const event: SlackEvent = {
+    type: 'message',
+    user: slackUserId,
+    channel: meta.channelId,
+    text: [decisionLine, '', 'Continue the turn based on this decision.'].join('\n'),
+    ts: meta.messageTs,
+    thread_ts: meta.threadTs,
+    team: meta.teamId,
+  };
+  const envelope: SlackEnvelope = { type: 'event_callback', team_id: meta.teamId, event };
+  await spawnAgentTurn(meta.projectId, envelope, event);
 }
 
 export async function handleBlockAction(payload: SlackInteractionPayload): Promise<void> {
