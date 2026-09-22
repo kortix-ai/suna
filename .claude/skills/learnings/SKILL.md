@@ -7684,3 +7684,28 @@ that contain a term from the encrypted `BLOCKED_COMMIT_TERMS` in
 `apps/api/.env` (`scripts/check-blocked-terms.test.mjs`, packages lane).
 `/output/` is gitignored. The PR template carries a checkbox. PR text is not
 covered by the hooks.
+
+## A per-project Slack webhook must only act on rows its own project owns
+
+- **Incident (2026-09-22, prod, workspace T07FUFNT3RV):** a plain reply in a
+  `Kortix Company` Slack thread made the `kortix-incident-reporter` bot post
+  "Open session in Kortix". The link combined the reporter's project
+  (`0825e40b…`) with Kortix Company's session (`b27cc3c2…`). Kortix Company
+  then went silent in that thread. Cause: every BYO Slack app in a workspace
+  receives every `message.channels` event. `threadIsOwned` read `chat_threads`
+  by workspace and thread only. The reporter took the reply as a follow-up and
+  won the exactly-once claim (`slack:msg:{team}:{channel}:{ts}`). Kortix
+  Company's own delivery then lost that claim and returned without a reply.
+  This is the third incident from the same two-app workspace, after
+  2026-08-20 (`app_mention` not bot-checked) and 2026-08-28 (channel binding
+  stolen).
+- **Rule:** the BYO path `/v1/webhooks/slack/:projectId` receives events that
+  may belong to another project. Every lookup it makes in `chat_threads`,
+  `chat_channel_bindings`, or any other workspace-keyed table must filter by
+  that `projectId`, or be a deliberate claim-if-unowned. Test every new Slack
+  routing branch with two projects in one workspace.
+- **Enforcement:** `dispatchSlackEvent(..., { ownThreadsOnly: true })` on the
+  BYO route scopes `threadIsOwned` to `chat_threads.project_id`.
+  `unit-slack-classify-event.test.ts` asserts the bound SQL parameters include
+  the project. The shared OAuth route stays workspace-wide on purpose: it is
+  one app, and `/kortix use` can re-bind a channel under older threads.

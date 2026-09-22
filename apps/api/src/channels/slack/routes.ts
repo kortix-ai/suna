@@ -287,7 +287,7 @@ slackWebhookApp.openapi(
     if (envelope.event && (await maybeHandleDmCommand(teamId, envelope.event, projectId))) {
       return;
     }
-    await dispatchSlackEvent(projectId, envelope);
+    await dispatchSlackEvent(projectId, envelope, { ownThreadsOnly: true });
   })().catch((err) => console.error('[slack-webhook] byo handler failed', err));
   return c.json({ ok: true });
 },
