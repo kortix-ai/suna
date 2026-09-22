@@ -68,6 +68,7 @@ export interface VerifiedReloadOptions {
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { OPENCODE_HOME } from './paths'
+import { describeOpencodeError, isConfigErrorName } from './proven-check'
 import { access, constants, open, readFile, realpath, stat } from 'node:fs/promises'
 import { isDeepStrictEqual } from 'node:util'
 
@@ -2187,13 +2188,25 @@ export function createOpencodeLifecycle(
     // the point is to exercise the ACTUAL decline path — candidate spawned,
     // candidate retired, incumbent untouched — rather than a shortcut that
     // proves only the plumbing.
-    const candidateReady = await probeUntilReady(candidatePort, Math.max(0, deadline - Date.now()), candidate)
+    const probeFailure: { reason?: string } = {}
+    const candidateReady = await probeUntilReady(
+      candidatePort,
+      Math.max(0, deadline - Date.now()),
+      candidate,
+      probeFailure,
+    )
     const ready = candidateReady && !opts.forceFail
     if (!ready) {
       await killProcessGroup(candidate, 'SIGTERM').catch(() => {})
       logger.warn('[opencode] candidate never became ready; keeping the running instance', {
         candidatePort,
+        cause: probeFailure.reason ?? null,
       })
+      // The concrete cause, when the candidate showed one: a config error it
+      // answered with, or its exit. Found at once, not at the 90 s deadline.
+      if (probeFailure.reason && !opts.forceFail) {
+        return { ok: false, reason: probeFailure.reason, candidateFailed: true }
+      }
       // prettier-ignore
       return { ok: false, reason: 'the new opencode did not start; the previous one is still running', candidateFailed: true }
     }
@@ -2230,20 +2243,36 @@ export function createOpencodeLifecycle(
     port: number,
     timeoutMs: number,
     proc: ChildProcess,
+    failure: { reason?: string } = {},
   ): Promise<boolean> {
     const deadline = Date.now() + timeoutMs
+    // A config OpenCode refuses to load answers every directory route with a
+    // `Config…` error (ConfigJsonError on a syntax error, measured on 1.18.31).
+    // It will not go away by waiting.
+    const observe = (status: number, text: string) => {
+      if (status < 400 || status >= 500) return
+      try {
+        if (isConfigErrorName((JSON.parse(text) as { name?: unknown }).name)) {
+          failure.reason = describeOpencodeError(status, text, currentOpencodeConfigDir)
+        }
+      } catch {}
+    }
     while (Date.now() < deadline) {
       if (stopping) return false
-      if (proc.exitCode !== null || proc.signalCode !== null) return false
+      if (proc.exitCode !== null || proc.signalCode !== null) {
+        failure.reason = `the new opencode exited (${proc.exitCode !== null ? `code ${proc.exitCode}` : `signal ${proc.signalCode}`}) before it served`
+        return false
+      }
       // Same rule as the readiness loop: nothing is sent before the candidate
       // announced its handler (or the fallback deadline passed).
       if (!mayProbe(proc)) {
         await new Promise((r) => setTimeout(r, 50))
         continue
       }
-      if (await probeOpencodeSessionApi(`http://127.0.0.1:${port}`, currentCfg.projectTarget, 2_000)) {
+      if (await probeOpencodeSessionApi(`http://127.0.0.1:${port}`, currentCfg.projectTarget, 2_000, observe)) {
         return true
       }
+      if (failure.reason) return false
       await new Promise((r) => setTimeout(r, 500))
     }
     return false
@@ -2739,12 +2768,16 @@ async function probeOpencodeSessionApi(
   baseUrl: string,
   directory: string,
   timeoutMs = 1_000,
+  /** Sees every answer that is not ready, with its body. */
+  observe?: (status: number, text: string) => void,
 ): Promise<boolean> {
   try {
     const res = await fetch(`${baseUrl}/session?directory=${encodeURIComponent(directory)}`, {
       signal: AbortSignal.timeout(timeoutMs),
     })
-    return res.status >= 200 && res.status < 400
+    const ready = res.status >= 200 && res.status < 400
+    if (!ready && observe) observe(res.status, await res.text().catch(() => ''))
+    return ready
   } catch {
     return false
   }
