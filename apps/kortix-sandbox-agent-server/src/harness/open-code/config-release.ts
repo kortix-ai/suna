@@ -385,6 +385,7 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
   if (descriptor.archive === null) {
     const dir = cfg.defaultOpencodeConfigDir
     if (running.release_id === releaseId && running.source === 'image-default' && opencode.getConfigDir() === dir) {
+      running.mode = 'follow-base'
       return respond('unchanged', null)
     }
     const notRunning = await requireRunning()
@@ -420,6 +421,7 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
   //    before any proof is proven now, on the live process.
   if (running.source === 'release' && running.release_id === releaseId && opencode.getConfigDir() === dir) {
     if (await verifies()) {
+      running.mode = 'follow-base'
       if (running.proven) return respond('unchanged', null)
       return proveBootRelease(deps, { root, api, releaseId, manifest, dir })
     }
@@ -529,7 +531,7 @@ async function proveBootRelease(
       proven: true,
     })
     await pruneBootConfigs(root, previous ? [releaseId, previous.release_id] : [releaseId])
-    running = { ...running, proven: true, fallback_reason: null, failed_release_id: null }
+    running = { ...running, mode: 'follow-base', proven: true, fallback_reason: null, failed_release_id: null }
     logger.info('[config-release] the boot release is proven', { releaseId })
     return respond('applied', null)
   }

@@ -595,7 +595,10 @@ describe('convergeConfigRelease — other sources', () => {
       proven: true,
     })
     expect(configReleaseReport().release_id).toBe(release.descriptor.release_id)
-    expect((await converge(oc)).outcome).toBe('unchanged')
+    expect(configReleaseReport().mode).toBeNull()
+    const unchanged = await converge(oc)
+    expect(unchanged.outcome).toBe('unchanged')
+    expect(unchanged.config.mode).toBe('follow-base')
   })
 })
 
@@ -696,7 +699,8 @@ describe('fresh boot from a release', () => {
 
     expect(response.outcome).toBe('applied')
     expect(response.reload).toBeNull()
-    expect(response.config).toMatchObject({ release_id: boot!.releaseId, proven: true, source: 'release' })
+    // DEF-1: the mode the API chose is reported once the boot release is proven.
+    expect(response.config).toMatchObject({ release_id: boot!.releaseId, proven: true, source: 'release', mode: 'follow-base' })
     expect(oc.state.reloads).toBe(0)
     expect((await readBootConfigPointer(store))!.release_id).toBe(boot!.releaseId)
     expect((await converge(oc)).outcome).toBe('unchanged')
