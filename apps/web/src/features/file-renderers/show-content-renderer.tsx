@@ -62,6 +62,7 @@ import {
 } from '@phosphor-icons/react';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ImageRenderer } from './image-renderer';
+import { MermaidDiagram } from './mermaid/mermaid-diagram';
 import { ViewerFrame } from './shared/viewer-frame';
 import { resolveShowType, shouldRenderFromSandboxFile } from './show-type-utils';
 import { VideoRenderer } from './video-renderer';
@@ -254,6 +255,7 @@ export function ShowContentRenderer({
   const isText = effectiveType === 'text';
   const isHtml = effectiveType === 'html';
   const isHtmlFile = effectiveType === 'html-file';
+  const isMermaid = effectiveType === 'mermaid';
   const hasLocalhostUrl = !!parseLocalhostUrl(url) && !isAppRouteUrl(url);
   const safeExternalUrl = safeHttpUrl(url);
 
@@ -406,6 +408,8 @@ export function ShowContentRenderer({
   const ownStatus = useMemo<'loading' | 'ready' | 'error' | null>(() => {
     // Generic file → FileContentRenderer reports via its own onStatusChange.
     if (effectiveType === 'file' && path && sandboxPath) return null;
+    // A Mermaid file with no inline source renders through the same branch.
+    if (isMermaid && !content && path && sandboxPath) return null;
     // Binary/media types backed by useBinaryBlob.
     if ((isImage || isVideo || isAudio || isDocx || isPptx) && path) {
       if (blobError) return 'error';
@@ -427,6 +431,8 @@ export function ShowContentRenderer({
     effectiveType,
     path,
     sandboxPath,
+    isMermaid,
+    content,
     isImage,
     isVideo,
     isAudio,
@@ -728,6 +734,18 @@ export function ShowContentRenderer({
         fileName={fileName}
         path={path}
       />
+    );
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // Mermaid — inline source renders here. A path with no inline content falls
+  // through to FileContentRenderer below, which renders `.mmd` the same way.
+  // ═════════════════════════════════════════════════════════════════════════
+  if (isMermaid && content) {
+    return (
+      <div className={mediaH}>
+        {alwaysFramed(<MermaidDiagram source={content} fileName={fileName || 'diagram.mmd'} />)}
+      </div>
     );
   }
 

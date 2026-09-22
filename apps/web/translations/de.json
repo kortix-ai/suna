@@ -18619,7 +18619,11 @@
       "text88cfd89168a0": "Admins dürfen nicht mehr jede Sitzung öffnen",
       "textcbccc00faa36": "Sitzung eines Mitglieds als Konto-Admin geöffnet",
       "text798f62f95bed": "Admin-Sitzungszugriff angesehen",
-      "text0814e13d671d": "Admin-Sitzungszugriff geändert"
+      "text0814e13d671d": "Admin-Sitzungszugriff geändert",
+      "textde340d411411": "Dieses Diagramm ist leer.",
+      "textc53147a0d05b": "Dieses Diagramm konnte nicht gerendert werden",
+      "text91aec62280a3": "SVG herunterladen",
+      "text751dfdcf3878": "Zeile {value0}"
     }
   },
   "projectOnboarding": {
