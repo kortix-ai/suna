@@ -12,6 +12,7 @@ import {
   projects,
   tunnelConnections,
 } from '@kortix/db';
+import { appAuthorizationForConnectorCall } from '../apps/connector-assertion';
 import { sanitizeConnectorHeaders, SLUG_RE } from '@kortix/manifest-schema';
 import { and, desc, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 /**
@@ -607,6 +608,8 @@ const nodeFetch: FetchImpl = async (url, init) => {
 export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
   return {
     attachmentStore: connectorAttachmentStore,
+    // Spec 2026-09-22 §2.5: an agent session calling a same-project Kortix App.
+    appAuthorizationFor: (input) => appAuthorizationForConnectorCall(input),
     loadConnectorBySlug: async (projectId, slug) => {
       const [row] = await db
         .select()
@@ -1058,6 +1061,7 @@ async function resolvePrincipal(c: Context): Promise<ConnectorPrincipal | null> 
     accountId: result.accountId,
     projectId: result.projectId,
     sessionId: sessionIdentity.sessionId,
+    tokenId: result.tokenId ?? null,
     subject: await resolveShareSubject(result.userId),
     agentGrant,
     channelConnectorSlugs,
@@ -1131,6 +1135,7 @@ async function resolveProjectPrincipal(
     accountId,
     projectId,
     sessionId: sessionIdentity.sessionId,
+    tokenId: (c.get('iamTokenId') as string | undefined) ?? null,
     subject: await resolveShareSubject(userId),
     agentGrant,
     channelConnectorSlugs,

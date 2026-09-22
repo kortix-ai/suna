@@ -173,6 +173,9 @@ export interface ConnectorPrincipal {
   accountId: string;
   projectId: string;
   sessionId: string | null;
+  /** The presented account token's id, when the caller used one. With
+   *  `sessionId`, identifies the agent session a Kortix App assertion names. */
+  tokenId?: string | null;
   /** The acting identity resolved to its group memberships. */
   subject: { userId: string; groupIds: string[] };
   /** Per-agent grant from the session token — restricts which connectors this
@@ -877,6 +880,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       accountId: p.accountId,
       subject: p.subject,
       sessionId: p.sessionId,
+      actingTokenId: p.tokenId ?? null,
       connectorSlug,
       actionPath,
       args,
