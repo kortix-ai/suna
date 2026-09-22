@@ -21,6 +21,15 @@ linked, not inlined.
 
 ## Register
 
+### Restore the original lifecycle state after every provider probe (2026-09-22)
+
+**Rule:** Record the provider state before a migration probe. On every exit,
+drive `started` through `stopped` before restoring `archived`; an archive request
+against a still-starting or started sandbox is invalid. **Near-miss:** a provider
+start timed out after the VM reached `started`, and the first cleanup attempted a
+direct archive. **Enforcement:** the private rehome probe polls the stopped
+intermediate and verifies the final state before it returns or retries.
+
 ### Keep established sandbox IDs immutable during migration recovery (2026-09-17)
 
 **Rule:** If a destination sandbox is permanently missing, do not clear its established `external_id` to reuse the session URL. Create a replacement session, verify its history and files, then retire the failed partial session. **Near-miss:** two unverified Suna sandboxes returned provider 404 and rejected backup restore. A guarded reset attempt raised `established session sandbox identity is immutable`; PostgreSQL rolled back. **Enforcement:** `kortix.guard_session_sandbox_identity()` blocked the unsafe update. The private replacement workflow verified both new histories and workspaces before soft-deleting the old partial sessions; the ledger retains old-to-new IDs.
