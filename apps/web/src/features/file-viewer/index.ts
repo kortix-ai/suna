@@ -6,11 +6,7 @@
  * provides data access through a <FileSourceProvider>. See ./file-source.
  */
 export { FileContentRenderer, getFileCategory, getLanguageFromExt } from './file-content-renderer';
-export type {
-  FileCategory,
-  FileContentRendererHandle,
-  FileContentRendererProps,
-} from './file-content-renderer';
+export type { FileCategory, FileContentRendererProps } from './file-content-renderer';
 export { FilePreviewModal } from './file-preview-modal';
 export type { FilePreviewModalProps, FilePreviewState } from './file-preview-modal';
 export { FileSourceProvider, useFileSource } from './file-source';

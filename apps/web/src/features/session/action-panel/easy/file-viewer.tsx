@@ -35,7 +35,7 @@ import { getFileIcon } from '@/features/project-files';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import { CodeSimpleIcon as Code2, EyeIcon as Eye } from '@phosphor-icons/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
 import {
   PanelWidthButton,
@@ -112,7 +112,6 @@ export function FileViewer({
   path,
   shareContext,
   onClose,
-  onRefresh,
   className,
 }: {
   content: string;
@@ -125,24 +124,9 @@ export function FileViewer({
    *  text and markdown file with no way to produce a public link. */
   shareContext?: ShareContext;
   onClose?: () => void;
-  /** Re-read the file's text. Omit and the toolbar has no Refresh button. */
-  onRefresh?: () => Promise<unknown>;
   className?: string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  // A served HTML page is not the text above: the frame loads the file from
-  // the sandbox itself. Bumping this remounts only that frame on Refresh.
-  const [reloadToken, setReloadToken] = useState(0);
-  const refresh = useMemo(
-    () =>
-      onRefresh
-        ? async () => {
-            setReloadToken((n) => n + 1);
-            await onRefresh();
-          }
-        : undefined,
-    [onRefresh],
-  );
   // Previewable only WITH a path. The preview is the file served by the
   // sandbox's static file server (see `HtmlPreview`), so with nothing on disk
   // to serve there is no rendered form — and therefore no second view to
@@ -207,7 +191,6 @@ export function FileViewer({
             shareContext={shareContext}
             shareInput={fileShareInput(path, fileName)}
             download={path ? { path, fileName } : undefined}
-            refresh={refresh}
           />
           <PanelWidthButton isMobile={isMobile} />
           {onClose && <CloseButton onClose={onClose} />}
@@ -233,7 +216,6 @@ export function FileViewer({
           svg={svg}
           markdown={markdown}
           view={view}
-          reloadToken={reloadToken}
         />
       </div>
     </div>
@@ -275,7 +257,6 @@ function FileBody({
   svg,
   markdown,
   view,
-  reloadToken,
 }: {
   content: string;
   fileName: string;
@@ -284,7 +265,6 @@ function FileBody({
   svg: boolean;
   markdown: boolean;
   view: View;
-  reloadToken: number;
 }) {
   const svgUrl = useSvgObjectUrl(content, svg && view === 'preview');
 
@@ -299,7 +279,7 @@ function FileBody({
   // `HtmlPreview` owns the whole exchange, and is the same component the files
   // viewer uses — one answer to "what does an HTML file look like".
   if (html && path && view === 'preview') {
-    return <HtmlPreview key={reloadToken} path={path} fileName={fileName} />;
+    return <HtmlPreview path={path} fileName={fileName} />;
   }
 
   // SVG stays inline, and stays inert: loaded through `<img>` it renders in the

@@ -310,18 +310,6 @@ export interface FileContentRendererProps {
   fitOnOpen?: boolean;
   /** Additional class name for the code editor */
   codeEditorEditorClassName?: string;
-  /** Lets the host's toolbar Refresh button re-read this file in place. */
-  controllerRef?: React.Ref<FileContentRendererHandle>;
-}
-
-/** What a host can do to a mounted `FileContentRenderer`. */
-export interface FileContentRendererHandle {
-  /**
-   * Re-read the file from its source without closing the viewer. Resolves when
-   * the content and blob refetches settle. Renderers that fetch their own
-   * bytes (spreadsheet, SQLite, served HTML) are remounted to re-read.
-   */
-  refresh: () => Promise<void>;
 }
 
 export function FileContentRenderer({
@@ -339,7 +327,6 @@ export function FileContentRenderer({
   onStatusChange,
   fitOnOpen = false,
   codeEditorEditorClassName,
-  controllerRef,
 }: FileContentRendererProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -438,27 +425,7 @@ export function FileContentRenderer({
     blob: rawBlob,
     isLoading: blobLoading,
     error: blobError,
-    refetch: refetchBlob,
   } = useBinaryBlob(blobPath);
-
-  // Refresh. The query-backed content (text, images, PDF, CSV, blobs) is
-  // refetched in place. The renderers that fetch their own bytes carry
-  // `reloadToken` in their `key`, so a bump remounts only that renderer.
-  const [reloadToken, setReloadToken] = useState(0);
-  const contentQueryEnabled = !(isHeicImage || isZipArchive);
-  React.useImperativeHandle(
-    controllerRef,
-    () => ({
-      refresh: async () => {
-        setReloadToken((n) => n + 1);
-        const jobs: Promise<unknown>[] = [];
-        if (contentQueryEnabled) jobs.push(refetch());
-        if (blobPath && refetchBlob) jobs.push(refetchBlob());
-        await Promise.allSettled(jobs);
-      },
-    }),
-    [blobPath, contentQueryEnabled, refetch, refetchBlob],
-  );
 
   // HEIC conversion — converts the raw HEIC blob to a renderable JPEG URL
   const { url: heicImageUrl, isConverting: heicConverting } = useHeicBlob(
@@ -1027,7 +994,6 @@ export function FileContentRenderer({
           {!isLoading && !error && !isNotFound && fileCategory === 'xlsx' && (
             <Suspense fallback={<RendererFallback />}>
               <XlsxRenderer
-                key={`xlsx-${filePath}-${reloadToken}`}
                 filePath={filePath}
                 fileName={fileName}
                 className="h-full"
@@ -1040,7 +1006,6 @@ export function FileContentRenderer({
           {!isLoading && !error && !isNotFound && fileCategory === 'sqlite' && (
             <Suspense fallback={<RendererFallback />}>
               <SqliteRenderer
-                key={`sqlite-${filePath}-${reloadToken}`}
                 filePath={filePath}
                 fileName={fileName}
                 className="h-full"
@@ -1108,7 +1073,7 @@ export function FileContentRenderer({
               the retry and the frame; the session panel renders the same one. */}
           {isHtmlFile && isHtmlPreview && (
             <HtmlPreview
-              key={`html-preview-${filePath}-${reloadToken}`}
+              key={`html-preview-${filePath}`}
               path={toSandboxAbsolutePath(filePath)}
               fileName={fileName}
               pendingLabel={tHardcodedUi.raw(

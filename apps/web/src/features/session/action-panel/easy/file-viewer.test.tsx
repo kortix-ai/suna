@@ -38,7 +38,6 @@ function renderShareable(fileName: string, content = 'x'): string {
         fileName={fileName}
         path={`/workspace/${fileName}`}
         shareContext={SHARE_CONTEXT}
-        onRefresh={() => Promise.resolve()}
       />
     </Wrapped>,
   );
@@ -244,26 +243,18 @@ describe('FileViewer actions', () => {
     expect(md).not.toContain('title="Copy public link"');
   });
 
-  test('Refresh and Download are visible buttons, exactly one of each', () => {
+  test('Download is a visible button, exactly one', () => {
     // Download used to hide behind the caret. It is now a first-class icon
-    // button, and Refresh sits beside it, so neither needs a menu opened.
+    // button, so it needs no menu opened.
     const md = renderShareable('notes.txt', 'hi');
     expect(count(md, 'aria-label="Download"')).toBe(1);
-    expect(count(md, 'aria-label="Refresh"')).toBe(1);
     expect(count(md, 'data-viewer-download=""')).toBe(1);
-    expect(count(md, 'data-viewer-refresh=""')).toBe(1);
-    // Order: split button, then Refresh, then Download, then the panel controls.
+    // Order: split button, then Download, then the panel controls.
     const copy = md.indexOf('aria-label="Copy file contents"');
-    const refresh = md.indexOf('aria-label="Refresh"');
     const download = md.indexOf('aria-label="Download"');
     const fullScreen = md.indexOf('aria-label="Full screen"');
-    expect(copy).toBeLessThan(refresh);
-    expect(refresh).toBeLessThan(download);
+    expect(copy).toBeLessThan(download);
     expect(download).toBeLessThan(fullScreen);
-  });
-
-  test('no refresh handler, no Refresh button', () => {
-    expect(render('notes.txt', 'hi')).not.toContain('aria-label="Refresh"');
   });
 
   test('the removed icon peers stay removed', () => {

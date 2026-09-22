@@ -17,9 +17,9 @@ import { useTranslations } from '@/i18n/use-translations';
  * *the* action, and three of them ("copy" vs "copy link" vs "open in a tab")
  * were mutually indistinguishable at 14px.
  *
- * Now there is one labelled control with a caret, then Refresh and Download:
+ * Now there is one labelled control with a caret, and Download beside it:
  *
- *     [  Copy  |ᵛ]   [↻]   [⬇]   [⤢]   [✕]
+ *     [  Copy  |ᵛ]   [⬇]   [⤢]   [✕]
  *
  * `Copy` says in words what it does, so it needs no tooltip, no icon, and
  * cannot be confused with its neighbours. The word alone also carries the
@@ -29,9 +29,7 @@ import { useTranslations } from '@/i18n/use-translations';
  * Download is never behind the caret. It is the action people reach for most
  * after reading a file, so it is always a visible, single-click icon button —
  * the same `ViewerDownloadButton` every file renderer's own toolbar uses, so
- * there is exactly one Download control per viewer. Refresh sits beside it for
- * the same reason: an agent rewrites files while they are open, and re-reading
- * one must not mean closing the viewer. Full screen and close stay
+ * there is exactly one Download control per viewer. Full screen and close stay
  * outside too — they act on the panel, not on the output.
  *
  * ─── The one rule that decides the split button ────────────────────────────
@@ -58,7 +56,6 @@ import {
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { ViewerDownloadButton } from '@/features/file-renderers/shared/viewer-download-button';
-import { ViewerRefreshButton } from '@/features/file-renderers/shared/viewer-refresh-button';
 import { downloadFile } from '@/features/files/api/runtime-files';
 import { usePublicShareLink } from '@/hooks/use-public-share-link';
 import { track } from '@/lib/track';
@@ -150,8 +147,6 @@ export interface ViewerActionsPlan {
   primary: ViewerPrimaryKind | null;
   /** What sits behind the caret, in order. Empty means no caret. */
   menu: ViewerMenuItemKind[];
-  /** Refresh is its own visible button — never a menu item. */
-  refresh: boolean;
   /** Download is its own visible button — never a menu item. */
   download: boolean;
 }
@@ -164,13 +159,11 @@ export interface ViewerActionsPlan {
 export function planViewerActions({
   canCopy,
   canCopyLink,
-  canRefresh,
   canDownload,
   hasExtraMenuItems,
 }: {
   canCopy: boolean;
   canCopyLink: boolean;
-  canRefresh: boolean;
   canDownload: boolean;
   hasExtraMenuItems: boolean;
 }): ViewerActionsPlan {
@@ -178,7 +171,7 @@ export function planViewerActions({
   const menu: ViewerMenuItemKind[] = [];
   if (canCopyLink && primary !== 'link') menu.push('link');
   if (hasExtraMenuItems) menu.push('extra');
-  return { primary, menu, refresh: canRefresh, download: canDownload };
+  return { primary, menu, download: canDownload };
 }
 
 /**
@@ -194,7 +187,6 @@ export function ViewerActions({
   shareContext,
   shareInput,
   download,
-  refresh,
   extraMenuItems,
   className,
 }: {
@@ -209,9 +201,6 @@ export function ViewerActions({
   shareInput: CreateSessionPublicShareInput | null;
   /** Omit where there are no bytes to save — a running app. */
   download?: ViewerDownload;
-  /** Re-read the file in place. Rendered as a visible Refresh button beside
-   *  Download. Omit where the surface has its own reload — a running app. */
-  refresh?: () => Promise<unknown>;
   /** Rendered at the end of the menu. `AppPreview` puts "Open in a new tab"
    *  here: it is the only surface where a real browser tab shows something the
    *  panel cannot. */
@@ -251,7 +240,6 @@ export function ViewerActions({
   const plan = planViewerActions({
     canCopy: Boolean(copy),
     canCopyLink: share.canShare,
-    canRefresh: Boolean(refresh),
     canDownload: Boolean(download),
     hasExtraMenuItems: Boolean(extraMenuItems),
   });
@@ -275,24 +263,18 @@ export function ViewerActions({
     ),
   );
 
-  // Refresh and Download are always their own visible buttons, in that order,
-  // right of the split button. Never menu items.
-  const fileButtons =
-    plan.refresh || plan.download ? (
-      <>
-        {plan.refresh && refresh && <ViewerRefreshButton onRefresh={refresh} />}
-        {plan.download && (
-          <ViewerDownloadButton onDownload={() => void dl.run()} pending={dl.pending} />
-        )}
-      </>
-    ) : null;
+  // Download is always its own visible button, right of the split button.
+  // Never a menu item.
+  const downloadButton = plan.download ? (
+    <ViewerDownloadButton onDownload={() => void dl.run()} pending={dl.pending} />
+  ) : null;
 
   // No split button on two kinds of surface: a file in a session with no
   // project context (nothing to copy, no link to mint — Download alone), and
   // an app in such a session, where "Open in a new tab" still works. A lone
   // menu keeps that reachable rather than blanking the toolbar.
   if (!primary) {
-    if (menu.length === 0 && !fileButtons) return null;
+    if (menu.length === 0 && !downloadButton) return null;
     return (
       <span className={cn('flex shrink-0 items-center gap-1', className)}>
         {menu.length > 0 && (
@@ -312,7 +294,7 @@ export function ViewerActions({
             </DropdownMenuContent>
           </DropdownMenu>
         )}
-        {fileButtons}
+        {downloadButton}
       </span>
     );
   }
@@ -397,7 +379,7 @@ export function ViewerActions({
   return (
     <span className={cn('flex shrink-0 items-center gap-1', className)}>
       {split}
-      {fileButtons}
+      {downloadButton}
     </span>
   );
 }

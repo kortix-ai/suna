@@ -39,7 +39,6 @@ export function useBinaryBlob(filePath: string | null): {
   blob: Blob | null;
   isLoading: boolean;
   error: string | null;
-  refetch: () => Promise<unknown>;
 } {
   const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
   // Asleep, not booting — the re-read below takes the slow lane.
@@ -104,8 +103,7 @@ export function useBinaryBlob(filePath: string | null): {
       blob: cachedBlob,
       isLoading: query.isLoading,
       error: query.error?.message ?? null,
-      refetch: query.refetch,
     }),
-    [blobUrl, cachedBlob, query.isLoading, query.error?.message, query.refetch],
+    [blobUrl, cachedBlob, query.isLoading, query.error?.message],
   );
 }
