@@ -13,6 +13,7 @@ import {
 } from '../../connectors/share';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
+import { isAgentPrincipalActor } from '../../iam/actor';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 
@@ -297,6 +298,7 @@ projectsApp.openapi(
     limit: query.limit,
     cursor: query.cursor ?? null,
     boundCredentialSessionId: callerKortixSessionId(c),
+    agentPrincipal: loaded.actor ? isAgentPrincipalActor(loaded.actor) : false,
     probeManageCapability: () =>
       projectCapabilityAllowed(
         c,

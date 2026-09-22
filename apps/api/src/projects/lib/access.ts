@@ -14,6 +14,8 @@ import {
 // imported from it is a name those stubs must also declare.
 import { agentEffectiveAllows, authorize, assertAuthorized } from '../../iam/authorize';
 import { actorOf, isAgentPrincipalActor, type Actor } from '../../iam/actor';
+import { agentSessionStanding } from './agent-session-standing';
+export { agentSessionStanding } from './agent-session-standing';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
 import { projectRoleForUser } from '../../iam/read-models';
 // Straight from `iam/denial-message`, not the `iam` barrel: the barrel and the
@@ -383,7 +385,14 @@ export async function loadVisibleSession(
       metadata: { via: 'admin_bypass_header', sessionVisibility: row.visibility },
     });
   }
-  const isOwner = row.createdBy === loaded.userId;
+  let isOwner = row.createdBy === loaded.userId;
+  if (loaded.actor && isAgentPrincipalActor(loaded.actor)) {
+    // Spec §2: never the launcher's standing. Checked after the ordinary
+    // rules so it can only narrow them.
+    const standing = agentSessionStanding(boundCredentialSessionId, row, visible);
+    if (!standing.visible) return null;
+    isOwner = standing.isOwner;
+  }
   const ownerIsMachine = ownerIsMachineCanMatter(isOwner, canManageProject)
     ? await sessionOwnerIsMachine(loaded.row.accountId, row.createdBy)
     : false;
@@ -421,7 +430,7 @@ export async function loadVisibleSession(
  *    gate denied them — the same escalation the member-sharing rule closes.
  */
 export async function loadSessionForSharing(
-  loaded: { row: ProjectRow; userId: string; effectiveRole: ProjectRole },
+  loaded: { row: ProjectRow; userId: string; effectiveRole: ProjectRole; actor?: Actor | null },
   sessionId: string,
   /**
    * The CALLER's own session when the credential is bound to one. REQUIRED —
@@ -453,7 +462,14 @@ export async function loadSessionForSharing(
   })) {
     return null;
   }
-  const isOwner = row.createdBy === loaded.userId;
+  let isOwner = row.createdBy === loaded.userId;
+  if (loaded.actor && isAgentPrincipalActor(loaded.actor)) {
+    // Spec §2: an agent session manages share links only for sessions it
+    // owns (its own and its children), never the launcher's others.
+    const standing = agentSessionStanding(callerSessionId, row, true);
+    if (!standing.visible) return null;
+    isOwner = standing.isOwner;
+  }
   const canManageProject = roleAllows(loaded.effectiveRole, 'manage');
   const ownerIsMachine = ownerIsMachineCanMatter(isOwner, canManageProject)
     ? await sessionOwnerIsMachine(loaded.row.accountId, row.createdBy)
