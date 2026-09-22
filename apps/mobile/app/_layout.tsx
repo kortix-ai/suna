@@ -43,8 +43,9 @@ import { log } from '@/lib/logger';
 import { useAppearanceStore } from '@/stores/appearance-store';
 import { useThemeStore } from '@/stores/theme-store';
 import { installHapticsGate } from '@/lib/haptics';
-import { configureKortix } from '@kortix/sdk';
+import { configureKortix, setEventStreamTransport } from '@kortix/sdk';
 import { API_URL, getAuthToken } from '@/api/config';
+import { reactNativeEventStreamTransport } from '@/lib/opencode/react-native-event-stream-transport';
 import {
   clearWebRegistrationHandoff,
   consumeAuthCallbackState,
@@ -71,6 +72,13 @@ configureKortix({
     log.error('❌ [kortix-sdk] request failed:', error, context);
   },
 });
+
+// The SDK's live stream reads `response.body.pipeThrough(new
+// TextDecoderStream())`, which React Native's fetch cannot provide. Installing
+// this transport supplies the bytes over `react-native-sse` and leaves every
+// reconnect/backoff/heartbeat decision to the SDK — the reason this app no
+// longer carries its own 655-line copy of that logic.
+setEventStreamTransport(reactNativeEventStreamTransport);
 
 const THEME_PREFERENCE_KEY = '@theme_preference';
 
