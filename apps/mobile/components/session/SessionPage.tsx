@@ -22,6 +22,7 @@ import {
   TouchableOpacity,
   useWindowDimensions,
   Animated,
+  ActivityIndicator,
   Platform,
   type NativeSyntheticEvent,
   type NativeScrollEvent,
@@ -38,7 +39,13 @@ import { Text as RNText } from 'react-native';
 
 import { groupMessagesIntoTurns, updateProjectSession } from '@kortix/sdk';
 import { toSessionPickerItems } from '@/lib/sessions/session-picker-item';
-import { useSession, useProjectSession, useProjectSessions, qk } from '@kortix/sdk/react';
+import {
+  useSession,
+  useProjectSession,
+  useProjectSessions,
+  startSessionWithPrompt,
+  qk,
+} from '@kortix/sdk/react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Turn, QuestionRequest } from '@/lib/opencode/types';
 import { useTabStore } from '@/stores/tab-store';
@@ -247,19 +254,46 @@ export function SessionPage({ projectId, sessionId, onBack, onOpenDrawer, onOpen
         finalText = `${text}\n\nReferenced sessions (use the session_context tool to fetch details when needed):\n${refs}`;
       }
 
-      // One call. The optimistic user bubble, the busy state, the wire message
-      // id that lets the server's echo settle that bubble instead of
-      // duplicating it, and the failure rollback are all `useSession`'s — this
-      // used to be a hand-rolled `addOptimisticMessage` + `setStatus('busy')` +
-      // raw `POST /prompt_async`, whose optimistic id shared nothing with the
-      // id the runtime finally persisted.
-      session.send(finalText, {
-        model: options.model ?? undefined,
-        agent: options.agent ?? undefined,
-        variant: options.variant ?? undefined,
-      });
+      const overrides = {
+        ...(options.agent ? { agent: options.agent } : {}),
+        ...(options.model ? { model: options.model } : {}),
+        ...(options.variant ? { variant: options.variant } : {}),
+      };
+
+      // Two paths, chosen by whether the runtime can take the prompt NOW.
+      //
+      // Ready: `session.send` owns the optimistic bubble, the busy state, the
+      // wire message id that lets the server's echo settle that bubble instead
+      // of duplicating it, and the failure rollback. This used to be a
+      // hand-rolled `addOptimisticMessage` + `setStatus('busy')` + raw
+      // `POST /prompt_async`, whose optimistic id shared nothing with the id
+      // the runtime finally persisted.
+      //
+      // Not ready: `session.send` returns silently when the sandbox has not
+      // switched in, so a message typed while the box wakes used to vanish
+      // without a trace. `startSessionWithPrompt` POSTs it to the session's
+      // durable inbox instead, where the admission gate holds it until the
+      // runtime answers — the composer is usable during the whole boot, which
+      // is the other half of what the saved transcript is for.
+      if (session.phase === 'ready') {
+        session.send(finalText, {
+          model: options.model ?? undefined,
+          agent: options.agent ?? undefined,
+          variant: options.variant ?? undefined,
+        });
+        return;
+      }
+
+      try {
+        await startSessionWithPrompt(projectId, sessionId, {
+          parts: [{ type: 'text', text: finalText }],
+          ...(Object.keys(overrides).length > 0 ? { overrides } : {}),
+        });
+      } catch (err: any) {
+        log.error('[SessionPage] Could not queue the prompt:', err?.message || err);
+      }
     },
-    [session],
+    [session, projectId, sessionId],
   );
 
   const handleStop = useCallback(async () => {
@@ -802,6 +836,24 @@ export function SessionPage({ projectId, sessionId, onBack, onOpenDrawer, onOpen
         />
       )}
 
+      {/* Boot state, as a strip rather than a screen. The session view used to
+          be replaced wholesale by a "Connecting…" screen until the sandbox was
+          up, which is precisely the window the durable transcript exists to
+          cover — the saved thread was on hand and deliberately hidden. This
+          keeps the transcript and the composer on screen and reports the boot
+          beside them. */}
+      {!onboardingMode && (
+        <SessionBootStrip
+          phase={session.phase}
+          stage={session.stage}
+          reason={session.reason}
+          startError={session.startError}
+          failure={session.failure}
+          onRetry={session.retry}
+          isDark={isDark}
+        />
+      )}
+
       {/* Sandbox health pill — full-width row immediately above the chat
           input. Self-hides (returns null) when the sandbox is reachable,
           so it takes no layout space the rest of the time. */}
@@ -876,6 +928,80 @@ export function SessionPage({ projectId, sessionId, onBack, onOpenDrawer, onOpen
         sandboxUrl={runtimeUrl ?? undefined}
       />
     </KeyboardAvoidingView>
+  );
+}
+
+/**
+ * A one-line report on the session runtime, or nothing at all.
+ *
+ * Renders only while the runtime is NOT ready. Once it is, this returns null
+ * and costs no layout — the transcript is the whole screen again.
+ */
+function SessionBootStrip({
+  phase,
+  stage,
+  reason,
+  startError,
+  failure,
+  onRetry,
+  isDark,
+}: {
+  phase: 'starting' | 'ready' | 'error';
+  stage: string | null;
+  reason: string | null;
+  startError: { message?: string } | null;
+  failure: { message?: string } | null;
+  onRetry: () => void;
+  isDark: boolean;
+}) {
+  if (phase === 'ready') return null;
+
+  const failed = phase === 'error' || !!startError || !!failure;
+  const detail = failure?.message || startError?.message || null;
+  const label = failed
+    ? detail || 'This session could not start'
+    : stage === 'provisioning'
+      ? 'Provisioning the runtime…'
+      : reason === 'runtime_waking'
+        ? 'Waking the runtime…'
+        : 'Starting the runtime…';
+
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        backgroundColor: failed
+          ? isDark
+            ? 'rgba(239,68,68,0.10)'
+            : 'rgba(239,68,68,0.07)'
+          : isDark
+            ? 'rgba(255,255,255,0.04)'
+            : 'rgba(0,0,0,0.03)',
+      }}
+    >
+      {!failed && <ActivityIndicator size="small" color={isDark ? '#a1a1aa' : '#71717a'} />}
+      <Text
+        numberOfLines={2}
+        style={{
+          flex: 1,
+          fontSize: 12,
+          color: failed ? '#ef4444' : isDark ? '#a1a1aa' : '#71717a',
+        }}
+      >
+        {label}
+      </Text>
+      {failed && (
+        <TouchableOpacity onPress={onRetry} hitSlop={8} activeOpacity={0.6}>
+          <Text style={{ fontSize: 12, fontFamily: 'Roobert-SemiBold', color: '#ef4444' }}>
+            Retry
+          </Text>
+        </TouchableOpacity>
+      )}
+    </View>
   );
 }
 

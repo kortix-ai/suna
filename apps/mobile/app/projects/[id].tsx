@@ -1320,24 +1320,26 @@ export default function ProjectSessionScreen() {
       haptics.tap();
       setActiveProjectSessionId(ps.session_id);
       setDrawerOpen(false);
-      navigateToSession(null);
       setConnectError(null);
       erroredSessionRef.current = null;
-      setConnectingProjectSessionId(ps.session_id);
+      // Open the session view IMMEDIATELY rather than parking on a connecting
+      // screen until the sandbox answers. `useSession` inside SessionPage
+      // drives /start itself and paints the saved transcript from the mirror
+      // while the runtime boots — which is the entire point of the mirror, and
+      // was unreachable while this cleared the tab and waited.
+      navigateToSession(ps.session_id);
     },
     [navigateToSession]
   );
 
-  // Open a session by raw id (e.g. Fix-with-agent returns a new session). Same
-  // connecting flow as handleOpenProjectSession, minus the ProjectSession shell.
+  // Open a session by raw Kortix id (e.g. Fix-with-agent returns a new one).
   const handleOpenSessionById = useCallback(
     (sessionId: string) => {
       setActiveProjectSessionId(sessionId);
       setDrawerOpen(false);
-      navigateToSession(null);
       setConnectError(null);
       erroredSessionRef.current = null;
-      setConnectingProjectSessionId(sessionId);
+      navigateToSession(sessionId);
     },
     [navigateToSession]
   );
