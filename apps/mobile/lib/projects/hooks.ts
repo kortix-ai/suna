@@ -96,6 +96,7 @@ import {
   type OpenChangeRequestInput,
   type PolicyDefaultMode,
   type ProjectPolicy,
+  type ProvisionProjectInput,
   type UpdateProjectTriggerInput,
   type UpdateSandboxTemplateInput,
 } from './projects-client';
@@ -572,7 +573,9 @@ export function useArchiveProject() {
 export function useProvisionProject() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: provisionProject,
+    // Wrapped: TanStack v5 calls mutationFn(variables, context), and the
+    // context must not land in provisionProject's ApiClientOptions.
+    mutationFn: (input: ProvisionProjectInput) => provisionProject(input),
     onSuccess: () => {
       invalidateAfterProjectCreation(queryClient);
     },

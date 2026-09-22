@@ -8,7 +8,6 @@ export * from './api';
 export * from './hooks';
 
 export {
-  triggerKeys,
   useAllTriggers,
   useAgentTriggers,
   useTrigger,
