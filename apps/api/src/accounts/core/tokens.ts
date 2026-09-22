@@ -143,7 +143,10 @@ accountsRouter.openapi(
       session_id: (c.get('sessionId') as string | undefined) ?? null,
       agent: (c.get('agentGrant') as { agent?: string } | null | undefined)?.agent ?? null,
       connectors: (c.get('agentGrant') as { connectors?: string[] | 'all' } | null | undefined)?.connectors ?? null,
-      kortix_cli: (c.get('agentGrant') as { kortixCli?: string[] | 'all' } | null | undefined)?.kortixCli ?? null,
+      kortix_permissions: (c.get('agentGrant') as { permissions?: string[] | 'all' } | null | undefined)?.permissions ?? null,
+      // Deprecated wire alias of `kortix_permissions` — CLIs released before
+      // the 2026-09-22 rename read this key.
+      kortix_cli: (c.get('agentGrant') as { permissions?: string[] | 'all' } | null | undefined)?.permissions ?? null,
       env: (c.get('agentGrant') as { env?: string[] | 'all' } | null | undefined)?.env ?? null,
     },
     accounts: memberships.map((m) => ({

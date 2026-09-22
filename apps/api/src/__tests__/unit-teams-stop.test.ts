@@ -50,9 +50,11 @@ mock.module('../channels/teams/turn', () => ({
 
 let abortResult: boolean | Error = true;
 const aborted: string[] = [];
+const abortOpts: Array<{ requestedStop?: boolean } | undefined> = [];
 mock.module('../projects/session-lifecycle/abort-runtime-turn', () => ({
-  abortRuntimeTurn: async (id: string) => {
+  abortRuntimeTurn: async (id: string, opts?: { requestedStop?: boolean }) => {
     aborted.push(id);
+    abortOpts.push(opts);
     if (abortResult instanceof Error) throw abortResult;
     return abortResult;
   },
@@ -115,6 +117,8 @@ describe('stopTeamsTurn', () => {
 
     expect(outcome).toEqual({ stopped: true, stoppedRuntime: true });
     expect(aborted).toEqual([SESSION_ID]);
+    // A person asked for this stop: the turn must not read as a failure.
+    expect(abortOpts.at(-1)).toEqual({ requestedStop: true });
     expect(finalized).toEqual([{ title: 'Stopped', answer: 'Stopped by Ivan.', unfinished: true }]);
     expect(deleted).toEqual([SESSION_ID]);
   });

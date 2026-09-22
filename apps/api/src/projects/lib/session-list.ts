@@ -95,6 +95,8 @@ export async function loadProjectSessionInventory(input: {
   scope: ProjectSessionListScope;
   /** `callerKortixSessionId(c)` — null for a Supabase browser JWT. */
   boundCredentialSessionId: string | null;
+  /** The caller is an agent session under the `agent_principal` model (spec §2). */
+  agentPrincipal?: boolean;
   probeManageCapability: () => Promise<boolean>;
   /** Max VISIBLE items to return. Clamped to `SESSION_PAGE_MAX_LIMIT`. */
   limit?: number;
@@ -246,6 +248,7 @@ export async function loadProjectSessionInventory(input: {
       callerSessionId: input.boundCredentialSessionId,
       boundCredentialSessionId: input.boundCredentialSessionId,
       accountSessionOversight,
+      agentPrincipal: input.agentPrincipal === true,
     });
 
     for (const item of selected.items) {

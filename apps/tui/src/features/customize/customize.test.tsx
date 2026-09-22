@@ -426,7 +426,7 @@ describe('<AgentsTabView/>', () => {
       path: 'kortix.yaml#agents.auditor',
       enabled: false,
       isDefault: false,
-      scope: { env: 'all', connectors: [], kortix_cli: ['run'] },
+      scope: { env: 'all', connectors: [], kortix_permissions: ['run'] },
     },
   ];
 

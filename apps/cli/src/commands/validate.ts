@@ -18,8 +18,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, relative, resolve } from 'node:path';
 import {
-  DEPRECATED_KORTIX_CLI_ALIASES,
-  GRANTABLE_KORTIX_CLI_ACTIONS,
+  DEPRECATED_KORTIX_PERMISSION_ALIASES,
+  GRANTABLE_KORTIX_PERMISSIONS,
   type ManifestIssue,
   ManifestImportError,
   formatIssues,
@@ -43,7 +43,7 @@ Options:
   --file <path>          Validate this file instead of ./kortix.yaml.
   --no-dockerfile-lint   Skip the sandbox Dockerfile checks (manifest only).
   --json                 Emit a machine-readable JSON report (no color).
-  --scopes               Print the full grantable kortix_cli action enum and exit.
+  --scopes               Print the full grantable kortix_permissions enum and exit.
   -h, --help             Show this help.
 `;
 
@@ -102,7 +102,7 @@ function lintSandboxDockerfiles(
   return issues;
 }
 
-/** One line per agent: its assigned connectors + Kortix-CLI powers. */
+/** One line per agent: its assigned connectors + Kortix permissions. */
 function describeAgents(parsed: Record<string, unknown> | null): string {
   const agents = parsed?.agents;
   if (!Array.isArray(agents) || agents.length === 0) return '';
@@ -113,7 +113,7 @@ function describeAgents(parsed: Record<string, unknown> | null): string {
     // `env` omitted == 'all' (the parser's default), so render it that way rather
     // than as default-deny — otherwise the summary misreports an unscoped agent.
     const env = a?.env === undefined || a?.env === null ? 'all' : a?.env;
-    return `  ${C.cyan}${name}${C.reset}  connectors=[${show(a?.connectors)}]  kortix_cli=[${show(a?.kortix_cli)}]  env=[${show(env)}]`;
+    return `  ${C.cyan}${name}${C.reset}  connectors=[${show(a?.connectors)}]  kortix_permissions=[${show(a?.kortix_permissions ?? a?.kortix_cli)}]  env=[${show(env)}]`;
   });
   return `\n${C.dim}Per-agent scope (kortix.yaml [[agents]]):${C.reset}\n${lines.join('\n')}\n`;
 }
@@ -126,10 +126,10 @@ export function runValidate(argv: string[]): number {
   }
   if (flags.scopes) {
     process.stdout.write(
-      `${C.dim}Grantable kortix_cli actions (project-scoped — account-level admin actions can never be granted to an agent):${C.reset}\n`,
+      `${C.dim}Grantable kortix_permissions (project-scoped — account-level admin actions can never be granted to an agent):${C.reset}\n`,
     );
-    for (const a of GRANTABLE_KORTIX_CLI_ACTIONS) process.stdout.write(`  ${a}\n`);
-    const renamed = Object.entries(DEPRECATED_KORTIX_CLI_ALIASES);
+    for (const a of GRANTABLE_KORTIX_PERMISSIONS) process.stdout.write(`  ${a}\n`);
+    const renamed = Object.entries(DEPRECATED_KORTIX_PERMISSION_ALIASES);
     if (renamed.length > 0) {
       // Not grantable any more, but still ACCEPTED in a manifest that has one.
       // This list is what an agent reads to decide what to write, so it has to

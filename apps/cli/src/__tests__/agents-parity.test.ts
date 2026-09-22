@@ -42,7 +42,7 @@ const REVIEWER_BLOCK = {
   connectors_required: [],
   secrets: 'all',
   skills: 'all',
-  kortix_cli: 'all',
+  kortix_permissions: 'all',
   workspace: 'runtime',
   opencode: { description: 'Reviews diffs', mode: 'primary', prompt: 'You review code.' },
 };
