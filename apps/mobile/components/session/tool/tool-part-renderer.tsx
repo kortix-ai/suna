@@ -61,7 +61,6 @@ import { GlobGrepExpandedContent } from './tools/glob-tool';
 import { QuestionExpandedContent } from './tools/question-tool';
 import { GetMemExpandedContent } from './tools/get-mem-tool';
 import { LtmSearchExpandedContent } from './tools/memory-search-tool';
-import { ShowExpandedContent } from './tools/show-tool';
 import { SessionGetExpandedContent } from './tools/session-get-tool';
 
 export type PermissionReply = 'once' | 'always' | 'reject';
@@ -108,9 +107,6 @@ export function getExpandedContent(tool: ToolPart, isDark: boolean): React.React
     case 'oc-mem_search':
     case 'oc-mem-search':
       return <LtmSearchExpandedContent tool={tool} isDark={isDark} />;
-    case 'show':
-    case 'show-user':
-      return <ShowExpandedContent tool={tool} isDark={isDark} />;
     case 'session_get':
     case 'session-get':
     case 'oc-session_get':
@@ -135,7 +131,6 @@ export function toolHasExpandableContent(tool: ToolPart): boolean {
     (input.content || input.oldString || input.newString)
   )
     return true;
-  if ((tool.tool === 'show' || tool.tool === 'show-user') && (input.content || input.path)) return true;
   if (tool.tool === 'question') return true;
   if (state.status === 'completed' && 'output' in state && state.output?.trim()) return true;
   if (state.status === 'error' && 'error' in state && state.error) return true;

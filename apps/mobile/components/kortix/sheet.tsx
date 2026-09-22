@@ -22,6 +22,7 @@ import { haptics } from '@/lib/haptics';
 import { CheckIcon, CopyIcon, XIcon } from '@/lib/icons';
 import { cn } from '@/lib/utils/utils';
 import { detentsKey, withFullDetent } from '@/lib/ui/sheet-detents';
+import { SurfaceContext } from '@/components/kortix/surface-context';
 
 /**
  * Shared bottom-sheet backdrop. Every gorhom sheet creator in the app
@@ -254,7 +255,14 @@ export const KortixBottomSheetModal = React.forwardRef<
         },
         backgroundStyle,
       ]}>
-      {fixedDetents && typeof children !== 'function' ? <SheetFill>{children}</SheetFill> : children}
+      {typeof children === 'function' ? (
+        children
+      ) : (
+        // Rows inside know they sit on the sheet colour (`SettingsGroup`).
+        <SurfaceContext.Provider value="sheet">
+          {fixedDetents ? <SheetFill>{children}</SheetFill> : children}
+        </SurfaceContext.Provider>
+      )}
     </BottomSheetModal>
   );
 });

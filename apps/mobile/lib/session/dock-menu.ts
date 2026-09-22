@@ -22,7 +22,7 @@ export type DockIconKey =
   // project sheet, core sections
   | 'agents' | 'skills' | 'schedules' | 'review' | 'secrets'
   // project sheet, more
-  | 'webhooks' | 'members' | 'terminal';
+  | 'members' | 'terminal';
 
 export interface DockMenuItem {
   kind: 'item';
@@ -56,7 +56,6 @@ export const CUSTOMIZE_SHEET_GROUPS: CustomizeSheetGroup[] = [
     title: 'More',
     items: [
       { kind: 'item', label: 'Files', icon: 'files', pageId: 'page:files-nav' },
-      { kind: 'item', label: 'Webhooks', icon: 'webhooks', pageId: 'page:webhooks' },
       { kind: 'item', label: 'Members', icon: 'members', pageId: 'page:members' },
       { kind: 'item', label: 'Terminal', icon: 'terminal', pageId: 'page:terminal' },
     ],

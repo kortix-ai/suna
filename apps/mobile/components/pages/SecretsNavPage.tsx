@@ -565,7 +565,7 @@ function SecretDetailSheet({
         showsVerticalScrollIndicator={false}>
         {/* Which value my sessions use: only when there is a choice to make. */}
         {s?.mine || sharedSelectable ? (
-          <SettingsGroup title="Use in my sessions" className="bg-secondary">
+          <SettingsGroup title="Use in my sessions">
             <SettingsRow
               icon={Users}
               label="Shared value"
@@ -577,7 +577,7 @@ function SecretDetailSheet({
           </SettingsGroup>
         ) : null}
 
-        <SettingsGroup title="My value" className="bg-secondary">
+        <SettingsGroup title="My value">
           <SettingsRow
             label={s?.mine ? 'Edit my value' : 'Set my value'}
             onPress={() => { haptics.tap(); setView('personal'); }}
@@ -593,7 +593,7 @@ function SecretDetailSheet({
         </SettingsGroup>
 
         {canManageShared ? (
-          <SettingsGroup title={scope ? `Shared value · ${scope}` : 'Shared value'} className="bg-secondary">
+          <SettingsGroup title={scope ? `Shared value · ${scope}` : 'Shared value'}>
             <SettingsRow
               label={s?.configured ? 'Edit shared value' : 'Set shared value'}
               onPress={() => { haptics.tap(); setView('shared'); }}

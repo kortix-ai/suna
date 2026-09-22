@@ -198,7 +198,7 @@ function VersionSheet({
           No versions yet
         </Text>
       ) : (
-        <SettingsGroup className="bg-secondary">
+        <SettingsGroup>
           {sorted.map((b) => (
             <SettingsRow
               key={b.name}
@@ -315,7 +315,7 @@ function FileSheetBody({
               No checkpoints for this file yet
             </Text>
           ) : (
-            <SettingsGroup className="bg-secondary">
+            <SettingsGroup>
               {commits.map((c) => (
                 <SettingsRow
                   key={c.hash}
@@ -396,7 +396,9 @@ function FileTile({ file, label, onPress }: { file: SandboxFile; label: string; 
         <EntryIcon file={file} size={36} />
       </View>
       <View className="gap-0.5">
-        <Text variant="small" numberOfLines={1}>
+        {/* `small` is `leading-none`: a 14pt line clips g/p/y once
+            `numberOfLines` clips to the line box. `leading-5` = text-sm's 20pt. */}
+        <Text variant="small" className="leading-5" numberOfLines={1}>
           {label}
         </Text>
         {file.type === 'file' && fileSizeLabel(file.size) ? (

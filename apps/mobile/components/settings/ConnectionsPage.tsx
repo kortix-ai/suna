@@ -310,7 +310,6 @@ function ConnectionsContent({
   // ── Sticky search bar (rendered outside FlatList) ──
   const SearchBar = (
     <SearchListHeader
-      gutter="page"
       value={searchQuery}
       onChangeText={setSearchQuery}
       placeholder="Search 1000+ apps..."

@@ -160,7 +160,7 @@ function CreateGroupSheet({ accountId, onCreated, onClose, isDark }: { accountId
         <SheetTextInput value={name} onChangeText={setName} placeholder="Group name" accessibilityLabel="Group name" maxLength={128} />
         <SheetTextInput value={description} onChangeText={setDescription} placeholder="Description (optional)" accessibilityLabel="Description" maxLength={256} />
       </BottomSheetScrollView>
-      <View className="px-5 pt-3" style={{ paddingBottom: insets.bottom + 16 }}>
+      <View className="px-4 pt-3" style={{ paddingBottom: insets.bottom + 16 }}>
         <Button
           size="lg"
           className="rounded-full"

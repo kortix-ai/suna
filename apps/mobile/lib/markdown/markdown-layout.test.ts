@@ -59,8 +59,8 @@ describe('kindOfNode', () => {
     expect(kindOfNode('math_inline')).toBeNull();
   });
 
-  test('display math has KaTeX .katex-display margin: 1em of the 15px body', () => {
-    expect(collapsedGap('paragraph', 'math')).toBe(15);
+  test('display math has KaTeX .katex-display margin: 1em of the 16px body', () => {
+    expect(collapsedGap('paragraph', 'math')).toBe(16);
     expect(collapsedGap('math', 'heading2')).toBe(web(8));
   });
 });
@@ -85,8 +85,8 @@ describe('classifyBlock', () => {
 describe('orderedListGutter', () => {
   test('pl-6 for one digit, plus 1ch per extra digit', () => {
     expect(orderedListGutter(9)).toBe(22.08);
-    expect(orderedListGutter(10)).toBeCloseTo(22.08 + 9.48, 5);
-    expect(orderedListGutter(3, 98)).toBeCloseTo(22.08 + 2 * 9.48, 5);
+    expect(orderedListGutter(10)).toBeCloseTo(22.08 + 10.112, 5);
+    expect(orderedListGutter(3, 98)).toBeCloseTo(22.08 + 2 * 10.112, 5);
   });
 });
 
@@ -155,8 +155,8 @@ describe('inlineCodeAnchor', () => {
 
   test('iOS puts the view bottom on the line bottom minus a Helvetica 12 descender', () => {
     // Roobert: unitsPerEm 1000, hhea ascent 1018, descent 246. Helvetica 12 descender 2.76.
-    // body: -(3.69 + (24.38 - 18.96) / 2 - 2.76) + 5.07 = 1.43
-    expect(inlineCodeAnchor('ios', body).translateY).toBeCloseTo(-3.64 + hang, 2);
+    // body: -(3.936 + (26 - 20.224) / 2 - 2.76) + 5.07 = 1.006
+    expect(inlineCodeAnchor('ios', body).translateY).toBeCloseTo(-4.064 + hang, 2);
     // table: -(3.444 + (20 - 17.696) / 2 - 2.76) + 5.07 = 3.234
     expect(inlineCodeAnchor('ios', table).translateY).toBeCloseTo(-1.836 + hang, 2);
     // No line height: TextKit adds no half-leading.

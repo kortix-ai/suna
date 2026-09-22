@@ -510,7 +510,7 @@ function SessionChatInputImpl({
           <View className="flex-row items-center gap-2">
             <View className="shrink flex-row items-center gap-1.5 rounded-full bg-secondary py-1.5 pl-3 pr-2">
               <Icon as={TerminalIcon} size={14} className="text-muted-foreground" />
-              <Text variant="small" numberOfLines={1} className="shrink">
+              <Text variant="small" numberOfLines={1} className="shrink leading-5">
                 /{stagedCommand.name}
               </Text>
               <Pressable
@@ -601,7 +601,7 @@ function SessionChatInputImpl({
 
       {/* Add sheet — Camera · Photos · Files, and AutoContinue when the project has it. */}
       <AttachSheet ref={attachSheetRef} onPick={addFiles}>
-        <SettingsGroup className="bg-secondary">
+        <SettingsGroup>
           <SettingsRow
             icon={StackIcon}
             label="Recent files"

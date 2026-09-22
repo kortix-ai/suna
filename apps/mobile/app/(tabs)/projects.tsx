@@ -194,7 +194,7 @@ export default function ProjectsTab() {
             borderColor={chalk.border}
           />
           <View className="min-w-0 flex-1">
-            <Text variant="small" className="text-foreground" numberOfLines={1}>
+            <Text variant="small" className="leading-5 text-foreground" numberOfLines={1}>
               {row.title}
             </Text>
             <Text variant="muted" className="mt-0.5 text-xs" numberOfLines={1}>

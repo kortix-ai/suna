@@ -1,6 +1,6 @@
 /**
  * PageHeader — the header of every project tool page (Agents, Skills,
- * Schedules, Review, Secrets, Webhooks, Channels, Terminal, …).
+ * Schedules, Review, Secrets, Channels, Terminal, …).
  *
  * One row, three equal-width columns (Jay, 2026-09-22):
  *
@@ -80,6 +80,13 @@ export interface PageHeaderProps {
   /** Bottom padding below the row. `PageContent` adds 4pt more. */
   paddingBottom?: number;
 
+  /**
+   * The title takes all the width the buttons leave (the Browser's address
+   * field), instead of the centred third. The outer columns shrink to their
+   * buttons.
+   */
+  fillTitle?: boolean;
+
   /** Optional className passed to the outer View (e.g. to override bg). */
   className?: string;
 }
@@ -97,6 +104,7 @@ export function PageHeader({
   rightActions,
   hideRightDrawerToggle,
   paddingBottom = 0,
+  fillTitle = false,
   className,
 }: PageHeaderProps) {
   const insets = useSafeAreaInsets();
@@ -128,7 +136,7 @@ export function PageHeader({
       <View
         className="flex-row items-center px-4 pb-3"
         style={{ paddingTop: Math.max(insets.top, 10) + 6, minHeight: 56 }}>
-        <View className="flex-1 flex-row items-center gap-2">
+        <View className={`${fillTitle ? '' : 'flex-1 '}flex-row items-center gap-2`}>
           {onOpenDrawer ? <MenuButton onPress={onOpenDrawer} /> : null}
           {onBack ? (
             <PlatformButton
@@ -141,11 +149,11 @@ export function PageHeader({
           ) : null}
         </View>
 
-        <View className="flex-1 items-center px-1">{titleNode}</View>
+        <View className={fillTitle ? 'flex-1 flex-row items-center px-2' : 'flex-1 items-center px-1'}>{titleNode}</View>
 
         {/* The last button holds the padding edge: -mr-2.5 mirrors the
             hamburger's -ml-2.5. */}
-        <View className="flex-1 flex-row items-center justify-end">
+        <View className={`${fillTitle ? '' : 'flex-1 '}flex-row items-center justify-end`}>
           <View className="-mr-2.5 flex-row items-center">
             {rightActions}
             {onAdd ? (

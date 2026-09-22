@@ -80,7 +80,7 @@ export enum FilePreviewType {
 export function getFilePreviewType(filename: string): FilePreviewType {
   const ext = filename.split('.').pop()?.toLowerCase() || '';
 
-  const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'heic', 'heif', 'tiff'];
+  const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'ico', 'heic', 'heif', 'tiff'];
   const documentExtensions = ['pdf'];
   const markdownExtensions = ['md', 'markdown', 'mdx'];
   const csvExtensions = ['csv', 'tsv'];
@@ -108,6 +108,10 @@ export function getFilePreviewType(filename: string): FilePreviewType {
   const textExtensions = ['txt', 'log', 'rtf', 'tex', 'rst', 'org', 'nfo', 'info'];
   const binaryExtensions = ['zip', 'tar', 'gz', 'rar', '7z', 'exe', 'dmg', 'pkg', 'deb', 'rpm'];
 
+  // SVG is never drawn on mobile (Jay, 2026-09-22, `lib/files/svg-policy`):
+  // it reads as its markup, so Copy works, and Download hands the real file to
+  // the device. The `SvgXml` renderer that briefly lived here is gone.
+  if (ext === 'svg') return FilePreviewType.TEXT;
   if (imageExtensions.includes(ext)) return FilePreviewType.IMAGE;
   if (documentExtensions.includes(ext)) return FilePreviewType.PDF;
   if (markdownExtensions.includes(ext)) return FilePreviewType.MARKDOWN;
@@ -630,6 +634,8 @@ function HtmlPreview({
 /**
  * Text Preview Component
  */
+
+
 function TextPreview({ content }: { content: string }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -1459,6 +1465,7 @@ function TextContentPreview({
 
     case FilePreviewType.TEXT:
       return <TextPreview content={content} />;
+
 
     case FilePreviewType.CSV:
       return <CsvPreview content={content} />;

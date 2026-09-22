@@ -336,7 +336,7 @@ function ScheduleDetailSheet({
         contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: barInset, gap: 16 }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled">
-        <SettingsGroup className="bg-secondary">
+        <SettingsGroup>
           <SettingsRow label="Runs" value={oneOff ? describeRunAt(trigger.run_at) : describeCron(trigger.cron)} />
           {!oneOff && trigger.cron ? <SettingsRow label="Cron" value={trigger.cron} /> : null}
           {!oneOff && trigger.timezone ? <SettingsRow label="Time zone" value={trigger.timezone} /> : null}
@@ -347,7 +347,7 @@ function ScheduleDetailSheet({
         <AgentPickerField projectId={projectId} value={trigger.agent} onChange={handleAgentChange} flush />
         <ModelPickerField projectId={projectId} value={trigger.model} onChange={handleModelChange} flush />
 
-        <SettingsGroup className="bg-secondary">
+        <SettingsGroup>
           <SettingsRow label="Last fired" value={relativeTime(trigger.last_fired_at)} />
           <SettingsRow label="Source" value={trigger.path} />
         </SettingsGroup>

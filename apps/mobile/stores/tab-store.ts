@@ -42,7 +42,6 @@ export const PAGE_TABS: Record<string, PageTab> = {
   'page:connectors':        { id: 'page:connectors',        label: 'Connectors' },
   'page:secrets-nav':       { id: 'page:secrets-nav',       label: 'Secrets' },
   'page:schedules':         { id: 'page:schedules',         label: 'Schedules' },
-  'page:webhooks':          { id: 'page:webhooks',          label: 'Webhooks' },
   'page:changes':           { id: 'page:changes',           label: 'Changes' },
   'page:review':            { id: 'page:review',            label: 'Review' },
   'page:files-nav':         { id: 'page:files-nav',         label: 'Files' },

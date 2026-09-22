@@ -12,7 +12,6 @@ export { ConversationSection } from './ConversationSection';
 export { BottomNav } from './BottomNav';
 export { ProfileSection } from './ProfileSection';
 export { SettingsPage } from '../settings/SettingsPage';
-export { TierBadge } from './TierBadge';
 
 export type {
   Conversation,

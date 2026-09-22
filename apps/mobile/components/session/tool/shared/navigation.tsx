@@ -6,7 +6,7 @@
  * `ServicePreviewActions` / `ServicePreviewViewport` /
  * `ServicePreviewUrlFallback` / `InlineServicePreview`, adapted to mobile's
  * mechanisms:
- * - a FILE opens in `FileViewer` (the modal every other file-open on mobile
+ * - a FILE opens in `FilePreviewSheet` (the sheet every other file-open on mobile
  *   uses) through `useToolFilePreviewStore` — web's `useFilePreviewStore`
  *   equivalent. `ToolFilePreviewHost` renders that viewer and must be mounted
  *   once per screen that shows tool rows (the session screen);
@@ -19,17 +19,22 @@
  * opens the Browser tab instead of an embedded page.
  */
 
-import { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Linking, View } from 'react-native';
 import { create } from 'zustand';
 import { isProxiableLocalhostUrl, parseLocalhostUrl } from '@kortix/sdk';
 import type { SandboxFile } from '@/api/types';
-import { FileViewer } from '@/components/files/FileViewer';
+import { FilePreviewSheet, type PreviewFile } from '@/components/files/FilePreviewSheet';
+import type { SheetRef } from '@/components/kortix/sheet';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
+import { useColorScheme } from 'nativewind';
+
+import { ResultRow } from './result-row';
 import { useSandboxContext } from '@/contexts/SandboxContext';
-import { ArrowSquareOutIcon, GlobeIcon } from '@/lib/icons';
+import { THEME } from '@/lib/utils/theme';
+import { ArrowSquareOutIcon, CaretRightIcon, GlobeIcon, MonitorIcon } from '@/lib/icons';
 import { getSandboxPortUrl } from '@/lib/platform/client';
 import { webSpace } from '@/lib/session/user-message';
 import { useTabStore } from '@/stores/tab-store';
@@ -56,28 +61,33 @@ export const useToolFilePreviewStore = create<ToolFilePreviewState>()((set) => (
 }));
 
 /**
- * The one `FileViewer` tool rows open files into. Mount it once on the screen
- * that renders the transcript; without it `openFile` records the request and
- * nothing opens.
+ * The one file preview tool rows open files into: `FilePreviewSheet`, the
+ * sheet Recent files opens (Jay, 2026-09-22 — never the full-screen
+ * `FileViewer` again). Mount it once on the screen that renders the
+ * transcript; without it `openFile` records the request and nothing opens.
+ *
+ * No "Add to chat" here: that button writes a mention into the composer, which
+ * only `SessionChatInput` owns.
  */
 export function ToolFilePreviewHost() {
   const path = useToolFilePreviewStore((s) => s.path);
   const closePreview = useToolFilePreviewStore((s) => s.closePreview);
-  const { sandboxId, sandboxUrl } = useSandboxContext();
-  const file = useMemo<SandboxFile | null>(() => {
+  const { sandboxUrl } = useSandboxContext();
+  const sheetRef = useRef<SheetRef>(null);
+  const file = useMemo<PreviewFile | null>(() => {
     if (!path) return null;
     const fullPath = path.startsWith('/') ? path : `/workspace/${path}`;
-    return { name: fullPath.split('/').pop() || fullPath, path: fullPath, type: 'file' } as SandboxFile;
+    return { name: fullPath.split('/').pop() || fullPath, path: fullPath };
   }, [path]);
 
+  // The store is the source of truth: a row's tap sets the path, which opens
+  // the sheet; the sheet's close clears it.
+  useEffect(() => {
+    if (file) sheetRef.current?.open();
+  }, [file]);
+
   return (
-    <FileViewer
-      visible={Boolean(file)}
-      onClose={closePreview}
-      file={file}
-      sandboxId={sandboxId ?? ''}
-      sandboxUrl={sandboxUrl}
-    />
+    <FilePreviewSheet ref={sheetRef} file={file} sandboxUrl={sandboxUrl} onDismiss={closePreview} />
   );
 }
 
@@ -238,6 +248,32 @@ export function ServicePreviewActions({ preview }: { preview: ServicePreviewStat
   );
 }
 
+/**
+ * A running app in the transcript: ONE row, the same shape as a `show`
+ * output's row (COR-107; Jay, 2026-09-22). It replaces the old block — a mono
+ * URL strip with a globe, a grey viewport box, an outline button repeating the
+ * label, and two more controls — which asked the reader to find the target
+ * among five elements. The row is the target: a screen glyph, "App preview",
+ * the port under it, a chevron. The token-bearing proxy URL is never shown.
+ */
+export function ServicePreviewRow({ preview, url }: { preview: ServicePreviewState; url: string }) {
+  const { displayLabel, navigationEnabled, previewUrl, navigateToPreviewTab } = preview;
+  const disabled = !navigationEnabled || !previewUrl;
+  const parsed = parseLocalhostUrl(url);
+  const where = parsed
+    ? `localhost:${parsed.port}${parsed.path && parsed.path !== '/' ? parsed.path : ''}`
+    : 'Live preview';
+
+  return (
+    <ResultRow
+      icon={MonitorIcon}
+      title={displayLabel && displayLabel !== url ? displayLabel : 'App preview'}
+      subtitle={where}
+      onPress={disabled ? undefined : navigateToPreviewTab}
+    />
+  );
+}
+
 /** The tappable body of a preview: label + Open. Never renders the token-bearing URL. */
 export function ServicePreviewUrlFallback({ preview }: { preview: ServicePreviewState }) {
   const palette = useTurnPalette();
@@ -255,9 +291,11 @@ export function ServicePreviewUrlFallback({ preview }: { preview: ServicePreview
   );
 }
 
-export function ServicePreviewViewport({ preview }: { preview: ServicePreviewState }) {
+export function ServicePreviewViewport({ preview, url = '' }: { preview: ServicePreviewState; url?: string }) {
   const palette = useTurnPalette();
   const fill = useContext(ToolSurfaceContext) === 'panel';
+  // In the transcript the preview IS the row; only the panel draws a viewport.
+  if (!fill) return <ServicePreviewRow preview={preview} url={url} />;
   return (
     <View
       style={{
@@ -276,6 +314,8 @@ export function ServicePreviewViewport({ preview }: { preview: ServicePreviewSta
 export function InlineServicePreview({ url, label }: { url: string; label?: string }) {
   const palette = useTurnPalette();
   const preview = useServicePreview(url, label);
+  const fill = useContext(ToolSurfaceContext) === 'panel';
+  if (!fill) return <ServicePreviewRow preview={preview} url={url} />;
   return (
     <View style={{ overflow: 'hidden' }}>
       <View

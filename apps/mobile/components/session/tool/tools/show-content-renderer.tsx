@@ -15,10 +15,10 @@
  *
  * Differences from web (no in-app viewer for these on mobile):
  * - video → a poster (`Play` well · file name); tap opens it: a sandbox file in
- *   `FileViewer`, a URL in the browser. `expo-video` is not installed;
+ *   the file sheet, a URL in the browser. `expo-video` is not installed;
  * - audio → the web layout with an "Open" button in place of `<audio>`;
  * - PDF / DOCX / PPTX / XLSX / CSV file → web's `FileCard`; tap opens
- *   `FileViewer` full screen. Inline CSV content prints as mono text;
+ *   the file sheet. Inline CSV content prints as mono text;
  * - a generic sandbox file reads its text (`useOpenCodeFileContent`) and
  *   renders markdown or highlighted code capped at 420 (web: a fixed 420 box).
  *
@@ -31,7 +31,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react';
-import { Image, Linking, Pressable, View } from 'react-native';
+import { Image, Linking, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTypes';
 import { useColorScheme } from 'nativewind';
@@ -71,6 +71,8 @@ export const SHOW_MEDIA_HEIGHT = 420;
 const SHOW_HTML_HEIGHT = 540;
 /** Web `px-5` / `py-5`. */
 const TEXT_PAD = webSpace(5);
+/** Pressed feedback on a tappable image or link (same value as the image-search grid). */
+const PRESSED_OPACITY = 0.8;
 
 export type ShowLoadStatus = 'loading' | 'ready' | 'error';
 
@@ -251,7 +253,7 @@ function HtmlPreview({ html, title, aspectRatio, fill }: { html: string; title: 
 /** Web's hero link card: favicon well · title · domain · description · `ArrowSquareOut`. */
 function LinkCard({ url, title, description, fill }: { url: string; title: string; description: string; fill: boolean }) {
   const palette = useTurnPalette();
-  const { openExternal } = useToolNavigation();
+  const { enabled, openExternal } = useToolNavigation();
   const [faviconFailed, setFaviconFailed] = useState(false);
   const favicon = wsFavicon(url);
   const domain = showDomain(url);
@@ -260,6 +262,7 @@ function LinkCard({ url, title, description, fill }: { url: string; title: strin
       <PressableSurface
         accessibilityRole="link"
         accessibilityLabel={title || domain}
+        disabled={!enabled}
         onPress={() => openExternal(url)}
         style={({ pressed }) => ({
           flexDirection: 'row',
@@ -413,9 +416,15 @@ export function ShowContentRenderer({
       const directUri = !imagePath ? safeExternalUrl : null;
       if (directUri) {
         return framed(
-          <Pressable accessibilityRole="imagebutton" accessibilityLabel={title || fileName || 'Image'} onPress={() => openExternal(directUri)}>
+          <PressableSurface
+            accessibilityRole="imagebutton"
+            accessibilityLabel={title || fileName || 'Image'}
+            disabled={!navigationEnabled}
+            onPress={() => openExternal(directUri)}
+            style={({ pressed }) => ({ opacity: pressed ? PRESSED_OPACITY : 1 })}
+          >
             <Image source={{ uri: directUri }} resizeMode="contain" style={{ width: '100%', height: mediaHeight ?? '100%' }} />
-          </Pressable>,
+          </PressableSurface>,
         );
       }
       if (image.phase === 'probing') return <RendererFallback height={mediaHeight} />;
@@ -432,11 +441,12 @@ export function ShowContentRenderer({
       if (image.source) {
         const source = image.source;
         return framed(
-          <Pressable
+          <PressableSurface
             accessibilityRole="imagebutton"
             accessibilityLabel={title || fileName}
             disabled={!navigationEnabled}
             onPress={() => openFile(path)}
+            style={({ pressed }) => ({ opacity: pressed ? PRESSED_OPACITY : 1 })}
           >
             <Image
               key={image.attempt}
@@ -446,7 +456,7 @@ export function ShowContentRenderer({
               resizeMethod="resize"
               style={{ width: '100%', height: mediaHeight ?? '100%' }}
             />
-          </Pressable>,
+          </PressableSurface>,
         );
       }
       return <FileCard title={title} fileName={fileName} path={path} />;
@@ -599,7 +609,12 @@ export function ShowContentRenderer({
       ) : null}
       {path && !content ? <MonoLine icon={FileIcon}>{path}</MonoLine> : null}
       {safeExternalUrl && !content ? (
-        <Pressable accessibilityRole="link" onPress={() => openExternal(safeExternalUrl)}>
+        <PressableSurface
+          accessibilityRole="link"
+          disabled={!navigationEnabled}
+          onPress={() => openExternal(safeExternalUrl)}
+          style={({ pressed }) => ({ opacity: pressed ? PRESSED_OPACITY : 1 })}
+        >
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: TURN_SPACE.gap1_5 }}>
             <ArrowSquareOutIcon size={TURN_SPACE.caret} color={palette.foreground} />
             <Text
@@ -610,7 +625,7 @@ export function ShowContentRenderer({
               {safeExternalUrl}
             </Text>
           </View>
-        </Pressable>
+        </PressableSurface>
       ) : null}
       {url && !safeExternalUrl && !content ? <MonoLine icon={GlobeIcon}>{url}</MonoLine> : null}
     </View>

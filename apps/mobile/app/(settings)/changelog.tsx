@@ -92,7 +92,7 @@ export default function ChangelogScreen() {
       showsVerticalScrollIndicator={false}
       contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
     >
-      <View className="px-5 pt-2 pb-4">
+      <View className="px-4 pt-2 pb-4">
         {/* Header */}
         <Text className="text-2xl font-roobert-semibold text-foreground">Changelog</Text>
         <View className="mt-1 flex-row items-center">
@@ -200,7 +200,7 @@ export default function ChangelogScreen() {
       </View>
 
       {/* Changelog entries */}
-      <View className="px-5" style={{ gap: 16 }}>
+      <View className="px-4" style={{ gap: 16 }}>
         {isLoading && (
           <View className="py-12 items-center">
             <ActivityIndicator size="small" />

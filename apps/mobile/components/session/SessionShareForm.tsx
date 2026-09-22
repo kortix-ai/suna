@@ -114,7 +114,7 @@ export function SessionShareForm({ projectId, session, onDone }: SessionShareFor
   return (
     <View className="gap-4 px-4">
       {/* `bg-secondary`: in dark mode `card` equals the sheet's `popover`. */}
-      <SettingsGroup className="bg-secondary">
+      <SettingsGroup>
         {MODE_OPTIONS.map((option) => (
           <SettingsRow
             key={option.mode}
@@ -144,7 +144,7 @@ export function SessionShareForm({ projectId, session, onDone }: SessionShareFor
               <Text variant="muted">No other members yet</Text>
             </View>
           ) : (
-            <SettingsGroup className="bg-secondary">
+            <SettingsGroup>
               {sortedMembers.map((member) => {
                 const name = member.email ?? member.user_id;
                 return (

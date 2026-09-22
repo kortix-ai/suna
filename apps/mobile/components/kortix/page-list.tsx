@@ -1,6 +1,6 @@
 /**
  * PageList — the scrolling list of a project tool page (Agents, Skills,
- * Schedules, Webhooks, Secrets): one place for its states and its edges, so
+ * Schedules, Secrets): one place for its states and its edges, so
  * every list page reads the same (Jay, 2026-09-22).
  *
  * - loading: three `Skeleton` rows. Never an `ActivityIndicator`.

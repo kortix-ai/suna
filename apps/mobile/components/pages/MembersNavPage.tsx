@@ -216,7 +216,7 @@ function InviteSheet({ projectId, onClose }: { projectId: string; onClose: () =>
           onSubmitEditing={submit}
           editable={!invite.isPending}
         />
-        <SettingsGroup title="Role" className="bg-secondary">
+        <SettingsGroup title="Role">
           {ROLES.map((r) => (
             <SettingsRow
               key={r}
@@ -257,14 +257,14 @@ function PendingInviteSheet({
     <View className="flex-1">
       <SheetTitleRow title={invite.email} onClose={() => { haptics.tap(); onClose(); }} />
       <View className="gap-4 px-4 pt-1" style={{ paddingBottom: insets.bottom + 24 }}>
-        <SettingsGroup className="bg-secondary">
+        <SettingsGroup>
           <SettingsRow label="Role" value={ROLE_DESC[invite.project_role]?.label ?? invite.project_role} />
           <SettingsRow
             label={invite.invite_expired ? 'Link expired' : 'Link expires'}
             value={invite.invite_expired ? undefined : formatDate(invite.invite_expires_at)}
           />
         </SettingsGroup>
-        <SettingsGroup className="bg-secondary">
+        <SettingsGroup>
           <SettingsRow
             icon={RefreshCw}
             label={resend.isPending ? 'Sending…' : 'Resend invitation'}

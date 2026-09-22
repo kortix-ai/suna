@@ -37,7 +37,6 @@ import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ListIcon as MenuIcon, XIcon as CloseIcon, ListIcon, XIcon, PaperPlaneTiltIcon, ArrowUpIcon, ArrowDownIcon, CaretUpIcon, CaretDownIcon, DotsThreeIcon } from '@/lib/icons';
 import { MenuButton } from '@/components/kortix/menu-button';
-import { PlatformButton } from '@/components/kortix/platform-button';
 import { FLOATING_MENU_CLEARANCE, FloatingMenuButton } from '@/components/session/FloatingMenuButton';
 import { AgentPill } from '@/components/session/AgentPill';
 import { ProjectHeaderActions } from '@/components/session/ProjectHeaderActions';
@@ -1804,12 +1803,13 @@ const SCROLL_BUTTON_EASING = ReanimatedEasing.bezier(0.23, 1, 0.32, 1);
 
 /**
  * ScrollToBottomButton — apps/web `session-chat.tsx`'s chevron: a round glass
- * button centred above the composer, shown once the reader is more than 120pt
+ * button at the bottom-right corner, directly above the composer, shown once the reader is more than 120pt
  * of content away from the end. Opacity + scale 0.97 → 1, `duration-normal`
  * in, `duration-fast` out. Tapping glides to the end and follows from there.
  *
- * iOS 26+ draws native Liquid Glass (web `liquid-glass`); elsewhere the
- * `secondary` round button, the closest token to web's 45% `secondary` glass.
+ * The `secondary` round button with a 1pt `border-border` ring on every
+ * platform (Jay, 2026-09-22), so it separates from the prose scrolling under
+ * it. No native Liquid Glass: SwiftUI glass cannot carry the border.
  */
 function ScrollToBottomButton({ visible, onPress }: { visible: boolean; onPress: () => void }) {
   const progress = useSharedValue(visible ? 1 : 0);
@@ -1831,17 +1831,20 @@ function ScrollToBottomButton({ visible, onPress }: { visible: boolean; onPress:
       pointerEvents={visible ? 'box-none' : 'none'}
       accessibilityElementsHidden={!visible}
       importantForAccessibility={visible ? 'auto' : 'no-hide-descendants'}
-      // 16pt above the 24pt fade that overlaps the bottom of the list.
-      style={[{ position: 'absolute', left: 0, right: 0, bottom: 40, alignItems: 'center', zIndex: 20 }, style]}
+      // Bottom-right, directly above the composer: the 16pt project edge
+      // (`px-4`) on the right; 8pt above the 24pt fade that overlaps the
+      // bottom of the list — lower, and the fade would paint over it.
+      style={[{ position: 'absolute', right: 16, bottom: 10, zIndex: 20 }, style]}
     >
-      <PlatformButton
-        glass
-        systemImage="chevron.down"
-        icon={CaretDownIcon}
-        fallbackVariant="secondary"
+      <Button
+        variant="secondary"
+        size="icon"
+        className="rounded-full border border-border"
         accessibilityLabel="Scroll to bottom"
         onPress={onPress}
-      />
+      >
+        <Icon as={CaretDownIcon} size={20} />
+      </Button>
     </Reanimated.View>
   );
 }

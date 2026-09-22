@@ -60,7 +60,6 @@ import { ClockCounterClockwiseIcon as ClockCounterClockwiseGlyph } from 'phospho
 import { ClockIcon as ClockGlyph } from 'phosphor-react-native/src/icons/Clock';
 import { CodeIcon as CodeGlyph } from 'phosphor-react-native/src/icons/Code';
 import { CodeSimpleIcon as CodeSimpleGlyph } from 'phosphor-react-native/src/icons/CodeSimple';
-import { CoinsIcon as CoinsGlyph } from 'phosphor-react-native/src/icons/Coins';
 import { CompassIcon as CompassGlyph } from 'phosphor-react-native/src/icons/Compass';
 import { CpuIcon as CpuGlyph } from 'phosphor-react-native/src/icons/Cpu';
 import { CreditCardIcon as CreditCardGlyph } from 'phosphor-react-native/src/icons/CreditCard';
@@ -130,7 +129,6 @@ import { GearSixIcon as GearSixGlyph } from 'phosphor-react-native/src/icons/Gea
 import { GitBranchIcon as GitBranchGlyph } from 'phosphor-react-native/src/icons/GitBranch';
 import { GitCommitIcon as GitCommitGlyph } from 'phosphor-react-native/src/icons/GitCommit';
 import { GitDiffIcon as GitDiffGlyph } from 'phosphor-react-native/src/icons/GitDiff';
-import { GitForkIcon as GitForkGlyph } from 'phosphor-react-native/src/icons/GitFork';
 import { GitMergeIcon as GitMergeGlyph } from 'phosphor-react-native/src/icons/GitMerge';
 import { GitPullRequestIcon as GitPullRequestGlyph } from 'phosphor-react-native/src/icons/GitPullRequest';
 import { GithubLogoIcon as GithubLogoGlyph } from 'phosphor-react-native/src/icons/GithubLogo';
@@ -221,7 +219,6 @@ import { TagIcon as TagGlyph } from 'phosphor-react-native/src/icons/Tag';
 import { TargetIcon as TargetGlyph } from 'phosphor-react-native/src/icons/Target';
 import { TerminalIcon as TerminalGlyph } from 'phosphor-react-native/src/icons/Terminal';
 import { TerminalWindowIcon as TerminalWindowGlyph } from 'phosphor-react-native/src/icons/TerminalWindow';
-import { TextAlignLeftIcon as TextAlignLeftGlyph } from 'phosphor-react-native/src/icons/TextAlignLeft';
 import { TextTIcon as TextTGlyph } from 'phosphor-react-native/src/icons/TextT';
 import { TimerIcon as TimerGlyph } from 'phosphor-react-native/src/icons/Timer';
 import { TrashIcon as TrashGlyph } from 'phosphor-react-native/src/icons/Trash';
@@ -298,7 +295,6 @@ export const ClockCounterClockwiseIcon = withAppWeight(ClockCounterClockwiseGlyp
 export const ClockIcon = withAppWeight(ClockGlyph, 'ClockIcon');
 export const CodeIcon = withAppWeight(CodeGlyph, 'CodeIcon');
 export const CodeSimpleIcon = withAppWeight(CodeSimpleGlyph, 'CodeSimpleIcon');
-export const CoinsIcon = withAppWeight(CoinsGlyph, 'CoinsIcon');
 export const CompassIcon = withAppWeight(CompassGlyph, 'CompassIcon');
 // Web's own copy glyph (apps/web src/features/icon/icons/copy.tsx), not Phosphor's Copy.
 export { KortixCopyIcon as CopyIcon } from './kortix-copy';
@@ -370,7 +366,6 @@ export const GearSixIcon = withAppWeight(GearSixGlyph, 'GearSixIcon');
 export const GitBranchIcon = withAppWeight(GitBranchGlyph, 'GitBranchIcon');
 export const GitCommitIcon = withAppWeight(GitCommitGlyph, 'GitCommitIcon');
 export const GitDiffIcon = withAppWeight(GitDiffGlyph, 'GitDiffIcon');
-export const GitForkIcon = withAppWeight(GitForkGlyph, 'GitForkIcon');
 export const GitMergeIcon = withAppWeight(GitMergeGlyph, 'GitMergeIcon');
 export const GitPullRequestIcon = withAppWeight(GitPullRequestGlyph, 'GitPullRequestIcon');
 export const GithubLogoIcon = withAppWeight(GithubLogoGlyph, 'GithubLogoIcon');
@@ -463,7 +458,6 @@ export const TagIcon = withAppWeight(TagGlyph, 'TagIcon');
 export const TargetIcon = withAppWeight(TargetGlyph, 'TargetIcon');
 export const TerminalIcon = withAppWeight(TerminalGlyph, 'TerminalIcon');
 export const TerminalWindowIcon = withAppWeight(TerminalWindowGlyph, 'TerminalWindowIcon');
-export const TextAlignLeftIcon = withAppWeight(TextAlignLeftGlyph, 'TextAlignLeftIcon');
 export const TextTIcon = withAppWeight(TextTGlyph, 'TextTIcon');
 export const TimerIcon = withAppWeight(TimerGlyph, 'TimerIcon');
 export const TrashIcon = withAppWeight(TrashGlyph, 'TrashIcon');

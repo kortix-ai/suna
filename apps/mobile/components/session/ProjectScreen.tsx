@@ -166,9 +166,6 @@ const Pages = {
   get SchedulesPage(): typeof import('@/components/pages/SchedulesPage').SchedulesPage {
     return require('@/components/pages/SchedulesPage').SchedulesPage;
   },
-  get WebhooksPage(): typeof import('@/components/pages/WebhooksPage').WebhooksPage {
-    return require('@/components/pages/WebhooksPage').WebhooksPage;
-  },
   get ChangesPage(): typeof import('@/components/pages/ChangesPage').ChangesPage {
     return require('@/components/pages/ChangesPage').ChangesPage;
   },
@@ -1125,8 +1122,6 @@ export function ProjectScreen() {
             <Pages.SecretsNavPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
           ) : activePageId === 'page:schedules' && PAGE_TABS[activePageId] ? (
             <Pages.SchedulesPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
-          ) : activePageId === 'page:webhooks' && PAGE_TABS[activePageId] ? (
-            <Pages.WebhooksPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
           ) : activePageId === 'page:changes' && PAGE_TABS[activePageId] ? (
             <Pages.ChangesPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
           ) : activePageId === 'page:review' && PAGE_TABS[activePageId] ? (

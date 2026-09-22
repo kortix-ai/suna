@@ -11,9 +11,9 @@
  *   the session on screen is highlighted), then Previous chats. Pages of 50
  *   load as the list nears its end; a pull refreshes it. The Sessions pill
  *   opens the same list with search and groups.
- * - Pinned bottom bar over a fade of the drawer surface: New session (large
- *   primary pill) · the user's profile photo (→ the Account page at
- *   /projects/[id]/account).
+ * - Pinned bottom bar over a fade of the drawer surface: the user's profile
+ *   photo in its plan's gradient ring (`PlanRingAvatar`; → the Account page at
+ *   /projects/[id]/account) · New session (large primary pill).
  *
  * Every action closes the drawer first. The Projects list opens only with
  * `router.replace('/projects')`: the project replaced the list when it
@@ -59,7 +59,8 @@ import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { KortixLogo } from '@/components/kortix/KortixLogo';
 import { LegacyChatsSection } from '@/components/menu/LegacyChatsSection';
 import { SessionStatusMark } from '@/components/session/SessionStatusMark';
-import { ProfilePicture } from '@/components/settings/ProfilePicture';
+import { PlanRingAvatar } from '@/components/settings/PlanRingAvatar';
+import { useActivePlanName } from '@/hooks/useActivePlanName';
 import { useProfileEditor } from '@/hooks/useProfileEditor';
 import { haptics } from '@/lib/haptics';
 import { useProjectSessionsPaged } from '@/lib/projects/hooks';
@@ -225,6 +226,8 @@ export function ProjectLeftDrawer({
   }, [hasNextPage, isFetchingNextPage, refreshing, fetchNextPage]);
   // The Account page's photo and name, so both surfaces show the same person.
   const profile = useProfileEditor();
+  // The avatar's ring colour.
+  const planName = useActivePlanName();
 
   // The bar's controls sit 16pt above the safe-area edge (home indicator).
   const barBottom = insets.bottom + BAR_BOTTOM_GAP;
@@ -419,7 +422,7 @@ export function ProjectLeftDrawer({
         </Animated.View>
       </View>
 
-      {/* Pinned bottom bar: New session · avatar, over a fade of the drawer
+      {/* Pinned bottom bar: avatar · New session, over a fade of the drawer
           surface. Touches on the transparent top of the fade reach the rows. */}
       <View
         pointerEvents="box-none"
@@ -435,23 +438,27 @@ export function ProjectLeftDrawer({
           pointerEvents="box-none"
           className="absolute inset-x-0 flex-row items-center justify-between px-5"
           style={{ bottom: barBottom }}>
+          {/* Avatar left, New session right (Jay, 2026-09-23). The avatar
+              wears its plan's gradient ring. */}
+          <Pressable
+            onPress={goToAccount}
+            accessibilityRole="button"
+            accessibilityLabel={planName ? `Account, ${planName} plan` : 'Account'}
+            hitSlop={2}
+            className="rounded-full active:opacity-70">
+            <PlanRingAvatar
+              imageUrl={profile.avatarUrl}
+              fallbackText={profile.displayName}
+              planName={planName}
+              size={BAR_CONTROL_HEIGHT}
+              gapColor={chrome}
+            />
+          </Pressable>
           <Button size="lg" className="rounded-full" onPress={handleNewSession}>
             {/* Web's New session glyph (project-sidebar.tsx), flipped horizontally: tip up-right. */}
             <Icon as={NavigationArrowIcon} size={20} style={{ transform: [{ scaleX: -1 }] }} />
             <Text>New session</Text>
           </Button>
-          <Pressable
-            onPress={goToAccount}
-            accessibilityRole="button"
-            accessibilityLabel="Account"
-            hitSlop={2}
-            className="rounded-full active:opacity-70">
-            <ProfilePicture
-              imageUrl={profile.avatarUrl}
-              size={BAR_CONTROL_HEIGHT / 4}
-              fallbackText={profile.displayName}
-            />
-          </Pressable>
         </View>
       </View>
     </View>

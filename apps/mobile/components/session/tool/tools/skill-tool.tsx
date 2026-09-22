@@ -2,7 +2,7 @@
  * `skill`. Port of apps/web `tool/tools/skill-tool.tsx` — the same disclosure
  * as Read / Edit:
  * - trigger: `FileDashed` · "Skill" · the skill name; tapping the name opens
- *   `SKILL.md` in `FileViewer` (web: the session preview) whenever a document
+ *   `SKILL.md` in the file sheet (web: the session preview) whenever a document
  *   path resolves (`@kortix/sdk` `skillDocumentPath`);
  * - body: a JSON failure → `ToolOutputFallback`; otherwise the document in a
  *   `ToolMarkdownCard` (frontmatter as a key/value card) and the listed files

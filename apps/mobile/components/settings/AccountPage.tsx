@@ -39,10 +39,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import Constants from 'expo-constants';
+import { useColorScheme } from 'nativewind';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { KortixLogo } from '@/components/kortix/KortixLogo';
 import {
   AppearanceRow,
   SettingsGroup,
@@ -64,7 +67,7 @@ import { useAuthContext, useLanguage } from '@/contexts';
 import { useAccountDeletionStatus } from '@/hooks/useAccountDeletion';
 import { useActiveAccount } from '@/hooks/useActiveAccount';
 import { useProfileEditor } from '@/hooks/useProfileEditor';
-import { useAccountState } from '@/lib/billing/hooks';
+import { useActivePlanName } from '@/hooks/useActivePlanName';
 import { haptics } from '@/lib/haptics';
 
 export interface AccountPageProps {
@@ -95,17 +98,7 @@ export function AccountPage({ presentation, onOpenMenu }: AccountPageProps) {
 
   const { account: activeAccount } = useActiveAccount();
   // Plan of the active account, shown as the plan badge next to the email.
-  // Same plan name as BillingPage's Current plan row: the API's trial-aware
-  // plan label first, then the stored tier name.
-  const accountStateQuery = useAccountState({
-    accountId: activeAccount?.account_id ?? undefined,
-    enabled: !!activeAccount,
-  });
-  const accountState = accountStateQuery.data;
-  const subscription = accountState?.subscription;
-  const planName =
-    accountState?.plan?.label ||
-    (subscription ? subscription.tier_display_name || subscription.tier_key || 'Basic' : undefined);
+  const planName = useActivePlanName();
 
   const { data: deletionStatus } = useAccountDeletionStatus({ enabled: !!user });
   // Hidden when the backend endpoint is unsupported (web parity).
@@ -172,10 +165,9 @@ export function AccountPage({ presentation, onOpenMenu }: AccountPageProps) {
   return (
     <View className="flex-1 bg-background">
       {isTab ? null : (
-        <SettingsHeader title={title} gutter="project" onOpenMenu={onOpenMenu} />
+        <SettingsHeader title={title} onOpenMenu={onOpenMenu} />
       )}
       <SettingsPage
-        gutter={isTab ? 'page' : 'project'}
         paddingBottom={isTab ? tabBarClearance : undefined}
         contentInsetAdjustmentBehavior={isTab ? TAB_SCROLL_INSET_ADJUSTMENT : undefined}
         header={
@@ -265,6 +257,8 @@ export function AccountPage({ presentation, onOpenMenu }: AccountPageProps) {
             />
           </SettingsGroup>
         )}
+
+        <AppVersionFooter />
       </SettingsPage>
 
       <EditProfileSheet
@@ -353,6 +347,27 @@ function ProfileHeader({
           {name}
         </Text>
       ) : null}
+    </View>
+  );
+}
+
+/**
+ * The page's last line, centred (Jay, 2026-09-23): the Kortix logomark and the
+ * app version, `v{x.y.z}` from `app.json` `expo.version`
+ * (`Constants.expoConfig.version` — the same value in a store build, an OTA
+ * update, and Expo Go, unlike `nativeApplicationVersion`, which reports Expo
+ * Go's own version there). No version, no text.
+ */
+function AppVersionFooter() {
+  const { colorScheme } = useColorScheme();
+  const version = Constants.expoConfig?.version;
+  return (
+    <View
+      className="flex-row items-center justify-center gap-2 py-8"
+      accessible
+      accessibilityLabel={version ? `Kortix version ${version}` : 'Kortix'}>
+      <KortixLogo variant="logomark" size={14} color={colorScheme === 'dark' ? 'dark' : 'light'} className="opacity-50" />
+      {version ? <Text variant="muted">v{version}</Text> : null}
     </View>
   );
 }

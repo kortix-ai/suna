@@ -181,10 +181,9 @@ export function BillingPage({ visible, onChangePlan }: BillingPageProps) {
   };
 
   const subscription = accountState?.subscription;
-  // The API's trial-aware plan label first, then the stored tier name.
-  const planName =
-    accountState?.plan?.label ||
-    (subscription ? subscription.tier_display_name || subscription.tier_key || 'Basic' : '');
+  // The API's trial-aware plan family: Free, Team or Enterprise. Legacy tier
+  // names are not shown (Jay, 2026-09-23).
+  const planName = accountState?.plan?.label ?? '';
   const nextBillingDate = subscription?.current_period_end
     ? formatDate(subscription.current_period_end)
     : null;

@@ -14,11 +14,11 @@
  * the project's versions (branches) in a sheet.
  *
  * The segment switcher is a pinned bar over a fade of the page (the project
- * drawer's bottom bar, `PinnedBar`), not a control under the header: a
- * `PlatformSegmentedTabs` (native segmented control on iOS) fills the row,
- * and the `+` sits beside it as a separate control in the same row
- * (Jay, 2026-09-22). List rows don't scale down on press here — the list is
- * scanned and tapped often enough that the shrink read as lag.
+ * drawer's bottom bar, `PinnedBar`), not a control under the header: three
+ * pill `Button`s — the active one `default`, the others `ghost` (Jay,
+ * 2026-09-23; the segmented control looked off on Android) — and the `+`
+ * beside them in the same row. The list is one `SettingsGroup` of
+ * `SettingsRow`s, the app's list (Jay, 2026-09-23).
  */
 import * as React from 'react';
 import { RefreshControl, ScrollView, View, useWindowDimensions } from 'react-native';
@@ -33,11 +33,9 @@ import {
 } from '@kortix/sdk';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ListRow } from '@/components/kortix/list-row';
 import { PageContent } from '@/components/kortix/page-content';
 import { PageHeader } from '@/components/kortix/page-header';
 import { PinnedBar, usePinnedBarInset } from '@/components/kortix/pinned-bar';
-import { PlatformSegmentedTabs } from '@/components/kortix/platform-segmented-tabs';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import {
   type SheetRef,
@@ -211,44 +209,62 @@ export function ReviewPage({
                 <Text variant="muted">{EMPTY_TITLE[segment]}</Text>
               </View>
             ) : (
-              visible.map((item, index) => {
-                const risk = reviewRiskLabel(item.risk);
-                const meta = [item.agent, formatReviewAge(item.createdAt), risk].filter(Boolean).join(' · ');
-                return (
-                  <ListRow
-                    key={item.id}
-                    title={item.title}
-                    subtitle={item.summary ? `${item.summary} · ${meta}` : meta}
-                    left={
-                      <Icon
-                        as={REVIEW_KIND_ICONS[item.kind]}
-                        size={20}
-                        color={toneColor(reviewItemTone(item.kind, item.status))}
+              // Settings rows in a group (Jay, 2026-09-23): the app's list, as on
+              // Agents, Skills and Schedules — not `ListRow`.
+              <View className="px-4 pt-1">
+                <SettingsGroup>
+                  {visible.map((item) => {
+                    const risk = reviewRiskLabel(item.risk);
+                    const meta = [item.agent, formatReviewAge(item.createdAt), risk].filter(Boolean).join(' · ');
+                    return (
+                      <SettingsRow
+                        key={item.id}
+                        leading={
+                          <Icon
+                            as={REVIEW_KIND_ICONS[item.kind]}
+                            size={20}
+                            color={toneColor(reviewItemTone(item.kind, item.status))}
+                          />
+                        }
+                        label={item.title}
+                        description={item.summary ? `${item.summary} · ${meta}` : meta}
+                        onPress={() => openItem(item.id)}
                       />
-                    }
-                    divider={index < visible.length - 1}
-                    onPress={() => openItem(item.id)}
-                    scaleOnPress={false}
-                  />
-                );
-              })
+                    );
+                  })}
+                </SettingsGroup>
+              </View>
             )}
           </ScrollView>
 
-          {/* Pinned bottom bar: the segment tabs · `+`, over a fade of the
-              page — the project drawer's bottom bar, same values. */}
+          {/* Pinned bottom bar: the segments · `+`, over a fade of the
+              page — the project drawer's bottom bar, same values. The
+              segments are plain pill Buttons, not a tab list (Jay,
+              2026-09-23: the segmented control looked off on Android):
+              the active one `default`, the others `ghost`. */}
           <PinnedBar controlHeight={BAR_CONTROL_HEIGHT} background={pageBackground} className="gap-2 px-4">
-            <PlatformSegmentedTabs
-              segments={REVIEW_SEGMENTS.map(({ key, label }) => ({
-                key,
-                // Only "Needs you" shows a count: it's the actionable queue.
-                // Waiting/Done are informational and stay uncluttered.
-                label: key === 'needs_you' && counts[key] > 0 ? `${label} ${counts[key]}` : label,
-                accessibilityLabel: `${label}, ${counts[key]}`,
-              }))}
-              value={segment}
-              onValueChange={setSegment}
-            />
+            <View className="flex-1 flex-row items-center gap-1" accessibilityRole="tablist">
+              {REVIEW_SEGMENTS.map(({ key, label }) => {
+                const active = key === segment;
+                return (
+                  <Button
+                    key={key}
+                    variant={active ? 'default' : 'ghost'}
+                    className="rounded-full"
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: active }}
+                    accessibilityLabel={`${label}, ${counts[key]}`}
+                    onPress={() => {
+                      if (active) return;
+                      haptics.selection();
+                      setSegment(key);
+                    }}>
+                    {/* Only "Needs you" shows a count: it's the actionable queue. */}
+                    <Text>{key === 'needs_you' && counts[key] > 0 ? `${label} ${counts[key]}` : label}</Text>
+                  </Button>
+                );
+              })}
+            </View>
             <Button
               variant="secondary"
               size="icon"

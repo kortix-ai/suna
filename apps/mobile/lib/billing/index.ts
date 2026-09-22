@@ -93,7 +93,6 @@ export type { RevenueCatProduct } from './revenuecat';
 // =============================================================================
 // PLAN UTILITIES
 // =============================================================================
-export { getPlanName, getPlanIcon } from './plan-utils';
 
 export { logAvailableProducts, findPackageForTier } from './revenuecat-utils';
 export { debugRevenueCat, isRevenueCatWorking } from './debug-revenuecat';

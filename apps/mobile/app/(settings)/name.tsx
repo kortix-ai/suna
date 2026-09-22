@@ -100,7 +100,7 @@ export default function NameEditScreen() {
       contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
       keyboardShouldPersistTaps="handled"
     >
-      <View className="px-5 pb-8">
+      <View className="px-4 pb-8">
         <View className="mb-6 items-center pt-3">
           <ProfilePicture
             imageUrl={user?.user_metadata?.avatar_url}

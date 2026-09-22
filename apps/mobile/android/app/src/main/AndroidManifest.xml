@@ -1,8 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
   <uses-permission android:name="android.permission.INTERNET"/>
-  <!-- expo-audio's own AndroidManifest.xml (node_modules/expo-audio/android/src/main/AndroidManifest.xml)
-       declares this permission and is merged in on every build; expo-audio is used only for sound
-       playback (lib/sounds.ts), never recording, so force it out of the merged manifest. -->
   <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" tools:node="remove"/>
   <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" tools:replace="android:maxSdkVersion"/>
   <uses-permission android:name="android.permission.VIBRATE"/>

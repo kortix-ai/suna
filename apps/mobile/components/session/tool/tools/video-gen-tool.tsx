@@ -7,7 +7,7 @@
  * Mobile addition: when the output names a video (a sandbox path or a direct
  * URL), a poster card sits above the output — `Video` glyph · file name ·
  * "Open". `expo-video` is not installed, so nothing plays inline: a sandbox
- * video opens in `FileViewer` (full screen, share/download), a URL opens in
+ * video opens in the app's file sheet (Download), a URL opens in
  * the browser.
  */
 

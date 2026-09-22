@@ -135,7 +135,7 @@ export default function InstancesScreen() {
         contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
       >
-        <View className="px-5 pt-1">
+        <View className="px-4 pt-1">
           {/* Instances */}
           {((instances && instances.length > 0) || creatingProgress) && (
             <View className="px-1">

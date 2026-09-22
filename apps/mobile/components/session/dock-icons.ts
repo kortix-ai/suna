@@ -8,7 +8,6 @@ import {
   RobotIcon as Bot,
   FolderOpenIcon as FolderOpen,
   KeyIcon as Key,
-  LinkSimpleIcon as Link2,
   PencilIcon as Pencil,
   GearSixIcon as Settings,
   SparkleIcon as Sparkles,
@@ -34,7 +33,6 @@ export const DOCK_ICONS: Record<DockIconKey, AppIcon> = {
   review: SealCheck,
   secrets: Key,
   // project sheet, more
-  webhooks: Link2,
   members: Users,
   terminal: Terminal,
 };

@@ -62,7 +62,7 @@ Kortix-specific: 23 files, built on top of `components/ui/`. **There is no
 | `sheet.tsx` | `<Sheet>` bottom-sheet wrapper + `SheetHeader`/`SheetBody`/`SheetFooter`, and the shared gorhom chrome — `SheetBackdrop`, `sheetHandleIndicatorStyle(isDark)`, `useSheetBackground()`. See **Bottom sheets** invariant below. |
 | `SheetInput.tsx` | Canonical pill text field for inside a bottom sheet (wraps gorhom's `BottomSheetTextInput`). |
 | `pill-input.tsx` | `PillInput` — the same pill on a plain `TextInput`, for full screens outside a sheet (the auth forms). Forwards its ref. Exports `usePillInputStyle`, the one source of the pill's look for both fields. |
-| `settings-list.tsx` | `SettingsHeader` / `SettingsPage` / `SettingsGroup` / `SettingsRow` / `AppearanceToggle` — the only layout for settings-style screens ((settings) stack, Account tab, Accounts, Billing): back-button header (optional centred + transparent variant), page with an optional full-bleed `hero` above a rounded sheet, sentence-case group title, borderless `rounded-2xl` card, full-width separators, icon · label · trailing rows, `AppearanceRow` (opens a System/Light/Dark dialog with a check on the active mode). See `design.md` → Settings screens. |
+| `settings-list.tsx` | `SettingsHeader` / `SettingsPage` / `SettingsGroup` / `SettingsRow` / `AppearanceToggle` — the only layout for settings-style screens ((settings) stack, Account tab, Accounts, Billing): back-button header (optional centred + transparent variant), page with an optional full-bleed `hero` above a rounded sheet, sentence-case group title, borderless `rounded-2xl` card, full-width separators, icon · label · trailing rows, `AppearanceRow` (opens a System/Light/Dark dialog with a check on the active mode). Inside a sheet, a group's rows take `SHEET_ROW_SURFACE` (`bg-secondary dark:bg-background`) from `SurfaceContext` (`surface-context.ts`) automatically — never pass a row fill there. See `design.md` → Settings screens. |
 | `search-header.tsx` | `SearchHeader` — iOS-style search mode for a screen header: filled 40pt pill (magnifier, auto-focused field, round clear button) + Cancel. A screen swaps its header row for it (projects header search). |
 | `platform-button.tsx` | `PlatformButton` — native SwiftUI button (`@expo/ui`, plain style on the `secondary` fill; no Liquid Glass, its shadow clips) on iOS, design-system `Button` with `rounded-full` on Android. Used for the projects "New" button and the settings Go back button. Same file: `PlatformFullWidthButton` — a full-width pill (label centred, `leading` React Native element pinned to the left edge) drawn natively on iOS in the design-system variant's tokens (`default` / `outline`, `size` `lg` / `xl`), design-system `Button` elsewhere; used by the auth welcome screen's three sign-in pills. Both fall back to the design-system button when the running binary lacks the `ExpoUI` native module (OTA-safe). |
 | `KortixLogo.tsx` | Brand mark / wordmark, light and dark SVG variants. |
@@ -79,7 +79,7 @@ Kortix-specific: 23 files, built on top of `components/ui/`. **There is no
 | `StopIcon.tsx` | Stop-square SVG icon used on the composer's stop button. |
 | `OfflineBanner.tsx` | Global connectivity banner (slides in on disconnect / brief "Back online" flash). |
 | `selectable-markdown.tsx` | Selectable markdown text via `@expensify/react-native-live-markdown`. |
-| `toast.tsx` / `toast-provider.tsx` | Toast primitive + provider/context. `useToast()` returns the toast functions: `const toast = useToast(); toast.error(...)`. |
+| `toast.tsx` / `toast-provider.tsx` | The toast seam. `sonner-native` renders toasts (Jay, 2026-09-22); `toast-provider.tsx` owns `useToast()` and mounts `<Toaster>`, `toast.tsx` owns the Kortix look, `lib/ui/toast-model.ts` owns durations/haptics. `const toast = useToast(); toast.error(...)`. Never import `sonner-native` in a screen. See design.md §11 |
 
 Plurality rule: if you find yourself writing the same `className` string on more
 than one `<Text>`, you are doing it wrong — that styling already exists as a
@@ -109,6 +109,7 @@ ships exactly these 12 — there is **no** `label` variant:
 - ✅ `<Text variant="muted">Forgot your password?</Text>`
 - ❌ `<Text className="font-roobert text-[13px] text-muted-foreground">…`
 - Inside a `<Button>`, just render `<Text>…</Text>` — the button styles it via `TextClassContext`.
+- `small` is `leading-none` (14pt line for 14pt text). With `numberOfLines` it clips the descenders of g, p, y on Android. Give a one-line `small` `className="leading-5"` (text-sm's 20pt; Jay, 2026-09-23).
 - Only add a `className` to `Text` for **layout** (`mt-3`, `text-center`) or a genuinely one-off color on a fixed-palette surface (e.g. always-dark hero). Never for size/weight that a variant already encodes.
 - Need an eyebrow / field-label style? There is no `label` variant. Use
   `@/components/ui/label` for form labels, or an explicit one-off className

@@ -128,7 +128,7 @@ export function AuditTab({ account }: { account: AccountDetail; isDark?: boolean
   };
 
   const filters = (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} className="-mx-5" contentContainerClassName="px-5">
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} className="-mx-4" contentContainerClassName="px-4">
       <ToggleGroup
         type="single"
         value={String(filterIndex)}

@@ -771,7 +771,7 @@ export function MessageAttachments({
 /**
  * One sent attachment. An image in the sandbox loads through `useSandboxImage`
  * (HEAD probe, tap-to-load above the size limit); until it loads, or when it
- * fails, the tile is the named tile. Tapping opens the file in FileViewer.
+ * fails, the tile is the named tile. Tapping opens the file in the file sheet.
  */
 function MessageAttachmentTile({
   file,

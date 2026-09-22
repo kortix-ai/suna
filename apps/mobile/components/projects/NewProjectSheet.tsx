@@ -239,7 +239,7 @@ export function NewProjectSheet({ open, accountId: initialAccountId, accounts, o
         <Animated.View key="account" entering={PUSH_IN} style={{ flex: 1 }}>
           <SheetTitleRow title="Account" onClose={close} leading={<SheetBackButton onPress={back} />} />
           <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
-            <SettingsGroup className="bg-secondary">
+            <SettingsGroup>
               {creatable.map((a) => (
                 <SettingsRow
                   key={a.account_id}
@@ -279,7 +279,7 @@ export function NewProjectSheet({ open, accountId: initialAccountId, accounts, o
               </View>
             ) : (
               <>
-                <SettingsGroup className="bg-secondary">
+                <SettingsGroup>
                   {installations.map((inst) => (
                     <SettingsRow
                       key={inst.installation_id ?? inst.owner_login ?? ''}
@@ -319,7 +319,7 @@ export function NewProjectSheet({ open, accountId: initialAccountId, accounts, o
                     No repositories found
                   </Text>
                 ) : (
-                  <SettingsGroup className="bg-secondary">
+                  <SettingsGroup>
                     {filteredRepos.map((repo) => (
                       <SettingsRow
                         key={repo.id}
@@ -380,7 +380,7 @@ export function NewProjectSheet({ open, accountId: initialAccountId, accounts, o
               editable={!submitting}
             />
 
-            <SettingsGroup className="bg-secondary">
+            <SettingsGroup>
               {creatable.length > 1 && (
                 <SettingsRow
                   icon={UserIcon}

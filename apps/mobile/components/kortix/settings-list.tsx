@@ -42,12 +42,20 @@ import { MenuButton } from '@/components/kortix/menu-button';
 import { PlatformButton } from '@/components/kortix/platform-button';
 import { haptics } from '@/lib/haptics';
 import { cn } from '@/lib/utils/index';
+import { SHEET_ROW_SURFACE, SurfaceContext } from '@/components/kortix/surface-context';
 import { useThemeStore, type ThemePreference } from '@/stores/theme-store';
 
 /**
  * Side padding of a settings-style screen. `page` is the app default (20pt);
  * `project` is the 16pt edge (`px-4`) of every page inside a project
  * (Jay, 2026-09-16), the same as the project home composer.
+ */
+/**
+ * A screen's side margin. `project` (16pt) is the default and what every
+ * settings-style screen uses, so a settings page, an account page and the
+ * project's own Account page share one edge (Jay, 2026-09-22 — the 20pt
+ * `page` screens read as a different app beside it). `page` (20pt) is kept
+ * for a surface that deliberately sits wider.
  */
 export type Gutter = 'page' | 'project';
 const GUTTER_CLASS: Record<Gutter, string> = {
@@ -69,7 +77,7 @@ export function SettingsHeader({
   align = 'start',
   transparent = false,
   largeTitle = false,
-  gutter = 'page',
+  gutter = 'project',
 }: {
   title: string;
   showBack?: boolean;
@@ -159,7 +167,7 @@ export function SettingsHeader({
   );
 }
 
-/** Scrollable screen body: 20pt side margins (12pt with `gutter="project"`), 18pt between groups. */
+/** Scrollable screen body: 16pt side margins (`gutter="project"`, the default — every settings-style screen matches the project's Account page; Jay, 2026-09-22), 18pt between groups. */
 export function SettingsPage({
   children,
   header,
@@ -167,7 +175,7 @@ export function SettingsPage({
   paddingBottom,
   contentInsetAdjustmentBehavior,
   refreshControl,
-  gutter = 'page',
+  gutter = 'project',
 }: {
   children: React.ReactNode;
   /** Side padding: `page` 20pt (`px-5`), `project` 12pt (`px-3`) on project pages. */
@@ -227,14 +235,20 @@ export function SettingsGroup({
   title,
   className,
   children,
+  parentClassName,
 }: {
   title?: string;
-  /** Row surface override — e.g. `bg-background` on a `bg-popover` dialog. */
+  /**
+   * Row surface override. Rarely needed: inside `KortixBottomSheetModal` the
+   * rows take `SHEET_ROW_SURFACE` on their own, elsewhere `bg-card`.
+   */
   className?: string;
   children: React.ReactNode;
+  parentClassName?: string;
 }) {
   // toArray drops null / false, so conditional rows (`{cond && <SettingsRow/>}`) just work.
   const rows = React.Children.toArray(children).filter(React.isValidElement);
+  const surface = React.useContext(SurfaceContext);
   if (rows.length === 0) return null;
 
   return (
@@ -244,15 +258,16 @@ export function SettingsGroup({
           {title}
         </Text>
       ) : null}
-      <View style={{ gap: ROW_GAP }}>
+      <View style={{ gap: ROW_GAP }} className={cn('rounded-2xl overflow-hidden', parentClassName)}>
         {rows.map((row, i) => (
           // `overflow-hidden` clips the row's pressed fill to the tile's corners.
           <View
             key={row.key ?? i}
             className={cn(
-              'overflow-hidden rounded-sm bg-card',
-              i === 0 && 'rounded-t-2xl',
-              i === rows.length - 1 && 'rounded-b-2xl',
+              'overflow-hidden rounded-sm',
+              surface === 'sheet' ? SHEET_ROW_SURFACE : 'bg-card',
+              // i === 0 && 'rounded-t-2xl',
+              // i === rows.length - 1 && 'rounded-b-2xl',
               className
             )}>
             {row}
@@ -303,6 +318,13 @@ export interface SettingsRowProps {
   destructive?: boolean;
   /** Wraps a long label onto more lines instead of truncating it (plan feature lists). */
   multiline?: boolean;
+  /**
+   * Tighter row: `py-2` instead of `py-3`, and the description sits directly
+   * under the label. For a row inside the TRANSCRIPT (a `show` output), where
+   * a settings screen's breathing room reads as a gap in the conversation
+   * (Jay, 2026-09-22). A settings screen never sets it.
+   */
+  dense?: boolean;
 }
 
 const TRAILING_ICON_SIZE = 16;
@@ -325,6 +347,7 @@ export function SettingsRow({
   badge,
   destructive = false,
   multiline = false,
+  dense = false,
 }: SettingsRowProps) {
   const trailing =
     right !== undefined ? (
@@ -369,7 +392,7 @@ export function SettingsRow({
           : undefined
       }
       className="active:bg-accent">
-      <View className="flex-row items-center px-4 py-3">
+      <View className={cn('flex-row items-center px-4', dense ? 'py-2' : 'py-3')}>
         {/* Leading slot is at least 20pt wide so icon rows share one label line.
             A row without leading content drops the slot and its gap entirely. */}
         {leadingContent ? (
@@ -394,7 +417,7 @@ export function SettingsRow({
             ) : null}
           </View>
           {description ? (
-            <Text variant="muted" className="mt-0.5" numberOfLines={1}>
+            <Text variant="muted" className={dense ? undefined : 'mt-0.5'} numberOfLines={1}>
               {description}
             </Text>
           ) : null}
@@ -463,7 +486,8 @@ export function AppearanceRow() {
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>
           </DialogHeader>
-          <SettingsGroup className="bg-secondary">
+          {/* The dialog is `bg-popover`, the sheet colour. */}
+          <SettingsGroup className={SHEET_ROW_SURFACE}>
             {APPEARANCE_OPTIONS.map((option) => (
               <SettingsRow
                 key={option.value}

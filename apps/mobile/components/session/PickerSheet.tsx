@@ -130,7 +130,7 @@ export const PickerSheet = React.forwardRef<SheetRef, PickerSheetProps>(
                   {section.title}
                 </Text>
               ) : null}
-              <SettingsGroup className="bg-secondary">
+              <SettingsGroup>
                 {section.options.map((option) => (
                   <SettingsRow
                     key={option.key}

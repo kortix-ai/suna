@@ -20,8 +20,11 @@ export function web(steps: number): number {
 
 /** Web type ramp (`app/globals.css` `--text-*`), [fontSize, lineHeight]. */
 export const TYPE = {
-  /** `.kortix-markdown` root: `text-[15px]`, paragraphs `leading-relaxed`. */
-  body: { fontSize: 15, lineHeight: 24.38 },
+  /**
+   * Chat prose. Web's `.kortix-markdown` root is `text-[15px]`; mobile reads
+   * one step up at 16px (Jay, 2026-09-22), `leading-relaxed` (1.625) = 26.
+   */
+  body: { fontSize: 16, lineHeight: 26 },
   xs: { fontSize: 13, lineHeight: 16 },
   sm: { fontSize: 14, lineHeight: 20 },
   base: { fontSize: 16, lineHeight: 24 },
@@ -180,7 +183,7 @@ export const BLOCK_MARGINS: Record<BlockKind, { top: number; bottom: number }> =
   table: { top: web(5), bottom: web(5) },
   hr: { top: web(6), bottom: web(6) },
   code: { top: web(5), bottom: web(5) },
-  /** `$$` display math: KaTeX's `.katex-display { margin: 1em 0 }` at the 15px body size. */
+  /** `$$` display math: KaTeX's `.katex-display { margin: 1em 0 }` at the body size. */
   math: { top: TYPE.body.fontSize, bottom: TYPE.body.fontSize },
 };
 
