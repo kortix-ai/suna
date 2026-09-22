@@ -180,6 +180,9 @@ export interface ProjectConfigSummary {
       kortix_permissions?: string[] | 'all';
       /** @deprecated Renamed to `kortix_permissions` (same value). Removed in the next major. */
       kortix_cli: string[] | 'all';
+      /** Kortix Apps (by slug) the agent may open when restricted/private.
+       *  `[]` = none. Absent on servers released before 2026-09-22 (= none). */
+      apps?: string[] | 'all';
     };
   }>;
   skills: Array<{ name: string; path: string; description: string | null }>;

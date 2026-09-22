@@ -61,6 +61,10 @@ export interface AgentConfigBlock {
   connectors_personal?: string[];
   secrets?: AgentGrantSetV2;
   skills?: AgentGrantSetV2;
+  /** Kortix Apps (by App slug) this agent may open when the App is
+   *  `restricted` or `private`. Deny by default. A `project`-mode App needs
+   *  only `project.app.read` in `kortix_permissions`. */
+  apps?: AgentGrantSetV2;
   /** Kortix permissions: the `project.*` actions this agent may exercise. */
   kortix_permissions?: AgentGrantSetV2;
   /** @deprecated Renamed to `kortix_permissions`. Servers accept it as an input
