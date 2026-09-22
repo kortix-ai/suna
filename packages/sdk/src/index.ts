@@ -485,6 +485,15 @@ export {
 } from './core/session-sync/session-sync-controller';
 export * from './core/session/url';
 export * from './core/stream/event-stream';
+// The injectable SSE wire. A host whose `fetch` cannot stream a response body
+// — React Native — installs its own transport here instead of reimplementing
+// reconnect/backoff/heartbeat/coalescing beside this package's copy.
+export {
+  getEventStreamTransport,
+  setEventStreamTransport,
+  type EventStreamTransport,
+  type EventStreamTransportInput,
+} from './core/stream/event-stream-transport';
 export * from './core/stream/fetch-sse';
 export * from './core/turns';
 export * from './transcript';

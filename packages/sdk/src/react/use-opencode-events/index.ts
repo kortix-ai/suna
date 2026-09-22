@@ -325,6 +325,12 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
     // the QueryClient-dependent event handler and the gap-rehydrate hook.
     const handle = openEventStream({
       client,
+      // Where this stream's runtime lives. Only a host that installed an
+      // `EventStreamTransport` (React Native, whose `fetch` cannot stream a
+      // response body) reads it; on web it is inert, because `client` already
+      // carries the same base url. Passing it unconditionally keeps the two
+      // wires pointed at one address instead of letting them drift.
+      url: activeServerUrl,
       // A park is not a verdict about the sandbox — only about the last few
       // attempts. Nothing supplied this callback before, so the stream's
       // documented "terminal for this handle" silently became terminal for the
