@@ -57,6 +57,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Client } from '../core/client';
 import type { FlowContext, Principal } from '../core/types';
+import { waitFor } from '../core/poll';
 
 export interface Db {
   query<R = any>(sql: string, params?: unknown[]): Promise<{ rows: R[]; rowCount: number | null }>;
@@ -235,21 +236,36 @@ export class AgentPrincipalsWorld {
   async serviceAccountId(agent: string): Promise<string> {
     const cached = this.serviceAccounts.get(agent);
     if (cached) return cached;
-    const r = await this.owner.get('/v1/accounts/:accountId/iam/agent-identities', {
-      params: { accountId: this.accountId },
-    });
-    r.status(200);
-    const rows = r.json<{ agents: Array<{ service_account_id: string; project_id: string | null; agent_name: string | null }> }>().agents;
-    for (const row of rows) {
-      if (row.project_id === this.projectId && row.agent_name) {
-        this.serviceAccounts.set(row.agent_name, row.service_account_id);
-      }
+    // `/iam/agent-identities` lists agents from the project's git mirror, which
+    // refreshes on a timer. On a deployed stack an agent committed seconds ago
+    // can be missing for up to one refresh interval, so wait for it.
+    let lastBody = '';
+    const found = await waitFor(
+      async () => {
+        const r = await this.owner.get('/v1/accounts/:accountId/iam/agent-identities', {
+          params: { accountId: this.accountId },
+        });
+        r.status(200);
+        lastBody = r.text();
+        const rows = r.json<{ agents: Array<{ service_account_id: string; project_id: string | null; agent_name: string | null }> }>().agents;
+        for (const row of rows) {
+          if (row.project_id === this.projectId && row.agent_name) {
+            this.serviceAccounts.set(row.agent_name, row.service_account_id);
+          }
+        }
+        return this.serviceAccounts.get(agent) ?? null;
+      },
+      {
+        until: (id) => id !== null,
+        timeoutMs: 120_000,
+        intervalMs: 2_000,
+        description: `service account for agent '${agent}'`,
+      },
+    ).catch(() => null);
+    if (!found) {
+      throw new Error(`agent-identities did not provision a service account for agent '${agent}' in ${this.projectId}: ${lastBody.slice(0, 400)}`);
     }
-    const id = this.serviceAccounts.get(agent);
-    if (!id) {
-      throw new Error(`agent-identities did not provision a service account for agent '${agent}' in ${this.projectId}: ${r.text().slice(0, 400)}`);
-    }
-    return id;
+    return found;
   }
 
   /** Grant `run(human, agent)` — the agent object grant, closed by default. */

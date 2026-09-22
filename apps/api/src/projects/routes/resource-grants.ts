@@ -265,7 +265,16 @@ projectsApp.openapi(
       );
     }
     if (!projectHasResource(config, resourceType, resourceId)) {
-      return c.json({ error: `no ${resourceType} '${resourceId}' in this project` }, 400);
+      // A just-committed agent can be missing from the timer-refreshed mirror.
+      // Read once more from a forced refresh before calling it absent.
+      try {
+        config = await loadConfigWithFiles(loaded.row, { forceRefresh: true });
+      } catch {
+        // Keep the first read; the answer below stays "not found".
+      }
+      if (!projectHasResource(config, resourceType, resourceId)) {
+        return c.json({ error: `no ${resourceType} '${resourceId}' in this project` }, 400);
+      }
     }
 
     const { grantId } = await upsertResourceGrant({
