@@ -99,7 +99,7 @@ describe('boot from a config release', () => {
     expect(runtime).toBeGreaterThan(proof)
     const call = BOOT.slice(proof, BOOT.indexOf('})', BOOT.indexOf('spawnOn:', proof)))
     expect(call).toContain('restoreGovernance: restoreBootGovernance')
-    expect(call).toContain('await opencode.restart()')
+    expect(call).toContain('await opencode.restart({ finalizeTurn: false')
     // A compiled-config process never runs the fetched release.
     expect(BOOT).toContain('opencodeStartedFromCompiledConfig || !bootReleasePromise || bootState.repoMaterializationError')
   })
@@ -111,5 +111,19 @@ describe('boot from a config release', () => {
     expect(runtime).toBeGreaterThan(proof)
     expect(BOOT).toContain("activeConfig.source === 'workspace'")
     expect(BOOT).toContain('quarantinedAtBoot = { releaseId, reason }')
+  })
+
+  test('DEF-4c: a fallback step never waits 60 s for a config that cannot become ready', () => {
+    // Verification 2026-09-22: a fresh session on a broken main spent exactly
+    // 60.0 s on the workspace step (spawn 07:39:33.006 -> next step
+    // 07:40:33.027). restart() waited RESPAWN_FINALIZE_TIMEOUT_MS for readiness
+    // to finalize an orphaned turn; a broken config never becomes ready, and at
+    // boot there is no turn to finalize. Every boot spawnOn skips that wait.
+    const spawnOns = BOOT.split('spawnOn: async (dir) => {').slice(1).map((s) => s.slice(0, s.indexOf('},')))
+    expect(spawnOns.length).toBe(2)
+    for (const body of spawnOns) {
+      expect(body).toContain('await opencode.restart({ finalizeTurn: false })')
+      expect(body).not.toContain('await opencode.restart()')
+    }
   })
 })

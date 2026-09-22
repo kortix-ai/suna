@@ -590,7 +590,7 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
       mark: bootMark,
       spawnOn: async (dir) => {
         harness.configuration.reconfigure(cfg, dir, projectEnv)
-        await opencode.restart()
+        await opencode.restart({ finalizeTurn: false })
         await opencode.waitForCurrentListening()
       },
     }).catch((err) => {
@@ -625,7 +625,7 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
       mark: bootMark,
       spawnOn: async (dir) => {
         harness.configuration.reconfigure(cfg, dir, projectEnv)
-        await opencode.restart()
+        await opencode.restart({ finalizeTurn: false })
         await opencode.waitForCurrentListening()
       },
     }).catch((err) => {

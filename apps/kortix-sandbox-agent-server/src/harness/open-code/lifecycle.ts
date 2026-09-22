@@ -2547,7 +2547,7 @@ export function createOpencodeLifecycle(
       })
     },
 
-    async restart() {
+    async restart(opts?: { finalizeTurn?: boolean }) {
       await this.stop('SIGTERM')
       restartDelayMs = 500
       // A restart is where a freshly converged OpenCode must take effect. The
@@ -2557,6 +2557,10 @@ export function createOpencodeLifecycle(
       // kept running until the daemon itself was relaunched).
       binaryResolutionPromise = null
       await this.start()
+      // At boot no turn exists yet, and the fallback chain restarts OpenCode on
+      // configs that may never become ready. Waiting RESPAWN_FINALIZE_TIMEOUT_MS
+      // there only delays the next step by 60 s (verification DEF-4c).
+      if (opts?.finalizeTurn === false) return
       // A PLANNED restart strands its turn exactly like a crash does, and only
       // the crash path was cleaning up: `proc.on('exit')` returns early while
       // `stopping` is set — which `stop()` sets and this goes through — so

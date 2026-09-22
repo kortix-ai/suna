@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { runningReleaseDir } from './config-release'
+import { configReleaseReport, runningReleaseDir } from './config-release'
 import { execFile } from 'node:child_process'
 import { readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -359,10 +359,17 @@ export function createOpenCodeAssetsService(
   return {
     componentNames: ['opencode'],
     // The overlay goes where opencode READS: the release when the box runs one
-    // (config-release.ts), else the working tree.
+    // (config-release.ts), the image default after a fallback to it, else the
+    // working tree.
     resolveConfigDir: async (cfg) => {
       const release = runningReleaseDir()
-      return release && existsSync(release) ? release : resolveOpencodeConfigDir(requireOpenCodeConfig(cfg))
+      if (release && existsSync(release)) return release
+      const opencodeCfg = requireOpenCodeConfig(cfg)
+      // A box that fell back to the image default does not read the working
+      // tree. Overlaying it there rewrote tracked managed skills in /workspace
+      // (verification DEF-6).
+      if (configReleaseReport().source === 'image-default') return opencodeCfg.defaultOpencodeConfigDir
+      return resolveOpencodeConfigDir(opencodeCfg)
     },
     injectSkills: (configDir, bakedDir) => ensureInjectedManagedSkills(configDir, { bakedDir }),
     reconcile: (input) => reconcileOpenCodeAssets(input, runtime, options),
