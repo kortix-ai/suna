@@ -2,8 +2,15 @@
  * ProjectSessionsPage — every session of a project, at `/projects/[id]/sessions`
  * (opened from the project drawer's Sessions button).
  *
- *   header   SettingsHeader: hamburger row, then the large "Sessions" title
+ *   header   `PageHeader` (Jay, 2026-09-22): hamburger, "Sessions" title, and
+ *            a Filter action at the right — the same header every other
+ *            project tool page uses.
  *   search   SearchListHeader, filters by display title
+ *   filter   Filter sheet (`SettingsGroup` of toggleable status rows: Needs
+ *            you / Running / Starting / Stopped / Failed). Empty selection
+ *            shows every status; toggling narrows the timeline to just the
+ *            checked ones. Basic on purpose — no date range or sort, unlike
+ *            web's fuller filter panel.
  *   list     Today / Yesterday / This week / Older, one `SettingsGroup` of
  *            `SettingsRow`s each (the settings screens' layout); a group's title
  *            shows only when more than one group has sessions.
@@ -21,8 +28,8 @@
  * options (`sheet-push`), with Back to return. Delete confirms in a dialog that
  * opens only after the sheet has closed, so two overlays never stack.
  *
- * No filter, grouping or ordering controls: the list is always newest activity
- * first. Title, status, grouping and relative time come from
+ * The list is always newest activity first (no sort control). Title, status,
+ * grouping, relative time, search and status filtering all come from
  * lib/session/session-list (unit-tested).
  */
 
@@ -34,7 +41,7 @@ import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { useIsFocused } from 'expo-router/react-navigation';
 import { BottomSheetScrollView, type BottomSheetModal } from '@gorhom/bottom-sheet';
 import Animated from 'react-native-reanimated';
-import { NavigationArrowIcon, PencilIcon as Pencil, ArrowCounterClockwiseIcon as RotateCcw, ExportIcon as Share, SquareIcon as Square, TrashIcon as Trash2 } from '@/lib/icons';
+import { FunnelIcon as Funnel, NavigationArrowIcon, PencilIcon as Pencil, ArrowCounterClockwiseIcon as RotateCcw, ExportIcon as Share, SquareIcon as Square, TrashIcon as Trash2 } from '@/lib/icons';
 
 import {
   AlertDialog,
@@ -49,9 +56,11 @@ import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { PageContent } from '@/components/kortix/page-content';
+import { PageHeader } from '@/components/kortix/page-header';
 import { PinnedBar, usePinnedBarInset } from '@/components/kortix/pinned-bar';
 import { SearchListHeader } from '@/components/kortix/search-list-header';
-import { SettingsGroup, SettingsHeader, SettingsRow } from '@/components/kortix/settings-list';
+import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { KortixBottomSheetModal, SheetTitleRow } from '@/components/kortix/sheet';
 import { POP_IN, PUSH_IN, SheetBackButton } from '@/components/kortix/sheet-push';
 import { useToast } from '@/components/kortix/toast-provider';
@@ -69,6 +78,8 @@ import {
   type ProjectSession,
 } from '@/lib/projects/projects-client';
 import {
+  SESSION_STATUS_FILTERS,
+  filterSessionsByStatus,
   filterSessionsByTitle,
   groupSessionsByActivity,
   sessionDisplayStatus,
@@ -77,6 +88,7 @@ import {
   sessionStatusLabel,
   shortRelative,
   spokenRelative,
+  type SessionDisplayStatus,
 } from '@/lib/session/session-list';
 import { THEME } from '@/lib/utils/theme';
 import { useTabStore } from '@/stores/tab-store';
@@ -175,7 +187,7 @@ export function ProjectSessionsPage() {
     setNow(Date.now());
   }, [sessionsQuery.dataUpdatedAt]);
 
-  // ── Search and grouping ──
+  // ── Search, status filter, and grouping ──
   const [query, setQuery] = React.useState('');
   const hasSessions = allSessions.length > 0;
   React.useEffect(() => {
@@ -183,9 +195,29 @@ export function ProjectSessionsPage() {
     if (!hasSessions && query) setQuery('');
   }, [hasSessions, query]);
 
+  // Empty set = no filter (every session passes). The filter sheet toggles
+  // membership; `Clear filters` (shown only when non-empty) resets to it.
+  const [statusFilter, setStatusFilter] = React.useState<Set<SessionDisplayStatus>>(
+    () => new Set()
+  );
+  const filterSheetRef = React.useRef<BottomSheetModal>(null);
+  const toggleStatusFilter = React.useCallback((status: SessionDisplayStatus) => {
+    haptics.selection();
+    setStatusFilter((current) => {
+      const next = new Set(current);
+      if (next.has(status)) next.delete(status);
+      else next.add(status);
+      return next;
+    });
+  }, []);
+  const clearStatusFilter = React.useCallback(() => {
+    haptics.tap();
+    setStatusFilter(new Set());
+  }, []);
+
   const filtered = React.useMemo(
-    () => filterSessionsByTitle(allSessions, query),
-    [allSessions, query]
+    () => filterSessionsByStatus(filterSessionsByTitle(allSessions, query), statusFilter),
+    [allSessions, query, statusFilter]
   );
   const grouped = React.useMemo(() => groupSessionsByActivity(filtered, now), [filtered, now]);
   const sections = React.useMemo<SessionSection[]>(
@@ -396,67 +428,93 @@ export function ProjectSessionsPage() {
   const canManageLifecycle = menuSession?.can_manage_lifecycle !== false;
   const canManageSharing = menuSession?.can_manage_sharing !== false;
 
+  const filterActive = statusFilter.size > 0;
+
   return (
     <View className="flex-1 bg-background">
-      <SettingsHeader title="Sessions" largeTitle gutter="project" onOpenMenu={openDrawer} />
-
-      {loading ? (
-        <View className="flex-1 items-center justify-center" style={{ paddingBottom: insets.bottom }}>
-          <KortixLoader />
-        </View>
-      ) : (
-        <>
-          {hasSessions ? (
-            <SearchListHeader
-              value={query}
-              onChangeText={setQuery}
-              placeholder="Search sessions"
-              inputProps={{ accessibilityLabel: 'Search sessions' }}
-            />
-          ) : null}
-          <FlatList
-            data={sections}
-            keyExtractor={(section) => section.key}
-            renderItem={renderSection}
-            ItemSeparatorComponent={GroupGap}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="on-drag"
-            showsVerticalScrollIndicator={false}
-            onEndReached={onEndReached}
-            onEndReachedThreshold={0.6}
-            ListFooterComponent={
-              isFetchingNextPage ? (
-                <View className="items-center py-4">
-                  <KortixLoader size="small" />
-                </View>
-              ) : null
-            }
-            style={{ flex: 1 }}
-            contentContainerStyle={{
-              flexGrow: 1,
-              paddingHorizontal: 16,
-              paddingTop: 4,
-              // The list scrolls under the pinned New session button; its last
-              // row rests above it.
-              paddingBottom: listBottomInset,
+      <PageHeader
+        title="Sessions"
+        onOpenDrawer={openDrawer}
+        rightActions={
+          <Button
+            variant="ghost"
+            size="icon"
+            className="rounded-full"
+            onPress={() => {
+              haptics.tap();
+              filterSheetRef.current?.present();
             }}
-            ListEmptyComponent={
-              <View className="flex-1 items-center justify-center px-8">
-                <Text variant="muted" className="text-center">
-                  {emptyMessage}
-                </Text>
-              </View>
-            }
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                tintColor={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground}
+            accessibilityLabel="Filter sessions"
+            accessibilityHint="Opens the session status filter">
+            <Icon
+              as={Funnel}
+              size={20}
+              className={filterActive ? 'text-primary' : 'text-foreground'}
+              weight={filterActive ? 'fill' : undefined}
+            />
+          </Button>
+        }
+      />
+
+      <PageContent>
+        {loading ? (
+          <View className="flex-1 items-center justify-center" style={{ paddingBottom: insets.bottom }}>
+            <KortixLoader />
+          </View>
+        ) : (
+          <>
+            {hasSessions ? (
+              <SearchListHeader
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Search sessions"
+                inputProps={{ accessibilityLabel: 'Search sessions' }}
               />
-            }
-          />
-        </>
-      )}
+            ) : null}
+            <FlatList
+              data={sections}
+              keyExtractor={(section) => section.key}
+              renderItem={renderSection}
+              ItemSeparatorComponent={GroupGap}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              showsVerticalScrollIndicator={false}
+              onEndReached={onEndReached}
+              onEndReachedThreshold={0.6}
+              ListFooterComponent={
+                isFetchingNextPage ? (
+                  <View className="items-center py-4">
+                    <KortixLoader size="small" />
+                  </View>
+                ) : null
+              }
+              style={{ flex: 1 }}
+              contentContainerStyle={{
+                flexGrow: 1,
+                paddingHorizontal: 16,
+                paddingTop: 4,
+                // The list scrolls under the pinned New session button; its last
+                // row rests above it.
+                paddingBottom: listBottomInset,
+              }}
+              ListEmptyComponent={
+                <View className="flex-1 items-center justify-center px-8">
+                  <Text variant="muted" className="text-center">
+                    {emptyMessage}
+                  </Text>
+                </View>
+              }
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={onRefresh}
+                  tintColor={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground}
+                />
+              }
+            />
+          </>
+        )}
+      </PageContent>
 
       {/* The project drawer's pinned bar (`PinnedBar`), its New session button at
           the bottom right. Hidden while the page loads. */}
@@ -551,6 +609,37 @@ export function ProjectSessionsPage() {
               )}
             </Animated.View>
           )}
+        </BottomSheetScrollView>
+      </KortixBottomSheetModal>
+
+      {/* Filter: which statuses show in the timeline. Empty selection = every
+          status. A basic, single group of toggleable rows — no date range or
+          sort, unlike web's fuller filter panel. */}
+      <KortixBottomSheetModal ref={filterSheetRef} title="Filter sessions" enableDynamicSizing enablePanDownToClose>
+        <BottomSheetScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: Math.max(insets.bottom, 16) + 8 }}>
+          <SettingsGroup>
+            {SESSION_STATUS_FILTERS.map((status) => (
+              <SettingsRow
+                key={status}
+                leading={<SessionStatusMark status={status} />}
+                label={sessionStatusLabel(status)}
+                checked={statusFilter.has(status)}
+                right={null}
+                onPress={() => toggleStatusFilter(status)}
+              />
+            ))}
+          </SettingsGroup>
+          {filterActive ? (
+            <Button
+              variant="secondary"
+              size="lg"
+              className="mt-4 rounded-full"
+              onPress={clearStatusFilter}>
+              <Text>Clear filters</Text>
+            </Button>
+          ) : null}
         </BottomSheetScrollView>
       </KortixBottomSheetModal>
 

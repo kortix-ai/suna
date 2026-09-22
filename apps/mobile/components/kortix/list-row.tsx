@@ -14,17 +14,23 @@ interface ListRowProps {
   onPress?: () => void; divider?: boolean; className?: string;
   variant?: 'default' | 'destructive';
   disabled?: boolean;
+  /** Press feedback scale-down. Off for a list a person scans quickly and
+   *  taps often (Review's Needs you/Waiting/Done), where the shrink read as
+   *  lag rather than feedback (Jay, 2026-09-22). Default on. */
+  scaleOnPress?: boolean;
 }
 export function ListRow({
   title, subtitle, left, right, onPress, divider = true, className,
-  variant = 'default', disabled,
+  variant = 'default', disabled, scaleOnPress = true,
 }: ListRowProps) {
   const destructive = variant === 'destructive';
   return (
     <PressableSurface
       onPress={onPress}
       disabled={disabled}
-      style={({ pressed }) => (pressed && !disabled ? { transform: [{ scale: 0.98 }] } : undefined)}
+      style={({ pressed }) =>
+        pressed && !disabled && scaleOnPress ? { transform: [{ scale: 0.98 }] } : undefined
+      }
       className={cn(
         'flex-row items-center gap-3 px-4 py-3.5',
         destructive ? 'active:bg-destructive/10' : 'active:bg-foreground/[0.03]',

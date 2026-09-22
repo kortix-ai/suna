@@ -298,6 +298,27 @@ export function filterSessionsByTitle(
   return sessions.filter((session) => sessionDisplayTitle(session).toLowerCase().includes(needle));
 }
 
+/** Every status the Sessions page's filter sheet offers, in display order. */
+export const SESSION_STATUS_FILTERS: SessionDisplayStatus[] = [
+  'needs-you',
+  'running',
+  'starting',
+  'stopped',
+  'failed',
+];
+
+/**
+ * Keeps only sessions whose display status is in `statuses`. An empty set
+ * means "no filter": every session passes, same as an untouched filter sheet.
+ */
+export function filterSessionsByStatus(
+  sessions: ProjectSession[],
+  statuses: ReadonlySet<SessionDisplayStatus>,
+): ProjectSession[] {
+  if (statuses.size === 0) return sessions;
+  return sessions.filter((session) => statuses.has(sessionDisplayStatus(session)));
+}
+
 // ── Recent sessions ───────────────────────────────────────────────────────
 
 /**

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import {
+  filterSessionsByStatus,
   filterSessionsByTitle,
   groupSessionsByActivity,
   recentSessions,
@@ -425,6 +426,40 @@ describe('filterSessionsByTitle', () => {
   test('no match returns an empty array', () => {
     const sessions = [makeSession({ session_id: 'a', name: 'Fix login' })];
     expect(filterSessionsByTitle(sessions, 'nonexistent')).toEqual([]);
+  });
+});
+
+describe('filterSessionsByStatus', () => {
+  test('an empty set returns the input unchanged', () => {
+    const sessions = [makeSession({ session_id: 'a', status: 'running' })];
+    expect(filterSessionsByStatus(sessions, new Set())).toBe(sessions);
+  });
+
+  test('keeps only sessions whose display status is in the set', () => {
+    const sessions = [
+      makeSession({ session_id: 'a', status: 'running' }),
+      makeSession({ session_id: 'b', status: 'failed' }),
+      makeSession({ session_id: 'c', status: 'completed' }),
+    ];
+    expect(
+      filterSessionsByStatus(sessions, new Set(['running', 'failed'])).map((s) => s.session_id),
+    ).toEqual(['a', 'b']);
+  });
+
+  test('completed and stopped both resolve to the stopped filter', () => {
+    const sessions = [
+      makeSession({ session_id: 'a', status: 'completed' }),
+      makeSession({ session_id: 'b', status: 'stopped' }),
+      makeSession({ session_id: 'c', status: 'running' }),
+    ];
+    expect(
+      filterSessionsByStatus(sessions, new Set(['stopped'])).map((s) => s.session_id),
+    ).toEqual(['a', 'b']);
+  });
+
+  test('a set matching nothing returns an empty array', () => {
+    const sessions = [makeSession({ session_id: 'a', status: 'running' })];
+    expect(filterSessionsByStatus(sessions, new Set(['failed']))).toEqual([]);
   });
 });
 
