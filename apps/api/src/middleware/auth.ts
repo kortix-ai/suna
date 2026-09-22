@@ -289,6 +289,10 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
     // Read by requireScope() to gate Kortix CLI/API actions on top of the
     // user's own role — net effect = userRole ∩ agentGrant.
     c.set('agentGrant', result.agentGrant ?? null);
+    // The human this agent session acts on behalf of (null = unattended, or
+    // cleared by another human's prompt). Personal resources only — see
+    // iam/actor.ts `credentialOnBehalfOf` and projects/lib/on-behalf-of.ts.
+    c.set('onBehalfOfUserId', result.onBehalfOfUserId ?? null);
     setSentryUser({ id: result.userId, accountId: result.accountId });
     setContextField('userId', result.userId);
     if (result.accountId) setContextField('accountId', result.accountId);

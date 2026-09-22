@@ -27,6 +27,11 @@ export interface AccountTokenValidationResult {
    *  authorization (which Kortix CLI/API actions + connectors it may use,
    *  already ∩ the launching user). Null = full access (laptop CLI PAT). */
   agentGrant?: AgentGrant | null;
+  /** The human an agent-session token acts on behalf of (spec
+   *  2026-09-22-agents-as-principals §2.3). Null for an unattended run, a
+   *  session another human prompted, and every non-session token. Read fresh
+   *  on every request (this query is not memoized). */
+  onBehalfOfUserId?: string | null;
   error?: string;
 }
 
@@ -48,6 +53,9 @@ export interface CreateAccountTokenParams {
    *  authorizes this session AS the SA (its own policies) ∩ agentGrant, not the
    *  launching user. Null = legacy (authorize as the user). */
   serviceAccountId?: string | null;
+  /** Agent-session tokens only: the human the session acts on behalf of
+   *  (spec 2026-09-22-agents-as-principals §2.3). Null = unattended. */
+  onBehalfOfUserId?: string | null;
 }
 
 export interface CreateAccountTokenResult {
@@ -167,6 +175,7 @@ export async function createAccountToken(
       expiresAt: params.expiresAt ?? null,
       agentGrant: params.agentGrant ?? null,
       serviceAccountId: params.serviceAccountId ?? null,
+      onBehalfOfUserId: params.onBehalfOfUserId ?? null,
     })
     .returning();
 
@@ -409,6 +418,7 @@ export async function validateAccountToken(
         lastUsedAt: accountTokens.lastUsedAt,
         createdAt: accountTokens.createdAt,
         agentGrant: accountTokens.agentGrant,
+        onBehalfOfUserId: accountTokens.onBehalfOfUserId,
         patIdleRevokeDays: accounts.patIdleRevokeDays,
       })
       .from(accountTokens)
@@ -497,6 +507,7 @@ export async function validateAccountToken(
       projectId: row.projectId,
       sessionId: row.sessionId ?? null,
       agentGrant: readStoredAgentGrant(row.agentGrant),
+      onBehalfOfUserId: row.onBehalfOfUserId ?? null,
     };
   } catch (err) {
     console.error('Account token validation error:', err);

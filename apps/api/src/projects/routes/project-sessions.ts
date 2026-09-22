@@ -51,6 +51,12 @@ const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   'trigger_slug',
   'name',
   'title_source',
+  // Agents as principals (spec 2026-09-22 §2.3): the mint reads these to decide
+  // `on_behalf_of`. A client that could set `spawned_by_session` would inherit
+  // another session's human; one that could forge the cleared stamp is harmless
+  // but still not the client's to write.
+  'spawned_by_session',
+  'on_behalf_of_cleared_at',
 ] as const;
 
 const PATCH_SERVER_MANAGED_SESSION_METADATA_KEYS = [

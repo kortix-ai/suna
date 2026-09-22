@@ -33,6 +33,7 @@ import {
   sessionIsTombstoned,
 } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
+import { clearSessionOnBehalfOfForPrompt } from '../lib/on-behalf-of';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { resolveChangeRequestBase, resolveChangeRequestOrigin } from '../change-request-policy';
 import { PROJECT_ACTIONS } from '../../iam';
@@ -615,6 +616,19 @@ projectsApp.openapi(
     // agent and every one after it as any other agent in the manifest. Falls
     // back to the session's own agent when the prompt names none.
     await resolveAndAuthorizeAgent(c, loaded, projectId, overrides.agent, visible.row.agentName);
+
+    // Spec 2026-09-22 §2.3 (closes V6): the first prompt from a HUMAN other than
+    // the session's `on_behalf_of` clears it permanently. The agent keeps its
+    // own authority; it loses the creator's personal resources, so the person
+    // prompting never acts through another person's accounts. An agent-session
+    // credential is not a human prompter and clears nothing.
+    if (!isProjectSessionPrincipal(c)) {
+      await clearSessionOnBehalfOfForPrompt({
+        accountId: loaded.row.accountId,
+        sessionId,
+        prompterUserId: loaded.userId,
+      });
+    }
 
     // NO connector pre-flight here. A prompt used to be refused 409
     // `CONNECTOR_CONNECTION_REQUIRED` when a connector the session declared had
