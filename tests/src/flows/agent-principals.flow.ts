@@ -161,6 +161,36 @@ flow(
     const conflict = manifest({ both: { kortix_cli: ['project.file.read'], kortix_permissions: ['project.secret.read'] } });
     const sandbox = new CliSandbox('agp1');
     try {
+      // Runtime first: the agent-config PUT below reads kortix.yaml through the
+      // project mirror, and GET /iam/agent-identities reads that mirror without
+      // forcing a refresh (up to 60 s stale). Committing the agents after the
+      // PUT made the fixture's service-account lookup see the pre-commit
+      // manifest. Same assertions, order only.
+      await enableFlag(ctx, world);
+
+      let legacy!: AgentSession;
+      let modern!: AgentSession;
+      await ctx.step('commit both spellings; the server stores the canonical `permissions` grant for each agent', async () => {
+        await world.writeManifest(manifest({
+          legacy: { kortix_cli: ['project.file.read'] },
+          modern: { kortix_permissions: ['project.file.read'] },
+        }));
+        legacy = await world.mintAgentSession({ agent: 'legacy', launcher: ctx.P.OWNER });
+        modern = await world.mintAgentSession({ agent: 'modern', launcher: ctx.P.OWNER });
+        for (const s of [legacy, modern]) {
+          if (JSON.stringify(s.grant?.permissions) !== JSON.stringify(['project.file.read'])) {
+            throw new Error(`${s.agent}: stored grant lacks permissions ["project.file.read"]: ${JSON.stringify(s.grant)}`);
+          }
+        }
+      });
+
+      await ctx.step('both agents read files (200) and are refused secrets with 403 agent_scope_insufficient', async () => {
+        for (const s of [legacy, modern]) {
+          (await filesOf(s, world.projectId)).status(200);
+          assertDenial(await secretsOf(s, world.projectId), 'agent_scope_insufficient', 'project.secret.read');
+        }
+      });
+
       await ctx.step('the deprecated kortix_cli key validates, with one warning on agents.legacy.kortix_cli', async () => {
         const r = await validate(alias);
         r.status(200).body().has('$.valid', true);
@@ -204,31 +234,6 @@ flow(
         sandbox.writeFile('kortix.yaml', conflict);
         const bad = await sandbox.run(['validate', '--json', '--no-dockerfile-lint']);
         if (bad.exitCode !== 1) throw new Error(`conflict: expected exit 1, got ${bad.exitCode}: ${bad.all.slice(0, 600)}`);
-      });
-
-      await enableFlag(ctx, world);
-
-      let legacy!: AgentSession;
-      let modern!: AgentSession;
-      await ctx.step('commit both spellings; the server stores the canonical `permissions` grant for each agent', async () => {
-        await world.writeManifest(manifest({
-          legacy: { kortix_cli: ['project.file.read'] },
-          modern: { kortix_permissions: ['project.file.read'] },
-        }));
-        legacy = await world.mintAgentSession({ agent: 'legacy', launcher: ctx.P.OWNER });
-        modern = await world.mintAgentSession({ agent: 'modern', launcher: ctx.P.OWNER });
-        for (const s of [legacy, modern]) {
-          if (JSON.stringify(s.grant?.permissions) !== JSON.stringify(['project.file.read'])) {
-            throw new Error(`${s.agent}: stored grant lacks permissions ["project.file.read"]: ${JSON.stringify(s.grant)}`);
-          }
-        }
-      });
-
-      await ctx.step('both agents read files (200) and are refused secrets with 403 agent_scope_insufficient', async () => {
-        for (const s of [legacy, modern]) {
-          (await filesOf(s, world.projectId)).status(200);
-          assertDenial(await secretsOf(s, world.projectId), 'agent_scope_insufficient', 'project.secret.read');
-        }
       });
     } finally {
       sandbox.dispose();
