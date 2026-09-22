@@ -6,9 +6,11 @@
  * an account token bound by SQL to one project and one session, with a live
  * `session_sandboxes` row. No cloud sandbox runs.
  *
- * On the local target the project repository is a bare repository on disk.
- * The flow commits a config dir into it with the real Git CLI. On a deployed
- * target the project is seeded with the starter, which ships a config dir.
+ * Every flow commits the same config dir onto the project's base branch with
+ * the real Git CLI, so each target asserts the same bytes. On the local target
+ * the repository is a bare repository on disk. On a deployed target it is the
+ * managed repository, reached through the Kortix git proxy
+ * (`/v1/git/<project>.git`) with an OWNER PAT, the way `kortix ship` pushes.
  */
 import { flow } from '../core/flow';
 import type { FlowContext, TeamFixture } from '../core/types';
@@ -19,6 +21,12 @@ const DESCRIPTOR = 'POST /v1/projects/:projectId/sessions/:sessionId/config-rele
 const ARCHIVE = 'GET /v1/projects/:projectId/config-archives/:configTreeId';
 const MINT = 'POST /v1/accounts/tokens';
 const CONFIG_STATE = 'GET /v1/projects/:projectId/sessions/:sessionId/config';
+/** The git proxy routes `commitTo` and `tipOf` use on a deployed target. */
+const GIT_PROXY = [
+  'GET /v1/git/:project/info/refs',
+  'POST /v1/git/:project/git-upload-pack',
+  'POST /v1/git/:project/git-receive-pack',
+];
 
 type Descriptor = {
   format: string;
@@ -39,19 +47,32 @@ interface SessionToken {
   secret: string;
 }
 
+/**
+ * A project's repository as a Git client reaches it: a bare repository path on
+ * the local target, the Kortix git proxy with an OWNER PAT on a deployed one.
+ */
+interface ProjectRepo {
+  projectId: string;
+  url: string;
+  branch: string;
+  /** `git -c` arguments that authenticate every request to `url`. */
+  auth: string[];
+}
+
 interface Fixture {
   ctx: FlowContext;
   db: import('pg').Client;
   team: TeamFixture;
   projectId: string;
-  /** Filesystem path of the bare repository on the local target, else null. */
-  localRepo: string | null;
+  repo: ProjectRepo;
   sessions: string[];
   mint(opts?: { repositoryAccess?: boolean; agentName?: string; projectId?: string; repositoryGeneration?: string }): Promise<SessionToken>;
   descriptor(secret: string | null, sessionId: string, body?: unknown): Promise<{ status: number; body: any }>;
   download(secret: string | null, treeId: string): Promise<{ status: number; bytes: Buffer; source: string | null }>;
-  /** Local target only: commit files onto `main` of the bare repository. Returns the new tip. */
+  /** Commit files onto the base branch of the project repository. Returns the new tip. */
   commit(files: Record<string, string>, message: string): Promise<string>;
+  /** Open another project's repository with the same credential. */
+  openRepo(projectId: string): Promise<ProjectRepo>;
   /** `GET .../sessions/:sessionId/config` as the project owner. */
   configState(sessionId: string): Promise<{ status: number; body: any }>;
   cleanup(): Promise<void>;
@@ -103,7 +124,12 @@ async function run(cmd: string, args: string[], cwd: string, input?: Buffer): Pr
     child.once('close', (code) =>
       code === 0
         ? resolve(Buffer.concat(out))
-        : reject(new Error(`${cmd} ${args.join(' ')} exited ${code}: ${Buffer.concat(err).toString()}`)),
+        : reject(
+            new Error(
+              // A git-proxy credential rides in `-c http.extraHeader=...`; never print it.
+              `${cmd} ${args.map((a) => (/authorization:/i.test(a) ? '<credential>' : a)).join(' ')} exited ${code}: ${Buffer.concat(err).toString()}`,
+            ),
+          ),
     );
     child.stdin.end(input ?? Buffer.alloc(0));
   });
@@ -145,12 +171,41 @@ async function extract(archive: Buffer): Promise<Map<string, Buffer>> {
   }
 }
 
+/** Clone `repo`, write `files`, commit, and push to its base branch. Returns the new tip. */
+async function commitTo(repo: ProjectRepo, files: Record<string, string>, message: string): Promise<string> {
+  const { mkdtemp, mkdir, rm, writeFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { dirname, join } = await import('node:path');
+  const work = await mkdtemp(join(tmpdir(), 'ke2e-cfg-commit-'));
+  try {
+    await run('git', [...repo.auth, 'clone', '-q', '--branch', repo.branch, repo.url, '.'], work);
+    for (const [path, body] of Object.entries(files)) {
+      await mkdir(dirname(join(work, path)), { recursive: true });
+      await writeFile(join(work, path), body);
+    }
+    await run('git', ['add', '-A'], work);
+    await run('git', ['-c', 'user.name=KE2E', '-c', 'user.email=ke2e@kortix.invalid', 'commit', '-qm', message], work);
+    await run('git', [...repo.auth, 'push', '-q', 'origin', `HEAD:refs/heads/${repo.branch}`], work);
+    return (await run('git', ['rev-parse', 'HEAD'], work)).toString().trim();
+  } finally {
+    await rm(work, { recursive: true, force: true });
+  }
+}
+
+/** The tip of `repo`'s base branch, read from the repository itself. */
+async function tipOf(repo: ProjectRepo): Promise<string> {
+  const out = (await run('git', [...repo.auth, 'ls-remote', repo.url, `refs/heads/${repo.branch}`], '/')).toString();
+  const tip = out.split(/\s+/)[0] ?? '';
+  if (!HEX40.test(tip)) throw new Error(`no tip for ${repo.branch} in ${repo.url}: ${out}`);
+  return tip;
+}
+
 async function setup(ctx: FlowContext): Promise<Fixture> {
   const { randomUUID } = await import('node:crypto');
   const { Client: PgClient } = await import('pg');
   const team = await ctx.fixtures.team();
   const local = ctx.env.target === 'local';
-  const project = await team.project(local ? { managedGit: true } : { seed: true });
+  const project = await team.project({ managedGit: true });
   const databaseUrl = ctx.env.databaseUrl!;
   const db = new PgClient({
     connectionString: databaseUrl,
@@ -160,21 +215,34 @@ async function setup(ctx: FlowContext): Promise<Fixture> {
   const sessions: string[] = [];
   const origin = ctx.env.apiUrl.replace(/\/v1$/, '');
 
-  let localRepo: string | null = null;
-  if (local) {
-    const { rows } = await db.query('SELECT repo_url FROM kortix.projects WHERE project_id = $1', [project.id]);
+  // One OWNER PAT authenticates every git-proxy request of this flow. The
+  // proxy accepts a PAT, never a Supabase JWT (`authorizeGitProxy`).
+  let proxyAuth: string[] | null = null;
+  const openRepo = async (projectId: string): Promise<ProjectRepo> => {
+    const { rows } = await db.query('SELECT repo_url, default_branch FROM kortix.projects WHERE project_id = $1', [projectId]);
     const repoUrl = String(rows[0]?.repo_url ?? '');
-    if (!repoUrl.startsWith('/')) throw new Error(`local project repo_url is not a path: ${repoUrl}`);
-    localRepo = repoUrl;
-  }
+    const branch = String(rows[0]?.default_branch || 'main');
+    if (local) {
+      if (!repoUrl.startsWith('/')) throw new Error(`local project repo_url is not a path: ${repoUrl}`);
+      return { projectId, url: repoUrl, branch, auth: [] };
+    }
+    if (!proxyAuth) {
+      const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name('cfg-git') });
+      const basic = Buffer.from(`ke2e:${pat}`).toString('base64');
+      proxyAuth = ['-c', `http.extraHeader=Authorization: Basic ${basic}`];
+    }
+    return { projectId, url: `${origin}/v1/git/${projectId}.git`, branch, auth: proxyAuth };
+  };
+  const repo = await openRepo(project.id);
 
   const fixture: Fixture = {
     ctx,
     db,
     team,
     projectId: project.id,
-    localRepo,
+    repo,
     sessions,
+    openRepo,
     async mint(opts = {}) {
       const sessionId = randomUUID();
       const projectId = opts.projectId ?? project.id;
@@ -232,25 +300,8 @@ async function setup(ctx: FlowContext): Promise<Fixture> {
       } catch {}
       return { status: response.status, body: parsed };
     },
-    async commit(files, message) {
-      if (!localRepo) throw new Error('commit needs the local target');
-      const { mkdtemp, mkdir, rm, writeFile } = await import('node:fs/promises');
-      const { tmpdir } = await import('node:os');
-      const { dirname, join } = await import('node:path');
-      const work = await mkdtemp(join(tmpdir(), 'ke2e-cfg-commit-'));
-      try {
-        await run('git', ['clone', '-q', localRepo, '.'], work);
-        for (const [path, body] of Object.entries(files)) {
-          await mkdir(dirname(join(work, path)), { recursive: true });
-          await writeFile(join(work, path), body);
-        }
-        await run('git', ['add', '-A'], work);
-        await run('git', ['-c', 'user.name=KE2E', '-c', 'user.email=ke2e@kortix.invalid', 'commit', '-qm', message], work);
-        await run('git', ['push', '-q', 'origin', 'HEAD:main'], work);
-        return (await run('git', ['rev-parse', 'HEAD'], work)).toString().trim();
-      } finally {
-        await rm(work, { recursive: true, force: true });
-      }
+    commit(files, message) {
+      return commitTo(repo, files, message);
     },
     async configState(sessionId) {
       const token = (ctx.P.OWNER.auth as { token?: string }).token ?? null;
@@ -314,31 +365,13 @@ async function setup(ctx: FlowContext): Promise<Fixture> {
     },
   };
 
-  if (localRepo) {
-    const { mkdtemp, mkdir, rm, writeFile } = await import('node:fs/promises');
-    const { tmpdir } = await import('node:os');
-    const { dirname, join } = await import('node:path');
-    const work = await mkdtemp(join(tmpdir(), 'ke2e-cfg-work-'));
-    try {
-      await run('git', ['clone', '-q', localRepo, '.'], work);
-      for (const [path, body] of Object.entries(CONFIG_FILES)) {
-        await mkdir(dirname(join(work, path)), { recursive: true });
-        await writeFile(join(work, path), body);
-      }
-      await run('git', ['add', '-A'], work);
-      await run('git', ['-c', 'user.name=KE2E', '-c', 'user.email=ke2e@kortix.invalid', 'commit', '-qm', 'config dir'], work);
-      await run('git', ['push', '-q', 'origin', 'HEAD:main'], work);
-    } finally {
-      await rm(work, { recursive: true, force: true });
-    }
-  }
+  // The same config dir on every target, so every step asserts known bytes.
+  await commitTo(repo, CONFIG_FILES, 'config dir');
   return fixture;
 }
 
-async function baseTip(fixture: Fixture): Promise<string | null> {
-  if (!fixture.localRepo) return null;
-  const out = (await run('git', ['ls-remote', fixture.localRepo, 'refs/heads/main'], '/')).toString();
-  return out.split(/\s+/)[0] ?? null;
+function baseTip(fixture: Fixture): Promise<string> {
+  return tipOf(fixture.repo);
 }
 
 async function assertArchiveMatches(descriptor: Descriptor, bytes: Buffer): Promise<Map<string, Buffer>> {
@@ -366,7 +399,7 @@ flow(
     domain: 'config-releases',
     requires: ['database'],
     timeoutMs: 180_000,
-    routes: [MINT, DESCRIPTOR],
+    routes: [MINT, DESCRIPTOR, ...GIT_PROXY],
   },
   async (ctx) => {
     const fixture = await setup(ctx);
@@ -440,7 +473,7 @@ flow(
         }
       });
       await ctx.step('a well-formed workspace report is accepted (200)', async () => {
-        const head = (await baseTip(fixture)) ?? 'a'.repeat(40);
+        const head = await baseTip(fixture);
         const r = await fixture.descriptor(own.secret, own.sessionId, {
           workspace: {
             head,
@@ -470,7 +503,7 @@ flow(
     domain: 'config-releases',
     requires: ['database'],
     timeoutMs: 240_000,
-    routes: [MINT, DESCRIPTOR, ARCHIVE],
+    routes: [MINT, DESCRIPTOR, ARCHIVE, ...GIT_PROXY],
   },
   async (ctx) => {
     const fixture = await setup(ctx);
@@ -486,7 +519,7 @@ flow(
         if (descriptor.mode !== 'follow-base') throw new Error(`mode ${descriptor.mode}`);
         if (!HEX40.test(descriptor.source_commit)) throw new Error('source_commit is not a commit SHA');
         const tip = await baseTip(fixture);
-        if (tip && descriptor.source_commit !== tip) {
+        if (descriptor.source_commit !== tip) {
           throw new Error(`source_commit ${descriptor.source_commit} is not the base tip ${tip}`);
         }
         if (!descriptor.config_dir || !HEX40.test(descriptor.config_tree_id ?? '')) {
@@ -515,14 +548,12 @@ flow(
         if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${r.bytes.toString().slice(0, 200)}`);
         firstBytes = r.bytes;
         const files = await assertArchiveMatches(descriptor, r.bytes);
-        if (fixture.localRepo) {
-          for (const path of ['opencode.json', 'agents/kortix.md', 'skills/demo/SKILL.md', 'tools/hello.ts']) {
-            if (!files.has(path)) throw new Error(`archive lacks ${path}`);
-          }
-          if (files.get('notes.md')?.toString() !== 'kept verbatim\n') throw new Error('export-ignore dropped notes.md');
-          if (files.get('version.txt')?.toString() !== 'commit $Format:%H$\n') {
-            throw new Error('export-subst rewrote version.txt');
-          }
+        for (const path of ['opencode.json', 'agents/kortix.md', 'skills/demo/SKILL.md', 'tools/hello.ts']) {
+          if (!files.has(path)) throw new Error(`archive lacks ${path}`);
+        }
+        if (files.get('notes.md')?.toString() !== 'kept verbatim\n') throw new Error('export-ignore dropped notes.md');
+        if (files.get('version.txt')?.toString() !== 'commit $Format:%H$\n') {
+          throw new Error('export-subst rewrote version.txt');
         }
       });
 
@@ -531,7 +562,7 @@ flow(
         if (r.status !== 200 || !r.bytes.equals(firstBytes)) throw new Error('the archive bytes changed between downloads');
       });
 
-      if (fixture.localRepo) {
+      if (ctx.env.target === 'local') {
         await ctx.step('local storage is loopback: the API streams, and a later download is served from the store', async () => {
           let source: string | null = null;
           for (let attempt = 0; attempt < 20 && source !== 'store'; attempt += 1) {
@@ -568,12 +599,7 @@ flow(
       });
 
       await ctx.step('a session without repository access gets governance, no archive, and a refused download', async () => {
-        // The starter on a deployed target declares `kortix`; the local fixture
-        // manifest also declares `reviewer`.
-        const restricted = await fixture.mint({
-          repositoryAccess: false,
-          agentName: fixture.localRepo ? 'reviewer' : 'kortix',
-        });
+        const restricted = await fixture.mint({ repositoryAccess: false, agentName: 'reviewer' });
         const r = await fixture.descriptor(restricted.secret, restricted.sessionId);
         if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
         const d = r.body as Descriptor;
@@ -585,7 +611,7 @@ flow(
         if (d.release_id !== governanceOnly) throw new Error(`restricted release_id ${d.release_id} is not sha256(":" + etag)`);
         if (!d.compiled_governance) throw new Error('restricted session lost its compiled governance');
         const agents = Object.keys(JSON.parse(d.compiled_governance).agent ?? {});
-        if (fixture.localRepo && (agents.length !== 1 || agents[0] !== 'reviewer')) {
+        if (agents.length !== 1 || agents[0] !== 'reviewer') {
           throw new Error(`selected-agent governance compiled ${agents.join(',')}`);
         }
         const download = await fixture.download(restricted.secret, descriptor.config_tree_id!);
@@ -604,7 +630,7 @@ flow(
     domain: 'config-releases',
     requires: ['database'],
     timeoutMs: 180_000,
-    routes: [MINT, DESCRIPTOR, ARCHIVE, 'POST /v1/projects/:projectId/secrets'],
+    routes: [MINT, DESCRIPTOR, ARCHIVE, 'POST /v1/projects/:projectId/secrets', ...GIT_PROXY],
   },
   async (ctx) => {
     const { randomBytes } = await import('node:crypto');
@@ -660,14 +686,13 @@ flow(
     domain: 'config-releases',
     requires: ['database'],
     timeoutMs: 240_000,
-    routes: [MINT, DESCRIPTOR],
+    routes: [MINT, DESCRIPTOR, ...GIT_PROXY],
   },
   async (ctx) => {
     const fixture = await setup(ctx);
     try {
-      if (!fixture.localRepo) ctx.skip('the report fixtures commit known bytes into the local bare repository');
       const own = await fixture.mint();
-      const head = (await baseTip(fixture))!;
+      const head = await baseTip(fixture);
       const report = (changed: unknown[], extra: Record<string, unknown> = {}) => ({
         workspace: { head, config_dir: '.kortix/opencode', changed, ...extra },
       });
@@ -769,12 +794,11 @@ flow(
     domain: 'config-releases',
     requires: ['database'],
     timeoutMs: 300_000,
-    routes: [MINT, DESCRIPTOR, ARCHIVE],
+    routes: [MINT, DESCRIPTOR, ARCHIVE, ...GIT_PROXY],
   },
   async (ctx) => {
     const fixture = await setup(ctx);
     try {
-      if (!fixture.localRepo) ctx.skip('the flow commits new base revisions into the local bare repository');
       const a = await fixture.mint();
       const b = await fixture.mint();
       const c = await fixture.mint();
@@ -862,7 +886,7 @@ flow(
     domain: 'config-releases',
     requires: ['database'],
     timeoutMs: 120_000,
-    routes: [MINT, CONFIG_STATE],
+    routes: [MINT, CONFIG_STATE, ...GIT_PROXY],
   },
   async (ctx) => {
     const fixture = await setup(ctx);
@@ -890,23 +914,31 @@ flow(
 );
 
 // ── CFG-7 — a previous-repository session receives no release ──────────────
+//
+// The replacement route (`PUT /v1/projects/:projectId/git/repository`) takes a
+// GitHub credential from the caller: a token, or an installation plus a GitHub
+// user token. The runner holds neither on any target, and a host whose managed
+// git runs on the org-wide PAT refuses to export one (`POST .../git-token` →
+// 503), which is the preview's configuration. PROJ-36 covers the route's
+// validation; `repository-replacement.integration.test.ts` covers its writes.
+// This flow owns what the config-release routes answer AFTER a replacement, so
+// it writes the same columns `persistProjectRepositoryReplacement` writes,
+// pointing the project at a second project's real repository.
 flow(
   'CFG-7',
   {
     domain: 'config-releases',
     requires: ['database'],
-    timeoutMs: 240_000,
-    routes: [MINT, DESCRIPTOR, ARCHIVE, CONFIG_STATE],
+    timeoutMs: 300_000,
+    routes: [MINT, DESCRIPTOR, ARCHIVE, CONFIG_STATE, ...GIT_PROXY],
   },
   async (ctx) => {
     const fixture = await setup(ctx);
-    const { mkdtemp, mkdir, rm, writeFile } = await import('node:fs/promises');
-    const { tmpdir } = await import('node:os');
-    const { dirname, join } = await import('node:path');
     const { randomUUID } = await import('node:crypto');
-    const scratch = await mkdtemp(join(tmpdir(), 'ke2e-cfg-replace-'));
+    // The project's own repository identity, restored before teardown so the
+    // fixture deletes the repository it created and not the second project's.
+    let original: { repo_url: string; default_branch: string; metadata: unknown; connection: unknown } | null = null;
     try {
-      if (!fixture.localRepo) ctx.skip('replacing the repository needs a second local bare repository');
       const old = await fixture.mint();
       let oldDescriptor!: Descriptor;
       await ctx.step('before the replacement the session receives a descriptor', async () => {
@@ -915,33 +947,59 @@ flow(
         oldDescriptor = r.body as Descriptor;
       });
 
-      // The replacement route needs GitHub, which this profile excludes. The
-      // flow writes what `persistProjectRepositoryReplacement` writes: a new
-      // repo_url, default branch, and metadata.repository_generation.
       const generation = randomUUID();
-      const newRepo = join(scratch, 'new.git');
       let newTip = '';
-      await ctx.step('the project repository is replaced with a new generation', async () => {
-        await run('git', ['init', '-q', '--bare', '--initial-branch=main', newRepo], scratch);
-        const work = join(scratch, 'work');
-        await run('git', ['clone', '-q', newRepo, work], scratch);
-        const files = { ...CONFIG_FILES, '.kortix/opencode/agents/kortix.md': '---\ndescription: main agent\nmode: primary\n---\nNEW REPOSITORY.\n' };
-        for (const [path, body] of Object.entries(files)) {
-          await mkdir(dirname(join(work, path)), { recursive: true });
-          await writeFile(join(work, path), body);
-        }
-        await run('git', ['add', '-A'], work);
-        await run('git', ['-c', 'user.name=KE2E', '-c', 'user.email=ke2e@kortix.invalid', 'commit', '-qm', 'new repository'], work);
-        await run('git', ['push', '-q', 'origin', 'HEAD:main'], work);
-        newTip = (await run('git', ['rev-parse', 'HEAD'], work)).toString().trim();
-        await fixture.db.query(
-          `UPDATE kortix.projects
-              SET repo_url = $2, default_branch = 'main',
-                  metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object('repository_generation', $3::text),
-                  updated_at = now()
-            WHERE project_id = $1`,
-          [fixture.projectId, newRepo, generation],
+      await ctx.step("the project repository is replaced by a second project's repository with a new generation", async () => {
+        const other = await fixture.team.project({ managedGit: true });
+        const otherRepo = await fixture.openRepo(other.id);
+        newTip = await commitTo(
+          otherRepo,
+          { ...CONFIG_FILES, '.kortix/opencode/agents/kortix.md': '---\ndescription: main agent\nmode: primary\n---\nNEW REPOSITORY.\n' },
+          'new repository',
         );
+        const { rows } = await fixture.db.query(
+          `SELECT p.repo_url, p.default_branch, p.metadata,
+                  (SELECT row_to_json(c) FROM kortix.project_git_connections c WHERE c.project_id = p.project_id) AS connection,
+                  (SELECT count(*)::int FROM kortix.project_git_connections c WHERE c.project_id = $2) AS other_connections
+             FROM kortix.projects p WHERE p.project_id = $1`,
+          [fixture.projectId, other.id],
+        );
+        const row = rows[0];
+        if (!row) throw new Error('project row missing');
+        if (Boolean(row.connection) !== (row.other_connections === 1)) {
+          throw new Error('the two projects do not both carry a git connection row');
+        }
+        original = { repo_url: row.repo_url, default_branch: row.default_branch, metadata: row.metadata, connection: row.connection };
+        await fixture.db.query('BEGIN');
+        try {
+          await fixture.db.query(
+            `UPDATE kortix.projects a
+                SET repo_url = b.repo_url, default_branch = b.default_branch,
+                    metadata = coalesce(a.metadata, '{}'::jsonb)
+                      || jsonb_strip_nulls(jsonb_build_object('git', b.metadata->'git', 'github', b.metadata->'github'))
+                      || jsonb_build_object('repository_generation', $3::text),
+                    updated_at = now()
+               FROM kortix.projects b
+              WHERE a.project_id = $1 AND b.project_id = $2`,
+            [fixture.projectId, other.id, generation],
+          );
+          await fixture.db.query(
+            `UPDATE kortix.project_git_connections a
+                SET repo_url = b.repo_url, upstream_url = b.upstream_url, repo_owner = b.repo_owner,
+                    repo_name = b.repo_name, external_repo_id = b.external_repo_id,
+                    default_branch = b.default_branch, updated_at = now()
+               FROM kortix.project_git_connections b
+              WHERE a.project_id = $1 AND b.project_id = $2`,
+            [fixture.projectId, other.id],
+          );
+          await fixture.db.query('COMMIT');
+        } catch (error) {
+          await fixture.db.query('ROLLBACK').catch(() => {});
+          throw error;
+        }
+        // The project's own origin now serves the second repository.
+        const tip = await tipOf(await fixture.openRepo(fixture.projectId));
+        if (tip !== newTip) throw new Error(`the project's git origin serves ${tip}, not the new repository's tip ${newTip}`);
       });
 
       await ctx.step('the previous-repository session gets 409 session_repository_changed for the descriptor and the archive', async () => {
@@ -976,8 +1034,30 @@ flow(
         if (!files.get('agents/kortix.md')?.toString().includes('NEW REPOSITORY.')) throw new Error('archive is not from the new repository');
       });
     } finally {
+      const restore = original as { repo_url: string; default_branch: string; metadata: unknown; connection: unknown } | null;
+      if (restore) {
+        await fixture.db
+          .query('UPDATE kortix.projects SET repo_url = $2, default_branch = $3, metadata = $4::jsonb WHERE project_id = $1', [
+            fixture.projectId,
+            restore.repo_url,
+            restore.default_branch,
+            JSON.stringify(restore.metadata),
+          ])
+          .catch(() => {});
+        if (restore.connection) {
+          await fixture.db
+            .query(
+              `UPDATE kortix.project_git_connections c
+                  SET repo_url = r.repo_url, upstream_url = r.upstream_url, repo_owner = r.repo_owner,
+                      repo_name = r.repo_name, external_repo_id = r.external_repo_id, default_branch = r.default_branch
+                 FROM jsonb_populate_record(NULL::kortix.project_git_connections, $2::jsonb) r
+                WHERE c.project_id = $1`,
+              [fixture.projectId, JSON.stringify(restore.connection)],
+            )
+            .catch(() => {});
+        }
+      }
       await fixture.cleanup();
-      await rm(scratch, { recursive: true, force: true });
     }
   },
 );
