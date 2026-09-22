@@ -1598,13 +1598,19 @@
       "message": "O computador dela foi liberado. Reinicie a sessão para reativá-la."
     },
     "previousRepository": {
-      "title": "A sessão usa o repositório anterior",
-      "message": "Este espaço de trabalho começou no repositório anterior do projeto. O Git agora se conecta ao repositório atual. Revise as alterações antes do push.",
+      "title": "Esta sessão está desatualizada",
+      "message": "O projeto mudou depois que esta sessão começou. Atualize-a para continuar trabalhando na versão mais recente.",
       "unavailable": "O espaço de trabalho anterior não está mais disponível. Inicie uma nova sessão no repositório atual.",
       "resume": "Retomar espaço anterior",
       "resuming": "Retomando…",
       "newSession": "Iniciar nova sessão",
-      "delete": "Excluir sessão"
+      "delete": "Excluir sessão",
+      "update": "Atualizar para o mais recente",
+      "updating": "Atualizando…",
+      "dismiss": "Dispensar",
+      "updateHint": "Pede ao agente para atualizar esta sessão",
+      "updateSent": "Atualização iniciada nesta sessão",
+      "updateFailed": "Não foi possível enviar o prompt de atualização."
     },
     "lost": {
       "title": "O computador desta sessão foi perdido",
@@ -1623,11 +1629,11 @@
     "connectProvider": "Conectar provedor",
     "manageModels": "Gerenciar modelos",
     "loading": "Carregando modelos",
-    "yourDefault": "Seu padrão",
-    "defaultAria": "{model} é seu modelo padrão",
-    "setDefaultAria": "Definir {model} como meu modelo padrão",
-    "defaultTitle": "Seu modelo padrão",
-    "setDefaultTitle": "Definir como meu modelo padrão",
+    "yourDefault": "Padrão da conta",
+    "defaultAria": "{model} é o modelo padrão desta conta",
+    "setDefaultAria": "Definir {model} como modelo padrão da conta",
+    "defaultTitle": "Modelo padrão da conta",
+    "setDefaultTitle": "Definir como modelo padrão da conta",
     "upgrade": "Fazer upgrade",
     "noMatch": {
       "title": "Nenhum modelo encontrado",
@@ -19501,5 +19507,42 @@
     "invitesTitle": "Você foi convidado",
     "invitesDescription": "Entre em um projeto da sua equipe ou crie o seu.",
     "createProjectInstead": "Criar um novo projeto"
+  },
+  "projectSelector": {
+    "welcome": "Boas-vindas ao Kortix",
+    "welcomeBack": "Bem-vindo de volta",
+    "descriptionNew": "Crie seu primeiro projeto ou entre em um que sua equipe compartilhou.",
+    "descriptionReturning": "Abra um projeto ou crie um novo.",
+    "signedInAs": "Conectado como {email}",
+    "createTitle": "Criar um novo projeto",
+    "createBody": "Um projeto guarda seus agentes, arquivos e sessões.",
+    "orContinue": "ou abra um projeto existente",
+    "invitations": "Convites",
+    "sentTo": "Enviado para {email}",
+    "invitedBy": "Convidado por {email}",
+    "join": "Entrar",
+    "joinError": "Não foi possível entrar. Tente novamente.",
+    "unnamedWorkspace": "Workspace",
+    "search": "Encontrar um projeto",
+    "noMatches": "Nenhum projeto corresponde a “{query}”.",
+    "projectCount": "{count, plural, one {# projeto} other {# projetos}}",
+    "role": {
+      "owner": "Proprietário",
+      "admin": "Admin",
+      "member": "Membro"
+    },
+    "openedAgo": "Aberto {time}",
+    "neverOpened": "Ainda não aberto",
+    "showAll": "Mostrar todos ({count})",
+    "showFewer": "Mostrar menos",
+    "createIn": "Criar um projeto",
+    "emptyCreatable": "Ainda não há projetos neste workspace.",
+    "emptyMember": "Nenhum projeto foi compartilhado com você aqui ainda. Peça acesso a um proprietário ou admin.",
+    "failed": "Não foi possível carregar estes projetos.",
+    "retry": "Tentar novamente",
+    "noAccessTitle": "Nenhum projeto ainda",
+    "noAccessBody": "Peça a um proprietário ou admin para convidar {email}.",
+    "loadErrorTitle": "Não foi possível carregar seus projetos",
+    "loadErrorBody": "Verifique sua conexão e tente novamente."
   }
 }

@@ -1598,13 +1598,19 @@
       "message": "Its computer was released. Restart the session to bring it back."
     },
     "previousRepository": {
-      "title": "Session uses previous repository",
-      "message": "This workspace started from the project's previous repository. Git now connects to the current repository. Review changes before you push.",
+      "title": "This session is out of date",
+      "message": "The project changed after this session started. Update it to keep working on the latest version.",
       "unavailable": "The previous workspace is no longer available. Start a new session in the current repository.",
       "resume": "Resume previous workspace",
       "resuming": "Resuming…",
       "newSession": "Start new session",
-      "delete": "Delete session"
+      "delete": "Delete session",
+      "update": "Update to latest",
+      "updating": "Updating…",
+      "dismiss": "Dismiss",
+      "updateHint": "Asks the agent to update this session",
+      "updateSent": "Update started in this session",
+      "updateFailed": "Could not send the update prompt."
     },
     "lost": {
       "title": "This session's computer was lost",
@@ -1623,11 +1629,11 @@
     "connectProvider": "Connect provider",
     "manageModels": "Manage models",
     "loading": "Loading models",
-    "yourDefault": "Your default",
-    "defaultAria": "{model} is your default model",
-    "setDefaultAria": "Set {model} as my default model",
-    "defaultTitle": "Your default model",
-    "setDefaultTitle": "Set as my default model",
+    "yourDefault": "Account default",
+    "defaultAria": "{model} is the default model for this account",
+    "setDefaultAria": "Set {model} as the account’s default model",
+    "defaultTitle": "Account default model",
+    "setDefaultTitle": "Set as the account’s default model",
     "upgrade": "Upgrade",
     "noMatch": {
       "title": "No models match",
@@ -19501,5 +19507,42 @@
     "invitesTitle": "You're invited",
     "invitesDescription": "Join a project your team shared, or start your own.",
     "createProjectInstead": "Create a new project instead"
+  },
+  "projectSelector": {
+    "welcome": "Welcome to Kortix",
+    "welcomeBack": "Welcome back",
+    "descriptionNew": "Create your first project, or join one your team shared.",
+    "descriptionReturning": "Open a project, or create a new one.",
+    "signedInAs": "Signed in as {email}",
+    "createTitle": "Create a new project",
+    "createBody": "A project holds your agents, files and sessions.",
+    "orContinue": "or open an existing project",
+    "invitations": "Invitations",
+    "sentTo": "Sent to {email}",
+    "invitedBy": "Invited by {email}",
+    "join": "Join",
+    "joinError": "Could not join. Try again.",
+    "unnamedWorkspace": "Workspace",
+    "search": "Find a project",
+    "noMatches": "No project matches “{query}”.",
+    "projectCount": "{count, plural, one {# project} other {# projects}}",
+    "role": {
+      "owner": "Owner",
+      "admin": "Admin",
+      "member": "Member"
+    },
+    "openedAgo": "Opened {time}",
+    "neverOpened": "Not opened yet",
+    "showAll": "Show all {count}",
+    "showFewer": "Show fewer",
+    "createIn": "Create a project",
+    "emptyCreatable": "No projects in this workspace yet.",
+    "emptyMember": "No projects are shared with you here yet. Ask an owner or admin for access.",
+    "failed": "Could not load these projects.",
+    "retry": "Retry",
+    "noAccessTitle": "No projects yet",
+    "noAccessBody": "Ask an owner or admin to invite {email}.",
+    "loadErrorTitle": "Could not load your projects",
+    "loadErrorBody": "Check your connection and try again."
   }
 }

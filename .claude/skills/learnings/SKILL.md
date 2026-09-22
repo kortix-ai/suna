@@ -21,6 +21,53 @@ linked, not inlined.
 
 ## Register
 
+### Port a guard with the feature, or the second platform ships without it (2026-09-22)
+
+**Rule:** When a channel/platform copies an interaction from another, copy its
+AUTHORIZATION, not only its rendering. A card posted to a conversation is
+visible to everyone in it, so the check belongs on the PRESS, and it is scoped
+to the account of the object being acted on — not to whatever account the
+presser happens to belong to. **Trigger surface:** adding an
+`Action.Execute` / Block Kit button that mutates anything, or porting a handler
+between `channels/slack/` and `channels/teams/`.
+
+**Incident:** `handleReview` in `channels/teams/interactivity.ts` checked only
+that the presser had *some* linked Kortix identity in the tenant
+(`lookupTeamsIdentity`). It never checked project access. Any Teams user in the
+tenant who had ever run `/login` could **Approve or Deny a review item for a
+project they are not a member of** — the human gate in front of whatever the
+agent flagged as risky. Slack's twin has always called `resolveSlackActor`, and
+carries the comment "The actor must be a linked Kortix user with write access
+to this project". Teams had `resolveTeamsActor`, with an identical signature
+and the full member + `PROJECT_WRITE` check, sitting unused. Found by auditing
+handlers while writing user docs, not by an alert. Exposure was limited by the
+`teams` project feature flag; the code was live on `main`.
+
+**Enforcers:** `apps/api/src/__tests__/unit-teams-review-authz.test.ts`, which
+was run against the pre-fix file first and failed 3 of 4 — a security test that
+passes before the fix proves nothing.
+
+### Freeing a port means waiting for it, not just deleting what held it (2026-09-21)
+
+**Rule:** A CI step that clears host ports for a following service must POLL
+until each port is actually free, then name the holder if it never clears.
+Deleting the container is not the same as getting the binding back.
+**Trigger surface:** any workflow step that stops one service and starts
+another on the same ports. **Incident:** run `35630898515`, `browser-1` lane,
+`main` @ `3c67a5e0b6` — the sweep added hours earlier ran clean, `supabase
+stop` succeeded, `docker ps -aq --filter publish=54324` matched nothing, 54322
+then bound fine, and 54324 still failed with `address already in use`. Nothing
+was left to delete. The bind had not been released yet. The lane read as a test
+failure for the third time. **Enforcers:** the `ss -ltnH` wait plus the
+`::warning::port … is still bound` diagnostic in `tests.yml`'s "Free the local
+Supabase ports", asserted by `tests/unit/sandbox-workflow.test.ts`.
+
+**Meta-rule from three occurrences of one symptom:** each was diagnosed by
+inference — stale containers, then a release race — and each fix was shipped
+without evidence naming the actual holder. When a failure recurs after a fix,
+the next change must make the NEXT occurrence self-diagnosing before it makes
+another guess at the cause.
+
 ### A CI step that creates shared state must be torn down on EVERY lane that creates it (2026-09-21)
 
 **Rule:** When a CI step starts a service that binds host ports, its teardown

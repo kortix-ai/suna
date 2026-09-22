@@ -4,11 +4,11 @@ import { applyVerdict, getReviewItemById } from '../../projects/review-items';
 import { setChannelAgent, setChannelModel } from '../slack/selection';
 import { resolveConversationProject, setConversationProject, teamsChannelCtx } from './binding';
 import { consumePendingTeamsPickerMessage } from './auth-resume';
-import { TEAMS_FORM_VERB, TEAMS_STOP_VERB, buildNoticeCard } from './cards';
+import { REVIEW_FEEDBACK_INPUT, TEAMS_FORM_VERB, TEAMS_STOP_VERB, buildNoticeCard } from './cards';
 import {
   createTeamsAccessRequest,
-  lookupTeamsIdentity,
   notifyAdminsOfTeamsAccessRequest,
+  resolveTeamsActor,
   teamsUserId,
 } from './identity';
 import { decideTeamsThreadJoin } from './participants';
@@ -179,10 +179,15 @@ async function handleAnswer(
   const projectId = await resolveConversationProject(convo.tenantId, convo.conversationId);
   if (!projectId) return cardResponse(buildNoticeCard("This conversation isn't connected to a project."));
 
+  // The question travels on the action (cards.ts), because the tap REPLACES the
+  // card that asked it. Sending the agent a bare "Yes" leaves it to infer what
+  // was agreed to; sending the pair leaves nothing to infer. Older cards, posted
+  // before this shipped, carry no question — they still work.
+  const question = typeof data.question === 'string' ? data.question.trim() : '';
   const synthetic: TeamsActivity = {
     ...activity,
     type: 'message',
-    text: answer,
+    text: question ? `${question}\n${answer}` : answer,
     id: `${activity.id ?? 'answer'}:answer`,
   };
   void createOrJoinTeamsConversationSession({
@@ -192,7 +197,9 @@ async function handleAnswer(
     activity: synthetic,
   }).catch((err) => console.error('[teams-webhook] answer follow-up failed', err));
 
-  return cardResponse(buildNoticeCard(`Answer received: ${answer}`));
+  return cardResponse(
+    buildNoticeCard(question ? `**${question}**\n\n${answer} — working on it.` : `Answer received: ${answer}`, '✅'),
+  );
 }
 
 /**
@@ -265,25 +272,50 @@ async function handleReview(
   const uid = teamsUserId(activity);
   if (!convo || !reviewItemId || !verdict) return cardResponse(buildNoticeCard("I couldn't apply that decision."));
 
-  const identity = uid ? await lookupTeamsIdentity(convo.tenantId, uid) : null;
-  if (!identity) {
-    return cardResponse(buildNoticeCard('Connect your Kortix account (`/login`) to act on reviews.'));
-  }
-
   const projectId = await resolveConversationProject(convo.tenantId, convo.conversationId);
   if (!projectId) return cardResponse(buildNoticeCard("This conversation isn't connected to a project."));
 
   const item = await getReviewItemById(reviewItemId, projectId);
   if (!item) return cardResponse(buildNoticeCard('That review item no longer exists.'));
 
-  await applyVerdict(reviewItemId, projectId, { verdict, feedback: null, actingUserId: identity.userId });
+  // The actor must be a linked Kortix user with WRITE access to this project —
+  // the same bar Slack has always applied (channels/slack/interactivity.ts).
+  // This checked only that the presser had *some* linked identity in the
+  // tenant, so anyone who had ever run `/login` could approve or deny a review
+  // for a project they are not a member of. The card is posted to the whole
+  // conversation, so the check has to happen on the press.
+  //
+  // The item is loaded FIRST because the authorization is scoped to its own
+  // account, not to whatever account the presser happens to belong to.
+  const actor = await resolveTeamsActor(convo.tenantId, uid ?? '', item.accountId, projectId);
+  if ('reason' in actor) {
+    return cardResponse(
+      buildNoticeCard(
+        actor.reason === 'unlinked'
+          ? 'Connect your Kortix account (`/login`) to act on reviews.'
+          : "You don't have access to act on this project's reviews.",
+      ),
+    );
+  }
 
-  const decisionLine =
+  // The card carries an optional box; `Action.Execute` hands back its value
+  // whichever button was pressed.
+  const raw = data[REVIEW_FEEDBACK_INPUT];
+  const feedback = typeof raw === 'string' && raw.trim() ? raw.trim().slice(0, 2000) : null;
+  await applyVerdict(reviewItemId, projectId, { verdict, feedback, actingUserId: actor.userId });
+
+  const base =
     verdict === 'approve'
       ? `The review "${item.title}" was approved.`
       : verdict === 'reject'
         ? `The review "${item.title}" was rejected — do not proceed with it.`
-        : `Changes were requested on the review "${item.title}". Ask what to change, then revise.`;
+        : `Changes were requested on the review "${item.title}".`;
+  // Only send the agent hunting for the reason when there is no reason to read.
+  const decisionLine = feedback
+    ? `${base}\n\nReviewer's feedback:\n${feedback}`
+    : verdict === 'changes'
+      ? `${base} Ask what to change, then revise.`
+      : base;
   const synthetic: TeamsActivity = {
     ...activity,
     type: 'message',

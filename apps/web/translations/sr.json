@@ -1598,13 +1598,19 @@
       "message": "Њен рачунар је ослобођен. Поново покрените сесију да бисте је вратили."
     },
     "previousRepository": {
-      "title": "Сесија користи претходно складиште",
-      "message": "Овај радни простор је покренут из претходног складишта пројекта. Git се сада повезује са тренутним складиштем. Прегледајте измене пре push операције.",
+      "title": "Ова сесија је застарела",
+      "message": "Пројекат се променио након покретања ове сесије. Ажурирајте је да бисте наставили рад на најновијој верзији.",
       "unavailable": "Претходни радни простор више није доступан. Покрените нову сесију у тренутном складишту.",
       "resume": "Настави претходни радни простор",
       "resuming": "Настављање…",
       "newSession": "Покрени нову сесију",
-      "delete": "Избриши сесију"
+      "delete": "Избриши сесију",
+      "update": "Ажурирај на најновије",
+      "updating": "Ажурирање…",
+      "dismiss": "Одбаци",
+      "updateHint": "Тражи од агента да ажурира ову сесију",
+      "updateSent": "Ажурирање је покренуто у овој сесији",
+      "updateFailed": "Слање упита за ажурирање није успело."
     },
     "lost": {
       "title": "Рачунар ове сесије је изгубљен",
@@ -1623,11 +1629,11 @@
     "connectProvider": "Повежи добављача",
     "manageModels": "Управљај моделима",
     "loading": "Учитавање модела",
-    "yourDefault": "Ваш подразумевани модел",
-    "defaultAria": "{model} је ваш подразумевани модел",
-    "setDefaultAria": "Постави {model} као мој подразумевани модел",
-    "defaultTitle": "Ваш подразумевани модел",
-    "setDefaultTitle": "Постави као мој подразумевани модел",
+    "yourDefault": "Подразумевано за налог",
+    "defaultAria": "{model} је подразумевани модел за овај налог",
+    "setDefaultAria": "Постави {model} као подразумевани модел налога",
+    "defaultTitle": "Подразумевани модел налога",
+    "setDefaultTitle": "Постави као подразумевани модел налога",
     "upgrade": "Надогради",
     "noMatch": {
       "title": "Нема одговарајућих модела",
@@ -19501,5 +19507,42 @@
     "invitesTitle": "Pozvani ste",
     "invitesDescription": "Pridružite se projektu vašeg tima ili napravite svoj.",
     "createProjectInstead": "Umesto toga napravite novi projekat"
+  },
+  "projectSelector": {
+    "welcome": "Dobro došli u Kortix",
+    "welcomeBack": "Dobro došli nazad",
+    "descriptionNew": "Napravite svoj prvi projekat ili se pridružite onom koji je vaš tim podelio.",
+    "descriptionReturning": "Otvorite projekat ili napravite novi.",
+    "signedInAs": "Prijavljeni ste kao {email}",
+    "createTitle": "Napravi novi projekat",
+    "createBody": "Projekat sadrži vaše agente, fajlove i sesije.",
+    "orContinue": "ili otvorite postojeći projekat",
+    "invitations": "Pozivnice",
+    "sentTo": "Poslato na {email}",
+    "invitedBy": "Pozvao/la {email}",
+    "join": "Pridruži se",
+    "joinError": "Pridruživanje nije uspelo. Pokušajte ponovo.",
+    "unnamedWorkspace": "Radni prostor",
+    "search": "Pronađi projekat",
+    "noMatches": "Nijedan projekat ne odgovara „{query}“.",
+    "projectCount": "{count, plural, one {# projekat} few {# projekta} other {# projekata}}",
+    "role": {
+      "owner": "Vlasnik",
+      "admin": "Admin",
+      "member": "Član"
+    },
+    "openedAgo": "Otvoreno {time}",
+    "neverOpened": "Još nije otvoren",
+    "showAll": "Prikaži sve ({count})",
+    "showFewer": "Prikaži manje",
+    "createIn": "Napravi projekat",
+    "emptyCreatable": "U ovom radnom prostoru još nema projekata.",
+    "emptyMember": "Ovde još nijedan projekat nije podeljen sa vama. Zatražite pristup od vlasnika ili admina.",
+    "failed": "Ovi projekti nisu mogli da se učitaju.",
+    "retry": "Pokušaj ponovo",
+    "noAccessTitle": "Još nema projekata",
+    "noAccessBody": "Zamolite vlasnika ili admina da pozove {email}.",
+    "loadErrorTitle": "Vaši projekti nisu mogli da se učitaju",
+    "loadErrorBody": "Proverite vezu i pokušajte ponovo."
   }
 }

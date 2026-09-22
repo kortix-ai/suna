@@ -340,7 +340,11 @@ async function deliverFollowUp(input: {
           error: `This conversation's session hit an error and couldn't start. [Open it in Kortix](${url}) to see what happened.`,
         });
       } else {
-        await finalizeTurn(handle, {});
+        // The notice is suppressed so a jammed conversation does not repeat
+        // the same error line on every message — but the CARD must not then
+        // claim "Task complete" over a session that failed to start. Title
+        // only: honest, and still silent.
+        await finalizeTurn(handle, { title: "Couldn't start", unfinished: true });
       }
     }
     return 'done';
@@ -622,7 +626,13 @@ const TURN_INSTRUCTIONS = [
   '  Keep them human and brief — a few per task — and post one right before anything slow so the conversation always shows fresh progress.',
   '- Attach inline context with `--detail`, and surface a finished step result with `--output`:',
   '    teams step "Drafting summary" --output "Found 3 incidents, 1 P0"',
-  '- Need to ask the user something? Use `teams send`, then END your turn — Teams questions are async: ask, stop, and resume when they reply.',
+  // The `question` tool is NOT disabled here and never blocks: the relay posts
+  // the card and returns immediately with a sentinel telling the agent to end
+  // its turn (channels/teams/questions.ts). Telling the agent to use `teams
+  // send` instead is what produced a wall of numbered prose where the user
+  // expected the same tappable card `/models` gives them.
+  '- Need to ask the user something with DISCRETE choices? Use the built-in `question` tool. It renders a real Adaptive Card — one tap per option, a dropdown when there are many, a multi-select when you pass `multiple`, and a text box when you pass no options. It does NOT block: it returns at once and you END your turn; the answer arrives as a NEW turn with full context.',
+  '- Use `teams send` for a question only when it is genuinely open-ended prose with nothing to pick from. A numbered list of choices in a message is the wrong shape — the user cannot tap it.',
   '- Deliver the final answer with `teams send` (text, or an Adaptive Card via --card-file). One `teams send` per turn — it finalizes the live message.',
 ].join('\n');
 

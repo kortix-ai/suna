@@ -468,6 +468,34 @@ export async function publishHomeView(
   }
 }
 
+/**
+ * Open a modal. Slack's only way to collect typed input from a button press.
+ *
+ * `trigger_id` is single-use and expires in ~3 seconds, so this must be the
+ * first thing the handler does — anything awaited before it (a DB read, an
+ * authorization check) can spend the budget and the modal silently never
+ * opens. The caller is responsible for that ordering.
+ */
+export async function openModal(
+  token: string,
+  triggerId: string,
+  view: Record<string, unknown>,
+): Promise<boolean> {
+  try {
+    const r = await slackApiCall(token, 'views.open', { trigger_id: triggerId, view });
+    if (!r.ok) {
+      // `expired_trigger_id` is the one worth recognising: it means the handler
+      // did work before opening, not that the view was malformed.
+      console.warn('[slack-api] views.open failed', { error: r.error });
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('[slack-api] views.open error', err);
+    return false;
+  }
+}
+
 // Resolve a bot by the name a human would type, e.g. "Incident reporter".
 //
 // The slash command is registered with should_escape:false, so Slack sends the

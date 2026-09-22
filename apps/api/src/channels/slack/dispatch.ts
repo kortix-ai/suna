@@ -875,7 +875,10 @@ export async function spawnAgentTurn(
               error: `This thread's session hit an error and couldn't start. <${url}|Open it in Kortix> to see what happened.`,
             });
           } else {
-            await finalizeTurn(handle, {});
+            // Suppressing the repeated notice must not turn a failed start
+            // into "Task complete" on the card. Title only — honest, still
+            // silent. Teams carried the identical bug.
+            await finalizeTurn(handle, { title: "Couldn't start", unfinished: true });
           }
         }
         return;

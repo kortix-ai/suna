@@ -1598,13 +1598,19 @@
       "message": "Il suo computer è stato rilasciato. Riavvia la sessione per ripristinarla."
     },
     "previousRepository": {
-      "title": "La sessione usa il repository precedente",
-      "message": "Questa area di lavoro proviene dal repository precedente del progetto. Git ora si collega al repository corrente. Controlla le modifiche prima del push.",
+      "title": "Questa sessione non è aggiornata",
+      "message": "Il progetto è cambiato dopo l’avvio di questa sessione. Aggiornala per continuare a lavorare sull’ultima versione.",
       "unavailable": "L’area di lavoro precedente non è più disponibile. Avvia una nuova sessione nel repository corrente.",
       "resume": "Riprendi area di lavoro precedente",
       "resuming": "Ripresa in corso…",
       "newSession": "Avvia nuova sessione",
-      "delete": "Elimina sessione"
+      "delete": "Elimina sessione",
+      "update": "Aggiorna all’ultima versione",
+      "updating": "Aggiornamento…",
+      "dismiss": "Ignora",
+      "updateHint": "Chiede all’agente di aggiornare questa sessione",
+      "updateSent": "Aggiornamento avviato in questa sessione",
+      "updateFailed": "Impossibile inviare il prompt di aggiornamento."
     },
     "lost": {
       "title": "Il computer di questa sessione è andato perso",
@@ -1623,11 +1629,11 @@
     "connectProvider": "Connetti provider",
     "manageModels": "Gestisci modelli",
     "loading": "Caricamento modelli",
-    "yourDefault": "Il tuo predefinito",
-    "defaultAria": "{model} è il tuo modello predefinito",
-    "setDefaultAria": "Imposta {model} come modello predefinito",
-    "defaultTitle": "Il tuo modello predefinito",
-    "setDefaultTitle": "Imposta come modello predefinito",
+    "yourDefault": "Predefinito dell’account",
+    "defaultAria": "{model} è il modello predefinito di questo account",
+    "setDefaultAria": "Imposta {model} come modello predefinito dell’account",
+    "defaultTitle": "Modello predefinito dell’account",
+    "setDefaultTitle": "Imposta come modello predefinito dell’account",
     "upgrade": "Effettua l’upgrade",
     "noMatch": {
       "title": "Nessun modello corrispondente",
@@ -19501,5 +19507,42 @@
     "invitesTitle": "Sei stato invitato",
     "invitesDescription": "Unisciti a un progetto del tuo team o creane uno tuo.",
     "createProjectInstead": "Crea invece un nuovo progetto"
+  },
+  "projectSelector": {
+    "welcome": "Benvenuto in Kortix",
+    "welcomeBack": "Bentornato",
+    "descriptionNew": "Crea il tuo primo progetto o unisciti a uno condiviso dal tuo team.",
+    "descriptionReturning": "Apri un progetto o creane uno nuovo.",
+    "signedInAs": "Accesso come {email}",
+    "createTitle": "Crea un nuovo progetto",
+    "createBody": "Un progetto contiene agenti, file e sessioni.",
+    "orContinue": "oppure apri un progetto esistente",
+    "invitations": "Inviti",
+    "sentTo": "Inviato a {email}",
+    "invitedBy": "Invitato da {email}",
+    "join": "Unisciti",
+    "joinError": "Impossibile unirsi. Riprova.",
+    "unnamedWorkspace": "Workspace",
+    "search": "Trova un progetto",
+    "noMatches": "Nessun progetto corrisponde a “{query}”.",
+    "projectCount": "{count, plural, one {# progetto} other {# progetti}}",
+    "role": {
+      "owner": "Proprietario",
+      "admin": "Admin",
+      "member": "Membro"
+    },
+    "openedAgo": "Aperto {time}",
+    "neverOpened": "Non ancora aperto",
+    "showAll": "Mostra tutti ({count})",
+    "showFewer": "Mostra meno",
+    "createIn": "Crea un progetto",
+    "emptyCreatable": "Nessun progetto in questo workspace.",
+    "emptyMember": "Qui non ci sono ancora progetti condivisi con te. Chiedi l’accesso a un proprietario o admin.",
+    "failed": "Impossibile caricare questi progetti.",
+    "retry": "Riprova",
+    "noAccessTitle": "Nessun progetto",
+    "noAccessBody": "Chiedi a un proprietario o admin di invitare {email}.",
+    "loadErrorTitle": "Impossibile caricare i tuoi progetti",
+    "loadErrorBody": "Controlla la connessione e riprova."
   }
 }

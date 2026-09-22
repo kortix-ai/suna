@@ -109,7 +109,7 @@ export async function stopTeamsTurn(input: {
   await finalizeTurn(handle, {
     title: 'Stopped',
     answer: by ? `Stopped by ${by}.` : 'Stopped.',
-    stopped: true,
+    unfinished: true,
   });
   await deleteTurn(input.sessionId);
   return { stopped: true, stoppedRuntime };

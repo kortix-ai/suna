@@ -332,6 +332,11 @@ describe('follow-up outcomes — the conversation is never left on "Working on i
     await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });
     expect(finalized).toHaveLength(1);
     expect(finalized[0].error).toBeUndefined();
+    // Silent is not the same as "Task complete". Suppressing the repeated
+    // notice must not make the card claim the run succeeded — every later
+    // message on a jammed conversation used to close with the default title.
+    expect(finalized[0].title).toBe("Couldn't start");
+    expect(finalized[0].unfinished).toBe(true);
   });
 
   test('no-session (deleted): the stale mapping is dropped and a NEW session is created with a revived note', async () => {

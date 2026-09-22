@@ -1598,13 +1598,19 @@
       "message": "コンピューターが解放されました。セッションを再起動すると再び利用できます。"
     },
     "previousRepository": {
-      "title": "このセッションは以前のリポジトリを使用しています",
-      "message": "このワークスペースはプロジェクトの以前のリポジトリから開始されました。Git は現在のリポジトリに接続します。push の前に変更内容を確認してください。",
+      "title": "このセッションは古くなっています",
+      "message": "このセッションの開始後にプロジェクトが変更されました。最新の状態で作業を続けるには更新してください。",
       "unavailable": "以前のワークスペースは利用できません。現在のリポジトリで新しいセッションを開始してください。",
       "resume": "以前のワークスペースを再開",
       "resuming": "再開中…",
       "newSession": "新しいセッションを開始",
-      "delete": "セッションを削除"
+      "delete": "セッションを削除",
+      "update": "最新に更新",
+      "updating": "更新中…",
+      "dismiss": "閉じる",
+      "updateHint": "エージェントにこのセッションの更新を依頼します",
+      "updateSent": "このセッションで更新を開始しました",
+      "updateFailed": "更新プロンプトを送信できませんでした。"
     },
     "lost": {
       "title": "このセッションのコンピューターが失われました",
@@ -1623,11 +1629,11 @@
     "connectProvider": "プロバイダーに接続",
     "manageModels": "モデルを管理",
     "loading": "モデルを読み込み中",
-    "yourDefault": "デフォルト",
-    "defaultAria": "{model} はデフォルトモデルです",
-    "setDefaultAria": "{model} をデフォルトモデルに設定",
-    "defaultTitle": "デフォルトモデル",
-    "setDefaultTitle": "デフォルトモデルに設定",
+    "yourDefault": "アカウントのデフォルト",
+    "defaultAria": "{model} はこのアカウントのデフォルトモデルです",
+    "setDefaultAria": "{model} をアカウントのデフォルトモデルに設定",
+    "defaultTitle": "アカウントのデフォルトモデル",
+    "setDefaultTitle": "アカウントのデフォルトモデルに設定",
     "upgrade": "アップグレード",
     "noMatch": {
       "title": "一致するモデルがありません",
@@ -19501,5 +19507,42 @@
     "invitesTitle": "招待されています",
     "invitesDescription": "チームが共有したプロジェクトに参加するか、自分のプロジェクトを作成してください。",
     "createProjectInstead": "代わりに新しいプロジェクトを作成"
+  },
+  "projectSelector": {
+    "welcome": "Kortix へようこそ",
+    "welcomeBack": "おかえりなさい",
+    "descriptionNew": "最初のプロジェクトを作成するか、チームが共有したプロジェクトに参加してください。",
+    "descriptionReturning": "プロジェクトを開くか、新しく作成してください。",
+    "signedInAs": "{email} でサインイン中",
+    "createTitle": "新しいプロジェクトを作成",
+    "createBody": "プロジェクトにはエージェント、ファイル、セッションが入ります。",
+    "orContinue": "または既存のプロジェクトを開く",
+    "invitations": "招待",
+    "sentTo": "{email} 宛て",
+    "invitedBy": "{email} からの招待",
+    "join": "参加",
+    "joinError": "参加できませんでした。もう一度お試しください。",
+    "unnamedWorkspace": "ワークスペース",
+    "search": "プロジェクトを検索",
+    "noMatches": "「{query}」に一致するプロジェクトはありません。",
+    "projectCount": "{count, plural, other {# 件のプロジェクト}}",
+    "role": {
+      "owner": "オーナー",
+      "admin": "管理者",
+      "member": "メンバー"
+    },
+    "openedAgo": "{time}に開いた",
+    "neverOpened": "まだ開いていません",
+    "showAll": "すべて表示（{count}）",
+    "showFewer": "表示を減らす",
+    "createIn": "プロジェクトを作成",
+    "emptyCreatable": "このワークスペースにはまだプロジェクトがありません。",
+    "emptyMember": "ここではまだ共有されたプロジェクトがありません。オーナーまたは管理者にアクセスを依頼してください。",
+    "failed": "これらのプロジェクトを読み込めませんでした。",
+    "retry": "再試行",
+    "noAccessTitle": "まだプロジェクトがありません",
+    "noAccessBody": "オーナーまたは管理者に {email} の招待を依頼してください。",
+    "loadErrorTitle": "プロジェクトを読み込めませんでした",
+    "loadErrorBody": "接続を確認して、もう一度お試しください。"
   }
 }

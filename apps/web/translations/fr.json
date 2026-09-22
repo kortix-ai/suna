@@ -1598,13 +1598,19 @@
       "message": "Son ordinateur a été libéré. Redémarrez la session pour le récupérer."
     },
     "previousRepository": {
-      "title": "La session utilise le dépôt précédent",
-      "message": "Cet espace de travail provient du dépôt précédent du projet. Git se connecte maintenant au dépôt actuel. Vérifiez les modifications avant le push.",
+      "title": "Cette session n’est pas à jour",
+      "message": "Le projet a changé depuis le début de cette session. Mettez-la à jour pour continuer sur la dernière version.",
       "unavailable": "L’espace de travail précédent n’est plus disponible. Démarrez une nouvelle session dans le dépôt actuel.",
       "resume": "Reprendre l’espace précédent",
       "resuming": "Reprise…",
       "newSession": "Démarrer une nouvelle session",
-      "delete": "Supprimer la session"
+      "delete": "Supprimer la session",
+      "update": "Mettre à jour",
+      "updating": "Mise à jour…",
+      "dismiss": "Ignorer",
+      "updateHint": "Demande à l’agent de mettre à jour cette session",
+      "updateSent": "Mise à jour lancée dans cette session",
+      "updateFailed": "Impossible d’envoyer le prompt de mise à jour."
     },
     "lost": {
       "title": "L’ordinateur de cette session a été perdu",
@@ -1623,11 +1629,11 @@
     "connectProvider": "Connecter un fournisseur",
     "manageModels": "Gérer les modèles",
     "loading": "Chargement des modèles",
-    "yourDefault": "Votre modèle par défaut",
-    "defaultAria": "{model} est votre modèle par défaut",
-    "setDefaultAria": "Définir {model} comme modèle par défaut",
-    "defaultTitle": "Votre modèle par défaut",
-    "setDefaultTitle": "Définir comme modèle par défaut",
+    "yourDefault": "Par défaut du compte",
+    "defaultAria": "{model} est le modèle par défaut de ce compte",
+    "setDefaultAria": "Définir {model} comme modèle par défaut du compte",
+    "defaultTitle": "Modèle par défaut du compte",
+    "setDefaultTitle": "Définir comme modèle par défaut du compte",
     "upgrade": "Mettre à niveau",
     "noMatch": {
       "title": "Aucun modèle correspondant",
@@ -19501,5 +19507,42 @@
     "invitesTitle": "Vous êtes invité",
     "invitesDescription": "Rejoignez un projet partagé par votre équipe, ou créez le vôtre.",
     "createProjectInstead": "Créer plutôt un nouveau projet"
+  },
+  "projectSelector": {
+    "welcome": "Bienvenue sur Kortix",
+    "welcomeBack": "Bon retour",
+    "descriptionNew": "Créez votre premier projet ou rejoignez un projet partagé par votre équipe.",
+    "descriptionReturning": "Ouvrez un projet ou créez-en un nouveau.",
+    "signedInAs": "Connecté en tant que {email}",
+    "createTitle": "Créer un nouveau projet",
+    "createBody": "Un projet contient vos agents, fichiers et sessions.",
+    "orContinue": "ou ouvrir un projet existant",
+    "invitations": "Invitations",
+    "sentTo": "Envoyée à {email}",
+    "invitedBy": "Invité par {email}",
+    "join": "Rejoindre",
+    "joinError": "Impossible de rejoindre. Réessayez.",
+    "unnamedWorkspace": "Espace de travail",
+    "search": "Rechercher un projet",
+    "noMatches": "Aucun projet ne correspond à « {query} ».",
+    "projectCount": "{count, plural, one {# projet} other {# projets}}",
+    "role": {
+      "owner": "Propriétaire",
+      "admin": "Admin",
+      "member": "Membre"
+    },
+    "openedAgo": "Ouvert {time}",
+    "neverOpened": "Jamais ouvert",
+    "showAll": "Tout afficher ({count})",
+    "showFewer": "Afficher moins",
+    "createIn": "Créer un projet",
+    "emptyCreatable": "Aucun projet dans cet espace pour l’instant.",
+    "emptyMember": "Aucun projet n’est encore partagé avec vous ici. Demandez l’accès à un propriétaire ou un admin.",
+    "failed": "Impossible de charger ces projets.",
+    "retry": "Réessayer",
+    "noAccessTitle": "Aucun projet pour l’instant",
+    "noAccessBody": "Demandez à un propriétaire ou un admin d’inviter {email}.",
+    "loadErrorTitle": "Impossible de charger vos projets",
+    "loadErrorBody": "Vérifiez votre connexion et réessayez."
   }
 }

@@ -1598,13 +1598,19 @@
       "message": "Der zugehörige Computer wurde freigegeben. Starte die Sitzung neu, um sie wiederherzustellen."
     },
     "previousRepository": {
-      "title": "Sitzung verwendet das vorherige Repository",
-      "message": "Dieser Arbeitsbereich stammt aus dem vorherigen Repository des Projekts. Git verbindet sich jetzt mit dem aktuellen Repository. Prüfe die Änderungen vor dem Push.",
+      "title": "Diese Sitzung ist veraltet",
+      "message": "Das Projekt hat sich seit dem Start dieser Sitzung geändert. Aktualisiere sie, um mit der neuesten Version weiterzuarbeiten.",
       "unavailable": "Der vorherige Arbeitsbereich ist nicht mehr verfügbar. Starte eine neue Sitzung im aktuellen Repository.",
       "resume": "Vorherigen Arbeitsbereich fortsetzen",
       "resuming": "Wird fortgesetzt…",
       "newSession": "Neue Sitzung starten",
-      "delete": "Sitzung löschen"
+      "delete": "Sitzung löschen",
+      "update": "Auf neuesten Stand bringen",
+      "updating": "Wird aktualisiert…",
+      "dismiss": "Schließen",
+      "updateHint": "Bittet den Agenten, diese Sitzung zu aktualisieren",
+      "updateSent": "Aktualisierung in dieser Sitzung gestartet",
+      "updateFailed": "Der Aktualisierungs-Prompt konnte nicht gesendet werden."
     },
     "lost": {
       "title": "Der Computer dieser Sitzung ist verloren gegangen",
@@ -1623,11 +1629,11 @@
     "connectProvider": "Anbieter verbinden",
     "manageModels": "Modelle verwalten",
     "loading": "Modelle werden geladen",
-    "yourDefault": "Dein Standardmodell",
-    "defaultAria": "{model} ist dein Standardmodell",
-    "setDefaultAria": "{model} als mein Standardmodell festlegen",
-    "defaultTitle": "Dein Standardmodell",
-    "setDefaultTitle": "Als mein Standardmodell festlegen",
+    "yourDefault": "Account-Standard",
+    "defaultAria": "{model} ist das Standardmodell für diesen Account",
+    "setDefaultAria": "{model} als Standardmodell des Accounts festlegen",
+    "defaultTitle": "Standardmodell des Accounts",
+    "setDefaultTitle": "Als Standardmodell des Accounts festlegen",
     "upgrade": "Upgrade",
     "noMatch": {
       "title": "Keine passenden Modelle",
@@ -19501,5 +19507,42 @@
     "invitesTitle": "Du wurdest eingeladen",
     "invitesDescription": "Tritt einem Projekt deines Teams bei oder starte dein eigenes.",
     "createProjectInstead": "Stattdessen ein neues Projekt erstellen"
+  },
+  "projectSelector": {
+    "welcome": "Willkommen bei Kortix",
+    "welcomeBack": "Willkommen zurück",
+    "descriptionNew": "Erstelle dein erstes Projekt oder tritt einem bei, das dein Team geteilt hat.",
+    "descriptionReturning": "Öffne ein Projekt oder erstelle ein neues.",
+    "signedInAs": "Angemeldet als {email}",
+    "createTitle": "Neues Projekt erstellen",
+    "createBody": "Ein Projekt enthält deine Agents, Dateien und Sitzungen.",
+    "orContinue": "oder ein bestehendes Projekt öffnen",
+    "invitations": "Einladungen",
+    "sentTo": "Gesendet an {email}",
+    "invitedBy": "Eingeladen von {email}",
+    "join": "Beitreten",
+    "joinError": "Beitritt fehlgeschlagen. Versuche es erneut.",
+    "unnamedWorkspace": "Workspace",
+    "search": "Projekt suchen",
+    "noMatches": "Kein Projekt passt zu „{query}“.",
+    "projectCount": "{count, plural, one {# Projekt} other {# Projekte}}",
+    "role": {
+      "owner": "Inhaber",
+      "admin": "Admin",
+      "member": "Mitglied"
+    },
+    "openedAgo": "Geöffnet {time}",
+    "neverOpened": "Noch nicht geöffnet",
+    "showAll": "Alle {count} anzeigen",
+    "showFewer": "Weniger anzeigen",
+    "createIn": "Projekt erstellen",
+    "emptyCreatable": "Noch keine Projekte in diesem Workspace.",
+    "emptyMember": "Hier wurden noch keine Projekte mit dir geteilt. Bitte einen Inhaber oder Admin um Zugriff.",
+    "failed": "Diese Projekte konnten nicht geladen werden.",
+    "retry": "Erneut versuchen",
+    "noAccessTitle": "Noch keine Projekte",
+    "noAccessBody": "Bitte einen Inhaber oder Admin, {email} einzuladen.",
+    "loadErrorTitle": "Deine Projekte konnten nicht geladen werden",
+    "loadErrorBody": "Prüfe deine Verbindung und versuche es erneut."
   }
 }

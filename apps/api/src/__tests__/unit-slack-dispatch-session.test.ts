@@ -97,6 +97,10 @@ mock.module('../channels/slack/turn', () => ({
   claimFinalize: async () => true,
   openPlanMessage: async () => true,
   repaintLivePlan: async () => {},
+  // `mock.module` REPLACES the module, so every export the session-start path
+  // reaches through it has to be listed. Session start repaints the live plan
+  // to show Stop as soon as the turn knows its session (slack/stop.ts).
+  showStopOnLivePlan: async () => {},
   loadTurn: async () => null, // no in-flight turn → we open our own stream
   startTurn: async () => ({ sessionId: '', channel: 'C1', token: 'xoxb', ts: '', steps: [] }),
   saveTurn: async () => {},

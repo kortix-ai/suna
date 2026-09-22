@@ -1598,13 +1598,19 @@
       "message": "其计算机已被释放。重启会话即可恢复。"
     },
     "previousRepository": {
-      "title": "会话使用先前的仓库",
-      "message": "此工作区基于项目先前的仓库创建。Git 现在连接到当前仓库。请在 push 前检查更改。",
+      "title": "此会话已过时",
+      "message": "此会话开始后项目已更改。请更新以继续在最新版本上工作。",
       "unavailable": "先前的工作区已不可用。请在当前仓库中启动新会话。",
       "resume": "恢复先前的工作区",
       "resuming": "正在恢复…",
       "newSession": "启动新会话",
-      "delete": "删除会话"
+      "delete": "删除会话",
+      "update": "更新到最新",
+      "updating": "正在更新…",
+      "dismiss": "关闭",
+      "updateHint": "让智能体更新此会话",
+      "updateSent": "已在此会话中开始更新",
+      "updateFailed": "无法发送更新提示。"
     },
     "lost": {
       "title": "此会话的计算机已丢失",
@@ -1623,11 +1629,11 @@
     "connectProvider": "连接提供商",
     "manageModels": "管理模型",
     "loading": "正在加载模型",
-    "yourDefault": "你的默认模型",
-    "defaultAria": "{model} 是你的默认模型",
-    "setDefaultAria": "将 {model} 设为我的默认模型",
-    "defaultTitle": "你的默认模型",
-    "setDefaultTitle": "设为我的默认模型",
+    "yourDefault": "账户默认",
+    "defaultAria": "{model} 是此账户的默认模型",
+    "setDefaultAria": "将 {model} 设为账户的默认模型",
+    "defaultTitle": "账户默认模型",
+    "setDefaultTitle": "设为账户的默认模型",
     "upgrade": "升级",
     "noMatch": {
       "title": "没有匹配的模型",
@@ -19501,5 +19507,42 @@
     "invitesTitle": "你收到了邀请",
     "invitesDescription": "加入团队共享的项目，或创建你自己的项目。",
     "createProjectInstead": "改为创建新项目"
+  },
+  "projectSelector": {
+    "welcome": "欢迎使用 Kortix",
+    "welcomeBack": "欢迎回来",
+    "descriptionNew": "创建你的第一个项目，或加入团队共享的项目。",
+    "descriptionReturning": "打开一个项目，或创建新项目。",
+    "signedInAs": "已登录：{email}",
+    "createTitle": "创建新项目",
+    "createBody": "项目包含你的智能体、文件和会话。",
+    "orContinue": "或打开现有项目",
+    "invitations": "邀请",
+    "sentTo": "发送至 {email}",
+    "invitedBy": "{email} 邀请",
+    "join": "加入",
+    "joinError": "无法加入，请重试。",
+    "unnamedWorkspace": "工作区",
+    "search": "查找项目",
+    "noMatches": "没有与“{query}”匹配的项目。",
+    "projectCount": "{count, plural, other {# 个项目}}",
+    "role": {
+      "owner": "所有者",
+      "admin": "管理员",
+      "member": "成员"
+    },
+    "openedAgo": "{time}打开",
+    "neverOpened": "尚未打开",
+    "showAll": "显示全部 {count} 个",
+    "showFewer": "收起",
+    "createIn": "创建项目",
+    "emptyCreatable": "此工作区还没有项目。",
+    "emptyMember": "这里还没有与你共享的项目。请向所有者或管理员申请访问。",
+    "failed": "无法加载这些项目。",
+    "retry": "重试",
+    "noAccessTitle": "还没有项目",
+    "noAccessBody": "请让所有者或管理员邀请 {email}。",
+    "loadErrorTitle": "无法加载你的项目",
+    "loadErrorBody": "请检查网络连接后重试。"
   }
 }

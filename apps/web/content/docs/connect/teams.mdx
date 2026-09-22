@@ -118,6 +118,22 @@ asking in the Kortix app.
 Either way you answer in place, and your answer reaches the agent as your next
 message in the conversation. You can always ignore the card and just type.
 
+## Approvals
+
+When an agent needs a human decision before it proceeds — a risky step, a
+change it wants signed off — it files a review item. If the session was started
+from this conversation, the decision lands here as a card: the title, a summary,
+a risk level, and **Approve**, **Request changes** and **Deny**, plus a link
+into Kortix.
+
+The card carries an optional feedback box. Whatever you type is stored with the
+decision and passed to the agent with it, so "Request changes" does not cost a
+second round trip to ask what you meant. It is optional by design — a plain
+Approve should not need typing.
+
+Anyone in the conversation sees the card, but acting on it needs a linked
+Kortix account with access to the project.
+
 ## Posting on its own
 
 Besides replying where it was asked, the agent can post into any chat or

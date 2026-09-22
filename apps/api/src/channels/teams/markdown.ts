@@ -164,3 +164,58 @@ export function markdownToCardElements(markdown: string): CardElement[] {
   flushPara();
   return out;
 }
+
+// ── Slack mrkdwn → Teams markdown ───────────────────────────────────────────
+// `classifyTurnError` (channels/slack/errors.ts) is shared with Teams, and it
+// writes Slack's dialect: `:warning:` for an emoji and `*text*` for bold. Teams
+// renders neither. Seen on dev 2026-09-21 — a provider-auth failure reached a
+// Teams card reading literally ":warning: The model provider rejected this
+// request", with the sentence in ITALIC, because `*text*` is bold in mrkdwn and
+// italic in every Markdown a Teams TextBlock understands. The copy was right;
+// the dialect was not.
+//
+// Converting at this one boundary keeps Slack's output byte-for-byte unchanged.
+
+/** The shortcodes `classifyTurnError` emits, and nothing else. */
+const MRKDWN_EMOJI: Record<string, string> = {
+  warning: '⚠️',
+  credit_card: '💳',
+  hourglass_flowing_sand: '⏳',
+  scroll: '📜',
+  books: '📚',
+  no_entry: '⛔',
+};
+
+const SLOT = '';
+
+/**
+ * Rewrite Slack mrkdwn as the Markdown a Teams TextBlock renders.
+ *
+ * - `:warning:` → ⚠️. An unmapped shortcode is DROPPED, never shown: a bare
+ *   `:sparkles:` in a failure card is noise at best and looks broken at worst.
+ * - `*bold*` → `**bold**`, because Teams reads a single asterisk as italic.
+ * - `_italic_` → `*italic*`, with word boundaries so `session_id` survives.
+ *
+ * Code spans and fences are stashed first, so nothing inside them is rewritten.
+ */
+export function mrkdwnToTeamsMarkdown(input: string): string {
+  if (!input) return input;
+  const slots: string[] = [];
+  const stash = (m: string) => `${SLOT}${slots.push(m) - 1}${SLOT}`;
+
+  let out = input
+    .replace(/```[\s\S]*?```/g, stash)
+    .replace(/`[^`\n]+`/g, stash)
+    // Already-Markdown bold must not become `****bold****`.
+    .replace(/\*\*[^*\n]+\*\*/g, stash);
+
+  out = out.replace(/\*([^*\n]+)\*/g, (_m, inner: string) => `**${inner}**`);
+  // `_x_` only when the underscores sit on a word boundary — `agent_name` and
+  // `MS_TEAMS_TENANT_ID` appear in this copy and must be left alone.
+  out = out.replace(/(^|[\s(])_([^_\n]+)_(?=$|[\s.,;:!?)])/g, (_m, lead: string, inner: string) => `${lead}*${inner}*`);
+  out = out.replace(/:([a-z0-9_+-]+):/gi, (_m, name: string) => MRKDWN_EMOJI[name.toLowerCase()] ?? '');
+  // Dropping a leading shortcode leaves the space it sat in front of.
+  out = out.replace(/^[ \t]+/gm, '');
+
+  return out.replace(new RegExp(`${SLOT}(\\d+)${SLOT}`, 'g'), (_m, i: string) => slots[Number(i)] ?? '');
+}
