@@ -9,7 +9,6 @@ import {
 } from '../src/core/sandbox-preview';
 import {
   type SandboxPreviewDeploymentInput,
-  deployDaytonaPreview,
   deployPlatinumPreview,
   reconcileDaytonaPreviews,
   reconcilePlatinumPreviews,
@@ -37,9 +36,9 @@ function positiveInteger(name: string): number {
 
 function provider(): SandboxPreviewProvider {
   const selected = value('PREVIEW_SANDBOX_PROVIDER', 'auto').toLowerCase();
-  if (selected === 'auto' || selected === 'platinum' || selected === 'daytona') return selected;
+  if (selected === 'auto' || selected === 'platinum') return selected;
   throw new Error(
-    `PREVIEW_SANDBOX_PROVIDER must be auto, platinum, or daytona; received ${selected}`,
+    `previews run on Platinum only: PREVIEW_SANDBOX_PROVIDER must be auto or platinum; received ${selected}`,
   );
 }
 
@@ -159,19 +158,16 @@ if (action === 'deploy') {
     lockfileHash: required('PREVIEW_LOCKFILE_SHA256'),
     secrets: readPreviewRuntimeSecrets(process.env),
     platinum,
-    daytona,
   };
   const result = await runSandboxPreview(
     { provider: provider(), prNumber, repository, sha },
     {
       platinum: () => deployPlatinumPreview(deployment),
-      daytona: () => deployDaytonaPreview(deployment),
     },
   );
-  const staleProviderCleanup = result.provider === 'platinum'
-    ? teardownDaytonaPreview({ ...daytona, prNumber })
-    : teardownPlatinumPreview({ ...platinum, prNumber });
-  await staleProviderCleanup.catch((error) => {
+  // Previews created before Platinum-only (2026-09-22) may still exist on
+  // Daytona. Remove this pull request's one; nothing new is ever created there.
+  await teardownDaytonaPreview({ ...daytona, prNumber }).catch((error) => {
     console.warn(
       `[sandbox-preview] stale provider cleanup failed; scheduled reconciliation will retry: ${String(error)}`,
     );

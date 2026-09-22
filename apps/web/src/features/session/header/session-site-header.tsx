@@ -19,6 +19,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { ExportTranscriptModal } from '@/features/session/header/export-transcript-modal';
 import { SessionChangesIndicator } from '@/features/session/header/session-changes-indicator';
+import { PreviousRepositoryNotice } from '@/features/session/previous-repository-session';
 import {
   SessionConfigIndicator,
   SessionConfigReloadConfirm,
@@ -443,6 +444,10 @@ export function SessionSiteHeader({
             )}
           </div>
         </div>
+        {/* Floats under this row, anchored to it, so it tracks the titlebar
+            band's height instead of guessing an offset. Null unless the route
+            marked this session as started from a previous repository. */}
+        {isProjectSession && <PreviousRepositoryNotice />}
       </div>
 
       <ExportTranscriptModal

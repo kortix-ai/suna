@@ -113,15 +113,16 @@ test('31 — previous repository session loads history without a repository gate
     ).toBeVisible();
     await expect(
       page.getByText(
-        "This workspace started from the project's previous repository. Git now connects to the current repository. Review changes before you push.",
+        'The project changed after this session started. Update it to keep working on the latest version.',
         { exact: true },
       ),
     ).toBeVisible();
     await expect(page.getByRole('button', { name: 'Resume previous workspace' })).toHaveCount(0);
     await expect(page.getByRole('link', { name: 'Continue in current repository' })).toHaveCount(0);
-    await expect(page.getByText('Session uses previous repository', { exact: true })).toHaveCount(
-      0,
-    );
+    const notice = page.getByRole('status', { name: 'This session is out of date' });
+    await expect(notice).toBeVisible();
+    await expect(notice.getByRole('button', { name: 'Update to latest' })).toBeEnabled();
+    await expect(notice.getByRole('button', { name: 'Dismiss' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Retry' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Copy prompt' })).toHaveCount(0);
 
@@ -135,7 +136,7 @@ test('31 — previous repository session loads history without a repository gate
     await expect(page.getByText('Show my saved conversation.', { exact: true })).toBeVisible();
     await expect(
       page.getByText(
-        "This workspace started from the project's previous repository. Git now connects to the current repository. Review changes before you push.",
+        'The project changed after this session started. Update it to keep working on the latest version.',
         { exact: true },
       ),
     ).toBeVisible();
@@ -150,6 +151,37 @@ test('31 — previous repository session loads history without a repository gate
       animations: 'disabled',
       path: testInfo.outputPath('previous-repository-session-dark-720x480.png'),
       fullPage: true,
+    });
+
+    // The X hides the notice for this viewer, and the dismissal survives a reload.
+    await notice.getByRole('button', { name: 'Dismiss' }).click();
+    await expect(notice).toHaveCount(0);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(page.getByText('Show my saved conversation.', { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('status', { name: 'This session is out of date' }),
+    ).toHaveCount(0);
+
+    // "Update to latest" hands the repository-update prompt to this session's chat.
+    await page.evaluate(() => {
+      for (const key of Object.keys(window.localStorage)) {
+        if (key.startsWith('kortix:previous-repository-notice-dismissed:')) {
+          window.localStorage.removeItem(key);
+        }
+      }
+    });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    const reshown = page.getByRole('status', { name: 'This session is out of date' });
+    await expect(reshown).toBeVisible();
+    await reshown.getByRole('button', { name: 'Update to latest' }).click();
+    await expect(page.getByText('Update started in this session', { exact: true })).toBeVisible();
+    await expect(reshown).toHaveCount(0);
+    await expect(
+      page.getByText("This project's repository was replaced.", { exact: false }).first(),
+    ).toBeVisible();
+    await page.screenshot({
+      animations: 'disabled',
+      path: testInfo.outputPath('previous-repository-session-update-sent.png'),
     });
   } finally {
     await project?.dispose();

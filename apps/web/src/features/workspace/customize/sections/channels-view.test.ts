@@ -472,9 +472,13 @@ describe('Teams panel — chrome aligned with the rebuilt Slack surface', () => 
     expect(teamsPanelSource).not.toContain('bg-destructive/5');
   });
 
-  test('the managed/BYO toggle is a Switch, not a raw checkbox', () => {
+  // The Switch this used to assert is gone: bring-your-own is a guided wizard
+  // now, so there is no second mode for this panel to toggle between. What
+  // must not come back is the raw checkbox that preceded the Switch.
+  test('bring-your-own opens the wizard; no raw checkbox, no mode toggle', () => {
     expect(teamsPanelSource).not.toContain('type="checkbox"');
-    expect(teamsPanelSource).toContain('<Switch');
+    expect(teamsPanelSource).toContain('<TeamsByoWizard');
+    expect(teamsPanelSource).not.toContain('<Switch');
   });
 
   test('shares one manifest-copy implementation with the Slack wizard', () => {

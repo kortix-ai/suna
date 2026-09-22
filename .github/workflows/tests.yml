@@ -115,6 +115,68 @@ jobs:
       - name: Install Chromium
         if: matrix.mode == 'browser'
         run: pnpm --dir tests exec playwright install --with-deps chromium
+      - name: Free the local Supabase ports
+        # Blacksmith runners are reused, and a job that ended without stopping
+        # its stack leaves containers holding 54321-54324. The next
+        # `supabase start` then dies with
+        #   failed to bind host port for 0.0.0.0:54324: address already in use
+        # which looks exactly like a test failure. Seen four times on
+        # 2026-09-21 across the core, packages and browser lanes.
+        #
+        # Three things have to happen, in this order, because each one misses
+        # what the next catches:
+        #
+        # 1. `supabase stop` — reaches only containers of its own project name.
+        # 2. Remove by PUBLISHED PORT — catches a stack another checkout left.
+        # 3. WAIT for the kernel to release the port. Removing a container does
+        #    not free its binding instantly. On run 35630898515 (browser-1,
+        #    main @ 3c67a5e0b6) steps 1 and 2 both ran clean, `docker ps`
+        #    matched nothing, 54322 then bound fine — and 54324 still refused.
+        #    Nothing was left to delete; the binding simply had not been given
+        #    back yet.
+        #
+        # If a port is STILL busy after the wait, say who holds it. The three
+        # occurrences so far were each diagnosed by inference; the next one
+        # should arrive with evidence instead.
+        run: |
+          set -uo pipefail
+          pnpm exec supabase stop --no-backup || true
+          for port in 54321 54322 54323 54324; do
+            ids=$(docker ps -aq --filter "publish=$port" || true)
+            if [ -n "$ids" ]; then
+              echo "[ci] removing stale container(s) on port $port: $ids"
+              docker rm -f $ids || true
+            fi
+          done
+          # Wait by ATTEMPTING A BIND, not by reading `ss`.
+          #
+          # `ss -ltn` lists LISTENING sockets only, so it reports a port free
+          # while `bind()` still returns EADDRINUSE — a closing docker-proxy is
+          # not "listening". Measured on browser-2: `supabase stop` returned at
+          # 09:19:26.710, the old `ss` loop cleared all four ports by
+          # 09:19:27.448 (0.74s, first poll), and `supabase start` still failed
+          # to bind 54324 twenty-five seconds later. The check was passing on a
+          # port that was not free, and two earlier fixes rested on that.
+          #
+          # A bind cannot disagree with Docker, because it is what Docker does.
+          # An uncaught OSError exits 1, so no try/except is needed — which
+          # keeps this a ONE-LINER. Multi-line python here would sit at column 0
+          # inside this block scalar and break the YAML.
+          # SO_REUSEADDR matches docker-proxy: without it a lingering TIME_WAIT
+          # would make this wait the full 30s on a healthy runner.
+          bindable() { python3 -c "import socket,sys; s=socket.socket(); s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1); s.bind(('0.0.0.0',int(sys.argv[1])))" "$1" 2>/dev/null; }
+          for port in 54321 54322 54323 54324; do
+            for _ in $(seq 1 30); do
+              bindable "$port" && break
+              sleep 1
+            done
+            if ! bindable "$port"; then
+              echo "::warning::port $port still refuses a bind after the sweep; supabase start will fail"
+              ss -ltnp "sport = :$port" || true
+              ss -tanH "sport = :$port" || true
+              docker ps -a --filter "publish=$port" --format '{{.ID}} {{.Image}} {{.Status}} {{.Ports}}' || true
+            fi
+          done
       - name: Prestart Supabase for the browser lane
         # The root runner reuses a running local Supabase. Starting it before the
         # lane keeps Next.js cold-route compilation and the Supabase image
@@ -133,7 +195,10 @@ jobs:
           # shellcheck disable=SC2086 # TEST_ARGS is a matrix literal, split on purpose
           if [[ -n "$TEST_ARGS" ]]; then pnpm test -- $TEST_ARGS; else pnpm test; fi
       - name: Stop the local Supabase stack
-        if: always() && matrix.mode == 'browser'
+        # EVERY lane, not just the browser ones. The core and packages lanes
+        # start Supabase too (through `pnpm test`), and leaving it running is
+        # what strands the ports for the next job on a reused runner.
+        if: always()
         run: pnpm exec supabase stop --no-backup || true
       - name: Guard test artifacts against secrets
         if: always()

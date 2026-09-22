@@ -37,7 +37,13 @@ export function applyDetailCapabilityFilter<C extends object, F>(
 ): { config: C; files: F[]; file_count: number } {
   const gatedConfig = {
     ...config,
-    ...(caps.canAgents ? {} : { agents: [], agent_discovery: null }),
+    // The default agent is a NAME from that same roster, so agent.read governs
+    // it, not customize.read. A member holds agent.read without customize.read;
+    // blanking it for them made the composer fall back to the first agent
+    // alphabetically and run it instead of the project default.
+    ...(caps.canAgents
+      ? {}
+      : { agents: [], agent_discovery: null, open_code_default_agent: null }),
     ...(caps.canSkills ? {} : { skills: [] }),
     ...(caps.canCommands ? {} : { commands: [] }),
     ...(caps.canCustomize
@@ -47,7 +53,6 @@ export function applyDetailCapabilityFilter<C extends object, F>(
           manifest: {},
           env: [],
           open_code_raw: null,
-          open_code_default_agent: null,
           // The verdict is derived FROM the raw manifest, so it has to be
           // blanked with it — otherwise a caller who cannot read the config
           // still learns its version, and worse, is shown an upgrade prompt

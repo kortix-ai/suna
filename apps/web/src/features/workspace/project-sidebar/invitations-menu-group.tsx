@@ -9,7 +9,7 @@ import {
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import Loading from '@/components/ui/loading';
 import { errorToast } from '@/components/ui/toast';
-import { joinDestination } from '@/app/(app)/projects/start/project-chooser';
+import { joinDestination } from '@/features/workspace/project-selector/project-selector-model';
 import { useMyInvites } from '@/hooks/account/use-my-invites';
 import { useTranslations } from '@/i18n/use-translations';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';

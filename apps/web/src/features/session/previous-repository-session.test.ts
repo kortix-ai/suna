@@ -4,6 +4,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   isPreviousRepositoryRuntimeUnavailableError,
   isPreviousRepositorySessionError,
+  previousRepositoryUpdatePrompt,
   sessionUsesPreviousRepository,
 } from './previous-repository-session';
 
@@ -54,5 +55,19 @@ describe('previous repository session state', () => {
       ),
     ).toBe(false);
     expect(sessionUsesPreviousRepository({}, {})).toBe(false);
+  });
+});
+
+describe('previous repository update prompt', () => {
+  test('backs up work before it moves anything, and never pushes', () => {
+    const prompt = previousRepositoryUpdatePrompt('dev');
+    const backup = prompt.indexOf('git branch -f backup/previous-repository HEAD');
+    const fetch = prompt.indexOf('git fetch origin');
+    expect(prompt.indexOf('Commit any uncommitted work')).toBeLessThan(backup);
+    expect(backup).toBeLessThan(fetch);
+    expect(prompt).toContain('git merge-base HEAD origin/dev');
+    expect(prompt).toContain('reset this branch to `origin/dev`');
+    expect(prompt).toContain('Do not push.');
+    expect(prompt).not.toContain('origin/main');
   });
 });

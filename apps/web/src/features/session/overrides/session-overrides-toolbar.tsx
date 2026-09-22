@@ -30,6 +30,8 @@ import {
 } from '@/features/session/scope/session-scope-toolbar';
 import { useSessionScope } from '@/features/session/scope/use-session-scope';
 import { useFeatureFlag, useSessionProviderSecretPools } from '@kortix/sdk/react';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 
 import { SessionOverridesControl, type SessionOverrideRow } from './session-overrides-control';
 import { NewProviderSecretPoolEditor, ProviderSecretPoolEditor } from './provider-secret-pool-editor';
@@ -129,6 +131,12 @@ export function SessionOverridesToolbar({
   const providerPools = useSessionProviderSecretPools(
     pooledSecretsEnabled && llmGatewayEnabled ? projectId : null, sessionId,
   );
+  // `project.secret.read` is a manager-tier leaf. Without it the catalog reads
+  // `unavailable`, and the row only ever said "Secret access is unavailable" —
+  // an axis the viewer can neither see nor change. Drop it on a SETTLED denial;
+  // a failed catalog read for someone who IS allowed keeps its row.
+  const secretRead = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SECRET_READ);
+  const secretsDenied = !secretRead.isLoading && !secretRead.allowed;
   const { scope, catalog, saveScope, isLoading, isScopeLoading } = useSessionScope({
     projectId,
     sessionId,
@@ -250,7 +258,7 @@ export function SessionOverridesToolbar({
 
   const rows = useMemo(() => {
     const list: SessionOverrideRow[] = [];
-    list.push({
+    if (!secretsDenied) list.push({
       id: 'secrets',
       name: 'Secrets',
       icon: KeyRound,
@@ -347,6 +355,7 @@ export function SessionOverridesToolbar({
     }
     return list;
   }, [
+    secretsDenied,
     activeCatalog,
     controlsDisabled,
     draft,
@@ -370,6 +379,11 @@ export function SessionOverridesToolbar({
     tPooled,
   ]);
 
+  // Nothing left to change (a member in an existing session: the sandbox row is
+  // read-only and fixed at create). A gear that opens onto a Save button and
+  // "Changes apply to the next prompt" over nothing editable is a dead end.
+  if (rows.every((row) => row.readOnly)) return null;
+
   return (
     <SessionOverridesControl
       rows={rows}
@@ -378,6 +392,7 @@ export function SessionOverridesToolbar({
       pendingNote={hasProviderChanges ? tPooled('unsavedChanges') : undefined}
       error={saveError}
       saveDisabled={saveDisabled}
+      hideSave={!rows.some((row) => row.id === 'secrets' || row.id === 'provider-keys')}
       notice={
         retroactive === false ? (
           <InfoBanner

@@ -106,10 +106,30 @@ beforeEach(() => {
 });
 
 describe('authorizeGitProxy — CLI PAT', () => {
-  test('a PAT on the owning account is allowed without an IAM round-trip', async () => {
+  // Account membership is not project access. A same-account PAT used to skip
+  // the project role entirely, so any account member could mint a personal
+  // token and push to `main` of a project they hold no role on.
+  test('a same-account PAT without the project git role is denied', async () => {
+    authorizeAllowed = false;
+    const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'write');
+    expect(res).toMatchObject({ ok: false, status: 403 });
+    expect(authorizeCalls).toEqual([
+      { userId: 'user-1', accountId: OWNER_ACCOUNT, action: 'project.gitops.push', actingTokenId: 'tok-1' },
+    ]);
+  });
+
+  test('a same-account PAT clone is checked against project.gitops.read', async () => {
+    authorizeAllowed = false;
+    const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'read');
+    expect(res).toMatchObject({ ok: false, status: 403 });
+    expect(authorizeCalls.map((call) => call.action)).toEqual(['project.gitops.read']);
+  });
+
+  test('a same-account PAT whose user holds the git role is allowed', async () => {
+    authorizeAllowed = true;
     const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'write');
     expect(res.ok).toBe(true);
-    expect(authorizeCalls).toHaveLength(0);
+    expect(authorizeCalls.map((call) => call.action)).toEqual(['project.gitops.push']);
   });
 
   test('a session PAT for a runtime workspace is denied before account ownership can allow it', async () => {
@@ -373,6 +393,11 @@ describe('authorizeGitProxy — sandbox token', () => {
 });
 
 describe('authorizeGitProxy — verdict memo', () => {
+  // These cases pin the cache, not the role: their user holds the git role.
+  beforeEach(() => {
+    authorizeAllowed = true;
+  });
+
   test('a repository switch invalidates a cached authorization', async () => {
     projectRow = { ...projectRow, repoUrl: 'https://github.com/example-org/old.git' };
     validateCalls = 0;

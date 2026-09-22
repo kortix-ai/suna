@@ -18,6 +18,7 @@ import {
   type MirrorMessage,
   type MirrorSnapshot,
   readSessionTranscriptMirror,
+  UnknownTranscriptCursorError,
 } from './session-transcript-mirror';
 
 const WORKSPACE_DIRECTORY = '/workspace';
@@ -68,7 +69,14 @@ export interface SessionTranscriptSyncEnvelope {
   complete: boolean;
   captured_at: string | null;
   opencode_session_id: string | null;
+  /** Messages in THIS window. */
   message_count: number;
+  /** Messages the mirror holds for this session, across every window.
+   *  `complete === false` says a window is partial; this says by how much. */
+  total: number;
+  /** Pass as `before` to read the window OLDER than this one. Null when this
+   *  window already reaches the oldest row the mirror holds. */
+  next_cursor: string | null;
   messages: MirrorMessage[];
 }
 
@@ -76,7 +84,11 @@ export interface SessionTranscriptSyncEnvelope {
  *  presence changes which branch the digest takes, and a DB is not needed to
  *  prove that. Production never passes it. */
 export interface SessionTranscriptDeps {
-  readMirror?: (sessionId: string, limit: number) => Promise<MirrorSnapshot | null>;
+  readMirror?: (
+    sessionId: string,
+    limit: number,
+    before?: string | null,
+  ) => Promise<MirrorSnapshot | null>;
 }
 
 export async function buildSessionTranscriptDigest(
@@ -216,12 +228,15 @@ export async function buildSessionTranscriptSyncEnvelope(
     session: ProjectSessionRow;
     limit: number;
     requireCurrentRoot?: boolean;
+    /** A `next_cursor` from a previous window — read the window older than it. */
+    before?: string | null;
   },
   deps: SessionTranscriptDeps = {},
 ): Promise<SessionTranscriptSyncEnvelope> {
   const mirror = await (deps.readMirror ?? readMirrorSafely)(
     input.session.sessionId,
     input.limit,
+    input.before ?? null,
   );
   const rootMismatch = input.requireCurrentRoot && (
     !input.session.opencodeSessionId || mirror?.opencode_session_id !== input.session.opencodeSessionId
@@ -235,6 +250,8 @@ export async function buildSessionTranscriptSyncEnvelope(
       captured_at: null,
       opencode_session_id: input.session.opencodeSessionId,
       message_count: 0,
+      total: 0,
+      next_cursor: null,
       messages: [],
     };
   }
@@ -246,6 +263,8 @@ export async function buildSessionTranscriptSyncEnvelope(
     captured_at: mirror.captured_at,
     opencode_session_id: mirror.opencode_session_id ?? input.session.opencodeSessionId,
     message_count: mirror.messages.length,
+    total: mirror.total,
+    next_cursor: mirror.next_cursor,
     messages: mirror.messages,
   };
 }
@@ -258,10 +277,18 @@ export function mirrorIsComplete(mirror: MirrorSnapshot): boolean {
 
 /** A mirror read must never be able to fail a transcript request: the mirror is
  *  an enrichment, and its absence is already an expressible answer. */
-async function readMirrorSafely(sessionId: string, limit: number): Promise<MirrorSnapshot | null> {
+async function readMirrorSafely(
+  sessionId: string,
+  limit: number,
+  before?: string | null,
+): Promise<MirrorSnapshot | null> {
   try {
-    return await readSessionTranscriptMirror({ sessionId, limit });
+    return await readSessionTranscriptMirror({ sessionId, limit, before });
   } catch (err) {
+    // A cursor the caller supplied is the caller's error, not a mirror
+    // failure, and swallowing it here would answer "nothing was captured" for
+    // a session that holds a full history.
+    if (err instanceof UnknownTranscriptCursorError) throw err;
     console.warn(
       `[transcript-mirror] read failed for session ${sessionId}:`,
       err instanceof Error ? err.message : err,

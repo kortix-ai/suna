@@ -101,13 +101,13 @@ describe('/new page: no invented constraints', () => {
 });
 
 describe('/new page: escape hatch for a user with zero workspaces', () => {
-  test('a Back link to the landing door sits ahead of the form, and Log out beside it', () => {
+  test('a Back link to the project selector sits ahead of the form, and Log out beside it', () => {
     // Log out alone was the only way off `/new` on the web; a user with an
     // invalid form read it as "you cannot leave" (dev, 2026-09-17). The exit
-    // is a plain link to the landing door, rendered ahead of the <form> so
+    // is a plain link to the project selector, rendered ahead of the <form> so
     // it is reachable regardless of form state.
     expect(code).toContain("t('actions.back')");
-    expect(code).toContain('href={PROJECT_LANDING_PATH}');
+    expect(code).toContain('href="/projects"');
     const formIndex = code.indexOf('<form');
     expect(code.indexOf("t('actions.back')")).toBeLessThan(formIndex);
     expect(code).toContain("t('actions.logOut')");
@@ -142,7 +142,7 @@ describe('/new page: escape hatch for a user with zero workspaces', () => {
 
   // The desktop shell has no browser toolbar. Without this control, Log out was
   // the only way off `/new` there.
-  test('on desktop, a Close control after Log out returns to the landing door', () => {
+  test('on desktop, a Close control after Log out returns to the project selector', () => {
     const logOutAt = code.indexOf('{signOutLabel}');
     const closeAt = code.indexOf('<DesktopCloseButton');
     expect(logOutAt).toBeGreaterThan(0);
@@ -151,8 +151,7 @@ describe('/new page: escape hatch for a user with zero workspaces', () => {
     expect(closeAt).toBeLessThan(code.indexOf('<AnimatePresence'));
 
     const close = code.match(/<DesktopCloseButton[\s\S]*?\/>/)?.[0];
-    expect(close).toContain('router.replace(PROJECT_LANDING_PATH)');
-    expect(code).toContain("from '@/lib/onboarding/landing-destination'");
+    expect(close).toContain("router.replace('/projects')");
     expect(code).toContain("from '@/components/desktop/desktop-close-button'");
   });
 

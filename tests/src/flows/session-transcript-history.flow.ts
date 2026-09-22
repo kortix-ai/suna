@@ -1,5 +1,6 @@
 import { Client } from "pg";
 import { flow } from "../core/flow";
+import { CliSandbox, throwIfCliInfraFailure } from "../fixtures/cli";
 import { createDatabaseSession } from "../fixtures/database-project";
 import { seedSessionTranscript } from "../fixtures/session-transcript";
 
@@ -11,6 +12,9 @@ flow(
     routes: [
       "GET /v1/projects/:projectId/sessions/:sessionId/transcript",
       "PATCH /v1/projects/:projectId/features",
+      // `kortix sessions digest` lists, then digests each session.
+      "GET /v1/projects/:projectId/sessions",
+      "GET /v1/accounts/me",
     ],
   },
   async (ctx) => {
@@ -109,6 +113,85 @@ flow(
           )
         ).status(200);
         (await owner.get(route, options)).status(403);
+      },
+    );
+    await ctx.step(
+      "the real CLI digests the stopped session's saved transcript, flag or no flag",
+      async () => {
+        // The compact digest shape is NOT gated by `session_transcript_history`
+        // — the flag above is still OFF here. `kortix sessions digest` used to
+        // refuse any session that was not `running` and never make the request.
+        //
+        // Put the root back first. The step above replaced it to prove the SYNC
+        // shape refuses a mirror it cannot attribute; the compact shape the CLI
+        // reads carries no such check, so leaving `ses_replacement` in place
+        // would make this step pass for a reason it is not testing.
+        const restore = new Client({ connectionString: ctx.env.databaseUrl! });
+        await restore.connect();
+        try {
+          await restore.query(
+            "UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1",
+            [sessionId, fixture.root],
+          );
+        } finally {
+          await restore.end();
+        }
+        const pat = await ctx.fixtures.pat({
+          name: ctx.fixtures.name("cli-digest"),
+        });
+        const cli = new CliSandbox("digest");
+        try {
+          const login = await cli.login(pat, {
+            noProject: true,
+            account: ctx.P.OWNER.accountId,
+          });
+          if (login.exitCode !== 0)
+            throw new Error(`kortix login exited ${login.exitCode}: ${login.all}`);
+          const run = await cli.run([
+            "sessions",
+            "digest",
+            "--project",
+            project.id,
+            "--all",
+            "--json",
+          ]);
+          throwIfCliInfraFailure(run, "kortix sessions digest");
+          if (run.exitCode !== 0)
+            throw new Error(`kortix sessions digest exited ${run.exitCode}: ${run.all}`);
+          const payload = JSON.parse(run.stdout) as {
+            sessions: Array<{
+              session: { session_id: string; status: string };
+              transcript: {
+                available: boolean;
+                source: string;
+                complete: boolean;
+                message_count: number;
+                messages: Array<{ role: string; text: string }>;
+              };
+            }>;
+          };
+          const digest = payload.sessions.find(
+            (row) => row.session.session_id === sessionId,
+          );
+          if (!digest) throw new Error(`digest omitted session ${sessionId}`);
+          if (digest.session.status === "running")
+            throw new Error("fixture session must be stopped for this assertion");
+          if (!digest.transcript.available)
+            throw new Error(
+              `stopped session reported no transcript: ${JSON.stringify(digest.transcript)}`,
+            );
+          if (digest.transcript.source !== "mirror")
+            throw new Error(`expected source 'mirror', got '${digest.transcript.source}'`);
+          if (digest.transcript.complete !== true)
+            throw new Error("a head-complete mirror must report complete");
+          if (digest.transcript.message_count !== 2)
+            throw new Error(`expected 2 messages, got ${digest.transcript.message_count}`);
+          const reply = digest.transcript.messages.find((m) => m.role === "assistant");
+          if (!reply?.text.includes("stored in the database"))
+            throw new Error(`digest lost the saved reply: ${JSON.stringify(reply)}`);
+        } finally {
+          cli.dispose();
+        }
       },
     );
   },

@@ -26,7 +26,11 @@ describe('buildTeamsManifest', () => {
 
   test('the command menu offers /policy', () => {
     const m = buildTeamsManifest({ appId: 'app-123', baseUrl: 'https://api.kortix.com' });
-    expect(m.bots[0]!.commandLists![0]!.commands.map((c) => c.title)).toContain('/policy');
+    const titles = m.bots[0]!.commandLists![0]!.commands.map((c) => c.title);
+    expect(titles).toContain('/policy');
+    // Teams' own command menu is where a user looks for the lever that ends a
+    // run; the live card's Stop button is gone as soon as the card scrolls.
+    expect(titles).toContain('/stop');
   });
 });
 

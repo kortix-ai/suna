@@ -711,7 +711,7 @@ flow(
 // signed up WITHOUT clicking the email link landed in an auto-created project
 // and never saw the invite. `GET /v1/account-invites` lists every pending
 // invite addressed to the caller's email, including the project the invite
-// grants, so the `/projects/start` chooser can offer Join.
+// grants, so the `/projects` selector can offer Join.
 flow(
   'INV-8',
   {

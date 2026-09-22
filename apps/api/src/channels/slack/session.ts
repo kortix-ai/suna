@@ -18,7 +18,13 @@ import {
   normalizeConversationPolicy,
   rememberSlackThreadOwner,
 } from './participants';
-import { buildSlackTurnEnv, finalizeTurn, saveTurn, startTurn } from './turn';
+import {
+  buildSlackTurnEnv,
+  finalizeTurn,
+  saveTurn,
+  showStopOnLivePlan,
+  startTurn,
+} from './turn';
 import type { SlackEnvelope, SlackEvent } from './types';
 import { channelTurnModel, promptModelOverride } from '../vision-model';
 
@@ -296,6 +302,8 @@ export async function createOrJoinThreadSession(input: {
   if (result.sessionId && handle) {
     handle.sessionId = result.sessionId;
     await saveTurn(handle);
+    // Stop is only paintable once the message knows which session it would end.
+    await showStopOnLivePlan(handle);
   }
   if (result.sessionId && teamId && threadId && event.user) {
     await rememberSlackThreadOwner({
@@ -379,13 +387,18 @@ export const TURN_INSTRUCTIONS = [
   '- When the PREVIOUS step finished with a result, surface it:',
   '    slack step "Drafting summary" --output "Found 3 incidents, 1 P0"',
   '  Add `--source URL|TITLE` (repeatable) to cite the URLs you used.',
-  '- **Need to ask the user something? Use `slack send`, then END your turn.** Slack',
-  '  questions are async: ask, stop, and resume when they reply — their reply arrives as',
-  '  a fresh turn with full context. The built-in `question` tool is DISABLED in Slack',
-  '  (it is a synchronous web-UI construct with no answerer in a thread); calling it just',
-  '  fails. Post your question with `slack send` — plain text, or a Block Kit message; for',
-  '  discrete choices add an `actions` block of buttons and a click resumes the thread on',
-  '  the next turn. Never sit waiting for an answer inside a turn.',
+  // The `question` tool is NOT disabled and does not hang: the relay posts the
+  // blocks and returns at once with a sentinel telling the agent to end its
+  // turn (channels/slack/questions.ts). The old "DISABLED … calling it just
+  // fails" line was stale, and it is why channel questions arrived as prose
+  // the user could not click.
+  '- **Need to ask the user something with DISCRETE choices? Use the built-in `question`',
+  '  tool.** It renders real Block Kit buttons — one per option — and a click resumes the',
+  '  thread on the next turn. It does NOT block and does NOT fail: it returns immediately,',
+  '  and you END your turn. The answer arrives as a fresh turn with full context.',
+  '- Use `slack send` for a question only when it is genuinely open-ended prose with',
+  '  nothing to pick from. A numbered list of choices in a message is the wrong shape —',
+  '  the user cannot click it. Never sit waiting for an answer inside a turn.',
   '- Deliver the answer as a rich Block Kit message whenever the response',
   '  benefits from structure (headers, sections, lists, links, bullets):',
   '    slack send --text "fallback summary" --blocks-file /tmp/answer.json',

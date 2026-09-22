@@ -510,7 +510,7 @@ function ChannelBindingTableRow({
           ) : null}
           <div className="min-w-0">
             <p className="truncate text-sm font-medium" title={binding.channelId}>
-              {binding.channelName ?? binding.channelId}
+              {binding.channelName ?? bindingFallbackName(binding, tI18nComplete)}
             </p>
             <p className="text-muted-foreground text-xs">
               {binding.platform === 'teams'
@@ -611,6 +611,24 @@ function ChannelBindingTableRow({
       </TableCell>
     </TableRow>
   );
+}
+
+/**
+ * A binding with no captured name.
+ *
+ * Teams conversation ids are ~100 characters
+ * (`19:…@thread.tacv2;messageid=…`), so falling back to the raw id filled the
+ * name column with an opaque string that told a reader nothing — seen on dev
+ * for channels bound before the name was read off the activity. The scope
+ * reads better, and the full id is still on the row's `title`.
+ */
+function bindingFallbackName(
+  binding: { platform: string; channelId: string; channelType: string | null },
+  tI18nComplete: UiTranslator,
+): string {
+  if (binding.platform !== 'teams') return binding.channelId;
+  if (binding.channelType === 'channel') return tI18nComplete.raw('text5cb103d6008c');
+  return tI18nComplete.raw('text31d248c44579');
 }
 
 /** Teams rows: the conversation scope reads better than a tenant GUID underneath the name. */

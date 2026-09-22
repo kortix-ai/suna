@@ -25,7 +25,11 @@ export async function postTeamsQuestion(
   const handle = await loadTurn(sessionId);
   if (!handle) return { ok: false, error: 'No active Teams turn for this session.' };
 
-  await finalizeTurn(handle, {});
+  // NOT "Task complete". The agent did not finish — it asked. Closing the live
+  // card with the default title told the user the work was done, one line above
+  // a card asking them a question. The step in flight gets the neutral glyph
+  // for the same reason.
+  await finalizeTurn(handle, { title: 'Waiting for your answer', unfinished: true });
   await deleteTurn(sessionId);
 
   const ref: TeamsConversationRef = {

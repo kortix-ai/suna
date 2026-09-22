@@ -166,9 +166,10 @@ describe('web ECS migration', () => {
     // in this workflow may delete it any more.
     expect(workflow).not.toContain('labels/preview');
     expect(workflow).toContain('PREVIEW_BRANCH_ENV');
-    expect(workflow).toContain(
-      'persistent_branch=$([ "$EVENT_NAME" = workflow_dispatch ] && [ "$provider" = daytona ] && printf \'\' || printf \'%s\' "$branch")',
-    );
+    // Previews run on Platinum only, so every run owns the branch's persistent identity.
+    expect(workflow).toContain('persistent_branch="$branch"');
+    expect(workflow).toContain('case "$provider" in auto|platinum) ;; *)');
+    expect(workflow).not.toMatch(/-\s+daytona\n/);
     expect(workflow).toContain(
       'PREVIEW_BRANCH_ENV: ${{ needs.authorize.outputs.persistent_branch }}',
     );
@@ -183,7 +184,8 @@ describe('web ECS migration', () => {
     expect(workflow).toContain('deployments: write');
     expect(workflow).toContain('type: choice');
     expect(workflow).toContain('- platinum');
-    expect(workflow).toContain('- daytona');
+    // Previews run on Platinum only: Daytona is not a dispatch option.
+    expect(workflow).not.toContain('- daytona');
     expect(workflow).not.toContain('infra/scripts/ecs-preview.sh');
     expect(workflow).not.toContain('configure-aws-credentials');
     expect(workflow).not.toMatch(/vercel/i);
