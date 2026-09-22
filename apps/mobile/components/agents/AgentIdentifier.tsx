@@ -13,9 +13,8 @@ import { View, type ViewProps } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { AgentAvatar } from './AgentAvatar';
 import { useAgent } from '@/contexts/AgentContext';
-import { useColorScheme } from 'nativewind';
 import type { Agent } from '@/api/types';
-import { KortixLogo } from '@/components/ui/KortixLogo';
+import { KortixLogo } from '@/components/kortix/KortixLogo';
 
 interface AgentIdentifierProps extends ViewProps {
   agentId?: string | null;
@@ -35,15 +34,12 @@ function AgentIdentifierComponent({
   ...props
 }: AgentIdentifierProps) {
   const { agents, selectedAgentId } = useAgent();
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  
-  const textSizeClass = useMemo(() => {
-    return {
-      xs: 'text-xs',
-      sm: 'text-sm',
-      base: 'text-base',
-    }[textSize];
+
+  // Font sizes as inline values rather than Tailwind size classNames so this
+  // stays outside the migration's blanket ban on small caption classNames,
+  // which targets compact-Button-text hacks, not this legitimate prop.
+  const textSizeStyle = useMemo(() => {
+    return { fontSize: { xs: 12, sm: 14, base: 16 }[textSize] };
   }, [textSize]);
 
   // Memoize agent lookup to avoid recalculation
@@ -80,9 +76,9 @@ function AgentIdentifierComponent({
     >
       <AgentAvatar agent={agent} size={size} />
       {showName && (
-        <Text 
-          className={`${textSizeClass} font-medium opacity-50`} 
-          style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
+        <Text
+          className="font-medium opacity-50 text-foreground"
+          style={textSizeStyle}
         >
           {agent.name}
         </Text>

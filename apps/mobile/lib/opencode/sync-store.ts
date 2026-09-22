@@ -38,10 +38,11 @@ interface SyncState {
   upsertMessage: (sessionId: string, msg: MessageWithParts) => void;
   /** Remove a message (from SSE) */
   removeMessage: (sessionId: string, messageId: string) => void;
-  /** Upsert a part on a message (from SSE) */
-  upsertPart: (messageId: string, part: Part) => void;
-  /** Remove a part from a message (from SSE) */
-  removePart: (messageId: string, partId: string) => void;
+  /** Upsert a part on a message (from SSE). With `sessionId`, only that
+   *  session is searched; without it, every loaded session is. */
+  upsertPart: (messageId: string, part: Part, sessionId?: string) => void;
+  /** Remove a part from a message (from SSE). `sessionId` scopes the search. */
+  removePart: (messageId: string, partId: string, sessionId?: string) => void;
   /** Append a delta to a part's text field (from SSE message.part.delta) */
   appendPartDelta: (messageId: string, partId: string, sessionId: string, field: string, delta: string) => void;
   /** Set session status */
@@ -60,6 +61,8 @@ interface SyncState {
   getMessages: (sessionId: string) => MessageWithParts[];
   /** Get status for a session */
   getStatus: (sessionId: string) => SessionStatus | undefined;
+  /** Drop every piece of state held for these sessions */
+  evictSessions: (sessionIds: readonly string[]) => void;
   /** Reset all data */
   reset: () => void;
 }
@@ -77,6 +80,11 @@ export function markOptimistic(id: string) {
 
 export function isOptimistic(id: string): boolean {
   return optimisticIds.has(id);
+}
+
+/** Forget optimistic ids whose messages a real message has replaced. */
+export function clearOptimistic(ids: Iterable<string>) {
+  for (const id of ids) optimisticIds.delete(id);
 }
 
 // Track part IDs that have received at least one delta.
@@ -128,6 +136,95 @@ function insertIndexByTime(
   return list.length;
 }
 
+/** Nesting depth past which `sameValue` stops and reports "different". */
+const MAX_COMPARE_DEPTH = 8;
+
+/**
+ * Structural equality for JSON-shaped wire data. Used by `hydrate` to keep the
+ * existing object when a re-read returns the same content, so memoized rows do
+ * not re-render on every tail verification. Beyond `MAX_COMPARE_DEPTH` it
+ * answers "different", which only costs a re-render.
+ */
+function sameValue(a: unknown, b: unknown, depth = 0): boolean {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  if (depth >= MAX_COMPARE_DEPTH) return false;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    for (let index = 0; index < a.length; index++) {
+      if (!sameValue(a[index], b[index], depth + 1)) return false;
+    }
+    return true;
+  }
+  const left = a as Record<string, unknown>;
+  const right = b as Record<string, unknown>;
+  const keys = Object.keys(left);
+  if (keys.length !== Object.keys(right).length) return false;
+  for (const key of keys) {
+    if (!Object.prototype.hasOwnProperty.call(right, key)) return false;
+    if (!sameValue(left[key], right[key], depth + 1)) return false;
+  }
+  return true;
+}
+
+/**
+ * The part to keep for one incoming REST part. Text and reasoning keep the
+ * longer SSE-accumulated text while it streams; any part whose content did not
+ * change keeps the existing object.
+ */
+function reconcilePart(inPart: Part, exPart: Part | undefined): Part {
+  if (!exPart) return inPart;
+  if (inPart.type === 'text' || inPart.type === 'reasoning') {
+    const inText = (inPart as any).text;
+    const exText = (exPart as any).text;
+    if (
+      typeof exText === 'string' &&
+      typeof inText === 'string' &&
+      exText.length > inText.length
+    ) {
+      // SSE version has more content — keep it
+      return exPart;
+    }
+  }
+  return sameValue(inPart, exPart) ? exPart : inPart;
+}
+
+function isWorking(status: SessionStatus | undefined): boolean {
+  return status?.type === 'busy' || status?.type === 'retry';
+}
+
+/**
+ * Sessions whose state may be dropped: every session the store holds data
+ * for, except those in `keep`, those still working, and those carrying an
+ * optimistic message (a send in flight before its page mounts).
+ */
+export function selectSessionsToEvict(
+  state: Pick<SyncState, 'messages' | 'sessionStatus' | 'questions' | 'permissions'>,
+  keep: ReadonlySet<string>,
+): string[] {
+  const loaded = new Set([
+    ...Object.keys(state.messages),
+    ...Object.keys(state.sessionStatus),
+    ...Object.keys(state.questions),
+    ...Object.keys(state.permissions),
+  ]);
+  const evict: string[] = [];
+  for (const sessionId of loaded) {
+    if (keep.has(sessionId) || isWorking(state.sessionStatus[sessionId])) continue;
+    const messages = state.messages[sessionId];
+    if (messages?.some((message) => optimisticIds.has(message.info.id))) continue;
+    evict.push(sessionId);
+  }
+  return evict;
+}
+
+function omitKeys<T>(record: Record<string, T>, keys: readonly string[]): Record<string, T> {
+  if (!keys.some((key) => key in record)) return record;
+  const next = { ...record };
+  for (const key of keys) delete next[key];
+  return next;
+}
+
 // ---------------------------------------------------------------------------
 // Store implementation
 // ---------------------------------------------------------------------------
@@ -149,7 +246,9 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       const incomingHasRealUserMessage = messages.some(
         (message) => message.info.role === 'user' && !optimisticIds.has(message.info.id),
       );
-      const messagesById = new Map(messages.map((message) => [message.info.id, message]));
+      const existingById = new Map(existing.map((message) => [message.info.id, message]));
+      const knownIds = new Set(messages.map((message) => message.info.id));
+      const supersededOptimisticIds: string[] = [];
       // The incoming page IS the order — `MessageV2.page()` orders by
       // `time_created` server-side, and always has. This used to re-sort the
       // union by `info.id.localeCompare(...)`: ids do not ascend with time
@@ -164,19 +263,20 @@ export const useSyncStore = create<SyncState>((set, get) => ({
           incomingHasRealUserMessage &&
           message.info.role === 'user' &&
           optimisticIds.has(message.info.id);
-        if (messagesById.has(message.info.id) || isSupersededOptimisticUser) continue;
-        messagesById.set(message.info.id, message);
+        if (isSupersededOptimisticUser) supersededOptimisticIds.push(message.info.id);
+        if (knownIds.has(message.info.id) || isSupersededOptimisticUser) continue;
+        knownIds.add(message.info.id);
         mergedMessages.splice(insertIndexByTime(mergedMessages, message), 0, message);
       }
 
-      // Reconcile: for text/reasoning parts that are currently being
-      // streamed, the SSE-accumulated version may have MORE content
-      // than the REST snapshot. Prefer the longer version to avoid
-      // clobbering in-progress streaming text.
+      // Reconcile against what the store already holds. For text/reasoning
+      // parts that are currently being streamed, the SSE-accumulated version
+      // may have MORE content than the REST snapshot: prefer the longer one
+      // to avoid clobbering in-progress streaming text. Everything whose
+      // content did not change keeps its existing object, so a re-read of the
+      // same tail does not re-render the transcript.
       const reconciled = mergedMessages.map((incomingMsg) => {
-        const existingMsg = existing.find(
-          (m) => m.info.id === incomingMsg.info.id,
-        );
+        const existingMsg = existingById.get(incomingMsg.info.id);
         if (!existingMsg) return incomingMsg;
 
         // If this message is still carrying bridged optimistic parts and the
@@ -189,28 +289,23 @@ export const useSyncStore = create<SyncState>((set, get) => ({
           bridgedPartIds.delete(incomingMsg.info.id);
           return incomingMsg;
         }
+        if (incomingMsg === existingMsg) return existingMsg;
 
-        const reconciledParts = incomingMsg.parts.map((inPart) => {
-          const exPart = existingMsg.parts.find((p) => p.id === inPart.id);
-          if (!exPart) return inPart;
-
-          const isTextLike =
-            inPart.type === 'text' || inPart.type === 'reasoning';
-          if (!isTextLike) return inPart;
-
-          const inText = (inPart as any).text;
-          const exText = (exPart as any).text;
-          if (
-            typeof exText === 'string' &&
-            typeof inText === 'string' &&
-            exText.length > inText.length
-          ) {
-            // SSE version has more content — keep it
-            return exPart;
+        const existingParts = existingMsg.parts;
+        let existingPartsById: Map<string, Part> | undefined;
+        let partsReused = incomingMsg.parts.length === existingParts.length;
+        const reconciledParts = incomingMsg.parts.map((inPart, index) => {
+          let exPart: Part | undefined = existingParts[index];
+          if (exPart?.id !== inPart.id) {
+            existingPartsById ??= new Map(existingParts.map((part) => [part.id, part]));
+            exPart = existingPartsById.get(inPart.id);
           }
-          return inPart;
+          const part = reconcilePart(inPart, exPart);
+          if (part !== existingParts[index]) partsReused = false;
+          return part;
         });
 
+        if (partsReused && sameValue(incomingMsg.info, existingMsg.info)) return existingMsg;
         return { ...incomingMsg, parts: reconciledParts };
       });
 
@@ -242,6 +337,13 @@ export const useSyncStore = create<SyncState>((set, get) => ({
         }
       }
 
+      // The real user message replaced these; their ids are no longer needed.
+      clearOptimistic(supersededOptimisticIds);
+
+      const unchanged =
+        reconciled.length === existing.length &&
+        reconciled.every((message, index) => message === existing[index]);
+      if (unchanged) return state;
       return { messages: { ...state.messages, [sessionId]: reconciled } };
     }),
 
@@ -258,6 +360,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
 
   removeMessage: (sessionId, messageId) =>
     set((state) => {
+      optimisticIds.delete(messageId);
       const existing = state.messages[sessionId] || [];
       return {
         messages: {
@@ -267,110 +370,121 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       };
     }),
 
-  upsertPart: (messageId, part) =>
+  upsertPart: (messageId, part, scopeSessionId) =>
     set((state) => {
-      const newMessages = { ...state.messages };
       // If this message had bridged (optimistic) parts carried over by
       // hydrate, clear them now that a real part has arrived so we don't
       // double-render. Mirrors web 77886a8.
       const bridgeCleared = bridgedPartIds.has(messageId);
       if (bridgeCleared) bridgedPartIds.delete(messageId);
-      for (const sessionId of Object.keys(newMessages)) {
-        const msgs = newMessages[sessionId];
+      // The event carries its session; scanning every loaded session is only
+      // the fallback for callers that do not know it.
+      const sessionIds =
+        scopeSessionId !== undefined ? [scopeSessionId] : Object.keys(state.messages);
+      for (const sessionId of sessionIds) {
+        const msgs = state.messages[sessionId];
+        if (!msgs) continue;
         const msgIdx = msgs.findIndex((m) => m.info.id === messageId);
-        if (msgIdx >= 0) {
-          const msg = bridgeCleared
-            ? { ...msgs[msgIdx], parts: [] as Part[] }
-            : msgs[msgIdx];
-          const partIdx = msg.parts.findIndex((p) => p.id === part.id);
-          let updatedParts: Part[];
-          if (partIdx >= 0) {
-            const prev = msg.parts[partIdx] as any;
-            const incoming = part as any;
+        if (msgIdx < 0) continue;
+        const msg = bridgeCleared
+          ? { ...msgs[msgIdx], parts: [] as Part[] }
+          : msgs[msgIdx];
+        const partIdx = msg.parts.findIndex((p) => p.id === part.id);
+        let updatedParts: Part[];
+        if (partIdx >= 0) {
+          const prev = msg.parts[partIdx] as any;
+          const incoming = part as any;
 
-            // Guard against out-of-order/stale part snapshots that can
-            // cause the stream to jump or start from the middle.
-            // For text/reasoning parts, only accept full-text replacements
-            // that are monotonic prefix growth (incoming starts with
-            // previous text). Otherwise keep the existing part.
-            const tracksStreamingText =
-              (prev?.type === 'text' || prev?.type === 'reasoning') &&
-              (incoming?.type === 'text' || incoming?.type === 'reasoning');
-            const prevText = typeof prev?.text === 'string' ? prev.text : null;
-            const incomingText =
-              typeof incoming?.text === 'string' ? incoming.text : null;
+          // Guard against out-of-order/stale part snapshots that can
+          // cause the stream to jump or start from the middle.
+          // For text/reasoning parts, only accept full-text replacements
+          // that are monotonic prefix growth (incoming starts with
+          // previous text). Otherwise keep the existing part.
+          const tracksStreamingText =
+            (prev?.type === 'text' || prev?.type === 'reasoning') &&
+            (incoming?.type === 'text' || incoming?.type === 'reasoning');
+          const prevText = typeof prev?.text === 'string' ? prev.text : null;
+          const incomingText =
+            typeof incoming?.text === 'string' ? incoming.text : null;
 
-            if (
-              tracksStreamingText &&
-              prevText !== null &&
-              incomingText !== null &&
-              prevText.length > 0
-            ) {
-              const isPrefixGrowth = incomingText.startsWith(prevText);
-              if (!isPrefixGrowth) {
-                // Stale/out-of-order snapshot — reject the update
-                return state;
-              }
+          if (
+            tracksStreamingText &&
+            prevText !== null &&
+            incomingText !== null &&
+            prevText.length > 0
+          ) {
+            const isPrefixGrowth = incomingText.startsWith(prevText);
+            if (!isPrefixGrowth) {
+              // Stale/out-of-order snapshot — reject the update
+              return state;
             }
+          }
 
-            updatedParts = msg.parts.map((p, i) => (i === partIdx ? part : p));
-          } else {
-            // For NEW text/reasoning parts: if deltas have already been
-            // applied for this part ID, the part was created by the delta
-            // handler with correct accumulated text. A stale snapshot
-            // arriving later would overwrite it with wrong text.
-            const incoming = part as any;
-            if (
-              deltaActiveParts.has(part.id) &&
-              (incoming?.type === 'text' || incoming?.type === 'reasoning')
-            ) {
-              // Check if the delta-created part already exists in any message
-              for (const sid of Object.keys(state.messages)) {
-                const sessionMsgs = state.messages[sid];
-                for (const m of sessionMsgs) {
-                  if (m.parts.some((p) => p.id === part.id)) {
-                    return state;
-                  }
+          updatedParts = msg.parts.map((p, i) => (i === partIdx ? part : p));
+        } else {
+          // For NEW text/reasoning parts: if deltas have already been
+          // applied for this part ID, the part was created by the delta
+          // handler with correct accumulated text. A stale snapshot
+          // arriving later would overwrite it with wrong text.
+          const incoming = part as any;
+          if (
+            deltaActiveParts.has(part.id) &&
+            (incoming?.type === 'text' || incoming?.type === 'reasoning')
+          ) {
+            // Check if the delta-created part already exists in any message
+            // of the searched sessions.
+            for (const sid of sessionIds) {
+              const sessionMsgs = state.messages[sid];
+              if (!sessionMsgs) continue;
+              for (const m of sessionMsgs) {
+                if (m.parts.some((p) => p.id === part.id)) {
+                  return state;
                 }
               }
             }
-
-            // When a real part arrives, remove any optimistic fallback parts
-            // of the same type to prevent duplicates (e.g. double user text)
-            const baseParts = msg.parts.filter(
-              (p) => !(p.type === part.type && p.id.startsWith('prt_')),
-            );
-            updatedParts = [...baseParts, part];
           }
-          const updatedMsg = { ...msg, parts: updatedParts };
-          newMessages[sessionId] = msgs.map((m, i) =>
-            i === msgIdx ? updatedMsg : m,
+
+          // When a real part arrives, remove any optimistic fallback parts
+          // of the same type to prevent duplicates (e.g. double user text)
+          const baseParts = msg.parts.filter(
+            (p) => !(p.type === part.type && p.id.startsWith('prt_')),
           );
-          break;
+          updatedParts = [...baseParts, part];
         }
+        const updatedMsg = { ...msg, parts: updatedParts };
+        return {
+          messages: {
+            ...state.messages,
+            [sessionId]: msgs.map((m, i) => (i === msgIdx ? updatedMsg : m)),
+          },
+        };
       }
-      return { messages: newMessages };
+      return state;
     }),
 
-  removePart: (messageId, partId) =>
+  removePart: (messageId, partId, scopeSessionId) =>
     set((state) => {
-      const newMessages = { ...state.messages };
-      for (const sessionId of Object.keys(newMessages)) {
-        const msgs = newMessages[sessionId];
+      const sessionIds =
+        scopeSessionId !== undefined ? [scopeSessionId] : Object.keys(state.messages);
+      for (const sessionId of sessionIds) {
+        const msgs = state.messages[sessionId];
+        if (!msgs) continue;
         const msgIdx = msgs.findIndex((m) => m.info.id === messageId);
-        if (msgIdx >= 0) {
-          const msg = msgs[msgIdx];
-          const updatedMsg = {
-            ...msg,
-            parts: msg.parts.filter((p) => p.id !== partId),
-          };
-          newMessages[sessionId] = msgs.map((m, i) =>
-            i === msgIdx ? updatedMsg : m,
-          );
-          break;
-        }
+        if (msgIdx < 0) continue;
+        const msg = msgs[msgIdx];
+        if (!msg.parts.some((p) => p.id === partId)) return state;
+        const updatedMsg = {
+          ...msg,
+          parts: msg.parts.filter((p) => p.id !== partId),
+        };
+        return {
+          messages: {
+            ...state.messages,
+            [sessionId]: msgs.map((m, i) => (i === msgIdx ? updatedMsg : m)),
+          },
+        };
       }
-      return { messages: newMessages };
+      return state;
     }),
 
   appendPartDelta: (messageId, partId, sessionId, field, delta) => {
@@ -468,6 +582,31 @@ export const useSyncStore = create<SyncState>((set, get) => ({
   getMessages: (sessionId) => get().messages[sessionId] || [],
 
   getStatus: (sessionId) => get().sessionStatus[sessionId],
+
+  evictSessions: (sessionIds) =>
+    set((state) => {
+      if (sessionIds.length === 0) return state;
+      for (const sessionId of sessionIds) {
+        for (const message of state.messages[sessionId] ?? []) {
+          bridgedPartIds.delete(message.info.id);
+          optimisticIds.delete(message.info.id);
+          for (const part of message.parts) deltaActiveParts.delete(part.id);
+        }
+      }
+      const messages = omitKeys(state.messages, sessionIds);
+      const sessionStatus = omitKeys(state.sessionStatus, sessionIds);
+      const permissions = omitKeys(state.permissions, sessionIds);
+      const questions = omitKeys(state.questions, sessionIds);
+      if (
+        messages === state.messages &&
+        sessionStatus === state.sessionStatus &&
+        permissions === state.permissions &&
+        questions === state.questions
+      ) {
+        return state;
+      }
+      return { messages, sessionStatus, permissions, questions };
+    }),
 
   reset: () => {
     bridgedPartIds.clear();

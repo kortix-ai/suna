@@ -1,5 +1,7 @@
 import { useColorScheme } from 'nativewind';
-import { ActivityIndicator, View, Text } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
+import { Text } from '@/components/ui/text';
+import { THEME } from '@/lib/utils/theme';
 
 interface LoadingProps {
   title: string;
@@ -13,7 +15,7 @@ export function Loading({ title, subtitle }: LoadingProps) {
     <View className="flex-1 bg-transparent">
       <View className="flex-1 items-center justify-center px-8">
         <View className="mb-6 h-20 w-20 items-center justify-center rounded-full">
-          <ActivityIndicator size="large" color={colorScheme === 'dark' ? '#FFFFFF' : '#121215'} />
+          <ActivityIndicator size="large" color={colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground} />
         </View>
         <Text className="text-center font-roobert-semibold text-lg text-foreground">{title}</Text>
         {subtitle && (

@@ -12,16 +12,20 @@
  */
 
 import React, { useMemo, useState } from 'react';
-import { View, TouchableOpacity, ScrollView, ActivityIndicator, TextInput, Alert } from 'react-native';
+import { View, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation } from '@tanstack/react-query';
 import * as Clipboard from 'expo-clipboard';
-import { Copy, Check, UserPlus, Github } from 'lucide-react-native';
+import { CopyIcon as Copy, CheckIcon as Check, UserPlusIcon as UserPlus, GithubLogoIcon as Github } from '@/lib/icons';
 import { Text } from '@/components/ui/text';
-import { PageHeader } from '@/components/ui/page-header';
-import { PageContent } from '@/components/ui/page-content';
+import { Button } from '@/components/ui/button';
+import { Icon } from '@/components/ui/icon';
+import { Input } from '@/components/ui/input';
+import { PageHeader } from '@/components/kortix/page-header';
+import { PageContent } from '@/components/kortix/page-content';
 import { useThemeColors } from '@/lib/theme-colors';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import { useProject } from '@/lib/projects/hooks';
 import { inviteRepoCollaborator, isManagedGithubProject } from '@/lib/projects/projects-client';
 import type { KortixProject } from '@/lib/projects/projects-client';
@@ -32,7 +36,6 @@ const MONO = 'Menlo';
 interface PageTabLike {
   id: string;
   label: string;
-  icon: string;
 }
 
 interface DevPageProps {
@@ -74,10 +77,10 @@ function repoDirFor(repoUrl: string | null | undefined): string {
 function CommandBlock({ lines, isDark }: { lines: string[]; isDark: boolean }) {
   const [copied, setCopied] = useState(false);
   const theme = useThemeColors();
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-  const bg = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.025)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const border = withAlpha(fg, 0.08);
+  const bg = withAlpha(fg, isDark ? 0.03 : 0.025);
 
   const copy = async () => {
     haptics.tap();
@@ -98,9 +101,15 @@ function CommandBlock({ lines, isDark }: { lines: string[]; isDark: boolean }) {
           ))}
         </View>
       </ScrollView>
-      <TouchableOpacity onPress={copy} hitSlop={8} style={{ position: 'absolute', top: 8, right: 8, width: 30, height: 30, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }}>
-        {copied ? <Check size={15} color={theme.primary} /> : <Copy size={14} color={muted} />}
-      </TouchableOpacity>
+      <Button
+        variant="secondary"
+        size="icon"
+        onPress={copy}
+        hitSlop={8}
+        className="absolute top-2 right-2 rounded-full"
+      >
+        <Icon as={copied ? Check : Copy} size={copied ? 15 : 14} color={copied ? theme.primary : muted} />
+      </Button>
     </View>
   );
 }
@@ -110,10 +119,7 @@ function CommandBlock({ lines, isDark }: { lines: string[]; isDark: boolean }) {
 function LauncherChip({ label, command, isDark }: { label: string; command: string; isDark: boolean }) {
   const [copied, setCopied] = useState(false);
   const theme = useThemeColors();
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
-  const bg = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.025)';
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
 
   const copy = async () => {
     haptics.tap();
@@ -123,11 +129,15 @@ function LauncherChip({ label, command, isDark }: { label: string; command: stri
   };
 
   return (
-    <TouchableOpacity onPress={copy} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 12, paddingRight: 11, height: 38, borderRadius: 9999, borderWidth: 1, borderColor: border, backgroundColor: bg }}>
-      <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: fg }}>{label}</Text>
-      <Text style={{ fontSize: 11.5, fontFamily: MONO, color: muted }}>{command}</Text>
-      {copied ? <Check size={14} color={theme.primary} /> : <Copy size={13} color={muted} />}
-    </TouchableOpacity>
+    <Button
+      variant="outline"
+      onPress={copy}
+      className="rounded-full"
+    >
+      <Text>{label}</Text>
+      <Text style={{ fontFamily: MONO }}>{command}</Text>
+      <Icon as={copied ? Check : Copy} size={copied ? 14 : 13} color={copied ? theme.primary : muted} />
+    </Button>
   );
 }
 
@@ -136,10 +146,10 @@ function LauncherChip({ label, command, isDark }: { label: string; command: stri
 function RepoAccessForm({ projectId, isDark }: { projectId: string; isDark: boolean }) {
   const theme = useThemeColors();
   const [username, setUsername] = useState('');
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)';
-  const inputBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const border = withAlpha(fg, isDark ? 0.1 : 0.12);
+  const inputBg = withAlpha(fg, isDark ? 0.05 : 0.03);
 
   const invite = useMutation({
     mutationFn: () => inviteRepoCollaborator(projectId, username.trim(), 'write'),
@@ -162,21 +172,25 @@ function RepoAccessForm({ projectId, isDark }: { projectId: string; isDark: bool
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
       <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, height: 44, borderRadius: 11, borderWidth: 1, borderColor: border, backgroundColor: inputBg, paddingHorizontal: 12 }}>
         <Github size={15} color={muted} />
-        <TextInput
+        <Input
           value={username}
           onChangeText={setUsername}
           placeholder="Your GitHub username"
-          placeholderTextColor={muted}
           autoCapitalize="none"
           autoCorrect={false}
           spellCheck={false}
-          style={{ flex: 1, fontSize: 14, color: fg, fontFamily: 'Roobert', padding: 0 }}
+          className="h-auto flex-1 bg-transparent px-0 py-0 text-sm"
         />
       </View>
-      <TouchableOpacity onPress={() => { haptics.tap(); invite.mutate(); }} disabled={!canSubmit} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, height: 44, borderRadius: 9999, backgroundColor: theme.primary, opacity: canSubmit ? 1 : 0.5 }}>
-        {invite.isPending ? <ActivityIndicator size="small" color={theme.primaryForeground} /> : <UserPlus size={14} color={theme.primaryForeground} />}
-        <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Add me</Text>
-      </TouchableOpacity>
+      <Button
+        size="lg"
+        onPress={() => { haptics.tap(); invite.mutate(); }}
+        disabled={!canSubmit}
+        className="rounded-full"
+      >
+        {invite.isPending ? <ActivityIndicator size="small" color={theme.primaryForeground} /> : <Icon as={UserPlus} size={14} color={theme.primaryForeground} />}
+        <Text>Add me</Text>
+      </Button>
     </View>
   );
 }
@@ -185,8 +199,8 @@ function RepoAccessForm({ projectId, isDark }: { projectId: string; isDark: bool
 
 function Step({ n, title, hint, isDark, children }: { n: number; title: string; hint?: string; isDark: boolean; children: React.ReactNode }) {
   const theme = useThemeColors();
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
   return (
     <View style={{ flexDirection: 'row', gap: 14 }}>
       <View style={{ width: 28, height: 28, borderRadius: 9999, backgroundColor: theme.primaryLight, alignItems: 'center', justifyContent: 'center' }}>
@@ -219,11 +233,11 @@ export function DevPage({
 
   const { data: project, isLoading, isError, error, refetch } = useProject(projectId);
 
-  const bgColor = isDark ? '#090909' : '#FFFFFF';
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-  const chipBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+  const bgColor = isDark ? THEME.dark.background : THEME.light.background;
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const chipBg = withAlpha(fg, isDark ? 0.06 : 0.05);
+  const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
 
   const steps = useMemo(() => buildSteps(project), [project]);
 
@@ -247,11 +261,16 @@ export function DevPage({
           {isLoading ? (
             <View style={{ paddingVertical: 48, alignItems: 'center' }}><ActivityIndicator size="small" color={muted} /></View>
           ) : isError ? (
-            <View style={{ padding: 20, borderRadius: 14, borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)', backgroundColor: 'rgba(239,68,68,0.05)', gap: 12 }}>
-              <Text style={{ fontSize: 13.5, color: '#ef4444' }}>Couldn't load this project: {(error as Error)?.message}</Text>
-              <TouchableOpacity onPress={() => { haptics.tap(); refetch(); }} style={{ alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
-                <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Retry</Text>
-              </TouchableOpacity>
+            <View style={{ padding: 20, borderRadius: 14, borderWidth: 1, borderColor: withAlpha(destructiveColor, 0.3), backgroundColor: withAlpha(destructiveColor, 0.05), gap: 12 }}>
+              <Text style={{ fontSize: 13.5, color: destructiveColor }}>Couldn't load this project: {(error as Error)?.message}</Text>
+              <Button
+                variant="outline"
+                size="sm"
+                onPress={() => { haptics.tap(); refetch(); }}
+                className="self-start rounded-full"
+              >
+                <Text>Retry</Text>
+              </Button>
             </View>
           ) : project ? (
             <View style={{ gap: 22 }}>

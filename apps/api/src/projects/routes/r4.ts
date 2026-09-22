@@ -177,6 +177,7 @@ import {
   acceptSandboxTurn,
   adoptRuntimeSandboxTurn,
   completeSandboxTurn,
+  recordUnidentifiedTurnCause,
   turnCompletionAllowsQueuePromotion,
 } from '../sandbox-turn-lifecycle';
 
@@ -2827,6 +2828,31 @@ projectsApp.openapi(
         errorInfo,
         childSession ? childIdleGraceMs() : undefined,
       );
+      // The memory guard reports its cause in a frame of its own, after the
+      // abort. A daemon built before 2026-09-21 sends it with no
+      // `turn_message_id` and `error_retryable: true`, which settles nothing
+      // above. Attach the cause to the turn it stopped, or the UI says "No
+      // reason was reported" under a turn the sandbox killed on purpose.
+      if (
+        status === 'error' &&
+        body.error_name === 'SandboxMemoryGuard' &&
+        typeof body.turn_message_id !== 'string' &&
+        turnCompletion.outcome !== 'closed'
+      ) {
+        const causeOutcome = await recordUnidentifiedTurnCause(
+          sessionId,
+          typeof body.opencode_session_id === 'string' ? body.opencode_session_id : null,
+          {
+            name: body.error_name,
+            message: typeof body.error_message === 'string' ? body.error_message : null,
+          },
+        );
+        console.info('[turn-stream] unidentified turn cause', {
+          sessionId,
+          name: body.error_name,
+          outcome: causeOutcome,
+        });
+      }
       // Prompts forwarded INTO the turn that just ended: close the ones the
       // step answered (older than the ended message), and re-queue any that
       // the loop stranded below a newer assistant — see

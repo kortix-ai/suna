@@ -3,7 +3,7 @@ import { View, Image } from 'react-native';
 import { SvgUri } from 'react-native-svg';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Plug2 } from 'lucide-react-native';
+import { PlugIcon as Plug2 } from '@/lib/icons';
 import { useComposioToolkitIcon } from '@/hooks/useComposio';
 
 interface ToolkitIconProps {

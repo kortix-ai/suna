@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AlertCircle } from 'lucide-react-native';
+import { WarningCircleIcon as AlertCircle } from '@/lib/icons';
 import { AlertBanner } from './AlertBanner';
 
 interface MaintenanceBannerProps {

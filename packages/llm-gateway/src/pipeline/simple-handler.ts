@@ -158,13 +158,11 @@ const ADMISSION_UNAVAILABLE = 'admission_unavailable';
 
 async function authorize(hooks: GatewayHooks, token: string): Promise<AuthorizeResult> {
   if (hooks.authorize) return hooks.authorize(token);
-  let principal = await hooks.authenticate(token);
+  const principal = await hooks.authenticate(token);
   if (!principal) {
     return { ok: false, status: 401, errorCode: 'invalid_token', message: 'Invalid token' };
   }
   try {
-    const billing = await hooks.assertBillingActive(principal.accountId);
-    if (billing?.holdUsd) principal = { ...principal, billingHold: { amountUsd: billing.holdUsd } };
     await hooks.assertBudget?.(principal);
     return { ok: true, principal };
   } catch (error) {
@@ -341,7 +339,7 @@ export async function handleChatCompletions(
       suggestion: 'Check authentication, billing, and budget settings.',
     });
   }
-  const principal = admission.principal;
+  let principal = admission.principal;
 
   // `body` is the ONLY reference to the parsed request graph from here on.
   // It is nulled the moment dispatch has taken it (below), so a slow
@@ -437,6 +435,26 @@ export async function handleChatCompletions(
       requestId: id,
       suggestion: 'Connect the provider or choose another model.',
     });
+  }
+
+  // Resolve the payee before touching the wallet. BYOK descriptors use the
+  // customer's provider account and must never create a Kortix hold or debit.
+  if (descriptor.billingMode !== 'none' && !principal.billingHold) {
+    try {
+      const billing = await hooks.assertBillingActive(principal.accountId);
+      if (billing?.holdUsd) principal = { ...principal, billingHold: { amountUsd: billing.holdUsd } };
+    } catch (error) {
+      const reason = (error as { reason?: unknown })?.reason;
+      return gatewayErrorResponse(402, {
+        message: error instanceof Error ? error.message : 'Billing inactive',
+        code: typeof reason === 'string' ? reason : 'subscription_required',
+        provider: descriptor.provider,
+        requestedModel,
+        resolvedModel: descriptor.resolvedModel ?? routedModel,
+        requestId: id,
+        suggestion: 'Check your subscription or add credits, then retry.',
+      });
+    }
   }
 
   const streaming = body.stream === true;
