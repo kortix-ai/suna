@@ -27,6 +27,7 @@ import Fuse from 'fuse.js';
 
 import type { Session } from '@/lib/opencode/types';
 import { searchFiles } from '@/lib/utils/file-search';
+import type { SessionPickerItem } from '@/lib/sessions/session-picker-item';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -44,8 +45,8 @@ interface CommandItem {
 interface CommandPaletteProps {
   visible: boolean;
   onClose: () => void;
-  /** All sessions (for recent + search) */
-  sessions: Session[];
+  /** All of the project's sessions (for recent + search) */
+  sessions: SessionPickerItem[];
   /** Create new session */
   onNewSession: () => void;
   /** Navigate to a session */
@@ -300,7 +301,7 @@ export function CommandPalette({
   // ── Recent sessions (last 5, non-archived) ─────────────────────────────
 
   const recentSessions = useMemo(() => {
-    const active = sessions.filter((s) => !(s.time as any).archived);
+    const active = sessions;
     return active.slice(0, 5);
   }, [sessions]);
 
@@ -322,7 +323,7 @@ export function CommandPalette({
   const sessionFuse = useMemo(
     () =>
       new Fuse(
-        sessions.filter((s) => !(s.time as any).archived),
+        sessions,
         {
           keys: ['title'],
           threshold: 0.4,
@@ -352,14 +353,10 @@ export function CommandPalette({
     [onSessionSelect, onClose],
   );
 
-  const formatTime = useCallback((session: Session) => {
-    const created = (session.time as any)?.created;
-    if (!created) return '';
-    const date = typeof created === 'number'
-      ? new Date(created < 1e12 ? created * 1000 : created)
-      : new Date(created);
-    const now = Date.now();
-    const diff = now - date.getTime();
+  const formatTime = useCallback((session: SessionPickerItem) => {
+    const updated = session.updatedAt;
+    if (!updated) return '';
+    const diff = Date.now() - updated;
     if (diff < 60_000) return 'just now';
     if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
     if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
@@ -721,7 +718,7 @@ function SessionRow({
   mutedColor,
   hoverBg,
 }: {
-  session: Session;
+  session: SessionPickerItem;
   timeLabel: string;
   onPress: () => void;
   fgColor: string;

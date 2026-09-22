@@ -37,7 +37,7 @@ import {
   Columns2,
 } from 'lucide-react-native';
 
-import { useSyncStore } from '@/lib/opencode/sync-store';
+import { useProjectSession, useSessionStateStore } from '@kortix/sdk/react';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { opencodeFetch } from '@/lib/opencode/hooks/use-opencode-data';
 import { extractDiffsFromMessages, type FileDiffData } from '@/lib/opencode/extract-diffs';
@@ -166,6 +166,9 @@ const colors = {
 // ─── Props ──────────────────────────────────────────────────────────────────
 
 interface ViewChangesSheetProps {
+  /** Kortix project id. */
+  projectId: string;
+  /** Kortix session id. The runtime id is resolved from it. */
   sessionId: string | null;
 }
 
@@ -753,33 +756,42 @@ interface ApiFileDiff {
 // ─── Main component ─────────────────────────────────────────────────────────
 
 export const ViewChangesSheet = forwardRef<BottomSheetModal, ViewChangesSheetProps>(
-  function ViewChangesSheet({ sessionId }, ref) {
+  function ViewChangesSheet({ projectId, sessionId }, ref) {
     const { colorScheme } = useColorScheme();
     const isDark = colorScheme === 'dark';
     const { sandboxUrl } = useSandboxContext();
     const [viewMode, setViewMode] = useState<ViewMode>('unified');
 
+    // Both the diff endpoint and the SDK's transcript store address a session
+    // by its OpenCode runtime id, so resolve it from the Kortix row once here
+    // instead of making every caller pass two ids.
+    const { data: sessionRow } = useProjectSession(projectId, sessionId ?? undefined);
+    const runtimeSessionId = sessionRow?.opencode_session_id ?? null;
+
     // API-fetched diffs
     const [apiDiffs, setApiDiffs] = useState<FileDiffData[] | null>(null);
     const [apiLoading, setApiLoading] = useState(false);
 
-    // Read messages for this session from sync store (fallback)
-    const messages = useSyncStore((s: any) => sessionId ? s.messages[sessionId] : undefined);
+    // Fallback diff source: this session's transcript from the SDK store,
+    // which is keyed by the OpenCode runtime id rather than the Kortix one.
+    const messages = useSessionStateStore((s) =>
+      runtimeSessionId ? s.messages[runtimeSessionId] : undefined,
+    );
 
     // Fallback: extract diffs from messages
     const messageDiffs = useMemo(() => {
-      if (!sessionId || !messages || !Array.isArray(messages)) return [];
+      if (!messages || !Array.isArray(messages)) return [];
       return extractDiffsFromMessages(messages as any);
-    }, [sessionId, messages]);
+    }, [messages]);
 
     // Fetch diffs from API when sheet becomes visible
     const fetchApiDiffs = useCallback(async () => {
-      if (!sessionId || !sandboxUrl) return;
+      if (!runtimeSessionId || !sandboxUrl) return;
       setApiLoading(true);
       try {
         const result = await opencodeFetch<ApiFileDiff[]>(
           sandboxUrl,
-          `/session/${sessionId}/diff`,
+          `/session/${runtimeSessionId}/diff`,
         );
         if (result && Array.isArray(result) && result.length > 0) {
           setApiDiffs(
@@ -798,7 +810,7 @@ export const ViewChangesSheet = forwardRef<BottomSheetModal, ViewChangesSheetPro
       } finally {
         setApiLoading(false);
       }
-    }, [sessionId, sandboxUrl]);
+    }, [runtimeSessionId, sandboxUrl]);
 
     // Use API diffs if available, else fall back to message extraction
     const diffs = (apiDiffs && apiDiffs.length > 0) ? apiDiffs : messageDiffs;

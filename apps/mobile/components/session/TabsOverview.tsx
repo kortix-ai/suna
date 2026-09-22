@@ -26,11 +26,12 @@ import { BottomSheetModal, BottomSheetBackdrop, BottomSheetView } from '@gorhom/
 import type { Session } from '@/lib/opencode/types';
 import { useTabStore, PAGE_TABS } from '@/stores/tab-store';
 import { useTabScreenshotStore } from '@/stores/tab-screenshot-store';
-import { useSyncStore } from '@/lib/opencode/sync-store';
+import { useSessionStateStore } from '@kortix/sdk/react';
 import { getSheetBg } from '@/lib/theme-colors';
+import type { SessionPickerItem } from '@/lib/sessions/session-picker-item';
 
 interface TabsOverviewProps {
-  sessions: Session[];
+  sessions: SessionPickerItem[];
   openTabIds: string[];
   activeSessionId: string | null;
   onSelectTab: (sessionId: string) => void;
@@ -65,7 +66,14 @@ export function TabsOverview({
 
   // Screenshots & message data for previews
   const screenshots = useTabScreenshotStore((s) => s.screenshots);
-  const allMessages = useSyncStore((s) => s.messages);
+  // The SDK's transcript store keeps messages and their parts in two maps and
+  // joins them in a selector; selecting the joined rows here would allocate a
+  // new array on every store tick and re-render this sheet continuously. The
+  // two maps are stable references, so select those and do the small amount of
+  // work this preview needs below. Keyed by OpenCode session id — see
+  // `SessionPickerItem.runtimeSessionId` for why the translation is needed.
+  const allMessages = useSessionStateStore((s) => s.messages);
+  const allParts = useSessionStateStore((s) => s.parts);
 
   const renderBackdrop = useCallback(
     (props: any) => (
@@ -129,35 +137,25 @@ export function TabsOverview({
   // Get preview text for a session tab (fallback when no screenshot)
   const getSessionPreview = useCallback(
     (sessionId: string): string => {
-      const msgs = allMessages[sessionId];
+      const runtimeId = sessions.find((s) => s.id === sessionId)?.runtimeSessionId;
+      const msgs = runtimeId ? allMessages[runtimeId] : undefined;
       if (!msgs || msgs.length === 0) return '';
       // Last assistant message with text
-      for (let i = msgs.length - 1; i >= 0; i--) {
-        const msg = msgs[i];
-        if (msg.info.role === 'assistant') {
-          for (let j = msg.parts.length - 1; j >= 0; j--) {
-            const part = msg.parts[j];
-            if (part.type === 'text' && (part as any).text) {
-              return (part as any).text;
-            }
+      const lastTextFrom = (role: 'assistant' | 'user'): string => {
+        for (let i = msgs.length - 1; i >= 0; i--) {
+          const info = msgs[i];
+          if (info.role !== role) continue;
+          const parts = allParts[info.id] ?? [];
+          for (let j = parts.length - 1; j >= 0; j--) {
+            const part = parts[j];
+            if (part.type === 'text' && part.text) return part.text;
           }
         }
-      }
-      // Last user message
-      for (let i = msgs.length - 1; i >= 0; i--) {
-        const msg = msgs[i];
-        if (msg.info.role === 'user') {
-          for (let j = msg.parts.length - 1; j >= 0; j--) {
-            const part = msg.parts[j];
-            if (part.type === 'text' && (part as any).text) {
-              return (part as any).text;
-            }
-          }
-        }
-      }
-      return '';
+        return '';
+      };
+      return lastTextFrom('assistant') || lastTextFrom('user');
     },
-    [allMessages],
+    [allMessages, allParts, sessions],
   );
 
   // Combined tab list

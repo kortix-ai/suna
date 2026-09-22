@@ -50,144 +50,32 @@ export interface Session {
 // Messages
 // ---------------------------------------------------------------------------
 
-export interface Message {
-  id: string;
-  role: 'user' | 'assistant';
-  sessionID: string;
-  parentID?: string;
-  error?: string;
-  time: {
-    created: number;
-    completed?: number;
-  };
-  system?: boolean;
-  metadata?: Record<string, any>;
-}
+/**
+ * The wire shapes come from the SDK, not from local copies.
+ *
+ * This file used to redeclare `Message`, the whole `Part` union and every
+ * member of it. They were structural twins of the OpenCode types the SDK
+ * already exports, which TypeScript treats as unrelated — so every transcript
+ * component rejected the data `useSession` actually produces, and the gap was
+ * bridged with `as any` casts at the boundary.
+ */
+export type {
+  Message,
+  UserMessage,
+  AssistantMessage,
+  Part,
+  TextPart,
+  ReasoningPart,
+  ToolPart,
+  ToolState,
+  FilePart,
+  AgentPart,
+  SnapshotPart,
+  PatchPart,
+  StepStartPart,
+  StepFinishPart,
+} from '@kortix/sdk';
 
-export type UserMessage = Message & { role: 'user' };
-export type AssistantMessage = Message & { role: 'assistant'; error?: string };
-
-// ---------------------------------------------------------------------------
-// Parts (polymorphic)
-// ---------------------------------------------------------------------------
-
-export type Part =
-  | TextPart
-  | ReasoningPart
-  | ToolPart
-  | FilePart
-  | AgentPart
-  | SubtaskPart
-  | StepStartPart
-  | StepFinishPart
-  | SnapshotPart
-  | PatchPart
-  | RetryPart
-  | CompactionPart;
-
-export interface TextPart {
-  type: 'text';
-  id: string;
-  text: string;
-  synthetic?: boolean;
-}
-
-export interface ReasoningPart {
-  type: 'reasoning';
-  id: string;
-  text: string;
-}
-
-export interface ToolPart {
-  type: 'tool';
-  id: string;
-  callID: string;
-  tool: string;
-  state: ToolState;
-  input: Record<string, any>;
-  time?: { start?: number; end?: number };
-}
-
-export type ToolState = ToolStatePending | ToolStateRunning | ToolStateCompleted | ToolStateError;
-
-export interface ToolStatePending {
-  status: 'pending';
-  metadata?: Record<string, any>;
-}
-
-export interface ToolStateRunning {
-  status: 'running';
-  metadata?: Record<string, any>;
-}
-
-export interface ToolStateCompleted {
-  status: 'completed';
-  output?: string;
-  metadata?: Record<string, any>;
-}
-
-export interface ToolStateError {
-  status: 'error';
-  error: string;
-  metadata?: Record<string, any>;
-}
-
-export interface FilePart {
-  type: 'file';
-  id: string;
-  mime: string;
-  filename: string;
-  url: string;
-}
-
-export interface AgentPart {
-  type: 'agent';
-  id: string;
-  agentID: string;
-  agentName?: string;
-}
-
-export interface SubtaskPart {
-  type: 'subtask';
-  id: string;
-}
-
-export interface StepStartPart {
-  type: 'step-start';
-  id: string;
-}
-
-export interface StepFinishPart {
-  type: 'step-finish';
-  id: string;
-  cost?: number;
-  tokens?: {
-    input?: number;
-    output?: number;
-    reasoning?: number;
-    cache?: { read?: number; write?: number };
-  };
-}
-
-export interface SnapshotPart {
-  type: 'snapshot';
-  id: string;
-}
-
-export interface PatchPart {
-  type: 'patch';
-  id: string;
-}
-
-export interface RetryPart {
-  type: 'retry';
-  id: string;
-}
-
-export interface CompactionPart {
-  type: 'compaction';
-  id: string;
-}
 
 // ---------------------------------------------------------------------------
 // Session status
@@ -268,15 +156,22 @@ export interface Command {
 // View-model types
 // ---------------------------------------------------------------------------
 
-export interface MessageWithParts {
-  info: Message;
-  parts: Part[];
-}
+/**
+ * The transcript shapes come from the SDK, not from a local copy.
+ *
+ * These used to be declared here over this file's own `Message`/`Part`
+ * mirrors. `useSession` hands back the SDK's `MessageWithParts`, so a local
+ * structural twin made every transcript component reject the very data the
+ * hook produces — two identical shapes TypeScript treats as unrelated.
+ */
+export type { MessageWithParts } from '@kortix/sdk';
 
 export interface Turn {
-  userMessage: MessageWithParts;
-  assistantMessages: MessageWithParts[];
+  userMessage: SdkMessageWithParts;
+  assistantMessages: SdkMessageWithParts[];
 }
+
+import type { MessageWithParts as SdkMessageWithParts } from '@kortix/sdk';
 
 export type { Diagnostic, RetryInfo, ToolInfo, TurnCostInfo } from '@kortix/sdk';
 

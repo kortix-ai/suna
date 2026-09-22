@@ -1,10 +1,15 @@
 /**
  * SessionPage — the full session chat view.
  *
- * Uses the sync store (hydrated by useSessionSync, kept live by SSE)
- * as the single source of truth for messages.
+ * Addressed by (projectId, sessionId) in KORTIX ids, and driven entirely by
+ * `useSession` from `@kortix/sdk/react` — the same hook apps/web, the Electron
+ * desktop app, the TUI and the whitelabel demo use.
  *
- * Sends messages via fire-and-forget promptAsync with agent/model/variant.
+ * That is what gives this screen saved transcript history: `useSession` drives
+ * `useSessionTranscriptHistory`, which reads the durable server-side mirror, so
+ * a stopped or still-waking session paints its thread from PostgreSQL instead
+ * of showing nothing until the sandbox answers. The previous implementation
+ * could not do this at any price — every read was keyed on a live sandbox url.
  */
 
 import React, { useMemo, useCallback, useRef, useEffect, useState } from 'react';
@@ -31,16 +36,21 @@ import { Ionicons } from '@expo/vector-icons';
 import { Menu as MenuIcon, X as CloseIcon } from 'lucide-react-native';
 import { Text as RNText } from 'react-native';
 
-import { useSyncStore } from '@/lib/opencode/sync-store';
-import { useSessionSync } from '@/lib/opencode/session-sync';
-import { groupMessagesIntoTurns } from '@kortix/sdk';
-import type { Turn, QuestionRequest, ToolPart } from '@/lib/opencode/types';
-import { useSession, replyToQuestion, rejectQuestion, useRenameSession } from '@/lib/platform/hooks';
+import { groupMessagesIntoTurns, updateProjectSession } from '@kortix/sdk';
+import { toSessionPickerItems } from '@/lib/sessions/session-picker-item';
+import {
+  useSession,
+  useProjectSession,
+  useProjectSessions,
+  flattenProjectSessionPages,
+  qk,
+} from '@kortix/sdk/react';
+import { useQueryClient } from '@tanstack/react-query';
+import type { Turn, QuestionRequest } from '@/lib/opencode/types';
 import { useTabStore } from '@/stores/tab-store';
 import { useMessageQueueStore } from '@/stores/message-queue-store';
 import type { QueuedMessage } from '@/stores/message-queue-store';
 import { useCompactionStore } from '@/stores/compaction-store';
-import { useSandboxContext } from '@/contexts/SandboxContext';
 import {
   useOpenCodeAgents,
   useOpenCodeModels,
@@ -49,7 +59,6 @@ import {
   type Command,
 } from '@/lib/opencode/hooks/use-opencode-data';
 import { useResolvedConfig } from '@/lib/opencode/hooks/use-local-config';
-import { getAuthToken } from '@/api/config';
 import { log } from '@/lib/logger';
 
 import { SessionChatInput, type PromptOptions, type TrackedMention } from './SessionChatInput';
@@ -57,7 +66,6 @@ import { SandboxHealthPill } from './SandboxHealthPill';
 import { useRouter } from 'expo-router';
 import { SessionTurn } from './SessionTurn';
 import { QuestionPrompt } from './QuestionPrompt';
-import { useSessions } from '@/lib/platform/hooks';
 import { FileViewer } from '@/components/files/FileViewer';
 import type { SandboxFile } from '@/api/types';
 import KortixSymbolBlack from '@/assets/brand/kortix-symbol-scale-effect-black.svg';
@@ -68,6 +76,17 @@ import KortixSymbolWhite from '@/assets/brand/kortix-symbol-scale-effect-white.s
 import { AnimatedToggleIcon } from '@/components/ui/animated-toggle-icon';
 
 interface SessionPageProps {
+  /** Kortix project id. Sessions are addressed as (projectId, sessionId). */
+  projectId: string;
+  /**
+   * Kortix session id — NOT an OpenCode session id.
+   *
+   * This app used to pass the OpenCode id and read everything off the live
+   * sandbox, which is why a stopped session showed nothing: every read was
+   * keyed on a sandbox that was not running. The durable transcript mirror is
+   * keyed by the KORTIX session, so addressing a session the way the rest of
+   * Kortix does is what lets saved history paint before the box wakes.
+   */
   sessionId: string;
   onBack: () => void;
   onOpenDrawer?: () => void;
@@ -82,13 +101,12 @@ interface SessionPageProps {
   onSkipOnboarding?: () => void;
 }
 
-export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, onboardingMode, onSkipOnboarding }: SessionPageProps) {
+export function SessionPage({ projectId, sessionId, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, onboardingMode, onSkipOnboarding }: SessionPageProps) {
   const router = useRouter();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
-  const { sandboxUrl } = useSandboxContext();
   const flatListRef = useRef<FlatList>(null);
   const setTabState = useTabStore((s) => s.setTabState);
   const savedSessionState = useTabStore((s) => s.tabStateById[sessionId] as { scrollOffset?: number } | undefined);
@@ -107,86 +125,46 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
 
 
 
-  // Session metadata
-  const { data: session } = useSession(sandboxUrl, sessionId);
-  const { data: allSessions = [] } = useSessions(sandboxUrl);
+  // ── The whole session, in one hook ──────────────────────────────────────
+  //
+  // This replaced five host-side mechanisms: a REST session read keyed on the
+  // sandbox url, a second Zustand sync store, a bespoke `useSessionSync`, a
+  // hand-rolled SSE mount, and the 40-line `GET /question` self-heal poll
+  // below it. `useSession` owns all of them — /start, the sandbox switch, the
+  // live stream, id resolution, message sync, and the question self-heal —
+  // and, because it is addressed by (projectId, sessionId), it also drives
+  // `useSessionTranscriptHistory`. That is what makes a STOPPED session paint
+  // its saved transcript from PostgreSQL instead of showing an empty thread
+  // until the box wakes.
+  //
+  // `replayStartStash: false`: this app hands the first prompt over itself
+  // (`handleCreateSessionWithPrompt`), so the SDK must not also replay a stash.
+  const session = useSession(projectId, sessionId, { replayStartStash: false });
+  const { data: sessionRow } = useProjectSession(projectId, sessionId);
+  const projectSessionsQuery = useProjectSessions(projectId);
+  // `useProjectSessions` pages. `flattenProjectSessionPages` is the SDK's own
+  // flattener — it also de-duplicates by session_id, which matters because a
+  // session prompted between two page fetches legitimately appears on both.
+  const sessionPickerItems = useMemo(
+    () => toSessionPickerItems(flattenProjectSessionPages(projectSessionsQuery.data)),
+    [projectSessionsQuery.data],
+  );
 
-  // Hydrate messages from REST on mount; SSE keeps store updated after
-  useSessionSync(sandboxUrl, sessionId);
+  const safeMessages = session.messages;
+  const sessionStatus = session.status;
+  const pendingQuestions = session.questions as unknown as QuestionRequest[];
+  const isBusy = session.isBusy;
+  const isCompacting = session.isCompacting;
+  /**
+   * The live runtime url, or null until `/start` reports ready.
+   *
+   * Everything that genuinely needs a RUNNING sandbox — file mentions, the
+   * file viewer, the model/agent catalog — reads this rather than a global
+   * "current sandbox". Transcript rendering deliberately does not: it must
+   * work while this is still null, which is the entire point of the migration.
+   */
+  const runtimeUrl = session.runtimeUrl;
 
-  // Read messages from sync store
-  const messages = useSyncStore((s) => s.messages[sessionId]);
-  const sessionStatus = useSyncStore((s) => s.sessionStatus[sessionId]);
-  const pendingQuestions = useSyncStore((s) => s.questions[sessionId]) ?? [];
-  const safeMessages = useMemo(() => messages ?? [], [messages]);
-
-  const isBusy = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
-  const isCompacting = useCompactionStore((s) => Boolean(s.compactingBySession[sessionId]));
-
-  // ── Self-heal: restore pending questions after reload ──────────────────
-  // Matches the frontend's pattern: detect running question tool parts in
-  // messages, and if the store has no pending questions, poll GET /question.
-  // Track recently-replied question IDs to avoid re-adding them before the
-  // server processes the reply.
-  const suppressedQuestionIds = useRef(new Set<string>());
-
-  const hasRunningQuestionTool = useMemo(() => {
-    if (!safeMessages || safeMessages.length === 0) return false;
-    return safeMessages.some((m) => {
-      if (m.info.role !== 'assistant') return false;
-      return m.parts.some((p) => {
-        if (p.type !== 'tool') return false;
-        const tool = p as ToolPart;
-        return tool.tool === 'question' && (tool.state.status === 'running' || tool.state.status === 'pending');
-      });
-    });
-  }, [safeMessages]);
-
-  // Poll for pending questions when:
-  // - A question tool part is running/pending in messages, OR session is busy
-  // - AND no pending questions in the store
-  const shouldPollQuestions = (hasRunningQuestionTool || isBusy) && pendingQuestions.length === 0 && !!sandboxUrl;
-
-  useEffect(() => {
-    if (!shouldPollQuestions || !sandboxUrl) return;
-    let cancelled = false;
-    let inFlight = false;
-
-    const hydrateQuestions = async () => {
-      if (inFlight || cancelled) return;
-      inFlight = true;
-      try {
-        const token = await getAuthToken();
-        const res = await fetch(`${sandboxUrl}/question`, {
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-        });
-        if (!res.ok || cancelled) return;
-        const questions = await res.json();
-        if (!Array.isArray(questions) || cancelled) return;
-        const store = useSyncStore.getState();
-        const existingIds = new Set((store.questions[sessionId] || []).map((q) => q.id));
-        for (const q of questions) {
-          if (q.sessionID === sessionId && !existingIds.has(q.id) && !suppressedQuestionIds.current.has(q.id)) {
-            store.addQuestion(sessionId, q);
-            log.log('🔄 [SessionPage] Self-healed pending question:', q.id);
-          }
-        }
-      } catch {} finally {
-        inFlight = false;
-      }
-    };
-
-    hydrateQuestions();
-    const timer = setInterval(hydrateQuestions, 1500);
-
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [shouldPollQuestions, sandboxUrl, sessionId]);
 
   // ── Message Queue ──────────────────────────────────────────────────────
   const queueHydrated = useMessageQueueStore((s) => s.hydrated);
@@ -242,15 +220,24 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
   // Mirrors the frontend's drainNextWhenSettled pattern.
 
   const drainScheduledRef = useRef(false);
+  // Latest-render mirrors of the two drain guards, for the delayed re-check
+  // below — a ref, because the 500ms timer must not act on the values that
+  // were current when it was scheduled.
+  const isBusyRef = useRef(false);
+  const hasQuestionRef = useRef(false);
   const queueInFlightRef = useRef<{ queueId: string; sentAt: number } | null>(null);
+
+  // Keep the drain guards' ref mirrors current on every render, so the delayed
+  // re-check below reads this render's values rather than the ones captured
+  // when its timer was scheduled.
+  isBusyRef.current = isBusy;
+  hasQuestionRef.current = hasQuestion;
 
 
   // ── Send / Stop handlers (defined early so queue drain logic can reference them) ──
 
   const handleSend = useCallback(
     async (text: string, options: PromptOptions, mentions?: TrackedMention[]) => {
-      if (!sandboxUrl) return;
-
       // Clear the tracked input text so it isn't saved when a question appears
       inputTextRef.current = '';
       // Re-enable auto-scroll follow when user sends a new message
@@ -266,71 +253,28 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
         finalText = `${text}\n\nReferenced sessions (use the session_context tool to fetch details when needed):\n${refs}`;
       }
 
-      // Optimistic user message
-      const messageId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      const partId = `prt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-
-      useSyncStore.getState().addOptimisticMessage(sessionId, {
-        info: {
-          id: messageId,
-          role: 'user',
-          sessionID: sessionId,
-          time: { created: Date.now() },
-        },
-        parts: [{ type: 'text', id: partId, text: finalText }],
+      // One call. The optimistic user bubble, the busy state, the wire message
+      // id that lets the server's echo settle that bubble instead of
+      // duplicating it, and the failure rollback are all `useSession`'s — this
+      // used to be a hand-rolled `addOptimisticMessage` + `setStatus('busy')` +
+      // raw `POST /prompt_async`, whose optimistic id shared nothing with the
+      // id the runtime finally persisted.
+      session.send(finalText, {
+        model: options.model ?? undefined,
+        agent: options.agent ?? undefined,
+        variant: options.variant ?? undefined,
       });
-      useSyncStore.getState().setStatus(sessionId, { type: 'busy' });
-
-      // Build prompt payload
-      const payload: Record<string, any> = {
-        parts: [{ type: 'text', text: finalText }],
-      };
-      if (options.model) payload.model = options.model;
-      if (options.agent) payload.agent = options.agent;
-      if (options.variant) payload.variant = options.variant;
-
-      try {
-        const token = await getAuthToken();
-        const res = await fetch(`${sandboxUrl}/session/${sessionId}/prompt_async`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify(payload),
-        });
-
-        if (!res.ok) {
-          const errorText = await res.text().catch(() => '');
-          log.error('[SessionPage] Prompt failed:', res.status, errorText);
-          useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
-        } else {
-          log.log('[SessionPage] Prompt sent (async)');
-        }
-      } catch (err: any) {
-        log.error('[SessionPage] Prompt error:', err?.message || err);
-        useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
-      }
     },
-    [sandboxUrl, sessionId],
+    [session],
   );
 
   const handleStop = useCallback(async () => {
-    if (!sandboxUrl) return;
-    useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
-    try {
-      const token = await getAuthToken();
-      await fetch(`${sandboxUrl}/session/${sessionId}/abort`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      });
-    } catch (err: any) {
-      log.error('[SessionPage] Abort error:', err?.message || err);
-    }
-  }, [sandboxUrl, sessionId]);
+    // `cancel()` aborts the run AND drops pending prompts/questions/permissions,
+    // then resolves once the control plane acknowledges. The old version
+    // fabricated an idle status locally and fired a bare POST /abort, so the
+    // composer flipped back to "Send" before the turn had actually stopped.
+    await session.cancel();
+  }, [session]);
 
   // ── Queue drain logic ───────────────────────────────────────────────────
 
@@ -349,11 +293,12 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
     setTimeout(() => {
       drainScheduledRef.current = false;
 
-      // Re-check guards after delay
-      const status = useSyncStore.getState().sessionStatus[sessionId];
-      const stillBusy = status?.type === 'busy' || status?.type === 'retry';
-      const stillHasQuestion = (useSyncStore.getState().questions[sessionId] ?? []).length > 0;
-      if (stillBusy || stillHasQuestion || queueInFlightRef.current) return;
+      // Re-check the guards after the delay against the LATEST render's
+      // values. This used to reach into the host sync store, which no longer
+      // exists; a ref mirror is the equivalent that does not capture the
+      // stale `isBusy`/`hasQuestion` from the closure this timer was
+      // scheduled in.
+      if (isBusyRef.current || hasQuestionRef.current || queueInFlightRef.current) return;
 
       const next = useMessageQueueStore.getState().dequeue(sessionId);
       if (next) {
@@ -405,10 +350,10 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
   );
 
   // Agent/model/variant config
-  const { data: agents = [] } = useOpenCodeAgents(sandboxUrl);
-  const { data: visibleModels = [], allModels = [], defaults } = useOpenCodeModels(sandboxUrl);
-  const { data: config } = useOpenCodeConfig(sandboxUrl);
-  const { data: commands = [] } = useOpenCodeCommands(sandboxUrl);
+  const { data: agents = [] } = useOpenCodeAgents(runtimeUrl ?? undefined);
+  const { data: visibleModels = [], allModels = [], defaults } = useOpenCodeModels(runtimeUrl ?? undefined);
+  const { data: config } = useOpenCodeConfig(runtimeUrl ?? undefined);
+  const { data: commands = [] } = useOpenCodeCommands(runtimeUrl ?? undefined);
 
   // Resolution uses ALL models (fallback chain); selector shows only visible
   const resolved = useResolvedConfig(agents, allModels, config, defaults);
@@ -532,77 +477,51 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
     [],
   );
 
-  // Question reply/reject handlers
+  // ── Question reply / reject ─────────────────────────────────────────────
+  //
+  // `answerQuestion`/`rejectQuestion` only drop the question from local state
+  // once the SERVER accepted the reply, and throw a typed error otherwise. The
+  // old handlers removed it optimistically and then had to suppress the id for
+  // 10s so their own self-heal poll would not re-add it — a workaround for a
+  // race that no longer exists, because nothing here re-polls.
   const handleQuestionReply = useCallback(
     async (requestId: string, answers: string[][]) => {
-      if (!sandboxUrl) return;
-      // Suppress this ID so the self-heal polling doesn't re-add it
-      suppressedQuestionIds.current.add(requestId);
-      // Optimistically remove from store
-      useSyncStore.getState().removeQuestion(sessionId, requestId);
       try {
-        await replyToQuestion(sandboxUrl, requestId, answers);
+        await session.answerQuestion(requestId, answers);
       } catch (err: any) {
         log.error('Failed to reply to question:', err?.message || err);
       }
-      // Clear suppression after a delay (server should have processed by then)
-      setTimeout(() => suppressedQuestionIds.current.delete(requestId), 10000);
     },
-    [sandboxUrl, sessionId],
+    [session],
   );
 
   const handleQuestionReject = useCallback(
     async (requestId: string) => {
-      if (!sandboxUrl) return;
-      suppressedQuestionIds.current.add(requestId);
-      // Optimistically remove from store
-      useSyncStore.getState().removeQuestion(sessionId, requestId);
       try {
-        await rejectQuestion(sandboxUrl, requestId);
+        await session.rejectQuestion(requestId);
       } catch (err: any) {
         log.error('Failed to reject question:', err?.message || err);
       }
-      setTimeout(() => suppressedQuestionIds.current.delete(requestId), 10000);
       // Also abort the session (matches frontend behavior)
       handleStop();
     },
-    [sandboxUrl, sessionId, handleStop],
+    [session, handleStop],
   );
 
-  // Command handler — executes a slash command via the server
+  // Command handler — executes a slash command through the session runtime.
   const handleCommand = useCallback(
     async (cmd: Command, args?: string) => {
-      if (!sandboxUrl) return;
-      useSyncStore.getState().setStatus(sessionId, { type: 'busy' });
       try {
-        const token = await getAuthToken();
-        const payload: Record<string, any> = {
-          command: cmd.name,
-          arguments: args || '',
-        };
-        if (resolved.agent?.name) payload.agent = resolved.agent.name;
-        if (resolved.modelKey) payload.model = `${resolved.modelKey.providerID}/${resolved.modelKey.modelID}`;
-        if (resolved.variant) payload.variant = resolved.variant;
-
-        const res = await fetch(`${sandboxUrl}/session/${sessionId}/command`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify(payload),
+        await session.runCommand(cmd.name, args || '', {
+          agent: resolved.agent?.name,
+          model: resolved.modelKey ?? undefined,
+          variant: resolved.variant ?? undefined,
         });
-        if (!res.ok) {
-          const errorText = await res.text().catch(() => '');
-          log.error('[SessionPage] Command failed:', res.status, errorText);
-          useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
-        }
       } catch (err: any) {
         log.error('[SessionPage] Command error:', err?.message || err);
-        useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
       }
     },
-    [sandboxUrl, sessionId, resolved.agent, resolved.modelKey, resolved.variant],
+    [session, resolved.agent, resolved.modelKey, resolved.variant],
   );
 
   // Track last turn height for footer sizing
@@ -637,19 +556,21 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
     [safeMessages, sessionStatus, isBusy, turns.length, pendingQuestions, agentNames, handleFileMention, handleSessionMention, commands],
   );
 
-  const title = session?.title || 'New Session';
+  // The Kortix session row owns the name, so a rename survives the sandbox
+  // stopping — the OpenCode session title did not.
+  const title = sessionRow?.name || 'New Session';
 
   // ── Inline title edit ──────────────────────────────────────────────────
   // Tap the title → it becomes a TextInput in place. Commit on blur or Return;
   // revert if the user clears the field. Disabled in onboarding mode.
-  const renameSession = useRenameSession(sandboxUrl);
+  const queryClient = useQueryClient();
   const titleInputRef = useRef<TextInput>(null);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(title);
 
   const beginTitleEdit = useCallback(() => {
     if (onboardingMode) return;
-    const current = session?.title || '';
+    const current = sessionRow?.name || '';
     setTitleDraft(current);
     setIsEditingTitle(true);
     // Focus on the next frame so the TextInput is mounted, then place the
@@ -661,22 +582,29 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
         selection: { start: current.length, end: current.length },
       });
     });
-  }, [onboardingMode, session?.title]);
+  }, [onboardingMode, sessionRow?.name]);
 
   const commitTitleEdit = useCallback(() => {
     if (!isEditingTitle) return;
     const trimmed = titleDraft.trim();
-    const previous = (session?.title || '').trim();
+    const previous = (sessionRow?.name || '').trim();
     setIsEditingTitle(false);
     // No change or empty → revert silently
     if (!trimmed || trimmed === previous) return;
-    renameSession.mutate({ sessionId, title: trimmed });
-  }, [isEditingTitle, titleDraft, session?.title, renameSession, sessionId]);
+    void updateProjectSession(projectId, sessionId, { name: trimmed })
+      .then(() => {
+        // Refresh both the row this header reads and the list the tab bar and
+        // session picker read, so the new name appears everywhere at once.
+        void queryClient.invalidateQueries({ queryKey: qk.project.session(projectId, sessionId) });
+        void queryClient.invalidateQueries({ queryKey: qk.project.sessions(projectId) });
+      })
+      .catch((err: any) => log.error('Failed to rename session:', err?.message || err));
+  }, [isEditingTitle, titleDraft, sessionRow?.name, projectId, sessionId, queryClient]);
 
   const cancelTitleEdit = useCallback(() => {
     setIsEditingTitle(false);
-    setTitleDraft(session?.title || '');
-  }, [session?.title]);
+    setTitleDraft(sessionRow?.name || '');
+  }, [sessionRow?.name]);
 
   return (
     <KeyboardAvoidingView
@@ -917,9 +845,9 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
             onModelChange={(pid, mid) => resolved.setModel(pid, mid, { explicit: true })}
             onVariantCycle={resolved.cycleVariant}
             onVariantSet={resolved.setVariant}
-            sessions={allSessions}
+            sessions={sessionPickerItems}
             currentSessionId={sessionId}
-            sandboxUrl={sandboxUrl}
+            sandboxUrl={runtimeUrl ?? undefined}
             onEnqueue={handleEnqueue}
             commands={commands}
             onCommand={handleCommand}
@@ -951,7 +879,7 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
         }}
         file={mentionViewerFile}
         sandboxId=""
-        sandboxUrl={sandboxUrl}
+        sandboxUrl={runtimeUrl ?? undefined}
       />
     </KeyboardAvoidingView>
   );

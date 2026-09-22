@@ -277,9 +277,20 @@ function getToolInput(tool: ToolPart): Record<string, any> {
     const raw = (tool.state as any).raw as string;
     if (raw) return parsePartialJSON(raw);
   }
-  return tool.input || {};
+  // OpenCode's ToolPart carries the call arguments inside `state`, not at the
+  // top level — the local type mirror this file used to compile against had
+  // them hoisted, which is why this read looked flat.
+  return toolInput(tool);
 }
 
+
+/** The arguments a tool was called with, from whichever state carries them. */
+function toolInput(tool: ToolPart): Record<string, unknown> {
+  const state = tool.state as { input?: unknown };
+  return state.input && typeof state.input === 'object'
+    ? (state.input as Record<string, unknown>)
+    : {};
+}
 
 // ─── Tool icon resolver ──────────────────────────────────────────────────────
 
@@ -925,7 +936,7 @@ function WriteEditExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: bo
 
 function TodosExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: boolean }) {
   const todos = useMemo(() => {
-    // Try parsing input.todos (check both state.input and top-level input)
+    // Try parsing the tool call's `todos` argument.
     const input = getToolInput(tool);
     const raw = input.todos;
     if (Array.isArray(raw)) return raw;
@@ -938,7 +949,7 @@ function TodosExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: boolea
       } catch {}
     }
     return [];
-  }, [tool.input, tool.state]);
+  }, [tool.state]);
 
   if (todos.length === 0) return null;
 
@@ -3284,7 +3295,14 @@ export function SessionTurn({
 
 const IMAGE_MIME_RE = /^image\//;
 
-function UserFileCard({ file, isDark }: { file: { path: string; mime: string; filename: string }; isDark: boolean }) {
+function UserFileCard({
+  file,
+  isDark,
+}: {
+  // `filename` is optional on the wire — a FilePart can arrive without one.
+  file: { path: string; mime: string; filename?: string };
+  isDark: boolean;
+}) {
   const isImage = IMAGE_MIME_RE.test(file.mime);
   const { sandboxUrl: ctxSandboxUrl } = useSandboxContext();
 

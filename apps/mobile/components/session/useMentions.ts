@@ -11,6 +11,7 @@ import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import type { Agent } from '@/lib/opencode/hooks/use-opencode-data';
 import type { Session } from '@/lib/platform/types';
 import { searchFiles, rankFile } from '@/lib/utils/file-search';
+import type { SessionPickerItem } from '@/lib/sessions/session-picker-item';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -45,7 +46,7 @@ function timeAgo(ts: number): string {
 
 interface UseMentionsOptions {
   agents: Agent[];
-  sessions: Session[];
+  sessions: SessionPickerItem[];
   currentSessionId?: string | null;
   sandboxUrl?: string;
 }
@@ -138,27 +139,23 @@ export function useMentions({
       .slice(0, 5)
       .map((a) => ({ kind: 'agent' as const, label: a.name, value: a.name }));
 
-    // Sessions (exclude current, children, archived)
+    // Sessions — the project's other sessions, newest first. The parent/child
+    // and archived filters are gone with the OpenCode session tree: a Kortix
+    // session has neither. The per-session diff summary went with it too — it
+    // came off the live sandbox, so it was only ever available for a running
+    // session anyway.
     const sessionItems: MentionItem[] = sessions
       .filter((s) => {
         if (s.id === currentSessionId) return false;
-        if (s.parentID) return false;
-        if (s.time.archived) return false;
-        const title = (s.title || '').toLowerCase();
-        if (title.includes(q)) return true;
-        const diffs = s.summary?.diffs;
-        if (Array.isArray(diffs)) {
-          return diffs.some((d: any) => ((d.file || d.path || '') as string).toLowerCase().includes(q));
-        }
-        return false;
+        return s.title.toLowerCase().includes(q);
       })
       .slice(0, 5)
-      .map((s) => {
-        const ago = timeAgo(s.time.updated);
-        const files = s.summary?.files ?? 0;
-        const desc = files > 0 ? `${ago} - ${files} file${files > 1 ? 's' : ''} changed` : ago;
-        return { kind: 'session' as const, label: s.title || s.id.slice(0, 8), value: s.id, description: desc };
-      });
+      .map((s) => ({
+        kind: 'session' as const,
+        label: s.title || s.id.slice(0, 8),
+        value: s.id,
+        description: timeAgo(s.updatedAt),
+      }));
 
     // Files
     const filteredFiles = q.length > 0

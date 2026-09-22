@@ -28,7 +28,9 @@ import * as Haptics from 'expo-haptics';
 
 import { KortixLogo } from '@/components/ui/KortixLogo';
 import { useSandboxContext } from '@/contexts/SandboxContext';
-import { useCreateSession } from '@/lib/platform/hooks';
+import { useCreateProjectSession } from '@/lib/projects/hooks';
+import { startProjectSession } from '@/lib/projects/projects-client';
+import { getSandboxUrl } from '@/lib/platform/client';
 import { getAuthToken } from '@/api/config';
 import { SessionPage } from '@/components/session/SessionPage';
 import { log } from '@/lib/logger';
@@ -188,7 +190,7 @@ function LogoPhase({ onDone, onSkip }: { onDone: () => void; onSkip: () => void 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export function InstanceOnboarding({ onComplete }: InstanceOnboardingProps) {
-  const { sandboxUrl } = useSandboxContext();
+  const { sandboxUrl, projectId } = useSandboxContext();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
 
@@ -196,7 +198,7 @@ export function InstanceOnboarding({ onComplete }: InstanceOnboardingProps) {
   const [onboardingSessionId, setOnboardingSessionId] = useState<string | null>(null);
   const commandFiredRef = useRef(false);
 
-  const createSession = useCreateSession(sandboxUrl);
+  const createSession = useCreateProjectSession(projectId ?? null);
 
   // ── Resume logic: check existing onboarding session on mount ──
   useEffect(() => {
@@ -230,22 +232,39 @@ export function InstanceOnboarding({ onComplete }: InstanceOnboardingProps) {
 
   // ── Create session & fire /onboarding when entering session phase ──
   const initSession = useCallback(async () => {
-    if (!sandboxUrl || onboardingSessionId) return;
+    if (!projectId || onboardingSessionId) return;
 
     try {
-      const session = await createSession.mutateAsync({ title: 'Kortix Onboarding' });
-      setOnboardingSessionId(session.id);
-      await writeEnv(sandboxUrl, 'ONBOARDING_SESSION_ID', session.id);
+      const session = await createSession.mutateAsync({ name: 'Kortix Onboarding' });
+      // The tab id is the KORTIX session id — SessionPage is addressed by it.
+      setOnboardingSessionId(session.session_id);
+
+      // The onboarding command runs against the RUNTIME, so it needs the
+      // OpenCode root id and a live sandbox. `/start` resolves both; a fresh
+      // session has neither at create time. Poll it rather than assuming the
+      // globally-current sandbox is this session's, which is what the previous
+      // version did.
+      const started = await startProjectSession(projectId, session.session_id);
+      const runtimeUrl = started?.sandbox?.external_id
+        ? getSandboxUrl(started.sandbox.external_id)
+        : null;
+      const runtimeSessionId = started?.opencode_session_id ?? null;
+      if (!runtimeUrl || !runtimeSessionId) {
+        log.warn('[Onboarding] Runtime not ready; skipping the onboarding command');
+        return;
+      }
+
+      await writeEnv(runtimeUrl, 'ONBOARDING_SESSION_ID', runtimeSessionId);
 
       // Fire /onboarding command
       if (!commandFiredRef.current) {
         commandFiredRef.current = true;
-        await writeEnv(sandboxUrl, 'ONBOARDING_COMMAND_FIRED', 'true');
+        await writeEnv(runtimeUrl, 'ONBOARDING_COMMAND_FIRED', 'true');
 
         const token = await getAuthToken();
 
-        log.log('[Onboarding] Firing /onboarding command for session:', session.id);
-        fetch(`${sandboxUrl}/session/${session.id}/command`, {
+        log.log('[Onboarding] Firing /onboarding command for session:', runtimeSessionId);
+        fetch(`${runtimeUrl}/session/${runtimeSessionId}/command`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -260,7 +279,7 @@ export function InstanceOnboarding({ onComplete }: InstanceOnboardingProps) {
     } catch (err: any) {
       log.error('[Onboarding] Session creation failed:', err?.message);
     }
-  }, [sandboxUrl, onboardingSessionId, createSession]);
+  }, [projectId, onboardingSessionId, createSession]);
 
   // When phase transitions to 'session', create session if needed
   useEffect(() => {
@@ -326,6 +345,7 @@ export function InstanceOnboarding({ onComplete }: InstanceOnboardingProps) {
   return (
     <View style={{ flex: 1 }}>
       <SessionPage
+        projectId={projectId ?? ''}
         sessionId={onboardingSessionId}
         onBack={handleSkip}
         onboardingMode

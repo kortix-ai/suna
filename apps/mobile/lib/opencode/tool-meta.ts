@@ -67,7 +67,8 @@ function truncate(s: string, max = 60): string {
  * Used for context-group item labels and any future compact views.
  */
 export function getToolPrimaryArg(part: ToolPart): string {
-  const input = (part.input ?? {}) as Record<string, any>;
+  // OpenCode's ToolPart carries the call arguments inside `state`.
+  const input = ((part.state as { input?: unknown }).input ?? {}) as Record<string, any>;
   const key = normalizeName(part.tool);
 
   switch (key) {

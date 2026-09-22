@@ -3,7 +3,6 @@
  *
  * 1. After login, calls useSandbox() to ensure user has a sandbox
  * 2. Detects provisioning state and exposes it for the progress screen
- * 3. Mounts the SSE event stream once sandbox is ready
  * 4. Passes sandboxUrl down to all children via context
  * 5. Supports switching to a different sandbox via switchSandbox()
  */
@@ -12,13 +11,21 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import { useQueryClient } from '@tanstack/react-query';
 import { useSandbox, platformKeys } from '@/lib/platform/hooks';
 import { getSandboxUrl, type SandboxInfo } from '@/lib/platform/client';
-import { useOpenCodeEventStream } from '@/lib/opencode/event-stream';
 import { useAuthContext } from '@/contexts/AuthContext';
-import { useSyncStore } from '@/lib/opencode/sync-store';
+import { useSessionStateStore } from '@kortix/sdk/react';
 import { log } from '@/lib/logger';
 
 interface SandboxContextValue {
   sandboxUrl: string | undefined;
+  /**
+   * The Kortix project this sandbox's session belongs to.
+   *
+   * Every sandbox mobile talks to IS a Kortix project session — `ensureSandbox`
+   * creates one — so the project id was always present in the row's metadata
+   * and simply never surfaced. Screens need it because a session is addressed
+   * as (projectId, sessionId).
+   */
+  projectId: string | undefined;
   sandboxId: string | undefined;
   sandboxUuid: string | undefined;
   sandboxName: string | undefined;
@@ -39,6 +46,7 @@ interface SandboxContextValue {
 
 const SandboxContext = createContext<SandboxContextValue>({
   sandboxUrl: undefined,
+  projectId: undefined,
   sandboxId: undefined,
   sandboxUuid: undefined,
   sandboxName: undefined,
@@ -86,6 +94,9 @@ export function SandboxProvider({ children }: { children: React.ReactNode }) {
   const sandboxId = override?.sandboxId ?? (shouldFetch ? data?.sandboxId : undefined);
   const sandboxUuid = override?.sandboxUuid ?? (shouldFetch ? data?.sandbox?.sandbox_id : undefined);
   const sandboxName = override?.sandboxName ?? (shouldFetch ? data?.sandbox?.name : undefined);
+  const projectId = shouldFetch
+    ? ((data?.sandbox?.metadata as { project_id?: string } | undefined)?.project_id ?? undefined)
+    : undefined;
 
   // Called by the provisioning progress screen when sandbox becomes ready
   const onProvisioningComplete = useCallback(() => {
@@ -93,13 +104,14 @@ export function SandboxProvider({ children }: { children: React.ReactNode }) {
     queryClient.invalidateQueries({ queryKey: platformKeys.sandbox() });
   }, [queryClient]);
 
-  // Mount SSE event stream globally (no-ops when sandboxUrl is undefined)
-  useOpenCodeEventStream(sandboxUrl);
+  // No global SSE mount. `useSession` opens the stream for the session being
+  // viewed and tears it down on unmount, so a stream now belongs to a session
+  // rather than to whatever sandbox happened to be current.
 
   // Reset sync store on logout and clear override
   useEffect(() => {
     if (!isAuthenticated) {
-      useSyncStore.getState().reset();
+      useSessionStateStore.getState().reset();
       setOverride(null);
     }
   }, [isAuthenticated]);
@@ -120,6 +132,7 @@ export function SandboxProvider({ children }: { children: React.ReactNode }) {
     <SandboxContext.Provider
       value={{
         sandboxUrl,
+        projectId,
         sandboxId,
         sandboxUuid,
         sandboxName,

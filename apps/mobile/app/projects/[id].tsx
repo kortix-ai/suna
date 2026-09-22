@@ -34,14 +34,7 @@ import { BottomSheetModal } from '@gorhom/bottom-sheet';
 
 import { useAuthContext } from '@/contexts';
 import { useSandboxContext } from '@/contexts/SandboxContext';
-import {
-  useSessions,
-  useCreateSession,
-  useDeleteSession,
-  useArchiveSession,
-  useUnarchiveSession,
-} from '@/lib/platform/hooks';
-import { useSyncStore } from '@/lib/opencode/sync-store';
+import { toSessionPickerItems } from '@/lib/sessions/session-picker-item';
 import { getAuthToken } from '@/api/config';
 import type { Session } from '@/lib/opencode/types';
 import { SessionPage } from '@/components/session/SessionPage';
@@ -431,120 +424,6 @@ function ConnectingToWorkspace({
 
 // ─── Session list item (extracted to avoid re-renders) ──────────────────────
 
-function SessionListItem({
-  item,
-  isActive,
-  isChild = false,
-  childCount = 0,
-  isExpanded = false,
-  onToggleExpand,
-  onPress,
-  onArchive,
-  onDelete,
-}: {
-  item: Session;
-  isActive: boolean;
-  /** True when this row is rendered nested under a parent */
-  isChild?: boolean;
-  /** Total number of direct children — shows a persistent toggle pill */
-  childCount?: number;
-  /** Whether this row's children are currently expanded */
-  isExpanded?: boolean;
-  /** Toggle expand/collapse for this row's children */
-  onToggleExpand?: () => void;
-  onPress: (s: Session) => void;
-  onArchive?: (id: string) => void;
-  onDelete?: (id: string) => void;
-}) {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const mutedColor = isDark ? '#999999' : '#6e6e6e';
-  const status = useSyncStore((s) => s.sessionStatus[item.id]);
-  const isSessionBusy = status?.type === 'busy';
-
-  return (
-    <TouchableOpacity
-      onPress={() => {
-        haptics.tap();
-        onPress(item);
-      }}
-      onLongPress={() => {
-        haptics.medium();
-        Alert.alert(item.title || 'Session', undefined, [
-          { text: 'Archive', onPress: () => onArchive?.(item.id) },
-          { text: 'Delete', style: 'destructive', onPress: () => onDelete?.(item.id) },
-          { text: 'Cancel', style: 'cancel' },
-        ]);
-      }}
-      className={`mb-1 rounded-2xl px-3 py-2.5 ${isActive ? 'bg-muted' : ''}`}
-      activeOpacity={0.6}>
-      <View className="flex-row items-center">
-        {isSessionBusy && <View className="mr-2 h-2 w-2 rounded-full bg-primary" />}
-        <Text
-          className={`flex-1 text-sm ${
-            isActive ? 'font-semibold text-foreground' : 'text-foreground'
-          }`}
-          numberOfLines={1}>
-          {item.title || 'New Session'}
-        </Text>
-
-        {/* Child toggle pill — matches web f1aea74: persistent badge that stays
-            visible so expanded sub-session lists can be collapsed again */}
-        {childCount > 0 && onToggleExpand && (
-          <TouchableOpacity
-            onPress={(e) => {
-              e.stopPropagation();
-              haptics.selection();
-              onToggleExpand();
-            }}
-            hitSlop={6}
-            activeOpacity={0.6}
-            accessibilityLabel={isExpanded ? 'Collapse sub-sessions' : 'Expand sub-sessions'}
-            className={`ml-2 rounded-full px-2 py-0.5 ${
-              isExpanded
-                ? isDark
-                  ? 'bg-white/10'
-                  : 'bg-black/10'
-                : isDark
-                  ? 'bg-white/[0.04]'
-                  : 'bg-black/[0.04]'
-            }`}>
-            <Text
-              className={`text-[10px] ${isExpanded ? 'text-foreground' : 'text-muted-foreground'}`}
-              style={{ fontVariant: ['tabular-nums'] }}>
-              {childCount}
-            </Text>
-          </TouchableOpacity>
-        )}
-
-        {isActive && (
-          <View className="ml-2 flex-row items-center">
-            <TouchableOpacity
-              onPress={() => {
-                haptics.medium();
-                onArchive?.(item.id);
-              }}
-              className="mr-0.5 p-1.5"
-              hitSlop={6}
-              activeOpacity={0.6}>
-              <Ionicons name="archive-outline" size={16} color={mutedColor} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => {
-                haptics.medium();
-                onDelete?.(item.id);
-              }}
-              className="p-1.5"
-              hitSlop={6}
-              activeOpacity={0.6}>
-              <Ionicons name="trash-outline" size={16} color={mutedColor} />
-            </TouchableOpacity>
-          </View>
-        )}
-      </View>
-    </TouchableOpacity>
-  );
-}
 
 // Quick-start suggestions for the project home composer. Mirrors the web's
 // STARTER_PROMPTS (apps/web/src/lib/starter-prompts.ts); tapping a chip starts
@@ -702,123 +581,7 @@ function ProjectSessionListItem({
   );
 }
 
-/**
- * Build a map from parent session ID → array of child session IDs.
- * Ported from childMapByParent() in @kortix/sdk/turns.
- */
-function buildChildMap(sessions: Session[]): Map<string, string[]> {
-  const map = new Map<string, string[]>();
-  for (const session of sessions) {
-    if (!session.parentID) continue;
-    const existing = map.get(session.parentID);
-    if (existing) {
-      existing.push(session.id);
-    } else {
-      map.set(session.parentID, [session.id]);
-    }
-  }
-  return map;
-}
 
-/**
- * SessionGroup — renders a session row + its expanded children (recursive for nested trees).
- */
-function SessionGroup({
-  session,
-  allSessions,
-  childMap,
-  expandedNodes,
-  onToggleExpand,
-  activeSessionId,
-  onPress,
-  onArchive,
-  onDelete,
-}: {
-  session: Session;
-  allSessions: Session[];
-  childMap: Map<string, string[]>;
-  expandedNodes: Record<string, boolean>;
-  onToggleExpand: (sessionId: string) => void;
-  activeSessionId: string | null;
-  onPress: (s: Session) => void;
-  onArchive?: (id: string) => void;
-  onDelete?: (id: string) => void;
-}) {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const childIds = childMap.get(session.id);
-  const hasChildren = !!childIds && childIds.length > 0;
-  const isExpanded = expandedNodes[session.id] ?? false;
-
-  const childSessions = useMemo(() => {
-    if (!childIds) return [];
-    return childIds
-      .map((id) => allSessions.find((s) => s.id === id))
-      .filter((s): s is Session => !!s)
-      .sort((a, b) => (a.time?.created ?? 0) - (b.time?.created ?? 0));
-  }, [childIds, allSessions]);
-
-  return (
-    <View>
-      <SessionListItem
-        item={session}
-        isActive={session.id === activeSessionId}
-        isChild={false}
-        childCount={hasChildren ? childSessions.length : 0}
-        isExpanded={isExpanded}
-        onToggleExpand={hasChildren ? () => onToggleExpand(session.id) : undefined}
-        onPress={onPress}
-        onArchive={onArchive}
-        onDelete={onDelete}
-      />
-
-      {/* Expanded children — indented with a subtle left border */}
-      {hasChildren && isExpanded && (
-        <View
-          className="ml-4 pl-2"
-          style={{
-            borderLeftWidth: 1,
-            borderLeftColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
-          }}>
-          {childSessions.map((child) => {
-            const grandchildIds = childMap.get(child.id);
-            const hasGrandchildren = !!grandchildIds && grandchildIds.length > 0;
-
-            // Recurse for grandchildren
-            if (hasGrandchildren) {
-              return (
-                <SessionGroup
-                  key={child.id}
-                  session={child}
-                  allSessions={allSessions}
-                  childMap={childMap}
-                  expandedNodes={expandedNodes}
-                  onToggleExpand={onToggleExpand}
-                  activeSessionId={activeSessionId}
-                  onPress={onPress}
-                  onArchive={onArchive}
-                  onDelete={onDelete}
-                />
-              );
-            }
-
-            return (
-              <SessionListItem
-                key={child.id}
-                item={child}
-                isActive={child.id === activeSessionId}
-                isChild
-                onPress={onPress}
-                onArchive={onArchive}
-                onDelete={onDelete}
-              />
-            );
-          })}
-        </View>
-      )}
-    </View>
-  );
-}
 
 /**
  * Probe a session sandbox's runtime health THROUGH the backend proxy — the same
@@ -1252,7 +1015,6 @@ export default function ProjectSessionScreen() {
   // OpenCode/Kortix proxy hooks must stay disabled to avoid 403s
   // ("Not authorized to access this sandbox").
   const sessionSandboxUrl = activeSessionId ? sandboxUrl : undefined;
-  const { data: sessions = [], isLoading: sessionsLoading } = useSessions(sessionSandboxUrl);
   const { data: kortixProjects } = useKortixProjects(sessionSandboxUrl);
   const sortedProjects = useMemo(() => {
     if (!kortixProjects || !Array.isArray(kortixProjects)) return [];
@@ -1261,28 +1023,14 @@ export default function ProjectSessionScreen() {
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
   }, [kortixProjects]);
-  const createSession = useCreateSession(sandboxUrl);
-  const deleteSession = useDeleteSession(sandboxUrl);
-  const archiveSession = useArchiveSession(sandboxUrl);
-  const unarchiveSession = useUnarchiveSession(sandboxUrl);
-
-  // Split sessions into active and archived
-  const activeSessions = useMemo(
-    () => sessions.filter((s) => !(s.time as any).archived),
-    [sessions]
-  );
-  const archivedSessions = useMemo(
-    () => sessions.filter((s) => !!(s.time as any).archived),
-    [sessions]
-  );
-
   // Tabs shown as pills in the BottomBar (session tabs + page tabs)
   const bottomBarTabs = useMemo(() => {
     const sessionPills = openTabIds.map((id) => {
-      const s = sessions.find((sess) => sess.id === id);
+      // Tab ids are Kortix session ids, so the label comes off the Kortix row.
+      const s = projectSessions.find((row) => row.session_id === id);
       return {
         id,
-        label: s?.title || 'Session',
+        label: s?.name || s?.branch_name || 'Session',
         icon: 'chatbubble-outline' as const,
       };
     });
@@ -1300,26 +1048,19 @@ export default function ProjectSessionScreen() {
       };
     });
     return [...sessionPills, ...pagePills];
-  }, [openTabIds, openPageIds, sessions, tabStateById]);
+  }, [openTabIds, openPageIds, projectSessions, tabStateById]);
+
+  // The project's sessions, as the palette / @-mention / tabs surfaces want
+  // them. One projection so those three cannot disagree about ordering or
+  // which sessions are even listable.
+  const sessionPickerItems = useMemo(
+    () => toSessionPickerItems(projectSessions),
+    [projectSessions]
+  );
 
   // Collapsible state
   const [sessionsExpanded, setSessionsExpanded] = useState(true);
-  const [archivedExpanded, setArchivedExpanded] = useState(false);
   const [projectsExpanded, setProjectsExpanded] = useState(false);
-  const [expandedSessionNodes, setExpandedSessionNodes] = useState<Record<string, boolean>>({});
-
-  const toggleSessionExpand = useCallback((sessionId: string) => {
-    setExpandedSessionNodes((prev) => ({ ...prev, [sessionId]: !prev[sessionId] }));
-  }, []);
-
-  // Build parent→children map and derive the list of top-level (root) sessions.
-  // Child sessions render nested under their parents when the parent is expanded.
-  const { childMap, rootSessions } = useMemo(() => {
-    const map = buildChildMap(activeSessions);
-    const sessionIds = new Set(activeSessions.map((s) => s.id));
-    const roots = activeSessions.filter((s) => !s.parentID || !sessionIds.has(s.parentID));
-    return { childMap: map, rootSessions: roots };
-  }, [activeSessions]);
 
   // Agent/model/variant for dashboard input
   const { data: agents = [] } = useOpenCodeAgents(sessionSandboxUrl);
@@ -1380,6 +1121,11 @@ export default function ProjectSessionScreen() {
     setRightDrawerOpen(false);
   }, []);
 
+  // Composer prompts awaiting their session's OpenCode root, keyed by KORTIX
+  // session id. Declared above its writers so the hand-off is readable in
+  // source order: a creator stashes here, `connectToProjectSession` drains it.
+  const pendingPromptsRef = useRef<Record<string, string>>({});
+
   const handleNewSession = useCallback(async () => {
     if (!projectId) return;
     try {
@@ -1403,37 +1149,31 @@ export default function ProjectSessionScreen() {
 
   const handleCreateSessionWithPrompt = useCallback(
     async (title: string, prompt: string) => {
-      if (!sandboxUrl) return;
+      if (!projectId) return;
       try {
-        const session = await createSession.mutateAsync({ title });
-        navigateToSession(session.id);
-        // Send the preset prompt into the new session
-        const token = await getAuthToken();
-        await fetch(`${sandboxUrl}/session/${session.id}/prompt_async`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({ parts: [{ type: 'text', text: prompt }] }),
+        // A real Kortix session with its own runtime, and the preset prompt
+        // handed to the server as `initial_prompt` — the same durable path
+        // `handleDashboardSend` uses, so it survives the box still booting.
+        // The old version created a bare OpenCode session inside whatever
+        // sandbox happened to be current and POSTed the prompt straight at it,
+        // so it had no Kortix row and no durable transcript.
+        const session = await createProjectSession.mutateAsync({
+          name: title,
+          initial_prompt: prompt,
         });
+        setActiveProjectSessionId(session.session_id);
+        navigateToSession(null);
+        setConnectError(null);
+        erroredSessionRef.current = null;
+        setConnectingProjectSessionId(session.session_id);
       } catch (err: any) {
-        log.error('❌ [Home] Failed to create session with prompt:', err?.message || err);
+        if (showUpgradeForError(err)) return;
+        log.error('❌ [Project] Failed to create session with prompt:', err?.message || err);
       }
     },
-    [sandboxUrl, createSession, navigateToSession]
+    [projectId, createProjectSession, navigateToSession, showUpgradeForError]
   );
 
-  const handleSessionPress = useCallback(
-    (session: Session) => {
-      navigateToSession(session.id);
-      setDrawerOpen(false);
-    },
-    [navigateToSession]
-  );
-
-  // Composer prompts awaiting their session's OpenCode root, keyed by session id.
-  const pendingPromptsRef = useRef<Record<string, string>>({});
 
   // Switch the SandboxContext to a session's sandbox and render its chat. Needs
   // both the sandbox URL and the resolved OpenCode pin (opencode_session_id).
@@ -1456,7 +1196,10 @@ export default function ProjectSessionScreen() {
       setConnectError(null);
       erroredSessionRef.current = null;
       setActiveProjectSessionId(ps.session_id);
-      navigateToSession(ps.opencode_session_id);
+      // The tab id is the KORTIX session id. It used to be the OpenCode root,
+      // which forced every caller to resolve back through the pin and left the
+      // transcript unreadable whenever the sandbox was not running.
+      navigateToSession(ps.session_id);
       // Deliver the composer's first prompt now that the OpenCode root exists.
       const pending = pendingPromptsRef.current[ps.session_id];
       if (pending) {
@@ -1652,18 +1395,13 @@ export default function ProjectSessionScreen() {
   // screen meanwhile. erroredSessionRef is seeded before flipping
   // connectingProjectSessionId so the auto-connect effect doesn't race the
   // restart; it's cleared once re-provision resolves so ensureAndOpen runs.
-  // The active tab's project-session row. The tab store's activeSessionId is
-  // the OPENCODE root id (connectToProjectSession navigates with
-  // ps.opencode_session_id), so resolve back to the Kortix row through the pin
-  // — every /projects/:id/sessions/:sid API call needs the Kortix UUID. The
-  // session_id fallback covers the brief pre-connect window where a tab can
-  // still carry the Kortix id (the two id shapes can't collide).
+  // The active tab's project-session row. `activeSessionId` IS the Kortix id
+  // now, so this is a direct lookup — no resolving back through the OpenCode
+  // pin, and no pre-connect window where a tab carries a different id shape.
   const activeProjectSession = useMemo(
     () =>
       activeSessionId
-        ? (projectSessions.find(
-            (s) => s.opencode_session_id === activeSessionId || s.session_id === activeSessionId
-          ) ?? null)
+        ? (projectSessions.find((s) => s.session_id === activeSessionId) ?? null)
         : null,
     [projectSessions, activeSessionId]
   );
@@ -1752,8 +1490,8 @@ export default function ProjectSessionScreen() {
             haptics.tap();
             try {
               await deleteProjectSession(projectId, ps.session_id);
-              if (ps.opencode_session_id) {
-                closeTab(ps.opencode_session_id);
+              if (ps.session_id) {
+                closeTab(ps.session_id);
               } else if (useTabStore.getState().activeSessionId) {
                 navigateToSession(null);
               }
@@ -1796,49 +1534,13 @@ export default function ProjectSessionScreen() {
 
   const handleBack = useCallback(() => navigateToSession(null), [navigateToSession]);
 
-  const handleArchive = useCallback(
-    (sessionId: string) => {
-      Alert.alert('Archive Session', 'Move this session to archived?', [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Archive',
-          onPress: () => {
-            if (useTabStore.getState().activeSessionId === sessionId) {
-              navigateToSession(null);
-            }
-            archiveSession.mutate(sessionId);
-          },
-        },
-      ]);
-    },
-    [archiveSession, navigateToSession]
-  );
+  // `handleArchive` / `handleUnarchive` / `handleDelete` operated on OpenCode
+  // sessions inside a shared sandbox. A Kortix session has no archive state —
+  // `archived_at` exists only on the OpenCode sub-session snapshot — so those
+  // actions have no equivalent and are gone rather than silently remapped onto
+  // stop/delete, which mean different things. Deleting a session is
+  // `handleDeleteActiveSession`, which calls `deleteProjectSession`.
 
-  const handleUnarchive = useCallback(
-    (sessionId: string) => {
-      unarchiveSession.mutate(sessionId);
-    },
-    [unarchiveSession]
-  );
-
-  const handleDelete = useCallback(
-    (sessionId: string) => {
-      Alert.alert('Delete Session', 'This cannot be undone.', [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            if (useTabStore.getState().activeSessionId === sessionId) {
-              navigateToSession(null);
-            }
-            deleteSession.mutate(sessionId);
-          },
-        },
-      ]);
-    },
-    [deleteSession, navigateToSession]
-  );
 
   // Simplified dashboard send flow (ported from web 3f150e0).
   // Single `isSending` guard, `finally` cleanup, parallel session create + fade.
@@ -2845,6 +2547,7 @@ export default function ProjectSessionScreen() {
               ) : /* Active session */
               activeSessionId && !showTabsOverview ? (
                 <SessionPage
+                  projectId={projectId}
                   sessionId={activeSessionId}
                   onBack={handleBack}
                   onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
@@ -2890,7 +2593,7 @@ export default function ProjectSessionScreen() {
               ) : /* Tabs overview */
               showTabsOverview ? (
                 <TabsOverview
-                  sessions={activeSessions}
+                  sessions={sessionPickerItems}
                   openTabIds={openTabIds}
                   activeSessionId={activeSessionId}
                   onSelectTab={(id) => navigateToSession(id)}
@@ -3012,7 +2715,7 @@ export default function ProjectSessionScreen() {
                       onModelChange={resolved.setModel}
                       onVariantCycle={resolved.cycleVariant}
                       onVariantSet={resolved.setVariant}
-                      sessions={sessions}
+                      sessions={sessionPickerItems}
                       sandboxUrl={sessionSandboxUrl}
                     />
                   </View>
@@ -3092,9 +2795,6 @@ export default function ProjectSessionScreen() {
                     : undefined
                 }
                 onRestartSession={handleRestartActiveSession}
-                onArchiveSession={() => {
-                  if (activeSessionId) handleArchive(activeSessionId);
-                }}
                 onDeleteSession={activeProjectSession ? handleDeleteActiveSession : undefined}
                 customMenuItems={
                   activePageId === 'page:workspace'
@@ -3250,9 +2950,17 @@ export default function ProjectSessionScreen() {
         />
       ) : null}
 
-      <ViewChangesSheet ref={viewChangesSheetRef} sessionId={activeSessionId} />
+      <ViewChangesSheet
+        ref={viewChangesSheetRef}
+        projectId={projectId}
+        sessionId={activeSessionId}
+      />
 
-      <ExportTranscriptSheet ref={exportTranscriptSheetRef} sessionId={activeSessionId} />
+      <ExportTranscriptSheet
+        ref={exportTranscriptSheetRef}
+        projectId={projectId}
+        sessionId={activeSessionId}
+      />
 
       <SessionRenameSheet
         ref={renameSessionSheetRef}
@@ -3270,7 +2978,7 @@ export default function ProjectSessionScreen() {
       <CommandPalette
         visible={commandPaletteOpen}
         onClose={() => setCommandPaletteOpen(false)}
-        sessions={sessions}
+        sessions={sessionPickerItems}
         onNewSession={handleNewSession}
         onSessionSelect={(id) => {
           if (id) {

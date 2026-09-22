@@ -142,11 +142,8 @@ export type {
   WebSearchResultItem,
 } from '@kortix/sdk';
 
-// Zustand sync store (single source of truth for messages)
-export { useSyncStore } from './sync-store';
-
-// SSE event stream hook
-export { useOpenCodeEventStream } from './event-stream';
-
-// Session sync hook (hydrates messages on mount)
-export { useSessionSync } from './session-sync';
+// The transcript store, the SSE event stream and the session-sync hook used to
+// be re-exported from here. All three are gone: `useSession` from
+// `@kortix/sdk/react` owns the session lifecycle, and the SDK's own store
+// (`useSessionStateStore`) holds the messages. What remains in this directory
+// is the turn-rendering helpers and the React Native SSE wire.

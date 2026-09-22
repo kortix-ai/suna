@@ -15,75 +15,116 @@ import * as Sharing from 'expo-sharing';
 import * as Haptics from 'expo-haptics';
 import { getSheetBg } from '@/lib/theme-colors';
 
-import { getAuthToken } from '@/api/config';
-
-import { useSyncStore } from '@/lib/opencode/sync-store';
-import { useSession } from '@/lib/platform/hooks';
-import { useSandboxContext } from '@/contexts/SandboxContext';
+import { useSession, useProjectSession } from '@kortix/sdk/react';
 import {
   formatTranscript,
   getTranscriptFilename,
   DEFAULT_TRANSCRIPT_OPTIONS,
-  loadHttpSessionHistory,
+  getSessionTranscriptSync,
+  type MessageWithParts,
   type TranscriptOptions,
 } from '@kortix/sdk';
 
 interface ExportTranscriptSheetProps {
+  /** Kortix project id — sessions are addressed as (projectId, sessionId). */
+  projectId: string;
+  /** Kortix session id. */
   sessionId: string | null;
 }
 
+/**
+ * Pages the WHOLE thread out of the durable transcript mirror, oldest last.
+ *
+ * This is the part of the export that had to change. It used to call
+ * `loadHttpSessionHistory` against the sandbox url, so exporting a session
+ * whose box was stopped produced an empty file — the one case where a user
+ * most wants a transcript. The mirror is server-side and keyed by the Kortix
+ * session, so it answers whether or not anything is running.
+ *
+ * Walks `before` cursors to the end rather than taking one window: the on-screen
+ * transcript is a tail, and an export that silently stopped at the newest 40
+ * messages would be worse than one that failed.
+ */
+async function loadMirroredTranscript(
+  projectId: string,
+  sessionId: string,
+): Promise<MessageWithParts[]> {
+  const PAGE = 200;
+  // Bounds an unbounded walk: 100 pages is 20k messages, far past any real
+  // session, and stops a cursor bug from looping forever on a user's tap.
+  const MAX_PAGES = 100;
+  const collected: MessageWithParts[][] = [];
+  let before: string | null = null;
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const envelope = await getSessionTranscriptSync(projectId, sessionId, {
+      limit: PAGE,
+      history: true,
+      before,
+    });
+    if (!envelope?.available || !envelope.messages?.length) break;
+    // Each window is oldest-first internally; collect windows newest-to-oldest
+    // and reverse at the end so the file reads in conversation order.
+    collected.push(envelope.messages as unknown as MessageWithParts[]);
+    if (!envelope.next_cursor) break;
+    before = envelope.next_cursor;
+  }
+
+  return collected.reverse().flat();
+}
+
 export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscriptSheetProps>(
-  function ExportTranscriptSheet({ sessionId }, ref) {
+  function ExportTranscriptSheet({ projectId, sessionId }, ref) {
     const { colorScheme } = useColorScheme();
     const isDark = colorScheme === 'dark';
-    const { sandboxUrl } = useSandboxContext();
 
     const [options, setOptions] = useState<TranscriptOptions>(DEFAULT_TRANSCRIPT_OPTIONS);
     const [copied, setCopied] = useState(false);
     const [sharing, setSharing] = useState(false);
 
-    // Session info
-    const { data: session } = useSession(sandboxUrl, sessionId || '');
+    // The Kortix row for the header fields, and the live hook for the preview.
+    // `chatEngine: false` because this sheet only reads what the session page
+    // has already synced — mounting a second chat engine for the same session
+    // would double its pollers for a preview.
+    const { data: sessionRow } = useProjectSession(projectId, sessionId ?? undefined);
+    const session = useSession(projectId, sessionId ?? '', {
+      enabled: !!sessionId,
+      chatEngine: false,
+      replayStartStash: false,
+    });
+
+    const sessionMeta = useMemo(
+      () => ({
+        id: sessionId ?? '',
+        title: sessionRow?.name || 'Untitled',
+        time: {
+          created: Date.parse(sessionRow?.created_at ?? '') || 0,
+          updated: Date.parse(sessionRow?.updated_at ?? '') || 0,
+        },
+      }),
+      [sessionId, sessionRow?.name, sessionRow?.created_at, sessionRow?.updated_at],
+    );
 
     const loadTranscript = useCallback(async () => {
-      if (!session || !sessionId || !sandboxUrl) return '';
-      const history = await loadHttpSessionHistory({
-        baseUrl: sandboxUrl,
-        sessionId,
-        getToken: getAuthToken,
-      });
-      return formatTranscript(
-        {
-          id: session.id,
-          title: session.title || 'Untitled',
-          time: session.time,
-        },
-        history,
-        options
-      );
-    }, [options, sandboxUrl, session, sessionId]);
+      if (!sessionId) return '';
+      const history = await loadMirroredTranscript(projectId, sessionId);
+      if (history.length === 0) return '';
+      return formatTranscript(sessionMeta, history, options);
+    }, [options, projectId, sessionId, sessionMeta]);
 
-    // Messages from sync store
-    const messages = useSyncStore((state) => (sessionId ? state.messages[sessionId] : undefined));
+    // Preview — whatever the open session already has on screen.
+    const messages = session.messages;
 
     // Build transcript
     const transcript = useMemo(() => {
-      if (!session || !messages || !Array.isArray(messages) || messages.length === 0) return '';
-      return formatTranscript(
-        {
-          id: session.id,
-          title: session.title || 'Untitled',
-          time: session.time,
-        },
-        messages,
-        options
-      );
-    }, [session, messages, options]);
+      if (!messages || messages.length === 0) return '';
+      return formatTranscript(sessionMeta, messages, options);
+    }, [sessionMeta, messages, options]);
 
-    const filename = useMemo(() => {
-      if (!session) return 'session.md';
-      return getTranscriptFilename(session.id, session.title);
-    }, [session]);
+    const filename = useMemo(
+      () => getTranscriptFilename(sessionMeta.id, sessionMeta.title),
+      [sessionMeta],
+    );
 
     const wordCount = useMemo(() => {
       if (!transcript) return 0;
@@ -91,7 +132,9 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
     }, [transcript]);
 
     const messageCount = Array.isArray(messages) ? messages.length : 0;
-    const canExport = !!session && !!sessionId && !!sandboxUrl;
+    // No sandbox in this condition on purpose: the mirror is server-side, so a
+    // stopped session is exportable.
+    const canExport = !!sessionId;
 
     // Copy to clipboard
     const handleCopy = useCallback(async () => {

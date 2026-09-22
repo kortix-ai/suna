@@ -57,6 +57,7 @@ import { MentionSuggestions } from './MentionSuggestions';
 import { useMentions, type TrackedMention, type MentionItem } from './useMentions';
 import { Text as RNText } from 'react-native';
 import { useThemeColors, getSheetBg, getToggleTrackBg, getToggleActiveBg } from '@/lib/theme-colors';
+import type { SessionPickerItem } from '@/lib/sessions/session-picker-item';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -200,7 +201,7 @@ interface SessionChatInputProps {
   onVariantCycle?: () => void;
   onVariantSet?: (variant: string | null) => void;
   /** Data for @mentions */
-  sessions?: Session[];
+  sessions?: SessionPickerItem[];
   currentSessionId?: string | null;
   sandboxUrl?: string;
   /** Called when the user submits while agent is busy — enqueue instead of send */
