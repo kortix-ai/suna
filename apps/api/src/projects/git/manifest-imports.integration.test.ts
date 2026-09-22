@@ -52,7 +52,7 @@ async function push(files: Record<string, string>, message: string): Promise<voi
   await git(['push', 'origin', 'main'], seedPath);
 }
 
-const ROOT = `# LibreMax — root manifest
+const ROOT = `# Acme — root manifest
 kortix_version: 2
 default_agent: kortix
 imports:

@@ -20,25 +20,23 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { TextInput, TouchableOpacity, View } from 'react-native';
+import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
-import { Check, ChevronUp, Search as SearchIcon } from 'lucide-react-native';
-import {
-  BottomSheetBackdrop,
-  BottomSheetModal,
-  BottomSheetScrollView,
-  type BottomSheetBackdropProps,
-} from '@gorhom/bottom-sheet';
+import { CheckIcon as Check, CaretUpIcon as ChevronUp, MagnifyingGlassIcon as SearchIcon } from '@/lib/icons';
+import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { Button } from '@/components/ui/button';
+import { SheetTextInput } from '@/components/kortix/SheetInput';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import {
   useKortixProjects,
   type KortixProject,
 } from '@/lib/kortix/use-kortix-projects';
 import { useSelectedProjectStore } from '@/stores/selected-project-store';
-import { getSheetBg } from '@/lib/theme-colors';
 import { useSandboxContext } from '@/contexts/SandboxContext';
+import { SheetBackdrop, useSheetBackground, KortixBottomSheetModal } from '@/components/kortix/sheet';
 
 // ─── Helpers (mirror of web) ─────────────────────────────────────────────────
 
@@ -79,6 +77,7 @@ function shortPath(path: string | undefined): string {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function ProjectPicker() {
+  const sheetBg = useSheetBackground();
   const { sandboxUrl } = useSandboxContext();
   const { data: projects, isLoading } = useKortixProjects(sandboxUrl);
   const selectedProjectId = useSelectedProjectStore((s) => s.projectId);
@@ -132,27 +131,14 @@ export function ProjectPicker() {
     sheetRef.current?.dismiss();
   }, []);
 
-  const renderBackdrop = useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop
-        {...props}
-        appearsOnIndex={0}
-        disappearsOnIndex={-1}
-        opacity={0.4}
-        pressBehavior="close"
-      />
-    ),
-    [],
-  );
 
   // Tokens — same neutral palette as Actions / Config sheets.
-  const bg = isDark ? '#1a1a1d' : '#FFFFFF';
-  const fgColor = isDark ? '#F8F8F8' : '#121215';
-  const mutedColor = isDark ? '#a1a1aa' : '#71717a';
-  const selectedBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)';
-  const inputBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
-  const dividerColor = isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.08)';
-  const pillBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)';
+  const bg = sheetBg;
+  const fgColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const mutedColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const selectedBg = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.05);
+  const dividerColor = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08);
+  const pillBg = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.05);
 
   return (
     <>
@@ -164,10 +150,11 @@ export function ProjectPicker() {
           paddingVertical: 6,
         }}
       >
-        <TouchableOpacity
+        <Button
+          variant="ghost"
           onPress={open}
-          activeOpacity={0.7}
           disabled={isLoading && !hasProjects}
+          className="h-auto w-auto active:bg-transparent active:opacity-70"
           style={{
             flexDirection: 'row',
             alignItems: 'center',
@@ -178,7 +165,6 @@ export function ProjectPicker() {
             backgroundColor: selected ? pillBg : 'transparent',
             borderWidth: 1,
             borderColor: dividerColor,
-            opacity: isLoading && !hasProjects ? 0.5 : 1,
             maxWidth: 260,
           }}
         >
@@ -198,30 +184,19 @@ export function ProjectPicker() {
             as={ChevronUp}
             size={12}
             color={mutedColor}
-            strokeWidth={2.2}
           />
-        </TouchableOpacity>
+        </Button>
       </View>
 
       {/* Picker sheet */}
-      <BottomSheetModal
+      <KortixBottomSheetModal
+        title="Project"
         ref={sheetRef}
         enableDynamicSizing
         maxDynamicContentSize={560}
         enablePanDownToClose
         enableOverDrag={false}
-        handleIndicatorStyle={{
-          backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-          width: 36,
-          height: 5,
-          borderRadius: 3,
-        }}
-        backgroundStyle={{
-          backgroundColor: getSheetBg(isDark),
-          borderTopLeftRadius: 24,
-          borderTopRightRadius: 24,
-        }}
-        backdropComponent={renderBackdrop}
+        backdropComponent={(p) => <SheetBackdrop {...p} opacity={0.4} />}
       >
         <BottomSheetScrollView
           contentContainerStyle={{ paddingBottom: insets.bottom + 12 }}
@@ -232,61 +207,35 @@ export function ProjectPicker() {
           {/* Sticky block: title + search field. Solid bg so rows don't
               bleed through while scrolled. */}
           <View style={{ backgroundColor: bg }}>
-            <View style={{ paddingHorizontal: 20, paddingTop: 6, paddingBottom: 8 }}>
-              <Text
-                style={{
-                  fontSize: 18,
-                  fontFamily: 'Roobert-SemiBold',
-                  color: fgColor,
-                }}
-              >
-                Project
-              </Text>
-            </View>
 
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 8,
-                marginHorizontal: 20,
-                marginBottom: 10,
-                paddingHorizontal: 12,
-                paddingVertical: 8,
-                borderRadius: 10,
-                backgroundColor: inputBg,
-              }}
-            >
-              <Icon as={SearchIcon} size={14} color={mutedColor} strokeWidth={2.2} />
-              <TextInput
+            <View style={{ marginHorizontal: 20, marginBottom: 10 }}>
+              <View
+                pointerEvents="none"
+                style={{ position: 'absolute', left: 14, top: 0, bottom: 0, justifyContent: 'center', zIndex: 1 }}
+              >
+                <Icon as={SearchIcon} size={14} color={mutedColor} />
+              </View>
+              <SheetTextInput
                 value={search}
                 onChangeText={setSearch}
                 placeholder="Search projects..."
-                placeholderTextColor={mutedColor}
                 autoCapitalize="none"
                 autoCorrect={false}
-                style={{
-                  flex: 1,
-                  color: fgColor,
-                  fontSize: 14,
-                  fontFamily: 'Roobert',
-                  padding: 0,
-                }}
+                style={{ height: 40, paddingLeft: 36 }}
               />
             </View>
           </View>
 
           {/* Default (no override) — only when search is empty, matches web. */}
           {!search.trim() && (
-            <TouchableOpacity
+            <Button
+              variant="ghost"
               onPress={() => {
                 setSelectedProjectId(null);
                 close();
               }}
-              activeOpacity={0.6}
+              className="h-auto w-auto flex-row items-center justify-start rounded-none active:opacity-70"
               style={{
-                flexDirection: 'row',
-                alignItems: 'center',
                 paddingHorizontal: 20,
                 paddingVertical: 12,
                 backgroundColor: !selectedProjectId ? selectedBg : 'transparent',
@@ -316,9 +265,9 @@ export function ProjectPicker() {
                 </Text>
               </View>
               {!selectedProjectId && (
-                <Icon as={Check} size={16} color={fgColor} strokeWidth={2.5} />
+                <Icon as={Check} size={16} color={fgColor} />
               )}
-            </TouchableOpacity>
+            </Button>
           )}
 
           {/* Recent projects list */}
@@ -345,16 +294,15 @@ export function ProjectPicker() {
                 const relLabel = recency > 0 ? formatRelativeTime(recency) : '';
                 const subtitleParts = [pathLabel, relLabel].filter(Boolean);
                 return (
-                  <TouchableOpacity
+                  <Button
                     key={project.id}
+                    variant="ghost"
                     onPress={() => {
                       setSelectedProjectId(project.id);
                       close();
                     }}
-                    activeOpacity={0.6}
+                    className="h-auto w-auto flex-row items-center justify-start rounded-none active:opacity-70"
                     style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
                       paddingHorizontal: 20,
                       paddingVertical: 12,
                       backgroundColor: isSelected ? selectedBg : 'transparent',
@@ -386,9 +334,9 @@ export function ProjectPicker() {
                       )}
                     </View>
                     {isSelected && (
-                      <Icon as={Check} size={16} color={fgColor} strokeWidth={2.5} />
+                      <Icon as={Check} size={16} color={fgColor} />
                     )}
-                  </TouchableOpacity>
+                  </Button>
                 );
               })}
             </View>
@@ -410,7 +358,7 @@ export function ProjectPicker() {
             </View>
           )}
         </BottomSheetScrollView>
-      </BottomSheetModal>
+      </KortixBottomSheetModal>
     </>
   );
 }

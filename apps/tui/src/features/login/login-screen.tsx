@@ -20,7 +20,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { type HostEntry, type ResolvedHost, hostToResolved } from '../../auth/hosts.ts';
 import { glyph as GLYPH, theme } from '../../theme.ts';
 import { Spinner, layoutRow, windowStart } from '../../ui/index.ts';
-import { DEFAULT_API_URL, HostForm, type HostFormValues } from './host-form.tsx';
+import { HostForm, type HostFormValues } from './host-form.tsx';
 import { type LoginFlowDeps, loginToHost, removeLoginHost } from './login-flow.ts';
 import { matchesLoginBinding } from './match.ts';
 

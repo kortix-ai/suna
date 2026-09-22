@@ -4,22 +4,21 @@ import {
   ScrollView,
   Pressable,
   ActivityIndicator,
-  TextInput,
   Alert,
-  Switch,
 } from 'react-native';
 import { BottomSheetFlatList, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { Text } from '@/components/ui/text';
+import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import {
-  ArrowLeft,
-  ExternalLink,
-  CheckCircle2,
-  Plus,
-  Check,
-  X,
-  Settings,
-} from 'lucide-react-native';
+  ArrowLeftIcon as ArrowLeft,
+  ArrowSquareOutIcon as ExternalLink,
+  CheckCircleIcon as CheckCircle2,
+  PlusIcon as Plus,
+  CheckIcon as Check,
+  XIcon as X,
+  GearSixIcon as Settings,
+} from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import {
@@ -33,6 +32,9 @@ import {
 import * as WebBrowser from 'expo-web-browser';
 import { ToolkitIcon } from './ToolkitIcon';
 import { log } from '@/lib/logger';
+import { THEME } from '@/lib/utils/theme';
+import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
 
 interface ComposioConnectorProps {
   app: ComposioApp;
@@ -284,7 +286,7 @@ export function ComposioConnectorContent({
             WebBrowser.openBrowserAsync(response.redirect_url, {
               presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
               showTitle: true,
-              controlsColor: '#000000',
+              controlsColor: '#000000', // hex-allowlist: native in-app-browser system chrome tint (WebBrowser.openBrowserAsync), not an app UI surface
               dismissButtonStyle: 'close',
             }).then((result) => {
               log.log('🔄 WebBrowser result:', result);
@@ -366,23 +368,16 @@ export function ComposioConnectorContent({
         <View style={{ flex: 1 }}>
           {/* Fixed header */}
           <View
+            className="bg-popover"
             style={{
               paddingHorizontal: 24,
               paddingTop: 16,
               paddingBottom: 16,
-              backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
             }}>
-            <Text
-              style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-              className="mb-1 font-roobert-semibold text-xl">
+            <Text className="mb-1 font-roobert-semibold text-xl text-foreground">
               {app.name}
             </Text>
-            <Text
-              style={{
-                color:
-                  colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
-              }}
-              className="font-roobert text-sm">
+            <Text className="font-roobert text-sm text-muted-foreground">
               {existingConnections.length > 0
                 ? t('connections.connector.selectConnection')
                 : t('connections.connector.createFirstConnection')}
@@ -420,7 +415,6 @@ export function ComposioConnectorContent({
                               ? 'text-primary-foreground'
                               : 'text-muted-foreground'
                           }
-                          strokeWidth={2.5}
                         />
                       </View>
                       <View className="ml-3 flex-1">
@@ -434,7 +428,6 @@ export function ComposioConnectorContent({
                             as={Check}
                             size={14}
                             className="text-primary-foreground"
-                            strokeWidth={3}
                           />
                         </View>
                       )}
@@ -464,11 +457,11 @@ export function ComposioConnectorContent({
 
           {/* Fixed footer button */}
           <View
+            className="bg-popover"
             style={{
               paddingHorizontal: 24,
               paddingTop: 16,
               paddingBottom: 24,
-              backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
             }}>
             <ContinueButton
               onPress={handleMainAction}
@@ -500,21 +493,14 @@ export function ComposioConnectorContent({
         <View className="mb-4 flex-row items-center">
           {onBack && (
             <Pressable onPress={onBack} className="flex-row items-center active:opacity-70">
-              <ArrowLeft size={20} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
+              <Icon as={ArrowLeft} size={20} className="text-foreground" />
             </Pressable>
           )}
           <View className="ml-3 flex-1">
-            <Text
-              style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-              className="font-roobert-semibold text-xl">
+            <Text className="font-roobert-semibold text-xl text-foreground">
               {app.name}
             </Text>
-            <Text
-              style={{
-                color:
-                  colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
-              }}
-              className="font-roobert text-sm">
+            <Text className="font-roobert text-sm text-muted-foreground">
               {existingConnections.length > 0
                 ? t('connections.connector.selectConnection')
                 : t('connections.connector.createFirstConnection')}
@@ -560,7 +546,6 @@ export function ComposioConnectorContent({
                         ? 'text-primary-foreground'
                         : 'text-muted-foreground'
                     }
-                    strokeWidth={2.5}
                   />
                 </View>
                 <View className="ml-3 flex-1">
@@ -574,7 +559,6 @@ export function ComposioConnectorContent({
                       as={Check}
                       size={14}
                       className="text-primary-foreground"
-                      strokeWidth={3}
                     />
                   </View>
                 )}
@@ -616,34 +600,36 @@ export function ComposioConnectorContent({
             {t('connections.connector.connectionName')}
           </Text>
           <View className="relative">
-            <TextInput
+            <Input
               value={connectionName}
               onChangeText={setConnectionName}
               placeholder={t('connections.connector.connectionNamePlaceholder', { app: app.name })}
-              className={`rounded-2xl bg-muted/5 px-4 py-4 pr-12 font-roobert text-base text-foreground ${
+              className={`h-auto rounded-2xl bg-muted/5 px-4 py-4 pr-12 font-roobert text-base text-foreground shadow-none ${
                 nameAvailability && !nameAvailability.available
-                  ? 'border-2 border-red-500/50'
+                  ? 'border-2 border-destructive/50'
                   : nameAvailability && nameAvailability.available && connectionName.length > 0
                     ? 'border border-border/40'
                     : 'border border-border/40'
               }`}
-              placeholderTextColor="rgba(156, 163, 175, 0.5)"
               autoFocus
             />
             <View className="absolute right-4 top-1/2 -translate-y-1/2">
               {isCheckingName && connectionName.length > 0 && (
-                <ActivityIndicator size="small" color="#999" />
+                <ActivityIndicator
+                  size="small"
+                  color={colorScheme === 'dark' ? THEME.dark.mutedForeground : THEME.light.mutedForeground}
+                />
               )}
               {!isCheckingName &&
                 nameAvailability &&
                 connectionName.length > 0 &&
                 (nameAvailability.available ? (
-                  <View className="h-6 w-6 items-center justify-center rounded-full bg-green-500/10">
-                    <Icon as={Check} size={16} className="text-green-600" strokeWidth={2.5} />
+                  <View className="h-6 w-6 items-center justify-center rounded-full bg-kortix-green/10">
+                    <Icon as={Check} size={16} className="text-kortix-green" />
                   </View>
                 ) : (
-                  <View className="h-6 w-6 items-center justify-center rounded-full bg-red-500/10">
-                    <Icon as={X} size={16} className="text-red-600" strokeWidth={2.5} />
+                  <View className="h-6 w-6 items-center justify-center rounded-full bg-destructive/10">
+                    <Icon as={X} size={16} className="text-destructive" />
                   </View>
                 ))}
             </View>
@@ -651,7 +637,7 @@ export function ComposioConnectorContent({
 
           {nameAvailability && !nameAvailability.available && (
             <View className="mt-3">
-              <Text className="mb-2 font-roobert text-sm text-red-600">
+              <Text className="mb-2 font-roobert text-sm text-destructive">
                 {t('connections.connector.nameAlreadyTaken')}
               </Text>
               {nameAvailability.suggestions.length > 0 && (
@@ -693,21 +679,16 @@ export function ComposioConnectorContent({
                       <View key={field.name} className="space-y-1">
                         <Text className="font-roobert-medium text-xs text-foreground">
                           {field.displayName}
-                          {field.required && <Text className="ml-1 text-red-500">*</Text>}
+                          {field.required && <Text className="ml-1 text-destructive">*</Text>}
                         </Text>
 
                         {isBoolean ? (
                           <View className="flex-row items-center">
                             <Switch
-                              value={initiationFields[field.name] === 'true'}
-                              onValueChange={(checked) =>
+                              checked={initiationFields[field.name] === 'true'}
+                              onCheckedChange={(checked) =>
                                 handleInitiationFieldChange(field.name, checked ? 'true' : 'false')
                               }
-                              trackColor={{
-                                false: '#e5e7eb',
-                                true: '#3b82f6',
-                              }}
-                              thumbColor="#ffffff"
                             />
                             <Text className="ml-3 font-roobert text-xs text-muted-foreground">
                               {field.description || 'Enable'}
@@ -715,7 +696,7 @@ export function ComposioConnectorContent({
                           </View>
                         ) : (
                           <>
-                            <TextInput
+                            <Input
                               value={initiationFields[field.name] || ''}
                               onChangeText={(value) =>
                                 handleInitiationFieldChange(field.name, value)
@@ -725,12 +706,11 @@ export function ComposioConnectorContent({
                                 field.description ||
                                 `Enter ${field.displayName.toLowerCase()}`
                               }
-                              className={`rounded-2xl border bg-muted/5 px-4 py-4 font-roobert text-base text-foreground ${
+                              className={`h-auto rounded-2xl border bg-muted/5 px-4 py-4 font-roobert text-base text-foreground shadow-none ${
                                 initiationFieldsErrors[field.name]
-                                  ? 'border-red-500/50'
+                                  ? 'border-destructive/50'
                                   : 'border-border/40'
                               }`}
-                              placeholderTextColor="rgba(156, 163, 175, 0.5)"
                               secureTextEntry={fieldType === 'password'}
                               keyboardType={
                                 fieldType === 'email'
@@ -751,7 +731,7 @@ export function ComposioConnectorContent({
                         )}
 
                         {initiationFieldsErrors[field.name] && (
-                          <Text className="font-roobert text-[10px] text-red-600">
+                          <Text className="font-roobert text-[10px] text-destructive">
                             {initiationFieldsErrors[field.name]}
                           </Text>
                         )}
@@ -785,9 +765,9 @@ export function ComposioConnectorContent({
                       <View key={field.name} className="space-y-1">
                         <Text className="font-roobert-medium text-xs text-foreground">
                           {field.displayName}
-                          {field.required && <Text className="ml-1 text-red-500">*</Text>}
+                          {field.required && <Text className="ml-1 text-destructive">*</Text>}
                         </Text>
-                        <TextInput
+                        <Input
                           value={customAuthConfig[field.name] || ''}
                           onChangeText={(value) => handleCustomAuthFieldChange(field.name, value)}
                           placeholder={
@@ -795,12 +775,11 @@ export function ComposioConnectorContent({
                             field.description ||
                             `Enter ${field.displayName.toLowerCase()}`
                           }
-                          className={`rounded-2xl border bg-muted/5 px-4 py-4 font-roobert text-base text-foreground ${
+                          className={`h-auto rounded-2xl border bg-muted/5 px-4 py-4 font-roobert text-base text-foreground shadow-none ${
                             customAuthConfigErrors[field.name]
-                              ? 'border-red-500/50'
+                              ? 'border-destructive/50'
                               : 'border-border/40'
                           }`}
-                          placeholderTextColor="rgba(156, 163, 175, 0.5)"
                           secureTextEntry={fieldType === 'password'}
                           keyboardType={
                             fieldType === 'email'
@@ -818,7 +797,7 @@ export function ComposioConnectorContent({
                           </Text>
                         )}
                         {customAuthConfigErrors[field.name] && (
-                          <Text className="font-roobert text-[10px] text-red-600">
+                          <Text className="font-roobert text-[10px] text-destructive">
                             {customAuthConfigErrors[field.name]}
                           </Text>
                         )}
@@ -832,7 +811,10 @@ export function ComposioConnectorContent({
 
         {isLoadingToolkitDetails && (
           <View className="mb-8">
-            <ActivityIndicator size="small" color="#999" />
+            <ActivityIndicator
+              size="small"
+              color={colorScheme === 'dark' ? THEME.dark.mutedForeground : THEME.light.mutedForeground}
+            />
           </View>
         )}
       </>
@@ -844,23 +826,16 @@ export function ComposioConnectorContent({
         <View style={{ flex: 1 }}>
           {/* Fixed Header */}
           <View
+            className="bg-popover"
             style={{
               paddingHorizontal: 24,
               paddingTop: 16,
               paddingBottom: 16,
-              backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
             }}>
-            <Text
-              style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-              className="mb-1 font-roobert-semibold text-xl">
+            <Text className="mb-1 font-roobert-semibold text-xl text-foreground">
               {app.name}
             </Text>
-            <Text
-              style={{
-                color:
-                  colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
-              }}
-              className="font-roobert text-sm">
+            <Text className="font-roobert text-sm text-muted-foreground">
               {t('connections.connector.chooseNameForConnection')}
             </Text>
           </View>
@@ -875,11 +850,11 @@ export function ComposioConnectorContent({
 
           {/* Fixed Footer Button */}
           <View
+            className="bg-popover"
             style={{
               paddingHorizontal: 24,
               paddingTop: 16,
               paddingBottom: 24,
-              backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
             }}>
             <ContinueButton
               onPress={handleCreateConnection}
@@ -909,20 +884,13 @@ export function ComposioConnectorContent({
         {/* Header with back button, title, and description */}
         <View className="mb-4 flex-row items-center">
           <Pressable onPress={handleBack} className="flex-row items-center active:opacity-70">
-            <ArrowLeft size={20} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
+            <Icon as={ArrowLeft} size={20} className="text-foreground" />
           </Pressable>
           <View className="ml-3 flex-1">
-            <Text
-              style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-              className="font-roobert-semibold text-xl">
+            <Text className="font-roobert-semibold text-xl text-foreground">
               {app.name}
             </Text>
-            <Text
-              style={{
-                color:
-                  colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
-              }}
-              className="font-roobert text-sm">
+            <Text className="font-roobert text-sm text-muted-foreground">
               {t('connections.connector.chooseNameForConnection')}
             </Text>
           </View>
@@ -959,7 +927,7 @@ export function ComposioConnectorContent({
         className="items-center pb-12 pt-12"
         style={{ paddingHorizontal: useBottomSheetFlatList ? 24 : 0 }}>
         <View className="mb-6 h-20 w-20 items-center justify-center rounded-2xl border border-border/40 bg-muted/5">
-          <Icon as={ExternalLink} size={40} className="text-foreground" strokeWidth={2} />
+          <Icon as={ExternalLink} size={40} className="text-foreground" />
         </View>
         <Text className="mb-2 text-center font-roobert-bold text-2xl text-foreground">
           {t('connections.connector.completeInBrowser')}
@@ -987,11 +955,11 @@ export function ComposioConnectorContent({
 
           {/* Fixed Footer Button */}
           <View
+            className="bg-popover"
             style={{
               paddingHorizontal: 24,
               paddingTop: 16,
               paddingBottom: 24,
-              backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
             }}>
             <ContinueButton
               onPress={handleAuthComplete}
@@ -1032,8 +1000,8 @@ export function ComposioConnectorContent({
       <View
         className="items-center pb-12 pt-16"
         style={{ paddingHorizontal: useBottomSheetFlatList ? 24 : 0 }}>
-        <View className="mb-6 h-20 w-20 items-center justify-center rounded-full bg-green-500/10">
-          <Icon as={CheckCircle2} size={44} className="text-green-600" strokeWidth={2} />
+        <View className="mb-6 h-20 w-20 items-center justify-center rounded-full bg-kortix-green/10">
+          <Icon as={CheckCircle2} size={44} className="text-kortix-green" />
         </View>
         <Text className="mb-2 font-roobert-bold text-2xl text-foreground">
           {t('connections.connector.allSet')}
@@ -1073,12 +1041,10 @@ export function ComposioConnector({
         {/* Header with back button */}
         <View className="mb-4 flex-row items-center">
           <Pressable onPress={onClose} className="flex-row items-center active:opacity-70">
-            <ArrowLeft size={20} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
+            <Icon as={ArrowLeft} size={20} className="text-foreground" />
           </Pressable>
           <View className="ml-3 flex-1">
-            <Text
-              style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-              className="font-roobert-semibold text-xl">
+            <Text className="font-roobert-semibold text-xl text-foreground">
               {t('connections.connector.connectTo', { app: app.name })}
             </Text>
           </View>
@@ -1118,15 +1084,15 @@ const ContinueButton = React.memo(
     rounded = 'full',
   }: ContinueButtonProps) => {
     return (
-      <Pressable
-        onPress={onPress}
+      <Button
+        size="lg"
+        className={rounded === 'full' ? 'rounded-full' : 'rounded-2xl'}
         disabled={disabled}
-        className={`flex-row items-center justify-center gap-2 rounded-xl p-4 ${
-          disabled ? 'bg-primary/50 opacity-50' : 'bg-primary active:opacity-80'
-        }`}>
-        {isLoading ? <ActivityIndicator size="small" color="#FFFFFF" /> : null}
-        <Text className="font-roobert-semibold text-base text-primary-foreground">{label}</Text>
-      </Pressable>
+        onPress={onPress}
+      >
+        {isLoading ? <ActivityIndicator size="small" color="white" /> : null}
+        <Text>{label}</Text>
+      </Button>
     );
   }
 );
@@ -1152,7 +1118,6 @@ const ConnectionListItem = React.memo(({ connection, isSelected, onPress }: Conn
           as={CheckCircle2}
           size={20}
           className={isSelected ? 'text-primary-foreground' : 'text-muted-foreground'}
-          strokeWidth={2.5}
         />
       </View>
       <View className="ml-3 flex-1">
@@ -1162,7 +1127,7 @@ const ConnectionListItem = React.memo(({ connection, isSelected, onPress }: Conn
       </View>
       {isSelected && (
         <View className="h-5 w-5 items-center justify-center rounded-full bg-primary">
-          <Icon as={Check} size={14} className="text-primary-foreground" strokeWidth={3} />
+          <Icon as={Check} size={14} className="text-primary-foreground" />
         </View>
       )}
     </Pressable>

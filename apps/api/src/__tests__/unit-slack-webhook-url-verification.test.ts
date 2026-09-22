@@ -35,6 +35,10 @@ mock.module('../channels/slack/interactivity', () => ({
     handledBlockActions.push(payload);
   },
   handleMessageShortcut: async () => {},
+  // `mock.module` REPLACES the module, so routes.ts importing one more name
+  // from it fails this whole file before a single test runs. The "Request
+  // changes" modal's submit lands here.
+  handleViewSubmission: async () => {},
 }));
 
 await import('../channels/slack/routes');

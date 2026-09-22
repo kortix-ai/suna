@@ -9,6 +9,9 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
 import {
+  EMPTY_LIST,
+  selectAccessFilters,
+  selectOwnerFilters,
   selectCollapsedSections,
   selectGroupMode,
   selectHiddenSections,
@@ -30,6 +33,8 @@ beforeEach(() => {
     sourceFiltersByProject: {},
     hiddenSectionsByProject: {},
     collapsedSectionsByProject: {},
+    ownerFiltersByProject: {},
+    accessFiltersByProject: {},
   });
 });
 
@@ -145,5 +150,28 @@ describe('snapshot stability (zustand v5 compares with Object.is)', () => {
     // Including the inherit path, which reads through two lookups.
     useSessionFilterStore.getState().toggleSourceFilter(P, 'slack', 'sidebar');
     expect(read(selectSourceFilters(P, 'page'))).toBe(read(selectSourceFilters(P, 'page')));
+  });
+});
+
+describe('owner and access facets', () => {
+  test('toggle per surface, and Reset clears them with the other facets', () => {
+    const s = useSessionFilterStore.getState();
+    s.toggleOwnerFilter(P, 'u-alice', 'page');
+    s.toggleOwnerFilter(P, 'u-bob', 'page');
+    s.toggleOwnerFilter(P, 'u-alice', 'page');
+    s.toggleAccessFilter(P, 'private', 'page');
+
+    expect(read(selectOwnerFilters(P, 'page'))).toEqual(['u-bob']);
+    expect(read(selectAccessFilters(P, 'page'))).toEqual(['private']);
+    expect(read(selectOwnerFilters(P, 'sidebar'))).toEqual([]);
+
+    useSessionFilterStore.getState().resetFilters(P, 'page');
+    expect(read(selectOwnerFilters(P, 'page'))).toEqual([]);
+    expect(read(selectAccessFilters(P, 'page'))).toEqual([]);
+  });
+
+  test('the unset owner filter is the stable empty list', () => {
+    expect(read(selectOwnerFilters('never-touched', 'page'))).toBe(EMPTY_LIST);
+    expect(read(selectAccessFilters('never-touched', 'page'))).toBe(EMPTY_LIST);
   });
 });

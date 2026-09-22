@@ -42,26 +42,12 @@ describe('no-managed-models message', () => {
   });
 });
 
-/**
- * The BYOK failover must respect the managed-model entitlement.
- *
- * `resolveCandidates` queues a Kortix-managed model BEHIND the user's own key so
- * a rate-limited turn doesn't die. That gate read `tier === 'free'` — a literal
- * string, not the entitlement. It was harmless while every paid tier carried
- * `models: ['all']`, and became a hole the moment paid plans stopped including
- * inference: a Starter account whose own key returns 402/403/429 would fail over
- * to managed tokens its plan forbids, and skip the wallet admission gate on the
- * way, because that gate is bypassed for precisely these tiers.
- *
- * Asserted on source. The branch sits mid-function behind project-secret
- * resolution and a provider catalog; the property worth protecting is which
- * predicate decides it, and that is exactly what regressed.
- */
+/** Protect the zero-charge BYOK invariant at the routing boundary. */
 const RESOLVE_SRC = await Bun.file(
   new URL('./resolve-candidates.ts', import.meta.url).pathname,
 ).text();
 
-describe('BYOK managed failover entitlement', () => {
+describe('BYOK billing invariant', () => {
   const SRC = RESOLVE_SRC;
 
   function code(): string {
@@ -71,35 +57,15 @@ describe('BYOK managed failover entitlement', () => {
       .join('\n');
   }
 
-  test('the failover is gated on the entitlement, not on the literal free tier', () => {
+  test('BYOK always resolves with no Kortix billing', () => {
     const src = code();
-    // The entitlement predicate is the shared resolver
-    // (accountMayUseManagedModels via the resolveCachedManagedModels
-    // re-export) — never a tier-string comparison. It carries the trial
-    // overlay and the operator managed_models_override.
-    expect(src).toMatch(/mayUseManagedModels = await resolveCachedManagedModels\(/);
-    expect(src).toContain('export const resolveCachedManagedModels = accountMayUseManagedModels');
-    // The regression shape: returning the managed candidates under isFreeTier.
-    expect(src).not.toMatch(/return isFreeTier[\s\S]{0,120}byokFallbackCandidates/);
+    expect(src).toMatch(/billingMode:\s*'none'/);
+    expect(src).toMatch(/markup:\s*0/);
   });
 
-  test('the platform fee still keys on free-vs-paid, a different question', () => {
-    // A credit plan pays the 10% BYOK platform fee — it is paid. Folding the two
-    // questions back into one variable is what caused the bypass.
+  test('BYOK never appends a Kortix-managed fallback', () => {
     const src = code();
-    expect(src).toContain("tier === 'free'");
-    expect(src).toMatch(/markup: isFreeTier \? 0 : PLATFORM_FEE_MARKUP/);
-  });
-
-  test('self-hosted keeps the failover', async () => {
-    // Billing disabled means no tiers at all; withdrawing the fallback there
-    // would break self-hosted turns that currently survive a key error. The
-    // guarantee lives inside the shared resolver now: billing off → entitled.
-    const entitlementsSrc = await Bun.file(
-      new URL('../../billing/services/entitlements.ts', import.meta.url).pathname,
-    ).text();
-    expect(entitlementsSrc).toMatch(
-      /accountMayUseManagedModels[\s\S]{0,400}if \(!config\.KORTIX_BILLING_INTERNAL_ENABLED\) return true;/,
-    );
+    expect(src).not.toContain('byokFallbackCandidates');
+    expect(src).not.toMatch(/return[^;]*byokDescriptors[^;]*managedCandidates/);
   });
 });

@@ -9,7 +9,7 @@
  * against a hosted project, so the route blocked on N remote calls.
  *
  * `auth.users` is in the same Postgres the API already pools, and reading it
- * directly is the established pattern in this codebase (`shared/users.ts`,
+ * directly is the established pattern in this codebase (`iam/account-identity.ts`,
  * `shared/platform-roles.ts`, `admin/index.ts`). One indexed lookup replaces the
  * fan-out, and a short TTL cache collapses repeat calls.
  *

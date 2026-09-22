@@ -21,6 +21,7 @@ function snapshot(over: Partial<MirrorSnapshot> = {}): MirrorSnapshot {
     captured_at: '2026-08-26T06:00:00.000Z',
     total: 2,
     head_complete: true,
+    next_cursor: null,
     messages: [
       {
         info: { id: 'msg_1', role: 'user', time: { created: 1000 } },
@@ -146,6 +147,54 @@ describe('the sync envelope is the mirror and says so', () => {
     expect(envelope.available).toBe(false);
     expect(envelope.source).toBe('none');
     expect(envelope.messages).toEqual([]);
+  });
+});
+
+describe('a window says how much it is a window OF', () => {
+  test('the envelope carries the mirror total and the cursor to the older window', async () => {
+    const envelope = await buildSessionTranscriptSyncEnvelope(
+      { session: session('stopped'), limit: 2 },
+      { readMirror: async () => snapshot({ total: 242, next_cursor: 'msg_1' }) },
+    );
+    // `complete: false` says the window is partial. Without these two the
+    // client cannot say by how much, and cannot reach the rest at all.
+    expect(envelope.complete).toBe(false);
+    expect(envelope.message_count).toBe(2);
+    expect(envelope.total).toBe(242);
+    expect(envelope.next_cursor).toBe('msg_1');
+  });
+
+  test('a window that reaches the oldest row offers no cursor', async () => {
+    const envelope = await buildSessionTranscriptSyncEnvelope(
+      { session: session('stopped'), limit: 40 },
+      { readMirror: async () => snapshot() },
+    );
+    expect(envelope.complete).toBe(true);
+    expect(envelope.total).toBe(2);
+    expect(envelope.next_cursor).toBeNull();
+  });
+
+  test('the cursor reaches the reader, so the older window is a different read', async () => {
+    const asked: Array<string | null | undefined> = [];
+    await buildSessionTranscriptSyncEnvelope(
+      { session: session('stopped'), limit: 40, before: 'msg_1' },
+      {
+        readMirror: async (_id, _limit, before) => {
+          asked.push(before);
+          return snapshot();
+        },
+      },
+    );
+    expect(asked).toEqual(['msg_1']);
+  });
+
+  test('an unavailable mirror still answers the two fields', async () => {
+    const envelope = await buildSessionTranscriptSyncEnvelope(
+      { session: session('running'), limit: 40 },
+      { readMirror: async () => null },
+    );
+    expect(envelope.total).toBe(0);
+    expect(envelope.next_cursor).toBeNull();
   });
 });
 

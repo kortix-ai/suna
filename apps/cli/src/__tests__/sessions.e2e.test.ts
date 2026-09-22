@@ -28,7 +28,11 @@ let server: ReturnType<typeof Bun.serve> | null = null;
 let sessionCreateBody: Record<string, unknown> | null = null;
 let sessionList: Record<string, unknown>[] = [];
 let transcriptRequests: URL[] = [];
+/** Per-session transcript origin, so a test can say which sessions the server
+ *  serves live and which it serves from the durable mirror. */
+let transcriptSources: Record<string, 'live' | 'mirror'> = {};
 let apiRequests: string[] = [];
+let clientCreatesBranch = false;
 
 function git(args: string[], cwd?: string): string {
   return execFileSync('git', args, {
@@ -97,7 +101,9 @@ describe('sessions new CLI flow', () => {
     sessionCreateBody = null;
     sessionList = [];
     transcriptRequests = [];
+    transcriptSources = {};
     apiRequests = [];
+    clientCreatesBranch = false;
 
     cpSync(join(templateRoot, 'repo'), repo, { recursive: true });
     cpSync(join(templateRoot, 'origin.git'), origin, { recursive: true });
@@ -129,7 +135,7 @@ describe('sessions new CLI flow', () => {
             default_branch: 'main',
             manifest_path: 'kortix.yaml',
             status: 'active',
-            metadata: {},
+            metadata: clientCreatesBranch ? {} : { git: { managed: true } },
             last_opened_at: null,
             created_at: '2026-01-01T00:00:00.000Z',
             updated_at: '2026-01-01T00:00:00.000Z',
@@ -137,7 +143,8 @@ describe('sessions new CLI flow', () => {
         }
         if (req.method === 'POST' && url.pathname === `/v1/projects/${PROJECT_ID}/sessions`) {
           sessionCreateBody = await req.json() as Record<string, unknown>;
-          const sessionId = sessionCreateBody.session_id as string;
+          const sessionId = (sessionCreateBody.session_id as string | undefined)
+            ?? '00000000-0000-4000-a000-000000000333';
           return Response.json({
             session_id: sessionId,
             account_id: ACCOUNT_ID,
@@ -163,9 +170,17 @@ describe('sessions new CLI flow', () => {
         const transcriptMatch = url.pathname.match(new RegExp(`^/v1/projects/${PROJECT_ID}/sessions/([^/]+)/transcript$`));
         if (req.method === 'GET' && transcriptMatch) {
           transcriptRequests.push(url);
+          const source = transcriptSources[transcriptMatch[1]!] ?? 'live';
           return Response.json({
             available: true,
-            reason: null,
+            reason:
+              source === 'mirror'
+                ? 'session is stopped; live transcript requires a running sandbox'
+                : null,
+            source,
+            // A mirror read reports completeness for itself; a live read is
+            // whatever the sandbox holds right now.
+            complete: source === 'mirror',
             opencode_session_id: 'ses_test',
             message_count: 2,
             messages: [
@@ -242,6 +257,7 @@ describe('sessions new CLI flow', () => {
   });
 
   test('creates the session branch with local git credentials before creating the API session', async () => {
+    clientCreatesBranch = true;
     const code = await runSessions(['new']);
 
     expect(code).toBe(0);
@@ -345,21 +361,46 @@ describe('sessions new CLI flow', () => {
       },
     ];
 
+    transcriptSources[stoppedId] = 'mirror';
+
     const { code, stdout } = await captureStdout(() =>
       runSessions(['digest', '--all', '--messages', '5', '--chars', '120', '--json']),
     );
 
     expect(code).toBe(0);
-    expect(transcriptRequests).toHaveLength(1);
-    expect(transcriptRequests[0]!.searchParams.get('limit')).toBe('5');
-    expect(transcriptRequests[0]!.searchParams.get('chars')).toBe('120');
+    // EVERY session is asked, not only the running one. The API serves a
+    // stopped session from its durable transcript mirror, so skipping the
+    // request here is how the digest used to lose a transcript it could read.
+    expect(transcriptRequests).toHaveLength(2);
+    expect(transcriptRequests.map((u) => u.pathname)).toEqual(
+      expect.arrayContaining([
+        `/v1/projects/${PROJECT_ID}/sessions/${runningId}/transcript`,
+        `/v1/projects/${PROJECT_ID}/sessions/${stoppedId}/transcript`,
+      ]),
+    );
+    for (const request of transcriptRequests) {
+      expect(request.searchParams.get('limit')).toBe('5');
+      expect(request.searchParams.get('chars')).toBe('120');
+    }
 
     const parsed = JSON.parse(stdout) as {
-      sessions: Array<{ transcript: { available: boolean; messages: Array<{ tools: unknown[] }> } }>;
+      sessions: Array<{
+        transcript: {
+          available: boolean;
+          source: string;
+          complete: boolean;
+          messages: Array<{ tools: unknown[] }>;
+        };
+      }>;
     };
     expect(parsed.sessions).toHaveLength(2);
-    expect(parsed.sessions[0]!.transcript.available).toBe(true);
-    expect(parsed.sessions[1]!.transcript.available).toBe(false);
+    expect(parsed.sessions[0]!.transcript).toMatchObject({ available: true, source: 'live' });
+    // The stopped session: served, and honest about where from.
+    expect(parsed.sessions[1]!.transcript).toMatchObject({
+      available: true,
+      source: 'mirror',
+      complete: true,
+    });
     expect(JSON.stringify(parsed)).not.toContain('must not leak');
     expect(parsed.sessions[0]!.transcript.messages[1]!.tools).toEqual([
       { tool: 'bash', status: 'completed' },

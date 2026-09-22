@@ -38,6 +38,7 @@ import type { ProviderName } from '../../platform/providers';
 import { sandboxOpencodeEndpoint } from '../opencode-mapping';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 import { sendQuickQueueControl } from './quick-queue-control';
+import { clearTurnStopRequest, markTurnStopRequested } from '../sandbox-turn-lifecycle';
 import {
   currentInstanceId,
   sandboxBelongsToThisInstance,
@@ -1139,6 +1140,8 @@ export async function disarmQuickQueueInterrupt(
   const resolved = await resolveSessionOpencodeEndpoint(sessionId, actorUserId).catch(() => null);
   if (!resolved) return;
   await sendQuickQueueControl(resolved.endpoint, { kind: 'disarm', promptId });
+  // Only the head prompt arms an interrupt, so there is one mark to withdraw.
+  await clearTurnStopRequest(sessionId, 'QueueInterrupt');
 }
 
 /** Stop holds all inbox rows, so no automatic boundary interrupt may remain. */
@@ -1149,6 +1152,7 @@ export async function disarmAllQuickQueueInterrupt(
   const resolved = await resolveSessionOpencodeEndpoint(sessionId, actorUserId).catch(() => null);
   if (!resolved) return;
   await sendQuickQueueControl(resolved.endpoint, { kind: 'disarm-all' });
+  await clearTurnStopRequest(sessionId, 'QueueInterrupt');
 }
 
 async function armQuickQueueInterrupt(
@@ -1168,7 +1172,15 @@ async function armQuickQueueInterrupt(
       sessionId: row.sessionId,
       commandId: row.commandId,
     });
+    return;
   }
+  // The daemon now aborts this turn at its next tool boundary because the user
+  // sent a prompt into it. That abort is asked for, not a failure.
+  if (!row.sessionId) return;
+  await markTurnStopRequested(row.sessionId, 'QueueInterrupt', {
+    opencodeSessionId: identity.opencodeSessionId,
+    messageId: identity.messageId,
+  });
 }
 
 /** What one read of the root transcript tells the drain about this prompt. */

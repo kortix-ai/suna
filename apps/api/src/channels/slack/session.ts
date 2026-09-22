@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm';
-import { chatEventDedup, chatThreads, projects } from '@kortix/db';
+import { chatEventDedup, chatThreads, projectSessions, projects } from '@kortix/db';
 import { db } from '../../shared/db';
 import { filterAccessibleObjects } from '../../iam';
 import { actorForUser } from '../../iam/actor';
@@ -18,8 +18,15 @@ import {
   normalizeConversationPolicy,
   rememberSlackThreadOwner,
 } from './participants';
-import { buildSlackTurnEnv, finalizeTurn, saveTurn, startTurn } from './turn';
+import {
+  buildSlackTurnEnv,
+  finalizeTurn,
+  saveTurn,
+  showStopOnLivePlan,
+  startTurn,
+} from './turn';
 import type { SlackEnvelope, SlackEvent } from './types';
+import { channelTurnModel, promptModelOverride } from '../vision-model';
 
 const defaultSlackSessionLifecycle = {
   continueSession: continueLifecycleSession,
@@ -41,12 +48,46 @@ export async function deliverSlackFollowUpToSession(input: {
   sessionId: string;
   text: string;
   userId?: string | null;
+  /** This turn only — see channels/vision-model.ts. */
+  model?: string | null;
 }) {
   return slackSessionLifecycle.continueSession({
     source: 'slack',
     sessionId: input.sessionId,
     text: input.text,
     userId: input.userId,
+    ...(input.model ? { overrides: { model: promptModelOverride(input.model) } } : {}),
+  });
+}
+
+/** Does this Slack message carry an image the model has to be able to see? */
+export function slackMessageHasImage(event: SlackEvent): boolean {
+  return (event.files ?? []).some((f) => f.mimetype?.startsWith('image/') === true);
+}
+
+/**
+ * The model a follow-up must run on — see channels/vision-model.ts. Null when
+ * the session's own model is fine.
+ */
+async function followUpModel(
+  projectId: string,
+  accountId: string,
+  userId: string,
+  sessionId: string,
+  event: SlackEvent,
+): Promise<string | null> {
+  const [row] = await db
+    .select({ metadata: projectSessions.metadata })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, sessionId))
+    .limit(1);
+  const pinned = (row?.metadata as Record<string, unknown> | null)?.opencode_model;
+  return channelTurnModel({
+    projectId,
+    accountId,
+    userId,
+    currentModel: typeof pinned === 'string' && pinned.trim() ? pinned.trim() : null,
+    hasImage: slackMessageHasImage(event),
   });
 }
 
@@ -88,7 +129,12 @@ export async function createOrJoinThreadSession(input: {
   if (claimKey && !(await claimThreadCreate(claimKey))) {
     const sessionId = await waitForThreadSession(teamId, threadId);
     if (sessionId) {
-      await deliverSlackFollowUpToSession({ sessionId, text: renderFollowUpPrompt(envelope, event), userId: actorUserId });
+      await deliverSlackFollowUpToSession({
+        sessionId,
+        text: renderFollowUpPrompt(envelope, event),
+        userId: actorUserId,
+        model: await followUpModel(projectId, project.accountId, actorUserId, sessionId, event),
+      });
     } else {
       console.warn('[slack-webhook] lost thread-create claim but winner never published a session', {
         teamId,
@@ -114,7 +160,12 @@ export async function createOrJoinThreadSession(input: {
       )
       .limit(1);
     if (existing) {
-      await deliverSlackFollowUpToSession({ sessionId: existing.sessionId, text: renderFollowUpPrompt(envelope, event), userId: actorUserId });
+      await deliverSlackFollowUpToSession({
+        sessionId: existing.sessionId,
+        text: renderFollowUpPrompt(envelope, event),
+        userId: actorUserId,
+        model: await followUpModel(projectId, project.accountId, actorUserId, existing.sessionId, event),
+      });
       return;
     }
   }
@@ -163,6 +214,17 @@ export async function createOrJoinThreadSession(input: {
     return;
   }
 
+  // A thread that OPENS with an image has to start on a model that can read
+  // one, and a retired `/kortix models` pick has to be replaced.
+  const createModel =
+    (await channelTurnModel({
+      projectId,
+      accountId: project.accountId,
+      userId,
+      currentModel: selection?.opencodeModel,
+      hasImage: slackMessageHasImage(event),
+    })) ?? selection?.opencodeModel;
+
   const result = await slackSessionLifecycle.createSession({
     source: 'slack',
     project,
@@ -171,7 +233,7 @@ export async function createOrJoinThreadSession(input: {
     body: {
       base_ref: project.defaultBranch,
       agent_name: launchAgent,
-      ...(selection?.opencodeModel ? { opencode_model: selection.opencodeModel } : {}),
+      ...(createModel ? { opencode_model: createModel } : {}),
       initial_prompt: renderAgentPrompt(envelope, event, revived),
       // Title from the user's actual words, not the scaffolded envelope — the
       // rendered prompt carries team/channel ids and turn instructions, and the
@@ -240,6 +302,8 @@ export async function createOrJoinThreadSession(input: {
   if (result.sessionId && handle) {
     handle.sessionId = result.sessionId;
     await saveTurn(handle);
+    // Stop is only paintable once the message knows which session it would end.
+    await showStopOnLivePlan(handle);
   }
   if (result.sessionId && teamId && threadId && event.user) {
     await rememberSlackThreadOwner({
@@ -323,13 +387,18 @@ export const TURN_INSTRUCTIONS = [
   '- When the PREVIOUS step finished with a result, surface it:',
   '    slack step "Drafting summary" --output "Found 3 incidents, 1 P0"',
   '  Add `--source URL|TITLE` (repeatable) to cite the URLs you used.',
-  '- **Need to ask the user something? Use `slack send`, then END your turn.** Slack',
-  '  questions are async: ask, stop, and resume when they reply — their reply arrives as',
-  '  a fresh turn with full context. The built-in `question` tool is DISABLED in Slack',
-  '  (it is a synchronous web-UI construct with no answerer in a thread); calling it just',
-  '  fails. Post your question with `slack send` — plain text, or a Block Kit message; for',
-  '  discrete choices add an `actions` block of buttons and a click resumes the thread on',
-  '  the next turn. Never sit waiting for an answer inside a turn.',
+  // The `question` tool is NOT disabled and does not hang: the relay posts the
+  // blocks and returns at once with a sentinel telling the agent to end its
+  // turn (channels/slack/questions.ts). The old "DISABLED … calling it just
+  // fails" line was stale, and it is why channel questions arrived as prose
+  // the user could not click.
+  '- **Need to ask the user something with DISCRETE choices? Use the built-in `question`',
+  '  tool.** It renders real Block Kit buttons — one per option — and a click resumes the',
+  '  thread on the next turn. It does NOT block and does NOT fail: it returns immediately,',
+  '  and you END your turn. The answer arrives as a fresh turn with full context.',
+  '- Use `slack send` for a question only when it is genuinely open-ended prose with',
+  '  nothing to pick from. A numbered list of choices in a message is the wrong shape —',
+  '  the user cannot click it. Never sit waiting for an answer inside a turn.',
   '- Deliver the answer as a rich Block Kit message whenever the response',
   '  benefits from structure (headers, sections, lists, links, bullets):',
   '    slack send --text "fallback summary" --blocks-file /tmp/answer.json',

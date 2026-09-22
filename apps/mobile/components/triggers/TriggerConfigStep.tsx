@@ -7,12 +7,14 @@
  */
 
 import React from 'react';
-import { View, TextInput, Pressable, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Pressable, ActivityIndicator } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Info, Plus, Check, CheckCircle2 } from 'lucide-react-native';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { InfoIcon as Info, PlusIcon as Plus, CheckIcon as Check, CheckCircleIcon as CheckCircle2 } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
-import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
+import { SelectableMarkdownText } from '@/components/kortix/selectable-markdown';
 import { DynamicConfigForm } from './DynamicConfigForm';
 import { ModelToggle } from '../models/ModelToggle';
 import { useAvailableModels } from '@/lib/models/hooks';
@@ -23,6 +25,7 @@ import * as Haptics from 'expo-haptics';
 import type { ComposioTriggerType, TriggerApp, Model } from '@/api/types';
 import type { ComposioConnection } from '@/hooks/useComposio';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { THEME } from '@/lib/utils/theme';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -127,7 +130,6 @@ function ConnectionListItem({ connection, isSelected, onPress }: ConnectionListI
           as={CheckCircle2}
           size={20}
           className={isSelected ? 'text-primary-foreground' : 'text-muted-foreground'}
-          strokeWidth={2.5}
         />
       </View>
       <View className="ml-3 flex-1">
@@ -136,8 +138,8 @@ function ConnectionListItem({ connection, isSelected, onPress }: ConnectionListI
         </Text>
         {connection.is_connected && (
           <View className="mt-1 flex-row items-center gap-2">
-            <View className="h-1.5 w-1.5 rounded-full bg-green-500" />
-            <Text className="font-roobert-medium text-xs text-green-600 dark:text-green-400">
+            <View className="h-1.5 w-1.5 rounded-full bg-kortix-green" />
+            <Text className="font-roobert-medium text-xs text-kortix-green">
               {t('triggers.connected')}
             </Text>
           </View>
@@ -145,7 +147,7 @@ function ConnectionListItem({ connection, isSelected, onPress }: ConnectionListI
       </View>
       {isSelected && (
         <View className="h-5 w-5 items-center justify-center rounded-full bg-primary">
-          <Icon as={Check} size={14} className="text-primary-foreground" strokeWidth={3} />
+          <Icon as={Check} size={14} className="text-primary-foreground" />
         </View>
       )}
     </AnimatedPressable>
@@ -195,18 +197,13 @@ export function TriggerConfigStep({
     <View className="space-y-1">
       {/* Instructions */}
       {trigger.instructions && (
-        <View
-          className="rounded-xl bg-muted p-4"
-          style={{
-            backgroundColor: isDark ? '#27272A' : '#F4F4F5',
-            borderWidth: 0,
-          }}>
+        <View className="rounded-xl bg-muted p-4" style={{ borderWidth: 0 }}>
           <SelectableMarkdownText
             isDark={isDark}
             style={{
               fontSize: 14,
               lineHeight: 20,
-              color: isDark ? '#A1A1AA' : '#71717A',
+              color: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground,
             }}>
             {normalizeInstructions(trigger.instructions)}
           </SelectableMarkdownText>
@@ -216,7 +213,7 @@ export function TriggerConfigStep({
       {/* Loading connections */}
       {isLoadingConnections && (
         <View className="items-center justify-center py-12">
-          <ActivityIndicator size="small" color={isDark ? '#FFFFFF' : '#121215'} />
+          <ActivityIndicator size="small" color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
           <Text className="mt-4 font-roobert text-sm text-muted-foreground">
             {t('triggers.loadingConnections')}
           </Text>
@@ -297,7 +294,6 @@ export function TriggerConfigStep({
                           as={Plus}
                           size={20}
                           className="text-primary-foreground"
-                          strokeWidth={2.5}
                         />
                       </View>
                       <View className="ml-3 flex-1">
@@ -316,26 +312,16 @@ export function TriggerConfigStep({
                   style={{
                     fontSize: 14,
                     fontWeight: '600',
-                    color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                    color: isDark ? THEME.dark.foreground : THEME.light.foreground,
                     marginBottom: 8,
                     marginTop: 16,
                   }}>
                   {t('triggers.triggerName')} *
                 </Text>
-                <TextInput
+                <Input
                   value={triggerName}
                   onChangeText={onTriggerNameChange}
                   placeholder={`${app.name} → Worker`}
-                  placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
-                  style={{
-                    padding: 12,
-                    borderRadius: 12,
-                    borderWidth: 1.5,
-                    borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-                    backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
-                    fontSize: 16,
-                    color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
-                  }}
                 />
               </View>
 
@@ -345,40 +331,18 @@ export function TriggerConfigStep({
                   style={{
                     fontSize: 14,
                     fontWeight: '600',
-                    color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                    color: isDark ? THEME.dark.foreground : THEME.light.foreground,
                     marginBottom: 8,
                   }}>
                   {t('triggers.agentInstructions')} *
                 </Text>
-                <ScrollView
-                  keyboardShouldPersistTaps="handled"
-                  keyboardDismissMode="on-drag"
-                  showsVerticalScrollIndicator={true}
-                  style={{
-                    borderRadius: 12,
-                    borderWidth: 1.5,
-                    borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-                    backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
-                    maxHeight: 200,
-                  }}
-                  contentContainerStyle={{
-                    padding: 12,
-                  }}>
-                  <TextInput
-                    value={agentPrompt}
-                    onChangeText={onAgentPromptChange}
-                    placeholder={t('triggers.instructionsPlaceholder')}
-                    placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
-                    multiline
-                    scrollEnabled={false}
-                    style={{
-                      minHeight: 120,
-                      fontSize: 16,
-                      color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
-                      textAlignVertical: 'top',
-                    }}
-                  />
-                </ScrollView>
+                <Textarea
+                  value={agentPrompt}
+                  onChangeText={onAgentPromptChange}
+                  placeholder={t('triggers.instructionsPlaceholder')}
+                  numberOfLines={8}
+                  className="min-h-[120px]"
+                />
                 <Text
                   className="font-roobert text-xs text-muted-foreground"
                   style={{ marginTop: 8 }}>

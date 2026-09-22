@@ -25,6 +25,7 @@ import { invalidateIamCacheForUser, registerPrincipalScopedMemo } from '../../ia
 import { setContextField } from '../../lib/request-context';
 import { auth } from '../../openapi';
 import { recordAuditEvent } from '../../shared/audit';
+import { hasAccountSessionOversight } from '../../iam/session-oversight';
 import { db } from '../../shared/db';
 import {
   IMPERSONATION_INVALID_CODE,
@@ -225,6 +226,43 @@ export function sessionIsTombstoned(row: { metadata: unknown }): boolean {
   return typeof metadata.deletedAt === 'string';
 }
 
+/**
+ * Audit a session read that only account session oversight allowed. Deduped to
+ * one event per (admin, session) per hour: `loadVisibleSession` runs on every
+ * poll of an open session, and one row per poll would bury the log. The first
+ * open is always recorded on each replica.
+ */
+const OVERSIGHT_AUDIT_WINDOW_MS = 60 * 60 * 1000;
+const OVERSIGHT_AUDIT_MAX_ENTRIES = 5_000;
+const oversightAuditedAt = new Map<string, number>();
+
+async function recordOversightSessionRead(input: {
+  accountId: string;
+  userId: string;
+  sessionId: string;
+  ownerId: string | null;
+  visibility: string;
+}): Promise<void> {
+  const key = `${input.userId}|${input.sessionId}`;
+  const now = Date.now();
+  const last = oversightAuditedAt.get(key);
+  if (last !== undefined && now - last < OVERSIGHT_AUDIT_WINDOW_MS) return;
+  if (oversightAuditedAt.size >= OVERSIGHT_AUDIT_MAX_ENTRIES) oversightAuditedAt.clear();
+  oversightAuditedAt.set(key, now);
+  await recordAuditEvent({
+    accountId: input.accountId,
+    actorUserId: input.userId,
+    action: 'project.admin_oversight_session_read',
+    resourceType: 'project_session',
+    resourceId: input.sessionId,
+    metadata: {
+      via: 'account_session_oversight',
+      sessionOwnerId: input.ownerId,
+      sessionVisibility: input.visibility,
+    },
+  });
+}
+
 export async function loadVisibleSession(
   loaded: {
     row: ProjectRow;
@@ -307,16 +345,38 @@ export async function loadVisibleSession(
         ).allowed
       : false;
   }
+  const visibility = row.visibility as 'private' | 'project' | 'restricted';
+  let visible = isProjectSessionVisibleTo(
+    visibility,
+    row.createdBy,
+    grants,
+    subject,
+    ownership,
+    { metadata: row.metadata, canManageProject },
+  );
+  // Account session oversight: asked only when ordinary visibility refused, so
+  // the common path never pays for it, and only for a human credential.
   if (
-    !isProjectSessionVisibleTo(
-      row.visibility as 'private' | 'project' | 'restricted',
-      row.createdBy,
-      grants,
-      subject,
-      ownership,
-      { metadata: row.metadata, canManageProject },
-    )
+    !visible &&
+    boundCredentialSessionId === null &&
+    (await hasAccountSessionOversight(loaded.userId, loaded.row.accountId))
   ) {
+    visible = isProjectSessionVisibleTo(visibility, row.createdBy, grants, subject, ownership, {
+      metadata: row.metadata,
+      canManageProject,
+      accountSessionOversight: true,
+    });
+    if (visible) {
+      await recordOversightSessionRead({
+        accountId: loaded.row.accountId,
+        userId: loaded.userId,
+        sessionId,
+        ownerId: row.createdBy ?? null,
+        visibility: row.visibility,
+      });
+    }
+  }
+  if (!visible) {
     // A platform-admin bypass already verified for the parent project (see
     // loadProjectForUser) also covers a session that would otherwise be
     // invisible (private / not-my-grant). Audit every use — this is a real

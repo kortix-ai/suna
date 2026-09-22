@@ -10,10 +10,11 @@ import {
   createAccountToken,
   listAccountTokens,
   listPersonalAccountTokens,
+  getAccountTokenOwner,
   revokeAccountToken,
 } from '../../repositories/account-tokens';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
-import { actorOf } from '../../iam/actor';
+import { actorOf, type Actor } from '../../iam/actor';
 import { loadProjectForUser } from '../../projects/lib/access';
 import {
   accountsRouter,
@@ -37,6 +38,22 @@ import {
 export function isTruthyFlag(raw: string | undefined): boolean {
   if (raw === undefined) return false;
   return raw === '' || raw === 'true' || raw === '1';
+}
+
+/**
+ * Whether the caller holds the person's full identity: a browser session, or an
+ * unscoped personal access token. Only such a caller may mint or revoke a
+ * personal token on the `token.personal.*` leaves. Every other credential — a
+ * project-scoped PAT, an agent session, a service account, a third-party
+ * `kortix_oat_` OAuth token, a sandbox API key — keeps needing the admin
+ * `token.create` / `token.revoke` leaves, so it can never turn itself into a
+ * wider or longer-lived bearer than the one it holds.
+ */
+export function actsAsFullIdentity(authType: string | undefined, actor: Actor): boolean {
+  const credential = actor.credential;
+  if (authType === 'supabase') return credential.kind === 'jwt';
+  if (authType === 'pat') return credential.kind === 'pat' && credential.projectId === null;
+  return false;
 }
 
 // Routes are registered via this function (called by the orchestrator AFTER
@@ -247,7 +264,17 @@ accountsRouter.openapi(
     return c.json({ error: (err as Error).message }, 403);
   }
 
-  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_CREATE);
+  // A PAT authenticates AS the person who minted it and is authorized against
+  // that person's own roles, so minting your own is a membership right
+  // (`token.personal.create`, held by every system account role) — without it
+  // a plain member cannot run `kortix login` at all.
+  const actor = await actorOf(c, accountId);
+  await assertAuthorized(
+    actor,
+    actsAsFullIdentity(c.get('authType') as string | undefined, actor)
+      ? ACCOUNT_ACTIONS.TOKEN_PERSONAL_CREATE
+      : ACCOUNT_ACTIONS.TOKEN_CREATE,
+  );
 
   const expiresAtRaw = typeof body.expires_at === 'string' ? body.expires_at.trim() : '';
   const expiresAt = expiresAtRaw ? new Date(expiresAtRaw) : undefined;
@@ -323,7 +350,20 @@ accountsRouter.openapi(
     return c.json({ error: (err as Error).message }, 403);
   }
 
-  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_REVOKE);
+  // Your own hand-minted token needs only `token.personal.revoke`. Anything
+  // else — another person's token, a session or service-account bearer, or an
+  // id that does not exist — needs the admin `token.revoke`, so a member learns
+  // nothing about tokens that are not theirs (403, not 404).
+  const actor = await actorOf(c, accountId);
+  const owner = await getAccountTokenOwner(tokenId, accountId);
+  const ownPersonalToken =
+    actsAsFullIdentity(c.get('authType') as string | undefined, actor) &&
+    owner?.personal === true &&
+    owner.userId === userId;
+  await assertAuthorized(
+    actor,
+    ownPersonalToken ? ACCOUNT_ACTIONS.TOKEN_PERSONAL_REVOKE : ACCOUNT_ACTIONS.TOKEN_REVOKE,
+  );
 
   const ok = await revokeAccountToken(tokenId, accountId);
   if (!ok) {

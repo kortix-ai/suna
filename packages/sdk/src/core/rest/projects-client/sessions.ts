@@ -690,7 +690,20 @@ export interface SessionTranscriptSyncEnvelope {
   complete: boolean;
   captured_at: string | null;
   opencode_session_id: string | null;
+  /** How many messages are in THIS window of the transcript. */
   message_count: number;
+  /**
+   * Messages the mirror holds for this session, across every window.
+   * `complete === false` says a window is partial; this says by how much.
+   *
+   * Optional because an older API does not send it — a self-hosted or staging
+   * backend behind this client answers without these two fields, and reading
+   * them as required would make a correct response look malformed.
+   */
+  total?: number;
+  /** Pass as `before` to read the window OLDER than this one. Null when this
+   *  window already reaches the oldest message the mirror holds. */
+  next_cursor?: string | null;
   messages: SessionTranscriptSyncMessage[];
 }
 
@@ -724,11 +737,23 @@ export async function getSessionTranscript(
 export async function getSessionTranscriptSync(
   projectId: string,
   sessionId: string,
-  options?: { limit?: number; signal?: AbortSignal; history?: boolean },
+  options?: {
+    limit?: number;
+    signal?: AbortSignal;
+    history?: boolean;
+    /**
+     * A previous window's `next_cursor`. Returns the window of messages
+     * strictly OLDER than it, so a client can walk back through a history the
+     * mirror retains in full. A cursor naming no mirrored message answers 400
+     * rather than silently returning the newest window again.
+     */
+    before?: string | null;
+  },
 ) {
   const search = new URLSearchParams({ shape: 'sync' });
   if (options?.limit != null) search.set('limit', String(options.limit));
   if (options?.history) search.set('history', 'true');
+  if (options?.before) search.set('before', options.before);
   return unwrap(
     await backendApi.get<SessionTranscriptSyncEnvelope>(
       `/projects/${projectId}/sessions/${sessionId}/transcript?${search.toString()}`,
@@ -756,13 +781,33 @@ export interface SessionTurn {
   accepted_at: string | null;
 }
 
+/** Why a `failed` turn ended: the name and message of the cause the sandbox
+ *  reported. A stop somebody asked for is never reported here. */
+export interface SessionTurnEndError {
+  name: string | null;
+  message: string | null;
+}
+
+/** One recent turn that failed, keyed by its user message. A turn the user
+ *  stopped is not a failure and is never listed. */
+export interface SessionTurnFailure {
+  message_id: string;
+  ended_at: string | null;
+  /** Null when the turn failed and nobody named why. */
+  error: SessionTurnEndError | null;
+}
+
 /** How the most recent turn ended. Present only when no turn is running —
  *  it is what separates "this session has never run a turn" from "the last
  *  one just finished". */
 export interface SessionTurnEnded {
   turn_token: string;
+  /** The user message the turn answered. Absent for a turn nobody named. */
+  message_id?: string;
   end_reason: string | null;
   ended_at: string | null;
+  /** Absent when nobody named the failure. */
+  error?: SessionTurnEndError;
 }
 
 export interface SessionTurnStatus {
@@ -771,6 +816,10 @@ export interface SessionTurnStatus {
    *  prompt, say), so this is a list and never a single turn. */
   turns: SessionTurn[];
   last_ended?: SessionTurnEnded;
+  /** Recent turns that failed, newest first, with the cause when one was named. Reported whether
+   *  or not a turn is running — `last_ended` is one row and vanishes when the
+   *  next turn starts. Absent when there are none. */
+  recent_failures?: SessionTurnFailure[];
 }
 
 /** Server truth about this session's running turns (`GET .../turn`), answered

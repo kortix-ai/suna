@@ -20,10 +20,8 @@ export type AuthorizeResult =
 
 export interface GatewayHooks {
   authenticate: (token: string) => Promise<AuthedPrincipal | null>;
-  // Optional combined gate: token → authenticated + billing-active + within
-  // budget, in ONE call. When provided, the chat-completions handler uses it
-  // instead of authenticate + assertBillingActive + assertBudget — the standalone
-  // gateway sets this to fold three sequential cross-process RPCs into one.
+  // Optional combined authentication + budget gate. Billing runs after
+  // upstream resolution because BYOK must never touch the Kortix wallet.
   // listModels still uses authenticate directly.
   authorize?: (token: string) => Promise<AuthorizeResult>;
   // The host/control plane owns model names, catalog state, defaults, and

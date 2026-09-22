@@ -1,7 +1,7 @@
 import { getProjectModelAccess } from '../../repositories/project-model-access';
 import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import { resolveDefaultCodexAccountSecret, resolveSessionProviderSecrets } from '../../secrets/account-resource';
-import { modelAccessAllows, modelAccessProvider, type ProjectModelAccess } from '../model-access';
+import { modelAccessAllows, modelAccessProvider } from '../model-access';
 import { toWireModel } from './effective';
 import {
   type AuthedPrincipal,
@@ -27,8 +27,6 @@ import {
   normalizeBedrockInferenceProfileRegion,
   stripBedrockInferenceProfilePrefix,
 } from './descriptors';
-
-const PLATFORM_FEE_MARKUP = 0.1;
 
 // Bedrock is the one native-transport BYOK provider whose credential is
 // multi-field (see apps/web/src/lib/llm-providers.ts's env-vars-per-provider
@@ -58,22 +56,6 @@ export const resolveCachedAccountTier = getCachedAccountTier;
 // this from a tier string here (that is exactly the conflation the comment
 // below warns about).
 export const resolveCachedManagedModels = accountMayUseManagedModels;
-
-// A managed model to fall over to when a BYOK key hits a limit (429/402/403).
-// Gated on the managed gateway being on + the managed provider being on (CLOUD-
-// ONLY) + a configured, resolvable fallback model. getRuntimeManagedModel()/
-// managedCandidates() are themselves empty when KORTIX_MANAGED_PROVIDER_ENABLED
-// is off, so a self-host naturally has no managed fallback — the explicit check
-// here is redundant belt-and-suspenders (never a silent fallback to Kortix's
-// shared credentials), not load-bearing on its own.
-function byokFallbackCandidates(access: ProjectModelAccess): UpstreamDescriptor[] {
-  if (access.disabledProviders.includes('kortix')) return [];
-  if (!config.LLM_GATEWAY_ENABLED || !config.KORTIX_MANAGED_PROVIDER_ENABLED) return [];
-  const fallbackId = config.LLM_GATEWAY_BYOK_FALLBACK_MODEL;
-  if (!fallbackId || !modelAccessAllows(access, fallbackId)) return [];
-  const managed = getRuntimeManagedModel(fallbackId);
-  return managed ? managedCandidates(managed) : [];
-}
 
 const PLAN_UPGRADE_SUGGESTION =
   'Upgrade your plan to use this model, or choose a model available on your current plan.';
@@ -300,28 +282,6 @@ export async function resolveCandidates(
       );
     }
     if (keys.length > 0) {
-      const tier = config.KORTIX_BILLING_INTERNAL_ENABLED
-        ? await resolveCachedAccountTier(principal.accountId)
-        : 'self-hosted';
-      // TWO DIFFERENT QUESTIONS. Conflating them is what let a credit plan reach
-      // managed inference through the back door.
-      //
-      // 1. Does this account pay the BYOK platform fee? Free accounts do not;
-      //    every paid account does, including the v3 credit plans.
-      //    `tier` here is the RESOLVED plan key (getCachedAccountTier reads the
-      //    shared billing resolver: trial overlay and per-seat self-heal
-      //    applied), so a trial of a paid plan pays the fee for the trial
-      //    window and a stale-tier per-seat team is not waived by accident.
-      //    Deliberately plan-KEY equality with 'free', not "free family": an
-      //    unprovisioned account (`none`) has always paid this fee, and
-      //    widening the waiver to it is a pricing decision, not a refactor.
-      const isFreeTier = config.KORTIX_BILLING_INTERNAL_ENABLED && tier === 'free';
-      // 2. May this account use MANAGED inference at all? `models: []` says no
-      //    for Starter/Team/Scale even though they are paid, so this cannot be a
-      //    `tier === 'free'` check — it has to be the same entitlement predicate
-      //    the direct managed path uses (trial + operator override included).
-      //    Billing disabled (self-hosted) keeps the fallback, as before.
-      const mayUseManagedModels = await resolveCachedManagedModels(principal.accountId);
       const resolvedModelId = effectiveModel.slice(provider.length + 1);
       // Capability flags from the catalog (models.dev enrichment) so the
       // transport can decide which params a reasoning-restricted model
@@ -356,9 +316,10 @@ export async function resolveCandidates(
         apiKey: value,
         credentialRef: identifier,
         ...(selectedPool?.configured ? { poolSecretId: identifier } : {}),
-        billingMode:
-          config.KORTIX_BILLING_INTERNAL_ENABLED && !isFreeTier ? 'platform-fee' : 'none',
-        markup: isFreeTier ? 0 : PLATFORM_FEE_MARKUP,
+        // BYOK bills the provider account directly. Kortix records provider
+        // spend for observability but never debits Kortix credits.
+        billingMode: 'none',
+        markup: 0,
         resolvedModel: invokeModelId,
         // Bedrock-only: the id used to INVOKE stays the full cross-region
         // inference-profile id (resolvedModel above, region-normalized) — only
@@ -374,18 +335,9 @@ export async function resolveCandidates(
         reasoning: capabilities.reasoning,
         temperature: capabilities.temperature,
       }));
-      // Queue a managed model behind the BYOK key: if the user's key hits a
-      // rate-limit / quota / billing error, the failover loop falls over to it
-      // (billed as Kortix credits) so the turn doesn't die.
-      //
-      // Only for accounts entitled to managed models. Otherwise a plan that
-      // includes no inference could reach it by having its own key rate-limit —
-      // serving managed tokens the plan forbids, and skipping the wallet
-      // admission gate on the way, since that gate is bypassed for exactly the
-      // tiers this fallback would be serving.
-      return mayUseManagedModels && !selectedPool?.configured
-        ? [...byokDescriptors, ...byokFallbackCandidates(access)]
-        : byokDescriptors;
+      // Never append a Kortix-managed fallback. A failed BYOK key must fail as
+      // BYOK; it must not silently convert the request into a Kortix charge.
+      return byokDescriptors;
     }
     // No shared key configured for this project — provider keys are always
     // project-wide, so there's no other place to look.

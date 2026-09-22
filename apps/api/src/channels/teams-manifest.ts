@@ -36,17 +36,26 @@ export interface TeamsManifest {
  * existing app only when this differs from what the catalog holds, and a Teams
  * admin has to re-consent to new resource-specific permissions on the team.
  */
-export const TEAMS_MANIFEST_VERSION = '1.2.0';
+export const TEAMS_MANIFEST_VERSION = '1.3.0';
 
 /**
- * Resource-specific consent (RSC). `ChannelMessage.Read.Group` lets the bot
- * receive every message in the channels of a team it is installed in — not
- * only @-mentions — so a reply in a thread the bot owns continues the
- * session without re-mentioning it. Dispatch still ignores un-mentioned
- * messages outside such threads (teams/dispatch.ts).
+ * Resource-specific consent (RSC). These let the bot receive every message in
+ * a conversation it is installed in — not only @-mentions — so a reply in a
+ * thread the bot owns continues the session without re-mentioning it, which is
+ * how Slack threads already behave. Dispatch still ignores un-mentioned
+ * messages outside such threads (teams/dispatch.ts), so the bot never answers
+ * every line typed in a channel it was added to.
+ *
+ * - `ChannelMessage.Read.Group` — team channels.
+ * - `ChatMessage.Read.Chat` — group chats. Without it Teams delivers only
+ *   @-mentions there, so every reply in a group chat needed one.
+ *
+ * Adding a permission here needs a Teams admin to RE-consent when the app is
+ * (re-)added to a team or chat — bump TEAMS_MANIFEST_VERSION with it.
  */
 export const TEAMS_RSC_PERMISSIONS = [
   { name: 'ChannelMessage.Read.Group', type: 'Application' as const },
+  { name: 'ChatMessage.Read.Chat', type: 'Application' as const },
 ];
 
 const BOT_COMMANDS = [
@@ -56,6 +65,7 @@ const BOT_COMMANDS = [
   { title: '/models', description: 'Pick the model for this conversation' },
   { title: '/agents', description: 'Pick the agent for this conversation' },
   { title: '/projects', description: 'List connected projects' },
+  { title: '/stop', description: 'Stop the run in progress here' },
   { title: '/policy', description: 'Who may join sessions started here' },
 ];
 

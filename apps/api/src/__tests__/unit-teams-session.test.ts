@@ -114,10 +114,16 @@ mock.module('../channels/teams/turn', () => ({
     calls.push('persistServiceUrl');
   },
   buildTeamsTurnEnv: () => ({}),
+  showStopOnLiveCard: async () => {
+    calls.push('showStopOnLiveCard');
+  },
 }));
 
 mock.module('../channels/teams/identity', () => ({
   teamsUserId: () => 'aad-user-1',
+  // Reached by the AGENT_NOT_DECLARED recovery picker, which scopes its list
+  // to the pressing user.
+  lookupTeamsIdentity: async () => null,
   resolveTeamsActor: async () => {
     calls.push('resolveTeamsActor');
     return actor;
@@ -137,8 +143,13 @@ mock.module('../channels/teams/binding', () => ({
   teamsChannelCtx: () => ({ platform: 'teams', teamId: TENANT_ID, channelId: CONVERSATION_ID }),
 }));
 
+// `mock.module` REPLACES the module wholesale, so every export the
+// session-start path reaches through this file has to be listed. Session start
+// pulls `listProjectAgents` through the AGENT_NOT_DECLARED recovery picker
+// (channels/teams/agent-picker.ts -> channels/scoped-agents.ts).
 mock.module('../channels/slack/selection', () => ({
   currentChannelSelection: async () => null,
+  listProjectAgents: async () => [],
 }));
 
 let participantVerdict: { allowed: true } | { allowed: false; notice: string } = { allowed: true };
@@ -321,6 +332,11 @@ describe('follow-up outcomes — the conversation is never left on "Working on i
     await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });
     expect(finalized).toHaveLength(1);
     expect(finalized[0].error).toBeUndefined();
+    // Silent is not the same as "Task complete". Suppressing the repeated
+    // notice must not make the card claim the run succeeded — every later
+    // message on a jammed conversation used to close with the default title.
+    expect(finalized[0].title).toBe("Couldn't start");
+    expect(finalized[0].unfinished).toBe(true);
   });
 
   test('no-session (deleted): the stale mapping is dropped and a NEW session is created with a revived note', async () => {
@@ -428,5 +444,75 @@ describe('a turn that died mid-flight does not wedge the conversation', () => {
 
     expect(calls).not.toContain('closeAbandonedTurn');
     expect(saved).toHaveLength(1);
+  });
+});
+
+// A conversation whose agent was deleted, renamed or disabled is rejected at
+// session create with `400 AGENT_NOT_DECLARED`. Teams used to answer that with
+// "give it a moment and send your message again" — advice that can never work,
+// because every retry re-sends the same dead agent. The conversation had no
+// way out at all short of an admin knowing `/agents` existed.
+describe('createOrJoinTeamsConversationSession — a start failure says what to do', () => {
+  const startFails = (status: number, body: unknown) =>
+    setTeamsSessionLifecycleForTest({
+      createSession: async () => {
+        calls.push('createSession');
+        return { error: { status, body } } as never;
+      },
+    });
+
+  test('AGENT_NOT_DECLARED posts the agent picker, not a line of prose', async () => {
+    startFails(400, { code: 'AGENT_NOT_DECLARED', error: 'agent "reviewer" is not declared' });
+
+    await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });
+
+    expect(finalized).toHaveLength(1);
+    const opts = finalized[0] as { title?: string; card?: Record<string, unknown>; error?: string };
+    expect(opts.title).toBe("Couldn't start — pick an agent");
+    expect(opts.card).toBeTruthy();
+    expect(opts.error).toBeUndefined();
+    // The mocked project declares no agents, so the picker degrades to the
+    // notice that names the dead pick and the way back to the default.
+    expect(JSON.stringify(opts.card)).toContain('no longer exists');
+  });
+
+  test('402 keeps the credits copy', async () => {
+    startFails(402, {});
+
+    await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });
+
+    expect((finalized[0] as { error: string }).error.toLowerCase()).toContain('out of credits');
+  });
+
+  test('a 403 asks for an admin instead of telling the user to retry forever', async () => {
+    startFails(403, {});
+
+    await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });
+
+    const error = (finalized[0] as { error: string }).error;
+    expect(error.toLowerCase()).toContain('admin');
+    expect(error).not.toContain('Give it a moment');
+  });
+
+  test('an error CODE beats its HTTP status, and points at the real fix', async () => {
+    startFails(503, { code: 'KORTIX_URL_UNREACHABLE', error: 'unreachable' });
+
+    await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });
+
+    expect((finalized[0] as { error: string }).error.toLowerCase()).toContain('sandbox runtime');
+  });
+});
+
+// Stop is only paintable once the card knows which session it would end, so
+// the repaint has to follow the bind — otherwise the button appears only when
+// the agent reports its first step, which on a slow start is the whole wait.
+describe('createOrJoinTeamsConversationSession — Stop appears as soon as the session exists', () => {
+  test('the live card is repainted immediately after the turn binds', async () => {
+    await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });
+
+    const bind = calls.indexOf('saveTurn');
+    const repaint = calls.indexOf('showStopOnLiveCard');
+    expect(bind).toBeGreaterThanOrEqual(0);
+    expect(repaint).toBeGreaterThan(bind);
   });
 });

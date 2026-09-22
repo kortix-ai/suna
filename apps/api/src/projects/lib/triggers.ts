@@ -1252,11 +1252,11 @@ async function executeTriggerExecution(
     }
     const error = result.error ?? result.reason ?? 'scheduled trigger execution failed';
     // A billing-gate rejection (wallet drained / no plan / no account) is
-    // PERMANENT — a retry re-runs the same `createSession` → `checkBillingActive`
-    // → atomic-hold `deductCredits` only to fail identically, so retrying five
-    // times over ~30s only delays the terminal state and re-burns the same
-    // admission attempt. Mark it terminal on the first failure so the trigger
-    // runtime row shows `failed` + the machine-readable reason immediately.
+    // PERMANENT — a retry re-runs the same `createSession` →
+    // `checkBillingAdmission` only to fail identically, so retrying five times
+    // over ~30s only delays the terminal state. Mark it terminal on the first
+    // failure so the trigger runtime row shows `failed` + the machine-readable
+    // reason immediately.
     const terminal = result.errorCode === 'insufficient_credits'
       || result.errorCode === 'subscription_required'
       || result.errorCode === 'no_account';

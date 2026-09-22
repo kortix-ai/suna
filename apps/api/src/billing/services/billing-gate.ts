@@ -108,10 +108,15 @@ async function resolveAdmissionState(accountId: string) {
 
 /**
  * The same account decision as `checkBillingActive`, without its admission
- * hold. For an admission that spends no compute, such as a prompt attachment
- * upload: only an LLM gateway settle reconciles a hold, so a hold taken here
- * would never be refunded. The prompt that later sends the upload runs
- * `checkBillingActive` itself.
+ * hold. This is the gate for EVERY caller that is not the LLM gateway: session
+ * create, `/start`, a prompt, an attachment upload, an App wake.
+ *
+ * Only an LLM gateway settle reconciles a hold (`recordGatewayUsage` in
+ * llm-gateway/hooks.ts), so a hold taken anywhere else is never refunded.
+ * Session create, `/start`, the prompt route, and App wake all called
+ * `checkBillingActive` as a yes/no check and dropped `holdUsd`. Each call cost
+ * the account one cent, labelled "LLM gateway admission hold". Measured on one
+ * prod account 2026-09-18: 115,810 holds against 9 real LLM charges ($1.69).
  */
 export async function checkBillingAdmission(
   accountId: string,
@@ -121,6 +126,11 @@ export async function checkBillingAdmission(
   return billingStateAllowsRun(state) ? { ok: true } : blockedResult(state, snapshot, billingModel);
 }
 
+/**
+ * LLM GATEWAY ONLY. This call DEBITS the account (the admission hold below),
+ * and the gateway settle is the only code that refunds it. Every other caller
+ * uses `checkBillingAdmission`.
+ */
 export async function checkBillingActive(
   accountId: string,
 ): Promise<BillingGateOk | BillingGateBlocked> {

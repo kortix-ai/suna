@@ -43,8 +43,12 @@ describe('gatewayModelCatalog — served catalog', () => {
     expect(full['glm-5.3-flash']).toMatchObject({ provider: 'kortix', attachment: true });
   });
 
+  test('does not serve retired DeepSeek V4 Pro under Kortix', () => {
+    expect(full['deepseek-v4-pro-0813']).toBeUndefined();
+  });
+
   test('does not serve other retired text-only managed models', () => {
-    for (const id of ['deepseek-v4-flash', 'deepseek-v4-pro-0813', 'glm-5.3-flash-text']) {
+    for (const id of ['deepseek-v4-flash', 'glm-5.3-flash-text']) {
       expect(full[id], id).toBeUndefined();
     }
   });

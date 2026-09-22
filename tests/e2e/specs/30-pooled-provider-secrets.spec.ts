@@ -139,7 +139,10 @@ test.describe('30 — pooled provider secrets', () => {
       for (const label of ['Primary test key', 'Backup test key for shared research and development sessions']) {
         await panel.getByRole('button', { name: 'Add key' }).click();
         const dialog = page.getByRole('dialog', { name: 'Add key · Anthropic' });
-        await expect(dialog.getByRole('radio', { name: /Everyone in this project/ })).toBeChecked();
+        await expect(dialog.getByRole('radio', { name: /Specific members/ })).toBeChecked();
+        await expect(dialog.getByText('1 selected', { exact: true })).toBeVisible();
+        const sharedWithProject = label !== 'Primary test key';
+        if (sharedWithProject) await dialog.getByRole('radio', { name: /Everyone in this project/ }).click();
         await dialog.getByPlaceholder('Primary key').fill(label);
         await dialog.locator('input[type="password"]').fill(`fake-${label.replaceAll(' ', '-')}`);
         if (label === 'Primary test key') {
@@ -157,7 +160,8 @@ test.describe('30 — pooled provider secrets', () => {
         const response = page.waitForResponse((candidate) => candidate.request().method() === 'POST'
           && candidate.url().endsWith(`/v1/accounts/${accountId}/secret-resources`));
         await dialog.getByRole('button', { name: 'Save key' }).click();
-        expect((await request).postDataJSON()).toMatchObject({ label, project_id: projectId, access_mode: 'project', provider_id: 'anthropic', consumer: 'llm_gateway' });
+        expect((await request).postDataJSON()).toMatchObject({ label, project_id: projectId, provider_id: 'anthropic', consumer: 'llm_gateway',
+          ...(sharedWithProject ? { access_mode: 'project', user_ids: [] } : { access_mode: 'members', user_ids: [user.id] }) });
         const saved = await response;
         expect(saved.status()).toBe(201);
         const body = await saved.json() as { secret_id: string; value?: string };
@@ -216,7 +220,7 @@ test.describe('30 — pooled provider secrets', () => {
         const startRequest = page.waitForRequest((request) => request.method() === 'POST'
           && request.url().endsWith(`/v1/projects/${projectId}/oauth/openai/start`));
         await dialog.getByRole('button', { name: 'Connect account' }).click();
-        expect((await startRequest).postDataJSON()).toEqual({ resource_label: label, sharing: { mode: 'project' } });
+        expect((await startRequest).postDataJSON()).toEqual({ resource_label: label, sharing: { mode: 'members', memberIds: [user.id] } });
 
         await expect(dialog.getByText(`TEST-CODE-${oauthStarts}`)).toBeVisible();
         if (oauthStarts === 1) {
@@ -265,15 +269,16 @@ test.describe('30 — pooled provider secrets', () => {
       await panel.getByRole('button', { name: 'Actions for Primary test key' }).click();
       await page.getByRole('menuitem', { name: 'Manage access' }).click();
       const accessDialog = page.getByRole('dialog', { name: 'Access to Primary test key' });
-      await expect(accessDialog.getByRole('radio', { name: /Everyone in this project/ })).toBeChecked();
-      await page.screenshot({ path: testInfo.outputPath('provider-access-modes.png'), fullPage: true, animations: 'disabled' });
-      await accessDialog.getByRole('radio', { name: /Specific members/ }).click();
+      await expect(accessDialog.getByRole('radio', { name: /Specific members/ })).toBeChecked();
       await expect(accessDialog.getByRole('textbox', { name: 'Search members' })).toBeVisible();
+      await page.screenshot({ path: testInfo.outputPath('provider-access-modes.png'), fullPage: true, animations: 'disabled' });
+      await accessDialog.getByRole('radio', { name: /Everyone in this project/ }).click();
+      await expect(accessDialog.getByRole('textbox', { name: 'Search members' })).toHaveCount(0);
       const accessRequest = page.waitForRequest((request) => request.method() === 'PUT' &&
         request.url().endsWith(`/accounts/${accountId}/secret-resources/${createdIds[0]}/access`));
       await accessDialog.getByRole('button', { name: 'Done' }).click();
-      expect((await accessRequest).postDataJSON()).toMatchObject({ mode: 'members' });
-      await expect(panel.getByText('1 member')).toBeVisible();
+      expect((await accessRequest).postDataJSON()).toMatchObject({ mode: 'project' });
+      await expect(panel.getByRole('listitem').filter({ hasText: 'Primary test key' }).getByText('Everyone in this project')).toBeVisible();
 
       await panel.getByRole('button', { name: 'Actions for Primary test key' }).click();
       await page.getByRole('menuitem', { name: 'Delete key' }).click();
@@ -313,9 +318,20 @@ test.describe('30 — pooled provider secrets', () => {
         label: 'Second provider key', value: 'fake-openai-key', consumer: 'llm_gateway', strategy: 'broker',
       }, 201);
       createdIds.push(secondProvider.secret_id);
+      // Secrets catalog down + connectors inheriting = nothing for the scope PUT
+      // to carry. A keys-only Save must not send `{}` (the API answers 400).
+      await page.route(`**/v1/projects/${projectId}/secrets`, async (route) => {
+        if (route.request().method() === 'GET') await route.fulfill({ status: 503, json: { error: 'Secrets unavailable' } });
+        else await route.continue();
+      });
+      const scopeWrites: string[] = [];
+      page.on('request', (request) => {
+        if (request.method() === 'PUT' && request.url().endsWith(`/sessions/${existingSession}/scope`)) scopeWrites.push(request.postData() ?? '');
+      });
       await page.setViewportSize({ width: 720, height: 480 });
       await page.goto(`/projects/${projectId}/sessions/${existingSession}`, { waitUntil: 'domcontentloaded' });
       await page.getByRole('button', { name: 'Session overrides' }).click();
+      await expect(page.getByRole('button', { name: /^Secrets Unavailable/ })).toBeVisible();
       await page.getByRole('button', { name: 'Provider keys 1 key selected Override', exact: true }).click();
       await expect(page.getByRole('checkbox', { name: 'Backup test key for shared research and development sessions' })).toBeChecked();
       const saveChanges = page.getByRole('button', { name: 'Save changes', exact: true });
@@ -388,13 +404,37 @@ test.describe('30 — pooled provider secrets', () => {
       await expect(page.getByRole('alert').filter({ hasText: 'Selected key access changed' })).toBeVisible();
       await expect(page.getByRole('checkbox', { name: 'Backup test key for shared research and development sessions' })).not.toBeChecked();
       rejectSave = false;
+      // The forced 403 also raises the global "Failed to perform action" toast.
+      // At 1440x900 that toast sits on top of Save changes and swallows the
+      // click for its whole lifetime (preview runs 35707181258, 35709014601,
+      // 35709807756, 35708105773: `<section aria-label="Notifications alt+T">
+      // subtree intercepts pointer events`). The inline alert above is the
+      // asserted error surface, so dismiss the toast before retrying the save.
+      for (const close of await page.getByRole('button', { name: 'Close notification' }).all()) {
+        await close.click().catch(() => {});
+      }
+      await expect(page.getByRole('region', { name: /Notifications/ }).getByRole('listitem')).toHaveCount(0);
+      // A click on the toast is outside the popover, so Radix may dismiss it.
+      // The unsaved selection survives a close (asserted above); reopen it.
+      if (!(await saveChanges.isVisible().catch(() => false))) {
+        if (!(await overrides.isVisible().catch(() => false))) {
+          await page.getByRole('button', { name: 'Session overrides' }).click();
+          await expect(overrides).toBeVisible();
+        }
+        await page.getByRole('button', { name: /Provider keys/ }).click();
+      }
+      await expect(page.getByRole('checkbox', { name: 'Backup test key for shared research and development sessions' })).not.toBeChecked();
       const saveResponse = page.waitForResponse((response) => response.request().method() === 'PUT'
         && response.url().endsWith(`${poolPath}/anthropic`) && response.status() === 200);
       await saveChanges.click();
-      expect((await saveResponse).request().postDataJSON()).toEqual({ secret_ids: [] });
+      // Unchecking the last key resets to the default; an empty pool fails every turn.
+      expect((await saveResponse).request().postDataJSON()).toEqual({ secret_ids: null });
       await expect(page.getByRole('dialog', { name: 'Session overrides', exact: true })).toHaveCount(0);
-      expect((await api<{ pools: Array<{ provider_id: string; secret_ids: string[] }> }>(session.access_token, 'GET', poolPath)).pools)
-        .toContainEqual(expect.objectContaining({ provider_id: 'anthropic', secret_ids: [] }));
+      await expect(page.getByText('Validation failed')).toHaveCount(0);
+      expect(scopeWrites).toEqual([]);
+      await page.unroute(`**/v1/projects/${projectId}/secrets`);
+      expect((await api<{ pools: Array<{ provider_id: string; secret_ids: string[] }> }>(session.access_token, 'GET', poolPath)).pools
+        .map((pool) => pool.provider_id)).not.toContain('anthropic');
       await page.unroute(`**/v1${poolPath}/anthropic`);
       expect((await api<{ secret_ids: string[] }>(session.access_token, 'GET', `${poolPath}/openai`)).secret_ids).toEqual([secondProvider.secret_id]);
       await api(session.access_token, 'PUT', `${poolPath}/openai`, { secret_ids: null });

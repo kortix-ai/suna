@@ -44,7 +44,7 @@ export function parseManagedModels(
   raw: string | undefined,
   fallback: readonly ManagedModel[] = BUNDLED_MANAGED_MODELS,
 ): ManagedModel[] {
-  if (!raw) return fallback.filter(isOfferedManagedModel);
+  if (!raw) return [...fallback];
 
   let parsed: unknown;
   try {
@@ -62,15 +62,11 @@ export function parseManagedModels(
     }
     ids.add(model.id);
   }
-  return models.filter(isOfferedManagedModel);
-}
-
-function isOfferedManagedModel(model: ManagedModel): boolean {
-  return model.vision;
+  return models;
 }
 
 /**
- * Image-capable Kortix-credit managed models. This registry is empty
+ * Kortix-credit managed models. This registry is empty
  * when the cloud managed-provider flag is off. The picker, catalog, and gateway
  * all use this registry, so self-host users never receive the shared key.
  */

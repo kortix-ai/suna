@@ -8,6 +8,7 @@ import type { StreamTaskChunk } from '../slack-api';
 import { sendCard, updateCard } from '../teams-api';
 import { saveTeamsServiceUrl } from '../install-store';
 import { buildAnswerCard, buildFinalCard, buildNoticeCard, buildPlanCard } from './cards';
+import { mrkdwnToTeamsMarkdown } from './markdown';
 import { STREAM_TTL_MS, STALE_AFTER_MS } from './app';
 import type { TeamsActivity, TeamsChannelRef, TeamsConversationRef, TeamsLiveTurn } from './types';
 import { conversationScope } from './util';
@@ -177,7 +178,30 @@ export async function noticeOnLiveCard(handle: TeamsLiveTurn, text: string): Pro
 
 async function repaintPlan(handle: TeamsLiveTurn): Promise<void> {
   if (!handle.messageActivityId) return;
-  await updateCard(refOf(handle), handle.messageActivityId, buildPlanCard(LIVE_PLAN_TITLE, handle.steps));
+  await updateCard(
+    refOf(handle),
+    handle.messageActivityId,
+    // `sessionId` is what puts Stop on the card, and it is empty until the
+    // session exists — there is nothing to stop before then.
+    buildPlanCard(LIVE_PLAN_TITLE, handle.steps, handle.sessionId || undefined),
+  );
+}
+
+/**
+ * Repaint the live card once the turn knows its session, so Stop appears
+ * without waiting for the agent's first step. Best effort: a card that cannot
+ * be updated still gains the button on the next step.
+ */
+export async function showStopOnLiveCard(handle: TeamsLiveTurn | null): Promise<void> {
+  if (!handle || !handle.messageActivityId || !handle.sessionId || handle.finalized) return;
+  try {
+    await repaintPlan(handle);
+  } catch (err) {
+    console.warn('[teams-webhook] could not repaint the live card with Stop', {
+      sessionId: handle.sessionId,
+      err: (err as Error)?.message,
+    });
+  }
 }
 
 export async function relayTurnStep(
@@ -208,7 +232,10 @@ export async function relayTurnStep(
       status: 'in_progress',
     };
     if (opts.detail) firstStep.details = opts.detail.slice(0, 500);
-    const activityId = await sendCard(refOf(handle), buildPlanCard(LIVE_PLAN_TITLE, [firstStep]));
+    const activityId = await sendCard(
+      refOf(handle),
+      buildPlanCard(LIVE_PLAN_TITLE, [firstStep], handle.sessionId || undefined),
+    );
     if (!activityId) return false;
     handle.messageActivityId = activityId;
     handle.steps = [firstStep];
@@ -266,7 +293,14 @@ export async function relayTurnEnd(
   if (!(await claimFinalize(sessionId))) return false;
   if (status === 'error') {
     const classified = classifyTurnError(errorInfo);
-    await finalizeTurn(handle, classified.aborted ? {} : { error: classified.text, title: classified.title });
+    // The classifier is Slack's, so its copy is Slack's dialect. Translate at
+    // the boundary rather than forking the copy — see mrkdwnToTeamsMarkdown.
+    await finalizeTurn(
+      handle,
+      classified.aborted
+        ? {}
+        : { error: mrkdwnToTeamsMarkdown(classified.text), title: classified.title },
+    );
   } else {
     await finalizeTurn(handle, {});
   }
@@ -276,7 +310,18 @@ export async function relayTurnEnd(
 
 export async function finalizeTurn(
   handle: TeamsLiveTurn,
-  opts: { answer?: string; error?: string; title?: string; card?: Record<string, unknown> },
+  opts: {
+    answer?: string;
+    error?: string;
+    title?: string;
+    card?: Record<string, unknown>;
+    /**
+     * The step in flight neither finished nor failed — a deliberate Stop, or a
+     * turn that ended by ASKING rather than answering. Both get the neutral
+     * glyph; `complete` would claim work that never happened.
+     */
+    unfinished?: boolean;
+  },
 ): Promise<void> {
   if (handle.finalized && handle.messageActivityId === '' && !opts.answer && !opts.error && !opts.card) return;
   const hasContent = Boolean(opts.answer || opts.error || opts.card);
@@ -294,7 +339,12 @@ export async function finalizeTurn(
       else await sendCard(refOf(handle), answer);
     } else if (handle.messageActivityId) {
       const last = handle.steps[handle.steps.length - 1];
-      if (last && last.status === 'in_progress') last.status = opts.error ? 'error' : 'complete';
+      if (last && last.status === 'in_progress') {
+        // An unfinished step gets the neutral glyph. `complete` would claim
+        // work that never finished, and `error` paints a red ✗ over something
+        // the user chose to end, or over a question waiting on them.
+        last.status = opts.unfinished ? 'pending' : opts.error ? 'error' : 'complete';
+      }
       await updateCard(
         refOf(handle),
         handle.messageActivityId,
@@ -356,9 +406,27 @@ setInterval(() => {
         if (!(await claimFinalize(row.sessionId))) continue;
         await finalizeTurn(rowToHandle(row), { error: '_This run ended without a reply._' });
         await deleteTurn(row.sessionId);
+        await abortDeadRuntimeTurn(row.sessionId);
       }
     } catch (err) {
       console.warn('[teams-webhook] gc tick failed', err);
     }
   })();
 }, 5 * 60 * 1000).unref();
+
+/**
+ * Closing the card is not ending the run. A turn this sweep reaps has been
+ * silent for 30 minutes, but OpenCode can still hold its assistant message
+ * OPEN — and while it does, every later prompt in that conversation is
+ * accepted and never runs. Seen on dev 2026-09-19: two messages vanished that
+ * way over two days. Imported lazily so the channel modules keep no static
+ * edge into the session-lifecycle engine.
+ */
+async function abortDeadRuntimeTurn(sessionId: string): Promise<void> {
+  try {
+    const { abortRuntimeTurn } = await import('../../projects/session-lifecycle/abort-runtime-turn');
+    await abortRuntimeTurn(sessionId);
+  } catch {
+    /* housekeeping: a runtime that cannot be reached needs no abort */
+  }
+}

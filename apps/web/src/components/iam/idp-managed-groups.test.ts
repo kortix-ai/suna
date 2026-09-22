@@ -13,8 +13,8 @@
 // that used to redirect there was deleted on 2026-09-08 with the rest of the
 // account routes — the hub is a modal now, so there is no route to bookmark
 // and nothing left to redirect.
-import { describe, expect, test } from 'bun:test';
 import { readFileSync } from '@/i18n/test-source';
+import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
 const pageSource = readFileSync(join(import.meta.dir, 'group-access-panel.tsx'), 'utf8');
@@ -32,11 +32,14 @@ describe('IdP-managed groups — detail panel', () => {
   });
 
   test('membership affordances hide for IdP-managed groups, with copy pointing at the IdP', () => {
-    // The "Add members" button and the row kebab both gate on canMutate,
-    // not canManage.
+    // The "Add members" button and the row's "Remove from group" both gate on
+    // canMutate, not canManage. The row's "Edit access" (account role) and
+    // "View access" do NOT: the account role is not owned by the IdP.
     expect(flatPageSource).toContain('canMutate ? ( <Button');
-    expect(flatPageSource).toContain("label: tI18nComplete.raw('text035edd9bd720')");
-    expect(flatPageSource).toContain('kebab={ canMutate ?');
+    expect(flatPageSource).toContain(
+      "if (canMutate) { items.push({ label: tI18nComplete.raw('text035edd9bd720')",
+    );
+    expect(flatPageSource).toContain('kebab={memberKebab(m.user_id, label, meta?.accountRole)}');
     expect(flatPageSource).toContain("raw('text58dc708c6651')");
   });
 

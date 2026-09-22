@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ErrorState } from '@/features/layout/section/error-state';
 import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 import { Field, FieldLabel } from '@/components/ui/field';
-import type { ProviderPoolDrafts } from './provider-pool-draft';
+import { normalizePoolSelection, type ProviderPoolDrafts } from './provider-pool-draft';
 
 function useResources(projectId: string) {
   const project = useQuery({ queryKey: ['provider-pool-project', projectId], queryFn: () => getProjectDetail(projectId) });
@@ -123,7 +123,14 @@ export function NewProviderSecretPoolEditor({ projectId, selection, onChange }: 
   return <div className="space-y-3">
     <PoolChoices projectId={projectId} providers={providers} providerId={activeProvider} onProviderChange={setProviderId}
       keys={usable.filter((secret) => secret.provider_id === activeProvider)} selected={selection[activeProvider] ?? []}
-      configured={activeProvider in selection} onChange={(ids) => onChange({ ...selection, [activeProvider]: ids })}
+      configured={activeProvider in selection}
+      onChange={(ids) => {
+        const next = { ...selection };
+        const normalized = normalizePoolSelection(ids);
+        if (normalized) next[activeProvider] = normalized;
+        else delete next[activeProvider];
+        onChange(next);
+      }}
       onReset={() => { const next = { ...selection }; delete next[activeProvider]; onChange(next); }} />
   </div>;
 }

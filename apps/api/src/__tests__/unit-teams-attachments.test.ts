@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { extractTeamsAttachments } from '../channels/teams/types';
+import { extractTeamsAttachments, teamsMessageHasImage } from '../channels/teams/types';
 
 /**
  * An image pasted into a Teams chat (dev, 2026-09-18: "what do you see on
@@ -21,10 +21,11 @@ describe('extractTeamsAttachments', () => {
       ],
     });
     expect(refs).toEqual([{ name: 'report.pdf', downloadUrl: 'https://kortixssotest-my.sharepoint.com/personal/x/report.pdf', fileType: 'pdf' }]);
+    expect(teamsMessageHasImage({ type: 'message', attachments: [] })).toBe(false);
   });
 
   test('a pasted image is an image/* attachment with a Bot Framework contentUrl', () => {
-    const refs = extractTeamsAttachments({
+    const activity = {
       type: 'message',
       attachments: [
         { contentType: 'text/html' },
@@ -34,17 +35,19 @@ describe('extractTeamsAttachments', () => {
           name: 'image.png',
         },
       ],
-    });
-    expect(refs).toEqual([
+    };
+    expect(extractTeamsAttachments(activity)).toEqual([
       {
         name: 'image.png',
         downloadUrl: 'https://smba.trafficmanager.net/emea/36009a52/v3/attachments/0-abc/views/original',
         fileType: 'png',
+        isImage: true,
       },
     ]);
+    expect(teamsMessageHasImage(activity)).toBe(true);
   });
 
-  test('an image without a name gets one from its type; html/card attachments are ignored', () => {
+  test('jpeg normalizes to a real .jpg extension; cards are ignored', () => {
     const refs = extractTeamsAttachments({
       type: 'message',
       attachments: [
@@ -53,7 +56,39 @@ describe('extractTeamsAttachments', () => {
       ],
     });
     expect(refs).toEqual([
-      { name: 'image.jpeg', downloadUrl: 'https://smba.trafficmanager.net/emea/x/v3/attachments/1/views/original', fileType: 'jpeg' },
+      {
+        name: 'image.jpg',
+        downloadUrl: 'https://smba.trafficmanager.net/emea/x/v3/attachments/1/views/original',
+        fileType: 'jpg',
+        isImage: true,
+      },
     ]);
+  });
+
+  /**
+   * The shape Teams ACTUALLY sends for a pasted screenshot — verified on dev
+   * 2026-09-19, session 196a99f5. The subtype is the literal `*`, so the old
+   * code named the file `image.*`, which is not a filename.
+   */
+  test('the wildcard image/* type produces a filename, not "image.*"', () => {
+    const refs = extractTeamsAttachments({
+      type: 'message',
+      attachments: [
+        {
+          contentType: 'image/*',
+          contentUrl:
+            'https://smba.trafficmanager.net/emea/36009a52-46d2-44bc-ba56-57a87e485e0a/v3/attachments/0-weu-d21-b7b5/views/original',
+        },
+      ],
+    });
+    expect(refs).toEqual([
+      {
+        name: 'image',
+        downloadUrl:
+          'https://smba.trafficmanager.net/emea/36009a52-46d2-44bc-ba56-57a87e485e0a/v3/attachments/0-weu-d21-b7b5/views/original',
+        isImage: true,
+      },
+    ]);
+    expect(refs[0]?.name).not.toContain('*');
   });
 });

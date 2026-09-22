@@ -10,8 +10,10 @@ import type { DailyCreditConfig, TierConfig, TierEntitlements } from '../../type
 import { isPerSeatAccount } from './tier-facts';
 
 export {
+  LEGACY_PAID_TIERS_UNMETERED,
   MINIMUM_CREDIT_FOR_RUN,
   accountMetersCompute,
+  accountRowMetersCompute,
   isCreditPlanAccount,
   isLegacyAccount,
   isPaidTier,

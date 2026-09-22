@@ -10,7 +10,7 @@ import React from 'react';
 import { View, Image } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Zap, ChevronRight } from 'lucide-react-native';
+import { LightningIcon as Zap, CaretRightIcon as ChevronRight } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { Loading } from '../loading/loading';

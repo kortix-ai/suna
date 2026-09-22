@@ -338,7 +338,7 @@ describe('GitHub App project repository auth', () => {
 
     const attempt = verifyGitHubInstallationAdmin('user-token', {
       id: 42,
-      account: { login: 'libremax', type: 'Organization' },
+      account: { login: 'acme-corp', type: 'Organization' },
       permissions: { contents: 'write', metadata: 'read' },
     });
     await expect(attempt).rejects.toBeInstanceOf(GitHubAppPermissionError);
@@ -360,13 +360,13 @@ describe('GitHub App project repository auth', () => {
 
     const attempt = verifyGitHubInstallationAdmin('user-token', {
       id: 42,
-      account: { login: 'libremax', type: 'Organization' },
+      account: { login: 'acme-corp', type: 'Organization' },
       permissions: { contents: 'write', metadata: 'read' },
-      html_url: 'https://github.com/organizations/libremax/settings/installations/42',
+      html_url: 'https://github.com/organizations/acme-corp/settings/installations/42',
     });
     await expect(attempt).rejects.toMatchObject({ scope: 'installation', missing: ['members'] });
     await expect(attempt).rejects.toThrow(
-      'https://github.com/organizations/libremax/settings/installations/42',
+      'https://github.com/organizations/acme-corp/settings/installations/42',
     );
     resetGitHubAppSlugCache();
   });
@@ -382,7 +382,7 @@ describe('GitHub App project repository auth', () => {
       return json(
         {
           message:
-            'Although you appear to have the correct authorization credentials, the `libremax` ' +
+            'Although you appear to have the correct authorization credentials, the `acme-corp` ' +
             'organization has an IP allow list enabled, and your IP address is not permitted to access this resource.',
         },
         403,
@@ -391,7 +391,7 @@ describe('GitHub App project repository auth', () => {
 
     const attempt = verifyGitHubInstallationAdmin('user-token', {
       id: 42,
-      account: { login: 'libremax', type: 'Organization' },
+      account: { login: 'acme-corp', type: 'Organization' },
       permissions: { members: 'read' },
     });
     await expect(attempt).rejects.toBeInstanceOf(GitHubIpAllowListError);
@@ -415,7 +415,7 @@ describe('GitHub App project repository auth', () => {
 
     const attempt = verifyGitHubInstallationAdmin('user-token', {
       id: 42,
-      account: { login: 'libremax', type: 'Organization' },
+      account: { login: 'acme-corp', type: 'Organization' },
       permissions: { members: 'read' },
     });
     await expect(attempt).rejects.toBeInstanceOf(GitHubSamlSsoError);
@@ -436,7 +436,7 @@ describe('GitHub App project repository auth', () => {
     await expect(
       verifyGitHubInstallationAdmin('user-token', {
         id: 42,
-        account: { login: 'libremax', type: 'Organization' },
+        account: { login: 'acme-corp', type: 'Organization' },
       }),
     ).rejects.toBeInstanceOf(GitHubAppPermissionError);
     resetGitHubAppSlugCache();

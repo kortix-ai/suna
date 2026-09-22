@@ -142,12 +142,32 @@ describe('every Linux job keeps the Blacksmith runner kill switch', () => {
   );
   const tiered =
     /^\$\{\{ vars\.CI_RUNNER_(S|M|L|L_ARM|M_2204) \|\| 'blacksmith-(2|4|8)vcpu-ubuntu-2(2|4)04(-arm)?' \}\}$/;
+  const githubHostedRunnerJobs = new Set([
+    'deploy-prod.yml:publish-llm-catalog',
+    'deploy-prod.yml:publish-sdk',
+    'deploy-prod.yml:publish-agent-tunnel',
+    'deploy-prod.yml:publish-executor-sdk',
+  ]);
 
   it.each(workflows)('%s', (name) => {
     const source = read(name);
-    for (const [, value] of source.matchAll(/^ {4}runs-on: (.+)$/gm)) {
+    const seenGithubHostedRunnerJobs = new Set<string>();
+    for (const match of source.matchAll(/^ {4}runs-on: (.+)$/gm)) {
+      const value = match[1];
       if (value === '${{ matrix.runner }}') continue;
+      const job = Array.from(source.slice(0, match.index).matchAll(/^ {2}([a-z0-9-]+):$/gm)).at(
+        -1,
+      )?.[1];
+      const key = `${name}:${job}`;
+      if (githubHostedRunnerJobs.has(key)) {
+        expect(value, `runs-on in ${key}`).toBe('ubuntu-latest');
+        seenGithubHostedRunnerJobs.add(key);
+        continue;
+      }
       expect(value, `runs-on in ${name}`).toMatch(tiered);
+    }
+    if (name === 'deploy-prod.yml') {
+      expect(seenGithubHostedRunnerJobs).toEqual(githubHostedRunnerJobs);
     }
     for (const [, value] of source.matchAll(/^ {12}runner: (.+)$/gm)) {
       // macOS and Windows stay GitHub-hosted: free on this public repo, and

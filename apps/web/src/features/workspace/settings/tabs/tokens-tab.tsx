@@ -190,14 +190,13 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
   const [revokeTarget, setRevokeTarget] = useState<ApiKeyRow | null>(null);
   const queryClient = useQueryClient();
 
-  // `token.create` / `token.revoke` are admin leaves today
-  // (`apps/api/src/iam/role-perms.ts` — `ADMIN_EXTRAS`), so a plain member of
-  // someone else's account can READ their keys here but not mint one. This tab
-  // reports that instead of offering a button the API answers 403 to; whether
-  // minting your own key should be a member-level right is an IAM decision,
-  // not this pane's to make.
-  const canCreate = usePermission(accountId, 'token.create').allowed === true;
-  const canRevoke = usePermission(accountId, 'token.revoke').allowed === true;
+  // Every row here is the caller's OWN hand-minted key (`mine: true`), so the
+  // gates are the personal leaves every system account role holds — a plain
+  // member can mint and revoke their own keys. An account that denies
+  // `token.personal.*` by policy gets the read-only view instead of a button
+  // the API answers 403 to.
+  const canCreate = usePermission(accountId, 'token.personal.create').allowed === true;
+  const canRevoke = usePermission(accountId, 'token.personal.revoke').allowed === true;
 
   const tokensQuery = useQuery({
     queryKey: MY_TOKENS_KEY(accountId ?? ''),
