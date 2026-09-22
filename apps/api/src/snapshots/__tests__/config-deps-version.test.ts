@@ -19,11 +19,14 @@ describe('opencode config dependencies', () => {
     expect(pkg.dependencies?.['@opencode-ai/plugin']).toBeUndefined();
   });
 
-  test('keeps one exact runtime dependency', () => {
+  test('keeps the exact starter runtime dependencies', () => {
     const pkg = JSON.parse(readFileSync(STARTER_CONFIG_PKG, 'utf8')) as {
       dependencies?: Record<string, string>;
     };
 
-    expect(pkg.dependencies).toEqual({ zod: '4.1.8' });
+    expect(pkg.dependencies).toEqual({
+      '@modelcontextprotocol/sdk': '^1.30.0',
+      zod: '4.1.8',
+    });
   });
 });

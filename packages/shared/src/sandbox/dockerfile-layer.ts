@@ -548,8 +548,8 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     '',
     // Pre-install the OpenCode tool/plugin dependencies once, at image-build time,
     // into a stable baked location. The cloned config dir's plugin + tools import
-    // @opencode-ai/plugin (+ its effect/zod/@opencode-ai/sdk tree) and
-    // @mendable/firecrawl-js / @tavily/core / replicate, and OpenCode runs
+    // @opencode-ai/plugin (+ its effect/zod/@opencode-ai/sdk tree),
+    // @modelcontextprotocol/sdk, and the provider packages. OpenCode runs
     // `bun install` in that dir the first time a session opens — but node_modules/
     // bun.lock are gitignored, so that boot install would otherwise fetch over the
     // network (a 1.5–6s — sometimes minutes — stall on the session hot path). The
@@ -566,15 +566,11 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // the matching plugin on EVERY boot — the ~5–8s "opencode-session-created" gap.
     // Baking the binary version makes opencode find it already present → no fetch.
     // Bump RUNTIME_LAYER_VERSION in templates.ts when this step changes.
-    // NOTE: this dependency set (and the "axios"/"form-data" security overrides
-    // below) is duplicated in packages/starter/templates/base/.kortix/opencode/package.json.
-    // Keep both in sync —
-    // a version bump made in only one place is exactly how this file's axios
-    // override once diverged and shipped a bundle-breaking install (see the
-    // verification RUN step right below, added after that incident).
+    // The starter's direct dependencies must be in this baked set. Pin versions
+    // resolved by its bun.lock so the later offline config install can use the cache.
     'RUN mkdir -p /opt/kortix/opencode-config-deps \\',
     '    && cd /opt/kortix/opencode-config-deps \\',
-    `    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"${opencodeVersion}","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.18.0","form-data":"4.0.6"}}' > package.json \\`,
+    `    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@modelcontextprotocol/sdk":"1.30.0","@opencode-ai/plugin":"${opencodeVersion}","@tavily/core":"^0.7.3","replicate":"^1.4.0","zod":"4.1.8"},"overrides":{"axios":"1.18.0","form-data":"4.0.6"}}' > package.json \\`,
     '    && bun install',
     '',
     // Verify the baked tree is actually usable by OpenCode's own runtime

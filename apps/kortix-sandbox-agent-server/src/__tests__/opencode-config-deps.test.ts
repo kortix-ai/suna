@@ -73,6 +73,38 @@ describe('ensureOpencodeConfigDeps', () => {
     }
   })
 
+  it('suppresses OpenCode plugin installation for the Parallel starter ABI', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'oc-deps-'))
+    try {
+      const configDir = join(root, 'config')
+      const bakedDir = join(root, 'baked')
+      await mkdir(configDir, { recursive: true })
+      await mkdir(join(bakedDir, 'node_modules', 'zod'), { recursive: true })
+      await writeFile(
+        join(configDir, 'package.json'),
+        JSON.stringify({
+          name: 'kortix-opencode-config',
+          private: true,
+          kortixToolAbi: 1,
+          dependencies: { '@modelcontextprotocol/sdk': '^1.30.0', zod: '4.1.8' },
+        }),
+      )
+      await writeFile(join(configDir, 'bun.lock'), '{"lockfileVersion":1}')
+      await writeFile(join(bakedDir, 'bun.lock'), '{"lockfileVersion":1}')
+
+      await ensureOpencodeConfigDeps(configDir, { bakedDir })
+
+      const packageLock = JSON.parse(await readFile(join(configDir, 'package-lock.json'), 'utf8'))
+      expect(packageLock.packages[''].dependencies).toEqual({
+        '@opencode-ai/plugin': '*',
+        '@modelcontextprotocol/sdk': '^1.30.0',
+        zod: '4.1.8',
+      })
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   it('does not replace a user package lock for a customized config', async () => {
     const root = await mkdtemp(join(tmpdir(), 'oc-deps-'))
     try {
@@ -279,7 +311,7 @@ describe('ensureOpencodeConfigDeps working-tree cleanliness', () => {
           name: 'kortix-opencode-config',
           private: true,
           kortixToolAbi: 1,
-          dependencies: { zod: '4.1.8' },
+          dependencies: { '@modelcontextprotocol/sdk': '^1.30.0', zod: '4.1.8' },
         },
         null,
         2,
@@ -315,6 +347,7 @@ describe('ensureOpencodeConfigDeps working-tree cleanliness', () => {
       expect(packageLock.kortixOpenCodeInstallSentinel).toBe(1)
       expect(packageLock.packages[''].dependencies).toEqual({
         '@opencode-ai/plugin': '*',
+        '@modelcontextprotocol/sdk': '^1.30.0',
         zod: '4.1.8',
       })
       // …and boot left the user's repository byte-for-byte clean.

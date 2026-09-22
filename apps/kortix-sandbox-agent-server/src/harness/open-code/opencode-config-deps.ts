@@ -65,12 +65,15 @@ async function filesMatch(left: string, right: string): Promise<boolean> {
 }
 
 function isLocalToolAbiPackage(value: ConfigPackageJson): value is ConfigPackageJson & {
-  dependencies: { zod: '4.1.8' }
+  dependencies: { zod: '4.1.8'; '@modelcontextprotocol/sdk'?: '^1.30.0' }
 } {
   if (value.kortixToolAbi !== LOCAL_TOOL_ABI) return false
   if (!value.dependencies || typeof value.dependencies !== 'object') return false
   const dependencies = value.dependencies as Record<string, unknown>
-  return Object.keys(dependencies).length === 1 && dependencies.zod === '4.1.8'
+  if (dependencies.zod !== '4.1.8') return false
+  const names = Object.keys(dependencies)
+  return names.length === 1 ||
+    (names.length === 2 && dependencies['@modelcontextprotocol/sdk'] === '^1.30.0')
 }
 
 async function writeInstallSentinel(configDir: string): Promise<boolean> {
@@ -97,7 +100,7 @@ async function writeInstallSentinel(configDir: string): Promise<boolean> {
   // that the plugin exists in node_modules.
   const dependencies = {
     '@opencode-ai/plugin': '*',
-    zod: '4.1.8',
+    ...packageJson.dependencies,
   }
   const sentinel = {
     name: typeof packageJson.name === 'string' ? packageJson.name : 'kortix-opencode-config',
