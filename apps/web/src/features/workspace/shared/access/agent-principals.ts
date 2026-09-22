@@ -19,8 +19,10 @@ import {
   getRolePermissions,
   listAgentIdentities,
   listAssignments,
+  listRoles,
   type AgentIdentity,
   type FeatureFlagKey,
+  type IamRole,
   type RoleAssignment,
 } from '@kortix/sdk';
 import { useFeatureFlag } from '@kortix/sdk/react';
@@ -129,6 +131,26 @@ export function ceilingAssignments(
   );
 }
 
+/**
+ * The id `GET /iam/roles/:roleId/permissions` answers for an assignment's role.
+ * A custom role is addressed by its assignment `role_id`. A system role is
+ * not: the assignment carries the seeded row's uuid, while the route knows
+ * system roles by their wire id (`builtin:user` is the project `member`), so
+ * it is looked up in the roles list by key and scope. Null when the roles list
+ * does not name it.
+ */
+export function rolePermissionsId(
+  assignment: Pick<RoleAssignment, 'role_id' | 'role_key' | 'role_is_system' | 'scope_type'>,
+  roles: readonly Pick<IamRole, 'role_id' | 'key' | 'is_system' | 'resource_type'>[] | undefined,
+): string | null {
+  if (!assignment.role_is_system) return assignment.role_id;
+  const resource = assignment.scope_type === 'project' ? 'project' : 'account';
+  return (
+    roles?.find((r) => r.is_system && r.key === assignment.role_key && r.resource_type === resource)
+      ?.role_id ?? null
+  );
+}
+
 export const agentIdentitiesQueryKey = (accountId: string | undefined) =>
   ['iam-agent-identities', accountId] as const;
 
@@ -207,7 +229,20 @@ export function useAgentAuthority({
         : [],
     [assignmentsQuery.data, identity, projectId],
   );
-  const roleIds = [...new Set(rows.map((r) => r.role_id))];
+  const rolesQuery = useQuery({
+    queryKey: ['iam-roles', accountId],
+    queryFn: () => listRoles(accountId as string),
+    enabled: !!accountId && rows.length > 0,
+    staleTime: 30_000,
+    retry: false,
+  });
+  const roleIds = [
+    ...new Set(
+      rows
+        .map((r) => rolePermissionsId(r, rolesQuery.data))
+        .filter((id): id is string => id !== null),
+    ),
+  ];
   const permissionQueries = useQueries({
     queries: roleIds.map((roleId) => ({
       queryKey: ['iam-role-permissions', accountId, roleId],
@@ -222,8 +257,15 @@ export function useAgentAuthority({
   else if (identities.isLoading || (identity && assignmentsQuery.isLoading)) {
     ceiling = { kind: 'loading' };
   } else if (!identity || rows.length === 0) ceiling = { kind: 'default' };
-  else if (permissionQueries.some((q) => q.isLoading)) ceiling = { kind: 'loading' };
-  else if (permissionQueries.some((q) => q.isError)) ceiling = { kind: 'hidden' };
+  else if (rolesQuery.isLoading || permissionQueries.some((q) => q.isLoading)) {
+    ceiling = { kind: 'loading' };
+  } else if (
+    rolesQuery.isError ||
+    roleIds.length === 0 ||
+    permissionQueries.some((q) => q.isError)
+  ) {
+    ceiling = { kind: 'hidden' };
+  }
   else {
     ceiling = {
       kind: 'roles',

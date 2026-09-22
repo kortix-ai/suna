@@ -33,6 +33,7 @@ import {
   useProjectAgentAssignments,
 } from '@/features/workspace/shared/access/agent-principals';
 import { useTranslations } from '@/i18n/use-translations';
+import { cn } from '@/lib/utils';
 import { listRoles, revokeAssignment, type ProjectRole, type RoleAssignment } from '@kortix/sdk';
 import { invalidatePermissionProbes } from '@kortix/sdk/react';
 import { PencilSimpleIcon, RobotIcon, TrashIcon } from '@phosphor-icons/react';
@@ -142,9 +143,7 @@ export function ProjectAgentAccessList({
               }
               metaParts={[
                 <span key="ceiling">{t('rowMeta')}</span>,
-                <span key="expires" className="tabular-nums">
-                  {formatExpiry(row.assignment.expires_at, tI18nComplete).label}
-                </span>,
+                <AgentExpiryMeta key="expires" expiresAt={row.assignment.expires_at} />,
               ]}
               trailing={roleLabel(row.assignment)}
               kebab={kebab}
@@ -204,5 +203,19 @@ export function ProjectAgentAccessList({
         }}
       />
     </>
+  );
+}
+
+/** "Expires never" / "Expires <date>" — the same meta the member rows show. */
+function AgentExpiryMeta({ expiresAt }: { expiresAt: string | null }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const expiry = formatExpiry(expiresAt, tI18nComplete);
+  if (!expiry.bounded) {
+    return <span className="tabular-nums">{tI18nComplete.raw('text1342ec89ae42')}</span>;
+  }
+  return (
+    <span className={cn('tabular-nums', expiry.expired ? 'text-kortix-red' : 'text-kortix-yellow')}>
+      {tI18nComplete.raw('textf6725f3af08a')} {expiry.label}
+    </span>
   );
 }

@@ -9,6 +9,7 @@ import {
   ceilingAssignments,
   computeAgentAuthority,
   expandPermissionGrant,
+  rolePermissionsId,
 } from './agent-principals';
 
 describe('computeAgentAuthority — kortix_permissions ∩ ceiling − HUMAN_ONLY', () => {
@@ -98,5 +99,35 @@ describe('agent identity + ceiling assignment selection', () => {
       'keep-project',
       'keep-account',
     ]);
+  });
+});
+
+describe('rolePermissionsId — system roles go by wire id, custom roles by id', () => {
+  const roles = [
+    { role_id: 'builtin:user', key: 'member', is_system: true, resource_type: 'project' as const },
+    { role_id: 'builtin:member', key: 'member', is_system: true, resource_type: 'account' as const },
+    { role_id: 'builtin:manager', key: 'manager', is_system: true, resource_type: 'project' as const },
+  ];
+  test('a project `member` assignment resolves to builtin:user, not the account member', () => {
+    expect(
+      rolePermissionsId(
+        { role_id: 'uuid-1', role_key: 'member', role_is_system: true, scope_type: 'project' },
+        roles,
+      ),
+    ).toBe('builtin:user');
+  });
+  test('a custom role keeps its own id; an unknown system role is null', () => {
+    expect(
+      rolePermissionsId(
+        { role_id: 'custom-9', role_key: 'finance', role_is_system: false, scope_type: 'project' },
+        roles,
+      ),
+    ).toBe('custom-9');
+    expect(
+      rolePermissionsId(
+        { role_id: 'uuid-2', role_key: 'viewer', role_is_system: true, scope_type: 'project' },
+        roles,
+      ),
+    ).toBeNull();
   });
 });
