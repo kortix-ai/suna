@@ -8,6 +8,8 @@ import {
   resolveProjectAutomationActor as resolveLifecycleAutomationActor,
 } from '../../projects/session-lifecycle';
 import { currentChannelSelection } from '../slack/selection';
+import { startErrorMessage, TEAMS_START_ERROR_COMMANDS } from '../start-error';
+import { buildAgentUnavailableCard } from './agent-picker';
 import { resolveAgentGrant } from '../../projects/agents';
 import { EVENT_DEDUPE_TTL_MS } from './app';
 import { ensureTeamsConversationBinding, teamsChannelCtx } from './binding';
@@ -21,6 +23,7 @@ import {
   noticeOnLiveCard,
   persistServiceUrl,
   saveTurn,
+  showStopOnLiveCard,
   startTurn,
 } from './turn';
 import { sessionWebUrl } from '../slack/util';
@@ -142,6 +145,8 @@ async function bindTurnToSession(handle: TeamsLiveTurn | null, sessionId: string
   if (!handle) return;
   handle.sessionId = sessionId;
   await saveTurn(handle);
+  // Stop is only paintable once the card knows which session it would end.
+  await showStopOnLiveCard(handle);
 }
 
 const ERROR_NOTICE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -268,6 +273,18 @@ async function deliverFollowUp(input: {
 
   // An image is unreadable on a text-only model, so THIS turn runs on the
   // configured vision model. The session's own pin is untouched.
+  // Backfill the conversation's display name on every message, not only at
+  // session creation: a channel bound before the name was read off the
+  // activity showed a raw `19:…@thread.tacv2;messageid=…` in the bindings
+  // table forever. The binding helper keeps its own per-process cache, so a
+  // settled conversation costs nothing.
+  void ensureTeamsConversationBinding({
+    projectId,
+    tenantId,
+    conversationId,
+    ...describeTeamsConversation(activity),
+  }).catch((err) => console.warn('[teams-webhook] binding backfill failed', err));
+
   const hasImage = teamsMessageHasImage(activity);
   const currentModel = sessionModelOf(input.sessionMetadata);
   const turnModel = await channelTurnModel({
@@ -444,7 +461,7 @@ export async function createOrJoinTeamsConversationSession(input: {
         tenantId,
         conversationId,
       });
-      if (handle) await finalizeTurn(handle, { error: startErrorMessage(undefined) });
+      if (handle) await finalizeTurn(handle, { error: startError(undefined, undefined) });
     }
     return;
   }
@@ -503,7 +520,27 @@ export async function createOrJoinTeamsConversationSession(input: {
 
   if (result.error) {
     console.error('[teams-webhook] createProjectSession failed', { status: result.error.status, body: result.error.body });
-    if (handle) await finalizeTurn(handle, { error: startErrorMessage(result.error.status) });
+    if (handle) {
+      // A deleted / renamed / disabled agent is rejected up front as
+      // `400 AGENT_NOT_DECLARED`, and no amount of retrying revives it. Hand
+      // over the picker instead of a line of text, so one tap re-points the
+      // conversation at a live agent.
+      const code = (result.error.body as { code?: string } | undefined)?.code;
+      if (code === 'AGENT_NOT_DECLARED' && tenantId && conversationId) {
+        await finalizeTurn(handle, {
+          title: "Couldn't start — pick an agent",
+          card: await buildAgentUnavailableCard({
+            tenantId,
+            conversationId,
+            projectId,
+            badAgent: selection?.agentName ?? null,
+            teamsUserId: teamsUserId(activity),
+          }),
+        });
+      } else {
+        await finalizeTurn(handle, { error: startError(result.error.status, result.error.body) });
+      }
+    }
     return;
   }
 
@@ -527,17 +564,12 @@ export async function createOrJoinTeamsConversationSession(input: {
   }
 }
 
-function startErrorMessage(status: number | undefined): string {
-  if (status === 402) {
-    return "This workspace is out of credits, so I can't start a session. Top up in the Kortix dashboard and send your message again.";
-  }
-  if (status === 429) {
-    return 'This workspace is at its concurrent-session limit right now. Close or finish a running session, then send your message again.';
-  }
-  if (status === 404) {
-    return "I couldn't find this project to start a session — it may have been moved or deleted. Reconnect Kortix to this team and try again.";
-  }
-  return "I couldn't start a session just now. Give it a moment and send your message again — I'll reply right here.";
+// Teams' binding of the shared channel start-error classifier. It used to map
+// only 402 / 429 / 404: every error CODE and every 400, 403, 409 and 5xx
+// collapsed into "give it a moment and send your message again", which is the
+// wrong instruction for a dead sandbox template or an unlinked account.
+function startError(status: number | undefined, body: unknown): string {
+  return startErrorMessage(status, body, TEAMS_START_ERROR_COMMANDS);
 }
 
 function queuedMessage(reason?: string): string {

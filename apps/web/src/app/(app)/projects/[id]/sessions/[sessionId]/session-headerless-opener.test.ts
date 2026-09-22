@@ -60,12 +60,12 @@ describe('headerless session surfaces carry the sidebar opener', () => {
     expect(wrapper).toContain('relative');
   });
 
-  // Four of these: the session-switch loader, the wake-ladder holding loader
-  // (added with the wake auto-escalation ladder, #6916), the auto-resume
+  // Five of these: the session-switch loader, the rolling-deploy repository
+  // compatibility loader, the wake-ladder holding loader, the auto-resume
   // loader, and the boot overlay's loader. None of them renders a header.
   test('every SessionStartingLoader on this route is wrapped', () => {
     const sites = allIndexesOf('<SessionStartingLoader');
-    expect(sites.length).toBe(4);
+    expect(sites.length).toBe(5);
     for (const at of sites) expect(insideSurface(at)).toBe(true);
   });
 

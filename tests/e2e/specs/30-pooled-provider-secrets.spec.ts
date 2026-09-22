@@ -318,9 +318,20 @@ test.describe('30 — pooled provider secrets', () => {
         label: 'Second provider key', value: 'fake-openai-key', consumer: 'llm_gateway', strategy: 'broker',
       }, 201);
       createdIds.push(secondProvider.secret_id);
+      // Secrets catalog down + connectors inheriting = nothing for the scope PUT
+      // to carry. A keys-only Save must not send `{}` (the API answers 400).
+      await page.route(`**/v1/projects/${projectId}/secrets`, async (route) => {
+        if (route.request().method() === 'GET') await route.fulfill({ status: 503, json: { error: 'Secrets unavailable' } });
+        else await route.continue();
+      });
+      const scopeWrites: string[] = [];
+      page.on('request', (request) => {
+        if (request.method() === 'PUT' && request.url().endsWith(`/sessions/${existingSession}/scope`)) scopeWrites.push(request.postData() ?? '');
+      });
       await page.setViewportSize({ width: 720, height: 480 });
       await page.goto(`/projects/${projectId}/sessions/${existingSession}`, { waitUntil: 'domcontentloaded' });
       await page.getByRole('button', { name: 'Session overrides' }).click();
+      await expect(page.getByRole('button', { name: /^Secrets Unavailable/ })).toBeVisible();
       await page.getByRole('button', { name: 'Provider keys 1 key selected Override', exact: true }).click();
       await expect(page.getByRole('checkbox', { name: 'Backup test key for shared research and development sessions' })).toBeChecked();
       const saveChanges = page.getByRole('button', { name: 'Save changes', exact: true });
@@ -396,10 +407,14 @@ test.describe('30 — pooled provider secrets', () => {
       const saveResponse = page.waitForResponse((response) => response.request().method() === 'PUT'
         && response.url().endsWith(`${poolPath}/anthropic`) && response.status() === 200);
       await saveChanges.click();
-      expect((await saveResponse).request().postDataJSON()).toEqual({ secret_ids: [] });
+      // Unchecking the last key resets to the default; an empty pool fails every turn.
+      expect((await saveResponse).request().postDataJSON()).toEqual({ secret_ids: null });
       await expect(page.getByRole('dialog', { name: 'Session overrides', exact: true })).toHaveCount(0);
-      expect((await api<{ pools: Array<{ provider_id: string; secret_ids: string[] }> }>(session.access_token, 'GET', poolPath)).pools)
-        .toContainEqual(expect.objectContaining({ provider_id: 'anthropic', secret_ids: [] }));
+      await expect(page.getByText('Validation failed')).toHaveCount(0);
+      expect(scopeWrites).toEqual([]);
+      await page.unroute(`**/v1/projects/${projectId}/secrets`);
+      expect((await api<{ pools: Array<{ provider_id: string; secret_ids: string[] }> }>(session.access_token, 'GET', poolPath)).pools
+        .map((pool) => pool.provider_id)).not.toContain('anthropic');
       await page.unroute(`**/v1${poolPath}/anthropic`);
       expect((await api<{ secret_ids: string[] }>(session.access_token, 'GET', `${poolPath}/openai`)).secret_ids).toEqual([secondProvider.secret_id]);
       await api(session.access_token, 'PUT', `${poolPath}/openai`, { secret_ids: null });

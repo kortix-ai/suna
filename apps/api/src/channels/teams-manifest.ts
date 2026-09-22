@@ -65,6 +65,7 @@ const BOT_COMMANDS = [
   { title: '/models', description: 'Pick the model for this conversation' },
   { title: '/agents', description: 'Pick the agent for this conversation' },
   { title: '/projects', description: 'List connected projects' },
+  { title: '/stop', description: 'Stop the run in progress here' },
   { title: '/policy', description: 'Who may join sessions started here' },
 ];
 

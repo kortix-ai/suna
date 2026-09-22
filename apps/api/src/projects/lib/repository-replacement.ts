@@ -201,8 +201,8 @@ export async function persistProjectRepositoryReplacement(input: {
       ? oldProject.metadata as Record<string, unknown> : {};
     const metadata = {
       ...existingMetadata,
-      // Old sessions have no matching generation and cannot resume or use the
-      // project-scoped Git proxy against this new upstream.
+      // Old sessions keep this mismatch as a UI warning. Their stable project
+      // Git proxy origin resolves the current upstream under normal ref policy.
       repository_generation: randomUUID(),
       git: {
         url: input.repo.clone_url, default_branch: input.defaultBranch,

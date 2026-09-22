@@ -130,12 +130,12 @@ async function relayTurnStream(
     card?: Record<string, unknown>;
     form?: Record<string, unknown>;
   } = {},
-): Promise<boolean> {
+): Promise<{ ok: boolean; reason?: string }> {
   const projectId = kortixProjectId();
   const sessionId = kortixSessionId();
-  if (!projectId || !sessionId) return false;
+  if (!projectId || !sessionId) return { ok: false, reason: 'no_session_env' };
   try {
-    const r = await kortixPost<{ ok?: boolean }>(`/projects/${projectId}/turn-stream`, {
+    const r = await kortixPost<{ ok?: boolean; reason?: string }>(`/projects/${projectId}/turn-stream`, {
       session_id: sessionId,
       kind,
       text,
@@ -145,9 +145,9 @@ async function relayTurnStream(
       ...(extras.card ? { card: extras.card } : {}),
       ...(extras.form ? { form: extras.form } : {}),
     });
-    return r?.ok === true;
-  } catch {
-    return false;
+    return r?.ok === true ? { ok: true } : { ok: false, reason: r?.reason ?? 'not_relayed' };
+  } catch (err) {
+    return { ok: false, reason: err instanceof CliError ? err.message : 'relay_request_failed' };
   }
 }
 
@@ -187,8 +187,21 @@ async function main(): Promise<void> {
       const output = flags.output?.trim() || undefined;
       const sources = readSourcesFlag(flags);
       const relayed = await relayTurnStream('step', text, { detail, output, sources });
-      out({ ok: true, relayed });
-      break;
+      if (relayed.ok) {
+        out({ ok: true, relayed: true });
+        break;
+      }
+      // Loud on purpose, same as `slack step`. `ok: true, relayed: false` made
+      // a dropped checkpoint indistinguishable from a delivered one
+      // (INC-2026-09-08-CONNECTOR-GATEWAY, S3) — and on Teams it also sent the
+      // agent hunting: it read `ok: true`, carried on, then hit "no active
+      // turn" on `send` and spent the rest of the run debugging the relay.
+      throw new CliError(
+        `Progress step was not relayed to Teams (${relayed.reason}). The turn is over — stop here rather than retrying.`,
+        'STEP_NOT_RELAYED',
+        1,
+        { relayed: false, reason: relayed.reason },
+      );
     }
     case 'send': {
       if (flags.file) {
@@ -210,11 +223,16 @@ async function main(): Promise<void> {
       if (!text && !card)
         throw new CliError('message text required, e.g. teams send "Done — here is the summary"');
       const relayed = await relayTurnStream('answer', (text ?? 'Done.').slice(0, 11000), { card });
-      if (relayed) {
+      if (relayed.ok) {
         out({ ok: true, delivered: card ? 'card' : 'stream' });
         break;
       }
-      throw new CliError('No active Teams turn to answer.');
+      throw new CliError(
+        `No active Teams turn to answer (${relayed.reason}). The turn is over — stop here rather than retrying.`,
+        'SEND_NOT_RELAYED',
+        1,
+        { reason: relayed.reason },
+      );
     }
     case 'ask': {
       if (!flags['form-file']) throw new CliError('--form-file <path> required');
@@ -229,11 +247,16 @@ async function main(): Promise<void> {
       }
       const text = readTextFlag(flags) ?? args[0] ?? 'A few details, please.';
       const relayed = await relayTurnStream('answer', text, { form });
-      if (relayed) {
+      if (relayed.ok) {
         out({ ok: true, delivered: 'form' });
         break;
       }
-      throw new CliError('No active Teams turn to post a form into.');
+      throw new CliError(
+        `No active Teams turn to post a form into (${relayed.reason}). The turn is over — stop here rather than retrying.`,
+        'SEND_NOT_RELAYED',
+        1,
+        { reason: relayed.reason },
+      );
     }
     case 'conversations': {
       const projectId = kortixProjectId();
