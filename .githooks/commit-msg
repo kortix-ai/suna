@@ -1,4 +1,6 @@
 #!/bin/sh
 # No customer data in commit messages: refuse a message with a blocked term.
 # See scripts/check-blocked-terms.sh and AGENTS.md.
-exec sh scripts/check-blocked-terms.sh message "$1"
+# Run the script beside these hooks: every worktree uses the PRIMARY checkout's
+# hooks, and an older worktree has no copy of the script.
+exec sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-blocked-terms.sh" message "$1"

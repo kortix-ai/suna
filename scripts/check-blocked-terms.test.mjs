@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -121,4 +121,44 @@ test('no decryptable terms: warns and allows', () => {
   assert.equal(res.code, 0);
   assert.match(res.stderr, /could not be decrypted; check skipped/);
   r.cleanup();
+});
+
+// Every worktree runs the PRIMARY checkout's hooks (`core.hooksPath` is an
+// absolute path). A worktree cut before the guard existed has neither the
+// script nor the encrypted term list, so the hooks must reach both through the
+// primary checkout, and a clean commit there must still succeed.
+test('old worktree: primary hooks + primary term list apply; clean commits pass', () => {
+  const primary = repo();
+  const oldCommit = primary.git('rev-parse', 'HEAD').trim();
+  const hooks = join(primary.dir, '.githooks');
+  mkdirSync(hooks);
+  mkdirSync(join(primary.dir, 'scripts'));
+  mkdirSync(join(primary.dir, 'apps/api'), { recursive: true });
+  copyFileSync(SCRIPT, join(primary.dir, 'scripts/check-blocked-terms.sh'));
+  for (const hook of ['commit-msg']) {
+    copyFileSync(resolve(import.meta.dirname, '../.githooks', hook), join(hooks, hook));
+    chmodSync(join(hooks, hook), 0o755);
+  }
+  // Plaintext here is a TEST fixture with a synthetic term; the real list is encrypted.
+  writeFileSync(join(primary.dir, 'apps/api/.env'), 'BLOCKED_COMMIT_TERMS="acme"\n');
+  primary.git('add', '.');
+  primary.git('commit', '-qm', 'guard');
+  primary.git('config', 'core.hooksPath', hooks);
+
+  const wt = mkdtempSync(join(tmpdir(), 'blocked-terms-wt-'));
+  rmSync(wt, { recursive: true });
+  primary.git('worktree', 'add', '-q', '-b', 'old', wt, oldCommit);
+  const env = { ...process.env };
+  delete env.BLOCKED_COMMIT_TERMS;
+  const commit = (message) =>
+    spawnSync('git', ['commit', '-q', '--allow-empty', '-m', message], { cwd: wt, encoding: 'utf8', env });
+
+  const clean = commit('clean change');
+  assert.equal(clean.status, 0, clean.stderr);
+  const blocked = commit('fix for Acme');
+  assert.equal(blocked.status, 1, blocked.stderr);
+  assert.match(blocked.stderr, /commit message: fix for Acme/);
+
+  primary.cleanup();
+  rmSync(wt, { recursive: true, force: true });
 });

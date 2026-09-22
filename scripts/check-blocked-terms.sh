@@ -22,10 +22,11 @@
 #                                          messages, and the pushed ref names
 #
 # Terms come from `BLOCKED_COMMIT_TERMS` when it is already set in the
-# environment, otherwise from decrypting `apps/api/.env`. In a worktree the
-# private key is read from the primary checkout's `apps/api/.env.keys`. With no
-# key available the guard prints a warning and allows the operation: it cannot
-# know the terms.
+# environment, otherwise from decrypting `apps/api/.env` — this checkout's
+# first, then the primary checkout's (every worktree runs the primary's hooks,
+# and an older worktree may predate the list). Keys come from either checkout's
+# `apps/api/.env.keys`. With no key available the guard prints a warning and
+# allows the operation: it cannot know the terms.
 set -e
 
 mode="$1"
@@ -35,18 +36,27 @@ load_terms() {
     printf '%s' "$BLOCKED_COMMIT_TERMS"
     return 0
   fi
-  if command -v dotenvx >/dev/null 2>&1; then dx="dotenvx"
-  elif [ -x "node_modules/.bin/dotenvx" ]; then dx="node_modules/.bin/dotenvx"
-  else return 1; fi
+  here=$(cd "$(dirname "$0")/.." && pwd)
   top=$(git rev-parse --show-toplevel)
   primary=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-  for keys in "$top/apps/api/.env.keys" "$primary/apps/api/.env.keys"; do
-    if [ -f "$keys" ]; then
-      $dx get BLOCKED_COMMIT_TERMS -f "$top/apps/api/.env" -fk "$keys" 2>/dev/null && return 0
-    fi
+  if command -v dotenvx >/dev/null 2>&1; then dx="dotenvx"
+  elif [ -x "$top/node_modules/.bin/dotenvx" ]; then dx="$top/node_modules/.bin/dotenvx"
+  elif [ -x "$here/node_modules/.bin/dotenvx" ]; then dx="$here/node_modules/.bin/dotenvx"
+  elif [ -x "$primary/node_modules/.bin/dotenvx" ]; then dx="$primary/node_modules/.bin/dotenvx"
+  else return 1; fi
+  # This checkout's list first, then the one beside the hooks, then the
+  # primary's: a worktree cut before a term was added (or before the guard
+  # existed) still gets the current list.
+  for env in "$top/apps/api/.env" "$here/apps/api/.env" "$primary/apps/api/.env"; do
+    [ -f "$env" ] || continue
+    for keys in "$top/apps/api/.env.keys" "$here/apps/api/.env.keys" "$primary/apps/api/.env.keys"; do
+      [ -f "$keys" ] || continue
+      out=$($dx get BLOCKED_COMMIT_TERMS -f "$env" -fk "$keys" 2>/dev/null) && [ -n "$out" ] && { printf '%s' "$out"; return 0; }
+    done
+    # CI or an Armor login may provide DOTENV_PRIVATE_KEY without a keys file.
+    out=$($dx get BLOCKED_COMMIT_TERMS -f "$env" 2>/dev/null) && [ -n "$out" ] && { printf '%s' "$out"; return 0; }
   done
-  # CI or an Armor login may provide DOTENV_PRIVATE_KEY without a keys file.
-  $dx get BLOCKED_COMMIT_TERMS -f "$top/apps/api/.env" 2>/dev/null
+  return 1
 }
 
 if ! terms=$(load_terms) || [ -z "$terms" ]; then
