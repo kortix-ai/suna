@@ -1008,7 +1008,7 @@ default_agent: w
 agents:
   w:
     kortix_permissions: [project.app.read]
-    apps: [finance-dashboards]
+    apps: [reports-dashboard]
 `);
     expect(valid).toBe(true);
     expect(errorPaths).toEqual([]);
@@ -1055,7 +1055,7 @@ kortix_version: 2
 default_agent: w
 agents:
   w:
-    apps: ["Finance Dashboards"]
+    apps: ["Reports Dashboard"]
 `);
     expect(errorPaths).toContain('agents.w.apps[0]');
   });

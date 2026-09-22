@@ -288,7 +288,7 @@ test('deployment inspection, logs, lifecycle, and rollback use bound identifiers
 
 test('listAppAgents reads the agents whose kortix.yaml `apps:` grant names the App', async () => {
   const agents = [
-    { agent_name: 'finance-report', grant: 'listed' as const, path: 'kortix.yaml#agents.finance-report' },
+    { agent_name: 'report-writer', grant: 'listed' as const, path: 'kortix.yaml#agents.report-writer' },
     { agent_name: 'ops', grant: 'all' as const, path: 'kortix.yaml#agents.ops' },
   ];
   responses.push({ body: { agents } });

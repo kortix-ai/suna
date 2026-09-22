@@ -33,7 +33,7 @@ describe('manifest → AgentSpec.apps', () => {
   test('v2: an explicit slug list, "all", "none", and omitted', () => {
     const { specs, errors } = parseV2(`
   reporter:
-    apps: [finance-dashboards]
+    apps: [reports-dashboard]
   admin:
     apps: all
   closed:
@@ -42,20 +42,20 @@ describe('manifest → AgentSpec.apps', () => {
 `);
     expect(errors).toEqual([]);
     const byName = Object.fromEntries(specs.map((s) => [s.name, s.apps]));
-    expect(byName).toEqual({ reporter: ['finance-dashboards'], admin: 'all', closed: [], quiet: [] });
+    expect(byName).toEqual({ reporter: ['reports-dashboard'], admin: 'all', closed: [], quiet: [] });
   });
 
   test('v1: [[agents]] apps parses with the same grant-set forms; omitted = none', () => {
     const { specs, errors } = parseV1(`
 [[agents]]
 name = "reporter"
-apps = ["finance-dashboards"]
+apps = ["reports-dashboard"]
 
 [[agents]]
 name = "quiet"
 `);
     expect(errors).toEqual([]);
-    expect(specs.find((s) => s.name === 'reporter')?.apps).toEqual(['finance-dashboards']);
+    expect(specs.find((s) => s.name === 'reporter')?.apps).toEqual(['reports-dashboard']);
     expect(specs.find((s) => s.name === 'quiet')?.apps).toEqual([]);
   });
 
@@ -72,12 +72,12 @@ apps = "everything"
     const { specs } = parseV1(`
 [[agents]]
 name = "reporter"
-apps = ["finance-dashboards"]
+apps = ["reports-dashboard"]
 
 [[agents]]
 name = "quiet"
 `);
-    expect(agentSpecToTomlEntry(specs.find((s) => s.name === 'reporter')!).apps).toEqual(['finance-dashboards']);
+    expect(agentSpecToTomlEntry(specs.find((s) => s.name === 'reporter')!).apps).toEqual(['reports-dashboard']);
     expect('apps' in agentSpecToTomlEntry(specs.find((s) => s.name === 'quiet')!)).toBe(false);
   });
 });
@@ -86,14 +86,14 @@ describe('AgentSpec → AgentGrant', () => {
   const loaded = parseV2(`
   reporter:
     kortix_permissions: [project.app.read]
-    apps: [finance-dashboards]
+    apps: [reports-dashboard]
   bystander:
     kortix_permissions: [project.app.read]
 `);
 
   test('a declared apps list reaches the grant', () => {
-    expect(grantFromLoadedAgents('reporter', loaded)?.apps).toEqual(['finance-dashboards']);
-    expect(grantFromLoadedAgents('default', loaded)?.apps).toEqual(['finance-dashboards']);
+    expect(grantFromLoadedAgents('reporter', loaded)?.apps).toEqual(['reports-dashboard']);
+    expect(grantFromLoadedAgents('default', loaded)?.apps).toEqual(['reports-dashboard']);
   });
 
   test('an agent without apps gets a grant without the key (absent = none)', () => {
@@ -103,14 +103,14 @@ describe('AgentSpec → AgentGrant', () => {
 
   test('an unlisted agent in a governed project gets no apps', () => {
     const grant = grantFromLoadedAgents('stranger', loaded)!;
-    expect(agentMayOpenApp(grant, 'finance-dashboards')).toBe(false);
+    expect(agentMayOpenApp(grant, 'reports-dashboard')).toBe(false);
   });
 
   test('resolveGovernedAgentGrant carries apps too', () => {
     const r = resolveGovernedAgentGrant('reporter', loaded, { subject: true, projectDefaultAgent: null });
-    expect(r.ok && r.grant?.apps).toEqual(['finance-dashboards']);
+    expect(r.ok && r.grant?.apps).toEqual(['reports-dashboard']);
     const d = resolveGovernedAgentGrant('default', loaded, { subject: true, projectDefaultAgent: null });
-    expect(d.ok && d.grant?.apps).toEqual(['finance-dashboards']);
+    expect(d.ok && d.grant?.apps).toEqual(['reports-dashboard']);
   });
 });
 

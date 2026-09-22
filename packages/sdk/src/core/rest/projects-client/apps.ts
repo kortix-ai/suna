@@ -299,7 +299,7 @@ export async function getAppAccess(projectId: string, appId: string): Promise<Ap
 export interface AppAgentAccess {
   agent_name: string;
   grant: 'all' | 'listed';
-  /** Where the grant is declared, e.g. `kortix.yaml#agents.finance-report`. */
+  /** Where the grant is declared, e.g. `kortix.yaml#agents.report-writer`. */
   path: string;
 }
 

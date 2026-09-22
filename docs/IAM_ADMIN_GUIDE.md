@@ -567,9 +567,9 @@ agents.
       kortix_permissions: [project.gitops.push, project.trigger.create]   # exactly two powers
       connectors: [github]
       secrets: [DEPLOY_KEY]
-    finance-report:
+    report-writer:
       kortix_permissions: [project.file.read, project.app.read]
-      apps: [finance-dashboards]   # restricted/private Apps this agent may open
+      apps: [reports-dashboard]   # restricted/private Apps this agent may open
   ```
 
   v2 manifests are **deny-by-default**: an agent declared without a grant field gets

@@ -733,7 +733,7 @@ connectors:
     name: 'v2: apps explicit slug list accepted',
     format: 'yaml',
     valid: true,
-    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    apps: [finance-dashboards]\n',
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    apps: [reports-dashboard]\n',
   },
   {
     name: 'v2: apps "none" sentinel accepted',

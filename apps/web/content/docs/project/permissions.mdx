@@ -35,11 +35,11 @@ source of truth.
 
 ```yaml
 agents:
-  finance-report:
+  report-writer:
     kortix_permissions: [project.file.read, project.connector.read, project.app.read]
-    connectors: [finance-dashboards-api]
-    secrets: [FINANCE_DASHBOARDS_WRITE_KEY]
-    apps: [finance-dashboards]
+    connectors: [reports-dashboard-api]
+    secrets: [REPORTS_API_KEY]
+    apps: [reports-dashboard]
 ```
 
 - The list is deny-by-default. An agent without `kortix_permissions` gets none.

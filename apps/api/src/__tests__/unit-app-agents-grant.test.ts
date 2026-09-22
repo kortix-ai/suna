@@ -4,18 +4,18 @@ import { agentsGrantingApp } from '../apps/routes';
 
 describe('agentsGrantingApp — kortix.yaml agents.<name>.apps', () => {
   const agents = {
-    'finance-report': { apps: ['finance-dashboards'] },
+    'report-writer': { apps: ['reports-dashboard'] },
     ops: { apps: 'all' },
     reviewer: { apps: 'none' },
     writer: { apps: ['other-app'] },
     legacy: { kortix_permissions: ['project.read'] },
-    shouty: { apps: ['FINANCE-DASHBOARDS'] },
+    shouty: { apps: ['REPORTS-DASHBOARD'] },
   };
 
   test('lists `all` and slug grants, sorted by name, with the declaring path', () => {
-    expect(agentsGrantingApp(agents, 'finance-dashboards', 'kortix.yaml')).toEqual([
-      { agent_name: 'finance-report', grant: 'listed', path: 'kortix.yaml#agents.finance-report' },
+    expect(agentsGrantingApp(agents, 'reports-dashboard', 'kortix.yaml')).toEqual([
       { agent_name: 'ops', grant: 'all', path: 'kortix.yaml#agents.ops' },
+      { agent_name: 'report-writer', grant: 'listed', path: 'kortix.yaml#agents.report-writer' },
       { agent_name: 'shouty', grant: 'listed', path: 'kortix.yaml#agents.shouty' },
     ]);
   });
