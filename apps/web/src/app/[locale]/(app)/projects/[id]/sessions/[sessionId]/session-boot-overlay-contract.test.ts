@@ -17,7 +17,7 @@ import { resolve } from 'node:path';
 const routeDir = import.meta.dir;
 const page = readFileSync(resolve(routeDir, 'page.tsx'), 'utf8');
 const layout = readFileSync(
-  resolve(routeDir, '../../../../../../features/session/session-layout.tsx'),
+  resolve(routeDir, '../../../../../../../features/session/session-layout.tsx'),
   'utf8',
 );
 

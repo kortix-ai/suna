@@ -12,7 +12,7 @@ import { join } from 'node:path';
 const dir = import.meta.dir;
 const pageSource = readFileSync(join(dir, 'page.tsx'), 'utf8');
 const demoCardSource = readFileSync(
-  join(dir, '../../../components/iam/enterprise-demo-card.tsx'),
+  join(dir, '../../../../components/iam/enterprise-demo-card.tsx'),
   'utf8',
 );
 

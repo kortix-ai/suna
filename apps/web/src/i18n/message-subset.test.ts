@@ -59,8 +59,8 @@ describe('message recorder', () => {
     const recorder = createMessageRecorder(structuredClone(en) as MessageTree);
     const server = createTranslator({
       locale: 'en',
-      messages: recorder.messages as never,
-      namespace: 'hardcodedUi.i18nComplete',
+      messages: recorder.messages as Record<string, never>,
+      namespace: 'hardcodedUi.i18nComplete' as never,
     });
     const first = server.raw('textce34af36d804' as never);
     const scripts = [clientBootScript('en', recorder.takeDelta()!)];
@@ -71,8 +71,8 @@ describe('message recorder', () => {
     expect(boot.l).toBe('en');
     const client = createTranslator({
       locale: 'en',
-      messages: boot.m as never,
-      namespace: 'hardcodedUi.i18nComplete',
+      messages: boot.m as Record<string, never>,
+      namespace: 'hardcodedUi.i18nComplete' as never,
     });
     expect(client.raw('textce34af36d804' as never)).toBe(first);
     expect(client.raw('text2bf70270bfde' as never)).toBe(second);

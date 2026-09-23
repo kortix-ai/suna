@@ -824,7 +824,7 @@ function scanFile(file) {
         file === path.join(srcDir, 'lib/wallpaper-downloads.ts') &&
         localizedDesignSystemText.has(node.text);
       const coveredDesignToken =
-        file === path.join(srcDir, 'app/(public)/(marketing)/design-system/page.tsx') &&
+        file === path.join(srcDir, 'app/[locale]/(public)/(marketing)/design-system/page.tsx') &&
         catalogRoot === 'SHADOW_SCALE' &&
         /^shadow-/.test(node.text);
       const coveredLocalizedSourceCatalog =
@@ -844,9 +844,9 @@ function scanFile(file) {
           ['STAGE_PROGRESS', 'STAGE_LABELS'].includes(catalogRoot)) ||
         (file === path.join(srcDir, 'components/home/interactive-demo/chat/scenarios.tsx') &&
           catalogRoot === 'SCENARIOS') ||
-        (file === path.join(srcDir, 'app/admin/utils/_components/constants.ts') &&
+        (file === path.join(srcDir, 'app/[locale]/admin/utils/_components/constants.ts') &&
           ['MAINTENANCE_LEVELS', 'AVAILABLE_SERVICES'].includes(catalogRoot)) ||
-        (file === path.join(srcDir, 'app/a1o/content.ts') &&
+        (file === path.join(srcDir, 'app/[locale]/a1o/content.ts') &&
           ['LAYERS', 'COPY'].includes(catalogRoot)) ||
         (file === path.join(srcDir, 'features/marketing/download/content.ts') &&
           [
@@ -910,9 +910,9 @@ function scanFile(file) {
         (file === path.join(srcDir, 'features/workspace/settings/tabs/sandbox-tab.tsx') &&
           catalogRoot === 'TEMPLATE_STATE_LABEL') ||
         (file === path.join(srcDir, 'lib/themes.ts') && catalogRoot === 'THEMES') ||
-        (file === path.join(srcDir, 'app/(app)/projects/start/landing-terminal.tsx') &&
+        (file === path.join(srcDir, 'app/[locale]/(app)/projects/start/landing-terminal.tsx') &&
           catalogRoot === 'COPY') ||
-        (file === path.join(srcDir, 'app/admin/analytics/page.tsx') &&
+        (file === path.join(srcDir, 'app/[locale]/admin/analytics/page.tsx') &&
           ['RANGES', 'sessionsConfig', 'accountsConfig', 'burnConfig'].includes(catalogRoot)) ||
         (file === path.join(srcDir, 'features/accounts/settings/branding-tab.tsx') &&
           catalogRoot === 'SLOTS') ||
@@ -997,9 +997,9 @@ function scanFile(file) {
         (file === path.join(srcDir, 'lib/utils/memory-search-output.ts') &&
           catalogRoot === 'EMPTY_RESULT');
       const coveredPresentationCatalog =
-        (file === path.join(srcDir, 'app/presentations/decks/security.tsx') &&
+        (file === path.join(srcDir, 'app/[locale]/presentations/decks/security.tsx') &&
           catalogRoot === 'ANSWERS') ||
-        (file === path.join(srcDir, 'app/presentations/registry.ts') && catalogRoot === 'DECKS');
+        (file === path.join(srcDir, 'app/[locale]/presentations/registry.ts') && catalogRoot === 'DECKS');
       const coveredLocalizedLeafCatalog =
         (file === path.join(srcDir, 'features/billing/billing-return.tsx') &&
           catalogRoot === 'RETURNS') ||
@@ -1029,7 +1029,7 @@ function scanFile(file) {
             'features/workspace/customize/sections/view/gateway/gateway-overview.tsx',
           ) &&
           catalogRoot === 'METRICS') ||
-        (file === path.join(srcDir, 'app/admin/projects/page.tsx') &&
+        (file === path.join(srcDir, 'app/[locale]/admin/projects/page.tsx') &&
           catalogRoot === 'STATUS_OPTIONS') ||
         (file === path.join(srcDir, 'components/iam/api-keys-card.tsx') &&
           catalogRoot === 'STATUS_BADGE') ||
