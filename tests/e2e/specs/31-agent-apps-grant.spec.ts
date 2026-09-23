@@ -64,12 +64,25 @@ test('31 — the agent editor grants Apps by slug, gated on the Apps feature fla
     await selectAccountForUi(page, accountId);
 
     // 1. Flag off: the rail has no Apps topic and `?section=apps` falls back.
+    // The fixture enables `apps` by default (`database-project.ts`), so turn it
+    // off through the product route rather than assuming the project's state.
+    await api(token, 'PATCH', `/projects/${project.id}/features`, {
+      feature: 'apps',
+      enabled: false,
+    });
     await page.goto(route, { waitUntil: 'domcontentloaded' });
     await dismissOnboarding(page);
     await dismissWelcomeCard(page);
-    await expect(page.getByRole('link', { name: 'Kortix permissions' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Apps', exact: true })).toHaveCount(0);
+    // The rail is a vertical tablist, and the project sidebar has its own
+    // "Apps" link — scope to the rail or the sidebar answers for it.
+    const rail = page.getByRole('navigation', { name: 'Agent sections' });
+    await expect(rail.getByRole('tab', { name: 'Kortix permissions' })).toBeVisible();
+    await expect(rail.getByRole('tab', { name: 'Apps', exact: true })).toHaveCount(0);
     await expect(page.getByTestId('agent-apps-grant')).toHaveCount(0);
+    await expect(rail.getByRole('tab', { name: 'Overview' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
 
     // 2. Flag on, with one restricted App to grant.
     await api(token, 'PATCH', `/projects/${project.id}/features`, {
@@ -100,6 +113,7 @@ test('31 — the agent editor grants Apps by slug, gated on the Apps feature fla
     await dismissWelcomeCard(page);
     const section = page.getByTestId('agent-apps-grant');
     await expect(section).toBeVisible();
+    await expect(rail.getByRole('tab', { name: 'Apps', exact: true })).toBeVisible();
     // The row is the App's SLUG — the value the grant stores — plus its name.
     await expect(section.getByText(app.slug, { exact: true })).toBeVisible();
     await expect(section.getByText('Reports dashboard', { exact: true })).toBeVisible();
