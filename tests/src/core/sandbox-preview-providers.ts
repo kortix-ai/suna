@@ -254,6 +254,14 @@ async function sweepStalePreviewSessions(
   return stopped;
 }
 
+async function stopOwnSessionsAfterSuite(api: PlatinumApi, hostName: string): Promise<void> {
+  try {
+    await stopPreviewSessionsOf(api, await allPlatinumPreviewSandboxes(api), [hostName]);
+  } catch (error) {
+    console.warn(`[sandbox-preview] post-suite session stop failed: ${String(error)}`);
+  }
+}
+
 async function replaceExistingPlatinumPreview(
   api: PlatinumApi,
   prNumber: number,
@@ -291,8 +299,8 @@ export async function deployPlatinumPreview(
   // Set only when this run adopted an existing branch environment, so the
   // failure path below can tell "a box I made" from "the standing environment".
   let reusedSandboxId = '';
+  const identity = previewSandboxIdentity(input);
   try {
-    const identity = previewSandboxIdentity(input);
     const listing = await allPlatinumPreviewSandboxes(api);
     // A branch environment reuses its sandbox; only an ephemeral PR preview is
     // replaced, which is what rotates its URL on every push.
@@ -454,16 +462,12 @@ export async function deployPlatinumPreview(
           1,
         ),
     });
-    // The suite creates real session boxes, and a gate run has nobody left to
-    // use them. Stop them now rather than after an idle timeout: their disks
-    // stay for inspection and a session resumes on open. A branch environment
-    // that skipped the suite is a place people work, so its sessions are left
-    // to its own deadline reaper.
-    if (input.runTests !== false) {
-      await stopPreviewSessionsOf(api, await allPlatinumPreviewSandboxes(api), [identity.name]).catch(
-        (error) => console.warn(`[sandbox-preview] post-suite session stop failed: ${String(error)}`),
-      );
-    }
+    // An ephemeral PR preview's suite creates real session boxes, and a gate
+    // run has nobody left to use them. Stop them now rather than after an idle
+    // timeout: their disks stay for inspection and a session resumes on open.
+    // A persistent branch environment is a place people work: a redeploy must
+    // not interrupt its sessions, so they are left to its deadline reaper.
+    if (!identity.reuseExisting) await stopOwnSessionsAfterSuite(api, identity.name);
     const result: SandboxPreviewResult = {
       provider: 'platinum',
       exitCode,
@@ -477,7 +481,10 @@ export async function deployPlatinumPreview(
     await writeDeploymentResult(input.root, result, input);
     return result;
   } catch (error) {
-    if (launched) throw error;
+    if (launched) {
+      if (!identity.reuseExisting) await stopOwnSessionsAfterSuite(api, identity.name);
+      throw error;
+    }
     // Clean up only a sandbox THIS run created. Deleting a reused branch
     // environment would throw away the stable origin it exists to hold — and a
     // failed deploy is a reason to look at it, not to destroy it.
