@@ -205,7 +205,7 @@ function FolderRow({
         )}
       />
       {getFileIcon(folder.name, {
-        className: tI18nComplete.raw('text7e50640f91b5'),
+        className: 'size-4 shrink-0',
         isDirectory: true,
         isOpen: open,
       })}
@@ -235,7 +235,7 @@ function FileRow({
       // names line up with folder names rather than with their carets.
       style={{ paddingLeft: depth * INDENT_PX + 12 + 20 }}
     >
-      {getFileIcon(entry.name, { className: tI18nComplete.raw('text7e50640f91b5') })}
+      {getFileIcon(entry.name, { className: 'size-4 shrink-0' })}
       <span
         className={cn(
           'min-w-0 flex-1 truncate text-sm',
@@ -561,7 +561,7 @@ export function ZipRenderer({
               <ArrowLeftIcon className="size-3.5" />
             </Button>
           </Hint>
-          {getFileIcon(selected.name, { className: tI18nComplete.raw('text7e50640f91b5') })}
+          {getFileIcon(selected.name, { className: 'size-4 shrink-0' })}
           {/* The full in-archive path, not just the name: the reader drilled
               past collapsed folders to get here and this is the only thing
               that says where "here" is. */}

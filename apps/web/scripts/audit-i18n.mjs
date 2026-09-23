@@ -6,6 +6,11 @@ import path from 'node:path';
 import process from 'node:process';
 import ts from 'typescript';
 import { defaultLocale, locales } from '../src/i18n/catalog.mjs';
+import {
+  NON_LINGUISTIC_BINDING,
+  nonLinguisticBindings,
+  technicalValueKind,
+} from './i18n-technical-values.mjs';
 
 const root = process.cwd();
 const srcDir = path.join(root, 'src');
@@ -81,6 +86,8 @@ const translationSentinelPattern = /(?:ZXQ|XZQ|ЗКСК|КСЗК)/iu;
 
 function isLikelyUntranslatedProse(key, sourceValue, targetValue, locale) {
   if (locale === defaultLocale || sourceValue !== targetValue) return false;
+  // Technical values must stay English (i18n-technical-values.mjs).
+  if (technicalValueKind(sourceValue)) return false;
   if (!/[a-z]/.test(sourceValue) || sourceValue.trim().split(/\s+/).length < 4) return false;
   if (/[{}<>@$=|`\[\]\\/]/.test(sourceValue)) return false;
   if (key.endsWith('Platforms')) return false;
@@ -225,6 +232,9 @@ const ignoredAttributes = new Set([
   'pattern',
   'accept',
   'activeHighlightColor',
+  'enableBackground',
+  'gradientTransform',
+  'sandbox',
   'githubManageAllHref',
   'highlightColor',
   'media',
@@ -740,6 +750,11 @@ function scanFile(file) {
     if (
       ts.isStringLiteralLike(node) &&
       ts.isJsxExpression(node.parent) &&
+      // The body of <script>/<Script> is code, not copy.
+      !(
+        ts.isJsxElement(node.parent.parent) &&
+        /^script$/i.test(node.parent.parent.openingElement.tagName.getText())
+      ) &&
       isDisplayExpression(node, node.text)
     ) {
       add('jsx-expression', node, node.text);
@@ -749,6 +764,13 @@ function scanFile(file) {
       ts.isStringLiteralLike(node) &&
       !ts.isJsxExpression(node.parent) &&
       node.parent &&
+      // `{ className: 'size-4' }` inside JSX is read by a machine, not a person,
+      // and so is an inline script's `{ __html: '…' }`.
+      !(
+        ts.isPropertyAssignment(node.parent) &&
+        (NON_LINGUISTIC_BINDING.test(propertyName(node.parent.name) ?? '') ||
+          propertyName(node.parent.name) === '__html')
+      ) &&
       (() => {
         let cursor = node.parent;
         while (cursor && !ts.isJsxExpression(cursor)) cursor = cursor.parent;
@@ -999,7 +1021,8 @@ function scanFile(file) {
       const coveredPresentationCatalog =
         (file === path.join(srcDir, 'app/[locale]/presentations/decks/security.tsx') &&
           catalogRoot === 'ANSWERS') ||
-        (file === path.join(srcDir, 'app/[locale]/presentations/registry.ts') && catalogRoot === 'DECKS');
+        (file === path.join(srcDir, 'app/[locale]/presentations/registry.ts') &&
+          catalogRoot === 'DECKS');
       const coveredLocalizedLeafCatalog =
         (file === path.join(srcDir, 'features/billing/billing-return.tsx') &&
           catalogRoot === 'RETURNS') ||
@@ -1234,13 +1257,49 @@ function auditTranslations() {
   return { report, failures };
 }
 
+/** Rule 1 of i18n-technical-values.mjs: technical values equal English. */
+function auditTechnicalValues() {
+  const english = flatten(readJson(path.join(translationsDir, `${defaultLocale}.json`)));
+  const mismatches = [];
+  const technicalKeys = Object.entries(english).filter(([, value]) => technicalValueKind(value));
+  for (const locale of locales) {
+    if (locale === defaultLocale) continue;
+    const file = path.join(translationsDir, `${locale}.json`);
+    if (!fs.existsSync(file)) continue;
+    const messages = flatten(readJson(file));
+    for (const [key, value] of technicalKeys) {
+      if (key in messages && messages[key] !== value) {
+        mismatches.push({
+          locale,
+          key,
+          kind: technicalValueKind(value),
+          english: value,
+          value: messages[key],
+        });
+      }
+    }
+  }
+  return { checked: technicalKeys.length, mismatches };
+}
+
+/** Rule 2 of i18n-technical-values.mjs: no machine-read value comes from a catalog. */
+function scanNonLinguisticBindings(file) {
+  if (!/\.[cm]?[jt]sx?$/.test(file) || ignoredFilePattern.test(file)) return [];
+  return nonLinguisticBindings(fs.readFileSync(file, 'utf8'), file).map((finding) => ({
+    file: path.relative(root, file),
+    ...finding,
+  }));
+}
+
 const translationAudit = auditTranslations();
+const technicalValueAudit = auditTechnicalValues();
 const sourceFiles = walkFiles(srcDir);
 const hardcodedFindings = sourceFiles.flatMap(scanFile);
 const defaultMessages = readJson(path.join(translationsDir, `${defaultLocale}.json`));
 const missingTranslationReferences = sourceFiles.flatMap((file) =>
   scanHardcodedTranslationReferences(file, defaultMessages),
 );
+const nonLinguisticBindingFindings = sourceFiles.flatMap(scanNonLinguisticBindings);
 const byFile = new Map();
 
 for (const finding of hardcodedFindings) {
@@ -1277,6 +1336,20 @@ for (const finding of missingTranslationReferences.slice(0, 30)) {
   console.log(`- ${finding.file}:${finding.line}: ${finding.key}`);
 }
 
+console.log('\nnon-linguistic value audit');
+console.log(
+  `- technical values: ${technicalValueAudit.checked}, locale mismatches: ${technicalValueAudit.mismatches.length}`,
+);
+for (const item of technicalValueAudit.mismatches.slice(0, 30)) {
+  console.log(
+    `- ${item.locale}: ${item.key} (${item.kind}) ${JSON.stringify(item.value)} != ${JSON.stringify(item.english)}`,
+  );
+}
+console.log(`- translated non-linguistic bindings: ${nonLinguisticBindingFindings.length}`);
+for (const finding of nonLinguisticBindingFindings.slice(0, 30)) {
+  console.log(`- ${finding.file}:${finding.line}: ${finding.name} <- ${finding.key}`);
+}
+
 if (args.get('json')) {
   const outputFile = path.resolve(root, args.get('json'));
   fs.writeFileSync(
@@ -1297,6 +1370,8 @@ if (args.get('json')) {
 
 let failed = translationAudit.failures > 0;
 if (missingTranslationReferences.length > 0) failed = true;
+if (technicalValueAudit.mismatches.length > 0) failed = true;
+if (nonLinguisticBindingFindings.length > 0) failed = true;
 if (hardcodedFindings.length > maxHardcoded) {
   console.error(
     `\nHardcoded UI text findings (${hardcodedFindings.length}) exceed --max-hardcoded=${maxHardcoded}.`,

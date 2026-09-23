@@ -2,7 +2,6 @@
 
 import { isSandboxNotReadyError } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
-import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useMemo, useState } from 'react';
 
 import {
@@ -140,7 +139,6 @@ export function PublicFileShareView({
   share: PublicFileShare;
   fileUrl: string;
 }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
   const filePath = share.file_path || share.label;
   const fileName = fileNameFromPath(filePath, share.label);
   const isHtmlFile = getFileCategory(fileName) === 'html';
@@ -167,7 +165,7 @@ export function PublicFileShareView({
         title={fileName}
         src={fileUrl}
         className={SHARE_FILE_IFRAME_CLASS}
-        sandbox={tI18nHardcoded.raw('autoAppPublicShareSessionTokenPublicFileShareViewJsxeeb5b063')}
+        sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-downloads"
       />
     );
   }
