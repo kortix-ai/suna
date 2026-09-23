@@ -87,8 +87,9 @@ async function buildChangelogPage(page: number): Promise<ChangelogPage | null> {
  * costs a cache read instead of a GitHub round trip plus ~100 markdown
  * renders. Each entry stays far below the 2 MB data-cache limit.
  *
- * Returns `null` for a page past the end, and an empty page when GitHub is
- * unreachable (not cached — the next request retries).
+ * Returns `null` for a page past the end. When GitHub is unreachable nothing
+ * is cached (the next request retries): page 1 comes back empty, a later
+ * page throws.
  */
 export async function getChangelogPage(page: number): Promise<ChangelogPage | null> {
   try {
@@ -99,7 +100,11 @@ export async function getChangelogPage(page: number): Promise<ChangelogPage | nu
       ['changelog-page', 'v1', `size-${CHANGELOG_PAGE_SIZE}`, String(page)],
       { revalidate: CHANGELOG_REVALIDATE_SECONDS, tags: ['changelog'] },
     )();
-  } catch {
-    return page === 1 ? { page: 1, pageCount: 1, releases: [], tagPages: {} } : null;
+  } catch (error) {
+    // Page 1 shows its "couldn't load releases" state. A later page cannot
+    // say anything useful, and a 404 would tell crawlers it is gone: rethrow
+    // so it answers 500, which crawlers treat as transient.
+    if (page === 1) return { page: 1, pageCount: 1, releases: [], tagPages: {} };
+    throw error;
   }
 }
