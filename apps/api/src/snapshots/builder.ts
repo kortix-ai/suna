@@ -65,6 +65,7 @@ class SnapshotBuildError extends Error {
 export type SnapshotBuildSource =
   | 'session-start'
   | 'project-create'
+  | 'project-repository-replacement'
   | 'cr-merge'
   | 'manual'
   | 'background'
@@ -1479,7 +1480,6 @@ export function kickProjectTemplatePrebuilds(
 }
 
 // ─── Per-project COLD rootfs warm ────────────────────────────────────────────
-
 
 
 

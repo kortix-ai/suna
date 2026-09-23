@@ -422,3 +422,24 @@ describe('buildSessionSearchIndex', () => {
     expect(buildSessionSearchIndex([], testUiTranslator).size).toBe(0);
   });
 });
+
+describe('filterProjectSessions — owner and access facets', () => {
+  const alice = makeSession({ session_id: 'alice', created_by: 'u-alice', visibility: 'project' });
+  const bob = makeSession({ session_id: 'bob', created_by: 'u-bob', visibility: 'private' });
+  const bob2 = makeSession({ session_id: 'bob-2', created_by: 'u-bob', visibility: 'restricted' });
+
+  const ids = (sessions: ProjectSession[]) => sessions.map((s) => s.session_id).sort();
+
+  test('owner and access filters AND with each other and with the other facets', () => {
+    const all = [alice, bob, bob2];
+    expect(ids(filterProjectSessions(all, [], [], '', testUiTranslator, undefined, { owners: ['u-bob'] }))).toEqual(['bob', 'bob-2']);
+    expect(ids(filterProjectSessions(all, [], [], '', testUiTranslator, undefined, { access: ['private'] }))).toEqual(['bob']);
+    expect(
+      ids(filterProjectSessions(all, [], [], '', testUiTranslator, undefined, { owners: ['u-bob'], access: ['project'] })),
+    ).toEqual([]);
+  });
+
+  test('omitting the owner and access facets keeps the old behaviour', () => {
+    expect(ids(filterProjectSessions([alice, bob, bob2], [], [], '', testUiTranslator))).toEqual(['alice', 'bob', 'bob-2']);
+  });
+});

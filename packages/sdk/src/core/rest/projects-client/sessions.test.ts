@@ -11,6 +11,7 @@ import type {
 } from './sessions';
 import {
   createProjectSession,
+  sessionParentId,
   createSessionPrompt,
   createSessionPublicShare,
   claimWarmProjectSession,
@@ -24,6 +25,7 @@ import {
   getSessionPreviewCandidates,
   getSessionOpenBundle,
   getSessionTranscript,
+  getSessionTranscriptSync,
   getSessionTurn,
   listProjectSessions,
   listProjectSessionsPage,
@@ -453,6 +455,45 @@ test('getSessionTranscript builds the query string from limit/chars options', as
   expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/transcript');
 });
 
+test('getSessionTranscriptSync pages older windows with the previous window cursor', async () => {
+  // The mirror retains a whole history and every reader asks for a tail, so
+  // without a cursor everything before that tail is stored and unreachable.
+  nextResponse = {
+    status: 200,
+    body: {
+      available: true,
+      reason: null,
+      source: 'mirror',
+      complete: false,
+      captured_at: '2026-09-21T00:00:00.000Z',
+      opencode_session_id: 'ocs-1',
+      message_count: 40,
+      total: 242,
+      next_cursor: 'msg_older',
+      messages: [],
+    },
+  };
+  const envelope = await getSessionTranscriptSync('P1', 'S1', {
+    limit: 40,
+    before: 'msg_tail',
+  });
+  expect(last().url).toContain('before=msg_tail');
+  expect(last().url).toContain('shape=sync');
+  // `complete: false` says the window is partial; these two say by how much and
+  // how to reach the rest.
+  expect(envelope.total).toBe(242);
+  expect(envelope.next_cursor).toBe('msg_older');
+});
+
+test('getSessionTranscriptSync omits the cursor on a first window', async () => {
+  nextResponse = {
+    status: 200,
+    body: { available: false, reason: null, source: 'none', complete: false, captured_at: null, opencode_session_id: null, message_count: 0, messages: [] },
+  };
+  await getSessionTranscriptSync('P1', 'S1', { limit: 40 });
+  expect(last().url).not.toContain('before=');
+});
+
 test('getSessionTurn hits GET /projects/:id/sessions/:id/turn', async () => {
   nextResponse = { status: 200, body: { turns: [] } };
   await getSessionTurn('P1', 'S1');
@@ -831,6 +872,10 @@ test('getProjectSessionScope reads canonical session scope', async () => {
   // client can stop calling an inherited default "nothing selected".
   expect(result.connector_bindings_configured).toBe(false);
   expect(result.connector_bindings_inherit_unbound).toBe(true);
+  // A session cannot require a connector any more. The field survives as a
+  // published-type compatibility shim and is always null — a consumer that
+  // branches on it must see "nothing required", never a stale alias list.
+  expect(result.required_connectors).toBeNull();
 });
 
 test('setProjectSessionScope clears a connector override with null', async () => {
@@ -1147,4 +1192,53 @@ test('getSessionOpenBundle asks for the transcript window it was given', async (
 test('getSessionOpenBundle throws when the response is unsuccessful', async () => {
   nextResponse = { status: 500, body: { message: 'boom' } };
   await expect(getSessionOpenBundle('P1', 'S1')).rejects.toBeTruthy();
+});
+
+
+// ── sessionParentId ────────────────────────────────────────────────────────
+//
+// A session spawned by an agent from inside another session carries its parent
+// in `metadata.spawned_by_session` (apps/api/src/projects/lib/sessions.ts:1566,
+// deliberately kept on the LIST payload — see LIST_OMITTED_SESSION_METADATA_KEYS
+// in apps/api/src/projects/lib/serializers.ts:84). `metadata` was
+// `Record<string, unknown>`, so every host re-derived the same `typeof … ===
+// 'string'` cast: apps/web/src/components/projects/session-label.ts:61,
+// apps/web/src/features/workspace/project-sidebar/project-session-list-helpers.ts:359,
+// apps/tui/src/lib/session-groups.ts:145.
+
+const child = (metadata: Record<string, unknown>, sessionId = 'child') =>
+  ({ session_id: sessionId, metadata }) as unknown as ProjectSession;
+
+test('sessionParentId reads metadata.spawned_by_session', () => {
+  expect(sessionParentId(child({ spawned_by_session: 'parent-1' }))).toBe('parent-1');
+});
+
+test('sessionParentId is null for a root session', () => {
+  expect(sessionParentId(child({}))).toBeNull();
+  expect(sessionParentId(child({ spawned_by_session: '' }))).toBeNull();
+  expect(sessionParentId(child({ spawned_by_session: '   ' }))).toBeNull();
+});
+
+test('sessionParentId ignores a non-string value', () => {
+  // The column is jsonb. A malformed row must not produce a parent id that a
+  // caller then uses as a session id.
+  expect(sessionParentId(child({ spawned_by_session: 42 }))).toBeNull();
+  expect(sessionParentId(child({ spawned_by_session: null }))).toBeNull();
+  expect(sessionParentId(child({ spawned_by_session: { id: 'x' } }))).toBeNull();
+});
+
+test('sessionParentId refuses a self-referential link', () => {
+  // A session that is its own parent would make any tree walk loop forever.
+  expect(sessionParentId(child({ spawned_by_session: 'child' }, 'child'))).toBeNull();
+});
+
+test('sessionParentId tolerates a session with no metadata at all', () => {
+  expect(sessionParentId({ session_id: 'a' } as unknown as ProjectSession)).toBeNull();
+});
+
+test('ProjectSession.metadata types spawned_by_session as an optional string', () => {
+  const session = child({ spawned_by_session: 'parent-1' });
+  // No cast: the narrowing is the point of the typed metadata.
+  const parent: string | undefined = session.metadata.spawned_by_session;
+  expect(parent).toBe('parent-1');
 });

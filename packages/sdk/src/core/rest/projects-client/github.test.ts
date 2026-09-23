@@ -7,11 +7,61 @@ import {
   type LinkableGitHubInstallationsResponse,
   linkGitHubInstallation,
   linkRepository,
+  replaceProjectRepository,
   listGitHubRepositories,
   listGitHubRepositoryBranches,
   listLinkableGitHubInstallations,
   saveGitHubInstallation,
 } from './github';
+
+test('replaces one project repository with a credential and an expected old URL', async () => {
+  let url = '';
+  let method = '';
+  let body: unknown;
+  globalThis.fetch = mock(async (input: string | URL | Request, init?: RequestInit) => {
+    url = String(input instanceof Request ? input.url : input);
+    method = init?.method ?? '';
+    body = JSON.parse(String(init?.body));
+    return Response.json({ project: { project_id: 'proj-1', repo_url: 'https://github.com/acme/new.git' }, git_connection: null });
+  }) as unknown as typeof fetch;
+
+  const result = await replaceProjectRepository({
+    project_id: 'proj-1',
+    repo_url: 'https://github.com/acme/new.git',
+    expected_repo_url: 'https://github.com/acme/old.git',
+    github_token: 'repo-scoped-token',
+  });
+
+  expect(url).toEndWith('/projects/proj-1/git/repository');
+  expect(method).toBe('PUT');
+  expect(body).toEqual({
+    repo_url: 'https://github.com/acme/new.git',
+    expected_repo_url: 'https://github.com/acme/old.git',
+    github_token: 'repo-scoped-token',
+  });
+  expect(result.project.repo_url).toBe('https://github.com/acme/new.git');
+});
+
+test('sends a repository-scoped App grant and shared secret copy without a stored PAT', async () => {
+  let body: any;
+  globalThis.fetch = mock(async (_input: string | URL | Request, init?: RequestInit) => {
+    body = JSON.parse(String(init?.body));
+    return Response.json({ project: { project_id: 'proj-1' }, git_connection: null });
+  }) as unknown as typeof fetch;
+  await replaceProjectRepository({
+    project_id: 'proj-1', repo_url: 'https://github.com/acme/new.git',
+    expected_repo_url: 'https://github.com/acme/old.git',
+    installation_id: '123', github_user_token: 'temporary-user-token',
+    copy_shared_secrets_from_project_id: 'source-1',
+    copy_shared_secret_identifiers: ['TS_AUTHKEY'],
+  });
+  expect(body).toMatchObject({
+    installation_id: '123', github_user_token: 'temporary-user-token',
+    copy_shared_secrets_from_project_id: 'source-1',
+    copy_shared_secret_identifiers: ['TS_AUTHKEY'],
+  });
+  expect(body.github_token).toBeUndefined();
+});
 
 let calls: string[] = [];
 

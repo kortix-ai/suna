@@ -3,6 +3,7 @@
  */
 import { flow } from "../core/flow";
 import { createDatabaseSession } from '../fixtures/database-project';
+import { subscribe } from '../fixtures/billing';
 
 flow(
   "SEC-POOL-1",
@@ -198,6 +199,91 @@ flow(
   },
 );
 
+flow('SEC-POOL-4', {
+  domain: 'secrets',
+  routes: [
+    'PATCH /v1/projects/:projectId/features',
+    'PUT /v1/projects/:projectId/agents/:agentName/config',
+    'PUT /v1/projects/:projectId/access/:userId',
+    'POST /v1/accounts/:accountId/secret-resources',
+    'GET /v1/accounts/:accountId/secret-resources',
+    'PUT /v1/accounts/:accountId/secret-resources/:secretId/access',
+    'POST /v1/projects/:projectId/sessions',
+    'DELETE /v1/accounts/:accountId/secret-resources/:secretId',
+  ],
+}, async (ctx) => {
+  const team = await ctx.fixtures.team();
+  if (ctx.env.target !== 'local') {
+    await ctx.step('fund the isolated account for two managed projects', async () => {
+      await subscribe(ctx.env, ctx.client.as(ctx.P.OWNER), team.id);
+    });
+  }
+  const project = await team.project({ seed: true, allowAllSecrets: true });
+  const otherProject = await team.project({ seed: true, allowAllSecrets: true });
+  const member = await team.addMember('member');
+  await team.grantProjectRole(project.id, member.userId!, 'user');
+  const owner = ctx.client.as(ctx.P.OWNER);
+  await ctx.step('grant the other project agent access to the provider', async () => {
+    (await owner.put('/v1/projects/:projectId/agents/:agentName/config',
+      { secrets: ['ANTHROPIC_API_KEY'] },
+      { params: { projectId: otherProject.id, agentName: 'kortix' } })).status(200);
+  });
+  const path = '/v1/accounts/:accountId/secret-resources';
+  const params = { accountId: team.id };
+  const listPath = `${path}?project_id=${project.id}`;
+  const input = { project_id: project.id, label: 'Project key', provider_id: 'anthropic',
+    name: 'ANTHROPIC_API_KEY', value: 'project-key-test-value', consumer: 'llm_gateway', strategy: 'broker' };
+  await ctx.step('flag off rejects a project-scoped credential', async () => {
+    (await owner.post(path, input, { params })).status(403);
+  });
+  for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
+    (await owner.patch('/v1/projects/:projectId/features', { feature, enabled: true },
+      { params: { projectId: project.id } })).status(200);
+  }
+  let secretId = '';
+  await ctx.step('new key defaults to everyone in the project', async () => {
+    const created = await owner.post(path, input, { params });
+    created.status(201).body().has('$.access_mode', 'project').has('$.project_id', project.id);
+    secretId = created.json<any>().secret_id;
+    const visible = await ctx.client.as(member).get(listPath, { params });
+    visible.status(200);
+    const row = (visible.json<any>().secrets as any[]).find((secret) => secret.secret_id === secretId);
+    if (!row || row.can_use !== true || 'value' in row || 'value_enc' in row) throw new Error('project member cannot use project key');
+    const other = await owner.get(`${path}?project_id=${otherProject.id}`, { params });
+    other.status(200);
+    if ((other.json<any>().secrets as any[]).some((secret) => secret.secret_id === secretId)) throw new Error('key leaked into another project');
+    for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
+      (await owner.patch('/v1/projects/:projectId/features', { feature, enabled: true },
+        { params: { projectId: otherProject.id } })).status(200);
+    }
+    (await owner.post('/v1/projects/:projectId/sessions', {
+      agent_name: 'kortix', provider_secret_pools: { anthropic: [secretId] },
+    }, { params: { projectId: otherProject.id } })).status(403)
+      .body().has('$.error', 'Secret unavailable or not granted');
+  });
+  await ctx.step('selected-member mode revokes and restores access atomically', async () => {
+    const accessPath = `${path}/:secretId/access`;
+    const accessParams = { ...params, secretId };
+    (await owner.put(accessPath, { mode: 'members', user_ids: [] }, { params: accessParams })).status(200)
+      .body().has('$.access_mode', 'members');
+    const restricted = await ctx.client.as(member).get(listPath, { params });
+    restricted.status(200);
+    if ((restricted.json<any>().secrets as any[]).some((secret) => secret.secret_id === secretId)) throw new Error('restricted key leaked to member');
+    (await owner.put(accessPath, { mode: 'members', user_ids: [member.userId] }, { params: accessParams })).status(200);
+    const granted = await ctx.client.as(member).get(listPath, { params });
+    granted.status(200);
+    if (!(granted.json<any>().secrets as any[]).some((secret) => secret.secret_id === secretId && secret.can_use)) throw new Error('member grant did not restore access');
+    (await owner.put(accessPath, { mode: 'project', user_ids: [] }, { params: accessParams })).status(200)
+      .body().has('$.access_mode', 'project');
+  });
+  await ctx.step('delete removes the scoped key', async () => {
+    (await owner.del(`${path}/:secretId`, { params: { ...params, secretId } })).status(200);
+    const listed = await owner.get(listPath, { params });
+    listed.status(200);
+    if ((listed.json<any>().secrets as any[]).some((secret) => secret.secret_id === secretId)) throw new Error('deleted key remained visible');
+  });
+});
+
 flow('SEC-POOL-3', {
   domain: 'secrets', requires: ['database'],
   routes: [
@@ -228,7 +314,7 @@ flow('SEC-POOL-3', {
     await database.query("INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status) VALUES ($1::uuid, $1, $2, $3, 'active')", [first, team.id, project.id]);
     await database.query('UPDATE kortix.account_tokens SET project_id = $2, session_id = $3, agent_grant = $4::jsonb, account_id = $5 WHERE token_id = $1', [
       credential.token_id, project.id, first,
-      JSON.stringify({ agent: 'kortix', kortixCli: 'all', connectors: 'all', env: 'all' }), team.id,
+      JSON.stringify({ agent: 'kortix', permissions: 'all', connectors: 'all', env: 'all' }), team.id,
     ]);
   } finally { await database.end(); }
   const caller = ctx.client.withBearer(credential.secret_key, 'BOUND_SESSION');

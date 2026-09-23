@@ -155,3 +155,21 @@ describe('systemNotificationSeverity', () => {
     expect(systemNotificationSeverity('retry_failed')).toBe('error');
   });
 });
+
+test('retains only valid private attachment references beside sandbox paths', () => {
+  const ref = 'kortix-attachment://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333';
+  const tag = (url: string) => `<file path="/workspace/uploads/a.png" mime="image/png" filename="a.png" attachment="${url}">file</file>`;
+  expect(parseFileReferences(tag(ref)).files[0]).toMatchObject({ attachment: ref });
+  expect(parseFileReferences(tag('https://other.test/private')).files[0]).not.toHaveProperty('attachment');
+});
+
+test('a pathological message cannot freeze the tab that renders it', () => {
+  // Every viewer parses every user message. The regex this used took ~10 s on
+  // this text — quadratic in it — so in a shared session one member's message
+  // froze the tab of every member who opened it.
+  const evil = `${'<file\t'.repeat(40_000)}<file${'\t'.repeat(200_000)}`;
+  const started = performance.now();
+  const parsed = parseFileReferences(evil);
+  expect(performance.now() - started).toBeLessThan(100);
+  expect(parsed.files).toEqual([]);
+});

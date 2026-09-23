@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 657,
+  "count": 668,
   "routes": [
     {
       "method": "GET",
@@ -141,6 +141,10 @@
     {
       "method": "GET",
       "path": "/v1/access/signup-status"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/account-invites"
     },
     {
       "method": "GET",
@@ -460,6 +464,14 @@
     },
     {
       "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/session-oversight"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/accounts/:accountId/iam/session-oversight"
+    },
+    {
+      "method": "GET",
       "path": "/v1/accounts/:accountId/iam/session-policy"
     },
     {
@@ -545,6 +557,10 @@
     {
       "method": "DELETE",
       "path": "/v1/accounts/:accountId/secret-resources/:secretId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/accounts/:accountId/secret-resources/:secretId/access"
     },
     {
       "method": "DELETE",
@@ -1003,6 +1019,10 @@
       "path": "/v1/connectors/projects/:projectId/connectors/:slug"
     },
     {
+      "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/connectors/:slug/accounts"
+    },
+    {
       "method": "PUT",
       "path": "/v1/connectors/projects/:projectId/connectors/:slug/authorization-strategy"
     },
@@ -1436,6 +1456,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/apps/:appId/agents"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/apps/:appId/deployments"
     },
     {
@@ -1596,6 +1620,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/channels/teams/conversations"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/channels/teams/file"
     },
     {
@@ -1613,6 +1641,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/channels/teams/manifest"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/teams/message"
     },
     {
       "method": "GET",
@@ -1855,6 +1887,10 @@
       "path": "/v1/projects/:projectId/git/connection"
     },
     {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/git/repository"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/group-grants"
     },
@@ -2073,6 +2109,14 @@
     {
       "method": "PATCH",
       "path": "/v1/projects/:projectId/sessions/:sessionId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/attachments"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/attachments/:attachmentId"
     },
     {
       "method": "GET",

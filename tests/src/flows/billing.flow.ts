@@ -590,3 +590,132 @@ flow(
     });
   },
 );
+
+/**
+ * BILL-17 — admitting a prompt debits nothing.
+ *
+ * `checkBillingActive` takes a real $0.01 admission hold, and only an LLM
+ * gateway settle reconciles it. The prompt route called it as a yes/no check
+ * and dropped `holdUsd`, so every accepted prompt cost the account one cent
+ * that nothing ever refunded — labelled "LLM gateway admission hold" in the
+ * transactions tab. Measured on one prod account: 115,810 holds, 9 real LLM
+ * charges. The route must make the same decision without touching the wallet.
+ */
+flow(
+  'BILL-17',
+  {
+    domain: 'billing',
+    global: true,
+    requires: ['database'],
+    timeoutMs: 120_000,
+    routes: ['POST /v1/projects/:projectId/sessions/:sessionId/prompts'],
+  },
+  async (ctx) => {
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const { randomUUID } = await import('node:crypto');
+    const { Client } = await import('pg');
+    const databaseUrl = ctx.env.databaseUrl as string;
+    const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
+    const db = new Client({
+      connectionString: databaseUrl,
+      ssl: local ? false : { rejectUnauthorized: false },
+    });
+    const team = await ctx.fixtures.team();
+    await db.connect();
+    const sessionId = randomUUID();
+    const blockerId = randomUUID();
+    const wallet = async () => {
+      const account = await db.query(
+        'SELECT balance_precise::text AS balance FROM kortix.credit_accounts WHERE account_id = $1',
+        [team.id],
+      );
+      const holds = await db.query(
+        `SELECT count(*)::int AS n FROM kortix.credit_ledger
+         WHERE account_id = $1 AND description = 'LLM gateway admission hold'`,
+        [team.id],
+      );
+      return { balance: account.rows[0]?.balance as string, holds: holds.rows[0].n as number };
+    };
+    try {
+      await db.query(
+        `INSERT INTO kortix.credit_accounts
+         (account_id, balance, balance_precise, non_expiring_credits, non_expiring_credits_precise, tier)
+         VALUES ($1, 1000, 1000, 1000, 1000, 'tier_2_20')
+         ON CONFLICT (account_id) DO UPDATE SET
+           balance = 1000, balance_precise = 1000,
+           non_expiring_credits = 1000, non_expiring_credits_precise = 1000,
+           tier = 'tier_2_20'`,
+        [team.id],
+      );
+      const project = await team.project({ managedGit: true });
+      const params = { projectId: project.id, sessionId };
+      const promptPath = '/v1/projects/:projectId/sessions/:sessionId/prompts';
+      await db.query(
+        `INSERT INTO kortix.project_sessions
+         (session_id, account_id, project_id, branch_name, agent_name, status, created_by, visibility)
+         VALUES ($1, $2, $3, 'main', 'kortix', 'running', $4, 'project')`,
+        [sessionId, team.id, project.id, ctx.P.OWNER.userId],
+      );
+      // A claimed row holds every prompt queued behind it, so the accepted
+      // prompt below never reaches a runtime this flow does not provision.
+      await db.query(
+        `INSERT INTO kortix.session_lifecycle_commands
+         (command_id, command_type, source, status, project_id, session_id, account_id,
+          actor_user_id, payload, locked_by, locked_until)
+         VALUES ($1, 'continue_session', 'ui', 'running', $2, $3, $4, $5,
+           '{"text":"hello","clientMessageId":"bill-17-blocker"}'::jsonb, 'BILL-17', now() + interval '1 hour')`,
+        [blockerId, project.id, sessionId, team.id, ctx.P.OWNER.userId],
+      );
+      const before = await wallet();
+
+      await ctx.step('a funded account has its prompt accepted 202', async () => {
+        const accepted = await owner.post(
+          promptPath,
+          {
+            client_message_id: 'bill-17-prompt',
+            message_id: 'msg_0123456789abAbCdEfGhIjKlMn',
+            parts: [{ type: 'text', text: 'hello' }],
+          },
+          { params },
+        );
+        accepted.status(202).body().has('$.state', 'queued');
+      });
+
+      await ctx.step('the accepted prompt wrote no admission hold and moved no balance', async () => {
+        const after = await wallet();
+        if (after.holds !== before.holds) {
+          throw new Error(
+            `prompt admission wrote ${after.holds - before.holds} "LLM gateway admission hold" ledger row(s); nothing refunds them`,
+          );
+        }
+        if (after.balance !== before.balance) {
+          throw new Error(`prompt admission moved the balance ${before.balance} → ${after.balance}`);
+        }
+      });
+
+      await ctx.step('a drained account is still refused 402 by the same route', async () => {
+        await db.query(
+          `UPDATE kortix.credit_accounts SET balance = 0, balance_precise = 0,
+             non_expiring_credits = 0, non_expiring_credits_precise = 0,
+             expiring_credits = 0, expiring_credits_precise = 0
+           WHERE account_id = $1`,
+          [team.id],
+        );
+        const refused = await owner.post(
+          promptPath,
+          {
+            client_message_id: 'bill-17-drained',
+            message_id: 'msg_0123456789abAbCdEfGhIjKlMo',
+            parts: [{ type: 'text', text: 'hello' }],
+          },
+          { params },
+        );
+        refused.status(402).body().has('$.code', 'insufficient_credits');
+      });
+    } finally {
+      await db.query('DELETE FROM kortix.session_lifecycle_commands WHERE session_id = $1', [sessionId]);
+      await db.query('DELETE FROM kortix.project_sessions WHERE session_id = $1', [sessionId]);
+      await db.end();
+    }
+  },
+);

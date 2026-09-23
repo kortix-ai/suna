@@ -4,7 +4,7 @@ import type {
   SessionStartResult,
 } from '@kortix/api-contract';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
-import { type SQL, and, eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import {
   markComputeSessionAlive,
   reopenComputeForSandbox,
@@ -14,6 +14,7 @@ import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { auth, json } from '../../openapi';
 import { type SandboxStatus, getProvider } from '../../platform/providers';
 import { classifySandboxProvisioningFailure } from '../../platform/services/sandbox-provisioning-error';
+import { invalidateSandbox } from '../../sandbox-proxy/backend';
 import { db } from '../../shared/db';
 import { resolveBranchTip } from '../git';
 import { legacyRehydrateSpec, rehydrateSessionChat } from '../legacy-migration-rehydrate';
@@ -47,6 +48,7 @@ import {
 import { runStoppedObservationFollowUp } from '../session-lifecycle/stopped-observation-followup';
 import type { StopReason } from '../stop-reason';
 import { recoverTurnsAfterRuntimeRestart } from '../session-lifecycle/runtime-restart-recovery';
+import { metadataDelta, stripMetadataKeys } from '../session-lifecycle/sandbox-metadata-sql';
 import {
   RUNTIME_READINESS_CLOCK_KEYS,
   STALE_OPENCODE_BOOT_HARD_MS,
@@ -69,29 +71,6 @@ import {
   runtimeWakeProgressPatch,
   stampedRuntimeFailureState,
 } from '../session-lifecycle/runtime-wake-fence';
-
-/**
- * `metadata - 'a' - 'b' - …`, generated from a key list.
- *
- * Hand-written `-` chains are how the readiness clocks drifted apart: the wake
- * claim stripped four of the ten, `clearRuntimeReadinessClocks` stripped eight
- * by hardcoded index, and `opencodeBootWaitFirstSeenAt` was therefore cleared
- * by nothing except a human Restart. That immortal clock parked session
- * 29861dfa's second attempt 14 ms before its daemon claimed its first turn
- * (2026-08-26). One generator, one list, no drift.
- */
-function stripMetadataKeys(keys: readonly string[]): SQL {
-  return keys.reduce<SQL>((acc, key) => {
-    // A LITERAL, not a bind parameter. `jsonb - $1` leaves the parameter type
-    // unknown and Postgres cannot choose between `jsonb - text` and
-    // `jsonb - integer`. Every key here is a compile-time constant from a
-    // frozen list, and this guard keeps it that way.
-    if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(key)) {
-      throw new Error(`refusing to strip a non-identifier metadata key: ${key}`);
-    }
-    return sql`${acc} - ${sql.raw(`'${key}'`)}`;
-  }, sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb)`);
-}
 
 /**
  * Keys a WAKE CLAIM drops. The readiness clocks are appended, so a re-attempt
@@ -284,6 +263,7 @@ export async function resumeStoppedSandbox(
         return true;
       });
       if (!finalized) return false;
+      invalidateSandbox(externalId);
       // The provider had this box STOPPED: whatever turn was still open on it
       // is over. Normally applyStoppedState settled those rows already and
       // this finds nothing; it is the guard for a row that reached `stopped`
@@ -616,30 +596,38 @@ function removedRuntimeStillInGrace(
   return graceStartedAtMs != null && nowMs - graceStartedAtMs <= STALE_RUNTIME_WAKE_MS;
 }
 
-async function markRuntimeWakeStarted(
+export async function markRuntimeWakeStarted(
   row: typeof sessionSandboxes.$inferSelect,
   providerStatus: SandboxStatus,
 ): Promise<void> {
   const metadata = sandboxMetadata(row);
   if (typeof metadata.runtimeWakeStartedAt === 'string') return;
   try {
+    // A merge, gated on the LOCKED row: `row` was read before the provider
+    // status call, and writing `{ ...metadata }` back erased a restart claim
+    // installed in between (SESS-9, 2026-09). A claim sets its own wake clock,
+    // so the predicate also keeps a stale poll from moving it.
     await db
       .update(sessionSandboxes)
       .set({
-        metadata: {
-          ...metadata,
+        metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({
           runtimeWakeStartedAt: new Date().toISOString(),
           runtimeWakeProviderStatus: providerStatus,
-        },
+        })}::jsonb`,
         updatedAt: new Date(),
       })
-      .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+      .where(
+        and(
+          eq(sessionSandboxes.sandboxId, row.sandboxId),
+          sql`${sessionSandboxes.metadata}->>'runtimeWakeStartedAt' IS NULL`,
+        ),
+      );
   } catch (err) {
     console.warn(`[start] failed to mark runtime wake for ${row.sandboxId}:`, err);
   }
 }
 
-async function markOpencodeReadyWaitStarted(
+export async function markOpencodeReadyWaitStarted(
   row: typeof sessionSandboxes.$inferSelect,
   reason: 'not_ready' | 'unreachable',
   bootPhase: string | undefined,
@@ -651,10 +639,24 @@ async function markOpencodeReadyWaitStarted(
   const patch = opencodeReadyWaitPatch(metadata, reason, bootPhase);
   if (!patch) return;
   try {
+    // Merge only the clocks this poll changed. `patch` spreads the row read
+    // before the daemon round-trip; writing it whole erased a restart claim
+    // installed in between (SESS-9, 2026-09). A row under a restart claim is
+    // not this poll's to stamp: the claim reset the clocks for its own attempt.
     await db
       .update(sessionSandboxes)
-      .set({ metadata: patch, updatedAt: new Date() })
-      .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+      .set({
+        metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify(
+          metadataDelta(metadata, patch),
+        )}::jsonb`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(sessionSandboxes.sandboxId, row.sandboxId),
+          sql`${sessionSandboxes.metadata}->>'runtimeRestartId' IS NULL`,
+        ),
+      );
   } catch (err) {
     console.warn(`[start] failed to mark OpenCode wait for ${row.sandboxId}:`, err);
   }

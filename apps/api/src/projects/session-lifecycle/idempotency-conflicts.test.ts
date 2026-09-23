@@ -1,8 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import {
-  requireConnectorsConflicts,
-  runtimeContextConflicts,
-} from './idempotency-conflicts';
+import { runtimeContextConflicts } from './idempotency-conflicts';
 
 describe('runtimeContextConflicts', () => {
   test('same context (order-independent) → no conflict', () => {
@@ -20,22 +17,3 @@ describe('runtimeContextConflicts', () => {
   });
 });
 
-describe('requireConnectorsConflicts', () => {
-  test('same set (order-independent, deduped) → no conflict', () => {
-    expect(requireConnectorsConflicts(['gmail', 'slack'], ['slack', 'gmail'])).toBe(false);
-    expect(requireConnectorsConflicts(['gmail', 'gmail'], ['gmail'])).toBe(false);
-  });
-  test('different required set → conflict', () => {
-    expect(requireConnectorsConflicts(['gmail'], ['slack'])).toBe(true);
-    expect(requireConnectorsConflicts(['gmail'], ['gmail', 'slack'])).toBe(true);
-  });
-  test('absent and empty both mean "no requirements" → no conflict', () => {
-    expect(requireConnectorsConflicts(undefined, [])).toBe(false);
-    expect(requireConnectorsConflicts([], undefined)).toBe(false);
-    expect(requireConnectorsConflicts(undefined, undefined)).toBe(false);
-  });
-  test('absent vs a real requirement → conflict', () => {
-    expect(requireConnectorsConflicts(undefined, ['gmail'])).toBe(true);
-    expect(requireConnectorsConflicts(['gmail'], undefined)).toBe(true);
-  });
-});

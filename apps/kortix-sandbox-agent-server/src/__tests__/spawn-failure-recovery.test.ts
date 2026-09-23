@@ -1,7 +1,7 @@
 /**
  * A spawn that FAILS must schedule a respawn. Nothing else recovers it.
  *
- * The supervisor's whole recovery story hangs off the child's `exit` event. A
+ * The lifecycle's whole recovery story hangs off the child's `exit` event. A
  * failed spawn produces no child, so no exit ever fires and that path never
  * runs. `start()` logged the error and carried on, which is survivable at BOOT
  * — nothing was running yet — and fatal on a RESTART, because `restart()` stops
@@ -28,9 +28,9 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-const SRC = readFileSync(join(import.meta.dir, '..', 'opencode.ts'), 'utf8')
+const SRC = readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'lifecycle.ts'), 'utf8')
 
-/** The body of the `start()` method on the returned supervisor. */
+/** The body of the `start()` method on the returned lifecycle. */
 function startBody(): string {
   const body = SRC.split('async start() {')[1]?.split('\n    },')[0]
   expect(body).toBeTruthy()

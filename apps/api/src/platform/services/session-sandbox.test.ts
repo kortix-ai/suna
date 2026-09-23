@@ -19,7 +19,7 @@
 //
 // This test drives the REAL provisionSessionSandbox with every external
 // dependency mocked (provider, snapshot builder, token minting, billing,
-// LLM-gateway entitlement) so it can run fully offline, deterministic, and
+// LLM-gateway flag) so it can run fully offline, deterministic, and
 // fast. The DB is a lightweight fake that records every update() call and
 // compiles its WHERE condition to real SQL text via drizzle's PgDialect (no
 // live Postgres needed) so the test asserts on the actual guard clauses, not
@@ -100,6 +100,7 @@ let activeRouting: {
   activeSnapshotName: string | null;
 } | null = null;
 let agentGrantError: Error | null = null;
+let gatewayFlag = false;
 const testConfig = {
   ALLOWED_SANDBOX_PROVIDERS: ['daytona', 'e2b'],
   KORTIX_URL: 'http://localhost:8008',
@@ -343,10 +344,6 @@ mock.module('../../repositories/service-accounts', () => ({
   },
 }));
 
-mock.module('../../shared/account-limits', () => ({
-  accountEntitledToLlmGateway: async (_accountId: string) => false,
-}));
-
 mock.module('../../projects/triggers', () => ({
   readManifest: async () => null,
 }));
@@ -364,7 +361,7 @@ mock.module('../../projects/agents', () => ({
 }));
 
 mock.module('../../llm-gateway/enablement', () => ({
-  projectLlmGatewayEnabled: (_metadata: unknown) => false,
+  projectLlmGatewayEnabled: (_metadata: unknown) => gatewayFlag,
 }));
 
 mock.module('../../shared/session-failure-notifier', () => ({
@@ -415,6 +412,7 @@ beforeEach(() => {
   providerSyncCalls = [];
   activeRouting = null;
   agentGrantError = null;
+  gatewayFlag = false;
 });
 
 function baseOpts() {
@@ -455,7 +453,7 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
       sessionId: SANDBOX_ID,
       agentGrant: {
         agent: 'meta',
-        kortixCli: 'all',
+        permissions: 'all',
         connectors: [],
         env: [],
       },
@@ -507,6 +505,45 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
         call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
     );
     expect(finishCall?.updates.config).toMatchObject({ serviceKey: 'exec-tok-1' });
+  });
+
+  test('a gateway project boots with the gateway env on any plan (the gateway enforces the plan per request)', async () => {
+    // The pi harness has no native-provider path: a box booted without
+    // KORTIX_LLM_BASE_URL never starts pi, so its first prompt is never
+    // delivered. A free account still gets the gateway; the gateway limits it
+    // to free/BYOK models per request (principal.freeModelsOnly).
+    gatewayFlag = true;
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    await provisionSessionSandbox(baseOpts());
+    await opened;
+
+    const envVars = providerCreateOpts[0]?.envVars as Record<string, string>;
+    expect(envVars.KORTIX_LLM_BASE_URL).toBe('http://localhost:8008/v1/llm');
+    const finishCall = updateCalls.find(
+      (call) =>
+        call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
+    );
+    expect((finishCall?.updates.config as Record<string, unknown>).llmGatewayEnabled).toBe(true);
+  });
+
+  test('a native project boots without the gateway env', async () => {
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    await provisionSessionSandbox(baseOpts());
+    await opened;
+
+    const envVars = providerCreateOpts[0]?.envVars as Record<string, string>;
+    expect(envVars).not.toHaveProperty('KORTIX_LLM_BASE_URL');
+    const finishCall = updateCalls.find(
+      (call) =>
+        call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
+    );
+    expect((finishCall?.updates.config as Record<string, unknown>).llmGatewayEnabled).toBe(false);
   });
 
   test('stamps metadata.instanceId from KORTIX_INSTANCE_ID on the row it creates, and the finish write keeps it', async () => {

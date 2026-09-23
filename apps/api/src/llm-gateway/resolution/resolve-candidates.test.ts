@@ -169,7 +169,9 @@ mock.module('../routing', () => ({
 
 let runtimeManagedModel: { id: string } | undefined;
 let knownManagedModelId: string | null = null;
+const managedModels = await import('../models/managed-models');
 mock.module('../models/managed-models', () => ({
+  ...managedModels,
   RUNTIME_MANAGED_MODELS: [],
   getRuntimeManagedModel: (id: string) =>
     runtimeManagedModel?.id === id ? runtimeManagedModel : undefined,
@@ -255,8 +257,8 @@ describe('resolveCandidates — selected account key pool', () => {
   });
 });
 
-describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback', () => {
-  test('paid tier: platform-fee billing, 10% markup, managed fallback queued behind the BYOK key', async () => {
+describe('resolveCandidates — BYOK billing', () => {
+  test('paid tier: BYOK has no Kortix charge and no managed fallback', async () => {
     catalogUpstream = {
       baseUrl: 'https://api.anthropic.com/v1',
       envVar: 'ANTHROPIC_API_KEY',
@@ -269,17 +271,16 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
 
     const candidates = await resolveCandidates(p, 'anthropic/claude-sonnet-4.6');
 
-    expect(candidates).toHaveLength(2);
+    expect(candidates).toHaveLength(1);
     expect(candidates[0]).toMatchObject({
-      billingMode: 'platform-fee',
-      markup: 0.1,
+      billingMode: 'none',
+      markup: 0,
       apiKey: 'sk-user-key',
       credentialRef: 'ANTHROPIC_API_KEY',
     });
-    expect(candidates[1]).toMatchObject({ provider: 'kortix-managed' });
   });
 
-  test('queues every provider credential before the managed fallback', async () => {
+  test('queues every provider credential without a managed fallback', async () => {
     catalogUpstream = {
       baseUrl: 'https://api.anthropic.com/v1',
       envVar: 'ANTHROPIC_API_KEY',
@@ -295,17 +296,9 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
 
     const candidates = await resolveCandidates(p, 'anthropic/claude-sonnet-4.6');
 
-    expect(candidates).toHaveLength(3);
-    expect(candidates.map((candidate) => candidate.credentialRef)).toEqual([
-      'primary',
-      'secondary',
-      undefined,
-    ]);
-    expect(candidates.map((candidate) => candidate.apiKey)).toEqual([
-      'sk-primary',
-      'sk-secondary',
-      'm',
-    ]);
+    expect(candidates).toHaveLength(2);
+    expect(candidates.map((candidate) => candidate.credentialRef)).toEqual(['primary', 'secondary']);
+    expect(candidates.map((candidate) => candidate.apiKey)).toEqual(['sk-primary', 'sk-secondary']);
   });
 
   test('BYOK descriptor carries the model capability flags for the transport', async () => {
@@ -327,17 +320,15 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
   // endpoint), NOT the cloud-only managed/credits path. A project that connects
   // its own AWS_BEARER_TOKEN_BEDROCK resolves to a `kind:'bedrock'` descriptor
   // carrying that key and the bare Bedrock model id — routed through the bedrock
-  // transport exactly like the managed Bedrock path, just with the user's own
-  // credentials. KORTIX_MANAGED_PROVIDER_ENABLED is irrelevant here.
+  // transport with the user's own credentials.
+  // KORTIX_MANAGED_PROVIDER_ENABLED is irrelevant here.
   //
   // Regression coverage: the region MUST come from the project's OWN
   // AWS_REGION secret, never from deployment/operator config — an earlier
   // version of this fix baked resolveCatalogUpstream's baseUrl from
-  // config.AWS_BEDROCK_REGION (the MANAGED path's operator setting), which
-  // would have silently routed every BYOK Bedrock project to the operator's
-  // region regardless of which region the project's own bearer token was
-  // actually issued for. This test pins a project region that differs from
-  // both the managed default (us-west-2) and the BYOK default (us-east-1) to
+  // an operator-wide region, which would have silently routed every BYOK
+  // Bedrock project away from its own region. This test pins a project region
+  // that differs from the BYOK default (us-east-1) to
   // prove it's genuinely read from the project secret.
   test('BYOK Bedrock: standalone provider, builds a kind:bedrock descriptor from the PROJECT-OWNED bearer token + region', async () => {
     catalogUpstream = { envVar: 'AWS_BEARER_TOKEN_BEDROCK', kind: 'bedrock' };
@@ -373,7 +364,7 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
     );
   });
 
-  test('BYOK Bedrock with no AWS_REGION set: falls back to the BYOK default (us-east-1), not the managed AWS_BEDROCK_REGION default', async () => {
+  test('BYOK Bedrock with no AWS_REGION set: falls back to us-east-1', async () => {
     catalogUpstream = { envVar: 'AWS_BEARER_TOKEN_BEDROCK', kind: 'bedrock' };
     secretsByName = { AWS_BEARER_TOKEN_BEDROCK: 'bedrock-bearer-key', AWS_REGION: null };
     const p = principal();
@@ -460,7 +451,7 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
     expect(candidates[0]).toMatchObject({ billingMode: 'none', markup: 0 });
   });
 
-  test('self-hosted (billing disabled): no tier lookup, still gets the platform markup and a managed fallback', async () => {
+  test('self-hosted (billing disabled): no tier lookup, no charge, and no managed fallback', async () => {
     config.KORTIX_BILLING_INTERNAL_ENABLED = false;
     catalogUpstream = {
       baseUrl: 'https://api.anthropic.com/v1',
@@ -473,8 +464,8 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
     const candidates = await resolveCandidates(principal(), 'anthropic/claude-sonnet-4.6');
 
     expect(getAccountTier).not.toHaveBeenCalled();
-    expect(candidates).toHaveLength(2);
-    expect(candidates[0]).toMatchObject({ billingMode: 'none', markup: 0.1 });
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({ billingMode: 'none', markup: 0 });
   });
 
   test('no BYOK key connected for anyone throws provider_not_connected', async () => {
@@ -629,6 +620,8 @@ describe('resolveCandidates — codex + unknown provider', () => {
     expect(resolveCodexCredential).toHaveBeenCalledWith('p1', 'u1', undefined, {
       accountId: 'acct-1',
       sessionId: 'session-1',
+      // Legacy principal (no personalUserId): the personal override owner is the token user.
+      principalUserId: 'u1',
     });
   });
 
@@ -715,7 +708,7 @@ test('a prospective ChatGPT pool validates through the same member-bound resolve
   const actor = principal();
   const candidates = await resolveCandidates(actor, 'codex/gpt-5.5', { providerSecretPools: { codex: ['shared'] } });
   expect(candidates.map(candidate => candidate.poolSecretId)).toEqual(['shared']);
-  expect(resolveSessionProviderSecrets).toHaveBeenCalledWith({ accountId: actor.accountId, userId: actor.userId, providerId: 'codex', name: 'CODEX_AUTH_JSON', secretIds: ['shared'] });
+  expect(resolveSessionProviderSecrets).toHaveBeenCalledWith({ accountId: actor.accountId, projectId: actor.projectId, userId: actor.userId, grantUserId: actor.userId, providerId: 'codex', name: 'CODEX_AUTH_JSON', secretIds: ['shared'] });
   expect(resolveCodexAccountCredential).toHaveBeenCalledWith(expect.objectContaining({ sessionId: null }));
 });
 

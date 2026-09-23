@@ -19,9 +19,29 @@
  * the change once, in terms of sessions, and never names a cache shape.
  */
 
-import type { QueryClient } from '@tanstack/react-query';
+import type { Query, QueryClient } from '@tanstack/react-query';
 import type { ProjectSession } from '../core/rest/projects-client/sessions';
 import { qk } from './query-keys';
+
+/**
+ * Is this cache entry one of the three SESSION shapes above?
+ *
+ * The `sessionsScope(projectId)` prefix is not only sessions. `sessionPrompts`,
+ * `messages`, `sessionTurn` and `sessionSandbox` nest under
+ * `session(projectId, sessionId)`, and two of them are arrays. A prefix write
+ * treated the prompt inbox as a session list: starting a session put a
+ * `ProjectSession` into every cached inbox, and the composer of any session
+ * still in memory threw on render and could not send (prod, 2026-09-22).
+ *
+ * Keys, relative to the prefix: `['list', scope]`, `['list-paged', scope]`,
+ * and `[sessionId]`. Anything longer or different is not a session.
+ */
+function isSessionCacheKey(projectId: string, query: Query): boolean {
+  const prefix = qk.project.sessionsScope(projectId);
+  const rest = query.queryKey.slice(prefix.length);
+  if (rest.length === 2) return rest[0] === 'list' || rest[0] === 'list-paged';
+  return rest.length === 1 && typeof rest[0] === 'string';
+}
 
 export type ProjectSessionsUpdater = (sessions: ProjectSession[]) => ProjectSession[];
 
@@ -83,9 +103,9 @@ export function applyToCachedSessionShape(cached: unknown, update: ProjectSessio
  * Apply `update` to every cached session list for this project — flat, paged,
  * single-row, and every scope — in one call.
  *
- * Prefixed on `qk.project.sessionsScope(projectId)`, the same prefix every
- * mutation already invalidates, so a cache shape added later is covered without
- * finding each writer again.
+ * Prefixed on `qk.project.sessionsScope(projectId)` and narrowed to the session
+ * shapes by `isSessionCacheKey`: the prefix also holds each session's prompts,
+ * messages and turn, which are not sessions.
  */
 export function updateCachedProjectSessions(
   queryClient: QueryClient,
@@ -93,7 +113,10 @@ export function updateCachedProjectSessions(
   update: ProjectSessionsUpdater,
 ): void {
   queryClient.setQueriesData(
-    { queryKey: qk.project.sessionsScope(projectId) },
+    {
+      queryKey: qk.project.sessionsScope(projectId),
+      predicate: (query) => isSessionCacheKey(projectId, query),
+    },
     (cached: unknown) => applyToCachedSessionShape(cached, update),
   );
 }
@@ -153,7 +176,10 @@ export function upsertCachedProjectSession(
   session: ProjectSession,
 ): void {
   queryClient.setQueriesData(
-    { queryKey: qk.project.sessionsScope(projectId) },
+    {
+      queryKey: qk.project.sessionsScope(projectId),
+      predicate: (query) => isSessionCacheKey(projectId, query),
+    },
     (cached: unknown) => upsertIntoCachedSessionShape(cached, session),
   );
 }

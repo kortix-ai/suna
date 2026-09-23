@@ -1,4 +1,5 @@
 import { config } from '../../config';
+import { formatRelativeTime, sessionWebUrl } from '../slack/util';
 import { lookupEmailsByUserIds } from '../../projects/lib/access';
 import { listPickerModels, labelForModelRef } from '../../llm-gateway/models/picker';
 import { isModelServableForAccount } from '../../llm-gateway/resolution/default-model';
@@ -9,8 +10,14 @@ import {
   currentChannelSelection,
   loadProjectAgentGovernance,
   setChannelAgent,
+  setChannelConversationPolicy,
   setChannelModel,
 } from '../slack/selection';
+import { buildAgentsPicker } from './agent-picker';
+import { stopTeamsTurn } from './stop';
+import { messageAfterFreshStart, startFreshTeamsConversation } from './fresh-start';
+import { createOrJoinTeamsConversationSession } from './session';
+import { conversationPolicyLabel, normalizeConversationPolicy } from './participants';
 import { sendCard } from '../teams-api';
 import {
   buildConnectAccountCard,
@@ -21,6 +28,8 @@ import {
   type SelectOption,
 } from './cards';
 import {
+  conversationSession,
+  type TeamsConversationSession,
   ensureTeamsConversationBinding,
   listTenantProjects,
   resolveConversationProject,
@@ -29,7 +38,7 @@ import {
 } from './binding';
 import { lookupTeamsIdentity, revokeTeamsIdentity, teamsUserId } from './identity';
 import { buildTeamsLoginUrl } from './login';
-import { type TeamsCommand } from './util';
+import { conversationScope, describeTeamsConversation, type TeamsCommand } from './util';
 import type { TeamsActivity, TeamsConversationRef } from './types';
 
 export { parseTeamsCommand } from './util';
@@ -87,25 +96,87 @@ export async function handleTeamsCommand(input: {
       case 'help':
         await post(helpCard());
         return true;
+      case 'stop':
+      case 'cancel': {
+        // The live card's Stop button is the primary lever; this is the one
+        // that still works after the card has scrolled out of reach.
+        const session = await conversationSession(input.tenantId, conversationId);
+        if (!session) {
+          await post(buildNoticeCard('Nothing is running in this conversation.'));
+          return true;
+        }
+        const outcome = await stopTeamsTurn({
+          sessionId: session.sessionId,
+          teamsUserId: userId ?? '',
+          byName: input.activity.from?.name,
+        });
+        await post(
+          outcome.stopped
+            ? buildNoticeCard(
+                outcome.stoppedRuntime
+                  ? 'Stopped. The agent is no longer working on this.'
+                  : 'Stopped. The run was already closing on its own.',
+                '✅',
+              )
+            : buildNoticeCard(outcome.notice),
+        );
+        return true;
+      }
+      case 'new':
+      case 'reset': {
+        // A chat is one conversation id for life, so without this every task
+        // anyone ever asked shared one session. The old one stays in Kortix.
+        const selection = await currentChannelSelection(ctx);
+        const outcome = await startFreshTeamsConversation({
+          tenantId: input.tenantId,
+          conversationId,
+          scope: conversationScope(input.activity),
+          teamsUserId: userId ?? '',
+          channelPolicy: selection?.conversationPolicy ?? null,
+        });
+        if (!outcome.reset) {
+          await post(buildNoticeCard(outcome.notice));
+          return true;
+        }
+        const message = messageAfterFreshStart(input.activity);
+        const previous = outcome.previousSessionId
+          ? ` The previous session stays in Kortix — [open it](${sessionWebUrl(config.FRONTEND_URL, input.projectId, outcome.previousSessionId)}).`
+          : '';
+        await post(
+          buildNoticeCard(
+            message ? `Starting a new session.${previous}` : `Your next message starts a new session.${previous}`,
+            '✅',
+          ),
+        );
+        if (message) {
+          await createOrJoinTeamsConversationSession({
+            projectId: input.projectId,
+            tenantId: input.tenantId,
+            conversationId,
+            activity: { ...input.activity, text: message, id: `${input.activity.id ?? 'new'}:new` },
+          });
+        }
+        return true;
+      }
       case 'status':
       case 'config':
       case 'settings':
         await post(await buildStatusCard(ctx, input.tenantId, conversationId, input.projectId));
         return true;
       case 'models':
-        await ensureBinding(input.tenantId, conversationId, input.projectId);
+        await ensureBinding(input.tenantId, conversationId, input.projectId, input.activity);
         await post(await buildModelsCard(ctx));
         return true;
       case 'model':
-        await ensureBinding(input.tenantId, conversationId, input.projectId);
+        await ensureBinding(input.tenantId, conversationId, input.projectId, input.activity);
         await post(await setModel(ctx, arg));
         return true;
       case 'agents':
-        await ensureBinding(input.tenantId, conversationId, input.projectId);
-        await post(await buildAgentsCard(ctx, input.projectId));
+        await ensureBinding(input.tenantId, conversationId, input.projectId, input.activity);
+        await post(await buildAgentsPicker(ctx, input.projectId, undefined, userId));
         return true;
       case 'agent':
-        await ensureBinding(input.tenantId, conversationId, input.projectId);
+        await ensureBinding(input.tenantId, conversationId, input.projectId, input.activity);
         await post(await setAgent(ctx, arg));
         return true;
       case 'projects':
@@ -114,6 +185,10 @@ export async function handleTeamsCommand(input: {
       case 'use':
       case 'switch':
         await post(await switchProject(input.tenantId, conversationId, arg));
+        return true;
+      case 'policy':
+        await ensureBinding(input.tenantId, conversationId, input.projectId, input.activity);
+        await post(await setPolicy(ctx, arg));
         return true;
       default:
         return false;
@@ -125,8 +200,18 @@ export async function handleTeamsCommand(input: {
   }
 }
 
-async function ensureBinding(tenantId: string, conversationId: string, projectId: string): Promise<void> {
-  await ensureTeamsConversationBinding({ tenantId, conversationId, projectId });
+async function ensureBinding(
+  tenantId: string,
+  conversationId: string,
+  projectId: string,
+  activity?: TeamsActivity,
+): Promise<void> {
+  await ensureTeamsConversationBinding({
+    tenantId,
+    conversationId,
+    projectId,
+    ...(activity ? describeTeamsConversation(activity) : {}),
+  });
 }
 
 function helpCard() {
@@ -139,6 +224,9 @@ function helpCard() {
     { cmd: '/agents', desc: 'pick the agent for this conversation' },
     { cmd: '/projects', desc: 'list connected projects' },
     { cmd: '/use <name>', desc: 'point this conversation at another project' },
+    { cmd: '/stop', desc: 'stop the run in progress here' },
+    { cmd: '/new [message]', desc: 'start a new session in this chat' },
+    { cmd: '/policy', desc: 'who may join sessions started here: open, owner, approval' },
   ]);
 }
 
@@ -148,9 +236,10 @@ async function buildStatusCard(
   conversationId: string,
   projectId: string,
 ) {
-  const [selection, projects] = await Promise.all([
+  const [selection, projects, session] = await Promise.all([
     currentChannelSelection(ctx),
     listTenantProjects(tenantId).catch(() => []),
+    conversationSession(tenantId, conversationId).catch(() => null),
   ]);
   const projectName = projects.find((p) => p.projectId === projectId)?.name ?? projectId;
   return buildPanelCard({
@@ -160,9 +249,51 @@ async function buildStatusCard(
       { label: 'Project', value: projectName },
       { label: 'Agent', value: selection?.agentName || 'default' },
       { label: 'Model', value: selection?.opencodeModel ? labelForModelRef(selection.opencodeModel) : 'project default' },
+      // The run itself. `/status` was the one place a user looks to answer
+      // "what is this conversation doing", and it answered everything except
+      // that — so a run that had quietly stopped looked identical to one still
+      // working.
+      { label: 'Session', value: describeConversationSession(session) },
     ],
-    url: `${dashboardBase()}/projects/${projectId}`,
+    // Deep-link to the run when there is one: the project page is a detour
+    // from the thing the card is about.
+    url: session
+      ? sessionWebUrl(config.FRONTEND_URL, projectId, session.sessionId)
+      : `${dashboardBase()}/projects/${projectId}`,
   });
+}
+
+/**
+ * Every value of `project_session_status`, as a glyph and a word a user reads.
+ *
+ * The first cut of this map keyed on `idle`, which is not one of them — so it
+ * never matched, and `queued`, `branching`, `provisioning` and `completed` all
+ * fell through to a bare `•`. The enum is the contract
+ * (packages/db/src/schema/kortix.ts): queued, branching, provisioning, running,
+ * stopped, failed, completed.
+ *
+ * `branching` and `provisioning` are how the sandbox is built, not something a
+ * user asked about; both read as "starting". A status outside the enum still
+ * renders, verbatim, rather than being swallowed.
+ */
+const SESSION_STATUS: Record<string, { glyph: string; label: string }> = {
+  queued: { glyph: '•', label: 'queued' },
+  branching: { glyph: '•', label: 'starting' },
+  provisioning: { glyph: '•', label: 'starting' },
+  running: { glyph: '⏳', label: 'working' },
+  completed: { glyph: '✓', label: 'done' },
+  stopped: { glyph: '•', label: 'stopped' },
+  failed: { glyph: '✗', label: 'failed' },
+};
+
+function describeConversationSession(session: TeamsConversationSession | null): string {
+  if (!session) return 'none yet — @-mention me with a task';
+  const raw = session.status ?? '';
+  const known = SESSION_STATUS[raw];
+  const glyph = known?.glyph ?? '•';
+  const label = known?.label ?? raw ?? 'unknown';
+  const when = session.createdAt ? ` · started ${formatRelativeTime(session.createdAt)}` : '';
+  return `${glyph} ${label}${when}`;
 }
 
 async function buildWhoamiCard(
@@ -269,39 +400,9 @@ async function setModel(ctx: ReturnType<typeof teamsChannelCtx>, arg: string) {
   return buildNoticeCard(`Model set to ${labelForModelRef(stored)}. New sessions will use it.`);
 }
 
-async function buildAgentsCard(ctx: ReturnType<typeof teamsChannelCtx>, projectId: string) {
-  const [governance, selection] = await Promise.all([
-    loadProjectAgentGovernance(projectId),
-    currentChannelSelection(ctx),
-  ]);
-  const current = selection?.agentName ?? null;
-  if (governance.agents.length === 0) {
-    return buildNoticeCard(
-      'This project has no declared agents, so it runs the default agent. Declare agents in `kortix.yaml` to switch here.',
-      '🤖',
-    );
-  }
-  const options: SelectOption[] = [
-    { label: 'Default', current: !current, data: { agent: '' } },
-    ...governance.agents.slice(0, 6).map((a) => ({
-      label: a.name,
-      hint: a.description ?? undefined,
-      current: current === a.name,
-      data: { agent: a.name },
-    })),
-  ];
-  return buildSelectCard({
-    emoji: '🤖',
-    title: 'Agent',
-    subtitle: current ? `Currently ${current}` : 'Currently the default agent',
-    verb: 'teams_set_agent',
-    options,
-  });
-}
-
 async function setAgent(ctx: ReturnType<typeof teamsChannelCtx>, arg: string) {
   const name = arg.trim();
-  if (!name) return buildAgentsCard(ctx, (await currentChannelSelection(ctx))?.projectId ?? '');
+  if (!name) return buildAgentsPicker(ctx, (await currentChannelSelection(ctx))?.projectId ?? '');
   if (name.toLowerCase() === 'default') {
     await setChannelAgent(ctx, null);
     return buildNoticeCard('Agent reset to the project default.');
@@ -312,6 +413,42 @@ async function setAgent(ctx: ReturnType<typeof teamsChannelCtx>, arg: string) {
   }
   if (!res.ok) return buildNoticeCard('Connect a project to this conversation first.');
   return buildNoticeCard(`Agent set to ${name}. New sessions will use it.`);
+}
+
+const POLICY_ALIASES: Record<string, 'project_open' | 'owner_only' | 'owner_approval'> = {
+  open: 'project_open',
+  project_open: 'project_open',
+  members: 'project_open',
+  owner: 'owner_only',
+  owner_only: 'owner_only',
+  private: 'owner_only',
+  approval: 'owner_approval',
+  owner_approval: 'owner_approval',
+  approve: 'owner_approval',
+};
+
+async function setPolicy(ctx: ReturnType<typeof teamsChannelCtx>, arg: string) {
+  const selection = await currentChannelSelection(ctx);
+  if (!selection) return buildNoticeCard('Connect a project to this conversation first — try /projects.', '📁');
+  const current = normalizeConversationPolicy(selection.conversationPolicy);
+  const requested = arg.trim().toLowerCase();
+  if (!requested) {
+    return buildPanelCard({
+      emoji: '🔒',
+      title: 'Session policy',
+      rows: [
+        { label: 'Current', value: conversationPolicyLabel(current) },
+        { label: 'open', value: 'linked project members can join sessions started here (default)' },
+        { label: 'approval', value: 'the session owner approves each person' },
+        { label: 'owner', value: 'only the session owner' },
+      ],
+    });
+  }
+  const next = POLICY_ALIASES[requested];
+  if (!next) return buildNoticeCard('Use `/policy open`, `/policy approval`, or `/policy owner`.');
+  const ok = await setChannelConversationPolicy(ctx, next);
+  if (!ok) return buildNoticeCard('Connect a project to this conversation first — try /projects.', '📁');
+  return buildNoticeCard(`Session policy set to **${conversationPolicyLabel(next)}**. New sessions started here use it.`, '✅');
 }
 
 async function buildProjectsCard(tenantId: string, currentProjectId: string) {
@@ -341,5 +478,5 @@ async function switchProject(tenantId: string, conversationId: string, arg: stri
     : null;
   if (!match) return buildProjectsCard(tenantId, (await resolveConversationProject(tenantId, conversationId)) ?? '');
   await setConversationProject({ tenantId, conversationId, projectId: match.projectId });
-  return buildNoticeCard(`This conversation now runs *${match.name}*.`);
+  return buildNoticeCard(`This conversation now runs **${match.name}**.`);
 }

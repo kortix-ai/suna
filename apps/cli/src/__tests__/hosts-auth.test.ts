@@ -90,6 +90,7 @@ function mockApi(
     session_id: string | null;
     agent: string | null;
     connectors: string[] | 'all' | null;
+    kortix_permissions?: string[] | 'all' | null;
     kortix_cli: string[] | 'all' | null;
     env: string[] | 'all' | null;
   },
@@ -203,6 +204,7 @@ describe('kortix hosts login', () => {
       session_id: 'session_1',
       agent: 'veyris-internal',
       connectors: 'all',
+      kortix_permissions: 'all',
       kortix_cli: 'all',
       env: 'all',
     });

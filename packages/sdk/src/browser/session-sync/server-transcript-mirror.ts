@@ -49,6 +49,7 @@ export interface MirrorHydrateDecision {
 	runtimeSessionId: string;
 	/** The store already holds messages for that root. */
 	hasMessages: boolean;
+	hasLoadedTranscript?: boolean;
 }
 
 /**
@@ -59,7 +60,7 @@ export function shouldHydrateFromMirror(input: MirrorHydrateDecision): boolean {
 	const { envelope, runtimeSessionId, hasMessages } = input;
 	if (!envelope) return false;
 	// A live read outranks a snapshot, always.
-	if (hasMessages) return false;
+	if (hasMessages || input.hasLoadedTranscript) return false;
 	// No root yet means no identity to match against, so nothing can be proven
 	// about the ids in the payload.
 	if (!runtimeSessionId) return false;
@@ -144,6 +145,42 @@ export async function loadSessionTranscriptMirror(input: {
 	try {
 		return await getSessionTranscriptSync(scope.projectId, scope.sessionId, {
 			limit: input.limit ?? MIRROR_HYDRATE_LIMIT,
+			signal: input.signal,
+		});
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * The mirror window OLDER than `before`.
+ *
+ * Deliberately NOT `loadSessionTranscriptMirror` with an extra argument: that
+ * function rides the session-open bundle's one-shot stash, which holds the
+ * FIRST window and must never be handed back for a second request. This is
+ * always a fresh read.
+ *
+ * `history: true` is not sent. It gates on the project flag and adds the
+ * current-root check, so passing it would 403 paging on a legacy mirror
+ * captured before the flag existed — the rows are the same either way, and
+ * `shouldHydrateFromMirror` already applies the root guard client-side.
+ *
+ * Never throws, for the same reason the first window does not: paging further
+ * back is an accelerator, and its absence costs only the page the user cannot
+ * see yet.
+ */
+export async function loadOlderSessionTranscriptMirror(input: {
+	kortixSessionScope: string | undefined;
+	before: string;
+	limit?: number;
+	signal?: AbortSignal;
+}): Promise<SessionTranscriptSyncEnvelope | null> {
+	const scope = parseKortixSessionScope(input.kortixSessionScope);
+	if (!scope) return null;
+	try {
+		return await getSessionTranscriptSync(scope.projectId, scope.sessionId, {
+			limit: input.limit ?? MIRROR_HYDRATE_LIMIT,
+			before: input.before,
 			signal: input.signal,
 		});
 	} catch {

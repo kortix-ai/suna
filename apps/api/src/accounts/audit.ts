@@ -252,6 +252,7 @@ const CSV_HEADERS = [
   'agent_name',
   'initiator_actor_type',
   'initiator_actor_id',
+  'on_behalf_of_user_id',
   'parent_event_id',
   'delegation_depth',
   'source',

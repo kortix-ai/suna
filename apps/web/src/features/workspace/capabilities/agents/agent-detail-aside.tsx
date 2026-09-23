@@ -151,9 +151,9 @@ export function AgentModel({ projectId, agentName }: { projectId: string; agentN
 /**
  * An agent's manifest allowlist (`agents:` in kortix.yaml, or the legacy
  * `[[agents]]` in kortix.toml) — which secrets it receives in $ENV, which
- * connectors it may call, which Kortix-CLI powers it has. Editors EDIT
+ * connectors it may call, which Kortix permissions it has. Editors EDIT
  * secrets + connectors here (persisted straight to the manifest); everyone
- * else sees the read-only mirror. `kortix_cli` stays read-only (a sharper
+ * else sees the read-only mirror. `kortix_permissions` stays read-only (a sharper
  * escalation, manifest-only). Absent for OpenCode-discovered agents, which
  * aren't governed by the manifest.
  */
@@ -244,7 +244,7 @@ function AgentScopeCard({
         <dl className="space-y-2">
           <ScopeRow label={tI18nComplete.raw('textd8707d411d99')} value={scope.env} />
           <ScopeRow label={tI18nComplete.raw('textc3d2e79ebdd0')} value={scope.connectors} />
-          <ScopeRow label="CLI" value={scope.kortix_cli} />
+          <ScopeRow label={tI18nComplete.raw('text8f12a6e05e6d')} value={scope.kortix_permissions ?? scope.kortix_cli} />
         </dl>
         <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
           {tI18nComplete.raw('textac4c418e412f')}
@@ -276,7 +276,7 @@ function AgentScopeCard({
         onChange={setConnectors}
       />
       <dl>
-        <ScopeRow label="CLI" value={scope.kortix_cli} />
+        <ScopeRow label={tI18nComplete.raw('text8f12a6e05e6d')} value={scope.kortix_permissions ?? scope.kortix_cli} />
       </dl>
       {/* The save bar only exists once there is something to save — an always-on
           disabled pair of buttons is chrome that never earns its row. */}

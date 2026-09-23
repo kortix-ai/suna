@@ -13,7 +13,9 @@ import {
 // replaced wholesale by `mock.module` in several route tests, so every name
 // imported from it is a name those stubs must also declare.
 import { authorize, assertAuthorized } from '../../iam/authorize';
-import { actorOf, type Actor } from '../../iam/actor';
+import { actorOf, isAgentPrincipalActor, type Actor } from '../../iam/actor';
+import { agentSessionStanding } from './agent-session-standing';
+export { agentSessionStanding } from './agent-session-standing';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
 import { projectRoleForUser } from '../../iam/read-models';
 // Straight from `iam/denial-message`, not the `iam` barrel: the barrel and the
@@ -25,6 +27,7 @@ import { invalidateIamCacheForUser, registerPrincipalScopedMemo } from '../../ia
 import { setContextField } from '../../lib/request-context';
 import { auth } from '../../openapi';
 import { recordAuditEvent } from '../../shared/audit';
+import { hasAccountSessionOversight } from '../../iam/session-oversight';
 import { db } from '../../shared/db';
 import {
   IMPERSONATION_INVALID_CODE,
@@ -225,6 +228,43 @@ export function sessionIsTombstoned(row: { metadata: unknown }): boolean {
   return typeof metadata.deletedAt === 'string';
 }
 
+/**
+ * Audit a session read that only account session oversight allowed. Deduped to
+ * one event per (admin, session) per hour: `loadVisibleSession` runs on every
+ * poll of an open session, and one row per poll would bury the log. The first
+ * open is always recorded on each replica.
+ */
+const OVERSIGHT_AUDIT_WINDOW_MS = 60 * 60 * 1000;
+const OVERSIGHT_AUDIT_MAX_ENTRIES = 5_000;
+const oversightAuditedAt = new Map<string, number>();
+
+async function recordOversightSessionRead(input: {
+  accountId: string;
+  userId: string;
+  sessionId: string;
+  ownerId: string | null;
+  visibility: string;
+}): Promise<void> {
+  const key = `${input.userId}|${input.sessionId}`;
+  const now = Date.now();
+  const last = oversightAuditedAt.get(key);
+  if (last !== undefined && now - last < OVERSIGHT_AUDIT_WINDOW_MS) return;
+  if (oversightAuditedAt.size >= OVERSIGHT_AUDIT_MAX_ENTRIES) oversightAuditedAt.clear();
+  oversightAuditedAt.set(key, now);
+  await recordAuditEvent({
+    accountId: input.accountId,
+    actorUserId: input.userId,
+    action: 'project.admin_oversight_session_read',
+    resourceType: 'project_session',
+    resourceId: input.sessionId,
+    metadata: {
+      via: 'account_session_oversight',
+      sessionOwnerId: input.ownerId,
+      sessionVisibility: input.visibility,
+    },
+  });
+}
+
 export async function loadVisibleSession(
   loaded: {
     row: ProjectRow;
@@ -299,16 +339,38 @@ export async function loadVisibleSession(
         ).allowed
       : false;
   }
+  const visibility = row.visibility as 'private' | 'project' | 'restricted';
+  let visible = isProjectSessionVisibleTo(
+    visibility,
+    row.createdBy,
+    grants,
+    subject,
+    ownership,
+    { metadata: row.metadata, canManageProject },
+  );
+  // Account session oversight: asked only when ordinary visibility refused, so
+  // the common path never pays for it, and only for a human credential.
   if (
-    !isProjectSessionVisibleTo(
-      row.visibility as 'private' | 'project' | 'restricted',
-      row.createdBy,
-      grants,
-      subject,
-      ownership,
-      { metadata: row.metadata, canManageProject },
-    )
+    !visible &&
+    boundCredentialSessionId === null &&
+    (await hasAccountSessionOversight(loaded.userId, loaded.row.accountId))
   ) {
+    visible = isProjectSessionVisibleTo(visibility, row.createdBy, grants, subject, ownership, {
+      metadata: row.metadata,
+      canManageProject,
+      accountSessionOversight: true,
+    });
+    if (visible) {
+      await recordOversightSessionRead({
+        accountId: loaded.row.accountId,
+        userId: loaded.userId,
+        sessionId,
+        ownerId: row.createdBy ?? null,
+        visibility: row.visibility,
+      });
+    }
+  }
+  if (!visible) {
     // A platform-admin bypass already verified for the parent project (see
     // loadProjectForUser) also covers a session that would otherwise be
     // invisible (private / not-my-grant). Audit every use — this is a real
@@ -323,7 +385,14 @@ export async function loadVisibleSession(
       metadata: { via: 'admin_bypass_header', sessionVisibility: row.visibility },
     });
   }
-  const isOwner = row.createdBy === loaded.userId;
+  let isOwner = row.createdBy === loaded.userId;
+  if (loaded.actor && isAgentPrincipalActor(loaded.actor)) {
+    // Spec §2: never the launcher's standing. Checked after the ordinary
+    // rules so it can only narrow them.
+    const standing = agentSessionStanding(boundCredentialSessionId, row, visible);
+    if (!standing.visible) return null;
+    isOwner = standing.isOwner;
+  }
   const ownerIsMachine = ownerIsMachineCanMatter(isOwner, canManageProject)
     ? await sessionOwnerIsMachine(loaded.row.accountId, row.createdBy)
     : false;
@@ -361,7 +430,7 @@ export async function loadVisibleSession(
  *    gate denied them — the same escalation the member-sharing rule closes.
  */
 export async function loadSessionForSharing(
-  loaded: { row: ProjectRow; userId: string; effectiveRole: ProjectRole },
+  loaded: { row: ProjectRow; userId: string; effectiveRole: ProjectRole; actor?: Actor | null },
   sessionId: string,
   /**
    * The CALLER's own session when the credential is bound to one. REQUIRED —
@@ -393,7 +462,14 @@ export async function loadSessionForSharing(
   })) {
     return null;
   }
-  const isOwner = row.createdBy === loaded.userId;
+  let isOwner = row.createdBy === loaded.userId;
+  if (loaded.actor && isAgentPrincipalActor(loaded.actor)) {
+    // Spec §2: an agent session manages share links only for sessions it
+    // owns (its own and its children), never the launcher's others.
+    const standing = agentSessionStanding(callerSessionId, row, true);
+    if (!standing.visible) return null;
+    isOwner = standing.isOwner;
+  }
   const canManageProject = roleAllows(loaded.effectiveRole, 'manage');
   const ownerIsMachine = ownerIsMachineCanMatter(isOwner, canManageProject)
     ? await sessionOwnerIsMachine(loaded.row.accountId, row.createdBy)
@@ -887,6 +963,27 @@ export function isAdminBypassEligible(input: {
   return input.action === 'read' && !input.isServiceAccount && input.bypassHeaderPresent;
 }
 
+/**
+ * The `effectiveRole` label manage-tier branches read (`roleAllows(…,
+ * 'manage')`: share management, `can_manage`, the serialized
+ * `effective_project_role`).
+ *
+ * Legacy callers keep the caller's own role. An agent-principal session (spec
+ * docs/specs/2026-09-22-agents-as-principals.md §2.1) never inherits its
+ * launcher's role: it is `manager` only when the AGENT's effective permissions
+ * hold `project.write` (the IAM action behind the `manage` tier,
+ * `iamActionForProjectAccess('manage')`), else `member`. Pure; exported for
+ * unit tests.
+ */
+export function deriveEffectiveRole(input: {
+  agentPrincipal: boolean;
+  agentMayWrite: boolean;
+  callerRole: ProjectRole;
+}): ProjectRole {
+  if (!input.agentPrincipal) return input.callerRole;
+  return input.agentMayWrite ? 'manager' : 'member';
+}
+
 export async function loadProjectForUser(c: Context, projectId: string, action: ProjectAccessAction) {
   const userId = c.get('userId') as string;
   if (!isUuid(projectId)) return null;
@@ -992,12 +1089,14 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
           throw buildDenialError(iamAction, verdict.reason);
         }
         const verb = action === 'manage' ? 'manage this project' : 'change this project';
-        throw new HTTPException(403, {
-          message: `Your role on this project doesn't let you ${verb}. Ask an account owner or admin to grant you a higher role.`,
-        });
+        throw buildDenialError(
+          iamAction,
+          verdict.reason,
+          `Your role on this project doesn't let you ${verb}. Ask an account owner or admin to grant you a higher role.`,
+        );
       }
     }
-    throw new HTTPException(403, { message: 'You do not have access to this project' });
+    throw buildDenialError(iamAction, verdict.reason, 'You do not have access to this project');
   }
 
   // effectiveRole label for the UI / downstream helpers. The engine
@@ -1009,8 +1108,19 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
   // For a service account there's no account role; capabilities come purely from
   // its policies (already enforced by `verdict`). Use the safe-minimum 'member'
   // label, exactly as for a member granted access via a policy with no role tier.
-  const effectiveRole =
+  const callerRole =
     (accountRole ? effectiveProjectRole(accountRole, projectRole) : projectRole) ?? 'member';
+  const agentPrincipal = isAgentPrincipalActor(actor);
+  const effectiveRole = deriveEffectiveRole({
+    agentPrincipal,
+    agentMayWrite: agentPrincipal
+      ? // `authorize` directly, not `agentEffectiveAllows`: for an agent-principal
+        // actor they are the same verdict, and a new name imported from
+        // iam/authorize is one more export every hand-written mock must list.
+        (await authorize(actor, iamActionForProjectAccess('manage'), { type: 'project', id: projectId })).allowed
+      : false,
+    callerRole: callerRole as ProjectRole,
+  });
   (c as any).set('accountId', row.accountId);
 
   return {

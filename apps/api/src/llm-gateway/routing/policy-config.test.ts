@@ -50,8 +50,8 @@ describe('gateway fallback policy configuration', () => {
   test('routes the platform default to an independent managed fallback', () => {
     expect(parseFallbackPolicies(DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES)).toContainEqual({
       id: 'platform-default-resilience',
-      models: ['glm-5.3-flash'],
-      fallbackModels: ['deepseek-v4-flash'],
+      models: ['deepseek-v4.1-flash'],
+      fallbackModels: ['glm-5.3-flash'],
       fallbackOn: 'transient',
     });
   });

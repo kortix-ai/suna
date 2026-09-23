@@ -1,6 +1,6 @@
 import { buildPreviewGuardInstall } from './preview-guard';
 
-export type SandboxPreviewProvider = 'auto' | 'platinum' | 'daytona';
+export type SandboxPreviewProvider = 'auto' | 'platinum';
 
 export interface SandboxPreviewInput {
   provider: SandboxPreviewProvider;
@@ -10,7 +10,7 @@ export interface SandboxPreviewInput {
 }
 
 export interface SandboxPreviewResult {
-  provider: 'platinum' | 'daytona';
+  provider: 'platinum';
   exitCode: number;
   sandboxId?: string;
   /** Where people go. The stable name when there is one, else `sandboxOrigin`. */
@@ -28,6 +28,13 @@ export function previewLockfileHash(value: string): string {
     throw new Error('preview lockfile hash must contain 64 hex characters');
   }
   return hash;
+}
+
+export function previewDeploymentStatusPath(runId: string, runAttempt: string): string {
+  if (![runId, runAttempt].every((value) => /^[a-z0-9_-]+$/i.test(value))) {
+    throw new Error('invalid preview workflow run identity');
+  }
+  return `/workspace/kortix-preview/run-${runId}-${runAttempt}.exit`;
 }
 
 export interface PreviewSandboxRecord {
@@ -64,6 +71,7 @@ export function buildPreviewBootstrapScript(input: {
    * has not already proved. Run it there on demand instead.
    */
   runTests?: boolean;
+  statusPath?: string;
 }): string {
   if (!/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/i.test(input.repository)) {
     throw new Error(`invalid GitHub repository: ${input.repository}`);
@@ -85,7 +93,7 @@ set -euo pipefail
 ROOT=/workspace/suna
 STATE=${state}
 LOG="$STATE/kortix-preview.log"
-STATUS="$STATE/kortix-preview.exit"
+STATUS=${shellQuote(input.statusPath ?? `${state}/kortix-preview.exit`)}
 PHASE="$STATE/kortix-preview.phase"
 SECRETS="$STATE/runtime-secrets.json"
 export HOME=/root
@@ -146,7 +154,7 @@ for module in overlay bridge br_netfilter veth nf_tables ip_tables iptable_nat; 
 done
 if ! docker info >/dev/null 2>&1; then
   rm -f /var/run/docker.pid /var/run/docker.sock
-  nohup dockerd --host=unix:///var/run/docker.sock > "$STATE/dockerd.log" 2>&1 &
+  nohup dockerd --host=unix:///var/run/docker.sock 9>&- > "$STATE/dockerd.log" 2>&1 &
   timeout 180 sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'
 fi
 docker info >/dev/null
@@ -428,20 +436,21 @@ export function selectStalePreviewSandboxIds(
     .map((sandbox) => sandbox.id);
 }
 
+/**
+ * Previews run on Platinum only, host and sessions. There is no Daytona
+ * fallback: from 2026-08-10 an infrastructure failure moved the preview to
+ * Daytona, and on 2026-09-21 the shared Daytona org hit its snapshot quota and
+ * every preview session failed there. A Platinum failure now fails the preview
+ * loudly. Daytona code remains only to tear down previews created before this.
+ */
 export async function runSandboxPreview(
   input: SandboxPreviewInput,
   runners: {
     platinum: (input: SandboxPreviewInput) => Promise<SandboxPreviewResult>;
-    daytona: (input: SandboxPreviewInput) => Promise<SandboxPreviewResult>;
   },
 ): Promise<SandboxPreviewResult> {
-  if (input.provider === 'platinum') return runners.platinum(input);
-  if (input.provider === 'daytona') return runners.daytona(input);
-  try {
-    return await runners.platinum(input);
-  } catch (error) {
-    if (!(error instanceof PreviewInfrastructureError)) throw error;
-    console.warn(`[sandbox-preview] Platinum infrastructure failed; fallback=daytona error=${error.message}`);
-    return runners.daytona(input);
+  if (input.provider !== 'auto' && input.provider !== 'platinum') {
+    throw new Error(`previews run on Platinum only; received provider ${String(input.provider)}`);
   }
+  return runners.platinum(input);
 }

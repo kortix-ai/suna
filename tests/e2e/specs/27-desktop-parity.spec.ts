@@ -29,6 +29,10 @@ import {
   signIn,
 } from "../helpers/session-auth";
 import {
+  SESSION_READY_TIMEOUT_MS,
+  waitForSessionReady,
+} from "../helpers/session-ready";
+import {
   dismissOnboarding,
   dismissWelcomeCard,
   selectAccountForUi,
@@ -291,7 +295,7 @@ for (const runtime of runtimes) {
           "Skills",
           "Connectors",
           "Secrets",
-          "Project actions",
+          "Kortix permissions",
           "Model",
           "Tools",
           "Workspace",
@@ -427,6 +431,29 @@ for (const runtime of runtimes) {
             },
           );
           expect(denied).toContain("Unauthorized IPC sender");
+
+          await resize(720, 480);
+          await page.goto(`${baseURL}/projects/${project.id}/settings/repositories`);
+          const changeRepository = page.getByRole('button', { name: 'Change', exact: true });
+          await expect(changeRepository).toBeVisible();
+          await changeRepository.click();
+          const repositoryDialog = page.getByRole('dialog', { name: 'Change repository' });
+          await expect(repositoryDialog.getByRole('textbox', { name: 'New GitHub repository URL' })).toBeVisible();
+          const confirmRepository = repositoryDialog.getByRole('button', { name: 'Change repository', exact: true });
+          await expect(confirmRepository).toBeVisible();
+          await expect.poll(() => confirmRepository.evaluate((button) => {
+            const bounds = button.getBoundingClientRect();
+            return bounds.bottom <= window.innerHeight;
+          })).toBe(true);
+          const cancelRepository = repositoryDialog.getByRole('button', { name: 'Cancel' });
+          await expect.poll(() => cancelRepository.evaluate((button) => {
+            const bounds = button.getBoundingClientRect();
+            const hit = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
+            return hit === button || button.contains(hit);
+          })).toBe(true);
+          await page.screenshot({ path: test.info().outputPath('desktop-repository-change.png'), scale: 'css' });
+          await cancelRepository.click();
+          await expect(repositoryDialog).toBeHidden();
         }
         for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
           await api(session.access_token, 'PATCH', `/projects/${project.id}/features`, {
@@ -469,7 +496,10 @@ for (const runtime of runtimes) {
       baseURL,
       desktopApp,
     }) => {
-      test.setTimeout(180_000);
+      // A deployed target provisions a real sandbox first (see below).
+      test.setTimeout(
+        isDeployedTarget() ? 180_000 + SESSION_READY_TIMEOUT_MS : 180_000,
+      );
       const databaseUrl =
         process.env.KE2E_DATABASE_URL || process.env.E2E_DATABASE_URL;
       if (!databaseUrl)
@@ -654,6 +684,11 @@ for (const runtime of runtimes) {
             timeout: 60_000,
           });
           sessionId = new URL(page.url()).pathname.split("/").at(-1)!;
+          // Stop is enabled only while a turn runs, and the turn starts only
+          // once the sandbox is ready. A fresh preview builds the default
+          // image for ~9 min first, so a flat 60 s wait on Stop failed 11 of
+          // 13 previews with the session still in `provisioning`.
+          await waitForSessionReady(api, auth.access_token, project.id, sessionId);
           await expect(page.getByRole("button", { name: "Stop", exact: true }))
             .toBeEnabled({ timeout: 60_000 });
           await expect(input).toBeEmpty();
@@ -967,6 +1002,8 @@ for (const runtime of runtimes) {
             name: "Invalid authorization request",
           });
         await installBrowserSessionDirect(page, session, deadEnd, authOptions);
+        await page.goto(`${baseURL}/dashboard`, { waitUntil: "domcontentloaded" });
+        await page.goto(deadEnd, { waitUntil: "domcontentloaded" });
         await expect(heading(page)).toBeVisible({ timeout: 60_000 });
         const back = page.getByRole("button", { name: "Back", exact: true });
         if (!desktop) {
@@ -984,8 +1021,8 @@ for (const runtime of runtimes) {
           box!.y + box!.height,
           "Back must sit inside the title-bar band",
         ).toBeLessThanOrEqual(43);
-        // installBrowserSessionDirect lands on /favicon.png first, so an
-        // in-app entry is behind the dead end and Back is history.back().
+        // The dashboard is a real in-app history entry behind this frame.
+        // Back returns there without relying on the favicon bootstrap.
         await back.click();
         await expect(page).not.toHaveURL(/\/oauth\/authorize/);
         if (desktopApp) return;

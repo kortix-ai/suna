@@ -823,7 +823,10 @@ flow(
   {
     domain: 'projects',
     requires: ['managedGit'],
-    routes: ['PATCH /v1/projects/:projectId/sandbox-provider'],
+    routes: [
+      'GET /v1/projects/:projectId',
+      'PATCH /v1/projects/:projectId/sandbox-provider',
+    ],
   },
   async (ctx) => {
     const p = await ctx.fixtures.project({ managedGit: true, seed: true });
@@ -838,27 +841,54 @@ flow(
       r.status(400);
     });
     if (ctx.env.target !== 'local') {
-      await ctx.step(
-        "pin to the enabled 'daytona' provider → 200 project or preparation",
-        async () => {
+      // The enabled set is deployment config (ALLOWED_SANDBOX_PROVIDERS with an
+      // API key): dev/staging/prod enable Daytona + Platinum, a PR preview
+      // enables Platinum only. Read it from the project instead of assuming a
+      // provider, then prove a concrete pin works and a known-but-disabled
+      // provider is refused.
+      let enabled: string[] = [];
+      await ctx.step('read the enabled providers from the project → non-empty', async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/projects/:projectId', { params: { projectId: p.id } });
+        r.status(200).body().exists('$.available_sandbox_providers');
+        enabled = r.json<{ available_sandbox_providers?: string[] }>()?.available_sandbox_providers ?? [];
+        if (enabled.length === 0) {
+          throw new Error(`no enabled sandbox provider: ${r.text()}`);
+        }
+      });
+      await ctx.step('pin to an enabled provider → 200 project or preparation', async () => {
+        const target = enabled[0]!;
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .patch(
+            '/v1/projects/:projectId/sandbox-provider',
+            { provider: target },
+            { params: { projectId: p.id } },
+          );
+        r.status(200).body().exists('$.kind');
+        const body = r.json<any>();
+        if (body?.kind === 'project') {
+          r.body().has('$.default_sandbox_provider', target);
+        } else if (body?.kind === 'preparation') {
+          r.body().has('$.target_provider', target);
+        } else {
+          throw new Error(`unexpected sandbox-provider PATCH response: ${r.text()}`);
+        }
+      });
+      const disabled = ['daytona', 'platinum', 'e2b'].find((name) => !enabled.includes(name));
+      if (disabled) {
+        await ctx.step('pin to a known but disabled provider → 400', async () => {
           const r = await ctx.client
             .as(ctx.P.OWNER)
             .patch(
               '/v1/projects/:projectId/sandbox-provider',
-              { provider: 'daytona' },
+              { provider: disabled },
               { params: { projectId: p.id } },
             );
-          r.status(200).body().exists('$.kind');
-          const body = r.json<any>();
-          if (body?.kind === 'project') {
-            r.body().has('$.default_sandbox_provider', 'daytona');
-          } else if (body?.kind === 'preparation') {
-            r.body().has('$.target_provider', 'daytona');
-          } else {
-            throw new Error(`unexpected sandbox-provider PATCH response: ${r.text()}`);
-          }
-        },
-      );
+          r.status(400);
+        });
+      }
     }
     await ctx.step('clear the pin (null) → 200 (immediate, kind:project)', async () => {
       const r = await ctx.client

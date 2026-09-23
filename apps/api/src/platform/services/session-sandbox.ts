@@ -56,7 +56,6 @@ import { ProvisionTimeline } from './provision-timeline';
 import { recordProviderEvent } from './provider-events';
 import type { GitBackedProject } from '../../projects/git';
 import { startComputeSession } from '../../billing/services/compute-metering';
-import { accountEntitledToLlmGateway } from '../../shared/account-limits';
 import { readManifest } from '../../projects/triggers';
 import { resolveAgentGrant } from '../../projects/agents';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
@@ -67,6 +66,8 @@ import { instanceStampMetadata } from '../../projects/instance-scope';
 import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
 import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
 import { platformMetaAgentGrant } from '../../projects/lib/platform-meta-agent';
+import { resolveSessionOnBehalfOf } from '../../projects/lib/on-behalf-of';
+import { agentPrincipalModeFor } from '../../iam/agent-principal';
 import { resolveSessionNetworkBoundary } from '../../projects/lib/network-secret-boundary';
 import {
   type PreparedInitialSandboxTurn,
@@ -173,6 +174,20 @@ export async function mintSessionToken(opts: {
           return null;
         }),
       ]);
+  // Agents as principals (spec 2026-09-22 §2.1): with the project flag on, a
+  // governed agent authorizes AS its service account. A token without one would
+  // fall back to the launcher — for an unattended run, the account OWNER — so
+  // under the flag a missing service account stops provisioning instead.
+  const [agentPrincipal, onBehalfOfUserId] = await Promise.all([
+    agentPrincipalModeFor(opts.projectId, agentGrant),
+    resolveSessionOnBehalfOf({ accountId: opts.accountId, sessionId: opts.sandboxId, userId: opts.userId }),
+  ]);
+  if (agentPrincipal && !serviceAccountId) {
+    throw new Error(
+      `agent_principal is on for project ${opts.projectId}, but agent "${opts.agentName}" has no service account; ` +
+        'refusing to mint a session credential that would authorize as the launcher',
+    );
+  }
   const tok = await createAccountToken({
     accountId: opts.accountId,
     userId: opts.userId,
@@ -184,6 +199,7 @@ export async function mintSessionToken(opts: {
     name: `Session ${opts.sandboxId.slice(0, 8)}`,
     agentGrant,
     serviceAccountId,
+    onBehalfOfUserId,
   });
   return tok.secretKey;
 }
@@ -478,7 +494,7 @@ export async function provisionSessionSandbox(opts: {
       .returning();
   };
 
-  const [sandboxRows, sessionToken, gatewayEntitled] = await Promise.all([
+  const [sandboxRows, sessionToken] = await Promise.all([
     createOrClaimSandboxRow(),
     // Resolve the per-agent grant and mint the sole sandbox credential. Token
     // minting is fail-closed: a sandbox without its session identity cannot
@@ -491,15 +507,6 @@ export async function provisionSessionSandbox(opts: {
       agentName: opts.agentName ?? 'default',
       gitProject: opts.gitProject,
     }),
-    llmGatewayEnabled
-      ? accountEntitledToLlmGateway(accountId).catch((err) => {
-          console.warn(
-            `[session-sandbox] failed to resolve LLM-gateway entitlement for ${userId}@${accountId}:`,
-            err instanceof Error ? err.message : String(err),
-          );
-          return false;
-        })
-      : Promise.resolve(false),
   ]);
   const [sandbox] = sandboxRows;
   if (!sandbox) throw new RuntimeIdentityConflictError(sandboxId);
@@ -525,13 +532,13 @@ export async function provisionSessionSandbox(opts: {
   // boots clobbered each other and left older sandboxes with a stale token the
   // gateway rejects (401). The PAT is per-session and stable.
   //
-  // Enablement is a three-part gate: operator availability, per-project
-  // experimental opt-in, and account entitlement. If any part is off we inject
-  // no KORTIX_LLM_* env, so OpenCode stays on its native provider behavior.
-  // accountEntitledToLlmGateway gates on the resolved TIER, not billing_model,
-  // so legacy paying customers are no longer wrongly stripped to the Zen-only
-  // catalog. Per-request affordability stays in the gateway's own billing gate.
-  const gatewayEnabled = llmGatewayEnabled && gatewayEntitled;
+  // Enablement is the project's `llm_gateway` flag alone (operator
+  // availability + per-project opt-in), the same rule prompt-time env-sync
+  // applies (sandbox-env-sync.ts). The account's plan is NOT a boot gate: the
+  // gateway limits a free account to free/BYOK models per request
+  // (principal.freeModelsOnly, resolve-candidates.ts). Gating boot on the plan
+  // booted free accounts without the gateway; OpenCode recovered on the first
+  // prompt's env-sync, but pi has no native path and never started.
 
   const providerCreateInput: CreateSandboxOpts = {
     accountId,
@@ -550,7 +557,7 @@ export async function provisionSessionSandbox(opts: {
       // executor and Git credentials stay server-side. The route being called
       // determines what this token may do.
       KORTIX_TOKEN: sessionToken,
-      ...(gatewayEnabled ? { KORTIX_LLM_BASE_URL: llmBaseUrl } : {}),
+      ...(llmGatewayEnabled ? { KORTIX_LLM_BASE_URL: llmBaseUrl } : {}),
     },
     // Idle lifecycle: we pass NO explicit autoStopInterval for a normal session,
     // so each provider gets its native idle timer set from
@@ -926,7 +933,7 @@ export async function provisionSessionSandbox(opts: {
           attempts,
           lastProvisionMaxAttempts,
         ),
-        config: { serviceKey: sessionToken, llmGatewayEnabled: gatewayEnabled },
+        config: { serviceKey: sessionToken, llmGatewayEnabled },
         lastUsedAt: new Date(),
         updatedAt: new Date(),
       };

@@ -22,7 +22,6 @@ import {
   useConnectorBindingChoices,
 } from '@/components/connector-bindings';
 import { Button } from '@/components/ui/button';
-import { ConnectRequiredCard } from '@/components/connect-required-card';
 import {
   Dialog,
   DialogContent,
@@ -35,10 +34,6 @@ import {
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
-import {
-  type ConnectorRequirement,
-  connectorRequirement,
-} from '@/lib/connector-required';
 import { kortix } from '@/lib/kortix';
 import { invalidateSessions, qk } from '@/lib/query-keys';
 import { sessionCreateFailure } from '@/lib/session-create-failure';
@@ -109,12 +104,6 @@ function NewSessionForm({
   // default: the agent's own grant already narrows what the sandbox receives.
   const [narrowSecrets, setNarrowSecrets] = useState(false);
   const [allowed, setAllowed] = useState<string[] | null>(null);
-  // The connector pre-flight refusal, kept IN the dialog. A toast would be
-  // dismissed along with the dialog that caused it, and this one has a remedy
-  // the user is meant to act on.
-  const [requirement, setRequirement] = useState<ConnectorRequirement | null>(
-    null,
-  );
 
   const agents = useVisibleAgents({ projectId });
   const config = useProjectConfig(projectId);
@@ -170,14 +159,10 @@ function NewSessionForm({
     },
     onError: (err) => {
       // Each KaaB refusal has a distinct code and a different person who can
-      // fix it — collapsing them into one string threw that away. The connector
-      // pre-flight goes further: it is the one with an action attached, so it
-      // renders in place instead of as a toast.
-      const connector = connectorRequirement(err);
-      if (connector) {
-        setRequirement(connector);
-        return;
-      }
+      // fix it — collapsing them into one string throws that away. There is no
+      // create-time connector pre-flight any more: a session can never be
+      // refused for an unconnected connector, so every create failure goes
+      // through the shared classifier.
       const failure = sessionCreateFailure(err);
       toast.error(failure.title, { description: failure.detail });
     },
@@ -275,13 +260,7 @@ function NewSessionForm({
           <ConnectorBindingFields
             choices={connectors.data?.connectors ?? []}
             value={bindings}
-            onChange={(next) => {
-              setBindings(next);
-              // The refusal named the bindings that were sent. Once those change
-              // it describes a request that no longer exists, and leaving it up
-              // would have the user reading a stale verdict on a new selection.
-              setRequirement(null);
-            }}
+            onChange={setBindings}
           />
           {/* Where the options in that picker come from — including why an
               alias can be listed with nothing to choose. */}
@@ -298,18 +277,6 @@ function NewSessionForm({
           overrides,
         }}
       />
-
-      {requirement && (
-        <ConnectRequiredCard
-          projectId={projectId}
-          requirement={requirement}
-          onRetry={() => {
-            setRequirement(null);
-            start.mutate();
-          }}
-          onDismiss={() => setRequirement(null)}
-        />
-      )}
 
       <DialogFooter>
         <Button variant="ghost" onClick={onDone} disabled={start.isPending}>

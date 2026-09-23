@@ -1,45 +1,13 @@
+/**
+ * @deprecated The connector-level authorization strategy is retired. Reachability
+ * is a property of the connection row — see `./connection-access`. This module
+ * stays as a re-export so nothing outside the connectors area breaks on the move.
+ */
+export type { ConnectionOwnerType } from './connection-access';
+export {
+  connectionIsReachable,
+  isTrustedManagedChannelAuthorization,
+} from './connection-access';
+
+/** @deprecated Kept on the wire and in the manifest parser; nothing reads it. */
 export type ConnectorAuthorizationStrategy = 'project' | 'user';
-
-export type ConnectionOwnerType =
-  | 'project'
-  | 'agent'
-  | 'member'
-  | 'subject'
-  | 'external';
-
-export function connectorAuthorizationMatchesStrategy(input: {
-  strategy: ConnectorAuthorizationStrategy;
-  ownerType: ConnectionOwnerType;
-  ownerId: string | null;
-  actingUserId: string;
-  actingPrincipalIsServiceAccount: boolean;
-  trustedManagedSystem?: boolean;
-}): boolean {
-  if (input.strategy === 'project') {
-    return input.ownerType === 'project' || input.trustedManagedSystem === true;
-  }
-  return (
-    !input.actingPrincipalIsServiceAccount &&
-    input.ownerType === 'member' &&
-    input.ownerId === input.actingUserId
-  );
-}
-
-export function isTrustedManagedChannelAuthorization(input: {
-  providerType: string;
-  platform: string | null;
-  ownerType: ConnectionOwnerType;
-  ownerId: string | null;
-  metadata: Record<string, unknown>;
-}): boolean {
-  const inboxId = input.metadata.inbox_id;
-  return (
-    input.providerType === 'channel' &&
-    input.platform === 'email' &&
-    input.ownerType === 'external' &&
-    input.metadata.channel_connection === true &&
-    typeof inboxId === 'string' &&
-    inboxId.length > 0 &&
-    input.ownerId === `agentmail:${inboxId}`
-  );
-}

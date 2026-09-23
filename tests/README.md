@@ -22,7 +22,7 @@ pnpm test -- --id ACC-4        # One flow
 pnpm test -- --domain access   # One flow domain
 pnpm test -- --sdk-only        # SDK only
 pnpm test -- --browser-only    # Browser journeys with the deterministic local stack
-pnpm test -- --browser-only --browser-shard=1/2 # One deterministic browser shard
+pnpm test -- --browser-only --browser-shard=1/4 # One deterministic browser shard
 pnpm test -- --packages-only   # Every app/package test and publish contract
 pnpm test -- --full            # Core, browser, and every app/package test
 pnpm test -- --target-smoke    # Deployed staging API SHA and browser smoke
@@ -59,15 +59,26 @@ Run the same journey in native Electron with `E2E_DESKTOP_NATIVE=1` and
 `E2E_GREP='27 — desktop parity'`. See
 [`desktop-verification.md`](../docs/runbooks/desktop-verification.md).
 
-GitHub Actions uses `.github/workflows/tests.yml` for local-profile PR tests.
-`tests-pr.yml` calls it once for pull requests into `main` or `staging`. Full
-mode runs four lanes in parallel, each natively on one Blacksmith runner
+GitHub Actions uses `.github/workflows/tests.yml` for every local-profile run.
+It runs on every push to `main`, on a pull request into `staging`, on a pull
+request labelled `test` or `preview`, and on manual dispatch. The label
+re-triggers an open pull request without a push. A plain pull request into
+`main` does not run it; its check shows as skipped. The push-to-`main`
+run blocks nothing — `main` and `staging` require no status check — and a red
+run comments on the offending commit with the failing lane names. A cancelled
+run means a newer commit superseded it. Deployed-target runs are separate:
+`deploy-preview.yml` (`--target-full` against a preview origin) and
+`tests-release.yml` (`--target-*-full` against deployed staging, whose
+`full suite + quality gates` job is the only required check in the repository).
+
+The run is six lanes in parallel, each natively on one Blacksmith runner
 (`CI_RUNNER_L`, 8 vCPU / 32 GB — see `docs/runbooks/ci-runners.md`). Core and
-package lanes run `pnpm test` and `pnpm test -- --packages-only`. Two browser
-lanes run shards `1/2` and `2/2` through
-`pnpm test -- --browser-only --browser-shard=CURRENT/TOTAL`. The four lanes are
-the parallel equivalent of `pnpm test -- --full`. Each lane checks out the exact
-pull-request head SHA, runs `pnpm install --frozen-lockfile`, and invokes the
+package lanes run `pnpm test` and `pnpm test -- --packages-only`. Four browser
+lanes run shards `1/4` through `4/4` via
+`pnpm test -- --browser-only --browser-shard=CURRENT/TOTAL`, which maps straight
+to Playwright's native `--shard`. The six lanes are the parallel equivalent of
+`pnpm test -- --full` and measure 8m17s wall clock. Each lane checks out the
+exact requested SHA, runs `pnpm install --frozen-lockfile`, and invokes the
 unchanged root command; browser lanes also install Chromium and prestart
 Supabase so the root runner reuses it. Blacksmith caches the pnpm store, the
 Chromium download, and every pulled Docker image (the Supabase images) across
@@ -109,7 +120,7 @@ The warm image contains dependencies and Docker layers only. It contains no
 preview database and no runtime secret.
 
 The runtime secret allowlist contains `DAYTONA_API_KEY`,
-`KE2E_STRIPE_SECRET_KEY`, `KE2E_STRIPE_WEBHOOK_SECRET`, `OPENROUTER_API_KEY`, and the five fields required
+`KE2E_STRIPE_SECRET_KEY`, `KE2E_STRIPE_WEBHOOK_SECRET`, `OPENROUTER_API_KEY`, `MORPH_API_KEY`, and the five fields required
 for the dedicated preview GitHub App installation. Mailpit handles preview
 email. The GitHub App runs the real managed repository and CLI push flows.
 OAuth initiation is the only allowed preview browser exclusion. All API flow
@@ -118,18 +129,57 @@ exclusions and all other browser journey exclusions fail the preview test.
 Use **Run workflow** to select `platinum` or `daytona` explicitly for one
 provider proof. A new deployment deletes any existing provider sandbox for the
 same pull request. A test failure keeps the sandbox available for diagnosis.
-Removing the label, closing the pull request, or pushing a new commit deletes
-the sandbox. A new commit also removes the stale `preview` label. A scheduled
-reconciler deletes sandboxes whose pull request is closed, unlabeled, or at a
-different SHA.
+A push to a labelled branch redeploys its environment in place, and the label
+stays. Removing the label or deleting the branch deletes the sandbox; closing
+the pull request does not. A scheduled reconciler deletes environments whose
+branch no longer exists.
 
 `tests-release.yml` runs the deployed staging suite for pull requests into
 `prod`. It does not repeat the local-profile suite. It rejects development and
-production hosts. It requires the API and gateway health commits to equal
-`RELEASE_SOURCE_SHA`. It runs every selected REST and CLI flow with
+production hosts. It requires the API, gateway, **and frontend** health commits
+to equal `RELEASE_SOURCE_SHA`. It runs every selected REST and CLI flow with
 `--require-all`, then runs all configured Playwright journeys against
 `staging.kortix.com` with the Vercel bypass header. A missing external
 capability fails the release gate instead of counting as a pass.
+
+#### Why the preflight reads three surfaces
+
+`assertTargetSmokeHealth` (`src/core/target-smoke.ts`) read only the API and the
+gateway until 2026-09-18. Those two roll on ECS; the frontend is a Vercel
+deployment that `deploy-staging.yml` aliases onto `staging.kortix.com`, and
+Vercel swaps an alias atomically. The two clocks are independent, so the browser
+shards could drive the previous release's frontend while preflight saw two green
+surfaces.
+
+Measured on the v0.13.25 gate (release run `35392201088`, PR #7422,
+`RELEASE_SOURCE_SHA=8a1e38dc97ba76ae2aba7fe9c7cce284fa05af23`):
+
+| Event | Time (UTC) |
+| --- | --- |
+| `deploy-staging` 35391030403, job "Deploy staging web to Vercel" starts | 20:32:06 |
+| Vercel `dpl_ZWu71zWXoWKvwGBr9uCs17FVu7Ha` (sha `8a1e38dc`) created | 20:32:38 |
+| Release-gate browser shards 1–3 start | 20:36:16 |
+| That deployment still `INITIALIZING`; alias still on `dpl_43b4…` (sha `fa68c114`, built 05:22Z) | 20:50 |
+
+So the shards drove a frontend 15 hours behind the release. A shard failing
+there fails for a reason unrelated to the code under test — a phantom failure.
+
+The preflight now **fails fast** on that skew. It does not wait or retry: a
+stale alias is a deploy problem for a human, not something a preflight should
+sit and hope out. Two distinct verdicts:
+
+- **SHA mismatch** — one message naming all three actual commits, so the stale
+  surface is readable without opening the run.
+- **Unstamped build** — the frontend reports `commit: "unknown"` (or no commit
+  field). That means the build never received the SHA, which is a build defect,
+  not a stale deploy, and it says so in its own words.
+
+Staging sits behind Vercel SSO deployment protection, so the frontend read sends
+`x-vercel-protection-bypass` using the `VERCEL_AUTOMATION_BYPASS_SECRET` the gate
+already sets at the workflow env level. It sends that header **alone**, without
+`x-vercel-set-bypass-cookie`: the cookie variant answers 307 instead of the body,
+and `fetch` keeps no cookie jar. `deployment-bypass.ts` owns both header forms so
+the browser lane and this one-shot read cannot drift.
 
 #### Release gate shards
 

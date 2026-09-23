@@ -118,12 +118,12 @@ agents:
   kortix:
     connectors: all
     secrets: all
-    kortix_cli: all
+    kortix_permissions: all
     skills: all
   release-bot:
     sandbox: ml
     connectors: [github]
-    kortix_cli: [project.write, project.cr.open]    # may OPEN a CR, but not merge it
+    kortix_permissions: [project.write, project.cr.open]    # may OPEN a CR, but not merge it
 ```
 
 ## `agents:` in version 2
@@ -136,7 +136,7 @@ what server-side authority each one receives. Keyed by the agent's name
 (matches its `.kortix/opencode/agents/<name>.md`).
 
 `agents:` is **required** in v2 and is **deny-by-default**: an omitted
-`connectors`/`secrets`/`skills`/`kortix_cli` on a declared agent
+`connectors`/`secrets`/`skills`/`kortix_permissions` on a declared agent
 resolves to `none`, not `all`. `default_agent` is also required and
 must name a declared, enabled agent.
 
@@ -147,19 +147,22 @@ must name a declared, enabled agent.
 | `connectors` | Connectors the agent may call. `["slug", …]` \| `"all"` \| `"none"` (default: `none`).           |
 | `secrets`    | Env-var / secret names the agent may read. Same shape (default: `none`).                        |
 | `skills`     | Skill names the agent may load. Same shape (default: `none`).                                   |
-| `kortix_cli` | What it may do via the Kortix CLI/API (project-scoped iam actions). Same shape (default: `none`). |
+| `kortix_permissions` | Kortix permissions: what it may do to the project (project-scoped iam actions), through the CLI, the API, or git. Same shape (default: `none`). `kortix_cli` is the deprecated spelling — still accepted with a validation warning. |
 | `workspace`  | `"runtime"` \| `"read"` \| `"branch"` — the git workspace mode granted to the agent.              |
+| `apps`       | Restricted or private Apps this agent may open, by slug. `["slug", …]` \| `"all"` \| `"none"` (default: `none`). The App gate also requires `project.app.read` in the agent's effective permissions. |
 
 ```yaml
 agents:
   release-bot:
     sandbox: ml
     connectors: [github]
-    kortix_cli: [project.write, project.cr.open]    # may OPEN a CR, but not merge it
+    kortix_permissions: [project.write, project.cr.open]    # may OPEN a CR, but not merge it
 ```
 
-**Grantable `kortix_cli` actions** (project-scoped only — account-level admin
-actions can never be granted to an agent; run `kortix validate --scopes`):
+**Grantable `kortix_permissions`** (project-scoped only — account-level admin
+actions can never be granted to an agent; `project.members.manage`,
+`project.delete` and `project.credentials.issue` are HUMAN_ONLY and never
+effective for an agent under `agent_principal`; run `kortix validate --scopes`):
 `project.read|write|delete`, `project.cr.open|merge`,
 `project.session.read|start|stop|bindings.write`, `project.members.read|manage`,
 `project.trigger.read|create|update|delete|fire`,
@@ -169,10 +172,14 @@ actions can never be granted to an agent; run `kortix validate --scopes`):
 **Resolution at session start:** every agent must be declared under
 `agents:`; an undeclared or disabled agent cannot be launched by the
 platform. `default_agent` must resolve to a declared, enabled agent —
-give it `connectors: all`, `secrets: all`, `kortix_cli: all`,
-`skills: all` explicitly if it should keep full access. The grant is
-always intersected with the launching user's role (agent ≤ user) and
+give it `connectors: all`, `secrets: all`, `kortix_permissions: all`,
+`skills: all` explicitly if it should keep full access. The grant
 takes effect only once a CR is merged (read from the default branch).
+With the project flag `agent_principal` off, it is intersected with the
+launching user's role (agent ≤ user). With it on, the agent is the acting
+principal: `kortix_permissions` ∩ its ceiling role (IAM, bound to the
+agent's service account; default = every grantable permission) − the
+HUMAN_ONLY set. The launcher only needs "may run this agent".
 
 **Discovery direction:** declaring `agents:` is server-side, declarative
 agent discovery — it is not a rule that every native OpenCode agent file
@@ -204,12 +211,66 @@ self-describing at a glance.
 | Sandbox runtime        | v2 `opencode:`                                                   |
 | Session bootstrap      | `env:` (advisory — surfaced to dashboard, not enforced)              |
 | Apps CLI               | `apps:` (local deployment defaults; deploy remains explicit)          |
-| Session token mint     | `agents:` (per-agent connectors/secrets/skills/kortix_cli scope)     |
+| Session token mint     | `agents:` (per-agent connectors/secrets/skills/kortix_permissions scope)     |
 | Agent/model UI         | Server-side agent registry + LLM-gateway model catalog                |
 | Dashboard UI           | All of the above + `project:` + the raw manifest                     |
 
+Every surface above reads the MERGED manifest when the root declares
+`imports:` (see below). `sandbox:`, `opencode:`, `env:`, `project:`,
+`default_agent`, and `runtime` are root-only keys.
+
 Unknown top-level keys are ignored — safe to add your own metadata,
 but the platform won't react to it.
+
+## `imports:` — split the manifest across files
+
+Use it when `kortix.yaml` outgrows one screen (many triggers with long
+prompts, one file per team or agent group). Do not dump 30 triggers into
+the root file.
+
+```yaml
+# kortix.yaml
+kortix_version: 2
+default_agent: kortix
+imports:
+  - .kortix/triggers/        # a directory: every .yaml/.yml below it, any depth
+  - .kortix/agents.yaml      # a single file
+agents:
+  kortix:
+    connectors: all
+```
+
+```yaml
+# .kortix/triggers/reports/weekly.yaml
+triggers:
+  - slug: weekly-report
+    type: cron
+    agent: galileo
+    cron: "0 0 15 * * 0"
+    prompt: |-
+      Build the weekly report.
+```
+
+The platform merges the root and every import into one manifest before
+it validates, sweeps triggers, or mints agent grants. A trigger in one
+file can name an agent declared in another.
+
+Rules:
+
+- Paths are relative to the repository root. No `..`, no absolute
+  paths, no globs.
+- A directory import takes every `.yaml`/`.yml` below it, sorted by path.
+- An imported file declares only `triggers`, `connectors`, `agents`,
+  `apps`, and `imports` (nesting: max 8 levels, 200 files). Every other
+  key stays in `kortix.yaml`; an imported file that sets one is an error.
+- One name, one file. The same trigger/connector slug or agent/app name
+  in two files is an error naming both files. Nothing overrides silently.
+- A broken import fails the WHOLE manifest, like a YAML syntax error.
+  Run `kortix validate` before `kortix ship`; it checks the merged result.
+- Dashboard, API, and `kortix triggers enable|disable|rm` edits are
+  written to the file that declares the entry. A new entry created
+  through the API lands in `kortix.yaml`; move it by hand if you want it
+  in an imported file.
 
 ## `project:`
 
@@ -422,7 +483,10 @@ and only one should actually fire.
 ### Common gotchas
 
 - `triggers:` must be a **list** (`- slug: …`), not a map — the parser
-  surfaces a clear error otherwise.
+  surfaces a clear error otherwise. The same holds in an imported file.
+- A slug must be unique across `kortix.yaml` AND every imported file. A
+  duplicate is not a per-entry error: it fails the whole manifest, and no
+  trigger fires until it is fixed. `kortix validate` names both files.
 - Slugs must be lowercase + URL-safe. Uppercase or spaces fail.
 - A webhook trigger without `secret_env` is rejected.
 - A cron trigger without a `cron` expression is rejected.

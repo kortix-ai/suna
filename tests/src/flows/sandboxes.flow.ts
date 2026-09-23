@@ -66,14 +66,31 @@ flow(
   },
   async (ctx) => {
     const p = await ctx.fixtures.project();
-    await ctx.step("OWNER rebuild → 202 started (or 502 provider)", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/snapshots/rebuild", {}, { params: { projectId: p.id } });
-      // Handler returns 202 with {status:'started'} on the trigger; 502 only if
-      // the provider delete call throws. Accept both — never wait on the build.
-      r.status([200, 202, 502]);
-    });
+    await ctx.step(
+      "OWNER rebuild → 202 started, or 409 SNAPSHOT_IN_USE while running sandboxes use the image",
+      async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .post("/v1/projects/:projectId/snapshots/rebuild", {}, { params: { projectId: p.id } });
+        // 202: every enabled provider dropped the image and a rebuild started.
+        // 409 SNAPSHOT_IN_USE: the provider refuses to delete an image that
+        // running sandboxes still use. Platinum does this (`template_in_use`);
+        // Daytona does not. The shared default image is in use whenever
+        // another flow's session is alive, so both answers are the product
+        // contract. A generic 503/502 is a provider failure and fails here.
+        // Never wait on the build.
+        r.status([202, 409]);
+        if (r.statusCode === 202) {
+          r.body().has("$.status", "started");
+          const providers = r.json<{ providers?: unknown[] }>()?.providers ?? [];
+          if (providers.length === 0) throw new Error(`202 without a started provider: ${r.text()}`);
+        } else {
+          r.body().has("$.code", "SNAPSHOT_IN_USE");
+          const inUse = r.json<{ in_use?: number }>()?.in_use ?? 0;
+          if (!(inUse > 0)) throw new Error(`409 without an in_use count: ${r.text()}`);
+        }
+      },
+    );
     await ctx.step("NONMEMBER cannot rebuild → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)

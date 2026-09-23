@@ -14,11 +14,17 @@ import type { Captured } from '../src/core/result';
 let paceProvisionRequest: typeof import('../src/fixtures/provision').paceProvisionRequest;
 let provisionProject: typeof import('../src/fixtures/provision').provisionProject;
 
-function response(statusCode: number, bodyText: string, json?: unknown) {
+function response(
+  statusCode: number,
+  bodyText: string,
+  json?: unknown,
+  headers: Record<string, string> = {},
+) {
   return {
     statusCode,
     text: () => bodyText,
     json: <T>() => json as T,
+    header: (name: string) => headers[name.toLowerCase()],
   };
 }
 
@@ -129,6 +135,98 @@ describe('release gate transient failure resilience', () => {
     const delay = (attempts.at(1) ?? 0) - (attempts.at(0) ?? 0);
     expect(delay).toBeGreaterThanOrEqual(7_500);
     expect(delay).toBeLessThanOrEqual(15_000);
+  });
+
+  // GitHub's secondary rate limit on repository creation blocks for minutes,
+  // not seconds (preview runs 35713379676 and 35715183384, 2026-09-22: every
+  // provision 403'd for > 4 min). The API now passes GitHub's wait through as
+  // `503` + `Retry-After`; the fixture must honor it, share it across
+  // concurrent provisions, and budget rate-limit waits by time, not by a
+  // 5-attempt count.
+  it('honors Retry-After on a rate-limited 503 instead of the short backoff', async () => {
+    vi.useFakeTimers();
+    const attempts: number[] = [];
+    const post = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        attempts.push(Date.now());
+        return response(
+          503,
+          '{"error":"GitHub /orgs/o/repos failed (403): You have exceeded a secondary rate limit","code":"GITHUB_RATE_LIMITED","retry_after_seconds":90}',
+          undefined,
+          { 'retry-after': '90' },
+        );
+      })
+      .mockImplementationOnce(async () => {
+        attempts.push(Date.now());
+        return response(200, '{"project_id":"project-4"}', { project_id: 'project-4' });
+      });
+
+    const result = provisionProject(clientWithPost(post), { name: 'release-gate-test' });
+
+    await expect(settleTimers(result)).resolves.toBe('project-4');
+    const delay = (attempts.at(1) ?? 0) - (attempts.at(0) ?? 0);
+    expect(delay).toBeGreaterThanOrEqual(90_000);
+    expect(delay).toBeLessThanOrEqual(90_000 + 15_000);
+  });
+
+  it('holds every concurrent provision behind one rate-limit cooldown', async () => {
+    vi.useFakeTimers();
+    const started = Date.now();
+    const calls: Array<{ name: string; at: number }> = [];
+    let first = true;
+    const post = vi.fn().mockImplementation(async (_path: string, body: { name: string }) => {
+      calls.push({ name: body.name, at: Date.now() - started });
+      if (first) {
+        first = false;
+        return response(503, '{"error":"secondary rate limit","code":"GITHUB_RATE_LIMITED"}', undefined, {
+          'retry-after': '60',
+        });
+      }
+      return response(200, `{"project_id":"${body.name}"}`, { project_id: body.name });
+    });
+
+    const a = provisionProject(clientWithPost(post), { name: 'a' });
+    // B starts after A was refused: it must wait out A's cooldown, not fire.
+    await vi.advanceTimersByTimeAsync(1_000);
+    const b = provisionProject(clientWithPost(post), { name: 'b' });
+
+    await expect(settleTimers(Promise.all([a, b]))).resolves.toEqual(['a', 'b']);
+    const bCall = calls.find((call) => call.name === 'b');
+    expect(bCall?.at).toBeGreaterThanOrEqual(60_000);
+  });
+
+  it('keeps retrying a rate limit past five attempts while the time budget lasts', async () => {
+    vi.useFakeTimers();
+    const limited = () =>
+      response(503, '{"error":"secondary rate limit","code":"GITHUB_RATE_LIMITED"}', undefined, {
+        'retry-after': '60',
+      });
+    const post = vi.fn();
+    for (let i = 0; i < 6; i++) post.mockResolvedValueOnce(limited());
+    post.mockResolvedValueOnce(response(200, '{"project_id":"project-5"}', { project_id: 'project-5' }));
+
+    const result = provisionProject(clientWithPost(post), { name: 'release-gate-test' });
+
+    await expect(settleTimers(result)).resolves.toBe('project-5');
+    expect(post).toHaveBeenCalledTimes(7);
+  });
+
+  it('gives up on a rate limit once the time budget is spent, with the real reason', async () => {
+    vi.useFakeTimers();
+    const post = vi.fn().mockResolvedValue(
+      response(503, '{"error":"secondary rate limit","code":"GITHUB_RATE_LIMITED"}', undefined, {
+        'retry-after': '300',
+      }),
+    );
+
+    const result = provisionProject(clientWithPost(post), { name: 'release-gate-test' });
+    const settled = result.then(() => null, (error: unknown) => error);
+
+    const error = await settleTimers(settled);
+    expect(String(error)).toMatch(/HTTP 503.*secondary rate limit/);
+    // 15 min budget / 300 s waits: bounded, never endless.
+    expect(post.mock.calls.length).toBeLessThanOrEqual(5);
   });
 
   it('paces concurrent managed repository creation attempts', async () => {

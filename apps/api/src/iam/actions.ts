@@ -54,6 +54,12 @@ export const ACCOUNT_ACTIONS = {
   TOKEN_READ: 'token.read',
   TOKEN_CREATE: 'token.create',
   TOKEN_REVOKE: 'token.revoke',
+  // A person's OWN personal access tokens. A PAT acts as the person who minted
+  // it, so these grant nothing beyond that person's own roles; every system
+  // account role holds them. `token.create` / `token.revoke` stay admin leaves
+  // for OAuth clients, service accounts, and other people's tokens.
+  TOKEN_PERSONAL_CREATE: 'token.personal.create',
+  TOKEN_PERSONAL_REVOKE: 'token.personal.revoke',
 
   // "Create a brand-new project" must live at account scope (the project
   // doesn't exist yet to scope to).
@@ -116,7 +122,7 @@ export const PROJECT_ACTIONS = {
   // scopes a SESSION credential to its own branch structurally — that binding
   // is the credential's identity, not a permission, and is never grantable.
   // These two leaves are what a principal needs to act OUTSIDE that lane, and
-  // they are what a role or a `kortix_cli` grant can hand to an agent
+  // they are what a role or a `kortix_permissions` grant can hand to an agent
   // deliberately. Absent = denied: unlike the rest of the agent-grant fold, the
   // git path treats a null grant as "principal defaults", never "unrestricted".
   // See git-proxy/ref-policy.ts.

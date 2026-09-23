@@ -11,7 +11,7 @@
  * now lives ENTIRELY in the agent's own `.md` frontmatter + body — a stock
  * OpenCode agent `.md` is valid input as-is, frontmatter included. The
  * manifest's `agents.<name>` block carries governance ONLY (connectors/
- * secrets/skills/kortix_cli/repository_access/enabled); the agent's NAME is the join
+ * secrets/skills/kortix_permissions/repository_access/enabled); the agent's NAME is the join
  * between the two (map key ↔ `.md` filename).
  *
  * `compileAgentConfig` is pure — no I/O, no DB. For each declared agent it
@@ -20,7 +20,7 @@
  * OpenCode behavioral field straight through, and overlays governance on top:
  * `enabled: false` forces the runtime's `disable` on (governance always wins
  * on that one field); `skills` folds onto `permission.skill`. Every other
- * governance field (connectors/secrets/kortix_cli/repository_access) has no runtime
+ * governance field (connectors/secrets/kortix_permissions/repository_access) has no runtime
  * representation and is never copied.
  *
  * `resolveCompiledAgentConfigForSession` is the I/O half: reads the project's
@@ -295,7 +295,7 @@ export function compileSelectedAgentConfig(
  * governance always wins over whatever the `.md` itself says; there is no
  * other precedence to document since behavior lives ONLY in the `.md`), and
  * `skills` folds onto `permission.skill`. Pure governance fields (connectors/
- * secrets/kortix_cli/repository_access) are never copied: no runtime representation.
+ * secrets/kortix_permissions/repository_access) are never copied: no runtime representation.
  */
 function compileAgentBlock(
   name: string,
@@ -452,6 +452,27 @@ export function agentConfigEtag(compiled: string | null | undefined): string | n
  * posture as resolveCompiledAgentConfigForSession below. Only an explicit,
  * well-formed `runtime: pi` can move a session onto the worker.
  */
+/**
+ * The harness a session boots, from the two inputs that can ask for pi:
+ * the project's `pi_harness` feature flag (on ⇒ pi, whatever the manifest
+ * says) and the manifest's `runtime:` field (`pi` ⇒ pi, even with the flag
+ * off). Everything else is OpenCode. `runtime: null` is "no readable v2
+ * manifest", which counts as opencode.
+ */
+export function selectSessionHarness(input: {
+  piHarnessFlag: boolean;
+  runtime: RuntimeV2 | null;
+}): 'opencode' | 'pi' {
+  if (input.piHarnessFlag) return 'pi';
+  return input.runtime === 'pi' ? 'pi' : 'opencode';
+}
+
+/** The harness a parsed manifest selects. `runtime` is a v2 field; anything but `pi` is OpenCode. */
+export function manifestRuntime(raw: unknown): RuntimeV2 {
+  if (!raw || typeof raw !== 'object' || manifestSchemaVersion(raw as Record<string, unknown>) !== 2) return 'opencode';
+  return (raw as Record<string, unknown>).runtime === 'pi' ? 'pi' : 'opencode';
+}
+
 export async function resolveManifestRuntime(
   project: GitBackedProject,
   baseRef?: string | null,
@@ -463,12 +484,19 @@ export async function resolveManifestRuntime(
     if (!found) return null;
     const raw = parseManifestText(found.content, manifestFormatForPath(found.path));
     if (manifestSchemaVersion(raw) !== 2) return null;
-    const runtime = (raw as Record<string, unknown>).runtime;
-    if (runtime === 'pi') return 'pi';
-    return 'opencode';
+    return manifestRuntime(raw);
   } catch {
     return null;
   }
+}
+
+/**
+ * Observe the manifest a compile read, without a second git round trip. The
+ * session env builder uses it to learn `runtime:` from the same read that
+ * compiles the agent config.
+ */
+export interface CompileReadOptions {
+  onManifest?: (raw: Record<string, unknown>) => void;
 }
 
 export async function resolveCompiledAgentConfigForSession(
@@ -486,6 +514,7 @@ export async function resolveCompiledAgentConfigForSession(
    * Falls back to the default branch, which is what every caller got before.
    */
   baseRef?: string | null,
+  options: CompileReadOptions = {},
 ): Promise<string | null> {
   const ref = baseRef?.trim() || project.defaultBranch;
   try {
@@ -495,6 +524,7 @@ export async function resolveCompiledAgentConfigForSession(
 
     const format = manifestFormatForPath(found.path);
     const raw = parseManifestText(found.content, format);
+    options.onManifest?.(raw as Record<string, unknown>);
     if (manifestSchemaVersion(raw) !== 2) return null;
 
     const v2 = raw as unknown as ManifestV2;
@@ -542,6 +572,7 @@ export async function resolveSelectedAgentConfigForSession(
   project: GitBackedProject,
   agentName: string,
   baseRef?: string | null,
+  options: CompileReadOptions = {},
 ): Promise<string> {
   const ref = baseRef?.trim() || project.defaultBranch;
   const candidates = manifestCandidatePaths(project.manifestPath).map(
@@ -557,6 +588,7 @@ export async function resolveSelectedAgentConfigForSession(
 
   const format = manifestFormatForPath(found.path);
   const raw = parseManifestText(found.content, format);
+  options.onManifest?.(raw as Record<string, unknown>);
   if (manifestSchemaVersion(raw) !== 2) {
     throw new CompileAgentConfigError(
       `Project ${project.projectId} must use kortix_version 2 for selected-agent compilation.`,

@@ -35,6 +35,10 @@ import { isAllowedSourceValidationError } from '../marketplace/catalog';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import { INVALID_SOURCE_ADDRESS_CODE } from '../marketplace/catalog';
 import { UnsafeEgressError } from '../shared/ssrf-guard';
+import {
+  type ConnectorConnectOwner,
+  parseConnectorConnectOwner,
+} from '../projects/lib/connection-access';
 import { canonicalConnectorAlias } from '../projects/lib/session-connector-bindings';
 import {
   type ConnectorAttachmentStore,
@@ -63,6 +67,14 @@ const CatalogActionSchema = z
     inputSchema: z.any().nullable(),
   })
   .openapi('ConnectorCatalogAction');
+const CatalogAccountSchema = z
+  .object({
+    connection_id: z.string(),
+    label: z.string(),
+    owner_type: z.string(),
+    is_default: z.boolean(),
+  })
+  .openapi('ConnectorCatalogAccount');
 const CatalogConnectorSchema = z
   .object({
     slug: z.string(),
@@ -72,6 +84,15 @@ const CatalogConnectorSchema = z
     iconUrl: z.string().nullable().optional(),
     status: z.string(),
     actions: z.array(CatalogActionSchema),
+    /**
+     * The accounts THIS principal may run this connector as, default first.
+     * One connector can hold the project's shared account and each member's
+     * own — this is what tells a caller (human or agent) that more than one
+     * exists, without a separate accounts call.
+     */
+    accounts: z.array(CatalogAccountSchema).optional(),
+    /** Label of the account an unnamed call resolves to, or null if none. */
+    default_account: z.string().nullable().optional(),
   })
   .openapi('ConnectorCatalogConnector');
 const ConnectorsResponseSchema = z
@@ -110,6 +131,16 @@ const CallResponseSchema = z
     risk: z.any().optional(),
     status: z.string().optional(),
     reason: z.any().optional(),
+    // Which connection ran the call, so the transcript can always answer
+    // "whose account sent that". Absent when the connector resolved no
+    // connection (public/no-auth connector, or a Computers tunnel profile).
+    account: z
+      .object({
+        connection_id: z.string(),
+        label: z.string(),
+        owner_type: z.string(),
+      })
+      .optional(),
   })
   .passthrough()
   .openapi('ConnectorCallResult');
@@ -142,6 +173,9 @@ export interface ConnectorPrincipal {
   accountId: string;
   projectId: string;
   sessionId: string | null;
+  /** The presented account token's id, when the caller used one. With
+   *  `sessionId`, identifies the agent session a Kortix App assertion names. */
+  tokenId?: string | null;
   /** The acting identity resolved to its group memberships. */
   subject: { userId: string; groupIds: string[] };
   /** Per-agent grant from the session token — restricts which connectors this
@@ -151,6 +185,24 @@ export interface ConnectorPrincipal {
    *  (Slack/Teams/email). Always reachable, whatever the grant says — see
    *  `principalMayUseConnector`. Empty for a session no channel created. */
   channelConnectorSlugs?: string[];
+  /**
+   * The account THIS call asked to run as (`account` in the call body), by
+   * connection label or id. A per-request value, carried on the principal
+   * because `makeGatewayDeps(p)` is the only seam between the route and
+   * connection resolution.
+   *
+   * Absent means "the default account", which is how every call behaved before
+   * a connector could hold more than one reachable account.
+   */
+  requestedConnectorAccount?: string | null;
+  /**
+   * Present when the caller is an agent session under the agent-principal
+   * model (flag `agent_principal` ON, governed grant — spec
+   * docs/specs/2026-09-22-agents-as-principals.md §2.3). Personal resources
+   * (member-owned accounts, own computers) then key on `onBehalfOfUserId` AND
+   * a private session, never on `userId` (the launcher). Absent = legacy.
+   */
+  agentPrincipal?: { onBehalfOfUserId: string | null } | null;
 }
 
 interface CatalogAction {
@@ -159,6 +211,13 @@ interface CatalogAction {
   description: string;
   risk: string;
   inputSchema: Record<string, unknown> | null;
+}
+/** One account a connector can run as, as surfaced in the catalog. See {@link CatalogConnector.accounts}. */
+export interface CatalogAccount {
+  connection_id: string;
+  label: string;
+  owner_type: string;
+  is_default: boolean;
 }
 export interface CatalogConnector {
   slug: string;
@@ -169,6 +228,17 @@ export interface CatalogConnector {
   iconUrl?: string | null;
   status: string;
   actions: CatalogAction[];
+  /**
+   * The accounts THIS principal may run this connector as, default first.
+   *
+   * One connector can hold the project's shared account and each member's own
+   * — this is the signal that tells a caller (human or agent) more than one
+   * account exists, without a separate round trip. Undefined only for a fake
+   * `ConnectorRouterDeps.listCatalog` that predates this field.
+   */
+  accounts?: CatalogAccount[];
+  /** Label of the account an unnamed call resolves to, or null if none. */
+  default_account?: string | null;
 }
 
 export interface AdminConnectorView extends CatalogConnector {
@@ -180,6 +250,11 @@ export interface AdminConnectorView extends CatalogConnector {
   /** Credential storage mode. Always `shared` — `per_user` (each member's
    *  own) was removed 2026-07-05. */
   credentialMode: 'shared';
+  /**
+   * @deprecated A DERIVED SUMMARY, not a setting: `user` when this connector's
+   * live accounts are member-owned only, `project` otherwise. The PUT that used
+   * to set it is an inert no-op. Kept on the wire for older clients.
+   */
   authorizationStrategy: 'project' | 'user';
   /** Authentication shape required when a member adds a private credential. */
   requestAuthType: ConnectorAuth['type'];
@@ -264,7 +339,13 @@ export interface ConnectorRouterDeps {
     c: Context,
     projectId: string,
   ): Promise<{ accountId: string; userId: string } | null>;
-  listConnectors(projectId: string): Promise<AdminConnectorView[]>;
+  /**
+   * `actingUserId`: whose own credentialed accounts count toward "connected"
+   * for a connector with no project-wide shared credential (connection-access.ts
+   * — reachability is per-row, not per-connector). Omit only when there is no
+   * human caller to ask.
+   */
+  listConnectors(projectId: string, actingUserId?: string | null): Promise<AdminConnectorView[]>;
   syncConnectors(projectId: string, accountId: string): Promise<SyncResult>;
   /** Create/update a connector in kortix.yaml + materialize. */
   createConnector?(
@@ -308,7 +389,7 @@ export interface ConnectorRouterDeps {
     slug: string,
     mode: 'shared',
   ): Promise<CrudOutcome>;
-  /** Set the exclusive connection owner model for this connector. */
+  /** @deprecated Retired. Its route is an inert 200 no-op and never calls this. */
   setAuthorizationStrategy?(
     projectId: string,
     accountId: string,
@@ -392,6 +473,42 @@ export interface ConnectorRouterDeps {
     slug: string,
     userId: string,
   ): Promise<{ connected: boolean; accountId?: string } | null>;
+  /**
+   * The accounts this principal may run a connector as, default first.
+   *
+   * One connector can hold the project's shared account and each member's own.
+   * The CLI prints this so a human can see what exists and name one; the call
+   * denial uses it to say which names WERE available when a named account did
+   * not match.
+   */
+  listConnectorAccounts?(input: {
+    projectId: string;
+    slug: string;
+    userId: string;
+    sessionId: string | null;
+    agentPrincipal?: { onBehalfOfUserId: string | null } | null;
+  }): Promise<
+    Array<{
+      connection_id: string;
+      label: string;
+      owner_type: string;
+      is_default: boolean;
+    }>
+  >;
+  /**
+   * A hosted authorization link for a connector with no connected account, or
+   * null when this connector has no hosted page (a raw HTTP/MCP connector whose
+   * credential someone has to paste, or a deployment with no link provider).
+   *
+   * Used by the call denial so `connector_not_connected` carries its own
+   * remedy. Never throws: a link we cannot mint degrades to the plain hint.
+   */
+  mintConnectorConnectLink?(input: {
+    projectId: string;
+    slug: string;
+    userId: string;
+    sessionId: string | null;
+  }): Promise<string | null>;
   /** Provider-neutral connect routes. Prefer Composio when wired; keep Pipedream path intact. */
   connectorConnect?(
     projectId: string,
@@ -402,6 +519,8 @@ export interface ConnectorRouterDeps {
      *  the call. Persisted on the connection so finalize can tell that agent the
      *  account landed instead of it re-minting a link on its next run. */
     requestingSessionId?: string | null,
+    /** Whose account this authorization lands on. Defaults to `me`. */
+    owner?: ConnectorConnectOwner,
   ): Promise<{
     provider: string;
     token?: string;
@@ -418,7 +537,18 @@ export interface ConnectorRouterDeps {
     slug: string,
     userId: string,
     selector?: { connectionId?: string; requestId?: string },
+    /** Whose account the matching connect started on. Defaults to `me`. */
+    owner?: ConnectorConnectOwner,
   ): Promise<{ provider: string; connected: boolean; accountId?: string; connectionId?: string; isNoAuth?: boolean } | null>;
+  /**
+   * Does this caller hold the connections-manage capability on the project?
+   * The same gate r4's project-owned connection create asserts — connecting an
+   * account the WHOLE project can then use is administration, not self-service.
+   */
+  resolveConnectionsManager?(
+    c: Context,
+    projectId: string,
+  ): Promise<{ accountId: string; userId: string } | null>;
   /** Connectors this session's agent asked a human to authorize, and whether
    *  each is connected yet. Drives the in-session Connect button. */
   listSessionConnectRequests?(
@@ -661,6 +791,7 @@ const CONNECTOR_DENIAL_REASONS: ReadonlySet<string> = new Set<ConnectorDenialRea
   'connector_not_connected',
   'connector_disabled',
   'action_not_found',
+  'account_required',
 ]);
 
 function isConnectorDenialReason(reason: string): reason is ConnectorDenialReason {
@@ -740,11 +871,25 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
     // pending row, but it returns immediately and never polls that execution.
     const approvalExecutionId =
       typeof body?.approval_execution_id === 'string' ? body.approval_execution_id : null;
-    const result = await handleCall(deps.makeGatewayDeps(p), {
+    // WHICH account to run as. Accepted as `account` (label or connection id);
+    // `connection_id` is taken too because that is what the connections API
+    // calls the same value. Unset keeps the default account.
+    const requestedAccount =
+      typeof body?.account === 'string' && body.account.trim()
+        ? body.account.trim()
+        : typeof body?.connection_id === 'string' && body.connection_id.trim()
+          ? body.connection_id.trim()
+          : null;
+    const callPrincipal: ConnectorPrincipal = {
+      ...p,
+      requestedConnectorAccount: requestedAccount,
+    };
+    const result = await handleCall(deps.makeGatewayDeps(callPrincipal), {
       projectId: p.projectId,
       accountId: p.accountId,
       subject: p.subject,
       sessionId: p.sessionId,
+      actingTokenId: p.tokenId ?? null,
       connectorSlug,
       actionPath,
       args,
@@ -752,7 +897,12 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
     });
     switch (result.status) {
       case 'ok':
-        return c.json({ ok: true, data: result.data, risk: result.risk });
+        return c.json({
+          ok: true,
+          data: result.data,
+          risk: result.risk,
+          ...(result.account ? { account: result.account } : {}),
+        });
       case 'pending_approval':
         return c.json(
           {
@@ -767,19 +917,56 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
           },
           202,
         );
-      case 'denied':
+      case 'denied': {
+        // The one denial with a remedy attached. Minting is best-effort: a
+        // connector with no hosted page still denies, just without a link.
+        const notConnected = result.reason === 'connector_not_connected';
+        const connectUrl =
+          notConnected && deps.mintConnectorConnectLink
+            ? await deps
+                .mintConnectorConnectLink({
+                  projectId: p.projectId,
+                  slug: connectorSlug,
+                  userId: p.userId,
+                  sessionId: p.sessionId,
+                })
+                .catch(() => null)
+            : null;
+        // Two cases want the account list: the caller NAMED one that didn't
+        // match (a plain unconnected call is a connect problem, not a
+        // wrong-name problem, and listing an empty set would just be noise),
+        // or the call is `account_required` — several accounts exist and the
+        // retry needs to know what to name.
+        const accountRequired = result.reason === 'account_required';
+        const availableAccounts =
+          ((notConnected && requestedAccount) || accountRequired) && deps.listConnectorAccounts
+            ? await deps
+                .listConnectorAccounts({
+                  projectId: p.projectId,
+                  slug: connectorSlug,
+                  userId: p.userId,
+                  sessionId: p.sessionId,
+                  agentPrincipal: p.agentPrincipal ?? null,
+                })
+                .then((rows) => rows.map((row) => row.label))
+                .catch(() => [])
+            : [];
         return c.json(
           isConnectorDenialReason(result.reason)
             ? connectorDenialBody(result.reason, {
                 principal: p,
                 connector: connectorSlug,
                 action: actionPath,
+                connectUrl,
+                requestedAccount,
+                availableAccounts,
               })
             : { ok: false, status: 'denied', reason: result.reason },
           result.reason === 'connector_not_found' || result.reason === 'action_not_found'
             ? 404
             : 403,
         );
+      }
       default:
         // 500, not 502 — Cloudflare eats 502 bodies (see route schema note).
         return c.json({ ok: false, status: 'error', reason: result.reason }, 500);
@@ -1081,6 +1268,9 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
                 connector: z.string().optional(),
                 action: z.string().optional(),
                 args: z.record(z.string(), z.any()).optional(),
+                /** Which account to run as — a connection label or id. Omit for
+                 *  the default. See GET .../connectors/{slug}/accounts. */
+                account: z.string().optional(),
               }),
             },
           },
@@ -1153,6 +1343,9 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
                 connector: z.string().optional(),
                 action: z.string().optional(),
                 args: z.record(z.string(), z.any()).optional(),
+                /** Which account to run as — a connection label or id. Omit for
+                 *  the default. See GET .../connectors/{slug}/accounts. */
+                account: z.string().optional(),
               }),
             },
           },
@@ -1172,6 +1365,62 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       const p = await deps.resolveProjectPrincipal(c, projectId);
       if (!p) return c.json({ error: 'forbidden' }, 403);
       return callResponse(c, p);
+    },
+  );
+
+  // ── The accounts a call may run as ───────────────────────────────────────
+  //
+  // One connector can hold the project's shared account and each member's own.
+  // Resolution picks the first entitled one unless a call names another, so this
+  // is how a human (or an agent) finds out WHICH names `--account` accepts.
+  // Same principal as `/call`, so what it lists is exactly what a call can use —
+  // never an account the gateway would then refuse.
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/projects/{projectId}/connectors/{slug}/accounts',
+      tags: ['connector'],
+      summary: 'Accounts this principal may run a connector as',
+      ...auth,
+      request: {
+        params: ProjectParam.extend({ slug: z.string().min(1) }),
+      },
+      responses: {
+        200: json(OpaqueSchema, 'Accounts, default first'),
+        ...errors(403, 501),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const slug = c.req.param('slug');
+      const p = await deps.resolveProjectPrincipal(c, projectId);
+      if (!p) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.listConnectorAccounts) {
+        return featureNotSupportedResponse(c, 'connector_accounts');
+      }
+      if (!principalMayUseConnector(p, canonicalConnectorAlias(slug))) {
+        return c.json(
+          connectorDenialBody('connector_not_assigned', { principal: p, connector: slug }),
+          403,
+        );
+      }
+      const accounts = await deps.listConnectorAccounts({
+        projectId,
+        slug,
+        userId: p.userId,
+        sessionId: p.sessionId,
+        agentPrincipal: p.agentPrincipal ?? null,
+      });
+      // The pinned account, when exactly one is pinned — the SAME "is a
+      // default reachable" question an unnamed `/call` answers. Two or more
+      // pinned accounts (a member's own pin + the project's, both entitled)
+      // is not reported as a single default here either.
+      const pinned = accounts.filter((account) => account.is_default);
+      return c.json({
+        connector: slug,
+        default_account: pinned.length === 1 ? pinned[0]!.label : null,
+        accounts,
+      });
     },
   );
 
@@ -1201,7 +1450,9 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       const canReadSecretIdentifiers = deps.resolveSecretReader
         ? Boolean(await deps.resolveSecretReader(c, projectId))
         : false;
-      const connectors = await deps.listConnectors(projectId);
+      // Whose own credentialed accounts count as "connected" for a connector
+      // with no project-wide shared credential — see listConnectors' doc.
+      const connectors = await deps.listConnectors(projectId, reader.userId);
       return c.json({
         connectors: canReadSecretIdentifiers
           ? connectors
@@ -1771,28 +2022,20 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       const slug = c.req.param('slug');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.setAuthorizationStrategy) {
-        return featureNotSupportedResponse(c, 'connector_authorization_strategy');
-      }
-      let body: any;
-      try {
-        body = await c.req.json();
-      } catch {
-        return c.json({ error: 'invalid_json' }, 400);
-      }
-      const authorizationStrategy = body?.authorization_strategy;
-      if (authorizationStrategy !== 'project' && authorizationStrategy !== 'user') {
-        return c.json({ error: 'authorization_strategy must be "project" or "user"' }, 400);
-      }
-      const result = await deps.setAuthorizationStrategy(
-        projectId,
-        admin.accountId,
-        slug,
-        authorizationStrategy,
-      );
-      return result.ok
-        ? c.json({ ok: true, sync: result.sync })
-        : c.json({ error: result.error }, result.status as 400 | 409 | 502);
+      // DEPRECATED NO-OP. The connector-level authorization strategy is retired:
+      // an account is shared or private per CONNECTION (`owner_type`), and both
+      // kinds can exist on one connector. The route stays, and stays a 200, so
+      // an older CLI or web build that still calls it is not broken by a 404 or
+      // a 501 — it simply changes nothing. The body is not even read: there is
+      // no value it could carry that would mean anything.
+      void slug;
+      return c.json({
+        ok: true,
+        deprecated: true,
+        note:
+          'Connector authorization strategy is retired. An account is shared or private ' +
+          'per connection — connect one with owner "project" or "me" instead.',
+      });
     },
   );
 
@@ -1994,20 +2237,38 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       // Native clients pass app deep-link redirect URIs so the in-app browser
       // auto-dismisses back to the app instead of landing on a web page.
       let redirects: { success?: string; error?: string } | undefined;
+      let rawOwner: unknown;
       try {
         const body = await c.req.json();
         if (body?.success_redirect_uri || body?.error_redirect_uri) {
           redirects = { success: body.success_redirect_uri, error: body.error_redirect_uri };
         }
+        rawOwner = body?.owner;
       } catch {
         /* no body */
+      }
+      const owner = parseConnectorConnectOwner(rawOwner);
+      if (!owner) return c.json({ error: 'owner must be "me" or "project"' }, 400);
+      // Connecting an account the whole project can then use is administration.
+      // `me` — the default — is self-service and needs nothing beyond the
+      // connector-write gate already asserted above.
+      if (owner === 'project' && deps.resolveConnectionsManager) {
+        const manager = await deps.resolveConnectionsManager(c, projectId);
+        if (!manager) return c.json({ error: 'forbidden' }, 403);
       }
       // Set by the auth middleware from a scoped session token, so this is
       // populated exactly when the agent in a sandbox made the call — and null
       // when a human clicked Connect in project settings, which has no session
       // waiting on the answer.
       const requestingSessionId = (c.get('sessionId') as string | undefined) ?? null;
-      const result = await connect(projectId, slug, admin.userId, redirects, requestingSessionId);
+      const result = await connect(
+        projectId,
+        slug,
+        admin.userId,
+        redirects,
+        requestingSessionId,
+        owner,
+      );
       if (!result) return c.json({ error: 'not a supported connect connector' }, 404);
       return c.json(result);
     },
@@ -2042,11 +2303,27 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
         : undefined);
       if (!finalize) return featureNotSupportedResponse(c, 'connector_finalize');
       let selector: { connectionId?: string; requestId?: string } | undefined;
+      let rawOwner: unknown;
       try {
         const body = await c.req.json();
         if (body?.connection_id || body?.request_id) selector = { connectionId: body.connection_id, requestId: body.request_id };
+        rawOwner = body?.owner;
       } catch { /* no body */ }
-      const result = await finalize(projectId, slug, admin.userId, selector);
+      const owner = parseConnectorConnectOwner(rawOwner);
+      if (!owner) return c.json({ error: 'owner must be "me" or "project"' }, 400);
+      // Same gate the `/connect` START route asserts above: landing an account
+      // the WHOLE project can then use is administration, not self-service, and
+      // finalize is what actually persists `connected_account_id` on the shared
+      // connection. Without this a principal holding `project.connector.write`
+      // but NOT `project.connector.connections.manage` was refused when
+      // STARTING a project-owned connection and still allowed to FINISH one —
+      // sibling routes on one resource disagreeing about who may act (CWE-862).
+      // `me` stays self-service on both routes.
+      if (owner === 'project' && deps.resolveConnectionsManager) {
+        const manager = await deps.resolveConnectionsManager(c, projectId);
+        if (!manager) return c.json({ error: 'forbidden' }, 403);
+      }
+      const result = await finalize(projectId, slug, admin.userId, selector, owner);
       if (!result) return c.json({ error: 'not a supported connect connector' }, 404);
       return c.json(result);
     },

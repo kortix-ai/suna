@@ -647,6 +647,8 @@ test('gateway executes Composio with selected-row metadata and never exposes a s
       session_id: 'persisted-session',
       connected_account_id: 'connected-account-1',
     },
+    connectionLabel: 'Gmail default',
+    connectionOwnerType: 'project',
     slug: 'gmail',
     provider: 'composio',
     platform: 'gmail',
@@ -722,6 +724,9 @@ test('gateway executes Composio with selected-row metadata and never exposes a s
       sessionId: 'persisted-session',
       result: { sent: true },
     },
+    // Which account ran it, so the transcript can answer "whose mailbox sent
+    // that" — carried from the resolved GatewayConnector (gateway.ts).
+    account: { connection_id: 'connection-1', label: 'Gmail default', owner_type: 'project' },
   });
   expect(executions[0]).toEqual({
     composioInput: {

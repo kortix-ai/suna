@@ -618,6 +618,36 @@ export async function setMfaRequired(accountId: string, enabled: boolean) {
   );
 }
 
+// ─── Session oversight ────────────────────────────────────────────────────
+
+/**
+ * The account policy that lets account owners and admins open EVERY session in
+ * the account, members' private sessions included. Off by default. Any member
+ * may read it; only an account owner may change it (`can_change`).
+ */
+export interface SessionOversightStatus {
+  enabled: boolean;
+  /** True when the caller is an account owner and may change the policy. */
+  can_change: boolean;
+}
+
+export async function getSessionOversight(accountId: string) {
+  return unwrap(
+    await iamGet<SessionOversightStatus>(`/accounts/${accountId}/iam/session-oversight`),
+  );
+}
+
+/** Owner only. An admin or member receives 403 `account_owner_required`. */
+export async function setSessionOversight(accountId: string, enabled: boolean) {
+  return unwrap(
+    await backendApi.patch<{ enabled: boolean; unchanged?: boolean }>(
+      `/accounts/${accountId}/iam/session-oversight`,
+      { enabled },
+      { showErrors: false },
+    ),
+  );
+}
+
 // ─── SAML SSO ─────────────────────────────────────────────────────────────
 
 export interface SsoProvider {

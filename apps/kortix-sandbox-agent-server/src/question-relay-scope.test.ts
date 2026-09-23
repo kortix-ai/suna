@@ -22,7 +22,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 
-const SRC = await Bun.file(new URL('./main.ts', import.meta.url).pathname).text();
+const SRC = await Bun.file(new URL('./harness/open-code/boot.ts', import.meta.url).pathname).text();
 
 /** `relayQuestionToApi`'s body, up to the next top-level declaration. */
 function relayBody(): string {
@@ -52,30 +52,83 @@ describe('relayQuestionToApi', () => {
     expect(body).toContain('turn-question');
   });
 
-  test('the POST is not gated on a Slack context', () => {
-    // The regression this guards: reintroducing `slackRelayContext()` as the
-    // early return would silently stop persisting web questions again, and
-    // nothing user-visible fails until a box parks.
+  test('the POST is not gated on a channel context', () => {
+    // The regression this guards: reintroducing the channel gate as the early
+    // return would silently stop persisting web questions again, and nothing
+    // user-visible fails until a box parks.
     const postAt = body.indexOf('turn-question');
-    const slackGateAt = body.indexOf('slackRelayContext()');
-    expect(slackGateAt).toBeGreaterThan(postAt);
+    const gateAt = body.indexOf('channelRelayContext()');
+    expect(gateAt).toBeGreaterThan(postAt);
   });
 
   test('RESOLVES only when a channel carries the reply out of band', () => {
-    expect(body).toContain('if (!slackRelayContext())');
+    expect(body).toContain('if (!channelRelayContext())');
   });
 
-  test('the Slack-worded sentinel is unreachable without a Slack context', () => {
+  test('a TEAMS session counts as a channel, not as the dashboard', () => {
+    // It did not. `slackRelayContext()` read SLACK_THREAD_TS / SLACK_CHANNEL_ID
+    // only, so a Teams session fell through to "left open for the UI" and the
+    // blocking `question` tool was never released — the agent hung until its
+    // box was parked, AFTER the card had been posted (the relay is ungated).
+    const ctx = SRC.slice(SRC.indexOf('function channelRelayContext'));
+    const fn = ctx.slice(0, ctx.indexOf('\n}'));
+    expect(fn).toContain('MS_TEAMS_CONVERSATION_ID');
+    expect(fn).toContain('MS_TEAMS_TENANT_ID');
+    expect(fn).toContain('SLACK_THREAD_TS');
+  });
+
+  test('the sentinel names the channel it was actually posted to', () => {
+    // It said "Posted to the Slack thread" and "just ask with `slack send`"
+    // unconditionally — in a Teams conversation that names a CLI the agent
+    // does not have.
+    expect(body).toContain('channelLabel()');
+    expect(body).not.toMatch(/Posted to the Slack thread/);
+    expect(body).not.toMatch(/`slack send` rather than the question tool/);
+  });
+
+  test('the sentinel is unreachable without a channel context', () => {
     // The false "Posted to the Slack thread" line a web session received.
-    const gateAt = body.indexOf('if (!slackRelayContext())');
-    const sentinelAt = body.indexOf('Posted to the Slack thread');
+    const gateAt = body.indexOf('if (!channelRelayContext())');
+    // The sentinel now names the channel, so anchor on the phrase that
+    // survives: it must be BUILT after the gate, never before it.
+    const sentinelAt = body.indexOf('questions are async');
     expect(gateAt).toBeGreaterThan(-1);
     expect(sentinelAt).toBeGreaterThan(gateAt);
   });
 
   test('a non-channel question is left open, not replied to', () => {
-    const gateAt = body.indexOf('if (!slackRelayContext())');
+    const gateAt = body.indexOf('if (!channelRelayContext())');
     const replyAt = body.indexOf('/reply?directory=');
     expect(replyAt).toBeGreaterThan(gateAt);
+  });
+});
+
+// The pi harness releases in-process rather than over HTTP, but had the SAME
+// Slack-only gate: a Teams pi session's question was never released and the
+// turn hung. apps/api now releases channel questions itself, so this is the
+// fallback — but it must still recognise a Teams session, and must not tell
+// the agent to stop using the tool both channel prompts now recommend.
+describe('pi relayQuestion', () => {
+  const PI = Bun.file(new URL('./harness/pi/relay.ts', import.meta.url).pathname);
+
+  test('a TEAMS session is a channel, not "left open"', async () => {
+    const src = await PI.text();
+    const fn = src.slice(src.indexOf('export async function relayQuestion'));
+    const body = fn.slice(0, fn.indexOf('\n}\n'));
+    expect(body).toContain('MS_TEAMS_CONVERSATION_ID');
+    expect(body).toContain('SLACK_THREAD_TS');
+    expect(body).toContain('if (!teams && !slack) return');
+  });
+
+  test('the sentinel names the channel and never says to avoid the tool', async () => {
+    const src = await PI.text();
+    const fn = src.slice(src.indexOf('export async function relayQuestion'));
+    const code = fn
+      .slice(0, fn.indexOf('\n}\n'))
+      .split('\n')
+      .filter((l) => !l.trim().startsWith('//'))
+      .join('\n');
+    expect(code).toContain('the Teams conversation');
+    expect(code).not.toMatch(/rather than the question tool/);
   });
 });

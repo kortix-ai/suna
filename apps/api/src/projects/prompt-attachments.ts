@@ -1236,17 +1236,21 @@ export async function resolvePromptAttachments(input: {
       ),
     );
   if (!found.length) return resolved;
-  // Every row joins the same command.
-  if (found[0]!.commandStatus !== 'running')
-    throw new PromptAttachmentError(
-      'attachment_command_not_running',
-      'The command attachment is not active.',
-      409,
-    );
   const parts = Array.isArray(found[0]!.commandPayload.parts)
     ? (found[0]!.commandPayload.parts as PromptPartWire[])
     : [];
   const rows = new Map(found.map(({ attachment }) => [attachment.attachmentId, attachment]));
+  // A handle's shape does not depend on the command's status: the payload that
+  // decides it is on the same row. So check the handle FIRST. A wrong part
+  // index is permanently wrong and reports 404 whatever the command is doing —
+  // ordering the status check first made that 404 unreachable for a command
+  // that had left `running`, which answered the same wrong index 404 or 409 on
+  // timing alone and told the caller to retry an error no retry can fix.
+  const verified: Array<{
+    row: NonNullable<ReturnType<typeof rows.get>>;
+    partIndex: number;
+    sha256: string;
+  }> = [];
   for (const { attachmentId, partIndex } of input.handles) {
     const row = rows.get(attachmentId);
     const part = parts[partIndex];
@@ -1267,7 +1271,20 @@ export async function resolvePromptAttachments(input: {
       row.sizeBytes > MAX_PROMPT_ATTACHMENT_BYTES
     )
       continue;
-    const sha256 = row.sha256;
+    verified.push({ row, partIndex, sha256: row.sha256 });
+  }
+  // No handle names a real part of this command: absent from the result, so the
+  // caller reports 404. Every row joins the same command, so one status decides
+  // the rest — a handle that WOULD resolve keeps the transient 409, which stays
+  // distinguishable from the permanent 404 above.
+  if (!verified.length) return resolved;
+  if (found[0]!.commandStatus !== 'running')
+    throw new PromptAttachmentError(
+      'attachment_command_not_running',
+      'The command attachment is not active.',
+      409,
+    );
+  for (const { row, partIndex, sha256 } of verified) {
     const reference = buildPromptAttachmentReference({
       part: { type: 'file', filename: row.filename, mime: row.mime },
       index: partIndex,

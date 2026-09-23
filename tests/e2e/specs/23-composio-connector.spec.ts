@@ -314,15 +314,24 @@ test.describe("23 — Composio managed connector", () => {
       .click();
     const createRequest = await createRequestPromise;
     const createBody = createRequest.postDataJSON() as Record<string, unknown>;
+    // `authorization_strategy` was a connector-level MODE that made project-
+    // owned and member-owned accounts mutually exclusive, and the add dialog
+    // carried an owner field that set it. 2bdc308a87 (PR #7326, 2026-09-16)
+    // deleted that field and the key: ownership is a property of each ACCOUNT
+    // (`owner_type` on the connection), so the draft names the account to
+    // authorize (`account: "default"`) instead of a connector-wide strategy.
+    // The route still answers the old strategy PUT as a deprecation no-op
+    // (CONN-13), but no client sends the key on create any more.
     expect(createBody).toEqual(
       expect.objectContaining({
         name: "Composio Search",
         provider: "composio",
         app: "composio_search",
-        authorization_strategy: "project",
+        account: "default",
         create_only: true,
       }),
     );
+    expect(createBody).not.toHaveProperty("authorization_strategy");
     // A proposed connector slug is `<app>-<6 random base36>` since 7f6b8087f3
     // (so two connections to one app never collide). The suffix is random, so
     // read the slug the UI actually proposed and follow it for the rest of the
@@ -392,13 +401,21 @@ test.describe("23 — Composio managed connector", () => {
       "GET",
       `/projects/${project.id}/connections`,
     );
-    const connection = connections.connections.find(
+    // The connector's shared account. Do NOT filter on `is_default`: since
+    // 6b7e3c27c5 (PR #7326, 2026-09-16) `ensureDefaultConnection` never pins
+    // the row it creates — an auto-authorized account is not a deliberate
+    // choice, and silently defaulting it was the guess the `account_required`
+    // rule refuses to make. Only `PUT /connections/:id/default` pins one now.
+    // The EFFECTIVE project default is the connector's sole active
+    // project-owned account, which is exactly what this journey created, so
+    // assert that: one project-owned account, unpinned.
+    const projectConnections = connections.connections.filter(
       (item) =>
-        item.connector_alias === connectorSlug &&
-        item.owner_type === "project" &&
-        item.is_default,
+        item.connector_alias === connectorSlug && item.owner_type === "project",
     );
-    expect(connection).toBeDefined();
+    expect(projectConnections).toHaveLength(1);
+    const connection = projectConnections[0];
+    expect(connection.is_default).toBe(false);
     expect(connection?.status).toBe("active");
     expect(connection?.metadata).toEqual(
       expect.objectContaining({

@@ -9,11 +9,12 @@ import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Sun, Moon, Check, Monitor } from 'lucide-react-native';
+import { SunIcon as Sun, MoonIcon as Moon, CheckIcon as Check, MonitorIcon as Monitor } from '@/lib/icons';
 import { SettingsHeader } from './SettingsHeader';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useThemeStore } from '@/stores/theme-store';
+import { DEFAULT_THEME_PREFERENCE, parseThemePreference } from '@/stores/theme-preference';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -26,13 +27,13 @@ interface ThemePageProps {
 }
 
 export function ThemePage({ visible, onClose }: ThemePageProps) {
-  const { colorScheme, setColorScheme } = useColorScheme();
+  const { setColorScheme } = useColorScheme();
   const { t } = useLanguage();
   
   const [themePreference, setThemePreference] = React.useState<ThemePreference | null>(null);
   const [isTransitioning, setIsTransitioning] = React.useState(false);
   const isMountedRef = React.useRef(true);
-  const transitionTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const transitionTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   React.useEffect(() => {
     isMountedRef.current = true;
@@ -56,19 +57,12 @@ export function ThemePage({ visible, onClose }: ThemePageProps) {
     try {
       const saved = await AsyncStorage.getItem(THEME_PREFERENCE_KEY);
       if (!isMountedRef.current) return;
-      if (saved) {
-        const preference = saved as ThemePreference;
-        setThemePreference(preference);
-        setColorScheme(preference === 'system' ? 'system' : preference);
-      } else {
-        const currentTheme = colorScheme || 'light';
-        const derivedPreference = currentTheme === 'dark' ? 'dark' : 'light';
-        setThemePreference(derivedPreference);
-      }
+      const preference = parseThemePreference(saved);
+      setThemePreference(preference);
+      setColorScheme(preference);
     } catch {
       if (!isMountedRef.current) return;
-      const derivedPreference = colorScheme === 'dark' ? 'dark' : 'light';
-      setThemePreference(derivedPreference);
+      setThemePreference(DEFAULT_THEME_PREFERENCE);
     }
   };
 
@@ -233,7 +227,6 @@ function ThemeOption({ icon, label, description, isSelected, onPress, disabled }
               as={icon} 
               size={18} 
               className={isSelected ? 'text-primary-foreground' : 'text-primary'} 
-              strokeWidth={2.5} 
             />
           </View>
           <View className="flex-1">
@@ -252,7 +245,6 @@ function ThemeOption({ icon, label, description, isSelected, onPress, disabled }
               as={Check} 
               size={12} 
               className="text-primary-foreground" 
-              strokeWidth={3} 
             />
           </View>
         )}

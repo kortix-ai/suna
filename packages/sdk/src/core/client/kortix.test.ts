@@ -1479,6 +1479,59 @@ test('ensureReady() throws RUNTIME_UNAVAILABLE when the runtime never becomes re
   ).rejects.toMatchObject({ code: 'RUNTIME_UNAVAILABLE' });
 });
 
+// A terminal `stage:"failed"` /start carries the concrete reason the server
+// earned: `failure.category`/`failure.message`, its `failure.evidence.error`,
+// and a `reason`. The thrown message must surface that reason instead of only
+// `(stage: failed)` — else `sessions log`/`sessions new --wait` show a bare
+// `Session runtime not ready (stage: failed)` and the operator cannot tell a
+// provider-capacity failure from a git-auth failure. Regression guard for
+// incident-20260922T140537Z-kxhourly.
+test('ensureReady() surfaces the concrete failure reason from a terminal stage:"failed" /start', async () => {
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    if (url.includes('/start')) {
+      return jsonResponse({
+        stage: 'failed',
+        agent_name: 'heartbeat-probe',
+        retriable: false,
+        sandbox: null,
+        opencode_session_id: null,
+        reason: 'runtime_boot_failed',
+        failure: {
+          category: 'sandbox-provider',
+          message: 'runtime exec did not come up before the boot budget',
+          retryable: false,
+          evidence: {
+            check: 'opencode_boot_wait',
+            observed_at: '2026-09-22T14:07:10Z',
+            error: 'daemon never reported ready',
+            attempts: 1,
+            next_retry_at: null,
+          },
+        },
+      });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const err = await k
+    .session('PROJ', 'SESS-FAILED')
+    .ensureReady({ readyTimeoutMs: 50 })
+    .then(
+      () => null,
+      (e) => e as ApiError,
+    );
+
+  expect(err).toBeInstanceOf(ApiError);
+  expect(err?.code).toBe('RUNTIME_UNAVAILABLE');
+  // The stage stays for continuity, but the concrete reason must be present.
+  expect(err?.message).toContain('failed');
+  expect(err?.message).toContain('sandbox-provider');
+  expect(err?.message).toContain('runtime exec did not come up before the boot budget');
+  expect(err?.message).toContain('daemon never reported ready');
+});
+
 test('ensureReady() treats a transient null /start result as retriable and resolves once ready', async () => {
   let n = 0;
   globalThis.fetch = mock(async (input: unknown) => {
@@ -1596,4 +1649,26 @@ test('kortix.iam.can probes one leaf for one principal', async () => {
   });
   expect(last().url).toContain('/accounts/ACC1/iam/members/U1/effective?');
   expect(last().url).toContain('action=project.write');
+});
+
+test('session attachments upload before runtime initialization', async () => {
+  await kortix.session('PID123', 'SID456').attachments.upload(new File(['hello'], 'notes.txt'));
+  expect(last().url).toContain('/projects/PID123/sessions/SID456/attachments');
+  expect(last().method).toBe('POST');
+});
+
+test('the facade carries the connect owner through to both connect surfaces', async () => {
+  // The web host and the CLI both pick the owner in the UI and hand it to the
+  // facade; if the facade dropped it, every account would be created under the
+  // API's default and the "Connect shared account" button would be a lie.
+  await kortix.project('PID123').connectors.pipedream.connect('slack-1', { owner: 'project' });
+  expect(last().url).toBe(
+    'http://test.local/connectors/projects/PID123/connectors/slack-1/connect',
+  );
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ owner: 'project' });
+
+  await kortix.project('PID123').setupLinks.requestConnector({ slug: 'slack-1', owner: 'me' });
+  expect(last().url).toBe('http://test.local/projects/PID123/connect-requests');
+  expect(last().body).toEqual({ slug: 'slack-1', owner: 'me' });
 });

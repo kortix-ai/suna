@@ -88,6 +88,7 @@ describe('ephemeral self-host preview stack', () => {
       KORTIX_GITHUB_APP_SLUG: 's',
       MANAGED_GIT_GITHUB_INSTALL_ID: '2',
       MANAGED_GIT_GITHUB_OWNER: 'o',
+      PLATINUM_API_KEY: 'pt_live_example',
     };
     // The App shape still works unchanged.
     expect(applyPreviewEnvironment(base, stack, app).testEnv).toContain('KE2E_CAP_MANAGED_GIT=1');
@@ -96,6 +97,7 @@ describe('ephemeral self-host preview stack', () => {
     const pat = {
       MANAGED_GIT_GITHUB_OWNER: 'o',
       MANAGED_GIT_GITHUB_TOKEN: 't',
+      PLATINUM_API_KEY: 'pt_live_example',
     };
     const patEnv = applyPreviewEnvironment(base, stack, pat);
     expect(patEnv.testEnv).toContain('KE2E_CAP_MANAGED_GIT=1');
@@ -151,6 +153,7 @@ describe('ephemeral self-host preview stack', () => {
       'MANAGED_GIT_GITHUB_OWNER',
       'MANAGED_GIT_GITHUB_TOKEN',
       'OPENROUTER_API_KEY',
+      'MORPH_API_KEY',
       'PLATINUM_API_KEY',
     ]);
     expect(() =>
@@ -191,6 +194,8 @@ describe('ephemeral self-host preview stack', () => {
         MANAGED_GIT_GITHUB_INSTALL_ID: '67890',
         MANAGED_GIT_GITHUB_OWNER: 'kortix-preview',
         OPENROUTER_API_KEY: 'openrouter',
+        MORPH_API_KEY: 'morph',
+        PLATINUM_API_KEY: 'pt_live_example',
       },
     );
 
@@ -200,6 +205,7 @@ describe('ephemeral self-host preview stack', () => {
     );
     expect(configured.runtimeEnv).toContain('SUPABASE_PUBLIC_URL=https://preview.example');
     expect(configured.runtimeEnv).toContain('INTERNAL_KORTIX_ENV=preview');
+    expect(configured.runtimeEnv).toContain('MORPH_API_KEY=morph');
     // The preview edge drops request bodies above ~124 KiB, Storage uploads included.
     expect(configured.runtimeEnv).toContain('PROMPT_ATTACHMENT_UPLOAD_MODE=chunked');
     expect(configured.runtimeEnv).toContain('KORTIX_FRONTEND_MEMORY_LIMIT=2048m');
@@ -220,7 +226,7 @@ describe('ephemeral self-host preview stack', () => {
     expect(configured.testEnv).toContain('E2E_AGENTMAIL_API_KEY=');
   });
 
-  it('offers Platinum only when its key is present, and never forwards an AWS identity', () => {
+  it('runs preview sessions on Platinum only, and never forwards an AWS identity', () => {
     const base = 'POSTGRES_PASSWORD=generated\nSUPABASE_ANON_KEY=anon\nSUPABASE_SERVICE_ROLE_KEY=service\nINTERNAL_SERVICE_KEY=internal\n';
     const input = {
       origin: 'https://preview.example',
@@ -238,18 +244,20 @@ describe('ephemeral self-host preview stack', () => {
       MANAGED_GIT_GITHUB_OWNER: 'kortix-preview',
     };
 
-    // Without a Platinum key: exactly the old posture.
-    const plain = applyPreviewEnvironment(base, input, secrets);
-    expect(plain.runtimeEnv).toContain('ALLOWED_SANDBOX_PROVIDERS=daytona\n');
-    expect(plain.runtimeEnv).not.toContain('PLATINUM_API_KEY');
+    // Without a Platinum key the preview cannot run a session anywhere it is
+    // allowed to. Fail before boot instead of falling back to Daytona: the
+    // shared Daytona org hit its snapshot quota on 2026-09-21 and every preview
+    // session died with "Snapshot quota exceeded".
+    expect(() => applyPreviewEnvironment(base, input, secrets)).toThrow('PLATINUM_API_KEY');
 
-    // With it: Platinum offered SECOND so Daytona stays the default for unpinned sessions.
     const wired = applyPreviewEnvironment(
       base,
       { ...input, platinumApiUrl: 'https://api.platinum.dev' },
       { ...secrets, PLATINUM_API_KEY: 'pt_live_example' },
     );
-    expect(wired.runtimeEnv).toContain('ALLOWED_SANDBOX_PROVIDERS=daytona,platinum\n');
+    expect(wired.runtimeEnv).toContain('ALLOWED_SANDBOX_PROVIDERS=platinum\n');
+    expect(wired.runtimeEnv).not.toMatch(/ALLOWED_SANDBOX_PROVIDERS=.*daytona/);
+    expect(wired.runtimeEnv).not.toContain('DAYTONA_API_KEY');
     expect(wired.runtimeEnv).toContain('PLATINUM_API_URL=https://api.platinum.dev');
     expect(wired.runtimeEnv).toContain('PLATINUM_API_KEY=pt_live_example');
 

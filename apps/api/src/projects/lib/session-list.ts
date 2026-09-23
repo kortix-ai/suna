@@ -38,6 +38,7 @@ import {
   type ShareSubject,
 } from '../../connectors/share';
 import { db } from '../../shared/db';
+import { hasAccountSessionOversight } from '../../iam/session-oversight';
 
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq, inArray, lt, or } from 'drizzle-orm';
@@ -94,6 +95,8 @@ export async function loadProjectSessionInventory(input: {
   scope: ProjectSessionListScope;
   /** `callerKortixSessionId(c)` — null for a Supabase browser JWT. */
   boundCredentialSessionId: string | null;
+  /** The caller is an agent session under the `agent_principal` model (spec §2). */
+  agentPrincipal?: boolean;
   probeManageCapability: () => Promise<boolean>;
   /** Max VISIBLE items to return. Clamped to `SESSION_PAGE_MAX_LIMIT`. */
   limit?: number;
@@ -130,6 +133,13 @@ export async function loadProjectSessionInventory(input: {
 
   // The manager-only scope is refused before any row is read: an unauthorized
   // caller must not cost a page scan.
+  // Oversight widens only the manager inventory; see selectSessionRowsForViewer.
+  const accountSessionOversight =
+    input.scope === 'project' &&
+    canManageProject &&
+    input.boundCredentialSessionId === null &&
+    (await hasAccountSessionOversight(input.userId, input.accountId));
+
   if (input.scope === 'project' && !canManageProject) {
     return {
       authorized: false,
@@ -237,6 +247,8 @@ export async function loadProjectSessionInventory(input: {
       runtimeStatusBySession: chunkRuntime,
       callerSessionId: input.boundCredentialSessionId,
       boundCredentialSessionId: input.boundCredentialSessionId,
+      accountSessionOversight,
+      agentPrincipal: input.agentPrincipal === true,
     });
 
     for (const item of selected.items) {

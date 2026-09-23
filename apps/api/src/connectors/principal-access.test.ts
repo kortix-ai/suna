@@ -5,7 +5,7 @@ import { connectorDenialBody, principalMayUseConnector } from './principal-acces
 const narrow: AgentGrant = {
   agent: 'release-bot',
   connectors: ['github'],
-  kortixCli: [],
+  permissions: [],
   env: [],
   manifestRevision: 'd'.repeat(40),
   manifestCommit: 'b'.repeat(40),
@@ -55,6 +55,7 @@ test('each denial reason carries a stable code and a hint', () => {
     'connector_not_connected',
     'connector_disabled',
     'action_not_found',
+    'account_required',
   ] as const) {
     const body = connectorDenialBody(reason, { connector: 'heyreach_api', action: 'check_api_key' });
     expect(body.reason).toBe(reason);
@@ -65,4 +66,35 @@ test('each denial reason carries a stable code and a hint', () => {
   expect(String(connectorDenialBody('connector_not_connected', { connector: 'heyreach_api' }).hint)).toContain(
     'kortix connectors connect heyreach_api',
   );
+});
+
+/**
+ * THE RULE: several accounts reachable, none named, none pinned → denied
+ * `account_required`, never a silent guess. The body must name every
+ * available account and say how to fix it (name one, or pin one).
+ */
+test('account_required names every available account and how to fix it', () => {
+  const body = connectorDenialBody('account_required', {
+    connector: 'gmail',
+    action: 'send_message',
+    availableAccounts: ['Work', 'Personal'],
+  });
+  expect(body).toMatchObject({
+    ok: false,
+    status: 'denied',
+    reason: 'account_required',
+    connector: 'gmail',
+    action: 'send_message',
+    available_accounts: ['Work', 'Personal'],
+    default_account: null,
+  });
+  expect(String(body.hint)).toContain('account:<label|id|me|project>');
+  expect(String(body.hint)).toContain('gmail');
+  expect(String(body.hint)).toContain('kortix connectors accounts gmail --default');
+});
+
+test('account_required with no available accounts still carries a usable hint', () => {
+  const body = connectorDenialBody('account_required', { connector: 'gmail' });
+  expect(body.available_accounts).toEqual([]);
+  expect(body.default_account).toBeNull();
 });

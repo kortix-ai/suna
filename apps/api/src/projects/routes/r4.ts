@@ -54,14 +54,17 @@ import { buildTeamsManifest } from '../../channels/teams-manifest';
 import { teamsDeepLink, teamsMode } from '../../channels/teams-mode';
 import { teamsOrgConsentUrl } from '../../channels/teams-oauth';
 import { downloadTeamsFile, initiateTeamsUpload } from '../../channels/teams/file-proxy';
+import { listTeamsPostTargets, postToTeamsConversation } from '../../channels/teams/post';
 import {
   relayTurnAnswerDetailed,
   relayTurnEnd,
   relayTurnQuestion,
   relayTurnStepDetailed,
 } from '../../channels/turn-relay';
+import { channelOfSessionMetadata, releaseChannelQuestion } from '../../channels/question-release';
 import { config } from '../../config';
 import {
+  connectionIsEffectiveProjectDefault,
   resolveConnectionCredentialValue,
   upsertConnectionCredential,
   upsertConnectionOAuth2Credential,
@@ -79,6 +82,7 @@ import {
   rematerializeCatalogAfterCredentialUpdate,
 } from '../../connectors/sync';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { assertMayRunAgent } from '../lib/agent-access';
 import { featureDisabledBody } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
 import { setContextField } from '../../lib/request-context';
@@ -125,11 +129,13 @@ import { AnyObject, TriggerSchema, projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
 import {
   type ConnectionOwnerType,
-  type ConnectorAuthorizationStrategy,
-  connectorAuthorizationMatchesStrategy,
+  connectionIsReachable,
   isTrustedManagedChannelAuthorization,
-} from '../lib/connector-authorization-strategy';
+} from '../lib/connection-access';
 import { sessionMayEnumerateConnection } from '../lib/connector-connection-visibility';
+import { requestAgentPrincipalReach, requestPersonalOwner } from '../lib/personal-resources';
+
+type AgentPrincipalReach = Awaited<ReturnType<typeof requestAgentPrincipalReach>>;
 import { withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
@@ -166,11 +172,13 @@ import {
   findProjectTriggerBySlug,
 } from '../triggers';
 import { turnStreamKindField, turnStreamKindNeedsConnectorWrite } from './r4-turn-stream-kind';
+import { buildFormCard, type TeamsFormSpec } from '../../channels/teams/cards';
 import {
   abandonSandboxTurn,
   acceptSandboxTurn,
   adoptRuntimeSandboxTurn,
   completeSandboxTurn,
+  recordUnidentifiedTurnCause,
   turnCompletionAllowsQueuePromotion,
 } from '../sandbox-turn-lifecycle';
 
@@ -259,7 +267,6 @@ function mayReadConnection(
     ownerId: string | null;
     isDefault: boolean;
     metadata: Record<string, unknown>;
-    authorizationStrategy: ConnectorAuthorizationStrategy;
     providerType: string;
     connectorConfig: Record<string, unknown>;
   },
@@ -270,14 +277,16 @@ function mayReadConnection(
    *  carries the WRAPPER's user id, so without this every end-user's agent could
    *  enumerate every other end-user's connection and then bind it. */
   sessionBoundConnectionIds: ReadonlySet<string> | null,
+  /** Agent-principal reach (spec 2026-09-22 §2.3); null = legacy rule. */
+  agentPrincipal: AgentPrincipalReach | null = null,
 ): boolean {
   if (!sessionMayEnumerateConnection(connection, sessionBoundConnectionIds)) return false;
-  return connectorAuthorizationMatchesStrategy({
-    strategy: connection.authorizationStrategy,
+  return connectionIsReachable({
     ownerType: connection.ownerType,
     ownerId: connection.ownerId,
     actingUserId: userId,
     actingPrincipalIsServiceAccount,
+    agentPrincipal,
     trustedManagedSystem: isTrustedManagedChannelAuthorization({
       providerType: connection.providerType,
       platform:
@@ -296,20 +305,21 @@ function mayMutateConnection(
     ownerType: ConnectionOwnerType;
     ownerId: string | null;
     metadata: Record<string, unknown>;
-    authorizationStrategy: ConnectorAuthorizationStrategy;
     providerType: string;
     connectorConfig: Record<string, unknown>;
   },
   userId: string,
   actingPrincipalIsServiceAccount: boolean,
   mayManageSystemConnections: boolean,
+  /** Agent-principal reach (spec 2026-09-22 §2.3); null = legacy rule. */
+  agentPrincipal: AgentPrincipalReach | null = null,
 ): boolean {
-  const strategyMatches = connectorAuthorizationMatchesStrategy({
-    strategy: connection.authorizationStrategy,
+  const reachable = connectionIsReachable({
     ownerType: connection.ownerType,
     ownerId: connection.ownerId,
     actingUserId: userId,
     actingPrincipalIsServiceAccount,
+    agentPrincipal,
     trustedManagedSystem: isTrustedManagedChannelAuthorization({
       providerType: connection.providerType,
       platform:
@@ -321,8 +331,11 @@ function mayMutateConnection(
       metadata: connection.metadata,
     }),
   });
-  if (!strategyMatches) return false;
-  return connection.authorizationStrategy === 'user' || mayManageSystemConnections;
+  if (!reachable) return false;
+  // Your own private account is yours to administer — reachability already
+  // proved the owner is the caller. Everything shared with the project is
+  // administration and needs the connections-manage capability.
+  return connection.ownerType === 'member' || mayManageSystemConnections;
 }
 
 async function reconcileConnectionRow(input: {
@@ -351,9 +364,21 @@ async function reconcileConnectionRow(input: {
   );
   const [existing] = await db.select().from(connectorConnections).where(identity).limit(1);
   if (existing) {
+    // Reconciling the label of a REVOKED row is a re-connect, not a metadata
+    // touch: the caller is adding "this account" back, and the credential they
+    // set next must land on a live row. Left `revoked`, the row kept its new
+    // credential but stayed invisible to every call and every list of usable
+    // accounts (found 2026-09-17: header "Add credential" on a connector whose
+    // only shared account had just been disconnected saved into a dead row).
+    // `error` is a live-state flag the next sync owns; it is not cleared here.
     const [connection] = await db
       .update(connectorConnections)
-      .set({ label: input.label, metadata: input.metadata, updatedAt: new Date() })
+      .set({
+        label: input.label,
+        metadata: input.metadata,
+        ...(existing.status === 'revoked' ? { status: 'active' as const } : {}),
+        updatedAt: new Date(),
+      })
       .where(eq(connectorConnections.connectionId, existing.connectionId))
       .returning();
     return { connection, created: false };
@@ -399,6 +424,7 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     const actingPrincipalIsServiceAccount = c.get('authType') === 'service_account';
+    const agentReach = await requestAgentPrincipalReach(c, loaded.actor);
     // A sandbox connector token is bound to ONE session. Load what that session was
     // actually GIVEN so the enumeration below can be narrowed to it. null for
     // every non-session caller, which leaves the operator's view unchanged.
@@ -426,7 +452,6 @@ projectsApp.openapi(
         status: connectorConnections.status,
         isDefault: connectorConnections.isDefault,
         metadata: connectorConnections.metadata,
-        authorizationStrategy: connectors.authorizationStrategy,
         providerType: connectors.providerType,
         connectorConfig: connectors.config,
       })
@@ -441,6 +466,7 @@ projectsApp.openapi(
             loaded.userId,
             actingPrincipalIsServiceAccount,
             sessionBoundConnectionIds,
+            agentReach,
           ),
         )
         .map(serializeConnection),
@@ -568,7 +594,6 @@ projectsApp.openapi(
       .select({
         connectorId: connectors.connectorId,
         providerType: connectors.providerType,
-        authorizationStrategy: connectors.authorizationStrategy,
       })
       .from(connectors)
       .where(
@@ -586,15 +611,9 @@ projectsApp.openapi(
         409,
       );
     }
-    if (connector.authorizationStrategy !== 'user') {
-      return c.json(
-        {
-          error: 'This connector uses project-owned connections',
-          code: 'CONNECTOR_AUTHORIZATION_STRATEGY_MISMATCH',
-        },
-        409,
-      );
-    }
+    // No connector-level gate: every connector can hold both a shared project
+    // account and each member's own private one. Refusing here is what left a
+    // former `user`-strategy connector with no connect flow at all.
     const ownerType = 'member' as const;
     const ownerId = loaded.userId;
     const { connection, created } = await reconcileConnectionRow({
@@ -685,7 +704,6 @@ projectsApp.openapi(
       .select({
         connectorId: connectors.connectorId,
         providerType: connectors.providerType,
-        authorizationStrategy: connectors.authorizationStrategy,
       })
       .from(connectors)
       .where(
@@ -705,18 +723,18 @@ projectsApp.openapi(
     }
     const normalizedOwnerId = ownerType === 'project' ? null : ownerId;
     if (
-      !connectorAuthorizationMatchesStrategy({
-        strategy: connector.authorizationStrategy,
+      !connectionIsReachable({
         ownerType: ownerType as ConnectionOwnerType,
         ownerId: normalizedOwnerId,
         actingUserId: loaded.userId,
         actingPrincipalIsServiceAccount: c.get('authType') === 'service_account',
+        agentPrincipal: await requestAgentPrincipalReach(c, loaded.actor),
       })
     ) {
       return c.json(
         {
-          error: `This connector uses ${connector.authorizationStrategy}-owned connections`,
-          code: 'CONNECTOR_AUTHORIZATION_STRATEGY_MISMATCH',
+          error: `A ${ownerType}-owned connection is not reachable by this caller`,
+          code: 'CONNECTOR_CONNECTION_OWNER_NOT_REACHABLE',
         },
         409,
       );
@@ -783,8 +801,7 @@ for (const operation of ['credential', 'revoke', 'activate', 'default'] as const
           ownerId: connectorConnections.ownerId,
           isDefault: connectorConnections.isDefault,
           metadata: connectorConnections.metadata,
-          authorizationStrategy: connectors.authorizationStrategy,
-          providerType: connectors.providerType,
+            providerType: connectors.providerType,
           connectorConfig: connectors.config,
         })
         .from(connectorConnections)
@@ -811,6 +828,7 @@ for (const operation of ['credential', 'revoke', 'activate', 'default'] as const
           loaded.userId,
           actingPrincipalIsServiceAccount,
           mayManageSystemConnections,
+          await requestAgentPrincipalReach(c, loaded.actor),
         )
       ) {
         return c.json({ error: 'Not found' }, 404);
@@ -851,17 +869,27 @@ for (const operation of ['credential', 'revoke', 'activate', 'default'] as const
         } catch (error) {
           return c.json({ error: (error as Error).message || 'credential validation failed' }, 400);
         }
+        // INVARIANT (2026-09-16, account_required rule): `connection.isDefault`
+        // is the raw (possibly unpinned) row flag; the project-wide catalog
+        // write below must key on the EFFECTIVE default — pinned, or the
+        // connector's sole active project-owned connection — so setting a
+        // credential on a never-pinned solo MCP connection still publishes
+        // exactly as it did before this rule existed.
+        const isEffectiveDefault =
+          connection.isDefault ||
+          (connection.ownerType === 'project' &&
+            (await connectionIsEffectiveProjectDefault(connection.connectorId, connectionId)));
         await rematerializeCatalogAfterCredentialUpdate({
           projectId,
           accountId: loaded.row.accountId,
           provider: connection.providerType,
           ownerType: connection.ownerType,
-          isDefault: connection.isDefault,
+          isDefault: isEffectiveDefault,
           connectorId: connection.connectorId,
           credential:
             connection.providerType === 'mcp' &&
             connection.ownerType === 'project' &&
-            connection.isDefault
+            isEffectiveDefault
               ? await resolveConnectionCredentialValue({
                   connectorId: connection.connectorId,
                   connectionId,
@@ -974,8 +1002,7 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
           connectorAlias: connectors.slug,
           providerType: connectors.providerType,
           connectorConfig: connectors.config,
-          authorizationStrategy: connectors.authorizationStrategy,
-        })
+          })
         .from(connectorConnections)
         .innerJoin(
           connectors,
@@ -1000,11 +1027,21 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
           loaded.userId,
           actingPrincipalIsServiceAccount,
           mayManageSystemConnections,
+          await requestAgentPrincipalReach(c, loaded.actor),
         )
       ) {
         return c.json({ error: 'Not found' }, 404);
       }
-      if (connection.isDefault) {
+      // INVARIANT (2026-09-16, account_required rule): a project-owned
+      // connection with nothing PINNED is still blocked here when it is the
+      // connector's sole active project-owned row — it is the connector's
+      // EFFECTIVE default even unpinned, and must still go through the shared
+      // connect endpoint. See `connectionIsEffectiveProjectDefault`.
+      const isEffectiveDefault =
+        connection.isDefault ||
+        (connection.ownerType === 'project' &&
+          (await connectionIsEffectiveProjectDefault(connection.connectorId, connectionId)));
+      if (isEffectiveDefault) {
         return c.json(
           { error: 'Use the shared connector connect endpoint for the default connection' },
           409,
@@ -1170,7 +1207,7 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Leaf-gate the read (a custom role can omit project.trigger.read) — and, via
-    // the central agent-grant fold, an agent token must hold it in its kortixCli.
+    // the central agent-grant fold, an agent token must hold it in its Kortix permissions.
     await assertProjectCapability(
       c,
       loaded.userId,
@@ -1958,6 +1995,75 @@ projectsApp.openapi(
 
 projectsApp.openapi(
   createRoute({
+    method: 'get',
+    path: '/{projectId}/channels/teams/conversations',
+    tags: ['channels'],
+    summary: 'GET /:projectId/channels/teams/conversations (proactive-post targets)',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: {
+      200: json(
+        z.object({ conversations: z.array(z.object({ conversationId: z.string(), name: z.string().nullable(), type: z.string().nullable() })) }),
+        'Conversations this project may post into',
+      ),
+      ...errors(403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    if (!teamsChannelEnabled(loaded.row.metadata)) return c.json(featureDisabledBody('teams'), 403);
+    return c.json({ conversations: await listTeamsPostTargets(projectId) });
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/channels/teams/message',
+    tags: ['channels'],
+    summary: 'POST /:projectId/channels/teams/message (proactive post)',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(
+        z.object({ ok: z.boolean(), conversationId: z.string(), delivered: z.string() }).passthrough(),
+        'Message posted',
+      ),
+      ...errors(400, 403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Posting into a customer's Teams conversation is a send primitive, gated
+    // on connector-write exactly like the file upload below.
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    );
+    if (!teamsChannelEnabled(loaded.row.metadata)) return c.json(featureDisabledBody('teams'), 403);
+    const body = await readBody(c);
+    const result = await postToTeamsConversation(projectId, {
+      conversationId: String(body.conversation_id ?? body.conversationId ?? ''),
+      text: typeof body.text === 'string' ? body.text : undefined,
+      card: body.card && typeof body.card === 'object' && !Array.isArray(body.card) ? (body.card as Record<string, unknown>) : undefined,
+    });
+    if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 403 | 404);
+    return c.json(result);
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
     method: 'post',
     path: '/{projectId}/channels/teams/file/upload',
     tags: ['channels'],
@@ -1969,8 +2075,10 @@ projectsApp.openapi(
     },
     responses: {
       200: json(
-        z.object({ ok: z.boolean(), uploadId: z.string() }).passthrough(),
-        'Consent card sent',
+        z
+          .object({ ok: z.boolean(), delivered: z.string(), uploadId: z.string().optional(), url: z.string().optional() })
+          .passthrough(),
+        'File delivered (consent card, inline image, or team-drive link)',
       ),
       ...errors(400, 403, 404),
     },
@@ -2001,9 +2109,14 @@ projectsApp.openapi(
       filename: String(body.filename ?? ''),
       contentBase64: String(body.content_base64 ?? body.contentBase64 ?? ''),
       description: typeof body.description === 'string' ? body.description : undefined,
+      conversationType:
+        body.conversation_type === 'channel' || body.conversation_type === 'groupChat' || body.conversation_type === 'personal'
+          ? body.conversation_type
+          : undefined,
+      teamGroupId: typeof body.team_group_id === 'string' && body.team_group_id ? body.team_group_id : undefined,
     });
     if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 404);
-    return c.json({ ok: true, uploadId: result.uploadId });
+    return c.json(result);
   },
 );
 
@@ -2440,6 +2553,8 @@ projectsApp.openapi(
       output?: string;
       sources?: Array<{ url?: string; text?: string }>;
       blocks?: unknown[];
+      card?: Record<string, unknown>;
+      form?: Record<string, unknown>;
       status?: string;
       opencode_session_id?: string;
       turn_message_id?: string;
@@ -2714,6 +2829,31 @@ projectsApp.openapi(
         errorInfo,
         childSession ? childIdleGraceMs() : undefined,
       );
+      // The memory guard reports its cause in a frame of its own, after the
+      // abort. A daemon built before 2026-09-21 sends it with no
+      // `turn_message_id` and `error_retryable: true`, which settles nothing
+      // above. Attach the cause to the turn it stopped, or the UI says "No
+      // reason was reported" under a turn the sandbox killed on purpose.
+      if (
+        status === 'error' &&
+        body.error_name === 'SandboxMemoryGuard' &&
+        typeof body.turn_message_id !== 'string' &&
+        turnCompletion.outcome !== 'closed'
+      ) {
+        const causeOutcome = await recordUnidentifiedTurnCause(
+          sessionId,
+          typeof body.opencode_session_id === 'string' ? body.opencode_session_id : null,
+          {
+            name: body.error_name,
+            message: typeof body.error_message === 'string' ? body.error_message : null,
+          },
+        );
+        console.info('[turn-stream] unidentified turn cause', {
+          sessionId,
+          name: body.error_name,
+          outcome: causeOutcome,
+        });
+      }
       // Prompts forwarded INTO the turn that just ended: close the ones the
       // step answered (older than the ended message), and re-queue any that
       // the loop stranded below a newer assistant — see
@@ -2862,6 +3002,26 @@ projectsApp.openapi(
           .map((s) => ({ url: s.url, text: s.text }))
       : undefined;
     const blocks = Array.isArray(body.blocks) && body.blocks.length > 0 ? body.blocks : undefined;
+    // A full Adaptive Card for the Teams answer (`teams send --card-file`).
+    // `form` is the safe alternative: the agent describes the FIELDS and the
+    // server builds the card, so the submit verb and the branding cannot
+    // drift and a malformed spec fails here instead of rendering a dead
+    // button. See channels/teams/cards.ts buildFormCard.
+    const formSpec =
+      body.form && typeof body.form === 'object' && !Array.isArray(body.form)
+        ? (body.form as unknown as TeamsFormSpec)
+        : undefined;
+    const card = formSpec
+      ? (buildFormCard(formSpec) ?? undefined)
+      : body.card && typeof body.card === 'object' && !Array.isArray(body.card)
+        ? (body.card as Record<string, unknown>)
+        : undefined;
+    if (formSpec && !card) {
+      return c.json(
+        { ok: false, reason: 'invalid_form', error: 'the form needs at least one field with an id and a label' },
+        400,
+      );
+    }
 
     // `reason` is what makes `ok: false` actionable in the sandbox: `slack
     // step` and `slack send` print it, so an agent can tell "no Slack turn is
@@ -2869,7 +3029,7 @@ projectsApp.openapi(
     // of assuming its progress was delivered.
     const relayed =
       body.kind === 'answer'
-        ? await relayTurnAnswerDetailed(sessionId, text, blocks)
+        ? await relayTurnAnswerDetailed(sessionId, text, blocks, card)
         : await relayTurnStepDetailed(sessionId, text, {
             detail,
             outputForPrev,
@@ -3188,7 +3348,8 @@ projectsApp.openapi(
     const catalog = await servableProjectCatalog({
       projectId,
       accountId,
-      principalUserId: loaded.userId,
+      // Spec 2026-09-22 §2.3: personal provider keys of the on-behalf-of human only.
+      principalUserId: await requestPersonalOwner(c, loaded),
     });
     return c.json(catalog);
   },
@@ -3678,7 +3839,7 @@ projectsApp.openapi(
     }
 
     const [turnQuestionSession] = await db
-      .select({ sessionId: projectSessions.sessionId })
+      .select({ sessionId: projectSessions.sessionId, metadata: projectSessions.metadata })
       .from(projectSessions)
       .where(
         and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)),
@@ -3764,6 +3925,24 @@ projectsApp.openapi(
     // that the question is durable: it is the ordinary web case, and failing here
     // would make the relay look broken for every non-Slack session.
     const result = await relayTurnQuestion(sessionId, questions);
+
+    // Release the runtime's BLOCKING `question` call for a chat-channel session
+    // — see channels/question-release.ts. Keyed on the session's own metadata,
+    // not the live-turn row, and only with a real runtime question id: the
+    // `q-<session>` fallback above names nothing the runtime can answer.
+    // A dashboard session is left alone; its UI answers the question itself.
+    const channel = channelOfSessionMetadata(turnQuestionSession.metadata);
+    const runtimeRequestId = body.request_id?.trim();
+    if (channel && runtimeRequestId) {
+      await releaseChannelQuestion({
+        sessionId,
+        requestId: runtimeRequestId,
+        questionCount: questions.length,
+        channel,
+        posted: result.ok,
+      });
+    }
+
     if (!result.ok) {
       return c.json({ ok: true, persisted: true, answers: [], channel_error: result.error });
     }
@@ -3936,6 +4115,24 @@ projectsApp.openapi(
 
     const spec = await findProjectTriggerBySlug(await withProjectGitAuth(loaded.row), slug);
     if (!spec) return c.json({ error: 'Not found' }, 404);
+    // Agents as principals (spec 2026-09-22 §2.2, closes V2): the fired run
+    // acts as the trigger's agent, so the FIRER must be allowed to run that
+    // agent. Under the legacy model (flag off) the fire keeps today's gate.
+    if (resolveFeatureFlag(loaded.row.metadata, 'agent_principal')) {
+      // `default` selects the project's default agent; ask about that agent.
+      const mirroredDefault = (loaded.row.metadata as Record<string, unknown> | null)?.default_agent;
+      const firedAgent =
+        spec.agent === 'default' && typeof mirroredDefault === 'string' && mirroredDefault.trim()
+          ? mirroredDefault.trim()
+          : spec.agent;
+      await assertMayRunAgent(
+        c,
+        loaded.row.accountId,
+        projectId,
+        firedAgent,
+        PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE,
+      );
+    }
 
     const now = new Date();
     const payload = {

@@ -1,21 +1,13 @@
-import { spawn } from 'node:child_process';
-
 import {
-  type RunningOpenCodeProxy,
-  startOpenCodeProxy,
-  unwrapRuntime,
-  withKortixScope,
-} from '../api/sdk.ts';
-import { takeFlagValue } from '../command-helpers.ts';
-import { ensureOpencodeBin, isValidOpencodeVersion } from '../opencode-bin.ts';
+  attachOpenCodeSession,
+  AttachOpenCodeError,
+  attachSessionLabel,
+} from '../attach-opencode.ts';
+import { locateSessionAnywhere, surfaceApiError, takeFlagValue } from '../command-helpers.ts';
+import { SessionRuntimeError } from '../session-runtime.ts';
 import { C, help, status } from '../style.ts';
 import { pickConnectSessionId } from './home.ts';
-import {
-  ensureOpencodeSession,
-  loadSessionForChat,
-  type ResolvedSession,
-  resolveRunningSessionId,
-} from './sessions-chat.ts';
+import { resolveRunningSessionId } from './sessions-chat.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
@@ -92,69 +84,73 @@ export async function runSessionsConnect(argv: string[]): Promise<number> {
   if (!sessionId) return 1;
 
   // A session id may belong to a different project (or host) than the one
-  // currently active/linked — loadSessionForChat locates it on its own
+  // currently active/linked — locateSessionAnywhere finds it on its own
   // (--project/--host still pin it) instead of surfacing a bare "Not found".
-  const resolved = await loadSessionForChat(sessionId, opts, 'sessions connect');
-  if (!resolved) return 1;
-  const ocSessionId = await ensureOpencodeSession(resolved);
-  if (!ocSessionId) return 1;
-
-  // Resolve (and, first time, download) the version-matched binary BEFORE the
-  // proxy exists — a multi-minute download must not sit on an open proxy.
-  let bin: string;
-  try {
-    bin = (await ensureOpencodeBin({ version: await runtimeOpencodeVersion(resolved) })).bin;
-  } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 1;
-  }
-
-  let proxy: RunningOpenCodeProxy;
-  try {
-    proxy = startOpenCodeProxy({
-      runtimeUrl: resolved.runtimeUrl,
-      token: resolved.auth.token,
-      port: proxyPort,
-    });
-  } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 1;
-  }
-
-  const label = resolved.session.name ?? resolved.session.session_id.split('-')[0];
-  const attachCommand = buildAttachArgs(proxy.url, ocSessionId, attachArgs);
-  process.stderr.write(
-    `${status.ok(`Connecting to ${C.bold}${label}${C.reset}`)} ` +
-      `${C.dim}(OpenCode ${ocSessionId}, local ${proxy.url})${C.reset}\n`,
+  const found = await locateSessionAnywhere(
+    sessionId,
+    opts,
+    (host) => `kortix sessions connect ${sessionId} --host ${host}`,
   );
+  if (!found) return 1;
+  const { auth, projectId, projectName, hostName, session } = found.located;
+  if (found.switched) {
+    process.stderr.write(
+      `${status.ok(`Found in ${C.bold}${projectName ?? projectId}${C.reset}`)} ` +
+        `${C.dim}(host ${hostName}) — using it.${C.reset}\n`,
+    );
+  }
 
+  // Everything from here on is `attachOpenCodeSession` — the same flow the
+  // TUI runs. This command owns only the printing.
   try {
-    return await spawnOpenCodeAttach(bin, attachCommand);
-  } finally {
-    proxy.close();
+    const result = await attachOpenCodeSession({
+      auth,
+      projectId,
+      sessionId: session.session_id,
+      session,
+      extraArgs: attachArgs,
+      proxyPort,
+      // The picker already restarts a dormant session; a bare stopped id keeps
+      // its "run `kortix sessions restart` first" error.
+      restartDormant: false,
+      onStatus: (stage, _detail, context) => {
+        if (stage !== 'attached' || !context.session) return;
+        process.stderr.write(
+          `${status.ok(`Connecting to ${C.bold}${attachSessionLabel(context.session)}${C.reset}`)} ` +
+            `${C.dim}(OpenCode ${context.opencodeSessionId}, local ${context.proxyUrl})${C.reset}\n`,
+        );
+      },
+    });
+    return result.exitCode;
+  } catch (err) {
+    return reportAttachFailure(err, session.session_id);
   }
 }
 
-/**
- * The version the session's OpenCode server actually runs, from its own
- * `/global/health` — the sandbox image may be newer or older than this CLI's
- * baked pin, and the TUI must match the server, not the pin. Falls back to
- * undefined (→ the runtime-versions pin) when the probe fails.
- *
- * The value crosses a trust boundary: it comes from inside the sandbox and
- * ends up in a download URL and an executable path, so anything that is not
- * strictly `X.Y.Z(-tag)` is discarded, not truncated.
- */
-async function runtimeOpencodeVersion(resolved: ResolvedSession): Promise<string | undefined> {
-  try {
-    const health = unwrapRuntime(
-      await withKortixScope(resolved.auth, () => resolved.runtime.global.health()),
-    );
-    const version = (health as { version?: unknown }).version;
-    return typeof version === 'string' && isValidOpencodeVersion(version) ? version : undefined;
-  } catch {
-    return undefined;
+/** Reproduce the message each failure printed before the flow moved into the library. */
+function reportAttachFailure(err: unknown, sessionId: string): number {
+  if (!(err instanceof AttachOpenCodeError)) {
+    process.stderr.write(`${status.err((err as Error).message)}\n`);
+    return 1;
   }
+  if (err.cause instanceof SessionRuntimeError) {
+    const failure = err.cause;
+    if (failure.kind === 'not-running') {
+      process.stderr.write(
+        `${status.err(failure.message)}\n` +
+          `  ${C.dim}Run \`kortix sessions restart ${sessionId}\` first.${C.reset}\n`,
+      );
+      return 1;
+    }
+    if (failure.kind === 'api' || failure.kind === 'ensure-ready') {
+      return surfaceApiError(failure.cause);
+    }
+  }
+  process.stderr.write(`${status.err(err.message)}\n`);
+  if (err.stage === 'attached') {
+    process.stderr.write(`  ${C.dim}Install OpenCode or set KORTIX_OPENCODE_BIN.${C.reset}\n`);
+  }
+  return 1;
 }
 
 function parseConnectPort(raw: string | undefined): number | null {
@@ -165,38 +161,4 @@ function parseConnectPort(raw: string | undefined): number | null {
     return null;
   }
   return port;
-}
-
-function buildAttachArgs(url: string, opencodeSessionId: string, extraArgs: string[]): string[] {
-  const hasContinuation = extraArgs.some(
-    (arg) =>
-      arg === '--session' ||
-      arg === '-s' ||
-      arg.startsWith('--session=') ||
-      arg === '--continue' ||
-      arg === '-c',
-  );
-  return [
-    'attach',
-    url,
-    ...(hasContinuation ? [] : ['--session', opencodeSessionId]),
-    ...extraArgs,
-  ];
-}
-
-function spawnOpenCodeAttach(bin: string, args: string[]): Promise<number> {
-  const child = spawn(bin, args, { stdio: 'inherit' });
-  return new Promise((resolve) => {
-    child.on('error', (err) => {
-      process.stderr.write(
-        `${status.err(`Could not run ${bin}: ${err.message}`)}\n` +
-          `  ${C.dim}Install OpenCode or set KORTIX_OPENCODE_BIN.${C.reset}\n`,
-      );
-      resolve(1);
-    });
-    child.on('exit', (code, signal) => {
-      if (typeof code === 'number') resolve(code);
-      else resolve(signal ? 130 : 1);
-    });
-  });
 }

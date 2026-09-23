@@ -19,15 +19,15 @@ export async function throwIfPromptRefused(response: Response): Promise<void> {
     .json()
     .catch(() => null);
   const code = typeof body?.code === 'string' ? body.code : null;
-  const terminalConflict =
-    response.status === 409 &&
-    (code === 'CONNECTOR_CONNECTION_REQUIRED' ||
-      code === 'REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE');
+  // A 409 is never terminal: the two connector-requirement refusals that used
+  // to be classified here were retired with the session connector gate
+  // (2026-09-16) — nothing emits them — and every other 409 can be a busy
+  // runtime worth retrying.
   const terminalClientError =
     response.status >= 400 &&
     response.status < 500 &&
     ![404, 408, 409, 429].includes(response.status);
-  if (!terminalConflict && !terminalClientError) return;
+  if (!terminalClientError) return;
   const message =
     typeof body?.message === 'string'
       ? body.message

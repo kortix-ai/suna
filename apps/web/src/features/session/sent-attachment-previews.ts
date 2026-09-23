@@ -60,10 +60,10 @@ export function holdConvertedPreview(id: string, url: string): () => void {
   };
 }
 
-/** At Send: take each handed-off image's object URL. HEIC hands over its JPEG, or nothing. */
+/** At Send: retain file bytes for previews and downloads. HEIC hands over its JPEG, or nothing. */
 export function adoptSentAttachmentPreviews(files: readonly AttachedFile[]): void {
   for (const file of files) {
-    if (file.kind !== 'local' || !file.uploadId || !file.isImage) continue;
+    if (file.kind !== 'local' || !file.uploadId) continue;
     const url =
       convertedPreviews.get(file.uploadId) ??
       (isHeicFile(file.file.name) ? undefined : file.localUrl);

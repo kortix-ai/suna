@@ -10,6 +10,7 @@ import type { DraftScope } from '@/features/session/composer/draft/composer-draf
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useIsMobile } from '@/hooks/utils';
 import { useProjectCan } from '@/lib/use-project-can';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { useFirstChatPending } from '@/stores/first-chat-store';
@@ -171,6 +172,7 @@ export function ProjectHome({
     [metaSelected, selectedSlug, onSend, firstChat],
   );
 
+  const isMobile = useIsMobile();
   const pendingPrefill = useComposerPrefillStore((s) => s.prefillByProject[projectId]);
   const consumePrefill = useComposerPrefillStore((s) => s.consume);
 
@@ -239,19 +241,21 @@ export function ProjectHome({
       isSending={busy}
       disabled={busy}
       // The home composer navigates to the new session on send — don't
-      // clear it first (that only flashes an empty box before the route
-      // swaps, and would drop the text on a gated send). The message
-      // rides across via the start-stash and reappears as the instant
-      // shell's optimistic turn.
+      // clear it first (that would drop the text on a gated send). The
+      // message rides across via `create.pending_prompt` and reappears
+      // as the instant shell's optimistic turn.
       clearOnSend={false}
       autoFocus
-      // A hero composer floating mid-page has no column for a second rail to
-      // align to, so the attach/agent/context controls ride on the toolbar
-      // itself, ahead of the model selector, and the `/` menu opens BELOW the
-      // card, into the empty lower half, instead of shoving the heading up.
-      // The first chat docks the composer at the bottom like a session does,
-      // so it keeps a session's defaults: the row beneath, the menu above.
-      underbarPlacement={firstChat ? 'below' : 'inline'}
+      // Desktop: a hero composer floating mid-page has no column for a second
+      // rail to align to, so the attach/agent/context controls ride on the
+      // toolbar itself, ahead of the model selector, and the `/` menu opens
+      // BELOW the card, into the empty lower half, instead of shoving the
+      // heading up. Mobile: the toolbar is too narrow to hold them next to the
+      // model selector — the labels overlap — so it uses the session page's
+      // row beneath the card. The first chat docks the composer at the bottom
+      // like a session does, so it keeps a session's defaults: the row
+      // beneath, the menu above.
+      underbarPlacement={firstChat || isMobile ? 'below' : 'inline'}
       slashMenuPlacement={firstChat ? 'above' : 'below'}
       placeholder={
         firstChat
@@ -273,6 +277,11 @@ export function ProjectHome({
       <SidebarToggle placement="floating" />
       <AccessRequestsBell count={pendingAccessCount} to={accessRequestsTo} />
 
+      {/* No bubble or "Thinking" row is painted here on send. The page stays
+          the welcome screen with the sentence held in the composer until the
+          create resolves and the session route opens; the instant shell draws
+          the first turn there (`useFirstPromptPreviewStore`). Painting the turn
+          here left a slow or stuck create looking like a live session. */}
       {firstChat ? (
         <FirstChat
           composer={composer}

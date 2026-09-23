@@ -80,6 +80,7 @@ import {
 import Loading from '@/components/ui/loading';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { PROVIDER_NOTES, ProviderLogo } from '@/features/providers/provider-branding';
 import { ChatGptSubscriptionConnect } from '@/features/workspace/customize/sections/llm-provider/chatgpt-subscription-connect';
 import { AccountSecretResourcesPanel } from '@/features/workspace/customize/sections/view/account-secret-resources-panel';
@@ -830,6 +831,7 @@ export function ProviderConnect({
   onOpenModels,
   className,
 }: ProviderConnectProps) {
+  const common = useTranslations('common');
   const access = useModelAccess(enabled ? projectId : null);
   const pooledFlag = useFeatureFlag(enabled ? projectId : null, 'pooled_provider_secrets');
   const pooledSecretsEnabled = pooledFlag.enabled;
@@ -839,7 +841,7 @@ export function ProviderConnect({
     enabled: enabled && pooledSecretsEnabled,
   });
   const accountId = project.data?.project?.account_id;
-  const pooledResources = useAccountSecretResources(enabled && pooledSecretsEnabled ? accountId : null);
+  const pooledResources = useAccountSecretResources(enabled && pooledSecretsEnabled ? accountId : null, projectId);
   const pooledProviderIds = useMemo(
     () => new Set((pooledResources.data?.secrets ?? []).filter((secret) => secret.can_use && secret.active).map((secret) => secret.provider_id)),
     [pooledResources.data],
@@ -1138,6 +1140,12 @@ export function ProviderConnect({
         <Loading className="text-muted-foreground size-4 shrink-0" />
       </div>
     );
+  }
+
+  if (pooledSecretsEnabled && (project.isError || pooledResources.isError)) {
+    return <ErrorState size="sm" title={tPooled('loadError')}
+      action={<Button size="sm" variant="secondary" disabled={project.isFetching || pooledResources.isFetching}
+        onClick={() => { void project.refetch(); void pooledResources.refetch(); }}>{common('retry')}</Button>} />;
   }
 
   return (

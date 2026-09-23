@@ -20,8 +20,8 @@ describe('serverErrorBody', () => {
   });
 
   test('uses the lifted top-level code when the body did not parse', () => {
-    expect(serverErrorBody({ status: 403, code: 'REQUIRE_CONNECTORS_INTERACTIVE_ONLY' })?.code).toBe(
-      'REQUIRE_CONNECTORS_INTERACTIVE_ONLY',
+    expect(serverErrorBody({ status: 403, code: 'CONNECTOR_NOT_ASSIGNED' })?.code).toBe(
+      'CONNECTOR_NOT_ASSIGNED',
     );
   });
 

@@ -44,6 +44,7 @@ import {
   runSessionsWarm,
 } from './sessions-lifecycle.ts';
 import { runSessionsQueue, wireMessageId } from './sessions-queue.ts';
+import { runSessionsAttachments } from './sessions-attachments.ts';
 import { runSessionsFiles } from './sessions-sandbox-files.ts';
 import { runSessionsScope } from './sessions-scope.ts';
 import { runSessionsLinks, runSessionsShare } from './sessions-share.ts';
@@ -88,9 +89,6 @@ Subcommands:
                                       bind a connection
                                       (repeatable).
                                     --no-connectors          use no connections.
-                                    --require-connector <alias>
-                                      require a connection before
-                                      provisioning (repeatable).
                                     --context <key>=<value>  runtime context
                                       (repeatable).
   chat [<session-id>]               Talk to a session's agent (REPL, or
@@ -111,8 +109,15 @@ Subcommands:
                                     to end one.
   log [<session-id>]                Print a session's recent messages
                                     (read-only) — peek at what an agent is
-                                    doing without sending it anything.
-                                    --limit <N>, --json. Aliases: messages.
+                                    doing without sending it anything. A
+                                    stopped session is read from its saved
+                                    transcript. --limit <N>, --json.
+                                    Aliases: messages.
+  attachments <session-id>          List a session's stored files — uploads
+                                    and copies of what the agent showed —
+                                    and download them (--download <id>,
+                                    --all, --out <dir>). Works while the
+                                    session is stopped. --json.
   pending <session-id>              List open interactive prompts the agent
                                     is blocked on: tool-permission asks +
                                     questions. --json. Aliases: prompts.
@@ -147,8 +152,7 @@ Subcommands:
                                     connector access. Changes apply to the next
                                     prompt. --secret, --no-secrets,
                                     --inherit-secrets, --connector,
-                                    --no-connectors, --require-connector,
-                                    --no-required-connectors, --json.
+                                    --no-connectors, --json.
                                     Alias: access.
   share <session-id>                Who inside Kortix can open this session.
                                     --mode private|project|members, --member
@@ -266,6 +270,10 @@ export async function runSessions(argv: string[]): Promise<number> {
   if (sub === 'files') {
     return runSessionsFiles(argv.slice(1));
   }
+  // `attachments` reads the platform's private store, never the sandbox.
+  if (sub === 'attachments') {
+    return runSessionsAttachments(argv.slice(1));
+  }
   if (sub === 'stop' || sub === 'pause') {
     return runSessionsStop(argv.slice(1));
   }
@@ -362,7 +370,6 @@ export type SessionOverrides = {
   model?: string;
   secrets?: string[];
   connectors?: Record<string, { connection_id: string }>;
-  requiredConnectors?: string[];
   runtimeContext?: Record<string, string>;
 };
 
@@ -396,8 +403,6 @@ export function parseSessionOverrides(argv: string[]): SessionOverrides {
     };
   }
   if (noConnectors) out.connectors = {};
-  const requiredConnectors = takeFlagValues(argv, ['--require-connector']);
-  if (requiredConnectors.length) out.requiredConnectors = [...new Set(requiredConnectors)];
   for (const pair of takeFlagValues(argv, ['--context'])) {
     const eq = pair.indexOf('=');
     if (eq <= 0 || eq === pair.length - 1) {
@@ -514,9 +519,6 @@ async function sessionsNew(
   if (overrides.model) body.opencode_model = overrides.model;
   if (overrides.secrets !== undefined) body.secrets = overrides.secrets;
   if (overrides.connectors !== undefined) body.connector_bindings = overrides.connectors;
-  if (overrides.requiredConnectors !== undefined) {
-    body.require_connectors = overrides.requiredConnectors;
-  }
   if (overrides.runtimeContext) body.runtime_context = overrides.runtimeContext;
 
   const prepared = await prepareClientCreatedBranch(ctx, body);

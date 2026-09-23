@@ -2,12 +2,21 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import type { TeamsActivity } from '../channels/teams/types';
 
 let apiCalls: Array<{ fn: string; args: unknown[] }> = [];
+/** When set, Teams refuses any activity carrying an inline data: image — as it
+ *  does when the base64 payload pushes the activity past its size cap. */
+let refuseInlineImages = false;
 mock.module('../channels/teams-api', () => ({
   sendActivity: async (...a: unknown[]) => {
     apiCalls.push({ fn: 'sendActivity', args: a });
+    const activity = a[1] as { attachments?: Array<{ contentUrl?: string }> } | undefined;
+    const inline = activity?.attachments?.some((x) => x.contentUrl?.startsWith('data:'));
+    if (refuseInlineImages && inline) return null;
     return 'posted-1';
   },
-  sendCard: async () => 'card-1',
+  sendCard: async (...a: unknown[]) => {
+    apiCalls.push({ fn: 'sendCard', args: a });
+    return 'card-1';
+  },
   updateCard: async () => true,
   sendTyping: async () => {},
   sendText: async () => 'text-1',
@@ -19,6 +28,7 @@ mock.module('../channels/teams-api', () => ({
 }));
 mock.module('../channels/teams-auth', () => ({
   graphToken: async () => 'graph-tok',
+  botConnectorToken: async () => 'bot-tok',
   teamsChannelEnabled: () => true,
   teamsConfigured: () => true,
 }));
@@ -66,17 +76,37 @@ const { downloadTeamsFile, initiateTeamsUpload, handleFileConsentInvoke } = awai
   '../channels/teams/file-proxy'
 );
 
-let fetchCalls: Array<{ url: string; method: string }> = [];
+let fetchCalls: Array<{ url: string; method: string; headers?: Record<string, string> }> = [];
+let graphStatus = 200;
+let channelOwnershipOk = true;
 let nextFetchOk = true;
 const realFetch = globalThis.fetch;
 beforeEach(() => {
   apiCalls = [];
+  refuseInlineImages = false;
   dbWrites = [];
   dbResults = [];
   fetchCalls = [];
   nextFetchOk = true;
-  globalThis.fetch = (async (url: string, init: { method?: string }) => {
-    fetchCalls.push({ url: String(url), method: init?.method ?? 'GET' });
+  graphStatus = 200;
+  channelOwnershipOk = true;
+  globalThis.fetch = (async (url: string, init: { method?: string; headers?: Record<string, string> }) => {
+    fetchCalls.push({ url: String(url), method: init?.method ?? 'GET', headers: init?.headers });
+    const u = String(url);
+    if (u.startsWith('https://graph.microsoft.com/')) {
+      if (u.includes('/channels/') && (init?.method ?? 'GET') === 'GET') {
+        return { ok: channelOwnershipOk, status: channelOwnershipOk ? 200 : 404, json: async () => ({ id: 'ch' }), text: async () => '' };
+      }
+      if (graphStatus !== 200) {
+        return { ok: false, status: graphStatus, text: async () => '{"error":{"code":"accessDenied"}}', json: async () => ({}) };
+      }
+      if (init?.method === 'PUT') {
+        return { ok: true, status: 201, json: async () => ({ id: 'item-1', webUrl: 'https://kortixssotest.sharepoint.com/sites/x/report.pdf', parentReference: { driveId: 'drive-1' } }), text: async () => '' };
+      }
+      if (u.endsWith('/createLink')) {
+        return { ok: true, status: 201, json: async () => ({ link: { webUrl: 'https://kortixssotest.sharepoint.com/:b:/s/x/link' } }), text: async () => '' };
+      }
+    }
     return {
       ok: nextFetchOk,
       status: nextFetchOk ? 200 : 502,
@@ -100,6 +130,16 @@ describe('downloadTeamsFile', () => {
     const r = await downloadTeamsFile('proj-1', 'https://contoso.sharepoint.com/f/report.pdf');
     expect(r.ok).toBe(true);
     expect(fetchCalls).toHaveLength(1);
+  });
+
+  test('a Bot Framework attachment URL (pasted image) is fetched with the bot connector token', async () => {
+    const r = await downloadTeamsFile(
+      'proj-1',
+      'https://smba.trafficmanager.net/emea/36009a52/v3/attachments/0-abc/views/original',
+    );
+    expect(r.ok).toBe(true);
+    expect(fetchCalls).toHaveLength(1);
+    expect(fetchCalls[0].headers?.Authorization).toBe('Bearer bot-tok');
   });
 });
 
@@ -182,5 +222,236 @@ describe('handleFileConsentInvoke', () => {
     );
     expect(apiCalls.map((c) => c.fn)).toEqual(['sendActivity']);
     expect(dbWrites.some((w) => w.op === 'delete')).toBe(true);
+  });
+});
+
+/**
+ * Teams accepts the file-consent card in PERSONAL chats only. In a channel or
+ * group chat the bot has two other ways: an image goes inline (base64 data
+ * URI attachment, any scope), anything else is uploaded to the team's
+ * SharePoint drive through Graph and shared as a link card.
+ */
+describe('initiateTeamsUpload outside a personal chat', () => {
+  const channel = {
+    serviceUrl: 'https://smba.trafficmanager.net/emea/',
+    conversationId: '19:chan@thread.tacv2;messageid=1',
+    conversationType: 'channel' as const,
+  };
+
+  test('an image in a channel is sent inline, no consent card, nothing stashed', async () => {
+    const r = await initiateTeamsUpload('proj-1', {
+      ...channel,
+      filename: 'chart.png',
+      contentBase64: Buffer.from('png-bytes').toString('base64'),
+      description: 'Here is the chart',
+    });
+    expect(r).toMatchObject({ ok: true, delivered: 'inline' });
+    expect(dbWrites.filter((w) => w.op === 'insert')).toHaveLength(0);
+    const sent = apiCalls.find((c) => c.fn === 'sendActivity')?.args[1] as {
+      text?: string;
+      attachments: Array<{ contentType: string; contentUrl?: string; name?: string }>;
+    };
+    expect(sent.text).toBe('Here is the chart');
+    expect(sent.attachments[0]).toMatchObject({ contentType: 'image/png', name: 'chart.png' });
+    expect(sent.attachments[0].contentUrl).toMatch(/^data:image\/png;base64,/);
+  });
+
+  test('a document in a channel is uploaded to the team drive and shared as a link', async () => {
+    const r = await initiateTeamsUpload('proj-1', {
+      ...channel,
+      teamGroupId: 'group-1',
+      filename: 'report.pdf',
+      contentBase64: Buffer.from('%PDF').toString('base64'),
+    });
+    expect(r).toMatchObject({ ok: true, delivered: 'drive_link' });
+    const put = fetchCalls.find((c) => c.method === 'PUT');
+    expect(put?.url).toBe('https://graph.microsoft.com/v1.0/groups/group-1/drive/root:/Kortix/report.pdf:/content');
+    expect(put?.headers?.Authorization).toBe('Bearer graph-tok');
+    const link = fetchCalls.find((c) => c.method === 'POST' && c.url.endsWith('/createLink'));
+    expect(link).toBeDefined();
+    const sent = apiCalls.find((c) => c.fn === 'sendCard')?.args[1];
+    expect(JSON.stringify(sent)).toContain('https://kortixssotest.sharepoint.com/:b:/s/x/link');
+    expect(JSON.stringify(sent)).toContain('report.pdf');
+  });
+
+  test('a document in a channel with no team drive available is refused with a reason the agent can relay', async () => {
+    const r = await initiateTeamsUpload('proj-1', {
+      ...channel,
+      filename: 'report.pdf',
+      contentBase64: Buffer.from('%PDF').toString('base64'),
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.status).toBe(400);
+      expect(r.error).toMatch(/personal chat|team/i);
+    }
+  });
+
+  test('Graph refusing the upload (missing Files.ReadWrite.All) is a 502 naming the permission', async () => {
+    graphStatus = 403;
+    const r = await initiateTeamsUpload('proj-1', {
+      ...channel,
+      teamGroupId: 'group-1',
+      filename: 'report.pdf',
+      contentBase64: Buffer.from('%PDF').toString('base64'),
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.status).toBe(502);
+      expect(r.error).toContain('Files.ReadWrite.All');
+    }
+  });
+});
+
+/**
+ * Security review on #7395 (Strix), both HIGH:
+ * - CWE-918: the download proxy attached the bot connector token to any host
+ *   the broad outbound allowlist accepted — including the customer-registrable
+ *   `*.azurewebsites.net` namespace, so a caller could capture the token.
+ * - CWE-862: the team-drive upload trusted a client-supplied `team_group_id`,
+ *   so connector-write on one project could write into ANY team's SharePoint
+ *   drive in the tenant.
+ */
+describe('file proxy — token and drive authorization', () => {
+  test('an azurewebsites.net url is refused outright — never fetched, never tokened', async () => {
+    const r = await downloadTeamsFile('proj-1', 'https://attacker.azurewebsites.net/steal');
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.status).toBe(400);
+    expect(fetchCalls).toHaveLength(0);
+  });
+
+  test('a real Bot Framework attachment host still gets the token', async () => {
+    const r = await downloadTeamsFile('proj-1', 'https://smba.trafficmanager.net/emea/x/v3/attachments/1/views/original');
+    expect(r.ok).toBe(true);
+    expect(fetchCalls[0].headers?.Authorization).toBe('Bearer bot-tok');
+  });
+
+  test('a SharePoint url is fetched with NO bot token', async () => {
+    const r = await downloadTeamsFile('proj-1', 'https://contoso.sharepoint.com/f/report.pdf');
+    expect(r.ok).toBe(true);
+    expect(fetchCalls[0].headers?.Authorization).toBeUndefined();
+  });
+
+  test('uploading to a team that does not own the conversation is refused 403, with no write', async () => {
+    channelOwnershipOk = false;
+    const r = await initiateTeamsUpload('proj-1', {
+      serviceUrl: 'https://smba.trafficmanager.net/emea/',
+      conversationId: '19:chan@thread.tacv2;messageid=1',
+      conversationType: 'channel',
+      teamGroupId: 'someone-elses-group',
+      filename: 'report.pdf',
+      contentBase64: Buffer.from('%PDF').toString('base64'),
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.status).toBe(403);
+      expect(r.error).toMatch(/does not own this conversation/);
+    }
+    expect(fetchCalls.some((c) => c.method === 'PUT')).toBe(false);
+  });
+
+  test('the ownership check asks Graph for the channel under that team, stripping the messageid suffix', async () => {
+    await initiateTeamsUpload('proj-1', {
+      serviceUrl: 'https://smba.trafficmanager.net/emea/',
+      conversationId: '19:chan@thread.tacv2;messageid=1',
+      conversationType: 'channel',
+      teamGroupId: 'group-1',
+      filename: 'report.pdf',
+      contentBase64: Buffer.from('%PDF').toString('base64'),
+    });
+    const check = fetchCalls.find((c) => c.url.includes('/channels/') && c.method === 'GET');
+    expect(check?.url).toBe(
+      'https://graph.microsoft.com/v1.0/teams/group-1/channels/19%3Achan%40thread.tacv2',
+    );
+  });
+
+  test('a non-channel conversation id can never select a drive', async () => {
+    const r = await initiateTeamsUpload('proj-1', {
+      serviceUrl: 'https://smba.trafficmanager.net/emea/',
+      conversationId: 'a:1FQyR2jW1pEUK',
+      conversationType: 'channel',
+      teamGroupId: 'group-1',
+      filename: 'report.pdf',
+      contentBase64: Buffer.from('%PDF').toString('base64'),
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.status).toBe(403);
+  });
+});
+
+
+// An agent's image in a PERSONAL chat used to go through the consent card —
+// "Kortix wants to send you chart.png — Accept / Decline", then OneDrive — the
+// worst image experience of the three scopes, in the most common one. A group
+// chat or channel posted inline with NO fallback: a refused post was a 502.
+describe('initiateTeamsUpload — an image is shown inline first, in every scope', () => {
+  const png = Buffer.from('fake-png-bytes').toString('base64');
+  const base = {
+    serviceUrl: 'https://smba.trafficmanager.net/teams/',
+    conversationId: 'conv-1',
+    filename: 'chart.png',
+    contentBase64: png,
+  };
+  const inlinePosts = () =>
+    apiCalls.filter((c) =>
+      (c.args[1] as { attachments?: Array<{ contentUrl?: string }> })?.attachments?.some((x) =>
+        x.contentUrl?.startsWith('data:image/png;base64,'),
+      ),
+    );
+  const consentPosts = () =>
+    apiCalls.filter((c) =>
+      (c.args[1] as { attachments?: Array<{ contentType?: string }> })?.attachments?.some(
+        (x) => x.contentType === 'application/vnd.microsoft.teams.card.file.consent',
+      ),
+    );
+
+  test('a personal-chat image is shown inline, with no consent card and no pending upload', async () => {
+    const r = await initiateTeamsUpload('proj-1', { ...base, conversationType: 'personal' });
+
+    expect(r).toEqual({ ok: true, delivered: 'inline' });
+    expect(inlinePosts()).toHaveLength(1);
+    expect(consentPosts()).toHaveLength(0);
+    expect(dbWrites.some((w) => w.op === 'insert.values')).toBe(false);
+  });
+
+  test('a personal-chat image Teams refuses inline falls back to the consent card', async () => {
+    refuseInlineImages = true;
+    const r = await initiateTeamsUpload('proj-1', { ...base, conversationType: 'personal' });
+
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.delivered).toBe('consent_card');
+    expect(inlinePosts()).toHaveLength(1);
+    expect(consentPosts()).toHaveLength(1);
+  });
+
+  test('a group-chat image Teams refuses says WHY, instead of a bare 502', async () => {
+    // A group chat cannot take a file transfer, so there is no fallback left —
+    // but "send it inline" would be circular: that is what just failed.
+    refuseInlineImages = true;
+    const r = await initiateTeamsUpload('proj-1', { ...base, conversationType: 'groupChat' });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.status).toBe(400);
+      expect(r.error).toContain('too large for Teams to show inline');
+      expect(r.error).not.toContain('send images inline');
+    }
+  });
+
+  test('a group-chat image that fits is still shown inline', async () => {
+    const r = await initiateTeamsUpload('proj-1', { ...base, conversationType: 'groupChat' });
+    expect(r).toEqual({ ok: true, delivered: 'inline' });
+  });
+
+  test('a NON-image file in a personal chat goes straight to the consent card', async () => {
+    const r = await initiateTeamsUpload('proj-1', {
+      ...base,
+      filename: 'report.pdf',
+      conversationType: 'personal',
+    });
+
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.delivered).toBe('consent_card');
+    expect(inlinePosts()).toHaveLength(0);
   });
 });

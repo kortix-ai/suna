@@ -28,6 +28,7 @@ import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import { canonicalConnectorAlias, publicConnectorAlias } from '../../shared/connector-alias';
 import { rescopeSessionBindings, rescopeSessionSecrets } from '../lib/session-rescope';
 import { listResolvedProjectSecrets, secretKeyCollisionInAllowlist } from '../secrets';
+import { resolveSessionPersonalOwner } from '../lib/personal-resources';
 projectsApp.openapi(
   createRoute({
     method: 'get',
@@ -87,7 +88,11 @@ projectsApp.openapi(
     });
     return c.json({
       secrets_allowlist: visible.row.secretsAllowlist ?? null,
-      required_connectors: visible.row.requiredConnectors ?? null,
+      // Always null. A session cannot require connectors any more, but the key
+      // stays on the wire: `SessionScope` is a published @kortix/sdk type, and a
+      // consumer reading `scope.required_connectors` must get null, not
+      // undefined.
+      required_connectors: null,
       connector_bindings: bindings,
       dropped_secrets: [],
       added_secrets: [],
@@ -175,7 +180,6 @@ projectsApp.openapi(
     // opposite — an explicit "no connectors at all". Before this existed an
     // override was one-way: nothing in the API could undo one.
     const clearsBindings = wantsBindings && body.connector_bindings === null;
-    const wantsRequired = Object.hasOwn(body, 'require_connectors');
 
     // The agent grant is the ceiling for both axes. Resolved from the agent this
     // session actually runs, and fail-closed: if it cannot be established, the
@@ -275,7 +279,12 @@ projectsApp.openapi(
         //
         // Falls back to the caller only when the row carries no creator, which
         // matches how every other principal-resolution site degrades.
-        const secretsPrincipal = visible.row.createdBy ?? loaded.userId;
+        const secretsPrincipal = await resolveSessionPersonalOwner({
+          projectId,
+          sessionId: visible.row.sessionId,
+          accountId: loaded.row.accountId,
+          legacyUserId: visible.row.createdBy ?? loaded.userId,
+        });
         const availableSecrets = await listResolvedProjectSecrets(projectId, secretsPrincipal);
         const available = new Set(
           availableSecrets.map((secret) => secret.identifier.toUpperCase()),
@@ -326,35 +335,6 @@ projectsApp.openapi(
       });
       if (!decided.ok) return c.json({ error: decided.message, code: decided.code }, 403);
       nextBindings = decided.bindings;
-    }
-
-    // `require_connectors` is the one axis that can name an alias with NOTHING
-    // connected to it — that is the whole point of it existing separately from
-    // bindings, which must carry a connection id. So it is checked against the
-    // agent's grant (may this agent use the alias at all?) and never against
-    // whether a connection exists: not-yet-connected is the state the caller is
-    // deliberately declaring, and the pre-flight turns it into a connect prompt
-    // on the next turn.
-    let nextRequired = visible.row.requiredConnectors ?? null;
-    if (wantsRequired) {
-      const requested = (body.require_connectors ?? [])
-        .map((alias) => canonicalConnectorAlias(String(alias).trim()))
-        .filter((alias) => alias.length > 0);
-      const deduped = [...new Set(requested)];
-      if (Array.isArray(grant?.connectors)) {
-        const granted = new Set(grant.connectors.map(canonicalConnectorAlias));
-        const offending = deduped.filter((alias) => !granted.has(alias));
-        if (offending.length > 0) {
-          return c.json(
-            {
-              error: `not granted to this agent: ${offending.map(publicConnectorAlias).join(', ')}`,
-              code: 'CONNECTOR_NOT_ASSIGNED',
-            },
-            403,
-          );
-        }
-      }
-      nextRequired = deduped.length > 0 ? deduped : null;
     }
 
     let bindingRows: Array<{
@@ -424,12 +404,10 @@ projectsApp.openapi(
       const sessionUpdates: {
         updatedAt: Date;
         secretsAllowlist?: string[] | null;
-        requiredConnectors?: string[] | null;
         connectorBindingsConfigured?: boolean;
         connectorBindingsInheritUnbound?: boolean;
       } = { updatedAt: new Date() };
       if (wantsSecrets) sessionUpdates.secretsAllowlist = nextAllowlist;
-      if (wantsRequired) sessionUpdates.requiredConnectors = nextRequired;
       if (wantsBindings) {
         // `null` reverts the session to inheriting project defaults; anything
         // else is an explicit override.
@@ -516,7 +494,7 @@ projectsApp.openapi(
 
     return c.json({
       secrets_allowlist: nextAllowlist,
-      required_connectors: nextRequired,
+      required_connectors: null,
       connector_bindings: effectiveBindings,
       // Names are gated; the WARNING is not. Enumerating the agent grant to
       // report what a null → list narrowing dropped hands the caller secret

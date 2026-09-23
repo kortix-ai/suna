@@ -14,18 +14,18 @@ import { useColorScheme } from 'nativewind';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { haptics } from '@/lib/haptics';
 import {
-  Menu,
-  Play,
-  RefreshCw,
-  RotateCcw,
-  Server,
-  Square,
-  Trash2,
-  FileText,
-} from 'lucide-react-native';
+  ListIcon as Menu,
+  PlayIcon as Play,
+  ArrowClockwiseIcon as RefreshCw,
+  ArrowCounterClockwiseIcon as RotateCcw,
+  HardDrivesIcon as Server,
+  SquareIcon as Square,
+  TrashIcon as Trash2,
+  FileTextIcon as FileText,
+} from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Ionicons } from '@expo/vector-icons';
+import { Button } from '@/components/ui/button';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import {
   getSandboxServices,
@@ -36,9 +36,10 @@ import {
   type ServiceAction,
 } from '@/lib/platform/client';
 import { useTabStore, type PageTab } from '@/stores/tab-store';
-import { PageHeader } from '@/components/ui/page-header';
-import { PageContent } from '@/components/ui/page-content';
+import { PageHeader } from '@/components/kortix/page-header';
+import { PageContent } from '@/components/kortix/page-content';
 import { useThemeColors } from '@/lib/theme-colors';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -210,9 +211,9 @@ export function RunningServicesPage({ page, onBack, onOpenDrawer, onOpenRightDra
   const runningCount = filteredServices.filter((s) => s.status === 'running' || s.status === 'starting').length;
   const totalCount = filteredServices.length;
 
-  const fgColor = isDark ? '#F8F8F8' : '#121215';
-  const mutedColor = isDark ? '#888' : '#777';
-  const borderColor = isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.08)';
+  const fgColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const mutedColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const borderColor = withAlpha(fgColor, 0.08);
 
   return (
     <View className="flex-1 bg-muted">
@@ -233,7 +234,7 @@ export function RunningServicesPage({ page, onBack, onOpenDrawer, onOpenRightDra
         isRightDrawerOpen={isRightDrawerOpen}
         rightActions={
           <Pressable onPress={handleReconcile} hitSlop={8} className="p-1">
-            <Icon as={RefreshCw} size={18} color={mutedColor} strokeWidth={2} />
+            <Icon as={RefreshCw} size={18} color={mutedColor} />
           </Pressable>
         }
       />
@@ -253,7 +254,7 @@ export function RunningServicesPage({ page, onBack, onOpenDrawer, onOpenRightDra
               key={key}
               onPress={() => { haptics.selection(); setFilter(key); }}
               style={{
-                backgroundColor: active ? themeColors.primary : isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)',
+                backgroundColor: active ? themeColors.primary : isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
                 borderRadius: 9999,
                 paddingHorizontal: 14,
                 paddingVertical: 6,
@@ -313,7 +314,7 @@ export function RunningServicesPage({ page, onBack, onOpenDrawer, onOpenRightDra
           {/* Empty state */}
           {!isLoading && filteredServices.length === 0 && (
             <View className="items-center justify-center py-16">
-              <Icon as={Server} size={32} className="text-muted-foreground/40" strokeWidth={1.5} />
+              <Icon as={Server} size={32} className="text-muted-foreground/40" />
               <Text className="mt-3 font-roobert-medium text-[15px] text-foreground">No Services</Text>
               <Text className="mt-1 text-center font-roobert text-xs text-muted-foreground">
                 {filter === 'all'
@@ -371,10 +372,10 @@ function ServiceCard({
   });
 
   const statusColor = isRunning
-    ? '#34D399'
+    ? THEME.accent.green
     : isFailed
-      ? '#EF4444'
-      : isDark ? 'rgba(248,248,248,0.3)' : 'rgba(18,18,21,0.3)';
+      ? (isDark ? THEME.dark.destructive : THEME.light.destructive)
+      : withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.3);
 
   const statusLabel = service.status === 'running'
     ? 'Running'
@@ -394,13 +395,13 @@ function ServiceCard({
           <View className="relative">
             <View
               className="w-8 h-8 rounded-[10px] items-center justify-center"
-              style={{ backgroundColor: isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)' }}
+              style={{ backgroundColor: withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, isDark ? 0.06 : 0.04) }}
             >
-              <Icon as={Server} size={16} color={fgColor} strokeWidth={1.8} />
+              <Icon as={Server} size={16} color={fgColor} />
             </View>
             {isRunning && (
               <View className="absolute -bottom-0.5 -right-0.5">
-                <View className="h-2.5 w-2.5 rounded-full bg-emerald-400 border-2 border-background" />
+                <View className="h-2.5 w-2.5 rounded-full bg-kortix-green border-2 border-background" />
               </View>
             )}
           </View>
@@ -413,10 +414,10 @@ function ServiceCard({
                 className="rounded-full px-1.5 py-0.5"
                 style={{
                   backgroundColor: isRunning
-                    ? isDark ? 'rgba(52,211,153,0.12)' : 'rgba(52,211,153,0.1)'
+                    ? withAlpha(THEME.accent.green, isDark ? 0.12 : 0.1)
                     : isFailed
-                      ? isDark ? 'rgba(239,68,68,0.12)' : 'rgba(239,68,68,0.1)'
-                      : isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.05)',
+                      ? withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, isDark ? 0.12 : 0.1)
+                      : withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, isDark ? 0.06 : 0.05),
                 }}
               >
                 <Text
@@ -458,7 +459,6 @@ function ServiceCard({
               onPress={() => onAction(service, 'stop')}
               disabled={!!pendingAction}
               variant="destructive"
-              isDark={isDark}
             />
           ) : (
             <ActionButton
@@ -467,8 +467,6 @@ function ServiceCard({
               onPress={() => onAction(service, 'start')}
               disabled={!!pendingAction}
               variant="primary"
-              isDark={isDark}
-              themeColors={themeColors}
             />
           )}
 
@@ -479,7 +477,6 @@ function ServiceCard({
             onPress={() => onAction(service, 'restart')}
             disabled={!!pendingAction}
             variant="default"
-            isDark={isDark}
           />
 
           {/* Logs */}
@@ -489,7 +486,6 @@ function ServiceCard({
             onPress={() => onToggleLogs(service.id)}
             disabled={false}
             variant={showLogs ? 'active' : 'default'}
-            isDark={isDark}
           />
 
           <View className="flex-1" />
@@ -502,7 +498,6 @@ function ServiceCard({
               onPress={() => onAction(service, 'delete')}
               disabled={!!pendingAction}
               variant="ghost-destructive"
-              isDark={isDark}
             />
           )}
 
@@ -519,9 +514,9 @@ function ServiceCard({
       {showLogs && (
         <View
           style={{
-            backgroundColor: isDark ? '#0D0D0F' : '#F5F5F5',
+            backgroundColor: isDark ? THEME.dark.surface : THEME.light.muted,
             borderTopWidth: 1,
-            borderTopColor: isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.06)',
+            borderTopColor: withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.06),
             maxHeight: 200,
           }}
         >
@@ -535,7 +530,7 @@ function ServiceCard({
                 <Text
                   key={i}
                   className="text-[11px] font-mono"
-                  style={{ color: isDark ? '#BBB' : '#555', lineHeight: 16 }}
+                  style={{ color: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground, lineHeight: 16 }}
                   selectable
                 >
                   {line}
@@ -561,61 +556,34 @@ function ActionButton({
   onPress,
   disabled,
   variant,
-  isDark,
-  themeColors,
 }: {
   icon: any;
   label: string;
   onPress: () => void;
   disabled: boolean;
   variant: 'primary' | 'destructive' | 'default' | 'active' | 'ghost-destructive';
-  isDark: boolean;
-  themeColors?: { primary: string; primaryForeground: string };
 }) {
-  let bgColor: string;
-  let textColor: string;
-
-  switch (variant) {
-    case 'primary':
-      bgColor = themeColors?.primary ?? (isDark ? '#F8F8F8' : '#121215');
-      textColor = themeColors?.primaryForeground ?? (isDark ? '#121215' : '#F8F8F8');
-      break;
-    case 'destructive':
-      bgColor = isDark ? 'rgba(239,68,68,0.12)' : 'rgba(239,68,68,0.1)';
-      textColor = '#EF4444';
-      break;
-    case 'active':
-      bgColor = isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.08)';
-      textColor = isDark ? '#F8F8F8' : '#121215';
-      break;
-    case 'ghost-destructive':
-      bgColor = 'transparent';
-      textColor = isDark ? 'rgba(239,68,68,0.6)' : 'rgba(239,68,68,0.7)';
-      break;
-    default:
-      bgColor = isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)';
-      textColor = isDark ? '#AAA' : '#666';
-  }
+  const iconOnly = !label;
+  const buttonVariant =
+    variant === 'primary'
+      ? 'default'
+      : variant === 'destructive'
+        ? 'destructive'
+        : variant === 'active'
+          ? 'secondary'
+          : 'ghost';
+  const destructiveText = variant === 'ghost-destructive';
 
   return (
-    <Pressable
-      onPress={onPress}
+    <Button
+      variant={buttonVariant}
+      size={iconOnly ? 'icon-sm' : 'sm'}
+      className="rounded-full"
       disabled={disabled}
-      className="flex-row items-center rounded-full active:opacity-70"
-      style={{
-        backgroundColor: bgColor,
-        paddingHorizontal: label ? 12 : 8,
-        paddingVertical: 6,
-        opacity: disabled ? 0.5 : 1,
-        gap: label ? 4 : 0,
-      }}
+      onPress={onPress}
     >
-      <Icon as={IconComponent} size={12} color={textColor} strokeWidth={2.2} />
-      {label ? (
-        <Text className="text-[11px] font-roobert-medium" style={{ color: textColor }}>
-          {label}
-        </Text>
-      ) : null}
-    </Pressable>
+      <Icon as={IconComponent} size={12} className={destructiveText ? 'text-destructive' : undefined} />
+      {label ? <Text className={destructiveText ? 'text-destructive' : undefined}>{label}</Text> : null}
+    </Button>
   );
 }

@@ -22,6 +22,8 @@ let inTransaction = false;
 // resolveSandboxIngress are stubbed below, so intercepting `fetch` is enough
 // to observe and control it without a real network call.
 let callOrder: string[] = [];
+/** What scope each awaited stop-time capture asked for. */
+let captureScopes: Array<string | undefined> = [];
 let abortServiceKey: string | null = 'daemon-service-key';
 let abortFetchCalls: Array<{ url: string; init: Record<string, unknown> }> = [];
 let abortFetchImpl: (url: string, init: Record<string, unknown>) => Promise<Response> = async () =>
@@ -141,8 +143,13 @@ mock.module('../../../sandbox-proxy', () => ({
 }));
 
 mock.module('../../lib/session-transcript-capture', () => ({
-  captureSessionTranscriptMirror: async (sessionId: string) => {
+  captureSessionTranscriptMirror: async (
+    sessionId: string,
+    _deps?: unknown,
+    options?: { scope?: string },
+  ) => {
     callOrder.push(`capture:${sessionId}`);
+    captureScopes.push(options?.scope);
     return null;
   },
 }));
@@ -167,6 +174,7 @@ beforeEach(() => {
   inTransaction = false;
 
   callOrder = [];
+  captureScopes = [];
   abortServiceKey = 'daemon-service-key';
   abortFetchCalls = [];
   abortFetchImpl = async () => new Response(JSON.stringify({ ok: true }), { status: 200 });
@@ -388,6 +396,12 @@ describe('stopSession', () => {
       expect(abortFetchCalls[0]?.init.method).toBe('POST');
       // Ordering: the abort call happens strictly before provider.stop().
       expect(callOrder).toEqual(['abort', 'capture:sess-1', 'provider.stop']);
+      // And it asks for a TAIL. This capture is AWAITED with the user holding
+      // the Stop button; on a project with `session_transcript_history` the
+      // default scope is a 60s pagination with three retries. The whole copy is
+      // maintained at every turn end, so the only gap a stop can close is the
+      // turn that just ended.
+      expect(captureScopes).toEqual(['tail']);
     });
 
     test('a timed-out/failed abort still stops the box (best-effort, never a gate)', async () => {

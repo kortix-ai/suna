@@ -1,13 +1,14 @@
 import { buildInviteUrl, isInviteEmailConfigured, sendAccountInviteEmail } from '../../accounts/email';
 import { PROJECT_ACTIONS, authorize } from '../../iam';
-import { assertAgentScope } from '../../iam/agent-scope';
-import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
+import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
+import { buildDenialError } from '../../iam/denial-message';
+import { invalidateIamCacheForProjectResources, invalidateIamCacheForUser } from '../../iam/cache-invalidation';
+import { resolveAccountIdentityByEmail } from '../../iam/account-identity';
 import { actorOf } from '../../iam/actor';
 import { assignPendingProjectRole, revokePendingAssignments, revokeProjectRole } from '../../iam/assignments';
 import { normalizeProjectRole, parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR } from '../../iam/roles';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
-import { lookupUserIdByEmail } from '../../shared/users';
 import { isAccountManager, roleAllows, type AccountRole, type ProjectRole } from '../access';
 import {
   accountRoleMap,
@@ -841,7 +842,7 @@ projectsApp.openapi(
       },
     responses: {
         200: json(z.any(), 'OK'),
-        ...errors(400, 404),
+        ...errors(400, 404, 409),
     },
   }),
   async (c: any) => {
@@ -859,7 +860,11 @@ projectsApp.openapi(
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);
 
-  const targetUserId = await lookupUserIdByEmail(email);
+  const identity = await resolveAccountIdentityByEmail(loaded.row.accountId, email);
+  if (identity.ambiguous) {
+    return c.json({ error: 'Multiple account identities use this email', code: 'account_identity_ambiguous' }, 409);
+  }
+  const targetUserId = identity.userId;
   if (!targetUserId) {
     // No Kortix user yet. Upsert an account invitation carrying a
     // bootstrap_grant so when they accept, they're added to the org
@@ -975,8 +980,8 @@ projectsApp.openapi(
         email_sent: emailConfigured,
         email_skip_reason: emailConfigured ? null : 'email_not_configured',
         message: emailConfigured
-          ? `No Kortix account for that email yet — an invitation email has been sent. They'll land on this project as ${role} when they sign up.`
-          : `No Kortix account for that email yet — invitation created. Share the invite link with them; they'll land on this project as ${role} when they sign up.`,
+          ? `No Kortix account for that email yet — an invitation email has been sent. After they sign up, Kortix shows them the invite and they join this project as ${role}.`
+          : `No Kortix account for that email yet — invitation created. Share the invite link with them. After they sign up, Kortix shows them the invite and they join this project as ${role}.`,
       },
       201,
     );
@@ -1430,6 +1435,16 @@ const patchFeatureFlagHandler = async (c: any) => {
   if (enabled !== null && typeof enabled !== 'boolean') {
     return c.json({ error: 'enabled must be a boolean or null' }, 400);
   }
+  // The agent-principal switch decides which authority model an agent session
+  // runs under. An agent must not pick its own model: turning it off would put
+  // an owner-launched session back on the owner's super-admin bypass.
+  if (feature === 'agent_principal' && isProjectSessionPrincipal(c)) {
+    throw buildDenialError(
+      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+      'agent_human_only_action',
+      'Only a human can change the agent_principal feature flag.',
+    );
+  }
   // Archived projects are read-only: reject BEFORE the write. The old order
   // (update, then 404 on archived) committed the metadata mutation anyway.
   if (loaded.row.status === 'archived') return c.json({ error: 'Not found' }, 404);
@@ -1450,6 +1465,10 @@ const patchFeatureFlagHandler = async (c: any) => {
     .where(eq(projects.projectId, projectId))
     .returning();
   if (!row) return c.json({ error: 'Not found' }, 404);
+  // The IAM engine memoizes `agent_principal` per project for 15 s
+  // (iam/agent-principal.ts). Bust it on this replica so the switch applies to
+  // the next request; other replicas converge within one TTL.
+  if (feature === 'agent_principal') invalidateIamCacheForProjectResources(projectId);
   // Convergence work (connector materialization, sandbox env fan-out) runs
   // behind the response; runFeatureFlagToggleEffects retries once and logs
   // failures at error level. See feature-flags/toggle-effects.ts.

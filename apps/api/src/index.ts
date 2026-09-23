@@ -61,6 +61,7 @@ import {
   teamsIdentityApp,
   teamsOauthApp,
   teamsWebhookApp,
+  startTeamsBotTokenRefresh,
   telegramWebhookApp,
 } from './channels';
 import { connectorApp } from './connectors';
@@ -94,7 +95,7 @@ import {
   stopProjectTriggerScheduler,
 } from './projects';
 import { startActiveTurnRenewal, stopActiveTurnRenewal } from './projects/active-turn-renewal';
-import { GitOperationError, isGitOperationError } from './projects/git/mirror';
+import { GitOperationError, isGitOperationError, isTransientGitMirrorError } from './projects/git/mirror';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import {
   startProviderTransitionWorker,
@@ -988,6 +989,9 @@ app.route('/v1/webhooks/slack/oauth', slackOauthApp); // /v1/webhooks/slack/oaut
 app.route('/v1/webhooks/slack', slackWebhookApp); // /v1/webhooks/slack/:projectId — raw Slack events (BYO mode)
 app.route('/v1/webhooks/teams/oauth', teamsOauthApp); // /v1/webhooks/teams/oauth/callback — admin-consent + catalog publish
 app.route('/v1/webhooks/teams', teamsWebhookApp); // /v1/webhooks/teams/messages — Bot Framework activities
+// Keep the shared Teams bot token warm so the first message after a deploy
+// does not wait on login.microsoftonline.com before its live card is posted.
+startTeamsBotTokenRefresh();
 app.route('/v1/channels/slack/identity', slackIdentityApp); // /v1/channels/slack/identity/bind — authed /login bind
 app.route('/v1/channels/teams/identity', teamsIdentityApp); // /v1/channels/teams/identity/bind — authed login bind
 app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
@@ -1143,24 +1147,31 @@ app.onError((err, c) => {
     );
   }
 
-  // A bare-clone / fetch of a project's git mirror that exceeds its timeout
-  // (SIGTERM mid-transfer, large repo, transient network) is EXPECTED and
-  // retryable — the mirror already retries once internally before surfacing.
-  // Previously these surfaced as the opaque Better Stack pattern `8d0cffbb…`
-  // ("Cloning into bare repository '/tmp/kortix/git-cache/….git'…" — git's
-  // progress line captured on stderr before the kill, masking the real cause).
-  // `runGit` now throws a typed `GitOperationError` (kind 'timeout') whose
-  // message names the timeout; classify the transient kind into a retryable
+  // A bare-clone / fetch of a project's git mirror that fails for a TRANSIENT,
+  // upstream reason is EXPECTED and retryable — the mirror already retries a
+  // bounded number of times internally before surfacing. Two shapes:
+  //   * `kind: 'timeout'` (SIGTERM mid-transfer, large repo, transient network)
+  //     — previously surfaced as the opaque Better Stack pattern `8d0cffbb…`
+  //     ("Cloning into bare repository '/tmp/kortix/git-cache/….git'…" — git's
+  //     progress line captured on stderr before the kill, masking the cause).
+  //   * `kind: 'failed'` whose message is a transient upstream failure — the
+  //     network/DNS/socket class, GitHub's 5xx, and GitHub's ambiguous
+  //     `fatal: repository '<url>' not found` for a PRIVATE mirror whose
+  //     credential is momentarily unusable (incident
+  //     `incident-20260923T100537Z-hbcr`: KX-HOURLY `sessions new` hard-failed
+  //     with an unhandled 500 on exactly this, while the git proxy served the
+  //     same repo 200 seconds before and after).
+  // Both are classified by `isTransientGitMirrorError` into a retryable
   // 503 + Retry-After WITHOUT paging Sentry (mirroring Platinum /
-  // request-deadline), while a real `failed` kind (auth / missing repo) still
-  // falls through to Sentry with a meaningful `fatal:` message. See
-  // projects/git/mirror.ts.
-  if (isGitOperationError(err) && err.kind === 'timeout') {
-    appLogger.warn(`${method} ${path} -> 503 [GitOperationError:timeout] ${err.message}`, {
+  // request-deadline). A PERMANENT failure (bad ref, real auth denial, corrupt
+  // local repo) still falls through to Sentry with a meaningful `fatal:`
+  // message. See projects/git/mirror.ts.
+  if (isTransientGitMirrorError(err)) {
+    appLogger.warn(`${method} ${path} -> 503 [GitOperationError:${err.kind}] ${err.message}`, {
       method,
       path,
       errorType: 'GitOperationError',
-      gitKind: 'timeout',
+      gitKind: err.kind,
       gitArgs: err.gitArgs,
       signal: err.signal,
     });

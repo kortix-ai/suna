@@ -10,6 +10,7 @@ import {
   FileCodeIcon as FileCode,
   FileCodeIcon as FileCode2,
   GearSixIcon as FileCog,
+  TreeStructureIcon as FileDiagram,
   FileIcon,
   FileImageIcon as FileImage,
   FileCodeIcon as FileJson,
@@ -180,6 +181,10 @@ function getColoredIcon(fileName: string, ic: string, isDirectory?: boolean) {
   // Shell
   if (['sh', 'bash', 'zsh', 'fish', 'bat', 'cmd', 'ps1'].includes(ext))
     return <FileTerminal className={cn(ic, 'text-green-400')} />;
+
+  // Diagrams
+  if (['mmd', 'mermaid'].includes(ext))
+    return <FileDiagram className={cn(ic, 'text-muted-foreground')} />;
 
   // Text / docs
   if (['md', 'mdx', 'txt', 'rst', 'rtf'].includes(ext))

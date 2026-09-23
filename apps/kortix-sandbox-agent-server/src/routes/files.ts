@@ -419,10 +419,11 @@ export function createFilesRouter(cfg: Config): Hono {
       return c.json({ error: (err as Error).message }, 500)
     }
 
-    // fs.readFile returns an exact-sized Buffer (a Uint8Array view) — a valid
-    // BodyInit, sent verbatim. Never text/html, so clients don't mistake it
-    // for the SPA shell and reject it.
-    return new Response(snapshot.data, {
+    // fs.readFile returns an exact-sized, ArrayBuffer-backed Buffer — sent
+    // verbatim (the cast satisfies the DOM lib the API's typecheck uses, which
+    // admits only `Uint8Array<ArrayBuffer>` as a body). Never text/html, so
+    // clients don't mistake it for the SPA shell and reject it.
+    return new Response(snapshot.data as Uint8Array<ArrayBuffer>, {
       status: 200,
       headers: {
         'Content-Type': mimeTypeFor(resolved, true),

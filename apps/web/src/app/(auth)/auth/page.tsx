@@ -44,7 +44,6 @@ import {
 } from '@/lib/auth/unified-auth-flow';
 import { authRedirectUrl } from '@/lib/desktop';
 import { getEnv } from '@/lib/env-config';
-import { markPostAuthIntent } from '@/lib/onboarding/post-auth-intent';
 import { emailDomain, isWorkEmail } from '@/lib/personal-email';
 import {
   createClient as createBrowserSupabaseClient,
@@ -238,11 +237,6 @@ function AuthCardForm({
         // Server cookies still carry the session; fall through to redirect.
       }
     }
-
-    // The referrer /auth carries is whatever /auth itself was loaded with —
-    // often a search engine — so the landing door cannot read intent from it.
-    // The marker is what proves "this user just signed in" to the door.
-    markPostAuthIntent();
 
     // A HARD navigation, deliberately, NOT `router.push`.
     //

@@ -3,11 +3,12 @@ import { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { Config } from '../config'
-import { createOpencodeSupervisor, waitForOpencodeReady } from '../opencode'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import { createOpencodeLifecycle, waitForOpencodeReady } from '../harness/open-code/lifecycle'
+import { createOpenCodeHarnessService } from '../harness/open-code/service'
 
 let root: string
-let supervisor: ReturnType<typeof createOpencodeSupervisor> | null
+let lifecycle: ReturnType<typeof createOpencodeLifecycle> | null
 
 function reservePort(): number {
   const server = Bun.serve({ port: 0, fetch: () => new Response('reserved') })
@@ -37,16 +38,16 @@ async function waitFor(check: () => boolean, timeoutMs = 5_000): Promise<void> {
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'kortix-reload-process-'))
-  supervisor = null
+  lifecycle = null
 })
 
 afterEach(async () => {
-  await supervisor?.stop()
+  await lifecycle?.stop()
   rmSync(root, { recursive: true, force: true })
 })
 
 describe('verified reload process promotion', () => {
-  test('promotes each verified candidate and preserves the active process on failure', async () => {
+  test('harness service promotes verified candidates, preserves failed reloads, and restarts through lifecycle', async () => {
     const workspace = join(root, 'workspace')
     const configDir = join(root, 'config')
     const binary = join(root, 'opencode')
@@ -54,7 +55,7 @@ describe('verified reload process promotion', () => {
     mkdirSync(configDir)
     writeFileSync(
       binary,
-      // Announces itself like real OpenCode: the supervisor sends a candidate
+      // Announces itself like real OpenCode: the lifecycle sends a candidate
       // nothing before this line (or its 10 s fallback).
       '#!/usr/bin/env bun\nconst port = Number(Bun.argv[Bun.argv.indexOf("--port") + 1])\nBun.serve({ port, hostname: "127.0.0.1", fetch: () => Response.json([]) })\nconsole.log("opencode server listening on http://127.0.0.1:" + port)\n',
     )
@@ -70,44 +71,53 @@ describe('verified reload process promotion', () => {
       gitUserName: 'Kortix Agent',
       gitUserEmail: 'agent@kortix.ai',
     } as Config
-    supervisor = createOpencodeSupervisor(cfg, configDir, undefined, {
+    const harness = createOpenCodeHarnessService(cfg, configDir, undefined, {
       binaryPathOverride: binary,
       configPathOverride: join(root, 'runtime-config.json'),
     })
 
-    await supervisor.start()
-    expect(await waitForOpencodeReady(supervisor, workspace)).toBe(true)
-    const initialPid = supervisor.getPid()
+    lifecycle = harness.native
+    await harness.lifecycle.start()
+    expect(await waitForOpencodeReady(lifecycle, workspace)).toBe(true)
+    const initialPid = lifecycle.getPid()
     expect(initialPid).not.toBeNull()
-    expect(supervisor.getInternalUrl()).toBe(`http://127.0.0.1:${primary}`)
+    expect(lifecycle.getInternalUrl()).toBe(`http://127.0.0.1:${primary}`)
 
-    const first = await supervisor.reloadVerified()
+    const first = await harness.configuration.reloadVerified()
     expect(first.outcome).toBe('swapped')
     if (first.outcome !== 'swapped') throw new Error(first.reason)
     expect(first.port).toBe(standby)
     expect(first.pid).not.toBe(initialPid)
-    expect(supervisor.getInternalUrl()).toBe(`http://127.0.0.1:${standby}`)
+    expect(lifecycle.getInternalUrl()).toBe(`http://127.0.0.1:${standby}`)
     await waitFor(() => !processExists(initialPid as number))
-    expect((await fetch(`${supervisor.getInternalUrl()}/session`)).status).toBe(200)
+    expect((await fetch(`${lifecycle.getInternalUrl()}/session`)).status).toBe(200)
     await Bun.sleep(650)
-    expect(supervisor.getPid()).toBe(first.pid)
+    expect(lifecycle.getPid()).toBe(first.pid)
 
-    const second = await supervisor.reloadVerified()
+    const second = await harness.configuration.reloadVerified()
     expect(second.outcome).toBe('swapped')
     if (second.outcome !== 'swapped') throw new Error(second.reason)
     expect(second.port).toBe(primary)
     expect(second.pid).not.toBe(first.pid)
-    expect(supervisor.getInternalUrl()).toBe(`http://127.0.0.1:${primary}`)
+    expect(lifecycle.getInternalUrl()).toBe(`http://127.0.0.1:${primary}`)
     await waitFor(() => !processExists(first.pid as number))
     await Bun.sleep(650)
-    expect(supervisor.getPid()).toBe(second.pid)
+    expect(lifecycle.getPid()).toBe(second.pid)
 
-    const activePid = supervisor.getPid()
-    const failed = await supervisor.reloadVerified({ forceFail: true })
+    const activePid = lifecycle.getPid()
+    const failed = await harness.configuration.reloadVerified({ forceFail: true })
     expect(failed.outcome).toBe('kept-old')
-    expect(supervisor.getPid()).toBe(activePid)
-    expect(supervisor.getInternalUrl()).toBe(`http://127.0.0.1:${primary}`)
-    expect((await fetch(`${supervisor.getInternalUrl()}/session`)).status).toBe(200)
+    expect(lifecycle.getPid()).toBe(activePid)
+    expect(lifecycle.getInternalUrl()).toBe(`http://127.0.0.1:${primary}`)
+    expect((await fetch(`${lifecycle.getInternalUrl()}/session`)).status).toBe(200)
+
+    // Lifecycle and native features must retain the same method owner. These
+    // operations call sibling lifecycle methods through `this` internally.
+    await harness.lifecycle.restart()
+    expect(await waitForOpencodeReady(lifecycle, workspace)).toBe(true)
+    expect(lifecycle.getPid()).not.toBe(activePid)
+    expect(harness.lifecycle.getState()).toBe('ok')
+    expect((await fetch(`${lifecycle.getInternalUrl()}/session`)).status).toBe(200)
   }, 20_000)
 })
 
@@ -123,7 +133,7 @@ describe('the live port is a property of the process, never a variable beside it
     mkdirSync(configDir)
     writeFileSync(
       binary,
-      // Announces itself like real OpenCode: the supervisor sends a candidate
+      // Announces itself like real OpenCode: the lifecycle sends a candidate
       // nothing before this line (or its 10 s fallback).
       '#!/usr/bin/env bun\nconst port = Number(Bun.argv[Bun.argv.indexOf("--port") + 1])\nBun.serve({ port, hostname: "127.0.0.1", fetch: () => Response.json([]) })\nconsole.log("opencode server listening on http://127.0.0.1:" + port)\n',
     )
@@ -143,27 +153,27 @@ describe('the live port is a property of the process, never a variable beside it
       gitUserName: 'Kortix Agent',
       gitUserEmail: 'agent@kortix.ai',
     } as Config
-    supervisor = createOpencodeSupervisor(cfg, configDir, undefined, {
+    lifecycle = createOpencodeLifecycle(cfg, configDir, undefined, {
       binaryPathOverride: binary,
       configPathOverride: join(root, 'runtime-config.json'),
     })
-    await supervisor.start()
-    expect(await waitForOpencodeReady(supervisor, workspace)).toBe(true)
+    await lifecycle.start()
+    expect(await waitForOpencodeReady(lifecycle, workspace)).toBe(true)
 
-    const swapped = await supervisor.reloadVerified()
+    const swapped = await lifecycle.reloadVerified()
     expect(swapped.outcome).toBe('swapped')
-    expect(supervisor.getActivePort()).toBe(standby)
+    expect(lifecycle.getActivePort()).toBe(standby)
 
     // The only code path that rewrites the port variable without touching the
     // process: a config whose pair does not contain the live port.
-    supervisor.reconfigure({ ...cfg, opencodeStandbyPort: reservePort() } as Config, configDir)
+    lifecycle.reconfigure({ ...cfg, opencodeStandbyPort: reservePort() } as Config, configDir)
 
-    expect(supervisor.getActivePort()).toBe(standby)
-    expect(supervisor.getInternalUrl()).toBe(`http://127.0.0.1:${standby}`)
-    expect((await fetch(`${supervisor.getInternalUrl()}/session`)).status).toBe(200)
+    expect(lifecycle.getActivePort()).toBe(standby)
+    expect(lifecycle.getInternalUrl()).toBe(`http://127.0.0.1:${standby}`)
+    expect((await fetch(`${lifecycle.getInternalUrl()}/session`)).status).toBe(200)
     // reconfigure() marks `starting` until the next probe; the probe asks the
     // process's real port, so it comes back `ok` on its own.
-    await waitFor(() => supervisor?.getState() === 'ok', 5_000)
+    await waitFor(() => lifecycle?.getState() === 'ok', 5_000)
   }, 20_000)
 
   test('a candidate half that already answers is declined, never "proven" by the incumbent', async () => {
@@ -178,26 +188,26 @@ describe('the live port is a property of the process, never a variable beside it
       gitUserName: 'Kortix Agent',
       gitUserEmail: 'agent@kortix.ai',
     } as Config
-    supervisor = createOpencodeSupervisor(cfg, configDir, undefined, {
+    lifecycle = createOpencodeLifecycle(cfg, configDir, undefined, {
       binaryPathOverride: binary,
       configPathOverride: join(root, 'runtime-config.json'),
     })
-    await supervisor.start()
-    expect(await waitForOpencodeReady(supervisor, workspace)).toBe(true)
-    const livePid = supervisor.getPid()
+    await lifecycle.start()
+    expect(await waitForOpencodeReady(lifecycle, workspace)).toBe(true)
+    const livePid = lifecycle.getPid()
 
     // Something else is already serving the session API on the idle half —
     // the shape a drifted port pair produces (`opencode serve --port <busy>`
     // exits at once with ServeError, so a candidate there is dead on arrival).
     const squatter = Bun.serve({ port: standby, hostname: '127.0.0.1', fetch: () => Response.json([]) })
     try {
-      const result = await supervisor.reloadVerified()
+      const result = await lifecycle.reloadVerified()
       expect(result.outcome).toBe('kept-old')
       if (result.outcome !== 'kept-old') throw new Error('unreachable')
       expect(result.reason).toContain('already answers')
-      expect(supervisor.getPid()).toBe(livePid)
+      expect(lifecycle.getPid()).toBe(livePid)
       expect(processExists(livePid as number)).toBe(true)
-      expect(supervisor.getActivePort()).toBe(primary)
+      expect(lifecycle.getActivePort()).toBe(primary)
     } finally {
       squatter.stop(true)
     }

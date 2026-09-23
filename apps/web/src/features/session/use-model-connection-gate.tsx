@@ -15,6 +15,7 @@ import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { getProjectDetail, listProjectSecrets } from '@kortix/sdk';
 import { contract, type ModelKey, qk } from '@kortix/sdk/react';
+import { resolveEntitlementsPending } from './entitlements-pending';
 import type { FlatModel } from './session-chat-input';
 
 /**
@@ -108,7 +109,7 @@ export function useModelConnectionGate(
     enabled: !!projectId && llmGatewayEnabled && canReadSecrets,
     ...contract('config'),
   });
-  const { isPending: accountStatePending } = useAccountState();
+  const accountStateQuery = useAccountState();
   // Availability is SERVER-resolved, never re-derived here. `/model-picker`
   // already applies plan entitlement (`freeManagedOnly`) and connected-BYOK
   // filtering, then stamps `enabled` on every model it serves. This gate must
@@ -148,13 +149,19 @@ export function useModelConnectionGate(
   );
   // `hasSelectableModels` is only trustworthy once every input the served
   // catalog depends on has loaded — a secret write invalidates `/model-picker`,
-  // so a gate keyed on a half-loaded answer flashes, then vanishes. Disabled
-  // queries stay `isPending` forever, so each is guarded by its `enabled`
-  // condition.
-  const entitlementsPending =
-    (!!projectId && projectDetailQuery.isPending) ||
-    (!!projectId && llmGatewayEnabled && secretsQuery.isPending) ||
-    accountStatePending;
+  // so a gate keyed on a half-loaded answer flashes, then vanishes.
+  //
+  // Each query is passed WHOLE. This used to restate every query's `enabled`
+  // inline, because a disabled react-query reports `isPending` forever; one
+  // such restatement went stale (`secretsQuery` gained `&& canReadSecrets`,
+  // this expression did not) and every project member got a model picker that
+  // spun over a catalog already sitting in the browser. `fetchStatus` answers
+  // the question without a copy to keep in sync — see `entitlements-pending`.
+  const entitlementsPending = resolveEntitlementsPending([
+    projectDetailQuery,
+    secretsQuery,
+    accountStateQuery,
+  ]);
 
   const openConnectProvider = useCallback(
     (tab: ProviderModalTab = 'providers') => {

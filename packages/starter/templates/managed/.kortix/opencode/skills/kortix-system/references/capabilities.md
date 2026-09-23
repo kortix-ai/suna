@@ -108,10 +108,14 @@ managed connectors, plus MCP servers, OpenAPI, GraphQL, and raw HTTP — all
 brokered server-side through a single scoped token, so the agent acts in
 your tools (read *and* write) without ever holding raw credentials.
 Connectors are discovered dynamically: check what's connected before
-assuming something is unavailable. When a needed app or key isn't
-connected, **mint a setup link and surface it in the same turn** rather
-than telling the user to dig through settings or paste a secret into chat
-(see the `credentials-and-setup-links.md` reference).
+assuming something is unavailable. **A connector is not an account** — one
+connector (e.g. Gmail) can hold several accounts, each shared with the
+project or private to one member; list them with `kortix connectors accounts
+<slug>` before assuming there is only one, and never infer accounts from a
+single profile call. When a needed app or key isn't connected, **mint a setup
+link and surface it in the same turn** rather than telling the user to dig
+through settings or paste a secret into chat (see the
+`credentials-and-setup-links.md` reference).
 
 **Secrets.** Credentials are encrypted at rest and scoped to the project, the
 agent's grant, and the session allowlist. Each secret has an **exposure** that

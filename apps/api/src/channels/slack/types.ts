@@ -99,6 +99,16 @@ export interface SlackEvent {
 
 export interface SlackInteractionPayload {
   type: string;
+  /** Single-use, expires in ~3s. Present on block_actions; required by views.open. */
+  trigger_id?: string;
+  /** Present on `view_submission`: the modal being submitted. */
+  view?: {
+    callback_id?: string;
+    private_metadata?: string;
+    state?: {
+      values?: Record<string, Record<string, { value?: string | null }>>;
+    };
+  };
   // Present on shortcuts / message actions (type === 'message_action').
   callback_id?: string;
   team?: { id: string };

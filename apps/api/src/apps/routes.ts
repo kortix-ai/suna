@@ -40,6 +40,7 @@ import { assertProjectCapability, loadProjectForUser } from '../projects/lib/acc
 import { callerKortixSessionId } from '../projects/lib/caller-session';
 import { projectsApp } from '../projects/lib/app';
 import { requireFeatureFlag } from '../feature-flags/gate';
+import { readManifest } from '../projects/triggers';
 import {
   appAccessibleToUser,
   appsOpenableByUser,
@@ -404,6 +405,74 @@ projectsApp.openapi(
       console.warn(`[apps] viewer-token revoke failed for ${current.appId}:`, error);
     });
     return c.json(await serializeAppAccessPolicy(row));
+  },
+);
+
+/**
+ * The agents whose `kortix.yaml` grant `agents.<name>.apps` names one App:
+ * `apps: all`, or a list that contains the App's slug. Read-only — the
+ * manifest on the default branch is the source of truth, so this route
+ * reports the declaration and never writes it. It does not decide access:
+ * the App gate (`./access.ts`, `./public-proxy.ts`) also requires
+ * `project.app.read` in the agent's effective permissions.
+ */
+export function agentsGrantingApp(
+  rawAgents: unknown,
+  appSlug: string,
+  manifestPath: string,
+  origins?: Record<string, string>,
+): Array<{ agent_name: string; grant: 'all' | 'listed'; path: string }> {
+  if (!rawAgents || typeof rawAgents !== 'object' || Array.isArray(rawAgents)) return [];
+  const out: Array<{ agent_name: string; grant: 'all' | 'listed'; path: string }> = [];
+  for (const [name, block] of Object.entries(rawAgents as Record<string, unknown>)) {
+    if (!block || typeof block !== 'object') continue;
+    const grant = (block as Record<string, unknown>).apps;
+    const path = `${origins?.[name] ?? manifestPath}#agents.${name}`;
+    if (grant === 'all') out.push({ agent_name: name, grant: 'all', path });
+    else if (Array.isArray(grant) && grant.some((slug) => typeof slug === 'string' && slug.toLowerCase() === appSlug)) {
+      out.push({ agent_name: name, grant: 'listed', path });
+    }
+  }
+  return out.sort((a, b) => a.agent_name.localeCompare(b.agent_name));
+}
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get', path: '/{projectId}/apps/{appId}/agents', tags: ['apps'], summary: 'List the agents granted this App in kortix.yaml', ...auth,
+    request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
+    responses: {
+      200: json(z.object({ agents: z.array(z.object({
+        agent_name: z.string(),
+        grant: z.enum(['all', 'listed']),
+        path: z.string(),
+      })) }), 'Agents whose apps grant names this App'),
+      ...errors(403, 404, 503),
+    },
+  }),
+  async (c: any) => {
+    const { projectId, appId } = c.req.param();
+    const loaded = await authorizedProject(c, projectId);
+    if (loaded instanceof Response) return loaded;
+    const row = await visibleApp(projectId, appId, loaded.userId);
+    if (!row) return c.json({ error: 'Not found' }, 404);
+    const project = loaded.row;
+    if (!project.defaultBranch) return c.json({ agents: [] });
+    let manifest: Awaited<ReturnType<typeof readManifest>>;
+    try {
+      manifest = await readManifest({
+        projectId: project.projectId,
+        repoUrl: project.repoUrl,
+        defaultBranch: project.defaultBranch,
+        manifestPath: project.manifestPath ?? 'kortix.yaml',
+        gitAuthToken: null,
+      }, { rethrowReadErrors: true });
+    } catch (error) {
+      return c.json({ error: `kortix.yaml could not be read: ${(error as Error).message}` }, 503);
+    }
+    if (!manifest || manifest.schemaVersion < 2) return c.json({ agents: [] });
+    return c.json({
+      agents: agentsGrantingApp(manifest.raw.agents, row.slug, manifest.path, manifest.imports?.origins.agents),
+    });
   },
 );
 

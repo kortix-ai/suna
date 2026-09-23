@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
-import { chatTurnStreams } from '@kortix/db';
+import { chatTurnStreams, projectSessions } from '@kortix/db';
 import { db } from '../shared/db';
+import { channelOfSessionMetadata } from './question-release';
 import type { TurnErrorInfo } from './slack/errors';
 import * as slackQuestions from './slack/questions';
 import * as slackReview from './slack/review';
@@ -30,7 +31,19 @@ async function platformFor(sessionId: string): Promise<Platform> {
     .where(eq(chatTurnStreams.sessionId, sessionId))
     .limit(1);
   const platform = (row?.channelRef as { platform?: string } | null)?.platform;
-  return platform === 'teams' ? 'teams' : 'slack';
+  if (platform === 'teams' || platform === 'slack') return platform;
+
+  // No live-turn row. That used to mean "Slack", so a Teams session whose turn
+  // had already closed — a question asked late, a review filed after the card
+  // settled — was handed to the SLACK renderer, which found no Slack turn and
+  // dropped it. The session's own metadata is set once at creation and never
+  // goes away; ask it before falling back.
+  const [session] = await db
+    .select({ metadata: projectSessions.metadata })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, sessionId))
+    .limit(1);
+  return channelOfSessionMetadata(session?.metadata) === 'teams' ? 'teams' : 'slack';
 }
 
 export async function relayTurnStep(
@@ -69,10 +82,11 @@ export async function relayTurnAnswerDetailed(
   sessionId: string,
   text: string,
   blocks?: unknown[],
+  card?: Record<string, unknown>,
 ): Promise<slack.TurnRelayResult> {
   const platform = await platformFor(sessionId);
   return platform === 'teams'
-    ? fromBoolean(await teams.relayTurnAnswer(sessionId, text))
+    ? fromBoolean(await teams.relayTurnAnswer(sessionId, text, card))
     : slack.relayTurnAnswerDetailed(sessionId, text, blocks);
 }
 

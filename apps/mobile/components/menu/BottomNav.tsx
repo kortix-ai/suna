@@ -1,19 +1,12 @@
 import * as React from 'react';
-import { Pressable, View } from 'react-native';
-import Animated, { 
-  useAnimatedStyle, 
-  useSharedValue, 
-  withSpring 
-} from 'react-native-reanimated';
-import { useColorScheme } from 'nativewind';
+import { View } from 'react-native';
 import { useLanguage } from '@/contexts';
 import * as Haptics from 'expo-haptics';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { MessageCircle, Briefcase, Zap } from 'lucide-react-native';
+import { Button } from '@/components/ui/button';
+import { ChatCircleIcon as MessageCircle, BriefcaseIcon as Briefcase, LightningIcon as Zap } from '@/lib/icons';
 import { log } from '@/lib/logger';
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 interface BottomNavProps {
   activeTab?: 'chats' | 'workers' | 'triggers';
@@ -104,70 +97,37 @@ interface NavButtonProps {
  * - Prevents double activation
  */
 function NavButton({ icon, label, isActive = false, onPress }: NavButtonProps) {
-  const { colorScheme } = useColorScheme();
-  const scale = useSharedValue(1);
-  
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-  
-  const handlePressIn = () => {
-    scale.value = withSpring(0.98, { damping: 15, stiffness: 400 });
-  };
-  
-  const handlePressOut = () => {
-    scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-  };
-  
   const handlePress = () => {
     log.log('🎯 Bottom nav tab pressed:', label);
     log.log('📊 Active state:', isActive);
     log.log('⏰ Timestamp:', new Date().toISOString());
-    
-    // Haptic feedback
+
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    
+
     // Don't trigger if already active
     if (isActive) {
       log.log('ℹ️ Tab already active, skipping callback');
       return;
     }
-    
+
     onPress?.();
   };
-  
+
   return (
-    <AnimatedPressable
+    <Button
+      variant="ghost"
       onPress={handlePress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      style={animatedStyle}
-      className={`flex-1 items-center justify-center rounded-2xl h-24 ${
-        isActive 
-          ? 'bg-card border-[1.5px] border-border' 
-          : 'bg-card/30'
+      className={`h-24 flex-1 flex-col gap-2 rounded-2xl ${
+        isActive ? 'border-[1.5px] border-border bg-card' : 'bg-card/30'
       }`}
       accessibilityLabel={label}
       accessibilityRole="tab"
       accessibilityState={{ selected: isActive }}
       accessibilityHint={`Switch to ${label} view`}
     >
-      <View className="items-center justify-center gap-2">
-        <Icon 
-          as={icon}
-          size={24}
-          className={isActive ? 'text-foreground' : 'text-foreground/60'}
-          strokeWidth={2}
-        />
-        <Text 
-          className={`text-[15px] font-roobert-medium ${
-            isActive ? 'text-foreground' : 'text-foreground/60'
-          }`}
-        >
-          {label}
-        </Text>
-      </View>
-    </AnimatedPressable>
+      <Icon as={icon} size={24} className={isActive ? 'text-foreground' : 'text-foreground/60'} />
+      <Text className={isActive ? 'text-foreground' : 'text-foreground/60'}>{label}</Text>
+    </Button>
   );
 }
 

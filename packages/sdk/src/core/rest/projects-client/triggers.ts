@@ -48,8 +48,9 @@ export interface TriggerSessionAccess {
 export interface ProjectTrigger {
   /** URL-safe slug (the filename minus `.md`). */
   slug: string;
-  /** Where the entry is sourced from. Always `kortix.yaml#triggers.<slug>`
-   *  now that triggers are centralized in the manifest. */
+  /** Where the entry is declared: `<file>#triggers.<slug>`. `<file>` is
+   *  `kortix.yaml`, or the imported file when the manifest's `imports:`
+   *  brought the trigger in (e.g. `.kortix/triggers/weekly.yaml`). */
   path: string;
   name: string;
   type: ProjectTriggerType;

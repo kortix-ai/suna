@@ -258,7 +258,7 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
       const token = await getAuthToken();
       if (!token) return;
 
-      await fetch(`${API_URL}/presence/clear?token=${token}&session_id=${sessionId}`, {
+      await fetch(`${API_URL}/presence/clear?session_id=${encodeURIComponent(sessionId)}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

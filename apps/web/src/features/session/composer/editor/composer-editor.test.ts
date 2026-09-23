@@ -2,6 +2,8 @@ import { Editor, type JSONContent } from '@tiptap/core';
 import { PLUGIN_KEY as PLACEHOLDER_PLUGIN_KEY } from '@tiptap/extensions';
 import type { EditorView } from '@tiptap/pm/view';
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 import { mergeFailedSubmissionText } from '../../composer-draft-recovery';
 import { planPrefillMerge, textToDocument } from '../composer-logic';
@@ -493,7 +495,68 @@ describe('editor.setEditable — the mechanism the disabled effect depends on', 
     editor.setEditable(true);
     expect(editor.isEditable).toBe(true);
   });
+
+  /**
+   * The trap the `emitUpdate: false` argument in that effect exists for.
+   *
+   * `setEditable` emits the editor's `update` event by default, and `onUpdate`
+   * here is `createUpdateHandler` — a DOCUMENT-change reporter feeding the
+   * draft saver. A flip of `disabled` therefore reported the live document as
+   * a change the user had made. On the project-home composer, which keeps the
+   * sent text in the box (`clearOnSend={false}`), that phantom change landed
+   * after the send's `clearSavedDraft()` and re-saved the just-sent message as
+   * the project's unsent draft; the next visit restored it into the composer.
+   */
+  test('the default emit reports a phantom document change to the draft saver', () => {
+    const docs: JSONContent[] = [];
+    const editor = editorReportingDocChanges(docs);
+    editor.commands.insertContent({ type: 'text', text: 'Hi' });
+    const afterTyping = docs.length;
+
+    editor.setEditable(false);
+
+    expect(docs.length).toBe(afterTyping + 1);
+    // And it carries the whole document, which is why it re-saved the draft.
+    expect(JSON.stringify(docs.at(-1))).toContain('"text":"Hi"');
+  });
+
+  test('setEditable(x, false) — what the disabled effect passes — reports nothing', () => {
+    const docs: JSONContent[] = [];
+    const editor = editorReportingDocChanges(docs);
+    editor.commands.insertContent({ type: 'text', text: 'Hi' });
+    const afterTyping = docs.length;
+
+    editor.setEditable(false, false);
+    editor.setEditable(true, false);
+
+    expect(docs.length).toBe(afterTyping);
+    // Suppressing the event does not suppress the state change itself.
+    expect(editor.isEditable).toBe(true);
+  });
+
+  // The React-level wiring needs a renderer this suite does not have, so the
+  // one thing left to pin is that production passes the argument at all.
+  test('the disabled effect suppresses the emit', () => {
+    const source = readFileSync(
+      fileURLToPath(new URL('./composer-editor.tsx', import.meta.url)),
+      'utf8',
+    );
+
+    expect(source).toContain('editor?.setEditable(!disabled, false)');
+  });
 });
+
+/** A headless editor whose `onUpdate` is the exact production composition. */
+function editorReportingDocChanges(docs: JSONContent[]): Editor {
+  return new Editor({
+    extensions: [...baseExtensions(() => 'Type a message'), MentionNode],
+    onUpdate: createUpdateHandler(
+      () => {},
+      (doc) => docs.push(doc),
+    ),
+    content: { type: 'doc', content: [{ type: 'paragraph' }] },
+  });
+}
 
 function mentionNode(kind: 'file' | 'agent' | 'session', label: string, value = ''): JSONContent {
   return { type: 'mention', attrs: { kind, label, value } };

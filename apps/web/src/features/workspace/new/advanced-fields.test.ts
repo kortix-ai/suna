@@ -63,16 +63,16 @@ describe('AdvancedFields: revealed by the name, not a disclosure', () => {
   });
 });
 
-describe('AdvancedFields: one repository list, connections first', () => {
+describe('AdvancedFields: a git account manager, connections first', () => {
   /**
    * The two-control shape is gone: an abstract source select, then a SECOND
    * select for the GitHub account that only appeared after a GitHub source was
    * picked. Ordering, labels and the default now come from
-   * `repository-options.ts`, which is unit-tested on its own.
+   * `repository-options.ts` (git accounts, then the action), unit-tested on its own.
    */
-  test('builds the options from repositoryChoices, not from a hardcoded source list', () => {
-    expect(code).toContain('repositoryChoices(connections, managedConfigured)');
-    expect(code).toContain('choices.map((choice)');
+  test('builds the git accounts from gitAccountOptions, not from a hardcoded source list', () => {
+    expect(code).toContain('gitAccountOptions(connections, managedConfigured)');
+    expect(code).toContain('options.map((option)');
     expect(code).toContain('<Select');
     expect(code).toContain('<SelectItem');
     expect(code).not.toContain('SOURCE_KEYS');
@@ -84,9 +84,9 @@ describe('AdvancedFields: one repository list, connections first', () => {
   });
 
   test('defaults to the account connection when it has one', () => {
-    // `defaultRepositoryChoice` returns the FIRST connection, and only falls
+    // `defaultGitAccount` returns the FIRST connection, and only falls
     // back to `managed` when there is none.
-    expect(code).toContain('defaultRepositoryChoice(choices)');
+    expect(code).toContain('defaultGitAccount(options)');
     expect(code).toContain("if (!fallback || fallback.kind === 'managed') return;");
   });
 
@@ -100,7 +100,7 @@ describe('AdvancedFields: one repository list, connections first', () => {
     // import into a create, and leaks the imported repo's branch into a
     // managed provision. `withRepositoryChoice` delegates to
     // `withRepositorySource`, which is unit-tested in `github-source.test.ts`.
-    expect(code).toContain('withRepositoryChoice(state, choice)');
+    expect(code).toContain('withGitAccount(state, option)');
   });
 });
 
@@ -183,23 +183,52 @@ describe('AdvancedFields: the two GitHub sources are wired, not disabled', () =>
     expect(code).toContain('defaultBranch: repo?.default_branch');
   });
 
-  test('changing the GitHub account clears the repository chosen under the previous one', () => {
-    // The owner and the action are ONE choice now, so the clearing rule rides
-    // on the choice itself: `withRepositoryChoice` -> `withRepositorySource`.
-    expect(code).toContain('withRepositoryChoice(state, choice)');
+  test('changing the git account clears the repository chosen under the previous one', () => {
+    // The owner is one control and the action another, but the clearing rule
+    // rides on the owner switch: `withGitAccount` -> `withRepositoryChoice`
+    // -> `withRepositorySource`.
+    expect(code).toContain('withGitAccount(state, option)');
+    expect(code).toContain('withRepositoryAction(state, value as RepositoryAction)');
   });
 
-  test('hides the free-text branch field for github-create, which cannot accept one', () => {
+  test('asks for a default branch only where one means something', () => {
     // `create-repo` reads `repo.default_branch` off the repository GitHub just
-    // created and accepts no branch input, so a field here would be collected
-    // and silently dropped.
-    expect(code).toContain("selected?.kind === 'github-create' ? null");
+    // created and accepts no branch input, and a managed repository is born
+    // on `main`. So the branch appears for an import (a real list), and for
+    // the operator-only managed import once a repository is picked — never
+    // as a free-text field under "create".
+    expect(code).toContain("selected?.kind === 'github' && action === 'import'");
+    expect(code).toContain('state.repoFullName ? (');
+    expect(code).not.toContain("selected?.kind === 'github-create'");
   });
 
-  test('still links to the real GitHub connect route when no installation exists, and remembers the way back', () => {
-    expect(code).toContain('/github/setup');
-    expect(code).toContain('rememberGitHubSetupReturn');
-    expect(code).toContain('newWorkspaceReturnPath');
+  test('the action is a segmented control under a GitHub owner, and absent for Kortix managed', () => {
+    expect(code).toContain('<TabsTrigger value="create"');
+    expect(code).toContain('<TabsTrigger value="import"');
+    expect(code).toContain("selected?.kind === 'github' ? (");
+  });
+
+  test('adding a GitHub account is a row in the same list, through the shared dialog', () => {
+    // The last row opens `AddGitHubAccountDialog` — the same dialog the
+    // account Git tab uses — and leaves the picked account untouched.
+    expect(code).toContain('ADD_ACCOUNT_VALUE');
+    expect(code).toContain('<SelectSeparator');
+    expect(code).toContain('<AddGitHubAccountDialog');
+    expect(code).toContain('newWorkspaceReturnPath(state.source, accountId)');
+  });
+
+  test('the way to GitHub is the shared dialog, which remembers the way back', () => {
+    // `/github/setup` and `rememberGitHubSetupReturn` live in the dialog now
+    // (one story for both surfaces); this screen only hands it the return
+    // path — carrying the SOURCE and the ACCOUNT, so a multi-account user
+    // comes back to the account they were creating in.
+    const dialog = readFileSync(
+      join(import.meta.dir, '../../../components/iam/add-github-account-dialog.tsx'),
+      'utf8',
+    );
+    expect(dialog).toContain('/github/setup');
+    expect(dialog).toContain('rememberGitHubSetupReturn(returnPath)');
+    expect(code).toContain('newWorkspaceReturnPath(state.source, accountId)');
     // Plain text in the field group, never an InfoBanner: that primitive is a
     // bordered `bg-popover` box and this note sits inside the page's own
     // field group, so it would read as a card inside a card.

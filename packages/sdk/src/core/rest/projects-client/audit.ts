@@ -25,6 +25,10 @@ export interface AuditEvent {
   agent_name?: string | null;
   initiator_actor_type?: string | null;
   initiator_actor_id?: string | null;
+  /** The human an agent session acted on behalf of; null for a human actor,
+   *  an unattended run (trigger, channel, system), or a session whose
+   *  on-behalf-of another human's prompt cleared. */
+  on_behalf_of_user_id?: string | null;
   parent_event_id?: string | null;
   delegation_depth?: number;
   source: string | null;

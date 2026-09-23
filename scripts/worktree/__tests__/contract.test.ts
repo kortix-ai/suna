@@ -65,9 +65,33 @@ describe('dependency contract — every external binary the worktree spawns is d
 describe('runtime artifact contract', () => {
   test('worktree startup builds every binary consumed by runtime snapshot staging', () => {
     const services = readFileSync(join(LIB_DIR, 'services.ts'), 'utf8');
-    expect(services).toContain("['sandbox agent', '@kortix/sandbox-agent-server']");
     expect(services).toContain("['CLI', '@kortix/cli']");
     expect(services).toContain("['Apps runtime', 'apps/kortix-app-runtime/build.sh']");
+  });
+
+  // `pnpm --filter <name>` that matches nothing prints "No projects matched" and
+  // exits 0. The sandbox agent was renamed to `kortixd` and its filter was not,
+  // so worktrees stopped building the daemon without a single failure: a pinned
+  // string kept this test green. Every filter is checked against the workspace.
+  test('every pnpm build filter names a real workspace package with a build script', () => {
+    const services = readFileSync(join(LIB_DIR, 'services.ts'), 'utf8');
+    const block = services.slice(services.indexOf('packageBuilds'), services.indexOf('for (const'));
+    const filters = [...block.matchAll(/\[\s*'[^']+'\s*,\s*'([^']+)'\s*\]/g)].map((m) => m[1]!);
+    expect(filters.length).toBeGreaterThanOrEqual(2);
+
+    const packages = new Map<string, { scripts?: Record<string, string> }>();
+    for (const group of ['apps', 'packages']) {
+      for (const dir of readdirSync(join(REPO, group))) {
+        const file = join(REPO, group, dir, 'package.json');
+        if (!existsSync(file)) continue;
+        const pkg = JSON.parse(readFileSync(file, 'utf8')) as { name?: string; scripts?: Record<string, string> };
+        if (pkg.name) packages.set(pkg.name, pkg);
+      }
+    }
+    for (const filter of filters) {
+      expect(packages.has(filter), `pnpm --filter "${filter}" matches no workspace package`).toBe(true);
+      expect(packages.get(filter)?.scripts?.build, `"${filter}" has no build script`).toBeTruthy();
+    }
   });
 });
 

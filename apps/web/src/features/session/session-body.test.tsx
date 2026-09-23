@@ -67,10 +67,10 @@ describe('SessionBodyRow', () => {
 
 describe('the transcript column has ONE definition', () => {
   test('it keeps the gutters the composer is measured against', () => {
-    // `COMPOSER_SHELL_CLASS` is `px-4 md:pr-1`; the conversation sits 12px
-    // further in on both sides so a right-aligned bubble never reaches the
-    // input card's edge. Changing these without changing that is the bug.
-    expect(SESSION_TRANSCRIPT_CLASS).toBe('mx-auto w-full max-w-3xl min-w-0 px-7 pt-6 md:pr-4');
+    // `COMPOSER_SHELL_CLASS` is `px-4`; the conversation sits 12px further in
+    // on both sides so a right-aligned bubble never reaches the input card's
+    // edge. Equal gutters on both sides keep it on the row's exact center.
+    expect(SESSION_TRANSCRIPT_CLASS).toBe('mx-auto w-full max-w-3xl min-w-0 px-7 pt-6');
   });
 
   test('neither surface hand-writes a transcript column', () => {

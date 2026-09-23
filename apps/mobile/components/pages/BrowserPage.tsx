@@ -1,26 +1,29 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, View } from 'react-native';
 import { WebView, type WebViewNavigation } from 'react-native-webview';
 import { useColorScheme } from 'nativewind';
 import { haptics } from '@/lib/haptics';
 import {
-  ArrowLeft,
-  ArrowRight,
-  ExternalLink,
-  Globe,
-  RefreshCw,
-  X,
-} from 'lucide-react-native';
+  ArrowLeftIcon as ArrowLeft,
+  ArrowRightIcon as ArrowRight,
+  ArrowSquareOutIcon as ExternalLink,
+  GlobeIcon as Globe,
+  ArrowClockwiseIcon as RefreshCw,
+  XIcon as X,
+} from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { Input } from '@/components/ui/input';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { getSandboxPortUrl } from '@/lib/platform/client';
 import { useTabStore, type PageTab } from '@/stores/tab-store';
 import { API_URL, getAuthToken } from '@/api/config';
 import * as Linking from 'expo-linking';
-import { PageHeader } from '@/components/ui/page-header';
-import { PageContent } from '@/components/ui/page-content';
+import { PageHeader } from '@/components/kortix/page-header';
+import { PageContent } from '@/components/kortix/page-content';
 import { ViewStyle } from 'react-native';
+import { THEME } from '@/lib/utils/theme';
+import { allowBrowserNavigation } from '@/lib/utils/html-embed';
 
 interface BrowserPageProps {
   page: PageTab;
@@ -36,7 +39,7 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
   const isDark = colorScheme === 'dark';
   const { sandboxId } = useSandboxContext();
 
-  const webViewRef = useRef<WebView>(null);
+  const webViewRef = useRef<React.ElementRef<typeof WebView>>(null);
 
   // Restore persisted state from tab store
   const savedState = useTabStore((s) => s.tabStateById[page.id]) as { savedUrl?: string; savedDisplay?: string } | undefined;
@@ -172,10 +175,8 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
     }
   }, []);
 
-  const fgColor = isDark ? '#F8F8F8' : '#121215';
-  const mutedColor = isDark ? '#888' : '#999';
-  const barBg = isDark ? '#1E1E22' : '#F4F4F5';
-  const inputBg = isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)';
+  const fgColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const mutedColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
 
   // URL bar + inline nav buttons, passed into PageHeader's title slot so
   // the browser toolbar inherits the standard `bg-muted` header chrome
@@ -183,36 +184,25 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
   const titleNode = (
     <View className="flex-1 flex-row items-center" style={{ gap: 2 }}>
       <Pressable onPress={handleGoBack} disabled={!canGoBack} hitSlop={6} className="p-1">
-        <Icon as={ArrowLeft} size={16} style={{ color: canGoBack ? fgColor : mutedColor } as ViewStyle} strokeWidth={2.2} />
+        <Icon as={ArrowLeft} size={16} style={{ color: canGoBack ? fgColor : mutedColor } as ViewStyle} />
       </Pressable>
       <Pressable onPress={handleGoForward} disabled={!canGoForward} hitSlop={6} className="p-1 mr-1">
-        <Icon as={ArrowRight} size={16} style={{ color: canGoForward ? fgColor : mutedColor } as ViewStyle} strokeWidth={2.2} />
+        <Icon as={ArrowRight} size={16} style={{ color: canGoForward ? fgColor : mutedColor } as ViewStyle} />
       </Pressable>
 
       <View
-        style={{
-          flex: 1,
-          flexDirection: 'row',
-          alignItems: 'center',
-          backgroundColor: inputBg,
-          height: 32,
-          maxHeight: 32,
-          borderRadius: 8,
-          paddingHorizontal: 10,
-          marginHorizontal: 4,
-          overflow: 'hidden',
-        }}
+        className="flex-1 flex-row items-center gap-1.5 rounded-lg bg-secondary px-2.5"
+        style={{ height: 32, maxHeight: 32, marginHorizontal: 4, overflow: 'hidden' }}
       >
-        {!isLoading && <Icon as={Globe} size={12} style={{ color: mutedColor } as ViewStyle} strokeWidth={2} />}
+        {!isLoading && <Icon as={Globe} size={12} style={{ color: mutedColor } as ViewStyle} />}
         {isLoading && <ActivityIndicator size={10} color={mutedColor} />}
-        <TextInput
+        <Input
           value={urlInput}
           onChangeText={setUrlInput}
           onFocus={() => { setIsEditing(true); setUrlInput(currentUrl); }}
           onBlur={() => setIsEditing(false)}
           onSubmitEditing={handleUrlSubmit}
           placeholder="Enter URL or port..."
-          placeholderTextColor={mutedColor}
           autoCapitalize="none"
           autoCorrect={false}
           keyboardType="url"
@@ -220,16 +210,7 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
           selectTextOnFocus
           numberOfLines={1}
           multiline={false}
-          style={{
-            flex: 1,
-            marginLeft: 6,
-            fontSize: 12,
-            fontFamily: 'Roobert',
-            color: fgColor,
-            paddingVertical: 0,
-            height: 32,
-            includeFontPadding: false,
-          }}
+          className="h-8 flex-1 rounded-none bg-transparent px-0 py-0 text-xs leading-4"
         />
       </View>
     </View>
@@ -238,10 +219,10 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
   const rightActions = (
     <View className="flex-row items-center">
       <Pressable onPress={isLoading ? handleStop : handleRefresh} hitSlop={6} className="p-1">
-        <Icon as={isLoading ? X : RefreshCw} size={15} style={{ color: fgColor } as ViewStyle} strokeWidth={2.2} />
+        <Icon as={isLoading ? X : RefreshCw} size={15} style={{ color: fgColor } as ViewStyle} />
       </Pressable>
       <Pressable onPress={handleOpenExternal} hitSlop={6} className="p-1 ml-1">
-        <Icon as={ExternalLink} size={15} style={{ color: mutedColor } as ViewStyle} strokeWidth={2.2} />
+        <Icon as={ExternalLink} size={15} style={{ color: mutedColor } as ViewStyle} />
       </Pressable>
     </View>
   );
@@ -266,6 +247,8 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
                 ? { Authorization: `Bearer ${authToken}` }
                 : undefined,
             }}
+            originWhitelist={['*']}
+            onShouldStartLoadWithRequest={allowBrowserNavigation}
             onNavigationStateChange={handleNavigationChange}
             onLoadStart={() => setIsLoading(true)}
             onLoadEnd={() => setIsLoading(false)}
@@ -285,7 +268,7 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
           />
         ) : (
           <View className="flex-1 items-center justify-center px-8">
-            <Icon as={Globe} size={32} className="text-muted-foreground/40" strokeWidth={1.5} />
+            <Icon as={Globe} size={32} className="text-muted-foreground/40" />
             <Text className="mt-3 font-roobert-medium text-[15px] text-foreground">Browser</Text>
             <Text className="mt-1 text-center font-roobert text-xs text-muted-foreground">
               {!sandboxId

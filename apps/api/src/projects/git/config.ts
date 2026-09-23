@@ -4,6 +4,7 @@
 
 import {
   type ManifestFormat,
+  ManifestImportError,
   manifestCandidatePaths,
   manifestFormatForPath,
   parseManifestText,
@@ -189,11 +190,16 @@ export function resolveConfigAgents(
           enabled: spec.enabled,
           sandbox: spec.sandbox ?? null,
           // Surface the per-agent allowlists so the UI can show (read-only) what
-          // secrets/connectors/CLI powers each declared agent is scoped to.
+          // secrets/connectors/Kortix permissions each declared agent is scoped to.
+          // `kortix_cli` is the deprecated wire alias of `kortix_permissions`,
+          // kept so clients released before the rename still read it.
           scope: {
             env: spec.env,
             connectors: spec.connectors,
-            kortix_cli: spec.kortixCli,
+            kortix_permissions: spec.permissions,
+            kortix_cli: spec.permissions,
+            // Kortix Apps this agent may open when restricted/private (§2.5).
+            apps: spec.apps ?? [],
           },
         };
       }),
@@ -208,11 +214,19 @@ export async function loadProjectConfig(
   // Dual-format: resolve kortix.yaml (preferred) or kortix.toml, then parse in
   // the matched format. Without this, a yaml-only project reads no manifest here
   // → its [[agents]] scoping silently vanishes from the config introspection.
-  const resolved = await readManifestFromRepo(
-    project,
-    manifestCandidatePaths(project.manifestPath).map((c) => c.path),
-    project.defaultBranch,
-  ).catch(() => null);
+  const candidatePaths = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
+  const resolved = await readManifestFromRepo(project, candidatePaths, project.defaultBranch)
+    // A broken `imports:` must not make the summary report "no manifest" (the
+    // UI would offer to create one). Degrade to the root file alone; the
+    // Triggers page surfaces the import error itself.
+    .catch((err) =>
+      err instanceof ManifestImportError
+        ? readManifestFromRepo(project, candidatePaths, project.defaultBranch, {
+            resolveImports: false,
+          })
+        : null,
+    )
+    .catch(() => null);
   const manifestRaw = resolved?.content ?? null;
   const manifestFormat: ManifestFormat = resolved ? manifestFormatForPath(resolved.path) : 'toml';
   const manifestFilePath = resolved?.path ?? project.manifestPath;
@@ -327,7 +341,9 @@ export async function loadProjectConfig(
   return {
     is_kortix_repo: Object.values(signals).some(Boolean),
     signals,
-    manifest_raw: manifestRaw,
+    // The root file's own text. `manifest`/`env`/agents below come from the
+    // merged document when the root declares `imports:`.
+    manifest_raw: resolved?.rootContent ?? manifestRaw,
     manifest,
     // The authoritative version verdict. Computed here so no client ever has to
     // infer a version from the raw text — and so an unreadable manifest reports

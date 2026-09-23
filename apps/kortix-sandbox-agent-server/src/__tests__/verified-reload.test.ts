@@ -9,18 +9,22 @@
  * The required shape is: boot the candidate, verify it serves, then promote it
  * and retire the old process.
  *
- * These assert on source structure. The supervisor owns real child processes,
+ * These assert on source structure. The lifecycle owns real child processes,
  * real ports and a real readiness probe; spawning opencode in unit tests would
  * be slow and flaky. What regresses here is the ORDERING and the FAILURE
  * BRANCH — kill-before-verify, or treating a failed boot as success — and both
  * are visible in the source. The live swap is exercised on dev.
  */
 import { describe, expect, test } from 'bun:test';
+import { createOpenCodeProxyService } from '../harness/open-code/proxy';
+import type { Opencode } from '../harness/open-code/lifecycle';
+import { loadOpenCodeConfig } from '../harness/open-code/config';
 
-const SRC = await Bun.file(new URL('../opencode.ts', import.meta.url).pathname).text();
-const CONFIG = await Bun.file(new URL('../config.ts', import.meta.url).pathname).text();
+const SRC = await Bun.file(new URL('../harness/open-code/lifecycle.ts', import.meta.url).pathname).text();
+const CONFIG = await Bun.file(new URL('../harness/open-code/config.ts', import.meta.url).pathname).text();
 const PROXY = await Bun.file(new URL('../proxy.ts', import.meta.url).pathname).text();
-const REFRESH = await Bun.file(new URL('../routes/refresh.ts', import.meta.url).pathname).text();
+const REFRESH = await Bun.file(new URL('../harness/open-code/control.ts', import.meta.url).pathname).text();
+const REFRESH_ROUTE = await Bun.file(new URL('../routes/refresh.ts', import.meta.url).pathname).text();
 
 /** `verifyCandidateBoots`'s body, comments stripped. */
 function candidateBody(): string {
@@ -120,8 +124,10 @@ describe('the port pair', () => {
     // ephemeral candidate port would be unguarded the moment it went live —
     // an unproxied route from the sandbox to its own opencode.
     const call = PROXY.slice(PROXY.indexOf('blockedSelfPorts'), PROXY.indexOf('blockedSelfPorts') + 260);
-    expect(call).toContain('cfg.opencodeInternalPort');
-    expect(call).toContain('cfg.opencodeStandbyPort');
+    expect(call).toContain('...harness.proxy.blockedPorts(cfg)');
+    const proxy = createOpenCodeProxyService({} as Opencode);
+    const cfg = loadOpenCodeConfig({ KORTIX_OPENCODE_INTERNAL_PORT: '4096', KORTIX_OPENCODE_STANDBY_PORT: '4097' });
+    expect(proxy.blockedPorts(cfg)).toEqual([4096, 4097]);
   });
 
   test('chooses the idle half relative to the current active port', () => {
@@ -241,7 +247,7 @@ describe('verify_fail fault injection', () => {
   test('the route only injects on an explicit opt-in', () => {
     // Default MUST be a normal reload. A flag that defaulted on would turn
     // every reload on the box into a no-op.
-    expect(REFRESH).toContain("c.req.query('verify_fail') === '1'");
+    expect(REFRESH_ROUTE).toContain("c.req.query('verify_fail') === '1'");
   });
 
   test('injection cannot reach promotion', () => {

@@ -17,6 +17,9 @@ export interface MeResponse {
     session_id: string | null;
     agent: string | null;
     connectors: string[] | 'all' | null;
+    /** The agent's Kortix permissions. Absent on APIs released before 2026-09-22. */
+    kortix_permissions?: string[] | 'all' | null;
+    /** @deprecated Same value as `kortix_permissions`. */
     kortix_cli: string[] | 'all' | null;
     env?: string[] | 'all' | null;
   };

@@ -111,6 +111,9 @@ interface TeamsInstallation {
   tenantId: string | null;
   catalogAppId: string | null;
   orgInstalled: boolean;
+  /** Outcome of the one-click org-catalog publish; null for manual/BYO installs. */
+  publishState?: 'publishing' | 'published' | 'review' | 'failed' | null;
+  publishError?: string | null;
   installedAt: string | null;
 }
 
@@ -627,22 +630,45 @@ async function teamsStatus(
       emitJson({ connected: Boolean(install), installation: install ?? null });
       return 0;
     }
-    if (!install || !install.orgInstalled) {
+    if (!install) {
       process.stdout.write(
         `${C.dim}teams${C.reset}  not connected\n` +
           `       Run ${C.cyan}kortix channels connect --platform teams${C.reset} — it prints the Microsoft admin-consent URL.\n`,
       );
       return 0;
     }
+    // A bound tenant is a connection. The org-catalog publish is a SEPARATE
+    // outcome that finishes in the background after consent, so report it on
+    // its own line instead of folding it into "connected".
     process.stdout.write(
       `${status.ok('teams')}  tenant ${install.tenantId ?? '?'}${install.catalogAppId ? `  catalog app ${install.catalogAppId}` : ''}  (installed ${install.installedAt ?? '?'})\n`,
     );
-    if (install.catalogAppId) {
-      process.stdout.write(`       Deep link: ${install.catalogAppId}\n`);
-    }
+    const publishLine = teamsPublishLine(install);
+    if (publishLine) process.stdout.write(`       ${publishLine}\n`);
     return 0;
   } catch (err) {
     return surfaceApiError(err);
+  }
+}
+
+function teamsPublishLine(install: TeamsInstallation): string | null {
+  const retry = `${C.cyan}kortix channels connect --platform teams${C.reset}`;
+  switch (install.publishState) {
+    case 'publishing':
+      return `${C.dim}Catalog: publishing the app to the org Teams catalog… (re-run status in a minute)${C.reset}`;
+    case 'review':
+      return `${C.dim}Catalog: submitted for review — a Teams admin must approve the app in the Teams admin center${C.reset}`;
+    case 'failed':
+      return (
+        `${status.err('Catalog publish failed')} ${install.publishError ?? 'no reason recorded'}\n` +
+        `       Fix the cause, then re-run ${retry} to publish again.`
+      );
+    case 'published':
+      return install.orgInstalled ? `${C.dim}Catalog: published to the org Teams catalog${C.reset}` : null;
+    default:
+      return install.orgInstalled
+        ? null
+        : `${C.dim}Catalog: app not published to the org catalog (manual upload, or re-run ${retry})${C.reset}`;
   }
 }
 
@@ -693,7 +719,9 @@ async function teamsManifest(
 ): Promise<number> {
   const ctx = await resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
-  // The Teams app manifest lives in the repo at apps/api/src/channels/teams-app-manifest.json.
+  // The Teams app manifest is BUILT by the API (apps/api/src/channels/teams-manifest.ts)
+  // from the project's own app id and base URL. The checked-in
+  // teams-app-manifest.json is a stale hand file and is not read at runtime.
   // Print it so an operator can review/submit it manually if the one-click flow
   // isn't available. The server's /mode endpoint carries the consent URL; the
   // manifest is static (doesn't depend on the project).
@@ -708,7 +736,7 @@ async function teamsManifest(
           orgConsentUrl: mode.orgConsentUrl,
           orgInstalled: mode.orgInstalled,
           deepLinkUrl: mode.deepLinkUrl,
-          note: 'Teams app manifest is generated server-side from apps/api/src/channels/teams-app-manifest.json. Use the orgConsentUrl above for one-click install; manual app-package upload uses buildTeamsAppPackage() in apps/api/src/channels/teams/app-package.ts.',
+          note: 'The Teams app manifest is generated server-side by apps/api/src/channels/teams-manifest.ts. Use the orgConsentUrl above for one-click install; manual app-package upload uses buildTeamsAppPackage() in apps/api/src/channels/teams/app-package.ts.',
         },
         null,
         2,

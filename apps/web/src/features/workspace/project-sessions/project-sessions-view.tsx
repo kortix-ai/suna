@@ -1,5 +1,7 @@
 'use client';
 
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
@@ -30,6 +32,8 @@ import {
   selectHiddenSections,
   selectOrderMode,
   selectSourceFilters,
+  selectAccessFilters,
+  selectOwnerFilters,
   selectStatusFilters,
   useSessionFilterStore,
 } from '@/stores/session-filter-store';
@@ -192,14 +196,22 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   );
   const creatingSession = useIsCreatingProjectSession(projectId);
 
+  // The 'project' scope is manager-only: the API answers 403 "Project manager
+  // access is required to list every session" unless the caller holds
+  // `project.members.manage`. A plain member opened this page onto that error
+  // while the sidebar listed their sessions fine. They read the default
+  // 'visible' scope — the same list the sidebar shows. The request waits for
+  // the probe so a manager does not fetch both scopes.
+  const manage = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
   const sessionsQuery = useProjectSessions(projectId, {
+    enabled: !manage.isLoading,
     // 'project' scope: the manager-only lifecycle inventory — a
     // DIFFERENT server request than the default 'visible' scope every other
     // reader uses. It includes accessible warm and soft-deleted rows, but never
     // sessions the manager cannot open. It MUST carry its own scope segment in
     // the key (see qk.project.sessionsPaged' doc comment). Sharing the
     // default-scope key here is the exact bug this file existed to fix.
-    scope: 'project',
+    scope: manage.allowed ? 'project' : 'visible',
     // The shared policy, not a local copy of the provisioning rule. This view
     // stopped polling the moment every session settled, so a title written
     // seconds later (server-side, with no event — see `sessionTitleHasLanded`)
@@ -247,6 +259,8 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const orderMode = useSessionFilterStore(selectOrderMode(projectId, SURFACE));
   const statusFilters = useSessionFilterStore(selectStatusFilters(projectId, SURFACE));
   const sourceFilters = useSessionFilterStore(selectSourceFilters(projectId, SURFACE));
+  const ownerFilters = useSessionFilterStore(selectOwnerFilters(projectId, SURFACE));
+  const accessFilters = useSessionFilterStore(selectAccessFilters(projectId, SURFACE));
   const hiddenSections = useSessionFilterStore(selectHiddenSections(projectId, SURFACE));
   const collapsedSections = useSessionFilterStore(selectCollapsedSections(projectId, SURFACE));
   const collapsedSectionSet = useMemo(() => new Set(collapsedSections), [collapsedSections]);
@@ -266,8 +280,18 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
         deferredSearch,
         tI18nComplete,
         searchIndex,
+        { owners: ownerFilters, access: accessFilters },
       ),
-    [sessions, statusFilters, sourceFilters, deferredSearch, tI18nComplete, searchIndex],
+    [
+      sessions,
+      statusFilters,
+      sourceFilters,
+      ownerFilters,
+      accessFilters,
+      deferredSearch,
+      tI18nComplete,
+      searchIndex,
+    ],
   );
 
   const grouped = useMemo(
@@ -279,10 +303,15 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
           order: orderMode,
           reviewCountBySession: reviewSummary.needsYouBySession,
           hiddenSections,
+          ownerLabels: {
+            you: tSidebar('filter.ownerValue.you'),
+            unknown: tSidebar('filter.ownerValue.unknown'),
+          },
         },
         tI18nComplete,
       ),
     [
+      tSidebar,
       visibleSessions,
       groupMode,
       orderMode,
