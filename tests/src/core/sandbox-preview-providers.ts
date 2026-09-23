@@ -30,18 +30,20 @@ import {
   stat as statPlatinum,
   waitForWarmSandbox,
 } from './platinum-ci';
+import type { PreviewRuntimeSecrets } from './preview-stack';
 import {
   PreviewInfrastructureError,
   type SandboxPreviewResult,
+  branchEnvSandboxName,
   buildPreviewBootstrapScript,
-  previewLockfileHash,
   previewDeploymentStatusPath,
+  previewLockfileHash,
   previewSandboxIdentity,
   previewSandboxName,
+  selectPreviewSessionSandboxIds,
   selectStalePreviewSandboxIds,
   selectTeardownSandboxIds,
 } from './sandbox-preview';
-import type { PreviewRuntimeSecrets } from './preview-stack';
 
 const PREVIEW_TIMEOUT_MS = 90 * 60_000;
 const LOG_CHUNK_BYTES = 1024 * 1024;
@@ -148,17 +150,38 @@ async function deletePlatinum(api: PlatinumApi, sandboxId: string): Promise<void
   }
 }
 
+async function stopPlatinum(api: PlatinumApi, sandboxId: string): Promise<void> {
+  try {
+    await api.json(`/v1/sandboxes/${sandboxId}/stop`, { method: 'POST' }, { retry: true });
+  } catch (error) {
+    const message = String(error);
+    if (!message.includes('-> 404:') && !message.includes('-> 409:')) throw error;
+  }
+}
+
+async function stopPreviewSessions(api: PlatinumApi, instanceId: string): Promise<number> {
+  const sessions = selectPreviewSessionSandboxIds(
+    await allPlatinumPreviewSandboxes(api),
+    new Set([instanceId]),
+  );
+  await Promise.all(sessions.map((sandboxId) => stopPlatinum(api, sandboxId)));
+  return sessions.length;
+}
+
 async function replaceExistingPlatinumPreview(
   api: PlatinumApi,
   prNumber: number,
 ): Promise<void> {
   const name = previewSandboxName(prNumber);
-  const existing = (await allPlatinumPreviewSandboxes(api)).filter(
+  const sandboxes = await allPlatinumPreviewSandboxes(api);
+  const sessions = selectPreviewSessionSandboxIds(sandboxes, new Set([name]));
+  const existing = sandboxes.filter(
     (sandbox) =>
       sandbox.name === name &&
       sandbox.metadata?.owner === 'kortix-preview' &&
       Number(sandbox.metadata?.pr_number) === prNumber,
   );
+  for (const sandboxId of sessions) await deletePlatinum(api, sandboxId);
   for (const sandbox of existing) await deletePlatinum(api, sandbox.id);
 }
 
@@ -176,13 +199,13 @@ export async function deployPlatinumPreview(
   const statusPath = previewDeploymentStatusPath(input.runId, input.runAttempt);
   if (!input.platinum.apiKey) throw new PreviewInfrastructureError('PLATINUM_API_KEY is required');
   const api = new PlatinumApi(input.platinum.apiUrl, input.platinum.apiKey);
+  const identity = previewSandboxIdentity(input);
   let sandboxId = '';
   let launched = false;
   // Set only when this run adopted an existing branch environment, so the
   // failure path below can tell "a box I made" from "the standing environment".
   let reusedSandboxId = '';
   try {
-    const identity = previewSandboxIdentity(input);
     // A branch environment reuses its sandbox; only an ephemeral PR preview is
     // replaced, which is what rotates its URL on every push.
     const reusable = identity.reuseExisting
@@ -272,7 +295,7 @@ export async function deployPlatinumPreview(
     );
     await api.write(
       `${sandboxId}:/workspace/run-kortix-preview.sh`,
-      buildPreviewBootstrapScript({ ...input, origin, statusPath }),
+      buildPreviewBootstrapScript({ ...input, origin, statusPath, instanceId: identity.name }),
       '0755',
     );
     const launch = await execPlatinum(api, sandboxId, [
@@ -311,6 +334,11 @@ export async function deployPlatinumPreview(
           1,
         ),
     });
+    // Target-full creates real session sandboxes. Workers are disabled inside a
+    // preview, so nothing else reaps them when the suite exits. Stop them here:
+    // their disks remain available for inspection and restart, while their RAM
+    // returns to the shared provider pool before the workflow completes.
+    await stopPreviewSessions(api, identity.name);
     const result: SandboxPreviewResult = {
       provider: 'platinum',
       exitCode,
@@ -324,7 +352,10 @@ export async function deployPlatinumPreview(
     await writeDeploymentResult(input.root, result, input);
     return result;
   } catch (error) {
-    if (launched) throw error;
+    if (launched) {
+      await stopPreviewSessions(api, identity.name).catch(() => {});
+      throw error;
+    }
     // Clean up only a sandbox THIS run created. Deleting a reused branch
     // environment would throw away the stable origin it exists to hold — and a
     // failed deploy is a reason to look at it, not to destroy it.
@@ -348,9 +379,15 @@ export async function teardownPlatinumPreview(input: {
 }): Promise<number> {
   if (!input.apiKey) return 0;
   const api = new PlatinumApi(input.apiUrl, input.apiKey);
-  const owned = selectTeardownSandboxIds(await allPlatinumPreviewSandboxes(api), input);
+  const sandboxes = await allPlatinumPreviewSandboxes(api);
+  const owned = selectTeardownSandboxIds(sandboxes, input);
+  const instances = new Set<string>();
+  if (input.prNumber !== undefined) instances.add(previewSandboxName(input.prNumber));
+  if (input.branchEnv) instances.add(branchEnvSandboxName(input.branchEnv));
+  const sessions = selectPreviewSessionSandboxIds(sandboxes, instances);
+  for (const sandboxId of sessions) await deletePlatinum(api, sandboxId);
   for (const sandboxId of owned) await deletePlatinum(api, sandboxId);
-  return owned.length;
+  return new Set([...sessions, ...owned]).size;
 }
 
 export async function teardownDaytonaPreview(input: {
@@ -386,8 +423,16 @@ export async function reconcilePlatinumPreviews(input: {
     input.activePullRequests,
     input.liveBranchSandboxNames,
   );
+  const staleIds = new Set(stale);
+  const staleInstances = new Set(
+    sandboxes
+      .filter((sandbox) => staleIds.has(sandbox.id) && sandbox.name)
+      .map((sandbox) => sandbox.name as string),
+  );
+  const sessions = selectPreviewSessionSandboxIds(sandboxes, staleInstances);
+  for (const sandboxId of sessions) await deletePlatinum(api, sandboxId);
   for (const sandboxId of stale) await deletePlatinum(api, sandboxId);
-  return stale.length;
+  return new Set([...sessions, ...stale]).size;
 }
 
 interface DaytonaSandboxPage {

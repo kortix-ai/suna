@@ -2,11 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   PreviewInfrastructureError,
   buildPreviewBootstrapScript,
-  previewLockfileHash,
   previewDeploymentStatusPath,
+  previewLockfileHash,
   previewSandboxIdentity,
   previewSandboxName,
   runSandboxPreview,
+  selectPreviewSessionSandboxIds,
   selectStalePreviewSandboxIds,
   selectTeardownSandboxIds,
 } from '../src/core/sandbox-preview';
@@ -25,6 +26,18 @@ const input = {
 describe('provider-neutral preview lifecycle', () => {
   it('uses one stable sandbox name per pull request', () => {
     expect(previewSandboxName(6337)).toBe('kortix-preview-pr-6337');
+  });
+
+  it('passes a persistent branch instance id into the preview runtime', () => {
+    const script = buildPreviewBootstrapScript({
+      repository: input.repository,
+      ref: 'feat/live-preview',
+      sha: input.sha,
+      prNumber: input.prNumber,
+      origin: 'https://preview.example.com/',
+      instanceId: 'kortix-env-feat-live-preview',
+    });
+    expect(script).toContain("PREVIEW_INSTANCE_ID='kortix-env-feat-live-preview'");
   });
 
   it('serializes remote deployments before checkout and test status reset', () => {
@@ -294,6 +307,20 @@ describe('provider-neutral preview lifecycle', () => {
     );
   });
 
+  it('selects only managed preview sessions owned by the preview instance', () => {
+    const sandboxes = [
+      { id: 'owned', metadata: { 'kortix.managed': 'true', 'kortix.env': 'preview', 'kortix.workload': 'session', 'kortix.instance': 'kortix-preview-pr-42' } },
+      { id: 'other-instance', metadata: { 'kortix.managed': 'true', 'kortix.env': 'preview', 'kortix.workload': 'session', 'kortix.instance': 'kortix-preview-pr-43' } },
+      { id: 'dev', metadata: { 'kortix.managed': 'true', 'kortix.env': 'dev', 'kortix.workload': 'session', 'kortix.instance': 'kortix-preview-pr-42' } },
+      { id: 'host', metadata: { owner: 'kortix-preview', 'kortix.instance': 'kortix-preview-pr-42' } },
+      { id: 'unmanaged', metadata: { 'kortix.env': 'preview', 'kortix.workload': 'session', 'kortix.instance': 'kortix-preview-pr-42' } },
+    ];
+
+    expect(selectPreviewSessionSandboxIds(sandboxes, new Set(['kortix-preview-pr-42']))).toEqual([
+      'owned',
+    ]);
+  });
+
   it('does not sweep a branch environment for the one thing that retires a preview', () => {
     // A MOVED HEAD is the difference between the two owners. It makes an
     // ephemeral preview stale — it was built for exactly one commit — but it is
@@ -360,6 +387,7 @@ describe('provider-neutral preview lifecycle', () => {
     expect(script).toContain('test "$actual_sha" = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"');
     expect(script).toContain('apps/cli/src/index.ts self-host init');
     expect(script).toContain('tests/bin/preview-stack.ts');
+    expect(script).toContain("PREVIEW_INSTANCE_ID='kortix-preview-pr-6337'");
     expect(script).toContain('docker compose');
     expect(script).toContain('for stack_attempt in 1 2; do');
     expect(script).toMatch(/if docker compose .* up -d --wait --wait-timeout 300; then/);

@@ -26,6 +26,7 @@ const platinumApiUrl = process.env.PLATINUM_API_URL?.trim() || undefined;
 const configured = applyPreviewEnvironment(
   await readFile(envPath, 'utf8'),
   {
+    instanceId: required('PREVIEW_INSTANCE_ID'),
     origin,
     sha,
     apiImage: `kortix/kortix-api:pr-${sha}`,

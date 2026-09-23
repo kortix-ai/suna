@@ -25,6 +25,7 @@ export function readPreviewRuntimeSecrets(
 }
 
 export interface PreviewStackInput {
+  instanceId: string;
   origin: string;
   sha: string;
   apiImage: string;
@@ -251,6 +252,9 @@ export function applyPreviewEnvironment(
   if (!/^[0-9a-f]{40}$/.test(input.sha))
     throw new Error('preview SHA must contain 40 hex characters');
   const origin = validatedOrigin(input.origin);
+  if (!/^kortix-(?:preview-pr-[1-9][0-9]*|env-[a-z0-9-]+)$/.test(input.instanceId)) {
+    throw new Error(`invalid preview instance id: ${input.instanceId}`);
+  }
   const runtime = parseEnvironment(baseEnvironmentText);
   const postgresPassword = runtime.POSTGRES_PASSWORD;
   const anonKey = runtime.SUPABASE_ANON_KEY;
@@ -301,6 +305,7 @@ export function applyPreviewEnvironment(
     KORTIX_VERSION: `pr-${input.sha}`,
     KORTIX_COMMIT: input.sha,
     INTERNAL_KORTIX_ENV: 'preview',
+    KORTIX_INSTANCE_ID: input.instanceId,
     ENV_MODE: 'local',
     PUBLIC_URL: origin,
     API_PUBLIC_URL: origin,

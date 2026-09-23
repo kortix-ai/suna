@@ -21,6 +21,16 @@ linked, not inlined.
 
 ## Register
 
+### A parent sandbox teardown must reclaim every provider resource that it created (2026-09-24)
+
+**Rule:** Stamp child sandboxes with a stable parent instance id. Stop them when
+the parent workload ends. Delete them before parent replacement, teardown, and
+stale-parent reconciliation. Keep provider auto-stop as a bounded backstop.
+**Incident:** Preview suites created session sandboxes that survived preview host
+teardown. The idle sessions exhausted the shared 512 GB Platinum RAM pool and
+blocked preview and development sessions. **Enforcers:** `sandbox-preview.test.ts`
+and `preview-stack.test.ts` verify ownership stamping and exact child selection.
+
 ### A get-or-create that finds its row by a mutable field duplicates the row once that field changes (2026-09-23)
 
 **Rule:** When a get-or-create finds "its" row again, match on a field nothing

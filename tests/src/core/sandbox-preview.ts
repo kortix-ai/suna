@@ -72,6 +72,8 @@ export function buildPreviewBootstrapScript(input: {
    */
   runTests?: boolean;
   statusPath?: string;
+  /** Stable provider ownership key shared by the preview host and its sessions. */
+  instanceId?: string;
 }): string {
   if (!/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/i.test(input.repository)) {
     throw new Error(`invalid GitHub repository: ${input.repository}`);
@@ -79,6 +81,10 @@ export function buildPreviewBootstrapScript(input: {
   if (!/^[a-z0-9_./-]+$/i.test(input.ref)) throw new Error(`invalid Git ref: ${input.ref}`);
   if (!/^[a-f0-9]{40}$/i.test(input.sha)) throw new Error(`invalid Git SHA: ${input.sha}`);
   previewSandboxName(input.prNumber);
+  const instanceId = input.instanceId ?? previewSandboxName(input.prNumber);
+  if (!/^kortix-(?:preview-pr-[1-9][0-9]*|env-[a-z0-9-]+)$/.test(instanceId)) {
+    throw new Error(`invalid preview instance id: ${instanceId}`);
+  }
   const origin = new URL(input.origin);
   if (origin.protocol !== 'https:' || origin.pathname !== '/') {
     throw new Error('preview origin must be an HTTPS origin');
@@ -169,6 +175,7 @@ PREVIEW_INSTANCE_DIR=${shellQuote(instanceDir)} \
 PREVIEW_STATE_DIR=${shellQuote(state)} \
 PREVIEW_ORIGIN=${shellQuote(origin.origin)} \
 PREVIEW_SHA=${shellQuote(input.sha)} \
+PREVIEW_INSTANCE_ID=${shellQuote(instanceId)} \
 PREVIEW_SECRETS_FILE="$SECRETS" \
 bun tests/bin/preview-stack.ts
 
@@ -398,6 +405,22 @@ export function selectTeardownSandboxIds(
       }
       return persistent !== null && sandbox.name === persistent && owner === 'kortix-branch-env';
     })
+    .map((sandbox) => sandbox.id);
+}
+
+/** Session sandboxes owned by one or more preview host instances. */
+export function selectPreviewSessionSandboxIds(
+  sandboxes: PreviewSandboxRecord[],
+  instanceIds: ReadonlySet<string>,
+): string[] {
+  return sandboxes
+    .filter(
+      (sandbox) =>
+        sandbox.metadata?.['kortix.managed'] === 'true' &&
+        sandbox.metadata?.['kortix.env'] === 'preview' &&
+        sandbox.metadata?.['kortix.workload'] === 'session' &&
+        instanceIds.has(String(sandbox.metadata?.['kortix.instance'] ?? '')),
+    )
     .map((sandbox) => sandbox.id);
 }
 

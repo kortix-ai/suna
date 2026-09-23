@@ -76,6 +76,7 @@ describe('ephemeral self-host preview stack', () => {
       'INTERNAL_SERVICE_KEY=i',
     ].join('\n');
     const stack = {
+      instanceId: 'kortix-preview-pr-6337',
       origin: 'https://x.example.test',
       sha: SHA,
       apiImage: 'a',
@@ -178,6 +179,7 @@ describe('ephemeral self-host preview stack', () => {
     const configured = applyPreviewEnvironment(
       'POSTGRES_PASSWORD=generated\nSUPABASE_ANON_KEY=anon\nSUPABASE_SERVICE_ROLE_KEY=service\nINTERNAL_SERVICE_KEY=internal\nAPI_KEY_SECRET=tokenhash\n',
       {
+        instanceId: 'kortix-preview-pr-6337',
         origin: 'https://preview.example',
         sha: SHA,
         apiImage: `kortix/kortix-api:pr-${SHA}`,
@@ -205,6 +207,7 @@ describe('ephemeral self-host preview stack', () => {
     );
     expect(configured.runtimeEnv).toContain('SUPABASE_PUBLIC_URL=https://preview.example');
     expect(configured.runtimeEnv).toContain('INTERNAL_KORTIX_ENV=preview');
+    expect(configured.runtimeEnv).toContain('KORTIX_INSTANCE_ID=kortix-preview-pr-6337');
     expect(configured.runtimeEnv).toContain('MORPH_API_KEY=morph');
     // The preview edge drops request bodies above ~124 KiB, Storage uploads included.
     expect(configured.runtimeEnv).toContain('PROMPT_ATTACHMENT_UPLOAD_MODE=chunked');
@@ -229,6 +232,7 @@ describe('ephemeral self-host preview stack', () => {
   it('runs preview sessions on Platinum only, and never forwards an AWS identity', () => {
     const base = 'POSTGRES_PASSWORD=generated\nSUPABASE_ANON_KEY=anon\nSUPABASE_SERVICE_ROLE_KEY=service\nINTERNAL_SERVICE_KEY=internal\n';
     const input = {
+      instanceId: 'kortix-preview-pr-6337',
       origin: 'https://preview.example',
       sha: SHA,
       apiImage: `kortix/kortix-api:pr-${SHA}`,
@@ -279,6 +283,7 @@ describe('ephemeral self-host preview stack', () => {
       applyPreviewEnvironment(
         'POSTGRES_PASSWORD=generated\nSUPABASE_ANON_KEY=anon\nSUPABASE_SERVICE_ROLE_KEY=service\nINTERNAL_SERVICE_KEY=internal\n',
         {
+          instanceId: 'kortix-preview-pr-6337',
           origin: 'https://preview.example',
           sha: SHA,
           apiImage: 'api',
