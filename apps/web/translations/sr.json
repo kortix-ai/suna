@@ -19639,5 +19639,8 @@
     "appAgentsEmpty": "Ниједан агент не наводи ову апликацију. Додај њен slug у agents.<name>.apps у kortix.yaml.",
     "appAgentsDeclared": "Декларисано у {file} (agents.{agent}.apps)",
     "appAgentsGrantAll": "Све апликације"
+  },
+  "connectorsAppReturn": {
+    "done": "Gotovo. Nazad u Kortix aplikaciju"
   }
 }

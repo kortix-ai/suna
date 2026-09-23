@@ -19639,5 +19639,8 @@
     "appAgentsEmpty": "没有智能体列出此应用。请在 kortix.yaml 的 agents.<name>.apps 中添加它的 slug。",
     "appAgentsDeclared": "在 {file} 中声明（agents.{agent}.apps）",
     "appAgentsGrantAll": "全部应用"
+  },
+  "connectorsAppReturn": {
+    "done": "完成。返回 Kortix 应用"
   }
 }

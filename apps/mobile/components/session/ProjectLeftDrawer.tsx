@@ -12,7 +12,9 @@
  *   reached from Settings (drawer avatar) → project row.
  * - Nav rows: Search (→ Sessions, its search field auto-focused), Files
  *   (→ /projects/[id]/files), Review (→ the Review page, a trailing count
- *   pill while items wait).
+ *   pill while items wait), Connectors (→ web's Customize → Connectors page
+ *   in an in-app auth session; a trailing ↗ says it leaves the app, and the
+ *   page's "Done" bar returns to the app via `kortix://connectors/done`).
  * - A muted "Sessions" label, then every session of the project, newest
  *   activity first (status mark · title; the session on screen is
  *   highlighted). A sub-agent session (one spawned by another session in the
@@ -46,9 +48,13 @@ import { useIsFocused } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as WebBrowser from 'expo-web-browser';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   ArrowElbowDownRightIcon,
+  ArrowUpRightIcon,
   CaretUpDownIcon,
+  ConnectorsIcon,
   FoldersIcon,
   MagnifyingGlassIcon,
   NavigationArrowIcon,
@@ -78,7 +84,13 @@ import { PlanRingAvatar } from '@/components/settings/PlanRingAvatar';
 import { useActivePlanName } from '@/hooks/useActivePlanName';
 import { useProfileEditor } from '@/hooks/useProfileEditor';
 import { haptics } from '@/lib/haptics';
-import { useAccounts, useProject, useProjectSessionsPaged } from '@/lib/projects/hooks';
+import { projectKeys, useAccounts, useProject, useProjectSessionsPaged } from '@/lib/projects/hooks';
+import {
+  CONNECTORS_DONE_URI,
+  CONNECTORS_RETURN_URL,
+  projectConnectorsWebUrl,
+} from '@/lib/projects/web-project-links';
+import { KORTIX_WEB_URL } from '@/lib/kortix-web';
 import { sessionListState, shouldLoadMoreSessions } from '@/lib/session/session-pages';
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import {
@@ -179,7 +191,7 @@ function ProjectSessionListItem({
       style={nested ? { marginLeft: NESTED_SESSION_INDENT } : undefined}
       className={cn(
         'flex-row items-center gap-3 rounded-xl active:bg-foreground/5',
-        'px-3 py-2',
+        'px-4 py-2',
         active && 'bg-accent'
       )}>
       {nested && (
@@ -204,12 +216,27 @@ function ProjectSessionListItem({
 
 // ─── Nav pill ────────────────────────────────────────────────────────────────
 
+/**
+ * One leading column for the drawer: nav pill icons sit in the same 20pt slot
+ * as a session's `SessionStatusMark` (`h-5 min-w-5`), and both rows pad 16pt
+ * (`px-4`), so every icon and status mark centres on one vertical line.
+ */
+const LEADING_SLOT_CLASS = 'w-5 shrink-0 items-center';
+
+/**
+ * One trailing column for the drawer's top rows: the switcher caret, Review's
+ * count pill, and Connectors' external arrow centre on the same vertical line.
+ * 28pt holds a two-digit count; "99+" widens it by ~5pt.
+ */
+const TRAILING_SLOT_CLASS = 'min-w-7 shrink-0 items-center';
+
 function NavPill({
   icon,
   label,
   onPress,
   trailing,
   accessibilityLabel,
+  accessibilityHint,
 }: {
   icon: AppIcon;
   label: string;
@@ -218,18 +245,23 @@ function NavPill({
   trailing?: React.ReactNode;
   /** Overrides `label` for a screen reader (Review speaks its pending count). */
   accessibilityLabel?: string;
+  /** Says where a row that leaves the app goes (Connectors → kortix.com). */
+  accessibilityHint?: string;
 }) {
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityHint={accessibilityHint}
       className="flex-row items-center gap-3 rounded-full px-4 py-2.5 active:bg-foreground/5">
-      <Icon as={icon} size={18} className="shrink-0 text-foreground" />
+      <View className={LEADING_SLOT_CLASS}>
+        <Icon as={icon} size={18} className="text-foreground" />
+      </View>
       <Text className="flex-1 font-medium" numberOfLines={1}>
         {label}
       </Text>
-      {trailing}
+      {trailing ? <View className={TRAILING_SLOT_CLASS}>{trailing}</View> : null}
     </Pressable>
   );
 }
@@ -269,13 +301,13 @@ function SwitcherRow({
     // fill at rest (in light mode `bg-card` equals the drawer surface, so a
     // fill never showed); `bg-secondary` pressed. One button edge to edge;
     // inner views ignore touches so every part presses it.
-    <View className="px-2 pb-1">
+    <View className="px-1 pb-1">
       <Pressable
         onPress={onPress}
         hitSlop={4}
         accessibilityRole="button"
         accessibilityLabel={label}
-        className="flex-row items-center gap-3 rounded-2xl px-3 py-2 active:bg-secondary">
+        className="flex-row items-center gap-3 rounded-full px-3 py-2 active:bg-foreground/5">
         <View pointerEvents="none" style={{ width: 62, height: 36 }}>
           <Avatar
             chalk
@@ -303,7 +335,10 @@ function SwitcherRow({
             </Text>
           ) : null}
         </View>
-        <Icon as={CaretUpDownIcon} size={16} className="shrink-0 text-muted-foreground" />
+        {/* mr-1: this row's content ends 4pt closer to the edge than a NavPill's (px-1 + px-3 vs px-2 -mx-1 + px-4). */}
+        <View pointerEvents="none" className={cn(TRAILING_SLOT_CLASS, 'mr-1')}>
+          <Icon as={CaretUpDownIcon} size={16} className="shrink-0 text-muted-foreground" />
+        </View>
       </Pressable>
     </View>
   );
@@ -518,6 +553,35 @@ export function ProjectLeftDrawer({
     [navigateOnce]
   );
 
+  // Connectors: mobile has no connector catalog; web's Customize → Connectors
+  // page owns connecting (COR-125). It opens in an in-app auth session with
+  // `return_to=kortix://connectors/done`: the page's bottom bar sends the
+  // browser there once the user is done, and the session closes itself on
+  // that redirect. The user can connect any number of connectors first —
+  // nothing returns automatically after one. Closing the browser by hand
+  // (iOS Cancel, Android back) ends the trip the same way. Either way the
+  // project's connector list refetches, so a thread's connector rows see the
+  // new connections.
+  const queryClient = useQueryClient();
+  const goToConnectors = useCallback(
+    () =>
+      navigateOnce(() => {
+        void (async () => {
+          try {
+            await WebBrowser.openAuthSessionAsync(
+              projectConnectorsWebUrl(KORTIX_WEB_URL, projectId, CONNECTORS_DONE_URI),
+              CONNECTORS_RETURN_URL
+            );
+          } catch {
+            // The browser failed to open; nothing changed on the server.
+            return;
+          }
+          void queryClient.invalidateQueries({ queryKey: projectKeys.connectors(projectId) });
+        })();
+      }),
+    [navigateOnce, projectId, queryClient]
+  );
+
   const handleOpenProjectSession = useCallback(
     (session: ProjectSession) => {
       onClose();
@@ -567,8 +631,10 @@ export function ProjectLeftDrawer({
 
   return (
     <>
-    {/* One straight left line at 20pt: the switcher row is px-5; every row
-        (nav, sessions, Previous chats) is px-3 inside a px-2 column. */}
+    {/* One icon column: nav icons, session status marks, and the Previous
+        Chats clock each sit in a 20pt slot starting 20pt from the drawer edge
+        (centre 30pt, label 52pt). Nav and session rows are px-4 inside a
+        4pt column (px-2 -mx-1); Previous Chats is px-3 inside px-2. */}
     <View className="flex-1 bg-chrome-background" style={{ paddingTop: insets.top }}>
       <SwitcherRow
         projectName={project?.name ?? ''}
@@ -587,11 +653,18 @@ export function ProjectLeftDrawer({
           onPress={goToReview}
           trailing={<ReviewCountPill count={reviewNeedsYouCount} />}
         />
+        <NavPill
+          icon={ConnectorsIcon}
+          label="Connectors"
+          accessibilityHint="Opens kortix.com to connect apps"
+          onPress={goToConnectors}
+          trailing={<Icon as={ArrowUpRightIcon} size={14} className="shrink-0 text-muted-foreground" />}
+        />
       </View>
 
       {needsYouSessions.length > 0 && (
         <View className="px-2 -mx-1">
-          <Text variant="muted" className="px-3 pb-1 pt-3">
+          <Text variant="muted" className="px-4 pb-1 pt-3">
             {`Needs you · ${needsYouSessions.length}`}
           </Text>
           {needsYouSessions.map((session) => (
@@ -608,7 +681,7 @@ export function ProjectLeftDrawer({
       )}
 
       <View className="px-2 -mx-1">
-        <Text variant="muted" className="px-3 pb-1 pt-3">
+        <Text variant="muted" className="px-4 pb-1 pt-3">
           Sessions
         </Text>
       </View>

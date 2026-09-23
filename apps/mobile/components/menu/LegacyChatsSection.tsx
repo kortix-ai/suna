@@ -61,7 +61,10 @@ export function LegacyChatsSection({ iconColor, mutedColor }: LegacyChatsSection
           onPress={() => { haptics.selection(); setExpanded((v) => !v); }}
           className="flex-1 flex-row items-center rounded-lg px-3 py-2 active:opacity-60"
         >
-          <ClockIcon size={18} color={iconColor} />
+          {/* 20pt slot: the project drawer's leading icon column (LEADING_SLOT_CLASS). */}
+          <View className="w-5 shrink-0 items-center">
+            <ClockIcon size={18} color={iconColor} />
+          </View>
           <Text className="flex-1 text-sm font-medium ml-3 text-foreground">Previous Chats</Text>
           <View className="bg-muted rounded-full px-2 py-0.5 mr-1">
             <Text className="text-muted-foreground" style={{ fontSize: 12, lineHeight: 16 }}>{total}</Text>

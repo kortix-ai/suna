@@ -468,11 +468,12 @@ function MessageBody({
  */
 export function UserMessageBubble({
   isDark,
-  quotes,
+  quotes = [],
   children,
 }: {
   isDark: boolean;
-  quotes: string[];
+  /** Quoted passages above the text. Omitted by the connecting screen's pending-prompt bubble. */
+  quotes?: string[];
   children?: React.ReactNode;
 }) {
   const palette = paletteFor(isDark);

@@ -19639,5 +19639,8 @@
     "appAgentsEmpty": "No agent lists this App. Add its slug to agents.<name>.apps in kortix.yaml.",
     "appAgentsDeclared": "Declared in {file} (agents.{agent}.apps)",
     "appAgentsGrantAll": "All Apps"
+  },
+  "connectorsAppReturn": {
+    "done": "Done. Back to the Kortix app"
   }
 }

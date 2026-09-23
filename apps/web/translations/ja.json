@@ -19639,5 +19639,8 @@
     "appAgentsEmpty": "このアプリを挙げているエージェントはありません。kortix.yaml の agents.<name>.apps にスラッグを追加してください。",
     "appAgentsDeclared": "{file} で宣言（agents.{agent}.apps）",
     "appAgentsGrantAll": "すべてのアプリ"
+  },
+  "connectorsAppReturn": {
+    "done": "完了。Kortix アプリに戻る"
   }
 }

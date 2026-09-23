@@ -27,7 +27,8 @@ export function projectModelsWebUrl(
 
 /**
  * The `kortix://` URLs that only close an in-app browser session: provider
- * connect (this file), connector connect (`ConnectorAuthSheet`) and
+ * connect (this file), connector connect (`ConnectorAuthSheet`), the project
+ * drawer's Connectors row (`kortix://connectors/done`) and
  * connections (`ConnectionsPage`). They have no screen. On Android the URL
  * also reaches the app as a deep link, so `app/+native-intent.ts` must not
  * route it (the router would show the not-found screen).

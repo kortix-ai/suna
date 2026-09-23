@@ -5,13 +5,14 @@ import { useSearchParams } from 'next/navigation';
 import { useEffect, useRef } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { parseAppReturnUrl } from '@/features/workspace/capabilities/shared/app-return-url';
 import { useTranslations } from '@/i18n/use-translations';
 
-import { parseAppReturnUrl, usableModelCount } from './app-return';
+import { usableModelCount } from './app-return';
 
 /**
  * The way back to the mobile app after it opened this page to connect a
- * model provider (`?return_to=kortix://…`, see `./app-return.ts`).
+ * model provider (`?return_to=kortix://…`, see `../shared/app-return-url.ts`).
  *
  * Renders nothing without a valid `return_to`, so the web page is unchanged.
  * With one:

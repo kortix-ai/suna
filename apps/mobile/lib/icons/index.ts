@@ -116,7 +116,6 @@ import { FloppyDiskIcon as FloppyDiskGlyph } from 'phosphor-react-native/src/ico
 import { FolderIcon as FolderGlyph } from 'phosphor-react-native/src/icons/Folder';
 import { FolderOpenIcon as FolderOpenGlyph } from 'phosphor-react-native/src/icons/FolderOpen';
 import { FolderPlusIcon as FolderPlusGlyph } from 'phosphor-react-native/src/icons/FolderPlus';
-import { FoldersIcon as FoldersGlyph } from 'phosphor-react-native/src/icons/Folders';
 import { FunnelIcon as FunnelGlyph } from 'phosphor-react-native/src/icons/Funnel';
 import { GearSixIcon as GearSixGlyph } from 'phosphor-react-native/src/icons/GearSix';
 import { GitBranchIcon as GitBranchGlyph } from 'phosphor-react-native/src/icons/GitBranch';
@@ -267,6 +266,8 @@ export const ClockCounterClockwiseIcon = withAppWeight(ClockCounterClockwiseGlyp
 export const ClockIcon = withAppWeight(ClockGlyph, 'ClockIcon');
 export const CodeIcon = withAppWeight(CodeGlyph, 'CodeIcon');
 export const CodeSimpleIcon = withAppWeight(CodeSimpleGlyph, 'CodeSimpleIcon');
+// Tiles glyph drawn by hand for the drawer's Connectors row; Phosphor has no match.
+export { KortixConnectorsIcon as ConnectorsIcon } from './connectors';
 // Web's own copy glyph (apps/web src/features/icon/icons/copy.tsx), not Phosphor's Copy.
 export { KortixCopyIcon as CopyIcon } from './kortix-copy';
 export const CpuIcon = withAppWeight(CpuGlyph, 'CpuIcon');
@@ -331,7 +332,8 @@ export const FloppyDiskIcon = withAppWeight(FloppyDiskGlyph, 'FloppyDiskIcon');
 export const FolderIcon = withAppWeight(FolderGlyph, 'FolderIcon');
 export const FolderOpenIcon = withAppWeight(FolderOpenGlyph, 'FolderOpenIcon');
 export const FolderPlusIcon = withAppWeight(FolderPlusGlyph, 'FolderPlusIcon');
-export const FoldersIcon = withAppWeight(FoldersGlyph, 'FoldersIcon');
+// Stacked-folders glyph drawn by hand; Phosphor's Folders is a different shape.
+export { KortixFoldersIcon as FoldersIcon } from './folders';
 export const FunnelIcon = withAppWeight(FunnelGlyph, 'FunnelIcon');
 export const GearSixIcon = withAppWeight(GearSixGlyph, 'GearSixIcon');
 export const GitBranchIcon = withAppWeight(GitBranchGlyph, 'GitBranchIcon');
