@@ -13,14 +13,15 @@
  * - a SESSION opens through `useTabStore().navigateToSession`;
  * - a sandbox PREVIEW (localhost URL) opens the Browser page tab
  *   (`page:browser`) on the sandbox proxy URL, as `SandboxPreviewCard` does;
- * - an EXTERNAL link opens with `Linking.openURL` (http/https only).
+ * - an EXTERNAL link opens with `openLink` (http/https only): kortix.com in
+ *   the in-app browser, any other site in the system browser.
  *
  * Mobile has no iframe, so `ServicePreviewViewport` is a tappable card that
  * opens the Browser tab instead of an embedded page.
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Linking, View } from 'react-native';
+import { View } from 'react-native';
 import { create } from 'zustand';
 import { isProxiableLocalhostUrl, parseLocalhostUrl } from '@kortix/sdk';
 import type { SandboxFile } from '@/api/types';
@@ -40,6 +41,7 @@ import { webSpace } from '@/lib/session/user-message';
 import { useTabStore } from '@/stores/tab-store';
 import { TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from './styles';
 import { ToolSurfaceContext } from './surface';
+import { openLink } from '@/lib/utils/open-link';
 
 /** `false` inside a surface where tool rows must not navigate (sub-agent lists). */
 export const ToolNavigationContext = createContext(true);
@@ -137,7 +139,7 @@ export function useToolNavigation() {
     (targetUrl?: string) => {
       const safe = safeHttpUrl(targetUrl);
       if (!enabled || !safe) return;
-      Linking.openURL(safe).catch(() => {});
+      openLink(safe).catch(() => {});
     },
     [enabled],
   );

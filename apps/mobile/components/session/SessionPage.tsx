@@ -53,11 +53,12 @@ import { catalogPickerModels, offeredSessionModels, type PickerCatalogModel, typ
 import type { SubAgentRelation } from '@/lib/session/sub-agents';
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import { haptics } from '@/lib/haptics';
+import { playSound } from '@/lib/sounds';
 import { Icon } from '@/components/ui/icon';
 import { Text as RNText } from 'react-native';
 import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
 
-import { useSyncStore } from '@/lib/opencode/sync-store';
+import { clearOptimistic, useSyncStore } from '@/lib/opencode/sync-store';
 import { reconcileLiveSession, useSessionSync } from '@/lib/opencode/session-sync';
 import { compactionTurnInfo, groupMessagesIntoTurns, resolveWorkingTurn } from '@kortix/sdk';
 import type { Turn, QuestionRequest, MessageWithParts, PermissionRequest } from '@/lib/opencode/types';
@@ -85,6 +86,8 @@ import {
   turnTopGap,
 } from '@/lib/session/auto-scroll';
 import { mintWireMessageId } from '@/lib/session/wire-message-id';
+import { useFailedSendStore, useFailedSends } from '@/lib/session/failed-sends';
+import { draftKey } from '@/lib/session/composer-draft';
 import { interruptedTurnIds, rewindHiddenMessageIds, webSpace } from '@/lib/session/user-message';
 import {
   hasCompactionTurn as findCompactionTurn,
@@ -106,6 +109,7 @@ import { questionsToHydrate } from '@/lib/opencode/stream-policy';
 import { useSession, replyToQuestion, rejectQuestion, replyToPermission } from '@/lib/platform/hooks';
 import { useTabStore } from '@/stores/tab-store';
 import { useMessageQueueStore } from '@/stores/message-queue-store';
+import { useSessionPromptRequestStore } from '@/stores/session-prompt-request-store';
 import type { QueuedMessage } from '@/stores/message-queue-store';
 import { useCompactionStore } from '@/stores/compaction-store';
 import { useSandboxContext } from '@/contexts/SandboxContext';
@@ -126,6 +130,9 @@ import { log } from '@/lib/logger';
 
 import { SessionChatInput, type PromptOptions, type TrackedMention } from './SessionChatInput';
 import { SandboxHealthPill } from './SandboxHealthPill';
+import { LiveUpdatesPausedPill } from './LiveUpdatesPausedPill';
+import { useLiveUpdates } from '@/hooks/useLiveUpdates';
+import { OLDER_HOLD_POSITION_MS, olderHistoryControl } from '@/lib/session/older-history';
 import { useRouter } from 'expo-router';
 import { SessionTurn } from './SessionTurn';
 import { SessionBusyIndicator } from './session-busy-indicator';
@@ -180,10 +187,6 @@ interface SessionPageProps {
   isDrawerOpen?: boolean;
   /** True when the right drawer is currently open — swaps the grid icon for an X */
   isRightDrawerOpen?: boolean;
-  /** Hides drawer buttons, model/variant selectors — used for onboarding */
-  onboardingMode?: boolean;
-  /** Skip callback shown in header during onboarding */
-  onSkipOnboarding?: () => void;
 }
 
 // Module-level empty values: a `?? []` default creates a new array on every
@@ -219,6 +222,9 @@ function useShallowStableArray<T>(next: T[]): T[] {
 // low; opening a thread jumps to the end instead of rendering every turn.
 const INITIAL_TURNS_TO_RENDER = 4;
 
+/** Keeps the first visible turn in place while older turns prepend (COR-144). */
+const MAINTAIN_FIRST_VISIBLE = { minIndexForVisible: 0 } as const;
+
 function readSavedScrollOffset(sessionId: string): number {
   const saved = useTabStore.getState().tabStateById[sessionId] as { scrollOffset?: number } | undefined;
   return typeof saved?.scrollOffset === 'number' ? saved.scrollOffset : 0;
@@ -235,7 +241,7 @@ function flatModelFromCatalog(model: PickerModel, entry: PickerCatalogModel): Fl
   };
 }
 
-function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRightDrawer, onRenamePress, sessionTitle, subAgentRelation: subAgentRelationValue, subAgents, onOpenProjectSession, onCreateAgent, isDrawerOpen, isRightDrawerOpen, onboardingMode, onSkipOnboarding }: SessionPageProps) {
+function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRightDrawer, onRenamePress, sessionTitle, subAgentRelation: subAgentRelationValue, subAgents, onOpenProjectSession, onCreateAgent, isDrawerOpen, isRightDrawerOpen }: SessionPageProps) {
   const router = useRouter();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -272,8 +278,15 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
   const { data: session } = useSession(sandboxUrl, sessionId);
   const { data: allSessions = EMPTY_SESSIONS } = useSessions(sandboxUrl);
 
-  // Hydrate messages from REST on mount; SSE keeps store updated after
-  useSessionSync(sandboxUrl, sessionId);
+  // Hydrate messages from REST on mount; SSE keeps store updated after.
+  // The newest page only: `loadOlder` pulls the next older page (COR-144).
+  const { hasOlder, isLoadingOlder, loadOlder } = useSessionSync(sandboxUrl, sessionId);
+  const loadOlderRef = useRef(loadOlder);
+  loadOlderRef.current = loadOlder;
+
+  // Live stream health (COR-144): "Last update … ago" in the header and the
+  // "Live updates paused · Reconnect" pill above the composer.
+  const liveUpdates = useLiveUpdates();
 
   // Pull to refresh (Jay, 2026-09-23): re-reads this session's transcript
   // through its sync controller (`reconcile('manual')`) — the chat refreshes,
@@ -539,6 +552,7 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
         parts: [{ type: 'text', id: partId, text: finalText }],
       });
       useSyncStore.getState().setStatus(sessionId, { type: 'busy' });
+      void playSound('send');
 
       // Build prompt payload
       const payload: Record<string, any> = {
@@ -547,6 +561,14 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
       if (options.model) payload.model = options.model;
       if (options.agent) payload.agent = options.agent;
       if (options.variant) payload.variant = options.variant;
+
+      // The prompt never reached the runtime: the message stays in the thread,
+      // dimmed, with "Not sent · Try again" (COR-143). It stops being
+      // optimistic, so a refetch keeps it instead of swapping it out.
+      const markFailed = () => {
+        clearOptimistic([messageId]);
+        useFailedSendStore.getState().markFailed(sessionId, messageId, { text, options, mentions });
+      };
 
       try {
         const token = await getAuthToken();
@@ -564,6 +586,7 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
           log.error('[SessionPage] Prompt failed:', res.status, errorText);
           userSentRef.current = false;
           useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
+          markFailed();
         } else {
           log.log('[SessionPage] Prompt sent (async)');
         }
@@ -571,9 +594,23 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
         log.error('[SessionPage] Prompt error:', err?.message || err);
         userSentRef.current = false;
         useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
+        markFailed();
       }
     },
     [sandboxUrl, sessionId],
+  );
+
+  // "Try again" on a failed send: the failed copy leaves the thread and the
+  // same text, options and mentions go out as a new send.
+  const failedSends = useFailedSends(sessionId);
+  const handleRetrySend = useCallback(
+    (messageId: string) => {
+      const failed = useFailedSendStore.getState().take(sessionId, messageId);
+      if (!failed) return;
+      useSyncStore.getState().removeMessage(sessionId, messageId);
+      void handleSend(failed.text, failed.options as PromptOptions, failed.mentions as TrackedMention[] | undefined);
+    },
+    [sessionId, handleSend],
   );
 
   const handleStop = useCallback(async () => {
@@ -737,6 +774,29 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
   // through a ref that always calls the latest resolved config.
   const resolvedRef = useRef(resolved);
   resolvedRef.current = resolved;
+
+  // A prompt the session actions sheet asks this thread to send (Open change
+  // request): sent as the composer sends it — at once when idle, with the
+  // composer's agent/model/variant; into the queue while the agent works or a
+  // question waits.
+  const promptRequest = useSessionPromptRequestStore((s) =>
+    s.request?.sessionId === sessionId ? s.request : null,
+  );
+  useEffect(() => {
+    if (!promptRequest) return;
+    const request = useSessionPromptRequestStore.getState().take(sessionId);
+    if (!request) return;
+    if (isBusy || hasQuestion) {
+      queueEnqueue(sessionId, request.text);
+      return;
+    }
+    const { agent, modelKey, variant } = resolvedRef.current;
+    const options: PromptOptions = {};
+    if (agent?.name) options.agent = agent.name;
+    if (modelKey) options.model = modelKey;
+    if (variant) options.variant = variant;
+    void handleSend(request.text, options);
+  }, [promptRequest, sessionId, isBusy, hasQuestion, queueEnqueue, handleSend]);
   const resolvedAgents = useShallowStableArray(resolved.agents);
   const resolvedVariants = useShallowStableArray(resolved.variants);
   const resolvedModel = resolved.model;
@@ -1577,12 +1637,13 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
             onEditSend={handleEditSend}
             rewindDisabled={rewindDisabled}
             queueState={interruptedIds.has(id) ? 'interrupted' : null}
+            uploadStatus={failedSends[id] ? { state: 'failed', onRetry: () => handleRetrySend(id) } : undefined}
           />
           )}
         </View>
       );
     },
-    [workingTurnId, lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, isBusy, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds],
+    [workingTurnId, lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, isBusy, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds, failedSends, handleRetrySend],
   );
 
   const keyExtractor = useCallback((item: Turn) => item.userMessage.info.id, []);
@@ -1635,6 +1696,52 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
     isDark,
   ]);
 
+  // ── Older history (COR-144) ─────────────────────────────────────────────
+  // "Show 100 earlier messages" above the first turn. While a page loads and
+  // lays out, `maintainVisibleContentPosition` keeps the turn the reader sees
+  // in place as older turns prepend above it. It is on only for that window:
+  // always on, it would move the list under the auto-scroll physics above.
+  const [holdPosition, setHoldPosition] = useState(false);
+  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+  }, []);
+  const handleLoadOlder = useCallback(() => {
+    haptics.tap();
+    if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+    setHoldPosition(true);
+    void loadOlderRef.current()
+      .catch((error: unknown) => {
+        log.warn('[SessionPage] Loading older messages failed:', error instanceof Error ? error.message : error);
+        toast.error('Could not load earlier messages');
+      })
+      .finally(() => {
+        // The native position fix scrolls the list: not the reader's scroll.
+        markOwnScroll(OLDER_HOLD_POSITION_MS);
+        holdTimerRef.current = setTimeout(() => {
+          holdTimerRef.current = null;
+          setHoldPosition(false);
+        }, OLDER_HOLD_POSITION_MS);
+      });
+  }, [markOwnScroll, toast]);
+  const olderControl = olderHistoryControl({ hasOlder, isLoadingOlder, turnCount: turns.length });
+  const olderHistoryHeader = useMemo(
+    () =>
+      olderControl ? (
+        <View className="items-center px-4 pb-6">
+          <Button
+            variant="secondary"
+            size="sm"
+            className="rounded-full"
+            disabled={olderControl.disabled}
+            onPress={handleLoadOlder}>
+            <Text>{olderControl.label}</Text>
+          </Button>
+        </View>
+      ) : null,
+    [olderControl?.label, olderControl?.disabled, handleLoadOlder],
+  );
+
   const title = sessionTitle ?? (session?.title || 'New Session');
 
   // ── Sub-agent relationship (COR-162) ────────────────────────────────────
@@ -1670,24 +1777,26 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
           `title`: the thread's title (COR-140), centred between the
           hamburger and the right-side controls. The legacy static header bar
           this used to branch on (`chrome === 'header'`) rendered nowhere —
-          no call site ever passed it, and nothing ever set `onboardingMode`,
-          its only other trigger — so it was deleted with the inline-rename
-          state that belonged only to it (COR-140 remaining part). */}
+          no call site ever passed it — so it was deleted with the
+          inline-rename state that belonged only to it (COR-140 remaining
+          part). */}
       <FloatingMenuButton
         onPress={onOpenDrawer}
         fade
         title={
-          !onboardingMode ? (
-            <SessionThreadTitle title={title} onPress={onRenamePress} />
-          ) : undefined
+          <SessionThreadTitle
+            title={title}
+            onPress={onRenamePress}
+            status={liveUpdates.paused ? liveUpdates.statusLabel : null}
+          />
         }
       >
         {/* The agent is picked in the model sheet's Agent tab (Jay,
             2026-09-23), not here. The `···` button opens the session actions
-            sheet (COR-140 Task 5) for the open thread's session. Onboarding,
-            and a thread whose project session has not loaded yet, have no
-            `···`, so the relation chip (or nothing) holds the edge there. */}
-        {onOpenRightDrawer && !onboardingMode ? (
+            sheet (COR-140 Task 5) for the open thread's session. A thread
+            whose project session has not loaded yet has no `···`, so the
+            relation chip (or nothing) holds the edge there. */}
+        {onOpenRightDrawer ? (
           <ProjectHeaderActions onOpenMore={onOpenRightDrawer}>
             <SubAgentHeaderChip relation={headerRelation} onPress={handleSubAgentRelationPress} />
           </ProjectHeaderActions>
@@ -1712,6 +1821,8 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
           windowSize={11}
           updateCellsBatchingPeriod={32}
           contentContainerStyle={{ paddingTop: listTopInset }}
+          ListHeaderComponent={olderHistoryHeader}
+          maintainVisibleContentPosition={holdPosition ? MAINTAIN_FIRST_VISIBLE : undefined}
           showsVerticalScrollIndicator={false}
           scrollEventThrottle={16}
           onScroll={handleListScroll}
@@ -1783,9 +1894,12 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
       {/* Sandbox health pill — full-width row immediately above the chat
           input. Self-hides (returns null) when the sandbox is reachable,
           so it takes no layout space the rest of the time. */}
-      {!onboardingMode && !hasQuestion && (
+      {!hasQuestion && (
         <SandboxHealthPill
           onSwitch={() => router.push('/(settings)/instances')}
+          whenReachable={
+            liveUpdates.paused ? <LiveUpdatesPausedPill onReconnect={liveUpdates.reconnect} /> : null
+          }
         />
       )}
 
@@ -1803,9 +1917,9 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
             onSend={handleSend}
             onStop={handleStop}
             isBusy={isBusy}
-            onboardingMode={onboardingMode}
             initialText={savedInputText}
             onTextChange={handleTextChange}
+            draftKey={draftKey({ kind: 'session', sessionId })}
             agent={resolved.agent}
             agents={resolvedAgents}
             onAgentChange={handleAgentChange}
@@ -2008,48 +2122,55 @@ function QueuePanel({
         overflow: 'hidden',
       }}
     >
-      {/* Header — tap to expand/collapse */}
-      <Button
-        variant="ghost"
-        onPress={onToggle}
-        className="h-auto w-auto flex-row items-center justify-start rounded-none active:opacity-70"
-        style={{
-          paddingHorizontal: 12,
-          paddingVertical: 10,
-        }}
-      >
-        <ListIcon size={14} color={mutedText} style={{ marginRight: 6 }} />
-        <RNText
+      {/* Header — tap to expand/collapse. Clear sits beside the toggle, not
+          inside it: a button nested in a button is hidden from VoiceOver and
+          its hit area is clipped to the parent. */}
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <Button
+          variant="ghost"
+          onPress={onToggle}
+          accessibilityState={{ expanded }}
+          className="h-auto w-auto flex-1 flex-row items-center justify-start rounded-none active:opacity-70"
           style={{
-            flex: 1,
-            fontSize: 12,
-            fontFamily: 'Roobert-Medium',
-            color: mutedText,
+            minHeight: 44,
+            paddingLeft: 12,
+            paddingRight: 4,
+            paddingVertical: 10,
           }}
-          numberOfLines={1}
         >
-          {messages.length} message{messages.length !== 1 ? 's' : ''} queued
-          {!expanded && messages.length > 0
-            ? ` — ${messages[0].text.length > 40 ? messages[0].text.slice(0, 40) + '...' : messages[0].text}`
-            : ''}
-        </RNText>
+          <ListIcon size={14} color={mutedText} style={{ marginRight: 6 }} />
+          <RNText
+            style={{
+              flex: 1,
+              fontSize: 13,
+              fontFamily: 'Roobert-Medium',
+              color: mutedText,
+            }}
+            numberOfLines={1}
+          >
+            {messages.length} message{messages.length !== 1 ? 's' : ''} queued
+            {!expanded && messages.length > 0
+              ? ` — ${messages[0].text.length > 40 ? messages[0].text.slice(0, 40) + '...' : messages[0].text}`
+              : ''}
+          </RNText>
+          {/* Expand/collapse chevron */}
+          {expanded ? (
+            <CaretUpIcon size={14} color={mutedText} />
+          ) : (
+            <CaretDownIcon size={14} color={mutedText} />
+          )}
+        </Button>
         {/* Clear all */}
         <Button
           variant="ghost"
           size="icon"
           onPress={() => onClear()}
-          hitSlop={8}
-          className="h-auto w-auto mr-2 p-0 active:bg-transparent active:opacity-70"
+          accessibilityLabel="Clear queue"
+          className="mr-1"
         >
-          <XIcon size={14} color={mutedText} />
+          <XIcon size={16} color={mutedText} />
         </Button>
-        {/* Expand/collapse chevron */}
-        {expanded ? (
-          <CaretUpIcon size={14} color={mutedText} />
-        ) : (
-          <CaretDownIcon size={14} color={mutedText} />
-        )}
-      </Button>
+      </View>
 
       {/* Expanded list */}
       {expanded && messages.length > 0 && (
@@ -2064,8 +2185,9 @@ function QueuePanel({
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
-                  paddingHorizontal: 12,
-                  paddingVertical: 8,
+                  paddingLeft: 12,
+                  paddingRight: 4,
+                  paddingVertical: 2,
                   borderTopWidth: 1,
                   borderTopColor: borderColor,
                 }}
@@ -2073,10 +2195,10 @@ function QueuePanel({
                 {/* Index badge */}
                 <RNText
                   style={{
-                    fontSize: 10,
+                    fontSize: 13,
                     fontFamily: 'Roobert-Medium',
                     color: mutedText,
-                    width: 18,
+                    width: 22,
                   }}
                 >
                   {idx + 1}
@@ -2096,17 +2218,18 @@ function QueuePanel({
                   {qm.text}
                 </RNText>
 
-                {/* Action buttons */}
+                {/* Action buttons — 40pt `icon` boxes 4pt apart; the Button's
+                    default 2pt hit slop makes each target 44pt without
+                    reaching into its neighbour. */}
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                   {/* Send now */}
                   <Button
                     variant="ghost"
                     size="icon"
                     onPress={() => onSendNow(qm.id)}
-                    hitSlop={6}
-                    className="h-auto w-auto p-1 active:bg-transparent active:opacity-70"
+                    accessibilityLabel="Send now"
                   >
-                    <PaperPlaneTiltIcon size={12} color={THEME.accent.blue} weight="fill" />
+                    <PaperPlaneTiltIcon size={16} color={THEME.accent.blue} weight="fill" />
                   </Button>
                   {/* Move up */}
                   {idx > 0 && (
@@ -2114,10 +2237,9 @@ function QueuePanel({
                       variant="ghost"
                       size="icon"
                       onPress={() => onMoveUp(qm.id)}
-                      hitSlop={6}
-                      className="h-auto w-auto p-1 active:bg-transparent active:opacity-70"
+                      accessibilityLabel="Move up"
                     >
-                      <ArrowUpIcon size={12} color={mutedText} />
+                      <ArrowUpIcon size={16} color={mutedText} />
                     </Button>
                   )}
                   {/* Move down */}
@@ -2126,10 +2248,9 @@ function QueuePanel({
                       variant="ghost"
                       size="icon"
                       onPress={() => onMoveDown(qm.id)}
-                      hitSlop={6}
-                      className="h-auto w-auto p-1 active:bg-transparent active:opacity-70"
+                      accessibilityLabel="Move down"
                     >
-                      <ArrowDownIcon size={12} color={mutedText} />
+                      <ArrowDownIcon size={16} color={mutedText} />
                     </Button>
                   )}
                   {/* Remove */}
@@ -2137,10 +2258,9 @@ function QueuePanel({
                     variant="ghost"
                     size="icon"
                     onPress={() => onRemove(qm.id)}
-                    hitSlop={6}
-                    className="h-auto w-auto p-1 active:bg-transparent active:opacity-70"
+                    accessibilityLabel="Remove from queue"
                   >
-                    <XIcon size={12} color={mutedText} />
+                    <XIcon size={16} color={mutedText} />
                   </Button>
                 </View>
               </View>

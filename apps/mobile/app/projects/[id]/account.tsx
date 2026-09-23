@@ -1,6 +1,6 @@
 /**
  * `/projects/[id]/account` — the Account page inside the project, opened from
- * the drawer avatar. Same page as the Account tab, with a hamburger header
+ * the drawer avatar — the app's one settings page — with a hamburger header
  * that opens the project drawer, so the current project, the active account,
  * and Log out are reachable without leaving the project.
  */

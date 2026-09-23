@@ -89,6 +89,7 @@ export function SheetCloseButton({ onPress, isDark }: { onPress: () => void; isD
       onPress={onPress}
       hitSlop={8}
       className="rounded-full"
+      accessibilityLabel="Close"
     >
       <X size={17} color={c.muted} />
     </Button>

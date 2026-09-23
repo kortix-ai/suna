@@ -19532,7 +19532,9 @@
     "disableModel": "Modell deaktivieren",
     "modelError": "Der Modellzugriff konnte nicht aktualisiert werden.",
     "hiddenShort": "In der Auswahl ausgeblendet. Direkte Anfragen sind weiterhin erlaubt.",
-    "resetError": "Die Modellliste konnte nicht zurückgesetzt werden."
+    "resetError": "Die Modellliste konnte nicht zurückgesetzt werden.",
+    "appReturn": "Zurück zur Kortix-App",
+    "appReturnConnected": "Anbieter verbunden. Zurück zur Kortix-App"
   },
   "projectChooser": {
     "invitations": "Einladungen",
@@ -19637,5 +19639,8 @@
     "appAgentsEmpty": "Kein Agent listet diese App. Füge ihren Slug zu agents.<name>.apps in kortix.yaml hinzu.",
     "appAgentsDeclared": "Deklariert in {file} (agents.{agent}.apps)",
     "appAgentsGrantAll": "Alle Apps"
+  },
+  "connectorsAppReturn": {
+    "done": "Fertig. Zurück zur Kortix-App"
   }
 }

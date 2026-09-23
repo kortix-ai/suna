@@ -1,6 +1,6 @@
 /**
  * Settings list — the one layout for every settings-style screen: the
- * (settings) stack, the Account tab, an account's own page, Billing.
+ * (settings) stack, the Account page, an account's own page, Billing.
  *
  *   <SettingsHeader title="Account" right={<PlatformButton … />} />
  *   <SettingsPage>
@@ -98,8 +98,8 @@ export function SettingsHeader({
   transparent?: boolean;
   /**
    * Large page title: the control row holds only the leading button and
-   * `right`, and the title renders below it as `Text variant="h3"` (the
-   * Account tab's page title), above the page content (Sessions page).
+   * `right`, and the title renders below it as `Text variant="h3"`, above
+   * the page content (Sessions page).
    */
   largeTitle?: boolean;
   /** Side padding: `page` 20pt (`px-5`), `project` 12pt (`px-3`) on project pages. */
@@ -188,7 +188,7 @@ export function SettingsPage({
    * hero's bottom 24pt, so the hero needs at least that much bottom padding.
    */
   hero?: React.ReactNode;
-  /** Defaults to the safe-area inset + 28pt. Tab roots pass the tab bar clearance. */
+  /** Defaults to the safe-area inset + 28pt. The Projects page passes its own. */
   paddingBottom?: number;
   contentInsetAdjustmentBehavior?: ScrollViewProps['contentInsetAdjustmentBehavior'];
   /** Pull-to-refresh for list screens (Members, Groups, …). */
@@ -278,6 +278,42 @@ export function SettingsGroup({
   );
 }
 
+/**
+ * One row of a `SettingsGroup`, drawn on its own — for a virtualised list
+ * (`FlatList`, `PageList` `data`), where the rows cannot share one group
+ * `View`. `index` / `count` place it in its group: the first row takes the
+ * group's top corners, the last its bottom corners, and every row after the
+ * first sits `ROW_GAP` below the one before. It reads the same as the row
+ * inside a `SettingsGroup` (COR-155).
+ */
+export function SettingsGroupItem({
+  index,
+  count,
+  className,
+  children,
+}: {
+  index: number;
+  count: number;
+  /** Row surface override, as `SettingsGroup`'s `className`. */
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const surface = React.useContext(SurfaceContext);
+  return (
+    <View
+      style={index > 0 ? { marginTop: ROW_GAP } : undefined}
+      className={cn(
+        'overflow-hidden rounded-sm',
+        surface === 'sheet' ? SHEET_ROW_SURFACE : 'bg-card',
+        index === 0 && 'rounded-t-2xl',
+        index === count - 1 && 'rounded-b-2xl',
+        className
+      )}>
+      {children}
+    </View>
+  );
+}
+
 export interface SettingsRowProps {
   /** Icon (from `@/lib/icons`) in the 20pt leading slot. */
   icon?: AppIcon;
@@ -316,6 +352,12 @@ export interface SettingsRowProps {
   external?: boolean;
   badge?: string;
   destructive?: boolean;
+  /**
+   * The action exists but cannot run now (a session with no changes, a busy
+   * session): the row stays in place at half opacity and ignores taps. Its
+   * `value` says why.
+   */
+  disabled?: boolean;
   /** Wraps a long label onto more lines instead of truncating it (plan feature lists). */
   multiline?: boolean;
   /**
@@ -346,6 +388,7 @@ export function SettingsRow({
   external = false,
   badge,
   destructive = false,
+  disabled = false,
   multiline = false,
   dense = false,
 }: SettingsRowProps) {
@@ -376,8 +419,9 @@ export function SettingsRow({
     <Pressable
       onPress={onPress}
       onLongPress={onLongPress}
-      disabled={!onPress}
+      disabled={disabled || !onPress}
       accessibilityRole={onPress ? 'button' : undefined}
+      accessibilityState={disabled ? { disabled: true } : undefined}
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
       // A screen reader cannot long-press: the second action is a named one.
@@ -392,7 +436,7 @@ export function SettingsRow({
           : undefined
       }
       className="active:bg-accent">
-      <View className={cn('flex-row items-center px-4', dense ? 'py-2' : 'py-3')}>
+      <View className={cn('flex-row items-center px-4', dense ? 'py-2' : 'py-3', disabled && 'opacity-50')}>
         {/* Leading slot is at least 20pt wide so icon rows share one label line.
             A row without leading content drops the slot and its gap entirely. */}
         {leadingContent ? (

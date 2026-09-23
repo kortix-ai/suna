@@ -46,6 +46,7 @@ import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { PixelDeadFlower } from '@/components/kortix/PixelDeadFlower';
 import { PageContent } from '@/components/kortix/page-content';
 import { PageHeader } from '@/components/kortix/page-header';
 import { PinnedBar, usePinnedBarInset } from '@/components/kortix/pinned-bar';
@@ -57,6 +58,8 @@ import { SessionStatusMark } from '@/components/session/SessionStatusMark';
 import { haptics } from '@/lib/haptics';
 import { useProjectSessionsPaged } from '@/lib/projects/hooks';
 import { sessionListState, shouldLoadMoreSessions } from '@/lib/session/session-pages';
+import { needsYouBySession } from '@/lib/session/needs-you';
+import { useReviewItems } from '@/lib/review/use-review';
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import {
   SESSION_STATUS_FILTERS,
@@ -93,6 +96,8 @@ interface SessionRowProps {
    *  a small branch mark joins the status mark, indenting the label past the
    *  usual leading slot — the row's own tile stays full width. */
   nested?: boolean;
+  /** Pending review-inbox items from this session (`needsYouBySession`): > 0 marks it `needs-you`. */
+  needsYouCount: number;
   onOpen: (session: ProjectSession) => void;
   onActions: (session: ProjectSession) => void;
 }
@@ -102,11 +107,12 @@ const SessionRow = React.memo(function SessionRow({
   session,
   now,
   nested = false,
+  needsYouCount,
   onOpen,
   onActions,
 }: SessionRowProps) {
   const title = sessionDisplayTitle(session);
-  const status = sessionDisplayStatus(session);
+  const status = sessionDisplayStatus(session, needsYouCount);
   const lastActivity = sessionLastActivityAt(session);
   const accessibilityLabel = nested
     ? `${title}, sub-agent session, ${sessionStatusLabel(status)}, ${spokenRelative(lastActivity, now)}`
@@ -207,9 +213,14 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
     setStatusFilter(new Set());
   }, []);
 
+  // Sessions that wait on the user, from the review inbox. ProjectScreen
+  // polls it; this reads the same query cache without a second poll.
+  const reviewItems = useReviewItems(projectId, { poll: false });
+  const needsYou = React.useMemo(() => needsYouBySession(reviewItems.data ?? []), [reviewItems.data]);
+
   const filtered = React.useMemo(
-    () => filterSessionsByStatus(filterSessionsByTitle(allSessions, query), statusFilter),
-    [allSessions, query, statusFilter]
+    () => filterSessionsByStatus(filterSessionsByTitle(allSessions, query), statusFilter, needsYou),
+    [allSessions, query, statusFilter, needsYou]
   );
   const grouped = React.useMemo(() => groupSessionsByActivity(filtered, now), [filtered, now]);
   const sections = React.useMemo<SessionSection[]>(
@@ -266,6 +277,7 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
             key={group.session.session_id}
             session={group.session}
             now={now}
+            needsYouCount={needsYou.get(group.session.session_id)?.count ?? 0}
             onOpen={openSession}
             onActions={openSessionActions}
           />,
@@ -275,6 +287,7 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
               session={child}
               now={now}
               nested
+              needsYouCount={needsYou.get(child.session_id)?.count ?? 0}
               onOpen={openSession}
               onActions={openSessionActions}
             />
@@ -282,12 +295,13 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
         ])}
       </SettingsGroup>
     ),
-    [showHeaders, now, openSession, openSessionActions]
+    [showHeaders, now, needsYou, openSession, openSessionActions]
   );
 
   // ── New session: the project drawer's pinned button, at the bottom right ──
   const listBottomInset = usePinnedBarInset(NEW_SESSION_BUTTON_HEIGHT);
   const pageBackground = isDark ? THEME.dark.background : THEME.light.background;
+  const mutedColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
   const handleNewSession = React.useCallback(() => {
     haptics.tap();
     newSession();
@@ -381,11 +395,23 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
                 paddingBottom: listBottomInset,
               }}
               ListEmptyComponent={
-                <View className="flex-1 items-center justify-center px-8">
-                  <Text variant="muted" className="text-center">
-                    {emptyMessage}
-                  </Text>
-                </View>
+                !loadFailed && !hasSessions ? (
+                  // The project has no sessions at all: the drawer's wilted
+                  // flower. Errors and empty filter results keep their text.
+                  <View
+                    className="flex-1 items-center justify-center px-8"
+                    accessible
+                    accessibilityRole="image"
+                    accessibilityLabel={emptyMessage}>
+                    <PixelDeadFlower color={mutedColor} size={96} animate={isFocused} />
+                  </View>
+                ) : (
+                  <View className="flex-1 items-center justify-center px-8">
+                    <Text variant="muted" className="text-center">
+                      {emptyMessage}
+                    </Text>
+                  </View>
+                )
               }
               refreshControl={
                 <RefreshControl

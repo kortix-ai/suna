@@ -107,18 +107,18 @@ describe('inline code chip', () => {
   });
 
   test('knows where its own text baseline sits', () => {
-    // Menlo: unitsPerEm 2048, hhea ascent 1901, descent 483.
-    const content = ((1901 + 483) / 2048) * 12.8;
-    const descent = (483 / 2048) * 12.8;
+    // Roobert Mono Regular: unitsPerEm 1000, hhea ascent 1018, descent 246.
+    const content = ((1018 + 246) / 1000) * 12.8;
+    const descent = (246 / 1000) * 12.8;
     const textBaseline = (INLINE_CODE.lineHeight - content) / 2 + descent;
     expect(INLINE_CODE.textBaselineFromBottom).toBeCloseTo(textBaseline, 5);
     expect(INLINE_CODE.chipBaselineFromBottom).toBeCloseTo(textBaseline + INLINE_CODE.paddingY + INLINE_CODE.borderWidth, 5);
-    expect(INLINE_CODE.chipBaselineFromBottom).toBeCloseTo(5.07, 2);
+    expect(INLINE_CODE.chipBaselineFromBottom).toBeCloseTo(4.56, 2);
   });
 
   test('the widest piece fits a table cell and a nested list on a 320pt phone', () => {
-    // Menlo advance 1233/2048 em, plus tracking-tight.
-    expect(INLINE_CODE.charWidth).toBeCloseTo((1233 / 2048) * 12.8 - 0.32, 5);
+    // Roobert Mono advance 630/1000 em, plus tracking-tight.
+    expect(INLINE_CODE.charWidth).toBeCloseTo((630 / 1000) * 12.8 - 0.32, 5);
     const widest = INLINE_CODE_SEGMENT.max * INLINE_CODE.charWidth + 2 * INLINE_CODE.paddingX + 2 * INLINE_CODE.borderWidth;
     expect(widest).toBeLessThanOrEqual(240);
     expect(widest).toBeLessThanOrEqual(320 - 2 * 16 - 3 * web(6));
@@ -128,7 +128,7 @@ describe('inline code chip', () => {
 describe('inlineCodeAnchor', () => {
   const body = { fontSize: TYPE.body.fontSize, lineHeight: TYPE.body.lineHeight };
   const table = { fontSize: TYPE.sm.fontSize, lineHeight: TYPE.sm.lineHeight };
-  // Chip text baseline above the chip's bottom edge: 3.07 + 1 + 1.
+  // Chip text baseline above the chip's bottom edge: 2.56 + 1 + 1.
   const hang = INLINE_CODE.chipBaselineFromBottom;
 
   test('the inline view is the whole chip, so nothing hangs outside it to be clipped', () => {
@@ -155,9 +155,9 @@ describe('inlineCodeAnchor', () => {
 
   test('iOS puts the view bottom on the line bottom minus a Helvetica 12 descender', () => {
     // Roobert: unitsPerEm 1000, hhea ascent 1018, descent 246. Helvetica 12 descender 2.76.
-    // body: -(3.936 + (26 - 20.224) / 2 - 2.76) + 5.07 = 1.006
+    // body: -(3.936 + (26 - 20.224) / 2 - 2.76) + 4.56 = 0.495
     expect(inlineCodeAnchor('ios', body).translateY).toBeCloseTo(-4.064 + hang, 2);
-    // table: -(3.444 + (20 - 17.696) / 2 - 2.76) + 5.07 = 3.234
+    // table: -(3.444 + (20 - 17.696) / 2 - 2.76) + 4.56 = 2.723
     expect(inlineCodeAnchor('ios', table).translateY).toBeCloseTo(-1.836 + hang, 2);
     // No line height: TextKit adds no half-leading.
     expect(inlineCodeAnchor('ios', { fontSize: 15 }).translateY).toBeCloseTo(-(3.69 - 2.76) + hang, 2);

@@ -187,17 +187,16 @@ export function pageBackMove(state: {
 
 /**
  * The project session whose content the view shows, or null. Same order as
- * the view's render: the tabs overview and a tool page cover everything, then
- * a thread (its project session id), then a connecting session.
+ * the view's render: a tool page covers everything, then a thread (its
+ * project session id), then a connecting session.
  */
 export function shownProjectSessionId(state: {
-  showTabsOverview: boolean;
   activePageId: string | null;
   /** The open thread's project session id (not the OpenCode id). */
   threadSessionId: string | null;
   connectingSessionId: string | null;
 }): string | null {
-  if (state.showTabsOverview || state.activePageId) return null;
+  if (state.activePageId) return null;
   return state.threadSessionId ?? state.connectingSessionId ?? null;
 }
 

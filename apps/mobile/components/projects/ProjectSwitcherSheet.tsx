@@ -6,7 +6,7 @@
  * account's projects as a `SettingsGroup`. Opened from the project drawer's
  * switcher row (`ProjectLeftDrawer` → `onOpenSwitcher`; the sheet itself is
  * mounted once by `ProjectScreen`, next to the other project sheets) and
- * from the Projects tab's account control (`app/(tabs)/projects.tsx`) — one
+ * from the Projects page's account control (`app/projects/index.tsx`) — one
  * sheet, two call sites.
  *
  * Both call sites mount it closed. `open` drives it through `sheetOpenMove`
@@ -15,18 +15,18 @@
  * before its first present (the device bug: the sheet never appeared).
  *
  * Picking a chip only swaps the list in place, and fires `onAccountSelect`
- * when the caller passed one (the Projects tab, so its own list follows) —
+ * when the caller passed one (the Projects page, so its own list follows) —
  * no navigation, no write to `useCurrentAccountStore` here. Picking a project
  * commits it — sets the current
- * account, closes this sheet, and opens the project the same way the
- * Projects tab does (`router.replace`, the last-project store follows from
- * `ProjectScreen` as it always has).
+ * account, closes this sheet, and opens the project: `router.replace` from
+ * the Projects page, the caller's `openProjectRoute` from inside a project
+ * (a root-stack replace; see the prop). The last-project store follows from
+ * `ProjectScreen` as it always has.
  *
  * `+` and the empty state's "Create project" open `NewProjectSheet` preset to
  * the picked account; the chip row's last "New account" chip opens the
  * existing `NewAccountSheet`. Both are a real second `BottomSheetModal`, so
- * this sheet dismisses itself first (`go`, the `AccountSwitcherSheet`
- * pattern) — a `dismiss()` inside `go` must not fire `onClose` (the caller
+ * this sheet dismisses itself first (`go`) — a `dismiss()` inside `go` must not fire `onClose` (the caller
  * would think the whole switcher closed), so `handleDismiss` swallows one
  * dismiss per `go` call via `suppressCloseRef`. New account returns to this
  * sheet, on the fresh account's (empty) project list; New project finishes
@@ -59,7 +59,7 @@ import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { sheetOpenMove } from '@/lib/ui/sheet-open';
 import type { KortixAccount, KortixProject } from '@/lib/projects/projects-client';
 
-/** The bottom tabs: the app's own tab bar items and icons, Account left, Projects right (Jay, 2026-09-23). */
+/** The bottom tabs: the old root tab bar's items and icons, Account left, Projects right (Jay, 2026-09-23). */
 const SWITCHER_TABS: FloatingTabItem[] = [
   { key: 'account', label: 'Account', icon: <Icon as={UserIcon} size={20} className="text-foreground" /> },
   { key: 'projects', label: 'Projects', icon: <Icon as={FolderIcon} size={20} className="text-foreground" /> },
@@ -77,16 +77,26 @@ export interface ProjectSwitcherSheetProps {
   /**
    * Fires once, right before an existing or freshly created project opens —
    * so a caller with its own chrome (the project drawer) can close it too.
-   * The Projects tab, which has none, omits it.
+   * The Projects page, which has none, omits it.
    */
   onProjectOpen?: () => void;
   /**
    * Fires when an account chip is tapped, with that account's id. The
-   * Projects tab passes `setSelectedAccountId` so its list switches with the
+   * Projects page passes `setSelectedAccountId` so its list switches with the
    * chip; the drawer omits it — there a chip only swaps this sheet's project
    * list, and the account is written when a project is picked.
    */
   onAccountSelect?: (accountId: string) => void;
+  /**
+   * Opens a project other than the one on screen. Default:
+   * `router.replace(projectHref(id))` — right from the Projects page. Inside a
+   * project, `ProjectScreen` passes a root-stack replace instead: expo-router
+   * does not see `projects/[id]` → `projects/[id]` with a new `id` as a new
+   * route (its `matchDynamicName` only matches a bare `[id]` segment), so it
+   * sends the replace into the project's own stack, the layout keeps the old
+   * `id`, and the pick does nothing.
+   */
+  openProjectRoute?: (projectId: string) => void;
 }
 
 export function ProjectSwitcherSheet({
@@ -97,12 +107,20 @@ export function ProjectSwitcherSheet({
   onClose,
   onProjectOpen,
   onAccountSelect,
+  openProjectRoute,
 }: ProjectSwitcherSheetProps) {
   const sheetRef = useRef<BottomSheetModal>(null);
   const router = useRouter();
   const sheetBackground = useSheetBackground();
   const listBottomInset = usePinnedBarInset(FLOATING_BAR_HEIGHT);
   const setSelectedAccountId = useCurrentAccountStore((s) => s.setSelectedAccountId);
+  const goToProject = useCallback(
+    (projectId: string) => {
+      if (openProjectRoute) openProjectRoute(projectId);
+      else router.replace(projectHref(projectId));
+    },
+    [openProjectRoute, router]
+  );
 
   // Null until the sheet actually opens (below), so `useProjects` stays
   // disabled while it is unmounted-in-spirit — both call sites render this
@@ -207,9 +225,9 @@ export function ProjectSwitcherSheet({
       setSelectedAccountId(project.account_id);
       onProjectOpen?.();
       sheetRef.current?.dismiss();
-      router.replace(projectHref(project.project_id));
+      goToProject(project.project_id);
     },
-    [currentProjectId, setSelectedAccountId, onProjectOpen, router]
+    [currentProjectId, setSelectedAccountId, onProjectOpen, goToProject]
   );
 
   const openNewProject = useCallback(() => {
@@ -259,9 +277,9 @@ export function ProjectSwitcherSheet({
       setSelectedAccountId(project.account_id);
       onProjectOpen?.();
       onClose();
-      router.replace(projectHref(project.project_id));
+      goToProject(project.project_id);
     },
-    [setSelectedAccountId, onProjectOpen, onClose, router]
+    [setSelectedAccountId, onProjectOpen, onClose, goToProject]
   );
 
   return (

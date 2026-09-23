@@ -193,7 +193,7 @@ describe('projectEdgeGesture', () => {
 });
 
 describe('shownProjectSessionId', () => {
-  const none = { showTabsOverview: false, activePageId: null, threadSessionId: null, connectingSessionId: null };
+  const none = { activePageId: null, threadSessionId: null, connectingSessionId: null };
 
   test('project home: no session on screen', () => {
     expect(shownProjectSessionId(none)).toBeNull();
@@ -213,9 +213,9 @@ describe('shownProjectSessionId', () => {
     ).toBe('ps-1');
   });
 
-  test('a tool page or the tabs overview covers the session: none on screen', () => {
-    expect(shownProjectSessionId({ ...none, activePageId: 'page:files', threadSessionId: 'ps-1' })).toBeNull();
-    expect(shownProjectSessionId({ ...none, showTabsOverview: true, connectingSessionId: 'ps-2' })).toBeNull();
+  test('a tool page covers the session: none on screen', () => {
+    expect(shownProjectSessionId({ ...none, activePageId: 'page:browser', threadSessionId: 'ps-1' })).toBeNull();
+    expect(shownProjectSessionId({ ...none, activePageId: 'page:review', connectingSessionId: 'ps-2' })).toBeNull();
   });
 });
 

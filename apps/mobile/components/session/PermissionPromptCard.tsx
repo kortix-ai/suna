@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { ShieldWarningIcon } from '@/lib/icons';
 import { permissionPromptDetail, permissionPromptTitle } from '@/lib/session/permission-prompt';
+import { BUTTON_LABEL_MAX_FONT_SCALE } from '@/lib/ui/font-scale';
 import type { PermissionRequest } from '@/lib/opencode/types';
 import type { PermissionReply } from '@/components/session/tool/tool-part-renderer';
 
@@ -72,7 +73,7 @@ export function PermissionPromptCard({ permission, onReply }: PermissionPromptCa
             disabled={replying}
             onPress={() => reply('reject')}
           >
-            <Text>Deny</Text>
+            <Text maxFontSizeMultiplier={BUTTON_LABEL_MAX_FONT_SCALE.lg}>Deny</Text>
           </Button>
         </View>
         <View className="flex-1">
@@ -83,7 +84,7 @@ export function PermissionPromptCard({ permission, onReply }: PermissionPromptCa
             disabled={replying}
             onPress={() => reply('once')}
           >
-            <Text>Allow once</Text>
+            <Text maxFontSizeMultiplier={BUTTON_LABEL_MAX_FONT_SCALE.lg}>Allow once</Text>
           </Button>
         </View>
       </View>
@@ -94,7 +95,9 @@ export function PermissionPromptCard({ permission, onReply }: PermissionPromptCa
           disabled={replying}
           onPress={() => reply('always')}
         >
-          <Text className="text-muted-foreground">Always allow</Text>
+          <Text maxFontSizeMultiplier={BUTTON_LABEL_MAX_FONT_SCALE.sm} className="text-muted-foreground">
+            Always allow
+          </Text>
         </Button>
       </View>
     </View>

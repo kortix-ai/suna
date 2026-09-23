@@ -463,6 +463,22 @@ describe('filterSessionsByStatus', () => {
     const sessions = [makeSession({ session_id: 'a', status: 'running' })];
     expect(filterSessionsByStatus(sessions, new Set(['failed']))).toEqual([]);
   });
+
+  test('needs-you matches the sessions with a pending inbox item', () => {
+    const sessions = [
+      makeSession({ session_id: 'a', status: 'running' }),
+      makeSession({ session_id: 'b', status: 'running' }),
+      makeSession({ session_id: 'c', status: 'stopped' }),
+    ];
+    const needsYou = new Map([['b', { count: 1 }], ['c', { count: 2 }]]);
+    expect(
+      filterSessionsByStatus(sessions, new Set(['needs-you']), needsYou).map((s) => s.session_id),
+    ).toEqual(['b', 'c']);
+    // A waiting session is no longer "running" for the filter.
+    expect(
+      filterSessionsByStatus(sessions, new Set(['running']), needsYou).map((s) => s.session_id),
+    ).toEqual(['a']);
+  });
 });
 
 describe('spokenRelative', () => {

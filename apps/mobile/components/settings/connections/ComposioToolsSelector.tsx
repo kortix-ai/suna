@@ -314,7 +314,7 @@ export function ComposioToolsContent({
               className="ml-3 h-auto flex-1 border-0 bg-transparent py-3 font-roobert text-base text-foreground shadow-none"
             />
             {searchQuery.length > 0 && (
-              <Pressable onPress={() => setSearchQuery('')} className="ml-2">
+              <Pressable onPress={() => setSearchQuery('')} className="ml-2" accessibilityRole="button" accessibilityLabel="Clear search">
                 <Icon as={X} size={18} className="text-muted-foreground" />
               </Pressable>
             )}
@@ -437,7 +437,9 @@ export function ComposioToolsContent({
         {onEdit && (
           <Pressable
             onPress={onEdit}
-            className="h-10 w-10 items-center justify-center rounded-xl bg-muted/10 active:opacity-70">
+            className="h-10 w-10 items-center justify-center rounded-xl bg-muted/10 active:opacity-70"
+            accessibilityRole="button"
+            accessibilityLabel="Edit">
             <Icon as={Pencil} size={18} className="text-foreground" />
           </Pressable>
         )}
@@ -454,7 +456,7 @@ export function ComposioToolsContent({
             className="ml-3 h-auto flex-1 border-0 bg-transparent py-3 font-roobert text-base text-foreground shadow-none"
           />
           {searchQuery.length > 0 && (
-            <Pressable onPress={() => setSearchQuery('')} className="ml-2">
+            <Pressable onPress={() => setSearchQuery('')} className="ml-2" accessibilityRole="button" accessibilityLabel="Clear search">
               <Icon as={X} size={18} className="text-muted-foreground" />
             </Pressable>
           )}

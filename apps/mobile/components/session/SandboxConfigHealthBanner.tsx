@@ -10,7 +10,7 @@
  */
 
 import React, { useCallback, useEffect, useRef } from 'react';
-import { Animated, Easing, Platform, Pressable, View } from 'react-native';
+import { Animated, Easing, Pressable, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { useColorScheme } from 'nativewind';
@@ -21,6 +21,7 @@ import { Icon } from '@/components/ui/icon';
 import { useToast } from '@/components/kortix/toast-provider';
 import { useSandboxConfigStatus } from '@/hooks/useSandboxConfigStatus';
 import { useThemeColors } from '@/lib/theme-colors';
+import { MONO_FONT_FAMILY } from '@/lib/utils/mono-font';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 
 export function SandboxConfigHealthBanner() {
@@ -187,7 +188,7 @@ export function SandboxConfigHealthBanner() {
               numberOfLines={1}
               style={{
                 fontSize: 10,
-                fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }),
+                fontFamily: MONO_FONT_FAMILY,
               }}
             >
               {primaryProblem.source}

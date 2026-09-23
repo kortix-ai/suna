@@ -312,13 +312,18 @@ export const SESSION_STATUS_FILTERS: SessionDisplayStatus[] = [
 /**
  * Keeps only sessions whose display status is in `statuses`. An empty set
  * means "no filter": every session passes, same as an untouched filter sheet.
+ * `needsYou` (session id → pending inbox items, `needsYouBySession`) resolves
+ * the sessions that wait on the user to `needs-you`.
  */
 export function filterSessionsByStatus(
   sessions: ProjectSession[],
   statuses: ReadonlySet<SessionDisplayStatus>,
+  needsYou?: ReadonlyMap<string, { count: number }>,
 ): ProjectSession[] {
   if (statuses.size === 0) return sessions;
-  return sessions.filter((session) => statuses.has(sessionDisplayStatus(session)));
+  return sessions.filter((session) =>
+    statuses.has(sessionDisplayStatus(session, needsYou?.get(session.session_id)?.count ?? 0)),
+  );
 }
 
 // ── Recent sessions ───────────────────────────────────────────────────────

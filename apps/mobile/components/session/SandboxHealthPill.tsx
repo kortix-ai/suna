@@ -26,9 +26,12 @@ interface SandboxHealthPillProps {
   onSwitch?: () => void;
   /** Optional — opens a detailed health sheet. Hidden when omitted. */
   onHealth?: () => void;
+  /** Rendered in this slot while the sandbox is reachable: the thread's
+   *  "Live updates paused" pill (COR-144), so the two never stack. */
+  whenReachable?: React.ReactNode;
 }
 
-export function SandboxHealthPill({ onSwitch, onHealth }: SandboxHealthPillProps) {
+export function SandboxHealthPill({ onSwitch, onHealth, whenReachable }: SandboxHealthPillProps) {
   const { sandboxUrl } = useSandboxContext();
   const { reachable, downSince, checked } = useSandboxReachability(sandboxUrl);
   const elapsed = useElapsedSince(downSince);
@@ -51,7 +54,7 @@ export function SandboxHealthPill({ onSwitch, onHealth }: SandboxHealthPillProps
     return () => loop.stop();
   }, [show, pingAnim]);
 
-  if (!show) return null;
+  if (!show) return whenReachable ? <>{whenReachable}</> : null;
 
   const pingScale = pingAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 2.2] });
   const pingOpacity = pingAnim.interpolate({ inputRange: [0, 1], outputRange: [0.6, 0] });

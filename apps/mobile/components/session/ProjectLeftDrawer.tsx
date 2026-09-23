@@ -3,8 +3,8 @@
  * project page (the hamburger, or an edge swipe on any project route).
  *
  * Top to bottom:
- * - Switcher row (COR-124/COR-157, Task 4): the 32pt project avatar, the
- *   project name, and the active account below it. Tap calls
+ * - Switcher row (COR-124/COR-157, Task 4): the account avatar overlapped
+ *   by the project tile, the project name, and "in <account>" below it. Tap calls
  *   `onOpenSwitcher`: ProjectScreen opens `ProjectSwitcherSheet` (mounted
  *   there once, beside the other project sheets) over the drawer — one
  *   project/account switcher, not a navigation.
@@ -12,7 +12,9 @@
  *   reached from Settings (drawer avatar) → project row.
  * - Nav rows: Search (→ Sessions, its search field auto-focused), Files
  *   (→ /projects/[id]/files), Review (→ the Review page, a trailing count
- *   pill while items wait).
+ *   pill while items wait), Connectors (→ web's Customize → Connectors page
+ *   in an in-app auth session; a trailing ↗ says it leaves the app, and the
+ *   page's "Done" bar returns to the app via `kortix://connectors/done`).
  * - A muted "Sessions" label, then every session of the project, newest
  *   activity first (status mark · title; the session on screen is
  *   highlighted). A sub-agent session (one spawned by another session in the
@@ -46,8 +48,13 @@ import { useIsFocused } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as WebBrowser from 'expo-web-browser';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   ArrowElbowDownRightIcon,
+  ArrowUpRightIcon,
+  CaretUpDownIcon,
+  ConnectorsIcon,
   FoldersIcon,
   MagnifyingGlassIcon,
   NavigationArrowIcon,
@@ -69,6 +76,7 @@ import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { PixelDeadFlower } from '@/components/kortix/PixelDeadFlower';
 import { Avatar } from '@/components/kortix/avatar';
 import { LegacyChatsSection } from '@/components/menu/LegacyChatsSection';
 import { SessionStatusMark } from '@/components/session/SessionStatusMark';
@@ -76,7 +84,13 @@ import { PlanRingAvatar } from '@/components/settings/PlanRingAvatar';
 import { useActivePlanName } from '@/hooks/useActivePlanName';
 import { useProfileEditor } from '@/hooks/useProfileEditor';
 import { haptics } from '@/lib/haptics';
-import { useAccounts, useProject, useProjectSessionsPaged } from '@/lib/projects/hooks';
+import { projectKeys, useAccounts, useProject, useProjectSessionsPaged } from '@/lib/projects/hooks';
+import {
+  CONNECTORS_DONE_URI,
+  CONNECTORS_RETURN_URL,
+  projectConnectorsWebUrl,
+} from '@/lib/projects/web-project-links';
+import { KORTIX_WEB_URL } from '@/lib/kortix-web';
 import { sessionListState, shouldLoadMoreSessions } from '@/lib/session/session-pages';
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import {
@@ -93,8 +107,10 @@ import {
   sessionStatusLabel,
   type SessionListRow,
 } from '@/lib/session/session-list';
+import type { SessionNeedsYou } from '@/lib/session/needs-you';
 import { useTabStore } from '@/stores/tab-store';
 import { cn } from '@/lib/utils/index';
+import { BUTTON_LABEL_MAX_FONT_SCALE } from '@/lib/ui/font-scale';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 
 /** `Button size="lg"` height: the New session pill and the avatar match it. */
@@ -114,6 +130,23 @@ const LIST_TOP_FADE_HEIGHT = 24;
 /** Drawer progress at or below this counts as closed (fully off screen). */
 const DRAWER_CLOSED_PROGRESS = 0.01;
 
+/**
+ * The empty session list's art. The petal loop runs only while the drawer is
+ * open: the drawer content stays mounted while closed. The visibility state
+ * lives here, so opening the drawer re-renders this node only.
+ */
+function DrawerEmptyFlower({ color }: { color: string }) {
+  const progress = useDrawerProgress();
+  const [visible, setVisible] = useState(false);
+  useAnimatedReaction(
+    () => progress.value > DRAWER_CLOSED_PROGRESS,
+    (next, prev) => {
+      if (next !== prev) scheduleOnRN(setVisible, next);
+    }
+  );
+  return <PixelDeadFlower color={color} animate={visible} />;
+}
+
 // ─── Session row ─────────────────────────────────────────────────────────────
 
 /** Sub-agent sessions indent under their coordinator by this much (mobile's
@@ -124,10 +157,14 @@ function ProjectSessionListItem({
   item,
   active,
   nested = false,
+  needsYou,
   onPress,
   onLongPress,
 }: {
   item: ProjectSession;
+  /** What the session waits on (the Needs you group): a `needs-you` mark and a
+   *  one-line reason under the title. */
+  needsYou?: SessionNeedsYou;
   /** The session on screen: `bg-accent` at rest and the `selected` state. */
   active: boolean;
   /** A sub-agent session, rendered indented under its coordinator with a
@@ -138,7 +175,8 @@ function ProjectSessionListItem({
   onLongPress: (s: ProjectSession) => void;
 }) {
   const title = sessionDisplayTitle(item);
-  const status = sessionDisplayStatus(item);
+  const status = sessionDisplayStatus(item, needsYou?.count ?? 0);
+  const statusLabel = needsYou ? `${sessionStatusLabel(status)}, ${needsYou.reason}` : sessionStatusLabel(status);
 
   return (
     <Pressable
@@ -146,28 +184,51 @@ function ProjectSessionListItem({
       onLongPress={() => onLongPress(item)}
       accessibilityRole="button"
       accessibilityLabel={
-        nested ? `${title}, sub-agent session, ${sessionStatusLabel(status)}` : `${title}, ${sessionStatusLabel(status)}`
+        nested ? `${title}, sub-agent session, ${statusLabel}` : `${title}, ${statusLabel}`
       }
       accessibilityHint="Long press for session actions"
       accessibilityState={{ selected: active }}
       style={nested ? { marginLeft: NESTED_SESSION_INDENT } : undefined}
       className={cn(
         'flex-row items-center gap-3 rounded-xl active:bg-foreground/5',
-        'px-3 py-2',
+        'px-4 py-2',
         active && 'bg-accent'
       )}>
       {nested && (
         <Icon as={ArrowElbowDownRightIcon} size={12} className="shrink-0 text-muted-foreground/60" />
       )}
       <SessionStatusMark status={status} />
-      <Text className="flex-1" numberOfLines={1}>
-        {title}
-      </Text>
+      {needsYou ? (
+        <View className="min-w-0 flex-1">
+          <Text numberOfLines={1}>{title}</Text>
+          <Text variant="muted" style={{ fontSize: 13, lineHeight: 17 }} numberOfLines={1}>
+            {needsYou.reason}
+          </Text>
+        </View>
+      ) : (
+        <Text className="flex-1" numberOfLines={1}>
+          {title}
+        </Text>
+      )}
     </Pressable>
   );
 }
 
 // ─── Nav pill ────────────────────────────────────────────────────────────────
+
+/**
+ * One leading column for the drawer: nav pill icons sit in the same 20pt slot
+ * as a session's `SessionStatusMark` (`h-5 min-w-5`), and both rows pad 16pt
+ * (`px-4`), so every icon and status mark centres on one vertical line.
+ */
+const LEADING_SLOT_CLASS = 'w-5 shrink-0 items-center';
+
+/**
+ * One trailing column for the drawer's top rows: the switcher caret, Review's
+ * count pill, and Connectors' external arrow centre on the same vertical line.
+ * 28pt holds a two-digit count; "99+" widens it by ~5pt.
+ */
+const TRAILING_SLOT_CLASS = 'min-w-7 shrink-0 items-center';
 
 function NavPill({
   icon,
@@ -175,6 +236,7 @@ function NavPill({
   onPress,
   trailing,
   accessibilityLabel,
+  accessibilityHint,
 }: {
   icon: AppIcon;
   label: string;
@@ -183,18 +245,23 @@ function NavPill({
   trailing?: React.ReactNode;
   /** Overrides `label` for a screen reader (Review speaks its pending count). */
   accessibilityLabel?: string;
+  /** Says where a row that leaves the app goes (Connectors → kortix.com). */
+  accessibilityHint?: string;
 }) {
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityHint={accessibilityHint}
       className="flex-row items-center gap-3 rounded-full px-4 py-2.5 active:bg-foreground/5">
-      <Icon as={icon} size={18} className="shrink-0 text-foreground" />
+      <View className={LEADING_SLOT_CLASS}>
+        <Icon as={icon} size={18} className="text-foreground" />
+      </View>
       <Text className="flex-1 font-medium" numberOfLines={1}>
         {label}
       </Text>
-      {trailing}
+      {trailing ? <View className={TRAILING_SLOT_CLASS}>{trailing}</View> : null}
     </Pressable>
   );
 }
@@ -216,40 +283,61 @@ function ReviewCountPill({ count }: { count: number }) {
 function SwitcherRow({
   projectName,
   accountName,
+  ringColor,
   onPress,
 }: {
   projectName: string;
   accountName: string;
+  /** The drawer surface colour: the ring that cuts the project tile out of the account avatar. */
+  ringColor: string;
   onPress: () => void;
 }) {
   const label = projectName && accountName ? `Switch project, ${projectName}, ${accountName}` : 'Switch project';
   return (
-    // Minimal (Jay, 2026-09-23): the project's avatar top left (Jay,
-    // 2026-09-24: in place of the Kortix symbol) — the chalk tile the
-    // switcher sheet and the Projects tab draw for the same project — then
-    // the project name over the account, no caret. The avatar is 32pt, the
-    // height of the two text lines (20pt + 17pt line boxes), so it spans both. One button edge to edge; inner views ignore touches so
-    // every part presses it.
-    <View className="px-2 pb-1">
+    // Avatar pair (Jay, 2026-09-24, Paper "Drawer header · variants" 16):
+    // the account's round chalk avatar, overlapped by the project's chalk
+    // tile — a 2pt ring in the drawer colour separates them — then the
+    // project name over "in <account>", and a trailing up/down caret. No
+    // fill at rest (in light mode `bg-card` equals the drawer surface, so a
+    // fill never showed); `bg-secondary` pressed. One button edge to edge;
+    // inner views ignore touches so every part presses it.
+    <View className="px-1 pb-1">
       <Pressable
         onPress={onPress}
         hitSlop={4}
         accessibilityRole="button"
         accessibilityLabel={label}
-        className="flex-row items-center gap-3 rounded-2xl px-3 py-2 active:bg-accent">
-        <View pointerEvents="none" className="w-8 items-center">
-          <Avatar chalk size={32} fallbackText={projectName} />
+        className="flex-row items-center gap-3 rounded-full px-3 py-2 active:bg-foreground/5">
+        <View pointerEvents="none" style={{ width: 62, height: 36 }}>
+          <Avatar
+            chalk
+            size={34}
+            fallbackText={accountName}
+            style={{ position: 'absolute', left: 0, top: 1, borderRadius: 17 }}
+          />
+          <Avatar
+            chalk
+            size={36}
+            fallbackText={projectName}
+            style={{ position: 'absolute', left: 26, top: 0, borderWidth: 2, borderColor: ringColor }}
+          />
         </View>
         <View pointerEvents="none" className="min-w-0 flex-1">
           <Text
-            className="font-roobert-medium text-foreground"
-            style={{ fontSize: 16, lineHeight: 20 }}
+            className="font-roobert-semibold text-foreground"
+            style={{ fontSize: 17, lineHeight: 22, letterSpacing: -0.17 }}
             numberOfLines={1}>
             {projectName}
           </Text>
-          <Text variant="muted" style={{ fontSize: 13, lineHeight: 17 }} numberOfLines={1}>
-            {accountName}
-          </Text>
+          {accountName ? (
+            <Text variant="muted" style={{ fontSize: 13, lineHeight: 17 }} numberOfLines={1}>
+              in {accountName}
+            </Text>
+          ) : null}
+        </View>
+        {/* mr-1: this row's content ends 4pt closer to the edge than a NavPill's (px-1 + px-3 vs px-2 -mx-1 + px-4). */}
+        <View pointerEvents="none" className={cn(TRAILING_SLOT_CLASS, 'mr-1')}>
+          <Icon as={CaretUpDownIcon} size={16} className="shrink-0 text-muted-foreground" />
         </View>
       </Pressable>
     </View>
@@ -267,6 +355,11 @@ export interface ProjectLeftDrawerProps {
   activeProjectSessionId?: string | null;
   /** Items that wait for the user — the Review row's trailing count pill. */
   reviewNeedsYouCount?: number;
+  /**
+   * Session id → what it waits on (`needsYouBySession` over the review inbox).
+   * Those sessions leave the list for a "Needs you · N" group above it.
+   */
+  needsYouBySession?: ReadonlyMap<string, SessionNeedsYou>;
   /** New session: open project home, whose composer starts the session. */
   onNewSession: () => void;
   onOpenProjectSession: (session: ProjectSession) => void;
@@ -288,11 +381,14 @@ export interface ProjectLeftDrawerProps {
 }
 
 const sessionRowKey = (row: SessionListRow) => row.session.session_id;
+/** Shared empty map: a fresh one per render would re-derive the lists. */
+const EMPTY_NEEDS_YOU: ReadonlyMap<string, SessionNeedsYou> = new Map();
 
 export function ProjectLeftDrawer({
   projectId,
   activeProjectSessionId = null,
   reviewNeedsYouCount = 0,
+  needsYouBySession = EMPTY_NEEDS_YOU,
   onNewSession,
   onOpenProjectSession,
   onNavigateRoute,
@@ -342,14 +438,31 @@ export function ProjectLeftDrawer({
   // flattened for this `FlatList`. A coordinator not yet loaded (its page
   // hasn't arrived) leaves the child top-level until it does — see
   // `groupSessionsByCoordinator`'s doc comment.
-  const rows = useMemo(() => flattenSessionGroups(recent), [recent]);
+  const rows = useMemo(
+    () => flattenSessionGroups(recent.filter((session) => !needsYouBySession.has(session.session_id))),
+    [recent, needsYouBySession]
+  );
+  // Sessions that wait on the user, newest wait first: their own group above
+  // the list. A session not loaded yet (an older page) is left to the Review
+  // row's count.
+  const needsYouSessions = useMemo(
+    () =>
+      recent
+        .filter((session) => needsYouBySession.has(session.session_id))
+        .sort(
+          (a, b) =>
+            (needsYouBySession.get(b.session_id)?.newestAt ?? 0) -
+            (needsYouBySession.get(a.session_id)?.newestAt ?? 0)
+        ),
+    [recent, needsYouBySession]
+  );
   // loading / error / empty / rows — shared with the Sessions page
   // (lib/session/session-pages) so a failed fetch never reads as "No
   // sessions yet" (COR-146).
   const sessionsListState = sessionListState({
     isLoading: projectSessionsLoading,
     isError: projectSessionsErrored,
-    hasSessions: recent.length > 0,
+    hasSessions: rows.length > 0 || needsYouSessions.length > 0,
   });
   // Only a pull shows the refresh spinner; a background poll does not.
   const [refreshing, setRefreshing] = useState(false);
@@ -440,6 +553,35 @@ export function ProjectLeftDrawer({
     [navigateOnce]
   );
 
+  // Connectors: mobile has no connector catalog; web's Customize → Connectors
+  // page owns connecting (COR-125). It opens in an in-app auth session with
+  // `return_to=kortix://connectors/done`: the page's bottom bar sends the
+  // browser there once the user is done, and the session closes itself on
+  // that redirect. The user can connect any number of connectors first —
+  // nothing returns automatically after one. Closing the browser by hand
+  // (iOS Cancel, Android back) ends the trip the same way. Either way the
+  // project's connector list refetches, so a thread's connector rows see the
+  // new connections.
+  const queryClient = useQueryClient();
+  const goToConnectors = useCallback(
+    () =>
+      navigateOnce(() => {
+        void (async () => {
+          try {
+            await WebBrowser.openAuthSessionAsync(
+              projectConnectorsWebUrl(KORTIX_WEB_URL, projectId, CONNECTORS_DONE_URI),
+              CONNECTORS_RETURN_URL
+            );
+          } catch {
+            // The browser failed to open; nothing changed on the server.
+            return;
+          }
+          void queryClient.invalidateQueries({ queryKey: projectKeys.connectors(projectId) });
+        })();
+      }),
+    [navigateOnce, projectId, queryClient]
+  );
+
   const handleOpenProjectSession = useCallback(
     (session: ProjectSession) => {
       onClose();
@@ -469,7 +611,7 @@ export function ProjectLeftDrawer({
     onNewSession();
   }, [onClose, onNewSession]);
 
-  // The same Account page as the Account tab, inside the project stack, so
+  // The app's one settings page (AccountPage), inside the project stack, so
   // its hamburger opens this drawer.
   const goToAccount = useCallback(
     () => navigateOnce(() => onNavigateRoute(PROJECT_ACCOUNT_ROUTE)),
@@ -489,10 +631,17 @@ export function ProjectLeftDrawer({
 
   return (
     <>
-    {/* One straight left line at 20pt: the switcher row is px-5; every row
-        (nav, sessions, Previous chats) is px-3 inside a px-2 column. */}
+    {/* One icon column: nav icons, session status marks, and the Previous
+        Chats clock each sit in a 20pt slot starting 20pt from the drawer edge
+        (centre 30pt, label 52pt). Nav and session rows are px-4 inside a
+        4pt column (px-2 -mx-1); Previous Chats is px-3 inside px-2. */}
     <View className="flex-1 bg-chrome-background" style={{ paddingTop: insets.top }}>
-      <SwitcherRow projectName={project?.name ?? ''} accountName={projectAccountName} onPress={openSwitcher} />
+      <SwitcherRow
+        projectName={project?.name ?? ''}
+        accountName={projectAccountName}
+        ringColor={chrome}
+        onPress={openSwitcher}
+      />
 
       <View className="px-2 -mx-1 space-y-1">
         <NavPill icon={MagnifyingGlassIcon} label="Search" onPress={goToSearch} />
@@ -504,10 +653,35 @@ export function ProjectLeftDrawer({
           onPress={goToReview}
           trailing={<ReviewCountPill count={reviewNeedsYouCount} />}
         />
+        <NavPill
+          icon={ConnectorsIcon}
+          label="Connectors"
+          accessibilityHint="Opens kortix.com to connect apps"
+          onPress={goToConnectors}
+          trailing={<Icon as={ArrowUpRightIcon} size={14} className="shrink-0 text-muted-foreground" />}
+        />
       </View>
 
+      {needsYouSessions.length > 0 && (
+        <View className="px-2 -mx-1">
+          <Text variant="muted" className="px-4 pb-1 pt-3">
+            {`Needs you · ${needsYouSessions.length}`}
+          </Text>
+          {needsYouSessions.map((session) => (
+            <ProjectSessionListItem
+              key={session.session_id}
+              item={session}
+              active={session.session_id === activeProjectSessionId}
+              needsYou={needsYouBySession.get(session.session_id)}
+              onPress={handleOpenProjectSession}
+              onLongPress={onSessionActions}
+            />
+          ))}
+        </View>
+      )}
+
       <View className="px-2 -mx-1">
-        <Text variant="muted" className="px-3 pb-1 pt-3">
+        <Text variant="muted" className="px-4 pb-1 pt-3">
           Sessions
         </Text>
       </View>
@@ -546,15 +720,19 @@ export function ProjectLeftDrawer({
                   </Text>
                   <View className="mt-1">
                     <Button variant="secondary" size="sm" className="rounded-full" onPress={handleRetrySessions}>
-                      <Text>Try again</Text>
+                      <Text maxFontSizeMultiplier={BUTTON_LABEL_MAX_FONT_SCALE.sm}>Try again</Text>
                     </Button>
                   </View>
                 </View>
-              ) : (
-                <Text variant="muted" className="px-3 py-2">
-                  No sessions yet
-                </Text>
-              )}
+              ) : sessionsListState === 'empty' ? (
+                <View
+                  className="items-center py-8"
+                  accessible
+                  accessibilityRole="image"
+                  accessibilityLabel="No sessions yet">
+                  <DrawerEmptyFlower color={mutedColor} />
+                </View>
+              ) : null /* every session sits in the Needs you group */}
             </View>
           }
           ListFooterComponent={
@@ -613,7 +791,7 @@ export function ProjectLeftDrawer({
           <Button size="lg" className="rounded-full" onPress={handleNewSession}>
             {/* Web's New session glyph (project-sidebar.tsx), flipped horizontally: tip up-right. */}
             <Icon as={NavigationArrowIcon} size={20} style={{ transform: [{ scaleX: -1 }] }} />
-            <Text>New session</Text>
+            <Text maxFontSizeMultiplier={BUTTON_LABEL_MAX_FONT_SCALE.lg}>New session</Text>
           </Button>
         </View>
       </View>

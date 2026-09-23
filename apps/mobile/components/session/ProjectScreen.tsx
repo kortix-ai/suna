@@ -30,7 +30,6 @@ import { Stack, useIsFocused, useLocalSearchParams, useRouter } from 'expo-route
 
 import { getAuthToken } from '@/api/config';
 import { useSandboxContext } from '@/contexts/SandboxContext';
-import { useSessions, useCreateSession } from '@/lib/platform/hooks';
 import { SessionPage } from '@/components/session/SessionPage';
 import { SessionConnecting, type SessionConnectError } from '@/components/session/SessionConnecting';
 import { SessionThreadTitle } from '@/components/session/SessionThreadTitle';
@@ -81,22 +80,16 @@ import {
   threadSandboxReady,
   type OpenedThread,
 } from '@/lib/session/session-sandbox';
-import { TabsOverview } from '@/components/session/TabsOverview';
 import { ProjectHome, type ProjectHomeSubmit } from '@/components/session/ProjectHome';
 import { uploadAttachments, withAttachments, type AttachedFile } from '@/lib/session/attachments';
 import { resolveSessionTitle, sessionDisplayTitle } from '@/lib/session/session-list';
 import { subAgentRelation, subAgentsOf } from '@/lib/session/sub-agents';
 import { ProjectLeftDrawer } from '@/components/session/ProjectLeftDrawer';
 import {
-  PageContextMenuSheet,
-  type PageContextMenuTarget,
-} from '@/components/session/PageContextMenuSheet';
-import {
   SessionActionsSheet,
   type SessionActionsSheetRef,
 } from '@/components/session/SessionActionsSheet';
 import { Drawer } from 'react-native-drawer-layout';
-import type { SheetRef } from '@/components/kortix/sheet';
 import { haptics } from '@/lib/haptics';
 import { log } from '@/lib/logger';
 import { useQueryClient } from '@tanstack/react-query';
@@ -108,6 +101,7 @@ import {
   useCreateProjectSession,
 } from '@/lib/projects/hooks';
 import { useReviewItems } from '@/lib/review/use-review';
+import { needsYouBySession } from '@/lib/session/needs-you';
 import { countReviewItemsBySegment } from '@kortix/sdk';
 import {
   deleteProjectSession,
@@ -122,60 +116,20 @@ import { connectStepFromRequestError, connectStepFromStart } from '@/lib/session
 import { useToast } from '@/components/kortix/toast-provider';
 import { getUpgradeGate } from '@/lib/billing/upgrade-gate';
 import { useUpgradeSheetStore } from '@/stores/upgrade-sheet-store';
+import { clearComposerDraftIfSent } from '@/stores/composer-draft-store';
+import { draftKey } from '@/lib/session/composer-draft';
 import { getSandboxUrl } from '@/lib/platform/client';
 import type { SandboxProviderName } from '@/lib/platform/client';
-import { useTabScreenshotStore } from '@/stores/tab-screenshot-store';
 
 // ── Tool pages (reused verbatim from the legacy page ternary) ──
-import type { FilesPageRef } from '@/components/pages/FilesPage';
-import type { WorkspacePageRef } from '@/components/pages/WorkspacePage';
 
 // A tool page renders only while it is the open page, so its module is required
 // on first render, not when the app starts. Metro's `require` is synchronous:
 // no Suspense boundary and no fallback flash. Modules are cached after the
 // first call, so each later access is a lookup.
 const Pages = {
-  get PlaceholderPage(): typeof import('@/components/session/PlaceholderPage').PlaceholderPage {
-    return require('@/components/session/PlaceholderPage').PlaceholderPage;
-  },
-  get UpdatesPage(): typeof import('@/components/pages/UpdatesPage').UpdatesPage {
-    return require('@/components/pages/UpdatesPage').UpdatesPage;
-  },
-  get SSHPage(): typeof import('@/components/pages/SSHPage').SSHPage {
-    return require('@/components/pages/SSHPage').SSHPage;
-  },
-  get RunningServicesPage(): typeof import('@/components/pages/RunningServicesPage').RunningServicesPage {
-    return require('@/components/pages/RunningServicesPage').RunningServicesPage;
-  },
   get BrowserPage(): typeof import('@/components/pages/BrowserPage').BrowserPage {
     return require('@/components/pages/BrowserPage').BrowserPage;
-  },
-  get FilesPage(): typeof import('@/components/pages/FilesPage').FilesPage {
-    return require('@/components/pages/FilesPage').FilesPage;
-  },
-  get ConnectionsTabPage(): typeof import('@/components/pages/ConnectionsTabPage').ConnectionsTabPage {
-    return require('@/components/pages/ConnectionsTabPage').ConnectionsTabPage;
-  },
-  get ScheduledTasksTabPage(): typeof import('@/components/pages/ScheduledTasksPage').ScheduledTasksTabPage {
-    return require('@/components/pages/ScheduledTasksPage').ScheduledTasksTabPage;
-  },
-  get ApiKeysTabPage(): typeof import('@/components/pages/ApiKeysPage').ApiKeysTabPage {
-    return require('@/components/pages/ApiKeysPage').ApiKeysTabPage;
-  },
-  get TunnelTabPage(): typeof import('@/components/pages/TunnelPage').TunnelTabPage {
-    return require('@/components/pages/TunnelPage').TunnelTabPage;
-  },
-  get WorkspacePage(): typeof import('@/components/pages/WorkspacePage').WorkspacePage {
-    return require('@/components/pages/WorkspacePage').WorkspacePage;
-  },
-  get AgentBrowserPage(): typeof import('@/components/pages/AgentBrowserPage').AgentBrowserPage {
-    return require('@/components/pages/AgentBrowserPage').AgentBrowserPage;
-  },
-  get SecretsPage(): typeof import('@/components/pages/SecretsPage').SecretsPage {
-    return require('@/components/pages/SecretsPage').SecretsPage;
-  },
-  get ConnectorsPage(): typeof import('@/components/pages/ConnectorsPage').ConnectorsPage {
-    return require('@/components/pages/ConnectorsPage').ConnectorsPage;
   },
   get SecretsNavPage(): typeof import('@/components/pages/SecretsNavPage').SecretsNavPage {
     return require('@/components/pages/SecretsNavPage').SecretsNavPage;
@@ -183,26 +137,14 @@ const Pages = {
   get SchedulesPage(): typeof import('@/components/pages/SchedulesPage').SchedulesPage {
     return require('@/components/pages/SchedulesPage').SchedulesPage;
   },
-  get ChangesPage(): typeof import('@/components/pages/ChangesPage').ChangesPage {
-    return require('@/components/pages/ChangesPage').ChangesPage;
-  },
   get ReviewPage(): typeof import('@/components/pages/ReviewPage').ReviewPage {
     return require('@/components/pages/ReviewPage').ReviewPage;
-  },
-  get FilesNavPage(): typeof import('@/components/pages/FilesNavPage').FilesNavPage {
-    return require('@/components/pages/FilesNavPage').FilesNavPage;
-  },
-  get DevPage(): typeof import('@/components/pages/DevPage').DevPage {
-    return require('@/components/pages/DevPage').DevPage;
   },
   get SettingsNavPage(): typeof import('@/components/pages/SettingsNavPage').SettingsNavPage {
     return require('@/components/pages/SettingsNavPage').SettingsNavPage;
   },
   get MemoryPage(): typeof import('@/components/pages/MemoryPage').MemoryPage {
     return require('@/components/pages/MemoryPage').MemoryPage;
-  },
-  get ProjectsPage(): typeof import('@/components/pages/ProjectsPage').ProjectsPage {
-    return require('@/components/pages/ProjectsPage').ProjectsPage;
   },
   get ProjectDetailPage(): typeof import('@/components/pages/ProjectDetailPage').ProjectDetailPage {
     return require('@/components/pages/ProjectDetailPage').ProjectDetailPage;
@@ -377,12 +319,6 @@ export function ProjectScreen() {
   // Polls pause while a root screen (Account, settings) covers the project.
   const isFocused = useIsFocused();
 
-  // The per-page context menu (Workspace / Files "···").
-  const pageMenuRef = useRef<SheetRef>(null);
-  const [pageMenuTarget, setPageMenuTarget] = useState<PageContextMenuTarget | null>(null);
-  // Page refs (some tool pages drive imperative actions).
-  const filesPageRef = useRef<FilesPageRef>(null);
-  const workspacePageRef = useRef<WorkspacePageRef>(null);
   // The session actions sheet (COR-140 Task 5): one instance for the thread's
   // "···", the Sessions page's long press, and the drawer's session row long
   // press. `openSessionActions` goes on ProjectRouteValue, so every consumer
@@ -421,12 +357,7 @@ export function ProjectScreen() {
   // Persisted tab state (survives app restarts)
   const activeSessionId = useTabStore((s) => s.activeSessionId);
   const activePageId = useTabStore((s) => s.activePageId);
-  const showTabsOverview = useTabStore((s) => s.showTabsOverview);
-  const openTabIds = useTabStore((s) => s.openTabIds);
   const navigateToSession = useTabStore((s) => s.navigateToSession);
-  const closeTab = useTabStore((s) => s.closeTab);
-  const closeAllTabs = useTabStore((s) => s.closeAllTabs);
-  const setShowTabsOverview = useTabStore((s) => s.setShowTabsOverview);
 
   // Data
   // Repo-first project sessions (web model): GET /projects/:id/sessions.
@@ -466,12 +397,6 @@ export function ProjectScreen() {
   const createProjectSession = useCreateProjectSession(projectId);
   const openUpgradeSheet = useUpgradeSheetStore((state) => state.openUpgradeSheet);
 
-  // Only touch a sandbox once a session is actually open (its sandbox is switched
-  // in via connectToProjectSession). On the project home there is no authorized
-  // sandbox — keep the OpenCode/Kortix proxy hooks disabled to avoid 403s.
-  const sessionSandboxUrl = activeSessionId ? sandboxUrl : undefined;
-  const { data: sessions = [] } = useSessions(sessionSandboxUrl);
-  const createSession = useCreateSession(sandboxUrl);
   // Review items that wait for the user. The project sheet that used to show
   // this as its Review row's badge is deleted (COR-123/COR-160 Task 3); the
   // drawer's Review row carries the same count now (Task 4). Open change
@@ -481,12 +406,8 @@ export function ProjectScreen() {
     () => countReviewItemsBySegment(reviewItems.data ?? []).needs_you,
     [reviewItems.data]
   );
-
-  // Split sessions into active (TabsOverview grid).
-  const activeSessions = useMemo(
-    () => sessions.filter((s) => !(s.time as any).archived),
-    [sessions]
-  );
+  // The same items per originating session: the drawer's Needs you group.
+  const needsYouSessions = useMemo(() => needsYouBySession(reviewItems.data ?? []), [reviewItems.data]);
 
   const showUpgradeForError = useCallback(
     (error: unknown) => {
@@ -499,49 +420,6 @@ export function ProjectScreen() {
   );
 
   // ── Handlers (copied verbatim from ProjectScreenLegacy) ──
-
-  const handleNewSession = useCallback(async () => {
-    if (!projectId) return;
-    try {
-      haptics.tap();
-      // Repo-first new session (web parity): create a blank project session and
-      // open it via the connecting state — the effect resolves the OpenCode pin
-      // (ensure-opencode) once the sandbox is up. No global-sandbox POST /session.
-      const session = await createProjectSession.mutateAsync({});
-      navigateToSession(null);
-      setConnectError(null);
-      erroredSessionRef.current = null;
-      freshSessionIdRef.current = session.session_id;
-      setConnectingProjectSessionId(session.session_id);
-    } catch (err: any) {
-      if (showUpgradeForError(err)) return;
-      log.error('❌ [Project] Failed to create session:', err?.message || err);
-      toast.error(err?.message || 'Failed to create session');
-    }
-  }, [projectId, createProjectSession, navigateToSession, showUpgradeForError, toast]);
-
-  const handleCreateSessionWithPrompt = useCallback(
-    async (title: string, prompt: string) => {
-      if (!sandboxUrl) return;
-      try {
-        const session = await createSession.mutateAsync({ title });
-        navigateToSession(session.id);
-        // Send the preset prompt into the new session
-        const token = await getAuthToken();
-        await fetch(`${sandboxUrl}/session/${session.id}/prompt_async`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({ parts: [{ type: 'text', text: prompt }] }),
-        });
-      } catch (err: any) {
-        log.error('❌ [Home] Failed to create session with prompt:', err?.message || err);
-      }
-    },
-    [sandboxUrl, createSession, navigateToSession]
-  );
 
   // Composer prompts awaiting their session's OpenCode root, keyed by session id.
   const pendingPromptsRef = useRef<Record<string, PendingPrompt>>({});
@@ -817,8 +695,8 @@ export function ProjectScreen() {
     void ensureAndOpen(connectingProjectSessionId);
   }, [connectingProjectSessionId, ensureAndOpen]);
 
-  // No thread, page, or overview is on screen: the thread closed (deleted,
-  // archived, closed from the overview), another session is connecting, or
+  // No thread or page is on screen: the thread closed (deleted or
+  // archived), another session is connecting, or
   // this project just opened on project home (setScope). Leave the previous
   // session's sandbox, so the live stream never stays on it while the next
   // session connects or after its connect fails. A page opened from a thread
@@ -826,7 +704,6 @@ export function ProjectScreen() {
   const showsSessionContent = showsSessionContentFor({
     activeSessionId,
     activePageId,
-    showTabsOverview,
   });
   useEffect(() => {
     if (!showsSessionContent) clearSandbox();
@@ -842,7 +719,6 @@ export function ProjectScreen() {
         leaveSandboxOnFocus({
           activeSessionId: tabs.activeSessionId,
           activePageId: tabs.activePageId,
-          showTabsOverview: tabs.showTabsOverview,
           connectInProgress: ensuringRef.current !== null,
         })
       ) {
@@ -865,7 +741,6 @@ export function ProjectScreen() {
     setConnectError(null);
     clearSandbox();
     const tabs = useTabStore.getState();
-    if (tabs.showTabsOverview) tabs.setShowTabsOverview(false);
     if (tabs.activeSessionId || tabs.activePageId) tabs.navigateToSession(null);
   }, [clearSandbox]);
   const handleBack = goHome;
@@ -958,6 +833,9 @@ export function ProjectScreen() {
         erroredSessionRef.current = null;
         freshSessionIdRef.current = session.session_id;
         setConnectingProjectSessionId(session.session_id);
+        // The session holds the prompt now: drop the home's saved draft
+        // (COR-143). Cancel hands the text back through `takeInitialDraft`.
+        clearComposerDraftIfSent(draftKey({ kind: 'project', projectId }), text);
       } catch (err: any) {
         if (showUpgradeForError(err)) return;
         log.error('❌ [Project] Home send failed:', err?.message || err);
@@ -1051,6 +929,19 @@ export function ProjectScreen() {
   // This layout's own screen in the root stack (/projects/[id]).
   const navigation = useNavigation();
   const router = useRouter();
+
+  // The switcher's pick of another project: replace this whole project in the
+  // root stack, so ProjectScreen remounts on the new `id`.
+  // `router.replace(projectHref(id))` cannot do it from here: expo-router
+  // treats `projects/[id]` → `projects/[id]` as the same route whatever the
+  // `id`, and dispatches into the project stack (ProjectSwitcherSheet,
+  // `openProjectRoute`).
+  const replaceProject = useCallback(
+    (nextProjectId: string) => {
+      navigation.dispatch(StackActions.replace('projects/[id]', { id: nextProjectId }));
+    },
+    [navigation]
+  );
 
   // Back to project home from any project route: reset the store, then pop a
   // covering route. popTo keeps home's params and, when home is not in the
@@ -1166,7 +1057,6 @@ export function ProjectScreen() {
   // The project session on screen (a thread, or a connecting session), by its
   // project session id. The drawer highlights its row.
   const shownSessionId = shownProjectSessionId({
-    showTabsOverview,
     activePageId,
     threadSessionId: activeSessionId ? (activeProjectSession?.session_id ?? null) : null,
     connectingSessionId: connectingProjectSessionId,
@@ -1197,6 +1087,7 @@ export function ProjectScreen() {
         projectId={projectId}
         activeProjectSessionId={shownSessionId}
         reviewNeedsYouCount={reviewNeedsYouCount}
+        needsYouBySession={needsYouSessions}
         // New session opens project home: its composer starts the session.
         onNewSession={returnHome}
         onOpenProjectSession={openSessionFromDrawer}
@@ -1235,7 +1126,7 @@ export function ProjectScreen() {
 
   const isHome =
     !scopeReady ||
-    (!showTabsOverview && !activePageId && !activeSessionId && !connectingProjectSessionId);
+    (!activePageId && !activeSessionId && !connectingProjectSessionId);
   isHomeRef.current = isHome;
 
   // The thread renders only once the context holds its sandbox. Until then it
@@ -1264,127 +1155,30 @@ export function ProjectScreen() {
   // The open page, thread, or connecting session: the view route's content.
   const viewContent = isHome ? null : (
         <View className="flex-1 bg-background">
-          {showTabsOverview ? (
-          /* Session history grid — opened from the "···" tools menu */
-          <TabsOverview
-            sessions={activeSessions}
-            openTabIds={openTabIds}
-            activeSessionId={activeSessionId}
-            onSelectTab={(id) => navigateToSession(id)}
-            onCloseTab={(id) => {
-              closeTab(id);
-              useTabScreenshotStore.getState().removeScreenshot(id);
-            }}
-            onCloseAll={() => {
-              closeAllTabs();
-              useTabScreenshotStore.getState().clear();
-            }}
-            onNewSession={handleNewSession}
-            onDismiss={() => setShowTabsOverview(false)}
-          />
-        ) : activePageId ? (
+          {activePageId ? (
           /* Tool page — the SAME page component the legacy screen renders. Its
              PageHeader hamburger opens the drawer. A page that takes `onBack`
-             gets goHome: the store returns home and the view route pops. */
-          activePageId === 'page:files' && PAGE_TABS[activePageId] ? (
-            <Pages.FilesPage
-              ref={filesPageRef}
-              page={PAGE_TABS[activePageId]}
-              onBack={handlePageBack}
-              {...pageChrome}
-              onFileSelectionChange={() => {}}
-              onRequestMenu={() => {
-                setPageMenuTarget({ page: 'files' });
-                pageMenuRef.current?.open();
-              }}
-            />
-          ) : activePageId === 'page:memory' && PAGE_TABS[activePageId] ? (
-            <Pages.MemoryPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
-          ) : activePageId === 'page:secrets' && PAGE_TABS[activePageId] ? (
-            <Pages.SecretsPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
-          ) : activePageId === 'page:connectors' && PAGE_TABS[activePageId] ? (
-            <Pages.ConnectorsPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
-          ) : activePageId === 'page:secrets-nav' && PAGE_TABS[activePageId] ? (
-            <Pages.SecretsNavPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
-          ) : activePageId === 'page:schedules' && PAGE_TABS[activePageId] ? (
-            <Pages.SchedulesPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
-          ) : activePageId === 'page:changes' && PAGE_TABS[activePageId] ? (
-            <Pages.ChangesPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
-          ) : activePageId === 'page:review' && PAGE_TABS[activePageId] ? (
+             gets handlePageBack: back to the thread it was opened over, else
+             project home. Entry points: Review (drawer), Browser (a preview
+             card or tool link), a project (a project_select/create tool row).
+             Memory has no entry point (COR-156: re-add one or delete it). */
+          activePageId === 'page:review' && PAGE_TABS[activePageId] ? (
             <Pages.ReviewPage
               page={PAGE_TABS[activePageId]}
               projectId={projectId}
               {...pageChrome}
               onOpenSession={handleOpenSessionById}
             />
-          ) : activePageId === 'page:files-nav' && PAGE_TABS[activePageId] ? (
-            <Pages.FilesNavPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
-          ) : activePageId === 'page:dev' && PAGE_TABS[activePageId] ? (
-            <Pages.DevPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
-          ) : activePageId === 'page:settings' && PAGE_TABS[activePageId] ? (
-            <Pages.SettingsNavPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
-          ) : activePageId === 'page:updates' && PAGE_TABS[activePageId] ? (
-            <Pages.UpdatesPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
-          ) : activePageId === 'page:ssh' && PAGE_TABS[activePageId] ? (
-            <Pages.SSHPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
-          ) : activePageId === 'page:running-services' && PAGE_TABS[activePageId] ? (
-            <Pages.RunningServicesPage
-              page={PAGE_TABS[activePageId]}
-              onBack={handlePageBack}
-              {...pageChrome}
-            />
           ) : activePageId === 'page:browser' && PAGE_TABS[activePageId] ? (
             <Pages.BrowserPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
-          ) : activePageId === 'page:agent-browser' && PAGE_TABS[activePageId] ? (
-            <Pages.AgentBrowserPage
-              page={PAGE_TABS[activePageId]}
-              onBack={handlePageBack}
-              {...pageChrome}
-            />
-          ) : activePageId === 'page:connections' && PAGE_TABS[activePageId] ? (
-            <Pages.ConnectionsTabPage
-              page={PAGE_TABS[activePageId]}
-              onBack={handlePageBack}
-              {...pageChrome}
-            />
-          ) : activePageId === 'page:triggers' && PAGE_TABS[activePageId] ? (
-            <Pages.ScheduledTasksTabPage
-              page={PAGE_TABS[activePageId]}
-              onBack={handlePageBack}
-              {...pageChrome}
-            />
-          ) : activePageId === 'page:api' && PAGE_TABS[activePageId] ? (
-            <Pages.ApiKeysTabPage
-              page={PAGE_TABS[activePageId]}
-              onBack={handlePageBack}
-              {...pageChrome}
-            />
-          ) : activePageId === 'page:tunnel' && PAGE_TABS[activePageId] ? (
-            <Pages.TunnelTabPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
-          ) : activePageId === 'page:workspace' && PAGE_TABS[activePageId] ? (
-            <Pages.WorkspacePage
-              ref={workspacePageRef}
-              page={PAGE_TABS[activePageId]}
-              onBack={handlePageBack}
-              {...pageChrome}
-              onRequestMenu={() => {
-                setPageMenuTarget({ page: 'workspace' });
-                pageMenuRef.current?.open();
-              }}
-              onCreateSessionWithPrompt={handleCreateSessionWithPrompt}
-            />
-          ) : activePageId === 'page:projects' && PAGE_TABS[activePageId] ? (
-            <Pages.ProjectsPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
-          ) : activePageId?.startsWith('page:project:') ? (
+          ) : activePageId === 'page:memory' && PAGE_TABS[activePageId] ? (
+            <Pages.MemoryPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
+          ) : activePageId.startsWith('page:project:') ? (
             <Pages.ProjectDetailPage
               projectId={activePageId.replace('page:project:', '')}
-              onBack={() => {
-                useTabStore.getState().navigateToPage('page:projects');
-              }}
+              onBack={handlePageBack}
               {...pageChrome}
             />
-          ) : activePageId && PAGE_TABS[activePageId] ? (
-            <Pages.PlaceholderPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
           ) : null
         ) : activeSessionId && threadReady ? (
           /* Thread — the existing SessionPage, reused verbatim. Its own header
@@ -1541,17 +1335,6 @@ export function ProjectScreen() {
         </ProjectRouteProvider>
       </Drawer>
 
-      {/* The per-page context menu (Workspace / Files "···"). The project
-          sheet (`CustomizeSheet`) it used to sit beside is deleted
-          (COR-123/COR-160 Task 3). */}
-      <PageContextMenuSheet
-        ref={pageMenuRef}
-        target={pageMenuTarget}
-        workspaceRef={workspacePageRef}
-        filesRef={filesPageRef}
-        onCreateSessionWithPrompt={handleCreateSessionWithPrompt}
-      />
-
       {/* One session actions sheet (COR-140 Task 5): the thread's "···", the
           Sessions page's long press, and the drawer's session row long press
           all open it through `openSessionActions` (ProjectRouteValue). */}
@@ -1566,6 +1349,7 @@ export function ProjectScreen() {
         currentProjectId={projectId}
         onClose={closeSwitcher}
         onProjectOpen={closeDrawer}
+        openProjectRoute={replaceProject}
       />
     </>
   );

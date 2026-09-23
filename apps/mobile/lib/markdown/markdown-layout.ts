@@ -57,20 +57,19 @@ export const CODE_BLOCK = {
 } as const;
 
 /**
- * Code font metrics, read from `/System/Library/Fonts/Menlo.ttc` (Menlo
- * Regular): unitsPerEm 2048, hhea ascent 1901, descent 483, advance 1233.
- * Android's `monospace` is assumed to match (Droid Sans Mono shares the
- * Bitstream Vera metrics); not measured on a device.
+ * Code font metrics, read from `assets/font/Roobert/RoobertMono-Regular.ttf`
+ * (`MONO_FONT_FAMILY`, the same face on iOS and Android): unitsPerEm 1000,
+ * hhea ascent 1018, descent 246, line gap 0, advance 630.
  */
-const MONO = { unitsPerEm: 2048, ascent: 1901, descent: 483, advance: 1233 } as const;
+const MONO = { unitsPerEm: 1000, ascent: 1018, descent: 246, advance: 630 } as const;
 
 const CHIP_FONT_SIZE = 12.8;
 const CHIP_LINE_HEIGHT = 15;
 const CHIP_PADDING_Y = 1;
 const CHIP_BORDER = 1;
-/** Glyph content box of the code font at the chip size: 14.90px. */
+/** Glyph content box of the code font at the chip size: 16.18px (taller than the 15px line). */
 const CHIP_CONTENT = ((MONO.ascent + MONO.descent) / MONO.unitsPerEm) * CHIP_FONT_SIZE;
-/** Chip text baseline above the bottom of its 15px line: half-leading + descent = 3.07px. */
+/** Chip text baseline above the bottom of its 15px line: half-leading (-0.59) + descent (3.15) = 2.56px. */
 const CHIP_TEXT_BASELINE =
   (CHIP_LINE_HEIGHT - CHIP_CONTENT) / 2 + (MONO.descent / MONO.unitsPerEm) * CHIP_FONT_SIZE;
 
@@ -91,11 +90,11 @@ export const INLINE_CODE = {
   borderWidth: CHIP_BORDER,
   /** 15 + 2 × 1 + 2 × 1 = 19px. */
   height: CHIP_LINE_HEIGHT + 2 * CHIP_PADDING_Y + 2 * CHIP_BORDER,
-  /** Chip text baseline above the bottom of the chip's 15px text line: 3.07px. */
+  /** Chip text baseline above the bottom of the chip's 15px text line: 2.56px. */
   textBaselineFromBottom: CHIP_TEXT_BASELINE,
-  /** Chip text baseline above the chip's bottom border edge: 3.07 + 1 + 1 = 5.07px. */
+  /** Chip text baseline above the chip's bottom border edge: 2.56 + 1 + 1 = 4.56px. */
   chipBaselineFromBottom: CHIP_TEXT_BASELINE + CHIP_PADDING_Y + CHIP_BORDER,
-  /** One code character, px: Menlo advance 7.71 + tracking -0.32 = 7.39. */
+  /** One code character, px: Roobert Mono advance 8.06 + tracking -0.32 = 7.74. */
   charWidth: (MONO.advance / MONO.unitsPerEm) * CHIP_FONT_SIZE - 0.32,
   /** Hex swatch `size-[0.8em]`. */
   swatchSize: 10.24,
@@ -117,21 +116,21 @@ const IOS_ATTACHMENT_DESCENDER = 2.76;
  * The inline view is the WHOLE chip (`height`, 19px at 1x text size). An
  * earlier version made the view only the part above the chip's text baseline
  * and let the rest hang out of its bottom; Android clips children to their
- * parent's bounds, so the bottom 5.07px disappeared (about 70% of the chip
+ * parent's bounds, so the bottom 5.07px (Menlo metrics) disappeared (about 70% of the chip
  * showed). Nothing may render outside this view.
  *
  * `translateY` moves the chip so its text baseline sits on the sentence
  * baseline. Where each platform puts the view's bottom edge:
  * - Android: on the line baseline (`TextLayoutManager.kt`:
  *   `getLineBaseline(line) - placeholderHeight`). Shift down by the chip's own
- *   baseline offset (5.07px). The paragraph's fixed line height leaves room
+ *   baseline offset (4.56px). The paragraph's fixed line height leaves room
  *   below the baseline (body: 24.38px line, about 5.9px below the baseline).
  * - iOS: `RCTTextLayoutManager.mm` sets the bottom to the line fragment's
  *   bottom plus the fragment font's descender. The glyph rect of an
  *   attachment is the whole line fragment, and the font is Helvetica 12.
  *   That bottom sits `Roobert descent + half-leading - 2.76` above the line
  *   baseline, so the shift is the chip baseline offset minus that drop:
- *   +1.43px in body text, +3.23px in table cells.
+ *   +0.50px in body text, +2.72px in table cells.
  */
 export function inlineCodeAnchor(
   os: string,

@@ -16,6 +16,23 @@
  * Delete confirms in an `AlertDialog` that opens only after the sheet has
  * closed — never two overlays at once.
  *
+ * COR-148 (Jay, 2026-09-24): three rows sit above Rename, in their own
+ * untitled group — Open change request · View changes · Compact. Open change
+ * request is web's "Propose changes": shown while the session has changes, it
+ * closes the sheet and sends web's prompt to the thread (the agent commits and
+ * runs `kortix cr open` into the session's base), queued if the agent works.
+ * View changes pushes the
+ * session's changed files in place (`SessionChangesList`), and a file pushes
+ * its diff (`SessionChangeFileView`); disabled with "No changes" when the
+ * runtime reports none. Compact confirms (`useConfirmDialog`) after the sheet
+ * has closed, then calls `useCompactSession`; the thread's compaction divider
+ * is the progress, and only a failure toasts (web `compact-modal.tsx`).
+ * Disabled while the session works. View changes and Compact need the live
+ * runtime, so they show only for the thread on screen; a drawer long press on
+ * another session shows none of the three. Rules:
+ * `lib/session/session-actions.ts`. Export transcript and Archive are not on
+ * mobile.
+ *
  * Controlled by an imperative ref (`present(session)`), so a caller needs no
  * state of its own: mount one instance and call `ref.current?.present(session)`
  * from a tap or a long press.
@@ -27,10 +44,13 @@ import { BottomSheetScrollView, type BottomSheetModal } from '@gorhom/bottom-she
 import Animated from 'react-native-reanimated';
 import { View } from 'react-native';
 import {
+  GitDiffIcon,
+  GitPullRequestIcon,
   PencilIcon as Pencil,
   ArrowCounterClockwiseIcon as RotateCcw,
   ExportIcon as Share,
   SquareIcon as Square,
+  StackIcon,
   TrashIcon as Trash2,
 } from '@/lib/icons';
 
@@ -49,9 +69,24 @@ import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 import { POP_IN, PUSH_IN, SheetBackButton } from '@/components/kortix/sheet-push';
 import { useToast } from '@/components/kortix/toast-provider';
+import { useConfirmDialog } from '@/components/kortix/confirm-dialog';
+import { useSessionPromptRequestStore } from '@/stores/session-prompt-request-store';
+import { SessionChangeFileView, SessionChangesList } from '@/components/session/SessionChangesView';
 import { SessionRenameForm } from '@/components/session/SessionRenameForm';
 import { SessionShareForm } from '@/components/session/SessionShareForm';
+import { useSandboxContext } from '@/contexts/SandboxContext';
 import { haptics } from '@/lib/haptics';
+import { useCompactSession } from '@/lib/opencode/hooks/use-compact-session';
+import { useSessionChanges } from '@/lib/opencode/hooks/use-session-changes';
+import { useSyncStore } from '@/lib/opencode/sync-store';
+import {
+  isOpenThreadSession,
+  changeRequestBaseRef,
+  openChangeRequestPrompt,
+  sessionActionRows,
+  type ChangedFile,
+} from '@/lib/session/session-actions';
+import { useCompactionStore } from '@/stores/compaction-store';
 import { projectKeys, useProjectSessionsPaged } from '@/lib/projects/hooks';
 import {
   deleteProjectSession,
@@ -63,11 +98,16 @@ import { sessionDisplayStatus, sessionDisplayTitle } from '@/lib/session/session
 import { useTabStore } from '@/stores/tab-store';
 
 /** The sheet's view: its actions, or a form pushed over them. */
-type SheetView = 'options' | 'rename' | 'share';
+type SheetView = 'options' | 'rename' | 'share' | 'changes' | 'change-file';
 const PUSHED_VIEW_TITLE: Record<Exclude<SheetView, 'options'>, string> = {
   rename: 'Rename session',
   share: 'Share session',
+  changes: 'Changes',
+  // The pushed file's name replaces this while one shows.
+  'change-file': 'Changes',
 };
+/** What runs once the sheet has closed: a follow-up overlay, never two at once. */
+type AfterClose = 'delete' | 'open-cr' | 'compact' | null;
 
 export interface SessionActionsSheetRef {
   /**
@@ -123,9 +163,29 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
     // True once the user came back from Rename: only then the options slide in.
     const [returning, setReturning] = React.useState(false);
     const [menuSession, setMenuSession] = React.useState<ProjectSession | null>(null);
+    // The file pushed over the changes list (View changes → a file).
+    const [changeFile, setChangeFile] = React.useState<ChangedFile | null>(null);
     // Set before the sheet closes; read when its close animation ends.
-    // Delete confirms in a dialog, which opens only after the sheet has closed.
-    const deleteAfterCloseRef = React.useRef(false);
+    // Delete and Compact confirm in a dialog, and Open change request is its
+    // own sheet: each opens only after this sheet has closed.
+    const afterCloseRef = React.useRef<AfterClose>(null);
+
+    // ── COR-148: Open change request · View changes · Compact ──
+    const { sandboxUrl } = useSandboxContext();
+    // The thread on screen, keyed by its OpenCode id (SessionPage's `sessionId`).
+    const activeSessionId = useTabStore((s) => s.activeSessionId);
+    const isOpenThread = !!menuSession && isOpenThreadSession(menuSession, activeSessionId);
+    const liveSessionId = isOpenThread ? activeSessionId : null;
+    const changesQuery = useSessionChanges(sandboxUrl, isOpenThread);
+    const runtimeStatus = useSyncStore((s) => (liveSessionId ? s.sessionStatus[liveSessionId] : undefined));
+    const isBusy = runtimeStatus?.type === 'busy' || runtimeStatus?.type === 'retry';
+    const isCompacting = useCompactionStore((s) =>
+      liveSessionId ? Boolean(s.compactingBySession[liveSessionId]) : false
+    );
+    const compactSession = useCompactSession();
+    const { confirm, dialog: confirmDialog } = useConfirmDialog();
+    // The session and runtime a Compact tap was for, kept past the sheet's close.
+    const compactTargetRef = React.useRef<{ sessionId: string; sandboxUrl: string } | null>(null);
 
     const present = React.useCallback((session: ProjectSession, initialView?: 'rename') => {
       haptics.medium();
@@ -151,32 +211,86 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
     const [deleteTitle, setDeleteTitle] = React.useState('');
     const [deleteFailed, setDeleteFailed] = React.useState(false);
 
+    const runCompact = React.useCallback(() => {
+      const target = compactTargetRef.current;
+      compactTargetRef.current = null;
+      if (!target) return;
+      // The session may have started working while the dialog was up.
+      const status = useSyncStore.getState().sessionStatus[target.sessionId];
+      if (status?.type === 'busy' || status?.type === 'retry') {
+        haptics.warning();
+        toast.error('The session is working. Compact it when it stops.');
+        return;
+      }
+      haptics.medium();
+      // No progress or success toast: the thread's compaction divider mounts
+      // at once (`startCompaction`) and becomes the server's compaction turn.
+      compactSession.mutate(target, {
+        onError: (error) => {
+          haptics.warning();
+          toast.error(error instanceof Error && error.message ? error.message : 'Unable to compact the session. Try again.');
+        },
+      });
+    }, [compactSession, toast]);
+
     const handleSheetDismiss = React.useCallback(() => {
       const session = menuSession;
-      const confirm = deleteAfterCloseRef.current;
-      deleteAfterCloseRef.current = false;
+      const next = afterCloseRef.current;
+      afterCloseRef.current = null;
       setMenuSession(null);
       setSheetView('options');
       setReturning(false);
-      if (!session || !confirm) return;
-      setDeleteFailed(false);
-      setDeleteTitle(sessionDisplayTitle(session));
-      setConfirmDelete(session);
-    }, [menuSession]);
+      setChangeFile(null);
+      if (!session || !next) return;
+      if (next === 'delete') {
+        setDeleteFailed(false);
+        setDeleteTitle(sessionDisplayTitle(session));
+        setConfirmDelete(session);
+      } else if (next === 'open-cr') {
+        if (!liveSessionId) return;
+        useSessionPromptRequestStore
+          .getState()
+          .requestSend(liveSessionId, openChangeRequestPrompt(changeRequestBaseRef(session)));
+        haptics.success();
+        toast.success('Asked your agent to propose these changes for review.');
+      } else if (next === 'compact') {
+        confirm({
+          title: 'Compact session',
+          description:
+            'Older messages are summarized into a short recap to free up context. Recent messages stay as they are.',
+          confirmLabel: 'Compact',
+          onConfirm: runCompact,
+        });
+      }
+    }, [menuSession, confirm, runCompact, liveSessionId, toast]);
 
     const pushView = React.useCallback((view: Exclude<SheetView, 'options'>) => {
       haptics.tap();
+      setReturning(false);
       setSheetView(view);
       // Rename goes to full height (Jay, 2026-09-22): the field sits at the top,
       // clear of the keyboard, and the sheet does not resize as the keyboard moves.
-      if (view === 'rename') actionSheetRef.current?.snapToPosition('100%');
+      // A file's diff is long and wide: it reads at full height too.
+      if (view === 'rename' || view === 'change-file') actionSheetRef.current?.snapToPosition('100%');
     }, []);
     const popView = React.useCallback(() => {
       haptics.tap();
       setReturning(true);
-      setSheetView('options');
+      // A file's diff goes back to the changes list; every other view to the options.
+      setSheetView((view) => (view === 'change-file' ? 'changes' : 'options'));
       // Back to the content height: index 0, the stop under the full-height one.
       actionSheetRef.current?.snapToIndex(0);
+    }, []);
+    const openChangeFile = React.useCallback(
+      (file: ChangedFile) => {
+        setChangeFile(file);
+        pushView('change-file');
+      },
+      [pushView]
+    );
+    const closeThen = React.useCallback((next: Exclude<AfterClose, null>) => {
+      afterCloseRef.current = next;
+      actionSheetRef.current?.dismiss();
     }, []);
     const closeSheet = React.useCallback(() => actionSheetRef.current?.dismiss(), []);
 
@@ -262,6 +376,20 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
     const menuStatus = menuSession ? sessionDisplayStatus(menuSession) : null;
     const canManageLifecycle = menuSession?.can_manage_lifecycle !== false;
     const canManageSharing = menuSession?.can_manage_sharing !== false;
+    const topRows = sessionActionRows({
+      isOpenThread,
+      hasRuntime: !!sandboxUrl,
+      canManageLifecycle,
+      changes: {
+        pending: changesQuery.isPending,
+        error: changesQuery.isError,
+        count: changesQuery.data?.count ?? 0,
+      },
+      busy: isBusy,
+      compacting: isCompacting,
+    });
+    const hasTopRows =
+      topRows.openChangeRequest.visible || topRows.viewChanges.visible || topRows.compact.visible;
 
     return (
       <>
@@ -276,7 +404,9 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
           // the X, and no second handle gap above an in-content title.
           title={
             menuSession && sheetView !== 'options'
-              ? PUSHED_VIEW_TITLE[sheetView]
+              ? sheetView === 'change-file' && changeFile
+                ? changeFile.name
+                : PUSHED_VIEW_TITLE[sheetView]
               : menuSession
                 ? sessionDisplayTitle(menuSession)
                 : 'Session'
@@ -286,8 +416,7 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
           enablePanDownToClose
           onDismiss={handleSheetDismiss}
           keyboardBehavior="interactive"
-          keyboardBlurBehavior="restore"
-          android_keyboardInputMode="adjustResize">
+          keyboardBlurBehavior="restore">
           {/* One scrollable child: dynamic sizing needs it, and Share's member
               list can be taller than the screen. */}
           <BottomSheetScrollView
@@ -301,6 +430,47 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
                     project edge matches the title row's inset; 18pt between
                     the two groups, the settings screens' gap. */}
                 <View className="px-4" style={{ gap: 18 }}>
+                  {/* COR-148: the session's work first — Open change request ·
+                      View changes · Compact — in their own group on top. */}
+                  {hasTopRows ? (
+                    <SettingsGroup>
+                      {topRows.openChangeRequest.visible ? (
+                        <SettingsRow
+                          icon={GitPullRequestIcon}
+                          label="Open change request"
+                          onPress={() => {
+                            haptics.tap();
+                            closeThen('open-cr');
+                          }}
+                        />
+                      ) : null}
+                      {topRows.viewChanges.visible ? (
+                        <SettingsRow
+                          icon={GitDiffIcon}
+                          label="View changes"
+                          value={topRows.viewChanges.value}
+                          disabled={!topRows.viewChanges.enabled}
+                          right={topRows.viewChanges.enabled ? undefined : null}
+                          onPress={() => pushView('changes')}
+                        />
+                      ) : null}
+                      {topRows.compact.visible ? (
+                        <SettingsRow
+                          icon={StackIcon}
+                          label="Compact"
+                          value={topRows.compact.value}
+                          disabled={!topRows.compact.enabled}
+                          right={null}
+                          onPress={() => {
+                            if (!liveSessionId || !sandboxUrl) return;
+                            haptics.tap();
+                            compactTargetRef.current = { sessionId: liveSessionId, sandboxUrl };
+                            closeThen('compact');
+                          }}
+                        />
+                      ) : null}
+                    </SettingsGroup>
+                  ) : null}
                   <SettingsGroup>
                     <SettingsRow icon={Pencil} label="Rename" onPress={() => pushView('rename')} />
                     {canManageSharing ? (
@@ -327,13 +497,27 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
                         right={null}
                         onPress={() => {
                           haptics.warning();
-                          deleteAfterCloseRef.current = true;
-                          closeSheet();
+                          closeThen('delete');
                         }}
                       />
                     </SettingsGroup>
                   ) : null}
                 </View>
+              </Animated.View>
+            ) : sheetView === 'changes' ? (
+              // View changes: the file list. Back from a file slides it back in.
+              <Animated.View key="changes" entering={returning ? POP_IN : PUSH_IN}>
+                <SessionChangesList
+                  summary={changesQuery.data}
+                  isLoading={changesQuery.isPending}
+                  isError={changesQuery.isError}
+                  onRetry={() => void changesQuery.refetch()}
+                  onOpenFile={openChangeFile}
+                />
+              </Animated.View>
+            ) : sheetView === 'change-file' ? (
+              <Animated.View key="change-file" entering={PUSH_IN}>
+                {changeFile ? <SessionChangeFileView file={changeFile} /> : null}
               </Animated.View>
             ) : (
               // Rename and Share push in place of the options; Back returns to them.
@@ -388,6 +572,9 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Compact's confirm. */}
+        {confirmDialog}
       </>
     );
   }

@@ -2,7 +2,7 @@
  * Account detail (web parity: app/accounts/[id]/page.tsx). Mobile does not
  * maintain settings parity with web (COR-120): this screen is a small plan +
  * web handoff, not a rebuild of the web admin tabs. See apps/mobile/design.md
- * → Account tab and account screens.
+ * → Account page and account screens.
  *
  * Native back header titled with the account name, one Billing row (plan ·
  * balance as its value, opens `/billing` for this account), then "On
