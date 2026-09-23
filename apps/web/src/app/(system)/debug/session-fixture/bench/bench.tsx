@@ -79,10 +79,10 @@ function assistant(id: string, parentID: string, created: number, completed: boo
   };
 }
 
-function seed(messageCount: number): { messageId: string; partId: string } {
+function seed(messageCount: number): { messageId: string; partId: string; userId: string } {
   const turns = Math.max(1, Math.floor(messageCount / 2));
   const rows: MessageWithParts[] = [];
-  let last = { messageId: '', partId: '' };
+  let last = { messageId: '', partId: '', userId: '' };
   for (let t = 0; t < turns; t++) {
     const n = String(t).padStart(5, '0');
     const userId = `msg_bench_${n}_0`;
@@ -96,7 +96,7 @@ function seed(messageCount: number): { messageId: string; partId: string } {
       info: assistant(assistantId, userId, t * 10 + 1, !streaming),
       parts: [{ id: `prt_${assistantId}`, sessionID: SESSION_ID, messageID: assistantId, type: 'text', text: streaming ? '' : answerText(t) }],
     } as unknown as MessageWithParts);
-    last = { messageId: assistantId, partId: `prt_${assistantId}` };
+    last = { messageId: assistantId, partId: `prt_${assistantId}`, userId };
   }
   const store = useSessionStateStore.getState();
   store.clearSession(SESSION_ID);
@@ -104,11 +104,41 @@ function seed(messageCount: number): { messageId: string; partId: string } {
   return last;
 }
 
-const BenchTurn = memo(FixtureTurn);
+/** Renders of turns other than the streaming one, while the replay runs. Target: 0. */
+const settledRenders = { active: false, count: 0, streamingTurnId: '' };
+
+type BenchTurnProps = Parameters<typeof FixtureTurn>[0];
+
+/** `SessionTurn`'s memo boundary: the turn itself. Counts its real renders. */
+const BenchTurn = memo(function BenchTurn(props: BenchTurnProps) {
+  if (settledRenders.active && props.turn.userMessage.info.id !== settledRenders.streamingTurnId) {
+    settledRenders.count += 1;
+  }
+  return <FixtureTurn {...props} />;
+});
+
+/**
+ * `?rows=row` memoizes the whole row (viewport + turn), as `TranscriptTurnRow`
+ * in session-chat.tsx does; the default memoizes only the turn, as
+ * `SessionChat` did before it. Compare both to see the viewport's share.
+ */
+const BenchRow = memo(function BenchRow({
+  turnId,
+  className,
+  ...props
+}: BenchTurnProps & { turnId: string; className: string }) {
+  return (
+    <TurnViewport turnId={turnId} className={className}>
+      <BenchTurn {...props} />
+    </TurnViewport>
+  );
+});
 
 interface BenchResult {
   messages: number;
   deltas: number;
+  rows: 'turn' | 'row';
+  settledTurnRenders: number;
   commits: number;
   renderMs: number;
   longTasks: number;
@@ -131,7 +161,7 @@ function heapMb(): number | null {
   return memory ? Math.round((memory.usedJSHeapSize / 1024 / 1024) * 10) / 10 : null;
 }
 
-function Transcript({ streaming }: { streaming: boolean }) {
+function Transcript({ streaming, memoRows }: { streaming: boolean; memoRows: boolean }) {
   const { data } = useRuntimeMessages(SESSION_ID);
   const stableRef = useRef<Turn[]>([]);
   const turns = useMemo(
@@ -148,19 +178,23 @@ function Transcript({ streaming }: { streaming: boolean }) {
       <div className="flex min-w-0 flex-col">
         {turns.map((turn, index) => {
           const id = turn.userMessage.info.id;
-          return (
-            <TurnViewport key={id} turnId={id} className={index === 0 ? '' : 'mt-12'}>
-              <BenchTurn
-                turn={turn}
-                sessionId={SESSION_ID}
-                sessionStatus={status}
-                sessionWorking={streaming}
-                isWorkingTurn={id === lastId}
-                queueState={null}
-                permissions={NO_PERMISSIONS}
-                questions={NO_QUESTIONS}
-                agentNames={AGENT_NAMES}
-              />
+          const turnProps: BenchTurnProps = {
+            turn,
+            sessionId: SESSION_ID,
+            sessionStatus: status,
+            sessionWorking: streaming,
+            isWorkingTurn: id === lastId,
+            queueState: null,
+            permissions: NO_PERMISSIONS,
+            questions: NO_QUESTIONS,
+            agentNames: AGENT_NAMES,
+          };
+          const className = index === 0 ? '' : 'mt-12';
+          return memoRows ? (
+            <BenchRow key={id} turnId={id} className={className} {...turnProps} />
+          ) : (
+            <TurnViewport key={id} turnId={id} className={className}>
+              <BenchTurn {...turnProps} />
             </TurnViewport>
           );
         })}
@@ -174,10 +208,11 @@ export function SessionFixtureBench() {
   const messageCount = Number(params.get('messages') ?? 100);
   const deltaCount = Number(params.get('deltas') ?? 200);
   const autorun = params.get('autorun') === '1';
+  const memoRows = params.get('rows') === 'row';
   const [queryClient] = useState(
     () => new QueryClient({ defaultOptions: { queries: { enabled: false, retry: false } } }),
   );
-  const [target, setTarget] = useState<{ messageId: string; partId: string } | null>(null);
+  const [target, setTarget] = useState<{ messageId: string; partId: string; userId: string } | null>(null);
   const [streaming, setStreaming] = useState(true);
   const [phase, setPhase] = useState<'seeding' | 'settling' | 'ready' | 'running' | 'done'>('seeding');
   const [result, setResult] = useState<BenchResult | null>(null);
@@ -219,6 +254,9 @@ export function SessionFixtureBench() {
       }
     }
     profile.current = { active: true, commits: 0, renderMs: 0 };
+    settledRenders.active = true;
+    settledRenders.count = 0;
+    settledRenders.streamingTurnId = target.userId;
     const started = performance.now();
     const frames = { slow: 0, jank: 0, last: started, on: true };
     const tick = (now: number) => {
@@ -236,16 +274,22 @@ export function SessionFixtureBench() {
     const timer = setInterval(() => {
       if (sent >= deltaCount) {
         clearInterval(timer);
+        // Stop counting before the turn ends: the end flips `sessionWorking`
+        // for every turn once, which is not per-delta cost.
+        settledRenders.active = false;
         setStreaming(false);
         setTimeout(() => {
           const wallMs = performance.now() - started;
           profile.current.active = false;
+          settledRenders.active = false;
           frames.on = false;
           for (const observer of observers) observer.disconnect();
           const longTaskMs = longTasks.reduce((sum, entry) => sum + entry.duration, 0);
           const next: BenchResult = {
             messages: messageCount,
             deltas: deltaCount,
+            rows: memoRows ? 'row' : 'turn',
+            settledTurnRenders: settledRenders.count,
             commits: profile.current.commits,
             renderMs: Math.round(profile.current.renderMs),
             longTasks: longTasks.length,
@@ -276,7 +320,7 @@ export function SessionFixtureBench() {
         .applyPartDelta(SESSION_ID, target.messageId, target.partId, 'text', text, `evt_bench_${sent}`);
       sent += 1;
     }, DELTA_INTERVAL_MS);
-  }, [target, deltaCount, messageCount]);
+  }, [target, deltaCount, messageCount, memoRows]);
 
   useEffect(() => {
     if (autorun && phase === 'ready') run();
@@ -303,7 +347,7 @@ export function SessionFixtureBench() {
           </header>
           <div className="min-w-0 flex-1 pb-12">
             <Profiler id="transcript" onRender={onRender}>
-              <Transcript streaming={streaming} />
+              <Transcript streaming={streaming} memoRows={memoRows} />
             </Profiler>
           </div>
         </div>
