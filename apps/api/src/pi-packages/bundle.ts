@@ -19,6 +19,7 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { config } from '../config';
 import {
   headObject,
   presignProjectSnapshotDownload,
@@ -50,8 +51,10 @@ export function piPackageBundleDigest(specs: readonly string[]): string {
   return createHash('sha256').update(JSON.stringify({ format: PI_PACKAGE_BUNDLE_FORMAT, target: TARGET, specs })).digest('hex');
 }
 
-export function piPackageBundleKey(digest: string): string {
-  return `pi-packages/${PI_PACKAGE_BUNDLE_FORMAT}/${digest}.tar.gz`;
+/** `<snapshot prefix>pi-packages/<format>/<digest>.tar.gz`: under the same prefix (and bucket policy) as project snapshots. */
+export function piPackageBundleKey(digest: string, configuredPrefix = config.KORTIX_PROJECT_SNAPSHOT_S3_PREFIX): string {
+  const trimmed = configuredPrefix.trim().replace(/^\/+/, '').replace(/\/+$/, '');
+  return `${trimmed ? `${trimmed}/` : ''}pi-packages/${PI_PACKAGE_BUNDLE_FORMAT}/${digest}.tar.gz`;
 }
 
 async function run(cmd: string[], cwd: string): Promise<void> {
