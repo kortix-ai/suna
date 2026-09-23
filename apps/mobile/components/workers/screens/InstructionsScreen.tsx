@@ -4,17 +4,19 @@
  * Allows editing the system prompt/instructions for a worker
  */
 
-import React, { useState, useEffect, useRef } from 'react';
-import { View, TextInput, ScrollView, Keyboard } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Keyboard } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { Textarea } from '@/components/ui/textarea';
 import { useColorScheme } from 'nativewind';
 import { useAgent, useUpdateAgent } from '@/lib/agents/hooks';
-import { Save, AlertCircle } from 'lucide-react-native';
+import { FloppyDiskIcon as Save, WarningCircleIcon as AlertCircle } from '@/lib/icons';
 import { Pressable, ActivityIndicator, Alert } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { log } from '@/lib/logger';
+import { THEME } from '@/lib/utils/theme';
 
 interface InstructionsScreenProps {
   agentId: string;
@@ -28,9 +30,6 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
   const [systemPrompt, setSystemPrompt] = useState('');
   const [hasChanges, setHasChanges] = useState(false);
   const { t } = useLanguage();
-
-  // TextInput ref to control focus manually
-  const inputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     if (agent?.system_prompt !== undefined) {
@@ -80,7 +79,7 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
   if (isLoading) {
     return (
       <View className="items-center justify-center py-12">
-        <ActivityIndicator size="small" color={colorScheme === 'dark' ? '#FFFFFF' : '#121215'} />
+        <ActivityIndicator size="small" color={colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground} />
         <Text className="mt-4 font-roobert text-sm text-muted-foreground">
           {t('workers.instructions.loading')}
         </Text>
@@ -104,13 +103,13 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
         </Text>
 
         {!isEditable && (
-          <View className="flex-row items-start gap-2 rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-3">
+          <View className="flex-row items-start gap-2 rounded-xl border border-kortix-orange/20 bg-kortix-orange/10 p-3">
             <Icon
               as={AlertCircle}
               size={16}
-              className="mt-0.5 text-yellow-600 dark:text-yellow-400"
+              className="mt-0.5 text-kortix-orange"
             />
-            <Text className="flex-1 font-roobert text-sm text-yellow-600 dark:text-yellow-400">
+            <Text className="flex-1 font-roobert text-sm text-kortix-orange">
               {isSunaAgent
                 ? t('workers.instructions.cannotEditSuna')
                 : t('workers.instructions.cannotEdit')}
@@ -121,38 +120,13 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
 
       {/* Scrollable text input */}
       <View style={{ flex: 1, marginBottom: isEditable ? 84 : 0 }}>
-        <ScrollView
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          showsVerticalScrollIndicator={true}
-          style={{
-            flex: 1,
-            borderRadius: 16,
-            borderWidth: 1.5,
-            borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-            backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
-            opacity: isEditable ? 1 : 0.6,
-          }}
-          contentContainerStyle={{
-            padding: 16,
-          }}>
-          <TextInput
-            ref={inputRef}
-            value={systemPrompt}
-            onChangeText={handleTextChange}
-            placeholder={t('workers.instructions.placeholder')}
-            placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
-            multiline
-            scrollEnabled={false}
-            editable={isEditable}
-            style={{
-              fontSize: 16,
-              color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
-              textAlignVertical: 'top',
-              minHeight: 300,
-            }}
-          />
-        </ScrollView>
+        <Textarea
+          value={systemPrompt}
+          onChangeText={handleTextChange}
+          placeholder={t('workers.instructions.placeholder')}
+          editable={isEditable}
+          className="min-h-[300px] flex-1 text-base"
+        />
       </View>
 
       {/* Sticky Save Button */}
@@ -174,7 +148,10 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
                 : 'bg-primary active:opacity-80'
             }`}>
             {updateAgentMutation.isPending ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
+              <ActivityIndicator
+                size="small"
+                color={colorScheme === 'dark' ? THEME.dark.primaryForeground : THEME.light.primaryForeground}
+              />
             ) : (
               <Icon as={Save} size={18} className="text-primary-foreground" />
             )}

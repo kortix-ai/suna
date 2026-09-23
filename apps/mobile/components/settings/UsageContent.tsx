@@ -12,7 +12,7 @@ import { View, ActivityIndicator, Pressable } from 'react-native';
 import { useLanguage } from '@/contexts';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { AlertCircle, MessageSquare, Activity, Sparkles } from 'lucide-react-native';
+import { WarningCircleIcon as AlertCircle, ChatIcon as MessageSquare, PulseIcon as Activity, SparkleIcon as Sparkles } from '@/lib/icons';
 import * as Haptics from 'expo-haptics';
 import { useThreadUsage } from '@/lib/billing';
 import { useBillingContext } from '@/contexts/BillingContext';
@@ -177,7 +177,7 @@ export function UsageContent({ onThreadPress, onUpgradePress }: UsageContentProp
       {threadSummary && (
         <View className="mb-8 items-center">
           <View className="mb-3 h-16 w-16 items-center justify-center rounded-full bg-primary/10">
-            <Icon as={Activity} size={28} className="text-primary" strokeWidth={2} />
+            <Icon as={Activity} size={28} className="text-primary" />
           </View>
           <Text className="mb-1 font-roobert-semibold text-5xl tracking-tight text-foreground">
             {formatCredits(threadSummary.total_credits_used)}
@@ -243,7 +243,6 @@ export function UsageContent({ onThreadPress, onUpgradePress }: UsageContentProp
                   as={MessageSquare}
                   size={18}
                   className="text-primary-foreground"
-                  strokeWidth={2.5}
                 />
               </View>
               <Text className="mb-1 font-roobert-semibold text-2xl text-foreground">
@@ -259,7 +258,6 @@ export function UsageContent({ onThreadPress, onUpgradePress }: UsageContentProp
                   as={Sparkles}
                   size={18}
                   className="text-primary-foreground"
-                  strokeWidth={2.5}
                 />
               </View>
               <Text className="mb-1 font-roobert-semibold text-2xl text-foreground">
@@ -302,7 +300,7 @@ export function UsageContent({ onThreadPress, onUpgradePress }: UsageContentProp
         ) : threadError ? (
           <View className="rounded-[18px] border border-destructive/20 bg-destructive/10 p-4">
             <View className="flex-row items-start gap-2">
-              <Icon as={AlertCircle} size={16} className="text-destructive" strokeWidth={2} />
+              <Icon as={AlertCircle} size={16} className="text-destructive" />
               <Text className="flex-1 font-roobert-medium text-sm text-destructive">
                 {threadError instanceof Error
                   ? threadError.message

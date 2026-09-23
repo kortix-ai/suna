@@ -31,6 +31,7 @@ import {
   connectionIsReachable,
   isTrustedManagedChannelAuthorization,
 } from '../lib/connection-access';
+import { requestAgentPrincipalReach } from '../lib/personal-resources';
 import { readBody } from '../lib/serializers';
 
 function callbackUrl(requestUrl: string): string {
@@ -106,6 +107,8 @@ async function loadMutableConnection(c: any, projectId: string, connectionId: st
     ownerId: connection.ownerId,
     actingUserId: loaded.userId,
     actingPrincipalIsServiceAccount: serviceAccount,
+    // Spec 2026-09-22 §2.3: an agent-principal session keys on on_behalf_of.
+    agentPrincipal: await requestAgentPrincipalReach(c, loaded.actor),
     trustedManagedSystem: isTrustedManagedChannelAuthorization({
       providerType: connection.providerType,
       platform:

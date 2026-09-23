@@ -1,32 +1,21 @@
-Admins can open every session, a project home that sends, and history that fills in on wake
+Agents as principals, Teams complete, and saved history without a sandbox
 
-Owners can let admins open every session in their account, sending a message
-from the project home no longer freezes the box, and a woken session fills in
-its saved history.
+### New
+- **Agents act as their own principal.** An agent session now acts as the agent, on behalf of the person who started it, and every audit event records both. The `kortix_cli` permission scope is now `kortix_permissions`.
+- **Microsoft Teams is complete.** Agent questions, images, and the remaining Teams flows now work like Slack.
+- **Saved history works while the sandbox is off.** Session transcripts and their attachments load on web, SDK, and CLI without waking the sandbox.
+- **Mermaid previews.** `.mmd` and `.mermaid` files render as diagrams in the file viewer.
+- **Mobile app revamp.** New primitives, a project stack, and session chat parity with web. Session logic is now shared through `@kortix/sdk`.
 
-## New
+### Improved
+- **Download is a visible primary action** in the file viewers.
+- **Session layout:** a centered session column, sub-agent tree lines, neutral queued-message bubbles, tighter connector intake spacing, and a working send from project home.
+- **Sandbox memory guard:** a turn stops only on real memory pressure, and every stop says why.
 
-- **Let owners and admins open every session.** An owner can turn on an account
-  policy that gives owners and admins access to every session in the account.
-  It is off by default, only an owner can change it, and every session opened
-  this way is recorded in the audit log.
-- **See who owns each session.** The Sessions page shows each session's owner and
-  filters by owner and by access.
-
-## Improved
-
-- Sending from the project home sends the message instead of freezing the input,
-  and the composer stays in one place through the send.
-- A session that wakes fills in its saved history.
-- The waiting indicator stops while a turn is waiting on you.
-- When a session cannot start, the reason is shown instead of a generic error.
-
-## Fixed
-
-- Creating a project during a GitHub rate limit now tells you to retry and when,
-  instead of failing.
-- Rebuilding a sandbox image that is still in use explains why it cannot proceed.
-- Restarting or starting a session no longer erases what another in-flight
-  request recorded about it.
-- Session-access audit entries are translated.
-
+### Fixed
+- **Slack:** in a workspace with more than one Kortix Slack app, an app no longer answers replies in another project's thread, so the right bot replies again.
+- **BYOK billing:** sessions on your own provider key are never charged Kortix credits, and usage is attributed correctly.
+- **CLI:** `kortix sessions rm` retries a stalled delete instead of hanging.
+- **Git:** shallow pushes are accepted.
+- Usage descriptions are fully localized.
+- Internal: the Pi raw event envelope carries its own id; commit hooks block customer data and work in older worktrees; release-gate test fixes.

@@ -472,6 +472,12 @@ export async function sessionHasMemberConnectorBinding(input: {
   return Boolean(row);
 }
 
+/** The personal-resource scope of an agent-principal caller (spec §2.3). */
+export interface AgentPrincipalPersonalScope {
+  /** The human the session acts on behalf of; null = unattended or cleared. */
+  onBehalfOfUserId: string | null;
+}
+
 /**
  * Resolve the effective connection on every connector request. A present but
  * revoked/error binding never falls through to a project default.
@@ -495,6 +501,13 @@ export async function resolveSessionConnectorConnectionOutcome(input: {
   alias: string;
   actingUserId?: string;
   actingPrincipalIsServiceAccount?: boolean;
+  /**
+   * Present when the caller is an agent session under the agent-principal
+   * model (spec docs/specs/2026-09-22-agents-as-principals.md §2.3). A
+   * member-owned account then keys on `onBehalfOfUserId` AND a private
+   * session — never on the session creator or the token user.
+   */
+  agentPrincipal?: AgentPrincipalPersonalScope | null;
   /**
    * Name or id of the account to run this call as, when the caller named one.
    * Omitted resolves exactly as before: the session's binding if it holds one,
@@ -616,6 +629,9 @@ export async function resolveSessionConnectorConnectionOutcome(input: {
           actingUserId,
           actingPrincipalIsServiceAccount,
           trustedManagedSystem: trustedManagedAuthorization(connector, connection),
+          agentPrincipal: input.agentPrincipal
+            ? { onBehalfOfUserId: input.agentPrincipal.onBehalfOfUserId, visibility }
+            : null,
         }) ||
         !(await connectorConnectionIsConnected({ connector, connection }))
       ) {
@@ -661,6 +677,7 @@ export async function resolveSessionConnectorConnectionOutcome(input: {
       : input.actingPrincipalIsServiceAccount,
     visibility,
     account: input.account,
+    agentPrincipal: input.agentPrincipal ?? null,
   });
 }
 
@@ -716,13 +733,16 @@ export async function listEntitledConnectorConnections(input: {
   actingUserId?: string;
   actingPrincipalIsServiceAccount?: boolean;
   visibility?: 'private' | 'project' | 'restricted';
+  /** See `resolveSessionConnectorConnectionOutcome`. With it, the
+   *  service-account probe below is skipped: the rule keys on on_behalf_of. */
+  agentPrincipal?: AgentPrincipalPersonalScope | null;
 }): Promise<EntitledConnectorConnection[]> {
   const alias = canonicalConnectorAlias(input.alias);
   const actingUserId = input.actingUserId ?? '';
   let actingPrincipalIsServiceAccount = input.actingPrincipalIsServiceAccount ?? false;
   const visibility: 'private' | 'project' | 'restricted' = input.visibility ?? 'private';
 
-  if (input.actingPrincipalIsServiceAccount === undefined && actingUserId.length > 0) {
+  if (!input.agentPrincipal && input.actingPrincipalIsServiceAccount === undefined && actingUserId.length > 0) {
     const [serviceAccount] = await db
       .select({ id: serviceAccounts.serviceAccountId })
       .from(serviceAccounts)
@@ -797,6 +817,9 @@ export async function listEntitledConnectorConnections(input: {
         actingUserId,
         actingPrincipalIsServiceAccount,
         trustedManagedSystem: trustedManagedAuthorization(connector, connection),
+        agentPrincipal: input.agentPrincipal
+          ? { onBehalfOfUserId: input.agentPrincipal.onBehalfOfUserId, visibility }
+          : null,
       })
     ) {
       continue;
@@ -923,6 +946,7 @@ export async function resolveProjectDefaultConnectorConnectionOutcome(input: {
   visibility?: 'private' | 'project' | 'restricted';
   /** Name or id of the account to run as. Omitted = the default. */
   account?: string | null;
+  agentPrincipal?: AgentPrincipalPersonalScope | null;
 }): Promise<ResolvedConnectorConnectionOutcome> {
   const entitled = await listEntitledConnectorConnections(input);
   const selection = selectEntitledConnectorConnection(entitled, input.account);

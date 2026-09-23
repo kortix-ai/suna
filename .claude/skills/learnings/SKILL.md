@@ -21,6 +21,31 @@ linked, not inlined.
 
 ## Register
 
+### A guard that stops work must judge what the kernel judges, and every stop must name its cause (2026-09-22)
+
+**Rule:** A memory guard compares the cgroup WORKING SET (`memory.current -
+inactive_file`) to `memory.max`, never raw `memory.current`: the page cache is
+reclaimed before any OOM kill. Every writer that ends a turn `failed` records a
+cause in `end_error`; a turn with no cause is still shown to the user, never
+hidden. A stop a person asked for is stamped `UserStop` on every path, not only
+the proxy. **Incident:** a prod session lost 3 turns in 20 min to the memory
+guard during `tsc --noEmit` (92 % "used", <1 GB anon, 5 GB inactive file,
+`oom_kill 0`), and the UI said "No reason was reported"; 20-30 % of failed turns
+per hour had no cause and were hidden. **Enforcers:** `resources.test.ts`
+(working set), `integration-sandbox-turn-lifecycle.test.ts`,
+`sandbox-reaper.test.ts`, flows SESS-34 and SESS-35.
+
+### Resolve the LLM payee before touching the Kortix wallet (2026-09-22)
+
+**Rule:** Every BYOK descriptor uses `billingMode: 'none'`, `markup: 0`, and
+only customer-owned credentials. Never append a managed fallback. Run wallet
+admission only after resolution selects a Kortix-billed descriptor. Account
+Billing sums `final_cost`; provider spend belongs only in Gateway observability.
+**Incident:** A new free account showed provider-side BYOK spend as a Kortix LLM
+charge, while active compute stayed at $0 until stop. **Enforcers:**
+`resolve-candidates.test.ts`, `simple-handler.test.ts`,
+`handlers-byok.test.ts`, `session-costs.test.ts`, and `cost-rollups.test.ts`.
+
 ### Never write back a JSONB column you read earlier: merge in SQL (2026-09-22)
 
 **Rule:** A writer of shared JSONB state (`session_sandboxes.metadata`) never
@@ -7490,7 +7515,7 @@ prompt route and App wake called it as a yes/no check: at least 163,280 holds
 labelled them "LLM gateway admission hold". A comment next to one caller read
 "independent read-only checks". Non-gateway callers use `checkBillingAdmission`.
 
-**Incident.** Prod account `9c178b9d` (enterprise trial): 16,909 sandboxes,
+**Incident.** A prod enterprise-trial account: 16,909 sandboxes,
 0 compute rows, $0 compute; 115,810 holds against $1.69 of real LLM spend.
 Found from one screenshot of a $0 compute line. PR #7414.
 
@@ -7662,3 +7687,50 @@ the API instead of naming one.
 **Enforcement.** `SnapshotInUseError` + `rebuildFailureResponse`
 (`provider-actions.test.ts`, `platinum-list-pagination.test.ts`); SNAP-2
 asserts `202` or `409 SNAPSHOT_IN_USE` and fails on `503`. PR #7491.
+
+### 2026-09-22 — Customer data leaked into a commit, a test, and a PR body during an incident fix
+
+**Near-miss.** A customer reported a composer crash. The fix (PR #7508)
+carried the customer's name in its commit message and in a test comment, and
+the prod session id in the PR body. The commit message is on `main` and cannot
+be removed without a force push. A sweep then found the same class of leak
+elsewhere: a customer name in a test fixture, a prod account id in this file,
+committed screenshots of a customer account under `output/`, and one customer
+name in ~120 files.
+
+**Rule.** Customer names, people's names, emails, and real prod IDs never go
+into a commit, a PR, a doc, a comment, a test, or a skill. Write the class:
+"a customer", "a prod session", `<session_id>`. Real evidence stays in the
+gitignored `output/`, the scratchpad, or private agent memory.
+
+**Enforcement.** `scripts/check-blocked-terms.sh` from `pre-commit`,
+`commit-msg`, and `pre-push` refuses added lines, messages, and branch names
+that contain a term from the encrypted `BLOCKED_COMMIT_TERMS` in
+`apps/api/.env` (`scripts/check-blocked-terms.test.mjs`, packages lane).
+`/output/` is gitignored. The PR template carries a checkbox. PR text is not
+covered by the hooks.
+
+## A per-project Slack webhook must only act on rows its own project owns
+
+- **Incident (2026-09-22, prod, workspace T07FUFNT3RV):** a plain reply in a
+  `Kortix Company` Slack thread made the `kortix-incident-reporter` bot post
+  "Open session in Kortix". The link combined the reporter's project
+  (`0825e40b…`) with Kortix Company's session (`b27cc3c2…`). Kortix Company
+  then went silent in that thread. Cause: every BYO Slack app in a workspace
+  receives every `message.channels` event. `threadIsOwned` read `chat_threads`
+  by workspace and thread only. The reporter took the reply as a follow-up and
+  won the exactly-once claim (`slack:msg:{team}:{channel}:{ts}`). Kortix
+  Company's own delivery then lost that claim and returned without a reply.
+  This is the third incident from the same two-app workspace, after
+  2026-08-20 (`app_mention` not bot-checked) and 2026-08-28 (channel binding
+  stolen).
+- **Rule:** the BYO path `/v1/webhooks/slack/:projectId` receives events that
+  may belong to another project. Every lookup it makes in `chat_threads`,
+  `chat_channel_bindings`, or any other workspace-keyed table must filter by
+  that `projectId`, or be a deliberate claim-if-unowned. Test every new Slack
+  routing branch with two projects in one workspace.
+- **Enforcement:** `dispatchSlackEvent(..., { ownThreadsOnly: true })` on the
+  BYO route scopes `threadIsOwned` to `chat_threads.project_id`.
+  `unit-slack-classify-event.test.ts` asserts the bound SQL parameters include
+  the project. The shared OAuth route stays workspace-wide on purpose: it is
+  one app, and `/kortix use` can re-bind a channel under older threads.

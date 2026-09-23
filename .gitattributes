@@ -3,4 +3,3 @@
 scripts/worktree/*.ts text
 
 # Generated QA reports are binary artifacts.
-output/pdf/*.pdf binary

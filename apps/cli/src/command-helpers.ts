@@ -5,7 +5,7 @@ import { activeAccount, activeHostName, hasEnvTokenHost, listHosts } from './api
 import { ApiError, clientFromAuth, type ApiClient } from './api/client.ts';
 import { loadLink, resolveProjectId } from './project-link.ts';
 import { ensureDefaultProjectBinding } from './project-bind.ts';
-import { recordPermissionDenial } from './token-denial.ts';
+import { denialDetailFromBody, recordPermissionDenial } from './token-denial.ts';
 import { C, status } from './style.ts';
 import type { MeResponse, ProjectSession, ProjectSummary } from './api/types.ts';
 
@@ -506,7 +506,7 @@ export function surfaceApiError(err: unknown): number {
     // Both codes are identity verdicts. Note it so the CLI's tail can name the
     // token that was refused (see token-denial.ts) — the message itself only
     // ever names the action.
-    recordPermissionDenial(err.status);
+    recordPermissionDenial(err.status, undefined, denialDetailFromBody(err.body));
     if (err.status === 401) {
       process.stderr.write(
         `${status.err('Token rejected. Run `kortix login` to re-authenticate.')}\n`,

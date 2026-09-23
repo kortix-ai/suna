@@ -7,3 +7,9 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+## Customer data
+
+Never write customer names, people's names, emails, or real prod IDs into code,
+commits, PRs, docs, or comments. The full rule and the commit guard are in the
+root `AGENTS.md` → "NEVER write customer data or PII".

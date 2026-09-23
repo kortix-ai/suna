@@ -126,8 +126,8 @@ export const PERMISSION_KEY_HELP: Record<string, string> = {
 };
 
 /**
- * The grantable `kortix_cli` action catalog, grouped for the picker. MUST stay
- * in sync with `GRANTABLE_KORTIX_CLI_ACTIONS` in @kortix/manifest-schema (=
+ * The grantable `kortix_permissions` catalog, grouped for the picker. MUST stay
+ * in sync with `GRANTABLE_KORTIX_PERMISSIONS` in @kortix/manifest-schema (=
  * PROJECT_ACTIONS in apps/api iam/actions.ts — every project-scoped action,
  * including the manager-tier leaves project.delete / project.members.manage /
  * project.gateway.keys.manage, still reachable via a project's `manager`
@@ -135,7 +135,7 @@ export const PERMISSION_KEY_HELP: Record<string, string> = {
  * packages aren't in the web bundle — same mirror discipline as
  * apps/web/src/lib/project-actions.ts. Kept in sync by
  * agent-editor.test.tsx's drift guard against the real
- * `GRANTABLE_KORTIX_CLI_ACTIONS` constant.
+ * `GRANTABLE_KORTIX_PERMISSIONS` constant.
  *
  * Account-scoped admin actions (member.*, billing.*, token.*, project.create,
  * …) are ALSO absent — but that omission is a UX curation choice, not the
@@ -144,7 +144,7 @@ export const PERMISSION_KEY_HELP: Record<string, string> = {
  * project-bound token before an agent's grant is even consulted (see
  * `iam/engine-v2.ts`'s `computeTokenScope`).
  */
-export const KORTIX_CLI_CATALOG: { group: string; actions: string[] }[] = [
+export const KORTIX_PERMISSIONS_CATALOG: { group: string; actions: string[] }[] = [
   { group: 'Project', actions: ['project.read', 'project.write', 'project.delete'] },
   {
     group: 'Sessions',

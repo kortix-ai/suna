@@ -1,30 +1,7 @@
-export interface PresentationOutput {
-  success: boolean;
-  action: string;
-  error?: string;
-  presentation_name?: string;
-  presentation_path?: string;
-  slide_number?: number;
-  slide_title?: string;
-  slide_file?: string;
-  total_slides?: number;
-  viewer_url?: string;
-  viewer_file?: string;
-  message?: string;
-}
-
-export function parsePresentationOutput(output: string): PresentationOutput | null {
-  if (!output) return null;
-  try {
-    return JSON.parse(output) as PresentationOutput;
-  } catch {
-    if (output.startsWith('Error:')) {
-      return {
-        success: false,
-        action: 'unknown',
-        error: output.replace(/^Error:\s*/, ''),
-      };
-    }
-    return null;
-  }
-}
+/**
+ * Moved to `@kortix/sdk` (`packages/sdk/src/core/turns/tools/presentation-helpers.ts`)
+ * so web and mobile render the transcript from one implementation. This file
+ * keeps the old import path working for existing web call sites.
+ */
+export { parsePresentationOutput } from '@kortix/sdk';
+export type { PresentationOutput } from '@kortix/sdk';

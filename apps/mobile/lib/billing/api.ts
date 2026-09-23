@@ -12,6 +12,16 @@ import { log } from '@/lib/logger';
 // =============================================================================
 
 export interface AccountState {
+  /**
+   * The plan the account behaves as (trial-aware). Absent on API versions
+   * that predate it; read it through `getPlanFamily` (lib/billing/plan-action).
+   */
+  plan?: {
+    family: 'free' | 'team' | 'enterprise';
+    label: string;
+    sublabel?: string | null;
+    is_grandfathered?: boolean;
+  } | null;
   /** Team-plan checkout metadata (mirrors the web account-state contract). */
   can_manage_billing?: boolean;
   member_count?: number;

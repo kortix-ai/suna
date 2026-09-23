@@ -69,6 +69,7 @@ let unconfirmedTurnDrips: string[] = [];
 // on its own, without every existing exact-equality assertion having to carry
 // it.
 let clearedTurnReasons: Array<string | undefined> = [];
+let clearedTurnCauses: Array<string | null> = [];
 let ledgerSettleStatements: string[] = [];
 let huskFinalizeCalls: Array<{
   sandboxId: string;
@@ -427,12 +428,14 @@ const reapAndReconcileSandboxes = (
       token: string,
       _graceMs?: number,
       reason?: string,
+      cause?: { name: string | null } | null,
     ) => {
       clearedTurnCalls.push({
         sandboxId,
         token,
       });
       clearedTurnReasons.push(reason);
+      clearedTurnCauses.push(cause?.name ?? null);
       lifecycleCallOrder.push(`clear:${token}`);
       return true;
     },
@@ -504,6 +507,7 @@ beforeEach(() => {
   clearedTurnCalls = [];
   promptRedeliveries = [];
   clearedTurnReasons = [];
+  clearedTurnCauses = [];
   unconfirmedTurnDrips = [];
   __resetProbeBackoffForTests();
   ledgerSettleStatements = [];
@@ -1747,6 +1751,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
 
     expect(clearedTurnCalls).toEqual([{ sandboxId: 'sb-1', token: 'active-token' }]);
     expect(clearedTurnReasons).toEqual(['completed']);
+    expect(clearedTurnCauses).toEqual([null]);
   });
 
   test('a turn the model killed is recorded failed, exactly as the session.error relay records it', async () => {
@@ -1761,6 +1766,8 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     await reapAndReconcileSandboxes(NOW);
 
     expect(clearedTurnReasons).toEqual(['failed']);
+    // Its own end frame never arrived, so the reaper says what it saw.
+    expect(clearedTurnCauses).toEqual(['RuntimeTurnFailed']);
   });
 
   test('a husk the reaper had to force-close is failed, never completed', async () => {
@@ -1775,6 +1782,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
 
     expect(r.husksFinalized).toBe(1);
     expect(clearedTurnReasons).toEqual(['failed']);
+    expect(clearedTurnCauses).toEqual(['TurnHuskFinalized']);
   });
 
   test('a terminal answer no observer can explain is recorded unknown', async () => {

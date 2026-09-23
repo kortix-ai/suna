@@ -50,6 +50,12 @@ interface MessageQueueState {
 
   /** Clear all messages for a session */
   clearSession: (sessionId: string) => void;
+
+  /**
+   * Sign-out: drop every queued message from memory. Storage is cleared by
+   * the caller; `hydrated` stays true so the queue keeps working.
+   */
+  reset: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -203,5 +209,9 @@ export const useMessageQueueStore = create<MessageQueueState>()((set, get) => ({
       persistMessages(next);
       return { messages: next };
     });
+  },
+
+  reset: () => {
+    set({ messages: [] });
   },
 }));

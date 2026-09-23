@@ -96,7 +96,7 @@ beforeAll(async () => {
       '  scope_worker:',
       '    connectors: all',
       '    secrets: all',
-      '    kortix_cli: all',
+      '    kortix_permissions: all',
       '',
     ].join('\n'),
     'utf8',

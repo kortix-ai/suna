@@ -221,7 +221,7 @@ export function ConnectorIntake({
   return (
     <div className={cn('space-y-4 text-center', compact ? '' : 'mt-2')}>
       <p className="text-muted-foreground text-sm">
-        {tI18nHardcoded.raw('autoComponentsSetupLinksConnectorIntakeJsxText1ClickConnect9e029325')}
+        {tI18nHardcoded.raw('autoComponentsSetupLinksConnectorIntakeJsxText1ClickConnect9e029325')}{' '}
         <span className="text-foreground font-medium">{appLabel}</span>{' '}
         {tI18nHardcoded.raw('autoComponentsSetupLinksConnectorIntakeJsxTextViaPipedreamNo5dadf477')}
       </p>

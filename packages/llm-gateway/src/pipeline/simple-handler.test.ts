@@ -42,6 +42,29 @@ function hooks(usage: UsageEvent[], traces: GatewayTrace[]): GatewayHooks {
 }
 
 describe('simple gateway pipeline', () => {
+  test('runs wallet admission only for a Kortix-billed descriptor', async () => {
+    const calls: string[] = [];
+    for (const descriptor of [
+      { ...primary, billingMode: 'none' as const, markup: 0 },
+      { ...primary, billingMode: 'credits' as const },
+    ]) {
+      const response = await handleChatCompletions({
+        hooks: {
+          ...hooks([], []),
+          resolveUpstream: async () => [descriptor],
+          assertBillingActive: async (accountId) => { calls.push(accountId); },
+        },
+        logger: { info() {}, warn() {}, error() {} },
+        fetchImpl: async () => new Response(JSON.stringify({ choices: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) });
+      expect(response.status).toBe(200);
+    }
+    expect(calls).toEqual(['account']);
+  });
+
   test('HTTP pool exhaustion returns the earliest bounded cooldown', async () => {
     const keys: string[] = [];
     const upstream = Bun.serve({ port: 0, fetch: (request) => {
