@@ -15,6 +15,7 @@ import {
   mergeFailedSubmissionDocument,
   mergeFailedSubmissionFiles,
 } from '../composer-draft-recovery';
+import { joinAtQuoteBoundary, parseReplyContexts, splitAtQuoteMarkers } from '../reply-context';
 import type { AttachedFile } from './types';
 
 /**
@@ -35,6 +36,30 @@ import type { AttachedFile } from './types';
  * `DOMParser`), which would corrupt literal `<`, `>`, `&` in plain text.
  */
 export function textToParagraphs(text: string): JSONContent[] {
+  const { cleanText, quotes } = parseReplyContexts(text);
+  // No quote: the original line split on the RAW text. `parseReplyContexts`
+  // trims its output, and a plain prefill must keep its whitespace exactly.
+  if (quotes.length === 0) return linesToParagraphs(text);
+
+  // COR-117: each `<reply_context>` block becomes a `replyQuote` node
+  // (editor/quote-node.ts) at its position, so a prefill, a restored queue
+  // row or a rewind brings quotes back as quotes, not as raw XML the next
+  // send would double-wrap. `serializeDocument` writes the same blocks back
+  // out, so text -> document -> text round-trips.
+  const content: JSONContent[] = [];
+  for (const piece of splitAtQuoteMarkers(cleanText, quotes)) {
+    if (piece.kind === 'quote') {
+      content.push({ type: 'replyQuote', attrs: { text: piece.text } });
+    } else {
+      content.push(...linesToParagraphs(piece.text));
+    }
+  }
+  // A quote is an atom: with nothing after it the caret has nowhere to go.
+  if (content[content.length - 1]?.type === 'replyQuote') content.push({ type: 'paragraph' });
+  return content;
+}
+
+function linesToParagraphs(text: string): JSONContent[] {
   return text.split('\n').map((line) => ({
     type: 'paragraph',
     ...(line ? { content: [{ type: 'text', text: line }] } : {}),
@@ -242,6 +267,57 @@ export function shouldApplyPrefill({
   return true;
 }
 
+/** One "Reply" on a transcript selection, waiting to become a quote block. */
+export interface QuoteRequest {
+  id: number;
+  text: string;
+}
+
+/**
+ * The `quoteRequests` (COR-117) to insert right now, in order.
+ *
+ * A FIFO, not a single slot: two "Reply" clicks before the composer applies
+ * the first used to keep only the second. Each request is applied once per
+ * id — a quote insert is not idempotent, so `appliedIds` (tracked by the
+ * caller) is refused here.
+ *
+ * Held, not dropped, in two states:
+ * - `editorReady` false — same reason as `shouldApplyPrefill`: a request
+ *   that arrives before the lazy editor mounts must wait for it.
+ * - `locked` — the question lock or a disabled/approval-locked editor. The
+ *   question lock sends the draft as a custom answer (raw `<reply_context>`
+ *   XML) and on unlock restores the pre-question document over whatever was
+ *   inserted; `editable: false` blocks typing, not a programmatic insert.
+ */
+export function planQuoteRequests({
+  requests,
+  appliedIds,
+  editorReady,
+  locked,
+}: {
+  requests: readonly QuoteRequest[];
+  appliedIds: ReadonlySet<number>;
+  editorReady: boolean;
+  locked: boolean;
+}): QuoteRequest[] {
+  if (!editorReady || locked) return [];
+  return requests.filter((request) => !appliedIds.has(request.id));
+}
+
+/**
+ * `requests` without the acknowledged `ids` — the holder's half of the
+ * handoff. An acknowledged request must leave the holder, or a remounted
+ * composer (empty applied set) would insert it again. Returns `requests`
+ * itself when nothing matches, so a no-op ack does not re-render.
+ */
+export function acknowledgeQuoteRequests(
+  requests: QuoteRequest[],
+  ids: readonly number[],
+): QuoteRequest[] {
+  const remaining = requests.filter((request) => !ids.includes(request.id));
+  return remaining.length === requests.length ? requests : remaining;
+}
+
 export interface ResolveEditorPlaceholderInput {
   lockForApproval: boolean;
   lockForQuestion: boolean;
@@ -319,7 +395,8 @@ export function planDraftSubmission({
   const command = commands.find((candidate) => candidate.name === commandName);
   if (command) return { kind: 'command', command, args: trimmed || undefined };
 
-  return { kind: 'message', text: `/${commandName} ${trimmed}`.trim() };
+  // Args that open with a quote block keep it on its own line.
+  return { kind: 'message', text: joinAtQuoteBoundary(`/${commandName}`, trimmed) };
 }
 
 /**

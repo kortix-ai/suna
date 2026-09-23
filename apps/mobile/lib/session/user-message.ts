@@ -38,8 +38,8 @@ export interface ParsedSessionRef {
 export interface ParsedUserMessageText {
   /** The text the bubble shows. */
   text: string;
-  /** Quoted `<reply_context>` text, or null. */
-  replyContext: string | null;
+  /** Every `<reply_context>` block's quoted text, in document order. */
+  quotes: string[];
   /** Uploaded files referenced by `<file>` tags. */
   files: ParsedFileRef[];
   /** `<session_ref>` mentions. */
@@ -57,6 +57,39 @@ function unescapeAttr(value: string): string {
 const FILE_TAG_REGEX = /<file\s+([^>]*?)>\s*[\s\S]*?<\/file>/g;
 
 /**
+ * One `<reply_context>` block, open tag through close tag, tolerating
+ * attributes on the open tag. Matches web's `REPLY_CONTEXT_BLOCK_RE`
+ * (`apps/web/src/features/session/message-parsing.tsx`) exactly: consumes at
+ * most ONE trailing newline with the block, so a block on its own line
+ * doesn't leave a blank line behind, but other trailing whitespace (spaces,
+ * a second newline) is left alone. A leading newline is left alone too, so it
+ * stays as the separator for the text before it.
+ */
+const REPLY_CONTEXT_REGEX = /<reply_context\b[^>]*>([\s\S]*?)<\/reply_context>\n?/g;
+
+/** Undo the one escape `serializeReplyContext` applies on the wire (web `message-parsing.tsx`). */
+function decodeReplyContextBody(body: string): string {
+  return body.trim().replace(/&lt;\/reply_context&gt;/g, '</reply_context>');
+}
+
+/**
+ * Every `<reply_context>` block in `text`, in order, with all of them
+ * removed from the returned text. Blank-line runs left behind by removal are
+ * collapsed and the result is trimmed. An unclosed `<reply_context>` (no
+ * matching close tag) does not match and is left in the text untouched.
+ * Mirrors web's `stripReplyContexts`, but also returns the quotes (web keeps
+ * that in `parseReplyContexts`) since mobile has one call site for both.
+ */
+export function extractReplyContexts(text: string): { text: string; quotes: string[] } {
+  const quotes: string[] = [];
+  const stripped = text.replace(REPLY_CONTEXT_REGEX, (_whole, body: string) => {
+    quotes.push(decodeReplyContextBody(body));
+    return '';
+  });
+  return { text: stripped.replace(/\n{3,}/g, '\n\n').trim(), quotes };
+}
+
+/**
  * Strip every structured block a user message carries and keep what the user
  * typed. Order matches web's pipeline: kortix_system, reply context, uploads,
  * project refs, file refs, agent refs, session refs.
@@ -65,12 +98,8 @@ export function parseUserMessageText(raw: string): ParsedUserMessageText {
   let text = (raw ?? '').replace(/<kortix_system[^>]*>[\s\S]*?<\/kortix_system>/gi, '');
   text = text.replace(/\n{3,}/g, '\n\n').trim();
 
-  let replyContext: string | null = null;
-  const reply = text.match(/<reply_context>([\s\S]*?)<\/reply_context>/);
-  if (reply) {
-    replyContext = reply[1]!.trim();
-    text = text.replace(/<reply_context>[\s\S]*?<\/reply_context>\s*/, '').trim();
-  }
+  const { text: withoutQuotes, quotes } = extractReplyContexts(text);
+  text = withoutQuotes;
 
   const files: ParsedFileRef[] = [];
   text = text
@@ -105,7 +134,32 @@ export function parseUserMessageText(raw: string): ParsedUserMessageText {
     .replace(/\n*Referenced sessions \(use the session_context tool to fetch details when needed\):\n?/g, '')
     .trim();
 
-  return { text, replyContext, files, sessions };
+  return { text, quotes, files, sessions };
+}
+
+/**
+ * What a `/command` bubble shows (`body`) and what Copy/Edit use (`prompt`).
+ *
+ * `detectCommandFromText` returns the args raw, and a quote the user replied
+ * with sits in them as a `<reply_context>` block — so the body drew the raw
+ * XML under the quote the bubble already draws from `quotes`. Stripping here
+ * draws the quote once and keeps the XML out of the copied/edited text.
+ */
+export function commandMessageText(
+  name: string,
+  args: string | undefined,
+): { body: string; prompt: string } {
+  const body = extractReplyContexts(args ?? '').text;
+  return { body, prompt: body ? `/${name} ${body}` : `/${name}` };
+}
+
+/**
+ * Bottom margin under quote `index` of `count` in a bubble: the `mb-2` gap to
+ * whatever follows, and none under the last quote when no text follows —
+ * otherwise a quote-only bubble ends on an empty band.
+ */
+export function quoteMarginBottom(index: number, count: number, hasText: boolean): number {
+  return index < count - 1 || hasText ? webSpace(2) : 0;
 }
 
 interface PartLike {

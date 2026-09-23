@@ -2,13 +2,16 @@ import type { JSONContent } from '@tiptap/core';
 import { describe, expect, test } from 'bun:test';
 
 import {
+  acknowledgeQuoteRequests,
   planDraftSubmission,
   planFailedSendRecovery,
   planPrefillMerge,
+  planQuoteRequests,
   resolveEditorPlaceholder,
   shouldApplyPrefill,
   shouldFocusEditorFromPadding,
   textToDocument,
+  textToParagraphs,
 } from './composer-logic';
 import type { AttachedFile } from './types';
 
@@ -429,6 +432,26 @@ describe('planDraftSubmission', () => {
     { name: 'compact', description: 'Compact the thread' },
   ] as never as Parameters<typeof planDraftSubmission>[0]['commands'];
 
+  test('unknown command with args that start with a quote: the quote keeps its own line', () => {
+    expect(
+      planDraftSubmission({
+        commandName: 'gone',
+        text: '<reply_context>a passage</reply_context>\nrun it',
+        commands,
+      }),
+    ).toEqual({
+      kind: 'message',
+      text: '/gone\n<reply_context>a passage</reply_context>\nrun it',
+    });
+  });
+
+  test('unknown command with plain args still joins them with one space', () => {
+    expect(planDraftSubmission({ commandName: 'gone', text: 'run it', commands })).toEqual({
+      kind: 'message',
+      text: '/gone run it',
+    });
+  });
+
   test('no command chip — an ordinary message, trimmed', () => {
     expect(
       planDraftSubmission({ commandName: undefined, text: '  hello world  ', commands }),
@@ -510,5 +533,122 @@ describe('shouldFocusEditorFromPadding', () => {
     // dead editor would put the caret somewhere that cannot accept typing.
     expect(shouldFocusEditorFromPadding({ onWrapperItself: true, disabled: true })).toBe(false);
     expect(shouldFocusEditorFromPadding({ onWrapperItself: false, disabled: true })).toBe(false);
+  });
+});
+
+describe('textToParagraphs — <reply_context> blocks become quote nodes (COR-117)', () => {
+  test('text with no reply block is unchanged: one paragraph per line, blanks kept', () => {
+    expect(textToParagraphs('one\n\ntwo')).toEqual([
+      { type: 'paragraph', content: [{ type: 'text', text: 'one' }] },
+      { type: 'paragraph' },
+      { type: 'paragraph', content: [{ type: 'text', text: 'two' }] },
+    ]);
+    expect(textToParagraphs('')).toEqual([{ type: 'paragraph' }]);
+  });
+
+  test('each block becomes a replyQuote at its position, interleaved with the text', () => {
+    const wire = [
+      '<reply_context>first quoted passage</reply_context>',
+      'my reply to the first',
+      '<reply_context>second quoted passage</reply_context>',
+      'my reply to the second',
+    ].join('\n');
+    expect(textToParagraphs(wire)).toEqual([
+      { type: 'replyQuote', attrs: { text: 'first quoted passage' } },
+      { type: 'paragraph', content: [{ type: 'text', text: 'my reply to the first' }] },
+      { type: 'replyQuote', attrs: { text: 'second quoted passage' } },
+      { type: 'paragraph', content: [{ type: 'text', text: 'my reply to the second' }] },
+    ]);
+  });
+
+  test('a document that would end on a quote gets a trailing empty paragraph for the caret', () => {
+    expect(textToParagraphs('intro\n<reply_context>a passage</reply_context>')).toEqual([
+      { type: 'paragraph', content: [{ type: 'text', text: 'intro' }] },
+      { type: 'replyQuote', attrs: { text: 'a passage' } },
+      { type: 'paragraph' },
+    ]);
+  });
+
+  test('the old single leading block (blank line after it) still parses', () => {
+    expect(textToDocument('<reply_context>old quote</reply_context>\n\nold reply')).toEqual({
+      type: 'doc',
+      content: [
+        { type: 'replyQuote', attrs: { text: 'old quote' } },
+        { type: 'paragraph', content: [{ type: 'text', text: 'old reply' }] },
+      ],
+    });
+  });
+
+  test('an escaped closing tag inside the body is restored in the node text', () => {
+    expect(
+      textToParagraphs('<reply_context>a &lt;/reply_context&gt; b</reply_context>\nreply'),
+    ).toEqual([
+      { type: 'replyQuote', attrs: { text: 'a </reply_context> b' } },
+      { type: 'paragraph', content: [{ type: 'text', text: 'reply' }] },
+    ]);
+  });
+});
+describe('planQuoteRequests — a FIFO, applied once per id, held while locked', () => {
+  const first = { id: 1, text: 'first passage' };
+  const second = { id: 2, text: 'second passage' };
+  const ready = { editorReady: true, locked: false, appliedIds: new Set<number>() };
+
+  test('nothing to apply with no requests', () => {
+    expect(planQuoteRequests({ ...ready, requests: [] })).toEqual([]);
+  });
+
+  test('held while the lazy editor is not ready — waits, is not dropped', () => {
+    expect(planQuoteRequests({ ...ready, editorReady: false, requests: [first] })).toEqual([]);
+    expect(planQuoteRequests({ ...ready, requests: [first] })).toEqual([first]);
+  });
+
+  test('held while the composer is locked (question or approval), applied on unlock', () => {
+    // Inserting into a locked composer sent raw XML as a custom answer, or
+    // lost the quote to the unlock restore. It stays pending instead.
+    expect(planQuoteRequests({ ...ready, locked: true, requests: [first] })).toEqual([]);
+    expect(planQuoteRequests({ ...ready, locked: false, requests: [first] })).toEqual([first]);
+  });
+
+  test('two requests queued before the composer applies either are BOTH applied, in order', () => {
+    expect(planQuoteRequests({ ...ready, requests: [first, second] })).toEqual([first, second]);
+  });
+
+  test('an id already applied is never applied again (no double insert on re-render)', () => {
+    expect(
+      planQuoteRequests({ ...ready, appliedIds: new Set([1]), requests: [first, second] }),
+    ).toEqual([second]);
+    expect(
+      planQuoteRequests({ ...ready, appliedIds: new Set([1, 2]), requests: [first, second] }),
+    ).toEqual([]);
+  });
+});
+
+describe('acknowledgeQuoteRequests — the holder drops only acknowledged ids', () => {
+  const first = { id: 1, text: 'first passage' };
+  const second = { id: 2, text: 'second passage' };
+  const third = { id: 3, text: 'third passage' };
+
+  test('removes exactly the acknowledged ids and keeps the rest in order', () => {
+    expect(acknowledgeQuoteRequests([first, second, third], [1, 3])).toEqual([second]);
+  });
+
+  test('a request added after the composer applied the others survives the ack', () => {
+    // Remount safety: an acknowledged request is gone from the holder, so a
+    // fresh composer (empty applied set) cannot insert it a second time.
+    const remaining = acknowledgeQuoteRequests([first, second, third], [1, 2]);
+    expect(remaining).toEqual([third]);
+    expect(
+      planQuoteRequests({
+        editorReady: true,
+        locked: false,
+        appliedIds: new Set(),
+        requests: remaining,
+      }),
+    ).toEqual([third]);
+  });
+
+  test('returns the same array when no id matches, so a no-op ack does not re-render', () => {
+    const requests = [first];
+    expect(acknowledgeQuoteRequests(requests, [9])).toBe(requests);
   });
 });

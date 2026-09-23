@@ -12,11 +12,7 @@ import type {
   UsePromptAttachmentsResult,
 } from '@kortix/sdk/react';
 import { usePromptAttachments, useRuntimeSessions } from '@kortix/sdk/react';
-import {
-  ArrowBendDoubleUpLeftIcon,
-  ArrowUpLeftIcon as ArrowUpLeft,
-  WarningIcon,
-} from '@phosphor-icons/react';
+import { ArrowUpLeftIcon as ArrowUpLeft, WarningIcon } from '@phosphor-icons/react';
 import type { JSONContent } from '@tiptap/core';
 import type { RefObject } from 'react';
 import {
@@ -53,7 +49,6 @@ import { commandBlocker, sendBlocker, sendBlockerMessage } from './send-blockers
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
-import { Close } from '@/features/icon/icons/close';
 import { AnimatedComposerPlaceholder } from './animated-placeholder';
 import { handleBillingError } from '@/lib/error-handler';
 import {
@@ -78,6 +73,8 @@ import {
   planDraftSubmission,
   planFailedSendRecovery,
   planPrefillMerge,
+  planQuoteRequests,
+  type QuoteRequest,
   resolveEditorPlaceholder,
   shouldApplyPrefill,
   shouldFocusEditorFromPadding,
@@ -321,8 +318,22 @@ export interface SessionChatInputProps {
 
   cardClassName?: string;
 
-  replyTo?: { text: string } | null;
-  onClearReply?: () => void;
+  /**
+   * Reply quotes to insert (COR-117) — transcript selections the user clicked
+   * "Reply" on, oldest first. Id-keyed like `prefill`: each id inserts ONE
+   * quote block at the end of the document (`ComposerEditorHandle.insertQuote`),
+   * in array order. A request that arrives before the lazy editor mounts, or
+   * while the composer is question-locked or disabled, is held and inserted
+   * once that clears. The same id is never inserted twice.
+   */
+  quoteRequests?: readonly QuoteRequest[];
+  /**
+   * Called with the ids just inserted — the consume half of the handoff, same
+   * contract as `onPrefillApplied`. A holder removes those ids on this
+   * (`acknowledgeQuoteRequests`) so a later remount of the composer cannot
+   * insert them again.
+   */
+  onQuoteRequestsApplied?: (requestIds: number[]) => void;
   lockForQuestion?: boolean;
   lockForApproval?: boolean;
   onCustomAnswer?: (text: string) => void;
@@ -335,8 +346,8 @@ export interface SessionChatInputProps {
 
 /**
  * The composer's outer shell — max width, centering, and the horizontal gutter
- * everything in the composer (notice bar, reply bar, card, under-row, model
- * connection bar) is measured from.
+ * everything in the composer (notice bar, card, under-row, model connection
+ * bar) is measured from.
  *
  * The BASE gutter is `px-4` and it carries no breakpoint, deliberately. This
  * was `px-2 sm:px-0`, and `sm:` is a VIEWPORT query answering a CONTAINER
@@ -396,6 +407,7 @@ const EMPTY_COMMANDS: Command[] = [];
 const EMPTY_MODELS: FlatModel[] = [];
 const EMPTY_VARIANTS: string[] = [];
 const EMPTY_SLASH_FILES: SlashFile[] = [];
+const NO_QUOTE_REQUESTS: readonly QuoteRequest[] = [];
 
 /** Stable identities for the command-chip subscription below. */
 const NO_SUBSCRIPTION = () => {};
@@ -477,8 +489,8 @@ function ComposerImpl({
   underbarPlacement = 'below',
   slashMenuPlacement = 'above',
   cardClassName,
-  replyTo,
-  onClearReply,
+  quoteRequests = NO_QUOTE_REQUESTS,
+  onQuoteRequestsApplied,
   lockForQuestion = false,
   lockForApproval = false,
   onCustomAnswer,
@@ -1062,6 +1074,33 @@ function ComposerImpl({
     }
   }, [lockForQuestion]);
 
+  // Declared AFTER the question-lock effect on purpose: on the render that
+  // unlocks, that effect restores the pre-question document first, and only
+  // then are held quotes appended. The other order let the restore overwrite
+  // a quote inserted a moment earlier.
+  const appliedQuoteRequestIdsRef = useRef(new Set<number>());
+  const onQuoteRequestsAppliedRef = useRef(onQuoteRequestsApplied);
+  useEffect(() => {
+    onQuoteRequestsAppliedRef.current = onQuoteRequestsApplied;
+  }, [onQuoteRequestsApplied]);
+  useEffect(() => {
+    const pending = planQuoteRequests({
+      requests: quoteRequests,
+      appliedIds: appliedQuoteRequestIdsRef.current,
+      editorReady: editorElement != null,
+      locked: lockForQuestion || editorDisabled,
+    });
+    if (pending.length === 0) return;
+    // Recorded BEFORE the insert: the insert's own update re-renders this
+    // component, and a quote is not idempotent — a second pass would add a
+    // second copy.
+    for (const request of pending) {
+      appliedQuoteRequestIdsRef.current.add(request.id);
+      editorRef.current?.insertQuote(request.text);
+    }
+    onQuoteRequestsAppliedRef.current?.(pending.map((request) => request.id));
+  }, [quoteRequests, editorElement, lockForQuestion, editorDisabled]);
+
   /**
    * The model popover's open state, hoisted out of `ModelSelector` so the `/`
    * palette can open it. `focusSection` is what separates the palette's two
@@ -1584,7 +1623,7 @@ function ComposerImpl({
         (queue strip at 96%, first full-width bar, the card itself); a layer
         the SAME width as the one above stays square and shares the divider.
       */}
-      {(notice || replyTo || showQueueStrip) && (
+      {(notice || showQueueStrip) && (
         <div className="relative isolate flex w-full flex-col items-center justify-center">
           {/*
             ONE element carries both the strip's chrome (bg, border, padding)
@@ -1645,38 +1684,6 @@ function ComposerImpl({
               )}
             </div>
           )}
-
-          {replyTo && (
-            // `w-full`, or the `items-center` column shrinks this bar to its
-            // content width. Rounded only when no notice sits above it — the
-            // notice is the same width, so under one this bar is a flush
-            // continuation, not a new edge.
-            <div
-              className={cn(
-                'bg-sidebar border-border flex w-full items-center gap-2 border border-b-0 px-3 py-1',
-                !notice && 'rounded-t-xl',
-              )}
-            >
-              <ArrowBendDoubleUpLeftIcon className="text-muted-foreground size-4 shrink-0" />
-              <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
-                {replyTo.text.length > 120 ? `${replyTo.text.slice(0, 120)}…` : replyTo.text}
-              </span>
-              {onClearReply && (
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  type="button"
-                  onClick={onClearReply}
-                  className="text-muted-foreground hover:text-foreground shrink-0 transition-colors"
-                  aria-label={tHardcodedUi.raw(
-                    'componentsSessionSessionChatInput.line2078JsxAttrAriaLabelClearReply',
-                  )}
-                >
-                  <Close className="size-3" />
-                </Button>
-              )}
-            </div>
-          )}
         </div>
       )}
 
@@ -1699,7 +1706,7 @@ function ComposerImpl({
           'motion-reduce:transition-none',
           cardClassName,
           isDragOver && 'border-kortix-blue/80 ring-primary/40 border ring',
-          (replyTo || notice) && 'rounded-t-none',
+          notice && 'rounded-t-none',
         )}
       >
         {/* What the dimmed card is asking for. Without it the drag state said

@@ -101,6 +101,20 @@ describe('extractMinimapItem', () => {
     expect(item!.attachments.map((a) => a.name)).toEqual(['hero.tsx', 'landing.test.ts']);
   });
 
+  test('previews only the reply text of a message with several inline quotes (COR-117)', () => {
+    const item = extractMinimapItem(
+      turnWithParts([
+        {
+          type: 'text',
+          text:
+            '<reply_context>quoted alpha</reply_context>\nreply to alpha\n' +
+            '<reply_context>quoted bravo</reply_context>\nreply to bravo',
+        },
+      ]),
+    );
+    expect(item!.text).toBe('reply to alpha reply to bravo');
+  });
+
   test('strips agent-mention XML and marks the mention in the segments', () => {
     const item = extractMinimapItem(
       turnWithParts([

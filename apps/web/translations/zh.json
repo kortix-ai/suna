@@ -15253,7 +15253,7 @@
       "line2101JsxAttrAriaLabelCancelCommand": "取消命令",
       "line2061JsxAttrAriaLabelClearReply": "清除回复",
       "line2235JsxTextAttachFiles": "附加文件",
-      "line2078JsxAttrAriaLabelClearReply": "清除回复",
+      "removeQuoteAriaLabel": "移除引用",
       "line210JsxAttrAriaLabelAgentPicker": "智能体选择器",
       "line273JsxTextNoAgentsMatchLdquo": "没有代理匹配“",
       "line2237JsxAttrAcceptImagePdfTxtMdJsonCsvXmlYaml": "image/*,.pdf,.txt,.md,.json,.csv,.xml,.yaml,.yml,.toml,.js,.ts,.jsx,.tsx,.py,.rb,.go,.rs,.java,.c,.cpp,.h,.css,.html,.vue,.svelte,.log,.sql,.zip,.tar,.gz,.rar",

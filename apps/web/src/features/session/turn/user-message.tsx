@@ -59,7 +59,11 @@ import {
   sentAttachmentPreview,
   type SentAttachment,
 } from '../sent-attachment-previews';
-import { buildMentionSegments, type MentionSourceRef } from '../mention-segments';
+import {
+  buildMentionSegments,
+  type MentionSegment,
+  type MentionSourceRef,
+} from '../mention-segments';
 import { parseChannelMessage } from './channel-message';
 import { CHANNEL_BRAND_COLOR, ChannelBrandMark, channelPlatformLabel } from './channel-brand';
 import {
@@ -67,9 +71,13 @@ import {
   parseFileMentionReferences,
   parseFileReferences,
   parseProjectReferences,
-  parseReplyContext,
+  parseReplyContexts,
   parseSessionReferences,
   parseSystemNotifications,
+  QUOTE_MARKER_RE,
+  quoteMarker,
+  splitAtQuoteMarkers,
+  stripReplyContexts,
   stripSystemPtyText,
   SystemNotificationCard,
 } from '../message-parsing';
@@ -465,9 +473,30 @@ interface OrderedUploadReference {
 interface ParsedAttachmentContent {
   rawText: string;
   textAfterFiles: string;
-  replyContext: string | null;
+  /** Every `<reply_context>` quote across all text parts, in order. The
+   *  quote markers left in `textAfterFiles` index into this array. */
+  quotes: string[];
   uploads: OrderedUploadReference[];
 }
+
+/**
+ * Shift every quote marker in `text` by `offset`. Text parsed on its own has
+ * markers counting from 0; appended after `offset` earlier quotes, its markers
+ * must index the combined list.
+ */
+function offsetQuoteMarkers(text: string, offset: number): string {
+  if (offset === 0) return text;
+  return text.replace(new RegExp(QUOTE_MARKER_RE), (_marker, index: string) =>
+    quoteMarker(offset + Number(index)),
+  );
+}
+
+/**
+ * Where the `/command` chip sits in a quoted command body — see
+ * `quotedPieces` in `UserMessage`. A private-use character, like the quote
+ * markers: never typed, not whitespace, untouched by every parser.
+ */
+const COMMAND_SLOT = '\uE002';
 
 /**
  * Parse visible text parts once while retaining each upload reference's source
@@ -478,7 +507,7 @@ function parseAttachmentContent(parts: readonly Part[]): ParsedAttachmentContent
   const rawTextParts: string[] = [];
   const cleanTextParts: string[] = [];
   const uploads: OrderedUploadReference[] = [];
-  let replyContext: string | null = null;
+  const quotes: string[] = [];
 
   parts.forEach((part, sourcePartIndex) => {
     if (
@@ -493,12 +522,14 @@ function parseAttachmentContent(parts: readonly Part[]): ParsedAttachmentContent
     const rawPartText = stripSystemPtyText((part as TextPart).text);
     rawTextParts.push(rawPartText);
 
-    const parsedReply = replyContext
-      ? { cleanText: rawPartText, replyContext: null }
-      : parseReplyContext(rawPartText);
-    if (parsedReply.replyContext) replyContext = parsedReply.replyContext;
+    // Each part is parsed on its own, so its markers count from 0. Shift them
+    // by the quotes already collected, or part 2's first marker would name
+    // part 1's first quote.
+    const parsedReply = parseReplyContexts(rawPartText);
+    const partText = offsetQuoteMarkers(parsedReply.cleanText, quotes.length);
+    quotes.push(...parsedReply.quotes);
 
-    const parsedFiles = parseFileReferences(parsedReply.cleanText);
+    const parsedFiles = parseFileReferences(partText);
     cleanTextParts.push(parsedFiles.cleanText);
     uploads.push(
       ...parsedFiles.files.map((file) => ({
@@ -511,7 +542,7 @@ function parseAttachmentContent(parts: readonly Part[]): ParsedAttachmentContent
   return {
     rawText: rawTextParts.join('\n'),
     textAfterFiles: cleanTextParts.join('\n'),
-    replyContext,
+    quotes,
     uploads,
   };
 }
@@ -909,6 +940,103 @@ export function MessageAttachments({
 }
 
 // ============================================================================
+// Inline reply quotes
+// ============================================================================
+
+/**
+ * Key each mention segment by its character offset in the text — stable
+ * across renders, unlike an array index.
+ */
+function keyMentionSegments(segs: MentionSegment[]) {
+  const keyed: Array<MentionSegment & { key: string }> = [];
+  let offset = 0;
+  for (const seg of segs) {
+    keyed.push({ ...seg, key: `${offset}-${seg.type ?? 'text'}` });
+    offset += seg.text.length;
+  }
+  return keyed;
+}
+
+/** One piece of a message body split at its quote markers. */
+export type QuotedBodyPiece = ReturnType<typeof splitAtQuoteMarkers>[number];
+
+/**
+ * A message body with its `<reply_context>` quotes drawn where they were
+ * written (COR-117) — quote, reply, quote, reply — instead of one quote pinned
+ * above the text.
+ *
+ * Shared by the sent bubble and `OptimisticTurn`, so the optimistic → echo
+ * swap draws the same markup and cannot jump. `renderText` draws one text run
+ * (mention chips included); this component owns only the order, the quote
+ * treatment and the spacing.
+ *
+ * A quote is a rule, not a card. A filled, bordered banner sitting on the
+ * already-filled bubble made two nested surfaces, and the louder one was the
+ * quote rather than the message the reader came for. `line-clamp-2` wraps to a
+ * second line and ends cleanly, and the full text stays in the DOM to copy.
+ *
+ * `gap-2` is the old quote's `mb-2`, moved to the parent so every gap has one
+ * owner: quote → reply, reply → quote and quote → quote are all the same step.
+ * `BUBBLE_TEXT` sits on each text run, not on the column: a quote inside the
+ * `font-medium whitespace-pre-wrap` run would inherit both.
+ */
+export function QuotedMessageBody({
+  pieces,
+  renderText,
+}: {
+  pieces: readonly QuotedBodyPiece[];
+  renderText: (text: string) => React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      {pieces.map((piece, position) => {
+        if (piece.kind === 'quote') {
+          return (
+            <blockquote key={`quote-${piece.index}`} className="border-border border-l-2 pl-2.5">
+              <p className="text-muted-foreground line-clamp-2 text-sm leading-5">{piece.text}</p>
+            </blockquote>
+          );
+        }
+        // Two text runs are never adjacent — a quote always separates them —
+        // so "the run after quote N" is a unique, content-stable key.
+        const previous = pieces[position - 1];
+        const after = previous?.kind === 'quote' ? previous.index : 'start';
+        return (
+          <div key={`text-after-${after}`} className={BUBBLE_TEXT}>
+            {renderText(piece.text)}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * The text the inline edit-from-here editor starts from. That editor is a
+ * plain `<textarea>` (`UserMessageEditor`), not the TipTap composer, so it has
+ * no quote node to hold a `<reply_context>` block — it would show raw XML.
+ * Quotes are dropped; the reply text stays, in order.
+ */
+export function editablePromptText(
+  copyText: string,
+  command?: { name: string; args?: string } | null,
+): string {
+  if (command) {
+    // A command's args carry its quotes too (the composer serializes a quote
+    // node inside them).
+    const args = command.args ? stripReplyContexts(command.args) : '';
+    return `/${command.name}${args ? ` ${args}` : ''}`;
+  }
+  const withoutReply = stripReplyContexts(copyText);
+  const withoutUploads = parseFileReferences(withoutReply).cleanText;
+  const withoutProjects = parseProjectReferences(withoutUploads).cleanText;
+  const withoutFiles = parseFileMentionReferences(withoutProjects).cleanText;
+  const withoutAgents = parseAgentMentionReferences(withoutFiles).cleanText;
+  const withoutSessions = parseSessionReferences(withoutAgents).cleanText;
+  return stripKortixSystemTags(withoutSessions).trim();
+}
+
+// ============================================================================
 // The bubble
 // ============================================================================
 
@@ -947,7 +1075,7 @@ export function UserMessageBubble({
   fullWidth,
   textId,
   textRef,
-  replyContext,
+  quoted,
   children,
 }: {
   /** The text overflows its clamp, so there is something to expand. */
@@ -959,7 +1087,11 @@ export function UserMessageBubble({
   /** Ties the toggle's `aria-controls` to the region it expands. */
   textId: string;
   textRef?: React.RefObject<HTMLDivElement | null>;
-  replyContext?: string | null;
+  /**
+   * `children` is a {@link QuotedMessageBody}: it styles its own text runs,
+   * so the clamped region must not apply `BUBBLE_TEXT` over its quotes.
+   */
+  quoted?: boolean;
   children?: React.ReactNode;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -973,24 +1105,8 @@ export function UserMessageBubble({
       )}
       onClick={() => canExpand && onToggle()}
     >
-      {/* Quoted context — a rule, not a card.
-          A filled, bordered banner sitting on the already-filled bubble
-          made two nested surfaces, and the louder one was the quote rather
-          than the message the reader actually came for. A left rule says
-          "this part is quoted" with no chrome at all, and lets the message
-          lead again.
-          `line-clamp-2` replaces the old `slice(0, 150) + '...'` AND
-          `truncate` pair: two truncations that could stack two ellipses,
-          and cut mid-word at the container edge. Clamping wraps to a
-          second line and ends cleanly, and the full text stays in the DOM
-          to select and copy. */}
-      {replyContext && (
-        <blockquote className="border-border mb-2 border-l-2 pl-2.5">
-          <p className="text-muted-foreground line-clamp-2 text-sm leading-5">{replyContext}</p>
-        </blockquote>
-      )}
-
-      {/* Text content */}
+      {/* Text content. Quoted context, when the message has any, is part of
+          it — see `QuotedMessageBody`. */}
       {children && (
         <div className="relative">
           <div
@@ -998,7 +1114,7 @@ export function UserMessageBubble({
             id={textId}
             className={cn(
               'max-w-full min-w-0',
-              BUBBLE_TEXT,
+              !quoted && BUBBLE_TEXT,
               !expanded && 'max-h-[200px] overflow-hidden',
             )}
           >
@@ -1356,7 +1472,7 @@ export function UserMessage({
   const {
     rawText,
     textAfterFiles,
-    replyContext,
+    quotes,
     uploads: uploadedFiles,
   } = useMemo(() => parseAttachmentContent(message.parts), [message.parts]);
   const { cleanText: textAfterProjects } = useMemo(
@@ -1456,16 +1572,7 @@ export function UserMessage({
   }, [message.parts]);
 
   const rewindPromptText = useMemo(() => {
-    if (effectiveCommandInfo) {
-      return `/${effectiveCommandInfo.name}${effectiveCommandInfo.args ? ` ${effectiveCommandInfo.args}` : ''}`;
-    }
-    const withoutReply = parseReplyContext(copyText).cleanText;
-    const withoutUploads = parseFileReferences(withoutReply).cleanText;
-    const withoutProjects = parseProjectReferences(withoutUploads).cleanText;
-    const withoutFiles = parseFileMentionReferences(withoutProjects).cleanText;
-    const withoutAgents = parseAgentMentionReferences(withoutFiles).cleanText;
-    const withoutSessions = parseSessionReferences(withoutAgents).cleanText;
-    return stripKortixSystemTags(withoutSessions).trim();
+    return editablePromptText(copyText, effectiveCommandInfo);
   }, [copyText, effectiveCommandInfo]);
 
   // Detect a channel message (Slack / Microsoft Teams / Telegram): the API
@@ -1590,23 +1697,49 @@ export function UserMessage({
   // Build highlighted text segments — see `../mention-segments.ts`. The walk
   // used to live inline here and in `optimistic-turn.tsx`, and the two copies
   // had already diverged.
-  const segments = useMemo(() => {
-    const segs = buildMentionSegments({
-      text: bodyText,
-      sourceRefs,
-      sessionTitles,
-      agentNames,
-    });
-    // A segment's identity is its character offset in the text — stable across
-    // renders, unlike the array index the keys used before.
-    const keyed = [];
-    let offset = 0;
-    for (const seg of segs) {
-      keyed.push({ ...seg, key: `${offset}-${seg.type ?? 'text'}` });
-      offset += seg.text.length;
+  const segments = useMemo(
+    () =>
+      keyMentionSegments(
+        buildMentionSegments({
+          text: bodyText,
+          sourceRefs,
+          sessionTitles,
+          agentNames,
+        }),
+      ),
+    [bodyText, sourceRefs, sessionTitles, agentNames],
+  );
+
+  /**
+   * The body split at its reply quotes, or `null` for a message without any —
+   * that message keeps the single-run render below, unchanged.
+   *
+   * A quoted message drops `sourceRefs`, for the reason a command message
+   * does: the server's offsets index the raw part text, and every stripped
+   * block (a quote most of all) moved the characters under them. Each text
+   * run gets the regex fill in `buildMentionSegments`, which finds the same
+   * `@` mentions from the run's own text.
+   *
+   * A command message is parsed from its own halves, not from the part text:
+   * the composer writes each quote node inside the args, as raw
+   * `<reply_context>` blocks, on either side of the chip. The part text is
+   * the expanded template, which repeats the args — so the part's `quotes`
+   * are ignored here, or every quote would draw twice. `COMMAND_SLOT` marks
+   * where the chip goes between the two halves.
+   */
+  const quotedPieces = useMemo<QuotedBodyPiece[] | null>(() => {
+    if (effectiveCommandInfo) {
+      const before = parseReplyContexts(commandSplit?.before ?? '');
+      const after = parseReplyContexts(bodyText);
+      if (before.quotes.length === 0 && after.quotes.length === 0) return null;
+      return splitAtQuoteMarkers(
+        before.cleanText + COMMAND_SLOT + offsetQuoteMarkers(after.cleanText, before.quotes.length),
+        [...before.quotes, ...after.quotes],
+      );
     }
-    return keyed;
-  }, [bodyText, sourceRefs, sessionTitles, agentNames]);
+    if (quotes.length === 0) return null;
+    return splitAtQuoteMarkers(bodyText, quotes);
+  }, [quotes, effectiveCommandInfo, commandSplit, bodyText]);
 
   const sessionHref = useProjectSessionHref();
 
@@ -1638,6 +1771,66 @@ export function UserMessage({
     });
   };
 
+  /* The `/command` chip sits exactly where it was typed — leading the line,
+     between two words, or trailing — because that is where the composer drew
+     it. `split.before` is the prose that preceded the chip; without it every
+     command message rebuilt as `/name` + args and a chip typed mid-sentence
+     silently jumped to the front. */
+  const commandLead = effectiveCommandInfo ? (
+    <>
+      {commandSplit?.before ? <span>{commandSplit.before} </span> : null}
+      <MentionChip kind="command" label={effectiveCommandInfo.name} />
+      {bodyText ? ' ' : null}
+    </>
+  ) : null;
+
+  const renderSegments = (segs: ReturnType<typeof keyMentionSegments>) =>
+    segs.map((seg) =>
+      seg.type === 'file' ? (
+        <MentionChip
+          key={seg.key}
+          kind="file"
+          label={seg.text.replace(/^@/, '')}
+          onClick={() => openFileInComputer(seg.text.replace(/^@/, ''))}
+        />
+      ) : seg.type === 'session' ? (
+        <MentionChip
+          key={seg.key}
+          kind="session"
+          label={seg.text.replace(/^@/, '')}
+          onClick={() => openSessionMention(seg.text.replace(/^@/, ''))}
+        />
+      ) : seg.type === 'agent' ? (
+        // Static: an agent is named, not navigable. Same surface,
+        // no press affordance it cannot honour.
+        <MentionChip key={seg.key} kind="agent" label={seg.text.replace(/^@/, '')} />
+      ) : (
+        <span key={seg.key}>{seg.text}</span>
+      ),
+    );
+
+  const renderRunSegments = (runText: string) =>
+    renderSegments(
+      keyMentionSegments(buildMentionSegments({ text: runText, sessionTitles, agentNames })),
+    );
+
+  /** One text run of a quoted body. The run holding `COMMAND_SLOT` draws the
+   *  chip there, with the same spacing `commandLead` uses. */
+  const renderQuotedRun = (runText: string) => {
+    const slot = runText.indexOf(COMMAND_SLOT);
+    if (slot === -1 || !effectiveCommandInfo) return renderRunSegments(runText);
+    const lead = runText.slice(0, slot);
+    const rest = runText.slice(slot + COMMAND_SLOT.length);
+    return (
+      <>
+        {lead ? <span>{lead} </span> : null}
+        <MentionChip kind="command" label={effectiveCommandInfo.name} />
+        {rest ? ' ' : null}
+        {renderRunSegments(rest)}
+      </>
+    );
+  };
+
   // Editing replaces the WHOLE message column — bubble, attachments, meta row —
   // with the full-width editor, ChatGPT-style. Placed after every hook above so
   // the hook count never changes when editing starts or ends.
@@ -1656,7 +1849,7 @@ export function UserMessage({
   const hasUserContent = !!(
     text ||
     effectiveCommandInfo ||
-    replyContext ||
+    quotes.length > 0 ||
     uploadedFiles.length > 0 ||
     sessionRefs.length > 0 ||
     systemNotifications.length > 0 ||
@@ -1783,54 +1976,24 @@ export function UserMessage({
       {/* No text means no bubble. Attach a file and send with nothing typed and
           the bubble used to render anyway — a padded surface with nothing in
           it, hanging under the attachments. The attachments ARE the message. */}
-      {(bodyText || replyContext || effectiveCommandInfo) && (
+      {(bodyText || quotedPieces || effectiveCommandInfo) && (
         <UserMessageBubble
           canExpand={canExpand}
           expanded={expanded}
           onToggle={() => setExpanded(!expanded)}
           textId={`${message.info.id}-text`}
           textRef={textRef}
-          replyContext={replyContext}
+          quoted={Boolean(quotedPieces)}
         >
-          {(bodyText || effectiveCommandInfo) && (
-            <>
-              {/* The `/command` chip sits exactly where it was typed —
-                  leading the line, between two words, or trailing — because
-                  that is where the composer drew it. `split.before` is the
-                  prose that preceded the chip; without it every command
-                  message rebuilt as `/name` + args and a chip typed
-                  mid-sentence silently jumped to the front. */}
-              {effectiveCommandInfo && (
-                <>
-                  {commandSplit?.before ? <span>{commandSplit.before} </span> : null}
-                  <MentionChip kind="command" label={effectiveCommandInfo.name} />
-                  {bodyText ? ' ' : null}
-                </>
-              )}
-              {segments.map((seg) =>
-                seg.type === 'file' ? (
-                  <MentionChip
-                    key={seg.key}
-                    kind="file"
-                    label={seg.text.replace(/^@/, '')}
-                    onClick={() => openFileInComputer(seg.text.replace(/^@/, ''))}
-                  />
-                ) : seg.type === 'session' ? (
-                  <MentionChip
-                    key={seg.key}
-                    kind="session"
-                    label={seg.text.replace(/^@/, '')}
-                    onClick={() => openSessionMention(seg.text.replace(/^@/, ''))}
-                  />
-                ) : seg.type === 'agent' ? (
-                  // Static: an agent is named, not navigable. Same surface,
-                  // no press affordance it cannot honour.
-                  <MentionChip key={seg.key} kind="agent" label={seg.text.replace(/^@/, '')} />
-                ) : (
-                  <span key={seg.key}>{seg.text}</span>
-                ),
-              )}
-            </>
+          {quotedPieces ? (
+            <QuotedMessageBody pieces={quotedPieces} renderText={renderQuotedRun} />
+          ) : (
+            (bodyText || effectiveCommandInfo) && (
+              <>
+                {commandLead}
+                {renderSegments(segments)}
+              </>
+            )
           )}
         </UserMessageBubble>
       )}

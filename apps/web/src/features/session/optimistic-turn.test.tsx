@@ -10,7 +10,10 @@ import {
 } from '@/stores/session-composer-handoff-store';
 
 import enMessages from '../../../translations/en.json';
+import type { MessageWithParts } from '@/ui';
+
 import { OptimisticTurn } from './optimistic-turn';
+import { UserMessage } from './turn/user-message';
 import { adoptSentAttachmentPreviews } from './sent-attachment-previews';
 import { buildOptimisticPromptTextWithUploads } from './uploaded-file-refs';
 
@@ -88,6 +91,50 @@ describe('OptimisticTurn', () => {
     expect(markup).toContain('the earlier line');
     expect(markup).toContain('fix it');
     expect(markup).not.toContain('reply_context');
+    expect(markup.indexOf('the earlier line')).toBeLessThan(markup.indexOf('fix it'));
+  });
+
+  // COR-117: many quotes, each drawn where it was written.
+  const interleaved =
+    '<reply_context>quoted alpha</reply_context>\nreply to alpha\n' +
+    '<reply_context>quoted bravo</reply_context>\nreply to bravo';
+
+  test('draws every quote at its position, never as a notification card', () => {
+    const markup = render(<OptimisticTurn text={interleaved} />);
+    const quotes = markup.match(/<blockquote\b[^>]*>[\s\S]*?<\/blockquote>/g) ?? [];
+    expect(quotes).toHaveLength(2);
+    expect(quotes[0]).toContain('quoted alpha');
+    expect(quotes[1]).toContain('quoted bravo');
+    const order = ['quoted alpha', 'reply to alpha', 'quoted bravo', 'reply to bravo'].map((n) =>
+      markup.indexOf(n),
+    );
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(markup).not.toContain('reply_context');
+    expect(markup).not.toContain('Reply context');
+  });
+
+  test('draws the same quoted body the settled message draws, so the echo swap cannot jump', () => {
+    const optimistic = render(<OptimisticTurn text={interleaved} />);
+    const settled = render(
+      <UserMessage
+        message={
+          {
+            info: { id: 'message-1', role: 'user' },
+            parts: [{ id: 'part-1', messageID: 'message-1', type: 'text', text: interleaved }],
+          } as MessageWithParts
+        }
+        sessionId="session-1"
+        ownsPlan={false}
+      />,
+    );
+    const body = (html: string) => {
+      const start = html.indexOf('<blockquote');
+      const end = html.lastIndexOf('reply to bravo');
+      return start >= 0 && end > start ? html.slice(start, end) : null;
+    };
+    expect(body(optimistic)).not.toBeNull();
+    expect(body(optimistic)).toBe(body(settled));
   });
 
   test('a deferred preview keeps the tile box the chat will fill', () => {

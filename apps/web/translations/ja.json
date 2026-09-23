@@ -15253,7 +15253,7 @@
       "line2101JsxAttrAriaLabelCancelCommand": "コマンドをキャンセル",
       "line2061JsxAttrAriaLabelClearReply": "返信をクリア",
       "line2235JsxTextAttachFiles": "ファイルを添付",
-      "line2078JsxAttrAriaLabelClearReply": "返信をクリア",
+      "removeQuoteAriaLabel": "引用を削除",
       "line210JsxAttrAriaLabelAgentPicker": "エージェント選択",
       "line273JsxTextNoAgentsMatchLdquo": "一致するエージェントがありません：“",
       "line2237JsxAttrAcceptImagePdfTxtMdJsonCsvXmlYaml": "image/*,.pdf,.txt,.md,.json,.csv,.xml,.yaml,.yml,.toml,.js,.ts,.jsx,.tsx,.py,.rb,.go,.rs,.java,.c,.cpp,.h,.css,.html,.vue,.svelte,.log,.sql,.zip,.tar,.gz,.rar",

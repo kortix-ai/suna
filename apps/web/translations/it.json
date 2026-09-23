@@ -15253,7 +15253,7 @@
       "line2101JsxAttrAriaLabelCancelCommand": "Annulla comando",
       "line2061JsxAttrAriaLabelClearReply": "Cancella risposta",
       "line2235JsxTextAttachFiles": "Allega file",
-      "line2078JsxAttrAriaLabelClearReply": "Cancella risposta",
+      "removeQuoteAriaLabel": "Rimuovi citazione",
       "line210JsxAttrAriaLabelAgentPicker": "Selettore agente",
       "line273JsxTextNoAgentsMatchLdquo": "Nessun agente corrisponde a “",
       "line2237JsxAttrAcceptImagePdfTxtMdJsonCsvXmlYaml": "image/*,.pdf,.txt,.md,.json,.csv,.xml,.yaml,.yml,.toml,.js,.ts,.jsx,.tsx,.py,.rb,.go,.rs,.java,.c,.cpp,.h,.css,.html,.vue,.svelte,.log,.sql,.zip,.tar,.gz,.rar",

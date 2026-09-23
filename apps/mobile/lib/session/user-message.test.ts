@@ -2,10 +2,13 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   WEB_SPACING_PX,
+  commandMessageText,
+  extractReplyContexts,
   interruptedTurnIds,
   isUserMessageEdited,
   parseUserMessageText,
   queuedPromptStatusLabel,
+  quoteMarginBottom,
   rewindHiddenMessageIds,
   userMessageMetaItems,
   webSpace,
@@ -28,7 +31,7 @@ describe('parseUserMessageText', () => {
   test('plain text passes through', () => {
     const parsed = parseUserMessageText('hello');
     expect(parsed.text).toBe('hello');
-    expect(parsed.replyContext).toBeNull();
+    expect(parsed.quotes).toEqual([]);
     expect(parsed.files).toEqual([]);
     expect(parsed.sessions).toEqual([]);
   });
@@ -48,10 +51,65 @@ describe('parseUserMessageText', () => {
     expect(parseUserMessageText(raw).files[0]?.filename).toBe('R&D.pdf');
   });
 
-  test('extracts reply context', () => {
+  test('extracts a legacy single leading reply context', () => {
     const parsed = parseUserMessageText('<reply_context>quoted bit</reply_context>\nmy answer');
-    expect(parsed.replyContext).toBe('quoted bit');
+    expect(parsed.quotes).toEqual(['quoted bit']);
     expect(parsed.text).toBe('my answer');
+  });
+
+  test('extracts many interleaved reply_context blocks in order', () => {
+    const raw =
+      '<reply_context>first quoted passage</reply_context>\nmy reply to the first\n<reply_context>second quoted passage</reply_context>\nmy reply to the second';
+    const parsed = parseUserMessageText(raw);
+    expect(parsed.quotes).toEqual(['first quoted passage', 'second quoted passage']);
+    expect(parsed.text).toBe('my reply to the first\nmy reply to the second');
+  });
+
+  test('a third block keeps ordering and strips all raw XML', () => {
+    const raw =
+      '<reply_context>a</reply_context>\none\n<reply_context>b</reply_context>\ntwo\n<reply_context>c</reply_context>\nthree';
+    const parsed = parseUserMessageText(raw);
+    expect(parsed.quotes).toEqual(['a', 'b', 'c']);
+    expect(parsed.text).toBe('one\ntwo\nthree');
+    expect(parsed.text).not.toContain('reply_context');
+  });
+
+  test('tolerates attributes on the open tag and surrounding whitespace, and trims the body', () => {
+    const raw = '<reply_context foo="x">   quoted with attrs   </reply_context>\nreply text';
+    const parsed = parseUserMessageText(raw);
+    expect(parsed.quotes).toEqual(['quoted with attrs']);
+    expect(parsed.text).toBe('reply text');
+  });
+
+  test('decodes an escaped closing tag inside the quote body', () => {
+    const raw = '<reply_context>before &lt;/reply_context&gt; after</reply_context>\nreply text';
+    const parsed = parseUserMessageText(raw);
+    expect(parsed.quotes).toEqual(['before </reply_context> after']);
+    expect(parsed.text).toBe('reply text');
+  });
+
+  test('an unclosed block is left as text, not parsed as a quote', () => {
+    const raw = '<reply_context>never closed\nreply text';
+    const parsed = parseUserMessageText(raw);
+    expect(parsed.quotes).toEqual([]);
+    expect(parsed.text).toBe(raw);
+  });
+
+  test('consumes only one trailing newline after a close tag, matching web stripReplyContexts', () => {
+    // Expected value confirmed by running web's own function:
+    // `bun -e` against apps/web/src/features/session/message-parsing.tsx
+    // stripReplyContexts('<reply_context>a</reply_context>   \nrest') === 'rest'
+    const raw = '<reply_context>a</reply_context>   \nrest';
+    const parsed = parseUserMessageText(raw);
+    expect(parsed.quotes).toEqual(['a']);
+    expect(parsed.text).toBe('rest');
+  });
+
+  test('collapses a blank-line run left behind between two blocks to one blank line', () => {
+    const raw = '<reply_context>a</reply_context>\n\n\nmiddle text\n\n\n<reply_context>b</reply_context>\nend';
+    const parsed = parseUserMessageText(raw);
+    expect(parsed.quotes).toEqual(['a', 'b']);
+    expect(parsed.text).toBe('middle text\n\nend');
   });
 
   test('extracts session refs and strips their header', () => {
@@ -163,5 +221,54 @@ describe('rewindHiddenMessageIds', () => {
 
   test('an unknown boundary hides nothing', () => {
     expect(rewindHiddenMessageIds([msg('a', 1)], 'nope')).toEqual([]);
+  });
+});
+
+describe('extractReplyContexts (exported for the command path)', () => {
+  test('returns the quotes in order and the text without any block', () => {
+    expect(
+      extractReplyContexts('<reply_context>first</reply_context>\nrun it\n<reply_context>second</reply_context>'),
+    ).toEqual({ text: 'run it', quotes: ['first', 'second'] });
+  });
+});
+
+describe('commandMessageText — a /command whose args carry quotes', () => {
+  test('the body and the copy/edit text never contain raw <reply_context> XML', () => {
+    const result = commandMessageText('review', '<reply_context>a passage</reply_context>\nrun it');
+    expect(result.body).toBe('run it');
+    expect(result.prompt).toBe('/review run it');
+  });
+
+  test('quote-only args leave an empty body and a bare /name prompt', () => {
+    expect(commandMessageText('review', '<reply_context>a passage</reply_context>')).toEqual({
+      body: '',
+      prompt: '/review',
+    });
+  });
+
+  test('plain args and no args are unchanged', () => {
+    expect(commandMessageText('review', 'this file')).toEqual({ body: 'this file', prompt: '/review this file' });
+    expect(commandMessageText('review', undefined)).toEqual({ body: '', prompt: '/review' });
+  });
+
+  test('the quote is drawn once: parseUserMessageText already carries it in quotes', () => {
+    // The bubble draws `content.quotes`; the command body must not repeat it.
+    const raw = 'Review template\n<reply_context>a passage</reply_context>\nrun it';
+    expect(parseUserMessageText(raw).quotes).toEqual(['a passage']);
+    expect(commandMessageText('review', '<reply_context>a passage</reply_context>\nrun it').body).not.toContain(
+      'a passage',
+    );
+  });
+});
+
+describe('quoteMarginBottom — no trailing gap under the last quote', () => {
+  test('a quote followed by another quote keeps the gap', () => {
+    expect(quoteMarginBottom(0, 2, false)).toBe(webSpace(2));
+  });
+
+  test('the last quote keeps the gap only when text follows it', () => {
+    expect(quoteMarginBottom(1, 2, true)).toBe(webSpace(2));
+    expect(quoteMarginBottom(1, 2, false)).toBe(0);
+    expect(quoteMarginBottom(0, 1, false)).toBe(0);
   });
 });
