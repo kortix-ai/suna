@@ -1944,9 +1944,7 @@ function ComposerImpl({
             <input
               ref={fileInputRef}
               type="file"
-              accept={tHardcodedUi.raw(
-                'componentsSessionSessionChatInput.line2237JsxAttrAcceptImagePdfTxtMdJsonCsvXmlYaml',
-              )}
+              accept="image/*,.pdf,.txt,.md,.json,.csv,.xml,.yaml,.yml,.toml,.js,.ts,.jsx,.tsx,.py,.rb,.go,.rs,.java,.c,.cpp,.h,.css,.html,.vue,.svelte,.log,.sql,.zip,.tar,.gz,.rar"
               multiple
               className="hidden"
               onChange={handleFileSelect}

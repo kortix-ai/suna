@@ -71,7 +71,7 @@ export function AppFilePreviewModal() {
       HistoryContent={HistoryContent}
       renderFileIcon={(name) =>
         getFileIcon(name, {
-          className: tI18nComplete.raw('text8db7e9afa45d'),
+          className: 'h-4 w-4 shrink-0 text-muted-foreground',
           variant: 'monochrome',
         })
       }
