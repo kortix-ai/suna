@@ -89,7 +89,7 @@ RUN printf '{"name":"kortix-cli-build","private":true,"workspaces":["apps/cli","
 
 # ─── Stage 3: runtime ───────────────────────────────────────────────────
 
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
