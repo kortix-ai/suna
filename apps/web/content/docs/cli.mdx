@@ -363,11 +363,12 @@ Each session runs in one sandbox on its own branch.
 | `kortix sessions shell [<id>] [--new]` | Open a raw interactive terminal in the sandbox, with no agent. Reattaches to the session's existing terminal; `--new` always starts a fresh one. Aliases: `terminal`, `ssh`. |
 | `kortix sessions shell <id> ls [--json]` | List the session's terminals: id, status, command. Needs no TTY. |
 | `kortix sessions shell <id> kill <pty-id>` | Kill one terminal. The ambient shell respawns on the next attach; anything running inside it does not. |
-| `kortix sessions log [<id>] [--limit <n>] [--json]` | Print recent messages, read-only. Aliases: `messages`, `history`. |
+| `kortix sessions log [<id>] [--limit <n>] [--json]` | Print recent messages, read-only. A running session is read live; a stopped one is read from the transcript saved at the end of every turn, so it is never woken just to be read. The source is noted on stderr, so `--json` output is unchanged. Aliases: `messages`, `history`. |
+| `kortix sessions attachments <id> [--download <attachment-id>\|--all] [--out <dir>] [--json]` | List a session's stored files — what users attached, and copies of the files the agent showed — and download them. Works while the session is stopped: neither the list nor the bytes need its sandbox. Downloads never overwrite; a name already taken becomes `name (1).ext`. |
 | `kortix sessions pending <id> [--json]` | List open tool-permission or question prompts. Alias: `prompts`. |
 | `kortix sessions approve <id> [<req-id>] [--always] [--reject] [--message "<text>"]` | Answer a permission prompt. |
 | `kortix sessions answer <id> [<req-id>] [--option <v>]... [--text "<text>"] [--reject]` | Answer a question prompt. |
-| `kortix sessions digest [--since <7d>] [--json]` | Compact multi-session review. Aliases: `review`, `summary`. |
+| `kortix sessions digest [--since <7d>] [--json]` | Compact multi-session review. A stopped session's transcript comes from its saved copy and is marked `saved` (and `partial` when that copy does not reach the first message). Aliases: `review`, `summary`. |
 | `kortix sessions scope <id> [scope options] [--json]` | Read or replace Secret and Connector access. Alias: `access`. Use `--secret <id>`, `--no-secrets`, or `--inherit-secrets` for Secrets. Use `--connector <alias>=<authorization-id>` or `--no-connectors` for Connector bindings. Use `--require-connector <alias>` or `--no-required-connectors` for required Connectors. Provided categories replace their current values. Omitted categories remain unchanged. Changes apply to the next prompt. Removed Secret values remain in existing context if the session already read them. |
 | `kortix sessions preview <id> [port] [--port <n>] [--list] [--json]` | Print a clickable preview URL for a sandbox port. Default port: `3000`. `--list` prints the named candidates instead. |
 | `kortix sessions restart <id>` | Restart the session's sandbox. |
@@ -399,6 +400,12 @@ session can take it. Put one there with
 `sessions approvals` are durable: unlike `sessions pending`, they survive a
 sandbox restart. It needs `project.members.manage`, or being the human who
 launched the session. An agent may never resolve its own approval.
+
+`sessions attachments` reads the session's private file store, not its
+workspace. Files land there when the project has **Session Transcript History**
+enabled (Settings → Feature flags): uploads at send time, and every file the
+agent showed at the end of the turn. Files stored while the flag was on stay
+downloadable after it is turned off.
 
 `sessions files` reads the working tree the agent is editing right now, before
 anything is committed; `kortix files` reads the committed repo instead. Paths

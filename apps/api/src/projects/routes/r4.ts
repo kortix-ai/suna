@@ -61,6 +61,7 @@ import {
   relayTurnQuestion,
   relayTurnStepDetailed,
 } from '../../channels/turn-relay';
+import { channelOfSessionMetadata, releaseChannelQuestion } from '../../channels/question-release';
 import { config } from '../../config';
 import {
   connectionIsEffectiveProjectDefault,
@@ -3838,7 +3839,7 @@ projectsApp.openapi(
     }
 
     const [turnQuestionSession] = await db
-      .select({ sessionId: projectSessions.sessionId })
+      .select({ sessionId: projectSessions.sessionId, metadata: projectSessions.metadata })
       .from(projectSessions)
       .where(
         and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)),
@@ -3924,6 +3925,24 @@ projectsApp.openapi(
     // that the question is durable: it is the ordinary web case, and failing here
     // would make the relay look broken for every non-Slack session.
     const result = await relayTurnQuestion(sessionId, questions);
+
+    // Release the runtime's BLOCKING `question` call for a chat-channel session
+    // — see channels/question-release.ts. Keyed on the session's own metadata,
+    // not the live-turn row, and only with a real runtime question id: the
+    // `q-<session>` fallback above names nothing the runtime can answer.
+    // A dashboard session is left alone; its UI answers the question itself.
+    const channel = channelOfSessionMetadata(turnQuestionSession.metadata);
+    const runtimeRequestId = body.request_id?.trim();
+    if (channel && runtimeRequestId) {
+      await releaseChannelQuestion({
+        sessionId,
+        requestId: runtimeRequestId,
+        questionCount: questions.length,
+        channel,
+        posted: result.ok,
+      });
+    }
+
     if (!result.ok) {
       return c.json({ ok: true, persisted: true, answers: [], channel_error: result.error });
     }

@@ -20,6 +20,9 @@ interface CsvRendererProps {
   fileName?: string;
   /** Extra controls for this viewer's own toolbar. */
   toolbarActions?: React.ReactNode;
+  /** False when the host's own toolbar already has the Download button, so the
+   *  viewer does not show a second one. */
+  showDownload?: boolean;
 }
 
 export function CsvRenderer({
@@ -29,6 +32,7 @@ export function CsvRenderer({
   containerHeight,
   fileName,
   toolbarActions,
+  showDownload = true,
 }: CsvRendererProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (!hasCsvContent(content)) {
@@ -74,6 +78,7 @@ export function CsvRenderer({
           fileName={fileName}
           search={!compact}
           showToolbar={!compact}
+          showDownload={showDownload}
           toolbarActions={toolbarActions}
           className="h-full"
         />

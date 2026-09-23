@@ -1,6 +1,7 @@
 'use client';
 
 import { isSessionAttachmentRef } from '@kortix/sdk';
+import { fileTagBlocks } from '@kortix/shared';
 
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { SystemMessage } from '@/components/ui/system-message';
@@ -20,17 +21,28 @@ interface ParsedFileRef {
 }
 
 // Attributes are read by NAME, not by position, so an optional `attachment` can be
-// appended without the tag becoming unparseable. A value can never contain a
-// raw `>` — `xmlAttr` escapes it — so `[^>]*` cannot run past the tag.
-const FILE_TAG_REGEX = /<file\s+([^>]*?)>\s*[\s\S]*?<\/file>/g;
+// appended without the tag becoming unparseable.
+//
+// The blocks come from `fileTagBlocks`, not a regex. The regex this replaced was
+// quadratic in the message text: `<file` followed by many spaces and no `>` froze
+// the tab for seconds, and in a shared session one member's message froze every
+// member who opened it. See `@kortix/shared/file-tags`.
+function replaceFileTags(text: string, replace: (whole: string, attrs: string) => string): string {
+  let out = '';
+  let end = 0;
+  for (const block of fileTagBlocks(text)) {
+    out += text.slice(end, block.index) + replace(text.slice(block.index, block.end), block.attrs);
+    end = block.end;
+  }
+  return out + text.slice(end);
+}
 
 export function parseFileReferences(text: string): {
   cleanText: string;
   files: ParsedFileRef[];
 } {
   const files: ParsedFileRef[] = [];
-  const cleanText = text
-    .replace(FILE_TAG_REGEX, (whole, attrs: string) => {
+  const cleanText = replaceFileTags(text, (whole, attrs) => {
       const pick = (key: string): string | undefined => {
         const m = attrs.match(new RegExp(`\\b${key}="([^"]*?)"`));
         // Every attribute is unescaped on the way out. `xmlAttr` escapes `&`,
@@ -52,8 +64,7 @@ export function parseFileReferences(text: string): {
         ...(attachment && (isSessionAttachmentRef(attachment) || /^[A-Za-z0-9_-]+$/.test(attachment)) ? { attachment } : {}),
       });
       return '';
-    })
-    .trim();
+    }).trim();
   return { cleanText, files };
 }
 

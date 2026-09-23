@@ -4,12 +4,14 @@
  * Teams renders TextBlock markdown as bold, italic, bullet/numbered lists and
  * links — and nothing else. Anything richer has to become its own element:
  *
- * - fenced code → a `Monospace` TextBlock (line breaks kept, markdown escaped)
+ * - fenced code → a Teams `CodeBlock` (highlighted, first 10 lines with
+ *   Expand), with a `Monospace` TextBlock fallback for mobile, which has none
  * - inline `code` → **bold** (there is no inline monospace in a TextBlock)
+ * - each prose line → its own TextBlock; a run of list items → one block
  * - `#` headings → bolder, sized TextBlocks
  * - pipe tables → an Adaptive Cards 1.5 `Table`
  * - `>` quotes → subtle text; `---` → `separator` on the next block
- * - everything else → TextBlocks, one per paragraph, markdown untouched
+ * - bold, italic, links and lists → passed through for TextBlock to render
  *
  * Deliberately regex-based and dependency-free: the input is the agent's own
  * prose, a few kilobytes at most, and the card has a 28 KB ceiling anyway.
@@ -31,8 +33,70 @@ function textBlock(text: string, extra: CardElement = {}): CardElement {
   return { type: 'TextBlock', text, wrap: true, ...extra };
 }
 
-function codeBlock(code: string): CardElement {
-  return textBlock(escapeCardMarkdown(code), { fontType: 'Monospace' });
+/** Fence tags → the `language` values Teams' CodeBlock highlights. */
+const CODE_LANGUAGES: Record<string, string> = {
+  bash: 'Bash', sh: 'Bash', shell: 'Bash', zsh: 'Bash', console: 'Bash',
+  c: 'C', cpp: 'C++', 'c++': 'C++', cc: 'C++', cs: 'C#', csharp: 'C#', 'c#': 'C#',
+  css: 'CSS', bat: 'DOS', cmd: 'DOS', dos: 'DOS', go: 'Go', golang: 'Go',
+  graphql: 'GraphQL', gql: 'GraphQL', html: 'HTML', java: 'Java',
+  javascript: 'JavaScript', js: 'JavaScript', jsx: 'JavaScript', mjs: 'JavaScript',
+  json: 'JSON', jsonc: 'JSON', perl: 'Perl', pl: 'Perl', php: 'PHP',
+  powershell: 'PowerShell', ps1: 'PowerShell', pwsh: 'PowerShell',
+  python: 'Python', py: 'Python', sql: 'SQL',
+  typescript: 'TypeScript', ts: 'TypeScript', tsx: 'TypeScript',
+  vb: 'Visual Basic', vbnet: 'Visual Basic', verilog: 'Verilog', vhdl: 'VHDL', xml: 'XML',
+};
+
+/** Lines of code the mobile fallback shows before pointing at the full snippet. */
+const FALLBACK_CODE_LINES = 30;
+
+/**
+ * A fenced block. Teams breaks a TextBlock only at `\n\n` outside a list, so
+ * one monospace TextBlock ran a whole block onto a single line. `CodeBlock`
+ * keeps every line (Teams web and desktop); mobile has no `CodeBlock` and
+ * renders the fallback, whose lines are kept apart by `\n\n`.
+ */
+function codeBlock(code: string, fence = ''): CardElement {
+  const lines = code.split('\n');
+  const shown = lines.slice(0, FALLBACK_CODE_LINES).map((l) => escapeCardMarkdown(l) || ' ');
+  const more = lines.length - shown.length;
+  if (more > 0) shown.push(`_… ${more} more lines — open this on desktop or in Kortix._`);
+  return {
+    type: 'CodeBlock',
+    codeSnippet: code,
+    language: CODE_LANGUAGES[fence.trim().toLowerCase()] ?? 'PlainText',
+    fallback: textBlock(shown.join('\n\n'), { fontType: 'Monospace' }),
+  };
+}
+
+const LIST_ITEM = /^\s*(?:[-*+]|\d+[.)])\s+/;
+
+/**
+ * A paragraph as TextBlocks, one per prose line and one per run of list
+ * items. Outside a list Teams renders a single `\n` as a space, so
+ * "Deployed.\nVersion 1.2" read as one line where Slack shows two. The first
+ * block carries `first` (a separator, a spacing); the rest sit tight under it.
+ */
+function lineBlocks(lines: string[], first: CardElement, style: CardElement = {}): CardElement[] {
+  const blocks: CardElement[] = [];
+  let list: string[] = [];
+  const push = (text: string) => {
+    blocks.push(textBlock(inlineCode(text), { ...style, ...(blocks.length === 0 ? first : { spacing: 'none' }) }));
+  };
+  const flushList = () => {
+    if (list.length) push(list.join('\n'));
+    list = [];
+  };
+  for (const line of lines) {
+    if (LIST_ITEM.test(line) || (list.length > 0 && /^\s+\S/.test(line))) {
+      list.push(line);
+      continue;
+    }
+    flushList();
+    if (line.trim()) push(line.trim());
+  }
+  flushList();
+  return blocks;
 }
 
 function heading(level: number, text: string): CardElement {
@@ -72,24 +136,23 @@ function table(lines: string[]): CardElement {
 }
 
 /** One paragraph of ordinary markdown, or a quote, or a heading. */
-function paragraph(lines: string[], separator: boolean): CardElement | null {
+function paragraph(lines: string[], separator: boolean): CardElement[] {
   const raw = lines.join('\n').trim();
-  if (!raw) return null;
+  if (!raw) return [];
   const extra: CardElement = separator ? { separator: true } : {};
 
   const h = /^(#{1,6})\s+(.+)$/.exec(raw);
-  if (h && lines.length === 1) return { ...heading(h[1].length, h[2].trim()), ...extra };
+  if (h && lines.length === 1) return [{ ...heading(h[1].length, h[2].trim()), ...extra }];
 
   if (lines.every((l) => /^\s*>/.test(l))) {
-    const quoted = lines.map((l) => l.replace(/^\s*>\s?/, '')).join('\n').trim();
-    return textBlock(inlineCode(quoted), { isSubtle: true, ...extra });
+    return lineBlocks(lines.map((l) => l.replace(/^\s*>\s?/, '')), extra, { isSubtle: true });
   }
 
   if (lines.every((l) => TABLE_ROW.test(l) || TABLE_DIVIDER.test(l)) && lines.length >= 2) {
-    return { ...table(lines), ...extra };
+    return [{ ...table(lines), ...extra }];
   }
 
-  return textBlock(inlineCode(raw), extra);
+  return lineBlocks(lines, extra);
 }
 
 const ENTITIES: Record<string, string> = {
@@ -115,12 +178,13 @@ export function markdownToCardElements(markdown: string): CardElement[] {
 
   let para: string[] = [];
   let code: string[] | null = null;
+  let fence = '';
   let pendingSeparator = false;
 
   const flushPara = () => {
-    const el = paragraph(para, pendingSeparator);
-    if (el) {
-      out.push(el);
+    const els = paragraph(para, pendingSeparator);
+    if (els.length) {
+      out.push(...els);
       pendingSeparator = false;
     }
     para = [];
@@ -129,7 +193,7 @@ export function markdownToCardElements(markdown: string): CardElement[] {
   for (const line of lines) {
     if (code) {
       if (/^\s*```/.test(line)) {
-        out.push({ ...codeBlock(code.join('\n')), ...(pendingSeparator ? { separator: true } : {}) });
+        out.push({ ...codeBlock(code.join('\n'), fence), ...(pendingSeparator ? { separator: true } : {}) });
         pendingSeparator = false;
         code = null;
       } else {
@@ -137,9 +201,11 @@ export function markdownToCardElements(markdown: string): CardElement[] {
       }
       continue;
     }
-    if (/^\s*```/.test(line)) {
+    const opening = /^\s*```\s*([\w#+.-]*)/.exec(line);
+    if (opening) {
       flushPara();
       code = [];
+      fence = opening[1] ?? '';
       continue;
     }
     if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
@@ -160,7 +226,7 @@ export function markdownToCardElements(markdown: string): CardElement[] {
     }
     para.push(line);
   }
-  if (code) out.push(codeBlock(code.join('\n')));
+  if (code) out.push(codeBlock(code.join('\n'), fence));
   flushPara();
   return out;
 }

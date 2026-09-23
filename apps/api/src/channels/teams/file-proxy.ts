@@ -151,24 +151,41 @@ export async function initiateTeamsUpload(
     projectId,
   };
   const scope = args.conversationType ?? 'personal';
+
+  // An IMAGE is shown inline first, in every scope — the way Slack shows one.
+  //
+  // A personal chat used to skip this and send every file, images included,
+  // through the consent card: "Kortix wants to send you chart.png — Accept /
+  // Decline", then a file in OneDrive. That is the most common way people use
+  // the bot, and it was the worst image experience of the three scopes.
+  //
+  // Inline is not guaranteed to fit: Teams caps an activity's size, and a
+  // base64 image is a third larger than the file. So a refused post is not the
+  // end — it falls through to whatever that scope CAN carry: the consent card
+  // in a personal chat, the team drive in a channel. Before, a group chat or a
+  // channel had no fallback at all and simply returned 502.
+  const image = imageContentType(args.filename);
+  if (image) {
+    const posted = await sendActivity(ref, {
+      ...(args.description ? { text: args.description } : {}),
+      attachments: [
+        { contentType: image, contentUrl: `data:${image};base64,${args.contentBase64}`, name: args.filename },
+      ],
+      type: 'message',
+    });
+    if (posted) return { ok: true, delivered: 'inline' };
+    console.warn('[teams-file] inline image refused; falling back', { scope, size, filename: args.filename });
+  }
+
   if (scope !== 'personal') {
-    const image = imageContentType(args.filename);
-    if (image) {
-      const posted = await sendActivity(ref, {
-        ...(args.description ? { text: args.description } : {}),
-        attachments: [
-          { contentType: image, contentUrl: `data:${image};base64,${args.contentBase64}`, name: args.filename },
-        ],
-        type: 'message',
-      });
-      if (!posted) return { ok: false, error: 'failed to post the image', status: 502 };
-      return { ok: true, delivered: 'inline' };
-    }
     if (!args.teamGroupId) {
       return {
         ok: false,
-        error:
-          'Teams only accepts file transfers in a personal chat; in a group chat send images inline, or share a link. In a team channel the file can be uploaded to the team drive when the team is known.',
+        // Say which of the two it was. For an image this runs only AFTER the
+        // inline post was refused, so "send it inline" would be circular.
+        error: image
+          ? `The image (${size} bytes) was too large for Teams to show inline, and a group chat cannot receive file transfers. Send a smaller image (compress or resize it), or share a link.`
+          : 'Teams only accepts file transfers in a personal chat; in a group chat send images inline, or share a link. In a team channel the file can be uploaded to the team drive when the team is known.',
         status: 400,
       };
     }

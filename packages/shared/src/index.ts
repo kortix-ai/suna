@@ -18,3 +18,4 @@ export * from "./utils/format-relative";
 export * from './prompt-attachments';
 export * from './markdown-math';
 export * from './session-attachments';
+export * from './file-tags';

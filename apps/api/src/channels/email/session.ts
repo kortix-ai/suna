@@ -239,7 +239,14 @@ async function createThreadSession(
     enforceAccountCap: false,
     mayManageSystemConnections: true,
     queuePolicy: 'on_backpressure',
-    idempotencyKey: claimKey,
+    // One key per message, never per thread: the lifecycle keeps a key
+    // forever, so under the thread's key a failed first start (dead-lettered)
+    // answered every later reply in the thread with the same failure, and a
+    // deleted session answered 409 IDEMPOTENCY_KEY_SESSION_DELETED. Racing
+    // messages are serialized by the thread-create claim above.
+    idempotencyKey: event.message.message_id
+      ? `email:create:${inboxId}:${threadId}:${event.message.message_id}`
+      : claimKey,
     postCreate: [
       {
         type: 'bind_chat_thread',

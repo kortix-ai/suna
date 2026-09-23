@@ -17,7 +17,7 @@ import { useTranslations } from '@/i18n/use-translations';
  *
  * So the toolbar is: what you're looking at (left) and what you can do with it
  * (right). The right side is one split button — `Copy`, with a caret holding
- * `Copy link` and `Download file` — then full screen and close. Every file gets
+ * `Copy link` — then a visible Download button, full screen and close. Every file gets
  * the same right side, built by `ViewerActions`, so the actions never move and
  * this toolbar cannot drift from `PreviewShell`'s.
  */

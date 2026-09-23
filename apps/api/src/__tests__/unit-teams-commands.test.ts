@@ -34,6 +34,20 @@ describe('parseTeamsCommand — /policy', () => {
   });
 });
 
+// A chat is one conversation id for life. `/new` is the only way to give its
+// next task a clean session, so the parser must not swallow it.
+describe('parseTeamsCommand — /new', () => {
+  test('/new and /reset both parse, with or without a message after them', () => {
+    expect(parseTeamsCommand('/new')).toEqual({ verb: 'new', arg: '' });
+    expect(parseTeamsCommand('<at>Kortix</at> /reset')).toEqual({ verb: 'reset', arg: '' });
+    expect(parseTeamsCommand('/new plan the sprint')).toEqual({ verb: 'new', arg: 'plan the sprint' });
+  });
+
+  test('"new" without the slash is a message to the agent', () => {
+    expect(parseTeamsCommand('new idea: ship it')).toBeNull();
+  });
+});
+
 // `/stop` is the lever that ends a run after the live card's Stop button has
 // scrolled out of reach. It is useless if the parser drops it.
 describe('parseTeamsCommand — /stop', () => {
