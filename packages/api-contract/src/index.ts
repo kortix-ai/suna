@@ -488,8 +488,24 @@ export const ConnectionSchema = z.object({
   status: ConnectionStatusSchema,
   is_default: z.boolean(),
   metadata: ConnectionMetadataSchema,
+  /**
+   * The identity the account was authorized as: an email, a login, or a
+   * display name, read from the provider at finalize. `null` when the
+   * provider exposes none or the connection holds no authorized account.
+   */
+  connected_as: z.string().nullable().optional(),
 });
 export type Connection = z.infer<typeof ConnectionSchema>;
+
+/**
+ * Rename a connection. Only the label changes. `me`, `project`, and
+ * UUID-shaped labels are refused at the route because `--account` resolves
+ * those before labels.
+ */
+export const RenameConnectionInputSchema = z
+  .object({ label: z.string().trim().min(1).max(255) })
+  .strict();
+export type RenameConnectionInput = z.infer<typeof RenameConnectionInputSchema>;
 
 export const ReconcileConnectionInputSchema = z
   .object({

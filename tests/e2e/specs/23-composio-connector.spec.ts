@@ -433,6 +433,141 @@ test.describe("23 — Composio managed connector", () => {
     expect(pageErrors, `client errors: ${pageErrors.join(" | ")}`).toEqual([]);
   });
 
+  test("renames an account from its row menu without re-authorizing it", async ({
+    page,
+  }) => {
+    // A direct (MCP) connector: the row, its menu, and the rename modal are
+    // the same for every provider, and this needs no provider credentials.
+    const slug = `e2e-rename-${Date.now().toString(36)}`;
+    await api(
+      session.access_token,
+      "POST",
+      `/connectors/projects/${project.id}/connectors`,
+      { slug, provider: "mcp", url: "https://ke2e.kortix.test/mcp", auth: { type: "none" } },
+      200,
+    );
+    const created = await api<{ connection_id: string; label: string }>(
+      session.access_token,
+      "POST",
+      `/projects/${project.id}/connections`,
+      { connector_alias: slug, owner_type: "project", label: "Project connection" },
+      201,
+    );
+
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    await installBrowserSessionDirect(
+      page,
+      session,
+      `/projects/${project.id}/customize/connectors?scope=connected&c=${slug}`,
+      authOptions,
+    );
+    await selectAccountForUi(page, accountId);
+    await page.goto(
+      `/projects/${project.id}/customize/connectors?scope=connected&c=${slug}`,
+      { waitUntil: "domcontentloaded" },
+    );
+    await dismissOnboarding(page);
+
+    const row = page.getByRole("listitem").filter({ hasText: "Project connection" });
+    await expect(row).toBeVisible({ timeout: 60_000 });
+    await row.getByRole("button", { name: "Actions for Project connection" }).click();
+    await page.getByRole("menuitem", { name: "Rename", exact: true }).click();
+
+    const dialog = page.getByRole("dialog", { name: "Rename Project connection" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByLabel("Name").fill("  Shared support inbox  ");
+
+    const renameRequest = page.waitForRequest(
+      (request) =>
+        request
+          .url()
+          .endsWith(`/v1/projects/${project.id}/connections/${created.connection_id}/label`) &&
+        request.method() === "PUT",
+    );
+    const renameResponse = page.waitForResponse(
+      (response) =>
+        response
+          .url()
+          .endsWith(`/v1/projects/${project.id}/connections/${created.connection_id}/label`) &&
+        response.request().method() === "PUT",
+    );
+    await dialog.getByRole("button", { name: "Save", exact: true }).click();
+    expect((await renameRequest).postDataJSON()).toEqual({ label: "Shared support inbox" });
+    const response = await renameResponse;
+    expect(response.status()).toBe(200);
+    expect(await response.json()).toEqual(
+      expect.objectContaining({
+        connection_id: created.connection_id,
+        label: "Shared support inbox",
+        owner_type: "project",
+        status: "active",
+      }),
+    );
+
+    await expect(dialog).not.toBeVisible();
+    await expect(page.getByText("Account renamed")).toBeVisible();
+    await expect(
+      page.getByRole("listitem").filter({ hasText: "Shared support inbox" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("listitem").filter({ hasText: "Project connection" }),
+    ).toHaveCount(0);
+
+    const readBack = await api<ConnectionList & {
+      connections: Array<{ connection_id: string; label: string }>;
+    }>(session.access_token, "GET", `/projects/${project.id}/connections`);
+    expect(
+      readBack.connections.find((item) => item.connection_id === created.connection_id)?.label,
+    ).toBe("Shared support inbox");
+    expect(pageErrors, `client errors: ${pageErrors.join(" | ")}`).toEqual([]);
+  });
+
+  test("a connect link for an already-connected account reads as success and names the identity", async ({
+    page,
+  }) => {
+    // The API half (Composio reusing an active account, finalize naming it) is
+    // proven against real Postgres in integration-connector-connected-as and
+    // public-app.test. A hosted OAuth cannot complete in a browser run, so
+    // this journey pins the three setup-link responses and asserts what the
+    // human sees: before the fix this exact `/start` answer rendered
+    // "Could not start the connect flow."
+    const token = "ksl_e2e_already_connected";
+    const finalizeCalls: string[] = [];
+    await page.route(`**/setup-links/connectors/${token}`, (route) =>
+      route.fulfill({
+        json: {
+          kind: "connector",
+          project_name: "E2E project",
+          slug: "gmail",
+          app: "Gmail",
+          expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+        },
+      }),
+    );
+    await page.route(`**/setup-links/connectors/${token}/start`, (route) =>
+      route.fulfill({ json: { connect_url: null, connected: true, already_connected: true } }),
+    );
+    await page.route(`**/setup-links/connectors/${token}/finalize`, (route) => {
+      finalizeCalls.push(route.request().method());
+      return route.fulfill({ json: { connected: true, connected_as: "ops@example.test" } });
+    });
+
+    await page.goto(`/connect/${token}`, { waitUntil: "domcontentloaded" });
+    const popups: string[] = [];
+    page.on("popup", (popup) => popups.push(popup.url()));
+    await page.getByRole("button", { name: "Connect Gmail" }).click();
+
+    await expect(page.getByText("Already connected", { exact: true })).toBeVisible();
+    await expect(page.getByTestId("connector-intake-connected-as")).toHaveText(
+      "Connected as ops@example.test",
+    );
+    await expect(page.getByText("Could not start the connect flow.")).toHaveCount(0);
+    await expect(page.getByText(/To use a different account/)).toBeVisible();
+    expect(finalizeCalls).toEqual(["POST"]);
+    expect(popups).toEqual([]);
+  });
+
   // @quarantine: this journey calls `test.skip(!providers.includes("composio"))`
   // when the live `/connectors/connect-status` does not report composio. Under
   // the strict browser reporter (E2E_REQUIRE_ALL_BROWSER=1) any runtime skip

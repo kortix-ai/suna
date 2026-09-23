@@ -449,3 +449,61 @@ describe('authorizeGitProxy — verdict memo', () => {
     expect(allowed.ok).toBe(true);
   });
 });
+
+describe('a refused git credential still names who presented it', () => {
+  // The V1 finding: any account member could clone and push `main` of a
+  // project they held no role on. The refusal is now in place — and an audit
+  // row that cannot say WHO was refused is no evidence at all. The request's
+  // audit scope must carry the identity the token proved before the refusal.
+  const { runWithContext } = require('../lib/request-context');
+  const { attachInboundAuditScope } = require('../shared/audit-scope');
+
+  async function principalAfter(token: string, scope: 'read' | 'write') {
+    return runWithContext('POST', `/v1/git/${PROJECT_ID}/git-receive-pack`, async () => {
+      const audit = attachInboundAuditScope({ owner: 'edge', method: 'POST' });
+      const res = await authorizeGitProxy(token, PROJECT_ID, scope);
+      return { res, principal: audit.principal };
+    });
+  }
+
+  test('a same-account PAT refused for lack of a project role names its user and token', async () => {
+    authorizeAllowed = false;
+    const { res, principal } = await principalAfter('kortix_pat_x', 'write');
+    expect(res).toMatchObject({ ok: false, status: 403 });
+    expect(principal).toMatchObject({
+      accountId: OWNER_ACCOUNT,
+      projectId: PROJECT_ID,
+      actorUserId: 'user-1',
+      actorType: 'human',
+      authoritativeSource: 'api_key',
+      authMethod: { kind: 'account_token', token_id: 'tok-1' },
+    });
+  });
+
+  test('an invalid PAT names only the project it was aimed at', async () => {
+    patResult = { isValid: false, error: 'Invalid PAT' };
+    const { res, principal } = await principalAfter('kortix_pat_x', 'read');
+    expect(res).toMatchObject({ ok: false, status: 401 });
+    expect(principal).toEqual({ accountId: OWNER_ACCOUNT, projectId: PROJECT_ID });
+  });
+
+  test('a sandbox token refused for another project names the agent credential', async () => {
+    apiKeyResult = { isValid: true, type: 'sandbox', sandboxId: 'sbx-1', accountId: OWNER_ACCOUNT };
+    const { res, principal } = await principalAfter('kortix_sbx_x', 'read');
+    expect(res).toMatchObject({ ok: false, status: 403 });
+    expect(principal).toMatchObject({
+      projectId: PROJECT_ID,
+      actorType: 'agent',
+      actorUserId: null,
+      authoritativeSource: 'agent',
+      authMethod: { kind: 'sandbox_token', sandbox_id: 'sbx-1' },
+    });
+  });
+
+  test('an unknown project binds nothing: there is no owner to show it to', async () => {
+    projectRow = null;
+    const { res, principal } = await principalAfter('kortix_pat_x', 'read');
+    expect(res).toMatchObject({ ok: false, status: 404 });
+    expect(principal).toEqual({});
+  });
+});

@@ -50,7 +50,7 @@ Filters (ls, export, project):
   --until <when>       Only events at or before this point.
   --action <prefix>    Action prefix, e.g. "iam.policy." or "session.".
   --actor <user-id>    Only this actor.
-  --actor-type <t>     human | agent | service_account | system
+  --actor-type <t>     human | agent | service_account | system | anonymous
   --outcome <o>        success | failure | denied | pending
   --project <id>       Only this project.
   --session <id>       Only this session.
@@ -479,6 +479,7 @@ export async function runAudit(argv: string[]): Promise<number> {
                 | 'agent'
                 | 'service_account'
                 | 'system'
+                | 'anonymous'
                 | undefined,
               source: search.get('source') ?? undefined,
               phase: search.get('phase') ?? undefined,

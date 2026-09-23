@@ -217,7 +217,11 @@ export async function readManifestFromRepo(
     .filter((p): p is string => !!p);
   if (normalized.length === 0) return null;
   const treeRef = validateRef(ref || project.defaultBranch);
-  const repoPath = await refreshMirror(project, opts?.forceRefresh);
+  // A forced refresh here exists to make THIS ref's manifest current (the
+  // per-prompt grant read is the hot caller), so the mirror only has to prove
+  // that one branch is at the remote's tip. When it is, the fetch is skipped;
+  // when it moved, or the ref is a sha, the full fetch runs as before.
+  const repoPath = await refreshMirror(project, opts?.forceRefresh, { freshRef: treeRef });
   // A pathspec-scoped ls-tree prints only the candidates present at this ref
   // (order-agnostic), so we pick the highest-priority one ourselves.
   const listed = await runGitCapture(['ls-tree', treeRef, '--', ...normalized], repoPath);

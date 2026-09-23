@@ -250,3 +250,54 @@ describe('authenticatePreviewPrincipalDetailed — session binding', () => {
     expect(await authenticatePreviewPrincipal('kortix_pat_bad', SANDBOX_ID)).toBeNull();
   });
 });
+
+describe('a proven preview credential names its caller in the request audit', () => {
+  // Preview subdomains and the PTY / preview WebSockets are dispatched before
+  // Hono: no auth middleware names their caller. This validator does, the
+  // moment a token is proven — BEFORE the sandbox-ownership check, so a caller
+  // refused on someone else's sandbox is still attributed.
+  const { runWithContext } = require('../lib/request-context');
+  const { attachInboundAuditScope } = require('../shared/audit-scope');
+
+  async function principalAfter(token: string) {
+    return runWithContext('GET', '/', async () => {
+      const scope = attachInboundAuditScope({ owner: 'edge', method: 'GET' });
+      const result = await authenticatePreviewPrincipalDetailed(token, SANDBOX_ID);
+      return { result, principal: scope.principal };
+    });
+  }
+
+  test('a Supabase session is the human user', async () => {
+    const { result, principal } = await principalAfter('jwt-owner');
+    expect(result).toMatchObject({ userId: 'user-owner', principalKind: 'user' });
+    expect(principal).toMatchObject({ actorType: 'human', actorUserId: 'user-owner', authMethod: { kind: 'jwt' } });
+  });
+
+  test('a user refused on another sandbox is still named', async () => {
+    const { result, principal } = await principalAfter('jwt-other');
+    expect(result).toBeNull();
+    expect(principal).toMatchObject({ actorType: 'human', actorUserId: 'user-other' });
+  });
+
+  test('a service account is not written as a user', async () => {
+    const { result, principal } = await principalAfter('kortix_sa_owner');
+    expect(result).toMatchObject({ userId: 'sa-owner', principalKind: 'service_account' });
+    expect(principal).toMatchObject({
+      actorType: 'service_account',
+      actorUserId: null,
+      authMethod: { kind: 'service_account', service_account_id: 'sa-owner' },
+    });
+  });
+
+  test('an account API key is system; its account id is never a user id', async () => {
+    const { result, principal } = await principalAfter('kortix_owner');
+    expect(result).toMatchObject({ userId: 'acct-owner', principalKind: 'account' });
+    expect(principal).toMatchObject({ actorType: 'system', actorUserId: null });
+  });
+
+  test('an invalid token binds nothing', async () => {
+    const { result, principal } = await principalAfter('kortix_pat_forged');
+    expect(result).toBeNull();
+    expect(principal).toEqual({});
+  });
+});

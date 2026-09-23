@@ -11,8 +11,8 @@ import {
 import { OutcomeCard } from '@/features/session/outcomes/outcome-card';
 import type { Outcome } from '@/features/session/outcomes/outcome-types';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
-import { KeyIcon, PlugIcon } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
+import { KeyIcon, PlugIcon } from '@phosphor-icons/react';
 import React, { useCallback, useMemo, useState } from 'react';
 import { ConnectorIntake } from './connector-intake';
 import { SecretIntakeForm } from './secret-intake-form';
@@ -63,7 +63,12 @@ export function SetupLinkButton({
   children,
 }: {
   kind: SetupLinkKind;
-  token: string;
+  /**
+   * `null` while the link's URL is still streaming (`holdPendingSetupLink`).
+   * The card then reads "Preparing link…" with its action disabled and no
+   * modal, and turns live in place once the token has arrived.
+   */
+  token: string | null;
   children?: React.ReactNode;
 }): React.ReactElement {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -87,7 +92,8 @@ export function SetupLinkButton({
   const localizedCopy = useLocalizedUiCatalog(COPY);
   const copy = localizedCopy[kind];
   const Icon = copy.icon;
-  const label = setupLinkChipLabel(textOf(children), token, copy.fallback);
+  const pending = token === null;
+  const label = setupLinkChipLabel(textOf(children), token ?? '', copy.fallback);
 
   /** Stable so `ConnectorIntake`'s notify effect does not refire on every render. */
   const handleSettled = useCallback((): void => setSettled(true), []);
@@ -95,7 +101,7 @@ export function SetupLinkButton({
   /** Closing settles the connect; the rule lives in `onSetupLinkModalClose` so it is testable. */
   const handleOpenChange = (next: boolean): void => {
     setOpen(next);
-    void onSetupLinkModalClose({ open: next, kind, token });
+    if (token !== null) void onSetupLinkModalClose({ open: next, kind, token });
   };
 
   // `kind: 'external'` is the closest of the three the union offers, and only
@@ -105,21 +111,27 @@ export function SetupLinkButton({
   // like a merged change request in the transcript: green tone, past-tense
   // status, and a quiet outline button that reopens the same modal to look
   // rather than to act.
+  //
+  // Pending keeps the live card's tone, title, and action label, so the only
+  // change when the token lands is the status line and the button enabling.
   const outcome = useMemo<Outcome>(
     () => ({
-      id: `setup:${token}`,
+      id: `setup:${token ?? 'pending'}`,
       kind: 'external',
       title: label,
       description: '',
       status: settled
         ? { label: copy.doneStatus, tone: 'success' }
-        : { label: tI18nComplete.raw('text9f760ab20739'), tone: 'warning' },
+        : {
+            label: tI18nComplete.raw(pending ? 'textae47d51077b4' : 'text9f760ab20739'),
+            tone: 'warning',
+          },
       at: 0,
       meta: [],
       action: { label: settled ? 'View' : copy.action, intent: 'open' },
       resourceHref: null,
     }),
-    [token, label, settled, copy.doneStatus, copy.action, tI18nComplete],
+    [token, pending, label, settled, copy.doneStatus, copy.action, tI18nComplete],
   );
 
   return (
@@ -129,27 +141,30 @@ export function SetupLinkButton({
         index={0}
         icon={Icon}
         actionVariant={settled ? 'outline' : 'default'}
+        pending={pending}
         onOpen={() => setOpen(true)}
         className="my-2"
       />
 
-      <Modal open={open} onOpenChange={handleOpenChange}>
-        <ModalContent className="lg:max-w-lg">
-          {/* `pr-12` keeps the text clear of the absolute close button (`top-3 right-3 size-8`). */}
-          <ModalHeader className=" pr-12">
-            <ModalTitle>{copy.title}</ModalTitle>
-            <ModalDescription className="text-pretty">{copy.blurb}</ModalDescription>
-          </ModalHeader>
+      {token !== null && (
+        <Modal open={open} onOpenChange={handleOpenChange}>
+          <ModalContent className="lg:max-w-lg">
+            {/* `pr-12` keeps the text clear of the absolute close button (`top-3 right-3 size-8`). */}
+            <ModalHeader className="pr-12">
+              <ModalTitle>{copy.title}</ModalTitle>
+              <ModalDescription className="text-pretty">{copy.blurb}</ModalDescription>
+            </ModalHeader>
 
-          <ModalBody className="max-h-[60vh] overflow-y-auto">
-            {kind === 'secret' ? (
-              <SecretIntakeForm token={token} compact onDone={handleSettled} />
-            ) : (
-              <ConnectorIntake token={token} compact onConnected={handleSettled} />
-            )}
-          </ModalBody>
-        </ModalContent>
-      </Modal>
+            <ModalBody className="max-h-[60vh] overflow-y-auto">
+              {kind === 'secret' ? (
+                <SecretIntakeForm token={token} compact onDone={handleSettled} />
+              ) : (
+                <ConnectorIntake token={token} compact onConnected={handleSettled} />
+              )}
+            </ModalBody>
+          </ModalContent>
+        </Modal>
+      )}
     </>
   );
 }

@@ -149,6 +149,7 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'POST /v1/projects/:projectId/connect-requests': 'Created connection request',
   'PUT /v1/projects/:projectId/connections/:connectionId/activate': 'Activated connector',
   'PUT /v1/projects/:projectId/connections/:connectionId/default': 'Set default connector',
+  'PUT /v1/projects/:projectId/connections/:connectionId/label': 'Renamed connector account',
   'PUT /v1/projects/:projectId/connections/:connectionId/revoke': 'Revoked connector',
   'POST /v1/projects/:projectId/connections/me': 'Created personal connector',
   'POST /v1/projects/:projectId/gateway/playground': 'Ran gateway playground request',
