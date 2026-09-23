@@ -51,6 +51,8 @@ mock.module('../shared/crypto', () => ({
 }));
 
 mock.module('../repositories/account-tokens', () => ({
+  // The connector → App assertion path; not exercised in this suite.
+  validateAccountTokenById: async () => ({ isValid: false, error: 'not in this suite' }),
   validateAccountToken: async (t: string) => {
     const known = TOKENS[t];
     if (!known) return { isValid: false, error: 'Invalid PAT' };

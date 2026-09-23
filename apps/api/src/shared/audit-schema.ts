@@ -20,6 +20,8 @@ export const AuditEventSchema = z
     agent_name: z.string().nullable(),
     initiator_actor_type: z.string().nullable(),
     initiator_actor_id: z.string().nullable(),
+    /** The human an agent session acted on behalf of; null otherwise. */
+    on_behalf_of_user_id: z.string().uuid().nullable(),
     parent_event_id: z.string().uuid().nullable(),
     delegation_depth: z.number().int(),
     source: z.string().nullable(),

@@ -14,84 +14,85 @@ import { useAgent, useUpdateAgent } from '@/lib/agents/hooks';
 import { useToolsMetadata, type ToolMetadata, type ToolMethod } from '@/hooks/useToolsMetadata';
 import { useLanguage } from '@/contexts/LanguageContext';
 import {
-  Wrench,
-  Save,
-  AlertCircle,
-  Check,
-  ChevronRight,
-  ChevronDown,
-  FileText,
-  Terminal,
-  Folder,
-  ListTodo,
-  Image as ImageIcon,
-  Globe,
-  Presentation,
-  Code,
-  File,
-  FileCode,
-  Database,
-  Settings,
-  Zap,
-  Search,
-  Mail,
-  Calendar,
-  Clock,
-  Users,
-  MessageSquare,
-  Video,
-  Music,
-  Camera,
-  Palette,
-  BarChart,
-  PieChart,
-  TrendingUp,
-  ShoppingCart,
-  CreditCard,
-  Map,
-  Navigation,
-  Plane,
-  Car,
-  Home,
-  Building,
-  Briefcase,
-  Book,
-  GraduationCap,
-  Heart,
-  Star,
-  Bell,
-  Lock,
-  Key,
-  Shield,
-  Eye,
-  EyeOff,
-  Download,
-  Upload,
-  Share,
-  Link,
-  Copy,
-  Edit,
-  Trash,
-  Plus,
-  Minus,
-  X,
-  CheckCircle,
-  XCircle,
-  AlertTriangle,
-  Info,
-  HelpCircle,
-  ExternalLink,
-  ArrowRight,
-  ArrowLeft,
-  ChevronUp,
-  ChevronDown as ChevronDownIcon,
-  MoreVertical,
-  MoreHorizontal,
-} from 'lucide-react-native';
+  WrenchIcon as Wrench,
+  FloppyDiskIcon as Save,
+  WarningCircleIcon as AlertCircle,
+  CheckIcon as Check,
+  CaretRightIcon as ChevronRight,
+  CaretDownIcon as ChevronDown,
+  FileTextIcon as FileText,
+  TerminalIcon as Terminal,
+  FolderIcon as Folder,
+  ListChecksIcon as ListTodo,
+  ImageIcon,
+  GlobeIcon as Globe,
+  PresentationIcon as Presentation,
+  CodeIcon as Code,
+  FileIcon as File,
+  FileCodeIcon as FileCode,
+  DatabaseIcon as Database,
+  GearSixIcon as Settings,
+  LightningIcon as Zap,
+  MagnifyingGlassIcon as Search,
+  EnvelopeIcon as Mail,
+  CalendarIcon as Calendar,
+  ClockIcon as Clock,
+  UsersIcon as Users,
+  ChatIcon as MessageSquare,
+  VideoIcon as Video,
+  MusicNotesIcon as Music,
+  CameraIcon as Camera,
+  PaletteIcon as Palette,
+  ChartBarIcon as BarChart,
+  ChartPieIcon as PieChart,
+  TrendUpIcon as TrendingUp,
+  ShoppingCartIcon as ShoppingCart,
+  CreditCardIcon as CreditCard,
+  MapTrifoldIcon as Map,
+  NavigationArrowIcon as Navigation,
+  AirplaneIcon as Plane,
+  CarIcon as Car,
+  HouseIcon as Home,
+  BuildingIcon as Building,
+  BriefcaseIcon as Briefcase,
+  BookIcon as Book,
+  GraduationCapIcon as GraduationCap,
+  HeartIcon as Heart,
+  StarIcon as Star,
+  BellIcon as Bell,
+  LockIcon as Lock,
+  KeyIcon as Key,
+  ShieldIcon as Shield,
+  EyeIcon as Eye,
+  EyeSlashIcon as EyeOff,
+  DownloadIcon as Download,
+  UploadIcon as Upload,
+  ExportIcon as Share,
+  LinkIcon as Link,
+  CopyIcon as Copy,
+  PencilSimpleIcon as Edit,
+  TrashIcon as Trash,
+  PlusIcon as Plus,
+  MinusIcon as Minus,
+  XIcon as X,
+  CheckCircleIcon as CheckCircle,
+  XCircleIcon as XCircle,
+  WarningIcon as AlertTriangle,
+  InfoIcon as Info,
+  QuestionIcon as HelpCircle,
+  ArrowSquareOutIcon as ExternalLink,
+  ArrowRightIcon as ArrowRight,
+  ArrowLeftIcon as ArrowLeft,
+  CaretUpIcon as ChevronUp,
+  CaretDownIcon as ChevronDownIcon,
+  DotsThreeVerticalIcon as MoreVertical,
+  DotsThreeIcon as MoreHorizontal,
+} from '@/lib/icons';
 import { SvgUri } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { log } from '@/lib/logger';
+import { THEME } from '@/lib/utils/theme';
 
 interface ToolsScreenProps {
   agentId: string;
@@ -498,7 +499,7 @@ export function ToolsScreen({ agentId, onUpdate }: ToolsScreenProps) {
   if (isLoading || isLoadingMetadata) {
     return (
       <View className="items-center justify-center py-12">
-        <ActivityIndicator size="small" color={colorScheme === 'dark' ? '#FFFFFF' : '#121215'} />
+        <ActivityIndicator size="small" color={colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground} />
         <Text className="mt-4 font-roobert text-sm text-muted-foreground">
           {t('workers.loadingTools')}
         </Text>
@@ -531,13 +532,13 @@ export function ToolsScreen({ agentId, onUpdate }: ToolsScreenProps) {
         <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
           <View className="space-y-4">
             {!areToolsEditable && (
-              <View className="mb-4 flex-row items-start gap-2 rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-3">
+              <View className="mb-4 flex-row items-start gap-2 rounded-xl border border-kortix-orange/20 bg-kortix-orange/10 p-3">
                 <Icon
                   as={AlertCircle}
                   size={16}
-                  className="mt-0.5 text-yellow-600 dark:text-yellow-400"
+                  className="mt-0.5 text-kortix-orange"
                 />
-                <Text className="flex-1 font-roobert text-sm text-yellow-600 dark:text-yellow-400">
+                <Text className="flex-1 font-roobert text-sm text-kortix-orange">
                   {isSunaAgent ? t('workers.sunaToolsManaged') : t('workers.toolsNotEditable')}
                 </Text>
               </View>
@@ -623,7 +624,6 @@ export function ToolsScreen({ agentId, onUpdate }: ToolsScreenProps) {
                                 as={Check}
                                 size={14}
                                 className="text-primary-foreground"
-                                strokeWidth={3}
                               />
                             )}
                           </Pressable>
@@ -686,7 +686,6 @@ export function ToolsScreen({ agentId, onUpdate }: ToolsScreenProps) {
                                           as={Check}
                                           size={12}
                                           className="text-primary-foreground"
-                                          strokeWidth={3}
                                         />
                                       )}
                                     </View>
@@ -726,7 +725,10 @@ export function ToolsScreen({ agentId, onUpdate }: ToolsScreenProps) {
                   : 'bg-primary active:opacity-80'
               }`}>
               {updateAgentMutation.isPending ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
+                <ActivityIndicator
+                  size="small"
+                  color={colorScheme === 'dark' ? THEME.dark.primaryForeground : THEME.light.primaryForeground}
+                />
               ) : (
                 <Icon as={Save} size={18} className="text-primary-foreground" />
               )}

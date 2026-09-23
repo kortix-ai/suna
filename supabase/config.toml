@@ -34,7 +34,10 @@ enabled = false
 [auth]
 enabled = true
 site_url = "http://localhost:3000"
-additional_redirect_urls = ["http://127.0.0.1:3000", "http://localhost:3000"]
+# kortix://** — the mobile app's deep links (auth/callback for magic links and
+# OAuth, auth/reset-password). Without it GoTrue drops the redirect and sends
+# the user to site_url instead of back into the app.
+additional_redirect_urls = ["http://127.0.0.1:3000", "http://localhost:3000", "kortix://**"]
 enable_signup = true
 
 [auth.email]

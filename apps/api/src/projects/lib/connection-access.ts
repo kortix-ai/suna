@@ -31,13 +31,23 @@ export type ConnectionOwnerType =
  * | owner_type | reachable by                                                    |
  * |------------|-----------------------------------------------------------------|
  * | `project`  | anyone who may use the connector — humans AND service accounts  |
- * | `member`   | only `ownerId === actingUserId`; NEVER a service account        |
+ * | `member`   | only `ownerId === actingUserId`; NEVER a service account.       |
+ * |            | Agent-principal session: only `ownerId === on_behalf_of` in a   |
+ * |            | `private` session (see `agentPrincipal` below)                  |
  * | `external` | only through `trustedManagedSystem` (the managed email channel) |
  * | `agent` / `subject` | nobody — unchanged, deliberately not widened           |
  *
  * The caller keeps its own session-visibility guard: a `member`-owned account is
  * reachable only inside a `private` session, so a shared session can never run
  * as one person's identity.
+ *
+ * `agentPrincipal` (spec docs/specs/2026-09-22-agents-as-principals.md §2.3):
+ * present when the caller is an agent session under the agent-principal model
+ * (flag `agent_principal` ON, governed grant). Its acting principal is the
+ * agent's service account, so neither `actingUserId` (the launcher) nor the
+ * service-account flag decides. A `member` row is reachable only when
+ * `ownerId === onBehalfOfUserId` AND the session is `private`. An unattended
+ * run (`onBehalfOfUserId` null) and a shared session reach no member row.
  */
 export function connectionIsReachable(input: {
   ownerType: ConnectionOwnerType;
@@ -45,10 +55,23 @@ export function connectionIsReachable(input: {
   actingUserId: string;
   actingPrincipalIsServiceAccount: boolean;
   trustedManagedSystem?: boolean;
+  agentPrincipal?: {
+    onBehalfOfUserId: string | null;
+    visibility: 'private' | 'project' | 'restricted' | null;
+  } | null;
 }): boolean {
   if (input.trustedManagedSystem === true) return true;
   if (input.ownerType === 'project') return true;
   if (input.ownerType !== 'member') return false;
+  if (input.agentPrincipal) {
+    const human = input.agentPrincipal.onBehalfOfUserId;
+    return (
+      input.agentPrincipal.visibility === 'private' &&
+      typeof human === 'string' &&
+      human !== '' &&
+      input.ownerId === human
+    );
+  }
   // `actingUserId` defaults to '' where the caller has no human principal
   // (a service account, or a resolution with no user in context). An empty
   // owner id must never collide with it.

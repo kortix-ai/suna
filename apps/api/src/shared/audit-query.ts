@@ -97,6 +97,7 @@ export function serializeAuditEvent(row: AuditEventRow) {
     agent_name: row.agentName,
     initiator_actor_type: row.initiatorActorType,
     initiator_actor_id: row.initiatorActorId,
+    on_behalf_of_user_id: row.onBehalfOfUserId ?? null,
     parent_event_id: row.parentEventId,
     delegation_depth: row.delegationDepth,
     source: row.source,

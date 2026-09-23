@@ -10,7 +10,7 @@ import React from 'react';
 import { View, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { ArrowUpRight } from 'lucide-react-native';
+import { ArrowUpRightIcon as ArrowUpRight } from '@/lib/icons';
 import * as Haptics from 'expo-haptics';
 import Animated, { 
   useAnimatedStyle, 
@@ -150,7 +150,10 @@ export function PromptExamples({
   return (
     <View className={className}>
       {showTitle && (
-        <Text className="text-xs font-roobert text-muted-foreground/60 mb-2">
+        <Text
+          className="font-roobert text-muted-foreground/60 mb-2"
+          style={{ fontSize: 12, lineHeight: 16 }}
+        >
           {title}
         </Text>
       )}

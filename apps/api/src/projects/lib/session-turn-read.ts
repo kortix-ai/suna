@@ -70,6 +70,13 @@ export interface SessionTurnFailure {
 const RECENT_FAILURE_TURN_WINDOW = 50;
 
 /**
+ * From here on every requested stop is stamped (`UserStop`, `QueueInterrupt`),
+ * so a `failed` row with no `end_error` is a death nobody explained, not a Stop.
+ * Prod's first recorded `end_error` is 2026-08-20 22:00 UTC.
+ */
+export const END_ERROR_COLUMN_EPOCH_MS = Date.parse('2026-08-21T00:00:00Z');
+
+/**
  * Bounded by turn count, not by failure count: this read is polled, and a
  * session with no failures must not scan its whole history to learn that.
  * Served by `session_turns_session_idx` (session_id, started_at DESC).
@@ -81,11 +88,15 @@ const RECENT_FAILURE_TURN_WINDOW = 50;
  *   - `failed` with a recorded error. A bare abort is the EFFECT of whatever
  *     stopped the turn, never a cause, so it reads as `error: null`.
  *
+ *   - `failed` with NO recorded error, when it ended after the column existed.
+ *     Nobody said why (a lost end frame, an old daemon), and saying nothing
+ *     under a dead turn is worse than saying "no reason was reported". Prod
+ *     2026-09-22: 20-30 % of failed turns per hour had no cause and were hidden.
+ *
  * Not listed: a stop somebody asked for (`REQUESTED_STOP_NAMES`), and a `failed`
- * row with NO recorded error. Every end frame has written `end_error` since the
- * column exists, so such a row predates it — and before it, a user Stop and an
- * unexplained abort were stored identically. Listing them would flag every turn
- * anyone ever stopped.
+ * row with no recorded error from before `END_ERROR_COLUMN_EPOCH`. Before the
+ * column, a user Stop and an unexplained abort were stored identically; listing
+ * those would flag every turn anyone ever stopped.
  */
 async function readRecentTurnFailures(sessionId: string): Promise<SessionTurnFailure[]> {
   const recent = await db
@@ -104,7 +115,10 @@ async function readRecentTurnFailures(sessionId: string): Promise<SessionTurnFai
     if (!turn.messageId) continue;
     const name = turn.endError?.name ?? null;
     const died =
-      turn.endReason === 'runtime_gone' || (turn.endReason === 'failed' && turn.endError !== null);
+      turn.endReason === 'runtime_gone' ||
+      (turn.endReason === 'failed' &&
+        (turn.endError !== null ||
+          (turn.endedAt !== null && turn.endedAt.getTime() >= END_ERROR_COLUMN_EPOCH_MS)));
     if (!died || isRequestedStopName(name)) continue;
     const named = turn.endError && !(name && ABORT_END_ERROR_NAMES.includes(name));
     failures.push({

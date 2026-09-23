@@ -2,7 +2,7 @@
  * Agent-led project config authoring (web parity:
  * components/projects/customize/use-configure-thread.ts).
  *
- * Project config (agents / skills / commands) lives in the repo and is
+ * Project config (agents / skills) lives in the repo and is
  * read-only from the UI — the only way to change it is through a session that
  * edits the files on a branch and opens a change request. "New" and "Edit"
  * therefore don't write files directly: they start a fresh session seeded with
@@ -10,7 +10,7 @@
  * the agent takes it from there.
  */
 
-export type ConfigureKind = 'agent' | 'skill' | 'command';
+export type ConfigureKind = 'agent' | 'skill';
 
 const NEW_PROMPTS: Record<ConfigureKind, string> = {
   agent:
@@ -21,10 +21,6 @@ const NEW_PROMPTS: Record<ConfigureKind, string> = {
     'I want to add a new skill to this project. Ask me what capability it ' +
     'should provide and when it should trigger, then scaffold ' +
     '`.kortix/opencode/skills/<name>/SKILL.md` and open a change request so I can review and merge it.',
-  command:
-    'I want to create a new slash command for this project. Ask me what it ' +
-    'should do, then add it at `.kortix/opencode/commands/<name>.md` and open a ' +
-    'change request so I can review and merge it.',
 };
 
 export function newConfigPrompt(kind: ConfigureKind): string {

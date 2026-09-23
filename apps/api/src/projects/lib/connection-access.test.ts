@@ -115,3 +115,66 @@ describe('connection reachability', () => {
     ).toBe(false);
   });
 });
+
+// Spec docs/specs/2026-09-22-agents-as-principals.md §2.3: under the
+// agent-principal model the acting principal is the agent's service account,
+// so a member-owned account keys on `on_behalf_of` AND a private session.
+describe('connection reachability for an agent-principal session', () => {
+  const agentSession = (onBehalfOfUserId: string | null, visibility: 'private' | 'project' | 'restricted' | null) => ({
+    actingUserId: '',
+    actingPrincipalIsServiceAccount: true,
+    agentPrincipal: { onBehalfOfUserId, visibility },
+  });
+
+  test("the on-behalf-of human's own account is reachable in a private session", () => {
+    expect(
+      connectionIsReachable({ ownerType: 'member', ownerId: 'user-1', ...agentSession('user-1', 'private') }),
+    ).toBe(true);
+  });
+
+  test("another member's account is never reachable", () => {
+    expect(
+      connectionIsReachable({ ownerType: 'member', ownerId: 'user-2', ...agentSession('user-1', 'private') }),
+    ).toBe(false);
+  });
+
+  test('a shared session reaches no personal account', () => {
+    for (const visibility of ['project', 'restricted', null] as const) {
+      expect(
+        connectionIsReachable({ ownerType: 'member', ownerId: 'user-1', ...agentSession('user-1', visibility) }),
+      ).toBe(false);
+    }
+  });
+
+  test('an unattended run (no on_behalf_of) reaches no personal account', () => {
+    expect(
+      connectionIsReachable({ ownerType: 'member', ownerId: 'user-1', ...agentSession(null, 'private') }),
+    ).toBe(false);
+    expect(
+      connectionIsReachable({ ownerType: 'member', ownerId: '', ...agentSession(null, 'private') }),
+    ).toBe(false);
+  });
+
+  test('the launcher passed as actingUserId does not count: only on_behalf_of does', () => {
+    expect(
+      connectionIsReachable({
+        ownerType: 'member',
+        ownerId: 'user-1',
+        actingUserId: 'user-1',
+        actingPrincipalIsServiceAccount: false,
+        agentPrincipal: { onBehalfOfUserId: null, visibility: 'private' },
+      }),
+    ).toBe(false);
+  });
+
+  test('project accounts stay reachable; agent/subject accounts stay closed', () => {
+    expect(
+      connectionIsReachable({ ownerType: 'project', ownerId: null, ...agentSession(null, 'project') }),
+    ).toBe(true);
+    for (const ownerType of ['agent', 'subject'] as const) {
+      expect(
+        connectionIsReachable({ ownerType, ownerId: 'user-1', ...agentSession('user-1', 'private') }),
+      ).toBe(false);
+    }
+  });
+});

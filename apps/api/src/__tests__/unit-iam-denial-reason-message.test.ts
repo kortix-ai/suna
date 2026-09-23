@@ -1,7 +1,7 @@
 // A 403's message must name the constraint that ACTUALLY fired.
 //
 // `authorizeV2` folds three independent limits into one boolean — the human's
-// project role, the agent session's `kortix_cli` grant, and an activated service
+// project role, the agent session's `kortix_permissions` grant, and an activated service
 // account's assigned role. Only `verdict.reason` separates them. The project
 // loader used to discard the reason and re-derive the cause by probing
 // `project.read`, which is exempt from the agent-grant fold — so the probe
@@ -19,7 +19,7 @@ describe('denialReasonMessage', () => {
   test('agent_scope_insufficient names the agent grant, not the role', () => {
     const message = denialReasonMessage('project.session.start', 'agent_scope_insufficient');
     expect(message).toBe(
-      'This agent session is not granted "project.session.start". Add it to the agent\'s kortix_cli in kortix.yaml and merge the change.',
+      'This agent session is not granted "project.session.start". Add it to the agent\'s kortix_permissions in kortix.yaml and merge the change.',
     );
     // The bug being fixed: this must NEVER read as a role problem.
     expect(message).not.toContain('role');
@@ -95,7 +95,7 @@ describe('buildDenialError uses the reason message', () => {
     const err = buildDenialError('project.session.read', 'agent_scope_insufficient');
     expect(err.status).toBe(403);
     const text = await err.getResponse().text();
-    expect(text).toContain('kortix_cli');
+    expect(text).toContain('kortix_permissions');
     expect(text).toContain('project.session.read');
   });
 

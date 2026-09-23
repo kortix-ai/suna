@@ -18,6 +18,7 @@ import {
   clearTurnStopRequest,
   completeSandboxTurn,
   markTurnStopRequested,
+  recordUnidentifiedTurnCause,
   reconcileSandboxTurnDelivery,
   settleOpenSandboxTurnsQuery,
 } from '../projects/sandbox-turn-lifecycle';
@@ -1329,3 +1330,134 @@ describe('end_error: causes, requested stops, and which one wins', () => {
   });
 });
 
+// A daemon built before the guard named its turn sends the cause with no
+// `turn_message_id` and `error_retryable: true`. `completeSandboxTurn` drops that
+// frame as `non_terminal`, so the UI said "No reason was reported" under a turn
+// the memory guard stopped (prod 2026-09-22, daemon built 2026-09-18).
+describe('recordUnidentifiedTurnCause: a cause frame that does not name its turn', () => {
+  const ROOT = 'ses_root';
+  const ABORT = { name: 'MessageAbortedError', message: 'Aborted' };
+  const GUARD = { name: 'SandboxMemoryGuard', message: 'sandbox memory at 92%' };
+
+  async function openTurn(token: string, messageId: string) {
+    await setLifecycleState({
+      activeTurns: {
+        [token]: { token, state: 'active', opencodeSessionId: ROOT, messageId, startedAtMs: 1 },
+      },
+    });
+    await db.execute(sql`
+      INSERT INTO kortix.session_turns
+        (turn_token, session_id, sandbox_id, project_id, account_id,
+         opencode_session_id, message_id, state, started_at, created_at, updated_at)
+      VALUES (${token}, ${SESSION_ID}, ${SANDBOX_ID}::uuid, ${PROJECT_ID}::uuid,
+              ${ACCOUNT_ID}::uuid, ${ROOT}, ${messageId}, 'active', now(), now(), now())`);
+    return token;
+  }
+  const end = (messageId: string, error: { name: string; message: string } | undefined, status: 'idle' | 'error' = 'error') =>
+    completeSandboxTurn(SESSION_ID, status, { opencodeSessionId: ROOT, messageId }, error, 60_000);
+  const cause = () => recordUnidentifiedTurnCause(SESSION_ID, ROOT, GUARD);
+
+  test('the abort closed the turn first: the cause replaces that abort', async () => {
+    const token = await openTurn(t('u-first'), 'msg_u1');
+    await end('msg_u1', ABORT);
+    expect(await cause()).toBe('refined_ended');
+    expect((await readTurn(token))?.end_error).toEqual(GUARD);
+  });
+
+  test('the cause arrived first: it is held on the open turn and survives the abort', async () => {
+    const token = await openTurn(t('u-open'), 'msg_u2');
+    expect(await cause()).toBe('marked_open');
+    await end('msg_u2', ABORT);
+    const row = await readTurn(token);
+    expect(row?.end_reason).toBe('failed');
+    expect(row?.end_error).toEqual(GUARD);
+  });
+
+  test('the abort never landed and the turn completed: the held cause is dropped', async () => {
+    const token = await openTurn(t('u-done'), 'msg_u3');
+    await cause();
+    await end('msg_u3', undefined, 'idle');
+    const row = await readTurn(token);
+    expect(row?.end_reason).toBe('completed');
+    expect(row?.end_error).toBeNull();
+  });
+
+  test('a turn the abort just ended wins over the next turn that already started', async () => {
+    const aborted = await openTurn(t('u-prev'), 'msg_u4');
+    await end('msg_u4', ABORT);
+    const next = await openTurn(t('u-next'), 'msg_u5');
+    expect(await cause()).toBe('refined_ended');
+    expect((await readTurn(aborted))?.end_error).toEqual(GUARD);
+    expect((await readTurn(next))?.end_error).toBeNull();
+  });
+
+  test('an old abort, a requested stop, or another named cause is never rewritten', async () => {
+    const old = await openTurn(t('u-old'), 'msg_u6');
+    await end('msg_u6', ABORT);
+    await db.execute(sql`UPDATE kortix.session_turns SET ended_at = now() - interval '5 minutes' WHERE turn_token = ${old}`);
+    const stopped = await openTurn(t('u-stop'), 'msg_u7');
+    await markTurnStopRequested(SESSION_ID, 'UserStop', { messageId: 'msg_u7' });
+    await end('msg_u7', ABORT);
+    const other = await openTurn(t('u-other'), 'msg_u8');
+    await end('msg_u8', { name: 'APIError', message: 'upstream 500' });
+
+    expect(await cause()).toBe('none');
+    expect((await readTurn(old))?.end_error).toEqual(ABORT);
+    expect((await readTurn(stopped))?.end_error).toEqual({ name: 'UserStop', message: null });
+    expect((await readTurn(other))?.end_error).toEqual({ name: 'APIError', message: 'upstream 500' });
+  });
+});
+
+
+// The reaper closes a turn whose end frame never arrived. `failed` with no
+// cause was hidden from the UI entirely: the reader took it for a row older
+// than the end_error column. The reaper now says what it saw, as a fallback
+// that never overrides a stop somebody asked for.
+describe('clearSandboxTurn: the reaper names what it saw', () => {
+  const ROOT = 'ses_root';
+  async function openTurn(token: string, messageId: string) {
+    await setLifecycleState({
+      activeTurns: {
+        [token]: { token, state: 'active', opencodeSessionId: ROOT, messageId, startedAtMs: 1 },
+      },
+    });
+    await db.execute(sql`
+      INSERT INTO kortix.session_turns
+        (turn_token, session_id, sandbox_id, project_id, account_id,
+         opencode_session_id, message_id, state, started_at, created_at, updated_at)
+      VALUES (${token}, ${SESSION_ID}, ${SANDBOX_ID}::uuid, ${PROJECT_ID}::uuid,
+              ${ACCOUNT_ID}::uuid, ${ROOT}, ${messageId}, 'active', now(), now(), now())`);
+    return token;
+  }
+  const HUSK = { name: 'TurnHuskFinalized', message: 'The agent stopped responding in the middle of this turn, so Kortix closed it.' };
+
+  test('a failed clear records the cause it was given', async () => {
+    const token = await openTurn(t('reap-husk'), 'msg_r1');
+    expect(await clearSandboxTurn(SANDBOX_ID, token, 60_000, 'failed', HUSK)).toBe(true);
+    const row = await readTurn(token);
+    expect(row?.end_reason).toBe('failed');
+    expect(row?.end_error).toEqual(HUSK);
+  });
+
+  test('the reaper cause never overrides a requested stop', async () => {
+    const token = await openTurn(t('reap-stop'), 'msg_r2');
+    await markTurnStopRequested(SESSION_ID, 'UserStop', { messageId: 'msg_r2' });
+    await clearSandboxTurn(SANDBOX_ID, token, 60_000, 'failed', HUSK);
+    expect((await readTurn(token))?.end_error).toEqual({ name: 'UserStop', message: null });
+  });
+
+  test('a turn the reaper finds completed drops the request that never fired', async () => {
+    const token = await openTurn(t('reap-done'), 'msg_r4');
+    await markTurnStopRequested(SESSION_ID, 'QueueInterrupt', { messageId: 'msg_r4' });
+    await clearSandboxTurn(SANDBOX_ID, token, 60_000, 'completed');
+    const row = await readTurn(token);
+    expect(row?.end_reason).toBe('completed');
+    expect(row?.end_error).toBeNull();
+  });
+
+  test('a clear without a cause still writes none', async () => {
+    const token = await openTurn(t('reap-none'), 'msg_r3');
+    await clearSandboxTurn(SANDBOX_ID, token, 60_000, 'runtime_gone');
+    expect((await readTurn(token))?.end_error).toBeNull();
+  });
+});

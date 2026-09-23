@@ -7,25 +7,27 @@
  */
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { View, Pressable, TextInput, Alert, Image, ScrollView, Platform } from 'react-native';
+import { View, Pressable, Alert, Image, ScrollView, Platform } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
 import {
-  Clock,
-  Sparkles,
-  ChevronRight,
-  Check,
-  Zap,
-  Target,
-  Calendar as CalendarIcon,
-  Link2,
-  CheckCircle2,
-  ArrowLeft,
-  Info,
-  Lock,
-} from 'lucide-react-native';
+  ClockIcon as Clock,
+  SparkleIcon as Sparkles,
+  CaretRightIcon as ChevronRight,
+  CheckIcon as Check,
+  LightningIcon as Zap,
+  TargetIcon as Target,
+  CalendarIcon,
+  LinkSimpleIcon as Link2,
+  CheckCircleIcon as CheckCircle2,
+  ArrowLeftIcon as ArrowLeft,
+  InfoIcon as Info,
+  LockIcon as Lock,
+} from '@/lib/icons';
 import { useBillingContext } from '@/contexts/BillingContext';
 import { FreeTierBlock } from '@/components/billing/FreeTierBlock';
 import { useAgent } from '@/contexts/AgentContext';
@@ -41,8 +43,7 @@ import {
 import type { TriggerConfiguration } from '@/api/types';
 import { useComposioConnections } from '@/hooks/useComposio';
 import type { ComposioApp, ComposioConnection } from '@/hooks/useComposio';
-import { BottomSheetModal, BottomSheetBackdrop, BottomSheetScrollView, TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
-import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { Loading } from '../loading/loading';
 import { AppSelectionStep } from './AppSelectionStep';
@@ -53,7 +54,8 @@ import type { TriggerApp, ComposioTriggerType } from '@/api/types';
 import { SvgUri } from 'react-native-svg';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { log } from '@/lib/logger';
-import { getSheetBg } from '@/lib/theme-colors';
+import { KortixBottomSheetModal } from '@/components/kortix/sheet';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -102,17 +104,18 @@ function TypeCard({ icon: IconComponent, title, subtitle, onPress }: TypeCardPro
   const { colorScheme } = useColorScheme();
 
   return (
-    <BottomSheetTouchable
+    <Pressable
       onPress={() => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         onPress();
       }}
+      className="active:opacity-70"
       style={{
         marginBottom: 12,
         borderRadius: 16,
         borderWidth: 1,
-        borderColor: colorScheme === 'dark' ? '#3f3f46' : '#e4e4e7',
-        backgroundColor: colorScheme === 'dark' ? '#27272a' : '#ffffff',
+        borderColor: colorScheme === 'dark' ? THEME.dark.border : THEME.light.border,
+        backgroundColor: colorScheme === 'dark' ? THEME.dark.card : THEME.light.card,
         padding: 16,
       }}>
       <View className="flex-row items-center gap-3">
@@ -125,7 +128,7 @@ function TypeCard({ icon: IconComponent, title, subtitle, onPress }: TypeCardPro
         </View>
         <Icon as={ChevronRight} size={20} className="text-muted-foreground" />
       </View>
-    </BottomSheetTouchable>
+    </Pressable>
   );
 }
 
@@ -730,12 +733,6 @@ export function TriggerCreationDrawer({
     }
   };
 
-  const renderBackdrop = React.useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />
-    ),
-    []
-  );
 
   // Check if we should show action buttons
   const showActionButtons =
@@ -755,23 +752,11 @@ export function TriggerCreationDrawer({
             : cronExpression.trim());
 
   return (
-    <BottomSheetModal
+    <KortixBottomSheetModal
       ref={bottomSheetModalRef}
       snapPoints={snapPoints}
       enablePanDownToClose
       onDismiss={handleDismiss}
-      backdropComponent={renderBackdrop}
-      backgroundStyle={{
-        backgroundColor: getSheetBg(colorScheme === 'dark'),
-      }}
-      handleIndicatorStyle={{
-        backgroundColor: colorScheme === 'dark' ? '#3F3F46' : '#D4D4D8',
-        width: 36,
-        height: 5,
-        borderRadius: 3,
-        marginTop: 8,
-        marginBottom: 0,
-      }}
       enableDynamicSizing={shouldUseDynamicSizing}
       style={{
         borderTopLeftRadius: 24,
@@ -976,25 +961,15 @@ export function TriggerCreationDrawer({
                     style={{
                       fontSize: 14,
                       fontWeight: '600',
-                      color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                      color: colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground,
                       marginBottom: 8,
                     }}>
                     {t('triggers.nameRequired')}
                   </Text>
-                  <TextInput
+                  <Input
                     value={triggerName}
                     onChangeText={setTriggerName}
                     placeholder={t('triggers.dailyAt9Am')}
-                    placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
-                    style={{
-                      padding: 12,
-                      borderRadius: 12,
-                      borderWidth: 1.5,
-                      borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-                      backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
-                      fontSize: 16,
-                      color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
-                    }}
                   />
                 </View>
 
@@ -1004,7 +979,7 @@ export function TriggerCreationDrawer({
                     style={{
                       fontSize: 14,
                       fontWeight: '600',
-                      color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                      color: colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground,
                       marginBottom: 8,
                     }}>
                     {t('triggers.scheduleRequired')}
@@ -1060,7 +1035,6 @@ export function TriggerCreationDrawer({
                                 as={Check}
                                 size={12}
                                 className="text-primary-foreground"
-                                strokeWidth={3}
                               />
                             </View>
                           )}
@@ -1093,44 +1067,22 @@ export function TriggerCreationDrawer({
                       </View>
 
                       <View className="mt-4 flex-row items-center gap-4">
-                        <TextInput
+                        <Input
                           value={selectedHour}
                           onChangeText={setSelectedHour}
                           placeholder="09"
                           keyboardType="number-pad"
                           maxLength={2}
-                          placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
-                          style={{
-                            width: 80,
-                            padding: 12,
-                            borderRadius: 12,
-                            borderWidth: 1.5,
-                            borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-                            backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
-                            fontSize: 18,
-                            color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
-                            textAlign: 'center',
-                          }}
+                          className="w-20 text-center text-lg"
                         />
                         <Text className="text-2xl text-foreground">:</Text>
-                        <TextInput
+                        <Input
                           value={selectedMinute}
                           onChangeText={setSelectedMinute}
                           placeholder="00"
                           keyboardType="number-pad"
                           maxLength={2}
-                          placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
-                          style={{
-                            width: 80,
-                            padding: 12,
-                            borderRadius: 12,
-                            borderWidth: 1.5,
-                            borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-                            backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
-                            fontSize: 18,
-                            color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
-                            textAlign: 'center',
-                          }}
+                          className="w-20 text-center text-lg"
                         />
                       </View>
 
@@ -1168,22 +1120,11 @@ export function TriggerCreationDrawer({
 
                   {/* Advanced Cron Input */}
                   {scheduleMode === 'advanced' && (
-                    <TextInput
+                    <Input
                       value={cronExpression}
                       onChangeText={setCronExpression}
                       placeholder="0 9 * * 1-5"
-                      placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
-                      style={{
-                        padding: 12,
-                        borderRadius: 12,
-                        borderWidth: 1.5,
-                        borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-                        backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
-                        fontSize: 16,
-                        color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
-                        fontFamily: 'monospace',
-                        marginTop: 16,
-                      }}
+                      className="mt-4 font-mono"
                     />
                   )}
                 </View>
@@ -1194,40 +1135,18 @@ export function TriggerCreationDrawer({
                     style={{
                       fontSize: 14,
                       fontWeight: '600',
-                      color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                      color: colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground,
                       marginBottom: 8,
                     }}>
                     {t('triggers.descriptionOptional')}
                   </Text>
-                  <ScrollView
-                    keyboardShouldPersistTaps="handled"
-                    keyboardDismissMode="on-drag"
-                    showsVerticalScrollIndicator={true}
-                    style={{
-                      borderRadius: 12,
-                      borderWidth: 1.5,
-                      borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-                      backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
-                      maxHeight: 150,
-                    }}
-                    contentContainerStyle={{
-                      padding: 12,
-                    }}>
-                    <TextInput
-                      value={description}
-                      onChangeText={setDescription}
-                      placeholder={t('triggers.describePlaceholder')}
-                      placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
-                      multiline
-                      scrollEnabled={false}
-                      style={{
-                        minHeight: 100,
-                        fontSize: 16,
-                        color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
-                        textAlignVertical: 'top',
-                      }}
-                    />
-                  </ScrollView>
+                  <Textarea
+                    value={description}
+                    onChangeText={setDescription}
+                    placeholder={t('triggers.describePlaceholder')}
+                    numberOfLines={6}
+                    className="min-h-[100px]"
+                  />
                 </View>
 
                 {/* Agent Instructions */}
@@ -1236,40 +1155,18 @@ export function TriggerCreationDrawer({
                     style={{
                       fontSize: 14,
                       fontWeight: '600',
-                      color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                      color: colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground,
                       marginBottom: 8,
                     }}>
                     {t('triggers.instructionsRequired')}
                   </Text>
-                  <ScrollView
-                    keyboardShouldPersistTaps="handled"
-                    keyboardDismissMode="on-drag"
-                    showsVerticalScrollIndicator={true}
-                    style={{
-                      borderRadius: 12,
-                      borderWidth: 1.5,
-                      borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-                      backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
-                      maxHeight: 200,
-                    }}
-                    contentContainerStyle={{
-                      padding: 12,
-                    }}>
-                    <TextInput
-                      value={agentPrompt}
-                      onChangeText={setAgentPrompt}
-                      placeholder={t('triggers.instructionsLabel')}
-                      placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
-                      multiline
-                      scrollEnabled={false}
-                      style={{
-                        minHeight: 120,
-                        fontSize: 16,
-                        color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
-                        textAlignVertical: 'top',
-                      }}
-                    />
-                  </ScrollView>
+                  <Textarea
+                    value={agentPrompt}
+                    onChangeText={setAgentPrompt}
+                    placeholder={t('triggers.instructionsLabel')}
+                    numberOfLines={8}
+                    className="min-h-[120px]"
+                  />
                 </View>
               </View>
             )}
@@ -1325,12 +1222,16 @@ export function TriggerCreationDrawer({
                         <View
                           className="mb-4 h-16 w-16 items-center justify-center rounded-2xl"
                           style={{
-                            backgroundColor:
-                              colorScheme === 'dark'
-                                ? 'rgba(239, 68, 68, 0.1)'
-                                : 'rgba(239, 68, 68, 0.05)',
+                            backgroundColor: withAlpha(
+                              colorScheme === 'dark' ? THEME.dark.destructive : THEME.light.destructive,
+                              colorScheme === 'dark' ? 0.1 : 0.05
+                            ),
                           }}>
-                          <Icon as={Info} size={32} color="#ef4444" strokeWidth={2} />
+                          <Icon
+                            as={Info}
+                            size={32}
+                            color={colorScheme === 'dark' ? THEME.dark.destructive : THEME.light.destructive}
+                          />
                         </View>
                         <Text className="mb-2 text-center font-roobert-semibold text-lg text-foreground">
                           {t('triggers.failedToLoadTrigger')}
@@ -1432,6 +1333,6 @@ export function TriggerCreationDrawer({
           </>
         )}
       </BottomSheetScrollView>
-    </BottomSheetModal>
+    </KortixBottomSheetModal>
   );
 }

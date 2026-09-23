@@ -7,28 +7,30 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { View, TextInput, Alert, ScrollView } from 'react-native';
+import { View, Alert, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
 import {
-  Wrench,
-  MessageSquare,
-  Globe,
-  ChevronRight,
-  ArrowLeft,
-  Sparkles,
-} from 'lucide-react-native';
-import { KortixLoader } from '@/components/ui/kortix-loader';
-import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView, TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
-import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+  WrenchIcon as Wrench,
+  ChatIcon as MessageSquare,
+  GlobeIcon as Globe,
+  CaretRightIcon as ChevronRight,
+  ArrowLeftIcon as ArrowLeft,
+  SparkleIcon as Sparkles,
+} from '@/lib/icons';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
+import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useCreateAgent, useCreateNewAgent } from '@/lib/agents/hooks';
 import { API_URL, getAuthHeaders } from '@/api/config';
 import { Loading } from '../loading/loading';
 import type { AgentCreateRequest } from '@/api/types';
 import { log } from '@/lib/logger';
-import { getSheetBg } from '@/lib/theme-colors';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 interface WorkerCreationDrawerProps {
   visible: boolean;
@@ -71,21 +73,22 @@ function OptionCard({ option, isSelected, isLoading, onPress }: OptionCardProps)
   const IconComponent = option.icon;
 
   return (
-    <BottomSheetTouchable
+    <Pressable
       onPress={() => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         onPress();
       }}
       disabled={isLoading}
+      className="active:opacity-70"
       style={{
         marginBottom: 12,
         borderRadius: 16,
         borderWidth: 1,
         padding: 16,
-        borderColor: isSelected ? '#10b981' : (colorScheme === 'dark' ? '#3f3f46' : '#e4e4e7'),
-        backgroundColor: isSelected 
-          ? (colorScheme === 'dark' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(16, 185, 129, 0.05)')
-          : (colorScheme === 'dark' ? '#27272a' : '#ffffff'),
+        borderColor: isSelected ? THEME.accent.green : (colorScheme === 'dark' ? THEME.dark.border : THEME.light.border),
+        backgroundColor: isSelected
+          ? withAlpha(THEME.accent.green, colorScheme === 'dark' ? 0.1 : 0.05)
+          : (colorScheme === 'dark' ? THEME.dark.card : THEME.light.card),
         opacity: isLoading ? 0.5 : 1,
       }}>
       <View className="flex-row items-center gap-3">
@@ -114,7 +117,7 @@ function OptionCard({ option, isSelected, isLoading, onPress }: OptionCardProps)
         </View>
         {!isLoading && <Icon as={ChevronRight} size={20} className="text-muted-foreground" />}
       </View>
-    </BottomSheetTouchable>
+    </Pressable>
   );
 }
 
@@ -123,6 +126,7 @@ export function WorkerCreationDrawer({
   onClose,
   onWorkerCreated,
 }: WorkerCreationDrawerProps) {
+  const sheetBg = useSheetBackground();
   const bottomSheetRef = React.useRef<BottomSheet>(null);
   const { colorScheme } = useColorScheme();
   const [selectedOption, setSelectedOption] = useState<CreationOption | null>(null);
@@ -176,17 +180,6 @@ export function WorkerCreationDrawer({
   }, [onClose]);
 
   // Backdrop component
-  const renderBackdrop = React.useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop
-        {...props}
-        disappearsOnIndex={-1}
-        appearsOnIndex={0}
-        opacity={0.5}
-      />
-    ),
-    []
-  );
 
   const handleOptionClick = (option: CreationOption) => {
     setSelectedOption(option);
@@ -255,13 +248,11 @@ export function WorkerCreationDrawer({
       snapPoints={snapPoints}
       onChange={handleSheetChanges}
       enablePanDownToClose
-      backdropComponent={renderBackdrop}
+      backdropComponent={SheetBackdrop}
       backgroundStyle={{
-        backgroundColor: getSheetBg(colorScheme === 'dark'),
+        backgroundColor: sheetBg,
       }}
-      handleIndicatorStyle={{
-        backgroundColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-      }}>
+      handleIndicatorStyle={sheetHandleIndicatorStyle(colorScheme === 'dark')}>
       <BottomSheetScrollView
         contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}>
@@ -294,23 +285,23 @@ export function WorkerCreationDrawer({
             </View>
 
             {/* Cancel button */}
-            <BottomSheetTouchable
-              onPress={onClose}
-              style={{ borderRadius: 12, borderWidth: 1, borderColor: '#3f3f46', padding: 12 }}>
-              <Text className="text-center font-roobert-medium text-sm text-muted-foreground">
+            <Button variant="outline" onPress={onClose}>
+              <Text className="text-center">
                 Cancel
               </Text>
-            </BottomSheetTouchable>
+            </Button>
           </>
         ) : (
           <>
             {/* Chat Step Header */}
             <View className="items-center mb-5">
-              <BottomSheetTouchable
+              <Button
+                variant="ghost"
+                size="icon"
                 onPress={handleBack}
-                style={{ position: 'absolute', left: 0, top: 0, width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 12 }}>
+                className="absolute left-0 top-0">
                 <Icon as={ArrowLeft} size={20} className="text-foreground" />
-              </BottomSheetTouchable>
+              </Button>
               <View className="mb-3 p-3 rounded-2xl bg-muted/50">
                 <Icon as={Sparkles} size={28} className="text-primary" />
               </View>
@@ -324,62 +315,38 @@ export function WorkerCreationDrawer({
 
             {/* Textarea */}
             <View className="mb-6">
-              <ScrollView
-                keyboardShouldPersistTaps="handled"
-                keyboardDismissMode="on-drag"
-                showsVerticalScrollIndicator={true}
-                style={{
-                  borderRadius: 16,
-                  borderWidth: 1.5,
-                  borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-                  backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
-                  maxHeight: 200,
-                }}
-                contentContainerStyle={{
-                  padding: 16,
-                }}>
-                <TextInput
-                  value={chatDescription}
-                  onChangeText={setChatDescription}
-                  placeholder="e.g., A worker that monitors competitor prices and sends me daily reports..."
-                  placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
-                  multiline
-                  scrollEnabled={false}
-                  style={{
-                    minHeight: 120,
-                    fontSize: 16,
-                    color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
-                    textAlignVertical: 'top',
-                  }}
-                  autoFocus
-                />
-              </ScrollView>
+              <Textarea
+                value={chatDescription}
+                onChangeText={setChatDescription}
+                placeholder="e.g., A worker that monitors competitor prices and sends me daily reports..."
+                numberOfLines={8}
+                className="min-h-[120px] text-base"
+                autoFocus
+              />
             </View>
 
             {/* Actions */}
             <View className="space-y-3">
-              <BottomSheetTouchable
+              <Button
+                size="lg"
                 onPress={handleChatContinue}
                 disabled={!chatDescription.trim() || isLoading}
-                style={{
-                  borderRadius: 12,
-                  padding: 16,
-                  backgroundColor: !chatDescription.trim() || isLoading ? '#3f3f46' : '#10b981',
-                  opacity: !chatDescription.trim() || isLoading ? 0.5 : 1,
-                }}>
-                <Text className="text-center font-roobert-semibold text-base text-primary-foreground">
+                style={{ backgroundColor: THEME.accent.green }}>
+                <Text
+                  className="text-center"
+                  style={{ color: THEME.light.primaryForeground }}>
                   {isLoading ? 'Creating...' : 'Create Worker'}
                 </Text>
-              </BottomSheetTouchable>
-              <BottomSheetTouchable
+              </Button>
+              <Button
+                variant="outline"
                 onPress={handleBack}
-                disabled={isLoading}
-                style={{ borderRadius: 12, borderWidth: 1, borderColor: '#3f3f46', padding: 12 }}>
+                disabled={isLoading}>
                 <View className="flex-row items-center justify-center gap-2">
                   <Icon as={ArrowLeft} size={16} className="text-muted-foreground" />
-                  <Text className="font-roobert-medium text-sm text-muted-foreground">Back</Text>
+                  <Text>Back</Text>
                 </View>
-              </BottomSheetTouchable>
+              </Button>
             </View>
           </>
         )}

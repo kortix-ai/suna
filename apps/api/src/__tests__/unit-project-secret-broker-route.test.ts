@@ -36,7 +36,7 @@ let tokenProjectId: string | undefined = PROJECT_ID;
 let sessionId: string | undefined = SESSION_ID;
 let agentGrant: Record<string, unknown> | null = {
   agent: 'default',
-  kortixCli: 'all',
+  permissions: 'all',
   connectors: 'all',
   env: ['PRIMARY'],
 };
@@ -242,7 +242,7 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/broker', () => {
     sessionId = SESSION_ID;
     agentGrant = {
       agent: 'default',
-      kortixCli: 'all',
+      permissions: 'all',
       connectors: 'all',
       env: ['PRIMARY'],
     };
@@ -315,7 +315,7 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/broker', () => {
   test('intersects the immutable agent grant with the session allowlist before decryption', async () => {
     agentGrant = {
       agent: 'default',
-      kortixCli: 'all',
+      permissions: 'all',
       connectors: 'all',
       env: ['OTHER'],
     };
@@ -327,7 +327,7 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/broker', () => {
 
     agentGrant = {
       agent: 'default',
-      kortixCli: 'all',
+      permissions: 'all',
       connectors: 'all',
       env: ['PRIMARY'],
     };
@@ -344,7 +344,7 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/broker', () => {
   test('accepts a broker handle materialized from an all grant narrowed by the session allowlist', async () => {
     agentGrant = {
       agent: 'default',
-      kortixCli: 'all',
+      permissions: 'all',
       connectors: 'all',
       env: 'all',
     };
@@ -442,7 +442,7 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/broker', () => {
     beforeEach(() => {
       agentGrant = {
         agent: 'default',
-        kortixCli: 'all',
+        permissions: 'all',
         connectors: 'all',
         env: ['PRIMARY', 'SECOND'],
       };
@@ -488,7 +488,7 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/broker', () => {
     });
 
     test('a secret outside the agent grant is never decrypted', async () => {
-      agentGrant = { agent: 'default', kortixCli: 'all', connectors: 'all', env: ['PRIMARY'] };
+      agentGrant = { agent: 'default', permissions: 'all', connectors: 'all', env: ['PRIMARY'] };
 
       const response = await brokerRequest();
 

@@ -399,7 +399,14 @@ test.describe('21 — Session access UI', () => {
         // edge, so at 1280px the submenu flips LEFT of the menu, and a pointer
         // jump from its trigger leaves Radix's grace area and closes it (the
         // pre-existing Status submenu does the same). Keys are deterministic.
-        await adminPage.getByRole('menuitem', { name: /^Access/ }).hover();
+        //
+        // No hover, and the pointer parked off the menu: toggling the filter
+        // reflows the list, Chromium re-dispatches mousemove under a cursor
+        // that did not move, and a cursor left over the menu moved focus to
+        // another item and closed this submenu before `aria-checked` could be
+        // read (2 of 3 attempts on main, Tests run 35744224673).
+        await adminPage.mouse.move(0, 0);
+        await adminPage.getByRole('menuitem', { name: /^Access/ }).focus();
         await adminPage.keyboard.press('ArrowRight');
         const wholeProject = adminPage.getByRole('menuitemcheckbox', { name: /Whole project/ });
         await expect(wholeProject).toBeVisible();

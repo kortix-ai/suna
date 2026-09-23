@@ -53,6 +53,7 @@ import {
   type SandboxTurnDeliveryReconciliation,
   type SessionTurnEndReason,
   type StoredSandboxTurn,
+  REAPER_TURN_CAUSES,
   clearSandboxTurn,
   reconcileSandboxTurnDelivery,
   renewActiveSandboxTurn,
@@ -569,11 +570,21 @@ export async function reapAndReconcileSandboxes(
                 // Its own `turn_end` is the authority; failing that, a husk
                 // this pass had to force-close is a turn that did NOT finish;
                 // failing both, the honest record is that nobody can say.
+                const clearReason = endReason ?? (huskFinalized ? 'failed' : 'unknown');
+                // A turn closed here lost its own end frame, and with it the
+                // reason. Say what this pass saw, or the UI shows nothing.
+                const clearCause =
+                  clearReason !== 'failed'
+                    ? null
+                    : huskFinalized
+                      ? REAPER_TURN_CAUSES.huskFinalized
+                      : REAPER_TURN_CAUSES.runtimeFailed;
                 const cleared = await dependencies.clearSandboxTurn(
                   row.sandboxId,
                   turn.token,
                   undefined,
-                  endReason ?? (huskFinalized ? 'failed' : 'unknown'),
+                  clearReason,
+                  clearCause,
                 );
                 // AND THE PROMPT COMES BACK, when the daemon says one is
                 // stranded. This is the incident: the record is `active`

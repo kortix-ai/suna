@@ -28,6 +28,7 @@ import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import { canonicalConnectorAlias, publicConnectorAlias } from '../../shared/connector-alias';
 import { rescopeSessionBindings, rescopeSessionSecrets } from '../lib/session-rescope';
 import { listResolvedProjectSecrets, secretKeyCollisionInAllowlist } from '../secrets';
+import { resolveSessionPersonalOwner } from '../lib/personal-resources';
 projectsApp.openapi(
   createRoute({
     method: 'get',
@@ -278,7 +279,12 @@ projectsApp.openapi(
         //
         // Falls back to the caller only when the row carries no creator, which
         // matches how every other principal-resolution site degrades.
-        const secretsPrincipal = visible.row.createdBy ?? loaded.userId;
+        const secretsPrincipal = await resolveSessionPersonalOwner({
+          projectId,
+          sessionId: visible.row.sessionId,
+          accountId: loaded.row.accountId,
+          legacyUserId: visible.row.createdBy ?? loaded.userId,
+        });
         const availableSecrets = await listResolvedProjectSecrets(projectId, secretsPrincipal);
         const available = new Set(
           availableSecrets.map((secret) => secret.identifier.toUpperCase()),

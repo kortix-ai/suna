@@ -1,6 +1,6 @@
 import { log } from '@/lib/logger';
 import { Icon } from '@/components/ui/icon';
-import { Moon, Sun } from 'lucide-react-native';
+import { MoonIcon as Moon, SunIcon as Sun } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
 import { Pressable } from 'react-native';

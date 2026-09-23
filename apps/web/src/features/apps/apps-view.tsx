@@ -29,6 +29,7 @@ import { RadioGroup } from '@/components/ui/radio-group';
 import { useOptionalSidebar } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { FeatureGateScreen } from '@/features/workspace/feature-gate-screen';
@@ -48,6 +49,7 @@ import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
   createAppAccessSession,
+  listAppAgents,
   type App,
   type AppAccessConfig,
   type AppAccessMode,
@@ -65,11 +67,13 @@ import {
   LockKeyIcon,
   PauseIcon,
   PlayIcon,
+  RobotIcon,
   SquaresFourIcon,
   TrashIcon,
   XIcon,
   type Icon as PhosphorIcon,
 } from '@phosphor-icons/react';
+import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useLayoutEffect, useState, useSyncExternalStore } from 'react';
@@ -1455,6 +1459,7 @@ function AppAccessModal({
           <AppAccessForm
             key={access.policy.data.revision}
             projectId={projectId}
+            appId={app.app_id}
             policy={access.policy.data}
             update={access.update}
             onSaved={() => onOpenChange(false)}
@@ -1467,11 +1472,13 @@ function AppAccessModal({
 
 function AppAccessForm({
   projectId,
+  appId,
   policy,
   update,
   onSaved,
 }: {
   projectId: string;
+  appId: string;
   policy: AppAccessConfig;
   update: ReturnType<typeof useAppAccess>['update'];
   onSaved: () => void;
@@ -1543,6 +1550,9 @@ function AppAccessForm({
               setGroupIds(groups);
             }}
           />
+        ) : null}
+        {mode === 'restricted' || mode === 'private' ? (
+          <AppAgentsWithAccess projectId={projectId} appId={appId} />
         ) : null}
         {mode === 'password' ? (
           <div className="space-y-2">
@@ -1678,6 +1688,59 @@ function DeploymentRow({
           {tI18nComplete.raw('texta76e13b98392')}
         </Button>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * The agents a restricted or private App admits besides the people above: every
+ * agent whose `kortix.yaml` grant `agents.<name>.apps` names this App, or is
+ * `all`. Read-only here — the manifest is the source of truth, so the list
+ * changes through a change request, never through this dialog. The App gate
+ * also requires `project.app.read` in the agent's effective permissions
+ * (spec 2026-09-22 agents as principals §2.5).
+ */
+function AppAgentsWithAccess({ projectId, appId }: { projectId: string; appId: string }) {
+  const t = useTranslations('agentPrincipals');
+  const agentsQuery = useQuery({
+    queryKey: ['app-agents', projectId, appId],
+    queryFn: () => listAppAgents(projectId, appId),
+    staleTime: 30_000,
+    retry: false,
+  });
+  return (
+    <div className="space-y-2" data-testid="app-agents-with-access">
+      <Label>{t('appAgentsTitle')}</Label>
+      {agentsQuery.isLoading ? (
+        <Skeleton className="h-10 w-full rounded-md" />
+      ) : agentsQuery.isError ? (
+        <p className="text-muted-foreground text-xs">{(agentsQuery.error as Error).message}</p>
+      ) : (agentsQuery.data ?? []).length === 0 ? (
+        <p className="text-muted-foreground text-xs text-pretty">{t('appAgentsEmpty')}</p>
+      ) : (
+        <ul className="space-y-2">
+          {(agentsQuery.data ?? []).map((agent) => (
+            <li
+              key={agent.agent_name}
+              className="bg-popover flex items-center gap-2.5 rounded-md border px-3 py-2"
+            >
+              <EntityAvatar icon={RobotIcon} label={agent.agent_name} size="sm" />
+              <div className="min-w-0 flex-1">
+                <p className="text-foreground truncate text-sm font-medium">{agent.agent_name}</p>
+                <p className="text-muted-foreground truncate text-xs">
+                  {t('appAgentsDeclared', {
+                    file: agent.path.split('#')[0] ?? 'kortix.yaml',
+                    agent: agent.agent_name,
+                  })}
+                </p>
+              </div>
+              <Badge variant="outline" size="sm">
+                {agent.grant === 'all' ? t('appAgentsGrantAll') : t('agentBadge')}
+              </Badge>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

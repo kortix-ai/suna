@@ -193,7 +193,7 @@ async function makeRequest<T = any>(
   let activeController = controller;
   const abortFromCaller = () => activeController.abort();
   fetchOptions.signal?.addEventListener('abort', abortFromCaller, { once: true });
-  let timeoutId: NodeJS.Timeout | null = null;
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
   let isAborted = false;
   // Tracks whether *our* timer fired the abort, vs. an external abort
   // (client navigation, tab close, dropped connection). Only the former is a
