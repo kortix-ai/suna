@@ -19600,11 +19600,7 @@
   },
   "agentPrincipals": {
     "title": "O que este agente pode fazer",
-    "flagOnDescription": "As pessoas que podem executar este agente agem com estas permissões.",
-    "flagOffDescription": "Agente como principal está desativado neste projeto. Uma sessão age com a função de projeto de quem a inicia, intersectada com estas permissões Kortix.",
-    "flagOffBadge": "Vale a função de quem inicia",
-    "flagOffHint": "Ative Agente como principal para que o agente aja por si: as permissões Kortix dele dentro da função teto, seja quem for que o execute.",
-    "featureFlags": "Feature flags",
+    "description": "As pessoas que podem executar este agente agem com estas permissões.",
     "kortixPermissions": "Permissões Kortix",
     "kortixPermissionsHelp": "Declaradas em kortix.yaml (agents.{agent}.kortix_permissions).",
     "declaredAll": "Todas",

@@ -19600,11 +19600,7 @@
   },
   "agentPrincipals": {
     "title": "What this agent can do",
-    "flagOnDescription": "People who may run this agent act with these permissions.",
-    "flagOffDescription": "Agent principal is off for this project. A session acts with the launcher's project role intersected with these Kortix permissions.",
-    "flagOffBadge": "Launcher's role applies",
-    "flagOffHint": "Turn on Agent principal to make the agent the acting principal: its Kortix permissions within its ceiling role, whoever runs it.",
-    "featureFlags": "Feature flags",
+    "description": "People who may run this agent act with these permissions.",
     "kortixPermissions": "Kortix permissions",
     "kortixPermissionsHelp": "Declared in kortix.yaml (agents.{agent}.kortix_permissions).",
     "declaredAll": "All",

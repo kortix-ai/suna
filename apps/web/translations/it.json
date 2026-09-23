@@ -19600,11 +19600,7 @@
   },
   "agentPrincipals": {
     "title": "Cosa può fare questo agente",
-    "flagOnDescription": "Le persone che possono eseguire questo agente agiscono con questi permessi.",
-    "flagOffDescription": "Agente come principal è disattivato per questo progetto. Una sessione agisce con il ruolo di progetto di chi la avvia, intersecato con questi permessi Kortix.",
-    "flagOffBadge": "Vale il ruolo di chi avvia",
-    "flagOffHint": "Attiva Agente come principal perché l'agente agisca in prima persona: i suoi permessi Kortix entro il suo ruolo limite, chiunque lo esegua.",
-    "featureFlags": "Feature flag",
+    "description": "Le persone che possono eseguire questo agente agiscono con questi permessi.",
     "kortixPermissions": "Permessi Kortix",
     "kortixPermissionsHelp": "Dichiarati in kortix.yaml (agents.{agent}.kortix_permissions).",
     "declaredAll": "Tutti",

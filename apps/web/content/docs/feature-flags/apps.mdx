@@ -225,15 +225,12 @@ The App record reports `viewer_can_access` for the second question.
 
 ## Agents and Apps
 
-This section applies when the project's `agent_principal` feature flag is on.
-With the flag off, the gate and the connector gateway behave as described above.
-
 An agent session can call an App with its session credential. The App gate
 checks that credential in `Authorization: Bearer` or in
 `X-Kortix-App-Authorization: Bearer`. Use `X-Kortix-App-Authorization` when the
 App reads `Authorization` for its own API key. The gate deletes
-`X-Kortix-App-Authorization` before it forwards the request (with the flag on
-or off), so the App never receives it. The App's own `Authorization` header is
+`X-Kortix-App-Authorization` before it forwards the request, so the App never
+receives it. The App's own `Authorization` header is
 forwarded unchanged.
 
 The gate judges a governed agent session as the agent, not as the person who

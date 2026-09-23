@@ -19600,11 +19600,7 @@
   },
   "agentPrincipals": {
     "title": "Was dieser Agent tun kann",
-    "flagOnDescription": "Personen, die diesen Agent ausführen dürfen, handeln mit diesen Berechtigungen.",
-    "flagOffDescription": "Agent-Prinzipal ist für dieses Projekt aus. Eine Sitzung handelt mit der Projektrolle der startenden Person, geschnitten mit diesen Kortix-Berechtigungen.",
-    "flagOffBadge": "Rolle der startenden Person gilt",
-    "flagOffHint": "Schalte Agent-Prinzipal ein, damit der Agent selbst handelt: seine Kortix-Berechtigungen innerhalb seiner Obergrenzen-Rolle, egal wer ihn startet.",
-    "featureFlags": "Feature-Flags",
+    "description": "Personen, die diesen Agent ausführen dürfen, handeln mit diesen Berechtigungen.",
     "kortixPermissions": "Kortix-Berechtigungen",
     "kortixPermissionsHelp": "Deklariert in kortix.yaml (agents.{agent}.kortix_permissions).",
     "declaredAll": "Alle",
