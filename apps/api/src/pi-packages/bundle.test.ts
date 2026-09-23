@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { ensurePiPackageBundle, piPackageBundleDigest, piPackageBundleKey, piPackageSpecs, type BundleDeps } from './bundle';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { ensurePiPackageBundle, missingPeers, piPackageBundleDigest, piPackageBundleKey, piPackageSpecs, type BundleDeps } from './bundle';
 
 describe('pi package bundle identity', () => {
   test('only exact npm pins count, sorted and unique; paths and junk are skipped', () => {
@@ -25,6 +28,28 @@ describe('pi package bundle identity', () => {
     expect(piPackageBundleKey(a, '')).toBe(`pi-packages/pi-packages-v1/${a}.tar.gz`);
     // The same prefix project snapshots use, so one bucket policy covers both.
     expect(piPackageBundleKey(a, '/dev/')).toBe(`dev/pi-packages/pi-packages-v1/${a}.tar.gz`);
+  });
+});
+
+describe('missingPeers', () => {
+  test('required peers nobody installed; pi-supplied and optional peers never count', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'peers-'));
+    const pkg = async (name: string, manifest: object) => {
+      await mkdir(join(root, name), { recursive: true });
+      await writeFile(join(root, name, 'package.json'), JSON.stringify({ name, version: '1.0.0', ...manifest }));
+    };
+    try {
+      await pkg('@acme/todo', {
+        peerDependencies: { '@acme/i18n': '*', '@earendil-works/pi-coding-agent': '*', 'left-pad': '^1', maybe: '*', typebox: '*' },
+        peerDependenciesMeta: { maybe: { optional: true } },
+      });
+      await pkg('left-pad', {});
+      await pkg('typebox', {});
+      expect(await missingPeers(root)).toEqual({ '@acme/i18n': '*' });
+      expect(await missingPeers(join(root, 'absent'))).toEqual({});
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });
 

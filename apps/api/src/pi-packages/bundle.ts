@@ -16,7 +16,7 @@
  * packages; the daemon reports them as not installed.
  */
 import { createHash } from 'node:crypto';
-import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { config } from '../config';
@@ -64,24 +64,72 @@ async function run(cmd: string[], cwd: string): Promise<void> {
   if (code !== 0) throw new Error(`${cmd[0]} ${cmd[1]} exited ${code}: ${stderr.trim().slice(-600)}`);
 }
 
+/** pi hands these to every extension itself (virtual modules); a bundle carries an empty stub in their place. */
+export const PI_SUPPLIED_PACKAGES = ['@earendil-works/pi-agent-core', '@earendil-works/pi-ai', '@earendil-works/pi-coding-agent', '@earendil-works/pi-tui'];
+const PEER_PASSES = 3;
+
 /**
- * Install `specs` for the sandbox target and pack `node_modules`. Peers stay
- * out: pi supplies `typebox` and `@earendil-works/pi-*` to every extension.
- * Bun never runs dependency lifecycle scripts; `--ignore-scripts` covers the root.
+ * Required peers that no installed package satisfies, as name → range. pi's
+ * own installer (npm) installs peers; bun does not, so the build adds them.
+ * pi-supplied names and optional peers never count.
+ */
+export async function missingPeers(nodeModules: string): Promise<Record<string, string>> {
+  const installed = new Set<string>();
+  const manifests: Array<{ peerDependencies?: Record<string, string>; peerDependenciesMeta?: Record<string, { optional?: boolean }> }> = [];
+  const read = async (name: string) => {
+    try {
+      manifests.push(JSON.parse(await readFile(join(nodeModules, name, 'package.json'), 'utf8')));
+      installed.add(name);
+    } catch {
+      // not a package directory
+    }
+  };
+  for (const entry of await readdir(nodeModules).catch(() => [] as string[])) {
+    if (entry.startsWith('.')) continue;
+    if (entry.startsWith('@')) {
+      for (const scoped of await readdir(join(nodeModules, entry)).catch(() => [] as string[])) await read(`${entry}/${scoped}`);
+    } else {
+      await read(entry);
+    }
+  }
+  const missing: Record<string, string> = {};
+  for (const manifest of manifests) {
+    for (const [name, range] of Object.entries(manifest.peerDependencies ?? {})) {
+      if (installed.has(name) || PI_SUPPLIED_PACKAGES.includes(name) || manifest.peerDependenciesMeta?.[name]?.optional) continue;
+      missing[name] ??= range;
+    }
+  }
+  return missing;
+}
+
+/**
+ * Install `specs` for the sandbox target and pack `node_modules`: the
+ * packages, their dependencies, and their required peers (as pi's own npm
+ * install would), with the pi-supplied packages as empty stubs. Bun never runs
+ * dependency lifecycle scripts; `--ignore-scripts` covers the root.
  */
 export async function buildPiPackageBundle(specs: readonly string[]): Promise<{ path: string; bytes: number; cleanup: () => Promise<void> }> {
   const dir = await mkdtemp(join(tmpdir(), 'pi-packages-'));
   const cleanup = () => rm(dir, { recursive: true, force: true });
   try {
-    const dependencies = Object.fromEntries(specs.map((spec) => {
+    const dependencies: Record<string, string> = Object.fromEntries(specs.map((spec) => {
       const at = spec.lastIndexOf('@');
       return [spec.slice(0, at), spec.slice(at + 1)];
     }));
-    await writeFile(join(dir, 'package.json'), JSON.stringify({ name: 'kortix-pi-project-packages', private: true, dependencies }));
-    await run(
-      ['bun', 'install', '--production', '--omit=peer', '--linker=hoisted', `--os=${TARGET.os}`, `--cpu=${TARGET.cpu}`, '--ignore-scripts', '--no-save', '--no-progress'],
-      dir,
-    );
+    await mkdir(join(dir, 'pi-supplied'));
+    await writeFile(join(dir, 'pi-supplied', 'package.json'), JSON.stringify({ name: 'kortix-pi-supplied', version: '0.0.0', private: true }));
+    for (const name of PI_SUPPLIED_PACKAGES) dependencies[name] = 'file:./pi-supplied';
+    for (let pass = 0; ; pass++) {
+      await writeFile(join(dir, 'package.json'), JSON.stringify({ name: 'kortix-pi-project-packages', private: true, dependencies }));
+      await run(
+        ['bun', 'install', '--production', '--linker=hoisted', `--os=${TARGET.os}`, `--cpu=${TARGET.cpu}`, '--ignore-scripts', '--no-save', '--no-progress'],
+        dir,
+      );
+      const missing = await missingPeers(join(dir, 'node_modules'));
+      if (Object.keys(missing).length === 0) break;
+      if (pass + 1 >= PEER_PASSES) throw new Error(`peer dependencies still missing after ${PEER_PASSES} installs: ${Object.keys(missing).join(', ')}`);
+      Object.assign(dependencies, missing);
+    }
     const path = join(dir, 'bundle.tar.gz');
     await run(['tar', '-czf', path, 'node_modules'], dir);
     const { size } = await stat(path);
