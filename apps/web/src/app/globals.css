@@ -1528,6 +1528,7 @@ html[data-desktop-platform='macos'] .kx-titlebar-row [role='tab'] {
    Keep their controls out of AppKit's hit area at every renderer zoom. */
 html[data-desktop-platform='macos'] .kx-overlay-sidebar-titlebar {
   padding-left: var(--kx-titlebar-control-left);
+  justify-content: flex-end;
 }
 /* With the account sidebar hidden, its opener occupies the first web-control
    slot. The breadcrumb follows it, rather than starting under the lights. */
