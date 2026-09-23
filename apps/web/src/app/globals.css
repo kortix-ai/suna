@@ -1498,16 +1498,12 @@ html[data-desktop='true'] .kx-titlebar-row {
 html[data-desktop='true'] .kx-titlebar-row[data-sidebar-collapsed] {
   padding-left: var(--kx-titlebar-content-left);
 }
+/* Keep collapsed capability rows draggable. The fixed shell opener paints
+   above page headers and has its own no-drag region; disabling the entire row
+   removes the only usable drag area between its tabs. */
 html[data-desktop-platform='macos'] .kx-titlebar-row {
   -webkit-app-region: drag;
   app-region: drag;
-}
-/* The shell's fixed sidebar opener overlaps this row's left padding when the
-   sidebar is closed. A drag rectangle there consumes its click in Electron.
-   Keep the tab controls and the native-light clearance, but release that row. */
-html[data-desktop-platform='macos'] .kx-capability-titlebar[data-sidebar-collapsed] {
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
 }
 html[data-desktop-platform='macos'] .kx-titlebar-band-height {
   height: var(--kx-titlebar-inset);
@@ -1568,12 +1564,6 @@ html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar .kx-settings-mo
 @media (max-width: 767px) {
   html[data-desktop='true'] .kx-titlebar-row {
     padding-left: var(--kx-titlebar-content-left);
-  }
-  /* A mobile sheet can be closed while the desktop sidebar cookie still says
-     expanded. The shell opener is visible in that state as well. */
-  html[data-desktop-platform='macos'] .kx-capability-titlebar {
-    -webkit-app-region: no-drag;
-    app-region: no-drag;
   }
 }
 

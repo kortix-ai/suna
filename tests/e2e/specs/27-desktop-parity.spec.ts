@@ -1739,6 +1739,88 @@ for (const runtime of runtimes) {
 const nativeBrowserTest =
   process.env.E2E_DESKTOP_NATIVE === "1" ? browserTest : null;
 nativeBrowserTest?.(
+  "27 — desktop parity keeps the collapsed Customize header draggable",
+  async ({ baseURL }) => {
+    browserTest.setTimeout(120_000);
+    const databaseUrl =
+      process.env.KE2E_DATABASE_URL || process.env.E2E_DATABASE_URL;
+    if (!databaseUrl)
+      throw new Error("Desktop drag test requires the configured test database");
+    const profile = await mkdtemp(join(tmpdir(), "kortix-desktop-drag-"));
+    const email = `e2e-desktop-drag-${randomUUID()}@example.test`;
+    const user = await createAuthUser(email, authOptions);
+    const session = await signIn(email, authOptions);
+    let project: ManifestProject | undefined;
+    let app: ElectronApplication | undefined;
+    try {
+      const accounts = await api<{ account_id: string }[]>(
+        session.access_token,
+        "GET",
+        "/accounts",
+      );
+      project = await createManifestProject({
+        api,
+        accessToken: session.access_token,
+        accountId: accounts[0].account_id,
+        userId: user.id,
+        name: "Desktop drag region",
+        databaseUrl,
+      });
+      app = await launchDesktop(baseURL!, profile);
+      const main = app
+        .windows()
+        .find((window) => window.url().startsWith(baseURL!));
+      if (!main) throw new Error("native main window not found");
+      await installBrowserSessionDirect(
+        main,
+        session,
+        `${baseURL}/projects/${project.id}/customize/agents`,
+        authOptions,
+      );
+      await selectAccountForUi(main, accounts[0].account_id);
+      await dismissOnboarding(main);
+      await main.getByRole("button", { name: "Collapse sidebar" }).click();
+      const row = main.locator(
+        ".kx-capability-titlebar[data-sidebar-collapsed='true']",
+      );
+      await expect(row).toBeVisible();
+      const dragPoint = () =>
+        row.evaluate((element) => {
+          const rect = element.getBoundingClientRect();
+          const y = Math.round(rect.top + rect.height / 2);
+          for (let x = Math.round(rect.left + 120); x < rect.right - 8; x += 8) {
+            const target = document.elementFromPoint(x, y);
+            if (!target || !element.contains(target)) continue;
+            if (target.closest("button,a,input,[role='button'],[role='tab']")) continue;
+            for (let node: Element | null = target; node && element.contains(node); node = node.parentElement) {
+              const region = getComputedStyle(node).webkitAppRegion;
+              if (region === "no-drag") break;
+              if (region === "drag") return { x, y };
+            }
+          }
+          return null;
+        });
+      expect(await dragPoint()).not.toBeNull();
+      const tab = row.getByRole("tab").first();
+      await expect(tab).toBeVisible();
+      expect(
+        await tab.evaluate((element) => getComputedStyle(element).webkitAppRegion),
+      ).toBe("no-drag");
+      const nativeWindow = await app.browserWindow(main);
+      await nativeWindow.evaluate((window) => window.setContentSize(720, 480));
+      await expect.poll(dragPoint).not.toBeNull();
+      const opener = main.getByRole("button", { name: "Open sidebar" });
+      await opener.hover();
+      expect(await dragPoint()).not.toBeNull();
+    } finally {
+      await app?.close();
+      await project?.dispose();
+      await deleteAuthUser(user.id, authOptions);
+      await rm(profile, { recursive: true, force: true });
+    }
+  },
+);
+nativeBrowserTest?.(
   "27 — desktop parity guards reload, Home, close, and quit with an unsaved agent draft",
   async ({ baseURL }) => {
     browserTest.setTimeout(240_000);
