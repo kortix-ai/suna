@@ -318,9 +318,14 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'A governed agent session acts as the agent itself, not as the person who started it. Its authority is its kortix_permissions list, capped by the IAM role bound to the agent and never including member management, project deletion, or credential issue. Running an agent, firing its trigger, or starting it from another agent requires permission to run that agent.',
     stability: 'experimental',
     available: () => true,
-    // Default OFF (spec docs/specs/2026-09-22-agents-as-principals.md §5). OFF
-    // keeps the launcher ∩ grant model byte for byte.
-    platformDefault: () => false,
+    // Default ON. An agent's authority is a property of the AGENT, not of
+    // whoever pressed start: the launcher-∩-grant model gave the same agent
+    // different power per person, let an owner-launched agent ignore its own
+    // grant entirely (super-admin short-circuit), and ran every unattended
+    // trigger as the account owner. Switching a project OFF restores that old
+    // model as an escape hatch for one release; the switch is then deleted
+    // (spec docs/specs/2026-09-22-agents-as-principals.md §5).
+    platformDefault: () => true,
     enforcement: 'behavioral',
     enforcementNote:
       'Read by the authorization engine for every agent-session credential ' +

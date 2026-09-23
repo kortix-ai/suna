@@ -71,8 +71,11 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(resolveFeatureFlag({ experimental: { meta_agent: false } }, 'meta_agent')).toBe(false);
   });
 
-  test('agent_principal is off by default and follows an explicit choice (spec 2026-09-22 §5)', () => {
-    expect(resolveFeatureFlag({}, 'agent_principal')).toBe(false);
+  test('agent_principal is ON by default and a project may still switch it off (spec 2026-09-22 §5)', () => {
+    // An agent's authority belongs to the AGENT, so it is the default. The
+    // explicit `false` is the one-release escape hatch back to the old
+    // launcher-∩-grant model.
+    expect(resolveFeatureFlag({}, 'agent_principal')).toBe(true);
     expect(resolveFeatureFlag({ experimental: { agent_principal: true } }, 'agent_principal')).toBe(true);
     expect(resolveFeatureFlag({ experimental: { agent_principal: false } }, 'agent_principal')).toBe(false);
   });
