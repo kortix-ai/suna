@@ -81,6 +81,15 @@ describe('rebuildEditedPromptText — the wire text an in-place save sends', () 
     );
   });
 
+  test('every reply quote survives the edit, not only the first', () => {
+    // The composer sends one `<reply_context>` line per quote (`withReplyQuotes`).
+    const original =
+      '<reply_context>first quote</reply_context>\n<reply_context>second aa quote</reply_context>\naa';
+    expect(rebuildEditedPromptText(original, 'bb')).toBe(
+      '<reply_context>first quote</reply_context>\n<reply_context>second aa quote</reply_context>\nbb',
+    );
+  });
+
   test('words that also appear inside the reply context are replaced where the user wrote them', () => {
     const original = '<reply_context>yes</reply_context>\n\nyes';
     expect(rebuildEditedPromptText(original, 'no')).toBe('<reply_context>yes</reply_context>\n\nno');

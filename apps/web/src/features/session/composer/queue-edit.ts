@@ -56,10 +56,11 @@ export function planQueueEditExit<Stash>(input: {
  */
 export function rebuildEditedPromptText(original: string, edited: string): string {
   const visible = cleanPromptText(original).text;
-  // The visible words follow the reply context, so the search starts after it
-  // — the quoted text can contain the same words.
+  // The visible words follow the reply contexts — one per quote — so the
+  // search starts after the LAST of them: the quoted text can contain the
+  // same words.
   const REPLY_END = '</reply_context>';
-  const replyEnd = original.indexOf(REPLY_END);
+  const replyEnd = original.lastIndexOf(REPLY_END);
   const from = replyEnd < 0 ? 0 : replyEnd + REPLY_END.length;
   const at = visible ? original.indexOf(visible, from) : -1;
   if (at < 0) return edited;

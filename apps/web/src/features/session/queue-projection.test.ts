@@ -217,6 +217,21 @@ describe('projectQueueRows', () => {
     expect(rows[0]).toMatchObject({ text: 'as typed', attachmentCount: 2, takeBackEligible: true });
   });
 
+  test("a draft sent with reply quotes shows only its own words, never the quote markup", () => {
+    // The composer puts each reply quote into the sent text as a leading
+    // `<reply_context>` line. A server row strips them (`cleanPromptText`); a
+    // draft row printed them raw — the quote and the message in one row
+    // (reported 2026-09-24: quote first, then Cmd+Enter).
+    const typed = '<reply_context>earlier answer</reply_context>\n<reply_context>second quote</reply_context>\naa';
+    const { rows } = projectQueueRows({
+      prompts: [prompt({ client_message_id: 'q_1', text: 'server preview' })],
+      drafts: [draft('q_1', { text: typed })],
+    });
+    expect(rows[0]?.text).toBe('aa');
+    const pending = projectQueueRows({ prompts: [], drafts: [draft('q_2', { text: typed, posted: false })] });
+    expect(pending.rows[0]?.text).toBe('aa');
+  });
+
   test('a row with files and no draft cannot be taken back — its files would be lost', () => {
     const { rows } = projectQueueRows({
       prompts: [

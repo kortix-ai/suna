@@ -1898,13 +1898,12 @@ function ComposerImpl({
       */}
       {slashMenuPlacement === 'above' && <div id={dockId} />}
 
-      {aboveSlot && <div className="mb-2 w-full empty:hidden">{aboveSlot}</div>}
-
       {/*
-        The reply quotes, as their own card above everything else in the
-        stack — the queued-messages card's chrome and mount. `QuoteList`
-        renders nothing for an empty list, and `empty:hidden` then drops this
-        wrapper and its margin.
+        The reply quotes: their OWN card, at the top of the stack, ABOVE the
+        queued-messages card and never inside it. What the next send replies
+        to reads first; what is already waiting reads next, directly above
+        the input. `QuoteList` renders nothing for an empty list, and
+        `empty:hidden` then drops this wrapper and its margin.
       */}
       <div className="mb-2 w-full empty:hidden">
         {/* Keyed on emptiness: an emptied card remounts, so the next quote
@@ -1916,6 +1915,9 @@ function ComposerImpl({
           onRemove={handleRemoveQuote}
         />
       </div>
+
+      {/* The queued messages: their own card, under the reply quotes. */}
+      {aboveSlot && <div className="mb-2 w-full empty:hidden">{aboveSlot}</div>}
 
       {/*
         The stack above the card. Each layer owns its OWN top rounding rather

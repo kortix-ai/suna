@@ -230,7 +230,7 @@ export function projectQueueRows(input: {
     rows.push({
       id: prompt.prompt_id,
       clientMessageId: prompt.client_message_id,
-      text: draft?.text ?? cleaned.text,
+      text: draft ? draftVisibleText(draft) : cleaned.text,
       attachmentCount,
       state,
       ...(state === 'failed' && prompt.last_error ? { lastError: prompt.last_error } : {}),
@@ -263,7 +263,7 @@ export function projectQueueRows(input: {
     rows.push({
       id: draftRowId(draft.clientMessageId),
       clientMessageId: draft.clientMessageId,
-      text: draft.text,
+      text: draftVisibleText(draft),
       attachmentCount: draft.files.length,
       // A send that failed before the POST leaves nothing durable behind. The
       // row is this tab's only copy of the message, so it has to say what went
@@ -279,6 +279,17 @@ export function projectQueueRows(input: {
   }
 
   return { rows, heldCount };
+}
+
+/**
+ * A draft's words as the row shows them. The composer puts each reply quote
+ * into the sent text as a leading `<reply_context>` line (`withReplyQuotes`);
+ * a server row drops them (`cleanPromptText`), and a draft must too, or the
+ * quote and the message print as one row. Edit rebuilds the quotes from the
+ * wire text (`rebuildEditedPromptText`), so nothing is lost by hiding them.
+ */
+function draftVisibleText(draft: QueuedDraft): string {
+  return stripReplyContexts(draft.text);
 }
 
 /** A queued row with no server row yet: `draft:<clientMessageId>`. */
