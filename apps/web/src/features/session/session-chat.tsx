@@ -2108,6 +2108,15 @@ interface SessionChatProps {
   deferComposerFocus?: boolean;
 }
 
+/**
+ * Transcript delivery cadence while a turn streams. Everything this component
+ * derives from the rows (turn grouping, per-turn props, the O(messages) memos)
+ * re-runs per delivery, and the streaming text itself is paced at 80 ms by
+ * `ThrottledMarkdown`, so delivering faster than this buys no visible update.
+ * The first change after a quiet interval still shows at once.
+ */
+const TRANSCRIPT_THROTTLE_MS = 50;
+
 /** `useSessionMessages` input when no `useSession` owns this chat: reads nothing. */
 const DETACHED_SESSION_MESSAGES = { projectId: '', sessionId: '', opencodeSessionId: null };
 
@@ -2290,7 +2299,9 @@ export function SessionChat({
   // The page's `useSession` runs with `subscribeMessages: false`, so its
   // `messages` is a render-time snapshot and the page does not re-render per
   // streamed delta. The live rows are read HERE, where they are drawn.
-  const liveSessionMessages = useSessionMessages(sessionState ?? DETACHED_SESSION_MESSAGES);
+  const liveSessionMessages = useSessionMessages(sessionState ?? DETACHED_SESSION_MESSAGES, {
+    throttleMs: TRANSCRIPT_THROTTLE_MS,
+  });
   const {
     messages: hookMessages,
     isLoading: syncMessagesLoading,

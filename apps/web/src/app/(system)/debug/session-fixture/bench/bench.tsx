@@ -2,7 +2,7 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { groupMessagesIntoTurns } from '@kortix/sdk';
-import { useRuntimeMessages, useSessionStateStore } from '@kortix/sdk/react';
+import { useRuntimeMessages, useSession, useSessionStateStore } from '@kortix/sdk/react';
 import { Profiler, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { SESSION_TRANSCRIPT_CLASS } from '@/features/session/session-body';
@@ -138,7 +138,7 @@ const BenchRow = memo(function BenchRow({
 interface BenchResult {
   messages: number;
   deltas: number;
-  rows: 'turn' | 'row' | 'chat';
+  rows: 'turn' | 'row' | 'chat' | 'session';
   settledTurnRenders: number;
   commits: number;
   renderMs: number;
@@ -204,6 +204,17 @@ function Transcript({ streaming, memoRows }: { streaming: boolean; memoRows: boo
   );
 }
 
+/** `SessionChat` fed by `useSession`, as the project session page renders it. */
+function SessionBackedChat() {
+  const session = useSession('bench-project', 'bench-session', {
+    enabled: false,
+    replayStartStash: false,
+    initialOpenCodeSessionId: SESSION_ID,
+    subscribeMessages: false,
+  });
+  return <SessionChat sessionId={SESSION_ID} sessionState={session} hideHeader readOnly />;
+}
+
 export function SessionFixtureBench() {
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
   const messageCount = Number(params.get('messages') ?? 100);
@@ -211,8 +222,11 @@ export function SessionFixtureBench() {
   const autorun = params.get('autorun') === '1';
   const memoRows = params.get('rows') === 'row';
   // `?chat=1` renders the real `SessionChat` (read-only, no `useSession`)
-  // over the seeded store instead of the fixture composition.
-  const realChat = params.get('chat') === '1';
+  // over the seeded store instead of the fixture composition. `?chat=session`
+  // hands it a `useSession` result (`enabled: false`: no network) — the
+  // project session page's path, with `subscribeMessages: false`.
+  const realChat = params.get('chat') === '1' || params.get('chat') === 'session';
+  const withSession = params.get('chat') === 'session';
   const [queryClient] = useState(
     () => new QueryClient({ defaultOptions: { queries: { enabled: false, retry: false } } }),
   );
@@ -300,7 +314,7 @@ export function SessionFixtureBench() {
           const next: BenchResult = {
             messages: messageCount,
             deltas: deltaCount,
-            rows: realChat ? 'chat' : memoRows ? 'row' : 'turn',
+            rows: withSession ? 'session' : realChat ? 'chat' : memoRows ? 'row' : 'turn',
             settledTurnRenders: settledRenders.count,
             commits: profile.current.commits,
             renderMs: Math.round(profile.current.renderMs),
@@ -332,7 +346,7 @@ export function SessionFixtureBench() {
         .applyPartDelta(SESSION_ID, target.messageId, target.partId, 'text', text, `evt_bench_${sent}`);
       sent += 1;
     }, DELTA_INTERVAL_MS);
-  }, [target, deltaCount, messageCount, memoRows]);
+  }, [target, deltaCount, messageCount, memoRows, withSession, realChat]);
 
   useEffect(() => {
     if (autorun && phase === 'ready') run();
@@ -359,7 +373,9 @@ export function SessionFixtureBench() {
           </header>
           <div className="min-w-0 flex-1 pb-12">
             <Profiler id="transcript" onRender={onRender}>
-              {realChat ? (
+              {withSession ? (
+                <SessionBackedChat />
+              ) : realChat ? (
                 <SessionChat sessionId={SESSION_ID} hideHeader readOnly />
               ) : (
                 <Transcript streaming={streaming} memoRows={memoRows} />
