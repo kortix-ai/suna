@@ -36,7 +36,7 @@ export interface TeamsManifest {
  * existing app only when this differs from what the catalog holds, and a Teams
  * admin has to re-consent to new resource-specific permissions on the team.
  */
-export const TEAMS_MANIFEST_VERSION = '1.3.0';
+export const TEAMS_MANIFEST_VERSION = '1.4.0';
 
 /**
  * Resource-specific consent (RSC). These let the bot receive every message in
@@ -66,6 +66,7 @@ const BOT_COMMANDS = [
   { title: '/agents', description: 'Pick the agent for this conversation' },
   { title: '/projects', description: 'List connected projects' },
   { title: '/stop', description: 'Stop the run in progress here' },
+  { title: '/new', description: 'Start a new session in this chat' },
   { title: '/policy', description: 'Who may join sessions started here' },
 ];
 

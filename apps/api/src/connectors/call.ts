@@ -374,6 +374,9 @@ function methodAllowsBody(method: string): boolean {
   return m === 'POST' || m === 'PUT' || m === 'PATCH' || m === 'DELETE';
 }
 
+/** The App gate's credential header (apps/public-proxy.ts), lowercase. */
+const APP_AUTHORIZATION_HEADER = 'x-kortix-app-authorization';
+
 function joinUrl(base: string, path: string): string {
   return `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
 }
@@ -972,10 +975,26 @@ export async function executeCall(opts: {
   secret?: string | null;
   args?: Record<string, unknown>;
   paramHints?: Record<string, ParamLoc>;
+  /**
+   * The Kortix App gate credential (`Bearer <assertion>`) for a connector
+   * whose base URL is an App of this deployment in the caller's project — see
+   * gateway.ts `appAuthorizationFor`. Sent as `X-Kortix-App-Authorization` on
+   * openapi/http requests only, so the App keeps `Authorization` for its own
+   * key. Wins over a static connector header of the same name.
+   */
+  appAuthorization?: string | null;
   now?: () => Date;
   fetchImpl: FetchImpl;
 }): Promise<ExecResult> {
   const { binding } = opts;
+  const withAppAuthorization = (req: BuiltRequest): BuiltRequest => {
+    if (!opts.appAuthorization) return req;
+    const headers = Object.fromEntries(
+      Object.entries(req.headers).filter(([name]) => name.toLowerCase() !== APP_AUTHORIZATION_HEADER),
+    );
+    headers['X-Kortix-App-Authorization'] = opts.appAuthorization;
+    return { ...req, headers };
+  };
 
   if (binding.kind === 'postman') {
     return performRequest(buildPostmanRequest({
@@ -1000,7 +1019,7 @@ export async function executeCall(opts: {
       args: opts.args,
       paramHints: opts.paramHints,
     });
-    return performRequest(req, opts.fetchImpl, opts.auth ?? NO_AUTH, opts.secret ?? null, opts.now ?? (() => new Date()));
+    return performRequest(withAppAuthorization(req), opts.fetchImpl, opts.auth ?? NO_AUTH, opts.secret ?? null, opts.now ?? (() => new Date()));
   }
 
   if (binding.kind === 'http') {
@@ -1015,7 +1034,7 @@ export async function executeCall(opts: {
       args: opts.args,
       paramHints: opts.paramHints,
     });
-    return performRequest(req, opts.fetchImpl, opts.auth ?? NO_AUTH, opts.secret ?? null, opts.now ?? (() => new Date()));
+    return performRequest(withAppAuthorization(req), opts.fetchImpl, opts.auth ?? NO_AUTH, opts.secret ?? null, opts.now ?? (() => new Date()));
   }
 
   if (binding.kind === 'mcp') {

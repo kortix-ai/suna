@@ -133,7 +133,8 @@ export function FilePreviewModal({
 
   const [historyPath, setHistoryPath] = useState<string | null>(null);
   const [markdownPreview, setMarkdownPreview] = useState(true);
-  const isMarkdownFile = getLanguageFromExt(fileName) === 'markdown';
+  // Markdown and Mermaid files both open rendered, with a Source toggle.
+  const isMarkdownFile = ['markdown', 'mermaid'].includes(getLanguageFromExt(fileName));
   const shareInput = useMemo(() => {
     if (!selectedFilePath || !shareContext) return null;
     return {

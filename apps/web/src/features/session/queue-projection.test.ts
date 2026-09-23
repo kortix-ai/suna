@@ -196,6 +196,19 @@ describe('projectQueueRows', () => {
     expect(rows[0]?.attachmentCount).toBe(1);
   });
 
+  test('a row with several inline quotes shows only its reply text', () => {
+    const { rows } = projectQueueRows({
+      prompts: [
+        prompt({
+          text:
+            '<reply_context>quoted alpha</reply_context>\nreply to alpha\n' +
+            '<reply_context>quoted bravo</reply_context>\nreply to bravo',
+        }),
+      ],
+    });
+    expect(rows[0]?.text).toBe('reply to alpha\nreply to bravo');
+  });
+
   test("this tab's draft supplies the text as typed and its file count", () => {
     const { rows } = projectQueueRows({
       prompts: [prompt({ client_message_id: 'q_1', text: 'server preview' })],

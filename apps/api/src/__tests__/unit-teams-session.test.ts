@@ -42,6 +42,9 @@ function chain(result: unknown[]): any {
   return c;
 }
 
+// The real table object: a delete is told apart by the table it targets.
+const { chatEventDedup: chatEventDedupTable } = await import('@kortix/db');
+
 let selectCount = 0;
 mock.module('../shared/db', () => ({
   hasDatabase: true,
@@ -58,8 +61,8 @@ mock.module('../shared/db', () => ({
       if (insertQueue.length) return chain(insertQueue.shift()!);
       return chain(claimWins ? [{ eventId: 'claimed' }] : []);
     },
-    delete: () => {
-      dbOps.push('delete');
+    delete: (table: unknown) => {
+      dbOps.push(table === chatEventDedupTable ? 'delete:dedup' : 'delete');
       return chain([]);
     },
     update: () => {
@@ -332,6 +335,11 @@ describe('follow-up outcomes — the conversation is never left on "Working on i
     await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });
     expect(finalized).toHaveLength(1);
     expect(finalized[0].error).toBeUndefined();
+    // Silent is not the same as "Task complete". Suppressing the repeated
+    // notice must not make the card claim the run succeeded — every later
+    // message on a jammed conversation used to close with the default title.
+    expect(finalized[0].title).toBe("Couldn't start");
+    expect(finalized[0].unfinished).toBe(true);
   });
 
   test('no-session (deleted): the stale mapping is dropped and a NEW session is created with a revived note', async () => {
@@ -405,6 +413,30 @@ describe('join policy on a follow-up', () => {
     const meta = created[0].metadata as { teams: { conversation_policy: string } };
     expect(meta.teams.conversation_policy).toBe('project_open');
   });
+
+  test('a channel session records its team', async () => {
+    // The turn env carries MS_TEAMS_TEAM_GROUP_ID for one turn only. Graph
+    // reads of the channel need the team id after that activity is gone.
+    existingThread = [];
+    await createOrJoinTeamsConversationSession({
+      projectId: PROJECT_ID,
+      tenantId: TENANT_ID,
+      conversationId: CONVERSATION_ID,
+      activity: { ...activity, channelData: { team: { id: '19:general@thread.tacv2', aadGroupId: 'group-1', name: 'Platform' } } },
+    });
+    expect((created[0].metadata as { teams: Record<string, unknown> }).teams).toMatchObject({
+      team_group_id: 'group-1',
+      team_name: 'Platform',
+    });
+  });
+
+  test('a personal or group chat session records no team', async () => {
+    existingThread = [];
+    await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });
+    const teams = (created[0].metadata as { teams: Record<string, unknown> }).teams;
+    expect(teams).not.toHaveProperty('team_group_id');
+    expect(teams).not.toHaveProperty('team_name');
+  });
 });
 
 describe('a turn that died mid-flight does not wedge the conversation', () => {
@@ -418,6 +450,28 @@ describe('a turn that died mid-flight does not wedge the conversation', () => {
     // No "I'll take this after the current step" — that was the wedge.
     expect(notices).toHaveLength(0);
     expect(saved).toEqual([{ sessionId: 'sess-existing', messageActivityId: 'live-card-1' }]);
+    expect(continued).toHaveLength(1);
+  });
+
+  test('a quiet card over a run the runtime still holds is NOT closed as abandoned', async () => {
+    // One long command posts no step. Closing its card as "ended" lost the
+    // run's answer: its `teams send` then found no turn.
+    setTeamsSessionLifecycleForTest({
+      createSession: async () => ({ status: 'running', sessionId: 'sess-new' }) as never,
+      continueSession: async (input: Record<string, unknown>) => {
+        continued.push(input);
+        return 'delivered' as never;
+      },
+      resolveProjectAutomationActor: async () => 'user-1',
+      holdsLiveTurn: async () => true,
+    } as never);
+    existingThread = [{ sessionId: 'sess-existing', createdBy: 'user-1', status: 'running' }];
+    inflightTurn = { finalized: false, updatedAt: Date.now() - 20 * 60 * 1000, sessionId: 'sess-existing' };
+
+    await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });
+
+    expect(calls).not.toContain('closeAbandonedTurn');
+    expect(notices).toEqual(['Got it — I’ll take this after the current step.']);
     expect(continued).toHaveLength(1);
   });
 
@@ -495,6 +549,72 @@ describe('createOrJoinTeamsConversationSession — a start failure says what to 
     await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });
 
     expect((finalized[0] as { error: string }).error.toLowerCase()).toContain('sandbox runtime');
+  });
+
+  test('a failed start releases the thread-create claim, so the retry it asks for can start', async () => {
+    // The claim lives 5 minutes. Held after a failure, every retry inside
+    // that window lost it, waited 8 s for a session nobody was creating, and
+    // failed with "couldn't start" — including the retry the agent picker
+    // asks for ("Pick one, then send your message again").
+    startFails(400, { code: 'AGENT_NOT_DECLARED', error: 'agent "reviewer" is not declared' });
+
+    await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });
+
+    expect(dbOps).toContain('delete:dedup');
+  });
+});
+
+// The lifecycle keeps an idempotency key forever (a unique index, no
+// retention), and a personal or group chat is ONE conversation for life. Under
+// a per-conversation key the chat's first create_session command answered
+// every later create: a failed first start (dead-lettered) failed every later
+// message with the same error, a deleted session answered 409
+// IDEMPOTENCY_KEY_SESSION_DELETED, and `/new` got the old session back.
+describe('createOrJoinTeamsConversationSession — the create key is per message', () => {
+  test('each message that creates a session carries its own key; a redelivery keeps it', async () => {
+    await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });
+    created.length = 0;
+    selectCount = 0;
+    await createOrJoinTeamsConversationSession({
+      projectId: PROJECT_ID,
+      tenantId: TENANT_ID,
+      conversationId: CONVERSATION_ID,
+      activity: { ...activity, id: 'act-2' },
+    });
+    const second = created[0]!.idempotencyKey;
+    created.length = 0;
+    selectCount = 0;
+    await createOrJoinTeamsConversationSession({
+      projectId: PROJECT_ID,
+      tenantId: TENANT_ID,
+      conversationId: CONVERSATION_ID,
+      activity: { ...activity, id: 'act-2' },
+    });
+
+    expect(second).toBe(`teams:create:${TENANT_ID}:${CONVERSATION_ID}:act-2`);
+    expect(created[0]!.idempotencyKey).toBe(second);
+  });
+
+  test('why: an existing command under the key answers the create — a failed one forever', async () => {
+    const { resultFromExistingCommand } = await import('../projects/session-lifecycle/store');
+    const answer = resultFromExistingCommand({
+      commandId: 'cmd-1',
+      status: 'dead_lettered',
+      lastError: 'agent "reviewer" is not declared',
+      result: {},
+      sessionId: null,
+    } as never);
+    expect(answer.status).toBe('failed');
+    expect(answer.retryable).toBe(false);
+  });
+});
+
+describe('createOrJoinTeamsConversationSession — a started session keeps its claim', () => {
+  test('a session that started does not release the claim a racing message must lose', async () => {
+    await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });
+
+    expect(created).toHaveLength(1);
+    expect(dbOps).not.toContain('delete:dedup');
   });
 });
 

@@ -135,4 +135,14 @@ describe('host boundary transport', () => {
     expect(result.complete).toBe(false);
     expect(result.nextCursor).toBe('2026-08-07T12:00:00.000Z|event-1');
   });
+
+  test('audit export can select the rows no authenticator identified', async () => {
+    responseFactory = () => new Response('', { status: 200 });
+    await boundary.downloadAccountAudit(
+      'account-1',
+      { format: 'jsonl', actor_type: 'anonymous' },
+      { backendUrl: 'https://api.example.test/v1', accessToken: 'token-1' },
+    );
+    expect(new URL(requests[0]!.url).searchParams.get('actor_type')).toBe('anonymous');
+  });
 });

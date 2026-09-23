@@ -9,30 +9,30 @@ import { View, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import {
-  Folder,
-  FolderOpen,
-  File,
-  FileText,
-  FileImage,
-  FileVideo,
-  FileAudio,
-  FileMusic,
-  FileCode,
-  FileCode2,
-  FileJson,
-  FileCog,
-  FileTerminal,
-  FileSpreadsheet,
-  FileType,
-  FileArchive,
-  FileLock,
-  FileBox,
-  FileKey,
-  FileBadge,
-  FileChartLine,
-  Database,
-  ChevronRight,
-} from 'lucide-react-native';
+  FolderIcon as Folder,
+  FolderOpenIcon as FolderOpen,
+  FileIcon as File,
+  FileTextIcon as FileText,
+  FileImageIcon as FileImage,
+  FileVideoIcon as FileVideo,
+  FileAudioIcon as FileAudio,
+  FileAudioIcon as FileMusic,
+  FileCodeIcon as FileCode,
+  FileCodeIcon as FileCode2,
+  FileCodeIcon as FileJson,
+  GearSixIcon as FileCog,
+  TerminalWindowIcon as FileTerminal,
+  FileXlsIcon as FileSpreadsheet,
+  FileTextIcon as FileType,
+  FileArchiveIcon as FileArchive,
+  FileLockIcon as FileLock,
+  FileArchiveIcon as FileBox,
+  FileLockIcon as FileKey,
+  CertificateIcon as FileBadge,
+  ChartLineIcon as FileChartLine,
+  DatabaseIcon as Database,
+  CaretRightIcon as ChevronRight,
+} from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import Animated, {
   useAnimatedStyle,
@@ -41,6 +41,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import type { SandboxFile } from '@/api/types';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -61,11 +62,11 @@ function getExt(name: string): string {
  * Mirrors web's `text-muted-foreground` usage on file icons.
  */
 export function getMutedIconColor(isDark: boolean): string {
-  return isDark ? '#a1a1aa' : '#71717a';
+  return isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
 }
 
 /**
- * Returns a Lucide icon component for the given file, mirroring the web
+ * Returns an icon component for the given file, mirroring the web
  * `getFileIcon` mapping (Google Drive-style monochrome icons).
  *
  * The returned icon is rendered with a muted color by callers — this helper
@@ -155,7 +156,7 @@ export function getFileIconComponent(
 }
 
 /**
- * Backwards-compatible helper returning a Lucide icon and a muted color.
+ * Backwards-compatible helper returning an icon and a muted color.
  * The color is theme-aware and mirrors web's `text-muted-foreground` look.
  */
 export function getFileIconAndColor(
@@ -172,9 +173,9 @@ interface FileItemProps {
 }
 
 /**
- * File Item Component
+ * File Item Component. Memoized: file lists re-render every row otherwise.
  */
-export function FileItem({ file, onPress, onLongPress }: FileItemProps) {
+export const FileItem = React.memo(function FileItem({ file, onPress, onLongPress }: FileItemProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const scale = useSharedValue(1);
@@ -218,14 +219,13 @@ export function FileItem({ file, onPress, onLongPress }: FileItemProps) {
             as={IconComponent}
             size={22}
             color={iconColor}
-            strokeWidth={1.75}
           />
         </View>
 
         {/* Text Content */}
         <View className="flex-1 min-w-0">
           <Text
-            style={{ color: isDark ? '#f8f8f8' : '#121215' }}
+            style={{ color: isDark ? THEME.dark.foreground : THEME.light.foreground }}
             className="text-base font-roobert-medium"
             numberOfLines={1}
           >
@@ -233,7 +233,7 @@ export function FileItem({ file, onPress, onLongPress }: FileItemProps) {
           </Text>
           {file.type === 'directory' && (
             <Text
-              style={{ color: isDark ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
+              style={{ color: withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.5) }}
               className="text-xs font-roobert mt-0.5"
             >
               Folder
@@ -246,11 +246,9 @@ export function FileItem({ file, onPress, onLongPress }: FileItemProps) {
       <Icon
         as={ChevronRight}
         size={20}
-        color={isDark ? 'rgba(248, 248, 248, 0.3)' : 'rgba(18, 18, 21, 0.3)'}
-        strokeWidth={2}
+        color={withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.3)}
         className="flex-shrink-0"
       />
     </AnimatedPressable>
   );
-}
-
+});

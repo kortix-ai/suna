@@ -51,6 +51,8 @@ mock.module('../shared/crypto', () => ({
 }));
 
 mock.module('../repositories/account-tokens', () => ({
+  // The connector → App assertion path; not exercised in this suite.
+  validateAccountTokenById: async () => ({ isValid: false, error: 'not in this suite' }),
   validateAccountToken: async (t: string) => {
     const known = TOKENS[t];
     if (!known) return { isValid: false, error: 'Invalid PAT' };
@@ -65,7 +67,10 @@ mock.module('../repositories/account-tokens', () => ({
 }));
 
 mock.module('../repositories/service-accounts', () => ({
-  validateServiceAccountToken: async () => ({ isValid: false, error: 'Invalid service account' }),
+  validateServiceAccountToken: async (t: string) =>
+    t === 'kortix_sa_app'
+      ? { isValid: true, serviceAccountId: 'sa-1', accountId: ACCOUNT }
+      : { isValid: false, error: 'Invalid service account' },
 }));
 
 /** Every `authorize` call the chain made, in order. */
@@ -129,7 +134,7 @@ mock.module('../connectors/share', () => ({
   resolveShareSubject: async (userId: string) => ({ userId, groupIds: [] }),
 }));
 
-const { authorizeAppRequest } = await import('./public-proxy');
+const { authorizeAppRequest, bindAppViewerSession } = await import('./public-proxy');
 const { appAccessibleToUser } = await import('./access');
 
 const appInProject = (projectId: string) => ({
@@ -215,5 +220,75 @@ describe('App bearer auth carries the token, not just the user', () => {
     expect(authorizeCalls).toEqual([
       { action: 'project.read', targetProjectId: PROJECT_B, actingTokenId: undefined },
     ]);
+  });
+});
+
+describe('an App request names its caller and the App in the request audit', () => {
+  // Deployed-App traffic is dispatched before Hono. Anonymous visitors to a
+  // public App are the customer's own end users and are not audited; a Kortix
+  // caller the gate identifies is, including one the gate refuses.
+  const { runWithContext } = require('../lib/request-context');
+  const { attachInboundAuditScope } = require('../shared/audit-scope');
+
+  async function scopeAfter(projectId: string, token: string) {
+    return runWithContext('GET', '/api/things', async () => {
+      const scope = attachInboundAuditScope({ owner: 'edge', method: 'GET' });
+      const res = await openApp(projectId, token);
+      return { status: res?.status ?? 200, scope };
+    });
+  }
+
+  test('every gated request names the App and its project', async () => {
+    const { scope } = await scopeAfter(PROJECT_A, PAT_UNSCOPED);
+    expect(scope.annotation).toMatchObject({
+      resourceType: 'app',
+      resourceId: '11111111-1111-4111-8111-111111111111',
+    });
+    expect(scope.principal).toMatchObject({ projectId: PROJECT_A });
+  });
+
+  test('a PAT that opens the App is the human, with the token it used', async () => {
+    const { status, scope } = await scopeAfter(PROJECT_A, PAT_UNSCOPED);
+    expect(status).toBe(200);
+    expect(scope.principal).toMatchObject({
+      actorType: 'human',
+      actorUserId: USER,
+      authoritativeSource: 'api_key',
+      authMethod: { kind: 'account_token', token_id: 'tok-unscoped' },
+    });
+  });
+
+  test('a PAT refused by its own scope is still named', async () => {
+    const { status, scope } = await scopeAfter(PROJECT_B, PAT_SCOPED_A);
+    expect(status).toBe(401);
+    expect(scope.principal).toMatchObject({
+      actorUserId: USER,
+      authMethod: { kind: 'account_token', token_id: 'tok-scoped-a' },
+    });
+  });
+
+  test('a service account is not written as a user', async () => {
+    const { scope } = await scopeAfter(PROJECT_A, 'kortix_sa_app');
+    expect(scope.principal).toMatchObject({
+      actorType: 'service_account',
+      actorUserId: null,
+      authMethod: { kind: 'service_account', service_account_id: 'sa-1' },
+    });
+  });
+
+  test('the App session cookie names the signed-in viewer', () => {
+    const url = new URL('https://dev-scoped-cccccccccccccccc.apps.kortix.com/');
+    const scope = runWithContext('GET', '/', () => {
+      const s = attachInboundAuditScope({ owner: 'edge', method: 'GET' });
+      bindAppViewerSession('viewer-1');
+      return s;
+    });
+    expect(url.hostname).toContain('apps.kortix.com');
+    expect(scope.principal).toEqual({
+      actorType: 'human',
+      actorUserId: 'viewer-1',
+      authoritativeSource: 'human',
+      authMethod: { kind: 'app_session' },
+    });
   });
 });

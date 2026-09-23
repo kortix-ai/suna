@@ -18,7 +18,13 @@ import {
   normalizeConversationPolicy,
   rememberSlackThreadOwner,
 } from './participants';
-import { buildSlackTurnEnv, finalizeTurn, saveTurn, startTurn } from './turn';
+import {
+  buildSlackTurnEnv,
+  finalizeTurn,
+  saveTurn,
+  showStopOnLivePlan,
+  startTurn,
+} from './turn';
 import type { SlackEnvelope, SlackEvent } from './types';
 import { channelTurnModel, promptModelOverride } from '../vision-model';
 
@@ -236,7 +242,14 @@ export async function createOrJoinThreadSession(input: {
     },
     enforceAccountCap: false,
     queuePolicy: 'on_backpressure',
-    idempotencyKey: claimKey,
+    // One key per message, never per thread. The lifecycle keeps a key
+    // forever (a unique index, no retention), so under the thread's key the
+    // thread's first create_session command answered every later create in
+    // it: a failed first start (dead-lettered) failed the re-send the agent
+    // picker asks for, with the same error, every time. Racing messages are
+    // serialized by the thread-create claim; Slack's double delivery of one
+    // mention (app_mention + message) shares the message ts, so one key.
+    idempotencyKey: teamId && threadId && event.ts ? `slack:create:${teamId}:${threadId}:${event.ts}` : claimKey,
     postCreate: teamId && threadId
       ? [{ type: 'bind_chat_thread', platform: 'slack', workspaceId: teamId, threadId }]
       : undefined,
@@ -259,6 +272,11 @@ export async function createOrJoinThreadSession(input: {
 
   if (result.error) {
     console.error('[slack-webhook] createProjectSession failed', { status: result.error.status, body: result.error.body });
+    // No session exists, so no mapping will ever be published under this
+    // claim. Held for its 5-minute TTL, it made every re-send inside that
+    // window lose the claim, wait 8 s, and be dropped without a reply —
+    // including the re-send the agent picker below asks for.
+    if (claimKey) await releaseThreadCreate(claimKey);
     if (handle) {
       // A deleted/renamed/disabled agent — the channel's own agent override, or
       // the project default the `default` sentinel resolves to — is rejected up
@@ -296,6 +314,8 @@ export async function createOrJoinThreadSession(input: {
   if (result.sessionId && handle) {
     handle.sessionId = result.sessionId;
     await saveTurn(handle);
+    // Stop is only paintable once the message knows which session it would end.
+    await showStopOnLivePlan(handle);
   }
   if (result.sessionId && teamId && threadId && event.user) {
     await rememberSlackThreadOwner({
@@ -331,6 +351,15 @@ async function claimThreadCreate(key: string): Promise<boolean> {
   } catch (err) {
     console.warn('[slack-webhook] thread-create claim failed (fail-open)', err);
     return true;
+  }
+}
+
+async function releaseThreadCreate(key: string): Promise<void> {
+  try {
+    await db.delete(chatEventDedup).where(eq(chatEventDedup.eventId, key));
+  } catch (err) {
+    // The claim still expires on its own; only the retry window stays shut.
+    console.warn('[slack-webhook] thread-create claim release failed', err);
   }
 }
 
@@ -379,13 +408,18 @@ export const TURN_INSTRUCTIONS = [
   '- When the PREVIOUS step finished with a result, surface it:',
   '    slack step "Drafting summary" --output "Found 3 incidents, 1 P0"',
   '  Add `--source URL|TITLE` (repeatable) to cite the URLs you used.',
-  '- **Need to ask the user something? Use `slack send`, then END your turn.** Slack',
-  '  questions are async: ask, stop, and resume when they reply — their reply arrives as',
-  '  a fresh turn with full context. The built-in `question` tool is DISABLED in Slack',
-  '  (it is a synchronous web-UI construct with no answerer in a thread); calling it just',
-  '  fails. Post your question with `slack send` — plain text, or a Block Kit message; for',
-  '  discrete choices add an `actions` block of buttons and a click resumes the thread on',
-  '  the next turn. Never sit waiting for an answer inside a turn.',
+  // The `question` tool is NOT disabled and does not hang: the relay posts the
+  // blocks and returns at once with a sentinel telling the agent to end its
+  // turn (channels/slack/questions.ts). The old "DISABLED … calling it just
+  // fails" line was stale, and it is why channel questions arrived as prose
+  // the user could not click.
+  '- **Need to ask the user something with DISCRETE choices? Use the built-in `question`',
+  '  tool.** It renders real Block Kit buttons — one per option — and a click resumes the',
+  '  thread on the next turn. It does NOT block and does NOT fail: it returns immediately,',
+  '  and you END your turn. The answer arrives as a fresh turn with full context.',
+  '- Use `slack send` for a question only when it is genuinely open-ended prose with',
+  '  nothing to pick from. A numbered list of choices in a message is the wrong shape —',
+  '  the user cannot click it. Never sit waiting for an answer inside a turn.',
   '- Deliver the answer as a rich Block Kit message whenever the response',
   '  benefits from structure (headers, sections, lists, links, bullets):',
   '    slack send --text "fallback summary" --blocks-file /tmp/answer.json',

@@ -1118,6 +1118,10 @@
         "pi_harness": {
           "name": "Harness Pi (nella sandbox)",
           "description": "Esegue le sessioni con l'harness Pi all'interno della sandbox della sessione invece di OpenCode. Disattivato, `runtime: pi` nel manifest seleziona comunque Pi."
+        },
+        "agent_principal": {
+          "name": "Agenti come principali",
+          "description": "Gli agenti agiscono come se stessi: con i loro permessi Kortix, limitati dal loro ruolo. Chi esegue un agente aggiunge solo i propri account."
         }
       }
     },
@@ -1441,7 +1445,8 @@
         "status": "Stato",
         "activity": "Attività",
         "source": "Origine",
-        "none": "Nessuno"
+        "none": "Nessuno",
+        "owner": "Proprietario"
       },
       "order": {
         "activity": "Ultima attività",
@@ -1475,7 +1480,19 @@
       "sourceValue": {
         "mine": "Le mie chat",
         "shared": "Condivise"
-      }
+      },
+      "owner": "Proprietario",
+      "access": "Accesso",
+      "ownerValue": {
+        "you": "Tu",
+        "unknown": "Proprietario sconosciuto"
+      },
+      "accessValue": {
+        "private": "Solo il proprietario",
+        "restricted": "Persone specifiche",
+        "project": "Tutto il progetto"
+      },
+      "ownerAccess": "{owner} · {access}"
     },
     "loadingMore": "Caricamento…",
     "loadMoreSessions": "Carica altre sessioni"
@@ -1598,13 +1615,19 @@
       "message": "Il suo computer è stato rilasciato. Riavvia la sessione per ripristinarla."
     },
     "previousRepository": {
-      "title": "La sessione usa il repository precedente",
-      "message": "Questa area di lavoro proviene dal repository precedente del progetto. Git ora si collega al repository corrente. Controlla le modifiche prima del push.",
+      "title": "Questa sessione non è aggiornata",
+      "message": "Il progetto è cambiato dopo l’avvio di questa sessione. Aggiornala per continuare a lavorare sull’ultima versione.",
       "unavailable": "L’area di lavoro precedente non è più disponibile. Avvia una nuova sessione nel repository corrente.",
       "resume": "Riprendi area di lavoro precedente",
       "resuming": "Ripresa in corso…",
       "newSession": "Avvia nuova sessione",
-      "delete": "Elimina sessione"
+      "delete": "Elimina sessione",
+      "update": "Aggiorna all’ultima versione",
+      "updating": "Aggiornamento…",
+      "dismiss": "Ignora",
+      "updateHint": "Chiede all’agente di aggiornare questa sessione",
+      "updateSent": "Aggiornamento avviato in questa sessione",
+      "updateFailed": "Impossibile inviare il prompt di aggiornamento."
     },
     "lost": {
       "title": "Il computer di questa sessione è andato perso",
@@ -1623,11 +1646,11 @@
     "connectProvider": "Connetti provider",
     "manageModels": "Gestisci modelli",
     "loading": "Caricamento modelli",
-    "yourDefault": "Il tuo predefinito",
-    "defaultAria": "{model} è il tuo modello predefinito",
-    "setDefaultAria": "Imposta {model} come modello predefinito",
-    "defaultTitle": "Il tuo modello predefinito",
-    "setDefaultTitle": "Imposta come modello predefinito",
+    "yourDefault": "Predefinito dell’account",
+    "defaultAria": "{model} è il modello predefinito di questo account",
+    "setDefaultAria": "Imposta {model} come modello predefinito dell’account",
+    "defaultTitle": "Modello predefinito dell’account",
+    "setDefaultTitle": "Imposta come modello predefinito dell’account",
     "upgrade": "Effettua l’upgrade",
     "noMatch": {
       "title": "Nessun modello corrispondente",
@@ -1826,6 +1849,9 @@
     "hintSettings": "Premi {modifier}, per aprire le impostazioni",
     "hintCompact": "Chiedi di compattare la sessione quando diventa lunga",
     "queueList": "Queue List",
+    "quoteCount": "{count, plural, one {# citazione} other {# citazioni}}",
+    "expandQuotes": "Espandi citazioni",
+    "collapseQuotes": "Comprimi citazioni",
     "stopUnconfirmed": "Impossibile confermare l’arresto. L’agente potrebbe essere ancora in esecuzione. Riprova.",
     "queued": "In coda",
     "queuedFiles": "{count, plural, one {# file} other {# file}}",
@@ -7034,7 +7060,7 @@
       "line1113JsxTextSearching": "Ricerca...",
       "line1153JsxTextTasksDone": "attività completate",
       "line2038JsxTextDropFilesToAttach": "Rilascia i file da allegare",
-      "line2078JsxAttrAriaLabelClearReply": "Cancella risposta",
+      "removeQuoteAriaLabel": "Rimuovi citazione",
       "line2118JsxAttrAriaLabelCancelCommand": "Annulla comando",
       "line2145JsxTextAddToQueue": "Aggiungi alla coda",
       "line2185JsxTextEnterDetailsAndPressEnterOrPressEsc": "Inserisci i dettagli e premi Invio, oppure Esc per annullare",
@@ -9853,7 +9879,7 @@
       "text0a2ea173ab93": "I crediti finanziano il calcolo nella sandbox: anche una prova BYOK richiede un saldo nel portafoglio per eseguire le sessioni. Il credito di benvenuto gratuito è di $2; un mese per posto è di $25.",
       "text0a30a815d67d": "Pagina",
       "text0a45caff4417": "Esegui comandi shell nel terminale",
-      "text0a4e750c7982": "Costi delle sessioni e registro dei crediti per questo account.",
+      "text36569109d4e5": "Costi delle sessioni e registro dei crediti per questo account.",
       "text0a53eddc090c": "Come Kortix autentica GitHub",
       "text0a5411640861": "App OAuth aggiornata",
       "text0a5d5c335cd8": "Spesa totale",
@@ -11616,6 +11642,7 @@
       "text3eb4b44dde07": "Esegui tutto",
       "text3eb54d5ae20d": "Dal template iniziale. Ogni nuovo progetto lo include, disattivato.",
       "text3ecb3ffd4f33": "Autorizzazioni effettive verificate",
+      "textae47d51077b4": "Preparazione del link…",
       "text3ed7c1e32705": "Leggere un tracker e riscriverlo sono azioni diverse. Imposta la scrittura su Ask: l’esecuzione si ferma sulla chiamata e mostra esattamente quali issue vuole unire o chiudere, poi riprende da lì quando approvi.",
       "text3ee7a9bba1b1": "analyst.md",
       "text3efd6742a383": "Crediti addebitati",
@@ -12607,7 +12634,6 @@
       "text59c40e05afe1": "Non c’è alcun livello nascosto da interrogare. Ogni convinzione, ogni autorizzazione e ogni istruzione è una riga in un file, e gli strumenti che già usi forniscono la risposta.",
       "text59d3b31b8956": "Da Linear a Slack",
       "text59da2efb2423": "Chiedi prima di ogni utilizzo · regole per pattern",
-      "text59e679e041ce": "Ciò che questo agente può fare al progetto stesso (sessioni, trigger, segreti, membri) tramite la CLI Kortix all'interno di una sessione.",
       "text59e7c0aa6df1": "Le richieste con un'immagine seguono la catena sopra.",
       "text59ea9cd2278c": "Vendi l’incarico FDE e i servizi insieme alla piattaforma.",
       "text59edd3fe9cc5": "Espandi anteprima",
@@ -12731,7 +12757,6 @@
       "text5d401fa67ac9": "Comodo — fino a 3 per riga",
       "text5d405d8955db": "Suite di fatturazione eseguita",
       "text5d42766c7eca": "Proposta",
-      "text5d4ef7cc3bec": "Azioni del progetto",
       "text5d4f8dc198f5": "Saldo ≤ {value0}",
       "text5d4ff119f3d4": "Impossibile eliminare: {value0}",
       "text5d561a1e3f17": "Ripristinato",
@@ -13076,6 +13101,7 @@
       "text6715b014ffd2": "Richiesta di autorizzazione non valida",
       "text6718dff3a548": "Genera un token e collega Identity Management",
       "text6725e7bbcd28": "Sistema",
+      "texte7a8aa2df7e5": "Anonimo",
       "text672a76cd238a": "Consentito: non verrà più chiesto nulla in questa sessione",
       "text672f1efd8b87": "Provider:",
       "text673760b857d0": "Visualizza le superfici disponibili.",
@@ -17806,7 +17832,6 @@
       "textec3e7d0c8967": "Notifiche a livello di sistema e interruttore di blocco completo. Un livello ha effetto nel momento in cui viene attivato.",
       "textec497eddd428": "Quale macchina, quali connettori, quali segreti, quali skill, quali verbi CLI. Solo governance. Se ometti una concessione, il risultato è nessuno: un agente ottiene ciò che gli hai dato e nient’altro.",
       "textec4b346efc00": "Le stesse cifre assemblate nel formato letto dal consiglio, con il commento elaborato dal lavoro sugli scostamenti invece che scritto da zero a mezzanotte.",
-      "textec56dc3a282b": "Un vocabolario, due associazioni. Persone, gruppi e agenti ricevono ruoli su un account, un progetto o una singola risorsa. Gli agenti inoltre includono gli ambiti Kortix CLI in",
       "textec5855a78ab3": "kortix-ai/suna",
       "textec5ba0abb717": "Accesso",
       "textec5c2f7304b1": "Contesto ridotto",
@@ -18285,7 +18310,7 @@
       "textf9cfe2f2d411": "installazioni",
       "textf9d35d43770d": "tools",
       "textf9d46c1722ea": "Push Immediately",
-      "textf9d52abc1fb8": "Requisiti di accesso a livello di account.",
+      "textf9d52abc1fb8": "Regole di accesso e di accesso alle sessioni a livello di account.",
       "textf9dcbb55deba": "Automatizza",
       "textf9debe3e14a5": "Abilita Create Users, Update User Attributes e Deactivate Users → Save.",
       "textf9e0dab461a6": "grep in tutta la tua azienda.",
@@ -18618,7 +18643,19 @@
       "textd9692dea50e7": "Aggiungi l'app a una chat o a un canale, poi incolla qui sotto l'ID del tuo tenant per collegarla a questo progetto.",
       "text8dd795841572": "Il segreto client è cifrato. Solo l'agente di questo spazio di lavoro può leggerlo.",
       "text5cb103d6008c": "Thread del canale",
-      "text31d248c44579": "Conversazione senza titolo"
+      "text31d248c44579": "Conversazione senza titolo",
+      "text3ea5efedf114": "Consentito agli admin di aprire ogni sessione",
+      "text88cfd89168a0": "Non più consentito agli admin di aprire ogni sessione",
+      "textcbccc00faa36": "Sessione di un membro aperta come admin dell’account",
+      "text798f62f95bed": "Visualizzato l’accesso admin alle sessioni",
+      "text0814e13d671d": "Modificato l’accesso admin alle sessioni",
+      "text8f12a6e05e6d": "Autorizzazioni Kortix",
+      "text15365eb45e29": "Ciò che questo agente può fare al progetto stesso (sessioni, trigger, segreti, membri) dall'interno di una sessione.",
+      "text4e2c36d015a8": "Un vocabolario, due associazioni. Persone, gruppi e agenti ricevono ruoli su un account, un progetto o una singola risorsa. Gli agenti inoltre includono le autorizzazioni Kortix in",
+      "textde340d411411": "Questo diagramma è vuoto.",
+      "textc53147a0d05b": "Impossibile visualizzare questo diagramma",
+      "text91aec62280a3": "Scarica SVG",
+      "text751dfdcf3878": "Riga {value0}"
     }
   },
   "projectOnboarding": {
@@ -19524,5 +19561,97 @@
     "invitesTitle": "Sei stato invitato",
     "invitesDescription": "Unisciti a un progetto del tuo team o creane uno tuo.",
     "createProjectInstead": "Crea invece un nuovo progetto"
+  },
+  "projectSelector": {
+    "welcome": "Benvenuto in Kortix",
+    "welcomeBack": "Bentornato",
+    "descriptionNew": "Crea il tuo primo progetto o unisciti a uno condiviso dal tuo team.",
+    "descriptionReturning": "Apri un progetto o creane uno nuovo.",
+    "signedInAs": "Accesso come {email}",
+    "createTitle": "Crea un nuovo progetto",
+    "createBody": "Un progetto contiene agenti, file e sessioni.",
+    "orContinue": "oppure apri un progetto esistente",
+    "invitations": "Inviti",
+    "sentTo": "Inviato a {email}",
+    "invitedBy": "Invitato da {email}",
+    "join": "Unisciti",
+    "joinError": "Impossibile unirsi. Riprova.",
+    "unnamedWorkspace": "Workspace",
+    "search": "Trova un progetto",
+    "noMatches": "Nessun progetto corrisponde a “{query}”.",
+    "projectCount": "{count, plural, one {# progetto} other {# progetti}}",
+    "role": {
+      "owner": "Proprietario",
+      "admin": "Admin",
+      "member": "Membro"
+    },
+    "openedAgo": "Aperto {time}",
+    "neverOpened": "Non ancora aperto",
+    "showAll": "Mostra tutti ({count})",
+    "showFewer": "Mostra meno",
+    "createIn": "Crea un progetto",
+    "emptyCreatable": "Nessun progetto in questo workspace.",
+    "emptyMember": "Qui non ci sono ancora progetti condivisi con te. Chiedi l’accesso a un proprietario o admin.",
+    "failed": "Impossibile caricare questi progetti.",
+    "retry": "Riprova",
+    "noAccessTitle": "Nessun progetto",
+    "noAccessBody": "Chiedi a un proprietario o admin di invitare {email}.",
+    "loadErrorTitle": "Impossibile caricare i tuoi progetti",
+    "loadErrorBody": "Controlla la connessione e riprova."
+  },
+  "sessionOversight": {
+    "label": "Gli admin possono aprire ogni sessione",
+    "description": "Proprietari e admin dell’account possono aprire qualsiasi sessione di questo account, comprese quelle private. Ogni sessione aperta così è nel registro di audit.",
+    "ownerOnlyDescription": "Proprietari e admin dell’account possono aprire qualsiasi sessione di questo account, comprese quelle private. Solo un proprietario dell’account può modificarlo.",
+    "enableTitle": "Consentire agli admin di aprire ogni sessione?",
+    "enableDescription": "Proprietari e admin potranno aprire tutte le sessioni di questo account, comprese quelle che i membri mantengono private. I membri vedranno un avviso nella finestra di condivisione. Ogni sessione aperta così viene registrata nel registro di audit.",
+    "enableConfirm": "Attiva",
+    "disableTitle": "Non consentire più agli admin di aprire ogni sessione?",
+    "disableDescription": "Le sessioni private tornano visibili solo al proprietario. Gli admin mantengono l’accesso solo alle sessioni condivise con loro.",
+    "disableConfirm": "Disattiva",
+    "enabledToast": "Ora gli admin possono aprire ogni sessione",
+    "disabledToast": "Le sessioni private sono di nuovo solo del proprietario",
+    "failedToast": "Impossibile aggiornare questa impostazione",
+    "shareDisclosure": "Proprietari e admin dell’account possono aprire ogni sessione di questo account, qualunque sia la tua scelta qui."
+  },
+  "agentPrincipals": {
+    "title": "Cosa può fare questo agente",
+    "flagOnDescription": "Le persone che possono eseguire questo agente agiscono con questi permessi.",
+    "flagOffDescription": "Agente come principal è disattivato per questo progetto. Una sessione agisce con il ruolo di progetto di chi la avvia, intersecato con questi permessi Kortix.",
+    "flagOffBadge": "Vale il ruolo di chi avvia",
+    "flagOffHint": "Attiva Agente come principal perché l'agente agisca in prima persona: i suoi permessi Kortix entro il suo ruolo limite, chiunque lo esegua.",
+    "featureFlags": "Feature flag",
+    "kortixPermissions": "Permessi Kortix",
+    "kortixPermissionsHelp": "Dichiarati in kortix.yaml (agents.{agent}.kortix_permissions).",
+    "declaredAll": "Tutti",
+    "declaredNone": "Nessuno",
+    "declaredCount": "{count, plural, one {# dichiarato} other {# dichiarati}}",
+    "effectiveCount": "{count, plural, one {# permesso} other {# permessi}}",
+    "ceiling": "Ruolo limite",
+    "ceilingHelp": "Il ruolo di progetto che un admin assegna a questo agente. I permessi Kortix non lo superano mai.",
+    "ceilingHidden": "Visibile agli admin",
+    "ceilingDefault": "Limite predefinito per agenti",
+    "changeCeiling": "Cambia",
+    "humanOnly": "Solo persone",
+    "humanOnlyHelp": "Gestire i membri, eliminare il progetto ed emettere credenziali restano alle persone.",
+    "humanOnlyValue": "Mai concesso",
+    "effective": "Permessi effettivi",
+    "effectiveHelp": "Permessi Kortix entro il ruolo limite, esclusi i permessi solo per persone. project.read è sempre concesso.",
+    "outsideCeiling": "Dichiarati, ma fuori dal ruolo limite:",
+    "droppedHumanOnly": "Dichiarati, ma solo per persone:",
+    "agentBadge": "Agente",
+    "agentsSection": "Agenti",
+    "searchWithAgents": "Cerca membri, gruppi o agenti",
+    "ceilingNoteTitle": "Il ruolo di un agente è il suo limite",
+    "ceilingNote": "L'agente agisce con i suoi permessi Kortix da kortix.yaml, entro questo ruolo. Gestire i membri, eliminare il progetto ed emettere credenziali restano alle persone.",
+    "ceilingRemoved": "Ruolo dell'agente rimosso. Vale il limite predefinito per agenti.",
+    "ceilingRemoveFailed": "Impossibile rimuovere il ruolo dell'agente.",
+    "rowMeta": "Limite per i suoi permessi Kortix",
+    "removeCeilingTitle": "Rimuovere il ruolo di {agent}?",
+    "removeCeilingDescription": "L'agente torna al limite predefinito per agenti su {project}. I suoi permessi Kortix in kortix.yaml non cambiano.",
+    "appAgentsTitle": "Agenti con accesso",
+    "appAgentsEmpty": "Nessun agente elenca questa App. Aggiungi il suo slug a agents.<name>.apps in kortix.yaml.",
+    "appAgentsDeclared": "Dichiarato in {file} (agents.{agent}.apps)",
+    "appAgentsGrantAll": "Tutte le App"
   }
 }

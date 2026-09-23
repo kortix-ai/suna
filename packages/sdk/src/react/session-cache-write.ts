@@ -46,7 +46,14 @@ const LIST_SEGMENTS: ReadonlySet<unknown> = new Set([
 ]);
 
 /**
- * Query filters for the cache entries that hold session shapes, and only those:
+ * Query filters for the cache entries that hold session shapes, and only those.
+ *
+ * The `sessionsScope(projectId)` prefix is not only sessions: `sessionPrompts`,
+ * `messages`, `sessionTurn` and `sessionSandbox` nest under it, and two of them
+ * are arrays. A prefix write treated the prompt inbox as a session list —
+ * starting a session put a `ProjectSession` into every cached inbox, and the
+ * composer of any session still in memory threw on render (prod, 2026-09-22).
+ * The session shapes are:
  *
  *   [...sessionsScope(id), 'list', scope]         qk.project.sessions
  *   [...sessionsScope(id), 'list-paged', scope]   qk.project.sessionsPaged
@@ -143,7 +150,7 @@ export function applyToCachedSessionShape(cached: unknown, update: ProjectSessio
  * `update` is a mapper over the rows already cached, so it applies no
  * `updated_at` ordering: what it returns is derived from those rows. Entries
  * under `sessionsScope` that are not session shapes (a session's prompts,
- * turn, messages, sandbox) are never passed to it.
+ * turn, messages, sandbox) are never passed to it — see `sessionShapeFilters`.
  */
 export function updateCachedProjectSessions(
   queryClient: QueryClient,

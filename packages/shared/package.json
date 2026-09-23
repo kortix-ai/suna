@@ -13,7 +13,9 @@
     "./email-url": "./src/email-url.ts",
     "./sandbox": "./src/sandbox/index.ts",
     "./sandbox-runtime-artifact": "./src/sandbox-runtime-artifact.ts",
-    "./connector-sections": "./src/connector-sections.ts"
+    "./connector-sections": "./src/connector-sections.ts",
+    "./markdown-math": "./src/markdown-math.ts",
+    "./session-fixture": "./src/session-fixture/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -50,6 +50,7 @@ function startApi() {
             session_id: SESSION_ID,
             agent: 'osp-vision-route-agent',
             connectors: [],
+            kortix_permissions: ['project.secret.read', 'project.secret.write'],
             kortix_cli: ['project.secret.read', 'project.secret.write'],
           },
           accounts: [
@@ -156,7 +157,7 @@ test('a refused session read reports the CLI as authenticated and names the agen
   // …and now also names the identity that was refused, its grant, and the fix.
   expect(first.stderr).toContain('session token · agent osp-vision-route-agent');
   expect(first.stderr).toContain('project.secret.read, project.secret.write');
-  expect(first.stderr).toContain('agents.osp-vision-route-agent.kortix_cli');
+  expect(first.stderr).toContain('agents.osp-vision-route-agent.kortix_permissions');
   expect(first.code).toBe(1);
 
   // 3. The identity was resolved once and cached, so the NEXT command names the

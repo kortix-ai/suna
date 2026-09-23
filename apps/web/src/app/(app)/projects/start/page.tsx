@@ -4,20 +4,18 @@ import { Button } from '@/components/ui/button';
 import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
 import Loading from '@/components/ui/loading';
 import { useAuth } from '@/features/providers/auth-provider';
-import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { readLastProjectId, writeLastProjectId } from '@/lib/onboarding/last-project-cookie';
-import { resolveLandingDestination } from '@/lib/onboarding/resolve-landing-destination';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import type { KortixAccount } from '@kortix/sdk';
 import { SignOutIcon } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-import { ProjectChooser } from './project-chooser';
+import { decideDoor } from '@/features/workspace/project-selector/project-selector-model';
+import { useProjectSelectorData } from '@/features/workspace/project-selector/use-project-selector-data';
 
 /**
  * Carry the incoming query string onto the resolved destination.
@@ -33,155 +31,69 @@ function withCurrentQuery(path: string): string {
   return search && search !== '?' ? `${path}${search}` : path;
 }
 
-/** Transient failures get retried here rather than bounced to the list. */
-const MAX_RESOLVE_ATTEMPTS = 3;
-const RETRY_DELAY_MS = [400, 1200];
-
 /**
  * `/projects/start` — the id-free door into the product.
  *
  * Every default entry point (post-auth redirect, `/`, the desktop shell) sends
- * the user to a project. When the destination project id is not already known,
- * it sends them here. This route exists so that resolving WHICH project never
- * blocks a redirect: it paints the project chrome on the first frame with zero
- * network, then resolves last-used -> first behind that paint and swaps the
- * URL to the real `/projects/<id>`. With nothing to open it renders the
- * chooser (`project-chooser.tsx`): pending invites and a create action. It
- * never creates a project on its own.
+ * the user here when the destination project id is not already known. It
+ * paints the project chrome on the first frame with zero network, then asks
+ * one question: is there a single obvious project to open?
  *
- * Before this existed, sign-up awaited a managed git repo create AND a full
- * starter push inside the auth callback, so a new user watched a blank callback
- * page for the entire provision.
+ *  - the project this browser last had open, if it still exists, or
+ *  - the user's only project.
+ *
+ * Yes: replace the URL with `/projects/<id>`. No — several projects and no
+ * memory, no project at all, or a pending invite — replace it with
+ * `/projects`, the selector (`decideDoor`). The door never creates a project
+ * and never renders a form of its own.
  */
 export default function ProjectStartPage() {
   const router = useRouter();
-  const { user, isLoading: authLoading } = useAuth();
-  const selectedAccountId = useCurrentAccountStore((state) => state.selectedAccountId);
+  const { user } = useAuth();
   const setSelectedAccountId = useCurrentAccountStore((state) => state.setSelectedAccountId);
-  const attempts = useRef(0);
-  const resolving = useRef(false);
-  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [failed, setFailed] = useState(false);
-  /** Nothing to open: the chooser, with create permission for the primary account. */
-  const [chooser, setChooser] = useState<{ canCreate: boolean } | null>(null);
+  const data = useProjectSelectorData();
+  const decided = useRef<string | null>(null);
+  const [nudge, setNudge] = useState(0);
 
   useSignedOutRedirect();
 
-  // `retry: 3` is this reader's own budget, kept verbatim: the landing
-  // destination is resolved FROM this list, so one transient failure here
-  // strands the user on a spinner with nowhere to go.
-  const accountsQuery = useAccountsList({ retry: 3 });
+  const failed = data.accountsQuery.isError || data.allListsFailed;
+  // Invites gate the decision: a pending invite always shows the selector. A
+  // failed invite read degrades to "no invites" rather than blocking entry.
+  const ready = !data.listsLoading && !data.invitesQuery.isLoading && !failed;
 
-  const resolve = useCallback(async (fresh?: KortixAccount[]) => {
-    if (resolving.current) return;
-    const accounts = fresh ?? accountsQuery.data;
-    if (!accounts || accounts.length === 0) return;
-
-    resolving.current = true;
-    attempts.current += 1;
-
-    try {
-      // Every membership is a candidate, not just the remembered/first one: a
-      // stale persisted selection (a team where the user is a plain member
-      // with zero grants) used to end here as a false "No workspace yet"
-      // while the personal account, in the same list, held their projects.
-      const resolution = await resolveLandingDestination({
-        accounts,
-        selectedAccountId,
-        preferredProjectId: readLastProjectId(user?.id),
+  useEffect(() => {
+    if (!ready) return;
+    if (!decided.current) {
+      const decision = decideDoor({
+        sections: data.sections,
+        inviteCount: data.invites.length,
+        rememberedProjectId: readLastProjectId(user?.id),
       });
-
-      if (resolution.kind === 'project') {
-        const { project } = resolution;
-        // Heal the persisted selection: every account-scoped surface after
-        // this navigation must agree with where the user actually landed.
-        setSelectedAccountId(resolution.accountId);
-        writeLastProjectId(user?.id, project.project_id);
-        router.replace(withCurrentQuery(`/projects/${project.project_id}`));
-        return;
+      if (decision.kind === 'open') {
+        // Heal the persisted selection: every account-scoped surface after this
+        // navigation must agree with where the user landed.
+        setSelectedAccountId(decision.accountId);
+        writeLastProjectId(user?.id, decision.projectId);
+        decided.current = withCurrentQuery(`/projects/${decision.projectId}`);
+      } else {
+        decided.current = withCurrentQuery('/projects');
       }
-
-      // No project exists in ANY account. `/projects` is a redirect back to
-      // THIS route (Task 21), so bouncing there would loop forever — render
-      // the chooser inline instead.
-      setChooser({ canCreate: resolution.canCreate });
-    } catch (err) {
-      // The LAST attempt ends on the "We could not open your project" screen,
-      // and a landing that is genuinely stuck must leave a trace.
-      if (attempts.current >= MAX_RESOLVE_ATTEMPTS) {
-        console.error('[onboarding] could not resolve a landing project', err);
-      }
-      const delay = RETRY_DELAY_MS[attempts.current - 1];
-      if (attempts.current < MAX_RESOLVE_ATTEMPTS && delay !== undefined) {
-        // A transient backend hiccup must not demote the user to the projects
-        // list — retry in place, behind the same paint.
-        retryTimer.current = setTimeout(() => {
-          resolving.current = false;
-          void resolve();
-        }, delay);
-        return;
-      }
-      setFailed(true);
-    } finally {
-      if (attempts.current >= MAX_RESOLVE_ATTEMPTS) resolving.current = false;
     }
-  }, [accountsQuery.data, selectedAccountId, setSelectedAccountId, router, user?.id]);
+    router.replace(decided.current);
+    // A soft navigation can be dropped (a cold dev compile, a superseded
+    // transition). This door has no content of its own, so a dropped replace
+    // would leave the loading frame up forever. Re-issue the SAME destination
+    // until this component unmounts.
+    const timer = setTimeout(() => setNudge((n) => n + 1), 3000);
+    return () => clearTimeout(timer);
+  }, [ready, nudge, data.sections, data.invites.length, user?.id, router, setSelectedAccountId]);
 
-  useEffect(() => {
-    if (attempts.current > 0) return;
-    void resolve();
-  }, [resolve]);
-
-  useEffect(() => {
-    return () => {
-      if (retryTimer.current) clearTimeout(retryTimer.current);
-    };
-  }, []);
-
-  // A loaded, EMPTY account list. `resolve` returns early on it, so without
-  // this nothing is ever set and the loading frame stays up forever, with no
-  // control — a hard lock on desktop, which has no browser Back. `GET
-  // /accounts` bootstraps a personal account or answers 500, so this is rare;
-  // the chooser still shows any pending invite, with no create action.
-  const noAccounts = accountsQuery.isSuccess && accountsQuery.data.length === 0;
-  const shownChooser = chooser ?? (noAccounts ? { canCreate: false } : null);
-
-  if (shownChooser) {
-    return (
-      <div className="relative">
-        <ProjectChooser
-          canCreate={shownChooser.canCreate}
-          onJoined={({ accountId, destination }) => {
-            setSelectedAccountId(accountId);
-            if (destination) {
-              router.replace(destination);
-              return;
-            }
-            // A workspace invite with no project grant: resolve again against
-            // the account list that now includes the joined workspace.
-            setChooser(null);
-            attempts.current = 0;
-            resolving.current = false;
-            void accountsQuery.refetch().then(({ data }) => resolve(data));
-          }}
-        />
-      </div>
-    );
-  }
-
-  if (failed || accountsQuery.isError) {
+  if (failed) {
     return (
       <div className="relative">
         <StartSignOutButton />
-        <ProjectStartError
-          onRetry={() => {
-            attempts.current = 0;
-            resolving.current = false;
-            setFailed(false);
-            if (accountsQuery.isError) void accountsQuery.refetch();
-            else void resolve();
-          }}
-        />
+        <ProjectStartError onRetry={data.retryAll} />
       </div>
     );
   }

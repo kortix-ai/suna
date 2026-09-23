@@ -183,6 +183,11 @@ export const accounts = kortixSchema.table('accounts', {
   /** When set, PATs not used in this many days are auto-revoked on
    *  next validate. NULL = no idle gate. Units: days. */
   patIdleRevokeDays: integer('pat_idle_revoke_days'),
+  /** When true, account owners and admins can open EVERY session in the
+   *  account, including members' private ones. Off by default; only an owner
+   *  may change it (`PATCH /accounts/:id/iam/session-oversight`). Members see
+   *  a disclosure in the share dialog while it is on. */
+  adminsSeeAllSessions: boolean('admins_see_all_sessions').default(false).notNull(),
   /** Organization branding (enterprise `branding` entitlement): the product
    *  name plus the Storage URLs of the logo / icon / favicon (light + optional
    *  dark) that replace the Kortix marks for this account's members. `{}` = default Kortix branding. The
@@ -2690,12 +2695,15 @@ export const kortixApiKeys = kortixSchema.table(
 /**
  * Per-agent authorization grant stored on a session's account token. The single
  * canonical shape — imported by the resolution, enforcement, and context layers
- * so it's never re-declared. `kortixCli`/`connectors` are `"all"` (everything,
+ * so it's never re-declared. `permissions`/`connectors` are `"all"` (everything,
  * capped at the launching user) or an explicit list; `[]` = deny.
  */
 export interface AgentGrant {
   agent: string;
-  kortixCli: string[] | 'all';
+  /** Kortix permissions: the `project.*` IAM actions this agent may exercise
+   *  (the manifest's `kortix_permissions`). Stored as `kortixCli` before the
+   *  2026-09-22 rename — read rows through `readStoredAgentGrant`. */
+  permissions: string[] | 'all';
   connectors: string[] | 'all';
   /** Project-secret IDENTIFIERS (not env-var keys — see project_secrets.identifier)
    *  this agent may receive as sandbox env (and read via the secrets API). 'all'
@@ -2706,6 +2714,13 @@ export interface AgentGrant {
    *  Optional for back-compat with grants minted before this field existed
    *  (treated as 'all'). */
   env?: string[] | 'all';
+  /** Kortix Apps (by App slug) this agent session may open when the App's
+   *  access mode is `restricted` or `private` (the manifest's
+   *  `agents.<a>.apps`, spec 2026-09-22 §2.5). 'all' = every App in the
+   *  project. ABSENT = none: the resolver omits the key for an agent that
+   *  declares no Apps, and grants minted before this field existed carry none
+   *  — read it through `agentMayOpenApp` (apps/api iam/agent-scope.ts). */
+  apps?: string[] | 'all';
   /**
    * PROVENANCE — which manifest this grant was derived from. Stamped by the
    * resolver (`projects/lib/secret-grant.ts`) and read by the re-mint policy
@@ -2724,6 +2739,32 @@ export interface AgentGrant {
   manifestRevision?: string | null;
   manifestCommit?: string | null;
   resolvedAt?: string;
+}
+
+/**
+ * The JSON actually stored in `account_tokens.agent_grant`. Rows written
+ * before the `kortixCli` → `permissions` rename (2026-09-22) carry the legacy
+ * key; no migration rewrites them. The column is typed as this union so a
+ * read cannot reach `.permissions` without going through
+ * `readStoredAgentGrant`.
+ */
+export type StoredAgentGrant =
+  | AgentGrant
+  | (Omit<AgentGrant, 'permissions'> & { kortixCli: string[] | 'all'; permissions?: undefined });
+
+/**
+ * Normalize a stored agent grant to the current shape. `permissions` wins
+ * when both keys are present; the legacy `kortixCli` key is dropped. A row
+ * with neither key resolves to `[]` (deny) — the same fail-closed outcome
+ * the gates give a malformed grant.
+ */
+export function readStoredAgentGrant(raw: StoredAgentGrant | null | undefined): AgentGrant | null {
+  if (!raw) return null;
+  const { kortixCli, permissions, ...rest } = raw as Omit<AgentGrant, 'permissions'> & {
+    kortixCli?: string[] | 'all';
+    permissions?: string[] | 'all';
+  };
+  return { ...rest, permissions: permissions ?? kortixCli ?? [] };
 }
 
 export const accountTokens = kortixSchema.table(
@@ -2750,12 +2791,12 @@ export const accountTokens = kortixSchema.table(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     /** Per-agent authorization grant for a sandbox session token: which Kortix
-     *  CLI/API actions + connectors the running agent may use. Resolved
+     *  permissions (`project.*` actions) + connectors the running agent may use. Resolved
      *  from the kortix.yaml `agents` map at session birth. The launching
      *  user's role is still enforced by route IAM, so effective access is
      *  user role ∩ agentGrant. Null for non-agent tokens (laptop CLI PATs,
      *  etc.) — which keep role-only access. */
-    agentGrant: jsonb('agent_grant').$type<AgentGrant>(),
+    agentGrant: jsonb('agent_grant').$type<StoredAgentGrant>(),
     /** Session this token belongs to (sandbox connector token, session_id =
      *  sandbox_id). Lets the LLM gateway attribute usage_events per-session —
      *  the reaper's reliable activity signal + precise billing. Null for
@@ -2775,6 +2816,16 @@ export const accountTokens = kortixSchema.table(
         onDelete: 'cascade',
       },
     ),
+    /** The human this agent-session token acts ON BEHALF OF (spec
+     *  docs/specs/2026-09-22-agents-as-principals.md §2.3). Set at mint to the
+     *  launching human for a human-initiated session; NULL for an unattended
+     *  run (trigger, cron, webhook, channel without a linked user, owner
+     *  fallback). It decides ONLY that human's personal resources, never the
+     *  agent's shared authority. The first prompt from any other human clears
+     *  it permanently for the session (r8 prompt route). FK to auth.users
+     *  (ON DELETE SET NULL) is added NOT VALID by the migration; auth.users is
+     *  outside this Drizzle schema. */
+    onBehalfOfUserId: uuid('on_behalf_of_user_id'),
   },
   (table) => [
     uniqueIndex('idx_account_tokens_public_key').on(table.publicKey),
@@ -3097,6 +3148,11 @@ export const auditEvents = kortixSchema.table(
     agentName: text('agent_name'),
     initiatorActorType: text('initiator_actor_type'),
     initiatorActorId: text('initiator_actor_id'),
+    /** The human an agent session acted on behalf of (spec
+     *  docs/specs/2026-09-22-agents-as-principals.md §2). NULL for a human
+     *  actor, an unattended run (trigger, channel, system), or a session whose
+     *  on_behalf_of another human's prompt cleared. No FK: forensic history. */
+    onBehalfOfUserId: uuid('on_behalf_of_user_id'),
     parentEventId: uuid('parent_event_id'),
     delegationDepth: integer('delegation_depth').default(0).notNull(),
     source: text('source'),

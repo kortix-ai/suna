@@ -19,6 +19,7 @@ import {
   type StreamTaskChunk,
 } from '../slack-api';
 import { STREAM_TTL_MS, WORKING_EMOJI } from './app';
+import { SLACK_STOP_ACTION } from './stop-action';
 import { classifyTurnError, type TurnErrorInfo } from './errors';
 import type { SlackEvent, LiveTurn } from './types';
 
@@ -249,9 +250,44 @@ export async function openPlanMessage(handle: LiveTurn, firstStep: StreamTaskChu
 // it; there is no streaming-append path left.
 export async function repaintLivePlan(handle: LiveTurn): Promise<void> {
   if (!handle.ts) return;
-  await updateBlocks(handle.token, handle.channel, handle.ts, LIVE_PLAN_TITLE, [
-    { type: 'plan', title: LIVE_PLAN_TITLE, tasks: buildPlanTasks(handle.steps) },
-  ]);
+  const blocks: unknown[] = [{ type: 'plan', title: LIVE_PLAN_TITLE, tasks: buildPlanTasks(handle.steps) }];
+  // Stop is only paintable once the turn knows which session it would end;
+  // `sessionId` is empty until the session exists, and there is nothing to
+  // stop before then. The id travels on the button because the block action
+  // that comes back names no turn of its own.
+  if (handle.sessionId) {
+    blocks.push({
+      type: 'actions',
+      block_id: 'live_run_controls',
+      elements: [
+        {
+          type: 'button',
+          action_id: SLACK_STOP_ACTION,
+          text: { type: 'plain_text', text: 'Stop', emoji: true },
+          value: handle.sessionId,
+        },
+      ],
+    });
+  }
+  await updateBlocks(handle.token, handle.channel, handle.ts, LIVE_PLAN_TITLE, blocks);
+}
+
+/**
+ * Repaint the live message once the turn knows its session, so Stop appears
+ * without waiting for the agent's first step — on a slow start that wait is
+ * the whole run. Best effort: a message that cannot be updated gains the
+ * button on the next step anyway.
+ */
+export async function showStopOnLivePlan(handle: LiveTurn | null): Promise<void> {
+  if (!handle || !handle.ts || !handle.sessionId || handle.finalized) return;
+  try {
+    await repaintLivePlan(handle);
+  } catch (err) {
+    console.warn('[slack-webhook] could not repaint the live plan with Stop', {
+      sessionId: handle.sessionId,
+      err: (err as Error)?.message,
+    });
+  }
 }
 
 export function buildSlackTurnEnv(teamId: string, event: SlackEvent): Record<string, string> {
@@ -272,7 +308,15 @@ export function buildSlackTurnEnv(teamId: string, event: SlackEvent): Record<str
 //     thread untouched. This is what stops an orphaned "On it…" from lingering.
 export async function finalizeTurn(
   handle: LiveTurn,
-  opts: { answer?: string; error?: string; blocks?: unknown[]; title?: string },
+  opts: {
+    answer?: string;
+    error?: string;
+    blocks?: unknown[];
+    title?: string;
+    /** The step in flight neither finished nor failed — e.g. the turn ended by
+     *  ASKING. `complete` would claim work that never happened. */
+    unfinished?: boolean;
+  },
 ): Promise<void> {
   if (handle.finalized) return;
   handle.finalized = true;
@@ -299,7 +343,7 @@ export async function finalizeTurn(
       // A plan message exists — close out the last in-progress step and render the
       // final plan (+ answer/error) into it via chat.update.
       const last = handle.steps[handle.steps.length - 1];
-      if (last && last.status === 'in_progress') last.status = opts.error ? 'error' : 'complete';
+      if (last && last.status === 'in_progress') last.status = opts.unfinished ? 'pending' : opts.error ? 'error' : 'complete';
       rendered = await updateBlocks(
         handle.token,
         handle.channel,

@@ -698,7 +698,20 @@ export interface SessionTranscriptSyncEnvelope {
   complete: boolean;
   captured_at: string | null;
   opencode_session_id: string | null;
+  /** How many messages are in THIS window of the transcript. */
   message_count: number;
+  /**
+   * Messages the mirror holds for this session, across every window.
+   * `complete === false` says a window is partial; this says by how much.
+   *
+   * Optional because an older API does not send it — a self-hosted or staging
+   * backend behind this client answers without these two fields, and reading
+   * them as required would make a correct response look malformed.
+   */
+  total?: number;
+  /** Pass as `before` to read the window OLDER than this one. Null when this
+   *  window already reaches the oldest message the mirror holds. */
+  next_cursor?: string | null;
   messages: SessionTranscriptSyncMessage[];
 }
 
@@ -732,11 +745,23 @@ export async function getSessionTranscript(
 export async function getSessionTranscriptSync(
   projectId: string,
   sessionId: string,
-  options?: { limit?: number; signal?: AbortSignal; history?: boolean },
+  options?: {
+    limit?: number;
+    signal?: AbortSignal;
+    history?: boolean;
+    /**
+     * A previous window's `next_cursor`. Returns the window of messages
+     * strictly OLDER than it, so a client can walk back through a history the
+     * mirror retains in full. A cursor naming no mirrored message answers 400
+     * rather than silently returning the newest window again.
+     */
+    before?: string | null;
+  },
 ) {
   const search = new URLSearchParams({ shape: 'sync' });
   if (options?.limit != null) search.set('limit', String(options.limit));
   if (options?.history) search.set('history', 'true');
+  if (options?.before) search.set('before', options.before);
   return unwrap(
     await backendApi.get<SessionTranscriptSyncEnvelope>(
       `/projects/${projectId}/sessions/${sessionId}/transcript?${search.toString()}`,

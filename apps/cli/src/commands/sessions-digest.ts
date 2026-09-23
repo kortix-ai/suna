@@ -14,13 +14,14 @@ type CtxOpts = { projectArg?: string; hostArg?: string };
 const DIGEST_HELP = help`Usage: kortix sessions digest [options]
 
 Compact review of recent sessions for reflection / handoff. It lists sessions
-in a time window and, for running sessions, reads the live OpenCode transcript
-through the project sessions API. Tool calls are compressed to name/status only;
-tool inputs and outputs are intentionally stripped so the digest stays readable.
+in a time window and reads each one's transcript through the project sessions
+API — live from the sandbox while a session runs, and from the server's saved
+copy once it stops. Tool calls are compressed to name/status only; tool inputs
+and outputs are intentionally stripped so the digest stays readable.
 
   --since <when>       Window start (default 7d). Examples: 24h, 7d,
                        2026-06-20, 2026-06-20T03:00:00Z.
-  --messages, -n <N>   Recent OpenCode messages per running session (default 40).
+  --messages, -n <N>   Recent OpenCode messages per session (default 40).
   --chars <N>          Max text chars per message after whitespace compaction
                        (default 700).
   --all                Ignore --since and include every listable session.
@@ -32,9 +33,12 @@ tool inputs and outputs are intentionally stripped so the digest stays readable.
 Aliases: review, summary.
 
 Notes:
-- Running sessions include a compact transcript when the sandbox is reachable.
-- Stopped/failed sessions include metadata and any mirrored OpenCode titles, but
-  their transcript is unavailable unless the sandbox is running/resumed.
+- A running session's transcript is read live from its sandbox.
+- A stopped or failed session is served from the server's saved copy, written at
+  every turn end. Such a transcript is marked "saved", and "partial" when the
+  saved copy does not reach the session's first message.
+- A session whose sandbox never wrote a saved copy reports its transcript as
+  unavailable, with the reason.
 `;
 
 interface CompactToolCall {
@@ -72,6 +76,12 @@ interface SessionDigest {
   transcript: {
     available: boolean;
     reason: string | null;
+    /** Where the messages came from: the running sandbox, the durable
+     *  server-side mirror, or nowhere. */
+    source: 'live' | 'mirror' | 'none';
+    /** The mirror proved it holds the session's first message AND returned
+     *  every row it holds. Never a guess — see `mirrorIsComplete`. */
+    complete: boolean;
     opencode_session_id: string | null;
     message_count: number;
     messages: CompactMessage[];
@@ -180,10 +190,19 @@ async function buildDigest(
   maxChars: number,
 ): Promise<SessionDigest> {
   const base = baseDigest(s);
-  if (s.status !== 'running') {
-    base.transcript.reason = `session is ${s.status}; live transcript requires a running sandbox`;
-    return base;
-  }
+  /*
+    ASK, WHATEVER THE STATUS SAYS.
+
+    This used to return here for any session that was not `running`, with the
+    reason hard-coded. That reason is the API's own string — and the API
+    stopped using it as a refusal: `buildSessionTranscriptDigest` passes it to
+    `degrade()`, which serves the durable mirror and answers `available: true,
+    source: 'mirror'` whenever rows exist. Serving a stopped session is the
+    whole point of the mirror.
+
+    So the guard was answering a question it never asked. The route reports
+    `source` and `complete` for itself; let it.
+  */
   try {
     const transcript = await client.get<unknown>(
       `/projects/${projectId}/sessions/${s.session_id}/transcript?limit=${messageLimit}&chars=${maxChars}`,
@@ -196,7 +215,7 @@ async function buildDigest(
   }
 }
 
-function sanitizeTranscript(raw: unknown, fallbackOpencodeSessionId: string | null): SessionDigest['transcript'] {
+export function sanitizeTranscript(raw: unknown, fallbackOpencodeSessionId: string | null): SessionDigest['transcript'] {
   const obj = typeof raw === 'object' && raw ? raw as Record<string, unknown> : {};
   const messages = Array.isArray(obj.messages)
     ? obj.messages.map(sanitizeCompactMessage)
@@ -207,6 +226,13 @@ function sanitizeTranscript(raw: unknown, fallbackOpencodeSessionId: string | nu
   return {
     available: obj.available === true,
     reason: typeof obj.reason === 'string' ? obj.reason : null,
+    // An older API answers neither field. Default to the shape that claims
+    // nothing: a transcript it served is at least live, and completeness is
+    // never assumed.
+    source: obj.source === 'live' || obj.source === 'mirror' || obj.source === 'none'
+      ? obj.source
+      : obj.available === true ? 'live' : 'none',
+    complete: obj.complete === true,
     opencode_session_id: typeof obj.opencode_session_id === 'string'
       ? obj.opencode_session_id
       : fallbackOpencodeSessionId,
@@ -270,6 +296,8 @@ function baseDigest(s: ProjectSession): SessionDigest {
     transcript: {
       available: false,
       reason: null,
+      source: 'none',
+      complete: false,
       opencode_session_id: s.opencode_session_id,
       message_count: 0,
       messages: [],
@@ -314,7 +342,12 @@ function printHumanDigest(
       process.stdout.write(`  ${C.dim}transcript${C.reset} no messages\n`);
       continue;
     }
-    process.stdout.write(`  ${C.dim}transcript${C.reset} ${d.transcript.message_count} compact message${d.transcript.message_count === 1 ? '' : 's'}\n`);
+    // Say where it came from and whether it is the whole thing. A saved
+    // transcript that stops short must not read like a complete one.
+    const origin = d.transcript.source === 'mirror'
+      ? `${C.faded} · saved${d.transcript.complete ? '' : ', partial'}${C.reset}`
+      : '';
+    process.stdout.write(`  ${C.dim}transcript${C.reset} ${d.transcript.message_count} compact message${d.transcript.message_count === 1 ? '' : 's'}${origin}\n`);
     for (const m of d.transcript.messages) {
       const who = m.role === 'assistant' ? C.cyan : C.green;
       const at = m.created ? ` ${C.faded}${new Date(m.created).toISOString()}${C.reset}` : '';

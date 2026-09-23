@@ -285,6 +285,12 @@ export function applyPreviewEnvironment(
       'preview target-full requires MANAGED_GIT_GITHUB_OWNER plus either the complete GitHub App configuration or MANAGED_GIT_GITHUB_TOKEN',
     );
   }
+  // Sessions in a preview run on Platinum only. Without its key the preview
+  // could run no session at all, so fail before boot rather than fall back.
+  const platinumApiKey = rawSecrets.PLATINUM_API_KEY?.trim() ?? '';
+  if (!platinumApiKey) {
+    throw new Error('preview sessions run on Platinum only; PLATINUM_API_KEY is required');
+  }
 
   Object.assign(runtime, {
     API_IMAGE: input.apiImage,
@@ -331,19 +337,14 @@ export function applyPreviewEnvironment(
     SMTP_USER: 'unused',
     SMTP_PASS: 'unused',
     ENABLE_EMAIL_AUTOCONFIRM: 'false',
-    // Daytona stays FIRST: the API takes the first allowed provider for an
-    // unpinned session, so the preview gate's behaviour does not change.
-    // Platinum is offered when its key is present so a session can be pinned
-    // to it ({"provider":"platinum"} on create) for provider-parity checks.
-    ALLOWED_SANDBOX_PROVIDERS: rawSecrets.PLATINUM_API_KEY ? 'daytona,platinum' : 'daytona',
-    ...(rawSecrets.PLATINUM_API_KEY
-      ? {
-          PLATINUM_API_URL: input.platinumApiUrl?.trim() || 'https://api.platinum.dev',
-          PLATINUM_API_KEY: rawSecrets.PLATINUM_API_KEY,
-        }
-      : {}),
+    // Preview sessions run on Platinum only, never on Daytona. Daytona used to
+    // be first (the default for an unpinned session) from 2026-08-10. On
+    // 2026-09-21 the shared Daytona org hit its snapshot quota and every
+    // preview session failed with "Snapshot quota exceeded".
+    ALLOWED_SANDBOX_PROVIDERS: 'platinum',
+    PLATINUM_API_URL: input.platinumApiUrl?.trim() || 'https://api.platinum.dev',
+    PLATINUM_API_KEY: platinumApiKey,
     DATABASE_URL: `postgresql://postgres:${postgresPassword}@supabase-db:5432/postgres`,
-    DAYTONA_API_KEY: rawSecrets.DAYTONA_API_KEY ?? '',
     MANAGED_GIT_PROVIDER: 'github',
     MANAGED_GIT_GITHUB_OWNER: rawSecrets.MANAGED_GIT_GITHUB_OWNER ?? '',
     MANAGED_GIT_GITHUB_INSTALL_ID: rawSecrets.MANAGED_GIT_GITHUB_INSTALL_ID ?? '',

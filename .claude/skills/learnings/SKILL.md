@@ -21,6 +21,284 @@ linked, not inlined.
 
 ## Register
 
+### Audit coverage must not depend on a route identifying its caller (2026-09-23)
+
+**Rule:** Never gate an audit row on a caller being known. The server edge
+(`shared/audit-edge.ts`) writes one row per inbound request. An authenticator
+binds the caller it proved (`bindAuditPrincipal`). A handler names the action
+(`annotateAuditEvent`). An unbound request is written as `anonymous`, never
+skipped.
+
+**Near-miss (2026-09-22):** the request audit wrote a row only when the Hono
+auth middleware set a user or account. The Git proxy, SCIM, preview origins,
+deployed-App origins, and the tunnel and PTY WebSockets authenticate
+themselves, so they wrote no row. Git clones and pushes left no trail while
+any account member could push `main` (fixed by GH-19). PR #7507 then patched
+the Git proxy by hand.
+
+**Enforcement:** `unit-audit-boundary-wiring.test.ts` fails when `fetch` stops
+routing through `runInboundAudit`. `e2e-audit-inbound.test.ts` pins the
+anonymous row. Product flow `AUD-7` reads Git and anonymous rows back from the
+account log.
+
+### A merge never rebuilds a translation catalog: catalogs merge key by key and keep their key order (2026-09-23)
+
+**Rule:** Resolve a conflict in `apps/web/translations/*.json` with the catalog
+merge driver (`pnpm install`, then `git checkout -m <file>`), never with a
+program that parses both sides and writes the file back. A merge may add and
+delete catalog keys; it never moves one. **Incident:** the last `origin/main`
+merge into PR #7507 (`aba5055432`, squashed to `main` as `ea09f2f6a8`) had 1
+text conflict per catalog and rebuilt all 9 through an unordered key set: 473
+of 840 objects per catalog changed order (~38,500 diff lines each), 4 deleted
+keys came back, and `starter-prompts.test.ts` turned the packages lane red on
+`main` (run 35833541707). **Enforcers:** the merge driver
+(`apps/web/scripts/i18n-catalogs.mjs`, `.gitattributes`,
+`scripts/register-merge-drivers.sh`), `i18n-catalogs.yml` on every pull request
+that touches a catalog, and `i18n-catalogs.test.mjs` in the packages lane.
+
+### An idempotency key names ONE intent; a key shared by intents replays the first one forever (2026-09-23)
+
+**Rule:** A `createSession` idempotency key identifies one inbound message
+(activity id, Slack message ts, email message id), never a conversation or
+thread. `session_lifecycle_commands.idempotency_key` is a unique index with no
+retention, and `resultFromExistingCommand` answers every later create with the
+first command's outcome — including `dead_lettered` and a deleted session's
+409. Serialize racing messages with a TTL claim, not with the lifecycle key.
+**Near-miss:** Teams, Slack and email keyed creates on the thread since launch;
+a Teams chat is one conversation for life, so one failed first start made every
+later message in that chat fail the same way, and the agent-picker recovery
+could never work. Found in review, PR #7545. **Enforcers:**
+`unit-teams-session.test.ts`, `unit-slack-session-selection.test.ts`,
+`unit-email-channel.test.ts` (key per message).
+
+### A transient git-mirror clone failure is retryable, never an unhandled 500 (2026-09-23)
+
+**Rule:** Classify a bare clone/fetch failure by CAUSE, not by exit kind. Both a
+mid-clone timeout AND a transient upstream failure — network/DNS/socket, GitHub
+5xx, or GitHub's ambiguous `fatal: repository '<url>' not found` for a PRIVATE
+mirror whose App installation token is momentarily unusable — are retryable:
+retry the clone a bounded number of times, and answer a retryable 503 +
+`Retry-After` without paging Sentry. Only a PERMANENT failure (bad ref, real
+auth denial, corrupt local repo) may answer 500. **Incident:** the hourly
+heartbeat probe's `sessions new` cold-cloned a private mirror, got `fatal:
+repository '<url>' not found`, and hard-failed with HTTP 500 (KX-HOURLY FAIL,
+2026-09-23T10:06Z) — while the git proxy served the same repository 200 seconds
+before and after. **Enforcers:** `isTransientGitMirrorError` and
+`cloneBareWithRetry` in `apps/api/src/projects/git/mirror.ts`;
+`mirror-transient.test.ts`, `unit-git-mirror-transient-onerror.test.ts`.
+
+### A guard that stops work must judge what the kernel judges, and every stop must name its cause (2026-09-22)
+
+**Rule:** A memory guard compares the cgroup WORKING SET (`memory.current -
+inactive_file`) to `memory.max`, never raw `memory.current`: the page cache is
+reclaimed before any OOM kill. Every writer that ends a turn `failed` records a
+cause in `end_error`; a turn with no cause is still shown to the user, never
+hidden. A stop a person asked for is stamped `UserStop` on every path, not only
+the proxy. **Incident:** a prod session lost 3 turns in 20 min to the memory
+guard during `tsc --noEmit` (92 % "used", <1 GB anon, 5 GB inactive file,
+`oom_kill 0`), and the UI said "No reason was reported"; 20-30 % of failed turns
+per hour had no cause and were hidden. **Enforcers:** `resources.test.ts`
+(working set), `integration-sandbox-turn-lifecycle.test.ts`,
+`sandbox-reaper.test.ts`, flows SESS-34 and SESS-35.
+
+### Resolve the LLM payee before touching the Kortix wallet (2026-09-22)
+
+**Rule:** Every BYOK descriptor uses `billingMode: 'none'`, `markup: 0`, and
+only customer-owned credentials. Never append a managed fallback. Run wallet
+admission only after resolution selects a Kortix-billed descriptor. Account
+Billing sums `final_cost`; provider spend belongs only in Gateway observability.
+**Incident:** A new free account showed provider-side BYOK spend as a Kortix LLM
+charge, while active compute stayed at $0 until stop. **Enforcers:**
+`resolve-candidates.test.ts`, `simple-handler.test.ts`,
+`handlers-byok.test.ts`, `session-costs.test.ts`, and `cost-rollups.test.ts`.
+
+### Never write back a JSONB column you read earlier: merge in SQL (2026-09-22)
+
+**Rule:** A writer of shared JSONB state (`session_sandboxes.metadata`) never
+builds `{ ...row.metadata, key }` from a read and writes the object back. Merge
+with `coalesce(metadata,'{}'::jsonb) || $patch::jsonb`, strip with the literal
+`-` chain from `stripMetadataKeys`, and put "only if unset" checks in the
+WHERE clause, which Postgres re-evaluates on the locked row. **Trigger
+surface:** any `.update(sessionSandboxes).set({ metadata: … })`, and any new
+lifecycle fence stored in metadata.
+
+**Incident:** SESS-9 failed on every PR preview (restart stuck in
+`provisioning` ~350 s). `pinSandboxEgressIp` read metadata; a restart claimed
+the row ~0.2 s later (`runtimeRestartId`); the pin wrote its stale copy back.
+`ownsRestart()` then returned false and the detached restart returned with no
+log line. The audit found the same shape in the restart claim itself and two
+`/start` clock writers. **Enforcers:** `e2e-sandbox-metadata-race.test.ts`
+(real PostgreSQL row-lock interleaving; runs only with `TEST_DATABASE_URL` —
+not in CI yet, which is the open TODO), `sandbox-egress-pin.test.ts` (hermetic
+shape guard), and the `restart abandoned: lost the restart claim` warning.
+Remaining whole-object writers: `deleteSession`, the provisioning IIFE in
+`session-sandbox.ts`, and the recovery fences in `runtime-identity.ts`.
+
+### Account membership is not project access — a check keyed on account ownership skips project roles (2026-09-22)
+
+**When:** writing any credential check that compares a token's account with a
+resource's account. `authorizeGitProxy` (`apps/api/src/projects/lib/git.ts`)
+evaluated the project role only when a personal token came from a DIFFERENT
+account. A token minted in the project's own account skipped the role for clone
+and push, so account membership stood in for project access. Once members could
+mint their own tokens (#7455, `token.personal.create`), a member with no role on
+a project could write its default branch. A unit test pinned the shortcut as
+intended ("allowed without an IAM round-trip").
+
+**Rule:** a personal credential is checked against the resource's own role
+every time. Account ownership may select WHICH check runs; it never replaces it.
+Ask of every early `return ok`: which principal reaches it without a role check?
+
+*Enforcer:* flow `GH-19` (real `git` processes: an account member with no
+project role is refused clone and push; a project `member` reads but cannot push
+the default branch; `ls-remote` proves the branch unchanged). It fails on the
+old code. `unit-git-proxy-authz.test.ts` pins the role check for same-account
+tokens.
+
+### Reporting a thing and unblocking on it are different code paths — check the one that unblocks (2026-09-22)
+
+**Rule:** Before telling an agent to use a BLOCKING tool on a new surface,
+find the code that RELEASES the block and confirm that surface satisfies its
+gate. A relay that reports the event is not the relay that resumes the caller,
+and the two are gated differently. **Trigger surface:** enabling an
+opencode/agent tool for a channel, or any "this works on platform A, so
+recommend it on platform B".
+
+**Incident:** #7493 changed the Teams turn prompt to recommend opencode's
+built-in `question` tool, on the strength of reading `POST /turn-question` —
+which persists the question, posts the card, and returns a finish-now sentinel.
+That is the REPORTING path, and it is ungated. The path that actually releases
+opencode's blocking `question` call is a separate POST to
+`/question/:id/reply`, gated on `slackRelayContext()` — `SLACK_THREAD_TS` /
+`SLACK_CHANNEL_ID`. A Teams session carries `MS_TEAMS_*`;
+`harness/open-code/boot.ts` had zero `MS_TEAMS` references. So a Teams agent
+posted the card and then hung until its box parked — strictly worse than the
+prose it replaced, because the user sees the question and answers a turn that
+never finishes. Caught while verifying a claim in the PR description, after
+merge, before anyone hit it. **Enforcers:** `channelRelayContext()` now accepts
+either platform, asserted by `question-relay-scope.test.ts` (a Teams session
+must count as a channel; the sentinel must come from `channelLabel()`), and
+`unit-channel-question-guidance.test.ts` asserts the two platforms differ ON
+PURPOSE until sandboxes carry the fixed daemon.
+
+**Second rule:** a server-side prompt change reaches every running session on
+the next API deploy; the sandbox agent server is IMAGE-BAKED and reaches only
+sandboxes built after it. When a feature needs both, ship the prompt LAST.
+Shipping it first is what made this live before its daemon half existed.
+
+### Check a port with a bind, never with `ss -l` (2026-09-22)
+
+**Rule:** To decide whether a host port is free for a container, ATTEMPT THE
+BIND. `ss -ltn` lists LISTENING sockets only and reports a port free while
+`bind()` still returns EADDRINUSE, so a wait built on it passes instantly on a
+port that is not free. **Trigger surface:** any CI step that frees ports before
+starting a service. **Incident:** the Supabase port failure was "fixed" three
+times — teardown on every lane, then removal by published port, then a wait on
+`ss -ltnH`. It recurred a fifth time on browser-2: `supabase stop` returned at
+09:19:26.710, the `ss` wait cleared all four ports by 09:19:27.448 (0.74s,
+first poll), and `supabase start` still failed to bind 54324 twenty-five
+seconds later. The check was passing on a port that was not free, and two
+fixes rested on that reading. **Enforcers:** the SO_REUSEADDR bind loop in
+`tests.yml`'s "Free the local Supabase ports" (SO_REUSEADDR to match
+docker-proxy, or a lingering TIME_WAIT makes it wait the full 30s), pinned by
+`tests/unit/sandbox-workflow.test.ts`, which now also forbids the
+`ss -ltnH | grep -q` shape.
+
+**Second rule from the same change:** keep embedded scripts inside a workflow
+`run: |` block to ONE LINE, or indent every line past the block's own indent.
+A multi-line `python3 -c "` whose body starts at column 0 ENDS the block
+scalar, and GitHub then fails to parse the whole workflow. The symptom is
+silent and misleading: the run completes with **zero jobs**, and the pull
+request reads `CLEAN` with **no lane checks at all** — a green that means
+"nothing ran". Check with `gh run view <id> --json jobs`; an empty list is a
+parse failure, not a pass. Verified locally by asserting every non-blank line
+inside each `run: |` is indented past its key.
+
+**Meta-rule, earned the hard way:** a diagnostic that reports "clean" is not
+evidence of clean until you have proved the diagnostic can report dirty. This
+one was run against four genuinely-held ports and warned on all four; the `ss`
+version, run the same way, would have said they were free.
+
+### A PR into `main` shows all-green with the whole suite skipped (2026-09-22)
+
+**Rule:** before merging any PR into `main`, read the CHECK NAMES, not the
+pass count. `tests.yml` gates its lane matrix on
+`contains(labels, 'test') || contains(labels, 'preview')` for pull requests
+into `main`, so an unlabelled PR skips all six lanes — core, browser-1..4,
+packages — and still reports every remaining check green. `${{ matrix.lane }}
+lane: skipping` beside `9 pass / 0 fail` is a PR that ran CodeQL, gitleaks and
+a typecheck, and nothing else. Add the `test` label and wait, or merge knowing
+only lint ran. **Near-miss:** PR #7483 (transcript mirror paging, apps/api +
+packages/sdk) was `MERGEABLE`/`CLEAN` with zero lanes run; labelled, the core
+lane then failed and four browser lanes passed. **Gotcha within the gotcha:**
+`gh pr edit --add-label` can fail on a Projects-classic GraphQL error and
+apply NOTHING while exiting noisily — check
+`gh pr view --json labels`, or use
+`gh api -X POST repos/<owner>/<repo>/issues/<n>/labels -f 'labels[]=test'`.
+*Enforcer:* none — the skip is by design, so nothing will ever fail for it.
+The check-name read is the control.
+
+### A local-stack CI failure is the stack, not the diff (2026-09-22)
+
+**Rule:** when a `core` or `browser` lane fails, find the first error before
+the test list. `local Supabase start exited with code 1` at
+`tests/src/core/local-stack.ts` with `failed to set up container networking`
+is the runner's docker, and the flows it gates never ran — nothing asserted
+false. Re-run that lane; do not touch the code, and do not report the re-run
+as a fix. If it fails the same way twice, that is a signal about the runner
+and belongs in a report, not in a third re-run. **Near-miss:** PR #7483's core
+lane failed exactly this way while `sdk`, `flow-runner-unit`,
+`route-coverage` and `worktree-unit` passed in the same lane; the re-run went
+green with no change. *Enforcer:* none.
+
+
+### Port a guard with the feature, or the second platform ships without it (2026-09-22)
+
+**Rule:** When a channel/platform copies an interaction from another, copy its
+AUTHORIZATION, not only its rendering. A card posted to a conversation is
+visible to everyone in it, so the check belongs on the PRESS, and it is scoped
+to the account of the object being acted on — not to whatever account the
+presser happens to belong to. **Trigger surface:** adding an
+`Action.Execute` / Block Kit button that mutates anything, or porting a handler
+between `channels/slack/` and `channels/teams/`.
+
+**Incident:** `handleReview` in `channels/teams/interactivity.ts` checked only
+that the presser had *some* linked Kortix identity in the tenant
+(`lookupTeamsIdentity`). It never checked project access. Any Teams user in the
+tenant who had ever run `/login` could **Approve or Deny a review item for a
+project they are not a member of** — the human gate in front of whatever the
+agent flagged as risky. Slack's twin has always called `resolveSlackActor`, and
+carries the comment "The actor must be a linked Kortix user with write access
+to this project". Teams had `resolveTeamsActor`, with an identical signature
+and the full member + `PROJECT_WRITE` check, sitting unused. Found by auditing
+handlers while writing user docs, not by an alert. Exposure was limited by the
+`teams` project feature flag; the code was live on `main`.
+
+**Enforcers:** `apps/api/src/__tests__/unit-teams-review-authz.test.ts`, which
+was run against the pre-fix file first and failed 3 of 4 — a security test that
+passes before the fix proves nothing.
+
+### Freeing a port means waiting for it, not just deleting what held it (2026-09-21)
+
+**Rule:** A CI step that clears host ports for a following service must POLL
+until each port is actually free, then name the holder if it never clears.
+Deleting the container is not the same as getting the binding back.
+**Trigger surface:** any workflow step that stops one service and starts
+another on the same ports. **Incident:** run `35630898515`, `browser-1` lane,
+`main` @ `3c67a5e0b6` — the sweep added hours earlier ran clean, `supabase
+stop` succeeded, `docker ps -aq --filter publish=54324` matched nothing, 54322
+then bound fine, and 54324 still failed with `address already in use`. Nothing
+was left to delete. The bind had not been released yet. The lane read as a test
+failure for the third time. **Enforcers:** the `ss -ltnH` wait plus the
+`::warning::port … is still bound` diagnostic in `tests.yml`'s "Free the local
+Supabase ports", asserted by `tests/unit/sandbox-workflow.test.ts`.
+
+**Meta-rule from three occurrences of one symptom:** each was diagnosed by
+inference — stale containers, then a release race — and each fix was shipped
+without evidence naming the actual holder. When a failure recurs after a fix,
+the next change must make the NEXT occurrence self-diagnosing before it makes
+another guess at the cause.
+
 ### A CI step that creates shared state must be torn down on EVERY lane that creates it (2026-09-21)
 
 **Rule:** When a CI step starts a service that binds host ports, its teardown
@@ -7303,7 +7581,7 @@ prompt route and App wake called it as a yes/no check: at least 163,280 holds
 labelled them "LLM gateway admission hold". A comment next to one caller read
 "independent read-only checks". Non-gateway callers use `checkBillingAdmission`.
 
-**Incident.** Prod account `9c178b9d` (enterprise trial): 16,909 sandboxes,
+**Incident.** A prod enterprise-trial account: 16,909 sandboxes,
 0 compute rows, $0 compute; 115,810 holds against $1.69 of real LLM spend.
 Found from one screenshot of a $0 compute line. PR #7414.
 
@@ -8164,3 +8442,75 @@ count one step fewer ("Completed 4 steps" instead of 5). Two causes:
 
 **Enforcement.** SDK `sync-store.reload-parts.test.ts`; web
 `turn/reload-mid-step.test.ts`; daemon `open-part-text.test.ts`.
+
+### 2026-09-22 — A provider fan-out that folds refusals into a silent 503
+
+**Near-miss.** PR previews moved to Platinum-only sessions (#7482). The first
+tested run (35708105773) failed SNAP-2: `POST /v1/projects/:id/snapshots/rebuild`
+answered `503 Could not start a rebuild on any sandbox provider` with no log
+line. Platinum refuses `DELETE /v1/templates/:id` while any sandbox pins the
+template (`409 template_in_use`, reproduced live with a probe sandbox). Daytona
+deletes a snapshot under live sandboxes. The shared default image is in use
+whenever a session runs, so Rebuild failed every time on a Platinum-only
+deployment. The same run also exposed two tests that passed only because
+Daytona answered a fabricated `external_id` non-definitively (spec 26) or was
+the hard-coded pin target (PROJ-31, spec 12).
+
+**Rule.** A route that fans an action out to providers and folds the results
+into one status must log each provider's error, and must map an expected
+provider state (in use, not found) to a typed error with its own status. A
+generic 5xx means "a provider failed", never "the provider said no". A test
+fixture must never depend on a provider's answer about an id the test made up;
+put the state the test needs in the fixture, and read enabled providers from
+the API instead of naming one.
+
+**Enforcement.** `SnapshotInUseError` + `rebuildFailureResponse`
+(`provider-actions.test.ts`, `platinum-list-pagination.test.ts`); SNAP-2
+asserts `202` or `409 SNAPSHOT_IN_USE` and fails on `503`. PR #7491.
+
+### 2026-09-22 — Customer data leaked into a commit, a test, and a PR body during an incident fix
+
+**Near-miss.** A customer reported a composer crash. The fix (PR #7508)
+carried the customer's name in its commit message and in a test comment, and
+the prod session id in the PR body. The commit message is on `main` and cannot
+be removed without a force push. A sweep then found the same class of leak
+elsewhere: a customer name in a test fixture, a prod account id in this file,
+committed screenshots of a customer account under `output/`, and one customer
+name in ~120 files.
+
+**Rule.** Customer names, people's names, emails, and real prod IDs never go
+into a commit, a PR, a doc, a comment, a test, or a skill. Write the class:
+"a customer", "a prod session", `<session_id>`. Real evidence stays in the
+gitignored `output/`, the scratchpad, or private agent memory.
+
+**Enforcement.** `scripts/check-blocked-terms.sh` from `pre-commit`,
+`commit-msg`, and `pre-push` refuses added lines, messages, and branch names
+that contain a term from the encrypted `BLOCKED_COMMIT_TERMS` in
+`apps/api/.env` (`scripts/check-blocked-terms.test.mjs`, packages lane).
+`/output/` is gitignored. The PR template carries a checkbox. PR text is not
+covered by the hooks.
+
+## A per-project Slack webhook must only act on rows its own project owns
+
+- **Incident (2026-09-22, prod, workspace T07FUFNT3RV):** a plain reply in a
+  `Kortix Company` Slack thread made the `kortix-incident-reporter` bot post
+  "Open session in Kortix". The link combined the reporter's project
+  (`0825e40b…`) with Kortix Company's session (`b27cc3c2…`). Kortix Company
+  then went silent in that thread. Cause: every BYO Slack app in a workspace
+  receives every `message.channels` event. `threadIsOwned` read `chat_threads`
+  by workspace and thread only. The reporter took the reply as a follow-up and
+  won the exactly-once claim (`slack:msg:{team}:{channel}:{ts}`). Kortix
+  Company's own delivery then lost that claim and returned without a reply.
+  This is the third incident from the same two-app workspace, after
+  2026-08-20 (`app_mention` not bot-checked) and 2026-08-28 (channel binding
+  stolen).
+- **Rule:** the BYO path `/v1/webhooks/slack/:projectId` receives events that
+  may belong to another project. Every lookup it makes in `chat_threads`,
+  `chat_channel_bindings`, or any other workspace-keyed table must filter by
+  that `projectId`, or be a deliberate claim-if-unowned. Test every new Slack
+  routing branch with two projects in one workspace.
+- **Enforcement:** `dispatchSlackEvent(..., { ownThreadsOnly: true })` on the
+  BYO route scopes `threadIsOwned` to `chat_threads.project_id`.
+  `unit-slack-classify-event.test.ts` asserts the bound SQL parameters include
+  the project. The shared OAuth route stays workspace-wide on purpose: it is
+  one app, and `/kortix use` can re-bind a channel under older threads.

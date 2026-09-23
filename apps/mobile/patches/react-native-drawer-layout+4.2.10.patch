@@ -1,0 +1,108 @@
+diff --git a/node_modules/react-native-drawer-layout/lib/module/views/Drawer.native.js b/node_modules/react-native-drawer-layout/lib/module/views/Drawer.native.js
+index 263fb16..932a178 100644
+--- a/node_modules/react-native-drawer-layout/lib/module/views/Drawer.native.js
++++ b/node_modules/react-native-drawer-layout/lib/module/views/Drawer.native.js
+@@ -45,6 +45,7 @@ export function Drawer({
+   swipeEdgeWidth = SWIPE_EDGE_WIDTH,
+   swipeMinDistance = SWIPE_MIN_DISTANCE,
+   swipeMinVelocity = SWIPE_MIN_VELOCITY,
++  closeSpringConfig,
+   renderDrawerContent,
+   children,
+   style
+@@ -137,9 +138,9 @@ export function Drawer({
+     touchX.value = 0;
+     translationX.value = withSpring(translateX, {
+       velocity,
+-      stiffness: 1000,
+-      damping: 500,
+-      mass: 3,
++      stiffness: !open && closeSpringConfig ? closeSpringConfig.stiffness : 1000,
++      damping: !open && closeSpringConfig ? closeSpringConfig.damping : 500,
++      mass: !open && closeSpringConfig ? closeSpringConfig.mass : 3,
+       overshootClamping: true,
+       reduceMotion: ReduceMotion.Never
+     }, finished => runOnJS(onAnimationEnd)(open, finished));
+@@ -148,7 +149,7 @@ export function Drawer({
+     } else {
+       runOnJS(onClose)();
+     }
+-  }, [getDrawerTranslationX, onAnimationEnd, onAnimationStart, onClose, onOpen, touchStartX, touchX, translationX]);
++  }, [closeSpringConfig, getDrawerTranslationX, onAnimationEnd, onAnimationStart, onClose, onOpen, touchStartX, touchX, translationX]);
+   const hasDrawerWidth = drawerWidth > 0;
+   const previousHasDrawerWidthRef = React.useRef(hasDrawerWidth);
+   const isHidden = useSharedValue(!isOpen && !hasDrawerWidth);
+diff --git a/node_modules/react-native-drawer-layout/lib/typescript/src/types.d.ts b/node_modules/react-native-drawer-layout/lib/typescript/src/types.d.ts
+index 7d5764a..f1a1d40 100644
+--- a/node_modules/react-native-drawer-layout/lib/typescript/src/types.d.ts
++++ b/node_modules/react-native-drawer-layout/lib/typescript/src/types.d.ts
+@@ -123,6 +123,16 @@ export type DrawerProps = {
+      * This is not supported on Web.
+      */
+     swipeMinVelocity?: number;
++    /**
++     * Spring for the close animation. Defaults to the open spring
++     * (`stiffness: 1000, damping: 500, mass: 3`). Kortix patch.
++     * This is not supported on Web.
++     */
++    closeSpringConfig?: {
++        stiffness: number;
++        damping: number;
++        mass: number;
++    };
+     /**
+      * Function to modify the pan gesture handler via RNGH properties API.
+      */
+diff --git a/node_modules/react-native-drawer-layout/src/types.tsx b/node_modules/react-native-drawer-layout/src/types.tsx
+index 069c88b..601da17 100644
+--- a/node_modules/react-native-drawer-layout/src/types.tsx
++++ b/node_modules/react-native-drawer-layout/src/types.tsx
+@@ -142,6 +142,15 @@ export type DrawerProps = {
+    */
+   swipeMinVelocity?: number;
+ 
++  /**
++   * Spring for the close animation (hamburger, `open={false}`, or a swipe
++   * release that closes). Defaults to the open spring
++   * (`stiffness: 1000, damping: 500, mass: 3`).
++   * Kortix patch (patches/react-native-drawer-layout+4.2.10.patch).
++   * This is not supported on Web.
++   */
++  closeSpringConfig?: { stiffness: number; damping: number; mass: number };
++
+   /**
+    * Function to modify the pan gesture handler via RNGH properties API.
+    */
+diff --git a/node_modules/react-native-drawer-layout/src/views/Drawer.native.tsx b/node_modules/react-native-drawer-layout/src/views/Drawer.native.tsx
+index e91f2a8..3dbcc44 100644
+--- a/node_modules/react-native-drawer-layout/src/views/Drawer.native.tsx
++++ b/node_modules/react-native-drawer-layout/src/views/Drawer.native.tsx
+@@ -71,6 +71,7 @@ export function Drawer({
+   swipeEdgeWidth = SWIPE_EDGE_WIDTH,
+   swipeMinDistance = SWIPE_MIN_DISTANCE,
+   swipeMinVelocity = SWIPE_MIN_VELOCITY,
++  closeSpringConfig,
+   renderDrawerContent,
+   children,
+   style,
+@@ -193,9 +194,9 @@ export function Drawer({
+         translateX,
+         {
+           velocity,
+-          stiffness: 1000,
+-          damping: 500,
+-          mass: 3,
++          stiffness: !open && closeSpringConfig ? closeSpringConfig.stiffness : 1000,
++          damping: !open && closeSpringConfig ? closeSpringConfig.damping : 500,
++          mass: !open && closeSpringConfig ? closeSpringConfig.mass : 3,
+           overshootClamping: true,
+           reduceMotion: ReduceMotion.Never,
+         },
+@@ -209,6 +210,7 @@ export function Drawer({
+       }
+     },
+     [
++      closeSpringConfig,
+       getDrawerTranslationX,
+       onAnimationEnd,
+       onAnimationStart,

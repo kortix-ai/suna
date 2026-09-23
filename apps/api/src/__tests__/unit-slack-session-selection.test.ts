@@ -50,8 +50,18 @@ function makeChain(): any {
   chain.then = (resolve: (rows: unknown[]) => unknown) => Promise.resolve(resolve(dbResults.shift() ?? []));
   return chain;
 }
+// Every table a delete targeted, so a released claim can be asserted.
+const deletedFrom: unknown[] = [];
 mock.module('../shared/db', () => ({
-  db: { select: () => makeChain(), insert: () => makeChain(), update: () => makeChain(), delete: () => makeChain() },
+  db: {
+    select: () => makeChain(),
+    insert: () => makeChain(),
+    update: () => makeChain(),
+    delete: (table: unknown) => {
+      deletedFrom.push(table);
+      return makeChain();
+    },
+  },
   hasDatabase: () => true,
 }));
 mock.module('../projects/session-lifecycle', () => ({
@@ -101,6 +111,10 @@ mock.module('../channels/slack/turn', () => ({
   claimFinalize: async () => true,
   openPlanMessage: async () => true,
   repaintLivePlan: async () => {},
+  // `mock.module` REPLACES the module, so every export the session-start path
+  // reaches through it has to be listed. Session start repaints the live plan
+  // to show Stop as soon as the turn knows its session (slack/stop.ts).
+  showStopOnLivePlan: async () => {},
   loadTurn: async () => null,
   startTurn: async () => ({ sessionId: '', channel: 'C1', token: 'xoxb', ts: '', steps: [] }),
   saveTurn: async () => {},
@@ -216,6 +230,31 @@ test('channel agent + model override flow into the session body', async () => {
   expect(lastBody?.opencode_model).toBe('anthropic/claude-opus-4-8');
 });
 
+// The lifecycle keeps an idempotency key forever. Under the thread's key, the
+// thread's first create_session command answered every later create in it: a
+// failed first start (dead-lettered) failed the re-send the agent picker asks
+// for with the same error, every time. One key per message; Slack's double
+// delivery of one mention (app_mention + message) shares the message ts.
+test('the create key is per message, not per thread', async () => {
+  const keys: unknown[] = [];
+  setSlackSessionLifecycleForTest({
+    continueSession: async () => 'delivered',
+    createSession: async (input: { idempotencyKey?: string | null }) => {
+      keys.push(input.idempotencyKey);
+      return { status: 'created', sessionId: 'new-sess', row: fakeSessionRow('new-sess') };
+    },
+    resolveProjectAutomationActor: async () => 'user-1',
+  });
+  newThreadFifo();
+  await spawnAgentTurn('proj-1', envelope, event);
+  newThreadFifo();
+  await spawnAgentTurn('proj-1', envelope, { ...event, ts: '100.2' });
+  newThreadFifo();
+  await spawnAgentTurn('proj-1', envelope, { ...event, type: 'message' });
+
+  expect(keys).toEqual(['slack:create:T1:90.0:100.1', 'slack:create:T1:90.0:100.2', 'slack:create:T1:90.0:100.1']);
+});
+
 test('no overrides → agent "default" and NO opencode_model key', async () => {
   selection = { projectId: 'proj-1', agentName: null, opencodeModel: null };
   newThreadFifo();
@@ -285,6 +324,29 @@ test('deleted channel agent (AGENT_NOT_DECLARED) → in-thread agent picker, not
 });
 
 // A non-agent failure still renders honest, specific copy (not the picker).
+// The thread-create claim lives 5 minutes. A failed start kept it, so the
+// re-send the picker asks for ("Pick a current agent, then send your message
+// again") lost the claim, waited 8 s for a session nobody was creating, and
+// was dropped without a word.
+test('a failed start releases the thread-create claim', async () => {
+  const { chatEventDedup } = await import('@kortix/db');
+  selection = { projectId: 'proj-1', agentName: 'ghost', opencodeModel: null };
+  setSlackSessionLifecycleForTest({
+    continueSession: async () => 'delivered',
+    createSession: async () => ({
+      status: 'failed',
+      retryable: false,
+      error: { status: 400, body: { error: 'Agent "ghost" is not declared in this project', code: 'AGENT_NOT_DECLARED' } },
+    }),
+    resolveProjectAutomationActor: async () => 'user-1',
+  });
+  newThreadFifo();
+  deletedFrom.length = 0;
+  await spawnAgentTurn('proj-1', envelope, event);
+
+  expect(deletedFrom).toContain(chatEventDedup);
+});
+
 test('out-of-credits (402) → credit copy, no picker blocks', async () => {
   selection = { projectId: 'proj-1', agentName: null, opencodeModel: null };
   setSlackSessionLifecycleForTest({

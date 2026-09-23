@@ -1118,6 +1118,10 @@
         "pi_harness": {
           "name": "Pi-Harness (in der Sandbox)",
           "description": "Sitzungen mit dem Pi-Harness in der Sitzungs-Sandbox statt mit OpenCode ausführen. Bei Aus wählt `runtime: pi` im Manifest weiterhin Pi."
+        },
+        "agent_principal": {
+          "name": "Agenten als Prinzipale",
+          "description": "Agenten handeln als sie selbst: mit ihren Kortix-Berechtigungen, begrenzt durch ihre Rolle. Wer einen Agenten ausführt, bringt nur die eigenen Konten ein."
         }
       }
     },
@@ -1441,7 +1445,8 @@
         "status": "Status",
         "activity": "Aktivität",
         "source": "Quelle",
-        "none": "Keine"
+        "none": "Keine",
+        "owner": "Inhaber"
       },
       "order": {
         "activity": "Letzte Aktivität",
@@ -1475,7 +1480,19 @@
       "sourceValue": {
         "mine": "Meine Chats",
         "shared": "Geteilt"
-      }
+      },
+      "owner": "Inhaber",
+      "access": "Zugriff",
+      "ownerValue": {
+        "you": "Du",
+        "unknown": "Unbekannter Inhaber"
+      },
+      "accessValue": {
+        "private": "Nur der Inhaber",
+        "restricted": "Bestimmte Personen",
+        "project": "Ganzes Projekt"
+      },
+      "ownerAccess": "{owner} · {access}"
     },
     "loadingMore": "Wird geladen …",
     "loadMoreSessions": "Weitere Sitzungen laden"
@@ -1598,13 +1615,19 @@
       "message": "Der zugehörige Computer wurde freigegeben. Starte die Sitzung neu, um sie wiederherzustellen."
     },
     "previousRepository": {
-      "title": "Sitzung verwendet das vorherige Repository",
-      "message": "Dieser Arbeitsbereich stammt aus dem vorherigen Repository des Projekts. Git verbindet sich jetzt mit dem aktuellen Repository. Prüfe die Änderungen vor dem Push.",
+      "title": "Diese Sitzung ist veraltet",
+      "message": "Das Projekt hat sich seit dem Start dieser Sitzung geändert. Aktualisiere sie, um mit der neuesten Version weiterzuarbeiten.",
       "unavailable": "Der vorherige Arbeitsbereich ist nicht mehr verfügbar. Starte eine neue Sitzung im aktuellen Repository.",
       "resume": "Vorherigen Arbeitsbereich fortsetzen",
       "resuming": "Wird fortgesetzt…",
       "newSession": "Neue Sitzung starten",
-      "delete": "Sitzung löschen"
+      "delete": "Sitzung löschen",
+      "update": "Auf neuesten Stand bringen",
+      "updating": "Wird aktualisiert…",
+      "dismiss": "Schließen",
+      "updateHint": "Bittet den Agenten, diese Sitzung zu aktualisieren",
+      "updateSent": "Aktualisierung in dieser Sitzung gestartet",
+      "updateFailed": "Der Aktualisierungs-Prompt konnte nicht gesendet werden."
     },
     "lost": {
       "title": "Der Computer dieser Sitzung ist verloren gegangen",
@@ -1623,11 +1646,11 @@
     "connectProvider": "Anbieter verbinden",
     "manageModels": "Modelle verwalten",
     "loading": "Modelle werden geladen",
-    "yourDefault": "Dein Standardmodell",
-    "defaultAria": "{model} ist dein Standardmodell",
-    "setDefaultAria": "{model} als mein Standardmodell festlegen",
-    "defaultTitle": "Dein Standardmodell",
-    "setDefaultTitle": "Als mein Standardmodell festlegen",
+    "yourDefault": "Account-Standard",
+    "defaultAria": "{model} ist das Standardmodell für diesen Account",
+    "setDefaultAria": "{model} als Standardmodell des Accounts festlegen",
+    "defaultTitle": "Standardmodell des Accounts",
+    "setDefaultTitle": "Als Standardmodell des Accounts festlegen",
     "upgrade": "Upgrade",
     "noMatch": {
       "title": "Keine passenden Modelle",
@@ -1826,6 +1849,9 @@
     "hintSettings": "Drücke {modifier}, um die Einstellungen zu öffnen",
     "hintCompact": "Bitte darum, die Sitzung zu komprimieren, wenn sie lang wird",
     "queueList": "Queue List",
+    "quoteCount": "{count, plural, one {# Zitat} other {# Zitate}}",
+    "expandQuotes": "Zitate ausklappen",
+    "collapseQuotes": "Zitate einklappen",
     "stopUnconfirmed": "Stopp konnte nicht bestätigt werden. Der Agent läuft möglicherweise noch. Versuche es erneut.",
     "queued": "In Warteschlange",
     "queuedFiles": "{count, plural, one {# Datei} other {# Dateien}}",
@@ -7034,7 +7060,7 @@
       "line1113JsxTextSearching": "Suche...",
       "line1153JsxTextTasksDone": "Aufgaben erledigt",
       "line2038JsxTextDropFilesToAttach": "Dateien zum Anhängen ablegen",
-      "line2078JsxAttrAriaLabelClearReply": "Antwort löschen",
+      "removeQuoteAriaLabel": "Zitat entfernen",
       "line2118JsxAttrAriaLabelCancelCommand": "Befehl abbrechen",
       "line2145JsxTextAddToQueue": "Zur Warteschlange hinzufügen",
       "line2185JsxTextEnterDetailsAndPressEnterOrPressEsc": "Details eingeben und Enter drücken oder Esc zum Abbrechen",
@@ -9853,7 +9879,7 @@
       "text0a2ea173ab93": "Guthaben finanziert Sandbox-Compute – auch für einen BYOK-Testzeitraum ist ein Wallet-Guthaben erforderlich, um Sitzungen auszuführen. Das kostenlose Willkommensguthaben beträgt 2 $; ein Monat pro Sitz kostet 25 $.",
       "text0a30a815d67d": "Seite",
       "text0a45caff4417": "Shell-Befehle im Terminal ausführen",
-      "text0a4e750c7982": "Sitzungskosten und Guthabenbuchungen für dieses Konto.",
+      "text36569109d4e5": "Sitzungskosten und Guthabenbuchungen für dieses Konto.",
       "text0a53eddc090c": "So authentifiziert sich Kortix bei GitHub",
       "text0a5411640861": "OAuth-App aktualisiert",
       "text0a5d5c335cd8": "Gesamtausgaben",
@@ -11616,6 +11642,7 @@
       "text3eb4b44dde07": "Alles ausführen",
       "text3eb54d5ae20d": "Aus der Startervorlage. Jedes neue Projekt wird damit ausgeliefert, standardmäßig deaktiviert.",
       "text3ecb3ffd4f33": "Effektive Berechtigungen geprüft",
+      "textae47d51077b4": "Link wird vorbereitet…",
       "text3ed7c1e32705": "Einen Tracker zu lesen und ihn umzuschreiben sind verschiedene Aktionen. Setze den Schreibvorgang auf Ask; der Lauf hält beim Aufruf an und zeigt genau, welche Issues zusammengeführt oder geschlossen werden sollen. Nach deiner Freigabe wird er dort fortgesetzt.",
       "text3ee7a9bba1b1": "analyst.md",
       "text3efd6742a383": "Credits abgebucht",
@@ -12607,7 +12634,6 @@
       "text59c40e05afe1": "Es gibt keine verborgene Ebene, zu der du Fragen stellen musst. Jede Überzeugung, jede Berechtigung und jede Anweisung ist eine Zeile in einer Datei, und die Tools, die du bereits verwendest, liefern die Antwort.",
       "text59d3b31b8956": "Linear zu Slack",
       "text59da2efb2423": "Vor jeder Verwendung fragen · Musterregeln",
-      "text59e679e041ce": "Was dieser Agent mit dem Projekt selbst tun kann – Sitzungen, Auslöser, Geheimnisse, Mitglieder – über die Kortix-CLI innerhalb einer Sitzung.",
       "text59e7c0aa6df1": "Anfragen mit einem Bild folgen der obigen Kette.",
       "text59ea9cd2278c": "Verkaufe FDE- und Services-Projekte gemeinsam mit der Plattform.",
       "text59edd3fe9cc5": "Vorschau ausklappen",
@@ -12731,7 +12757,6 @@
       "text5d401fa67ac9": "Bequem — bis zu 3 pro Zeile",
       "text5d405d8955db": "Abrechnungssuite ausgeführt",
       "text5d42766c7eca": "Angebot",
-      "text5d4ef7cc3bec": "Projektaktionen",
       "text5d4f8dc198f5": "Saldo ≤ {value0}",
       "text5d4ff119f3d4": "Löschen fehlgeschlagen: {value0}",
       "text5d561a1e3f17": "Wiederhergestellt",
@@ -13076,6 +13101,7 @@
       "text6715b014ffd2": "Ungültige Autorisierungsanfrage",
       "text6718dff3a548": "Token erstellen und Identity Management verbinden",
       "text6725e7bbcd28": "System",
+      "texte7a8aa2df7e5": "Anonym",
       "text672a76cd238a": "Erlaubt — in dieser Sitzung wird nicht mehr nachgefragt",
       "text672f1efd8b87": "Anbieter:",
       "text673760b857d0": "Verfügbare Schnittstellen anzeigen.",
@@ -17806,7 +17832,6 @@
       "textec3e7d0c8967": "Systemweite Benachrichtigungen und der Vollsperrschalter. Eine Stufe tritt in dem Moment in Kraft, in dem sie aktiviert wird.",
       "textec497eddd428": "Welche Maschine, welche Konnektoren, welche Secrets, welche Skills, welche CLI-Verben. Nur Governance. Fehlt eine Gewährung, wird sie zu keiner: Ein Agent erhält genau das, was du ihm gegeben hast, und nichts weiter.",
       "textec4b346efc00": "Dieselben Zahlen, zusammengestellt im Format, das der Vorstand liest, mit Kommentaren aus der Abweichungsanalyse statt um Mitternacht von Grund auf neu geschrieben.",
-      "textec56dc3a282b": "Ein Vokabular, zwei Bindungen. Personen, Gruppen und Agents erhalten Rollen für ein Konto, ein Projekt oder eine einzelne Ressource. Agents verfügen zusätzlich über Kortix CLI-Bereiche in",
       "textec5855a78ab3": "kortix-ai/suna",
       "textec5ba0abb717": "Zugriff",
       "textec5c2f7304b1": "Kontext gekürzt",
@@ -18285,7 +18310,7 @@
       "textf9cfe2f2d411": "Installationen",
       "textf9d35d43770d": "tools",
       "textf9d46c1722ea": "Sofort übertragen",
-      "textf9d52abc1fb8": "Anmeldeanforderungen für das gesamte Konto.",
+      "textf9d52abc1fb8": "Anmelde- und Sitzungszugriffsregeln für das gesamte Konto.",
       "textf9dcbb55deba": "Automatisieren",
       "textf9debe3e14a5": "Aktivieren Sie Create Users, Update User Attributes und Deactivate Users → Save.",
       "textf9e0dab461a6": "grep dein ganzes Unternehmen.",
@@ -18618,7 +18643,19 @@
       "textd9692dea50e7": "Füge die App einem Chat oder Kanal hinzu und füge unten deine Mandanten-ID ein, um sie mit diesem Projekt zu verknüpfen.",
       "text8dd795841572": "Das Clientgeheimnis ist verschlüsselt. Nur der Agent dieses Workspaces kann es lesen.",
       "text5cb103d6008c": "Kanal-Thread",
-      "text31d248c44579": "Unbenannte Unterhaltung"
+      "text31d248c44579": "Unbenannte Unterhaltung",
+      "text3ea5efedf114": "Admins dürfen jede Sitzung öffnen",
+      "text88cfd89168a0": "Admins dürfen nicht mehr jede Sitzung öffnen",
+      "textcbccc00faa36": "Sitzung eines Mitglieds als Konto-Admin geöffnet",
+      "text798f62f95bed": "Admin-Sitzungszugriff angesehen",
+      "text0814e13d671d": "Admin-Sitzungszugriff geändert",
+      "text8f12a6e05e6d": "Kortix-Berechtigungen",
+      "text15365eb45e29": "Was dieser Agent mit dem Projekt selbst tun kann – Sitzungen, Auslöser, Geheimnisse, Mitglieder – innerhalb einer Sitzung.",
+      "text4e2c36d015a8": "Ein Vokabular, zwei Bindungen. Personen, Gruppen und Agents erhalten Rollen für ein Konto, ein Projekt oder eine einzelne Ressource. Agents verfügen zusätzlich über Kortix-Berechtigungen in",
+      "textde340d411411": "Dieses Diagramm ist leer.",
+      "textc53147a0d05b": "Dieses Diagramm konnte nicht gerendert werden",
+      "text91aec62280a3": "SVG herunterladen",
+      "text751dfdcf3878": "Zeile {value0}"
     }
   },
   "projectOnboarding": {
@@ -19524,5 +19561,97 @@
     "invitesTitle": "Du wurdest eingeladen",
     "invitesDescription": "Tritt einem Projekt deines Teams bei oder starte dein eigenes.",
     "createProjectInstead": "Stattdessen ein neues Projekt erstellen"
+  },
+  "projectSelector": {
+    "welcome": "Willkommen bei Kortix",
+    "welcomeBack": "Willkommen zurück",
+    "descriptionNew": "Erstelle dein erstes Projekt oder tritt einem bei, das dein Team geteilt hat.",
+    "descriptionReturning": "Öffne ein Projekt oder erstelle ein neues.",
+    "signedInAs": "Angemeldet als {email}",
+    "createTitle": "Neues Projekt erstellen",
+    "createBody": "Ein Projekt enthält deine Agents, Dateien und Sitzungen.",
+    "orContinue": "oder ein bestehendes Projekt öffnen",
+    "invitations": "Einladungen",
+    "sentTo": "Gesendet an {email}",
+    "invitedBy": "Eingeladen von {email}",
+    "join": "Beitreten",
+    "joinError": "Beitritt fehlgeschlagen. Versuche es erneut.",
+    "unnamedWorkspace": "Workspace",
+    "search": "Projekt suchen",
+    "noMatches": "Kein Projekt passt zu „{query}“.",
+    "projectCount": "{count, plural, one {# Projekt} other {# Projekte}}",
+    "role": {
+      "owner": "Inhaber",
+      "admin": "Admin",
+      "member": "Mitglied"
+    },
+    "openedAgo": "Geöffnet {time}",
+    "neverOpened": "Noch nicht geöffnet",
+    "showAll": "Alle {count} anzeigen",
+    "showFewer": "Weniger anzeigen",
+    "createIn": "Projekt erstellen",
+    "emptyCreatable": "Noch keine Projekte in diesem Workspace.",
+    "emptyMember": "Hier wurden noch keine Projekte mit dir geteilt. Bitte einen Inhaber oder Admin um Zugriff.",
+    "failed": "Diese Projekte konnten nicht geladen werden.",
+    "retry": "Erneut versuchen",
+    "noAccessTitle": "Noch keine Projekte",
+    "noAccessBody": "Bitte einen Inhaber oder Admin, {email} einzuladen.",
+    "loadErrorTitle": "Deine Projekte konnten nicht geladen werden",
+    "loadErrorBody": "Prüfe deine Verbindung und versuche es erneut."
+  },
+  "sessionOversight": {
+    "label": "Admins können jede Sitzung öffnen",
+    "description": "Kontoinhaber und Admins können jede Sitzung in diesem Konto öffnen, auch private. Jede so geöffnete Sitzung steht im Audit-Log.",
+    "ownerOnlyDescription": "Kontoinhaber und Admins können jede Sitzung in diesem Konto öffnen, auch private. Nur ein Kontoinhaber kann das ändern.",
+    "enableTitle": "Admins jede Sitzung öffnen lassen?",
+    "enableDescription": "Kontoinhaber und Admins können dann jede Sitzung in diesem Konto öffnen, auch Sitzungen, die Mitglieder privat halten. Mitglieder sehen einen Hinweis im Teilen-Dialog. Jede so geöffnete Sitzung wird im Audit-Log erfasst.",
+    "enableConfirm": "Einschalten",
+    "disableTitle": "Admins nicht mehr jede Sitzung öffnen lassen?",
+    "disableDescription": "Private Sitzungen sind wieder nur für ihre Inhaber. Admins behalten nur Zugriff auf Sitzungen, die mit ihnen geteilt sind.",
+    "disableConfirm": "Ausschalten",
+    "enabledToast": "Admins können jetzt jede Sitzung öffnen",
+    "disabledToast": "Private Sitzungen sind wieder nur für Inhaber",
+    "failedToast": "Diese Einstellung konnte nicht geändert werden",
+    "shareDisclosure": "Kontoinhaber und Admins können jede Sitzung in diesem Konto öffnen, unabhängig von deiner Auswahl hier."
+  },
+  "agentPrincipals": {
+    "title": "Was dieser Agent tun kann",
+    "flagOnDescription": "Personen, die diesen Agent ausführen dürfen, handeln mit diesen Berechtigungen.",
+    "flagOffDescription": "Agent-Prinzipal ist für dieses Projekt aus. Eine Sitzung handelt mit der Projektrolle der startenden Person, geschnitten mit diesen Kortix-Berechtigungen.",
+    "flagOffBadge": "Rolle der startenden Person gilt",
+    "flagOffHint": "Schalte Agent-Prinzipal ein, damit der Agent selbst handelt: seine Kortix-Berechtigungen innerhalb seiner Obergrenzen-Rolle, egal wer ihn startet.",
+    "featureFlags": "Feature-Flags",
+    "kortixPermissions": "Kortix-Berechtigungen",
+    "kortixPermissionsHelp": "Deklariert in kortix.yaml (agents.{agent}.kortix_permissions).",
+    "declaredAll": "Alle",
+    "declaredNone": "Keine",
+    "declaredCount": "{count, plural, one {# deklariert} other {# deklariert}}",
+    "effectiveCount": "{count, plural, one {# Berechtigung} other {# Berechtigungen}}",
+    "ceiling": "Obergrenzen-Rolle",
+    "ceilingHelp": "Die Projektrolle, die ein Admin diesem Agent zuweist. Kortix-Berechtigungen gehen nie darüber hinaus.",
+    "ceilingHidden": "Für Admins sichtbar",
+    "ceilingDefault": "Standard-Obergrenze für Agents",
+    "changeCeiling": "Ändern",
+    "humanOnly": "Nur für Menschen",
+    "humanOnlyHelp": "Mitglieder verwalten, das Projekt löschen und Zugangsdaten ausstellen bleibt bei Menschen.",
+    "humanOnlyValue": "Nie gewährt",
+    "effective": "Wirksame Berechtigungen",
+    "effectiveHelp": "Kortix-Berechtigungen innerhalb der Obergrenzen-Rolle, ohne die Berechtigungen nur für Menschen. project.read ist immer gewährt.",
+    "outsideCeiling": "Deklariert, aber außerhalb der Obergrenzen-Rolle:",
+    "droppedHumanOnly": "Deklariert, aber nur für Menschen:",
+    "agentBadge": "Agent",
+    "agentsSection": "Agents",
+    "searchWithAgents": "Mitglieder, Gruppen oder Agents suchen",
+    "ceilingNoteTitle": "Die Rolle eines Agents ist seine Obergrenze",
+    "ceilingNote": "Der Agent handelt mit seinen Kortix-Berechtigungen aus kortix.yaml, innerhalb dieser Rolle. Mitglieder verwalten, das Projekt löschen und Zugangsdaten ausstellen bleibt bei Menschen.",
+    "ceilingRemoved": "Agent-Rolle entfernt. Die Standard-Obergrenze für Agents gilt.",
+    "ceilingRemoveFailed": "Die Agent-Rolle konnte nicht entfernt werden.",
+    "rowMeta": "Obergrenze für seine Kortix-Berechtigungen",
+    "removeCeilingTitle": "Rolle von {agent} entfernen?",
+    "removeCeilingDescription": "Der Agent fällt auf {project} auf die Standard-Obergrenze für Agents zurück. Seine Kortix-Berechtigungen in kortix.yaml ändern sich nicht.",
+    "appAgentsTitle": "Agents mit Zugriff",
+    "appAgentsEmpty": "Kein Agent listet diese App. Füge ihren Slug zu agents.<name>.apps in kortix.yaml hinzu.",
+    "appAgentsDeclared": "Deklariert in {file} (agents.{agent}.apps)",
+    "appAgentsGrantAll": "Alle Apps"
   }
 }

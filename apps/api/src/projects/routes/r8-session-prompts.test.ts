@@ -10,6 +10,7 @@
  * `src/__tests__/integration-prompt-inbox.test.ts`.
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { getTableName } from 'drizzle-orm';
 import { Hono } from 'hono';
 import * as realAccess from '../lib/access';
 import * as realLifecycle from '../session-lifecycle';
@@ -74,7 +75,9 @@ function row(overrides: Partial<CommandRow> = {}): CommandRow {
 // measurably later than one taken before it.
 let dbReadDelayMs = 0;
 const afterReadDelay = <T>(value: () => T): Promise<T> =>
-  new Promise((resolve) => setTimeout(() => resolve(value()), dbReadDelayMs));
+  dbReadDelayMs <= 0
+    ? Promise.resolve().then(value)
+    : new Promise((resolve) => setTimeout(() => resolve(value()), dbReadDelayMs));
 // The same for UPDATEs, plus the instant the last one settled, so a test can
 // prove a handler stamps `observed_at` after its writes rather than before.
 let dbWriteDelayMs = 0;
@@ -92,6 +95,15 @@ function afterWriteDelay<T>(apply: () => T): Promise<T> {
  *  SET applies. A throw fails that statement; a row edit lands between that
  *  statement's match and the next statement's. */
 let onCommandUpdate: (() => void) | null = null;
+
+/** A Drizzle table's SQL name; `String(table)` is only "[object Object]". */
+const tableNameOf = (table: unknown): string | undefined => {
+  try {
+    return getTableName(table as Parameters<typeof getTableName>[0]);
+  } catch {
+    return undefined;
+  }
+};
 
 const queryMock = {
   select: () => ({
@@ -114,9 +126,20 @@ const queryMock = {
       },
     }),
   }),
-  update: () => ({
+  update: (table?: unknown) => ({
     set: (values: Record<string, unknown>) => ({
       where: (predicate: unknown) => {
+        // Only the command table is modelled. Another table's UPDATE (the
+        // prompt route's `on_behalf_of` clear on `account_tokens`) matches no
+        // command row and must not consume a test's one-shot update hook.
+        if (table !== undefined && tableNameOf(table) !== 'session_lifecycle_commands') {
+          const none = () => Promise.resolve([] as CommandRow[]);
+          return {
+            returning: none,
+            // biome-ignore lint/suspicious/noThenProperty: awaitable query builder.
+            then: (resolve: (v: unknown) => unknown) => none().then(resolve),
+          };
+        }
         const apply = () => {
           const hit = commandTable.filter((r) => predicateOf(predicate)(r));
           const hook = onCommandUpdate;
@@ -235,6 +258,9 @@ function predicateOf(predicate: unknown): (r: CommandRow) => boolean {
   const excludesStopPaused = rendered.includes("->>'stop_paused', '') <> 'true'");
   const wantsStopPaused = rendered.includes("->>'stop_paused', '') = 'true'");
   const wantsHeld = rendered.includes("->>'held', '') = 'true'");
+  // `releaseInboxHold`'s pre-read: ANY hold marker, one OR over three columns.
+  const wantsAnyHoldMark =
+    rendered.includes("->>'stopPausedOnDelivery', '') = 'true'") && wantsHeld && wantsStopPaused;
   // `placed`: rows that LEFT the pending list (`delivered`), inside a window on
   // `updated_at`. `inboxScope` is honoured too, so an automation row (no
   // `clientMessageId`) is refused here the way Postgres refuses it.
@@ -271,6 +297,13 @@ function predicateOf(predicate: unknown): (r: CommandRow) => boolean {
       for (const id of wanted) {
         if (id !== r.commandId && id !== r.sessionId) return false;
       }
+    }
+    if (wantsAnyHoldMark) {
+      return (
+        r.result?.held === true ||
+        r.result?.stop_paused === true ||
+        r.payload?.stopPausedOnDelivery === true
+      );
     }
     if (wantsHeld && r.result?.held !== true) return false;
     if (wantsStopPaused && r.result?.stop_paused !== true) return false;

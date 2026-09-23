@@ -18,7 +18,7 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
 import { resolvePinnedRootSessionId } from '@/features/session/pinned-root-session';
 import {
-  PreviousRepositoryNotice,
+  PreviousRepositoryNoticeProvider,
   isPreviousRepositoryRuntimeUnavailableError,
   isPreviousRepositorySessionError,
   sessionUsesPreviousRepository,
@@ -1133,12 +1133,15 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   return (
     <>
       <SandboxLoadingBoundary>
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          {(usesPreviousRepository || repositoryMode === 'previous' || previousRepositorySession) && (
-            <PreviousRepositoryNotice />
-          )}
-          {inner}
-        </div>
+        {/* The notice itself mounts in the session header, which owns its
+            position; the route only decides whether this session needs it. */}
+        <PreviousRepositoryNoticeProvider
+          value={
+            usesPreviousRepository || repositoryMode === 'previous' || previousRepositorySession
+          }
+        >
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{inner}</div>
+        </PreviousRepositoryNoticeProvider>
       </SandboxLoadingBoundary>
       <SessionDeleteModal
         projectId={projectId}

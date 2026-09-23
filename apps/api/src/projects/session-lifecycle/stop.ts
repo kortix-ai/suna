@@ -102,8 +102,15 @@ export async function stopSession(input: {
     });
     // The turn-end relay can still be in flight. Persist the transcript before
     // powering off the only live reader; capture failures never prevent stop.
+    //
+    // A TAIL, never the whole history. This read is AWAITED — the user is
+    // holding a Stop button — and on a project with `session_transcript_history`
+    // a full-history read is a 60s pagination with three retries in front of
+    // them. The whole copy is already maintained at every turn end, which runs
+    // fire-and-forget with the box definitionally up; the only gap a stop can
+    // close is the turn that just ended, and one bounded page covers it.
     const { captureSessionTranscriptMirror } = await import('../lib/session-transcript-capture');
-    await captureSessionTranscriptMirror(sessionId);
+    await captureSessionTranscriptMirror(sessionId, undefined, { scope: 'tail' });
   }
 
   try {

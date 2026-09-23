@@ -28,7 +28,13 @@ async function mayStopTeamsTurn(
   teamsUserId: string,
 ): Promise<boolean> {
   if (!teamsUserId) return false;
-  if (handle.originatingActivity?.from?.id === teamsUserId) return true;
+  // Callers pass `teamsUserId(activity)`: the AAD object id when Teams sends
+  // one, which it does for every signed-in user. Comparing that with the
+  // sender's Bot Framework id (`29:…`) alone never matched, so the person who
+  // sent the message could not stop it unless a participant row also existed —
+  // and under `project_open` a non-owner has none.
+  const origin = handle.originatingActivity?.from;
+  if (origin && (origin.aadObjectId === teamsUserId || origin.id === teamsUserId)) return true;
   try {
     const [row] = await db
       .select({ status: chatThreadParticipants.status })
@@ -97,7 +103,7 @@ export async function stopTeamsTurn(input: {
     // Lazily imported so the channel modules keep no static edge into the
     // session-lifecycle engine (the same rule turn.ts follows for the GC).
     const { abortRuntimeTurn } = await import('../../projects/session-lifecycle/abort-runtime-turn');
-    stoppedRuntime = await abortRuntimeTurn(input.sessionId);
+    stoppedRuntime = await abortRuntimeTurn(input.sessionId, { requestedStop: true });
   } catch (err) {
     console.warn('[teams-webhook] runtime abort failed on stop', {
       sessionId: input.sessionId,
@@ -109,7 +115,7 @@ export async function stopTeamsTurn(input: {
   await finalizeTurn(handle, {
     title: 'Stopped',
     answer: by ? `Stopped by ${by}.` : 'Stopped.',
-    stopped: true,
+    unfinished: true,
   });
   await deleteTurn(input.sessionId);
   return { stopped: true, stoppedRuntime };

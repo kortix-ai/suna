@@ -1,6 +1,9 @@
 import { projectRoleGrants } from '../../iam/read-models';
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, assertAuthorized, authorize, listAccessible } from '../../iam';
 import { actorOf } from '../../iam/actor';
+import { isProjectSessionPrincipal } from '../../iam/agent-scope';
+import { buildDenialError } from '../../iam/denial-message';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { setContextField } from '../../lib/request-context';
 import { supabaseAuth } from '../../middleware/auth';
 import { auth, errors, json } from '../../openapi';
@@ -38,6 +41,7 @@ import {
   consumeProjectWebhookManifestRefreshBudget,
   createProjectWebhookRateLimitMiddleware,
 } from '../../shared/rate-limit';
+import { bindIntegrationPrincipal } from '../../shared/audit-scope';
 
 projectsApp.use('/*', supabaseAuth);
 
@@ -118,6 +122,10 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
   if (!authed) {
     return c.json({ error: 'Invalid webhook signature' }, 401);
   }
+  bindIntegrationPrincipal('project_webhook', {
+    accountId: project.accountId,
+    projectId: project.projectId,
+  });
 
   (c as any).set('accountId', project.accountId);
 
@@ -425,7 +433,7 @@ projectsApp.openapi(
     // here on purpose — /provision's response shape is depended on by the CLI
     // (`kortix ship`) and the SDK and must not change.
   });
-  return c.json(result.body, result.status);
+  return c.json(result.body, result.status, result.headers);
 },
 );
 
@@ -562,6 +570,19 @@ projectsApp.openapi(
   // token and bypass every CR/commit gate. Gate on gitops.push: a custom role
   // can withhold it, and the agent fold requires it in the token's grant.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
+  // Agents as principals (spec 2026-09-22 §2.4): an agent's authority is its
+  // kortix.yaml entry, and a change to that entry needs a human merge. A raw
+  // provider push credential would let the agent write the default branch
+  // directly — its own grant included — past the session ref policy and the
+  // merge guard. Under the flag an agent session pushes through the Kortix git
+  // proxy only.
+  if (isProjectSessionPrincipal(c) && resolveFeatureFlag(loaded.row.metadata, 'agent_principal')) {
+    throw buildDenialError(
+      PROJECT_ACTIONS.PROJECT_GITOPS_PUSH,
+      'agent_human_only_action',
+      'An agent session cannot receive a raw git push credential. Push through the Kortix git origin (git_origin_url).',
+    );
+  }
 
   const connection = await getProjectGitConnection(projectId);
   const remote = getProjectGitRemote(loaded.row, connection);

@@ -114,6 +114,57 @@ to a prod incident. After resolving ANY incident or near-miss, append its rule
 there in the same session — an incident that leaves no learning behind is not
 finished.
 
+## NEVER write customer data or PII into anything we publish or commit
+
+This is a hard rule. No exceptions, no "just this once", no "it's only
+internal".
+
+**Never write any of these:**
+
+- customer or company names, and the names of their people;
+- email addresses, phone numbers, or other personal data;
+- real account, project, session, user, or sandbox IDs from prod, staging, or
+  a customer deployment;
+- customer repository names, hostnames, or URLs that contain any of the above;
+- customer prompts, messages, files, or log lines;
+- screenshots of a real customer workspace.
+
+**Never write them into:**
+
+- commits, commit messages, or branch names;
+- PR titles, PR bodies, PR comments, or review comments;
+- issues;
+- code comments, test names, or test fixtures;
+- docs, runbooks, skills, `AGENTS.md`, changelogs, or release notes;
+- artifacts, Slack posts, or any public or team-visible text.
+
+**Write the class instead:** "a customer reported", "an enterprise
+workspace", "a prod session", `<session_id>`. Build test data from synthetic
+values. Evidence that contains real data stays local: the gitignored
+`output/` folder, your scratchpad, or the private agent memory. It never goes
+into a tracked file.
+
+**If you find customer data** in the tree or in a PR, remove it in the same
+branch and say so. Do not rewrite history on `main`. Report the SHA to the user
+instead.
+
+**A guard enforces this on every commit and push.**
+`scripts/check-blocked-terms.sh` runs from `.githooks/pre-commit`,
+`.githooks/commit-msg`, and `.githooks/pre-push`. It refuses any added line,
+commit message, or pushed branch name that contains a blocked term. Matching is
+case-insensitive and whole-word. The list is itself customer data, so it lives
+encrypted in `apps/api/.env` as `BLOCKED_COMMIT_TERMS`, comma-separated.
+
+- Add a customer the day they sign: `dotenvx set BLOCKED_COMMIT_TERMS
+  "<existing>,<new>" -f apps/api/.env`. Read the current value first with
+  `dotenvx get BLOCKED_COMMIT_TERMS -f apps/api/.env`.
+- In a worktree the guard decrypts with the primary checkout's
+  `apps/api/.env.keys`. Without a key it warns and allows.
+- Deleting a line that contains a term is always allowed.
+- Never bypass the guard with `--no-verify`. If it fires, remove the term.
+- The hooks do not see PR titles, PR bodies, or comments. Those stay your
+  responsibility.
+
 ## How to communicate: precise, technically accurate, no fluff
 
 Write every response — chat, PR text, commit messages, code comments, docs — in
@@ -416,9 +467,11 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   `RELEASE_SOURCE_SHA`, when any API flow is excluded, or when a configured
   Playwright journey fails.
 - The `preview` label creates one full self-host preview in a persistent warm
-  Platinum sandbox. `auto` uses Daytona only for a Platinum infrastructure
-  failure. The preview has its own PostgreSQL, Supabase, API, gateway, frontend,
-  Mailpit, and HTTPS origin.
+  Platinum sandbox. Previews run on Platinum only: the preview host and every
+  session inside it. A Platinum failure fails the preview; there is no Daytona
+  fallback. Daytona code remains only to delete previews created before
+  2026-09-22. The preview has its own PostgreSQL, Supabase, API, gateway,
+  frontend, Mailpit, and HTTPS origin.
 - Preview CI runs `pnpm test -- --target-full` against that origin. The sticky
   pull request comment links the origin and its `/_tests/` HTML report.
 - A push to a `preview`-labelled branch redeploys its environment in place; the

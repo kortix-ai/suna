@@ -11,7 +11,7 @@ import { PROJECT_ACTIONS } from '../iam';
 // agent-scope check that is a no-op for humans), so unchecking the leaf did
 // nothing. This suite proves each newly-added leaf gate fires, using the
 // agent-grant fold: a scoped agent token restricts the launching user to the
-// leaves in its kortix_cli grant (project.read/project.write are exempt — see
+// leaves in its kortix_permissions grant (project.read/project.write are exempt — see
 // AGENT_GRANT_EXEMPT_ACTIONS — so the coarse floor always passes and only the
 // specific leaf gate is under test).
 const ACCOUNT = crypto.randomUUID();
@@ -55,13 +55,13 @@ afterAll(async () => {
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
 });
 
-async function mint(userId: string, kortixCli: string[] | null): Promise<string> {
+async function mint(userId: string, permissions: string[] | null): Promise<string> {
   const t = await createAccountToken({
     accountId: ACCOUNT,
     userId,
     projectId: PROJECT,
     name: 'write-leaf-gate-test',
-    agentGrant: (kortixCli ? { agent: 'scoped-bot', kortixCli, connectors: [] } : null) as any,
+    agentGrant: (permissions ? { agent: 'scoped-bot', permissions, connectors: [] } : null) as any,
   });
   minted.push(t.tokenId);
   return t.secretKey;
@@ -98,7 +98,7 @@ interface WCase {
   // 'member' = the floor role holds this leaf (so a plain member passes);
   // 'manager' = manager-tier (a plain member is denied, a manager passes).
   tier: 'member' | 'manager';
-  // kortix_cli grants for the agent-grant fold. deny = a grant that should be
+  // kortix_permissions grants for the agent-grant fold. deny = a grant that should be
   // rejected by the leaf gate; allow = the exact grant that should pass it.
   denyGrant: string[];
   allowGrant: string[];

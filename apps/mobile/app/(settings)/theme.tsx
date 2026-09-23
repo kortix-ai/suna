@@ -5,11 +5,12 @@ import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Sun, Moon, Check, Monitor } from 'lucide-react-native';
+import { SunIcon as Sun, MoonIcon as Moon, CheckIcon as Check, MonitorIcon as Monitor } from '@/lib/icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { haptics } from '@/lib/haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useThemeStore } from '@/stores/theme-store';
+import { DEFAULT_THEME_PREFERENCE, parseThemePreference } from '@/stores/theme-preference';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -17,7 +18,7 @@ const THEME_PREFERENCE_KEY = '@theme_preference';
 type ThemePreference = 'light' | 'dark' | 'system';
 
 export default function ThemeScreen() {
-  const { colorScheme, setColorScheme } = useColorScheme();
+  const { setColorScheme } = useColorScheme();
   const { t } = useLanguage();
   const insets = useSafeAreaInsets();
 
@@ -31,14 +32,9 @@ export default function ThemeScreen() {
   const loadThemePreference = async () => {
     try {
       const saved = await AsyncStorage.getItem(THEME_PREFERENCE_KEY);
-      if (saved) {
-        setThemePreference(saved as ThemePreference);
-      } else {
-        const currentTheme = colorScheme || 'light';
-        setThemePreference(currentTheme === 'dark' ? 'dark' : 'light');
-      }
+      setThemePreference(parseThemePreference(saved));
     } catch {
-      setThemePreference(colorScheme === 'dark' ? 'dark' : 'light');
+      setThemePreference(DEFAULT_THEME_PREFERENCE);
     }
   };
 
@@ -169,7 +165,6 @@ function ThemeOption({ icon, label, description, isSelected, onPress, disabled }
               as={icon}
               size={18}
               className={isSelected ? 'text-primary-foreground' : 'text-primary'}
-              strokeWidth={2.5}
             />
           </View>
           <View className="flex-1">
@@ -180,7 +175,7 @@ function ThemeOption({ icon, label, description, isSelected, onPress, disabled }
 
         {isSelected && (
           <View className="ml-2 h-5 w-5 items-center justify-center rounded-full bg-primary">
-            <Icon as={Check} size={12} className="text-primary-foreground" strokeWidth={3} />
+            <Icon as={Check} size={12} className="text-primary-foreground" />
           </View>
         )}
       </View>

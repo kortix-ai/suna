@@ -22,6 +22,7 @@ import {
 } from '../connectors/share';
 import { authorize } from '../iam';
 import { actorForUser } from '../iam/actor';
+import { hasAccountSessionOversight } from '../iam/session-oversight';
 import { accountMembers, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, or, sql } from 'drizzle-orm';
 import type { KortixUserContext } from './kortix-user-context';
@@ -73,6 +74,12 @@ export async function canAccessSandboxSession(input: {
   const cached = sessionVisibilityCache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached.allowed;
 
+  // Started with the row read below, not after it: neither depends on it, and
+  // this runs on the prompt path where each round trip is a full one.
+  const subjectRead = resolveShareSubject(input.userId);
+  const grantsRead = loadSessionGrants([input.sessionId]);
+  subjectRead.catch(() => undefined);
+  grantsRead.catch(() => undefined);
   const [row] = await db
     .select({
       visibility: projectSessions.visibility,
@@ -93,8 +100,8 @@ export async function canAccessSandboxSession(input: {
   let allowed = true;
   if (row) {
     const [subject, grantsBySession, managerVerdict] = await Promise.all([
-      resolveShareSubject(input.userId),
-      loadSessionGrants([input.sessionId]),
+      subjectRead,
+      grantsRead,
       isTriggerCreatedSessionMetadata(row.metadata)
         ? authorize(
             actorForUser(input.userId, input.accountId),
@@ -117,19 +124,31 @@ export async function canAccessSandboxSession(input: {
       callerSessionId: input.callerSessionId,
       boundCredentialSessionId: input.boundCredentialSessionId,
     };
-    allowed = isProjectSessionVisibleTo(
-      row.visibility as 'private' | 'project' | 'restricted',
-      row.createdBy,
-      grants,
-      subject,
-      {
-        origin: row.origin ?? null,
-        sessionId: input.sessionId,
-        callerSessionId: input.callerSessionId,
-        boundCredentialSessionId: input.boundCredentialSessionId,
-      },
-      { metadata: row.metadata, canManageProject: managerVerdict.allowed },
-    );
+    const ownership = {
+      origin: row.origin ?? null,
+      sessionId: input.sessionId,
+      callerSessionId: input.callerSessionId,
+      boundCredentialSessionId: input.boundCredentialSessionId,
+    };
+    const visibility = row.visibility as 'private' | 'project' | 'restricted';
+    allowed = isProjectSessionVisibleTo(visibility, row.createdBy, grants, subject, ownership, {
+      metadata: row.metadata,
+      canManageProject: managerVerdict.allowed,
+    });
+    // Account session oversight — the same rule `loadVisibleSession` applies,
+    // so an admin who may open a session's transcript may also reach its
+    // runtime. Human credentials only.
+    if (
+      !allowed &&
+      input.boundCredentialSessionId === null &&
+      (await hasAccountSessionOversight(input.userId, input.accountId))
+    ) {
+      allowed = isProjectSessionVisibleTo(visibility, row.createdBy, grants, subject, ownership, {
+        metadata: row.metadata,
+        canManageProject: managerVerdict.allowed,
+        accountSessionOversight: true,
+      });
+    }
   }
   sessionVisibilityCache.set(key, { allowed, expiresAt: Date.now() + SESSION_VISIBILITY_TTL_MS });
   if (!allowed && lastRefusalContext) refusalContexts.set(key, lastRefusalContext);
@@ -263,6 +282,36 @@ export async function resolveSandboxProjectId(previewSandboxId: string): Promise
   return ref?.projectId ?? null;
 }
 
+export interface SandboxOwner {
+  sandboxId: string;
+  accountId: string;
+  projectId: string;
+}
+
+const OWNER_TTL_MS = 5 * 60 * 1000;
+const ownerCache = new Map<string, { value: SandboxOwner; expiresAt: number }>();
+
+/**
+ * The account and project that own a preview sandbox. For the audit log: a
+ * preview request's row belongs in the OWNER's log, whoever made it. Cached
+ * because a preview page load is hundreds of requests, and a sandbox's owner
+ * never changes. Only a found owner is cached.
+ */
+export async function resolveSandboxOwner(previewSandboxId: string): Promise<SandboxOwner | null> {
+  const key = previewSandboxId.toLowerCase();
+  const now = Date.now();
+  const hit = ownerCache.get(key);
+  if (hit && hit.expiresAt > now) return hit.value;
+  const value = await resolveSandboxRef(previewSandboxId);
+  if (value) {
+    ownerCache.set(key, { value, expiresAt: now + OWNER_TTL_MS });
+    if (ownerCache.size > 10_000) {
+      for (const [k, v] of ownerCache) if (v.expiresAt <= now) ownerCache.delete(k);
+    }
+  }
+  return value;
+}
+
 async function isAccountMember(userId: string, accountId: string): Promise<boolean> {
   const [row] = await db
     .select({ accountId: accountMembers.accountId })
@@ -358,6 +407,7 @@ export async function resolvePreviewUserContext(
 }
 
 export function clearPreviewOwnershipCache(): void {
+  ownerCache.clear();
   previewContextCache.clear();
 }
 

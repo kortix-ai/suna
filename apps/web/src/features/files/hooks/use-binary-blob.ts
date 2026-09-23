@@ -1,6 +1,6 @@
 'use client';
 
-import { isSandboxNotReadyError } from '@kortix/sdk';
+import { fetchSessionAttachment, isSessionAttachmentRef } from '@kortix/sdk';
 import { useRuntimeStore } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
@@ -33,6 +33,12 @@ export const binaryBlobKeys = {
  *   revoked on unmount or when the underlying Blob changes.
  *   This prevents the stale-blob-URL bug where navigating away and
  *   back would serve a revoked URL from the query cache.
+ *
+ * A `kortix-attachment://` reference is read from the PLATFORM instead of the
+ * sandbox. Saved session history records one for every file an agent showed
+ * (the server copies it while the box is up), so a card from a stopped session
+ * renders its bytes instead of waiting on a box that is not coming. A stored
+ * copy is immutable, so it is never refetched and never polled.
  */
 export function useBinaryBlob(filePath: string | null): {
   blobUrl: string | null;
@@ -43,35 +49,43 @@ export function useBinaryBlob(filePath: string | null): {
   const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
   // Asleep, not booting — the re-read below takes the slow lane.
   const { parked } = useServerHealth();
+  const stored = isSessionAttachmentRef(filePath);
 
   // ── Fetch the raw Blob — this is what React Query caches ────────────
   const query = useQuery<Blob>({
-    queryKey: filePath
-      ? binaryBlobKeys.file(serverUrl, filePath)
-      : ['runtime-files', 'binary-blob', '__disabled__'],
+    queryKey: !filePath
+      ? ['runtime-files', 'binary-blob', '__disabled__']
+      : stored
+        ? // Globally unique on its own: no server URL, because no server.
+          ['runtime-files', 'binary-blob', 'stored', filePath]
+        : binaryBlobKeys.file(serverUrl, filePath),
     queryFn: ({ signal }) =>
-      readRuntimeFileWithRetry(
-        filePath!,
-        async () => {
-          const blob = await readFileAsBlob(filePath!);
-          if (blob.size === 0) {
-            throw new Error(
-              'File is empty (0 bytes). It may still be generating — try again in a moment.',
-            );
-          }
-          return blob;
-        },
-        undefined,
-        signal,
-      ),
+      stored
+        ? fetchSessionAttachment(filePath!, signal)
+        : readRuntimeFileWithRetry(
+            filePath!,
+            async () => {
+              const blob = await readFileAsBlob(filePath!);
+              if (blob.size === 0) {
+                throw new Error(
+                  'File is empty (0 bytes). It may still be generating — try again in a moment.',
+                );
+              }
+              return blob;
+            },
+            undefined,
+            signal,
+          ),
     enabled: !!filePath,
-    staleTime: 30_000,
+    staleTime: stored ? Number.POSITIVE_INFINITY : 30_000,
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
     retry: false,
     // A readiness 503 is a pending state, not a failure. A booting box earns the
-    // fast cadence; a parked one is watched slowly. See the helper.
-    refetchInterval: (query) => sandboxWakingRefetchInterval(query.state.error, parked),
+    // fast cadence; a parked one is watched slowly. See the helper. A stored
+    // copy has no box to wait for.
+    refetchInterval: (query) =>
+      stored ? false : sandboxWakingRefetchInterval(query.state.error, parked),
   });
 
   const cachedBlob = query.data ?? null;

@@ -65,7 +65,36 @@ function eventStream(): HarnessForwardResult {
       write(`data: ${JSON.stringify({ type: 'server.connected', properties: {} })}\n\n`)
       const subscription = bus.subscribe((event) => {
         if (event.type.startsWith('kortix.')) return
-        write(`data: ${JSON.stringify({ type: event.type, properties: event.payload })}\n\n`)
+        /*
+          THE ENVELOPE NEEDS ITS OWN ID, AND STREAMED TEXT DEPENDS ON IT.
+
+          OpenCode's wire carries a top-level `id` on every event, and the SDK
+          store uses it as the idempotency key for `message.part.delta`
+          (`applyPartDelta`'s `eventID`). Its rule, verbatim: "a delta with no
+          id gets no protection here". The store cannot dedupe on delta CONTENT
+          — text that legitimately repeats, like "..." streamed one character
+          at a time, would false-positive — so identity is the only key it has.
+
+          This frame shipped as `{type, properties}`, so every pi delta arrived
+          unprotected. A redelivery then APPENDED the same text again: a
+          reconnect that stacks a second live connection, or a second mounted
+          subscriber, replays a tail of the stream, and the assistant's reply
+          rendered twice inside one message — the second copy streaming in
+          after the first had finished.
+
+          `seq` is dense and monotonic within an epoch, and a redelivery of one
+          event carries the same seq, which is exactly what a dedupe key must
+          do. The epoch is prefixed because seq restarts at 0 when the daemon
+          does, and an id that repeats across a restart is a key that silently
+          drops a legitimate delta.
+        */
+        write(
+          `data: ${JSON.stringify({
+            id: `${bus.epoch}:${event.seq}`,
+            type: event.type,
+            properties: event.payload,
+          })}\n\n`,
+        )
       })
       unsubscribe = subscription.unsubscribe
     },
@@ -170,10 +199,31 @@ export function createPiSurface(runtime: () => PiRuntime | null): PiSurface {
           if (method === 'GET' && !messageId) {
             const limitRaw = Number(search.get('limit') ?? 0)
             const limit = Number.isInteger(limitRaw) && limitRaw > 0 ? limitRaw : Math.max(rt.transcript.count, 1)
-            const before = search.get('before')?.trim() || null
+            // ONE PROTOCOL, TWO SPELLINGS. The SDK's page loader sends
+            // `before`; the API's transcript capture sends `cursor`
+            // (session-transcript-capture.ts). Reading only `before` made
+            // every capture re-read the newest page — see the header note on
+            // `x-next-cursor` for why that was worse than it sounds.
+            const before = (search.get('before') ?? search.get('cursor'))?.trim() || null
             const page = rt.transcript.page({ limit, before })
             const stripped = stripInlineAttachmentBytes(page.messages, partRef(root))
-            return json(200, stripped.value)
+            /*
+              THE ABSENT CURSOR IS A CLAIM, SO IT MUST BE EARNED.
+
+              Every pager in the fleet reads "no `x-next-cursor`" as "this page
+              reached the session's first message". `readTranscriptPages` turns
+              that into `headComplete`, the capture turns THAT into
+              `complete`, and a complete read licenses the writer's
+              "DELETE what disappeared" branch. pi never sent the header, so a
+              flagged session longer than one page mirrored its newest window,
+              declared itself whole, and deleted every older row it had.
+
+              `page()` already knows: `hasMore`. The cursor is the window's
+              OLDEST id, because `page({before})` is an exclusive upper bound
+              on the id order — the same contract OpenCode's list serves.
+            */
+            const older = page.hasMore ? String(page.messages[0]?.info.id ?? '') : ''
+            return json(200, stripped.value, older ? { 'x-next-cursor': older } : {})
           }
           if (method === 'GET' && messageId && !partId) {
             const found = rt.transcript.messageById(messageId)

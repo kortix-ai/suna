@@ -174,7 +174,7 @@ describe('the gate codemod is complete', () => {
 });
 
 // The manifest alias table (`MANIFEST_ACTION_ALIASES`) rewrites a hand-written
-// kortix_cli list ON INPUT; every gate then compares canonical-to-canonical.
+// kortix_permissions list ON INPUT; every gate then compares canonical-to-canonical.
 // A route asserting the RETIRED spelling breaks that: the grant holds
 // `project.gitops.push`, the assert asks for `project.cr.open`, and an agent
 // with an explicit (non-'all') grant 403s on CR open. Found live by a peer

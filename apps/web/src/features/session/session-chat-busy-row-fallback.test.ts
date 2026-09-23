@@ -274,3 +274,57 @@ test('a confirmed working turn cannot retain a stale pending inbox presentation'
   expect(chat).toContain('pending={pending}');
   expect(chat).toContain('pendingPrompt={pendingPrompt}');
 });
+
+/**
+ * A session parked on the USER draws no waiting row anywhere.
+ *
+ * The `question` tool and a tool-permission prompt both block OpenCode inside
+ * its own turn loop: no `session.idle` frame follows, the control plane's row
+ * stays `active`, and `projectWorking` correctly keeps saying `working`. So the
+ * shimmer and its clock ran while the agent was waiting for a reply — measured
+ * on the local stack 2026-09-22 (session 8d807956): 12m22s on one unanswered
+ * 2-option question, the clock reading 7m55s in the screenshot.
+ *
+ * Source assertions because the permission half cannot be driven here at all:
+ * the local test profile has no cloud sandbox, so no agent reaches a tool that
+ * asks. The question half was verified by hand against a real sandbox; this
+ * pins that BOTH lists feed one decision and that every consumer of it is
+ * wired, so the two halves cannot drift apart.
+ */
+describe('waiting on the user is not the agent working', () => {
+  test('one fact, read from both pending lists', () => {
+    expect(chat).toContain(
+      'const awaitingUserInput = pendingQuestions.length > 0 || pendingPermissions.length > 0;',
+    );
+  });
+
+  test('the busy-row resolver gets the same fact', () => {
+    // The rule itself — the working turn declines its row AND the fallback
+    // does not catch it — lives in `@kortix/sdk` `resolveBusyRow` and is
+    // tested there. This pins that the page hands it the fact.
+    const gate = between(chat, 'resolveBusyRow({', '}),');
+    expect(gate).toContain('awaitingUser: awaitingUserInput,');
+  });
+
+  test('the turn card gets the same fact, and its indicator reads it', () => {
+    expect(chat).toContain('awaitingUser={awaitingUserInput}');
+    const indicator = between(chat, '{showTurnBusyIndicator({', '}) && (');
+    expect(indicator).toContain('awaitingUser,');
+  });
+
+  test('the elapsed clock measures the AGENT, so it stops and restarts from zero', () => {
+    // On `working` it kept counting behind the hidden row and came back
+    // reporting how long the reader took to answer.
+    expect(chat).toContain('const agentWorking = working && !awaitingUser;');
+    const label = between(chat, 'const statusElapsedLabel =', 'formatDuration(statusElapsedMs)');
+    expect(label).toContain('agentWorking');
+    expect(chat).toContain('if (!agentWorking) return;');
+  });
+
+  test('`working` itself is untouched — the turn IS still open', () => {
+    // Every structural decision below still reads it: which steps render, and
+    // where answered questions go.
+    expect(chat).toContain('const working = isWorkingTurn && sessionWorking;');
+    expect(chat).toContain('{!hasSteps && !working && !hasReasoning && answeredQuestionParts.length > 0 && (');
+  });
+});

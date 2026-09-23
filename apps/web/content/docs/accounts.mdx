@@ -30,6 +30,8 @@ Each person in an account holds one account role:
 
 Owner and admin hold manager-equivalent access on every project in the account. A project assignment cannot lower that. To limit an owner or an admin on one project, first change their account role to member.
 
+Manager-equivalent access does not include members' private sessions. An account owner can turn that on for owners and admins with **Admins can open every session** under **Settings → Security**. Only an owner can change it, and every use is audited. See [Session access](/docs/work/sessions#admins-can-open-every-session).
+
 Invite a teammate by email from the account's members page. The invitation is an assignment on a `pending` principal. It becomes a `user` assignment when they accept.
 
 ## Project roles
@@ -66,7 +68,9 @@ Give an assignment an `expires_at` and it stops granting at that instant. The en
 
 ## One vocabulary, two bindings
 
-A person, a group, or an agent gets access from Kortix as **roles** — the assignments described above. An agent carries a **second, separate binding**: the Kortix CLI scopes its manifest declares in `kortix.yaml` under `agents.<name>.kortix_cli`. A session can only do what both allow. The two never widen each other. An agent whose manifest lists `project.secret.read` still reads nothing when the role verdict denies it, and an agent launched by an owner still reads nothing when its manifest does not list the action. Roles are account state; CLI scopes are repository state in the manifest. See [Manifest reference](/docs/project/manifest#agents).
+A person, a group, or an agent gets access from Kortix as **roles** — the assignments described above. An agent carries a **second, separate binding**: the Kortix permissions its manifest declares in `kortix.yaml` under `agents.<name>.kortix_permissions`. A session can only do what both allow. The two never widen each other. An agent whose manifest lists `project.secret.read` still reads nothing when the role verdict denies it, and an agent launched by an owner still reads nothing when its manifest does not list the action. Roles are account state; Kortix permissions are repository state in the manifest. See [Manifest reference](/docs/project/manifest#agents).
+
+Which role counts depends on the project flag `agent_principal`. Off: the role of the person who started the session. On: the role bound to the agent's own service account — its **ceiling** — or the default agent ceiling when none is bound. Three permissions (`project.members.manage`, `project.delete`, `project.credentials.issue`) are human-only and never reach an agent. Admins pick an agent as the principal of a project role in the Access hub, under **Agents**. See [Agent permissions](/docs/project/permissions).
 
 ## Custom roles
 
@@ -135,6 +139,24 @@ Kortix signs you in with a personal access token (`kortix_pat_...`). It acts as 
 The two live on two surfaces, because they belong to two different owners. Your own API keys are in your settings, at **Settings → API keys** (`/settings/tokens`) — only you see them, and they stop working when your membership does. Service account tokens are account configuration, at **Account → Tokens**, beside the key rules that govern expiry.
 
 See [SDK authentication](/docs/sdk/auth) for the full token model.
+
+## Audit log
+
+The audit log records every request that reaches the API, whether or not the request identified its caller. The server writes one row per HTTP request, WebSocket upgrade, preview request, Git transfer, and SCIM call. Coverage does not depend on the route.
+
+Each row names the caller that the request proved:
+
+| `actor_type` | Caller |
+| --- | --- |
+| `human` | A signed-in person, or a person's token (`source: api_key`). |
+| `agent` | A session's agent credential. The row also names the human the agent acts on behalf of. |
+| `service_account` | A service account token. |
+| `system` | An account API key, a SCIM directory token, or an integration webhook with a verified signature. |
+| `anonymous` | A request with no credential, or with an invalid or forged one. |
+
+A refused request is a row with `outcome: denied`. `metadata.auth` records how the caller authenticated: the token id, never the secret. A Git clone is the action `git.clone`. A push is `git.push`, and `metadata.refs` lists each ref it created, updated, or deleted.
+
+An anonymous request that names one of your projects is written to your log. Select these rows with `actor_type=anonymous`. Anonymous rows are rate-limited on each API process, so a flood of them cannot displace attributed rows. Health probes, CORS preflights, and anonymous traffic to a deployed App are not recorded.
 
 ## Billing
 

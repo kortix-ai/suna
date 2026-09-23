@@ -2502,9 +2502,32 @@ function sandboxRelayContext(tokenOverride?: string | null): SandboxRelayContext
 
 // Question relays remain Slack-only. A web session answers the question tool
 // through OpenCode SSE and must not receive the Slack sentinel response.
-function slackRelayContext(): SandboxRelayContext | null {
-  if (!(process.env.SLACK_THREAD_TS || process.env.SLACK_CHANNEL_ID)) return null
+/**
+ * A CHANNEL session — Slack or Teams — as opposed to a dashboard one.
+ *
+ * This used to read SLACK_THREAD_TS / SLACK_CHANNEL_ID only, and it gates
+ * RELEASING opencode's blocking `question` tool. A Teams session carries
+ * MS_TEAMS_CONVERSATION_ID / MS_TEAMS_TENANT_ID instead (buildTeamsTurnEnv), so
+ * the gate returned null, the call was "left open for the UI", and a Teams
+ * agent that called `question` hung until its box was parked — after the card
+ * had already been posted, because the RELAY is ungated.
+ *
+ * The distinction that matters is not which vendor: it is whether the answer
+ * arrives out of band (a channel) or over opencode's own SSE (the dashboard).
+ */
+function channelRelayContext(): SandboxRelayContext | null {
+  const inChannel =
+    process.env.SLACK_THREAD_TS ||
+    process.env.SLACK_CHANNEL_ID ||
+    process.env.MS_TEAMS_CONVERSATION_ID ||
+    process.env.MS_TEAMS_TENANT_ID
+  if (!inChannel) return null
   return sandboxRelayContext()
+}
+
+/** Which channel this session belongs to, for copy that names it. */
+function channelLabel(): 'Teams' | 'Slack' {
+  return process.env.MS_TEAMS_CONVERSATION_ID || process.env.MS_TEAMS_TENANT_ID ? 'Teams' : 'Slack'
 }
 
 // Relay an opencode `question.asked` event for a SLACK session: post the
@@ -2588,18 +2611,21 @@ async function relayQuestionToApi(
   // If the box is parked while the question is still open, the control plane
   // has it (persisted above) and POST /sessions/:id/question delivers the answer
   // as a follow-up turn. Nothing is lost by leaving this one blocked.
-  if (!slackRelayContext()) {
+  if (!channelRelayContext()) {
     logger.info('[opencode-events] question persisted; left open for the UI', {
       requestId: req.id,
     })
     return
   }
 
+  // Name the channel the agent is actually in. The old text said "Slack" and
+  // "`slack send`" unconditionally, which in a Teams conversation instructed
+  // the agent to use a CLI it does not have.
+  const channel = channelLabel()
   const sentinel =
-    '(Posted to the Slack thread. In Slack, questions are async — the user replies ' +
-    'as a normal message, which reaches you as a NEW turn with full context. Do NOT ' +
-    'wait for an answer here; finish this turn now. Next time, just ask with ' +
-    '`slack send` rather than the question tool.)'
+    `(Posted to the ${channel} conversation. In ${channel}, questions are async — the user ` +
+    'replies as a normal message, which reaches you as a NEW turn with full context. Do NOT ' +
+    'wait for an answer here; finish this turn now.)'
   const answers: string[][] = req.questions.map(() => [sentinel])
   const replyUrl = `${opencode.getInternalUrl()}/question/${encodeURIComponent(req.id)}/reply?directory=${encodeURIComponent(cfg.workspace)}`
   try {

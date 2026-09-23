@@ -167,9 +167,9 @@ export function AccountListContent() {
             queryKey: qk.projects.scope(),
           });
           // `/new` scoped to the account just created — NOT the landing door.
-          // The door opens the first project found in ANY account
-          // (`resolve-landing-destination.ts`), so a brand-new empty account
-          // falls through to some other account's project, and
+          // The door opens the remembered project in ANY account
+          // (`decideDoor`), so a brand-new empty account falls through to
+          // some other account's project, and
           // `projects/start/page.tsx` then heals the persisted selection to
           // THAT account — undoing the switch above. Same destination the
           // sidebar's create row uses, so both paths land in one place.

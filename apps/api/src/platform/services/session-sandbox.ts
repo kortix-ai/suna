@@ -66,6 +66,8 @@ import { instanceStampMetadata } from '../../projects/instance-scope';
 import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
 import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
 import { platformMetaAgentGrant } from '../../projects/lib/platform-meta-agent';
+import { resolveSessionOnBehalfOf } from '../../projects/lib/on-behalf-of';
+import { agentPrincipalModeFor } from '../../iam/agent-principal';
 import { resolveSessionNetworkBoundary } from '../../projects/lib/network-secret-boundary';
 import {
   type PreparedInitialSandboxTurn,
@@ -172,6 +174,20 @@ export async function mintSessionToken(opts: {
           return null;
         }),
       ]);
+  // Agents as principals (spec 2026-09-22 §2.1): with the project flag on, a
+  // governed agent authorizes AS its service account. A token without one would
+  // fall back to the launcher — for an unattended run, the account OWNER — so
+  // under the flag a missing service account stops provisioning instead.
+  const [agentPrincipal, onBehalfOfUserId] = await Promise.all([
+    agentPrincipalModeFor(opts.projectId, agentGrant),
+    resolveSessionOnBehalfOf({ accountId: opts.accountId, sessionId: opts.sandboxId, userId: opts.userId }),
+  ]);
+  if (agentPrincipal && !serviceAccountId) {
+    throw new Error(
+      `agent_principal is on for project ${opts.projectId}, but agent "${opts.agentName}" has no service account; ` +
+        'refusing to mint a session credential that would authorize as the launcher',
+    );
+  }
   const tok = await createAccountToken({
     accountId: opts.accountId,
     userId: opts.userId,
@@ -183,6 +199,7 @@ export async function mintSessionToken(opts: {
     name: `Session ${opts.sandboxId.slice(0, 8)}`,
     agentGrant,
     serviceAccountId,
+    onBehalfOfUserId,
   });
   return tok.secretKey;
 }

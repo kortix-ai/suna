@@ -311,6 +311,23 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'Read at session provisioning (projects/lib/sessions.ts buildSessionSandboxEnvVars → ' +
       'selectSessionHarness). A running session keeps its harness until it is restarted or resumed.',
   },
+  {
+    key: 'agent_principal',
+    name: 'Agents as Principals',
+    description:
+      'A governed agent session acts as the agent itself, not as the person who started it. Its authority is its kortix_permissions list, capped by the IAM role bound to the agent and never including member management, project deletion, or credential issue. Running an agent, firing its trigger, or starting it from another agent requires permission to run that agent.',
+    stability: 'experimental',
+    available: () => true,
+    // Default OFF (spec docs/specs/2026-09-22-agents-as-principals.md §5). OFF
+    // keeps the launcher ∩ grant model byte for byte.
+    platformDefault: () => false,
+    enforcement: 'behavioral',
+    enforcementNote:
+      'Read by the authorization engine for every agent-session credential ' +
+      '(iam/agent-principal.ts agentPrincipalModeFor → iam/actor.ts actingPrincipal, ' +
+      'iam/authorize.ts), the manual trigger fire and child-session run gates, and ' +
+      'the change-request merge governance guard.',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(

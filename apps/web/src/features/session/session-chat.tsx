@@ -103,6 +103,10 @@ import { ProjectFilesProvider } from '@/features/project-files/context';
 import { useOptionalSessionPanel } from '@/features/session/action-panel/session-panel-provider';
 import { Composer as SessionChatInput } from '@/features/session/composer/composer';
 import { resolveComposerAgent } from '@/features/session/composer/composer-agent-access';
+import {
+  acknowledgeQuoteRequests,
+  type QuoteRequest,
+} from '@/features/session/composer/composer-logic';
 import { sessionSlashFiles } from '@/features/session/composer/menus/slash-files';
 import {
   resolveFirstPromptHandover,
@@ -322,15 +326,6 @@ import {
 } from './session-older-autoload';
 import { useHeldOlderLoading } from './session-older-loading';
 import { useReadinessSettling } from './use-readiness-settling';
-
-// ============================================================================
-// Reply-to context (select & reply feature)
-// ============================================================================
-
-/** Selected text the user wants to reference in their next message. */
-export interface ReplyToContext {
-  text: string;
-}
 
 // ============================================================================
 // Sub-Session Breadcrumb
@@ -731,6 +726,17 @@ interface SessionTurnProps {
    */
   suppressBusyIndicator: boolean;
   /**
+   * The runtime is parked on an answer only the user can give — a pending
+   * `question` request or a tool-permission prompt for this session. Resolved
+   * once by the parent, beside the two lists it already passes down, because
+   * the fallback waiting row has to make the same call.
+   *
+   * Distinct from `suppressBusyIndicator`, which is about WHERE the one row
+   * belongs when a queue is waiting. This one is about whether any row belongs
+   * on screen at all: see `showTurnBusyIndicator`.
+   */
+  awaitingUser: boolean;
+  /**
    * A user message the agent has not reached yet — after the working turn,
    * with no assistant content. Drawn dimmed, like a queued prompt (it IS one:
    * the server forwarded it and OpenCode holds it until the next step), and
@@ -895,6 +901,7 @@ function SessionTurnImpl({
   sessionWorking,
   isWorkingTurn,
   suppressBusyIndicator,
+  awaitingUser,
   pending,
   isFirstPrompt,
   pendingPrompt,
@@ -961,6 +968,18 @@ function SessionTurnImpl({
   // and it is what removes the "last turn shimmers for ever" symptom the raw
   // slot's dropped end-of-turn frames caused here.
   const working = isWorkingTurn && sessionWorking;
+  /**
+   * The same turn, minus the stretch where the next move is the READER's.
+   *
+   * `working` stays the honest answer about the turn — it is still open, the
+   * server still holds its row, and every structural decision below (which
+   * steps render, where answered questions go) reads it unchanged. This is the
+   * narrower question the waiting row and its clock ask: is the AGENT working?
+   * While a question or a permission prompt is parked on screen it is not, and
+   * a shimmer with a ticking duration over an unanswered card is a progress
+   * claim about the reader — see `showTurnBusyIndicator`.
+   */
+  const agentWorking = working && !awaitingUser;
   // A compaction turn's message-state — `inFlight` (summary open: not
   // completed, not errored) is the half of "is this compaction running" the
   // working projection cannot see, because it deliberately knows nothing
@@ -1391,15 +1410,20 @@ function SessionTurnImpl({
   // How long the status has read the same thing. Past STATUS_STALL_AFTER_MS
   // the label carries the elapsed time, so a slow model step or a long tool
   // call reads as "still working, this long" instead of a frozen screen.
+  // `agentWorking`, not `working`: the clock measures how long the AGENT has
+  // been on this step, so it stops (and clears) the moment the turn parks on a
+  // question and starts again from zero when the answer resumes it. Left on
+  // `working` it kept counting behind the hidden row and came back reading the
+  // time the reader took to reply.
   const [statusElapsedState, setStatusElapsedState] = useState(() =>
     statusElapsedFrame(undefined, {
       status: throttledStatus,
-      working,
+      working: agentWorking,
       nowMs: Date.now(),
     }),
   );
   const statusElapsedMs =
-    statusElapsedState.status === throttledStatus && statusElapsedState.working === working
+    statusElapsedState.status === throttledStatus && statusElapsedState.working === agentWorking
       ? statusElapsedState.elapsedMs
       : 0;
   useEffect(() => {
@@ -1407,24 +1431,24 @@ function SessionTurnImpl({
       setStatusElapsedState((previous) =>
         statusElapsedFrame(previous, {
           status: throttledStatus,
-          working,
+          working: agentWorking,
           nowMs: Date.now(),
         }),
       );
     update();
-    if (!working) return;
+    if (!agentWorking) return;
     const timer = setInterval(update, 1000);
     return () => clearInterval(timer);
-  }, [working, throttledStatus]);
+  }, [agentWorking, throttledStatus]);
   /** The phrase alone — never the elapsed time. Folding the ticking duration in
    *  here changed the busy indicator's animation key once a second, which
    *  replayed its roll-swap forever during any long tool call. */
   const statusPhrase =
-    throttledStatus && working && statusElapsedMs >= STATUS_STALL_AFTER_MS
+    throttledStatus && agentWorking && statusElapsedMs >= STATUS_STALL_AFTER_MS
       ? throttledStatus.replace(/(\.\.\.|…)$/, '')
       : throttledStatus;
   const statusElapsedLabel =
-    throttledStatus && working && statusElapsedMs >= STATUS_STALL_AFTER_MS
+    throttledStatus && agentWorking && statusElapsedMs >= STATUS_STALL_AFTER_MS
       ? formatDuration(statusElapsedMs)
       : undefined;
 
@@ -1932,6 +1956,7 @@ function SessionTurnImpl({
         working: working && !suppressBusyIndicator,
         hasError: !!turnError,
         isRetrying: !!retryInfo,
+        awaitingUser,
       }) && (
         <div className="space-y-2">
           {retryInfo && retryMessage && (
@@ -2183,9 +2208,18 @@ export function SessionChat({
     setQuestionAction({ label, canAct });
   }, []);
 
-  // ---- Reply-to state (text selection → reply) ----
-  const [replyTo, setReplyTo] = useState<ReplyToContext | null>(null);
-  const handleClearReply = useCallback(() => setReplyTo(null), []);
+  // ---- Reply quotes (text selection → the composer's quote list) ----
+  // Each "Reply" asks the composer to add one quote to the card above its
+  // input. The composer owns the list from then on and writes each quote as a
+  // leading `<reply_context>` line on send, so there is no reply state to
+  // hold here — only the id-keyed requests, each removed once the composer
+  // has applied it. A FIFO: two "Reply" clicks in one render keep both, in
+  // order.
+  const [quoteRequests, setQuoteRequests] = useState<QuoteRequest[]>([]);
+  const quoteRequestIdRef = useRef(0);
+  const handleQuoteRequestsApplied = useCallback((requestIds: number[]) => {
+    setQuoteRequests((current) => acknowledgeQuoteRequests(current, requestIds));
+  }, []);
 
   // Floating "Reply" popup — shown near selected text in the chat area
   const [selectionPopup, setSelectionPopup] = useState<{
@@ -2247,7 +2281,9 @@ export function SessionChat({
   // When user clicks "Reply" in the popup
   const handleSelectionReply = useCallback(() => {
     if (!selectionPopup) return;
-    setReplyTo({ text: selectionPopup.text });
+    quoteRequestIdRef.current += 1;
+    const request = { id: quoteRequestIdRef.current, text: selectionPopup.text };
+    setQuoteRequests((current) => [...current, request]);
     setSelectionPopup(null);
     window.getSelection()?.removeAllRanges();
   }, [selectionPopup]);
@@ -3387,6 +3423,22 @@ export function SessionChat({
       ).filter((q) => !isQuestionSuppressed(q.id)),
     [sessionState?.questions, allQuestions, sessionId, isQuestionSuppressed],
   );
+  /**
+   * The runtime is parked on an answer only the user can give.
+   *
+   * Both lists are already session-scoped above. Either one means OpenCode has
+   * stopped inside the turn and is blocked on a reply — the `question` tool, or
+   * a tool asking for permission — so the turn row stays `active` and every
+   * observer keeps reporting `working` with nothing to bound it but the reader.
+   * The shimmer and its clock read that as progress; see
+   * `showTurnBusyIndicator` for the measurement.
+   *
+   * The RAW question list, not `renderedQuestion`: that one is held an extra
+   * 320ms past the answer to let the card fade out, and the waiting row must
+   * come back the instant the agent is running again, not a third of a second
+   * later.
+   */
+  const awaitingUserInput = pendingQuestions.length > 0 || pendingPermissions.length > 0;
   const QUESTION_PROMPT_ANIMATION_MS = 320;
   const activePendingQuestion = pendingQuestions[0] ?? null;
   const [renderedQuestion, setRenderedQuestion] = useState<QuestionRequest | null>(null);
@@ -3725,6 +3777,7 @@ export function SessionChat({
         isRetrying: isRetryingStatus,
         turnHasError: (turn) => !!resolveTurnError(turn),
         firstPromptStandIn,
+        awaitingUser: awaitingUserInput,
       }),
     [
       turns,
@@ -3735,6 +3788,7 @@ export function SessionChat({
       lastTurnWorking,
       isRetryingStatus,
       firstPromptStandIn,
+      awaitingUserInput,
     ],
   );
   const {
@@ -4057,13 +4111,12 @@ export function SessionChat({
     ) => {
       setCommandError(null);
 
-      // Wrap reply context in XML if present, then clear it
+      // Reply quotes are already in `rawText`: the composer prepends each
+      // quote as its own `<reply_context>` line (`withReplyQuotes`). A Retry
+      // sends the text the ORIGINAL send put on the wire, verbatim.
       let text = rawText;
       if (overrides?.sentText !== undefined) {
         text = overrides.sentText;
-      } else if (replyTo) {
-        text = `<reply_context>${replyTo.text}</reply_context>\n\n${rawText}`;
-        setReplyTo(null);
       }
 
       // Structured @-mention refs — emitted as <file_ref /> / <agent_ref />
@@ -4570,7 +4623,6 @@ export function SessionChat({
       anchorTurn,
       smoothScrollToAbsoluteBottom,
       scrollRef,
-      replyTo,
       messages,
       sessionState,
       tComposerAttachments,
@@ -6011,6 +6063,7 @@ export function SessionChat({
                                   sessionWorking={lastTurnWorking}
                                   isWorkingTurn={turn.userMessage.info.id === workingTurnId}
                                   suppressBusyIndicator={suppressWorkingTurnBusy}
+                                  awaitingUser={awaitingUserInput}
                                   pending={pending}
                                   isFirstPrompt={isFirstPrompt}
                                   pendingPrompt={pendingPrompt}
@@ -6233,8 +6286,8 @@ export function SessionChat({
                 modelsLoading={providersLoading}
                 onContextClick={handleContextClick}
                 onCompactClick={handleCompactClick}
-                replyTo={replyTo}
-                onClearReply={handleClearReply}
+                quoteRequests={quoteRequests}
+                onQuoteRequestsApplied={handleQuoteRequestsApplied}
                 // Only lock the input into question-answer mode while the session is
                 // actually busy (a live question keeps the run busy). If a question
                 // chip is ever showing while the session is idle — e.g. a dead /

@@ -10,6 +10,7 @@ import type { DraftScope } from '@/features/session/composer/draft/composer-draf
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useIsMobile } from '@/hooks/utils';
 import { useProjectCan } from '@/lib/use-project-can';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import {
@@ -128,8 +129,8 @@ export function ProjectHome({
       files: AttachedFile[] | undefined,
       options: ComposerOptions,
       attachments?: AttachmentSubmission,
-    ) => {
-      return onSend(
+    ) =>
+      onSend(
         text,
         files,
         {
@@ -141,11 +142,11 @@ export function ProjectHome({
               : {}),
         },
         attachments,
-      );
-    },
+      ),
     [metaSelected, selectedSlug, onSend],
   );
 
+  const isMobile = useIsMobile();
   const pendingPrefill = useComposerPrefillStore((s) => s.prefillByProject[projectId]);
   const consumePrefill = useComposerPrefillStore((s) => s.consume);
 
@@ -218,6 +219,11 @@ export function ProjectHome({
       <SidebarToggle placement="floating" />
       <AccessRequestsBell count={pendingAccessCount} to={accessRequestsTo} />
 
+      {/* No bubble or "Thinking" row is painted here on send. The page stays
+          the welcome screen with the sentence held in the composer until the
+          create resolves and the session route opens; the instant shell draws
+          the first turn there (`useFirstPromptPreviewStore`). Painting the turn
+          here left a slow or stuck create looking like a live session. */}
       <ProjectHomeWelcomeBody
         projectId={projectId}
         onPickSuggestion={applySuggestion}
@@ -233,17 +239,19 @@ export function ProjectHome({
             isSending={busy}
             disabled={busy}
             // The home composer navigates to the new session on send — don't
-            // clear it first (that only flashes an empty box before the route
-            // swaps, and would drop the text on a gated send). The message
-            // rides across via the start-stash and reappears as the instant
-            // shell's optimistic turn.
+            // clear it first (that would drop the text on a gated send). The
+            // message rides across via `create.pending_prompt` and reappears
+            // as the instant shell's optimistic turn.
             clearOnSend={false}
             autoFocus
-            // A hero composer floating mid-page has no column for a second
-            // rail to align to, so the attach/agent/context controls ride on
-            // the toolbar itself, ahead of the model selector. The session
-            // page keeps the default row beneath the card.
-            underbarPlacement="inline"
+            // Desktop: a hero composer floating mid-page has no column for a
+            // second rail to align to, so the attach/agent/context controls
+            // ride on the toolbar itself, ahead of the model selector.
+            // Mobile: the toolbar is too narrow to hold them next to the
+            // model selector — the labels overlap — so it uses the session
+            // page's layout, with those controls on their own row beneath
+            // the card.
+            underbarPlacement={isMobile ? 'below' : 'inline'}
             // Hero composer mid-page: the `/` menu opens BELOW the card, into
             // the empty lower half, instead of shoving the heading up.
             slashMenuPlacement="below"

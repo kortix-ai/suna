@@ -138,6 +138,7 @@ import { EditorSectionStyleProvider } from '@/features/workspace/customize/secti
 
 import { AgentModel, AgentScope } from './agent-detail-aside';
 import { ConnectorsGrantPage, SecretsGrantPage, SkillsGrantPage } from './agent-grant-pages';
+import { AgentAuthorityCard } from './agent-authority-card';
 import { AgentPeopleSection } from './agent-people-section';
 import { AgentShareControl } from './agent-share-control';
 import { AgentTriggersSection } from './agent-triggers-section';
@@ -627,6 +628,7 @@ const READ_ONLY_SECTIONS: readonly AgentConfigSectionKey[] = [
   'overview',
   'people',
   'triggers',
+  'actions',
   'model',
 ];
 
@@ -707,6 +709,13 @@ function EditableAgentPage({
             />
           }
           people={<AgentPeopleSection projectId={projectId} agentName={agent.name} />}
+          authority={
+            <AgentAuthorityCard
+              projectId={projectId}
+              agentName={agent.name}
+              grant={editor.draft.kortix_permissions ?? editor.draft.kortix_cli}
+            />
+          }
         />
       }
       footer={
@@ -1105,6 +1114,12 @@ function ReadOnlyAgentPage({
                 projectId={projectId}
                 agentName={agent.name}
                 defaultAgent={config.open_code_default_agent}
+              />
+            ) : section === 'actions' ? (
+              <AgentAuthorityCard
+                projectId={projectId}
+                agentName={agent.name}
+                grant={agent.scope?.kortix_permissions ?? agent.scope?.kortix_cli}
               />
             ) : (
               <div className="space-y-4">

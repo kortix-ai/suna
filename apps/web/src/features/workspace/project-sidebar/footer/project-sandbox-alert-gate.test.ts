@@ -92,3 +92,29 @@ describe('sandbox alert — controls are IAM-gated, the message is not', () => {
     expect(code).not.toContain('disabled={!canOpenDetails}');
   });
 });
+
+describe('sandbox alert — a viewer with neither leaf gets the member view', () => {
+  // A member saw "Sandbox build failing / Runtime artifact missing · 1m ago /
+  // The build finished, but without the agent it needs to run." in red, with
+  // no control to act on it (dev, 2026-09-22).
+  test('operator vs member is decided from the same two leaves, after the probe settles', () => {
+    expect(code).toContain('if (details?.isLoading || write?.isLoading) return null;');
+    expect(code).toContain(
+      "const isOperator = details?.allowed !== false || write?.allowed !== false;",
+    );
+    expect(code).toContain('if (!isOperator) {');
+  });
+
+  test('the member view carries no build internals', () => {
+    const start = code.indexOf('if (!isOperator) {');
+    const end = code.indexOf('return (', code.indexOf('</SidebarAlert>', start));
+    const member = code.slice(start, end);
+    expect(member).not.toContain('CATEGORY_LABEL');
+    expect(member).not.toContain('CATEGORY_CAUSE');
+    expect(member).not.toContain('failedAt');
+    expect(member).not.toContain('SandboxAlertContent');
+    expect(source).toContain("critical: 'Sessions unavailable',");
+    // A partial outage still routes sessions: members are not shown it.
+    expect(source).not.toContain('warning: \'Sessions');
+  });
+});

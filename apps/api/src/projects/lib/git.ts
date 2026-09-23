@@ -12,7 +12,8 @@ import {
   getProjectSecretValueForConsumer,
 } from '../secrets';
 import { recordAuditEvent } from '../../shared/audit';
-import { accountGithubInstallationStates, accountGithubInstallations, accountTokens, projectGitConnections, projectGitCredentials, projectSessions, projects, sessionSandboxes } from '@kortix/db';
+import { bindAuditPrincipal } from '../../shared/audit-scope';
+import { accountGithubInstallationStates, accountGithubInstallations, accountTokens, readStoredAgentGrant, projectGitConnections, projectGitCredentials, projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import type { AgentGrant } from '@kortix/db';
 import { and, asc, countDistinct, eq, gt, inArray, isNull, ne } from 'drizzle-orm';
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
@@ -853,7 +854,7 @@ export type GitProxyAuth =
       /**
        * The resolved agent grant for a session principal (null otherwise). The
        * receive-pack route places this on the request context so the ref-scope
-       * resolver can honor `project.gitops.ref.any` / `kortix_cli: all` for the
+       * resolver can honor `project.gitops.ref.any` / `kortix_permissions: all` for the
        * session pushing. Without it a session is default-denied beyond its own
        * branch no matter what its manifest grants — the exact failure behind the
        * 2026-09-07 monitoring-metadata persistence incident.
@@ -977,6 +978,11 @@ async function authorizeGitProxyUncached(
   if (!project || project.status === 'archived') {
     return { ok: false, status: 404, message: 'Not found' };
   }
+  // A credential was presented for a real project: its owner should see the
+  // attempt in their audit log whatever the verdict. Each branch below then
+  // binds WHO, the moment its token is proven — so a refusal still names the
+  // caller. The git proxy binds the full principal on success.
+  bindAuditPrincipal({ accountId: project.accountId, projectId: project.projectId });
 
   /** Does this token's USER hold the git capability this operation needs? */
   const grantedByProjectRole = async (
@@ -1005,6 +1011,16 @@ async function authorizeGitProxyUncached(
     if (!result.isValid || !result.accountId) {
       return { ok: false, status: 401, message: result.error || 'Invalid PAT' };
     }
+    bindAuditPrincipal({
+      actorUserId: result.userId ?? null,
+      actorType: result.sessionId ? 'agent' : result.userId ? 'human' : 'system',
+      authoritativeSource: result.sessionId ? 'agent' : 'api_key',
+      authMethod: {
+        kind: 'account_token',
+        ...(result.tokenId ? { token_id: result.tokenId } : {}),
+        ...(result.sessionId ? { session_id: result.sessionId } : {}),
+      },
+    });
     if (result.projectId && result.projectId !== projectId) {
       return { ok: false, status: 403, message: 'token is scoped to a different project' };
     }
@@ -1047,7 +1063,13 @@ async function authorizeGitProxyUncached(
         tokenId: result.tokenId ?? null,
       };
     }
-    if (result.accountId !== project.accountId) {
+    // A user PAT is checked against the PROJECT role, whatever account it was
+    // minted in. Account membership is not project access: this check used to
+    // run only for a foreign-account token, so any member of the owning account
+    // could mint a personal PAT and clone or push `main` of a project they hold
+    // no role on. A session PAT keeps its own-branch ref policy
+    // (git-proxy/ref-policy.ts); a cross-account session still needs the role.
+    if (!sessionPrincipal || result.accountId !== project.accountId) {
       // Thread the acting token so the agent-grant fold fires (userRole ∩ grant)
       // — a bare authorize() would silently skip it.
       if (!(await grantedByProjectRole(result.userId, result.tokenId))) {
@@ -1075,6 +1097,24 @@ async function authorizeGitProxyUncached(
     if (!result.isValid || !result.accountId) {
       return { ok: false, status: 401, message: result.error || 'Invalid token' };
     }
+    bindAuditPrincipal(
+      result.type === 'sandbox'
+        ? {
+            actorUserId: null,
+            actorType: 'agent',
+            authoritativeSource: 'agent',
+            authMethod: {
+              kind: 'sandbox_token',
+              ...(result.sandboxId ? { sandbox_id: result.sandboxId } : {}),
+            },
+          }
+        : {
+            actorUserId: null,
+            actorType: 'system',
+            authoritativeSource: 'api_key',
+            authMethod: { kind: 'api_key' },
+          },
+    );
     if (result.type === 'sandbox') {
       if (!result.sandboxId) {
         return { ok: false, status: 403, message: 'sandbox token missing a sandbox scope' };
@@ -1129,7 +1169,7 @@ async function authorizeGitProxyUncached(
         return { ok: false, status: 403, message: 'session has no branch to push' };
       }
       // Resolve the session's agent grant so the ref-scope resolver can widen a
-      // session that deliberately holds `project.gitops.ref.any` / `kortix_cli:
+      // session that deliberately holds `project.gitops.ref.any` / `kortix_permissions:
       // all`. The grant lives on the session's connector token(s) in
       // `account_tokens`; a sandbox key carries no grant of its own. Missing row
       // (or a project with no per-agent governance) reads null = default-deny.
@@ -1159,7 +1199,7 @@ async function authorizeGitProxyUncached(
           userId: grantRow?.userId ?? null,
           tokenId: grantRow?.tokenId ?? null,
         },
-        agentGrant: grantRow?.agentGrant ?? null,
+        agentGrant: readStoredAgentGrant(grantRow?.agentGrant),
       };
     }
     // Account-scoped user API key. No per-project fallback here: an API key

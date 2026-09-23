@@ -10,8 +10,9 @@ import {
   parseFileMentionReferences,
   parseFileReferences,
   parseProjectReferences,
-  parseReplyContext,
+  parseReplyContexts,
   parseSessionReferences,
+  splitAtQuoteMarkers,
 } from '@/features/session/message-parsing';
 import type { SentAttachment } from '@/features/session/sent-attachment-previews';
 import { SessionBusyIndicator } from '@/features/session/session-busy-indicator';
@@ -19,6 +20,7 @@ import {
   BUBBLE_SURFACE,
   BUBBLE_TEXT,
   MessageAttachments,
+  QuotedMessageBody,
   UserMessageActions,
   type AttachmentUploadStatus,
   type NormalizedAttachment,
@@ -153,15 +155,22 @@ function OptimisticUserBubble({
   // Strip every ref block the composer folded into the prompt, in the order it
   // folded them in, so the bubble shows the sentence the user typed and the
   // attachments as tiles — never raw XML.
-  const { replyContext, files, cleanText } = useMemo(() => {
-    const { cleanText: afterReply, replyContext } = parseReplyContext(text);
+  const { quotes, files, cleanText } = useMemo(() => {
+    const { cleanText: afterReply, quotes } = parseReplyContexts(text);
     const { cleanText: afterFiles, files } = parseFileReferences(afterReply);
     const { cleanText: afterProjects } = parseProjectReferences(afterFiles);
     const { cleanText: afterFileMentions } = parseFileMentionReferences(afterProjects);
     const { cleanText: afterAgentMentions } = parseAgentMentionReferences(afterFileMentions);
     const { cleanText } = parseSessionReferences(afterAgentMentions);
-    return { replyContext, files, cleanText };
+    return { quotes, files, cleanText };
   }, [text]);
+
+  // Quotes are drawn where they were written, by the same component the sent
+  // message uses — see `QuotedMessageBody`.
+  const quotedPieces = useMemo(
+    () => (quotes.length > 0 ? splitAtQuoteMarkers(cleanText, quotes) : null),
+    [cleanText, quotes],
+  );
 
   // Same shape MessageAttachments consumes on a real turn — one strip, one tile
   // language, so the optimistic bubble and the server turn never disagree.
@@ -201,14 +210,20 @@ function OptimisticUserBubble({
       {attachments.length > 0 && (
         <MessageAttachments attachments={attachments} status={uploadStatus} />
       )}
-      {(cleanText || replyContext) && (
+      {(cleanText || quotedPieces) && (
         <div className={cn(BUBBLE_SURFACE, 'w-fit overflow-hidden')}>
-          {replyContext && (
-            <blockquote className="border-border mb-2 border-l-2 pl-2.5">
-              <p className="text-muted-foreground line-clamp-2 text-sm leading-5">{replyContext}</p>
-            </blockquote>
-          )}
-          {cleanText && (
+          {quotedPieces ? (
+            <QuotedMessageBody
+              pieces={quotedPieces}
+              renderText={(runText) => (
+                <HighlightMentions
+                  text={runText}
+                  agentNames={agentNames}
+                  onFileClick={onFileClick}
+                />
+              )}
+            />
+          ) : (
             <p className={BUBBLE_TEXT}>
               <HighlightMentions
                 text={cleanText}

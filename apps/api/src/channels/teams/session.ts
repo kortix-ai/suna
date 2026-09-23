@@ -7,6 +7,7 @@ import {
   createSession as createLifecycleSession,
   resolveProjectAutomationActor as resolveLifecycleAutomationActor,
 } from '../../projects/session-lifecycle';
+import { sessionHoldsLiveTurn } from '../../projects/session-lifecycle/inbox-admission';
 import { currentChannelSelection } from '../slack/selection';
 import { startErrorMessage, TEAMS_START_ERROR_COMMANDS } from '../start-error';
 import { buildAgentUnavailableCard } from './agent-picker';
@@ -34,13 +35,14 @@ import {
   type TeamsActivity,
   type TeamsLiveTurn,
 } from './types';
-import { describeTeamsConversation, stripTeamsMentions } from './util';
+import { describeTeamsConversation, stripTeamsMentions, teamsMessageText } from './util';
 import { ensureTeamsThreadParticipant, normalizeConversationPolicy, rememberTeamsThreadOwner } from './participants';
 
 const defaultTeamsSessionLifecycle = {
   continueSession: continueLifecycleSession,
   createSession: createLifecycleSession,
   resolveProjectAutomationActor: resolveLifecycleAutomationActor,
+  holdsLiveTurn: sessionHoldsLiveTurn,
 };
 
 let teamsSessionLifecycle = defaultTeamsSessionLifecycle;
@@ -259,7 +261,15 @@ async function deliverFollowUp(input: {
   }
 
   const inflight = await loadTurn(sessionId);
-  if (turnIsLive(inflight, input.sessionStatus)) {
+  // A card that has not moved for 10 minutes is not proof of a dead run: one
+  // long command (a build, a test suite) posts no step while it works. Before
+  // closing it as abandoned, ask the runtime's own turn ledger — the authority
+  // `GET .../turn` and inbox admission read. Closing a live run's card lost
+  // its answer: the card said "ended", and its `teams send` found no turn.
+  const live =
+    turnIsLive(inflight, input.sessionStatus) ||
+    (!!inflight && !inflight.finalized && (await teamsSessionLifecycle.holdsLiveTurn(sessionId).catch(() => false)));
+  if (live) {
     // A turn really is streaming: the running stream keeps its card, ours
     // becomes a short notice and is not saved as the turn.
     if (handle) await noticeOnLiveCard(handle, 'Got it — I’ll take this after the current step.');
@@ -340,7 +350,11 @@ async function deliverFollowUp(input: {
           error: `This conversation's session hit an error and couldn't start. [Open it in Kortix](${url}) to see what happened.`,
         });
       } else {
-        await finalizeTurn(handle, {});
+        // The notice is suppressed so a jammed conversation does not repeat
+        // the same error line on every message — but the CARD must not then
+        // claim "Task complete" over a session that failed to start. Title
+        // only: honest, and still silent.
+        await finalizeTurn(handle, { title: "Couldn't start", unfinished: true });
       }
     }
     return 'done';
@@ -498,7 +512,19 @@ export async function createOrJoinTeamsConversationSession(input: {
     },
     enforceAccountCap: false,
     queuePolicy: 'on_backpressure',
-    idempotencyKey: claimKey,
+    // One key per inbound message, never per conversation. The lifecycle
+    // keeps a key forever (a unique index, no retention) and a chat is one
+    // conversation for life, so under the conversation's key its FIRST
+    // create_session command answered every later create: a failed first
+    // start (dead-lettered) failed every later message with the same error, a
+    // deleted session answered 409 IDEMPOTENCY_KEY_SESSION_DELETED — shown as
+    // "connect your account" — and `/new` got the old session back. Racing
+    // messages are already serialized by the thread-create claim; a Teams
+    // redelivery of the same activity still carries the same key.
+    idempotencyKey:
+      tenantId && conversationId && activity.id
+        ? `teams:create:${tenantId}:${conversationId}:${activity.id}`
+        : claimKey,
     postCreate:
       tenantId && conversationId
         ? [{ type: 'bind_chat_thread', platform: 'teams', workspaceId: tenantId, threadId: conversationId }]
@@ -513,6 +539,17 @@ export async function createOrJoinTeamsConversationSession(input: {
         activity_id: activity.id,
         // Frozen at start: a later `/policy` change applies to NEW sessions only.
         conversation_policy: normalizeConversationPolicy(selection?.conversationPolicy),
+        // The team a channel conversation lives in. Each turn gets it as
+        // MS_TEAMS_TEAM_GROUP_ID for that turn only; this is the durable
+        // record, so a channel session can be traced back to its team (Graph
+        // `/teams/{team}/channels/{channel}/…` needs the team id) after the
+        // activity is gone. Absent in a personal or group chat: no team.
+        ...(activity.channelData?.team?.aadGroupId
+          ? {
+              team_group_id: activity.channelData.team.aadGroupId,
+              ...(activity.channelData.team.name ? { team_name: activity.channelData.team.name } : {}),
+            }
+          : {}),
       },
     },
     extraEnvVars: buildTeamsTurnEnv(tenantId, activity),
@@ -520,6 +557,11 @@ export async function createOrJoinTeamsConversationSession(input: {
 
   if (result.error) {
     console.error('[teams-webhook] createProjectSession failed', { status: result.error.status, body: result.error.body });
+    // No session exists, so no mapping will ever be published under this
+    // claim. Held for its 5-minute TTL, it made every retry inside that
+    // window lose the claim, wait 8 s, and fail with "couldn't start" —
+    // including the retry the agent picker below asks for.
+    if (claimKey) await releaseThreadCreate(claimKey);
     if (handle) {
       // A deleted / renamed / disabled agent is rejected up front as
       // `400 AGENT_NOT_DECLARED`, and no amount of retrying revives it. Hand
@@ -593,6 +635,15 @@ async function claimThreadCreate(key: string): Promise<boolean> {
   }
 }
 
+async function releaseThreadCreate(key: string): Promise<void> {
+  try {
+    await db.delete(chatEventDedup).where(eq(chatEventDedup.eventId, key));
+  } catch (err) {
+    // The claim still expires on its own; only the retry window stays shut.
+    console.warn('[teams-webhook] thread-create claim release failed', err);
+  }
+}
+
 async function waitForConversationSession(tenantId: string, conversationId: string): Promise<string | null> {
   const deadline = Date.now() + 8_000;
   for (;;) {
@@ -622,7 +673,18 @@ const TURN_INSTRUCTIONS = [
   '  Keep them human and brief — a few per task — and post one right before anything slow so the conversation always shows fresh progress.',
   '- Attach inline context with `--detail`, and surface a finished step result with `--output`:',
   '    teams step "Drafting summary" --output "Found 3 incidents, 1 P0"',
-  '- Need to ask the user something? Use `teams send`, then END your turn — Teams questions are async: ask, stop, and resume when they reply.',
+  // The `question` tool renders a real Adaptive Card — one-tap buttons for a
+  // single question, a form with a picker per question for several — and it
+  // does NOT hang the turn. It used to: the daemons released the blocking call
+  // only for SLACK_* env, so a Teams agent that asked a question hung after its
+  // card was posted. `POST /turn-question` now releases it from the server for
+  // every chat-channel session (channels/question-release.ts), which reaches
+  // every sandbox the moment the API deploys — and this prompt ships in that
+  // same deploy, so it is never live without its release. Proven on a real dev
+  // runtime: the call blocked on `que_…`, the server-style reply returned 200,
+  // a second reply returned 404, and the agent resumed with the sentinel.
+  '- Need to ask the user something with DISCRETE choices? Use the built-in `question` tool. It renders a real Adaptive Card — one tap per option for a single question, a form with a picker per question for several, a multi-select when you pass `multiple`, and a text box when you pass no options. It returns at once: END your turn, and the answer arrives as a NEW turn with full context.',
+  '- Use `teams send` for a question only when it is genuinely open-ended prose with nothing to pick from. A numbered list of choices in a message is the wrong shape — the user cannot tap it.',
   '- Deliver the final answer with `teams send` (text, or an Adaptive Card via --card-file). One `teams send` per turn — it finalizes the live message.',
 ].join('\n');
 
@@ -660,7 +722,7 @@ function renderAttachments(activity: TeamsActivity): string[] {
 
 export function renderFollowUpPrompt(activity: TeamsActivity, imagesUnavailable = false): string {
   const user = activity.from?.name ?? activity.from?.id ?? 'unknown';
-  const text = stripTeamsMentions(activity.text ?? '');
+  const text = teamsMessageText(activity);
   return [
     `New message from ${user} in the same Teams conversation:`,
     '',
@@ -676,7 +738,7 @@ function renderAgentPrompt(activity: TeamsActivity, revived = false): string {
   const tenant = activity.conversation?.tenantId ?? activity.channelData?.tenant?.id ?? 'unknown';
   const conversation = activity.conversation?.id ?? '?';
   const user = activity.from?.name ?? activity.from?.id ?? 'unknown';
-  const text = stripTeamsMentions(activity.text ?? '');
+  const text = teamsMessageText(activity);
   return [
     ...(revived
       ? [

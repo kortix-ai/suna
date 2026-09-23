@@ -135,7 +135,9 @@
     "openEmailApp": "メールアプリを開く",
     "goToSignIn": "サインインに移動",
     "verifyEmailInstructions": "電子メール内のリンクをクリックしてアカウントを確認し、サインインします。",
-    "browseAsGuest": "ゲストとして閲覧"
+    "browseAsGuest": "ゲストとして閲覧",
+    "signOutFailed": "サインアウトできませんでした。接続を確認してもう一度お試しください。",
+    "signingOut": "サインアウト中…"
   },
   "onboarding": {
     "welcome": "Kortixができることを見る",
@@ -531,7 +533,22 @@
     "buyCredits": "クレジット購入",
     "availableCredits": "利用可能クレジット",
     "creditPackages": "クレジットパッケージ",
-    "choosePackageBoost": "パッケージを選んでクレジット残高を增やそう"
+    "choosePackageBoost": "パッケージを選んでクレジット残高を增やそう",
+    "title": "請求",
+    "nextDailyRefresh": "次回の毎日のリフレッシュ",
+    "in1Hour": "1時間後",
+    "cancelsOn": "終了日",
+    "manageOnWeb": "kortix.comで管理",
+    "openWebFailed": "kortix.comを開けませんでした。もう一度お試しください。",
+    "scheduledChange": "予定されている変更",
+    "newPlan": "新しいプラン",
+    "startsOn": "開始日",
+    "keepCurrentPlan": "現在のプランを維持",
+    "keepPlanTitle": "{{plan}}を維持しますか？",
+    "keepPlanFailed": "変更をキャンセルできませんでした。もう一度お試しください。",
+    "keepPlanDescription": "{{date}}の{{plan}}への変更はキャンセルされます。",
+    "keepPlan": "プランを維持",
+    "keepingPlan": "プランを維持しています…"
   },
   "theme": {
     "title": "外観",
@@ -587,7 +604,25 @@
     "deletionCancelledSuccess": "アカウントは安全です。削除がキャンセルされました。",
     "failedToRequest": "アカウント削除リクエストに失敗",
     "failedToCancel": "アカウント削除キャンセルに失敗",
-    "cancelRequestDescription": "削除日前ならいつでもこのリクエストをキャンセルできます。キャンセルすると、すべてのデータが保存されます。"
+    "cancelRequestDescription": "削除日前ならいつでもこのリクエストをキャンセルできます。キャンセルすると、すべてのデータが保存されます。",
+    "scheduledBadge": "予定済み",
+    "notAvailableTitle": "このサーバーでは利用できません",
+    "projectsAndSessions": "プロジェクトとセッション",
+    "credentialsAndConnections": "認証情報と接続",
+    "subscriptionAndBilling": "サブスクリプションと請求",
+    "when": "削除のタイミング",
+    "in30Days": "30日後",
+    "immediately": "今すぐ",
+    "deleteTitle": "アカウントを削除しますか？",
+    "deleteNowTitle": "今すぐアカウントを削除しますか？",
+    "deleteScheduledDescription": "アカウントは30日後に削除されます。それまではキャンセルできます。",
+    "deleteNowDescription": "アカウントとそのデータは今すぐ削除されます。元に戻すことはできません。",
+    "deleteNow": "今すぐ削除",
+    "deleting": "削除中…",
+    "cancelling": "キャンセル中…",
+    "finalTitle": "本当によろしいですか？",
+    "finalDescriptionNow": "アカウント内のすべて（プロジェクト、セッション、認証情報、請求情報）が今すぐ削除されます。元に戻すことはできません。",
+    "finalDescriptionScheduled": "アカウント内のすべて（プロジェクト、セッション、認証情報、請求情報）が30日後に削除されます。それまではキャンセルできます。"
   },
   "models": {
     "selectModel": "モデルを選択",
@@ -1112,5 +1147,40 @@
     "openSettings": "設定を開く",
     "enableAll": "すべてを有効にする",
     "disableAll": "すべて無効にする"
+  },
+  "account": {
+    "title": "アカウント",
+    "preferences": "環境設定",
+    "sounds": "サウンド",
+    "workspace": "ワークスペース",
+    "accounts": "アカウント",
+    "help": "ヘルプ",
+    "docs": "ドキュメント",
+    "support": "サポート",
+    "advanced": "詳細設定"
+  },
+  "profile": {
+    "changePhoto": "プロフィール写真を変更",
+    "photoFailed": "写真を更新できませんでした。もう一度お試しください。"
+  },
+  "plans": {
+    "title": "プラン",
+    "plan": "プラン",
+    "current": "現在",
+    "currentPlan": "現在のプラン",
+    "seats": "{{count}}席 × ${{price}}",
+    "perMonth": "${{total}} / 月",
+    "includes": "{{plan}}に含まれるもの",
+    "askOwner": "アカウントのオーナーにアップグレードを依頼してください",
+    "contactSales": "営業に問い合わせる",
+    "upgradeTo": "{{plan}}にアップグレード",
+    "switchTo": "{{plan}}に切り替え"
+  },
+  "upgrade": {
+    "teamPlan": "Kortix Team",
+    "perSeatMonthly": "1席あたり / 月",
+    "includes": "含まれるもの",
+    "askOwner": "アカウントのオーナーに席を依頼してください",
+    "notNow": "後で"
   }
 }

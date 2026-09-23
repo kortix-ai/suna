@@ -1,4 +1,4 @@
-import type { LucideIcon } from 'lucide-react-native';
+import { type AppIcon } from '@/lib/icons';
 
 /**
  * Conversation Type
@@ -8,7 +8,7 @@ import type { LucideIcon } from 'lucide-react-native';
 export interface Conversation {
   id: string;
   title: string;
-  icon: LucideIcon; // Fallback icon component
+  icon: AppIcon; // Fallback icon component
   iconName?: string | null; // Dynamic icon name from backend
   preview?: string;
   timestamp: Date;
@@ -34,7 +34,7 @@ export interface ConversationSection {
  */
 export interface BottomNavItem {
   id: string;
-  icon: LucideIcon;
+  icon: AppIcon;
   label: string;
   onPress: () => void;
 }

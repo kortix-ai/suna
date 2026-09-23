@@ -79,7 +79,7 @@ beforeAll(async () => {
       userId: ME,
       name: 'Connector Session abcdef12',
       sessionId: crypto.randomUUID(),
-      agentGrant: { agent: 'main', connectors: [], kortixCli: 'all' },
+      agentGrant: { agent: 'main', connectors: [], permissions: 'all' },
     }),
     // A service account's bearer: minted under a human's user_id, but it is
     // the automation's identity, not the human's key.

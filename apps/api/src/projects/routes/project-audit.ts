@@ -10,7 +10,7 @@ import { db } from '../../shared/db';
 import { auditDb, auditErrorSqlstate, isAuditContentionError } from '../../shared/audit-db';
 import { logger as appLogger } from '../../lib/logger';
 import { createRoute, z } from '@hono/zod-openapi';
-import { auditEvents, connectors, connectorCalls, projectSessions, sessionSandboxes, serviceAccounts } from '@kortix/db';
+import { accountTokens, auditEvents, connectors, connectorCalls, projectSessions, sessionSandboxes, serviceAccounts } from '@kortix/db';
 import { and, asc, desc, eq, gt, inArray, isNull, or } from 'drizzle-orm';
 import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, assertProjectCapability } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
@@ -27,13 +27,40 @@ import {
   serializeAuditEvent,
 } from '../../shared/audit-query';
 import { flushAuditEvents } from '../../shared/audit';
-import { AuditEventSchema, AuditListSchema } from '../../shared/audit-schema';
+import { AuditActorTypeSchema, AuditEventSchema, AuditListSchema } from '../../shared/audit-schema';
 import { parseOpenCodeAuditBatch } from '../../shared/opencode-audit-ingestion';
 import { applyOpenCodeAuditRateLimit } from '../../shared/opencode-audit-rate-guard';
 import { flagSessionAuditRateLimited } from '../lib/session-audit-rate-flag';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
+import { agentAuditInitiator } from '../../shared/agent-audit-attribution';
+
+/**
+ * The human a session acts on behalf of, for OpenCode audit ingestion. A
+ * session PAT carries it (auth middleware); a legacy sandbox key does not, so
+ * the session's live agent token is read. Any failure → null.
+ */
+async function ingestionOnBehalfOf(c: any, sessionId: string, accountId: string): Promise<string | null> {
+  if (c.get('authType') === 'pat') return (c.get('onBehalfOfUserId') as string | null | undefined) ?? null;
+  try {
+    const [token] = await db
+      .select({ onBehalfOfUserId: accountTokens.onBehalfOfUserId })
+      .from(accountTokens)
+      .where(
+        and(
+          eq(accountTokens.sessionId, sessionId),
+          eq(accountTokens.accountId, accountId),
+          eq(accountTokens.status, 'active'),
+          isNull(accountTokens.revokedAt),
+        ),
+      )
+      .limit(1);
+    return token?.onBehalfOfUserId ?? null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Rows per audit-ingest INSERT statement. Each statement holds this session's
@@ -79,7 +106,7 @@ projectsApp.openapi(
       query: z.object({
         action: z.string().optional(),
         actor: z.string().uuid().optional(),
-        actor_type: z.enum(['human', 'agent', 'service_account', 'system']).optional(),
+        actor_type: AuditActorTypeSchema.optional(),
         session_id: z.string().optional(),
         source: z.string().optional(),
         phase: z.string().optional(),
@@ -207,6 +234,8 @@ projectsApp.openapi(
         opencodeSessionId: projectSessions.opencodeSessionId,
         agentName: projectSessions.agentName,
         createdBy: projectSessions.createdBy,
+        origin: projectSessions.origin,
+        metadata: projectSessions.metadata,
       })
       .from(sessionSandboxes)
       .innerJoin(
@@ -257,6 +286,20 @@ projectsApp.openapi(
     const initiatorIdentity = scope.createdBy
       ? identities.find((identity) => identity.serviceAccountId === scope.createdBy)
       : null;
+    // Spec 2026-09-22 §2: the same initiator rule every other agent-session
+    // audit row uses (shared/agent-audit-attribution.ts), plus the human the
+    // session acts on behalf of — read from the credential when it is the
+    // session token, else from the session's live agent token.
+    const onBehalfOfUserId = await ingestionOnBehalfOf(c, sessionId, accountId);
+    const initiator = agentAuditInitiator({
+      onBehalfOfUserId,
+      session: {
+        origin: scope.origin ?? null,
+        metadata: (scope.metadata ?? {}) as Record<string, unknown>,
+        createdBy: scope.createdBy ?? null,
+        createdByIsServiceAccount: Boolean(initiatorIdentity),
+      },
+    });
 
     let parsed: ReturnType<typeof parseOpenCodeAuditBatch>;
     try {
@@ -268,12 +311,9 @@ projectsApp.openapi(
           opencodeSessionId: scope.opencodeSessionId,
           agentId: agentIdentity?.serviceAccountId ?? null,
           agentName: scope.agentName,
-          initiatorActorType: initiatorIdentity
-            ? 'service_account'
-            : scope.createdBy
-              ? 'human'
-              : 'system',
-          initiatorActorId: scope.createdBy,
+          initiatorActorType: initiator.type,
+          initiatorActorId: initiator.id,
+          onBehalfOfUserId,
           correlationId: sessionId,
           causationId: null,
           delegationDepth: 0,

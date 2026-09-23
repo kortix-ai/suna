@@ -1,76 +1,76 @@
 /**
  * Icon Mapping Utility
  * 
- * Maps backend icon names (strings) to Lucide React Native icons
+ * Maps backend icon names (strings) to app icons from `@/lib/icons`
  * Provides fallback icons for unmapped names
  */
 
 import {
-  Bot,
-  Sparkles,
-  Code2,
+  RobotIcon as Bot,
+  SparkleIcon as Sparkles,
+  CodeSimpleIcon as Code2,
   PresentationIcon,
-  FileCode2,
-  Headphones,
-  Brain,
-  Lightbulb,
-  Pencil,
-  Settings,
-  User,
-  Zap,
-  Star,
-  Heart,
-  Shield,
-  Target,
-  MessageSquare,
-  BookOpen,
-  Camera,
-  Music,
-  Video,
-  Image,
-  FileText,
-  Folder,
-  Database,
-  Globe,
-  Lock,
-  Unlock,
-  CheckCircle,
-  XCircle,
-  AlertCircle,
-  Info,
-  HelpCircle,
-  Search,
-  Filter,
-  SortAsc,
-  Download,
-  Upload,
-  Share,
-  Copy,
-  Edit,
-  Trash2,
-  Plus,
-  Minus,
-  X,
-  Check,
-  ChevronDown,
-  ChevronUp,
-  ChevronLeft,
-  ChevronRight,
-  ArrowLeft,
-  ArrowRight,
-  ArrowUp,
-  ArrowDown,
-  Home,
-  Menu,
-  MoreHorizontal,
-  MoreVertical,
-  type LucideIcon,
-} from 'lucide-react-native';
+  FileCodeIcon as FileCode2,
+  HeadphonesIcon as Headphones,
+  BrainIcon as Brain,
+  LightbulbIcon as Lightbulb,
+  PencilIcon as Pencil,
+  GearSixIcon as Settings,
+  UserIcon as User,
+  LightningIcon as Zap,
+  StarIcon as Star,
+  HeartIcon as Heart,
+  ShieldIcon as Shield,
+  TargetIcon as Target,
+  ChatIcon as MessageSquare,
+  BookOpenIcon as BookOpen,
+  CameraIcon as Camera,
+  MusicNotesIcon as Music,
+  VideoIcon as Video,
+  ImageIcon as Image,
+  FileTextIcon as FileText,
+  FolderIcon as Folder,
+  DatabaseIcon as Database,
+  GlobeIcon as Globe,
+  LockIcon as Lock,
+  LockOpenIcon as Unlock,
+  CheckCircleIcon as CheckCircle,
+  XCircleIcon as XCircle,
+  WarningCircleIcon as AlertCircle,
+  InfoIcon as Info,
+  QuestionIcon as HelpCircle,
+  MagnifyingGlassIcon as Search,
+  FunnelIcon as Filter,
+  SortAscendingIcon as SortAsc,
+  DownloadIcon as Download,
+  UploadIcon as Upload,
+  ExportIcon as Share,
+  CopyIcon as Copy,
+  PencilSimpleIcon as Edit,
+  TrashIcon as Trash2,
+  PlusIcon as Plus,
+  MinusIcon as Minus,
+  XIcon as X,
+  CheckIcon as Check,
+  CaretDownIcon as ChevronDown,
+  CaretUpIcon as ChevronUp,
+  CaretLeftIcon as ChevronLeft,
+  CaretRightIcon as ChevronRight,
+  ArrowLeftIcon as ArrowLeft,
+  ArrowRightIcon as ArrowRight,
+  ArrowUpIcon as ArrowUp,
+  ArrowDownIcon as ArrowDown,
+  HouseIcon as Home,
+  ListIcon as Menu,
+  DotsThreeIcon as MoreHorizontal,
+  DotsThreeVerticalIcon as MoreVertical,
+  type AppIcon,
+} from '@/lib/icons';
 
 /**
- * Icon mapping from backend icon names to Lucide icons
+ * Icon mapping from backend icon names to app icons
  */
-const ICON_MAP: Record<string, LucideIcon> = {
+const ICON_MAP: Record<string, AppIcon> = {
   // Core agent types
   'bot': Bot,
   'sparkles': Sparkles,
@@ -158,12 +158,12 @@ const ICON_MAP: Record<string, LucideIcon> = {
 const DEFAULT_ICON = Bot;
 
 /**
- * Get Lucide icon from backend icon name
+ * Get the app icon for a backend icon name
  * 
  * @param iconName - Backend icon name (string)
- * @returns Lucide React Native icon component
+ * @returns Icon component from `@/lib/icons`
  */
-export function getIconFromName(iconName: string | null | undefined): LucideIcon {
+export function getIconFromName(iconName: string | null | undefined): AppIcon {
   if (!iconName) {
     return DEFAULT_ICON;
   }

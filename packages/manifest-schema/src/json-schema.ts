@@ -3,7 +3,7 @@
  * the Kortix equivalent of opencode's https://opencode.ai/config.json.
  *
  * This is DATA generated from the same constants/enums the imperative
- * validator (`./index.ts`) uses (`GRANTABLE_KORTIX_CLI_ACTIONS`,
+ * validator (`./index.ts`) uses (`GRANTABLE_KORTIX_PERMISSIONS`,
  * `CONNECTOR_PROVIDERS`, `AGENT_MODES_V2`, `WORKSPACE_MODES_V2`, …) so the
  * two can never silently drift apart — see the conformance test
  * (`__tests__/json-schema.conformance.test.ts`), which runs a shared fixture
@@ -49,11 +49,11 @@ import {
   CONNECTOR_POLICY_ACTIONS,
   CONNECTOR_PROVIDERS,
   ENV_NAME_RE,
-  DEPRECATED_KORTIX_CLI_ALIASES,
-  GRANTABLE_KORTIX_CLI_ACTIONS,
+  DEPRECATED_KORTIX_PERMISSION_ALIASES,
+  GRANTABLE_KORTIX_PERMISSIONS,
   HEX_COLOR_RE_V2,
   LEGACY_SANDBOX_KEYS,
-  LEGACY_TOLERATED_KORTIX_CLI_ACTIONS,
+  LEGACY_TOLERATED_KORTIX_PERMISSIONS,
   PERMISSION_ACTION_ONLY_KEYS_V2,
   PERMISSION_ACTIONS_V2,
   DURATION_RE,
@@ -98,9 +98,12 @@ const ENV_NAME_PATTERN_CASE_INSENSITIVE = '^[A-Za-z_][A-Za-z0-9_]*$';
 
 const NON_EMPTY_STRING: JsonSchemaFragment = { type: 'string', minLength: 1 };
 
-/** The `connectors` / `secrets` / `skills` / `kortix_cli` grant-set shape:
+/** One `agents.<name>.apps` entry: an App slug (`SLUG_RE`) or the `*` wildcard. */
+const APP_GRANT_ENTRY_PATTERN = '^(?:[a-z0-9][a-z0-9_-]{0,127}|\\*)$';
+
+/** The `connectors` / `secrets` / `skills` / `kortix_permissions` grant-set shape:
  *  an allowlist of names, or the "all"/"none" sentinel (spec §2.2/§2.4/§2.5).
- *  `itemSchema` lets `kortix_cli` additionally constrain each entry to the
+ *  `itemSchema` lets `kortix_permissions` additionally constrain each entry to the
  *  grantable-action enum. */
 function grantSetSchema(itemSchema: JsonSchemaFragment = NON_EMPTY_STRING): JsonSchemaFragment {
   return {
@@ -113,26 +116,41 @@ function grantSetSchema(itemSchema: JsonSchemaFragment = NON_EMPTY_STRING): Json
 }
 
 /**
- * Every string a `kortix_cli` grant-list entry may legally be, version-gated
+ * Every string a `kortix_permissions` grant-list entry may legally be, version-gated
  * to mirror `validateGrantList`'s clean break (`./index.ts`): v1 still
  * tolerates the legacy no-op actions (warning, not error — an existing
  * manifest that lists one must keep validating), so its enum is the live
  * grantable catalog PLUS the legacy set. v2 hard-rejects them, so its enum
  * is the live grantable catalog ONLY. Both always accept the `"*"` wildcard.
  */
-function kortixCliEnum(version: 1 | 2): readonly string[] {
+function kortixPermissionsEnum(version: 1 | 2): readonly string[] {
   // The renamed aliases are in BOTH enums: the validator accepts them (they
   // still resolve), so an editor must not red-squiggle a file that passes
   // `kortix validate`. They are absent from the grantable catalog, so nothing
   // presents them as a live choice.
-  const renamed = Object.keys(DEPRECATED_KORTIX_CLI_ALIASES);
+  const renamed = Object.keys(DEPRECATED_KORTIX_PERMISSION_ALIASES);
   return version === 2
-    ? [...GRANTABLE_KORTIX_CLI_ACTIONS, ...renamed, '*']
-    : [...GRANTABLE_KORTIX_CLI_ACTIONS, ...renamed, ...LEGACY_TOLERATED_KORTIX_CLI_ACTIONS, '*'];
+    ? [...GRANTABLE_KORTIX_PERMISSIONS, ...renamed, '*']
+    : [...GRANTABLE_KORTIX_PERMISSIONS, ...renamed, ...LEGACY_TOLERATED_KORTIX_PERMISSIONS, '*'];
 }
 
-function kortixCliGrantSetSchema(version: 1 | 2): JsonSchemaFragment {
-  return grantSetSchema({ type: 'string', enum: [...kortixCliEnum(version)] });
+function kortixPermissionsGrantSetSchema(version: 1 | 2): JsonSchemaFragment {
+  return {
+    ...grantSetSchema({ type: 'string', enum: [...kortixPermissionsEnum(version)] }),
+    description: 'Kortix permissions: the project.* IAM actions this agent may exercise, or "all" / "none".',
+  };
+}
+
+/** `kortix_cli` — the deprecated input alias of `kortix_permissions`. Same
+ *  value shape; the imperative validator warns on it and errors when it
+ *  disagrees with `kortix_permissions` (a cross-field rule JSON Schema cannot
+ *  express). */
+function deprecatedKortixCliGrantSetSchema(version: 1 | 2): JsonSchemaFragment {
+  return {
+    ...grantSetSchema({ type: 'string', enum: [...kortixPermissionsEnum(version)] }),
+    deprecated: true,
+    description: 'Deprecated alias for kortix_permissions.',
+  };
 }
 
 /** `PermissionRuleConfig`: a bare action, or a glob-pattern → action map. */
@@ -562,8 +580,10 @@ function agentEntryV1Schema(): JsonSchemaFragment {
     properties: {
       name: SLUG_SCHEMA,
       connectors: grantSetSchema(),
-      kortix_cli: kortixCliGrantSetSchema(1),
+      kortix_permissions: kortixPermissionsGrantSetSchema(1),
+      kortix_cli: deprecatedKortixCliGrantSetSchema(1),
       env: grantSetSchema(),
+      apps: grantSetSchema(),
     },
     additionalProperties: true,
   };
@@ -593,7 +613,13 @@ function agentBlockV2Schema(): JsonSchemaFragment {
       },
       secrets: grantSetSchema(),
       skills: grantSetSchema(),
-      kortix_cli: kortixCliGrantSetSchema(2),
+      apps: {
+        ...grantSetSchema({ type: 'string', pattern: APP_GRANT_ENTRY_PATTERN }),
+        description:
+          'Kortix Apps (by App slug) this agent may open when the App is restricted or private. Deny by default.',
+      },
+      kortix_permissions: kortixPermissionsGrantSetSchema(2),
+      kortix_cli: deprecatedKortixCliGrantSetSchema(2),
       repository_access: { type: 'boolean', description: 'Allow new sessions to access the project repository. Defaults to true.' },
       workspace: { type: 'string', enum: [...WORKSPACE_MODES_V2], deprecated: true },
     },
@@ -689,7 +715,7 @@ export function buildManifestV1Schema(): JsonSchemaFragment {
     title: 'Kortix manifest (kortix_version 1)',
     description:
       'kortix.toml / kortix.yaml, schema version 1 — `[[agents]]` is a per-agent governance ' +
-      'OVERLAY (connectors/kortix_cli/env grants); absence means an unrestricted default agent ' +
+      'OVERLAY (connectors/kortix_permissions/env grants); absence means an unrestricted default agent ' +
       '(adopt-to-govern back-compat). `[[channels]]` is accepted (validated, though dead at ' +
       'runtime — see docs/specs/2026-07-05-agent-first-config-unification.md §1.5).',
     type: 'object',
@@ -712,7 +738,7 @@ export function buildManifestV2Schema(): JsonSchemaFragment {
     title: 'Kortix manifest (kortix_version 2)',
     description:
       'kortix.yaml, schema version 2 — YAML-only. `agents` is a name→block MAP, ' +
-      'GOVERNANCE ONLY (connectors/secrets/skills/kortix_cli/repository_access/enabled); every agent must ' +
+      'GOVERNANCE ONLY (connectors/secrets/skills/kortix_permissions/repository_access/enabled); every agent must ' +
       'be declared, and OpenCode behavior (description/model/mode/temperature/permission/the ' +
       'prompt itself) lives entirely in that agent’s own native ' +
       '`.kortix/opencode/agents/<name>.md` frontmatter + body — authoring any of those fields ' +

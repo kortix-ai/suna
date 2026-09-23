@@ -63,7 +63,7 @@ function principalFor(sessionId: string | null) {
     subject: { userId: USER, groupIds: [] },
     // Agent grant allows both connectors, so the agent-grant filter is not the
     // thing hiding them — the binding resolution is.
-    agentGrant: { agent: 'test', connectors: ['veyris', 'unbound', 'revoked'], kortixCli: [] },
+    agentGrant: { agent: 'test', connectors: ['veyris', 'unbound', 'revoked'], permissions: [] },
   };
 }
 
