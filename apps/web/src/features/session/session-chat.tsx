@@ -2016,6 +2016,46 @@ function SessionTurnImpl({
 const SessionTurn = memo(SessionTurnImpl);
 SessionTurn.displayName = 'SessionTurn';
 
+interface TranscriptTurnRowProps extends SessionTurnProps {
+  turnId: string;
+  viewportClassName: string;
+  /** A failed compaction attempt a later one supersedes: the viewport stays, empty. */
+  suppressed: boolean;
+  /** The fallback waiting row belongs under this turn. */
+  showBusyRow: boolean;
+}
+
+/**
+ * One transcript row: the turn's `TurnViewport`, its `SessionTurn`, and the
+ * fallback waiting row. Memoized at the ROW, not only at `SessionTurn`: the
+ * viewport re-rendered for every turn on every streamed delta (its children
+ * element is new each time, and its class list goes through tailwind-merge),
+ * which made a long transcript cost O(turns) per delta even though every
+ * settled `SessionTurn` bailed out. Every prop here is a primitive or a
+ * reference that holds while another turn streams.
+ */
+const TranscriptTurnRow = memo(function TranscriptTurnRow({
+  turnId,
+  viewportClassName,
+  suppressed,
+  showBusyRow,
+  ...turnProps
+}: TranscriptTurnRowProps) {
+  return (
+    <TurnViewport turnId={turnId} className={viewportClassName}>
+      {/* No separate divider for compaction turns — the
+      CompactionMarker rendered by SessionTurn IS the
+      divider (rule–pill–rule), through every phase. */}
+      {suppressed ? null : <SessionTurn {...turnProps} />}
+      {/* Queued bubbles follow this turn. The waiting
+          row stays above them, where the working turn
+          draws its own, so it never jumps. */}
+      {showBusyRow && <SessionBusyIndicator sessionId={turnProps.sessionId} className="mt-2.5" />}
+    </TurnViewport>
+  );
+});
+TranscriptTurnRow.displayName = 'TranscriptTurnRow';
+
 // ============================================================================
 // Main SessionChat Component
 // ============================================================================
@@ -5878,7 +5918,7 @@ export function SessionChat({
                               ? pendingPromptsByMessageId.get(turn.userMessage.info.id)
                               : undefined;
                           return (
-                            <TurnViewport
+                            <TranscriptTurnRow
                               // ONE element per prompt: keyed by the id the
                               // bubble was FIRST painted under, so the swap to a
                               // re-minted echo id re-renders this node instead
@@ -5886,13 +5926,18 @@ export function SessionChat({
                               // hover state survives, nothing jumps).
                               key={turnRenderKeys.get(turn.userMessage.info.id)}
                               turnId={turn.userMessage.info.id}
+                              suppressed={suppressedFailedCompaction}
+                              showBusyRow={
+                                showFallbackBusyRow &&
+                                fallbackBusyRowTurnId === turn.userMessage.info.id
+                              }
                               // Queued bubbles STACK: a pending turn right after
                               // another pending turn sits close to it, like a
                               // list of what is waiting — not a turn's width
                               // apart as if each had been answered in between.
                               // (Failed compaction rows need no stacking rule any
                               // more — at most one is visible at a time.)
-                              className={
+                              viewportClassName={
                                 turnIndex === 0
                                   ? ''
                                   : lastTurnWorking &&
@@ -5901,109 +5946,94 @@ export function SessionChat({
                                     ? 'mt-3'
                                     : 'mt-12'
                               }
-                            >
-                              {/* No separate divider for compaction turns — the
-                              CompactionMarker rendered by SessionTurn IS the
-                              divider (rule–pill–rule), through every phase. */}
-                              {suppressedFailedCompaction ? null : (
-                                <SessionTurn
-                                  turn={turn}
-                                  turnOutcome={turnOutcome}
-                                  isLast={turn.userMessage.info.id === lastUserMessageId}
-                                  ownsPlan={turn.userMessage.info.id === planAnchorId}
-                                  sessionId={sessionId}
-                                  sessionStatus={sessionStatus}
-                                  permissions={pendingPermissions}
-                                  questions={pendingQuestions}
-                                  agentNames={agentNames}
-                                  isFirstTurn={turnIndex === 0}
-                                  // Handed over only once the stand-in has stepped
-                                  // aside — while it is up it draws these itself.
-                                  pendingText={turnIndex === 0 ? firstTurnHandover?.text : undefined}
-                                  pendingAttachments={sentAttachmentsForTurn({
-                                    sentByMessage: sentAttachmentsByMessage,
-                                    messageId: turn.userMessage.info.id,
-                                    originId: optimisticOriginOf(sessionId, turn.userMessage.info.id),
-                                    isFirstTurn: turnIndex === 0,
-                                    firstTurnHandover: firstTurnHandover?.attachments,
-                                    firstTurnSent: firstPromptAttachments(projectSessionId),
-                                    queuedRowAttachments: inboxRowsByMessageId.get(
-                                      turn.userMessage.info.id,
-                                    )?.attachments,
-                                  })}
-                                  uploadStatus={
-                                    heldSendFailures?.[turn.userMessage.info.id]
-                                      ? {
-                                          state: 'failed',
-                                          message: heldSendFailures[turn.userMessage.info.id].message,
-                                          onRetry: () =>
-                                            retryHeldSend(
-                                              sessionId,
-                                              turn.userMessage.info.id,
-                                              resendHeldSend,
-                                              (error) => classifySessionError(error).message,
-                                            ),
-                                        }
-                                      : turnIndex === 0 && firstTurnHandover?.attachments.length
-                                        ? firstPromptUploadStatus
-                                        : undefined
-                                  }
-                                  sessionWorking={lastTurnWorking}
-                                  isWorkingTurn={
-                                    turn.userMessage.info.id === workingTurn.workingTurnId
-                                  }
-                                  suppressBusyIndicator={suppressWorkingTurnBusy}
-                                  awaitingUser={awaitingUserInput}
-                                  pending={
-                                    !confirmedActive &&
-                                    (Boolean(pendingPrompt) ||
-                                      pendingTurnIds.has(turn.userMessage.info.id))
-                                  }
-                                  pendingPrompt={pendingPrompt}
-                                  onRetryQueued={stableRetryQueued}
-                                  onRemoveQueued={stableRemoveQueued}
-                                  interruptedBeforeRun={interruptedTurnIds.has(
-                                    turn.userMessage.info.id,
-                                  )}
-                                  isCompaction={hasCompaction}
-                                  onOpenCompactionSummary={
-                                    panel ? stableOpenCompactionSummary : undefined
-                                  }
-                                  providers={providers}
-                                  commandMessages={commandMessagesRef.current}
-                                  commands={commands}
-                                  disableToolNavigation={disableToolNavigation}
-                                  onPermissionReply={stablePermissionReply}
-                                  onRewind={stableRewind}
-                                  editingText={
-                                    rewindTarget?.messageId === turn.userMessage.info.id
-                                      ? rewindTarget.text
-                                      : null
-                                  }
-                                  editPending={editSendPending || !!sessionState?.rewindPending}
-                                  onEditCancel={stableEditCancel}
-                                  onEditSend={stableEditSend}
-                                  rewindDisabled={
-                                    !!readOnly ||
-                                    !sessionState ||
-                                    isBusy ||
-                                    sessionState.rewindPending ||
-                                    // The runtime is not idle while queued prompts
-                                    // are still on their way to it — a rewind mid-
-                                    // delivery fails downstream with "Session is
-                                    // busy" (measured); refuse it up front instead.
-                                    promptInbox.prompts.length > 0
-                                  }
-                                />
+                              turn={turn}
+                              turnOutcome={turnOutcome}
+                              isLast={turn.userMessage.info.id === lastUserMessageId}
+                              ownsPlan={turn.userMessage.info.id === planAnchorId}
+                              sessionId={sessionId}
+                              sessionStatus={sessionStatus}
+                              permissions={pendingPermissions}
+                              questions={pendingQuestions}
+                              agentNames={agentNames}
+                              isFirstTurn={turnIndex === 0}
+                              // Handed over only once the stand-in has stepped
+                              // aside — while it is up it draws these itself.
+                              pendingText={turnIndex === 0 ? firstTurnHandover?.text : undefined}
+                              pendingAttachments={sentAttachmentsForTurn({
+                                sentByMessage: sentAttachmentsByMessage,
+                                messageId: turn.userMessage.info.id,
+                                originId: optimisticOriginOf(sessionId, turn.userMessage.info.id),
+                                isFirstTurn: turnIndex === 0,
+                                firstTurnHandover: firstTurnHandover?.attachments,
+                                firstTurnSent: firstPromptAttachments(projectSessionId),
+                                queuedRowAttachments: inboxRowsByMessageId.get(
+                                  turn.userMessage.info.id,
+                                )?.attachments,
+                              })}
+                              uploadStatus={
+                                heldSendFailures?.[turn.userMessage.info.id]
+                                  ? {
+                                      state: 'failed',
+                                      message: heldSendFailures[turn.userMessage.info.id].message,
+                                      onRetry: () =>
+                                        retryHeldSend(
+                                          sessionId,
+                                          turn.userMessage.info.id,
+                                          resendHeldSend,
+                                          (error) => classifySessionError(error).message,
+                                        ),
+                                    }
+                                  : turnIndex === 0 && firstTurnHandover?.attachments.length
+                                    ? firstPromptUploadStatus
+                                    : undefined
+                              }
+                              sessionWorking={lastTurnWorking}
+                              isWorkingTurn={
+                                turn.userMessage.info.id === workingTurn.workingTurnId
+                              }
+                              suppressBusyIndicator={suppressWorkingTurnBusy}
+                              awaitingUser={awaitingUserInput}
+                              pending={
+                                !confirmedActive &&
+                                (Boolean(pendingPrompt) ||
+                                  pendingTurnIds.has(turn.userMessage.info.id))
+                              }
+                              pendingPrompt={pendingPrompt}
+                              onRetryQueued={stableRetryQueued}
+                              onRemoveQueued={stableRemoveQueued}
+                              interruptedBeforeRun={interruptedTurnIds.has(
+                                turn.userMessage.info.id,
                               )}
-                              {/* Queued bubbles follow this turn. The waiting
-                                  row stays above them, where the working turn
-                                  draws its own, so it never jumps. */}
-                              {showFallbackBusyRow &&
-                                fallbackBusyRowTurnId === turn.userMessage.info.id && (
-                                  <SessionBusyIndicator sessionId={sessionId} className="mt-2.5" />
-                                )}
-                            </TurnViewport>
+                              isCompaction={hasCompaction}
+                              onOpenCompactionSummary={
+                                panel ? stableOpenCompactionSummary : undefined
+                              }
+                              providers={providers}
+                              commandMessages={commandMessagesRef.current}
+                              commands={commands}
+                              disableToolNavigation={disableToolNavigation}
+                              onPermissionReply={stablePermissionReply}
+                              onRewind={stableRewind}
+                              editingText={
+                                rewindTarget?.messageId === turn.userMessage.info.id
+                                  ? rewindTarget.text
+                                  : null
+                              }
+                              editPending={editSendPending || !!sessionState?.rewindPending}
+                              onEditCancel={stableEditCancel}
+                              onEditSend={stableEditSend}
+                              rewindDisabled={
+                                !!readOnly ||
+                                !sessionState ||
+                                isBusy ||
+                                sessionState.rewindPending ||
+                                // The runtime is not idle while queued prompts
+                                // are still on their way to it — a rewind mid-
+                                // delivery fails downstream with "Session is
+                                // busy" (measured); refuse it up front instead.
+                                promptInbox.prompts.length > 0
+                              }
+                            />
                           );
                         })}
                       </ToolActivateContext.Provider>
