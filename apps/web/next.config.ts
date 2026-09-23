@@ -695,6 +695,41 @@ const nextConfig = (): NextConfig => ({
           },
         ],
       },
+      // Astro content-hashes every file it writes to /docs/_astro/
+      // (`app.DDrhwGTK.css`), so a URL there never changes content. Without
+      // this, public/ files are served `max-age=0` and every docs page view
+      // revalidated each script and stylesheet.
+      {
+        source: '/docs/_astro/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
+        ],
+      },
+      // Marketing media (hero posters and walkthrough encodes, trust-seal
+      // texture) are NOT content-hashed: a re-encode keeps its file name. So no
+      // `immutable` — a day of freshness, then a week of serve-stale while the
+      // CDN or browser revalidates in the background.
+      {
+        source: '/media/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=86400, stale-while-revalidate=604800',
+          },
+        ],
+      },
+      {
+        source: '/marketing/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=86400, stale-while-revalidate=604800',
+          },
+        ],
+      },
       {
         source: '/:path*.woff2',
         headers: [
