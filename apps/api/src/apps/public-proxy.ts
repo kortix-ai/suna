@@ -58,7 +58,7 @@ const ACTIVITY_LEASE_MS = 60_000;
 // The `frame-ancestors` directive for App responses. It decides which origins
 // may embed an App in an iframe — the dashboard's App preview does exactly this.
 // Managed cloud embeds from kortix.com; a SELF-HOST box embeds from the
-// operator's OWN frontend origin (e.g. https://essentia.kortix.cloud), which is
+// operator's OWN frontend origin (e.g. https://sampleco.kortix.cloud), which is
 // NOT kortix.com, so the browser would block the preview. Build the allowlist
 // dynamically to ALWAYS include the configured frontend origin (config.FRONTEND_URL)
 // plus a wildcard for its domain, so the preview frames reliably on any
@@ -81,7 +81,7 @@ function appFrameAncestors(): string {
     if ((u.protocol === 'https:' || u.protocol === 'http:') && !isLocal) {
       parts.add(u.origin);
       // Also allow any sibling subdomain of the operator's registrable-ish
-      // domain (drop the leftmost label): essentia.kortix.cloud -> *.kortix.cloud.
+      // domain (drop the leftmost label): sampleco.kortix.cloud -> *.kortix.cloud.
       const labels = host.split('.');
       if (labels.length >= 3 && !/^\d+$/.test(labels[labels.length - 1])) {
         parts.add(`${u.protocol}//*.${labels.slice(1).join('.')}`);

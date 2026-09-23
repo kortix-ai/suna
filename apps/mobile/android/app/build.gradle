@@ -140,7 +140,7 @@ android {
     def options = (findProperty("android.packagingOptions.$prop") ?: "").split(",");
     // Trim all elements in place.
     for (i in 0..<options.size()) options[i] = options[i].trim();
-    // `[] - ""` is essentially `[""].filter(Boolean)` removing all empty strings.
+    // `[] - ""` is samplecolly `[""].filter(Boolean)` removing all empty strings.
     options -= ""
 
     if (options.length > 0) {

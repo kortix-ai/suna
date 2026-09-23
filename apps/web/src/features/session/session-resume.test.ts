@@ -52,7 +52,7 @@ describe('isSandboxResumable', () => {
  * dead-end card "session <id> is stopped — open a new session to continue"…
  * moments before the box came up and the session loaded fine.
  *
- * Reported exactly that way (essentia, 2026-08-24): "ALL OF THEM WILL SHOW ME
+ * Reported exactly that way (sampleco, 2026-08-24): "ALL OF THEM WILL SHOW ME
  * THE ERROR AFTER TRYING TO CONNECT FOR A WHILE & THEN THEY WILL CONNECT".
  *
  * A count cannot express "how long is it reasonable to wait for a machine to

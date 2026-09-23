@@ -105,7 +105,7 @@ describe('deliverWithRetry — hand the prompt off through the post-wake flake',
   // A DOWN RUNTIME IS NOT A FAILED DELIVERY. This loop stops re-trying a dead
   // box in-line — that part was always right — but the outcome it reports has
   // to say WHY, because the drain turns 'failed' into a dead-letter on the
-  // first attempt. Essentia 2026-08-26: a queued prompt delivered while the box
+  // first attempt. SampleCo 2026-08-26: a queued prompt delivered while the box
   // was unreachable went `state:failed, attempts:1` and was never re-tried when
   // the box came back minutes later.
   test('reopen reports a parked runtime → unreachable (stop retrying HERE, keep the prompt)', async () => {

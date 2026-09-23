@@ -1355,7 +1355,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     // the moments between OpenCode ACKing a prompt and starting it look like.
     // Redelivering into that window runs the user's prompt twice.
     //
-    // EXPECTATION CHANGED 2026-08-20 (live incident, Essentia session
+    // EXPECTATION CHANGED 2026-08-20 (live incident, SampleCo session
     // d1b74954): this used to CLEAR the record while skipping the redelivery.
     // Clearing deletes the record — the only thing that can ever trigger the
     // redelivery — so a terminal observation landing inside the age floor was
@@ -1899,7 +1899,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
   });
 
   // ═══ THE PROBE ITSELF WAS THE LOAD ═══
-  // Essentia 2026-08-25 (session 9df2a873): two API replicas re-asked one box
+  // SampleCo 2026-08-25 (session 9df2a873): two API replicas re-asked one box
   // 345 times in an hour after `unknown`; every ask made OpenCode serialise
   // its 140 MB transcript, and the kernel OOM-killed it mid-turn. An unknown
   // answer now backs the PROBE off (20 s → 5 min) while the drip still runs.

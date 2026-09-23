@@ -110,8 +110,8 @@ JSON
     cat <<'JSON'
 {"tasks":[
 {"taskArn":"arn:aws:ecs:us-west-2:111:task/kortix-dev-web/deadbeefcafe",
-"lastStatus":"STOPPED","stopCode":"EssentialContainerExited",
-"stoppedReason":"STUB_STOPPED_REASON Essential container in task exited",
+"lastStatus":"STOPPED","stopCode":"SampleColContainerExited",
+"stoppedReason":"STUB_STOPPED_REASON SampleCol container in task exited",
 "containers":[{"name":"web","exitCode":1,"reason":"STUB_CONTAINER_REASON Cannot find module 'next'"}]},
 {"taskArn":"arn:aws:ecs:us-west-2:111:task/kortix-dev-web/feedfacebeef",
 "lastStatus":"STOPPED","stopCode":"TaskFailedToStart",

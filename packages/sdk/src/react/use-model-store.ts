@@ -114,7 +114,7 @@ function capSessionMap<V>(map: Record<string, V> | undefined): Record<string, V>
 
 /**
  * Guarantee the persisted store's shape no matter what localStorage holds.
- * Proven live (Essentia 2026-08-26): a malformed `opencode-model-store-v1`
+ * Proven live (SampleCo 2026-08-26): a malformed `opencode-model-store-v1`
  * value crashed every route with "a.user is not iterable" because consumers
  * iterate `store.user` and `loadStore` returned `JSON.parse(raw)` unvalidated.
  * Corrupt or legacy data degrades to defaults — it never throws downstream.

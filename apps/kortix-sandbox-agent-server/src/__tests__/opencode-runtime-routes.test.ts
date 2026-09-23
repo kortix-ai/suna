@@ -56,7 +56,7 @@ function startFakeOpencode() {
           return Response.json({ version: '1.18.23' })
         case '/agent':
           return Response.json([
-            { name: 'essentia-agi', description: 'the working agent', mode: 'primary', native: false, permission: {}, options: {}, prompt: SYSTEM_PROMPT },
+            { name: 'sampleco-agi', description: 'the working agent', mode: 'primary', native: false, permission: {}, options: {}, prompt: SYSTEM_PROMPT },
             { name: 'build', description: 'builtin', mode: 'primary', native: true, permission: {}, options: {}, prompt: SYSTEM_PROMPT },
           ])
         case '/command':
@@ -68,7 +68,7 @@ function startFakeOpencode() {
           return Response.json({
             model: 'kortix/codex/gpt-5.6-sol',
             small_model: 'kortix/codex/gpt-5.6-sol',
-            agent: 'essentia-agi',
+            agent: 'sampleco-agi',
             permission: { edit: 'allow' },
             instructions: ['AGENTS.md'],
             provider: { kortix: { models: { a: { name: 'x'.repeat(4000) } } } },
@@ -140,7 +140,7 @@ function buildDb(messages = 6, attachmentBytes = 120_000): void {
         sessionID: SESSION,
         role: i % 2 === 0 ? 'assistant' : 'user',
         time: { created: i * 10, completed: i * 10 + 1 },
-        agent: 'essentia-agi',
+        agent: 'sampleco-agi',
         // Weight the raw row the way a live message is weighted.
         system: 'S'.repeat(2_000),
       }),
@@ -280,9 +280,9 @@ describe('GET /state', () => {
     expect(body.identity.head_seq).toEqual({ [SESSION]: 2_016 })
     expect(body.epoch).toBe(kortixEventBus().epoch)
     expect(body.agents.known).toBe(true)
-    expect(body.agents.value.map((a: any) => a.name)).toEqual(['essentia-agi', 'build'])
+    expect(body.agents.value.map((a: any) => a.name)).toEqual(['sampleco-agi', 'build'])
     expect(body.commands.value[0]).toMatchObject({ name: 'init', template_bytes: TEMPLATE.length })
-    expect(body.config.value).toMatchObject({ model: 'kortix/codex/gpt-5.6-sol', default_agent: 'essentia-agi' })
+    expect(body.config.value).toMatchObject({ model: 'kortix/codex/gpt-5.6-sol', default_agent: 'sampleco-agi' })
     expect(body.config.value.enabled_providers).toEqual(['kortix'])
     expect(body.statuses.value).toEqual({ [SESSION]: { type: 'idle' } })
     expect(body.permissions.value).toEqual([])

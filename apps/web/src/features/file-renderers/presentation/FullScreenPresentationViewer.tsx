@@ -500,7 +500,10 @@ export function FullScreenPresentationViewer({
     <div className="fixed inset-0 z-50 flex flex-col bg-black/90 backdrop-blur-sm">
       {/* Top Controls Bar */}
       <div className="shrink-0 border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
-        <div className="flex items-center justify-between p-4">
+        <div
+          className="kx-titlebar-row flex items-center justify-between p-4"
+          data-sidebar-collapsed=""
+        >
           <div className="flex items-center gap-3">
             <div className="relative shrink-0 rounded-2xl border border-zinc-300 bg-zinc-200/60 p-2 dark:border-zinc-700 dark:bg-zinc-900">
               <Presentation className="h-5 w-5 text-zinc-500 dark:text-zinc-400" />

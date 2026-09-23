@@ -65,7 +65,7 @@ function assistantMsg(
 }
 
 describe('groupMessagesIntoTurns — display order is by time.created, id is the tiebreak', () => {
-  // The Essentia case (2026-08-18): a steering prompt into a child session went
+  // The SampleCo case (2026-08-18): a steering prompt into a child session went
   // out under a wire id minted 2 minutes in the past (the client's clock-skew
   // backdate, with no transcript to lift against). Ordered by id, that ONE
   // message teleported to the top of the thread. OpenCode stamps
