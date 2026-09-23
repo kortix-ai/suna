@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { useTranslations } from '@/i18n/use-translations';
-import Link from 'next/link';
+import Link from '@/components/site-link';
 
 const NotFound = () => {
   const tI18nHardcoded = useTranslations('hardcodedUi');

@@ -5,6 +5,8 @@
  * File names, paths, URLs, and titles must never appear in properties.
  */
 
+import { loadPostHog } from './posthog-lazy';
+
 export const PANEL_EVENTS = [
   'panel_opened',
   'ready_chip_shown',
@@ -27,10 +29,8 @@ export function track(
   properties?: Record<string, string | number | boolean>,
 ): void {
   if (typeof window === 'undefined') return;
-  // posthog-js (~300 KB) loads on the first event, not with every route that
-  // can emit one (the marketing home demo renders session tool rows).
-  void import('posthog-js')
-    .then(({ default: posthog }) => posthog.capture(event, properties))
+  loadPostHog()
+    .then((posthog) => posthog.capture(event, properties))
     .catch(() => {
       // Telemetry must never take a feature down with it.
     });

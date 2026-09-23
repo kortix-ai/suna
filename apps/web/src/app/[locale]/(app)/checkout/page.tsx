@@ -9,6 +9,20 @@ import { useSearchParams } from 'next/navigation';
 import Script from 'next/script';
 import { Suspense, useEffect, useState } from 'react';
 
+/** The slice of Stripe.js (loaded from js.stripe.com below) this page calls.
+ *  `window.Stripe` used to type-check only because `@next/third-parties`
+ *  widened `Window` with an `any` index signature; the root layout no longer
+ *  imports that package. */
+declare global {
+  interface Window {
+    Stripe?: (publishableKey: string) => {
+      initEmbeddedCheckout: (options: { clientSecret: string }) => Promise<{
+        mount: (selector: string) => void;
+      }>;
+    };
+  }
+}
+
 function CheckoutContent() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const searchParams = useSearchParams();

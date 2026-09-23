@@ -7,7 +7,7 @@ import { DOC_BODY, DOC_GRID, DocRail, docRailItem } from '@/features/marketing/d
 import { cn } from '@/lib/utils';
 import { ArrowUpRightIcon } from '@phosphor-icons/react';
 import { m } from 'motion/react';
-import Link from 'next/link';
+import Link from '@/components/site-link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { Suspense, useState, type ReactNode } from 'react';
 

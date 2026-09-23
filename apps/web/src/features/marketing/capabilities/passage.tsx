@@ -1,7 +1,7 @@
 'use client';
 
 import { Reveal } from '@/components/home/reveal';
-import Link from 'next/link';
+import Link from '@/components/site-link';
 import type { ReactNode } from 'react';
 import type { Passage as PassageContent } from './content';
 

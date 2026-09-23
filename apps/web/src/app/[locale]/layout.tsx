@@ -1,5 +1,4 @@
 import { WebMcpTools } from '@/components/agent-discovery/webmcp-tools';
-import { WebOnlyGoogleTagManager } from '@/components/analytics/web-only-google-tag-manager';
 import { BrowserNoiseGuard } from '@/components/browser-noise-guard';
 import { DesktopChrome } from '@/components/desktop/desktop-chrome';
 import { ThemeProvider } from '@/components/home/theme-provider';
@@ -21,7 +20,6 @@ import { getServerPublicEnv } from '@/lib/public-env-server';
 import { runtimeConfigIsBakedAtBuild } from '@/lib/runtime-config-mode';
 import { safeJsonForHtml } from '@/lib/security/safe-json';
 import { siteMetadata } from '@/lib/site-metadata';
-import { VISITOR_PIXEL_SCRIPT } from '@/lib/tracking-pixel';
 import { cn } from '@/lib/utils';
 import { featureFlags } from '@kortix/sdk';
 import type { Metadata, Viewport } from 'next';
@@ -35,6 +33,8 @@ import { roobert } from '../(system)/fonts/roobert';
 import { roobertMono } from '../(system)/fonts/roobert-mono';
 import '../globals.css';
 import { ReactQueryProvider } from '../react-query-provider';
+import { GoogleTagManager } from '@/components/analytics/google-tag-manager';
+import { VisitorPixel } from '@/components/analytics/visitor-pixel';
 
 export const viewport: Viewport = {
   themeColor: [
@@ -290,11 +290,6 @@ export default async function RootLayout({
           }}
         />
 
-        {/* Domain integration — script tag verification. The inline loader
-            gates on host and user agent in the browser (the HTML is static):
-            never in the desktop app, only on kortix.com and its subdomains.
-            See lib/tracking-pixel.ts. */}
-        <script dangerouslySetInnerHTML={{ __html: VISITOR_PIXEL_SCRIPT }} />
       </head>
 
       {/* suppressHydrationWarning silences Grammarly et al. injecting
@@ -349,8 +344,11 @@ export default async function RootLayout({
                       <RootQueryHosts />
                     </ReactQueryProvider>
                     {process.env.NEXT_PUBLIC_GTM_ID && (
-                      <WebOnlyGoogleTagManager gtmId={process.env.NEXT_PUBLIC_GTM_ID} />
+                      <GoogleTagManager gtmId={process.env.NEXT_PUBLIC_GTM_ID} />
                     )}
+                    {/* Visitor pixel: production host only, never in the desktop
+                    app, after window.load — gating lives in the component. */}
+                    <VisitorPixel />
                     {/* Desktop URL prompt, analytics, trackers, localhost link
                     interceptor — each a post-hydration dynamic chunk. */}
                     <RootClientHosts vercel={process.env.VERCEL === '1'} />

@@ -22,7 +22,7 @@ import {
 } from '@/features/marketing/support/support-doc';
 import { cn } from '@/lib/utils';
 import { BookOpenIcon, DiscordLogoIcon, EnvelopeIcon, PulseIcon } from '@phosphor-icons/react';
-import Link from 'next/link';
+import Link from '@/components/site-link';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, type ReactNode } from 'react';
 

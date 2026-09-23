@@ -6,7 +6,7 @@ import { PRICING_PLANS } from '@/features/billing/pricing-plans';
 import { FaqSection, type FaqItem } from '@/features/marketing/faq';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { useTranslations } from '@/i18n/use-translations';
-import Link from 'next/link';
+import Link from '@/components/site-link';
 
 const START_URL = '/auth';
 const DEMO_URL = '/enterprise';

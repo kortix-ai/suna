@@ -30,7 +30,7 @@ import {
   TerminalIcon,
   FlowArrowIcon as Workflow,
 } from '@phosphor-icons/react';
-import Link from 'next/link';
+import Link from '@/components/site-link';
 import { useCallback } from 'react';
 
 const GITHUB_URL = 'https://github.com/kortix-ai/suna';
