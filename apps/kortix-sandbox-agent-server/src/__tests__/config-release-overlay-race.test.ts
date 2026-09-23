@@ -89,6 +89,11 @@ afterEach(() => {
 describe('DEF-5: the overlay pass and release verification', () => {
   test('a verification failure names the file and the overlay names it used', async () => {
     const { built, dir } = await oldStarterRelease()
+    // `seal` now closes the release root and `skills/`, so only the overlay
+    // pass can create an entry there (it unseals and reseals). This test is
+    // about the verification MESSAGE, so it opens the same doors the overlay
+    // does to reach the state DEF-5 described.
+    spawnSync('chmod', ['u+w', dir, join(dir, 'skills')])
     write(dir, 'skills/kortix-apps/SKILL.md', 'INJECTED\n')
     const detail = await verifyReleaseDetail({ dir, files: built.descriptor.files!, managedSkillsDir: overlay })
     expect(detail).toEqual({

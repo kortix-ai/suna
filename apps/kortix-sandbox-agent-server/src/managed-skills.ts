@@ -178,6 +178,21 @@ export async function ensureInjectedManagedSkills(
   try {
     if (!(await pathExists(bakedDir))) return // nothing baked → leave repo copies as-is
     const skillsDir = join(configDir, 'skills')
+    // A sealed release has `skills/` and its root read-only, so that an agent
+    // writing there fails instead of having its file silently reverted by the
+    // next verification (`seal`, boot-config.ts). This injection is the one
+    // legitimate writer: it opens what it needs and puts the seal straight
+    // back, so the hole does not reopen for everyone else.
+    const resealed: string[] = []
+    if (opts.unsealManaged) {
+      for (const dir of [configDir, skillsDir]) {
+        if (!(await pathExists(dir))) continue
+        await execFileAsync('chmod', ['u+w', dir]).then(
+          () => resealed.push(dir),
+          () => undefined,
+        )
+      }
+    }
     const entries = await readdir(bakedDir, { withFileTypes: true })
     const injectedNames: string[] = []
     const failed: string[] = []
@@ -208,6 +223,10 @@ export async function ensureInjectedManagedSkills(
         injected: injectedNames.length,
       })
       await excludeInjectedSkillsFromGit(skillsDir, injectedNames)
+    }
+    // Deepest first: `skills/` before the root that contains it.
+    for (const dir of [...resealed].reverse()) {
+      await execFileAsync('chmod', ['u-w', dir]).catch(() => undefined)
     }
   } catch (err) {
     // Non-fatal: the repo's own copy (if any) stays in place.

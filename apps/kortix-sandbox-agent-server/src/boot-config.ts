@@ -334,6 +334,10 @@ export async function materializeRelease(input: {
     })
     if (existsSync(dir)) await removeTree(dir)
     await rename(staged, dir)
+    // The root is sealed AFTER the rename: renaming a directory needs write
+    // permission on the directory itself, so a sealed staging dir cannot be
+    // moved into place (EACCES on `rename`).
+    await chmod(dir, 0o555).catch(() => undefined)
     await writeReleaseManifest(root, manifest)
   } catch (err) {
     await removeTree(staged).catch(() => undefined)
@@ -349,9 +353,36 @@ export async function materializeRelease(input: {
 }
 
 /**
- * Drop the write bit on every project file and on the directories that hold
- * only project files. The root and `skills/` stay writable: the installer and
- * the overlay create entries there.
+ * Drop the write bit on every project file, on the directories that hold only
+ * project files, on `skills/`, and on the release root.
+ *
+ * The root and `skills/` used to stay writable so the installer and the
+ * overlay could create entries there. That left a hole with a bad failure
+ * mode, measured on a Daytona box on 2026-09-24 (release `7a60e568`, session
+ * `1a685caf`): an agent's `write` tool answered "Wrote file successfully."
+ * for `<release>/skills/<name>/SKILL.md` and for a root-level file, and the
+ * next convergence then failed `verifyRelease`, rebuilt the release and
+ * respawned OpenCode. The user got a success message, the file vanished, and
+ * the runtime restarted with nothing said. Reproduced 4 times.
+ *
+ * A write that will be reverted must fail where it happens, so both are
+ * sealed now. The two writers that legitimately need them:
+ *
+ *  - the dependency pass (`ensureOpencodeConfigDeps`) runs on the STAGED
+ *    directory, before this seal, so it is unaffected;
+ *  - the managed-skill overlay re-injects into a LIVE release, and unseals
+ *    what it needs through `unsealManaged` (`managed-skills.ts`).
+ *
+ * The ROOT is sealed by `materializeRelease` after the rename, not here:
+ * renaming a directory needs write permission on the directory itself.
+ *
+ * `pruneBootConfigs` already runs `chmod -R u+w` before deleting a release,
+ * so the root's mode does not strand an old copy.
+ *
+ * Verified on the same box: with the root at `0555` OpenCode starts and
+ * serves normally. It writes one file there at every spawn, a `.gitignore`
+ * of its own bookkeeping, and skips it silently when it cannot — no
+ * `EACCES`/`EROFS` in the daemon log or OpenCode's own log.
  */
 async function seal(dir: string, files: readonly ConfigReleaseFile[], managed: Set<string>): Promise<void> {
   const sealedDirs = new Set<string>()
@@ -361,8 +392,10 @@ async function seal(dir: string, files: readonly ConfigReleaseFile[], managed: S
     const parts = path.split('/')
     for (let depth = 1; depth < parts.length; depth++) sealedDirs.add(parts.slice(0, depth).join('/'))
   }
-  sealedDirs.delete('skills')
-  // Deepest first, so a parent is still writable while its children are sealed.
+  // Deepest first, so a parent is still writable while its children are
+  // sealed. `skills/` joins the set; the ROOT is sealed by the caller after
+  // the staging directory is renamed into place.
+  sealedDirs.add('skills')
   for (const rel of [...sealedDirs].sort((a, b) => b.length - a.length)) {
     await chmod(join(dir, rel), 0o555).catch(() => undefined)
   }

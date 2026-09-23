@@ -39,6 +39,8 @@ export interface ConfigReleaseNotice {
   configDir: string | null
   /** The session id, for the reload command. */
   sessionId?: string | null
+  /** The read-only directory the release is served from, when it is known. */
+  releaseDir?: string | null
 }
 
 /** Commits are named by their first 12 characters, as every Kortix surface does. */
@@ -51,16 +53,20 @@ export function renderConfigReleaseNotice(notice: ConfigReleaseNotice): string {
   const configDir = notice.configDir ?? '.kortix/opencode'
   const reload = notice.sessionId ? `kortix sessions reload ${notice.sessionId}` : 'kortix sessions reload <session id>'
   const at = commit ? ` at commit ${commit}` : ''
+  const servedFrom = notice.releaseDir ?? '/opt/kortix/config/<release>'
   return [
     "# This session's agent config",
     '',
     `This session runs the project's agent config from the base branch${at}. The`,
-    'platform serves it read-only; it is not the copy in `/workspace`.',
+    `platform serves it read-only from \`${servedFrom}\`; it is not the copy in`,
+    '`/workspace`.',
     '',
     `- \`/workspace\` is a separate checkout and may be behind${commit ? ` commit ${commit}` : ' the base branch'}.`,
     '  Run `git pull` in `/workspace` to read the same files.',
     `- Editing a file under \`/workspace/${configDir}\` does NOT change the config this`,
     '  session runs. The change takes effect after it is pushed to the base branch.',
+    `- Writing into \`${servedFrom}\` fails with a permission error, on purpose.`,
+    '  That copy is the platform\'s; edit the project\'s files in `/workspace`.',
     `- \`${reload}\` refreshes the \`/workspace\` checkout and moves this`,
     "  session onto the base branch's current config, in one command.",
     '',

@@ -95,6 +95,7 @@ Use these terms exactly. Do not use synonyms.
 | convergence | The daemon applying the desired release. |
 | fallback | The daemon runs a config other than the desired release because it failed. |
 | quarantine | A release recorded as failed. It is not assigned again until the base branch moves. |
+| session notice | The line the daemon puts in the agent's system context naming the commit its config comes from. |
 | store | The storage interface for config archives. |
 
 ## Layers and owners
@@ -427,6 +428,37 @@ preparation and seal run one at a time. Interleaved, verification read the
 overlay names before the injection and reported an injected skill as an added
 file (DEF-5). Injection into a release restores owner write on a managed
 skill directory that an earlier seal made read-only.
+
+### Runtime writes: what writes where
+
+The release directory is read-only. Measured on a real Daytona box on
+2026-09-24 (project `6393a5f8`, session `1a685caf`, release `7a60e568`,
+source commit `378bac540aee`), by calling each writer and finding the file:
+
+| Writer | Path it writes | Succeeds | What the user sees |
+|---|---|---|---|
+| The starter `memory` tool | `/workspace/.kortix/memory/**` — it resolves from OpenCode's project directory, not its config dir | yes | `File created successfully at: .kortix/memory/…`. Unaffected by releases. |
+| An agent editing the project's config | `/workspace/<config dir>/**` | yes | Success, and no change to the running config. The session notice is what explains that; without it the edit looks applied. |
+| An agent writing into the release | `/opt/kortix/config/<release>/**` | **no — `EACCES`** | `PermissionDenied: FileSystem.writeFile (…)`. The notice names the directory, so the agent can say why and point at `/workspace`. |
+| OpenCode's spawn bookkeeping | `<release>/.gitignore`, rewritten at every spawn | best effort | Nothing. With the root sealed it is skipped silently and OpenCode still serves — no `EACCES` in either log. |
+| The dependency pass (`ensureOpencodeConfigDeps`) | `<release>/node_modules/`, `package.json`, `package-lock.json`, `bun.lock` | yes | Nothing. It runs on the STAGED directory, before the seal, and verification excludes these paths. |
+| The managed-skill overlay | `<release>/skills/kortix-*` | yes | Nothing. It unseals what it needs and reseals; it survives boot, `refresh?restart=0` and every rebuild. |
+| OpenCode's own runtime state | `/home/kortix/.local/share/opencode/**` | yes | Nothing. Zero runtime writes into the release: `find <release> -newermt <spawn>` was empty across 954 paths after a turn that used tools, a plugin and a PTY. |
+| Convergence | Rebuilds `<release>` in place | yes | Nothing, beyond an OpenCode restart. |
+
+The platform never writes `/workspace`. Straight after boot `git status
+--porcelain -uall` was empty and `.git/info/exclude` was the stock template.
+
+**Why the root and `skills/` are sealed.** They used to stay writable for the
+installer and the overlay. That made a write succeed and then disappear: an
+agent's `write` tool answered "Wrote file successfully." for
+`<release>/skills/<name>/SKILL.md`, the next convergence failed
+`verifyRelease`, and the daemon rebuilt the release and respawned OpenCode with
+nothing said to anyone. Reproduced 4 times on the box above. Both are sealed
+now, so the write fails where it happens; the overlay is the one legitimate
+writer and opens what it needs through `unsealManaged`. The root is sealed
+after the staging directory is renamed into place, because renaming a directory
+needs write permission on the directory itself.
 
 ### Telling the session
 
@@ -840,6 +872,11 @@ applies.
 | Supabase keeps object metadata in Postgres (`storage.objects`) | local Supabase |
 | Setting the snapshot bucket starts the snapshot producer | `apps/api/src/config.ts` comment |
 | Warm-seed and hot-swap boot paths are unreachable | nothing in the repo sets `KORTIX_WARM_SEED` or `KORTIX_LLM_HOTSWAP` |
+| The `memory` tool writes `/workspace/.kortix/memory`, not the config dir | Daytona box, 2026-09-24, session `1a685caf` |
+| A write into an unsealed release root or `skills/` succeeded, then vanished with an unannounced OpenCode respawn | same box, reproduced 4× |
+| OpenCode serves normally with the release root at `0555`; its `.gitignore` write is skipped silently | same box |
+| Zero OpenCode runtime writes into the release after a turn using tools, a plugin and a PTY | same box, `find <release> -newermt <spawn>` empty over 954 paths |
+| The agent reads the session notice and repeats the commit and the reload command | same box, real model turn |
 
 ## Open decisions
 

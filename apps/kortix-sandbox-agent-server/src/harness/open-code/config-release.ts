@@ -321,6 +321,29 @@ function respond(
 }
 
 /**
+ * Write the session notice for the release a box is about to run. Never
+ * throws: the notice is information, and a box that cannot write `/tmp` must
+ * still converge.
+ */
+export function noteRunningConfig(
+  descriptor: Pick<ConfigReleaseDescriptor, 'source_commit' | 'config_dir'>,
+  releaseDirPath: string | null = null,
+  sessionId: string | null = process.env.KORTIX_SESSION_ID ?? null,
+): 'written' | 'unchanged' | 'failed' {
+  try {
+    return writeConfigReleaseNotice({
+      sourceCommit: descriptor.source_commit,
+      configDir: descriptor.config_dir,
+      releaseDir: releaseDirPath,
+      sessionId,
+    })
+  } catch (err) {
+    logger.warn('[config-release] could not write the session config notice', { err: String(err) })
+    return 'failed'
+  }
+}
+
+/**
  * `config_releases` is OFF for this project — per project, or platform-wide
  * through the operator kill switch (docs/specs/config-releases.md, "Feature
  * flag"). The API answered `403 feature_disabled`.
@@ -329,8 +352,8 @@ function respond(
  * release:
  *
  * 1. OpenCode is pointed back at the session's workspace config dir, which is
- *    where it read its config before config releases existed. The overlay and
- *    the dependencies and the managed-skill overlay are prepared there first.
+ *    where it read its config before config releases existed. Its dependencies
+ *    and the managed-skill overlay are prepared there first.
  * 2. The boot pointer is cleared, so a reboot does not come back on the
  *    release. The extracted release stays on disk; `pruneBootConfigs` removes
  *    it the next time a release is applied.
@@ -342,27 +365,6 @@ function respond(
  * touched: with the flag off the API pushes `KORTIX_COMPILED_AGENT_CONFIG`
  * itself, as it did before releases.
  */
-/**
- * Write the session notice for the release a box is about to run. Never
- * throws: the notice is information, and a box that cannot write `/tmp` must
- * still converge.
- */
-export function noteRunningConfig(
-  descriptor: Pick<ConfigReleaseDescriptor, 'source_commit' | 'config_dir'>,
-  sessionId: string | null = process.env.KORTIX_SESSION_ID ?? null,
-): 'written' | 'unchanged' | 'failed' {
-  try {
-    return writeConfigReleaseNotice({
-      sourceCommit: descriptor.source_commit,
-      configDir: descriptor.config_dir,
-      sessionId,
-    })
-  } catch (err) {
-    logger.warn('[config-release] could not write the session config notice', { err: String(err) })
-    return 'failed'
-  }
-}
-
 async function revertToPreReleaseConfig(
   deps: ConvergeDeps,
   root: string,
@@ -387,7 +389,7 @@ async function revertToPreReleaseConfig(
     clearConfigReleaseNotice()
     await deactivateBootConfig(root)
     running = settled()
-      // One clear line, then the daemon carries on.
+    // One clear line, then the daemon carries on.
     logger.info('[config-release] disabled for this project; opencode already reads the workspace config dir', { dir })
     return respond('unchanged', null, reason)
   }
@@ -481,7 +483,7 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
     // OpenCode's `instructions`, so the new process reads it (spec, "Telling
     // the session"). Only a convergence that actually replaces something
     // reaches `swap`, and the writer is a no-op when the text is unchanged.
-    noteRunningConfig(descriptor)
+    noteRunningConfig(descriptor, dir)
     const restoreGovernance = deliverGovernance(descriptor.compiled_governance, descriptor.compiled_governance_etag)
     const result = await opencode.reloadVerified({
       prove: (baseUrl, deadline) =>
@@ -1001,7 +1003,7 @@ export async function fetchBootRelease(input: {
     // A fresh boot runs this commit's config while `/workspace` is cloned
     // separately and may be behind it. Tell the session (spec, "Telling the
     // session"); the spawn declares the file in OpenCode's `instructions`.
-    noteRunningConfig({ source_commit: manifest.source_commit, config_dir: manifest.config_dir })
+    noteRunningConfig({ source_commit: manifest.source_commit, config_dir: manifest.config_dir }, dir)
     return { dir, releaseId, sourceCommit: manifest.source_commit, manifest }
   } catch (err) {
     if (isRepositoryChangedError(err)) {
@@ -1141,7 +1143,7 @@ export async function resolveBootConfig(input: {
       }
       if (dir && manifest) {
         deliverGovernance(manifest.compiled_governance, manifest.compiled_governance_etag)
-        noteRunningConfig({ source_commit: pointer.source_commit, config_dir: manifest.config_dir })
+        noteRunningConfig({ source_commit: pointer.source_commit, config_dir: manifest.config_dir }, dir)
         return {
           dir,
           source: 'release',

@@ -46,6 +46,27 @@ describe('the notice text', () => {
     expect(body).toContain('pushed to the base branch')
   })
 
+  test('names the read-only directory, so a permission error explains itself', () => {
+    // Measured on a real box: an agent writing into the release dir gets a
+    // bare `PermissionDenied: FileSystem.writeFile (/opt/kortix/config/<64
+    // hex>/…)`. That is opaque alone; naming the path here is what lets the
+    // agent say why and where to write instead.
+    const body = renderConfigReleaseNotice({
+      sourceCommit: COMMIT,
+      configDir: '.kortix/opencode',
+      releaseDir: '/opt/kortix/config/abc123',
+    })
+    expect(body).toContain('read-only from `/opt/kortix/config/abc123`')
+    expect(body).toContain('fails with a permission error, on purpose')
+  })
+
+  test('without a known release dir it still names the store, never "null"', () => {
+    const body = renderConfigReleaseNotice({ sourceCommit: COMMIT, configDir: null })
+    expect(body).toContain('/opt/kortix/config/<release>')
+    expect(body).not.toContain('null')
+    expect(body).not.toContain('undefined')
+  })
+
   test('stays factual when the commit or the session id is unknown', () => {
     const body = renderConfigReleaseNotice({ sourceCommit: null, configDir: null })
     expect(body).toContain('may be behind the base branch')

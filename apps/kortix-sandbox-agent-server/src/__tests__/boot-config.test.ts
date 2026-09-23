@@ -23,7 +23,8 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { ensureInjectedManagedSkills } from '../managed-skills'
 import {
   activateBootConfig,
   bootLinkPath,
@@ -204,17 +205,62 @@ describe('verifyRelease', () => {
     expect(await verify(built, dir)).toBe(false)
   })
 
-  test('what the platform writes after extraction is not tampering', async () => {
+  test('what the platform writes is not tampering', async () => {
     const built = release('v1')
     const { dir } = await materialize(built)
+    // The platform writes these on the STAGED directory, before the seal, so
+    // the test opens the root the same way `materializeRelease` has it open
+    // at that point. Post-seal an agent cannot create them at all — that is
+    // the case above. What is asserted here is what `verifyRelease` TOLERATES.
+    spawnSync('chmod', ['u+w', dir])
     writeFileSync(join(dir, 'package.json'), '{"dependencies":{"@opencode-ai/plugin":"1.18.23"}}\n')
     writeFileSync(join(dir, 'bun.lock'), 'lock\n')
     mkdirSync(join(dir, 'node_modules/zod'), { recursive: true })
     writeFileSync(join(dir, 'node_modules/zod/index.js'), '')
-    spawnSync('chmod', ['-R', 'u+w', join(dir, 'skills/kortix-cli')])
+    spawnSync('chmod', ['-R', 'u+w', join(dir, 'skills')])
     writeFileSync(join(dir, 'skills/kortix-cli/SKILL.md'), 'NEWER OVERLAY\n')
     expect(await verify(built, dir)).toBe(true)
   })
+
+  /**
+   * Verified on a real Daytona box (2026-09-24, release 7a60e568, session
+   * 1a685caf): the seal left the release ROOT and `skills/` at 0755, so an
+   * agent's `write` tool answered "Wrote file successfully." for
+   * `<release>/skills/<name>/SKILL.md` and for a root-level file. The next
+   * convergence then failed verification, rebuilt the release and respawned
+   * OpenCode. The user saw a success message, the file vanished, and the
+   * runtime restarted with no notification. Reproduced 4 times.
+   *
+   * A write that will be reverted must FAIL where it happens.
+   */
+  test('a sealed release refuses a NEW file in its root or in skills/', async () => {
+    const built = release('v1');
+    const { dir } = await materialize(built);
+    for (const target of ['rogue.md', 'skills/rogue/SKILL.md']) {
+      expect(() => {
+        mkdirSync(dirname(join(dir, target)), { recursive: true });
+        writeFileSync(join(dir, target), 'ADDED\n');
+      }).toThrow(/EACCES|EPERM|EROFS/);
+      expect(existsSync(join(dir, target))).toBe(false);
+    }
+    // And the release still verifies, because nothing got in.
+    expect(await verify(built, dir)).toBe(true);
+  });
+
+  test('the managed-skill overlay still injects into a sealed release', async () => {
+    // The one legitimate runtime writer. It unseals what it needs and puts the
+    // seal back, so the hole above does not reopen for everyone else.
+    const built = release('v1');
+    const { dir } = await materialize(built);
+    const baked = join(root, 'baked-overlay');
+    mkdirSync(join(baked, 'kortix-new'), { recursive: true });
+    writeFileSync(join(baked, 'kortix-new/SKILL.md'), 'NEW OVERLAY\n');
+
+    await ensureInjectedManagedSkills(dir, { bakedDir: baked, unsealManaged: true });
+
+    expect(readFileSync(join(dir, 'skills/kortix-new/SKILL.md'), 'utf8')).toBe('NEW OVERLAY\n');
+    expect(() => writeFileSync(join(dir, 'rogue-after-inject.md'), 'x')).toThrow(/EACCES|EPERM|EROFS/);
+  });
 
   test('a swapped symlink is compared by its target, never followed', async () => {
     symlinkSync('kortix.md', join(repo, `${REL}/agents/alias.md`))
