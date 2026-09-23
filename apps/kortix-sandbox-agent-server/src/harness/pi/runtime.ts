@@ -308,7 +308,7 @@ export class PiRuntime {
     this.startError = null
     const startedAt = this.now()
     try {
-      const [{ createPiModels }, { createWorkspaceTools, createQuestionTool }, core, node, host, { subagents }, { convertToLlm }] = await Promise.all([
+      const [{ createPiModels }, { createWorkspaceTools, createQuestionTool }, core, node, host, { subagents }, { convertToLlm }, projectBundleRoot] = await Promise.all([
         import('./model'),
         import('./tools'),
         import('@earendil-works/pi-agent-core'),
@@ -316,6 +316,10 @@ export class PiRuntime {
         import('./extensions/host'),
         import('./extensions/subagents'),
         import('@earendil-works/pi-coding-agent'),
+        // The project's package bundle downloads while pi itself loads.
+        import('./extensions/bundle').then(({ ensureProjectPackageBundle }) =>
+          ensureProjectPackageBundle({ url: this.cfg.piPackagesBundleUrl, digest: this.cfg.piPackagesBundleDigest, dir: this.cfg.piPackagesDir }),
+        ),
       ])
       this.core = core
       this.compiled = parseCompiledAgentConfig(this.env.KORTIX_COMPILED_AGENT_CONFIG)
@@ -370,6 +374,7 @@ export class PiRuntime {
         cwd: this.workspace,
         agentDir: this.cfg.piAgentDir,
         projectPackages: host.parseProjectPackages(this.cfg.piPackages),
+        projectBundleRoot,
         baseTools: this.baseTools,
         extensions: [this.turnExtension(), ...(this.extensionList ?? [subagents(this.kortixHost())])],
         systemPrompt: () => this.systemPrompt(core.formatSkillsForSystemPrompt),

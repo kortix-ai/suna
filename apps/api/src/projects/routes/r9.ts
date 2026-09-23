@@ -8,6 +8,8 @@ import { manifestGovernanceChanged, refusesSelfMerge } from '../change-request-p
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
+import { kickPiPackageBundle } from '../../pi-packages/bundle';
+import { resolveManifestPiPackages } from '../lib/compile-agent-config';
 import { getCrById, serializeChangeRequest } from '../change-requests';
 // Imported from its own module, not the `../git` barrel: several route suites
 // replace the barrel wholesale with `mock.module`, and the guard below runs
@@ -234,6 +236,13 @@ projectsApp.openapi(
       accountId: loaded.row.accountId,
       source: 'cr-merge',
     });
+
+    // A merged CR may have changed kortix.yaml `harnesses.pi.packages`: build
+    // that list's bundle now, so the next pi session downloads it instead of
+    // booting without the project's packages. Best-effort, never blocks.
+    void resolveManifestPiPackages(projectForGit, cr.baseRef).then((packages) =>
+      kickPiPackageBundle(packages, { projectId, source: 'cr-merge' }),
+    );
 
     // A merged CR may have edited kortix.yaml's `connectors:` list. The connector DB
     // cache (what the gateway + dashboard read) is derived from the manifest, so

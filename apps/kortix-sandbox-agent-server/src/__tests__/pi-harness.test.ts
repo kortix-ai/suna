@@ -18,6 +18,7 @@ import { requirePiConfig } from '../harness/pi/config'
 import { createPiHarnessService, type PiHarnessService } from '../harness/pi/service'
 import type { PiBootState } from '../harness/pi/boot-state'
 import { extensionAgentHooks, installedPackages, parseNpmSource, type InlineExtension } from '../harness/pi/extensions/host'
+import { ensureProjectPackageBundle } from '../harness/pi/extensions/bundle'
 
 const TOKEN = 'pi-test-token'
 
@@ -59,6 +60,7 @@ async function boot(input: {
     KORTIX_PI_STATE_DIR: join(workspace, '.state'),
     // Never the machine's ~/.pi or the image's /opt/kortix/pi-agent.
     KORTIX_PI_AGENT_DIR: join(workspace, '.pi-agent'),
+    KORTIX_PI_PACKAGES_DIR: join(workspace, '.pi-packages'),
     KORTIX_PROJECT_AUTO_CLONE: '0',
     KORTIX_WORKSPACE: workspace,
     KORTIX_PROJECT_TARGET: workspace,
@@ -527,6 +529,15 @@ function fakePackage(npmRoot: string, name: string, version: string, source: str
   writeFileSync(join(dir, 'index.ts'), source)
 }
 
+const DIGEST = 'a'.repeat(64)
+
+/** A project bundle as bundle.ts leaves it: `<dir>/<digest>/node_modules` plus the `.complete` marker. */
+function fakeBundle(workspace: string, fill: (root: string) => void): void {
+  const root = join(workspace, '.pi-packages', DIGEST)
+  fill(root)
+  writeFileSync(join(root, '.complete'), DIGEST)
+}
+
 /** An extension source that registers one tool answering `<prefix>:<text>`. */
 function echoTool(tool: string, prefix: string): string {
   return `export default function (pi) {
@@ -662,13 +673,16 @@ describe('pi packages', () => {
   test('system and project packages load from disk and their tools run; nothing is installed at boot', async () => {
     const r = await boot({
       script: [{ tool: 'system_echo', args: { text: 'hi' } }, { tool: 'project_echo', args: { text: 'yo' } }, { tool: 'local_echo', args: { text: 'l' } }, { text: 'done' }],
-      env: { KORTIX_PI_PACKAGES: JSON.stringify(['npm:project-ext@2.0.0', 'npm:project-missing@1.0.0', './.kortix/pi/local.ts']) },
+      env: {
+        KORTIX_PI_PACKAGES: JSON.stringify(['npm:project-ext@2.0.0', 'npm:project-missing@1.0.0', './.kortix/pi/local.ts']),
+        KORTIX_PI_PACKAGES_BUNDLE_DIGEST: DIGEST,
+      },
       prepare(workspace) {
         const agentDir = join(workspace, '.pi-agent')
         mkdirSync(agentDir, { recursive: true })
         writeFileSync(join(agentDir, 'settings.json'), JSON.stringify({ packages: ['npm:system-ext@1.0.0', 'npm:system-missing@1.0.0'] }))
         fakePackage(join(agentDir, 'npm'), 'system-ext', '1.0.0', echoTool('system_echo', 'system'))
-        fakePackage(join(workspace, '.pi', 'npm'), 'project-ext', '2.0.0', echoTool('project_echo', 'project'))
+        fakeBundle(workspace, (root) => fakePackage(root, 'project-ext', '2.0.0', echoTool('project_echo', 'project')))
         mkdirSync(join(workspace, '.kortix', 'pi'), { recursive: true })
         writeFileSync(join(workspace, '.kortix', 'pi', 'local.ts'), echoTool('local_echo', 'local'))
         mkdirSync(join(workspace, '.pi', 'extensions'), { recursive: true })
@@ -689,24 +703,68 @@ describe('pi packages', () => {
     expect(toolParts(page, 'project_echo')[0]!.state.output).toBe('project:yo')
     expect(toolParts(page, 'local_echo')[0]!.state.output).toBe('local:l')
     expect(existsSync(join(r.workspace, '.pi-agent', 'npm', 'node_modules', 'system-missing'))).toBe(false)
-    expect(existsSync(join(r.workspace, '.pi', 'npm', 'node_modules', 'project-missing'))).toBe(false)
+    expect(existsSync(join(r.workspace, '.pi-packages', DIGEST, 'node_modules', 'project-missing'))).toBe(false)
   })
 
   test('a project package overrides the system package of the same name', async () => {
     const r = await boot({
       script: [{ tool: 'shared_echo', args: { text: 'x' } }, { text: 'done' }],
-      env: { KORTIX_PI_PACKAGES: JSON.stringify(['npm:shared-ext@2.0.0']) },
+      env: { KORTIX_PI_PACKAGES: JSON.stringify(['npm:shared-ext@2.0.0']), KORTIX_PI_PACKAGES_BUNDLE_DIGEST: DIGEST },
       prepare(workspace) {
         const agentDir = join(workspace, '.pi-agent')
         mkdirSync(agentDir, { recursive: true })
         writeFileSync(join(agentDir, 'settings.json'), JSON.stringify({ packages: ['npm:shared-ext@1.0.0'] }))
         fakePackage(join(agentDir, 'npm'), 'shared-ext', '1.0.0', echoTool('shared_echo', 'system'))
-        fakePackage(join(workspace, '.pi', 'npm'), 'shared-ext', '2.0.0', echoTool('shared_echo', 'project'))
+        fakeBundle(workspace, (root) => fakePackage(root, 'shared-ext', '2.0.0', echoTool('shared_echo', 'project')))
       },
     })
     await promptAndSettle(r, 'go')
     const page = (await r.bearer(`/kortix/opencode/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
     expect(toolParts(page, 'shared_echo').map((p) => p.state.output)).toEqual(['project:x'])
+  })
+
+  test('the project bundle downloads once, unpacks outside the repo, and its tool runs', async () => {
+    const source = mkdtempSync(join(tmpdir(), 'pi-bundle-src-'))
+    fakePackage(source, 'bundled-ext', '3.0.0', echoTool('bundled_echo', 'bundled'))
+    const archive = join(source, 'bundle.tar.gz')
+    await require('tar').c({ gzip: true, cwd: source, file: archive }, ['node_modules'])
+    let downloads = 0
+    const server = Bun.serve({ port: 0, fetch: () => (downloads++, new Response(Bun.file(archive))) })
+    try {
+      const url = `http://127.0.0.1:${server.port}/bundle.tar.gz`
+      const r = await boot({
+        script: [{ tool: 'bundled_echo', args: { text: 'b' } }, { text: 'done' }],
+        env: { KORTIX_PI_PACKAGES: JSON.stringify(['npm:bundled-ext@3.0.0']), KORTIX_PI_PACKAGES_BUNDLE_URL: url, KORTIX_PI_PACKAGES_BUNDLE_DIGEST: DIGEST },
+      })
+      expect(downloads).toBe(1)
+      expect(r.service.runtime()!.extensionStatus().loaded).toContain('npm:bundled-ext@3.0.0')
+      await promptAndSettle(r, 'go')
+      const page = (await r.bearer(`/kortix/opencode/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
+      expect(toolParts(page, 'bundled_echo')[0]!.state.output).toBe('bundled:b')
+      // Nothing lands in the repo; a restart reuses the unpacked bundle.
+      expect(existsSync(join(r.workspace, 'node_modules'))).toBe(false)
+      await r.service.lifecycle.stop()
+      await r.service.lifecycle.start()
+      expect(downloads).toBe(1)
+    } finally {
+      server.stop(true)
+      rmSync(source, { recursive: true, force: true })
+    }
+  })
+
+  test('a failed or absent bundle leaves the project packages out, never the session', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pi-bundle-dir-'))
+    const server = Bun.serve({ port: 0, fetch: () => new Response('gone', { status: 404 }) })
+    try {
+      expect(await ensureProjectPackageBundle({ dir, digest: DIGEST, url: `http://127.0.0.1:${server.port}/x` })).toBeNull()
+      expect(await ensureProjectPackageBundle({ dir, digest: DIGEST })).toBeNull()
+      expect(await ensureProjectPackageBundle({ dir, digest: '../escape', url: 'http://127.0.0.1:1/' })).toBeNull()
+      expect(await ensureProjectPackageBundle({ dir })).toBeNull()
+      expect(require('node:fs').readdirSync(dir)).toEqual([])
+    } finally {
+      server.stop(true)
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
 

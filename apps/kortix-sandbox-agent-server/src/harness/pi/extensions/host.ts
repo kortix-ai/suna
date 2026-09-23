@@ -11,9 +11,10 @@
  * Packages come from two scopes, exactly pi's own:
  * - system (global): `<agentDir>/settings.json`, installed under `<agentDir>/npm`
  *   when the image is built (apps/sandbox/pi-system-packages.json);
- * - project: kortix.yaml `harnesses.pi.packages` (`KORTIX_PI_PACKAGES`), installed
- *   under `<workspace>/.pi/npm` before the runtime starts.
- * A project entry for the same package wins, like pi's project settings.
+ * - project: kortix.yaml `harnesses.pi.packages` (`KORTIX_PI_PACKAGES`); npm
+ *   sources come from the API-built bundle (bundle.ts), unpacked outside the
+ *   repo before the runtime starts; `./` paths are files in the repo.
+ * A project pin of a package replaces the system one.
  *
  * Nothing is installed at boot: pi would `npm install` a missing package on
  * load (~13 s for two packages, measured), so a source that is not on disk is
@@ -154,6 +155,8 @@ export interface PiSessionInput {
   cwd: string
   agentDir: string
   projectPackages: readonly PackageSource[]
+  /** The unpacked project bundle (`<root>/node_modules/<name>`), or null when there is none. */
+  projectBundleRoot: string | null
   baseTools: readonly AgentTool<any, any>[]
   extensions: readonly InlineExtension[]
   systemPrompt: () => string
@@ -172,20 +175,61 @@ function extensionName(path: string): string {
   return inline ? inline[1]! : path
 }
 
+function withSource(entry: PackageSource, source: string): PackageSource {
+  return typeof entry === 'string' ? source : { ...entry, source }
+}
+
+/**
+ * Project entries as pi loads them: an npm source becomes the absolute path of
+ * its directory in the unpacked bundle (outside the repo, so a clone never
+ * meets it), a repo path becomes absolute. `labels` maps each path back to the
+ * source the project wrote.
+ */
+export function resolveProjectPackages(
+  entries: readonly PackageSource[],
+  input: { cwd: string; bundleRoot: string | null },
+): { kept: PackageSource[]; failed: ExtensionStatus['failed']; npmNames: Set<string>; labels: Map<string, string> } {
+  const kept: PackageSource[] = []
+  const failed: ExtensionStatus['failed'] = []
+  const npmNames = new Set<string>()
+  const labels = new Map<string, string>()
+  for (const entry of entries) {
+    const source = sourceOf(entry)
+    const npm = parseNpmSource(source)
+    if (npm) {
+      npmNames.add(npm.name)
+      if (!input.bundleRoot) {
+        failed.push({ name: source, error: 'package is not installed' })
+        continue
+      }
+      const checked = installedPackages([entry], input.bundleRoot)
+      if (checked.failed.length) {
+        failed.push(...checked.failed)
+        continue
+      }
+      const dir = join(input.bundleRoot, 'node_modules', npm.name)
+      kept.push(withSource(entry, dir))
+      labels.set(dir, source)
+      continue
+    }
+    if (source.startsWith('./')) {
+      kept.push(withSource(entry, join(input.cwd, source)))
+      continue
+    }
+    failed.push({ name: source, error: 'use an exact npm pin or a ./ repo path' })
+  }
+  return { kept, failed, npmNames, labels }
+}
+
 export async function createPiSession(input: PiSessionInput): Promise<PiSession> {
   const globalSettings = readSettings(join(input.agentDir, 'settings.json'))
-  const system = installedPackages((globalSettings.packages as PackageSource[] | undefined) ?? [], join(input.agentDir, 'npm'))
-  const project = installedPackages(
-    input.projectPackages.map((entry) => {
-      // kortix.yaml local paths are repo-relative; pi resolves project paths against `.pi/`.
-      const source = sourceOf(entry)
-      const local = !parseNpmSource(source) && !source.includes(':') && !source.startsWith('/')
-      if (!local) return entry
-      const absolute = join(input.cwd, source)
-      return typeof entry === 'string' ? absolute : { ...entry, source: absolute }
-    }),
-    join(input.cwd, '.pi', 'npm'),
-  )
+  const project = resolveProjectPackages(input.projectPackages, { cwd: input.cwd, bundleRoot: input.projectBundleRoot })
+  // A package the project pins itself replaces the system one (pi would load both: a path and an npm name differ).
+  const systemEntries = ((globalSettings.packages as PackageSource[] | undefined) ?? []).filter((entry) => {
+    const npm = parseNpmSource(sourceOf(entry))
+    return !npm || !project.npmNames.has(npm.name)
+  })
+  const system = installedPackages(systemEntries, join(input.agentDir, 'npm'))
   const settingsManager = SettingsManager.fromStorage(
     new ScopedSettingsStorage({
       global: JSON.stringify({ ...globalSettings, packages: system.kept }),
@@ -242,7 +286,10 @@ export async function createPiSession(input: PiSessionInput): Promise<PiSession>
       // A package's extension reads as its source (`npm:pi-web-access@0.30.0`), the rest as name or path.
       loaded: loaded.extensions
         .filter((extension) => !extension.hidden)
-        .map((extension) => (extension.sourceInfo?.origin === 'package' ? extension.sourceInfo.source : extensionName(extension.path))),
+        .map((extension) => {
+          const source = extension.sourceInfo?.origin === 'package' ? extension.sourceInfo.source : extensionName(extension.path)
+          return project.labels.get(source) ?? source
+        }),
       failed: [
         ...system.failed,
         ...project.failed,

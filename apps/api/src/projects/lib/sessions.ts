@@ -65,6 +65,7 @@ import {
   secretKeyCollisionInAllowlist,
 } from '../secrets';
 import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
+import { piPackageBundleForSession } from '../../pi-packages/bundle';
 import {
   manifestPiPackages,
   manifestRuntime,
@@ -561,6 +562,11 @@ export async function buildSessionSandboxEnvVars(input: {
       runtime: manifestHarness,
     });
   }
+  // The prebuilt bundle of the project's pi packages (one S3 HEAD + presign; none without npm packages).
+  const piPackagesBundle =
+    harness === 'pi' && manifestPackages.length > 0
+      ? await piPackageBundleForSession(manifestPackages, { projectId: input.projectId, sessionId: input.sessionId })
+      : null;
 
   // Per-session secret policy, read by sessionId inside the builder so all three
   // call sites (create, restart, open/ensure) are covered — no caller can
@@ -712,6 +718,7 @@ export async function buildSessionSandboxEnvVars(input: {
       compiledAgentConfig,
       harness,
       piPackages: manifestPackages,
+      piPackagesBundle,
       repositoryAccess: input.repositoryAccess,
       compiledBootMode: config.KORTIX_COMPILED_BOOT_MODE,
       freshSession: input.freshSession,

@@ -112,7 +112,7 @@ Three sources, in pi's own scopes:
 | Source | Declared in | Installed in |
 |---|---|---|
 | system (every session) | `<agentDir>/settings.json` `packages`; `agentDir` = `KORTIX_PI_AGENT_DIR`, default `/opt/kortix/pi-agent` | `<agentDir>/npm`, when the image is built |
-| project | kortix.yaml `harnesses.pi.packages` → `KORTIX_PI_PACKAGES` | `<workspace>/.pi/npm`, before the runtime starts |
+| project | kortix.yaml `harnesses.pi.packages` → `KORTIX_PI_PACKAGES` | npm sources: one bundle per package list, built by the API (apps/api/src/pi-packages/bundle.ts, on change-request merge), downloaded while pi loads (`KORTIX_PI_PACKAGES_BUNDLE_URL`/`_DIGEST`) and unpacked to `<KORTIX_PI_PACKAGES_DIR>/<digest>`, outside the repo |
 | repo-local | `<workspace>/.pi/extensions/*.ts`, or a repo-relative path in `harnesses.pi.packages` | the repo itself |
 
 A project entry for the same package overrides the system one. Nothing installs

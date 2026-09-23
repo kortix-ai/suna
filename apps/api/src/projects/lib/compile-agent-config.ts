@@ -484,21 +484,30 @@ export function manifestPiPackages(raw: unknown): unknown[] {
   return Array.isArray(pi?.packages) ? pi.packages : [];
 }
 
-export async function resolveManifestRuntime(
-  project: GitBackedProject,
-  baseRef?: string | null,
-): Promise<RuntimeV2 | null> {
+/** The parsed v2 manifest at `baseRef` (default branch when absent); null for v1, none, or a read failure. */
+async function readManifestV2(project: GitBackedProject, baseRef?: string | null): Promise<Record<string, unknown> | null> {
   const ref = baseRef?.trim() || project.defaultBranch;
   try {
     const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
     const found = await readManifestFromRepo(project, candidates, ref);
     if (!found) return null;
     const raw = parseManifestText(found.content, manifestFormatForPath(found.path));
-    if (manifestSchemaVersion(raw) !== 2) return null;
-    return manifestRuntime(raw);
+    return manifestSchemaVersion(raw) === 2 ? raw : null;
   } catch {
     return null;
   }
+}
+
+export async function resolveManifestRuntime(
+  project: GitBackedProject,
+  baseRef?: string | null,
+): Promise<RuntimeV2 | null> {
+  const raw = await readManifestV2(project, baseRef);
+  return raw ? manifestRuntime(raw) : null;
+}
+
+export async function resolveManifestPiPackages(project: GitBackedProject, baseRef?: string | null): Promise<unknown[]> {
+  return manifestPiPackages(await readManifestV2(project, baseRef));
 }
 
 /**
