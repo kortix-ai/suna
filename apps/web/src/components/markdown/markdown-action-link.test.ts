@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
-import { classifyMarkdownActionLink, standaloneActionLinks } from './markdown-action-link';
+import {
+  INCOMPLETE_LINK_HREF,
+  classifyMarkdownActionLink,
+  connectActionVerb,
+  standaloneActionLinks,
+} from './markdown-action-link';
 
 describe('classifyMarkdownActionLink', () => {
   test('known connect host → connect, plug icon', () => {
@@ -20,7 +25,11 @@ describe('classifyMarkdownActionLink', () => {
   });
 
   test('verb-rule connect on an unknown host', () => {
-    const result = classifyMarkdownActionLink('https://example.com/oauth', 'Authorize Linear', null);
+    const result = classifyMarkdownActionLink(
+      'https://example.com/oauth',
+      'Authorize Linear',
+      null,
+    );
     expect(result?.kind).toBe('connect');
     expect(result?.icon).toBe('plug');
   });
@@ -118,6 +127,54 @@ describe('classifyMarkdownActionLink', () => {
     ).toBeNull();
   });
 
+  test('a bare URL label matches its href without the scheme, www, or trailing slash', () => {
+    // `autoLinkUrls` emits these shapes: the visible text drops the scheme.
+    expect(
+      classifyMarkdownActionLink('https://docs.example.com/guide', 'docs.example.com/guide', null),
+    ).toBeNull();
+    expect(
+      classifyMarkdownActionLink('https://www.example.com', 'www.example.com', null),
+    ).toBeNull();
+    expect(classifyMarkdownActionLink('http://localhost:3000/', 'localhost:3000', null)).toBeNull();
+  });
+
+  test('the setup check runs before the bare-URL check', () => {
+    expect(
+      classifyMarkdownActionLink('/connect/ksl_debug_token', '/connect/ksl_debug_token', null)
+        ?.kind,
+    ).toBe('setup');
+  });
+
+  test('a backslash or protocol-relative href is never internal', () => {
+    // Browsers read `/\host` as `//host`: an off-origin URL.
+    expect(classifyMarkdownActionLink('/\\evil.example/x', 'Open files', null)).toBeNull();
+    expect(classifyMarkdownActionLink('//evil.example/x', 'Open files', null)).toBeNull();
+  });
+
+  test('only connect/reconnect/authorize/authorise are connect verbs', () => {
+    expect(classifyMarkdownActionLink('https://example.com/a', 'Reconnect Gmail', null)?.kind).toBe(
+      'connect',
+    );
+    expect(
+      classifyMarkdownActionLink('https://example.com/a', 'Authorise Linear', null)?.kind,
+    ).toBe('connect');
+    for (const label of ['Sign in to Linear', 'Log in', 'Install the app']) {
+      expect(classifyMarkdownActionLink('https://example.com/a', label, null)?.kind).toBe(
+        'external',
+      );
+    }
+  });
+
+  test('the streaming placeholder href is a pending action, not a rejection', () => {
+    expect(classifyMarkdownActionLink(INCOMPLETE_LINK_HREF, '→ Connect Shopify', null)).toEqual({
+      kind: 'pending',
+      href: INCOMPLETE_LINK_HREF,
+      label: 'Connect Shopify',
+      host: null,
+      icon: 'arrow-right',
+    });
+  });
+
   test('label stripping removes leading/trailing glyphs and whitespace, collapses internal whitespace', () => {
     expect(
       classifyMarkdownActionLink(
@@ -162,7 +219,12 @@ describe('standaloneActionLinks', () => {
   });
 
   test('a strong-wrapped link counts as that link', () => {
-    const strong = { type: 'element', tagName: 'strong', properties: {}, children: [a('/x', 'Go')] };
+    const strong = {
+      type: 'element',
+      tagName: 'strong',
+      properties: {},
+      children: [a('/x', 'Go')],
+    };
     expect(standaloneActionLinks(p([strong]))).toEqual([{ href: '/x', text: 'Go' }]);
   });
 
@@ -176,7 +238,9 @@ describe('standaloneActionLinks', () => {
 
   test('a code element is never standalone', () => {
     expect(
-      standaloneActionLinks(p([{ type: 'element', tagName: 'code', properties: {}, children: [] }])),
+      standaloneActionLinks(
+        p([{ type: 'element', tagName: 'code', properties: {}, children: [] }]),
+      ),
     ).toBeNull();
   });
 
@@ -189,5 +253,19 @@ describe('standaloneActionLinks', () => {
       { href: '/x', text: 'Go' },
       { href: '/y', text: 'Also' },
     ]);
+  });
+});
+
+describe('connectActionVerb', () => {
+  test('uses the label verb when it is a connect verb', () => {
+    expect(connectActionVerb('Authorize Linear')).toBe('Authorize');
+    expect(connectActionVerb('authorise linear')).toBe('Authorise');
+    expect(connectActionVerb('reconnect Gmail')).toBe('Reconnect');
+    expect(connectActionVerb('Connect Shopify')).toBe('Connect');
+  });
+
+  test('returns null for any other label', () => {
+    expect(connectActionVerb('Open Shopify')).toBeNull();
+    expect(connectActionVerb('Connector settings')).toBeNull();
   });
 });

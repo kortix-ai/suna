@@ -1,14 +1,14 @@
 import { parseSetupLinkHref } from '@/components/setup-links/util';
 
-export type MarkdownActionKind = 'setup' | 'connect' | 'internal' | 'external';
+/**
+ * `pending` is a link still streaming in: Streamdown's `remend` closes a
+ * partial `[label](…` as `[label](streamdown:incomplete-link)` until the `)`
+ * arrives. It renders as a disabled chip so the block does not flip between
+ * chips and text on every token.
+ */
+export type MarkdownActionKind = 'setup' | 'connect' | 'internal' | 'external' | 'pending';
 export type MarkdownActionIcon =
-  | 'plug'
-  | 'search'
-  | 'folder'
-  | 'settings'
-  | 'chat'
-  | 'arrow-right'
-  | 'arrow-up-right';
+  'plug' | 'search' | 'folder' | 'settings' | 'chat' | 'arrow-right' | 'arrow-up-right';
 
 export interface MarkdownActionLink {
   kind: MarkdownActionKind;
@@ -30,7 +30,10 @@ export const KNOWN_CONNECT_HOSTS = [
   'api.pipedream.com',
 ] as const;
 
-const CONNECT_VERB_PATTERN = /^(connect|reconnect|authorize|authorise|sign in|log in|install)\b/i;
+/** The href Streamdown's `remend` gives a link whose `(url)` has not finished streaming. */
+export const INCOMPLETE_LINK_HREF = 'streamdown:incomplete-link';
+
+const CONNECT_VERB_PATTERN = /^(connect|reconnect|authorize|authorise)\b/i;
 const SEARCH_LABEL_PATTERN = /^search\b/i;
 
 /** Arrow/bullet glyphs agents use to mark up an action link, stripped from the label edges. */
@@ -71,19 +74,41 @@ function stripLabel(raw: string): string {
   return chars.slice(start, end).join('').replace(/\s+/g, ' ');
 }
 
-function stripTrailingSlash(value: string): string {
-  return value.endsWith('/') ? value.slice(0, -1) : value;
+/** Drops the scheme, a leading `www.`, and a trailing slash — the parts link text omits. */
+function normalizeUrlText(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/\/$/, '');
 }
 
-/** A link whose visible text is just its own URL is a reference, not an action. */
-function isBareUrlLabel(label: string, href: string): boolean {
-  return stripTrailingSlash(label) === stripTrailingSlash(href);
+/**
+ * A link whose visible text is just its own URL is a reference, not an
+ * action. `autoLinkUrls` writes `docs.example.com/guide` as the text of
+ * `https://docs.example.com/guide`, so both sides are normalized first.
+ */
+export function isBareUrlLabel(label: string, href: string): boolean {
+  return normalizeUrlText(label) === normalizeUrlText(href);
 }
 
 function isValidHref(href: string): boolean {
   if (!href || href.startsWith('#')) return false;
   if (/^https?:\/\//i.test(href)) return true;
-  return href.startsWith('/') && !href.startsWith('//');
+  // Browsers read `/\host` as `//host`, a protocol-relative off-origin URL.
+  return href.startsWith('/') && !href.startsWith('//') && !href.startsWith('/\\');
+}
+
+/**
+ * The connect card's button text: the label's leading verb when it is a
+ * connect verb (`Authorize Linear` → `Authorize`), else `null` so the caller
+ * uses its localized default.
+ */
+export function connectActionVerb(label: string): string | null {
+  const verb = CONNECT_VERB_PATTERN.exec(label.trim())?.[1];
+  if (!verb) return null;
+  return verb.charAt(0).toUpperCase() + verb.slice(1).toLowerCase();
 }
 
 function isConnectHost(host: string | null): boolean {
@@ -113,6 +138,11 @@ export function classifyMarkdownActionLink(
   text: string,
   origin: string | null,
 ): MarkdownActionLink | null {
+  // A pending link may have no label yet (`[` just arrived); the caller drops it.
+  if (href === INCOMPLETE_LINK_HREF) {
+    return { kind: 'pending', href, label: stripLabel(text), host: null, icon: 'arrow-right' };
+  }
+
   if (!isValidHref(href)) return null;
 
   const label = stripLabel(text);
