@@ -924,7 +924,7 @@ describe('createUpdateHandler — per-change doc snapshots alongside the empty b
   });
 });
 
-// ── COR-117: reply quotes in the composer document ──────────────────────────
+// ── reply quotes in the composer document ──────────────────────────
 
 const para = (text?: string): JSONContent => ({
   type: 'paragraph',

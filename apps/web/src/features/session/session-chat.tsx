@@ -2140,7 +2140,7 @@ export function SessionChat({
   }, []);
 
   // ---- Reply quotes (text selection → quote block in the composer) ----
-  // Each "Reply" asks the composer to insert one quote block (COR-117). The
+  // Each "Reply" asks the composer to insert one quote block. The
   // quote lives in the composer document from then on and serializes inline
   // as `<reply_context>` on send, so there is no reply state to hold here —
   // only the id-keyed requests, each removed once the composer has applied it.

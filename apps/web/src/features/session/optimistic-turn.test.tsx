@@ -94,7 +94,7 @@ describe('OptimisticTurn', () => {
     expect(markup.indexOf('the earlier line')).toBeLessThan(markup.indexOf('fix it'));
   });
 
-  // COR-117: many quotes, each drawn where it was written.
+  // Many quotes, each drawn where it was written.
   const interleaved =
     '<reply_context>quoted alpha</reply_context>\nreply to alpha\n' +
     '<reply_context>quoted bravo</reply_context>\nreply to bravo';

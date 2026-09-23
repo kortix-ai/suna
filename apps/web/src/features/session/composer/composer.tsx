@@ -319,7 +319,7 @@ export interface SessionChatInputProps {
   cardClassName?: string;
 
   /**
-   * Reply quotes to insert (COR-117) — transcript selections the user clicked
+   * Reply quotes to insert — transcript selections the user clicked
    * "Reply" on, oldest first. Id-keyed like `prefill`: each id inserts ONE
    * quote block at the end of the document (`ComposerEditorHandle.insertQuote`),
    * in array order. A request that arrives before the lazy editor mounts, or

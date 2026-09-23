@@ -161,7 +161,7 @@ describe('projectQueueRows', () => {
     expect(rows[0]?.attachmentCount).toBe(1);
   });
 
-  test('a row with several inline quotes shows only its reply text (COR-117)', () => {
+  test('a row with several inline quotes shows only its reply text', () => {
     const { rows } = projectQueueRows({
       prompts: [
         prompt({

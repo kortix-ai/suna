@@ -282,7 +282,7 @@ describe('serializeDocument — command split across blocks', () => {
   });
 });
 
-// ── COR-117: quote blocks serialize inline, at their position ────────────────
+// ── quote blocks serialize inline, at their position ────────────────
 
 function blocksDoc(...blocks: unknown[]) {
   return PMNode.fromJSON(schema, { type: 'doc', content: blocks });

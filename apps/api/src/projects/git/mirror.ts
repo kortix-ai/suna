@@ -444,7 +444,59 @@ export function existingProjectMirrorPath(project: GitBackedProject): string | n
   return looksLikeBareMirror(repoPath) ? repoPath : null;
 }
 
-async function doRefreshMirror(project: GitBackedProject, force = false) {
+/**
+ * Is the mirror's tip for ONE branch already the remote's tip?
+ *
+ * `git ls-remote --heads origin <branch>` asks the git host for a single ref:
+ * one round trip, no pack, no objects. A `git fetch --prune` of a whole project
+ * mirror is the same question answered by transferring everything that moved —
+ * measured at ~0.9 s against the managed host, on EVERY prompt, because the
+ * per-prompt manifest read forces a refresh to stay fresh (see
+ * `remintGrantForAgentSwitch`). When the branch has not moved, the fetch had
+ * nothing to do and the ls-remote proves it.
+ *
+ * Answers false on anything unexpected — an unresolvable local ref, a sha
+ * instead of a branch, any git failure — so the caller falls back to the fetch
+ * it would have done anyway. It can never report "fresh" for a branch that
+ * moved: that is exactly the comparison it makes.
+ */
+async function mirrorMatchesRemoteTip(
+  repoPath: string,
+  access: ResolvedMirrorAccess,
+  authHost: string | undefined,
+  ref: string,
+): Promise<boolean> {
+  // Branch names only: a sha or a tag is not what `ls-remote --heads` answers.
+  if (/^[0-9a-f]{7,40}$/i.test(ref) || !/^[\w.\-\/]+$/.test(ref)) return false;
+  try {
+    const local = await runGitCapture(
+      ['rev-parse', '--verify', '--quiet', `refs/heads/${ref}^{commit}`],
+      repoPath,
+    );
+    const localSha = local.exitCode === 0 ? local.stdout.trim() : '';
+    if (!/^[0-9a-f]{40}$/i.test(localSha)) return false;
+    const remote = await runGit(
+      ['ls-remote', '--heads', 'origin', ref],
+      repoPath,
+      true,
+      access.token,
+      undefined,
+      authHost,
+      GIT_DEFAULT_TIMEOUT_MS,
+      access.headers,
+    );
+    const remoteSha = remote.stdout.trim().split(/\s+/)[0] ?? '';
+    return /^[0-9a-f]{40}$/i.test(remoteSha) && remoteSha === localSha;
+  } catch {
+    return false;
+  }
+}
+
+async function doRefreshMirror(
+  project: GitBackedProject,
+  force = false,
+  freshRef?: string,
+) {
   const repoPath = repoCachePath(project);
   await mkdir(dirname(repoPath), { recursive: true });
   if (existsSync(join(repoPath, 'shallow'))) {
@@ -501,19 +553,38 @@ async function doRefreshMirror(project: GitBackedProject, force = false) {
   await runGit(['remote', 'set-url', 'origin', access.repoUrl], repoPath);
   // Heal any legacy single-branch clones by widening the refspec.
   await runGit(['config', 'remote.origin.fetch', '+refs/heads/*:refs/heads/*'], repoPath, false);
+  // A caller that forced this refresh to read ONE branch gets the cheap proof
+  // first. `lastRefreshAt` is deliberately NOT bumped: only that branch was
+  // compared, so the next interval-driven refresh must still fetch the rest.
+  if (force && freshRef && (await mirrorMatchesRemoteTip(repoPath, access, authHost, freshRef))) {
+    return repoPath;
+  }
   await runGit(['fetch', '--prune', 'origin'], repoPath, true, access.token, undefined, authHost, GIT_DEFAULT_TIMEOUT_MS, access.headers);
   lastRefreshAt.set(project.projectId, Date.now());
   return repoPath;
 }
 
-export async function refreshMirror(project: GitBackedProject, force = false) {
+export async function refreshMirror(
+  project: GitBackedProject,
+  force = false,
+  opts?: {
+    /** Freshness is only needed for THIS branch: prove it with one `ls-remote`
+     *  and skip the whole-mirror fetch when it has not moved. Ignored unless
+     *  `force` is set. */
+    freshRef?: string;
+  },
+) {
+  // A ref-scoped refresh may skip the fetch, so it must not satisfy a caller
+  // that forced a full one: it registers as unforced, and such a caller waits
+  // for it and then runs its own real fetch.
+  const lockForced = force && !opts?.freshRef;
   const current = refreshLocks.get(project.projectId);
   if (current) {
     if (!force || current.forced) return current.promise;
     await current.promise;
     return refreshMirror(project, true);
   }
-  const next = doRefreshMirror(project, force)
+  const next = doRefreshMirror(project, force, opts?.freshRef)
     .then(async (repoPath) => {
       // Bump the mirror dir's mtime on EVERY access (warm hits included) — the
       // size-budget reaper below uses it as the LRU signal, and a warm read
@@ -527,7 +598,7 @@ export async function refreshMirror(project: GitBackedProject, force = false) {
         refreshLocks.delete(project.projectId);
       }
     });
-  refreshLocks.set(project.projectId, { promise: next, forced: force });
+  refreshLocks.set(project.projectId, { promise: next, forced: lockForced });
   return next;
 }
 

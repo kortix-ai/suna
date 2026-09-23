@@ -9,7 +9,7 @@ import { UndoRedo } from '@tiptap/extensions';
  * The composer's schema: paragraphs, text, line breaks, undo, a placeholder.
  * Nothing else. Mentions and `/` command chips are added on top of this by
  * `composer-editor.tsx` (`MentionNode`), and so are reply quotes
- * (`QuoteNode`, COR-117) — those two are the ONLY non-text nodes the document
+ * (`QuoteNode`) — those two are the ONLY non-text nodes the document
  * can hold. A reply quote is an atom carrying a `<reply_context>` block, not
  * the rich-text `Blockquote` removed below: nothing can be typed inside it.
  *

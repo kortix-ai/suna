@@ -66,6 +66,7 @@ import {
 } from '../mention-segments';
 import { parseChannelMessage } from './channel-message';
 import { CHANNEL_BRAND_COLOR, ChannelBrandMark, channelPlatformLabel } from './channel-brand';
+import { type DCPNotification, parseDCPNotifications } from './dcp-notification';
 import {
   parseAgentMentionReferences,
   parseFileMentionReferences,
@@ -74,6 +75,7 @@ import {
   parseReplyContexts,
   parseSessionReferences,
   parseSystemNotifications,
+  parseTriggerEvent,
   QUOTE_MARKER_RE,
   quoteMarker,
   splitAtQuoteMarkers,
@@ -94,173 +96,6 @@ import { PlanCard, useHasPlan } from './plan-card';
 
 // Channel brand colors + marks live in ./channel-brand.tsx, shared with the
 // outgoing reply card the bash tool renders for `teams send` & co.
-
-// ============================================================================
-// Parse <dcp-notification> XML tags from DCP plugin messages
-// ============================================================================
-
-interface DCPPrunedItem {
-  tool: string;
-  description: string;
-}
-
-interface DCPNotification {
-  type: 'prune' | 'compress';
-  tokensSaved: number;
-  batchSaved: number;
-  prunedCount: number;
-  extractedTokens: number;
-  reason?: string;
-  items: DCPPrunedItem[];
-  distilled?: string;
-  // compress-specific
-  messagesCount?: number;
-  toolsCount?: number;
-  topic?: string;
-  summary?: string;
-}
-
-const DCP_TAG_REGEX = /<dcp-notification\s+([^>]*)>([\s\S]*?)<\/dcp-notification>/g;
-const DCP_ITEM_REGEX = /<dcp-item\s+tool="([^"]*?)"\s+description="([^"]*?)"\s*\/>/g;
-const DCP_DISTILLED_REGEX = /<dcp-distilled>([\s\S]*?)<\/dcp-distilled>/;
-const DCP_SUMMARY_REGEX = /<dcp-summary>([\s\S]*?)<\/dcp-summary>/;
-
-function unescapeXml(str: string): string {
-  return str
-    .replace(/&quot;/g, '"')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&');
-}
-
-function parseAttr(attrs: string, name: string): string | undefined {
-  const re = new RegExp(`${name}="([^"]*?)"`);
-  const m = attrs.match(re);
-  return m ? unescapeXml(m[1]) : undefined;
-}
-
-// Legacy DCP format: "▣ DCP | ~12.5K tokens saved total" (pre-XML version)
-const DCP_LEGACY_REGEX = /^▣ DCP \| ~([\d.]+K?) tokens saved total/;
-const DCP_LEGACY_PRUNING_REGEX =
-  /▣ Pruning \(~([\d.]+K?) tokens(?:, distilled ([\d.]+K?) tokens)?\)(?:\s*—\s*(.+))?/;
-const DCP_LEGACY_ITEM_REGEX = /→\s+(\S+?):\s+(.+)/g;
-
-function parseLegacyDCPNotification(text: string): DCPNotification | null {
-  const headerMatch = text.match(DCP_LEGACY_REGEX);
-  if (!headerMatch) return null;
-
-  const tokenStr = headerMatch[1];
-  const tokensSaved = tokenStr.endsWith('K')
-    ? Math.round(Number.parseFloat(tokenStr.slice(0, -1)) * 1000)
-    : Number.parseInt(tokenStr, 10);
-
-  const pruningMatch = text.match(DCP_LEGACY_PRUNING_REGEX);
-  let batchSaved = 0;
-  let extractedTokens = 0;
-  let reason: string | undefined;
-  if (pruningMatch) {
-    const batchStr = pruningMatch[1];
-    batchSaved = batchStr.endsWith('K')
-      ? Math.round(Number.parseFloat(batchStr.slice(0, -1)) * 1000)
-      : Number.parseInt(batchStr, 10);
-    if (pruningMatch[2]) {
-      const extStr = pruningMatch[2];
-      extractedTokens = extStr.endsWith('K')
-        ? Math.round(Number.parseFloat(extStr.slice(0, -1)) * 1000)
-        : Number.parseInt(extStr, 10);
-    }
-    reason = pruningMatch[3]?.trim();
-  }
-
-  const items: DCPPrunedItem[] = [];
-  let itemMatch;
-  DCP_LEGACY_ITEM_REGEX.lastIndex = 0;
-  while ((itemMatch = DCP_LEGACY_ITEM_REGEX.exec(text)) !== null) {
-    items.push({ tool: itemMatch[1], description: itemMatch[2].trim() });
-  }
-
-  // Check for compress format
-  const isCompress = text.includes('▣ Compressing');
-
-  return {
-    type: isCompress ? 'compress' : 'prune',
-    tokensSaved,
-    batchSaved,
-    prunedCount: items.length,
-    extractedTokens,
-    reason,
-    items,
-  };
-}
-
-function parseDCPNotifications(text: string): {
-  cleanText: string;
-  notifications: DCPNotification[];
-} {
-  const notifications: DCPNotification[] = [];
-
-  // First try XML format
-  const cleanText = text
-    .replace(DCP_TAG_REGEX, (_, attrs: string, body: string) => {
-      const type = (parseAttr(attrs, 'type') || 'prune') as 'prune' | 'compress';
-      const tokensSaved = Number.parseInt(parseAttr(attrs, 'tokens-saved') || '0', 10);
-      const batchSaved = Number.parseInt(parseAttr(attrs, 'batch-saved') || '0', 10);
-      const prunedCount = Number.parseInt(parseAttr(attrs, 'pruned-count') || '0', 10);
-      const extractedTokens = Number.parseInt(parseAttr(attrs, 'extracted-tokens') || '0', 10);
-      const reason = parseAttr(attrs, 'reason');
-
-      // Parse items
-      const items: DCPPrunedItem[] = [];
-      let itemMatch;
-      DCP_ITEM_REGEX.lastIndex = 0;
-      while ((itemMatch = DCP_ITEM_REGEX.exec(body)) !== null) {
-        items.push({
-          tool: unescapeXml(itemMatch[1]),
-          description: unescapeXml(itemMatch[2]),
-        });
-      }
-
-      // Parse distilled
-      const distilledMatch = body.match(DCP_DISTILLED_REGEX);
-      const distilled = distilledMatch ? unescapeXml(distilledMatch[1]) : undefined;
-
-      // Compress-specific
-      const messagesCount =
-        Number.parseInt(parseAttr(attrs, 'messages-count') || '0', 10) || undefined;
-      const toolsCount = Number.parseInt(parseAttr(attrs, 'tools-count') || '0', 10) || undefined;
-      const topic = parseAttr(attrs, 'topic');
-      const summaryMatch = body.match(DCP_SUMMARY_REGEX);
-      const summary = summaryMatch ? unescapeXml(summaryMatch[1]) : undefined;
-
-      notifications.push({
-        type,
-        tokensSaved,
-        batchSaved,
-        prunedCount,
-        extractedTokens,
-        reason,
-        items,
-        distilled,
-        messagesCount,
-        toolsCount,
-        topic,
-        summary,
-      });
-      return '';
-    })
-    .trim();
-
-  // If no XML notifications found, try legacy format
-  if (notifications.length === 0 && cleanText) {
-    const legacy = parseLegacyDCPNotification(cleanText);
-    if (legacy) {
-      notifications.push(legacy);
-      return { cleanText: '', notifications };
-    }
-  }
-
-  return { cleanText, notifications };
-}
 
 // ============================================================================
 // DCP Notification Card — styled component for pruning/compress events
@@ -962,7 +797,7 @@ export type QuotedBodyPiece = ReturnType<typeof splitAtQuoteMarkers>[number];
 
 /**
  * A message body with its `<reply_context>` quotes drawn where they were
- * written (COR-117) — quote, reply, quote, reply — instead of one quote pinned
+ * written — quote, reply, quote, reply — instead of one quote pinned
  * above the text.
  *
  * Shared by the sent bubble and `OptimisticTurn`, so the optimistic → echo
@@ -1581,18 +1416,7 @@ export function UserMessage({
   const channelMessageInfo = useMemo(() => parseChannelMessage(rawText), [rawText]);
 
   // Detect trigger_event in user message
-  const triggerEventInfo = useMemo(() => {
-    if (!rawText) return undefined;
-    const match = rawText.match(/<trigger_event>\s*([\s\S]*?)\s*<\/trigger_event>/);
-    if (!match) return undefined;
-    try {
-      const data = JSON.parse(match[1]);
-      const promptText = rawText.replace(/<trigger_event>[\s\S]*?<\/trigger_event>/, '').trim();
-      return { data, prompt: promptText };
-    } catch {
-      return undefined;
-    }
-  }, [rawText]);
+  const triggerEventInfo = useMemo(() => parseTriggerEvent(rawText), [rawText]);
 
   // Extract DCP notifications from ignored text parts (DCP plugin sends ignored user messages)
   const ignoredTextParts = stickyParts.filter(

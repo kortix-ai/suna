@@ -903,7 +903,7 @@ test('saved attachments resolve before a sandbox path exists', () => {
   expect(normalizeAttachments([], [{ path: '', filename: 'a.png', mime: 'image/png', attachment: ref }])[0].src).toBe(ref);
 });
 
-// COR-117: a message can carry many `<reply_context>` quotes, each written at
+// A message can carry many `<reply_context>` quotes, each written at
 // its position in the text. The bubble draws each quote where it was written,
 // as the same left-rule blockquote the single leading quote always used.
 describe('UserMessage renders N inline reply quotes at their positions', () => {
@@ -1096,7 +1096,7 @@ describe('UserMessage renders reply quotes inside /command args', () => {
     expect([...order].sort((a, b) => a - b)).toEqual(order);
   });
 
-  test('a command without quotes renders byte-identical markup to before COR-117', () => {
+  test('a command without quotes renders byte-identical markup to a command before quote support', () => {
     // Captured from the renderer before this change.
     const region = (markup: string) => {
       const start = markup.indexOf('<div id="message-1-text"');

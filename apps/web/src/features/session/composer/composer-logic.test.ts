@@ -536,7 +536,7 @@ describe('shouldFocusEditorFromPadding', () => {
   });
 });
 
-describe('textToParagraphs — <reply_context> blocks become quote nodes (COR-117)', () => {
+describe('textToParagraphs — <reply_context> blocks become quote nodes', () => {
   test('text with no reply block is unchanged: one paragraph per line, blanks kept', () => {
     expect(textToParagraphs('one\n\ntwo')).toEqual([
       { type: 'paragraph', content: [{ type: 'text', text: 'one' }] },

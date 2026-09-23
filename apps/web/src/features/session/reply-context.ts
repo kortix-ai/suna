@@ -1,14 +1,16 @@
 /**
- * The `<reply_context>` wire format for reply quotes (COR-117), React-free.
+ * The `<reply_context>` wire format for reply quotes, React-free.
  *
  * Lives outside `message-parsing.tsx` so the composer (serialize.ts,
  * quote-node.ts, composer-logic.ts) can import it without pulling that
  * module's React components into its graph.
  * `message-parsing.tsx` re-exports everything here, so its importers are
- * unchanged.
+ * unchanged. Its only import is `@kortix/shared` (pure string helpers).
  */
 
-// ── COR-117: N inline reply-context quotes ────────────────────────────
+import { removeSpans, replaceSpans, type TagBlock } from '@kortix/shared';
+
+// ── Inline reply-context quotes ────────────────────────────
 //
 // The composer can insert more than one <reply_context> block into a single
 // message, interleaved with the user's text. The old single-block parser only
@@ -32,7 +34,7 @@
 // Written as the 4-hex-digit `\uXXXX` escape, never the brace form
 // (`\u{XXXX}`): the brace form is only a code-point escape under the regex
 // `u`/`v` flag. Without it, `\u{e000}` parses as the identity escape `u`
-// followed by the literal text `{e000}` \u2014 verified directly: outside `u`
+// followed by the literal text `{e000}` — verified directly: outside `u`
 // mode, `/\u{e000}/.test('u{e000}')` is `true` and it never matches the
 // real character. `\uE000` is a code-point escape in every mode, in both
 // strings and regexes, so this stays correct under any transpiler.
@@ -48,8 +50,8 @@ export function quoteMarker(index: number): string {
 }
 
 // Only `</reply_context>` is escaped — nothing else — so the body can never
-// contain a literal closing tag, and the non-greedy match below always
-// stops at the real one.
+// contain a literal closing tag, and `replyContextBlocks` below always stops
+// at the real one.
 function escapeReplyContextBody(quote: string): string {
   return quote.split('</reply_context>').join('&lt;/reply_context&gt;');
 }
@@ -63,34 +65,77 @@ export function serializeReplyContext(quote: string): string {
   return `<reply_context>${escapeReplyContextBody(quote)}</reply_context>`;
 }
 
-// Tolerates attributes on the open tag and surrounding whitespace inside it
-// (`<reply_context foo="x" >`). Consumes one trailing newline with the block
-// so a block on its own line doesn't leave a blank line behind; a leading
-// newline is left alone so it stays as the separator for the text before it.
-const REPLY_CONTEXT_BLOCK_RE = /<reply_context\b[^>]*>([\s\S]*?)<\/reply_context>\n?/g;
+const REPLY_CONTEXT_OPEN = '<reply_context';
+const REPLY_CONTEXT_CLOSE = '</reply_context>';
+const NEWLINE = 10;
+/** A regex `\w` without the `u` flag: `[A-Za-z0-9_]`. */
+const WORD_CHAR = /\w/;
+
+/**
+ * Every `<reply_context …>…</reply_context>` block in `text`, in order, as the
+ * regex `/<reply_context\b[^>]*>([\s\S]*?)<\/reply_context>\n?/g` matched
+ * them — the same spans at the same indices — in linear time.
+ *
+ * - The open tag tolerates attributes and whitespace (`<reply_context a="x" >`),
+ *   but the name must end there: `<reply_contextx>` is not a block.
+ * - Each block ends at the first `</reply_context>` after its open tag.
+ * - One `\n` right after the close tag goes with the block, so a block on its
+ *   own line does not leave a blank line behind. A leading newline stays: it
+ *   separates the block from the text before it.
+ * - An unclosed block matches nothing and stays in the text.
+ *
+ * WHY NOT THE REGEX. Its lazy body re-scanned the rest of the message for
+ * every opener that never closed: `'<reply_context>'.repeat(16_000)` (240k
+ * characters) took ~1 s with Bun, in every viewer's tab, on every render.
+ * `tagBlocks` from `@kortix/shared` cannot stand in: its `attributes: 'any'`
+ * accepts `<reply_contextx>` as an opener, which pairs a different closer.
+ * This scanner reads each character a bounded number of times, the way
+ * `tagBlocks` does: every search starts where the previous one stopped, and
+ * the scan stops once a `>` or a closer is absent from the rest of the text,
+ * because then no later opener can close either.
+ */
+function replyContextBlocks(text: string): TagBlock[] {
+  const blocks: TagBlock[] = [];
+  let from = 0;
+  for (;;) {
+    const index = text.indexOf(REPLY_CONTEXT_OPEN, from);
+    if (index === -1) return blocks;
+    const after = index + REPLY_CONTEXT_OPEN.length;
+    // `\b`: the name ends in a word character, so the next one must not be.
+    if (after < text.length && WORD_CHAR.test(text[after]!)) {
+      from = after;
+      continue;
+    }
+    const gt = text.indexOf('>', after);
+    if (gt === -1) return blocks;
+    const closeAt = text.indexOf(REPLY_CONTEXT_CLOSE, gt + 1);
+    if (closeAt === -1) return blocks;
+    let end = closeAt + REPLY_CONTEXT_CLOSE.length;
+    if (text.charCodeAt(end) === NEWLINE) end += 1;
+    blocks.push({ index, end, attrs: text.slice(after, gt), body: text.slice(gt + 1, closeAt) });
+    from = end;
+  }
+}
 
 /**
  * Every `<reply_context>` block in `text`, in order.
  * `cleanText` has each block replaced by a quote marker (see below) so a later
- * render can put the quote back at its position; newlines directly around a
- * block are consumed with it. Result is trimmed.
+ * render can put the quote back at its position; one newline directly after a
+ * block is consumed with it. Result is trimmed.
  */
 export function parseReplyContexts(text: string): { cleanText: string; quotes: string[] } {
   const quotes: string[] = [];
-  const cleanText = text
-    .replace(REPLY_CONTEXT_BLOCK_RE, (_full, rawBody: string) => {
-      const index = quotes.length;
-      quotes.push(unescapeReplyContextBody(rawBody).trim());
-      return quoteMarker(index);
-    })
-    .trim();
+  const cleanText = replaceSpans(text, replyContextBlocks(text), (block) => {
+    const index = quotes.length;
+    quotes.push(unescapeReplyContextBody(block.body).trim());
+    return quoteMarker(index);
+  }).trim();
   return { cleanText, quotes };
 }
 
 /** `text` with every `<reply_context>` block removed; blank-line runs collapsed; trimmed. */
 export function stripReplyContexts(text: string): string {
-  return text
-    .replace(/<reply_context\b[^>]*>[\s\S]*?<\/reply_context>\n?/g, '')
+  return removeSpans(text, replyContextBlocks(text))
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }

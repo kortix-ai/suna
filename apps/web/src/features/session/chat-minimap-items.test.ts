@@ -101,7 +101,7 @@ describe('extractMinimapItem', () => {
     expect(item!.attachments.map((a) => a.name)).toEqual(['hero.tsx', 'landing.test.ts']);
   });
 
-  test('previews only the reply text of a message with several inline quotes (COR-117)', () => {
+  test('previews only the reply text of a message with several inline quotes', () => {
     const item = extractMinimapItem(
       turnWithParts([
         {

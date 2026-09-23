@@ -41,7 +41,7 @@ export function textToParagraphs(text: string): JSONContent[] {
   // trims its output, and a plain prefill must keep its whitespace exactly.
   if (quotes.length === 0) return linesToParagraphs(text);
 
-  // COR-117: each `<reply_context>` block becomes a `replyQuote` node
+  // Each `<reply_context>` block becomes a `replyQuote` node
   // (editor/quote-node.ts) at its position, so a prefill, a restored queue
   // row or a rewind brings quotes back as quotes, not as raw XML the next
   // send would double-wrap. `serializeDocument` writes the same blocks back
@@ -274,7 +274,7 @@ export interface QuoteRequest {
 }
 
 /**
- * The `quoteRequests` (COR-117) to insert right now, in order.
+ * The `quoteRequests` to insert right now, in order.
  *
  * A FIFO, not a single slot: two "Reply" clicks before the composer applies
  * the first used to keep only the second. Each request is applied once per

@@ -7,6 +7,15 @@
  */
 
 import { formatMessageDay, isAbortError } from '@kortix/sdk';
+import {
+  fileTagBlocks,
+  referenceHeaders,
+  removeSpans,
+  replaceSpans,
+  selfClosingTags,
+  tagBlocks,
+  type TagBlock,
+} from '@kortix/shared';
 
 // ─── Web metrics ─────────────────────────────────────────────────────────────
 
@@ -54,22 +63,70 @@ function unescapeAttr(value: string): string {
     .replace(/&amp;/g, '&');
 }
 
-const FILE_TAG_REGEX = /<file\s+([^>]*?)>\s*[\s\S]*?<\/file>/g;
+/** Pass every `<file …>…</file>` block through `replace(whole, attrs)`. */
+function replaceFileTags(text: string, replace: (whole: string, attrs: string) => string): string {
+  return replaceSpans(text, fileTagBlocks(text), (block) => replace(text.slice(block.index, block.end), block.attrs));
+}
+
+/** Remove every `<tag …/>` and then every `Referenced <noun> (…):` header line. */
+function stripReferences(text: string, tag: string, noun: string): string {
+  const withoutTags = removeSpans(text, selfClosingTags(text, tag));
+  return removeSpans(withoutTags, referenceHeaders(withoutTags, noun));
+}
+
+/** The parenthesised text of the `Referenced sessions (…):` header. */
+const SESSION_REFERENCE_HINT = 'use the session_context tool to fetch details when needed';
+
+const REPLY_CONTEXT_OPEN = '<reply_context';
+const REPLY_CONTEXT_CLOSE = '</reply_context>';
+const NEWLINE = 10;
+/** A regex `\w` without the `u` flag: `[A-Za-z0-9_]`. */
+const WORD_CHAR = /\w/;
 
 /**
- * One `<reply_context>` block, open tag through close tag, tolerating
- * attributes on the open tag. Matches web's `REPLY_CONTEXT_BLOCK_RE`
- * (`apps/web/src/features/session/message-parsing.tsx`) exactly: consumes at
- * most ONE trailing newline with the block, so a block on its own line
- * doesn't leave a blank line behind, but other trailing whitespace (spaces,
- * a second newline) is left alone. A leading newline is left alone too, so it
- * stays as the separator for the text before it.
+ * Every `<reply_context …>…</reply_context>` block, as web's
+ * `replyContextBlocks` (`apps/web/src/features/session/reply-context.ts`) and
+ * the regex `/<reply_context\b[^>]*>([\s\S]*?)<\/reply_context>\n?/g` found
+ * them — the same spans at the same indices — in linear time:
+ * - the open tag tolerates attributes, but the name must end there
+ *   (`<reply_contextx>` is not a block);
+ * - each block ends at the first `</reply_context>` after its open tag;
+ * - at most ONE `\n` after the close tag goes with the block, so a block on
+ *   its own line does not leave a blank line behind; a leading newline stays;
+ * - an unclosed block matches nothing and stays in the text.
+ *
+ * The regex re-scanned the rest of the message for every opener that never
+ * closed: 240k characters took ~1 s with Bun, more with Hermes, on the JS
+ * thread on every mount. `tagBlocks` cannot stand in: its `attributes: 'any'`
+ * accepts `<reply_contextx>` as an opener. Every search here starts where the
+ * previous one stopped, and the scan stops once a `>` or a closer is absent.
  */
-const REPLY_CONTEXT_REGEX = /<reply_context\b[^>]*>([\s\S]*?)<\/reply_context>\n?/g;
+function replyContextBlocks(text: string): TagBlock[] {
+  const blocks: TagBlock[] = [];
+  let from = 0;
+  for (;;) {
+    const index = text.indexOf(REPLY_CONTEXT_OPEN, from);
+    if (index === -1) return blocks;
+    const after = index + REPLY_CONTEXT_OPEN.length;
+    // `\b`: the name ends in a word character, so the next one must not be.
+    if (after < text.length && WORD_CHAR.test(text[after]!)) {
+      from = after;
+      continue;
+    }
+    const gt = text.indexOf('>', after);
+    if (gt === -1) return blocks;
+    const closeAt = text.indexOf(REPLY_CONTEXT_CLOSE, gt + 1);
+    if (closeAt === -1) return blocks;
+    let end = closeAt + REPLY_CONTEXT_CLOSE.length;
+    if (text.charCodeAt(end) === NEWLINE) end += 1;
+    blocks.push({ index, end, attrs: text.slice(after, gt), body: text.slice(gt + 1, closeAt) });
+    from = end;
+  }
+}
 
-/** Undo the one escape `serializeReplyContext` applies on the wire (web `message-parsing.tsx`). */
+/** Undo the one escape `serializeReplyContext` applies on the wire (web `reply-context.ts`). */
 function decodeReplyContextBody(body: string): string {
-  return body.trim().replace(/&lt;\/reply_context&gt;/g, '</reply_context>');
+  return body.trim().split('&lt;/reply_context&gt;').join('</reply_context>');
 }
 
 /**
@@ -81,58 +138,52 @@ function decodeReplyContextBody(body: string): string {
  * that in `parseReplyContexts`) since mobile has one call site for both.
  */
 export function extractReplyContexts(text: string): { text: string; quotes: string[] } {
-  const quotes: string[] = [];
-  const stripped = text.replace(REPLY_CONTEXT_REGEX, (_whole, body: string) => {
-    quotes.push(decodeReplyContextBody(body));
-    return '';
-  });
-  return { text: stripped.replace(/\n{3,}/g, '\n\n').trim(), quotes };
+  const blocks = replyContextBlocks(text);
+  const quotes = blocks.map((block) => decodeReplyContextBody(block.body));
+  return { text: removeSpans(text, blocks).replace(/\n{3,}/g, '\n\n').trim(), quotes };
 }
 
 /**
  * Strip every structured block a user message carries and keep what the user
  * typed. Order matches web's pipeline: kortix_system, reply context, uploads,
  * project refs, file refs, agent refs, session refs.
+ *
+ * Every tag is found with a scanner from `@kortix/shared/tag-blocks`, never a
+ * lazy regex. The regexes re-scanned the rest of the message for each tag that
+ * never closed: a 240k-character message took ~1 s per tag kind with Bun on a
+ * laptop, more with Hermes on a phone, on every mount of the message.
  */
 export function parseUserMessageText(raw: string): ParsedUserMessageText {
-  let text = (raw ?? '').replace(/<kortix_system[^>]*>[\s\S]*?<\/kortix_system>/gi, '');
+  let text = raw ?? '';
+  text = removeSpans(text, tagBlocks(text, 'kortix_system', { attributes: 'any', ignoreCase: true }));
   text = text.replace(/\n{3,}/g, '\n\n').trim();
 
   const { text: withoutQuotes, quotes } = extractReplyContexts(text);
   text = withoutQuotes;
 
   const files: ParsedFileRef[] = [];
-  text = text
-    .replace(FILE_TAG_REGEX, (whole, attrs: string) => {
-      const pick = (key: string): string | undefined => {
-        const m = attrs.match(new RegExp(`\\b${key}="([^"]*?)"`));
-        return m ? unescapeAttr(m[1]!) : undefined;
-      };
-      const path = pick('path');
-      const filename = pick('filename');
-      if (path === undefined && filename === undefined) return whole;
-      files.push({ path: path ?? '', mime: pick('mime') ?? '', filename: filename ?? '' });
-      return '';
-    })
-    .trim();
+  text = replaceFileTags(text, (whole, attrs) => {
+    const pick = (key: string): string | undefined => {
+      const m = attrs.match(new RegExp(`\\b${key}="([^"]*?)"`));
+      return m ? unescapeAttr(m[1]!) : undefined;
+    };
+    const path = pick('path');
+    const filename = pick('filename');
+    if (path === undefined && filename === undefined) return whole;
+    files.push({ path: path ?? '', mime: pick('mime') ?? '', filename: filename ?? '' });
+    return '';
+  }).trim();
 
-  text = text
-    .replace(/<project_ref\b[\s\S]*?\/>/g, '')
-    .replace(/\n*Referenced projects \([^)]*\):\n?/g, '')
-    .replace(/<file_ref\b[\s\S]*?\/>/g, '')
-    .replace(/\n*Referenced files \([^)]*\):\n?/g, '')
-    .replace(/<agent_ref\b[\s\S]*?\/>/g, '')
-    .replace(/\n*Referenced agents \([^)]*\):\n?/g, '')
-    .trim();
+  text = stripReferences(text, 'project_ref', 'projects');
+  text = stripReferences(text, 'file_ref', 'files');
+  text = stripReferences(text, 'agent_ref', 'agents').trim();
 
   const sessions: ParsedSessionRef[] = [];
-  text = text
-    .replace(/<session_ref\s+id="([^"]*?)"\s+title="([^"]*?)"\s*\/>/g, (_, id: string, title: string) => {
-      sessions.push({ id, title });
-      return '';
-    })
-    .replace(/\n*Referenced sessions \(use the session_context tool to fetch details when needed\):\n?/g, '')
-    .trim();
+  text = text.replace(/<session_ref\s+id="([^"]*?)"\s+title="([^"]*?)"\s*\/>/g, (_, id: string, title: string) => {
+    sessions.push({ id, title });
+    return '';
+  });
+  text = removeSpans(text, referenceHeaders(text, 'sessions', SESSION_REFERENCE_HINT)).trim();
 
   return { text, quotes, files, sessions };
 }

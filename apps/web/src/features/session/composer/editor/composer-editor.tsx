@@ -61,7 +61,7 @@ export interface ComposerEditorHandle {
    * pair. A caller that snapshots via `getContent()` and later tries to
    * restore via `setContent(text)` therefore can never bring the mention
    * nodes back — `setContent` builds paragraphs (`textToParagraphs`, below)
-   * and, since COR-117, reply-quote blocks from `<reply_context>` text, but
+   * and reply-quote blocks from `<reply_context>` text, but
    * never mention atoms. `getDocument`/`setDocument`
    * round-trip the actual ProseMirror JSON, atoms included, which is what a
    * failed-send retry or a question-lock save/restore needs: the mentions
@@ -99,7 +99,7 @@ export interface ComposerEditorHandle {
    */
   insertAtCursor(text: string): void;
   /**
-   * Append a reply quote (COR-117) — see `insertQuoteAtEnd`. Always at the
+   * Append a reply quote — see `insertQuoteAtEnd`. Always at the
    * END of the document, never at the caret: the transcript selection that
    * produced the quote has already taken focus and selection away from the
    * editor, so "the caret" is wherever it was last left, not a choice the

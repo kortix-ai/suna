@@ -436,8 +436,29 @@ export async function holdInboxPrompts(sessionId: string, held: boolean): Promis
   return released.length + requeued.length;
 }
 
-/** Release without asserting anything about whether a hold was set. */
-export function releaseInboxHold(sessionId: string): Promise<number> {
+/**
+ * Release without asserting anything about whether a hold was set.
+ *
+ * EVERY prompt POST calls this, and without a Stop the three ordered UPDATEs it
+ * runs match no rows at all — three round trips to change nothing. One read of
+ * the union of their predicates answers whether any of them can touch a row;
+ * when nothing is held there is nothing to release, so the writes are skipped.
+ * When something IS held the original three run, in their original order.
+ */
+export async function releaseInboxHold(sessionId: string): Promise<number> {
+  const [marked] = await db
+    .select({ commandId: sessionLifecycleCommands.commandId })
+    .from(sessionLifecycleCommands)
+    .where(
+      and(
+        inboxScope(sessionId),
+        sql`(COALESCE(${sessionLifecycleCommands.payload}->>'stopPausedOnDelivery', '') = 'true'
+          OR COALESCE(${sessionLifecycleCommands.result}->>'held', '') = 'true'
+          OR COALESCE(${sessionLifecycleCommands.result}->>'stop_paused', '') = 'true')`,
+      ),
+    )
+    .limit(1);
+  if (!marked) return 0;
   return holdInboxPrompts(sessionId, false);
 }
 

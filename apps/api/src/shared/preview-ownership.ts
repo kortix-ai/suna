@@ -74,6 +74,12 @@ export async function canAccessSandboxSession(input: {
   const cached = sessionVisibilityCache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached.allowed;
 
+  // Started with the row read below, not after it: neither depends on it, and
+  // this runs on the prompt path where each round trip is a full one.
+  const subjectRead = resolveShareSubject(input.userId);
+  const grantsRead = loadSessionGrants([input.sessionId]);
+  subjectRead.catch(() => undefined);
+  grantsRead.catch(() => undefined);
   const [row] = await db
     .select({
       visibility: projectSessions.visibility,
@@ -94,8 +100,8 @@ export async function canAccessSandboxSession(input: {
   let allowed = true;
   if (row) {
     const [subject, grantsBySession, managerVerdict] = await Promise.all([
-      resolveShareSubject(input.userId),
-      loadSessionGrants([input.sessionId]),
+      subjectRead,
+      grantsRead,
       isTriggerCreatedSessionMetadata(row.metadata)
         ? authorize(
             actorForUser(input.userId, input.accountId),
