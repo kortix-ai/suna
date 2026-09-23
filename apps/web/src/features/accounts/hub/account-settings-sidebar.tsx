@@ -261,7 +261,7 @@ export function AccountSettingsSidebar() {
       className="bg-surface [&>[data-slot=sidebar-inner]]:bg-surface"
     >
       <SidebarHeader className="gap-0 px-2 pt-0 pb-0">
-        <div className="kx-titlebar-row kx-titlebar-band-height kx-overlay-sidebar-titlebar flex h-11 items-center justify-end gap-1 py-2 pr-0.5">
+        <div className="kx-titlebar-row kx-titlebar-band-height kx-overlay-sidebar-titlebar flex h-11 items-center justify-between gap-1 py-2 pr-0.5">
           <BackToApp label={tI18nComplete.raw('texta6989680b352')} />
           <div className="flex items-center gap-px">
             <Hint label={tI18nComplete.raw('text49c266baaaa7')} side="bottom">

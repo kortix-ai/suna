@@ -532,7 +532,7 @@ export function SettingsPanelShell({
            `ROW_CLASS` dialect keyed on the Radix `data-state` the trigger
            carries instead of `data-active`. */
           <aside className="flex min-h-0 flex-col border-r bg-inherit">
-            <div className="kx-titlebar-row kx-titlebar-band-height kx-overlay-sidebar-titlebar flex h-11 shrink-0 items-center justify-end px-2">
+            <div className="kx-titlebar-row kx-titlebar-band-height kx-overlay-sidebar-titlebar flex h-11 shrink-0 items-center justify-start px-2">
               <ModalClose asChild>
                 <Button
                   variant="ghost"

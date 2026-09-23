@@ -181,9 +181,9 @@ describe('SettingsPanelShell — desktop rail', () => {
     expect(html).not.toContain('Back to workspace');
   });
 
-  test('Back to app sits at the right edge of the native titlebar row', () => {
+  test('Back to app starts at the left edge of the web sidebar row', () => {
     const html = render();
-    expect(html).toMatch(/<aside[^>]*>[\s\S]*?<div class="[^"]*kx-titlebar-row[^"]*kx-titlebar-band-height[^"]*justify-end[^"]*"/);
+    expect(html).toMatch(/<aside[^>]*>[\s\S]*?<div class="[^"]*kx-titlebar-row[^"]*kx-titlebar-band-height[^"]*justify-start[^"]*"/);
     expect(html).toMatch(/kx-titlebar-row[\s\S]*?Back to app/);
   });
 
