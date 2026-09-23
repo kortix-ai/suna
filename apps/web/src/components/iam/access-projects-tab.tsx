@@ -72,6 +72,7 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
 import { isInheritedFromGroupOnly } from '@/components/iam/iam-display-helpers';
+import { ProjectAgentAccessList } from '@/components/iam/project-agent-access-list';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -972,6 +973,16 @@ function ProjectAccessPanel({
           ))}
         </AccessList>
       )}
+
+      {/* ── Agents that hold a role here (their ceiling) ─────────────────── */}
+      {canManageRoles && settledRows ? (
+        <ProjectAgentAccessList
+          accountId={accountId}
+          projectId={projectId}
+          projectName={projectName}
+          rbacEnabled={rbacEnabled}
+        />
+      ) : null}
 
       {/* ── The one grant / edit modal ────────────────────────────────── */}
       <AccessDialog

@@ -312,7 +312,7 @@ describe('a user principal', () => {
 describe('a session GRANTED project.gitops.ref.any', () => {
   beforeAll(() => {
     principal = { kind: 'session', sessionId: SESSION_ID, branch: SESSION_ID, userId: 'user-1', tokenId: 'tok-1' };
-    agentGrant = { agent: 'main', kortixCli: ['project.gitops.ref.any'] };
+    agentGrant = { agent: 'main', permissions: ['project.gitops.ref.any'] };
   });
   afterAll(() => {
     agentGrant = null;

@@ -12,6 +12,7 @@ import { getTemplateById } from '../../snapshots/templates';
 import { roleAllows } from '../access';
 import { loadProjectConfig } from '../git';
 import { pollCodexDeviceAuth, startCodexDeviceAuth } from '../codex-device-auth';
+import { requestPersonalOwner } from '../lib/personal-resources';
 import { decryptProjectSecret, encryptProjectSecret, identifierKeyConflicts, isValidIdentifier, isValidSecretName, resolveProjectSecretForConsumer } from '../secrets';
 import {
   propagateProjectSecretsToActiveSandboxes,
@@ -43,7 +44,7 @@ import {
   projects,
   type SecretEgressPolicy,
 } from '@kortix/db';
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
   loadProjectForUser,
   assertProjectCapability,
@@ -481,7 +482,7 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Leaf-gate the read (a custom role can omit project.secret.read) — and, via
-  // the central agent-grant fold, an agent token must hold it in its kortixCli.
+  // the central agent-grant fold, an agent token must hold it in its Kortix permissions.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_READ);
 
   const canManageShared = roleAllows(loaded.effectiveRole, 'manage');
@@ -526,7 +527,9 @@ projectsApp.openapi(
 
   const items = (await loadSecretViewsForUser({
     projectId,
-    userId: loaded.userId,
+    // Spec 2026-09-22 §2.3: an agent-principal session sees personal
+    // overrides of its on-behalf-of human in a private session only.
+    userId: await requestPersonalOwner(c, loaded),
     canManageShared,
     agentGrants,
   }))
@@ -1178,8 +1181,11 @@ projectsApp.openapi(
 
 // Kortix provider id → the secret we persist the resulting auth.json under.
 // Only OpenAI (ChatGPT) is wired today; the shape generalizes to others.
-const OAUTH_PROVIDERS: Record<string, { secretName: string }> = {
-  openai: { secretName: CODEX_AUTH_JSON_SECRET_NAME },
+// `legacySecretNames` are older names for the same login. Nothing writes them
+// any more, but clients and the gateway still count them as connected, so a
+// disconnect must delete them too.
+const OAUTH_PROVIDERS: Record<string, { secretName: string; legacySecretNames?: string[] }> = {
+  openai: { secretName: CODEX_AUTH_JSON_SECRET_NAME, legacySecretNames: ['OPENCODE_AUTH_JSON'] },
 };
 
 // How long the encrypted flow handle stays valid (OpenAI expires the device
@@ -1579,7 +1585,7 @@ projectsApp.openapi(
       projectId,
       accountId: loaded.row.accountId,
       actorUserId: loaded.userId,
-      principalUserId: loaded.userId,
+      principalUserId: await requestPersonalOwner(c, loaded),
       name: cfg.secretName,
       consumer: 'llm_gateway',
     });
@@ -1597,6 +1603,11 @@ projectsApp.openapi(
 
 // ─── DELETE /v1/projects/:projectId/oauth/:provider ────────────────────────
 // Remove an OAuth credential (deletes the backing secret).
+// The login can be a per-user PRIVATE row (`owner_user_id` set) or the shared
+// project row. The delete covers exactly the rows `loadSecretViewsForUser`
+// shows the caller: the caller's own private rows, plus the shared row when
+// the caller may manage shared secrets. Another member's private login is
+// never touched.
 projectsApp.openapi(
   createRoute({
     method: 'delete',
@@ -1620,12 +1631,20 @@ projectsApp.openapi(
   const cfg = OAUTH_PROVIDERS[provider];
   if (!cfg) return c.json({ error: 'Not found' }, 404);
 
+  // Same test the GET secrets route uses for `can_manage_shared`.
+  const canManageShared = roleAllows(loaded.effectiveRole, 'manage');
+  const ownPrivate = eq(projectSecrets.ownerUserId, loaded.userId);
+
   await runAuditedTransaction(
     async (tx) => {
       await tx
         .delete(projectSecrets)
         .where(
-          and(eq(projectSecrets.projectId, projectId), eq(projectSecrets.name, cfg.secretName)),
+          and(
+            eq(projectSecrets.projectId, projectId),
+            inArray(projectSecrets.name, [cfg.secretName, ...(cfg.legacySecretNames ?? [])]),
+            canManageShared ? or(ownPrivate, isNull(projectSecrets.ownerUserId)) : ownPrivate,
+          ),
         );
     },
     () => ({
@@ -1639,6 +1658,7 @@ projectsApp.openapi(
       metadata: {
         identifier: cfg.secretName,
         consumer: 'llm_gateway',
+        scope: canManageShared ? 'own_private_and_shared' : 'own_private',
       },
     }),
   );
@@ -1797,6 +1817,14 @@ projectsApp.openapi(
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Spec 2026-09-22 §2.3: an agent-principal session writes a personal
+  // override only for its on-behalf-of human, inside a private session.
+  if ((await requestPersonalOwner(c, loaded)) !== loaded.userId) {
+    return c.json(
+      { error: 'This session cannot change a personal secret', code: 'personal_resource_unreachable' },
+      403,
+    );
+  }
 
   const name = c.req.param('name')?.trim().toUpperCase();
   if (!name || !isValidSecretName(name)) {
@@ -1905,6 +1933,14 @@ projectsApp.openapi(
     return c.json(
       { error: `${CODEX_AUTH_JSON_SECRET_NAME} must be disconnected as an OAuth provider` },
       400,
+    );
+  }
+  // Spec 2026-09-22 §2.3: an agent-principal session writes a personal
+  // override only for its on-behalf-of human, inside a private session.
+  if ((await requestPersonalOwner(c, loaded)) !== loaded.userId) {
+    return c.json(
+      { error: 'This session cannot change a personal secret', code: 'personal_resource_unreachable' },
+      403,
     );
   }
 

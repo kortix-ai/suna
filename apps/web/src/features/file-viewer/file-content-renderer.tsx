@@ -955,6 +955,11 @@ export function FileContentRenderer({
             </Suspense>
           )}
 
+          {/* The rich renderers below get `showDownload={false}`: every host of
+              this component (the session panel, the file preview modal, the
+              public share page) already shows Download in its own toolbar, and
+              a second one inside the viewer is the duplicate we removed. */}
+
           {/* PDF preview */}
           {isContentReady && fileCategory === 'pdf' && fileContent?.content && (
             <Suspense fallback={<RendererFallback />}>
@@ -963,6 +968,7 @@ export function FileContentRenderer({
                 fileName={fileName}
                 className="h-full"
                 fitOnOpen={fitOnOpen}
+                showDownload={false}
               />
             </Suspense>
           )}
@@ -970,7 +976,12 @@ export function FileContentRenderer({
           {/* DOCX preview */}
           {isContentReady && fileCategory === 'docx' && rawBlob && (
             <Suspense fallback={<RendererFallback />}>
-              <DocxRenderer blob={rawBlob} fileName={fileName} className="h-full" />
+              <DocxRenderer
+                blob={rawBlob}
+                fileName={fileName}
+                className="h-full"
+                showDownload={false}
+              />
             </Suspense>
           )}
 
@@ -989,7 +1000,12 @@ export function FileContentRenderer({
           {/* XLSX / XLS preview */}
           {!isLoading && !error && !isNotFound && fileCategory === 'xlsx' && (
             <Suspense fallback={<RendererFallback />}>
-              <XlsxRenderer filePath={filePath} fileName={fileName} className="h-full" />
+              <XlsxRenderer
+                filePath={filePath}
+                fileName={fileName}
+                className="h-full"
+                showDownload={false}
+              />
             </Suspense>
           )}
 
@@ -1008,14 +1024,19 @@ export function FileContentRenderer({
           {/* CSV / TSV preview */}
           {!isLoading && !error && fileCategory === 'csv' && fileContent && (
             <Suspense fallback={<RendererFallback />}>
-              <CsvRenderer content={fileContent.content} fileName={fileName} className="h-full" />
+              <CsvRenderer
+                content={fileContent.content}
+                fileName={fileName}
+                className="h-full"
+                showDownload={false}
+              />
             </Suspense>
           )}
 
           {/* Video preview */}
           {isContentReady && fileCategory === 'video' && blobUrl && (
             <Suspense fallback={<RendererFallback />}>
-              <VideoRenderer url={blobUrl} className="h-full" onDownload={handleDownload} />
+              <VideoRenderer url={blobUrl} className="h-full" />
             </Suspense>
           )}
 

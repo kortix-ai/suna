@@ -21,6 +21,51 @@ linked, not inlined.
 
 ## Register
 
+### An idempotency key names ONE intent; a key shared by intents replays the first one forever (2026-09-23)
+
+**Rule:** A `createSession` idempotency key identifies one inbound message
+(activity id, Slack message ts, email message id), never a conversation or
+thread. `session_lifecycle_commands.idempotency_key` is a unique index with no
+retention, and `resultFromExistingCommand` answers every later create with the
+first command's outcome — including `dead_lettered` and a deleted session's
+409. Serialize racing messages with a TTL claim, not with the lifecycle key.
+**Near-miss:** Teams, Slack and email keyed creates on the thread since launch;
+a Teams chat is one conversation for life, so one failed first start made every
+later message in that chat fail the same way, and the agent-picker recovery
+could never work. Found in review, PR #7545. **Enforcers:**
+`unit-teams-session.test.ts`, `unit-slack-session-selection.test.ts`,
+`unit-email-channel.test.ts` (key per message).
+
+### A transient git-mirror clone failure is retryable, never an unhandled 500 (2026-09-23)
+
+**Rule:** Classify a bare clone/fetch failure by CAUSE, not by exit kind. Both a
+mid-clone timeout AND a transient upstream failure — network/DNS/socket, GitHub
+5xx, or GitHub's ambiguous `fatal: repository '<url>' not found` for a PRIVATE
+mirror whose App installation token is momentarily unusable — are retryable:
+retry the clone a bounded number of times, and answer a retryable 503 +
+`Retry-After` without paging Sentry. Only a PERMANENT failure (bad ref, real
+auth denial, corrupt local repo) may answer 500. **Incident:** the hourly
+heartbeat probe's `sessions new` cold-cloned a private mirror, got `fatal:
+repository '<url>' not found`, and hard-failed with HTTP 500 (KX-HOURLY FAIL,
+2026-09-23T10:06Z) — while the git proxy served the same repository 200 seconds
+before and after. **Enforcers:** `isTransientGitMirrorError` and
+`cloneBareWithRetry` in `apps/api/src/projects/git/mirror.ts`;
+`mirror-transient.test.ts`, `unit-git-mirror-transient-onerror.test.ts`.
+
+### A guard that stops work must judge what the kernel judges, and every stop must name its cause (2026-09-22)
+
+**Rule:** A memory guard compares the cgroup WORKING SET (`memory.current -
+inactive_file`) to `memory.max`, never raw `memory.current`: the page cache is
+reclaimed before any OOM kill. Every writer that ends a turn `failed` records a
+cause in `end_error`; a turn with no cause is still shown to the user, never
+hidden. A stop a person asked for is stamped `UserStop` on every path, not only
+the proxy. **Incident:** a prod session lost 3 turns in 20 min to the memory
+guard during `tsc --noEmit` (92 % "used", <1 GB anon, 5 GB inactive file,
+`oom_kill 0`), and the UI said "No reason was reported"; 20-30 % of failed turns
+per hour had no cause and were hidden. **Enforcers:** `resources.test.ts`
+(working set), `integration-sandbox-turn-lifecycle.test.ts`,
+`sandbox-reaper.test.ts`, flows SESS-34 and SESS-35.
+
 ### Resolve the LLM payee before touching the Kortix wallet (2026-09-22)
 
 **Rule:** Every BYOK descriptor uses `billingMode: 'none'`, `markup: 0`, and

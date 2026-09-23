@@ -314,7 +314,7 @@ flow('SEC-POOL-3', {
     await database.query("INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status) VALUES ($1::uuid, $1, $2, $3, 'active')", [first, team.id, project.id]);
     await database.query('UPDATE kortix.account_tokens SET project_id = $2, session_id = $3, agent_grant = $4::jsonb, account_id = $5 WHERE token_id = $1', [
       credential.token_id, project.id, first,
-      JSON.stringify({ agent: 'kortix', kortixCli: 'all', connectors: 'all', env: 'all' }), team.id,
+      JSON.stringify({ agent: 'kortix', permissions: 'all', connectors: 'all', env: 'all' }), team.id,
     ]);
   } finally { await database.end(); }
   const caller = ctx.client.withBearer(credential.secret_key, 'BOUND_SESSION');

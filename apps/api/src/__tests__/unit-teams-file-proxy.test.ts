@@ -2,9 +2,15 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import type { TeamsActivity } from '../channels/teams/types';
 
 let apiCalls: Array<{ fn: string; args: unknown[] }> = [];
+/** When set, Teams refuses any activity carrying an inline data: image — as it
+ *  does when the base64 payload pushes the activity past its size cap. */
+let refuseInlineImages = false;
 mock.module('../channels/teams-api', () => ({
   sendActivity: async (...a: unknown[]) => {
     apiCalls.push({ fn: 'sendActivity', args: a });
+    const activity = a[1] as { attachments?: Array<{ contentUrl?: string }> } | undefined;
+    const inline = activity?.attachments?.some((x) => x.contentUrl?.startsWith('data:'));
+    if (refuseInlineImages && inline) return null;
     return 'posted-1';
   },
   sendCard: async (...a: unknown[]) => {
@@ -77,6 +83,7 @@ let nextFetchOk = true;
 const realFetch = globalThis.fetch;
 beforeEach(() => {
   apiCalls = [];
+  refuseInlineImages = false;
   dbWrites = [];
   dbResults = [];
   fetchCalls = [];
@@ -369,5 +376,82 @@ describe('file proxy — token and drive authorization', () => {
     });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.status).toBe(403);
+  });
+});
+
+
+// An agent's image in a PERSONAL chat used to go through the consent card —
+// "Kortix wants to send you chart.png — Accept / Decline", then OneDrive — the
+// worst image experience of the three scopes, in the most common one. A group
+// chat or channel posted inline with NO fallback: a refused post was a 502.
+describe('initiateTeamsUpload — an image is shown inline first, in every scope', () => {
+  const png = Buffer.from('fake-png-bytes').toString('base64');
+  const base = {
+    serviceUrl: 'https://smba.trafficmanager.net/teams/',
+    conversationId: 'conv-1',
+    filename: 'chart.png',
+    contentBase64: png,
+  };
+  const inlinePosts = () =>
+    apiCalls.filter((c) =>
+      (c.args[1] as { attachments?: Array<{ contentUrl?: string }> })?.attachments?.some((x) =>
+        x.contentUrl?.startsWith('data:image/png;base64,'),
+      ),
+    );
+  const consentPosts = () =>
+    apiCalls.filter((c) =>
+      (c.args[1] as { attachments?: Array<{ contentType?: string }> })?.attachments?.some(
+        (x) => x.contentType === 'application/vnd.microsoft.teams.card.file.consent',
+      ),
+    );
+
+  test('a personal-chat image is shown inline, with no consent card and no pending upload', async () => {
+    const r = await initiateTeamsUpload('proj-1', { ...base, conversationType: 'personal' });
+
+    expect(r).toEqual({ ok: true, delivered: 'inline' });
+    expect(inlinePosts()).toHaveLength(1);
+    expect(consentPosts()).toHaveLength(0);
+    expect(dbWrites.some((w) => w.op === 'insert.values')).toBe(false);
+  });
+
+  test('a personal-chat image Teams refuses inline falls back to the consent card', async () => {
+    refuseInlineImages = true;
+    const r = await initiateTeamsUpload('proj-1', { ...base, conversationType: 'personal' });
+
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.delivered).toBe('consent_card');
+    expect(inlinePosts()).toHaveLength(1);
+    expect(consentPosts()).toHaveLength(1);
+  });
+
+  test('a group-chat image Teams refuses says WHY, instead of a bare 502', async () => {
+    // A group chat cannot take a file transfer, so there is no fallback left —
+    // but "send it inline" would be circular: that is what just failed.
+    refuseInlineImages = true;
+    const r = await initiateTeamsUpload('proj-1', { ...base, conversationType: 'groupChat' });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.status).toBe(400);
+      expect(r.error).toContain('too large for Teams to show inline');
+      expect(r.error).not.toContain('send images inline');
+    }
+  });
+
+  test('a group-chat image that fits is still shown inline', async () => {
+    const r = await initiateTeamsUpload('proj-1', { ...base, conversationType: 'groupChat' });
+    expect(r).toEqual({ ok: true, delivered: 'inline' });
+  });
+
+  test('a NON-image file in a personal chat goes straight to the consent card', async () => {
+    const r = await initiateTeamsUpload('proj-1', {
+      ...base,
+      filename: 'report.pdf',
+      conversationType: 'personal',
+    });
+
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.delivered).toBe('consent_card');
+    expect(inlinePosts()).toHaveLength(0);
   });
 });

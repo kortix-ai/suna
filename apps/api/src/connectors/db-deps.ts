@@ -12,6 +12,7 @@ import {
   projects,
   tunnelConnections,
 } from '@kortix/db';
+import { appAuthorizationForConnectorCall } from '../apps/connector-assertion';
 import { sanitizeConnectorHeaders, SLUG_RE } from '@kortix/manifest-schema';
 import { and, desc, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 /**
@@ -59,6 +60,12 @@ import {
 import { validateAccountToken } from '../repositories/account-tokens';
 import { db } from '../shared/db';
 import { executeComputerCall } from '../tunnel/core/rpc-core';
+import { getRequestOnBehalfOf } from '../projects/lib/on-behalf-of';
+import {
+  filterPersonalTunnelOwners,
+  personalResourceOwner,
+  tokenAgentPrincipalScope,
+} from '../projects/lib/personal-resources';
 import { connectorAttachmentStore } from './attachments';
 import { computerProfileSpec } from './computer-materialize';
 import { COMPUTER_SLUG, computerLabel } from './computers';
@@ -587,6 +594,7 @@ async function resolveActiveConnectorConnection(principal: ConnectorPrincipal, r
     alias: row.slug,
     actingUserId: principal.userId,
     account: principal.requestedConnectorAccount ?? null,
+    agentPrincipal: principal.agentPrincipal ?? null,
   });
   return connection?.status === 'active' ? connection : null;
 }
@@ -604,9 +612,31 @@ const nodeFetch: FetchImpl = async (url, init) => {
   return { status: res.status, ok: res.ok, text: () => res.text(), headers: res.headers };
 };
 
+/** Spec §2.3 "own computer": see `filterPersonalTunnelOwners`. */
+async function personalTunnelOwnersFor(
+  principal: ConnectorPrincipal,
+  accountId: string,
+  owners: string[] | null,
+): Promise<string[] | null> {
+  if (!principal.agentPrincipal) return owners;
+  const visibility = principal.sessionId ? await sessionVisibility(principal.sessionId) : null;
+  const personalOwner = personalResourceOwner({
+    agentPrincipal: true,
+    legacyUserId: principal.userId,
+    onBehalfOfUserId: principal.agentPrincipal.onBehalfOfUserId,
+    visibility,
+  });
+  const filtered = filterPersonalTunnelOwners({ accountId, owners, personalOwner });
+  // `listAccountComputers` reads an EMPTY owner list as "the team account",
+  // which is exactly the team-owned subset this filter keeps.
+  return filtered;
+}
+
 export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
   return {
     attachmentStore: connectorAttachmentStore,
+    // Spec 2026-09-22 §2.5: an agent session calling a same-project Kortix App.
+    appAuthorizationFor: (input) => appAuthorizationForConnectorCall(input),
     loadConnectorBySlug: async (projectId, slug) => {
       const [row] = await db
         .select()
@@ -644,6 +674,7 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
         alias: slug,
         actingUserId: principal.userId,
         account: principal.requestedConnectorAccount ?? null,
+        agentPrincipal: principal.agentPrincipal ?? null,
       });
       return outcome.kind === 'ambiguous' ? 'account_required' : 'connector_not_connected';
     },
@@ -771,17 +802,19 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
       method,
       args,
     }) =>
-      executeComputerCall({
-        accountId,
-        projectId,
-        sessionId,
-        actorUserId,
-        allowedTunnelIds,
-        allowedTunnelAccountIds,
-        selector,
-        method,
-        args,
-      }),
+      personalTunnelOwnersFor(principal, accountId, allowedTunnelAccountIds).then((owners) =>
+        executeComputerCall({
+          accountId,
+          projectId,
+          sessionId,
+          actorUserId,
+          allowedTunnelIds,
+          allowedTunnelAccountIds: owners,
+          selector,
+          method,
+          args,
+        }),
+      ),
     fetchImpl: nodeFetch,
     enforcePolicies: true,
   };
@@ -1058,9 +1091,16 @@ async function resolvePrincipal(c: Context): Promise<ConnectorPrincipal | null> 
     accountId: result.accountId,
     projectId: result.projectId,
     sessionId: sessionIdentity.sessionId,
+    tokenId: result.tokenId ?? null,
     subject: await resolveShareSubject(result.userId),
     agentGrant,
     channelConnectorSlugs,
+    agentPrincipal: await tokenAgentPrincipalScope({
+      projectId: result.projectId,
+      tokenId: result.tokenId ?? null,
+      agentGrant,
+      onBehalfOfUserId: result.onBehalfOfUserId ?? null,
+    }),
   };
 }
 
@@ -1126,14 +1166,27 @@ async function resolveProjectPrincipal(
     sessionChannelConnectorSlugs(projectId, sessionIdentity.sessionId),
   ]);
 
+  const tokenId = (c.get('iamTokenId') as string | undefined) ?? null;
   return {
     userId,
     accountId,
     projectId,
     sessionId: sessionIdentity.sessionId,
+    tokenId,
     subject: await resolveShareSubject(userId),
     agentGrant,
     channelConnectorSlugs,
+    // Only a project-scoped (session) token can be an agent principal; a
+    // human JWT/PAT keeps the legacy rule. The fresh on_behalf_of comes from
+    // the auth middleware, so a clear by a foreign prompt applies at once.
+    agentPrincipal: tokenProjectId
+      ? await tokenAgentPrincipalScope({
+          projectId,
+          tokenId,
+          agentGrant,
+          onBehalfOfUserId: getRequestOnBehalfOf(c),
+        })
+      : null,
   };
 }
 
@@ -1168,6 +1221,7 @@ async function catalogAccountsFor(
     alias: canonicalConnectorAlias(slug),
     actingUserId: p.userId,
     visibility,
+    agentPrincipal: p.agentPrincipal ?? null,
   });
   return entitled.map((connection) => ({
     connection_id: connection.connectionId,
@@ -1192,7 +1246,8 @@ async function listCatalog(p: ConnectorPrincipal): Promise<CatalogConnector[]> {
     loadDefaultModeFor(p.projectId),
     // Same rule `listConnectorAccounts` uses: a private session can also see
     // the caller's own member-owned accounts, anything else stays project-only.
-    sessionVisibility(p.sessionId),
+    // An agent-principal credential with no session is never `private`.
+    p.agentPrincipal && !p.sessionId ? Promise.resolve('project' as const) : sessionVisibility(p.sessionId),
   ]);
 
   const out: CatalogConnector[] = [];
@@ -1228,6 +1283,7 @@ async function listCatalog(p: ConnectorPrincipal): Promise<CatalogConnector[]> {
       alias: row.slug,
       actingUserId: p.userId,
       account: null,
+      agentPrincipal: p.agentPrincipal ?? null,
     });
     if (outcome.kind === 'none') continue;
     const connection =
@@ -2271,7 +2327,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     }
     return out;
   },
-  listConnectorAccounts: async ({ projectId, slug, userId, sessionId }) => {
+  listConnectorAccounts: async ({ projectId, slug, userId, sessionId, agentPrincipal }) => {
     const [session] = sessionId
       ? await db
           .select({ visibility: projectSessions.visibility })
@@ -2290,7 +2346,9 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
       projectId,
       alias: canonicalConnectorAlias(slug),
       actingUserId: userId,
-      visibility: session?.visibility ?? 'private',
+      // An agent-principal credential with no session is never `private`.
+      visibility: session?.visibility ?? (agentPrincipal ? 'project' : 'private'),
+      agentPrincipal: agentPrincipal ?? null,
     });
     return entitled.map((connection) => ({
       connection_id: connection.connectionId,

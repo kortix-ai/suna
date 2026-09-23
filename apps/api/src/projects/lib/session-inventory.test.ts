@@ -585,3 +585,39 @@ describe('session list cursor', () => {
     expect(SESSION_PAGE_DEFAULT_LIMIT).toBeGreaterThan(0);
   });
 });
+
+describe('selectSessionRowsForViewer — agent principal (spec §2)', () => {
+  test("an agent session lists its own session, its children and project sessions, never the launcher's private ones", () => {
+    const selected = selectSessionRowsForViewer({
+      rows: [
+        row('agent-own'),
+        row('agent-child', { metadata: { spawned_by_session: 'agent-own' } }),
+        row('launcher-private'),
+        row('shared', { visibility: 'project' }),
+      ],
+      scope: 'visible',
+      canManageProject: false,
+      subject: { userId: VIEWER_ID, groupIds: [] },
+      grantsBySession: new Map(),
+      callerSessionId: 'agent-own',
+      boundCredentialSessionId: 'agent-own',
+      runtimeStatusBySession: new Map(),
+      agentPrincipal: true,
+    });
+    expect(selected.items.map((item) => item.row.sessionId)).toEqual(['agent-own', 'agent-child', 'shared']);
+  });
+
+  test('the same credential without the flag keeps the launcher-keyed listing', () => {
+    const selected = selectSessionRowsForViewer({
+      rows: [row('agent-own'), row('launcher-private')],
+      scope: 'visible',
+      canManageProject: false,
+      subject: { userId: VIEWER_ID, groupIds: [] },
+      grantsBySession: new Map(),
+      callerSessionId: 'agent-own',
+      boundCredentialSessionId: 'agent-own',
+      runtimeStatusBySession: new Map(),
+    });
+    expect(selected.items.map((item) => item.row.sessionId)).toEqual(['agent-own', 'launcher-private']);
+  });
+});
