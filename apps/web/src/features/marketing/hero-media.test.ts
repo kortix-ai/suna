@@ -83,4 +83,34 @@ describe('hero media', () => {
     expect(source).toContain('key={theme}');
     expect(source).not.toMatch(/media="\(prefers-color-scheme/);
   });
+
+  /**
+   * The walkthrough poster is the LCP element of `/`. It must be a real
+   * `<img>` in the server HTML — discoverable by the preload scanner, fetched
+   * at high priority, both themes expressed as `<picture>` sources — and the
+   * web video must not also carry a `poster`, which would fetch it twice.
+   */
+  test('the web poster is a high-priority <picture> with both themes', () => {
+    const poster = source.slice(
+      source.indexOf('function ShowcasePoster'),
+      source.indexOf('function ShowcaseVideo'),
+    );
+    expect(poster).toContain('<picture>');
+    expect(poster).toContain('fetchPriority="high"');
+    expect(poster).toContain('SHOWCASE_MEDIA.dark.poster');
+    expect(poster).toContain('SHOWCASE_MEDIA.dark.phonePoster');
+    expect(poster).toContain('SHOWCASE_MEDIA.light.phonePoster');
+    expect(poster).toContain('src={SHOWCASE_MEDIA.light.poster}');
+
+    const video = source.slice(
+      source.indexOf('function ShowcaseVideo'),
+      source.indexOf('function usePrefersReducedMotion'),
+    );
+    expect(video).not.toContain('poster=');
+  });
+
+  /** One theme's encode per page view: the video waits for the theme. */
+  test('the web video mounts only once the theme is known', () => {
+    expect(source).toContain('{theme && posterReady && !reducedMotion ? (');
+  });
 });
