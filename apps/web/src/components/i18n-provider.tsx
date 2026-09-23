@@ -1,47 +1,93 @@
 'use client';
 
 import { useAuth } from '@/features/providers/auth-provider';
+import { getLoadedCatalog, loadClientCatalog } from '@/i18n/client-catalog';
 import { defaultLocale, locales, type Locale } from '@/i18n/config';
-import { getUserLocale, LOCALE_CHANGE_EVENT } from '@/i18n/locale';
+import { getUserLocale, LOCALE_CHANGE_EVENT, normalizeLocale } from '@/i18n/locale';
+import {
+  CLIENT_BOOT_GLOBAL,
+  clientBootScript,
+  createMessageRecorder,
+  type ClientBoot,
+  type MessageRecorder,
+  type MessageTree,
+} from '@/i18n/message-subset';
+import { serverMessagesRegistry } from '@/i18n/server-registry';
 import { NextIntlClientProvider, type AbstractIntlMessages } from 'next-intl';
-import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useServerInsertedHTML } from 'next/navigation';
+import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 
-// Keep English available for callers that do not supply a server-resolved catalog.
-import defaultTranslations from '../../translations/en.json';
+/**
+ * Message delivery.
+ *
+ * - SSR renders against the full catalog that the RSC layer loaded, through a
+ *   recording view. Inline boot scripts carry only the entries that render
+ *   read (`message-subset.ts`).
+ * - Hydration starts from that subset, so it never waits for a catalog.
+ * - The full catalog loads as its own cached chunk and replaces the subset.
+ *   Until it lands, an entry outside the subset renders as an empty string,
+ *   and the provider re-renders once the catalog arrives.
+ */
 
-async function getTranslations(locale: Locale): Promise<Record<string, unknown>> {
-  try {
-    // Return cached default translations immediately for English
-    if (locale === 'en') {
-      return defaultTranslations;
+function readClientBoot(locale: Locale): MessageTree | undefined {
+  if (typeof window === 'undefined') return undefined;
+  const boot = (window as unknown as Record<string, ClientBoot | undefined>)[CLIENT_BOOT_GLOBAL];
+  return boot && boot.l === locale ? boot.m : undefined;
+}
+
+// Start the catalog fetch as early as possible: the server-rendered
+// <html lang> names the locale before any component renders.
+if (typeof document !== 'undefined') {
+  const documentLocale = normalizeLocale(document.documentElement.lang);
+  if (documentLocale) void loadClientCatalog(documentLocale).catch(() => {});
+}
+
+function useServerMessages(locale: Locale): MessageRecorder | null {
+  // SSR only: one recorder per request render. The browser keeps `null`.
+  const [recorder] = useState<MessageRecorder | null>(() => {
+    if (typeof window !== 'undefined') return null;
+    const catalog = serverMessagesRegistry()[locale];
+    if (!catalog) {
+      // The root layout loads the catalog before it renders this provider.
+      throw new Error(`I18nProvider: no server catalog loaded for locale "${locale}"`);
     }
-    return (await import(`../../translations/${locale}.json`)).default;
-  } catch (error) {
-    console.error(`Failed to load translations for locale ${locale}:`, error);
-    // Fallback to English if locale file doesn't exist
-    return defaultTranslations;
-  }
+    return createMessageRecorder(catalog);
+  });
+  useServerInsertedHTML(() => {
+    const delta = recorder?.takeDelta();
+    if (!delta) return null;
+    return (
+      <script
+        key="kortix-i18n-boot"
+        dangerouslySetInnerHTML={{ __html: clientBootScript(locale, delta) }}
+      />
+    );
+  });
+  return recorder;
 }
 
 export function I18nProvider({
   children,
   initialLocale = defaultLocale,
-  initialMessages = defaultTranslations,
 }: {
   children: ReactNode;
   initialLocale?: Locale;
-  initialMessages?: Record<string, unknown>;
 }) {
   const { user } = useAuth();
+  const recorder = useServerMessages(initialLocale);
   const [locale, setLocale] = useState<Locale>(initialLocale);
-  const [messages, setMessages] = useState<Record<string, unknown>>(initialMessages);
+  const [messages, setMessages] = useState<MessageTree>(
+    () =>
+      recorder?.messages ?? getLoadedCatalog(initialLocale) ?? readClientBoot(initialLocale) ?? {},
+  );
+  const [catalogReady, setCatalogReady] = useState<boolean>(
+    () => recorder !== null || getLoadedCatalog(initialLocale) !== undefined,
+  );
   const localeRef = useRef(locale);
 
-  // Update ref and <html lang> when locale changes.
-  // Keeping <html lang> in sync with the active locale prevents browsers
-  // (especially Chrome) from offering auto-translate on pages that are
-  // already rendered in the user's language. When Chrome's translator
-  // mutates the DOM, React's reconciler crashes with "insertBefore on Node".
+  // Keep <html lang> in sync with the active locale. Chrome offers
+  // auto-translate on a page whose lang does not match its text, and its DOM
+  // mutations crash React's reconciler ("insertBefore on Node").
   useEffect(() => {
     localeRef.current = locale;
     if (typeof document !== 'undefined') {
@@ -49,69 +95,40 @@ export function I18nProvider({
     }
   }, [locale]);
 
-  // Load translations for a given locale - memoized to avoid stale closures
   const loadTranslations = useCallback(async (targetLocale: Locale) => {
     try {
-      const translations = await getTranslations(targetLocale);
-      // Verify critical sections exist
-      if (!translations || typeof translations !== 'object') {
-        throw new Error(`Invalid translations object for locale ${targetLocale}`);
-      }
-      if (!translations.common || !translations.modes) {
-        console.warn(`Missing sections in ${targetLocale}:`, {
-          hasCommon: !!translations.common,
-          hasModes: !!translations.modes,
-          keys: Object.keys(translations).slice(0, 10),
-        });
-      }
+      const translations = await loadClientCatalog(targetLocale);
       setMessages(translations);
       setLocale(targetLocale);
+      setCatalogReady(true);
       localeRef.current = targetLocale;
     } catch (error) {
       console.error(`Failed to load translations for ${targetLocale}:`, error);
-      // Fallback to default locale
+      if (targetLocale === defaultLocale) return;
       try {
-        const defaultTranslations = await getTranslations(defaultLocale);
-        setMessages(defaultTranslations);
+        const fallback = await loadClientCatalog(defaultLocale);
+        setMessages(fallback);
         setLocale(defaultLocale);
+        setCatalogReady(true);
         localeRef.current = defaultLocale;
       } catch (fallbackError) {
         console.error('Failed to load default locale translations:', fallbackError);
-        // Last resort: empty translations object
-        setMessages({});
-        setLocale(defaultLocale);
-        localeRef.current = defaultLocale;
       }
     }
   }, []);
 
-  // Initial load - only user metadata can move the app away from English.
+  // Only the profile locale can move the app away from the rendered locale.
+  // Otherwise this replaces the hydration subset with the full catalog.
   useEffect(() => {
-    let mounted = true;
-
-    function initializeLocale() {
-      const currentLocale = getUserLocale(user) ?? initialLocale;
-
-      if (mounted) {
-        setLocale(currentLocale);
-        loadTranslations(currentLocale);
-      }
-    }
-
-    initializeLocale();
-
-    return () => {
-      mounted = false;
-    };
+    void loadTranslations(getUserLocale(user) ?? initialLocale);
   }, [initialLocale, loadTranslations, user]);
 
-  // Listen for locale change events from useLanguage hook
+  // Locale change events from the useLanguage hook.
   useEffect(() => {
     const handleLocaleChange = (e: CustomEvent<Locale>) => {
       const newLocale = e.detail;
-      // Use ref to check current locale to avoid stale closure
       if (newLocale !== localeRef.current && locales.includes(newLocale)) {
-        loadTranslations(newLocale);
+        void loadTranslations(newLocale);
       }
     };
 
@@ -122,17 +139,21 @@ export function I18nProvider({
     };
   }, [loadTranslations]);
 
-  // Memoize messages to prevent unnecessary re-renders
-  const safeMessages = useMemo(() => messages || defaultTranslations, [messages]);
-
-  // Render immediately with the server-resolved catalog. English remains the fallback.
   return (
     <NextIntlClientProvider
       locale={locale}
-      messages={safeMessages as AbstractIntlMessages}
+      messages={messages as AbstractIntlMessages}
       timeZone="UTC"
+      {...(catalogReady ? {} : PENDING_CATALOG_HANDLERS)}
     >
       {children}
     </NextIntlClientProvider>
   );
 }
+
+// While only the hydration subset is present, an entry outside it is not an
+// error: the full catalog is on its way. Render nothing instead of the raw key.
+const PENDING_CATALOG_HANDLERS = {
+  onError: () => {},
+  getMessageFallback: () => '',
+};

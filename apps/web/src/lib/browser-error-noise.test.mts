@@ -2154,7 +2154,7 @@ const WEBPACK_RUNTIME_FRAME = {
 };
 const APP_CHUNK_FRAME = {
   filename:
-    'app:///_next/static/chunks/app/(app)/projects/[id]/not-found-c7f03e853940d826.js?dpl=dpl_GnR22QKUwZLPkRykUCM8KBxZmy8o',
+    'app:///_next/static/chunks/app/[locale]/(app)/projects/[id]/not-found-c7f03e853940d826.js?dpl=dpl_GnR22QKUwZLPkRykUCM8KBxZmy8o',
   function: '81761',
 };
 
