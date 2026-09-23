@@ -1,7 +1,7 @@
 import { dispatchCli, isManagementSubcommand } from './cli'
 import { loadConfig } from './config'
 import { runGitCredentialHelper } from './git'
-import { resolveHarness } from './harness/harness'
+import { resolveHarness, warmPiSystemPackages } from './harness/harness'
 import { kortixEventBus } from './kortix-event-bus'
 import { enableDaemonLogFile, logger } from './logger'
 import { runMonitorMode } from './monitor-mode'
@@ -56,10 +56,8 @@ if (import.meta.main) {
   } else if (subcommand === 'warm-pi-packages') {
     // Image build only: load the pi system packages once so their jiti cache
     // ships in the image. A package that fails to install or load fails the build.
-    import('./harness/pi/extensions/host')
-      .then(async ({ warmSystemPackageCache }) => {
-        const { DEFAULT_PI_AGENT_DIR } = await import('./harness/pi/config')
-        const status = await warmSystemPackageCache(process.env.KORTIX_PI_AGENT_DIR?.trim() || DEFAULT_PI_AGENT_DIR)
+    warmPiSystemPackages(process.env.KORTIX_PI_AGENT_DIR)
+      .then((status) => {
         process.stdout.write(`${JSON.stringify(status)}\n`)
         process.exit(status.failed.length > 0 ? 1 : 0)
       })
