@@ -61,6 +61,7 @@ export const OutcomeCard = memo(function OutcomeCard({
   onOpen,
   icon,
   actionVariant = 'outline',
+  actionAriaLabel,
   className,
 }: {
   outcome: Outcome;
@@ -87,6 +88,13 @@ export const OutcomeCard = memo(function OutcomeCard({
    * rather than a record of something already done.
    */
   actionVariant?: React.ComponentProps<typeof Button>['variant'];
+  /**
+   * The action's accessible name, when the visible label alone is ambiguous.
+   * Omit it and the visible label names the action. Pass it when several cards
+   * share one label (`Connect`) — each button then needs its own name, which
+   * must start with the visible label.
+   */
+  actionAriaLabel?: string;
   className?: string;
 }) {
   const Glyph = icon ?? OUTCOME_ICON[outcome.kind];
@@ -158,7 +166,12 @@ export const OutcomeCard = memo(function OutcomeCard({
       <ItemActions>
         {linkHref ? (
           <Button asChild variant={actionVariant} size="sm" className="active:scale-[0.96]">
-            <Link href={linkHref} target="_blank" rel="noopener noreferrer">
+            <Link
+              href={linkHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={actionAriaLabel}
+            >
               {outcome.action.label}
             </Link>
           </Button>
@@ -167,6 +180,7 @@ export const OutcomeCard = memo(function OutcomeCard({
             variant={actionVariant}
             size="sm"
             className="active:scale-[0.96]"
+            aria-label={actionAriaLabel}
             onClick={() => onOpen(outcome)}
           >
             {outcome.action.label}

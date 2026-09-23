@@ -127,4 +127,32 @@ describe('actions', () => {
     expect(out).toContain('rel="noopener noreferrer"');
     expect(out).toContain('target="_blank"');
   });
+
+  test('the action has no aria-label by default — its visible label is its name', () => {
+    expect(html(outcome())).not.toContain('aria-label=');
+  });
+
+  test('`actionAriaLabel` names the action, on both the link and the button', () => {
+    const link = renderToStaticMarkup(
+      <OutcomeCard
+        outcome={outcome({
+          kind: 'external',
+          action: { label: 'Connect', intent: 'link', href: 'https://example.com/a' },
+        })}
+        index={0}
+        onOpen={() => {}}
+        actionAriaLabel="Connect Shopify (opens in a new tab)"
+      />,
+    );
+    const button = renderToStaticMarkup(
+      <OutcomeCard
+        outcome={outcome()}
+        index={0}
+        onOpen={() => {}}
+        actionAriaLabel="Review rate limiting"
+      />,
+    );
+    expect(link).toContain('aria-label="Connect Shopify (opens in a new tab)"');
+    expect(button).toContain('aria-label="Review rate limiting"');
+  });
 });
