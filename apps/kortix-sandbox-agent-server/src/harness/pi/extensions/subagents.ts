@@ -15,8 +15,45 @@
  * compiled agent with a built-in's name replaces it. Children get no `task`
  * (no nesting) and no `question` (nobody answers a child).
  */
+import type { ExtensionAPI, InlineExtension } from '@earendil-works/pi-coding-agent'
 import { Type } from 'typebox'
-import type { ExtensionAPI, KortixHost } from './runner'
+
+/** What the subagents extension needs from the runtime that hosts it. */
+export interface KortixHost {
+  /** The compiled agent config's `agent` map (`KORTIX_COMPILED_AGENT_CONFIG`). */
+  compiledAgents(): Record<string, { description?: string; mode?: string; model?: string; variant?: string; prompt?: string; disable?: boolean; permission?: unknown }>
+  /** Run one prompt in a child session of this session and return its final answer. */
+  spawnSession(input: SpawnSessionInput): Promise<SpawnSessionResult>
+}
+
+export interface SpawnSessionInput {
+  /** Continue this existing child session instead of creating one. */
+  sessionId?: string
+  title: string
+  /** The agent name the child's messages carry. */
+  agent: string
+  /** Base system prompt; the runtime appends the workspace, skills and tool list. */
+  systemPrompt: string
+  /** `provider/model` ref; the parent's model when absent. */
+  model?: string
+  variant?: string
+  /** Workspace tool names the child may use; all of them when absent. */
+  tools?: string[]
+  /** OpenCode permission config for the child's tools. */
+  permission?: unknown
+  prompt: string
+  signal?: AbortSignal
+  /** Called once the child exists, before its model runs. */
+  onSession?: (session: { sessionId: string; model: { providerID: string; modelID: string } }) => void
+}
+
+export interface SpawnSessionResult {
+  sessionId: string
+  status: 'completed' | 'error' | 'aborted'
+  text: string
+  error?: string
+  model: { providerID: string; modelID: string }
+}
 
 interface SubagentType {
   description: string
@@ -82,24 +119,29 @@ function describe(types: Map<string, SubagentType>): string {
   ].join('\n')
 }
 
-export default function subagents(pi: ExtensionAPI): void {
+/** The extension, bound to the runtime that hosts it. */
+export function subagents(host: KortixHost): InlineExtension {
+  return { name: 'subagents', factory: (pi) => register(pi, host) }
+}
+
+function register(pi: ExtensionAPI, host: KortixHost): void {
   // Registered on session_start (and again on reload): the description lists
-  // the compiled agents, which the factory cannot see.
-  pi.on('session_start', (_event, ctx) => {
+  // the compiled agents, which change with a live agent-config update.
+  pi.on('session_start', () => {
     pi.registerTool({
       name: 'task',
       label: 'task',
-      description: describe(subagentTypes(ctx.kortix)),
+      description: describe(subagentTypes(host)),
       parameters,
       // Several task calls in one message run their subagents at the same time, like OpenCode.
       executionMode: 'parallel',
-      async execute(_toolCallId, params: { description: string; prompt: string; subagent_type: string; task_id?: string }, signal, onUpdate, ctx) {
-        const types = subagentTypes(ctx.kortix)
+      async execute(_toolCallId, params: { description: string; prompt: string; subagent_type: string; task_id?: string }, signal, onUpdate) {
+        const types = subagentTypes(host)
         const type = types.get(params.subagent_type)
         if (!type) {
           throw new Error(`Unknown subagent_type "${params.subagent_type}". Available: ${[...types.keys()].join(', ')}.`)
         }
-        const result = await ctx.kortix.spawnSession({
+        const result = await host.spawnSession({
           ...(params.task_id ? { sessionId: params.task_id } : {}),
           title: `${params.description} (@${params.subagent_type} subagent)`,
           agent: params.subagent_type,

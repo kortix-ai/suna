@@ -8,14 +8,18 @@
  * the root id is a deterministic function of the session id, so a restart
  * resolves the same root and restores the same transcript from disk.
  *
+ * Extensions are pi's own: the Agent runs inside pi-coding-agent's
+ * `AgentSession` (extensions/host.ts), so a package from pi.dev loads and runs
+ * unmodified. Kortix keeps the model, the tools, the permission gate and the wire.
+ *
  * Heavy dependencies (`@earendil-works/pi-*`) load on `start()`, never at
  * import: the resolver imports this module for every boot, including OpenCode's.
  */
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Agent, AgentEvent, AgentMessage, AgentTool, BeforeToolCallContext, BeforeToolCallResult, ExecutionEnv, Skill } from '@earendil-works/pi-agent-core'
-import type { ImageContent, ModelThinkingLevel, TextContent, UserMessage } from '@earendil-works/pi-ai'
+import type { Agent, AgentEvent, AgentMessage, AgentOptions, AgentTool, BeforeToolCallContext, BeforeToolCallResult, ExecutionEnv, Skill } from '@earendil-works/pi-agent-core'
+import type { ImageContent, ModelThinkingLevel } from '@earendil-works/pi-ai'
 import type { HarnessState } from '../lifecycle-contract'
 import type { ProjectEnvStore } from '../../project-env'
 import { kortixEventBus } from '../../kortix-event-bus'
@@ -23,7 +27,8 @@ import { logger } from '../../logger'
 import { SECRET_CAPABILITIES_INSTRUCTION_PATH } from '../../secret-capabilities'
 import type { PiConfig } from './config'
 import { resolvePiSkillDirectories } from './config'
-import type { ExtensionRunner, KortixHost, SpawnSessionInput, SpawnSessionResult, SystemExtension } from './extensions/runner'
+import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './extensions/host'
+import type { KortixHost, SpawnSessionInput, SpawnSessionResult } from './extensions/subagents'
 import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, type PermissionPolicy, type PermissionRule, type QuestionRequestWire } from './interactions'
 import type { CatalogModel, PiModels, SelectedModel } from './model'
 import { nativeModelId } from './model'
@@ -158,8 +163,8 @@ export interface PiRuntimeOptions {
   hooks?: PiRuntimeHooks
   env?: NodeJS.ProcessEnv
   now?: () => number
-  /** The system extensions to load; `SYSTEM_EXTENSIONS` when absent. */
-  extensions?: readonly SystemExtension[]
+  /** In-process pi extensions to load; the first-party set (subagents) when absent. */
+  extensions?: readonly InlineExtension[]
 }
 
 /** A child session a system extension spawned (a subagent). Lives beside the root, never in its transcript. */
@@ -236,11 +241,15 @@ export class PiRuntime {
   private workspaceTools: AgentTool<any, any>[] = []
   /** Workspace tools + `question`: the root's tools before extensions add theirs. */
   private baseTools: AgentTool<any, any>[] = []
-  private tools: AgentTool<any, any>[] = []
-  private readonly extensionList: readonly SystemExtension[] | undefined
-  private extensions: ExtensionRunner | null = null
-  /** Extension notifications run in event order, off the agent's path. */
-  private extensionEvents: Promise<void> = Promise.resolve()
+  private readonly extensionList: readonly InlineExtension[] | undefined
+  /** pi's AgentSession around `agent`: extensions, prompt expansion, tool registry. */
+  private pi: PiSession | null = null
+  /** The current ExtensionRunner; pi swaps it on reload, hooks read it at call time. */
+  private readonly runner: RunnerRef = {}
+  /** The running turn's `system` addition, applied through `before_agent_start`. */
+  private turnSystem: string | null = null
+  /** Message conversion + extension provider/context hooks a child agent shares with the root. */
+  private childAgentOptions: Partial<AgentOptions> = {}
   private readonly children = new Map<string, ChildSession>()
   private skills: Skill[] = []
   private compiled: CompiledAgentConfig | null = null
@@ -299,13 +308,14 @@ export class PiRuntime {
     this.startError = null
     const startedAt = this.now()
     try {
-      const [{ createPiModels }, { createWorkspaceTools, createQuestionTool }, core, node, { ExtensionRunner }, { SYSTEM_EXTENSIONS }] = await Promise.all([
+      const [{ createPiModels }, { createWorkspaceTools, createQuestionTool }, core, node, host, { subagents }, { convertToLlm }] = await Promise.all([
         import('./model'),
         import('./tools'),
         import('@earendil-works/pi-agent-core'),
         import('@earendil-works/pi-agent-core/node'),
-        import('./extensions/runner'),
-        import('./extensions'),
+        import('./extensions/host'),
+        import('./extensions/subagents'),
+        import('@earendil-works/pi-coding-agent'),
       ])
       this.core = core
       this.compiled = parseCompiledAgentConfig(this.env.KORTIX_COMPILED_AGENT_CONFIG)
@@ -334,41 +344,49 @@ export class PiRuntime {
       this.baseTools = [...this.workspaceTools, createQuestionTool(this.questions, (toolCallId) => this.adapter?.toolRef(toolCallId))].map(
         (tool) => ({ ...tool, executionMode: 'sequential' as const }),
       )
-      const extensionsStartedAt = performance.now()
-      this.extensions = await ExtensionRunner.load(this.extensionList ?? SYSTEM_EXTENSIONS, {
-        cwd: this.workspace,
-        systemPrompt: () => this.agent?.state.systemPrompt ?? '',
-        kortix: this.kortixHost(),
-      })
-      await this.extensions.emit({ type: 'session_start', reason: 'startup' })
-      const extensionsMs = performance.now() - extensionsStartedAt
-      this.tools = [...this.baseTools, ...this.extensions.agentTools()]
       this.skills = await this.loadSkills(core.loadSkills)
       this.policy = compilePermissionPolicy(this.compiledAgent()?.permission)
       this.permissions.setPolicy(this.policy)
       const restored = this.restore()
-      this.agent = new core.Agent({
+      const agent = new core.Agent({
         streamFn: (model, context, options) => this.models!.models.streamSimple(model, context, options),
+        convertToLlm,
         toolExecution: 'parallel',
         initialState: {
-          systemPrompt: this.systemPrompt(core.formatSkillsForSystemPrompt),
+          systemPrompt: '',
           model: this.selected.model,
           thinkingLevel: this.thinkingLevel(this.compiledAgent()?.variant),
-          tools: this.tools,
+          tools: [],
           messages: restored?.agentMessages ?? [],
         },
-        ...this.extensions.agentHooks(),
+        ...host.extensionAgentHooks(this.runner),
       })
-      this.agent.beforeToolCall = this.toolGate((tool, args) => this.permissions.rule(tool, args), true)
-      this.agent.subscribe((event) => this.onAgentEvent(event))
+      this.agent = agent
+      this.childAgentOptions = { convertToLlm, ...host.extensionAgentHooks(this.runner) }
+      const extensionsStartedAt = performance.now()
+      this.pi = await host.createPiSession({
+        agent,
+        ref: this.runner,
+        cwd: this.workspace,
+        agentDir: this.cfg.piAgentDir,
+        projectPackages: host.parseProjectPackages(this.cfg.piPackages),
+        baseTools: this.baseTools,
+        extensions: [this.turnExtension(), ...(this.extensionList ?? [subagents(this.kortixHost())])],
+        systemPrompt: () => this.systemPrompt(core.formatSkillsForSystemPrompt),
+        provider: this.models.models.getProvider(this.selected.providerID),
+      })
+      const extensionsMs = performance.now() - extensionsStartedAt
+      // The session installed the extension tool hooks; the permission policy runs first.
+      agent.beforeToolCall = this.toolGate((tool, args) => this.permissions.rule(tool, args), true, agent.beforeToolCall)
+      agent.subscribe((event) => this.onAgentEvent(event))
       this.state = 'ok'
       logger.info('[pi] runtime ready', {
         rootId: this.rootId,
         model: `${this.selected.providerID}/${this.selected.modelID}`,
         agent: this.agentName,
-        tools: this.tools.map((t) => t.name),
-        skills: this.skills.length,
-        extensions: this.extensions.status(),
+        tools: agent.state.tools.map((t) => t.name),
+        skills: this.skillList().length,
+        extensions: this.pi.status(),
         extensionsMs: Math.round(extensionsMs * 100) / 100,
         restoredMessages: restored?.agentMessages.length ?? 0,
         ms: this.now() - startedAt,
@@ -385,9 +403,11 @@ export class PiRuntime {
     if (this.state === 'down') return
     await this.abort()
     await this.queue.catch(() => {})
-    await this.extensionEvents
-    await this.extensions?.emit({ type: 'session_shutdown' })
+    const runner = this.runner.current
+    if (runner?.hasHandlers('session_shutdown')) await runner.emit({ type: 'session_shutdown', reason: 'quit' }).catch(() => {})
     this.persist()
+    this.pi?.session.dispose()
+    this.pi = null
     this.state = 'down'
   }
 
@@ -417,12 +437,10 @@ export class PiRuntime {
     this.policy = compilePermissionPolicy(this.compiledAgent()?.permission)
     this.permissions.setPolicy(this.policy)
     const core = await import('@earendil-works/pi-agent-core')
-    // Extensions re-register what depends on the agent config (the task tool lists the subagents).
-    await this.extensions?.emit({ type: 'session_start', reason: 'reload' })
-    this.tools = [...this.baseTools, ...(this.extensions?.agentTools() ?? [])]
-    this.agent.state.tools = this.tools
     this.skills = await this.loadSkills(core.loadSkills)
-    this.agent.state.systemPrompt = this.systemPrompt(core.formatSkillsForSystemPrompt)
+    // Extensions re-register what depends on the agent config (the task tool lists the subagents).
+    await this.runner.current?.emit({ type: 'session_start', reason: 'reload' })
+    this.rebuildSystemPrompt()
     this.agent.state.model = this.selected.model
     this.agent.state.thinkingLevel = this.thinkingLevel(this.compiledAgent()?.variant)
     const after = `${this.selected.modelID}|${this.agentName}|${this.env.KORTIX_COMPILED_AGENT_CONFIG_ETAG ?? ''}`
@@ -434,7 +452,7 @@ export class PiRuntime {
     if (!this.agent) return 0
     const core = await import('@earendil-works/pi-agent-core')
     this.skills = await this.loadSkills(core.loadSkills)
-    this.agent.state.systemPrompt = this.systemPrompt(core.formatSkillsForSystemPrompt)
+    this.rebuildSystemPrompt()
     return this.skills.length
   }
 
@@ -518,18 +536,18 @@ export class PiRuntime {
     this.active = turn
     this.status = 'busy'
     this.hooks.onTurnBegin?.({ rootId: this.rootId, messageId: turn.messageId })
-    const originalPrompt = agent.state.systemPrompt
     let outcome: TurnOutcome = 'completed'
     let error: TurnEnd['error'] | undefined
+    const before = agent.state.messages.length
     try {
       agent.state.model = this.selected!.model
       agent.state.thinkingLevel = this.thinkingLevel(turn.input.variant ?? this.compiledAgent()?.variant)
-      if (turn.input.system) agent.state.systemPrompt = `${originalPrompt}\n\n${turn.input.system}`
-      if (this.extensions?.has('before_agent_start')) {
-        agent.state.systemPrompt = await this.extensions.beforeAgentStart(turn.input.text, agent.state.systemPrompt)
-      }
-      await agent.prompt(this.userMessage(turn.input))
-      const last = [...agent.state.messages].reverse().find((m) => m.role === 'assistant') as
+      this.turnSystem = turn.input.system ?? null
+      // pi's prompt path: `input` and `before_agent_start` handlers, extension commands, `/skill:` and templates.
+      const images = this.images(turn.input)
+      await this.pi!.session.prompt(turn.input.text || '(attachment)', { source: 'rpc', ...(images.length ? { images } : {}) })
+      // Only this turn's messages: an extension command answers without a model call.
+      const last = agent.state.messages.slice(before).reverse().find((m) => m.role === 'assistant') as
         | { stopReason?: string; errorMessage?: string }
         | undefined
       if (last?.stopReason === 'aborted') outcome = 'aborted'
@@ -547,7 +565,7 @@ export class PiRuntime {
       this.publish({ type: 'session.status', properties: { sessionID: this.rootId, status: { type: 'idle' } } })
       this.publish({ type: 'session.idle', properties: { sessionID: this.rootId } })
     } finally {
-      agent.state.systemPrompt = originalPrompt
+      this.turnSystem = null
       this.permissions.rejectAll()
       this.questions.rejectAll()
       this.active = null
@@ -565,16 +583,12 @@ export class PiRuntime {
     if (event.type === 'tool_execution_start') this.runningTools += 1
     if (event.type === 'tool_execution_end') this.runningTools = Math.max(0, this.runningTools - 1)
     this.translateAndPublish(event)
-    const runner = this.extensions
-    if (runner?.has(event.type as never)) {
-      this.extensionEvents = this.extensionEvents.then(() => runner.emit(event as never))
-    }
     // After the frames: the finished tool part is on the transcript before the turn is cut.
     if (event.type === 'tool_execution_end') this.checkAbortAfterTool()
   }
 
-  /** Permission policy first, then extension `tool_call` handlers. Root and child agents share it. */
-  private toolGate(rule: (tool: string, args: unknown) => PermissionRule, attachToPart: boolean) {
+  /** Permission policy first, then extension `tool_call` handlers (`next`). Root and child agents share it. */
+  private toolGate(rule: (tool: string, args: unknown) => PermissionRule, attachToPart: boolean, next: Agent['beforeToolCall']) {
     return async (context: BeforeToolCallContext, signal?: AbortSignal): Promise<BeforeToolCallResult | undefined> => {
       const tool = context.toolCall.name
       const decided = rule(tool, context.args)
@@ -587,12 +601,52 @@ export class PiRuntime {
         })
         if (reply === 'reject') return { block: true, reason: 'The user rejected this tool call.' }
       }
-      if (!this.extensions?.has('tool_call')) return undefined
-      return this.extensions.toolCall(
-        { type: 'tool_call', toolName: tool, toolCallId: context.toolCall.id, input: (context.args ?? {}) as Record<string, unknown> },
-        signal,
-      )
+      return next?.(context, signal)
     }
+  }
+
+  /** Extension `tool_call` handlers for a child agent, which has no AgentSession of its own. */
+  private childExtensionGate(): Agent['beforeToolCall'] {
+    return async (context) => {
+      const runner = this.runner.current
+      if (!runner?.hasHandlers('tool_call')) return undefined
+      return runner.emitToolCall({ type: 'tool_call', toolName: context.toolCall.name, toolCallId: context.toolCall.id, input: (context.args ?? {}) as Record<string, unknown> })
+    }
+  }
+
+  /** Extension `tool_result` handlers for a child agent. */
+  private childToolResult(): Agent['afterToolCall'] {
+    return async ({ toolCall, args, result, isError }) => {
+      const runner = this.runner.current
+      if (!runner?.hasHandlers('tool_result')) return undefined
+      const patched = await runner.emitToolResult({
+        type: 'tool_result',
+        toolName: toolCall.name,
+        toolCallId: toolCall.id,
+        input: (args ?? {}) as Record<string, unknown>,
+        content: result.content,
+        details: result.details,
+        isError,
+      } as never)
+      return patched ? { content: patched.content ?? result.content, details: patched.details, isError: patched.isError ?? isError } : undefined
+    }
+  }
+
+  /** Adds the running turn's `system` text on top of whatever the prompt is by then. */
+  private turnExtension(): InlineExtension {
+    return {
+      name: 'kortix-turn',
+      hidden: true,
+      factory: (pi) => {
+        pi.on('before_agent_start', (event) => (this.turnSystem ? { systemPrompt: `${event.systemPrompt}\n\n${this.turnSystem}` } : undefined))
+      },
+    }
+  }
+
+  /** Re-read the base system prompt (compiled agent, skills) into pi's session. */
+  private rebuildSystemPrompt(): void {
+    const session = this.pi?.session
+    if (session) session.setActiveToolsByName(session.getActiveToolNames())
   }
 
   // ── child sessions ───────────────────────────────────────────────────────
@@ -658,8 +712,9 @@ export class PiRuntime {
         tools,
         messages: child.agentMessages,
       },
-      ...(this.extensions?.agentHooks() ?? {}),
+      ...this.childAgentOptions,
     })
+    agent.afterToolCall = this.childToolResult()
     // The subagent's own rules first, the session's rules otherwise. A deny from
     // either wins: delegating must never unlock a call the session denies.
     agent.beforeToolCall = this.toolGate((tool, args) => {
@@ -667,7 +722,7 @@ export class PiRuntime {
       const session = this.permissions.rule(tool, args)
       if (own === 'deny' || session === 'deny') return 'deny'
       return own ?? session
-    }, false)
+    }, false, this.childExtensionGate())
     agent.subscribe((event) => {
       for (const frame of adapter.translate(event)) this.publish(frame, frame.transcriptOnly ? { transcriptOnly: true } : undefined)
     })
@@ -722,8 +777,8 @@ export class PiRuntime {
     return { ...this.sessionObject(), id: child.id, slug: child.id, parentID: this.rootId, title: child.title, time: { created: child.createdAt, updated: child.updatedAt } }
   }
 
-  extensionStatus(): { loaded: string[]; failed: Array<{ name: string; error: string }> } {
-    return this.extensions?.status() ?? { loaded: [], failed: [] }
+  extensionStatus(): ExtensionStatus {
+    return this.pi?.status() ?? { loaded: [], failed: [] }
   }
 
   private translateAndPublish(event: AgentEvent): void {
@@ -816,17 +871,16 @@ export class PiRuntime {
     }
   }
 
-  private userMessage(input: PromptInput): UserMessage {
+  /** The prompt's image attachments, when the selected model reads images. */
+  private images(input: PromptInput): ImageContent[] {
     const images: ImageContent[] = []
-    if (this.selected?.images) {
-      for (const file of input.files) {
-        if (!file.mime.startsWith('image/')) continue
-        const decoded = decodeDataUrl(file.url)
-        if (decoded) images.push({ type: 'image', data: decoded.data, mimeType: decoded.mime })
-      }
+    if (!this.selected?.images) return images
+    for (const file of input.files) {
+      if (!file.mime.startsWith('image/')) continue
+      const decoded = decodeDataUrl(file.url)
+      if (decoded) images.push({ type: 'image', data: decoded.data, mimeType: decoded.mime })
     }
-    const text: TextContent = { type: 'text', text: input.text || '(attachment)' }
-    return { role: 'user', content: images.length ? [text, ...images] : input.text, timestamp: this.now() }
+    return images
   }
 
   // ── configuration ────────────────────────────────────────────────────────
@@ -871,14 +925,15 @@ export class PiRuntime {
     child?: { base: string; tools: AgentTool<any, any>[]; interactive: false },
   ): string {
     const parts = [child?.base || this.compiledAgent()?.prompt?.trim() || DEFAULT_SYSTEM_PROMPT]
-    parts.push(`Working directory: ${this.workspace}`)
+    // pi appends the working directory (and package skills) to the root's prompt.
+    if (child) parts.push(`Working directory: ${this.workspace}`)
     if (this.skills.length > 0) parts.push(formatSkills(this.skills))
     const capabilities = this.readInstruction(SECRET_CAPABILITIES_INSTRUCTION_PATH)
     if (capabilities) parts.push(capabilities)
     parts.push(
       [
         '## Runtime capabilities',
-        `Registered tools: ${(child?.tools ?? this.tools).map((t) => t.name).join(', ')}.`,
+        `Registered tools: ${(child?.tools ?? this.agent?.state.tools ?? this.baseTools).map((t) => t.name).join(', ')}.`,
         'Call tools normally; the runtime asks the user for permission when the project policy requires it.',
         ...(child ? [] : ['Use question to collect answers through the interactive question UI.']),
       ].join('\n'),
@@ -905,12 +960,14 @@ export class PiRuntime {
     return this.agentName
   }
 
-  skillList(): Skill[] {
-    return this.skills
+  /** Kortix skills first, then skills pi loaded from packages; a name appears once. */
+  skillList(): Array<Pick<Skill, 'name' | 'description' | 'filePath'>> {
+    const seen = new Set(this.skills.map((skill) => skill.name))
+    return [...this.skills, ...(this.pi?.skills() ?? []).filter((skill) => !seen.has(skill.name) && (seen.add(skill.name), true))]
   }
 
   toolList(): Array<{ id: string; description: string; parameters: unknown }> {
-    return this.tools.map((tool) => ({ id: tool.name, description: tool.description, parameters: tool.parameters }))
+    return (this.agent?.state.tools ?? []).map((tool) => ({ id: tool.name, description: tool.description, parameters: tool.parameters }))
   }
 
   sessionStatus(): { type: 'idle' | 'busy' } {

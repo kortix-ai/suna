@@ -15,7 +15,7 @@ import type { PiBootState } from './boot-state'
 import { loadPiEnvironment, requirePiConfig, resolvePiSkillDirectories, type PiConfig } from './config'
 import { createPiControlService } from './control'
 import { createPiDiagnosticsService } from './diagnostics'
-import type { SystemExtension } from './extensions/runner'
+import type { InlineExtension } from './extensions/host'
 import { createPiQueryService } from './queries'
 import { schedulePiProjectionPush } from './relay'
 import { PiRuntime, type PiRuntimeHooks } from './runtime'
@@ -30,7 +30,7 @@ export interface PiHarnessService extends HarnessService {
 export function createPiHarnessService(
   cfg: PiConfig,
   projectEnv?: ProjectEnvStore,
-  options: HarnessStartupOptions & { hooks?: PiRuntimeHooks; sessionId?: string; env?: NodeJS.ProcessEnv; extensions?: readonly SystemExtension[] } = {},
+  options: HarnessStartupOptions & { hooks?: PiRuntimeHooks; sessionId?: string; env?: NodeJS.ProcessEnv; extensions?: readonly InlineExtension[] } = {},
 ): PiHarnessService {
   const env = options.env ?? process.env
   const sessionId = (options.sessionId ?? env.KORTIX_SESSION_ID ?? '').trim() || 'session-local'

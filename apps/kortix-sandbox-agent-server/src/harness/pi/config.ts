@@ -23,24 +23,37 @@ const EnvironmentSchema = z.object({
   KORTIX_PI_MODEL_MODE: z.enum(['real', 'faux']).default('real'),
   // JSON array of `{ text }` | `{ tool, args }` steps for faux mode.
   KORTIX_PI_FAUX_SCRIPT: z.string().optional(),
+  // pi's global agent dir: `settings.json` lists the system packages the image
+  // installed under `npm/`. See apps/sandbox/pi-system-packages.json.
+  KORTIX_PI_AGENT_DIR: z.string().optional(),
+  // JSON array of the project's pi package sources (kortix.yaml `harnesses.pi.packages`).
+  KORTIX_PI_PACKAGES: z.string().optional(),
 })
 
 export interface PiEnvironment {
   piStateDir: string
   piModelMode: 'real' | 'faux'
   piFauxScript?: string
+  piAgentDir: string
+  piPackages?: string
 }
+
+export const DEFAULT_PI_AGENT_DIR = '/opt/kortix/pi-agent'
 
 export function loadPiEnvironment(env: NodeJS.ProcessEnv): PiEnvironment {
   const parsed = EnvironmentSchema.parse({
     KORTIX_PI_STATE_DIR: env.KORTIX_PI_STATE_DIR,
     KORTIX_PI_MODEL_MODE: env.KORTIX_PI_MODEL_MODE || undefined,
     KORTIX_PI_FAUX_SCRIPT: env.KORTIX_PI_FAUX_SCRIPT,
+    KORTIX_PI_AGENT_DIR: env.KORTIX_PI_AGENT_DIR,
+    KORTIX_PI_PACKAGES: env.KORTIX_PI_PACKAGES,
   })
   return {
     piStateDir: parsed.KORTIX_PI_STATE_DIR?.trim() || join(resolveKortixRuntimeStateDirectory(env), 'pi'),
     piModelMode: parsed.KORTIX_PI_MODEL_MODE,
     piFauxScript: parsed.KORTIX_PI_FAUX_SCRIPT,
+    piAgentDir: parsed.KORTIX_PI_AGENT_DIR?.trim() || DEFAULT_PI_AGENT_DIR,
+    piPackages: parsed.KORTIX_PI_PACKAGES,
   }
 }
 

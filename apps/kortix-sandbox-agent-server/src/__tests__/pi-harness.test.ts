@@ -8,7 +8,7 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { createHmac } from 'node:crypto'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { loadConfig } from '../config'
@@ -17,7 +17,7 @@ import { buildDaemonApp } from '../proxy'
 import { requirePiConfig } from '../harness/pi/config'
 import { createPiHarnessService, type PiHarnessService } from '../harness/pi/service'
 import type { PiBootState } from '../harness/pi/boot-state'
-import type { SystemExtension } from '../harness/pi/extensions/runner'
+import { extensionAgentHooks, installedPackages, parseNpmSource, type InlineExtension } from '../harness/pi/extensions/host'
 
 const TOKEN = 'pi-test-token'
 
@@ -42,13 +42,23 @@ interface Rig {
 
 let rig: Rig | null = null
 
-async function boot(input: { script: unknown[]; env?: Record<string, string>; start?: boolean; extensions?: SystemExtension[] }): Promise<Rig> {
+async function boot(input: {
+  script: unknown[]
+  env?: Record<string, string>
+  start?: boolean
+  extensions?: InlineExtension[]
+  /** Runs on the fresh workspace before the runtime starts. */
+  prepare?: (workspace: string) => void
+}): Promise<Rig> {
   const workspace = mkdtempSync(join(tmpdir(), 'pi-harness-'))
+  input.prepare?.(workspace)
   const env: NodeJS.ProcessEnv = {
     KORTIX_HARNESS: 'pi',
     KORTIX_PI_MODEL_MODE: 'faux',
     KORTIX_PI_FAUX_SCRIPT: JSON.stringify(input.script),
     KORTIX_PI_STATE_DIR: join(workspace, '.state'),
+    // Never the machine's ~/.pi or the image's /opt/kortix/pi-agent.
+    KORTIX_PI_AGENT_DIR: join(workspace, '.pi-agent'),
     KORTIX_PROJECT_AUTO_CLONE: '0',
     KORTIX_WORKSPACE: workspace,
     KORTIX_PROJECT_TARGET: workspace,
@@ -509,10 +519,32 @@ function toolParts(page: WirePage, tool: string): Array<Record<string, any>> {
   return page.messages.flatMap((m) => m.parts.filter((p) => p.type === 'tool' && p.tool === tool))
 }
 
-describe('pi system extensions', () => {
+/** An npm package as pi installs it: `<root>/node_modules/<name>` with a `pi` manifest. */
+function fakePackage(npmRoot: string, name: string, version: string, source: string): void {
+  const dir = join(npmRoot, 'node_modules', name)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ name, version, keywords: ['pi-package'], pi: { extensions: ['./index.ts'] } }))
+  writeFileSync(join(dir, 'index.ts'), source)
+}
+
+/** An extension source that registers one tool answering `<prefix>:<text>`. */
+function echoTool(tool: string, prefix: string): string {
+  return `export default function (pi) {
+  pi.registerTool({
+    name: '${tool}',
+    label: '${tool}',
+    description: 'Echo the text back.',
+    parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
+    async execute(_id, params) { return { content: [{ type: 'text', text: '${prefix}:' + params.text }], details: {} } },
+  })
+}
+`
+}
+
+describe('pi extensions', () => {
   test('a tool_call handler blocks a tool and a tool_result handler patches another', async () => {
     let promptSeen = ''
-    const guard: SystemExtension = {
+    const guard: InlineExtension = {
       name: 'guard',
       factory(pi) {
         pi.on('tool_call', (event, ctx) => {
@@ -528,27 +560,34 @@ describe('pi system extensions', () => {
       extensions: [guard],
     })
     await promptAndSettle(r, 'try')
-    expect(require('node:fs').existsSync(join(r.workspace, 'blocked.txt'))).toBe(false)
+    expect(existsSync(join(r.workspace, 'blocked.txt'))).toBe(false)
     const root = r.service.runtime()!.rootId
     const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage
-    expect(toolParts(page, 'write')[0]!.state).toMatchObject({ status: 'error', error: expect.stringContaining('writes are blocked by guard') })
-    expect(toolParts(page, 'bash')[0]!.state).toMatchObject({ status: 'completed', output: 'patched output' })
+    expect(toolParts(page, 'write')[0]!.state.status).toBe('error')
+    expect(String(toolParts(page, 'write')[0]!.state.error)).toContain('writes are blocked by guard')
+    expect(toolParts(page, 'bash')[0]!.state.status).toBe('completed')
+    expect(toolParts(page, 'bash')[0]!.state.output).toBe('patched output')
     expect(promptSeen).toContain('GUARD ACTIVE')
-    // The per-turn system prompt does not leak into the next turn.
     expect(r.service.runtime()!.extensionStatus()).toEqual({ loaded: ['guard'], failed: [] })
   })
 
-  test('an extension that throws or calls an unsupported API is skipped; the runtime still starts', async () => {
-    const broken: SystemExtension = { name: 'broken', factory: () => { throw new Error('boom') } }
-    const unsupported: SystemExtension = {
-      name: 'unsupported',
-      factory(pi) {
-        pi.registerTool({ name: 'never_registered', label: 'x', description: 'x', parameters: {} as never, execute: async () => ({ content: [], details: {} }) })
-        ;(pi as unknown as { registerCommand: (name: string) => void }).registerCommand('x')
-      },
-    }
+  test('the prompt system field reaches the model for its turn only, on top of extension edits', async () => {
+    let seen: string[] = []
+    const probe: InlineExtension = { name: 'probe', factory: (pi) => void pi.on('tool_call', (_event, ctx) => void seen.push(ctx.getSystemPrompt())) }
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'true' } }, { text: 'a' }, { tool: 'bash', args: { command: 'true' } }, { text: 'b' }], extensions: [probe] })
+    const root = r.service.runtime()!.rootId
+    expect((await r.user(`/session/${root}/prompt_async`, { method: 'POST', body: JSON.stringify({ parts: [{ type: 'text', text: 'one' }], system: 'TURN RULE' }) })).status).toBe(204)
+    await waitFor(() => !r.service.runtime()!.busy())
+    await promptAndSettle(r, 'two')
+    expect(seen).toHaveLength(2)
+    expect(seen[0]).toContain('TURN RULE')
+    expect(seen[1]).not.toContain('TURN RULE')
+  })
+
+  test('an extension that throws is reported and skipped; lifecycle events reach the others', async () => {
+    const broken: InlineExtension = { name: 'broken', factory: () => { throw new Error('boom') } }
     const events: string[] = []
-    const lifecycle: SystemExtension = {
+    const lifecycle: InlineExtension = {
       name: 'lifecycle',
       factory(pi) {
         pi.on('session_start', (event) => void events.push(`start:${event.reason}`))
@@ -556,39 +595,118 @@ describe('pi system extensions', () => {
         pi.on('turn_end', () => void events.push('turn_end'))
       },
     }
-    const r = await boot({ script: [{ text: 'ok' }], extensions: [broken, unsupported, lifecycle] })
+    const r = await boot({ script: [{ text: 'ok' }], extensions: [broken, lifecycle] })
     const status = r.service.runtime()!.extensionStatus()
     expect(status.loaded).toEqual(['lifecycle'])
-    expect(status.failed.map((f) => f.name)).toEqual(['broken', 'unsupported'])
+    expect(status.failed.map((f) => f.name)).toEqual(['broken'])
     expect(status.failed[0]!.error).toContain('boom')
-    expect(status.failed[1]!.error).toContain('registerCommand')
-    const tools = (await r.user('/tool/ids').then((res) => res.json())) as string[]
-    expect(tools).not.toContain('never_registered')
     await promptAndSettle(r, 'hi')
     await r.service.lifecycle.stop()
     expect(events).toEqual(['start:startup', 'turn_end', 'shutdown'])
   })
 
-  test('the context and before_provider_request hooks rewrite what the model receives', async () => {
-    const { ExtensionRunner } = await import('../harness/pi/extensions/runner')
-    const runner = await ExtensionRunner.load(
-      [
-        {
-          name: 'rewrite',
-          factory(pi) {
-            pi.on('context', (event) => ({ messages: event.messages.slice(-1) }))
-            pi.on('before_provider_request', (event) => ({ ...(event.payload as object), temperature: 0 }))
-          },
-        },
-      ],
-      { cwd: '/workspace', systemPrompt: () => '', kortix: {} as never },
-    )
-    const first = { role: 'user', content: 'a', timestamp: 1 } as never
-    const last = { role: 'user', content: 'b', timestamp: 2 } as never
-    expect(await runner.agentHooks().transformContext!([first, last])).toEqual([last])
-    expect(await runner.agentHooks().onPayload!({ model: 'm' }, {} as never)).toEqual({ model: 'm', temperature: 0 })
-    const none = await ExtensionRunner.load([], { cwd: '/workspace', systemPrompt: () => '', kortix: {} as never })
-    expect(none.agentHooks()).toEqual({})
+  test('a context handler rewrites what the model receives', async () => {
+    const counts: number[] = []
+    const trim: InlineExtension = {
+      name: 'trim',
+      factory(pi) {
+        pi.on('context', (event) => {
+          counts.push(event.messages.length)
+          return { messages: event.messages.slice(-1) }
+        })
+      },
+    }
+    const r = await boot({ script: [{ text: 'first' }, { text: 'second' }], extensions: [trim] })
+    await promptAndSettle(r, 'one')
+    await promptAndSettle(r, 'two')
+    // Turn two sees user, assistant, user; the model gets only the last one.
+    expect(counts).toEqual([1, 3])
+  })
+
+  test('the provider hooks route through the current runner, and pass through without one', async () => {
+    const ref: { current?: any } = {}
+    const hooks = extensionAgentHooks(ref)
+    expect(await hooks.onPayload!({ model: 'm' }, {} as never)).toEqual({ model: 'm' })
+    ref.current = { hasHandlers: (type: string) => type === 'before_provider_request', emitBeforeProviderRequest: async (p: object) => ({ ...p, temperature: 0 }) }
+    expect(await hooks.onPayload!({ model: 'm' }, {} as never)).toEqual({ model: 'm', temperature: 0 })
+  })
+})
+
+describe('pi packages', () => {
+  test('npm sources parse with scopes and pins', () => {
+    expect(parseNpmSource('npm:pi-web-access@0.30.0')).toEqual({ name: 'pi-web-access', version: '0.30.0' })
+    expect(parseNpmSource('npm:@juicesharp/rpiv-todo@1.2.0')).toEqual({ name: '@juicesharp/rpiv-todo', version: '1.2.0' })
+    expect(parseNpmSource('npm:@juicesharp/rpiv-todo')).toEqual({ name: '@juicesharp/rpiv-todo' })
+    expect(parseNpmSource('./local.ts')).toBeNull()
+  })
+
+  test('only installed sources at the pinned version are kept; git is refused', () => {
+    const root = mkdtempSync(join(tmpdir(), 'pi-npm-'))
+    try {
+      fakePackage(root, 'have', '1.0.0', 'export default () => {}')
+      const { kept, failed } = installedPackages(
+        ['npm:have@1.0.0', { source: 'npm:have', extensions: [] }, 'npm:have@2.0.0', 'npm:missing@1.0.0', 'git:github.com/a/b@v1', '/abs/local.ts'],
+        root,
+      )
+      expect(kept).toEqual(['npm:have@1.0.0', { source: 'npm:have', extensions: [] }, '/abs/local.ts'])
+      expect(failed).toEqual([
+        { name: 'npm:have@2.0.0', error: 'installed version 1.0.0 does not match 2.0.0' },
+        { name: 'npm:missing@1.0.0', error: 'package is not installed' },
+        { name: 'git:github.com/a/b@v1', error: 'git packages are not supported; use an npm package' },
+      ])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('system and project packages load from disk and their tools run; nothing is installed at boot', async () => {
+    const r = await boot({
+      script: [{ tool: 'system_echo', args: { text: 'hi' } }, { tool: 'project_echo', args: { text: 'yo' } }, { tool: 'local_echo', args: { text: 'l' } }, { text: 'done' }],
+      env: { KORTIX_PI_PACKAGES: JSON.stringify(['npm:project-ext@2.0.0', 'npm:project-missing@1.0.0', './.kortix/pi/local.ts']) },
+      prepare(workspace) {
+        const agentDir = join(workspace, '.pi-agent')
+        mkdirSync(agentDir, { recursive: true })
+        writeFileSync(join(agentDir, 'settings.json'), JSON.stringify({ packages: ['npm:system-ext@1.0.0', 'npm:system-missing@1.0.0'] }))
+        fakePackage(join(agentDir, 'npm'), 'system-ext', '1.0.0', echoTool('system_echo', 'system'))
+        fakePackage(join(workspace, '.pi', 'npm'), 'project-ext', '2.0.0', echoTool('project_echo', 'project'))
+        mkdirSync(join(workspace, '.kortix', 'pi'), { recursive: true })
+        writeFileSync(join(workspace, '.kortix', 'pi', 'local.ts'), echoTool('local_echo', 'local'))
+        mkdirSync(join(workspace, '.pi', 'extensions'), { recursive: true })
+        writeFileSync(join(workspace, '.pi', 'extensions', 'repo.ts'), echoTool('repo_echo', 'repo'))
+      },
+    })
+    const tools = (await r.user('/tool/ids').then((res) => res.json())) as string[]
+    expect(tools).toEqual(expect.arrayContaining(['system_echo', 'project_echo', 'local_echo', 'repo_echo', 'task', 'bash']))
+    const status = r.service.runtime()!.extensionStatus()
+    expect(status.loaded).toEqual(expect.arrayContaining(['subagents', 'npm:system-ext@1.0.0', 'npm:project-ext@2.0.0']))
+    expect(status.failed).toEqual([
+      { name: 'npm:system-missing@1.0.0', error: 'package is not installed' },
+      { name: 'npm:project-missing@1.0.0', error: 'package is not installed' },
+    ])
+    await promptAndSettle(r, 'use them')
+    const page = (await r.bearer(`/kortix/opencode/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
+    expect(toolParts(page, 'system_echo')[0]!.state.output).toBe('system:hi')
+    expect(toolParts(page, 'project_echo')[0]!.state.output).toBe('project:yo')
+    expect(toolParts(page, 'local_echo')[0]!.state.output).toBe('local:l')
+    expect(existsSync(join(r.workspace, '.pi-agent', 'npm', 'node_modules', 'system-missing'))).toBe(false)
+    expect(existsSync(join(r.workspace, '.pi', 'npm', 'node_modules', 'project-missing'))).toBe(false)
+  })
+
+  test('a project package overrides the system package of the same name', async () => {
+    const r = await boot({
+      script: [{ tool: 'shared_echo', args: { text: 'x' } }, { text: 'done' }],
+      env: { KORTIX_PI_PACKAGES: JSON.stringify(['npm:shared-ext@2.0.0']) },
+      prepare(workspace) {
+        const agentDir = join(workspace, '.pi-agent')
+        mkdirSync(agentDir, { recursive: true })
+        writeFileSync(join(agentDir, 'settings.json'), JSON.stringify({ packages: ['npm:shared-ext@1.0.0'] }))
+        fakePackage(join(agentDir, 'npm'), 'shared-ext', '1.0.0', echoTool('shared_echo', 'system'))
+        fakePackage(join(workspace, '.pi', 'npm'), 'shared-ext', '2.0.0', echoTool('shared_echo', 'project'))
+      },
+    })
+    await promptAndSettle(r, 'go')
+    const page = (await r.bearer(`/kortix/opencode/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
+    expect(toolParts(page, 'shared_echo').map((p) => p.state.output)).toEqual(['project:x'])
   })
 })
 

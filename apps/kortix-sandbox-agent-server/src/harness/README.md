@@ -94,24 +94,41 @@ or a workspace tool's path, with the longest matching pattern winning and `*`
 the weakest. A pattern map is never collapsed to its `*` entry, and a `deny`
 outranks an earlier "always" reply on the same tool.
 
-### System extensions
+### Extensions
 
-`pi/extensions/` holds the extensions every pi session loads, listed in
-`pi/extensions/index.ts`. They are compiled into the daemon: loading one is a
-function call (0.29 ms for `subagents` in the unit rig), with no import from
-disk and no network read. An extension uses pi's own shape —
-`export default (pi) => { pi.on(event, handler); pi.registerTool(tool) }` — so
-it also runs under pi-coding-agent. `pi/extensions/runner.ts` maps each event
-onto a hook of the core `Agent`: `tool_call` → `beforeToolCall` (after the
-permission policy; a throwing handler blocks), `tool_result` → `afterToolCall`,
-`context` → `transformContext`, `before_provider_request` → `onPayload`,
-`before_agent_start` → the turn's system prompt, `session_start` /
-`session_shutdown` → runtime start/reconfigure/stop, and the agent events →
-`subscribe`. Tool, context and provider hooks also run in child sessions.
-Everything else pi offers (`registerCommand`, `ctx.ui`, the session manager, …)
-is absent: an extension that calls it fails to load, is skipped, and
-`[pi] runtime ready` logs it under `extensions.failed`. `ctx.kortix` is the
-Kortix-only host API (`compiledAgents()`, `spawnSession()`).
+pi's own extension system runs every extension. The root `Agent` lives inside
+pi-coding-agent's `AgentSession` (`pi/extensions/host.ts`), which owns the
+loader, the real `ExtensionRunner`, tool wrapping, `input` and
+`before_agent_start` on each prompt, extension commands, and `/skill:` and
+prompt-template expansion. A package from https://pi.dev/packages runs
+unmodified: Kortix writes no per-extension code. Kortix keeps the model (the
+gateway provider is registered with pi's `ModelRuntime` only to pass its auth
+check), the tools, the wire, and the permission policy, which runs BEFORE any
+extension `tool_call` handler. pi's compaction and auto-retry are off: the
+transcript and the product own them.
+
+Three sources, in pi's own scopes:
+
+| Source | Declared in | Installed in |
+|---|---|---|
+| system (every session) | `<agentDir>/settings.json` `packages`; `agentDir` = `KORTIX_PI_AGENT_DIR`, default `/opt/kortix/pi-agent` | `<agentDir>/npm`, when the image is built |
+| project | kortix.yaml `harnesses.pi.packages` → `KORTIX_PI_PACKAGES` | `<workspace>/.pi/npm`, before the runtime starts |
+| repo-local | `<workspace>/.pi/extensions/*.ts`, or a repo-relative path in `harnesses.pi.packages` | the repo itself |
+
+A project entry for the same package overrides the system one. Nothing installs
+at boot. pi installs a missing package on load (13.2 s for two packages,
+measured), so `installedPackages()` drops an npm source that is not on disk at
+its pinned version, refuses repository sources, and reports each drop under
+`extensions.failed` in `[pi] runtime ready`. A package's extension loads through
+pi's jiti loader. In the compiled daemon, pi supplies `typebox` and the
+`@earendil-works/pi-*` peers as virtual modules: a compiled probe loaded a
+TypeScript package importing both in 24 ms, and its tool ran.
+
+In-process extensions are `InlineExtension`s (`{ name, factory }`): `subagents`,
+and the hidden `kortix-turn`, which adds a prompt's `system` field for that turn.
+Child sessions have no `AgentSession`; the runtime routes their tool, context and
+provider hooks to the same runner. `ctx.ui` has no UI bound (`hasUI` is false):
+tools and events work, TUI-only rendering does nothing.
 
 `subagents` is OpenCode's `task` tool: input `{ description, prompt,
 subagent_type, task_id? }`, the child id in the part's `metadata.sessionId`
@@ -131,7 +148,7 @@ rules; a `deny` from either wins, so delegating never unlocks a denied call.
 Not supported by pi today (answered honestly, never silently): session rewind
 (`/session/:id/revert`, 501 `feature_not_supported`), slash commands
 (`/session/:id/command`), summarize/compaction, MCP/connector tools, todo
-tools, warm-seed capture, user-defined extensions. `/kortix/health` reports `harness: 'pi'`
+tools, warm-seed capture, `ctx.ui` prompts from extensions. `/kortix/health` reports `harness: 'pi'`
 and keeps `opencode: <state>` as the compatibility field the control plane
 already reads for readiness.
 
