@@ -44,7 +44,7 @@ import {
   type Icon,
 } from '@phosphor-icons/react';
 import Link from 'next/link';
-import React, { useMemo } from 'react';
+import React, { useMemo, useSyncExternalStore } from 'react';
 
 /** The renderers' sandbox proxy: rewrites a sandbox-local URL, passes others through. */
 export type MarkdownProxy = (url: string | undefined) => string | undefined;
@@ -149,22 +149,52 @@ export function resolveActionBlock(
   return actions;
 }
 
-function currentOrigin(): string | null {
-  return typeof window === 'undefined' ? null : window.location.origin;
+function noopSubscribe(): () => void {
+  return noop;
+}
+
+/**
+ * The page origin, hydration-safe. The server snapshot is `null`, and React
+ * also uses it for the hydration render, so server and client first classify
+ * with the same origin. The client re-renders with the real origin after
+ * hydration. Reading `window` directly here made a same-origin absolute link
+ * server-render as an external chip and hydrate as an internal one.
+ */
+function useHydrationSafeOrigin(): string | null {
+  return useSyncExternalStore(
+    noopSubscribe,
+    () => window.location.origin,
+    () => null,
+  );
+}
+
+function ActionBlockOrFallback({
+  node,
+  proxy,
+  fallback,
+}: {
+  node: unknown;
+  proxy: MarkdownProxy;
+  fallback: React.ReactElement;
+}): React.ReactElement {
+  const origin = useHydrationSafeOrigin();
+  const links = standaloneActionLinks(node);
+  const actions = links && resolveActionBlock(links, proxy, origin);
+  return actions ? <MarkdownActionBlock actions={actions} /> : fallback;
 }
 
 /**
  * The `p` / `h1`–`h6` hook-in: the action block when `node` is a standalone
- * action block, otherwise `fallback` unchanged. A plain function, not a hook.
+ * action block, otherwise `fallback` unchanged. A plain function (the
+ * renderers call it from the components map), so it returns an element whose
+ * component reads the origin through a hook.
  */
 export function withActionBlock(
   node: unknown,
   proxy: MarkdownProxy,
   fallback: React.ReactElement,
 ): React.ReactElement {
-  const links = standaloneActionLinks(node);
-  const actions = links && resolveActionBlock(links, proxy, currentOrigin());
-  return actions ? <MarkdownActionBlock actions={actions} /> : fallback;
+  return <ActionBlockOrFallback node={node} proxy={proxy} fallback={fallback} />;
 }
 
 function noop(): void {}

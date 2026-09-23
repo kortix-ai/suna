@@ -111,6 +111,35 @@ for (const [name, R] of RENDERERS) {
   });
 }
 
+describe('hydration-safe origin', () => {
+  const SAME_ORIGIN_MD = '[Open report](https://app.example.com/projects/p1/report)';
+
+  function expectNullOriginMarkup(html: string) {
+    // `null` origin → an absolute URL is external: new-tab chip, not an internal one.
+    expect(html).toContain('data-slot="button"');
+    expect(html).toContain('href="https://app.example.com/projects/p1/report"');
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain('aria-label="Open report (opens in a new tab)"');
+  }
+
+  for (const [name, R] of RENDERERS) {
+    test(`${name} server render classifies a same-origin absolute link with a null origin`, () => {
+      expect(typeof window).toBe('undefined');
+      expectNullOriginMarkup(renderToStaticMarkup(withIntl(<R content={SAME_ORIGIN_MD} />)));
+    });
+
+    test(`${name} server render ignores window.location.origin even when window exists`, () => {
+      const g = globalThis as { window?: unknown };
+      g.window = { location: { origin: 'https://app.example.com' } };
+      try {
+        expectNullOriginMarkup(renderToStaticMarkup(withIntl(<R content={SAME_ORIGIN_MD} />)));
+      } finally {
+        delete g.window;
+      }
+    });
+  }
+});
+
 describe('resolveActionBlock', () => {
   const identity = (url: string | undefined) => url;
 
