@@ -3,8 +3,8 @@
  * project page (the hamburger, or an edge swipe on any project route).
  *
  * Top to bottom:
- * - Switcher row (COR-124/COR-157, Task 4): the 32pt project avatar, the
- *   project name, and the active account below it. Tap calls
+ * - Switcher row (COR-124/COR-157, Task 4): the account avatar overlapped
+ *   by the project tile, the project name, and "in <account>" below it. Tap calls
  *   `onOpenSwitcher`: ProjectScreen opens `ProjectSwitcherSheet` (mounted
  *   there once, beside the other project sheets) over the drawer — one
  *   project/account switcher, not a navigation.
@@ -95,6 +95,7 @@ import {
   sessionStatusLabel,
   type SessionListRow,
 } from '@/lib/session/session-list';
+import type { SessionNeedsYou } from '@/lib/session/needs-you';
 import { useTabStore } from '@/stores/tab-store';
 import { cn } from '@/lib/utils/index';
 import { BUTTON_LABEL_MAX_FONT_SCALE } from '@/lib/ui/font-scale';
@@ -144,10 +145,14 @@ function ProjectSessionListItem({
   item,
   active,
   nested = false,
+  needsYou,
   onPress,
   onLongPress,
 }: {
   item: ProjectSession;
+  /** What the session waits on (the Needs you group): a `needs-you` mark and a
+   *  one-line reason under the title. */
+  needsYou?: SessionNeedsYou;
   /** The session on screen: `bg-accent` at rest and the `selected` state. */
   active: boolean;
   /** A sub-agent session, rendered indented under its coordinator with a
@@ -158,7 +163,8 @@ function ProjectSessionListItem({
   onLongPress: (s: ProjectSession) => void;
 }) {
   const title = sessionDisplayTitle(item);
-  const status = sessionDisplayStatus(item);
+  const status = sessionDisplayStatus(item, needsYou?.count ?? 0);
+  const statusLabel = needsYou ? `${sessionStatusLabel(status)}, ${needsYou.reason}` : sessionStatusLabel(status);
 
   return (
     <Pressable
@@ -166,7 +172,7 @@ function ProjectSessionListItem({
       onLongPress={() => onLongPress(item)}
       accessibilityRole="button"
       accessibilityLabel={
-        nested ? `${title}, sub-agent session, ${sessionStatusLabel(status)}` : `${title}, ${sessionStatusLabel(status)}`
+        nested ? `${title}, sub-agent session, ${statusLabel}` : `${title}, ${statusLabel}`
       }
       accessibilityHint="Long press for session actions"
       accessibilityState={{ selected: active }}
@@ -180,9 +186,18 @@ function ProjectSessionListItem({
         <Icon as={ArrowElbowDownRightIcon} size={12} className="shrink-0 text-muted-foreground/60" />
       )}
       <SessionStatusMark status={status} />
-      <Text className="flex-1" numberOfLines={1}>
-        {title}
-      </Text>
+      {needsYou ? (
+        <View className="min-w-0 flex-1">
+          <Text numberOfLines={1}>{title}</Text>
+          <Text variant="muted" style={{ fontSize: 13, lineHeight: 17 }} numberOfLines={1}>
+            {needsYou.reason}
+          </Text>
+        </View>
+      ) : (
+        <Text className="flex-1" numberOfLines={1}>
+          {title}
+        </Text>
+      )}
     </Pressable>
   );
 }
@@ -236,43 +251,57 @@ function ReviewCountPill({ count }: { count: number }) {
 function SwitcherRow({
   projectName,
   accountName,
+  ringColor,
   onPress,
 }: {
   projectName: string;
   accountName: string;
+  /** The drawer surface colour: the ring that cuts the project tile out of the account avatar. */
+  ringColor: string;
   onPress: () => void;
 }) {
   const label = projectName && accountName ? `Switch project, ${projectName}, ${accountName}` : 'Switch project';
   return (
-    // Minimal (Jay, 2026-09-23): the project's avatar top left (Jay,
-    // 2026-09-24: in place of the Kortix symbol) — the chalk tile the
-    // switcher sheet and the Projects page draw for the same project — then
-    // the project name over the account. The avatar is 32pt, the height of
-    // the two text lines (20pt + 17pt line boxes), so it spans both. The row
-    // reads as a control (Jay, 2026-09-24): a `bg-card` fill at rest,
-    // `bg-secondary` pressed, and a trailing up/down caret — the switcher
-    // affordance. One button edge to edge; inner views ignore touches so
-    // every part presses it.
+    // Avatar pair (Jay, 2026-09-24, Paper "Drawer header · variants" 16):
+    // the account's round chalk avatar, overlapped by the project's chalk
+    // tile — a 2pt ring in the drawer colour separates them — then the
+    // project name over "in <account>", and a trailing up/down caret. No
+    // fill at rest (in light mode `bg-card` equals the drawer surface, so a
+    // fill never showed); `bg-secondary` pressed. One button edge to edge;
+    // inner views ignore touches so every part presses it.
     <View className="px-2 pb-1">
       <Pressable
         onPress={onPress}
         hitSlop={4}
         accessibilityRole="button"
         accessibilityLabel={label}
-        className="flex-row items-center gap-3 rounded-2xl bg-card px-3 py-2 active:bg-secondary">
-        <View pointerEvents="none" className="w-8 items-center">
-          <Avatar chalk size={32} fallbackText={projectName} />
+        className="flex-row items-center gap-3 rounded-2xl px-3 py-2 active:bg-secondary">
+        <View pointerEvents="none" style={{ width: 62, height: 36 }}>
+          <Avatar
+            chalk
+            size={34}
+            fallbackText={accountName}
+            style={{ position: 'absolute', left: 0, top: 1, borderRadius: 17 }}
+          />
+          <Avatar
+            chalk
+            size={36}
+            fallbackText={projectName}
+            style={{ position: 'absolute', left: 26, top: 0, borderWidth: 2, borderColor: ringColor }}
+          />
         </View>
         <View pointerEvents="none" className="min-w-0 flex-1">
           <Text
-            className="font-roobert-medium text-foreground"
-            style={{ fontSize: 16, lineHeight: 20 }}
+            className="font-roobert-semibold text-foreground"
+            style={{ fontSize: 17, lineHeight: 22, letterSpacing: -0.17 }}
             numberOfLines={1}>
             {projectName}
           </Text>
-          <Text variant="muted" style={{ fontSize: 13, lineHeight: 17 }} numberOfLines={1}>
-            {accountName}
-          </Text>
+          {accountName ? (
+            <Text variant="muted" style={{ fontSize: 13, lineHeight: 17 }} numberOfLines={1}>
+              in {accountName}
+            </Text>
+          ) : null}
         </View>
         <Icon as={CaretUpDownIcon} size={16} className="shrink-0 text-muted-foreground" />
       </Pressable>
@@ -291,6 +320,11 @@ export interface ProjectLeftDrawerProps {
   activeProjectSessionId?: string | null;
   /** Items that wait for the user — the Review row's trailing count pill. */
   reviewNeedsYouCount?: number;
+  /**
+   * Session id → what it waits on (`needsYouBySession` over the review inbox).
+   * Those sessions leave the list for a "Needs you · N" group above it.
+   */
+  needsYouBySession?: ReadonlyMap<string, SessionNeedsYou>;
   /** New session: open project home, whose composer starts the session. */
   onNewSession: () => void;
   onOpenProjectSession: (session: ProjectSession) => void;
@@ -312,11 +346,14 @@ export interface ProjectLeftDrawerProps {
 }
 
 const sessionRowKey = (row: SessionListRow) => row.session.session_id;
+/** Shared empty map: a fresh one per render would re-derive the lists. */
+const EMPTY_NEEDS_YOU: ReadonlyMap<string, SessionNeedsYou> = new Map();
 
 export function ProjectLeftDrawer({
   projectId,
   activeProjectSessionId = null,
   reviewNeedsYouCount = 0,
+  needsYouBySession = EMPTY_NEEDS_YOU,
   onNewSession,
   onOpenProjectSession,
   onNavigateRoute,
@@ -366,14 +403,31 @@ export function ProjectLeftDrawer({
   // flattened for this `FlatList`. A coordinator not yet loaded (its page
   // hasn't arrived) leaves the child top-level until it does — see
   // `groupSessionsByCoordinator`'s doc comment.
-  const rows = useMemo(() => flattenSessionGroups(recent), [recent]);
+  const rows = useMemo(
+    () => flattenSessionGroups(recent.filter((session) => !needsYouBySession.has(session.session_id))),
+    [recent, needsYouBySession]
+  );
+  // Sessions that wait on the user, newest wait first: their own group above
+  // the list. A session not loaded yet (an older page) is left to the Review
+  // row's count.
+  const needsYouSessions = useMemo(
+    () =>
+      recent
+        .filter((session) => needsYouBySession.has(session.session_id))
+        .sort(
+          (a, b) =>
+            (needsYouBySession.get(b.session_id)?.newestAt ?? 0) -
+            (needsYouBySession.get(a.session_id)?.newestAt ?? 0)
+        ),
+    [recent, needsYouBySession]
+  );
   // loading / error / empty / rows — shared with the Sessions page
   // (lib/session/session-pages) so a failed fetch never reads as "No
   // sessions yet" (COR-146).
   const sessionsListState = sessionListState({
     isLoading: projectSessionsLoading,
     isError: projectSessionsErrored,
-    hasSessions: recent.length > 0,
+    hasSessions: rows.length > 0 || needsYouSessions.length > 0,
   });
   // Only a pull shows the refresh spinner; a background poll does not.
   const [refreshing, setRefreshing] = useState(false);
@@ -516,7 +570,12 @@ export function ProjectLeftDrawer({
     {/* One straight left line at 20pt: the switcher row is px-5; every row
         (nav, sessions, Previous chats) is px-3 inside a px-2 column. */}
     <View className="flex-1 bg-chrome-background" style={{ paddingTop: insets.top }}>
-      <SwitcherRow projectName={project?.name ?? ''} accountName={projectAccountName} onPress={openSwitcher} />
+      <SwitcherRow
+        projectName={project?.name ?? ''}
+        accountName={projectAccountName}
+        ringColor={chrome}
+        onPress={openSwitcher}
+      />
 
       <View className="px-2 -mx-1 space-y-1">
         <NavPill icon={MagnifyingGlassIcon} label="Search" onPress={goToSearch} />
@@ -529,6 +588,24 @@ export function ProjectLeftDrawer({
           trailing={<ReviewCountPill count={reviewNeedsYouCount} />}
         />
       </View>
+
+      {needsYouSessions.length > 0 && (
+        <View className="px-2 -mx-1">
+          <Text variant="muted" className="px-3 pb-1 pt-3">
+            {`Needs you · ${needsYouSessions.length}`}
+          </Text>
+          {needsYouSessions.map((session) => (
+            <ProjectSessionListItem
+              key={session.session_id}
+              item={session}
+              active={session.session_id === activeProjectSessionId}
+              needsYou={needsYouBySession.get(session.session_id)}
+              onPress={handleOpenProjectSession}
+              onLongPress={onSessionActions}
+            />
+          ))}
+        </View>
+      )}
 
       <View className="px-2 -mx-1">
         <Text variant="muted" className="px-3 pb-1 pt-3">
@@ -574,7 +651,7 @@ export function ProjectLeftDrawer({
                     </Button>
                   </View>
                 </View>
-              ) : (
+              ) : sessionsListState === 'empty' ? (
                 <View
                   className="items-center py-8"
                   accessible
@@ -582,7 +659,7 @@ export function ProjectLeftDrawer({
                   accessibilityLabel="No sessions yet">
                   <DrawerEmptyFlower color={mutedColor} />
                 </View>
-              )}
+              ) : null /* every session sits in the Needs you group */}
             </View>
           }
           ListFooterComponent={

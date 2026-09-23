@@ -101,6 +101,7 @@ import {
   useCreateProjectSession,
 } from '@/lib/projects/hooks';
 import { useReviewItems } from '@/lib/review/use-review';
+import { needsYouBySession } from '@/lib/session/needs-you';
 import { countReviewItemsBySegment } from '@kortix/sdk';
 import {
   deleteProjectSession,
@@ -405,6 +406,8 @@ export function ProjectScreen() {
     () => countReviewItemsBySegment(reviewItems.data ?? []).needs_you,
     [reviewItems.data]
   );
+  // The same items per originating session: the drawer's Needs you group.
+  const needsYouSessions = useMemo(() => needsYouBySession(reviewItems.data ?? []), [reviewItems.data]);
 
   const showUpgradeForError = useCallback(
     (error: unknown) => {
@@ -927,6 +930,19 @@ export function ProjectScreen() {
   const navigation = useNavigation();
   const router = useRouter();
 
+  // The switcher's pick of another project: replace this whole project in the
+  // root stack, so ProjectScreen remounts on the new `id`.
+  // `router.replace(projectHref(id))` cannot do it from here: expo-router
+  // treats `projects/[id]` → `projects/[id]` as the same route whatever the
+  // `id`, and dispatches into the project stack (ProjectSwitcherSheet,
+  // `openProjectRoute`).
+  const replaceProject = useCallback(
+    (nextProjectId: string) => {
+      navigation.dispatch(StackActions.replace('projects/[id]', { id: nextProjectId }));
+    },
+    [navigation]
+  );
+
   // Back to project home from any project route: reset the store, then pop a
   // covering route. popTo keeps home's params and, when home is not in the
   // stack (a deep link straight to a covering route), replaces the top with it.
@@ -1071,6 +1087,7 @@ export function ProjectScreen() {
         projectId={projectId}
         activeProjectSessionId={shownSessionId}
         reviewNeedsYouCount={reviewNeedsYouCount}
+        needsYouBySession={needsYouSessions}
         // New session opens project home: its composer starts the session.
         onNewSession={returnHome}
         onOpenProjectSession={openSessionFromDrawer}
@@ -1332,6 +1349,7 @@ export function ProjectScreen() {
         currentProjectId={projectId}
         onClose={closeSwitcher}
         onProjectOpen={closeDrawer}
+        openProjectRoute={replaceProject}
       />
     </>
   );
