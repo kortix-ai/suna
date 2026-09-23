@@ -281,7 +281,7 @@ function AssistantBlock({ text }: { text: string }) {
       <div className="flex w-full wrap-break-word">
         <div className="min-w-0 flex-1 space-y-1.5">
           <div className="overflow-hidden wrap-break-word">
-            <UnifiedMarkdown content={text} />
+            <UnifiedMarkdown content={text} actionLinks />
           </div>
 
           {/* Message actions — Copy + Thumbs (matches Suna MessageActions) */}

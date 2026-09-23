@@ -53,12 +53,13 @@ const FIXTURES: Fixture[] = [
     id: 'minted-setup-link',
     label: 'Minted setup link',
     hint: 'Two mint tokens, each its own paragraph — clicking opens the setup modal, which reports the token invalid (expected: the token is synthetic).',
-    markdown: '[Connect Gmail](/connect/ksl_debug_token)\n\n[Add the Stripe key](/secret-intake/ksl_debug_secret)',
+    markdown:
+      '[Connect Gmail](/connect/ksl_debug_token)\n\n[Add the Stripe key](/secret-intake/ksl_debug_secret)',
   },
   {
     id: 'verb-only-connect',
     label: 'Verb-only connect',
-    hint: "A host outside the known connect list still classifies as a connect action, from the label's leading verb (\"Authorize\").",
+    hint: 'A host outside the known connect list still classifies as a connect action, from the label\'s leading verb ("Authorize").',
     markdown: '→ [Authorize Linear](https://auth.example.com/oauth/authorize?client_id=debug)',
   },
   {
@@ -71,9 +72,10 @@ const FIXTURES: Fixture[] = [
       '→ [Connectors](/projects/debug/connectors)',
       '→ [Search sessions](/search?q=debug)',
       '→ [Back to project](/projects/debug)',
-      // A backslash before the line break is a CommonMark hard break — it keeps
-      // these five links as separate action links inside ONE paragraph node,
-      // instead of five paragraphs.
+      // Consecutive lines with no blank line between them form ONE paragraph,
+      // with a soft break or a hard break. This backslash hard break adds a
+      // `br` between the links; the scanner skips it, so the five links still
+      // resolve as one action block.
     ].join('\\\n'),
   },
   {
@@ -93,7 +95,7 @@ const FIXTURES: Fixture[] = [
   {
     id: 'bare-url',
     label: 'Bare URL stays a link',
-    hint: "Autolinked, then rejected as an action because its label is its own href (isBareUrlLabel) — renders as a plain inline link.",
+    hint: 'Autolinked, then rejected as an action because its label is its own href (isBareUrlLabel) — renders as a plain inline link.',
     markdown: 'https://docs.example.com/guide',
   },
   {
@@ -115,7 +117,7 @@ const FIXTURES: Fixture[] = [
     hint: 'The label truncates inside the card/chip at both widths below — the control itself never grows past its container.',
     markdown:
       '[Connect the company-wide shared Google Workspace account used by the whole finance team](https://connect.composio.dev/link/lk_debug_002)',
-    widths: [720, 320],
+    widths: [640, 320],
   },
 ];
 
@@ -153,26 +155,26 @@ function RenderedFixture({
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-2">
           <p className="text-muted-foreground/60 text-xs">UnifiedMarkdown</p>
-          <UnifiedMarkdown content={content} isStreaming={isStreaming} />
+          <UnifiedMarkdown content={content} isStreaming={isStreaming} actionLinks />
         </div>
         <div className="space-y-2">
           <p className="text-muted-foreground/60 text-xs">DocMarkdown</p>
-          <DocMarkdown content={content} isStreaming={isStreaming} />
+          <DocMarkdown content={content} isStreaming={isStreaming} actionLinks />
         </div>
       </div>
     );
   }
   if (renderer === 'doc') {
-    return <DocMarkdown content={content} isStreaming={isStreaming} />;
+    return <DocMarkdown content={content} isStreaming={isStreaming} actionLinks />;
   }
-  return <UnifiedMarkdown content={content} isStreaming={isStreaming} />;
+  return <UnifiedMarkdown content={content} isStreaming={isStreaming} actionLinks />;
 }
 
 /**
  * Pins the render to an exact pixel width to prove truncation. The width is a
- * test parameter the brief calls out by number (720px / 320px), not a design
- * token — an inline style, so it never reads as a value pulled from the
- * spacing/radius allowlists.
+ * test parameter (640px / 320px; 640 fits inside the page's 672px `max-w-2xl`
+ * column), not a design token — an inline style, so it never reads as a value
+ * pulled from the spacing/radius allowlists.
  */
 function WidthBox({ width, children }: { width: number; children: React.ReactNode }) {
   return (
@@ -206,7 +208,7 @@ function SourceDisclosure({ markdown }: { markdown: string }) {
         </div>
       </DisclosureTrigger>
       <DisclosureContent>
-        <pre className="bg-muted/20 text-muted-foreground/80 mt-1 max-h-64 overflow-auto rounded-sm px-3 py-2 font-mono text-xs whitespace-pre-wrap wrap-break-word">
+        <pre className="bg-muted/20 text-muted-foreground/80 mt-1 max-h-64 overflow-auto rounded-sm px-3 py-2 font-mono text-xs wrap-break-word whitespace-pre-wrap">
           {markdown}
         </pre>
       </DisclosureContent>
@@ -271,9 +273,9 @@ export default function DebugMarkdownLinksPage() {
 
         <Row
           label="Streaming replay"
-          hint="Replays the reported-case transcript through UnifiedMarkdown with isStreaming true, ~24 chars every 30ms."
+          hint="Replays the reported-case transcript through UnifiedMarkdown with isStreaming true, ~24 chars every 30ms. While the connect link is still arriving it shows as a disabled chip, then becomes the connect card."
         >
-          <UnifiedMarkdown content={streamContent} isStreaming={isStreaming} />
+          <UnifiedMarkdown content={streamContent} isStreaming={isStreaming} actionLinks />
           <SourceDisclosure markdown={TRANSCRIPT} />
         </Row>
       </section>

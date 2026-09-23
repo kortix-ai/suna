@@ -60,6 +60,15 @@ const KATEX_MATHML_TAG_NAMES = [
 
 const katexSanitizeSchema = {
   ...defaultSchema,
+  // `streamdown:` is the placeholder scheme Streamdown's `remend` gives a link
+  // whose `(url)` is still streaming in. The default schema strips it, and
+  // rehype-harden then swaps the link for a "[blocked]" span. Keeping it lets
+  // markdown-link.tsx render the partial link as inert text or a pending chip.
+  // No href with this scheme is ever emitted to the DOM.
+  protocols: {
+    ...defaultSchema.protocols,
+    href: [...(defaultSchema.protocols?.href ?? []), 'streamdown'],
+  },
   tagNames: [...(defaultSchema.tagNames || []), ...KATEX_MATHML_TAG_NAMES],
   attributes: {
     ...defaultSchema.attributes,

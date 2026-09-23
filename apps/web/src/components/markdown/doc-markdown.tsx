@@ -29,13 +29,20 @@ export interface DocMarkdownProps {
    * for file/source viewers so markup shows as escaped text instead of broken DOM.
    */
   allowHtml?: boolean;
+  /**
+   * Render a block that is only links as Kortix actions (a connect card, button
+   * chips) instead of text. Defaults to `false`. Turn it on only where an agent
+   * wrote the markdown for the reader to act on — the session transcript —
+   * never for files, scraped pages, or READMEs, whose links are references.
+   */
+  actionLinks?: boolean;
 }
 
 // Docs-owned markdown renderer. It shares the whole code path with
 // UnifiedMarkdown through components/markdown/code, and differs only in the
 // Streamdown mode (`static` — docs are never streamed) and a few wrapping classes.
 export const DocMarkdown = React.memo<DocMarkdownProps>(
-  ({ content, className, isStreaming = false, allowHtml = true }) => {
+  ({ content, className, isStreaming = false, allowHtml = true, actionLinks = false }) => {
     const tHardcodedUi = useTranslations('hardcodedUi');
     const { proxyUrl } = useSandboxProxy();
     const proxy = useCallback((url: string | undefined) => proxyUrl(url), [proxyUrl]);
@@ -54,6 +61,7 @@ export const DocMarkdown = React.memo<DocMarkdownProps>(
             <h1 className="text-foreground mt-10 mb-4 text-xl font-semibold first:mt-0">
               {children}
             </h1>,
+            actionLinks,
           ),
         h2: ({ children, node }: { children?: React.ReactNode; node?: unknown }) =>
           withActionBlock(
@@ -62,6 +70,7 @@ export const DocMarkdown = React.memo<DocMarkdownProps>(
             <h2 className="text-foreground mt-8 mb-3 text-xl font-semibold first:mt-0">
               {children}
             </h2>,
+            actionLinks,
           ),
         h3: ({ children, node }: { children?: React.ReactNode; node?: unknown }) =>
           withActionBlock(
@@ -70,6 +79,7 @@ export const DocMarkdown = React.memo<DocMarkdownProps>(
             <h3 className="text-foreground mt-6 mb-2 text-lg font-semibold first:mt-0">
               {children}
             </h3>,
+            actionLinks,
           ),
         h4: ({ children, node }: { children?: React.ReactNode; node?: unknown }) =>
           withActionBlock(
@@ -78,6 +88,7 @@ export const DocMarkdown = React.memo<DocMarkdownProps>(
             <h4 className="text-foreground mt-6 mb-2 text-lg font-semibold first:mt-0">
               {children}
             </h4>,
+            actionLinks,
           ),
         h5: ({ children, node }: { children?: React.ReactNode; node?: unknown }) =>
           withActionBlock(
@@ -86,6 +97,7 @@ export const DocMarkdown = React.memo<DocMarkdownProps>(
             <h5 className="text-foreground mt-4 mb-1 text-base font-semibold first:mt-0">
               {children}
             </h5>,
+            actionLinks,
           ),
         h6: ({ children, node }: { children?: React.ReactNode; node?: unknown }) =>
           withActionBlock(
@@ -94,6 +106,7 @@ export const DocMarkdown = React.memo<DocMarkdownProps>(
             <h6 className="text-foreground mt-4 mb-1 text-base font-semibold tracking-wide first:mt-0">
               {children}
             </h6>,
+            actionLinks,
           ),
 
         p: ({ children, node }: { children?: React.ReactNode; node?: unknown }) =>
@@ -103,6 +116,7 @@ export const DocMarkdown = React.memo<DocMarkdownProps>(
             <div className="text-foreground/95 my-4 leading-relaxed font-medium first:mt-0 last:mb-0 [&:has(img)]:my-0">
               {wrapChildrenWithPaths(children)}
             </div>,
+            actionLinks,
           ),
 
         ul: ({ children }: { children?: React.ReactNode }) => (
@@ -291,7 +305,7 @@ export const DocMarkdown = React.memo<DocMarkdownProps>(
           );
         },
       }),
-      [isStreaming, proxy],
+      [isStreaming, proxy, actionLinks],
     );
 
     const safeContent = typeof content === 'string' ? content : content ? String(content) : '';

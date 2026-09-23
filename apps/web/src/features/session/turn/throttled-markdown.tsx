@@ -58,7 +58,7 @@ function ThrottledMarkdownImpl({
     () => (isStreaming ? closeUnterminatedCodeFence(content) : trimIncompleteTableRow(content)),
     [content, isStreaming],
   );
-  return <UnifiedMarkdown content={displayContent} isStreaming={isStreaming} />;
+  return <UnifiedMarkdown content={displayContent} isStreaming={isStreaming} actionLinks />;
 }
 
 /**

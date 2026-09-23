@@ -52,10 +52,20 @@ describe('/debug/markdown-links', () => {
     expect(html).toContain('Connect Shopify');
   });
 
+  test('both renderers opt into action links', () => {
+    const html = renderToStaticMarkup(withIntl(<DebugMarkdownLinksPage />));
+
+    // The internal-resources fixture renders as chips, not inline links.
+    expect(html).toContain('href="/projects/debug/files"');
+    expect(html).toContain('data-slot="button"');
+    expect(html).not.toContain('<h2 class="text-foreground mt-8');
+  });
+
   test('the long-label fixture renders both truncation widths', () => {
     const html = renderToStaticMarkup(withIntl(<DebugMarkdownLinksPage />));
 
-    expect(html).toContain('720px');
+    expect(html).toContain('640px');
     expect(html).toContain('320px');
+    expect(html).not.toContain('720px');
   });
 });
