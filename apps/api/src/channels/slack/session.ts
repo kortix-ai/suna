@@ -242,7 +242,14 @@ export async function createOrJoinThreadSession(input: {
     },
     enforceAccountCap: false,
     queuePolicy: 'on_backpressure',
-    idempotencyKey: claimKey,
+    // One key per message, never per thread. The lifecycle keeps a key
+    // forever (a unique index, no retention), so under the thread's key the
+    // thread's first create_session command answered every later create in
+    // it: a failed first start (dead-lettered) failed the re-send the agent
+    // picker asks for, with the same error, every time. Racing messages are
+    // serialized by the thread-create claim; Slack's double delivery of one
+    // mention (app_mention + message) shares the message ts, so one key.
+    idempotencyKey: teamId && threadId && event.ts ? `slack:create:${teamId}:${threadId}:${event.ts}` : claimKey,
     postCreate: teamId && threadId
       ? [{ type: 'bind_chat_thread', platform: 'slack', workspaceId: teamId, threadId }]
       : undefined,
@@ -265,6 +272,11 @@ export async function createOrJoinThreadSession(input: {
 
   if (result.error) {
     console.error('[slack-webhook] createProjectSession failed', { status: result.error.status, body: result.error.body });
+    // No session exists, so no mapping will ever be published under this
+    // claim. Held for its 5-minute TTL, it made every re-send inside that
+    // window lose the claim, wait 8 s, and be dropped without a reply —
+    // including the re-send the agent picker below asks for.
+    if (claimKey) await releaseThreadCreate(claimKey);
     if (handle) {
       // A deleted/renamed/disabled agent — the channel's own agent override, or
       // the project default the `default` sentinel resolves to — is rejected up
@@ -339,6 +351,15 @@ async function claimThreadCreate(key: string): Promise<boolean> {
   } catch (err) {
     console.warn('[slack-webhook] thread-create claim failed (fail-open)', err);
     return true;
+  }
+}
+
+async function releaseThreadCreate(key: string): Promise<void> {
+  try {
+    await db.delete(chatEventDedup).where(eq(chatEventDedup.eventId, key));
+  } catch (err) {
+    // The claim still expires on its own; only the retry window stays shut.
+    console.warn('[slack-webhook] thread-create claim release failed', err);
   }
 }
 
