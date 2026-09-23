@@ -34,25 +34,28 @@ identifiers (commit and compiled etag) applied in two steps.
 
 ## Goals
 
-1. Every session runs the base branch's current config by default.
+1. Every session runs the base branch's CURRENT config, at every boot and
+   start of its box.
 2. The platform never writes a session's `/workspace`.
-3. A session that edits its own config runs those edits after a reload.
+3. `/workspace` stays the full editable clone: config is read and edited there,
+   and an edit reaches a running box only once it is pushed to the base branch.
 4. A bad config on the base branch never makes a session unbootable.
 5. Every session reports which config it runs, which it wants, and why they
    differ.
 6. The API decides. The sandbox daemon executes and reports.
+7. The whole feature is behind one per-project flag with an operator kill
+   switch, so it can be rolled out and switched off without a revert.
 
 ## Non-goals
 
-- A per-session switch to preview the session's own config. Detection stays
-  automatic in this delivery.
+- A per-session config policy. There is no "run my own files" mode; see
+  "Feature flag" and "Boot commit policy".
 - A change-request gate that requires a proven config.
 - A pinned or manual release policy.
 - An AWS S3 storage backend. The store interface allows it later.
-- Enforcing governance independently of agent files. In `session-files` mode an
-  agent file can override compiled governance, as it can today.
-- SHA-256 object-format repositories. The workspace report accepts 64-hex blob
-  IDs, but the release builder and the archive route require 40-hex IDs.
+- Enforcing governance independently of agent files.
+- SHA-256 object-format repositories. The release builder and the archive
+  route require 40-hex IDs.
 
 ## Decisions
 
@@ -67,6 +70,10 @@ identifiers (commit and compiled etag) applied in two steps.
 | 2026-09-21 | Storage default is the Supabase Storage native API. |
 | 2026-09-21 | A session without repository access never receives a config archive. |
 | 2026-09-22 | A session from a previous repository generation keeps its running config. It never receives a release built from the current repository. |
+| 2026-09-23 | The whole feature is behind the per-project `config_releases` flag, ON by default, with the operator kill switch `CONFIG_RELEASES_ENABLED`. |
+| 2026-09-23 | `session-files` mode is removed. A session that edits its config dir under `/workspace` still runs the base branch's release; the edit reaches the box by being pushed. |
+| 2026-09-23 | `/workspace` is not a step in the boot fallback chain while the flag is on. The chain is: desired release, last proven release, image default. |
+| 2026-09-23 | The flag's authority is the boot/start of the box. It is evaluated wherever the daemon asks the API what to run. |
 
 ## Terms
 
@@ -83,8 +90,7 @@ Use these terms exactly. Do not use synonyms.
 | release descriptor | The JSON document the API returns for a session's desired release. |
 | desired release | The release the API assigns to a session. |
 | running release | The release the daemon serves from. |
-| config mode | `follow-base` or `session-files`. Chosen by the API. |
-| config source | `release`, `workspace`, or `image-default`. Reported by the daemon. |
+| config source | `release` or `image-default`, reported by the daemon. `workspace` exists only while the flag is OFF. |
 | proven | A release passed the proven check on this box. |
 | convergence | The daemon applying the desired release. |
 | fallback | The daemon runs a config other than the desired release because it failed. |
@@ -97,7 +103,7 @@ Use these terms exactly. Do not use synonyms.
 |---|---|---|---|
 | Platform runtime: daemon, CLI, OpenCode binary, managed skills | Platform | API deploy | Runtime-assets digest manifest. Unchanged. |
 | Project config: config dir and compiled governance | Project | Base branch commit | Config releases. This spec. |
-| Session work: repo, session branch, files | User | Session branch | Never touched by the platform. |
+| Session work: repo, session branch, files | User | Session branch | Never touched by the platform. `/workspace` is the editable clone; a config edit there reaches a box only after it is pushed to the base branch. |
 
 ## Config release
 
@@ -258,56 +264,52 @@ today.
 }
 ```
 
-In `session-files` mode `archive` and `files` are null. `compiled_governance`
-still comes from the base branch.
+`mode` is always `follow-base`. It is one member on purpose: there is no
+per-session config policy, so a session that edited its config dir under
+`/workspace` receives exactly this descriptor. The field stays in the wire
+shape because it names the policy a release follows, and a future policy would
+use it.
 
-### Workspace report
+### Boot commit policy
 
-```json
-{
-  "head": "<40 hex>",
-  "config_dir": ".kortix/opencode",
-  "changed": [
-    { "path": ".kortix/opencode/agents/kortix.md", "status": "modified", "blob": "<40 hex>" },
-    { "path": ".kortix/opencode/skills/x/SKILL.md", "status": "deleted", "blob": null }
-  ]
-}
-```
+The commit a release is built from is decided in ONE place:
+`resolveDesiredRelease` (`apps/api/src/config-releases/desired.ts`), which
+resolves `input.baseRef` — the session's base ref, else the project's default
+branch — to its tip on every call.
 
-- `status` is `modified`, `added`, `deleted`, or `untracked`.
-- `changed` covers uncommitted changes and every file the session's commits
-  changed since the merge base with the base branch.
-- `blob` is the Git blob ID of the working-tree file, or null when deleted.
-- The daemon builds it with read-only Git commands. It never fetches.
+**The policy is: the base branch tip at this boot/start.** A box asks on every
+boot, so it always receives the tip of that moment, never a stale release. The
+one exception is the project quarantine, which assigns the last release a
+session proved when the tip's release has failed in enough sessions; a bad base
+config must not make sessions unbootable.
+
+A future policy — for example a session's own branch tip, or a pinned commit —
+is a change to that one function. Nothing else moves: the release identity
+already carries `source_commit`, the descriptor already reports it, the daemon
+already stores it in the pointer, and the archive is keyed by content. There is
+no branch-selection parameter in the code today, and none is half-built.
+
+### The descriptor request has no inputs
+
+The daemon posts an empty body. The desired release is the base branch's
+current release for this session's variant, and nothing the box sends can
+change which config it is assigned. The route reads no body at all, so a
+daemon built against an older shape still converges.
+
+There is no workspace report. The daemon does not inspect the session's
+checkout, the API does not read it, and `GET /kortix/config/workspace` does not
+exist.
 
 ### Routes
 
 | Route | Caller | Purpose |
 |---|---|---|
-| `POST /v1/projects/{projectId}/sessions/{sessionId}/config-release` | Daemon (session token) | Body: `{ "workspace": WorkspaceReport \| null }`. Returns the desired release descriptor. |
+| `POST /v1/projects/{projectId}/sessions/{sessionId}/config-release` | Daemon (session token), project readers | No body. Returns the desired release descriptor. |
 | `GET /v1/projects/{projectId}/config-archives/{configTreeId}` | Daemon, project readers | `302` to the store or streamed bytes |
 | `GET /v1/projects/{projectId}/sessions/{sessionId}/config` | Web, CLI, SDK | Freshness and state. Extended below. |
 
-Regenerate `tests/spec/routes.generated.json` and add REST flows for each route.
-
-### Config mode
-
-The API chooses the mode on every convergence:
-
-1. Read the workspace report from the descriptor request body. The daemon
-   builds it from the session branch HEAD and every changed or untracked file
-   under the config dir. The API never calls back into the box: a booting box
-   cannot answer. A missing report means `follow-base`. The report only selects
-   this session's file source, so a false report gains nothing: the session can
-   already edit its own files.
-2. Ignore platform-written paths: the plugin pin in `package.json` when it is
-   the only difference, installer lockfiles while `package.json` holds no other
-   edit, and skill directories the managed overlay ships.
-3. Ignore a path whose blob ID equals that path at any commit of the base
-   branch. The API reads full history from its mirror. Such a file is base
-   content, left by an old sync or swept into a commit.
-4. Any other path is session work. Mode is `session-files`. Otherwise
-   `follow-base`.
+Both config-release routes are gated on the `config_releases` flag; see
+"Feature flag".
 
 ### Capability gate
 
@@ -363,7 +365,6 @@ the `sdk` skill first: test first, and no hand-bumped version.
 | Route | Auth | Purpose |
 |---|---|---|
 | `POST /kortix/config/converge` | Sandbox bearer | Fetch the descriptor from the API and apply it. No trusted body. |
-| `GET /kortix/config/workspace` | Sandbox bearer | Read-only report of session work under the config dir |
 | `POST /kortix/refresh?config_dir=1` | Sandbox bearer | Alias for converge, for an API that predates this spec |
 
 Single flight: a second request while a convergence runs answers `409`.
@@ -383,35 +384,34 @@ Converge response:
     "fallback_reason": null,
     "failed_release_id": null
   },
-  "reload": { "how": "restarted", "turn_ended": false }
+  "reload": { "how": "restarted", "turn_ended": false },
+  "reason": null
 }
 ```
 
-`outcome` is one of `applied`, `unchanged`, `declined`, `quarantined`,
-`session-files`, or `failed`. `reload` is null when no process was replaced.
-The `config` object is identical to the health `config` block.
+`outcome` is one of `applied`, `unchanged`, `declined`, `quarantined`, or
+`failed`. `reload` is null when no process was replaced. The `config` object is
+identical to the health `config` block.
 
 ### Apply sequence
 
-1. Build the workspace report. Post it to the descriptor route with the
-   session token as the bearer. Use the response as the descriptor.
-2. If `mode` is `session-files`: point OpenCode at the workspace config dir.
-   Prepare dependencies and the managed-skill overlay there first. Go to step 7.
-3. If `release_id` equals the running release and the copy verifies: no-op.
-4. If `release_id` is quarantined on this box: keep the running config. Report.
-5. Download the archive through the API. Follow one redirect.
-6. Extract into `/opt/kortix/config/<release_id>.<uuid>.tmp`. Verify every file
+1. Fetch the descriptor from the API with the session token as the bearer. The
+   request carries no inputs.
+2. If `release_id` equals the running release and the copy verifies: no-op.
+3. If `release_id` is quarantined on this box: keep the running config. Report.
+4. Download the archive through the API. Follow one redirect.
+5. Extract into `/opt/kortix/config/<release_id>.<uuid>.tmp`. Verify every file
    against its blob ID, and reject files not in `files`. Run dependency
    preparation and the managed-skill overlay on the staged directory. Seal
    project files read-only. Rename into `/opt/kortix/config/<release_id>`.
-7. Write the compiled governance for the next spawn.
-8. Start a replacement OpenCode on the standby port with the new directory.
-9. Run the proven check. On success, promote the replacement, retire the old
+6. Write the session notice and the compiled governance for the next spawn.
+7. Start a replacement OpenCode on the standby port with the new directory.
+8. Run the proven check. On success, promote the replacement, retire the old
    process, and write the pointer with `proven: true`.
-10. On failure, keep the old process, quarantine the release on this box, and
-    report the reason.
+9. On failure, keep the old process, quarantine the release on this box, and
+   report the reason.
 
-Dependency preparation of a release (step 6) leaves OpenCode's own installer
+Dependency preparation of a release (step 5) leaves OpenCode's own installer
 nothing to do. OpenCode runs on the boot link, a symlink, and npm's Arborist
 re-extracts the whole `node_modules` tree through a symlinked root: +5–7 s to
 `opencode-ready` on the old-starter shape (measured 2026-09-22). So the staged
@@ -427,6 +427,34 @@ preparation and seal run one at a time. Interleaved, verification read the
 overlay names before the injection and reported an injected skill as an added
 file (DEF-5). Injection into a release restores owner write on a managed
 skill directory that an earlier seal made read-only.
+
+### Telling the session
+
+A release is served from a read-only directory. `/workspace` holds a separate
+checkout, and it may be behind the commit the release was built from. An agent
+that is not told reads `/workspace/.kortix/opencode`, sees different bytes from
+the ones it is running, and edits files that change nothing.
+
+So the daemon writes a short, factual note and the session reads it.
+
+- **Channel: the agent's system context**, through OpenCode's `instructions`
+  array (`/tmp/kortix/config-release.md`, declared by `writeComposedConfig`).
+  This is the same mechanism `secret-capabilities.ts` uses, not a second
+  channel.
+- **Why not a message in the session.** Applying a release RESTARTS OpenCode.
+  `instructions` is composed at every spawn, so the note survives the restart
+  the convergence itself performs; a message posted to the old process does
+  not. The only other in-box channel is `POST /session/:id/prompt_async`, which
+  would begin a real model turn after every convergence.
+- **Content**: the session runs the base branch's config at commit `<short>`;
+  `/workspace` is a separate checkout and may be behind it; `git pull` there
+  reads the same files; an edit under `/workspace/<config dir>` takes effect
+  only after it is pushed to the base branch; `kortix sessions reload <id>`
+  does both halves in one command.
+- **Exactly once per convergence, never per turn.** It is a statement of state,
+  so it stays true on every later turn. The writer compares the rendered text
+  and does not touch the file when nothing changed, so a convergence that
+  applied nothing writes nothing. The flag-off revert deletes it.
 
 ### Proven check
 
@@ -450,23 +478,46 @@ not stop OpenCode; it drops a tool. Condition 3 catches that.
 
 ### Boot
 
-1. Read the pointer. If it names a proven release that still verifies, spawn
-   OpenCode on it before the repo clone finishes.
-2. Otherwise fetch the desired descriptor in parallel with repo
-   materialization. Extract before the clone finishes when possible.
-3. After ready, run one convergence.
+The box asks the API on EVERY boot. That request is the flag evaluation for
+this boot (see "Feature flag"), and its answer is the release the box runs, so
+a box always boots the base branch's CURRENT release rather than whatever it
+ran last time.
+
+1. Spawn OpenCode early. A proven release named by the pointer is the head
+   start: OpenCode spawns on it, through the boot link, before the clone
+   finishes. The pointer is NOT the decision.
+2. Fetch the desired descriptor in parallel with repo materialization. Extract
+   before the clone finishes when possible. When it arrives in time it is what
+   the box runs; the boot link is repointed before the workspace gate opens.
+3. After ready, run one convergence. It proves a release the box spawned on and
+   moves the box onto the desired release if step 2 was too slow.
 4. The seed-adoption path (`armSeedAdoption`) runs one convergence after
    adoption.
 
 ### Fallback chain
 
-On boot, and after a failed convergence:
+With config releases ON, on boot and after a failed convergence:
 
 1. The desired release.
 2. The last proven release named by the pointer.
-3. The workspace config dir, when it contains `opencode.json` or
+3. The image default config dir (`cfg.defaultOpencodeConfigDir`).
+
+**`/workspace` is not a step.** A box must never silently run a stale session
+checkout as the project's config; the image default is the floor, so the box
+still becomes ready and the header reports why.
+
+With config releases OFF — the pre-release behaviour:
+
+1. The workspace config dir, when it contains `opencode.json` or
    `opencode.jsonc`.
-4. The image default config dir (`cfg.defaultOpencodeConfigDir`).
+2. The image default config dir.
+
+`resolveBootConfig` is told which chain to walk by the API's answer on this
+boot: `false` after a `403 feature_disabled`, `true` after a descriptor. When
+the API could not be asked at all, the boot pointer is the record of the last
+answer — a box that holds one ran a release and takes the ON chain, a box that
+holds none has no evidence the feature is on and takes the OFF chain, which is
+what it always did.
 
 Each step down records `fallback_reason`. The step that chose the running
 config writes the most complete reason, because it saw every step down. A
@@ -502,6 +553,9 @@ Remove `config_dir_sha` one release after every API reads `config`.
 - `inspectSessionConfigWork` and its history reads.
 - `git archive` from the session repo.
 - The separate compiled-governance env push, for capable daemons.
+- The workspace report (`config-release/workspace-report.ts`) and
+  `GET /kortix/config/workspace`. Nothing reads a session's checkout to decide
+  its config any more.
 
 `boot-config.ts` stays. Its source changes from `git archive` to a downloaded
 archive. Verification reads blob IDs from the descriptor.
@@ -545,6 +599,115 @@ disclosure the Git proxy already forbids. Rules:
 A session created after the replacement has the new generation and converges
 normally against the new repository.
 
+## Feature flag
+
+The whole feature is behind ONE per-project flag, so it can be rolled out per
+project and switched off without a revert.
+
+| | |
+|---|---|
+| Key | `config_releases` |
+| Name | Config Releases |
+| Stability | `experimental` |
+| Default | **ON.** This is the intended behaviour; the flag exists to turn it OFF. |
+| Operator kill switch | `CONFIG_RELEASES_ENABLED` (`apps/api/src/config.ts`), default `true`. Set it to `false` and the flag is unavailable platform-wide: the Settings row disappears and the surface is dark for every project, whatever a project chose. |
+| Per-project state | `projects.metadata.experimental.config_releases`, written by `PATCH /v1/projects/:projectId/features`. |
+| Registry entry | `apps/api/src/feature-flags/registry.ts` |
+| One read | `apps/api/src/config-releases/enabled.ts` — `configReleasesEnabled(metadata)` / `projectConfigReleasesEnabled(projectId)`. Nothing else reads the key. |
+
+### The flag's authority is the boot/start of the box
+
+The flag decides two things TOGETHER, as one unit, for that box:
+
+1. whether the box enforces the base branch's current config, and
+2. whether OpenCode boots from the read-only release store
+   `/opt/kortix/config/<release>` instead of the workspace config dir.
+
+It is evaluated wherever the daemon asks the API what to run, on every boot and
+start — fresh boot, restart, resume — never once at session creation. Flipping
+it takes effect on the NEXT boot or start of that session's box, with no
+redeploy and no session deletion. A running box keeps working until then.
+
+The mid-session convergence triggers (turn end, base-branch moves, git-proxy
+push, the reload) follow the same project flag, because they are the same
+behaviour. But the boot/start decision is the authority, and the one chokepoint
+the boot path reads is the **descriptor request** (`fetchBootRelease`,
+`apps/kortix-sandbox-agent-server/src/harness/open-code/config-release.ts`): a
+descriptor means ON, a `403 feature_disabled` means OFF.
+
+### Chokepoints
+
+One per server path. There is no check sprinkled anywhere else.
+
+| # | Path | File | Off ⇒ |
+|---|---|---|---|
+| 1 | Descriptor route | `apps/api/src/config-releases/routes.ts` `configReleasesGate` | `403 feature_disabled` |
+| 2 | Archive route | the same `configReleasesGate` | `403 feature_disabled` |
+| 3 | Reload | `apps/api/src/projects/lib/session-reload.ts` `reloadSessionConfig` (`deps.configReleasesEnabled`) | The daemon's capability is ignored; the pre-release path runs: `POST /kortix/refresh?restart=0` plus the compiled-governance push, an etag result, no `release` block, no ledger write |
+| 4 | Every convergence trigger | `apps/api/src/projects/lib/session-config-convergence.ts` `convergeSessionConfig` | Outcome `disabled`; nothing reaches the box. A RESTART still pushes the compiled governance, as it did before config releases (`legacyGovernancePush`) |
+| 5 | `GET /config` | `apps/api/src/projects/routes/session-config.ts` | No `release` block; no desired release is built; `stale` is the pre-release etag compare alone |
+| 6 | Boot and convergence in the box | `harness/open-code/config-release.ts` `revertToPreReleaseConfig`, `fetchBootRelease`, `resolveBootConfig` | OpenCode reads the workspace config dir; the boot pointer is ignored and cleared |
+
+Resume, restart, turn end, base-branch writes (`branches.ts`, `r9.ts`,
+`triggers.ts`, change-request merge) and git-proxy pushes all reach
+`convergeSessionConfig`, so chokepoint 4 covers every one of them.
+
+### Behaviour when the flag is OFF
+
+The pre-release behaviour, not a half state.
+
+1. Both config-release routes answer `403` with
+   `{ "code": "feature_disabled", "feature": "config_releases" }`, after
+   membership authz.
+2. No release is built, no archive is uploaded to storage, no row is written to
+   `kortix.config_releases` or `kortix.config_release_failures`, and no
+   quarantine is evaluated.
+3. No convergence trigger fires.
+4. A session boots and reloads as it did before this feature: OpenCode reads
+   the workspace config dir, `kortix sessions reload` refreshes the checkout and
+   pushes the compiled governance, and `GET /config` carries no `release`
+   block — so the CLI formatter and the web header render their old,
+   etag-based text.
+5. The daemon logs one clear line and continues. It never retries and never
+   quarantines anything.
+
+**Known deviation from `origin/main`, stated plainly.** The daemon's own
+`git`-based config-dir sync into `/workspace` was removed by this branch for
+both flag states (see "Removed from the daemon"), because it was the broken
+mechanism this spec replaces — on `main` the web's reload sent
+`refresh_repo: false` and skipped that half anyway (see "Problem"). With the
+flag OFF the config FILES therefore do not converge, exactly as they
+effectively did not on `main`; the compiled governance still does.
+
+### Transitions
+
+- **ON → OFF, box already running a release.** The box is not stranded. On its
+  next convergence or boot the API answers `403`; `revertToPreReleaseConfig`
+  prepares the workspace config dir, swaps OpenCode onto it, clears
+  `/opt/kortix/config/current.json`, and deletes the session notice. Nothing is
+  quarantined and no `fallback_reason` is set. A running turn defers the swap
+  to the next trigger. Until then the session keeps working on the release it
+  has.
+- **ON → OFF, box restarted before any convergence saw the flag.** The boot
+  descriptor request answers `403`, `resolveBootConfig` ignores the pointer
+  outright, and OpenCode boots on the workspace config dir. The pointer is
+  cleared by the convergence after ready. The restart's governance push is
+  ignored by a box that still has a release active
+  (`releaseGovernanceActive`, `harness/open-code/control.ts`) — it logs one
+  line and skips, and the next boot has no release to own it.
+- **OFF → ON.** The next boot or trigger receives a descriptor and the box
+  converges onto the base branch's current release. The session is never
+  deleted and never recreated.
+- **Operator kill switch.** `CONFIG_RELEASES_ENABLED=false` makes every project
+  take the OFF path at once, whatever each project chose.
+
+### Registration
+
+The key lives in six places (`apps/api/src/feature-flags/registry.ts` header):
+the contract schema and its two test copies, the SDK union and
+`FEATURE_FLAG_KEYS` and its test, the registry entry, and the
+`useProjectFeatureFlags` hook + map. Four drift tests guard them.
+
 ## Convergence triggers
 
 | Trigger | Owner | Notes |
@@ -567,8 +730,18 @@ Header states:
 |---|---|---|
 | Current | not stale, no fallback | nothing |
 | Update available | `stale: true` | existing badge |
-| Session config | `mode: session-files` | neutral chip: "Running this session's config" |
 | Fallback | `fallback_reason` set | error: the reason and the release now serving |
+
+There is no "runs its own config" state. A session that edited its config dir
+under `/workspace` still runs the base branch's release, so the header shows
+nothing new.
+
+**"Reload config" does both halves and says so.** It converges the running
+config AND fast-forwards the `/workspace` checkout (`refresh_repo: true`), and
+the toast carries the server's `detail`, which names what happened to each. The
+pull is `--ff-only` on the session's OWN branch and can discard nothing; a
+checkout left behind is the confusion the control exists to remove.
+`kortix sessions reload <id>` is the same operation with the same sentence.
 
 Load `kortix-brand-guidelines` and `kortix-design-system` before any
 `className`. Verify both themes, 720 × 480, and the Electron shell.
@@ -591,8 +764,8 @@ Load `kortix-brand-guidelines` and `kortix-design-system` before any
 | Tampered or extended copy | Verification fails. Rebuilt before spawn. |
 | Pointer outside the store | Ignored. |
 | Disk full on the box | Extraction fails. Running config kept. Reason reported. |
-| Session edits then merges its config | Files match base history. Mode returns to `follow-base`. |
-| Agent writes a stray file into the config dir | Mode `session-files`. Visible chip. Known false positive. |
+| Agent edits the config dir in `/workspace` | The box keeps running the base release. The edit applies after it is pushed to the base branch. |
+| `config_releases` off for the project | No release is built, stored, or assigned. The box reads its workspace config dir. See "Feature flag". |
 
 ## Implementation sequence
 
@@ -606,27 +779,33 @@ applies.
 3. **Release builder and routes.** Descriptor and archive routes, route
    manifest, REST flows. A test that fails if a secret value appears in a
    release.
-4. **Config mode in the API.** Daemon workspace report, base-history check,
-   capability gate, `GET /config` extension, SDK types.
-5. **Daemon.** Converge and workspace routes, apply sequence, proven check,
-   pointer with `proven`, fallback chain, box quarantine, health block. Remove
-   the git-based code paths.
+4. **Capability gate**, `GET /config` extension, SDK types.
+5. **Daemon.** Converge route, apply sequence, proven check, pointer with
+   `proven`, fallback chain, box quarantine, health block. Remove the
+   git-based code paths.
 6. **Quarantine across the project.** Migration and assignment rule.
 7. **Triggers.** Turn end, API-observed base moves, git-proxy push, monitor box.
 8. **Fresh boot from a release.** Descriptor at boot, parallel extraction,
    early spawn on the release. Measure.
-9. **Web states.** Header chip and fallback error. Playwright journey.
-10. **Docs.** `apps/web/content/docs/work/runtime.mdx` rewritten against this
+9. **Web states.** Fallback error. Playwright journey.
+10. **Feature flag.** `config_releases`, ON by default, with the
+    `CONFIG_RELEASES_ENABLED` kill switch and the six chokepoints above. Remove
+    `session-files` mode and the workspace report end to end. Drop `/workspace`
+    from the boot fallback chain. Tell the session which commit it runs.
+11. **Docs.** `apps/web/content/docs/work/runtime.mdx` rewritten against this
     spec. `.claude/skills/learnings/SKILL.md` updated.
-11. **Verification.** Local, preview, then merge on approval. Deploy Dev and
+12. **Verification.** Local, preview, then merge on approval. Deploy Dev and
     dev re-run.
 
 ## Verification contract
 
-- Unit: store, builder, mode detection, capability gate, apply sequence, proven
-  check, fallback chain, quarantine. Real Git repositories and real archives, no
-  mocked Git.
-- The end-to-end script (`converge-e2e.sh`) keeps its 32 checks and adds:
+- Unit: store, builder, capability gate, apply sequence, proven check, fallback
+  chain, quarantine, the feature flag and its transitions, the session notice.
+  Real Git repositories and real archives, no mocked Git.
+- REST flows `CFG-1` … `CFG-8` (`tests/spec/end-to-end.md`), on the local
+  profile AND a deployed target. `CFG-8` is the flag: off, back on, and the
+  ledger untouched while off.
+- The end-to-end script (`converge-e2e.sh`) keeps its checks and adds:
   1. The descriptor's release ID equals `health.config.release_id` after
      convergence.
   2. A commit that touches no config file produces no respawn.
@@ -637,6 +816,9 @@ applies.
      the last good release.
   6. An old daemon converges only after its self-update.
   7. A fresh session's `git status` shows no change under the config dir.
+  8. The flag flipped OFF and the box RESTARTED: it boots the workspace config
+     dir and no longer reads `/opt/kortix/config`. Flipped ON and restarted
+     again: it boots the release.
 - Boot time: 10 fresh boots before and after step 8 on the preview. Record
   `opencode-spawned` and `opencode-ready` medians. Proposed budget: no more than
   300 ms added to the median time to `opencode-ready`.

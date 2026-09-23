@@ -1259,20 +1259,21 @@ export async function stopProjectSession(projectId: string, sessionId: string) {
  *
  * A config release is one archive of the base branch's config dir plus one
  * compiled governance. The sandbox serves it from a read-only directory, never
- * from `/workspace`.
+ * from `/workspace`. `/workspace` stays the full editable clone: a config edit
+ * made there reaches a box only once it is pushed to the base branch.
  */
 export interface SessionConfigRelease {
   /**
-   * `follow-base`: the session runs the base branch's config release.
-   * `session-files`: the session edited its own config dir, so it runs those
-   * files from its workspace.
+   * Always `follow-base`: a session runs the base branch's current config
+   * release. One member on purpose — there is no per-session config policy.
    */
-  mode: 'follow-base' | 'session-files';
+  mode: 'follow-base';
   /**
-   * Where the running config comes from, as the daemon reports it.
-   * `image-default` means neither a release nor the workspace config was usable.
+   * Where the running config comes from, as the daemon reports it. The chain
+   * is the desired release, then the last release this box proved, then the
+   * platform's own default config dir. `/workspace` is not a step in it.
    */
-  source: 'release' | 'workspace' | 'image-default';
+  source: 'release' | 'image-default';
   /** The release ID the box serves from. `null` when no release is running. */
   running_release_id: string | null;
   /** The release ID the API assigns. `null` when the base branch produces none. */
@@ -1397,6 +1398,16 @@ export interface SessionReloadResult {
    * did not take effect and an earlier config still serves the session.
    */
   release?: SessionConfigRelease;
+  /**
+   * What happened to the session's own `/workspace` checkout — the other half
+   * of a reload. A reload fast-forwards the checkout AND converges the config
+   * the box runs; a host reports both, so a half-sync is never silent.
+   *
+   * `not-requested` when the caller passed `refresh_repo: false`, `refused`
+   * when the box declined the pull. Absent on a response from an API that
+   * predates config releases.
+   */
+  workspace_checkout?: 'updated' | 'already-current' | 'not-requested' | 'refused';
 }
 
 /** Server-observed boundaries for a live session-config reload. */

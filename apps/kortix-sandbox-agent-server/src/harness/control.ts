@@ -1,5 +1,4 @@
 import type { Config } from '../config'
-import type { WorkspaceReport } from '../config-release/descriptor'
 import type { RepoInfo } from '../git'
 import type { ProjectEnvStore } from '../project-env'
 
@@ -73,8 +72,10 @@ export interface HarnessAbortAfterToolInput {
 export interface HarnessConfigReleaseReport {
   release_id: string | null
   desired_release_id: string | null
+  /** `workspace` only while `config_releases` is off for the project. */
   source: 'release' | 'workspace' | 'image-default'
-  mode: 'follow-base' | 'session-files' | null
+  /** Null before the first convergence; `follow-base` is the only mode. */
+  mode: 'follow-base' | null
   proven: boolean
   fallback_reason: string | null
   failed_release_id: string | null
@@ -99,7 +100,6 @@ export interface HarnessControlOperations {
    */
   convergeConfig?(): Promise<HarnessConfigConvergeResult>
   /** Read-only report of session work under the config dir; null without a repository. */
-  configWorkspace?(): Promise<WorkspaceReport | null>
   abort(): Promise<HarnessAbortResult>
   armAbortAfterTool(input: HarnessAbortAfterToolInput): Promise<void>
   /** Without a prompt id, disarm every pending interrupt. */

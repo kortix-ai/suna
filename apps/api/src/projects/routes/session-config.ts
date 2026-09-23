@@ -16,6 +16,7 @@ import { callerKortixSessionId } from '../lib/caller-session';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { mayChangeSessionModel } from '../lib/session-model-change';
 import { configReleaseVariant, resolveDesiredRelease } from '../../config-releases/desired';
+import { configReleasesEnabled } from '../../config-releases/enabled';
 import { recordDaemonConfigReport } from '../../config-releases/quarantine';
 import { isReleaseStale, toSessionConfigRelease } from '../lib/session-config-release';
 import { repositoryAccessFromSessionMetadata } from '../lib/session-sandbox-metadata';
@@ -72,6 +73,13 @@ projectsApp.openapi(
       loaded.row.metadata as Record<string, unknown> | null,
       visible.row.metadata as Record<string, unknown> | null,
     );
+    // CHOKEPOINT — the `config_releases` flag for this read
+    // (docs/specs/config-releases.md, "Feature flag"). Off ⇒ no `release`
+    // block, no desired release is built (so no archive is stored and no
+    // ledger row is written), and `stale` is the pre-release etag compare
+    // alone. The CLI formatter and the web header both render their
+    // pre-release text when `release` is absent.
+    const releasesEnabled = configReleasesEnabled(loaded.row.metadata);
     const [running, latest] = await Promise.all([
       readSandboxConfigState({ sessionId }),
       // Nothing from the current repository is compiled for a frozen session.
@@ -96,12 +104,14 @@ projectsApp.openapi(
         commit_sha: running.commitSha,
         stale: false,
         sandbox_reachable: running.reachable,
-        ...(running.configReleases && running.release ? { release: toSessionConfigRelease(running.release) } : {}),
+        ...(releasesEnabled && running.configReleases && running.release
+          ? { release: toSessionConfigRelease(running.release) }
+          : {}),
       });
     }
 
     // ── A daemon with config releases (spec, "`GET /config`, extended") ──
-    if (running.configReleases && running.release) {
+    if (releasesEnabled && running.configReleases && running.release) {
       // Health carries `failed_release_id` and `proven`: the project
       // quarantine learns from every read, not only from reloads.
       await recordDaemonConfigReport({ projectId, sessionId, report: running.release });
@@ -109,9 +119,6 @@ projectsApp.openapi(
         project,
         baseRef,
         variant: configReleaseVariant(visible.row),
-        // No workspace report on a read. The release ID does not depend on
-        // the mode, so the desired ID is exact; `mode` is the daemon's own.
-        report: null,
         repositoryAccess: repositoryAccessFromSessionMetadata(visible.row.metadata),
       }).catch(() => null);
       const release = toSessionConfigRelease(
@@ -135,7 +142,11 @@ projectsApp.openapi(
     // The etag cannot see a skill body, a tool or a plugin. A merge that touched
     // only those used to leave `stale: false` and the header never offered the
     // reload, so the config dir is compared as well.
-    const filesStale = running.reachable
+    // `releasesEnabled` guards this too: the config-dir compare shipped with
+    // config releases. With the flag off the daemon never syncs config files,
+    // so offering "update available" for them would promise a reload that
+    // cannot deliver. `stale` is then exactly the pre-release expression.
+    const filesStale = releasesEnabled && running.reachable
       ? await isSessionConfigDirStale({
           project,
           baseRef,

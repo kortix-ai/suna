@@ -2,9 +2,9 @@
  * Config release routes (docs/specs/config-releases.md, "Routes").
  *
  * POST /v1/projects/:projectId/sessions/:sessionId/config-release
- *   The daemon posts its workspace report and receives the desired release
- *   descriptor. Callers: the session's own sandbox token, or a project member
- *   who can read that session.
+ *   The desired release descriptor for one session: always the base branch's
+ *   current tip. The request carries no inputs. Callers: the session's own
+ *   sandbox token, or a project member who can read that session.
  *
  * GET /v1/projects/:projectId/config-archives/:configTreeId
  *   The config archive. `302` to a signed store URL when the storage host is
@@ -35,8 +35,9 @@ import { sessionUsesCurrentRepository } from '../projects/lib/repository-generat
 import { repositoryAccessFromSessionMetadata } from '../projects/lib/session-sandbox-metadata';
 import { UUID_V4_REGEX } from '../projects/lib/serializers';
 import { db } from '../shared/db';
+import { requireFeatureFlag } from '../feature-flags/gate';
+import { CONFIG_RELEASES_FLAG } from './enabled';
 import { BaseRefUnresolvedError, configReleaseVariant, resolveDesiredRelease } from './desired';
-import { ConfigReleaseRequestSchema } from './mode';
 import { serveConfigArchive } from './serve-archive';
 
 const HEX40 = /^[0-9a-f]{40}$/;
@@ -61,6 +62,19 @@ export const PREVIOUS_REPOSITORY_BODY = {
   error: 'Session belongs to a previous repository',
   code: 'session_repository_changed',
 } as const;
+
+/**
+ * CHOKEPOINT — the `config_releases` flag for both routes of this file
+ * (docs/specs/config-releases.md, "Feature flag"). Off ⇒ `403`
+ * `feature_disabled`, so no release is built, no archive is stored, and no
+ * `kortix.config_releases` row is written. Always AFTER authz, so a
+ * non-member learns nothing from the answer. The daemon reads this exact
+ * `code` and reverts to its workspace config dir
+ * (`isFeatureDisabledError`, harness/open-code/config-release.ts).
+ */
+function configReleasesGate(c: Context, project: ProjectRow): Response | null {
+  return requireFeatureFlag(c, project.metadata, CONFIG_RELEASES_FLAG);
+}
 
 function previousRepository(project: ProjectRow, session: SessionRow): boolean {
   return !sessionUsesCurrentRepository(
@@ -162,10 +176,7 @@ projectsApp.openapi(
     tags: ['sessions'],
     summary: "A session's desired config release descriptor",
     ...auth,
-    request: {
-      params: z.object({ projectId: z.string(), sessionId: z.string() }),
-      body: { content: { 'application/json': { schema: ConfigReleaseRequestSchema } }, required: false },
-    },
+    request: { params: z.object({ projectId: z.string(), sessionId: z.string() }) },
     responses: { 200: json(z.any(), 'Release descriptor'), ...errors(400, 403, 404, 409) },
   }),
   async (c: any) => {
@@ -213,26 +224,13 @@ projectsApp.openapi(
       );
     }
 
-    let raw: unknown = {};
-    const text = await c.req.text();
-    if (text.trim()) {
-      try {
-        raw = JSON.parse(text);
-      } catch {
-        return c.json({ error: 'Invalid JSON body' }, 400);
-      }
-    }
-    const parsed = ConfigReleaseRequestSchema.safeParse(raw);
-    if (!parsed.success) {
-      return c.json(
-        {
-          error: 'Invalid config release request',
-          issues: parsed.error.issues.map((issue) => ({ path: issue.path.join('.'), message: issue.message })),
-        },
-        400,
-      );
-    }
+    const disabled = configReleasesGate(c, project);
+    if (disabled) return disabled;
 
+    // The request has no inputs. The desired release is the base branch's
+    // current tip for this session's variant, full stop: nothing the caller
+    // sends can change which config it is assigned. Any body is ignored, so a
+    // daemon built against an older shape of this route still converges.
     if (previousRepository(project, session)) return c.json(PREVIOUS_REPOSITORY_BODY, 409);
 
     const baseRef = session.baseRef ?? project.defaultBranch;
@@ -241,7 +239,6 @@ projectsApp.openapi(
         project: gitProject(project),
         baseRef,
         variant: configReleaseVariant(session),
-        report: parsed.data.workspace ?? null,
         repositoryAccess: repositoryAccessFromSessionMetadata(session.metadata) && humanMayReadFiles,
         // Only the daemon's own request is an assignment. A human read is not.
         recordAssignment: isSessionSandboxCredential(c),
@@ -299,6 +296,9 @@ projectsApp.openapi(
       );
       project = loaded.row;
     }
+
+    const disabled = configReleasesGate(c, project);
+    if (disabled) return disabled;
 
     const repo = gitProject(project);
     return serveConfigArchive(repo, configTreeId, () => refreshMirror(repo), () => refreshMirror(repo, true));

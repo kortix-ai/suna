@@ -21,6 +21,8 @@ const DESCRIPTOR = 'POST /v1/projects/:projectId/sessions/:sessionId/config-rele
 const ARCHIVE = 'GET /v1/projects/:projectId/config-archives/:configTreeId';
 const MINT = 'POST /v1/accounts/tokens';
 const CONFIG_STATE = 'GET /v1/projects/:projectId/sessions/:sessionId/config';
+const FEATURES = 'PATCH /v1/projects/:projectId/features';
+const PROJECT_DETAIL = 'GET /v1/projects/:projectId';
 /** The git proxy routes `commitTo` and `tipOf` use on a deployed target. */
 const GIT_PROXY = [
   'GET /v1/git/:project/info/refs',
@@ -283,7 +285,7 @@ async function setup(ctx: FlowContext): Promise<Fixture> {
       );
       return { sessionId, secret };
     },
-    async descriptor(secret, sessionId, body = { workspace: null }) {
+    async descriptor(secret, sessionId, body = {}) {
       const response = await fetch(`${origin}/v1/projects/${project.id}/sessions/${sessionId}/config-release`, {
         method: 'POST',
         headers: {
@@ -392,7 +394,7 @@ async function assertArchiveMatches(descriptor: Descriptor, bytes: Buffer): Prom
   return files;
 }
 
-// ── CFG-1 — descriptor route authentication and body validation ────────────
+// ── CFG-1 — descriptor route authentication and input-free contract ────────
 flow(
   'CFG-1',
   {
@@ -438,53 +440,33 @@ flow(
         if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
         if (r.body.release_id !== mine.body.release_id) throw new Error('owner and sandbox read different releases');
       });
-      await ctx.step('malformed bodies are rejected with 400 and name the problem', async () => {
-        const cases: Array<[string, unknown]> = [
-          ['invalid JSON', '{"workspace":'],
-          ['a non-object body', '"report"'],
-          ['an unknown top-level key', { workspace: null, descriptor: {} }],
-          ['a short head', { workspace: { head: 'abc', config_dir: '.kortix/opencode', changed: [] } }],
-          [
-            'a deleted file with a blob',
-            {
-              workspace: {
-                head: 'a'.repeat(40),
-                config_dir: '.kortix/opencode',
-                changed: [{ path: '.kortix/opencode/x.md', status: 'deleted', blob: 'b'.repeat(40) }],
-              },
-            },
-          ],
-          [
-            'an unknown status',
-            {
-              workspace: {
-                head: 'a'.repeat(40),
-                config_dir: '.kortix/opencode',
-                changed: [{ path: '.kortix/opencode/x.md', status: 'renamed', blob: 'b'.repeat(40) }],
-              },
-            },
-          ],
+      await ctx.step('the request has no inputs: any body returns the same release (200)', async () => {
+        // The desired release is always the base branch's current one for this
+        // session's variant. Nothing a caller sends can change it, so nothing
+        // a caller sends is read.
+        const plain = await fixture.descriptor(own.secret, own.sessionId);
+        const bodies: unknown[] = [
+          '{"workspace":',
+          '"a string"',
+          { workspace: null, descriptor: {} },
+          { anything: [1, 2, 3] },
         ];
-        for (const [label, body] of cases) {
+        for (const body of bodies) {
           const r = await fixture.descriptor(own.secret, own.sessionId, body);
-          if (r.status !== 400) throw new Error(`${label}: expected 400, got ${r.status}`);
-          const named = typeof r.body === 'string' ? r.body : (r.body?.message ?? r.body?.error);
-          if (!named) throw new Error(`${label}: 400 without an error message`);
+          if (r.status !== 200) throw new Error(`body ${JSON.stringify(body)}: expected 200, got ${r.status}`);
+          if (r.body.release_id !== plain.body.release_id) {
+            throw new Error(`body ${JSON.stringify(body)} changed the assigned release`);
+          }
         }
       });
-      await ctx.step('a well-formed workspace report is accepted (200)', async () => {
-        const head = await baseTip(fixture);
-        const r = await fixture.descriptor(own.secret, own.sessionId, {
-          workspace: {
-            head,
-            config_dir: '.kortix/opencode',
-            changed: [
-              { path: '.kortix/opencode/agents/kortix.md', status: 'modified', blob: 'c'.repeat(40) },
-              { path: '.kortix/opencode/skills/x/SKILL.md', status: 'deleted', blob: null },
-            ],
-          },
-        });
-        if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
+      await ctx.step('a session with local config edits still receives the base release', async () => {
+        // There is no session-files mode: /workspace is an editable clone, and
+        // an edit there reaches the box only once it is pushed to the base
+        // branch. The descriptor never withholds the archive for that reason.
+        const r = await fixture.descriptor(own.secret, own.sessionId);
+        if (r.status !== 200) throw new Error(`expected 200, got ${r.status}`);
+        if (r.body.mode !== 'follow-base') throw new Error(`mode ${r.body.mode}, expected follow-base`);
+        if (r.body.archive === null) throw new Error('the base release carries no archive');
       });
       await ctx.step('a malformed session id is rejected with 400', async () => {
         const r = await fixture.descriptor(own.secret, 'not-a-uuid');
@@ -678,114 +660,6 @@ flow(
 async function reported(path: string, status: 'modified' | 'added' | 'deleted' | 'untracked', bytes: string | null) {
   return { path, status, blob: bytes === null ? null : await gitBlobId(Buffer.from(bytes)) };
 }
-
-// ── CFG-4 — the API chooses the config mode from the workspace report ──────
-flow(
-  'CFG-4',
-  {
-    domain: 'config-releases',
-    requires: ['database'],
-    timeoutMs: 240_000,
-    routes: [MINT, DESCRIPTOR, ...GIT_PROXY],
-  },
-  async (ctx) => {
-    const fixture = await setup(ctx);
-    try {
-      const own = await fixture.mint();
-      const head = await baseTip(fixture);
-      const report = (changed: unknown[], extra: Record<string, unknown> = {}) => ({
-        workspace: { head, config_dir: '.kortix/opencode', changed, ...extra },
-      });
-      let base!: Descriptor;
-
-      await ctx.step('without a report the session follows the base branch and receives the archive', async () => {
-        const r = await fixture.descriptor(own.secret, own.sessionId);
-        if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
-        base = r.body as Descriptor;
-        if (base.mode !== 'follow-base' || !base.archive || !base.files?.length) throw new Error('no follow-base release');
-      });
-
-      await ctx.step('platform output (plugin pin, lockfile, managed-skill overlay) keeps the session on the base branch', async () => {
-        const pinned = PACKAGE_JSON('1.18.23');
-        const r = await fixture.descriptor(
-          own.secret,
-          own.sessionId,
-          report(
-            [
-              await reported('.kortix/opencode/package.json', 'modified', pinned),
-              await reported('.kortix/opencode/bun.lock', 'modified', '"@opencode-ai/plugin": "1.18.23"\n'),
-              await reported('.kortix/opencode/skills/kortix-system/SKILL.md', 'untracked', 'OVERLAY\n'),
-            ],
-            { package_json: pinned, committed_scope: 'remote' },
-          ),
-        );
-        if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
-        if (r.body.mode !== 'follow-base') throw new Error(`mode ${r.body.mode}`);
-        if (r.body.release_id !== base.release_id || !r.body.archive) throw new Error('follow-base lost its release');
-        if (r.body.reason !== null) throw new Error(`reason ${r.body.reason}`);
-      });
-
-      await ctx.step("a file whose bytes equal a base-branch revision (an old sync, a reverted edit) is not the session's work", async () => {
-        const r = await fixture.descriptor(
-          own.secret,
-          own.sessionId,
-          report([await reported('.kortix/opencode/agents/kortix.md', 'modified', CONFIG_FILES['.kortix/opencode/agents/kortix.md']!)]),
-        );
-        if (r.body.mode !== 'follow-base') throw new Error(`mode ${r.body.mode}`);
-      });
-
-      await ctx.step('a real edit to an agent selects session-files: no archive, no files, base governance kept', async () => {
-        const r = await fixture.descriptor(
-          own.secret,
-          own.sessionId,
-          report([await reported('.kortix/opencode/agents/kortix.md', 'modified', 'MY OWN PROMPT\n')]),
-        );
-        if (r.status !== 200) throw new Error(`expected 200, got ${r.status}`);
-        const d = r.body as Descriptor;
-        if (d.mode !== 'session-files') throw new Error(`mode ${d.mode}`);
-        if (d.archive !== null || d.files !== null) throw new Error('session-files carried an archive or files');
-        if (d.compiled_governance !== base.compiled_governance) throw new Error('session-files lost the base governance');
-        if (d.release_id !== base.release_id) throw new Error('the release ID moved with the mode');
-      });
-
-      await ctx.step('an added dependency, a new skill, and a deleted base file each select session-files', async () => {
-        const withDep = PACKAGE_JSON('1.18.23', ',\n    "left-pad": "1.3.0"');
-        const cases: Array<[string, unknown]> = [
-          ['added dependency', report([await reported('.kortix/opencode/package.json', 'modified', withDep)], { package_json: withDep })],
-          ['new skill', report([await reported('.kortix/opencode/skills/brand-new/SKILL.md', 'untracked', 'draft\n')])],
-          ['deleted base file', report([await reported('.kortix/opencode/skills/demo/SKILL.md', 'deleted', null)])],
-        ];
-        for (const [label, body] of cases) {
-          const r = await fixture.descriptor(own.secret, own.sessionId, body);
-          if (r.status !== 200) throw new Error(`${label}: expected 200, got ${r.status}`);
-          if (r.body.mode !== 'session-files') throw new Error(`${label}: mode ${r.body.mode}`);
-        }
-      });
-
-      await ctx.step('committed_scope "none" is decided from uncommitted changes and names the gap in reason', async () => {
-        const r = await fixture.descriptor(own.secret, own.sessionId, report([], { committed_scope: 'none' }));
-        if (r.status !== 200) throw new Error(`expected 200, got ${r.status}`);
-        if (r.body.mode !== 'follow-base') throw new Error(`mode ${r.body.mode}`);
-        if (!String(r.body.reason ?? '').includes('committed_scope none')) throw new Error(`reason ${r.body.reason}`);
-      });
-
-      await ctx.step('SHA-256 object IDs (64 hex) are accepted; an unknown committed_scope is 400', async () => {
-        const ok = await fixture.descriptor(own.secret, own.sessionId, {
-          workspace: {
-            head: 'c'.repeat(64),
-            config_dir: '.kortix/opencode',
-            changed: [{ path: '.kortix/opencode/agents/x.md', status: 'modified', blob: 'd'.repeat(64) }],
-          },
-        });
-        if (ok.status !== 200) throw new Error(`64-hex: expected 200, got ${ok.status}: ${JSON.stringify(ok.body)}`);
-        const bad = await fixture.descriptor(own.secret, own.sessionId, report([], { committed_scope: 'all' }));
-        if (bad.status !== 400) throw new Error(`unknown committed_scope: expected 400, got ${bad.status}`);
-      });
-    } finally {
-      await fixture.cleanup();
-    }
-  },
-);
 
 // ── CFG-5 — project quarantine: threshold, fallback, clear on a new release ─
 flow(
@@ -1058,6 +932,122 @@ flow(
             .catch(() => {});
         }
       }
+      await fixture.cleanup();
+    }
+  },
+);
+
+// ── CFG-8 — the `config_releases` feature flag, off and back on ────────────
+//
+// The flag's authority is the boot/start of a box, but the API side of it is
+// the descriptor route and the archive route: OFF ⇒ both answer 403
+// `feature_disabled`, the box then reads its workspace config dir, and no
+// release is built, stored, or recorded. This flow drives the toggle through
+// the published write path and asserts both directions.
+flow(
+  'CFG-8',
+  {
+    domain: 'config-releases',
+    requires: ['database'],
+    timeoutMs: 180_000,
+    routes: [MINT, DESCRIPTOR, ARCHIVE, CONFIG_STATE, FEATURES, PROJECT_DETAIL, ...GIT_PROXY],
+  },
+  async (ctx) => {
+    const fixture = await setup(ctx);
+    const setFlag = async (enabled: boolean | null) => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch(
+          '/v1/projects/:projectId/features',
+          { feature: 'config_releases', enabled },
+          { params: { projectId: fixture.projectId } },
+        );
+      r.status(200);
+    };
+    try {
+      const own = await fixture.mint();
+      let treeId!: string;
+
+      await ctx.step('the flag is ON by default: the session receives a release', async () => {
+        const r = await fixture.descriptor(own.secret, own.sessionId);
+        if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
+        if (!HEX64.test(r.body.release_id)) throw new Error(`release_id ${r.body.release_id}`);
+        treeId = r.body.config_tree_id;
+        if (!HEX40.test(treeId)) throw new Error(`config_tree_id ${treeId}`);
+        const catalog = await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/projects/:projectId', { params: { projectId: fixture.projectId } });
+        catalog.status(200);
+        const flags = catalog.json<{ experimental: Record<string, boolean> }>().experimental;
+        if (flags.config_releases !== true) throw new Error('config_releases is not on by default');
+      });
+
+      await ctx.step('turning it OFF makes the descriptor route answer 403 feature_disabled', async () => {
+        await setFlag(false);
+        const r = await fixture.descriptor(own.secret, own.sessionId);
+        if (r.status !== 403) throw new Error(`expected 403, got ${r.status}: ${JSON.stringify(r.body)}`);
+        if (r.body.code !== 'feature_disabled') throw new Error(`code ${r.body.code}`);
+        if (r.body.feature !== 'config_releases') throw new Error(`feature ${r.body.feature}`);
+      });
+
+      await ctx.step('the archive route answers the same 403, so no archive can be fetched', async () => {
+        const r = await fixture.download(own.secret, treeId);
+        if (r.status !== 403) throw new Error(`expected 403, got ${r.status}`);
+      });
+
+      await ctx.step('a human reader is refused the same way, after authz', async () => {
+        const token = (ctx.P.OWNER.auth as { token?: string }).token ?? null;
+        const r = await fixture.descriptor(token, own.sessionId);
+        if (r.status !== 403) throw new Error(`owner: expected 403, got ${r.status}`);
+        const anon = await fixture.descriptor(null, own.sessionId);
+        if (anon.status !== 401) throw new Error(`ANON: expected 401, got ${anon.status}`);
+      });
+
+      await ctx.step('GET /config carries no release block while the flag is off', async () => {
+        const r = await fixture.configState(own.sessionId);
+        if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
+        if ('release' in r.body) throw new Error('release block while the flag is off');
+        if (r.body.stale !== null) throw new Error(`stale ${r.body.stale}, expected null`);
+      });
+
+      await ctx.step('nothing is recorded while the flag is off: no new ledger row', async () => {
+        const before = await fixture.db.query('SELECT count(*)::int AS n FROM kortix.config_releases WHERE project_id = $1', [
+          fixture.projectId,
+        ]);
+        await fixture.descriptor(own.secret, own.sessionId);
+        await fixture.configState(own.sessionId);
+        const after = await fixture.db.query('SELECT count(*)::int AS n FROM kortix.config_releases WHERE project_id = $1', [
+          fixture.projectId,
+        ]);
+        if (after.rows[0].n !== before.rows[0].n) {
+          throw new Error(`config_releases rows moved from ${before.rows[0].n} to ${after.rows[0].n} with the flag off`);
+        }
+      });
+
+      await ctx.step('a base-branch commit while the flag is off changes nothing', async () => {
+        await fixture.commit({ '.kortix/opencode/agents/kortix.md': '---\ndescription: edited\n---\nEdited.\n' }, 'off');
+        const r = await fixture.descriptor(own.secret, own.sessionId);
+        if (r.status !== 403) throw new Error(`expected 403, got ${r.status}`);
+      });
+
+      await ctx.step('turning it back ON converges the same session, on the new tip', async () => {
+        await setFlag(true);
+        const tip = await baseTip(fixture);
+        const r = await fixture.descriptor(own.secret, own.sessionId);
+        if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
+        if (r.body.source_commit !== tip) throw new Error(`source_commit ${r.body.source_commit}, tip ${tip}`);
+        if (r.body.mode !== 'follow-base') throw new Error(`mode ${r.body.mode}`);
+        const archive = await fixture.download(own.secret, r.body.config_tree_id);
+        if (archive.status !== 200) throw new Error(`archive: expected 200, got ${archive.status}`);
+      });
+
+      await ctx.step('clearing the override returns the project to the ON default', async () => {
+        await setFlag(null);
+        const r = await fixture.descriptor(own.secret, own.sessionId);
+        if (r.status !== 200) throw new Error(`expected 200, got ${r.status}`);
+      });
+    } finally {
+      await setFlag(null).catch(() => {});
       await fixture.cleanup();
     }
   },

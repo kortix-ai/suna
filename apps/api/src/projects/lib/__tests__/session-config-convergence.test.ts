@@ -49,6 +49,12 @@ function deps(results: SessionReloadResult[], overrides: Partial<SessionConfigCo
     sleep: async (ms) => {
       sleeps.push(ms);
     },
+    // The flag is ON by default, so these tests read as they did before it
+    // existed. The `config_releases off` block below overrides it.
+    configReleasesEnabled: () => true,
+    pushGovernance: async () => {
+      throw new Error('pushGovernance is only reachable with config_releases off');
+    },
     ...overrides,
   };
   return { deps: built, reloads, sleeps };
@@ -182,11 +188,6 @@ describe('convergeSessionConfig with config releases', () => {
     }
   });
 
-  test('session-files is kept-session-edits and is not retried', async () => {
-    const d = deps([release('session-files', { agent_files: 'kept-yours' })]);
-    expect(await convergeSessionConfig('sess-1', d.deps)).toBe('kept-session-edits');
-    expect(d.reloads.length).toBe(1);
-  });
 
   test('declined and quarantined never loop', async () => {
     for (const outcome of ['declined', 'quarantined'] as const) {
@@ -307,5 +308,69 @@ describe('combineConfigStaleness', () => {
   test('an unknown etag is NEVER reported as up to date', () => {
     expect(combineConfigStaleness(null, false)).toBeNull();
     expect(combineConfigStaleness(null, null)).toBeNull();
+  });
+});
+
+// ── The `config_releases` flag (spec, "Feature flag") ───────────────────────
+//
+// CHOKEPOINT: `convergeSessionConfig` is the one door every convergence
+// trigger goes through — resume, restart, turn end, an API write that moved
+// the base branch, and a push through the git proxy. Off ⇒ none of them
+// reaches the box, and a restart falls back to the compiled-governance push
+// it did before config releases existed.
+describe('convergeSessionConfig with config_releases off', () => {
+  function offDeps(overrides: Partial<SessionConfigConvergenceDeps> = {}) {
+    const d = deps([], { configReleasesEnabled: () => false, ...overrides });
+    return d;
+  }
+
+  test('a trigger convergence does not reach the box at all', async () => {
+    const pushes: unknown[] = [];
+    const d = offDeps({ pushGovernance: async (input) => void pushes.push(input) });
+    for (const schedule of ['trigger', 'wake'] as const) {
+      expect(await convergeSessionConfig('sess-1', d.deps, { schedule })).toBe('disabled');
+    }
+    expect(d.reloads).toEqual([]);
+    expect(d.sleeps).toEqual([]);
+    expect(pushes).toEqual([]);
+  });
+
+  test('a restart pushes the compiled governance, as it did before config releases', async () => {
+    const pushes: unknown[] = [];
+    const d = offDeps({ pushGovernance: async (input) => void pushes.push(input) });
+    expect(await convergeSessionConfig('sess-1', d.deps, { legacyGovernancePush: true })).toBe(
+      'governance-pushed',
+    );
+    expect(d.reloads).toEqual([]);
+    expect(pushes).toEqual([
+      {
+        projectId: TARGET.projectId,
+        sessionId: TARGET.sessionId,
+        repoUrl: TARGET.repoUrl,
+        defaultBranch: TARGET.defaultBranch,
+        manifestPath: TARGET.manifestPath,
+        baseRef: TARGET.baseRef,
+      },
+    ]);
+  });
+
+  test('a failed governance push is an outcome, never a throw', async () => {
+    const d = offDeps({
+      pushGovernance: async () => {
+        throw new Error('box unreachable');
+      },
+    });
+    expect(await convergeSessionConfig('sess-1', d.deps, { legacyGovernancePush: true })).toBe('failed');
+  });
+
+  test('with the flag ON the same call converges through the reload', async () => {
+    const d = deps([result()], { configReleasesEnabled: () => true });
+    expect(await convergeSessionConfig('sess-1', d.deps, { legacyGovernancePush: true })).toBe('converged');
+    expect(d.reloads.length).toBe(1);
+  });
+
+  test('an unknown session is still no-session, whatever the flag says', async () => {
+    const d = deps([], { loadTarget: async () => null, configReleasesEnabled: () => false });
+    expect(await convergeSessionConfig('sess-1', d.deps)).toBe('no-session');
   });
 });

@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { SessionConfigRelease } from '@kortix/sdk';
 import { describeConfigStatus, describeReloadOutcome } from '../commands/session-config-format';
+
+const FORMAT_SOURCE = readFileSync(
+  join(import.meta.dir, '../commands/session-config-format.ts'),
+  'utf8',
+);
 
 const REF = 'abc12345';
 const RUNNING = 'a'.repeat(64);
@@ -109,18 +116,7 @@ describe('describeConfigStatus — with a `release` block', () => {
     expect(out.text).not.toContain('kortix sessions reload');
   });
 
-  test('a fallback onto the workspace or the image default says so', () => {
-    const workspace = describeConfigStatus(
-      {
-        running_etag: null,
-        latest_etag: null,
-        stale: true,
-        sandbox_reachable: true,
-        release: release({ source: 'workspace', running_release_id: null, fallback_reason: 'x' }),
-      },
-      REF,
-    );
-    expect(workspace.text).toContain('its workspace config');
+  test('a fallback onto the image default says so', () => {
     const image = describeConfigStatus(
       {
         running_etag: null,
@@ -134,20 +130,36 @@ describe('describeConfigStatus — with a `release` block', () => {
     expect(image.text).toContain('This session runs the platform default config.');
   });
 
-  test('session-files mode is not a warning and does not suggest a reload', () => {
-    const out = describeConfigStatus(
-      {
-        running_etag: null,
-        latest_etag: null,
-        stale: true,
-        sandbox_reachable: true,
-        release: release({ mode: 'session-files', source: 'workspace', running_release_id: null }),
-      },
-      REF,
-    );
-    expect(out.tone).toBe('ok');
-    expect(out.text).toContain("this session's own config");
-    expect(out.text).not.toContain('kortix sessions reload');
+  test('a session that edited its own config is never described as running it', () => {
+    // `/workspace` is not a config source. A session edits `.kortix/opencode`
+    // there, but those edits run only once they are pushed to the base branch.
+    // No combination of the reported state may claim otherwise.
+    for (const source of ['release', 'image-default'] as const) {
+      for (const stale of [true, false] as const) {
+        for (const fallback of [null, 'x'] as const) {
+          const out = describeConfigStatus(
+            {
+              running_etag: null,
+              latest_etag: null,
+              stale,
+              sandbox_reachable: true,
+              release: release({ source, fallback_reason: fallback }),
+            },
+            REF,
+          );
+          expect(out.text).not.toContain('workspace');
+          expect(out.text).not.toContain("this session's own config");
+        }
+      }
+    }
+    // The narrowed `SessionConfigRelease` makes the old states unreachable at
+    // compile time, so the only way to catch a reintroduction is the source.
+    // Narrowed to the two things that must never come back — `/workspace`
+    // itself is named elsewhere in this file, as the CHECKOUT a reload
+    // fast-forwards, which is a different thing from a config source.
+    expect(FORMAT_SOURCE).not.toContain('session-files');
+    expect(FORMAT_SOURCE).not.toContain("=== 'workspace'");
+    expect(FORMAT_SOURCE).not.toContain("its workspace config");
   });
 
   test('stale null with a release block still never claims "up to date"', () => {
@@ -212,30 +224,13 @@ describe('describeReloadOutcome', () => {
     });
   });
 
-  test('a session running its own config is NOT a warning (E2E DEF-2)', () => {
-    // Verification on a real box printed "!  Reloaded …" for session-files mode:
-    // the tone keyed only off `agent_files === 'kept-yours'`. Running the
-    // session's own edits is the intended outcome of that mode.
-    const applied = describeReloadOutcome(
-      { ...base, agent_files: 'kept-yours', release: release({ mode: 'session-files', source: 'workspace', running_release_id: null }) },
-      REF,
-    );
-    expect(applied.tone).toBe('ok');
-    const notApplied = describeReloadOutcome(
-      {
-        ...base,
-        applied: false,
-        agent_files: 'kept-yours',
-        detail: 'Nothing to apply: this session runs its own config files.',
-        release: release({ mode: 'session-files', source: 'workspace', running_release_id: null }),
-      },
-      REF,
-    );
-    expect(notApplied.tone).toBe('ok');
-  });
-
-  test('without a release block, kept-yours still warns — the old meaning is unchanged', () => {
+  test('kept-yours warns with or without a release block — the meaning is unchanged', () => {
+    // There is no mode in which keeping the session's own agent files is the
+    // intended outcome: a session runs the base branch's config release.
     expect(describeReloadOutcome({ ...base, agent_files: 'kept-yours' }, REF).tone).toBe('warn');
+    expect(
+      describeReloadOutcome({ ...base, agent_files: 'kept-yours', release: release() }, REF).tone,
+    ).toBe('warn');
   });
 
   test('a no-op reload ("already current") is not a warning (E2E DEF-2)', () => {
@@ -268,5 +263,37 @@ describe('describeReloadOutcome', () => {
     expect(describeReloadOutcome(base, REF, b).text).toBe(
       'Reloaded *abc12345* — e1 → e2\n  Reloaded. The next prompt runs the new config.',
     );
+  });
+});
+
+// The checkout half of a reload is the SERVER's sentence (`detail`), so the
+// CLI and the web say the same thing. The CLI renders it verbatim.
+describe('a reload reports both halves through the server sentence', () => {
+  test('the detail line reaches the output unchanged, checkout sentence and all', () => {
+    const detail =
+      'Reloaded. The next prompt runs the new config. The /workspace checkout was updated at dddddddddddd.';
+    const line = describeReloadOutcome(
+      {
+        applied: true,
+        previous_etag: 'aaaa',
+        etag: 'bbbb',
+        agent_files: 'updated',
+        detail,
+        release: release(),
+      },
+      REF,
+    );
+    expect(line.tone).toBe('ok');
+    expect(line.text).toContain(detail);
+  });
+
+  test('a refused checkout is still printed when nothing was applied', () => {
+    const detail =
+      'Nothing to apply: already current. The /workspace checkout was NOT updated: the sandbox declined the pull.';
+    const line = describeReloadOutcome(
+      { applied: false, previous_etag: 'aaaa', etag: 'aaaa', agent_files: 'already-current', detail },
+      REF,
+    );
+    expect(line.text).toBe(detail);
   });
 });

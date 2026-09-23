@@ -52,7 +52,7 @@ const converged: HarnessConfigConvergeResult = {
 }
 
 function fakeControl(over: Partial<HarnessControlOperations> = {}) {
-  const calls = { converge: [] as unknown[][], refresh: 0, workspace: 0 }
+  const calls = { converge: [] as unknown[][], refresh: 0 }
   const control: HarnessControlOperations = {
     applyEnvironment: async () => {
       throw new Error('unexpected env')
@@ -69,10 +69,6 @@ function fakeControl(over: Partial<HarnessControlOperations> = {}) {
     convergeConfig: async (...args: unknown[]) => {
       calls.converge.push(args)
       return converged
-    },
-    configWorkspace: async () => {
-      calls.workspace++
-      return { head: 'b'.repeat(40), config_dir: '.kortix/opencode', committed_scope: 'remote' as const, changed: [] }
     },
     ...over,
   }
@@ -113,12 +109,10 @@ describe('config routes with a fake control', () => {
     expect(res.status).toBe(409)
   })
 
-  test('GET /workspace returns the report', async () => {
-    const { control, calls } = fakeControl()
+  test('the workspace-report route is gone: the descriptor request has no inputs', async () => {
+    const { control } = fakeControl()
     const res = await createConfigRouter(cfgWithToken, control).request('/workspace', { headers: bearer })
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ head: 'b'.repeat(40), config_dir: '.kortix/opencode', committed_scope: 'remote' as const, changed: [] })
-    expect(calls.workspace).toBe(1)
+    expect(res.status).toBe(404)
   })
 
   test('refresh?config_dir=1 is an alias of converge; the plain refresh does not run', async () => {
@@ -134,7 +128,7 @@ describe('config routes with a fake control', () => {
   })
 
   test('a runtime without config releases: converge is 404, config_dir=1 keeps the plain refresh', async () => {
-    const { control, calls } = fakeControl({ convergeConfig: undefined, configWorkspace: undefined })
+    const { control, calls } = fakeControl({ convergeConfig: undefined })
     expect(
       (await createConfigRouter(cfgWithToken, control).request('/converge', { method: 'POST', headers: bearer })).status,
     ).toBe(404)

@@ -339,21 +339,23 @@ describe('buildConfigRelease', () => {
     expect(other).not.toBe(first);
   });
 
-  test('session-files mode drops the archive and the files, and keeps base governance', async () => {
+  test('every descriptor follows the base branch and carries its archive', async () => {
+    // There is no second mode. A session that edited its own config dir under
+    // /workspace still receives the base branch's release; its edits reach the
+    // box only once they are pushed to the base branch.
     const sha = seed();
     const release = await buildConfigRelease(project, sha, 'project', { store });
-    const descriptor = toDescriptor(release, 'session-files');
-    expect(descriptor.mode).toBe('session-files');
-    expect(descriptor.archive).toBeNull();
-    expect(descriptor.files).toBeNull();
+    const descriptor = toDescriptor(release);
+    expect(descriptor.mode).toBe('follow-base');
+    expect(descriptor.archive).toEqual(release.archive);
+    expect(descriptor.files).toEqual(release.files);
     expect(descriptor.compiled_governance).toBe(release.compiled_governance);
-    expect(toDescriptor(release, 'follow-base').archive).toEqual(release.archive);
   });
 
   test('a session without repository access gets governance and no archive', async () => {
     const sha = seed();
     const release = await buildConfigRelease(project, sha, 'agent:reviewer', { store });
-    const descriptor = toDescriptor(release, 'follow-base', { repositoryAccess: false });
+    const descriptor = toDescriptor(release, { repositoryAccess: false });
     expect(descriptor.archive).toBeNull();
     expect(descriptor.files).toBeNull();
     expect(descriptor.config_tree_id).toBeNull();

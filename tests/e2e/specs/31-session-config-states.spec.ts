@@ -35,7 +35,6 @@ const DESIRED = 'fedcba9876543210'.repeat(4);
 const FALLBACK_REASON = 'replacement OpenCode did not list the default agent within 90 s';
 
 const UPDATE_LABEL = 'Agent config update available';
-const SESSION_FILES_LABEL = "Running this session's config";
 const FALLBACK_LABEL = 'Config failed to load';
 
 type ConfigBody = Record<string, unknown>;
@@ -91,17 +90,11 @@ const STATES: Array<{
     visible: UPDATE_LABEL,
   },
   {
-    name: "session config: the neutral chip",
-    body: configBody({
-      stale: false,
-      release: release({
-        mode: 'session-files',
-        source: 'workspace',
-        running_release_id: null,
-        desired_release_id: null,
-      }),
-    }),
-    visible: SESSION_FILES_LABEL,
+    // A session that edited its config dir under /workspace is NOT a state:
+    // it still runs the base branch's release, so the header shows nothing.
+    name: 'a session with local config edits: still the base release, nothing renders',
+    body: configBody({ stale: false, release: release({}) }),
+    visible: null,
   },
   {
     name: 'fallback: the error chip',
@@ -121,7 +114,6 @@ async function expectOnlyVisible(page: Page, visible: string | null) {
   const locators: Record<string, ReturnType<Page['getByRole']> | ReturnType<Page['getByTestId']>> =
     {
       [UPDATE_LABEL]: page.getByRole('button', { name: UPDATE_LABEL, exact: true }),
-      [SESSION_FILES_LABEL]: page.getByTestId('session-config-files-chip'),
       [FALLBACK_LABEL]: page.getByTestId('session-config-fallback-chip'),
     };
   for (const [label, locator] of Object.entries(locators)) {
@@ -220,11 +212,11 @@ test('31 — session header renders every config release state from GET /config'
       });
     }
 
-    await test.step('the session-files chip carries the exact label', async () => {
+    await test.step('there is no "runs its own config" chip at all', async () => {
+      // Removed with session-files mode: a session's edits under /workspace
+      // reach its box by being pushed to the base branch, never by adoption.
       await openWith(STATES[4].body);
-      const chip = page.getByTestId('session-config-files-chip');
-      await expect(chip).toHaveText(SESSION_FILES_LABEL);
-      await expect(chip).toHaveAttribute('aria-label', SESSION_FILES_LABEL);
+      await expect(page.getByTestId('session-config-files-chip')).toHaveCount(0);
     });
 
     await test.step('the fallback chip opens the reason, what runs now, and the failed release', async () => {
@@ -262,13 +254,10 @@ test('31 — session header renders every config release state from GET /config'
       await page.keyboard.press('Escape');
     });
 
-    await test.step('dark theme and a 720 × 480 window keep both chips inside the header', async () => {
+    await test.step('dark theme and a 720 × 480 window keep the chip inside the header', async () => {
       await page.emulateMedia({ colorScheme: 'dark' });
       await page.setViewportSize({ width: 720, height: 480 });
-      for (const [index, testId] of [
-        [4, 'session-config-files-chip'],
-        [5, 'session-config-fallback-chip'],
-      ] as const) {
+      for (const [index, testId] of [[5, 'session-config-fallback-chip']] as const) {
         await openWith(STATES[index].body);
         const chip = page.getByTestId(testId);
         await expect(chip).toBeVisible();

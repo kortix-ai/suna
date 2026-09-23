@@ -11,7 +11,8 @@ import { authorizeControl } from './control-auth'
  * `POST /converge` only TRIGGERS a convergence. The request body is never
  * read: the daemon fetches the descriptor from the API itself, so a caller
  * that can reach this route (the in-box agent included) cannot choose the
- * config it runs.
+ * config it runs. The descriptor request carries no inputs either — the
+ * desired release is always the base branch's current tip.
  */
 export function createConfigRouter(cfg: Config, control: HarnessControlOperations): Hono {
   const router = new Hono()
@@ -20,18 +21,6 @@ export function createConfigRouter(cfg: Config, control: HarnessControlOperation
     const auth = authorizeControl(c, cfg, 'config')
     if (auth.response) return auth.response
     return runConvergence(c, control)
-  })
-
-  router.get('/workspace', async (c) => {
-    const auth = authorizeControl(c, cfg, 'config')
-    if (auth.response) return auth.response
-    if (!control.configWorkspace) return c.json({ error: 'config releases are not supported by this runtime' }, 404)
-    try {
-      return c.json(await control.configWorkspace())
-    } catch (err) {
-      logger.warn('[config] workspace report failed', { err: String(err) })
-      return c.json({ error: 'workspace report failed', message: (err as Error).message }, 500)
-    }
   })
 
   return router

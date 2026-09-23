@@ -60,15 +60,13 @@ export function sessionConfigKey(projectId?: string, sessionId?: string) {
  * compare, and a box asleep all collapse to `hidden`.
  *
  * - `stale`: the session runs an older config than the one available.
- * - `session-files`: the session edited its own config dir and runs those files.
  * - `fallback`: the desired config failed on the box, and an earlier config
- *   serves the session. `servingReleaseId` is null when the workspace config
- *   or the image default serves it.
+ *   serves the session. `servingReleaseId` is null when the platform's default
+ *   config serves it.
  */
 export type SessionConfigNotice =
   | { kind: 'hidden' }
   | { kind: 'stale'; running: string; latest: string }
-  | { kind: 'session-files' }
   | {
       kind: 'fallback';
       reason: string;
@@ -90,9 +88,11 @@ function shortReleaseId(id: string | null | undefined): string | null {
  * Order:
  * 1. `fallback` first. After a failed convergence `stale` is also true, and
  *    "update available" would offer to retry the release that just failed.
- * 2. `stale` next, as before. In `session-files` mode a stale session has
- *    edits that are not loaded yet, so the reload offer is the right answer.
- * 3. `session-files` last. It is a state, not a problem.
+ * 2. `stale` next, as before.
+ *
+ * A session that edits `.kortix/opencode` in its own `/workspace` gets no
+ * notice of its own: those edits reach the session only once they are pushed to
+ * the base branch, and then the ordinary `stale` notice offers the reload.
  *
  * A response without `release` (an API that predates config releases) reaches
  * only the `stale` and `hidden` branches, exactly as before.
@@ -119,7 +119,6 @@ export function sessionConfigNotice(state: SessionConfigState | undefined): Sess
       latest: state.latest_etag ?? shortReleaseId(release?.desired_release_id) ?? '—',
     };
   }
-  if (release?.mode === 'session-files') return { kind: 'session-files' };
   // `false` is current. `null` is inconclusive: the sandbox is sleeping, the
   // project has no compiled config, or an older runtime cannot report an etag.
   // None is an error, and none warrants persistent UI.
@@ -241,15 +240,23 @@ export function useReloadSessionConfig(projectId: string, sessionId: string) {
     retry: false,
     mutationFn: (vars: { force?: boolean } = {}) => {
       setPhase(null);
-      // This web action is named "Reload config", so it never pulls the session
-      // branch: `refresh_repo: false`. It still loads the base branch's agents,
-      // skills and tools — the sandbox reads those from a read-only copy outside
-      // the checkout, so converging them changes no project file and no commit.
+      // A reload does BOTH halves, and the toast below names each:
+      //
+      //   1. the running config — the sandbox is moved onto the base branch's
+      //      current release, which it serves from a read-only copy;
+      //   2. the `/workspace` checkout — fast-forwarded so the files a person
+      //      or an agent reads there match the config the session runs.
+      //
+      // (2) used to be skipped, because /workspace was the config source and a
+      // pull from a UI button was a real change. It is not the config source
+      // any more: the pull is `--ff-only` on the session's OWN branch and can
+      // discard nothing, while a checkout left behind is exactly the confusion
+      // this control exists to remove.
       return reloadProjectSessionConfigStream(
         projectId,
         sessionId,
         {
-          refresh_repo: false,
+          refresh_repo: true,
           ...(vars.force ? { force: true } : {}),
         },
         (event) => {
@@ -269,7 +276,9 @@ export function useReloadSessionConfig(projectId: string, sessionId: string) {
           description: result.release?.fallback_reason ?? undefined,
         });
       } else if (!result.applied) {
-        warningToast(reloadNotAppliedCopy(result.reason));
+        // `detail` is the server's sentence and carries the checkout half, so
+        // a half-sync is never silent behind a localized headline.
+        warningToast(reloadNotAppliedCopy(result.reason), { description: result.detail });
       } else if (tone === 'warning') {
         // The session's own agent files were kept, or we could not confirm.
         // `detail` already words every case.

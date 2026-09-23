@@ -9,16 +9,21 @@
 /** A daemon that lists this in `/kortix/health` `capabilities` serves `POST /kortix/config/converge`. */
 export const CONFIG_RELEASE_CAPABILITY = 'config.release.v1';
 
-export type ConfigReleaseMode = 'follow-base' | 'session-files';
-export type ConfigReleaseSource = 'release' | 'workspace' | 'image-default';
-export type ConvergeOutcome = 'applied' | 'unchanged' | 'declined' | 'quarantined' | 'session-files' | 'failed';
+/**
+ * Always `follow-base`. A session runs the base branch's CURRENT config
+ * release; `/workspace` is an editable clone, never a config source. One
+ * member on purpose (docs/specs/config-releases.md, "Feature flag").
+ */
+export type ConfigReleaseMode = 'follow-base';
+/** The fallback chain: the desired release, the last proven one, the image default. */
+export type ConfigReleaseSource = 'release' | 'image-default';
+export type ConvergeOutcome = 'applied' | 'unchanged' | 'declined' | 'quarantined' | 'failed';
 
 const CONVERGE_OUTCOMES: readonly ConvergeOutcome[] = [
   'applied',
   'unchanged',
   'declined',
   'quarantined',
-  'session-files',
   'failed',
 ];
 
@@ -75,10 +80,11 @@ export function hasConfigReleaseCapability(capabilities: unknown): boolean {
 export function parseDaemonConfigReport(value: unknown): DaemonConfigReport | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const raw = value as Record<string, unknown>;
-  const source: ConfigReleaseSource =
-    raw.source === 'release' || raw.source === 'workspace' || raw.source === 'image-default' ? raw.source : 'image-default';
-  const mode: ConfigReleaseMode | null =
-    raw.mode === 'follow-base' || raw.mode === 'session-files' ? raw.mode : null;
+  // `workspace` is not a source any more. A daemon that still reports it is
+  // running its /workspace checkout, which under config releases means the
+  // chain fell past every release: read it as the image default.
+  const source: ConfigReleaseSource = raw.source === 'release' ? 'release' : 'image-default';
+  const mode: ConfigReleaseMode | null = raw.mode === 'follow-base' ? 'follow-base' : null;
   return {
     release_id: releaseIdOrNull(raw.release_id),
     desired_release_id: releaseIdOrNull(raw.desired_release_id),
@@ -115,9 +121,8 @@ export function parseConvergeResponse(value: unknown): DaemonConvergeResponse | 
  *
  * `desired_release_id` is the API's own assignment when the caller computed
  * one (`GET /config`), else the daemon's copy of the last descriptor it
- * fetched. A daemon that has not converged yet reports `mode: null`; the
- * API reports `follow-base`, the mode of a session without a workspace
- * report.
+ * fetched. A daemon that has not converged yet reports `mode: null`; the API
+ * reports `follow-base`, the only mode there is.
  */
 export function toSessionConfigRelease(
   report: DaemonConfigReport,

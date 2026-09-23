@@ -188,9 +188,8 @@ export function __clearQuarantineMemoForTests(): void {
 
 /**
  * Record what a daemon reported: `failed_release_id` as a failure, and a
- * proven release as a proof. A proof counts only when the box served that
- * release (source `release` or `image-default`); in `workspace` source the
- * session's own files ran, which proves nothing about the release.
+ * proven release as a proof. A proof needs a running release ID: a box that
+ * fell to the image default reports none, and proves nothing.
  *
  * Never throws: every caller is a read or a reload that must not fail on
  * bookkeeping.
@@ -212,7 +211,6 @@ export async function recordDaemonConfigReport(
       proven &&
       HEX64.test(proven) &&
       proven !== failed &&
-      report.source !== 'workspace' &&
       firstTimeRecently(`p\0${projectId}\0${proven}`)
     ) {
       await ledger.recordProof({ projectId, releaseId: proven, sessionId });

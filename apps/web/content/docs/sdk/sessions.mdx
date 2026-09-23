@@ -79,10 +79,12 @@ const { stale, release } = await s.configState();
 if (release?.fallback_reason) {
   // The desired config failed on the box. An earlier config runs the session.
   console.warn(release.fallback_reason, release.running_release_id);
-} else if (release?.mode === 'session-files') {
-  // The session edited its own config dir and runs those files.
 } else if (stale === true) {
-  await s.reloadConfig({ refresh_repo: false });
+  // Moves the session onto the base branch's current config AND
+  // fast-forwards its /workspace checkout. `workspace_checkout` says what
+  // happened to the checkout; `detail` words both halves.
+  const result = await s.reloadConfig();
+  console.log(result.workspace_checkout, result.detail);
 }
 ```
 

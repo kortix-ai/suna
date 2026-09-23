@@ -47,7 +47,7 @@ const DescriptorSchema = z
   .object({
     format: z.literal('config-release-v1'),
     release_id: z.string().regex(HEX64).nullable(),
-    mode: z.enum(['follow-base', 'session-files']),
+    mode: z.literal('follow-base'),
     source_commit: z.string().regex(OBJECT_ID).nullable(),
     config_dir: z.string().refine(isPlainConfigDir, 'config_dir must be a plain relative path').nullable(),
     config_tree_id: z.string().regex(OBJECT_ID).nullable(),
@@ -64,10 +64,6 @@ const DescriptorSchema = z
   })
   .superRefine((value, ctx) => {
     const issue = (message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, message })
-    if (value.mode === 'session-files') {
-      if (value.archive !== null) issue('session-files mode carries no archive')
-      if (value.files !== null) issue('session-files mode carries no files')
-    }
     if (value.archive !== null) {
       if (value.release_id === null) issue('an archive needs a release_id')
       if (value.files === null) issue('an archive needs its files')
@@ -103,35 +99,4 @@ export function parseConfigReleaseDescriptor(value: unknown): ConfigReleaseDescr
     throw new Error(`invalid config release descriptor: ${detail}`)
   }
   return parsed.data
-}
-
-export type WorkspaceChangeStatus = 'modified' | 'added' | 'deleted' | 'untracked'
-
-export interface WorkspaceChange {
-  /** Repo-relative path, under `config_dir`. */
-  path: string
-  status: WorkspaceChangeStatus
-  /** Git blob ID of the working-tree file; null when it is deleted. */
-  blob: string | null
-}
-
-/**
- * What committed changes cover. `remote`: since the merge base with
- * `refs/remotes/origin/<base>`. `base-sha`: since `KORTIX_BASE_SHA`. `none`:
- * no base commit is available locally, so committed changes are NOT listed.
- */
-export type WorkspaceCommittedScope = 'remote' | 'base-sha' | 'none'
-
-export interface WorkspaceReport {
-  head: string
-  config_dir: string
-  committed_scope: WorkspaceCommittedScope
-  changed: WorkspaceChange[]
-  /**
-   * Working-tree text of `<config_dir>/package.json` when that file is in
-   * `changed`; null when it is deleted; absent otherwise or above 256 KiB.
-   * The API needs the text for its plugin-pin rule: an uncommitted or
-   * unpushed blob is not in its mirror.
-   */
-  package_json?: string | null
 }

@@ -115,24 +115,39 @@ describe('resolveBootConfig', () => {
     expect(api.archiveRequests).toHaveLength(1)
   })
 
-  test('2. a tampered release that cannot be rebuilt steps down to the workspace, with a reason', async () => {
+  test('2. a tampered release that cannot be rebuilt steps down to the IMAGE DEFAULT, never /workspace', async () => {
+    // /workspace is not a step in the chain under config releases: a box must
+    // never silently run a stale session checkout as the project's config.
     const dir = await installProvenRelease()
     tamper(dir)
     api.archives.clear()
     const choice = await resolveBootConfig({ cfg: cfg(), root: store, api: client() })
-    expect(choice.dir).toBe(join(work, DIR))
-    expect(choice.source).toBe('workspace')
+    expect(choice.dir).toBe(defaultDir)
+    expect(choice.source).toBe('image-default')
     expect(choice.fallback_reason).toMatch(/could not be rebuilt: archive request answered 404/)
+    expect(choice.fallback_reason).toMatch(/no release is available on this box/)
 
     const offline = await resolveBootConfig({ cfg: cfg(), root: store, api: null })
     expect(offline.fallback_reason).toMatch(/no longer verifies and the API is not configured/)
+    expect(offline.source).toBe('image-default')
   })
 
   test('2b. a pointer that was never proven is not honoured', async () => {
     await installProvenRelease(false)
     const choice = await resolveBootConfig({ cfg: cfg(), root: store, api: null })
-    expect(choice.source).toBe('workspace')
+    expect(choice.source).toBe('image-default')
     expect(choice.fallback_reason).toMatch(/was never proven/)
+  })
+
+  test('2c. config releases OFF: the workspace config dir IS the boot source, pointer ignored', async () => {
+    // The pre-release behaviour, and the transition after the flag is flipped:
+    // a pointer this box wrote while the flag was on is not honoured.
+    await installProvenRelease()
+    const choice = await resolveBootConfig({ cfg: cfg(), root: store, api: null, releasesEnabled: false })
+    expect(choice.dir).toBe(join(work, DIR))
+    expect(choice.source).toBe('workspace')
+    expect(choice.release_id).toBeNull()
+    expect(choice.fallback_reason).toBeNull()
   })
 
   test('3. no workspace opencode.json: the image default, with the reason from above', async () => {

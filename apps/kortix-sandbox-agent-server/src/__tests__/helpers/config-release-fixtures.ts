@@ -48,7 +48,7 @@ export function buildRelease(
   repo: string,
   commit: string,
   configDir: string,
-  opts: { projectId?: string; governance?: string | null; mode?: 'follow-base' | 'session-files' } = {},
+  opts: { projectId?: string; governance?: string | null } = {},
 ): BuiltRelease {
   const tree = git(repo, 'rev-parse', `${commit}:${configDir}`)
   const listed = spawnSync('git', ['-C', repo, 'ls-tree', '-r', '-z', tree], { encoding: 'buffer' })
@@ -67,16 +67,15 @@ export function buildRelease(
   const governance = opts.governance === undefined ? null : opts.governance
   const etag = governanceEtag(governance)
   const projectId = opts.projectId ?? 'proj-1'
-  const mode = opts.mode ?? 'follow-base'
   const descriptor: ConfigReleaseDescriptor = {
     format: 'config-release-v1',
     release_id: createHash('sha256').update(`${tree}:${etag ?? ''}`).digest('hex'),
-    mode,
+    mode: 'follow-base',
     source_commit: commit,
     config_dir: configDir,
     config_tree_id: tree,
-    archive: mode === 'follow-base' ? { url: `/v1/projects/${projectId}/config-archives/${tree}`, bytes: archive.length } : null,
-    files: mode === 'follow-base' ? files : null,
+    archive: { url: `/v1/projects/${projectId}/config-archives/${tree}`, bytes: archive.length },
+    files,
     compiled_governance: governance,
     compiled_governance_etag: etag,
     reason: null,
@@ -186,6 +185,20 @@ export function startFakeApi(token = 'sandbox-token'): FakeApi {
 export const REPOSITORY_CHANGED = {
   status: 409,
   json: { error: 'Session belongs to a previous repository', code: 'session_repository_changed' },
+}
+
+/**
+ * The API's answer when the `config_releases` feature flag is off for the
+ * project, or platform-wide (spec, "Feature flag"). Exactly what
+ * `requireFeatureFlag` emits.
+ */
+export const FEATURE_DISABLED = {
+  status: 403,
+  json: {
+    error: 'Config Releases is not enabled for this project. Enable it in Settings → Feature flags.',
+    code: 'feature_disabled',
+    feature: 'config_releases',
+  },
 }
 
 /** Serve `release` from the fake API. */

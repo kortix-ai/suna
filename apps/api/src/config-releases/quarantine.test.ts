@@ -66,12 +66,12 @@ const deps = (): DesiredReleaseDeps => ({
 
 const desired = (recordAssignment = true) =>
   resolveDesiredRelease(
-    { project, baseRef: 'main', variant: 'project', report: null, repositoryAccess: true, recordAssignment },
+    { project, baseRef: 'main', variant: 'project', repositoryAccess: true, recordAssignment },
     deps(),
   );
 
 /** A session daemon reports what it runs, as GET /config or a reload reads it. */
-const report = (sessionId: string, fields: { running: string | null; failed?: string | null; proven?: boolean; source?: 'release' | 'workspace' }) =>
+const report = (sessionId: string, fields: { running: string | null; failed?: string | null; proven?: boolean; source?: 'release' | 'image-default' }) =>
   recordDaemonConfigReport(
     {
       projectId: PROJECT,
@@ -136,9 +136,11 @@ describe('project quarantine', () => {
     expect((await desired()).descriptor.release_id).toBe(idAt(C1));
   });
 
-  test('a proof in workspace source does not count', async () => {
+  test('a report without a running release proves nothing', async () => {
+    // The box fell to the image default with no release id: there is nothing
+    // to prove, so the quarantined release stays assigned.
     await desired();
-    await report(S1, { running: idAt(C1), source: 'workspace' });
+    await report(S1, { running: null, source: 'image-default' });
     tip = C2;
     await desired();
     await report(S1, { running: null, failed: idAt(C2) });

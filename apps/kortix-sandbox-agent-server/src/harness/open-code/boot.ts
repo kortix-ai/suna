@@ -170,10 +170,14 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
   // that still verifies is spawned on before the clone. Otherwise the desired
   // release is fetched in parallel with the clone.
   const earlyPointer = cfg.autoClone ? await provenReleaseForEarlySpawn() : null
-  const releaseApi =
-    cfg.autoClone && !earlyPointer
-      ? configReleaseApiFrom({ apiUrl: cfg.apiUrl, projectId: cfg.projectId, sandboxToken: cfg.sandboxToken })
-      : null
+  // ASKED ON EVERY BOOT, pointer or not. This request is where the
+  // `config_releases` flag is evaluated for this box (spec, "Feature flag"):
+  // the box must boot the base branch's CURRENT release, and a flag flipped
+  // since the last boot must take effect now. The pointer is only the early
+  // spawn's head start and the fallback below the fetched release.
+  const releaseApi = cfg.autoClone
+    ? configReleaseApiFrom({ apiUrl: cfg.apiUrl, projectId: cfg.projectId, sandboxToken: cfg.sandboxToken })
+    : null
   const hintedConfigDir = cfg.autoClone ? resolveHintedOpencodeConfigDir(cfg) : null
   const harness = createOpenCodeHarnessService(cfg, cfg.defaultOpencodeConfigDir, projectEnv, {
     onStartupMark: bootMark,
@@ -294,6 +298,10 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
   // The desired release, fetched and extracted while the clone runs. The
   // descriptor wait is short: an early spawn on the hint waits for it.
   let quarantinedAtBoot: { releaseId: string; reason: string } | null = null
+  // The `config_releases` flag as the API answered on THIS boot: false after a
+  // `403 feature_disabled`, true after a descriptor, null when the API could
+  // not be asked. It decides the fallback chain below (`resolveBootConfig`).
+  let releasesEnabledAtBoot: boolean | null = null
   const bootReleasePromise: Promise<BootRelease | null> | null = releaseApi
     ? fetchBootRelease({
         cfg,
@@ -302,7 +310,14 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
         descriptorTimeoutMs: BOOT_DESCRIPTOR_TIMEOUT_MS,
         onQuarantined: (releaseId, reason) => {
           quarantinedAtBoot = { releaseId, reason }
+          releasesEnabledAtBoot = true
         },
+        onFeatureDisabled: () => {
+          releasesEnabledAtBoot = false
+        },
+      }).then((release) => {
+        if (release) releasesEnabledAtBoot = true
+        return release
       })
     : null
 
@@ -463,7 +478,7 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
           source_commit: bootRelease.sourceCommit,
           fallback_reason: null,
         }
-      : await resolveBootConfig({ cfg })
+      : await resolveBootConfig({ cfg, releasesEnabled: releasesEnabledAtBoot })
   recordBootConfig({
     source: activeConfig.source,
     release_id: activeConfig.release_id,

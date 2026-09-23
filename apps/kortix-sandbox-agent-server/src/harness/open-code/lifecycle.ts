@@ -85,6 +85,7 @@ import {
   SECRET_CAPABILITIES_ENV_NAME,
   writeSecretCapabilitiesInstruction,
 } from '../../secret-capabilities'
+import { configReleaseNoticePath } from '../../config-release/notice'
 
 const READY_POLL_MS = 100
 // OpenCode announces readiness on stdout. `serve.ts` prints this line only
@@ -285,6 +286,8 @@ export async function buildOpencodeConfigContent(
   opts: {
     injectedSkillsDir?: string | null
     secretCapabilitiesInstructionPath?: string | null
+    /** The config-release notice, when one exists (config-release/notice.ts). */
+    configReleaseNoticePath?: string | null
   } = {},
 ): Promise<string | undefined> {
   const connectorToken = env.KORTIX_TOKEN
@@ -393,13 +396,14 @@ export async function buildOpencodeConfigContent(
   }
   const out: Record<string, unknown> = { ...base }
 
-  if (secretCapabilitiesInstructionPath) {
+  // Instruction files the platform contributes. Appended, never clobbering
+  // what the project's own config declares.
+  for (const instructionPath of [secretCapabilitiesInstructionPath, opts.configReleaseNoticePath]) {
+    if (!instructionPath) continue
     const instructions = Array.isArray(out.instructions)
       ? out.instructions.filter((item): item is string => typeof item === 'string')
       : []
-    out.instructions = instructions.includes(secretCapabilitiesInstructionPath)
-      ? instructions
-      : [...instructions, secretCapabilitiesInstructionPath]
+    out.instructions = instructions.includes(instructionPath) ? instructions : [...instructions, instructionPath]
   }
 
   // (5) Injected managed skills — append to whatever `skills.paths` the base
@@ -837,11 +841,13 @@ export async function writeKortixOpencodeConfig(
     configPath?: string
     injectedSkillsDir?: string | null
     secretCapabilitiesInstructionPath?: string | null
+    configReleaseNoticePath?: string | null
   } = {},
 ): Promise<string | null> {
   const content = await buildOpencodeConfigContent(env, {
     injectedSkillsDir: opts.injectedSkillsDir,
     secretCapabilitiesInstructionPath: opts.secretCapabilitiesInstructionPath,
+    configReleaseNoticePath: opts.configReleaseNoticePath,
   })
   if (!content) return null
   const configPath = opts.configPath ?? KORTIX_OPENCODE_CONFIG_PATH
@@ -1806,9 +1812,12 @@ export function createOpencodeLifecycle(
    */
   /**
    * Compose + write the Kortix OpenCode config exactly as a spawn does: the
-   * injected managed-skills dir under the CURRENT config dir and the secret
-   * capability instruction. Shared by spawn and by the in-place reloads so a
-   * reload can never drop a contributor the spawn declared.
+   * injected managed-skills dir under the CURRENT config dir, the secret
+   * capability instruction, and the config-release notice that tells the
+   * session which commit's config it runs. Shared by spawn and by the
+   * in-place reloads so a reload can never drop a contributor the spawn
+   * declared — which is what makes the notice survive the restart a
+   * convergence performs.
    */
   async function writeComposedConfig(baseEnv: NodeJS.ProcessEnv): Promise<string | null> {
     let secretCapabilitiesInstructionPath: string | null = null
@@ -1823,6 +1832,7 @@ export function createOpencodeLifecycle(
       configPath: options.configPathOverride,
       injectedSkillsDir: join(currentOpencodeConfigDir, 'skills'),
       secretCapabilitiesInstructionPath,
+      configReleaseNoticePath: configReleaseNoticePath(),
     })
   }
 

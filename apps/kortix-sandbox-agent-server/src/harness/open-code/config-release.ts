@@ -22,11 +22,12 @@ import {
   configReleaseApiFrom,
   downloadConfigArchive,
   fetchConfigReleaseDescriptor,
+  isFeatureDisabledError,
   isRepositoryChangedError,
   type ConfigReleaseApi,
 } from '../../config-release/api-client'
-import type { ConfigReleaseDescriptor, WorkspaceReport } from '../../config-release/descriptor'
-import { buildWorkspaceReport } from '../../config-release/workspace-report'
+import type { ConfigReleaseDescriptor } from '../../config-release/descriptor'
+import { clearConfigReleaseNotice, writeConfigReleaseNotice } from '../../config-release/notice'
 import { logger } from '../../logger'
 import { ensureInjectedManagedSkills } from '../../managed-skills'
 import { resolveOpencodeConfigDir, resolveOpencodeConfigDirLiteral, type OpenCodeConfig } from './config'
@@ -45,8 +46,26 @@ import { pluginFilesFrom, provenCheck, toolNamesFromFiles, type ProvenCheckInput
  * after the proven check. Every failure keeps the running process.
  */
 
+/**
+ * Where OpenCode reads its config from, as this box reports it.
+ *
+ * Under config releases the chain is: the desired release, then the last
+ * release this box proved, then the platform's image default. `/workspace` is
+ * NOT a step in it — OpenCode never boots from the session's checkout while
+ * the feature is on.
+ *
+ * `workspace` is reachable only when config releases are OFF for the project
+ * (docs/specs/config-releases.md, "Feature flag"), which is the pre-release
+ * behaviour: OpenCode reads `<workspace>/<config dir>`. The API emits no
+ * release block for such a session, so `workspace` never reaches a client.
+ */
 export type ConfigSource = 'release' | 'workspace' | 'image-default'
-export type ConfigMode = 'follow-base' | 'session-files'
+/**
+ * Always `follow-base`: a box runs the base branch's CURRENT config release.
+ * `/workspace` stays the editable clone; an edit there reaches the box only
+ * once it is pushed to the base branch.
+ */
+export type ConfigMode = 'follow-base'
 
 /** The health `config` block. The converge response carries the same object. */
 export interface ConfigReleaseReport {
@@ -59,7 +78,7 @@ export interface ConfigReleaseReport {
   failed_release_id: string | null
 }
 
-export type ConvergeOutcome = 'applied' | 'unchanged' | 'declined' | 'quarantined' | 'session-files' | 'failed'
+export type ConvergeOutcome = 'applied' | 'unchanged' | 'declined' | 'quarantined' | 'failed'
 
 export interface ConvergeResponse {
   ok: boolean
@@ -95,8 +114,6 @@ const INITIAL: RunningConfig = {
 }
 
 let running: RunningConfig = { ...INITIAL }
-/** Workspace report + release of the running session-files config. */
-let sessionFilesFingerprint: string | null = null
 let inFlight: Promise<ConvergeResponse> | null = null
 
 export function configReleaseReport(): ConfigReleaseReport {
@@ -147,12 +164,10 @@ function recordKeptConfigFailure(releaseId: string, reason: string): void {
 
 export function recordBootConfig(next: Partial<RunningConfig> & Pick<RunningConfig, 'source'>): void {
   running = { ...INITIAL, ...next }
-  sessionFilesFingerprint = null
 }
 
 export function resetConfigReleaseStateForTests(): void {
   running = { ...INITIAL }
-  sessionFilesFingerprint = null
   inFlight = null
 }
 
@@ -170,8 +185,6 @@ export interface ConvergeDeps {
   api?: ConfigReleaseApi | null
   /** Dependencies + managed-skill overlay for a directory. Injectable for tests. */
   prepare?: (dir: string) => Promise<void>
-  /** Injectable for tests. */
-  workspaceReport?: () => Promise<WorkspaceReport | null>
   /** Overrides the proven check. Tests point it at a fake OpenCode. */
   prove?: typeof provenCheck
   proveFetch?: typeof fetch
@@ -213,12 +226,6 @@ export async function prepareReleaseDir(
   await ensureInjectedManagedSkills(dir, managedSkillsDir ? { bakedDir: managedSkillsDir } : {})
 }
 
-/** The workspace report for this session, or null when there is none to give. */
-export async function workspaceReportFor(cfg: OpenCodeConfig): Promise<WorkspaceReport | null> {
-  const configDir = await resolveOpencodeConfigDirLiteral(cfg)
-  if (!configDir) return null
-  return buildWorkspaceReport(cfg.projectTarget, configDir, cfg.defaultBranch, { baseSha: cfg.baseSha })
-}
 
 /**
  * Deliver the release's compiled governance to the next spawn, through the
@@ -305,12 +312,120 @@ function respond(
   reason: string | null = null,
 ): ConvergeResponse {
   return {
-    ok: outcome === 'applied' || outcome === 'unchanged' || outcome === 'session-files',
+    ok: outcome === 'applied' || outcome === 'unchanged',
     outcome,
     config: configReleaseReport(),
     reload: reload && reload.outcome === 'swapped' ? { how: 'restarted', turn_ended: reload.turnEnded } : null,
     reason,
   }
+}
+
+/**
+ * `config_releases` is OFF for this project — per project, or platform-wide
+ * through the operator kill switch (docs/specs/config-releases.md, "Feature
+ * flag"). The API answered `403 feature_disabled`.
+ *
+ * This is the transition, and it must not strand a box that already runs a
+ * release:
+ *
+ * 1. OpenCode is pointed back at the session's workspace config dir, which is
+ *    where it read its config before config releases existed. The overlay and
+ *    the dependencies and the managed-skill overlay are prepared there first.
+ * 2. The boot pointer is cleared, so a reboot does not come back on the
+ *    release. The extracted release stays on disk; `pruneBootConfigs` removes
+ *    it the next time a release is applied.
+ * 3. Nothing is quarantined and no `fallback_reason` is set. The release did
+ *    not fail; it no longer applies.
+ *
+ * A box that already reads the workspace config dir is answered `unchanged`
+ * without a restart, so repeated convergences cost nothing. Governance is not
+ * touched: with the flag off the API pushes `KORTIX_COMPILED_AGENT_CONFIG`
+ * itself, as it did before releases.
+ */
+/**
+ * Write the session notice for the release a box is about to run. Never
+ * throws: the notice is information, and a box that cannot write `/tmp` must
+ * still converge.
+ */
+export function noteRunningConfig(
+  descriptor: Pick<ConfigReleaseDescriptor, 'source_commit' | 'config_dir'>,
+  sessionId: string | null = process.env.KORTIX_SESSION_ID ?? null,
+): 'written' | 'unchanged' | 'failed' {
+  try {
+    return writeConfigReleaseNotice({
+      sourceCommit: descriptor.source_commit,
+      configDir: descriptor.config_dir,
+      sessionId,
+    })
+  } catch (err) {
+    logger.warn('[config-release] could not write the session config notice', { err: String(err) })
+    return 'failed'
+  }
+}
+
+async function revertToPreReleaseConfig(
+  deps: ConvergeDeps,
+  root: string,
+  apiMessage: string,
+): Promise<ConvergeResponse> {
+  const { cfg, opencode } = deps
+  const dir = await resolveOpencodeConfigDir(cfg)
+  const source: ConfigSource = dir === cfg.defaultOpencodeConfigDir ? 'image-default' : 'workspace'
+  const reason = `config releases are disabled for this project; opencode reads ${dir} (${apiMessage})`
+  const settled = (): RunningConfig => ({
+    release_id: null,
+    desired_release_id: null,
+    source,
+    mode: null,
+    proven: true,
+    fallback_reason: null,
+    failed_release_id: null,
+    source_commit: null,
+  })
+
+  if (running.source !== 'release' && opencode.getConfigDir() === dir) {
+    clearConfigReleaseNotice()
+    await deactivateBootConfig(root)
+    running = settled()
+      // One clear line, then the daemon carries on.
+    logger.info('[config-release] disabled for this project; opencode already reads the workspace config dir', { dir })
+    return respond('unchanged', null, reason)
+  }
+
+  if (opencode.getPid() === null) return respond('failed', null, 'opencode is not running; nothing to replace')
+  if (deps.turnInFlight && (await deps.turnInFlight().catch(() => null)) !== false) {
+    return respond('failed', null, 'a turn is running or its state is unknown; the revert waits for the next trigger')
+  }
+
+  // No release runs any more: the notice would be a false statement.
+  clearConfigReleaseNotice()
+  await (deps.prepare ?? ((target: string) => prepareConfigDir(target, deps.managedSkillsDir)))(dir)
+  const toolNames = await toolNamesInDir(dir)
+  const pluginFiles = await pluginFilesInDir(dir)
+  const previousDir = opencode.useConfigDir(dir)
+  const result = await opencode.reloadVerified({
+    prove: (baseUrl, deadline) =>
+      (deps.prove ?? provenCheck)(baseUrl, deadline, {
+        directory: cfg.projectTarget,
+        toolNames,
+        pluginFiles,
+        configDir: dir,
+        fetchImpl: deps.proveFetch,
+      }),
+  })
+  if (result.outcome === 'kept-old') {
+    opencode.useConfigDir(previousDir)
+    logger.warn('[config-release] disabled, but the workspace config dir did not start; keeping the release', {
+      dir,
+      reason: result.reason,
+    })
+    return respond('declined', null, result.reason)
+  }
+
+  await deactivateBootConfig(root)
+  running = settled()
+  logger.info('[config-release] disabled for this project; opencode reverted to the workspace config dir', { dir })
+  return respond('applied', result, reason)
 }
 
 async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse> {
@@ -322,20 +437,18 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
       : deps.api
   if (!api) return respond('failed', null, 'KORTIX_API_URL, KORTIX_PROJECT_ID, KORTIX_SESSION_ID or KORTIX_TOKEN is unset')
 
-  // 1. Workspace report → descriptor. The report is best effort: without one
-  //    the API assumes follow-base.
-  const readReport = deps.workspaceReport ?? (() => workspaceReportFor(cfg))
-  const report = await readReport().catch((err: unknown) => {
-    logger.warn('[config-release] workspace report failed; sending none', { err: String(err) })
-    return null
-  })
+  // 1. The desired release. The request carries no inputs: the API always
+  //    assigns the base branch's current release for this session's variant.
   let descriptor: ConfigReleaseDescriptor
   try {
-    descriptor = await fetchConfigReleaseDescriptor(api, report)
+    descriptor = await fetchConfigReleaseDescriptor(api)
   } catch (err) {
     // A previous-repository session is frozen on its running config: nothing
     // failed, nothing falls back, nothing is quarantined.
     if (isRepositoryChangedError(err)) return respond('unchanged', null, err.message)
+    // Config releases are switched off for this project (spec, "Feature
+    // flag"). Not a failure: revert to the pre-release behaviour.
+    if (isFeatureDisabledError(err)) return revertToPreReleaseConfig(deps, root, err.message)
     // API unreachable or older than the spec: the running config stays.
     return respond('failed', null, (err as Error).message)
   }
@@ -363,6 +476,12 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
 
   const swap = async (dir: string, toolNames: readonly string[], pluginFiles: readonly string[] = []) => {
     const previousDir = opencode.useConfigDir(dir)
+    // Tell the session which commit's config it is about to run, BEFORE the
+    // replacement spawns: `writeComposedConfig` declares this file in
+    // OpenCode's `instructions`, so the new process reads it (spec, "Telling
+    // the session"). Only a convergence that actually replaces something
+    // reaches `swap`, and the writer is a no-op when the text is unchanged.
+    noteRunningConfig(descriptor)
     const restoreGovernance = deliverGovernance(descriptor.compiled_governance, descriptor.compiled_governance_etag)
     const result = await opencode.reloadVerified({
       prove: (baseUrl, deadline) =>
@@ -379,44 +498,6 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
       restoreGovernance()
     }
     return result
-  }
-
-  // 2. The session edits its own config: OpenCode reads the workspace dir.
-  if (descriptor.mode === 'session-files') {
-    const dir = await resolveOpencodeConfigDir(cfg)
-    const fingerprintOf = (workspace: WorkspaceReport | null) =>
-      createHash('sha256').update(JSON.stringify([releaseId, dir, workspace])).digest('hex')
-    const fingerprint = fingerprintOf(report)
-    if (
-      running.mode === 'session-files' &&
-      sessionFilesFingerprint === fingerprint &&
-      opencode.getConfigDir() === dir
-    ) {
-      return respond('unchanged', null)
-    }
-    const notRunning = await requireRunning()
-    if (notRunning) return notRunning
-    await (deps.prepare ?? ((target) => prepareConfigDir(target, deps.managedSkillsDir)))(dir)
-    const result = await swap(dir, await toolNamesInDir(dir), await pluginFilesInDir(dir))
-    if (result.outcome === 'kept-old') {
-      running.fallback_reason = result.reason
-      return respond('declined', null, result.reason)
-    }
-    running = {
-      release_id: releaseId,
-      desired_release_id: releaseId,
-      source: dir === cfg.defaultOpencodeConfigDir ? 'image-default' : 'workspace',
-      mode: 'session-files',
-      proven: true,
-      fallback_reason: null,
-      failed_release_id: null,
-      source_commit: null,
-    }
-    // Taken AFTER preparation and the spawn: the overlay and the installer
-    // write into this directory, and their output must not read as a new edit.
-    sessionFilesFingerprint = fingerprintOf(await readReport().catch(() => report))
-    logger.info('[config-release] opencode runs the session config', { releaseId, dir })
-    return respond('session-files', result)
   }
 
   // Governance only: no repository access, or no config dir on the base branch.
@@ -446,8 +527,7 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
       failed_release_id: null,
       source_commit: null,
     }
-    sessionFilesFingerprint = null
-    logger.info('[config-release] opencode runs the image default config', { releaseId, reason: descriptor.reason })
+      logger.info('[config-release] opencode runs the image default config', { releaseId, reason: descriptor.reason })
     return respond('applied', result)
   }
 
@@ -499,6 +579,8 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
   } catch (err) {
     // The archive route gates on the repository generation too.
     if (isRepositoryChangedError(err)) return respond('unchanged', null, err.message)
+    // …and on the feature flag, which can be turned off between the two calls.
+    if (isFeatureDisabledError(err)) return revertToPreReleaseConfig(deps, root, err.message)
     // Transport, disk or verification failure: nothing is wrong with the
     // release itself, so it is not quarantined. The next trigger retries.
     const reason = `could not build release ${releaseId.slice(0, 12)}: ${(err as Error).message}`
@@ -535,7 +617,6 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
     failed_release_id: null,
     source_commit: manifest.source_commit,
   }
-  sessionFilesFingerprint = null
   logger.info('[config-release] release applied', { releaseId, sourceCommit: manifest.source_commit, dir })
   return respond('applied', result)
 }
@@ -673,6 +754,11 @@ function bootProver(input: BootProofInput) {
  * Restart OpenCode on each candidate below a failed config and prove it. The
  * first that passes wins; the image default is the floor and runs even if it
  * fails too. Records the result, with every step down, as the running state.
+ *
+ * The chain below a failed RELEASE is: the last release this box proved, then
+ * the image default. `/workspace` is deliberately not in it — a box must never
+ * silently fall back to a stale session checkout while config releases are on
+ * (docs/specs/config-releases.md, "Fallback chain").
  */
 async function walkFallbackChain(
   input: BootProofInput,
@@ -711,10 +797,6 @@ async function walkFallbackChain(
       } else {
         reasons.push(`last proven release ${pointer.release_id.slice(0, 12)} no longer verifies`)
       }
-    }
-    const workspaceDir = await resolveOpencodeConfigDir(cfg)
-    if (workspaceDir !== cfg.defaultOpencodeConfigDir) {
-      candidates.push({ dir: workspaceDir, source: 'workspace', label: 'workspace config' })
     }
   }
   candidates.push({ dir: cfg.defaultOpencodeConfigDir, source: 'image-default', label: 'image default config' })
@@ -859,11 +941,15 @@ export interface BootRelease {
 
 /**
  * Fetch and extract the desired release at boot, in parallel with the repo
- * clone. No workspace report exists yet, so the request carries none and the
- * API answers follow-base; the convergence after ready corrects the mode.
- * Null when there is no archive to run (older API, API unreachable, a
- * session-files or governance-only descriptor, a quarantined release). Never
- * throws.
+ * clone. This is where the daemon ASKS THE API what to run, so it is also
+ * where the `config_releases` feature flag is evaluated for this boot
+ * (docs/specs/config-releases.md, "Feature flag"): a `403 feature_disabled`
+ * calls `onFeatureDisabled` and returns null, and boot then reads the
+ * workspace config dir, as it did before config releases.
+ *
+ * Null when there is no archive to run (the feature is off, an older API, the
+ * API is unreachable, a governance-only descriptor, a quarantined release).
+ * Never throws.
  */
 export async function fetchBootRelease(input: {
   cfg: OpenCodeConfig
@@ -875,6 +961,8 @@ export async function fetchBootRelease(input: {
   descriptorTimeoutMs?: number
   /** The desired release is quarantined on this box; boot reports it. */
   onQuarantined?: (releaseId: string, reason: string) => void
+  /** The API answered `403 feature_disabled`: config releases are off. */
+  onFeatureDisabled?: () => void
 }): Promise<BootRelease | null> {
   const { cfg } = input
   const root = input.root ?? bootConfigRoot()
@@ -884,7 +972,7 @@ export async function fetchBootRelease(input: {
       : input.api
   if (!api) return null
   try {
-    const descriptor = await fetchConfigReleaseDescriptor(api, null, { timeoutMs: input.descriptorTimeoutMs })
+    const descriptor = await fetchConfigReleaseDescriptor(api, { timeoutMs: input.descriptorTimeoutMs })
     input.mark?.('config-release-fetched')
     const releaseId = effectiveReleaseId(descriptor)
     if (descriptor.mode !== 'follow-base' || descriptor.archive === null || releaseId === null) return null
@@ -910,10 +998,22 @@ export async function fetchBootRelease(input: {
       })
     }
     input.mark?.('config-release-extracted')
+    // A fresh boot runs this commit's config while `/workspace` is cloned
+    // separately and may be behind it. Tell the session (spec, "Telling the
+    // session"); the spawn declares the file in OpenCode's `instructions`.
+    noteRunningConfig({ source_commit: manifest.source_commit, config_dir: manifest.config_dir })
     return { dir, releaseId, sourceCommit: manifest.source_commit, manifest }
   } catch (err) {
     if (isRepositoryChangedError(err)) {
       logger.info('[config-release] session belongs to a previous repository; no release at boot')
+      return null
+    }
+    // Spec, "Feature flag": one clear line, then boot carries on down the
+    // fallback chain to the workspace config dir. The convergence after ready
+    // clears the boot pointer (`revertToPreReleaseConfig`).
+    if (isFeatureDisabledError(err)) {
+      logger.info('[config-release] config releases are disabled for this project; no release at boot')
+      input.onFeatureDisabled?.()
       return null
     }
     logger.warn('[config-release] no release at boot; the fallback chain applies', {
@@ -949,13 +1049,27 @@ export interface BootConfigChoice {
 }
 
 /**
- * The directory a starting daemon spawns OpenCode on: the fallback chain below
- * the desired release.
+ * The directory a starting daemon spawns OpenCode on when the desired release
+ * is not available: the rest of the fallback chain.
  *
+ * With config releases ON:
  *   1. The last proven release named by the pointer, when it still verifies.
  *      A tampered copy is rebuilt from the API archive first.
- *   2. The workspace config dir, when it holds `opencode.json` or `opencode.jsonc`.
- *   3. The image default config dir.
+ *   2. The image default config dir.
+ *
+ * With config releases OFF — the pre-release behaviour:
+ *   1. The workspace config dir, when it holds `opencode.json` or `opencode.jsonc`.
+ *   2. The image default config dir.
+ *
+ * `/workspace` is a boot source only in the OFF chain. While the feature is on
+ * it stays the editable clone and a config edit reaches the box by being
+ * pushed to the base branch (docs/specs/config-releases.md, "Fallback chain").
+ *
+ * `releasesEnabled` is what the API said on THIS boot: `false` after a `403
+ * feature_disabled`, `true` after a descriptor, `null` when the API could not
+ * be asked. When it could not be asked, the boot pointer is the record of the
+ * last answer: a box that holds one ran a release, so it takes the ON chain,
+ * and a box that holds none takes the OFF chain.
  *
  * Each step down records `fallback_reason`. The release's compiled governance
  * is delivered to the spawn. Never throws.
@@ -966,10 +1080,27 @@ export async function resolveBootConfig(input: {
   managedSkillsDir?: string
   api?: ConfigReleaseApi | null
   prepare?: (dir: string) => Promise<void>
+  /** The `config_releases` flag as the API answered on this boot. */
+  releasesEnabled?: boolean | null
 }): Promise<BootConfigChoice> {
   const { cfg } = input
   const root = input.root ?? bootConfigRoot()
   const reasons: string[] = []
+  // Config releases are OFF for this project: `/opt/kortix/config` is not a
+  // boot source, not even through a pointer this box wrote while the flag was
+  // on. OpenCode reads the workspace config dir, as it did before releases
+  // (spec, "Feature flag"). The convergence after ready clears the pointer.
+  if (input.releasesEnabled === false) {
+    const dir = await resolveOpencodeConfigDir(cfg)
+    logger.info('[config-release] disabled for this project; booting on the workspace config dir', { dir })
+    return {
+      dir,
+      source: dir === cfg.defaultOpencodeConfigDir ? 'image-default' : 'workspace',
+      release_id: null,
+      source_commit: null,
+      fallback_reason: null,
+    }
+  }
   try {
     const pointer = await readBootConfigPointer(root)
     if (pointer && !pointer.proven) reasons.push(`release ${pointer.release_id.slice(0, 12)} was never proven`)
@@ -1010,6 +1141,7 @@ export async function resolveBootConfig(input: {
       }
       if (dir && manifest) {
         deliverGovernance(manifest.compiled_governance, manifest.compiled_governance_etag)
+        noteRunningConfig({ source_commit: pointer.source_commit, config_dir: manifest.config_dir })
         return {
           dir,
           source: 'release',
@@ -1021,6 +1153,24 @@ export async function resolveBootConfig(input: {
     }
   } catch (err) {
     reasons.push(`the release store could not be read: ${(err as Error).message}`)
+  }
+  // Was the feature on for this boot? The API's own answer wins; without one,
+  // a boot pointer means this box ran a release and the feature was on.
+  const releasesEnabled =
+    input.releasesEnabled ?? ((await readBootConfigPointer(root).catch(() => null)) !== null);
+  if (releasesEnabled) {
+    // The ON chain stops at the image default. Falling to /workspace here
+    // would silently run a stale session checkout as the project's config.
+    reasons.push('no release is available on this box');
+    const reason = reasons.join('; ');
+    logger.warn('[config-release] no release available; the image default config runs this session', { reason });
+    return {
+      dir: cfg.defaultOpencodeConfigDir,
+      source: 'image-default',
+      release_id: null,
+      source_commit: null,
+      fallback_reason: reason,
+    };
   }
   const fallbackReason = reasons.length > 0 ? reasons.join('; ') : null
   if (fallbackReason) logger.warn('[config-release] falling back below the proven release', { reason: fallbackReason })

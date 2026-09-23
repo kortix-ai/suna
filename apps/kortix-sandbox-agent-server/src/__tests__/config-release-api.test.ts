@@ -50,40 +50,40 @@ afterAll(() => {
 })
 
 describe('fetchConfigReleaseDescriptor', () => {
-  test('posts the workspace report with the sandbox bearer and returns the validated descriptor', async () => {
+  test('posts an empty request with the sandbox bearer and returns the validated descriptor', async () => {
+    // The request has no inputs: the desired release is always the base
+    // branch's current one, and nothing the box sends can change it.
     serveRelease(api, release)
-    const report = { head: 'a'.repeat(40), config_dir: '.kortix/opencode', committed_scope: 'remote' as const, changed: [] }
-    const descriptor = await fetchConfigReleaseDescriptor(client, report)
+    const descriptor = await fetchConfigReleaseDescriptor(client)
     expect(descriptor).toEqual(release.descriptor)
     const last = api.descriptorRequests.at(-1)!
     expect(last.path).toBe('/v1/projects/proj-1/sessions/ses-1/config-release')
     expect(last.authorization).toBe('Bearer tok')
-    expect(last.body).toEqual({ workspace: report })
+    expect(last.body).toEqual({})
   })
 
   test('accepts an API URL without the /v1 suffix', async () => {
     serveRelease(api, release)
-    const descriptor = await fetchConfigReleaseDescriptor({ ...client, apiUrl: api.url.replace(/\/v1$/, '') }, null)
+    const descriptor = await fetchConfigReleaseDescriptor({ ...client, apiUrl: api.url.replace(/\/v1$/, '') })
     expect(descriptor.release_id).toBe(release.descriptor.release_id)
-    expect(api.descriptorRequests.at(-1)!.body).toEqual({ workspace: null })
   })
 
   test('an API that predates the spec answers 404; the error carries the status', async () => {
     api.respond({ status: 404, json: { error: 'not found' } })
-    const err = await fetchConfigReleaseDescriptor(client, null).catch((e) => e)
+    const err = await fetchConfigReleaseDescriptor(client).catch((e) => e)
     expect(err).toBeInstanceOf(ConfigReleaseApiError)
     expect(err.status).toBe(404)
   })
 
   test('an unreachable API is a network error with a null status', async () => {
-    const err = await fetchConfigReleaseDescriptor({ ...client, apiUrl: 'http://127.0.0.1:1/v1' }, null).catch((e) => e)
+    const err = await fetchConfigReleaseDescriptor({ ...client, apiUrl: 'http://127.0.0.1:1/v1' }).catch((e) => e)
     expect(err).toBeInstanceOf(ConfigReleaseApiError)
     expect(err.status).toBeNull()
   })
 
   test('a malformed descriptor is refused before any field is used', async () => {
     api.respond({ status: 200, json: { ...release.descriptor, release_id: 'not-hex' } })
-    await expect(fetchConfigReleaseDescriptor(client, null)).rejects.toThrow(/release_id/)
+    await expect(fetchConfigReleaseDescriptor(client)).rejects.toThrow(/release_id/)
   })
 })
 
@@ -122,10 +122,13 @@ describe('parseConfigReleaseDescriptor', () => {
     expect(() => parseConfigReleaseDescriptor(magic)).toThrow(/config_dir/)
   })
 
-  test('session-files mode carries no archive; repository-less sessions get governance only', () => {
-    const sessionFiles = { ...valid(), mode: 'session-files', archive: null, files: null }
-    expect(parseConfigReleaseDescriptor(sessionFiles).mode).toBe('session-files')
-    expect(() => parseConfigReleaseDescriptor({ ...valid(), mode: 'session-files' })).toThrow(/session-files/)
+  test('follow-base is the only mode; repository-less sessions get governance only', () => {
+    // A session that edited its own config dir still receives the base
+    // release. Any other mode is refused outright.
+    expect(parseConfigReleaseDescriptor(valid()).mode).toBe('follow-base')
+    expect(() => parseConfigReleaseDescriptor({ ...valid(), mode: 'session-files', archive: null, files: null })).toThrow(
+      /mode/,
+    )
     const withheld = { ...valid(), archive: null, files: null, reason: 'repository access withheld' }
     expect(parseConfigReleaseDescriptor(withheld).compiled_governance).toBe('{"agent":{}}')
   })
@@ -221,11 +224,11 @@ describe('downloadConfigArchive', () => {
 describe('error codes', () => {
   test('a 409 session_repository_changed carries its status, code and error text', async () => {
     api.respond({ status: 409, json: { error: 'Session belongs to a previous repository', code: 'session_repository_changed' } })
-    const err = await fetchConfigReleaseDescriptor(client, null).catch((e) => e)
+    const err = await fetchConfigReleaseDescriptor(client).catch((e) => e)
     expect(isRepositoryChangedError(err)).toBe(true)
     expect(err.message).toBe('Session belongs to a previous repository')
     api.respond({ status: 409, json: { error: 'other', code: 'other_conflict' } })
-    const other = await fetchConfigReleaseDescriptor(client, null).catch((e) => e)
+    const other = await fetchConfigReleaseDescriptor(client).catch((e) => e)
     expect(isRepositoryChangedError(other)).toBe(false)
     expect(other.code).toBe('other_conflict')
   })

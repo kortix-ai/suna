@@ -29,7 +29,13 @@ const MAX_CONFIG_TAR_BYTES = 64 * 1024 * 1024;
 
 const HEX40 = /^[0-9a-f]{40}$/;
 
-export type ConfigMode = 'follow-base' | 'session-files';
+/**
+ * Always `follow-base`: a session runs the base branch's CURRENT config
+ * release. One member on purpose — there is no per-session config policy, and
+ * a session's own edits under `/workspace` reach a box only once they are
+ * pushed to the base branch (docs/specs/config-releases.md, "Feature flag").
+ */
+export type ConfigMode = 'follow-base';
 
 /** `project` compiles every agent. `agent:<name>` compiles one selected agent. */
 export type ConfigReleaseVariant = 'project' | `agent:${string}`;
@@ -391,17 +397,19 @@ export const REPOSITORY_ACCESS_WITHHELD = 'repository access withheld';
 export const COMPILED_GOVERNANCE_FAILED = 'compiled governance failed';
 
 /**
- * Combine a release with the mode the API chose.
- * - `session-files` carries no archive and no files.
- * - A session without repository access never receives an archive: it gets no
- *   repository URL and no clone (`allowsFullRepository`), and the archive would
- *   disclose files that mode withholds. It keeps the compiled governance.
+ * The wire descriptor for a release. The mode is always `follow-base`.
+ *
+ * A session without repository access never receives an archive: it gets no
+ * repository URL and no clone (`allowsFullRepository`), and the archive would
+ * disclose files that mode withholds. It keeps the compiled governance, and
+ * its release ID covers the governance alone so a governance change still
+ * converges.
  */
 export function toDescriptor(
   release: ConfigRelease,
-  mode: ConfigMode,
   options: { repositoryAccess: boolean } = { repositoryAccess: true },
 ): ConfigReleaseDescriptor {
+  const mode: ConfigMode = 'follow-base';
   if (!options.repositoryAccess) {
     return {
       ...release,
@@ -417,7 +425,6 @@ export function toDescriptor(
       reason: release.reason?.startsWith(COMPILED_GOVERNANCE_FAILED) ? release.reason : REPOSITORY_ACCESS_WITHHELD,
     };
   }
-  if (mode === 'session-files') return { ...release, mode, archive: null, files: null };
   return { ...release, mode };
 }
 

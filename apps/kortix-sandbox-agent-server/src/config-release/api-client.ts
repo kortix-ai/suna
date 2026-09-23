@@ -2,7 +2,6 @@ import {
   MAX_CONFIG_ARCHIVE_BYTES,
   parseConfigReleaseDescriptor,
   type ConfigReleaseDescriptor,
-  type WorkspaceReport,
 } from './descriptor'
 
 /**
@@ -65,12 +64,30 @@ export class ConfigReleaseApiError extends Error {
 export const SESSION_REPOSITORY_CHANGED = 'session_repository_changed'
 
 /**
+ * The API's code for a project whose `config_releases` feature flag is off —
+ * per project, or platform-wide through the operator kill switch
+ * (docs/specs/config-releases.md, "Feature flag"). Emitted by
+ * `requireFeatureFlag` as `403`.
+ */
+export const FEATURE_DISABLED = 'feature_disabled'
+
+/**
  * The project replaced its repository after this session was created
  * (spec "Repository replacement"). The session is frozen on its running
  * config: no release applies, and this is not a failure.
  */
 export function isRepositoryChangedError(err: unknown): err is ConfigReleaseApiError {
   return err instanceof ConfigReleaseApiError && err.status === 409 && err.code === SESSION_REPOSITORY_CHANGED
+}
+
+/**
+ * Config releases are switched off for this project. This is not a failure and
+ * not a release problem: the session runs the config it always ran before
+ * releases existed — the workspace config dir. The caller reverts to it and
+ * clears its boot pointer.
+ */
+export function isFeatureDisabledError(err: unknown): err is ConfigReleaseApiError {
+  return err instanceof ConfigReleaseApiError && err.status === 403 && err.code === FEATURE_DISABLED
 }
 
 /** An error for a non-2xx answer, with the JSON body's `error` and `code` when present. */
@@ -83,19 +100,24 @@ async function errorFromResponse(res: Response, what: string): Promise<ConfigRel
     if (typeof body.code === 'string') code = body.code
     if (typeof body.error === 'string') message = body.error
   } catch {}
-  if (code === SESSION_REPOSITORY_CHANGED && message) return new ConfigReleaseApiError(message, res.status, code)
+  if ((code === SESSION_REPOSITORY_CHANGED || code === FEATURE_DISABLED) && message) {
+    return new ConfigReleaseApiError(message, res.status, code)
+  }
   return new ConfigReleaseApiError(`${what} answered ${res.status}: ${text.slice(0, 300)}`, res.status, code)
 }
 
 /**
  * `POST /v1/projects/{projectId}/sessions/{sessionId}/config-release`.
  *
- * The response is validated in full before any field is used. An API that
- * predates the spec answers `404`; the caller keeps its current behaviour.
+ * The request carries no inputs: the desired release is always the base
+ * branch's current release for this session, and nothing the box sends can
+ * change it. The response is validated in full before any field is used. An
+ * API that predates the spec answers `404`; the caller keeps its current
+ * behaviour. A `403 feature_disabled` means config releases are off for the
+ * project (`isFeatureDisabledError`).
  */
 export async function fetchConfigReleaseDescriptor(
   api: ConfigReleaseApi,
-  workspace: WorkspaceReport | null,
   opts: { timeoutMs?: number } = {},
 ): Promise<ConfigReleaseDescriptor> {
   const fetchImpl = api.fetchImpl ?? fetch
@@ -107,7 +129,7 @@ export async function fetchConfigReleaseDescriptor(
     res = await fetchImpl(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${api.token}` },
-      body: JSON.stringify({ workspace }),
+      body: '{}',
       redirect: 'error',
       signal: AbortSignal.timeout(opts.timeoutMs ?? DESCRIPTOR_TIMEOUT_MS),
     })

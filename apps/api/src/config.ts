@@ -578,6 +578,14 @@ const envSchema = z.object({
   KORTIX_PROJECT_SNAPSHOT_MAX_ARCHIVE_BYTES: optInt(512 * 1024 * 1024),
 
   // ── Config releases (optional) ──────────────────────────────────────────
+  // Operator kill switch for the whole config-release feature (the
+  // `config_releases` per-project flag, docs/specs/config-releases.md →
+  // "Feature flag"). Default ON: a session runs the base branch's current
+  // config. Set to false and the flag is unavailable platform-wide — the
+  // Settings row disappears, both routes answer 403 `feature_disabled` for
+  // every project, no convergence is scheduled, and every session falls back
+  // to reading its workspace config dir, whatever a project chose.
+  CONFIG_RELEASES_ENABLED: optBoolTrue,
   // Config archives live in the private Supabase Storage bucket
   // `kortix-config-releases` (docs/specs/config-releases.md). They use
   // SUPABASE_URL and the service-role key, never the snapshot bucket above.
@@ -1223,6 +1231,7 @@ export const config = {
   KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID: env.KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID,
   KORTIX_PROJECT_SNAPSHOT_S3_SECRET_ACCESS_KEY: env.KORTIX_PROJECT_SNAPSHOT_S3_SECRET_ACCESS_KEY,
   KORTIX_PROJECT_SNAPSHOT_DOWNLOAD_TTL_SECONDS: env.KORTIX_PROJECT_SNAPSHOT_DOWNLOAD_TTL_SECONDS,
+  CONFIG_RELEASES_ENABLED: env.CONFIG_RELEASES_ENABLED,
   KORTIX_CONFIG_ARCHIVE_PUBLIC_URL: env.KORTIX_CONFIG_ARCHIVE_PUBLIC_URL,
   KORTIX_PROJECT_SNAPSHOT_MAX_ARCHIVE_BYTES: env.KORTIX_PROJECT_SNAPSHOT_MAX_ARCHIVE_BYTES,
 

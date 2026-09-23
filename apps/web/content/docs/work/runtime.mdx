@@ -53,22 +53,25 @@ The session header reports each server-confirmed reload phase in real time. A we
 
 ### Config convergence
 
-A sandbox holds the config of the commit it was provisioned from. A resume or a restart returns the same VM, so the config does not change by itself. Kortix converges each session on the current config of its `base_ref`. The platform never writes `/workspace` to do this. `/workspace` stays the full clone that you and the agent read and edit.
+A sandbox holds the config of the commit it was provisioned from. A resume or a restart returns the same VM, so the config does not change by itself. Kortix converges each session on the current config of its `base_ref`, at every boot and start of its box.
+
+The platform never writes `/workspace` to do this. `/workspace` stays the full clone that you and the agent read and edit.
 
 The unit a session runs is a **config release**: one archive of the OpenCode config directory (`.kortix/opencode` unless the manifest sets `opencode.config_dir`) at a base commit, plus the agent config the API compiles from `kortix.yaml` and the agent files. The release ID covers both halves. A commit that changes neither produces the same release ID, so nothing restarts.
 
 Convergence runs after the box boots, after each resume and restart, at the end of a turn, when the base branch moves, and when you select **Reload config** or run `kortix sessions reload`. It never ends a turn. A running turn defers convergence to the turn end.
 
-1. The daemon reports which files the session changed under the config directory. It uses read-only Git commands and never fetches.
-2. The API decides the desired release and the **config mode**:
-   - `follow-base`: the session has no config edits of its own. It runs the base branch's release.
-   - `session-files`: the session edited its own config. OpenCode reads those files from `/workspace`, so the edits take effect after a reload.
-3. In `follow-base` mode the daemon downloads the archive through the API and extracts it to `/opt/kortix/config/<release_id>`. It verifies every file against its Git blob ID, then seals the directory read-only. OpenCode reads its agents, skills, tools, and plugins from that directory.
-4. The daemon starts a replacement OpenCode on the new config and runs the proven check: the replacement serves the session API, lists the default agent, and loads every tool in `tools/`. Only a proven replacement takes over. The daemon then records the release as the last proven release in `/opt/kortix/config/current.json`.
+1. The box asks the API which release it should run. The request carries no inputs: the answer is always the base branch's current release for that session.
+2. The daemon downloads the archive through the API and extracts it to `/opt/kortix/config/<release_id>`. It verifies every file against its Git blob ID, then seals the directory read-only. OpenCode reads its agents, skills, tools, and plugins from there.
+3. The daemon starts a replacement OpenCode on the new config and runs the proven check: the replacement serves the session API, lists the default agent, and loads every tool in `tools/`. Only a proven replacement takes over. The daemon then records the release as the last proven release in `/opt/kortix/config/current.json`.
 
-A file does not count as a session edit when the platform writes it: the `@opencode-ai/plugin` version in `package.json`, the installer's lockfile while `package.json` has no other edit, and each skill directory that the managed-skill overlay ships. A file whose content equals any earlier version of that file on `base_ref` does not count either, so a session returns to `follow-base` after its config change merges.
+#### `/workspace` is where you edit, the base branch is what runs
 
-The release copy is read-only so that an edit to the wrong copy fails with a permission error. To change an agent, a skill, or a tool, edit the files under `/workspace/.kortix/opencode` and open a change request.
+A session ALWAYS runs the base branch's current config. There is no per-session config mode.
+
+`/workspace` is your editable checkout. Read the config there, change it there — and the change reaches the running session once it is **pushed to the base branch**, after which the normal convergence picks it up. An edit that is only in `/workspace` changes nothing about how the session behaves, and the running agent is told so: its instructions name the commit its config comes from and say that `/workspace` may be behind it.
+
+The release copy is read-only, so an edit to the wrong copy fails with a permission error instead of silently doing nothing.
 
 #### Fallback
 
@@ -76,8 +79,9 @@ A config that fails the proven check never replaces a working one. The daemon ke
 
 1. The desired release.
 2. The last proven release.
-3. The config directory in `/workspace`, when it contains `opencode.json` or `opencode.jsonc`.
-4. The default config of the sandbox image.
+3. The default config of the sandbox image.
+
+`/workspace` is not in that list. A box never silently falls back to a stale session checkout as the project's config.
 
 Each step down records a `fallback_reason`. The session header then shows **Config failed to load**. Its popover names the reason, the config that runs now, and the release that failed. The box does not retry a failed release until the base branch moves. After 2 sessions of a project fail on the same release, the API stops assigning it in that project and assigns the last release that any session proved.
 
@@ -87,7 +91,6 @@ Each step down records a `fallback_reason`. The session header then shows **Conf
 | --- | --- | --- |
 | Current | Not stale, no fallback | Nothing |
 | Update available | `stale: true` | The update badge, with **Reload config** |
-| Session config | `mode: session-files` | A neutral chip: **Running this session's config** |
 | Fallback | `fallback_reason` set | A red chip: **Config failed to load** |
 
 A reload that ends on a fallback reports an error, not a success.
@@ -112,15 +115,24 @@ A reload that ends on a fallback reports an error, not a success.
 ```
 
 - For a sandbox that supports config releases, `stale` is `true` when `running_release_id` differs from `desired_release_id`.
-- For an older sandbox, `stale` compares the compiled agent config etag and the base commit of the config directory. The API omits `release` for it.
+- For an older sandbox, `stale` compares the compiled agent config etag. The API omits `release` for it.
 - `stale` is `null` when Kortix cannot tell. It is never `false` in that case.
-- `source` is `release`, `workspace`, or `image-default`: where the running config comes from.
+- `mode` is always `follow-base`. `source` is `release` or `image-default`: where the running config comes from.
 
 The `@kortix/sdk` type for `release` is `SessionConfigRelease`.
 
 #### Reload config
 
-**Reload config** loads the base branch's current agents, skills, and tools into the running session. It does not pull the session branch, and it changes no project file and no commit. To bring the code of `base_ref` into the session branch, use **Ask agent to sync**.
+**Reload config** — and `kortix sessions reload <session id>` — does two things in one step, and names what happened to each:
+
+1. It moves the running session onto the base branch's current agents, skills, and tools.
+2. It fast-forwards the `/workspace` checkout, so the files you read there match the config the session runs.
+
+The checkout pull is fast-forward only, on the session's own branch, so it discards nothing. Pass `--no-repo` on the CLI to skip it. To bring the CODE of `base_ref` into the session branch, use **Ask agent to sync**.
+
+#### Turning it off
+
+Config releases are a per-project feature flag, **Config Releases**, on by default in **Settings → Feature flags**. Turn it off and the project returns to the earlier behaviour: OpenCode reads the config directory inside `/workspace`, no release is built, and the session header shows the earlier, etag-based state. The change takes effect at the next boot or start of each session's box; a running session keeps working until then. Turning it back on converges each session again at its next boot or start.
 
 ## Layout inside the sandbox
 

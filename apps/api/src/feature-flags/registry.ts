@@ -311,6 +311,30 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'Read at session provisioning (projects/lib/sessions.ts buildSessionSandboxEnvVars → ' +
       'selectSessionHarness). A running session keeps its harness until it is restarted or resumed.',
   },
+  {
+    key: 'config_releases',
+    name: 'Config Releases',
+    description:
+      "Sessions run the base branch's current config. Kortix loads the project's latest agent config from a read-only copy instead of the session's workspace checkout, so a merged agent, skill, or tool reaches every running session. Off ⇒ OpenCode reads the session's workspace config dir, as it did before config releases.",
+    stability: 'experimental',
+    // Operator kill switch (config.ts CONFIG_RELEASES_ENABLED). Off ⇒ the
+    // Settings row disappears and the surface is dark for every project.
+    available: () => config.CONFIG_RELEASES_ENABLED,
+    // ON by default: this IS the intended behaviour. The flag exists so a
+    // project (or an operator) can turn it OFF without reverting the code.
+    platformDefault: () => true,
+    enforcement: 'routes',
+    enforcementNote:
+      'Mixed, and both halves are enforced. ROUTES: the descriptor route ' +
+      '(POST /projects/:id/sessions/:id/config-release) and the archive route ' +
+      '(GET /projects/:id/config-archives/:tree) answer 403 `feature_disabled` ' +
+      'when off — config-releases/routes.ts. BEHAVIORAL: convergeSessionConfig ' +
+      'returns `disabled` without reaching the box (session-config-convergence.ts), ' +
+      'reloadSessionConfig takes the pre-release legacy path (session-reload.ts), ' +
+      'and GET /config omits the `release` block (routes/session-config.ts). Off ⇒ ' +
+      'no release is built, no archive is stored, and no kortix.config_releases ' +
+      'row is written. See docs/specs/config-releases.md → "Feature flag".',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(

@@ -36,7 +36,7 @@ import {
 } from '@/hooks/projects/use-session-config-freshness';
 import { useChatSendStore } from '@/stores/chat-send-store';
 import type { SessionReloadPhase } from '@kortix/sdk';
-import { ArrowsClockwiseIcon, FileCodeIcon, WarningIcon } from '@phosphor-icons/react';
+import { ArrowsClockwiseIcon, WarningIcon } from '@phosphor-icons/react';
 import type { VariantProps } from 'class-variance-authority';
 import { useState } from 'react';
 import { SessionReloadProgressView } from './session-reload-progress-view';
@@ -106,7 +106,6 @@ export function SessionConfigIndicator({
   // This component may vanish the moment a reload lands, and a dialog that
   // unmounts mid-question is worse than no dialog.
   if (notice.kind === 'hidden' && !isPending) return null;
-  if (!isPending && notice.kind === 'session-files') return <SessionConfigFilesChip />;
   if (!isPending && notice.kind === 'fallback') return <SessionConfigFallbackChip notice={notice} />;
 
   const label = isPending
@@ -220,38 +219,6 @@ export function SessionConfigIndicator({
 }
 
 /**
- * `mode: session-files`: the session edited its own config dir, so it runs those
- * files instead of the base branch's config release. A state, not a problem, so
- * the chip is neutral and carries no action.
- */
-function SessionConfigFilesChip() {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const label = tI18nComplete.raw('textef40aea2badf');
-  return (
-    <Hint
-      side="bottom"
-      sideOffset={4}
-      delayDuration={300}
-      label={tI18nComplete.raw('text15b25630019e')}
-    >
-      <Badge
-        variant="secondary"
-        size="sm"
-        tabIndex={0}
-        aria-label={label}
-        data-testid="session-config-files-chip"
-        className="max-w-56"
-      >
-        <FileCodeIcon />
-        {/* Icon-only below md: at 720 px the label collided with the centered
-            boot status. The label stays in aria-label and the Hint. */}
-        <span className="hidden truncate md:inline">{label}</span>
-      </Badge>
-    </Hint>
-  );
-}
-
-/**
  * How loud the fallback chip is. `destructive` is the loud error treatment the
  * spec recommends (docs/specs/config-releases.md, open decision 1). Set it to
  * `secondary` for a quiet notice; nothing else changes.
@@ -274,9 +241,7 @@ function SessionConfigFallbackChip({
   const servingLabel =
     notice.source === 'release'
       ? tI18nComplete.raw('text00ed4c71dc2b')
-      : notice.source === 'workspace'
-        ? tI18nComplete.raw('textd0cd78619cce')
-        : tI18nComplete.raw('textbd7a1a3b4141');
+      : tI18nComplete.raw('textbd7a1a3b4141');
 
   return (
     <Popover>

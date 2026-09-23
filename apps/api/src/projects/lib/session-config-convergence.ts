@@ -1,7 +1,9 @@
 import { projects, projectSessions } from '@kortix/db';
 import { eq } from 'drizzle-orm';
+import { configReleasesEnabled } from '../../config-releases/enabled';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
+import { pushSessionAgentConfigToSandbox } from './sandbox-env-sync';
 import { PREVIOUS_REPOSITORY_REASON, reloadSessionConfig, type SessionReloadResult } from './session-reload';
 
 /**
@@ -65,6 +67,8 @@ export interface SessionConfigConvergenceTarget {
   defaultBranch: string;
   manifestPath: string | null;
   baseRef: string | null;
+  /** The project's metadata, for the `config_releases` flag. */
+  metadata?: unknown;
 }
 
 export interface SessionConfigConvergenceDeps {
@@ -73,6 +77,17 @@ export interface SessionConfigConvergenceDeps {
     input: SessionConfigConvergenceTarget & { onlyIfStale: true; force: false; refreshRepo?: boolean },
   ) => Promise<SessionReloadResult>;
   sleep: (ms: number) => Promise<void>;
+  /** The project's `config_releases` flag, from its metadata. */
+  configReleasesEnabled: (metadata: unknown) => boolean;
+  /** The pre-config-releases restart behaviour: compile and push governance. */
+  pushGovernance: (input: {
+    projectId: string;
+    sessionId: string;
+    repoUrl: string;
+    defaultBranch: string;
+    manifestPath: string | null;
+    baseRef: string | null;
+  }) => Promise<unknown>;
 }
 
 async function loadTarget(sessionId: string): Promise<SessionConfigConvergenceTarget | null> {
@@ -84,6 +99,7 @@ async function loadTarget(sessionId: string): Promise<SessionConfigConvergenceTa
       defaultBranch: projects.defaultBranch,
       manifestPath: projects.manifestPath,
       baseRef: projectSessions.baseRef,
+      metadata: projects.metadata,
     })
     .from(projectSessions)
     .innerJoin(projects, eq(projects.projectId, projectSessions.projectId))
@@ -97,6 +113,8 @@ const defaultDeps: SessionConfigConvergenceDeps = {
   loadTarget,
   reload: (input) => reloadSessionConfig(input),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  configReleasesEnabled,
+  pushGovernance: (input) => pushSessionAgentConfigToSandbox(input),
 };
 
 export type SessionConfigConvergenceOutcome =
@@ -120,6 +138,17 @@ export type SessionConfigConvergenceOutcome =
   | 'awaiting-daemon-update'
   /** The session belongs to a previous repository generation. It keeps its config. */
   | 'previous-repository'
+  /**
+   * `config_releases` is off for this project (or platform-wide). No
+   * convergence runs; OpenCode keeps reading the session's workspace config
+   * dir. Spec, "Feature flag".
+   */
+  | 'disabled'
+  /**
+   * The flag is off and this was a restart: the compiled governance was
+   * pushed, the pre-config-releases behaviour of `restartSession`.
+   */
+  | 'governance-pushed'
   | 'failed';
 
 type Attempt =
@@ -149,10 +178,6 @@ function classify(result: SessionReloadResult): Attempt {
         return { done: 'converged' };
       case 'unchanged':
         return { done: 'current' };
-      case 'session-files':
-        // The API chose this mode from the session's own edits. Retrying
-        // cannot change it; the next trigger re-evaluates.
-        return { done: 'kept-session-edits' };
       case 'declined':
       case 'quarantined':
         // The same release fails the same way. No fast loop.
@@ -193,6 +218,13 @@ export interface ConvergeSessionConfigOptions {
   schedule?: 'wake' | 'trigger';
   /** Pull the session branch. Default true (the wake path). Triggers pass false. */
   refreshRepo?: boolean;
+  /**
+   * With `config_releases` OFF, push the compiled governance instead of doing
+   * nothing. Set only by the restart path, which pushed it before config
+   * releases existed (`restartSession`). Resume never pushed, so it does not
+   * pass this.
+   */
+  legacyGovernancePush?: boolean;
 }
 
 export async function convergeSessionConfig(
@@ -203,6 +235,26 @@ export async function convergeSessionConfig(
   try {
     const target = await deps.loadTarget(sessionId);
     if (!target) return 'no-session';
+
+    // ── CHOKEPOINT — the `config_releases` flag for every convergence
+    // trigger (docs/specs/config-releases.md, "Feature flag"). Resume,
+    // restart, turn end, an API write that moved the base branch, and a push
+    // through the git proxy ALL arrive here. Off ⇒ nothing reaches the box
+    // and no release is requested, so OpenCode keeps reading the session's
+    // workspace config dir. A restart still pushes the compiled governance,
+    // which is exactly what it did before config releases.
+    if (!deps.configReleasesEnabled(target.metadata)) {
+      if (!options.legacyGovernancePush) return 'disabled';
+      await deps.pushGovernance({
+        projectId: target.projectId,
+        sessionId: target.sessionId,
+        repoUrl: target.repoUrl,
+        defaultBranch: target.defaultBranch,
+        manifestPath: target.manifestPath,
+        baseRef: target.baseRef,
+      });
+      return 'governance-pushed';
+    }
 
     let soon = 0;
     let later = 0;
@@ -237,9 +289,15 @@ export async function convergeSessionConfig(
 
 /**
  * Fire-and-forget form for the restart/resume call sites. Returns immediately.
+ *
+ * `context` also decides the flag-OFF fallback: `restart` pushed the compiled
+ * governance before config releases existed, and keeps doing so; `resume`
+ * pushed nothing, and keeps pushing nothing.
  */
 export function scheduleSessionConfigConvergence(sessionId: string, context: string): void {
-  void convergeSessionConfig(sessionId).then((outcome) => {
+  void convergeSessionConfig(sessionId, undefined, {
+    legacyGovernancePush: context === 'restart',
+  }).then((outcome) => {
     if (outcome === 'current') return;
     logger.info('[projects] session config convergence finished', {
       session_id: sessionId,

@@ -9,12 +9,13 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { quarantineRelease, readBootConfigPointer, readQuarantine, releaseDir } from '../boot-config'
 import type { ConfigReleaseApi } from '../config-release/api-client'
 import type { OpenCodeConfig } from '../harness/open-code/config'
+import { CONFIG_RELEASE_NOTICE_PATH, clearConfigReleaseNotice, writeConfigReleaseNotice } from '../config-release/notice'
 import {
   ConvergeBusyError,
   configReleaseReport,
@@ -35,6 +36,7 @@ import {
   commitAll,
   git,
   initRepo,
+  FEATURE_DISABLED,
   REPOSITORY_CHANGED,
   serveRelease,
   startFakeApi,
@@ -282,10 +284,8 @@ describe('convergeConfigRelease — follow-base', () => {
     expect(runningSourceCommit()).toBe(release.descriptor.source_commit!)
     expect(prepared).toEqual([expect.stringMatching(new RegExp(`${id}\\.[0-9a-f-]+\\.tmp$`))])
     expect(git(work, 'status', '--porcelain')).toBe('')
-    // The workspace report of the untouched session went with the request.
-    expect(api.descriptorRequests.at(-1)!.body).toEqual({
-      workspace: { head: git(work, 'rev-parse', 'HEAD'), config_dir: DIR, committed_scope: 'remote', changed: [] },
-    })
+    // The descriptor request has no inputs at all.
+    expect(api.descriptorRequests.at(-1)!.body).toEqual({})
   })
 
   test('the pointer is written only after the proof', async () => {
@@ -489,30 +489,33 @@ describe('convergeConfigRelease — failures keep the running config', () => {
 })
 
 describe('convergeConfigRelease — other sources', () => {
-  test('session-files: OpenCode reads the workspace dir, prepared there; the pointer stays', async () => {
+  test('a session that edited its own config dir still runs the base release', async () => {
+    // There is no session-files mode. /workspace stays the editable clone; an
+    // edit there reaches the box only once it is pushed to the base branch.
     const good = baseRelease()
     serveRelease(api, good)
     const oc = fakeOpencode()
     await converge(oc)
+    const dir = releaseDir(store, good.descriptor.release_id!)
+    expect(oc.state.dir).toBe(dir)
 
     write(work, `${DIR}/agents/kortix.md`, 'SESSION EDIT\n')
-    api.respond({ status: 200, json: { ...good.descriptor, mode: 'session-files', archive: null, files: null } })
-    prepared.length = 0
     const response = await converge(oc)
 
-    expect(response.outcome).toBe('session-files')
-    expect(response.config).toMatchObject({ source: 'workspace', mode: 'session-files', proven: true })
-    expect(oc.state.dir).toBe(join(work, DIR))
-    expect(prepared).toEqual([join(work, DIR)])
-    expect((await readBootConfigPointer(store))!.release_id).toBe(good.descriptor.release_id!)
-    const report = api.descriptorRequests.at(-1)!.body as { workspace: { changed: Array<{ path: string }> } }
-    expect(report.workspace.changed.map((change) => change.path)).toEqual([`${DIR}/agents/kortix.md`])
+    expect(response.outcome).toBe('unchanged')
+    expect(response.config).toMatchObject({ source: 'release', mode: 'follow-base', proven: true })
+    expect(oc.state.dir).toBe(dir)
+    // The descriptor request carries no inputs at all.
+    expect(api.descriptorRequests.at(-1)!.body).toEqual({})
 
-    // Nothing changed since: no respawn. A further edit: respawn.
-    expect((await converge(oc)).outcome).toBe('unchanged')
-    write(work, `${DIR}/agents/kortix.md`, 'SESSION EDIT 2\n')
-    expect((await converge(oc)).outcome).toBe('session-files')
-    expect(oc.state.reloads).toBe(3)
+    // The edit reaches the box by being pushed to the base branch.
+    write(origin, `${DIR}/agents/kortix.md`, 'SESSION EDIT\n')
+    const pushed = buildRelease(origin, commitAll(origin, 'adopt the edit'), DIR, { governance: GOV_V1 })
+    serveRelease(api, pushed)
+    const after = await converge(oc)
+    expect(after.outcome).toBe('applied')
+    expect(after.config.release_id).toBe(pushed.descriptor.release_id!)
+    expect(oc.state.dir).toBe(releaseDir(store, pushed.descriptor.release_id!))
   })
 
   test('repository access withheld: the image default dir runs with the governance', async () => {
@@ -676,7 +679,7 @@ describe('provenCheck', () => {
 })
 
 describe('fresh boot from a release', () => {
-  test('fetchBootRelease extracts the desired release with no workspace report, and marks both steps', async () => {
+  test('fetchBootRelease extracts the desired release and marks both steps', async () => {
     const release = baseRelease()
     serveRelease(api, release)
     const marks: string[] = []
@@ -690,7 +693,7 @@ describe('fresh boot from a release', () => {
     })
     expect(boot).toMatchObject({ releaseId: release.descriptor.release_id, dir: releaseDir(store, release.descriptor.release_id!) })
     expect(marks).toEqual(['config-release-fetched', 'config-release-extracted'])
-    expect(api.descriptorRequests.at(-1)!.body).toEqual({ workspace: null })
+    expect(api.descriptorRequests.at(-1)!.body).toEqual({})
     expect(readFileSync(join(boot!.dir, 'agents/kortix.md'), 'utf8')).toBe('PROMPT v1\n')
     // Nothing is proven yet: the pointer waits for the proof.
     expect(await readBootConfigPointer(store)).toBeNull()
@@ -831,24 +834,6 @@ describe('repository replacement: a previous-repository session is frozen', () =
   })
 })
 
-describe('the descriptor request carries package.json text', () => {
-  test('an installer pin edit in /workspace reaches the API as text with a matching blob', async () => {
-    write(origin, `${DIR}/package.json`, '{"dependencies":{"@opencode-ai/plugin":"1.17.11"}}\n')
-    commitAll(origin, 'pin')
-    git(work, 'pull', '-q', 'origin', 'main')
-    const pinned = '{"dependencies":{"@opencode-ai/plugin":"1.18.23"}}\n'
-    write(work, `${DIR}/package.json`, pinned)
-    serveRelease(api, baseRelease())
-    await converge(fakeOpencode())
-    const body = api.descriptorRequests.at(-1)!.body as {
-      workspace: { package_json?: string | null; changed: Array<{ path: string; blob: string | null }> }
-    }
-    expect(body.workspace.package_json).toBe(pinned)
-    const entry = body.workspace.changed.find((change) => change.path === `${DIR}/package.json`)!
-    expect(entry.blob).toBe(git(work, 'hash-object', '--', `${DIR}/package.json`))
-  })
-})
-
 /**
  * DEF-4 (verification 2026-09-21): a fresh session created while the base
  * branch held a broken opencode.jsonc never became ready. OpenCode started on
@@ -895,7 +880,7 @@ describe('boot proof: a broken release at boot steps down the fallback chain', (
     return (await fetchBootRelease({ cfg: cfg(), api: client(), root: store, prepare: async () => undefined }))!
   }
 
-  test('broken release and broken workspace → image default, cause reported, release quarantined; a fixed main then converges', async () => {
+  test('a broken release with no proven predecessor → image default, cause reported, release quarantined; a fixed main then converges', async () => {
     const boot = await brokenMain()
     const { oc, spawned, run } = bootOn(boot)
     const restored: string[] = []
@@ -904,7 +889,8 @@ describe('boot proof: a broken release at boot steps down the fallback chain', (
     const result = await run({ restoreGovernance: () => restored.push('restored') })
 
     expect(Date.now() - started).toBeLessThan(4_000)
-    expect(spawned).toEqual([join(work, DIR), defaultDir])
+    // One step down, straight to the image default: /workspace is not a step.
+    expect(spawned).toEqual([defaultDir])
     expect(result).toMatchObject({ proven: true, source: 'image-default', dir: defaultDir })
     const health = configReleaseReport()
     expect(health).toEqual({
@@ -913,9 +899,10 @@ describe('boot proof: a broken release at boot steps down the fallback chain', (
       source: 'image-default',
       mode: 'follow-base',
       proven: true,
-      fallback_reason:
-        `release ${boot.releaseId.slice(0, 12)} failed: ConfigJsonError in opencode.jsonc: InvalidSymbol at line 1, column 20; ` +
-        'workspace config failed: ConfigJsonError in opencode.jsonc: InvalidSymbol at line 1, column 20',
+      // The chain is release -> last proven release -> image default. There
+      // is no proven predecessor here, so the image default runs and the
+      // reason names the release that failed, not a workspace step.
+      fallback_reason: `release ${boot.releaseId.slice(0, 12)} failed: ConfigJsonError in opencode.jsonc: InvalidSymbol at line 1, column 20`,
       failed_release_id: boot.releaseId,
     })
     expect(Object.keys(await readQuarantine(store))).toEqual([boot.releaseId])
@@ -949,9 +936,7 @@ describe('boot proof: a broken release at boot steps down the fallback chain', (
     const boot = await brokenMain()
     const { oc, run } = bootOn(boot)
     await run()
-    const chain =
-      `release ${boot.releaseId.slice(0, 12)} failed: ConfigJsonError in opencode.jsonc: InvalidSymbol at line 1, column 20; ` +
-      'workspace config failed: ConfigJsonError in opencode.jsonc: InvalidSymbol at line 1, column 20'
+    const chain = `release ${boot.releaseId.slice(0, 12)} failed: ConfigJsonError in opencode.jsonc: InvalidSymbol at line 1, column 20`
     expect(configReleaseReport().fallback_reason).toBe(chain)
 
     const again = await converge(oc)
@@ -969,7 +954,7 @@ describe('boot proof: a broken release at boot steps down the fallback chain', (
     expect(next.config.fallback_reason).toContain('ConfigJsonError in opencode.jsonc')
   })
 
-  test('DEF-4b: a restart after the quarantine proves the workspace config and steps down to the image default', async () => {
+  test('DEF-4b: a restart after the quarantine boots the image default and is proven there', async () => {
     const boot = await brokenMain()
     await bootOn(boot).run()
     resetConfigReleaseStateForTests()
@@ -985,8 +970,12 @@ describe('boot proof: a broken release at boot steps down the fallback chain', (
     })
     expect(again).toBeNull()
     expect(quarantined.map(([id]) => id)).toEqual([boot.releaseId])
-    const choice = await resolveBootConfig({ cfg: cfg(), root: store, api: client() })
-    expect(choice.source).toBe('workspace')
+    // The chain skips /workspace: with no proven predecessor the restart
+    // resolves straight to the image default. `releasesEnabled: true` is what
+    // boot passes after the API answered with a descriptor (boot.ts).
+    const choice = await resolveBootConfig({ cfg: cfg(), root: store, api: client(), releasesEnabled: true })
+    expect(choice.source).toBe('image-default')
+    expect(choice.dir).toBe(defaultDir)
     recordBootConfig({ source: choice.source })
     const oc = fakeOpencode()
     served.dir = choice.dir
@@ -995,7 +984,7 @@ describe('boot proof: a broken release at boot steps down the fallback chain', (
     const result = await proveBootFallback({
       cfg: cfg(),
       opencode: oc.opencode,
-      current: { dir: choice.dir, source: 'workspace' },
+      current: { dir: choice.dir, source: 'image-default' },
       prior: {
         reason: `release ${boot.releaseId.slice(0, 12)} is quarantined on this box: ${quarantined[0]![1]}`,
         failedReleaseId: boot.releaseId,
@@ -1011,13 +1000,14 @@ describe('boot proof: a broken release at boot steps down the fallback chain', (
     })
 
     expect(result).toMatchObject({ source: 'image-default', proven: true, dir: defaultDir })
-    expect(spawned).toEqual([defaultDir])
+    // Already on the floor: nothing further is spawned.
+    expect(spawned).toEqual([])
     const cause = 'ConfigJsonError in opencode.jsonc: InvalidSymbol at line 1, column 20'
     expect(configReleaseReport()).toMatchObject({
       source: 'image-default',
       proven: true,
       failed_release_id: boot.releaseId,
-      fallback_reason: `release ${boot.releaseId.slice(0, 12)} is quarantined on this box: ${cause}; workspace config failed: ${cause}`,
+      fallback_reason: `release ${boot.releaseId.slice(0, 12)} is quarantined on this box: ${cause}`,
     })
   })
 
@@ -1065,10 +1055,10 @@ describe('boot proof: a broken release at boot steps down the fallback chain', (
     const boot = (await fetchBootRelease({ cfg: cfg(), api: client(), root: store, prepare: async () => undefined }))!
     const { spawned, run } = bootOn(boot)
     await run()
-    expect(spawned).toEqual([join(work, DIR), defaultDir])
+    // Straight to the image default: /workspace is not a step in the chain.
+    expect(spawned).toEqual([defaultDir])
     expect(configReleaseReport().fallback_reason).toBe(
-      `release ${boot.releaseId.slice(0, 12)} failed: GET /config did not answer in 2 attempts; a plugin that fails at import stops the config load (plugins: plugins/boom.ts); ` +
-        'workspace config failed: GET /config did not answer in 2 attempts; a plugin that fails at import stops the config load (plugins: plugins/boom.ts)',
+      `release ${boot.releaseId.slice(0, 12)} failed: GET /config did not answer in 2 attempts; a plugin that fails at import stops the config load (plugins: plugins/boom.ts)`,
     )
   })
 
@@ -1083,5 +1073,176 @@ describe('boot proof: a broken release at boot steps down the fallback chain', (
     expect(marks).toEqual(['config-release-proven'])
     expect(configReleaseReport()).toMatchObject({ release_id: boot.releaseId, proven: true, mode: 'follow-base', fallback_reason: null })
     expect((await readBootConfigPointer(store))!.release_id).toBe(boot.releaseId)
+  })
+})
+
+/**
+ * The `config_releases` feature flag, off (spec, "Feature flag").
+ *
+ * The API answers `403 feature_disabled`. The box must then do what it did
+ * before config releases existed: OpenCode reads the session's workspace
+ * config dir. A box already running a release is not stranded — it reverts on
+ * this very convergence and clears its boot pointer, so a later reboot does
+ * not come back on the release. Nothing is quarantined, nothing retries.
+ */
+describe('config_releases off: the box reverts to its workspace config dir', () => {
+  test('a box on a release reverts, clears the pointer, and quarantines nothing', async () => {
+    const release = baseRelease()
+    serveRelease(api, release)
+    const oc = fakeOpencode()
+    await converge(oc)
+    expect(oc.state.dir).toBe(releaseDir(store, release.descriptor.release_id!))
+    expect(await readBootConfigPointer(store)).not.toBeNull()
+
+    api.respond(FEATURE_DISABLED)
+    const response = await converge(oc)
+
+    expect(response.outcome).toBe('applied')
+    expect(response.ok).toBe(true)
+    expect(response.reason).toMatch(/config releases are disabled/i)
+    expect(response.config).toMatchObject({
+      release_id: null,
+      desired_release_id: null,
+      source: 'workspace',
+      mode: null,
+      fallback_reason: null,
+      failed_release_id: null,
+    })
+    expect(oc.state.dir).toBe(join(work, DIR))
+    expect(await readBootConfigPointer(store)).toBeNull()
+    expect(await readQuarantine(store)).toEqual({})
+  })
+
+  test('a box already on its workspace config dir does nothing and does not restart', async () => {
+    api.respond(FEATURE_DISABLED)
+    const oc = fakeOpencode()
+    const response = await converge(oc)
+
+    expect(response.outcome).toBe('unchanged')
+    expect(response.reason).toMatch(/config releases are disabled/i)
+    expect(oc.state.reloads).toBe(0)
+    expect(oc.state.dir).toBe(join(work, DIR))
+    expect(await readBootConfigPointer(store)).toBeNull()
+  })
+
+  test('repeated convergences never restart again: no retry storm', async () => {
+    const release = baseRelease()
+    serveRelease(api, release)
+    const oc = fakeOpencode()
+    await converge(oc)
+    const reloadsOnRelease = oc.state.reloads
+
+    api.respond(FEATURE_DISABLED)
+    await converge(oc)
+    const afterRevert = oc.state.reloads
+    expect(afterRevert).toBe(reloadsOnRelease + 1)
+
+    for (let i = 0; i < 3; i++) expect((await converge(oc)).outcome).toBe('unchanged')
+    expect(oc.state.reloads).toBe(afterRevert)
+  })
+
+  test('the same 403 from the archive route reverts too', async () => {
+    serveRelease(api, baseRelease())
+    api.archiveOverride = FEATURE_DISABLED
+    const oc = fakeOpencode()
+    const response = await converge(oc)
+
+    expect(response.outcome).toBe('unchanged')
+    expect(response.reason).toMatch(/config releases are disabled/i)
+    expect(response.config.fallback_reason).toBeNull()
+    expect(oc.state.dir).toBe(join(work, DIR))
+    expect(await readQuarantine(store)).toEqual({})
+  })
+
+  test('turning the flag back ON converges the session again, on the same box', async () => {
+    const release = baseRelease()
+    serveRelease(api, release)
+    const oc = fakeOpencode()
+    await converge(oc)
+
+    api.respond(FEATURE_DISABLED)
+    expect((await converge(oc)).outcome).toBe('applied')
+    expect(oc.state.dir).toBe(join(work, DIR))
+
+    serveRelease(api, release)
+    const back = await converge(oc)
+    expect(back.outcome).toBe('applied')
+    expect(back.config).toMatchObject({
+      release_id: release.descriptor.release_id!,
+      source: 'release',
+      mode: 'follow-base',
+      proven: true,
+    })
+    expect(oc.state.dir).toBe(releaseDir(store, release.descriptor.release_id!))
+    expect((await readBootConfigPointer(store))!.release_id).toBe(release.descriptor.release_id!)
+  })
+})
+
+/**
+ * The session notice (spec, "Telling the session"). The agent's system
+ * context must name the commit whose config the box runs, exactly once per
+ * convergence that changed something.
+ */
+describe('the session is told which commit it runs', () => {
+  const noticePath = join(tmpdir(), `kortix-notice-converge-${process.pid}.md`)
+  const readNotice = () => (existsSync(noticePath) ? readFileSync(noticePath, 'utf8') : null)
+  const noteFor = (descriptor: { source_commit: string | null; config_dir: string | null }) =>
+    writeConfigReleaseNotice(
+      { sourceCommit: descriptor.source_commit, configDir: descriptor.config_dir, sessionId: 'ses-1' },
+      noticePath,
+    )
+
+  afterEach(() => {
+    rmSync(noticePath, { force: true })
+    clearConfigReleaseNotice()
+  })
+
+  test('a convergence that applies a release names its commit; an unchanged one writes nothing', async () => {
+    const release = baseRelease()
+    serveRelease(api, release)
+    const oc = fakeOpencode()
+    clearConfigReleaseNotice()
+    await converge(oc)
+
+    const applied = readFileSync(CONFIG_RELEASE_NOTICE_PATH, 'utf8')
+    expect(applied).toContain(`commit ${release.descriptor.source_commit!.slice(0, 12)}`)
+    expect(applied).toContain('`/workspace` is a separate checkout')
+    expect(applied).toContain('pushed to the base branch')
+    const mtime = statSync(CONFIG_RELEASE_NOTICE_PATH).mtimeMs
+
+    // Nothing moved: the agent must not be told its config changed.
+    expect((await converge(oc)).outcome).toBe('unchanged')
+    expect(statSync(CONFIG_RELEASE_NOTICE_PATH).mtimeMs).toBe(mtime)
+
+    // A push to the base branch: the notice names the new commit.
+    write(origin, `${DIR}/agents/kortix.md`, 'PROMPT v2\n')
+    const next = buildRelease(origin, commitAll(origin, 'v2'), DIR, { governance: GOV_V1 })
+    serveRelease(api, next)
+    expect((await converge(oc)).outcome).toBe('applied')
+    const after = readFileSync(CONFIG_RELEASE_NOTICE_PATH, 'utf8')
+    expect(after).toContain(`commit ${next.descriptor.source_commit!.slice(0, 12)}`)
+    expect(after).not.toContain(release.descriptor.source_commit!.slice(0, 12))
+  })
+
+  test('turning the flag off clears the notice: no release runs any more', async () => {
+    serveRelease(api, baseRelease())
+    const oc = fakeOpencode()
+    await converge(oc)
+    expect(existsSync(CONFIG_RELEASE_NOTICE_PATH)).toBe(true)
+
+    api.respond(FEATURE_DISABLED)
+    await converge(oc)
+    expect(existsSync(CONFIG_RELEASE_NOTICE_PATH)).toBe(false)
+  })
+
+  test('the notice is the one the composer declares as an OpenCode instruction', () => {
+    // The channel is the agent's system context, not a transcript message:
+    // applying a release restarts OpenCode, and `instructions` is composed at
+    // every spawn, so the note survives the restart the convergence performs.
+    const lifecycle = readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'lifecycle.ts'), 'utf8')
+    expect(lifecycle).toContain('configReleaseNoticePath: configReleaseNoticePath()')
+    expect(lifecycle).toContain("import { configReleaseNoticePath } from '../../config-release/notice'")
+    expect(noteFor({ source_commit: 'a'.repeat(40), config_dir: DIR })).toBe('written')
+    expect(readNotice()).toContain('kortix sessions reload ses-1')
   })
 })

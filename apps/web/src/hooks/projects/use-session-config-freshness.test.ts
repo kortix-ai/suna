@@ -143,28 +143,16 @@ describe('sessionConfigNotice with a config release block', () => {
     ).toEqual({ kind: 'stale', running: '0123456789ab', latest: 'fedcba987654' });
   });
 
-  test('session config: mode session-files shows the neutral chip', () => {
-    expect(
-      sessionConfigNotice(
-        state({
-          stale: false,
-          release: release({
-            mode: 'session-files',
-            source: 'workspace',
-            running_release_id: null,
-            desired_release_id: null,
-          }),
-        }),
-      ),
-    ).toEqual({ kind: 'session-files' });
-  });
-
-  test('session config with unloaded edits: stale wins, so the reload is offered', () => {
-    expect(
-      sessionConfigNotice(
-        state({ stale: true, release: release({ mode: 'session-files', source: 'workspace' }) }),
-      ).kind,
-    ).toBe('stale');
+  test('a session that edited its own config gets no notice of its own', () => {
+    // `/workspace` is not a config source. A session edits `.kortix/opencode`
+    // there, but those edits reach the session only once they are pushed to the
+    // base branch, after which the ordinary `stale` notice offers the reload.
+    // Silence is the only correct answer for a current session.
+    for (const source of ['release', 'image-default'] as const) {
+      expect(sessionConfigNotice(state({ stale: false, release: release({ source }) }))).toEqual({
+        kind: 'hidden',
+      });
+    }
   });
 
   test('fallback: a set fallback_reason shows the reason and what serves now', () => {
@@ -189,17 +177,15 @@ describe('sessionConfigNotice with a config release block', () => {
     });
   });
 
-  test('fallback wins over stale and over session-files', () => {
+  test('fallback wins over stale', () => {
     // After a failed convergence the running release differs from the desired
     // one, so `stale` is true. Offering "update available" would retry a
     // release that just failed; the reason is the useful answer.
-    for (const mode of ['follow-base', 'session-files'] as const) {
-      expect(
-        sessionConfigNotice(
-          state({ stale: true, release: release({ mode, fallback_reason: 'extract failed' }) }),
-        ).kind,
-      ).toBe('fallback');
-    }
+    expect(
+      sessionConfigNotice(
+        state({ stale: true, release: release({ fallback_reason: 'extract failed' }) }),
+      ).kind,
+    ).toBe('fallback');
   });
 
   test('fallback to the image default names no release', () => {
@@ -318,9 +304,19 @@ describe('reloadNotAppliedCopy', () => {
 const HOOK_SOURCE = readFileSync(join(import.meta.dir, 'use-session-config-freshness.ts'), 'utf8');
 
 describe('useReloadSessionConfig — the costly mistakes', () => {
-  test('the web reload is config-only and cannot refresh workspace files', () => {
+  test('the web reload does BOTH halves: the running config and the checkout', () => {
+    // A reload that converged the config and left /workspace behind was the
+    // confusion this control exists to remove: the files a person reads there
+    // no longer match the config the session runs. The pull is `--ff-only` on
+    // the session's own branch, so it can discard nothing.
     const body = HOOK_SOURCE.split('const mutation = useMutation({')[1]?.split('\n  });')[0];
-    expect(body).toContain('refresh_repo: false');
+    expect(body).toContain('refresh_repo: true');
+    expect(body).not.toContain('refresh_repo: false');
+  });
+
+  test('a reload that applied nothing still shows the server sentence, which names the checkout', () => {
+    const body = HOOK_SOURCE.split('const mutation = useMutation({')[1]?.split('\n  });')[0];
+    expect(body).toContain('warningToast(reloadNotAppliedCopy(result.reason), { description: result.detail })');
   });
 
   test('the reload mutation never retries', () => {
@@ -379,11 +375,16 @@ describe('fallbackCopyKeys', () => {
     expect(en[keys.toast]).toBe('The new agent config failed to load. The platform default config runs this session.');
   });
 
-  test('a release or the workspace keeps the earlier-config copy', () => {
-    for (const source of ['release', 'workspace'] as const) {
-      const keys = fallbackCopyKeys(source);
-      expect(en[keys.runs]).toContain('An earlier config runs this session.');
-      expect(en[keys.toast]).toContain('An earlier config still runs this session.');
-    }
+  test('a release keeps the earlier-config copy', () => {
+    const keys = fallbackCopyKeys('release');
+    expect(en[keys.runs]).toContain('An earlier config runs this session.');
+    expect(en[keys.toast]).toContain('An earlier config still runs this session.');
+  });
+
+  test('there is no copy for a workspace config source — `/workspace` is not one', () => {
+    // The narrowed `SessionConfigRelease['source']` makes the state unreachable
+    // at compile time, so the source is the only place a reintroduction shows.
+    expect(HOOK_SOURCE).not.toContain('session-files');
+    expect(HOOK_SOURCE).not.toContain("'workspace'");
   });
 });

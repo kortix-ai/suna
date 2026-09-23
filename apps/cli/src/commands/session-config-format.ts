@@ -44,7 +44,6 @@ function short(id: string): string {
 }
 
 function runningLabel(release: SessionConfigRelease, bold: Bold): string {
-  if (release.source === 'workspace') return 'its workspace config';
   // The web header names it the same way ("The platform default config").
   if (release.source === 'image-default') return 'the platform default config';
   return release.running_release_id
@@ -85,17 +84,6 @@ export function describeConfigStatus(
     };
   }
 
-  // The session edited its own config dir, so its files win until the edits
-  // are merged or reverted. A reload does not change that, so do not offer one.
-  if (release?.mode === 'session-files') {
-    return {
-      tone: 'ok',
-      text: state.stale
-        ? "Running this session's own config from its workspace. The base branch has newer config; it applies once this session's config edits are merged or reverted."
-        : "Running this session's own config from its workspace.",
-    };
-  }
-
   const running = release?.running_release_id
     ? `release ${bold(short(release.running_release_id))}`
     : bold(String(state.running_etag));
@@ -123,17 +111,11 @@ export function describeReloadOutcome(
   dim: Bold = plain,
 ): ConfigLine {
   const fallback = Boolean(result.release?.fallback_reason);
-  // The session runs its own edited config files. That is the intended outcome
-  // of `session-files` mode, not a problem (verification DEF-2: it printed as a
-  // warning because the tone keyed only off `agent_files === 'kept-yours'`).
-  // Without a `release` block, kept-yours keeps its old meaning: the base
-  // branch's agent files were NOT applied, which deserves a warning.
-  const sessionFiles = result.release?.mode === 'session-files' && !fallback;
 
   if (!result.applied) {
     // "Nothing to apply: already current." is a plain success. Everything else
     // that applied nothing — mid-turn, unreachable, declined — is a warning.
-    const quiet = !fallback && (result.agent_files === 'already-current' || sessionFiles);
+    const quiet = !fallback && result.agent_files === 'already-current';
     return { tone: quiet ? 'ok' : 'warn', text: result.detail };
   }
 
@@ -142,9 +124,7 @@ export function describeReloadOutcome(
   // the box could not say, the base branch's files were not applied, or the
   // new config did not start and an earlier one still runs.
   const needsAttention =
-    fallback ||
-    result.agent_files === 'unknown' ||
-    (result.agent_files === 'kept-yours' && !sessionFiles);
+    fallback || result.agent_files === 'unknown' || result.agent_files === 'kept-yours';
 
   // A release is the identity that matters: etags can be equal across two
   // releases (verification printed "— 37f79103 → 37f79103" for a real change).

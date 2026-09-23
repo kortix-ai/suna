@@ -1,6 +1,6 @@
 import type { HarnessControlService, HarnessControlOperations, HarnessEnvironmentInput, HarnessRefreshInput } from '../control'
 import { requireOpenCodeConfig } from './config'
-import { convergeConfigRelease, releaseGovernanceActive, workspaceReportFor } from './config-release'
+import { convergeConfigRelease, releaseGovernanceActive } from './config-release'
 import { writeAgentEnvFile } from '../../agent-env-file'
 import { syncEgressShim } from '../../egress-shim'
 import { invalidateRuntimeState } from './runtime-state-projection'
@@ -380,7 +380,6 @@ export function createOpenCodeControlService(
         // Config releases (docs/specs/config-releases.md). The descriptor is
         // always fetched from the API; nothing here takes one as input.
         convergeConfig: () => convergeConfigRelease({ cfg, opencode }),
-        configWorkspace: () => workspaceReportFor(cfg),
         async abort() {
           const sessionId = readPinnedOpencodeSessionId()
           if (!sessionId) {

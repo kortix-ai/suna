@@ -42,6 +42,7 @@ import {
   resolveCompiledAgentConfigForSession,
   resolveSelectedAgentConfigForSession,
 } from './compile-agent-config';
+import { projectConfigReleasesEnabled } from '../../config-releases/enabled';
 import { recordDaemonConfigReport } from '../../config-releases/quarantine';
 import { sessionUsesCurrentRepository } from './repository-generation';
 import { pushSessionAgentConfigToSandbox } from './sandbox-env-sync';
@@ -138,6 +139,29 @@ export function configNeedsPush(input: {
   );
 }
 
+/**
+ * The session's own `/workspace` checkout, after a reload.
+ *
+ *  • `updated`         — fast-forwarded to a new commit.
+ *  • `already-current` — nothing to pull.
+ *  • `not-requested`   — the caller passed `refresh_repo: false`.
+ *  • `refused`         — the box declined the pull (local changes, no remote).
+ */
+export type WorkspaceCheckout = 'updated' | 'already-current' | 'not-requested' | 'refused';
+
+/** Classify the checkout half of a reload from the commits before and after. */
+export function classifyWorkspaceCheckout(input: {
+  requested: boolean;
+  ok: boolean;
+  before: string | null;
+  after: string | null;
+}): WorkspaceCheckout {
+  if (!input.requested) return 'not-requested';
+  if (!input.ok) return 'refused';
+  if (input.before && input.after && input.before !== input.after) return 'updated';
+  return 'already-current';
+}
+
 export interface SessionReloadResult {
   /** True when the agent config the box runs was actually replaced. */
   applied: boolean;
@@ -204,6 +228,13 @@ export interface SessionReloadResult {
    * governance push. Absent when the box was not reached.
    */
   config_path?: 'release' | 'legacy';
+  /**
+   * What happened to the session's own `/workspace` checkout — the OTHER half
+   * of a reload. A reload does two things and must report both: it
+   * fast-forwards the checkout, and it converges the config the box runs.
+   * Absent when the box was not reached at all.
+   */
+  workspace_checkout?: WorkspaceCheckout;
 }
 
 /** Server-observed boundaries emitted by the streamed reload route. */
@@ -254,21 +285,42 @@ function fallbackSentence(result: SessionReloadResult): string | null {
 /** What serves the session after a fallback, named the way the web header names it. */
 function fallbackRunsSentence(source: string | undefined): string {
   if (source === 'image-default') return 'The platform default config runs this session.';
-  if (source === 'workspace') return "This session's workspace config runs this session.";
   return 'An earlier config still runs this session.';
 }
 
-const SESSION_FILES_SENTENCE =
-  "This session runs its own config files: it has edits under its config dir, so the base branch's config files are not applied. Compiled governance still comes from the base branch.";
+/**
+ * A reload does TWO things: it fast-forwards the session's `/workspace`
+ * checkout, and it converges the config the box runs. Both are reported, in
+ * one sentence each, so a half-sync is never silent. Empty when the API did
+ * not run the checkout half at all.
+ *
+ * The wording lives here, server-side, because every surface renders
+ * `detail`: `kortix sessions reload`, the web's "Reload config" toast, and the
+ * streamed reload. One sentence, one place.
+ */
+export function checkoutSentence(result: SessionReloadResult): string {
+  const at = result.commit_sha ? ` at ${result.commit_sha.slice(0, 12)}` : '';
+  switch (result.workspace_checkout) {
+    case 'updated':
+      return `The /workspace checkout was updated${at}.`;
+    case 'already-current':
+      return `The /workspace checkout was already current${at}.`;
+    case 'not-requested':
+      return 'The /workspace checkout was left alone; this call did not ask for it.';
+    case 'refused':
+      return 'The /workspace checkout was NOT updated: the sandbox declined the pull.';
+    default:
+      return '';
+  }
+}
 
 export function reloadDetail(result: SessionReloadResult): string {
+  const checkout = checkoutSentence(result);
+  const withCheckout = (text: string) => (checkout ? `${text} ${checkout}` : text);
   const fallback = fallbackSentence(result);
-  if (fallback) return withTurnNotice(fallback, result);
-  if (result.release?.mode === 'session-files' && result.agent_files === 'kept-yours') {
-    return withTurnNotice(SESSION_FILES_SENTENCE, result);
-  }
-  if (!result.applied) return `Nothing to apply: ${result.reason ?? 'unchanged'}.`;
-  return withTurnNotice(reloadOutcomeSentence(result), result);
+  if (fallback) return withCheckout(withTurnNotice(fallback, result));
+  if (!result.applied) return withCheckout(`Nothing to apply: ${result.reason ?? 'unchanged'}.`);
+  return withCheckout(withTurnNotice(reloadOutcomeSentence(result), result));
 }
 
 function reloadOutcomeSentence(result: SessionReloadResult): string {
@@ -337,6 +389,8 @@ export interface SessionReloadDeps {
   recordReport: typeof recordDaemonConfigReport;
   /** False for a session from a previous repository generation. */
   usesCurrentRepository: (projectId: string, sessionId: string) => Promise<boolean>;
+  /** The project's `config_releases` flag. False ⇒ the pre-release path. */
+  configReleasesEnabled: (projectId: string) => Promise<boolean>;
 }
 
 /** The reload `reason` for a session from a previous repository generation. */
@@ -366,6 +420,7 @@ function defaultReloadDeps(): SessionReloadDeps {
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     recordReport: recordDaemonConfigReport,
     usesCurrentRepository: sessionUsesCurrentRepositoryById,
+    configReleasesEnabled: projectConfigReleasesEnabled,
   };
 }
 
@@ -628,17 +683,33 @@ export async function reloadSessionConfig(input: {
     };
   }
 
-  await deps.recordReport({ projectId: input.projectId, sessionId: input.sessionId, report: before.release });
+  // CHOKEPOINT — the `config_releases` flag for the reload path
+  // (docs/specs/config-releases.md, "Feature flag"). Off ⇒ the daemon's own
+  // capability is ignored and this reload takes the pre-release path: the
+  // plain refresh plus the compiled-governance push, an etag-based result,
+  // and no `release` block for the CLI or the web to render. Nothing is
+  // recorded in the quarantine ledger either, because no release is assigned.
+  const releasesEnabled = await deps.configReleasesEnabled(input.projectId);
+  const capable = releasesEnabled && before.configReleases;
+
+  if (releasesEnabled) {
+    await deps.recordReport({ projectId: input.projectId, sessionId: input.sessionId, report: before.release });
+  }
   // Present for a daemon with `config.release.v1`: the state it reported
   // before this reload.
-  const releaseBefore = before.configReleases && before.release ? toSessionConfigRelease(before.release) : null;
+  const releaseBefore = capable && before.release ? toSessionConfigRelease(before.release) : null;
+  // The checkout half of the reload. Set by whichever branch below runs the
+  // refresh; a reload that never reached the refresh reports `not-requested`.
+  let checkout: WorkspaceCheckout = 'not-requested';
   const releaseFields = (
     release: SessionConfigRelease | null,
     outcome: ConvergeOutcome | null,
-  ): Pick<SessionReloadResult, 'release' | 'release_outcome' | 'config_path'> =>
-    before.configReleases
-      ? { ...(release ? { release } : {}), release_outcome: outcome, config_path: 'release' }
-      : { config_path: 'legacy' };
+  ): Pick<SessionReloadResult, 'release' | 'release_outcome' | 'config_path' | 'workspace_checkout'> => ({
+    ...(capable
+      ? { ...(release ? { release } : {}), release_outcome: outcome, config_path: 'release' as const }
+      : { config_path: 'legacy' as const }),
+    workspace_checkout: checkout,
+  });
 
   // `null` counts as busy. "Could not tell" is not permission to restart — that
   // would defeat the one promise this gate makes, in precisely the case where
@@ -671,11 +742,17 @@ export async function reloadSessionConfig(input: {
   // A daemon with `config.release.v1` converges itself: it fetches the
   // descriptor from the API, which carries the compiled governance, so no
   // separate governance push and no `config_dir=1`.
-  if (before.configReleases) {
+  if (capable) {
     if (pullRepo) {
       input.onPhase?.('refreshing-workspace');
       const refreshed = await refreshSandboxWorkspace(input.sessionId, { pullRepo }, deps);
       repoRefreshed = refreshed.ok;
+      checkout = classifyWorkspaceCheckout({
+        requested: true,
+        ok: refreshed.ok,
+        before: before.commitSha,
+        after: refreshed.commitSha,
+      });
       commitSha = refreshed.commitSha ?? commitSha;
     }
     input.onPhase?.('applying-config');
@@ -706,12 +783,20 @@ export async function reloadSessionConfig(input: {
     };
   }
 
-  // ── A daemon without config releases ────────────────────────────────────
-  // Only the plain refresh. It stages the new daemon through runtime assets.
+  // ── The pre-release path ────────────────────────────────────────────────
+  // Reached two ways: a daemon without `config.release.v1`, and a project
+  // whose `config_releases` flag is OFF (spec, "Feature flag"). Only the plain
+  // refresh plus the governance push — what a reload did before releases.
   // Never `config_dir=1`: the old handler writes into `/workspace`.
   input.onPhase?.('refreshing-workspace');
   const refreshed = await refreshSandboxWorkspace(input.sessionId, { pullRepo }, deps);
   repoRefreshed = pullRepo && refreshed.ok;
+  checkout = classifyWorkspaceCheckout({
+    requested: pullRepo,
+    ok: refreshed.ok,
+    before: before.commitSha,
+    after: refreshed.commitSha,
+  });
   commitSha = refreshed.commitSha ?? commitSha;
 
   // An old daemon cannot report its agent files: the files converge after its
@@ -802,10 +887,6 @@ export function convergeToReloadResult(
       return { ...common, applied: true, agent_files: 'updated' };
     case 'unchanged':
       return { ...common, applied: false, agent_files: 'already-current', reason: 'already current' };
-    case 'session-files':
-      return reloaded
-        ? { ...common, applied: true, agent_files: 'kept-yours' }
-        : { ...common, applied: false, agent_files: 'kept-yours', reason: 'this session runs its own config files' };
     case 'declined':
       return {
         ...common,
