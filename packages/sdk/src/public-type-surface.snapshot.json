@@ -3552,6 +3552,7 @@
     "SentimentSummary",
     "ServiceAction",
     "Session",
+    "SessionMessagesOptions",
     "SessionMessagesSource",
     "SessionModelSelection",
     "SessionPhase",

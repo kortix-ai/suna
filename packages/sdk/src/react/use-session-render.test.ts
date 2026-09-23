@@ -294,3 +294,64 @@ describe('useRuntimeMessages({ ignoreStreamedText: true }) — panel consumers',
     expect(renders - before).toBe(2);
   });
 });
+
+describe('useSessionMessages({ throttleMs }) — paced transcript delivery', () => {
+  test('a burst of deltas renders the leading change at once and the latest rows once at the interval edge', async () => {
+    const { streamingMessageId, streamingPartId } = seedTranscript();
+    let transcriptRenders = 0;
+    let liveText = '';
+    function Transcript({ session }: { session: Parameters<typeof useSessionMessages>[0] }) {
+      const messages = useSessionMessages(session, { throttleMs: 50 });
+      transcriptRenders++;
+      liveText = (messages[messages.length - 1]?.parts[0] as TextPart | undefined)?.text ?? '';
+      return null;
+    }
+    function Host() {
+      const session = useSession(PROJECT_ID, SESSION_ID, {
+        enabled: false,
+        replayStartStash: false,
+        initialOpenCodeSessionId: OC_ID,
+        subscribeMessages: false,
+      });
+      return createElement(Transcript, { session });
+    }
+    mount(createElement(Host));
+    const before = transcriptRenders;
+    const base = `answer ${TRANSCRIPT_MESSAGES / 2 - 1}`;
+
+    streamDeltas(streamingMessageId, streamingPartId, STREAMED_DELTAS);
+
+    // Leading edge: the first delta shows at once; the rest wait for the edge.
+    expect(transcriptRenders - before).toBe(1);
+    expect(liveText).toBe(`${base} tok`);
+
+    await act(async () => {
+      await Bun.sleep(80);
+    });
+    expect(transcriptRenders - before).toBe(2);
+    expect(liveText).toBe(`${base}${' tok'.repeat(STREAMED_DELTAS)}`);
+  });
+
+  test('without throttleMs every delta renders (the default contract)', () => {
+    const { streamingMessageId, streamingPartId } = seedTranscript();
+    let transcriptRenders = 0;
+    function Transcript({ session }: { session: Parameters<typeof useSessionMessages>[0] }) {
+      useSessionMessages(session);
+      transcriptRenders++;
+      return null;
+    }
+    function Host() {
+      const session = useSession(PROJECT_ID, SESSION_ID, {
+        enabled: false,
+        replayStartStash: false,
+        initialOpenCodeSessionId: OC_ID,
+        subscribeMessages: false,
+      });
+      return createElement(Transcript, { session });
+    }
+    mount(createElement(Host));
+    const before = transcriptRenders;
+    streamDeltas(streamingMessageId, streamingPartId, 20);
+    expect(transcriptRenders - before).toBe(20);
+  });
+});
