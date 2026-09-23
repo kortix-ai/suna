@@ -8,6 +8,7 @@ import {
   previewSandboxName,
   runSandboxPreview,
   selectPreviewSessionSandboxIds,
+  selectStalePreviewSessionSandboxIds,
   selectStalePreviewSandboxIds,
   selectTeardownSandboxIds,
 } from '../src/core/sandbox-preview';
@@ -319,6 +320,33 @@ describe('provider-neutral preview lifecycle', () => {
     expect(selectPreviewSessionSandboxIds(sandboxes, new Set(['kortix-preview-pr-42']))).toEqual([
       'owned',
     ]);
+  });
+
+  it('reconciles orphan preview sessions from their instance id', () => {
+    const session = (id: string, instance: string) => ({
+      id,
+      metadata: {
+        'kortix.managed': 'true',
+        'kortix.env': 'preview',
+        'kortix.workload': 'session',
+        'kortix.instance': instance,
+      },
+    });
+    const sandboxes = [
+      session('active-pr', 'kortix-preview-pr-42'),
+      session('closed-pr', 'kortix-preview-pr-43'),
+      session('live-branch', 'kortix-env-feat-live'),
+      session('deleted-branch', 'kortix-env-feat-gone'),
+      session('unknown-shape', 'manual-preview'),
+    ];
+
+    expect(
+      selectStalePreviewSessionSandboxIds(
+        sandboxes,
+        new Map([[42, 'head']]),
+        new Set(['kortix-env-feat-live']),
+      ),
+    ).toEqual(['closed-pr', 'deleted-branch']);
   });
 
   it('does not sweep a branch environment for the one thing that retires a preview', () => {

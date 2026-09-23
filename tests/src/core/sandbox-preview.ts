@@ -409,6 +409,14 @@ export function selectTeardownSandboxIds(
 }
 
 /** Session sandboxes owned by one or more preview host instances. */
+function isManagedPreviewSession(sandbox: PreviewSandboxRecord): boolean {
+  return (
+    sandbox.metadata?.['kortix.managed'] === 'true' &&
+    sandbox.metadata?.['kortix.env'] === 'preview' &&
+    sandbox.metadata?.['kortix.workload'] === 'session'
+  );
+}
+
 export function selectPreviewSessionSandboxIds(
   sandboxes: PreviewSandboxRecord[],
   instanceIds: ReadonlySet<string>,
@@ -416,11 +424,27 @@ export function selectPreviewSessionSandboxIds(
   return sandboxes
     .filter(
       (sandbox) =>
-        sandbox.metadata?.['kortix.managed'] === 'true' &&
-        sandbox.metadata?.['kortix.env'] === 'preview' &&
-        sandbox.metadata?.['kortix.workload'] === 'session' &&
+        isManagedPreviewSession(sandbox) &&
         instanceIds.has(String(sandbox.metadata?.['kortix.instance'] ?? '')),
     )
+    .map((sandbox) => sandbox.id);
+}
+
+/** Orphan child sessions whose pull request or branch no longer exists. */
+export function selectStalePreviewSessionSandboxIds(
+  sandboxes: PreviewSandboxRecord[],
+  activePullRequests: ReadonlyMap<number, string>,
+  liveBranchSandboxNames: ReadonlySet<string> = new Set(),
+): string[] {
+  return sandboxes
+    .filter(isManagedPreviewSession)
+    .filter((sandbox) => {
+      const instance = String(sandbox.metadata?.['kortix.instance'] ?? '');
+      const ephemeral = /^kortix-preview-pr-([1-9][0-9]*)$/.exec(instance);
+      if (ephemeral) return !activePullRequests.has(Number(ephemeral[1]));
+      if (instance.startsWith('kortix-env-')) return !liveBranchSandboxNames.has(instance);
+      return false;
+    })
     .map((sandbox) => sandbox.id);
 }
 

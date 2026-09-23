@@ -41,6 +41,7 @@ import {
   previewSandboxIdentity,
   previewSandboxName,
   selectPreviewSessionSandboxIds,
+  selectStalePreviewSessionSandboxIds,
   selectStalePreviewSandboxIds,
   selectTeardownSandboxIds,
 } from './sandbox-preview';
@@ -429,7 +430,14 @@ export async function reconcilePlatinumPreviews(input: {
       .filter((sandbox) => staleIds.has(sandbox.id) && sandbox.name)
       .map((sandbox) => sandbox.name as string),
   );
-  const sessions = selectPreviewSessionSandboxIds(sandboxes, staleInstances);
+  const sessions = new Set([
+    ...selectPreviewSessionSandboxIds(sandboxes, staleInstances),
+    ...selectStalePreviewSessionSandboxIds(
+      sandboxes,
+      input.activePullRequests,
+      input.liveBranchSandboxNames,
+    ),
+  ]);
   for (const sandboxId of sessions) await deletePlatinum(api, sandboxId);
   for (const sandboxId of stale) await deletePlatinum(api, sandboxId);
   return new Set([...sessions, ...stale]).size;
