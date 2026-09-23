@@ -89,7 +89,6 @@ import {
   INBOX_ORDER_BACKOFF_MS,
   admitInboxPrompt,
   sessionHoldsLiveTurn,
-  sessionHoldsTurnAuthority,
 } from './inbox-admission';
 import { claimDueSessionInboxSiblings } from './inbox-rows';
 import { compareInboxSendOrder, inboxFollowsRow } from './inbox-order';
@@ -1821,14 +1820,7 @@ export async function executeQueuedContinue(
   let turnLive = false;
   if (payload.wireMessageId && !remintKnown) {
     try {
-      // Admission read this exact row one round trip ago and refuses delivery
-      // while a turn is live, so an admitted row's sandbox read already answers
-      // this. Re-reading it closed no race the first read did not: a turn that
-      // starts between the two is equally invisible to both.
-      turnLive =
-        admission.admit && admission.sandbox !== undefined
-          ? sessionHoldsTurnAuthority(admission.sandbox)
-          : await sessionHoldsLiveTurn(row.sessionId);
+      turnLive = await sessionHoldsLiveTurn(row.sessionId);
     } catch (err) {
       console.warn('[session-lifecycle] turn-authority read failed — re-minting the wire id', {
         sessionId: row.sessionId,

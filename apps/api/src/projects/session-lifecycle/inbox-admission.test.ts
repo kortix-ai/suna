@@ -131,7 +131,7 @@ describe('admitInboxPrompt', () => {
       hasInFlightPrompt: async () => false,
       hasOlderPendingPrompt: async () => false,
     });
-    expect(admission.admit).toBe(true);
+    expect(admission).toEqual({ admit: true });
   });
 
   test('"send now" does NOT jump a live turn — it jumps the QUEUE', async () => {
@@ -200,7 +200,7 @@ describe('admitInboxPrompt', () => {
       hasInFlightPrompt: async () => false,
       hasOlderPendingPrompt: async () => false,
     });
-    expect(admission.admit).toBe(true);
+    expect(admission).toEqual({ admit: true });
   });
 
   test('a row the user asked for BY NAME jumps the order gate', async () => {
@@ -211,7 +211,7 @@ describe('admitInboxPrompt', () => {
       hasInFlightPrompt: async () => false,
       hasOlderPendingPrompt: async () => true,
     });
-    expect(admission.admit).toBe(true);
+    expect(admission).toEqual({ admit: true });
   });
 
   test('a promoted row still waits for a sibling prompt already ON THE WIRE', async () => {
@@ -291,7 +291,7 @@ describe('missed turn-end recovery', () => {
       reconcileTurn: async () => { ended = true; },
     });
     expect(ended).toBe(true);
-    expect(result.admit).toBe(true);
+    expect(result).toEqual({ admit: true });
   });
   test('later rows do not probe or bypass the head', async () => {
     let probes = 0;

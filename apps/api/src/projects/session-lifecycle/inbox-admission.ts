@@ -73,12 +73,7 @@ function admissionRefusals(result: unknown): number {
  *  written into `result.admission_reason` and served as `GET .../prompts`'
  *  `reason`, where a second value may well appear again. */
 export type InboxAdmission =
-  | {
-      admit: true;
-      /** The sandbox row the gate read, for callers that would otherwise re-read
-       *  it. Absent only when the row carries no session. */
-      sandbox?: { status: string; metadata: Record<string, unknown> | null } | null;
-    }
+  | { admit: true }
   | {
       admit: false;
       reason: InboxAdmissionReason;
@@ -276,8 +271,5 @@ export async function admitInboxPrompt(
     return { admit: false, reason: 'older_prompt_pending', retryAfterMs: orderBackoffMs };
   }
 
-  // The sandbox row this gate just read, handed back so the caller does not
-  // read the same row again one round trip later (see `executeQueuedContinue`'s
-  // turn-authority check).
-  return { admit: true, sandbox };
+  return { admit: true };
 }
