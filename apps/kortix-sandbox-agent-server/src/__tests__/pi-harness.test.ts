@@ -17,7 +17,7 @@ import { buildDaemonApp } from '../proxy'
 import { requirePiConfig } from '../harness/pi/config'
 import { createPiHarnessService, type PiHarnessService } from '../harness/pi/service'
 import type { PiBootState } from '../harness/pi/boot-state'
-import { extensionAgentHooks, installedPackages, parseNpmSource, type InlineExtension } from '../harness/pi/extensions/host'
+import { extensionAgentHooks, installedPackages, parseNpmSource, systemPackageCacheDir, warmSystemPackageCache, type InlineExtension } from '../harness/pi/extensions/host'
 import { ensureProjectPackageBundle } from '../harness/pi/extensions/bundle'
 
 const TOKEN = 'pi-test-token'
@@ -697,6 +697,9 @@ describe('pi packages', () => {
       { name: 'npm:system-missing@1.0.0', error: 'package is not installed' },
       { name: 'npm:project-missing@1.0.0', error: 'package is not installed' },
     ])
+    // The same report, where support reads it: the daemon's health.
+    const health = (await r.bearer('/kortix/health').then((res) => res.json())) as { extensions: typeof status }
+    expect(health.extensions).toEqual(status)
     await promptAndSettle(r, 'use them')
     const page = (await r.bearer(`/kortix/opencode/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
     expect(toolParts(page, 'system_echo')[0]!.state.output).toBe('system:hi')
@@ -750,6 +753,42 @@ describe('pi packages', () => {
       server.stop(true)
       rmSync(source, { recursive: true, force: true })
     }
+  })
+
+  test('the image-build warm step fills the extension cache a boot copies in, and names a broken package', async () => {
+    const r = await boot({
+      script: [{ text: 'ok' }],
+      start: false,
+      prepare(workspace) {
+        const agentDir = join(workspace, '.pi-agent')
+        mkdirSync(agentDir, { recursive: true })
+        writeFileSync(join(agentDir, 'settings.json'), JSON.stringify({ packages: ['npm:warm-ext@1.0.0'] }))
+        fakePackage(join(agentDir, 'npm'), 'warm-ext', '1.0.0', echoTool('warm_echo', 'warm'))
+      },
+    })
+    const agentDir = join(r.workspace, '.pi-agent')
+    const warm = async () => {
+      const saved = process.env.TMPDIR
+      try {
+        return await warmSystemPackageCache(agentDir)
+      } finally {
+        if (saved === undefined) delete process.env.TMPDIR
+        else process.env.TMPDIR = saved
+      }
+    }
+    expect(await warm()).toEqual({ loaded: ['npm:warm-ext@1.0.0'], failed: [] })
+    // Under `bun test` jiti imports TypeScript natively and caches nothing; the
+    // compiled daemon transpiles and writes here. A boot copies whatever is there.
+    const cached = `warm-ext-index.${Date.now()}.mjs`
+    mkdirSync(systemPackageCacheDir(agentDir), { recursive: true })
+    writeFileSync(join(systemPackageCacheDir(agentDir), cached), '/* warmed */')
+    await r.service.lifecycle.start()
+    expect(readFileSync(join(tmpdir(), 'jiti', cached), 'utf8')).toBe('/* warmed */')
+    rmSync(join(tmpdir(), 'jiti', cached), { force: true })
+    expect(r.service.runtime()!.extensionStatus().loaded).toContain('npm:warm-ext@1.0.0')
+
+    writeFileSync(join(agentDir, 'settings.json'), JSON.stringify({ packages: ['npm:warm-ext@1.0.0', 'npm:gone@1.0.0'] }))
+    expect((await warm()).failed).toEqual([{ name: 'npm:gone@1.0.0', error: 'package is not installed' }])
   })
 
   test('a failed or absent bundle leaves the project packages out, never the session', async () => {

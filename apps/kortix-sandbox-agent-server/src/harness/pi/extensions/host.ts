@@ -10,7 +10,8 @@
  *
  * Packages come from two scopes, exactly pi's own:
  * - system (global): `<agentDir>/settings.json`, installed under `<agentDir>/npm`
- *   when the image is built (apps/sandbox/pi-system-packages.json);
+ *   when the image is built (runtime-versions.json `piSystemPackages`), with
+ *   their jiti cache warmed there too (see `warmSystemPackageCache`);
  * - project: kortix.yaml `harnesses.pi.packages` (`KORTIX_PI_PACKAGES`); npm
  *   sources come from the API-built bundle (bundle.ts), unpacked outside the
  *   repo before the runtime starts; `./` paths are files in the repo.
@@ -20,7 +21,8 @@
  * load (~13 s for two packages, measured), so a source that is not on disk is
  * dropped and reported in the runtime's extension status instead.
  */
-import { existsSync, readFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Agent, AgentOptions, AgentTool } from '@earendil-works/pi-agent-core'
 import type { Provider } from '@earendil-works/pi-ai'
@@ -170,6 +172,57 @@ export interface PiSession {
   skills: () => Skill[]
 }
 
+/**
+ * jiti transpiles every extension file on first load (pi-web-access: 385 ms
+ * cold, 31 ms warm, macOS; the sandbox is ~5x slower) and caches the output in
+ * `${tmpdir()}/jiti`, keyed by absolute path and source hash. System packages
+ * sit at a fixed path, so the image build warms that cache here
+ * (`kortix-agent warm-pi-packages`) and every boot copies it in.
+ */
+export function systemPackageCacheDir(agentDir: string): string {
+  return join(agentDir, 'cache', 'jiti')
+}
+
+/** Copy the image's warm cache into jiti's runtime cache, keeping entries already there. */
+function seedJitiCache(agentDir: string): void {
+  const source = systemPackageCacheDir(agentDir)
+  if (!existsSync(source)) return
+  try {
+    cpSync(source, join(tmpdir(), 'jiti'), { recursive: true, force: false, errorOnExist: false })
+  } catch (err) {
+    logger.warn('[pi] could not seed the extension cache; system packages load cold', { err: (err as Error).message })
+  }
+}
+
+/**
+ * Image build: load the system packages once so their jiti cache ships in the
+ * image. A one-shot process, so pointing TMPDIR at the cache is safe here. Any
+ * package that fails to install or load is returned, and the CLI fails the build.
+ */
+export async function warmSystemPackageCache(agentDir: string): Promise<ExtensionStatus> {
+  const cacheParent = join(agentDir, 'cache')
+  mkdirSync(cacheParent, { recursive: true })
+  process.env.TMPDIR = cacheParent
+  const cwd = mkdtempSync(join(agentDir, 'warm-'))
+  try {
+    const globalSettings = readSettings(join(agentDir, 'settings.json'))
+    const system = installedPackages((globalSettings.packages as PackageSource[] | undefined) ?? [], join(agentDir, 'npm'))
+    const settingsManager = SettingsManager.fromStorage(
+      new ScopedSettingsStorage({ global: JSON.stringify({ ...globalSettings, packages: system.kept }), project: '{}' }),
+      { projectTrusted: false },
+    )
+    const loader = new DefaultResourceLoader({ cwd, agentDir, settingsManager, noContextFiles: true, noThemes: true })
+    await loader.reload()
+    const result = loader.getExtensions()
+    return {
+      loaded: result.extensions.map((extension) => (extension.sourceInfo?.origin === 'package' ? extension.sourceInfo.source : extension.path)),
+      failed: [...system.failed, ...result.errors.map((error) => ({ name: error.path, error: error.error }))],
+    }
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
+}
+
 function extensionName(path: string): string {
   const inline = /^<inline:(.+)>$/.exec(path)
   return inline ? inline[1]! : path
@@ -240,6 +293,7 @@ export async function createPiSession(input: PiSessionInput): Promise<PiSession>
   // Kortix owns these: the transcript has no compaction yet, and a failed turn
   // is the product's to retry (a silent pi retry would double-bill and reorder the wire).
   settingsManager.applyOverrides({ compaction: { enabled: false }, retry: { enabled: false } } as never)
+  seedJitiCache(input.agentDir)
 
   const loader = new KortixResourceLoader(
     {

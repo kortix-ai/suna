@@ -24,7 +24,7 @@ const EnvironmentSchema = z.object({
   // JSON array of `{ text }` | `{ tool, args }` steps for faux mode.
   KORTIX_PI_FAUX_SCRIPT: z.string().optional(),
   // pi's global agent dir: `settings.json` lists the system packages the image
-  // installed under `npm/`. See apps/sandbox/pi-system-packages.json.
+  // installed under `npm/` by the image build (runtime-versions.json `piSystemPackages`).
   KORTIX_PI_AGENT_DIR: z.string().optional(),
   // JSON array of the project's pi package sources (kortix.yaml `harnesses.pi.packages`).
   KORTIX_PI_PACKAGES: z.string().optional(),

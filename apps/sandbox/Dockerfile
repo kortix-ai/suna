@@ -243,10 +243,11 @@ RUN mkdir -p /opt/kortix/opencode-config-deps \
 # packages/shared/src/sandbox/dockerfile-layer.ts; keep both in sync.
 RUN PI_PACKAGES="$(node -e "console.log((require('/tmp/kortix-runtime-versions.json').piSystemPackages || []).map((s) => s.slice(4)).join(' '))")" \
     && if [ -n "$PI_PACKAGES" ]; then \
-         mkdir -p /opt/kortix/pi-agent/npm \
+         mkdir -p /opt/kortix/pi-agent/npm/pi-supplied \
          && cd /opt/kortix/pi-agent/npm \
-         && printf '{"name":"kortix-pi-system-packages","private":true}' > package.json \
-         && npm install --omit=dev --omit=peer --ignore-scripts --no-audit --no-fund $PI_PACKAGES \
+         && printf '%s' '{"name":"kortix-pi-supplied","version":"0.0.0","private":true}' > pi-supplied/package.json \
+         && node -e "const s='file:./pi-supplied'; require('fs').writeFileSync('package.json', JSON.stringify({ name: 'kortix-pi-system-packages', private: true, dependencies: { '@earendil-works/pi-agent-core': s, '@earendil-works/pi-ai': s, '@earendil-works/pi-coding-agent': s, '@earendil-works/pi-tui': s } }))" \
+         && npm install --omit=dev --ignore-scripts --no-audit --no-fund $PI_PACKAGES \
          && node -e "require('fs').writeFileSync('/opt/kortix/pi-agent/settings.json', JSON.stringify({ packages: require('/tmp/kortix-runtime-versions.json').piSystemPackages }))"; \
        fi
 
@@ -292,6 +293,9 @@ RUN printf '%s\n' '[ -r /dev/shm/kortix/agent-env.sh ] && . /dev/shm/kortix/agen
 
 ENV KORTIX_WORKSPACE=/workspace
 USER kortix
+# Warm jiti's cache for the pi system packages with the daemon itself; a package
+# that fails to load fails the build. Same step as `piSystemPackageWarmLines`.
+RUN if [ -f /opt/kortix/pi-agent/settings.json ]; then /usr/local/bin/kortix-agent warm-pi-packages; fi
 WORKDIR /workspace
 
 EXPOSE 8000

@@ -208,6 +208,11 @@ async function run(): Promise<void> {
     out.boot_timeline = health.boot_timeline;
     out.image = psql(`select coalesce(metadata->'runtimeArtifact'->>'providerArtifactRef','') from kortix.session_sandboxes where sandbox_id='${sessionId}'`);
     out.daemon_has_pi = (await api(base, token, `${daemon}/kortix/opencode/state`)).body?.identity?.harness ?? null;
+    out.extensions = health.extensions ?? null;
+    out.tool_ids = (await api(base, token, `${daemon}/tool/ids`)).body ?? null;
+    // The daemon's own pi lines: runtime ready (ms, extensionsMs), package bundle download.
+    const diag = await api(base, token, `${daemon}/kortix/diag?tail=400`);
+    out.pi_log = String(diag.body?.logs?.daemon ?? '').split('\n').filter((line) => line.includes('[pi]')).map((line) => line.slice(0, 600));
 
     // One prompt through the inbox.
     const messageId = mintMessageId();

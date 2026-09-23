@@ -33,6 +33,7 @@ import {
   PNPM_SHA256_AMD64,
   PNPM_SHA256_ARM64,
   PNPM_VERSION,
+  PI_SUPPLIED_PACKAGES,
   PI_SYSTEM_PACKAGES,
   PYTHON_PACKAGE_FLOOR,
   PYTHON_PACKAGE_FLOOR_IMPORTS,
@@ -288,21 +289,34 @@ export const PI_AGENT_DIR = '/opt/kortix/pi-agent';
 /**
  * Install the pi system packages the way `pi install` installs a global one:
  * the packages under `<agentDir>/npm`, the sources in `<agentDir>/settings.json`.
- * Peers stay out (`--omit=peer`): pi supplies `typebox` and `@earendil-works/pi-*`
- * to extensions itself. Install scripts do not run. An empty list adds no layer.
+ * npm installs required peers, as pi's own install does; the packages pi
+ * supplies itself resolve to an empty stub. Install scripts do not run. An
+ * empty list adds no layer.
  */
 export function piSystemPackageLines(packages: readonly string[]): string[] {
   if (packages.length === 0) return [];
   for (const source of packages) assertPiSystemPackage(source);
   const specs = packages.map((source) => source.slice('npm:'.length)).join(' ');
+  const stubs = Object.fromEntries(PI_SUPPLIED_PACKAGES.map((name) => [name, 'file:./pi-supplied']));
   return [
-    `RUN mkdir -p ${PI_AGENT_DIR}/npm \\`,
+    `RUN mkdir -p ${PI_AGENT_DIR}/npm/pi-supplied \\`,
     `    && cd ${PI_AGENT_DIR}/npm \\`,
-    `    && printf '{"name":"kortix-pi-system-packages","private":true}' > package.json \\`,
-    `    && npm install --omit=dev --omit=peer --ignore-scripts --no-audit --no-fund ${specs} \\`,
+    `    && printf '%s' '{"name":"kortix-pi-supplied","version":"0.0.0","private":true}' > pi-supplied/package.json \\`,
+    `    && printf '%s' '${JSON.stringify({ name: 'kortix-pi-system-packages', private: true, dependencies: stubs })}' > package.json \\`,
+    `    && npm install --omit=dev --ignore-scripts --no-audit --no-fund ${specs} \\`,
     `    && printf '%s' '${JSON.stringify({ packages })}' > ${PI_AGENT_DIR}/settings.json`,
     '',
   ];
+}
+
+/**
+ * Warm jiti's cache for the system packages with the daemon itself (it lands in
+ * `<agentDir>/cache/jiti`; each boot copies it in). A package that fails to
+ * load fails the image build here, not in a session.
+ */
+export function piSystemPackageWarmLines(packages: readonly string[]): string[] {
+  if (packages.length === 0) return [];
+  return ['RUN /usr/local/bin/kortix-agent warm-pi-packages', ''];
 }
 
 export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
@@ -678,6 +692,7 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
     // empty here; the daemon's materializeRepo path fills it.
     'ENV KORTIX_WORKSPACE=/workspace',
     'USER kortix',
+    ...piSystemPackageWarmLines(PI_SYSTEM_PACKAGES),
     'WORKDIR /workspace',
     'EXPOSE 8000',
     'ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]',

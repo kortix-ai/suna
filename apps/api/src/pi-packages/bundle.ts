@@ -19,6 +19,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { PI_SUPPLIED_PACKAGES } from '@kortix/shared';
 import { config } from '../config';
 import {
   headObject,
@@ -64,8 +65,6 @@ async function run(cmd: string[], cwd: string): Promise<void> {
   if (code !== 0) throw new Error(`${cmd[0]} ${cmd[1]} exited ${code}: ${stderr.trim().slice(-600)}`);
 }
 
-/** pi hands these to every extension itself (virtual modules); a bundle carries an empty stub in their place. */
-export const PI_SUPPLIED_PACKAGES = ['@earendil-works/pi-agent-core', '@earendil-works/pi-ai', '@earendil-works/pi-coding-agent', '@earendil-works/pi-tui'];
 const PEER_PASSES = 3;
 
 /**

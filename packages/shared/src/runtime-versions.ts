@@ -75,6 +75,18 @@ export function assertPiSystemPackage(source: string): void {
 }
 
 /**
+ * The packages pi hands to every extension itself (virtual modules in the
+ * compiled daemon). An install of pi packages satisfies their peer range with an
+ * empty stub instead of a second copy.
+ */
+export const PI_SUPPLIED_PACKAGES: readonly string[] = [
+  '@earendil-works/pi-agent-core',
+  '@earendil-works/pi-ai',
+  '@earendil-works/pi-coding-agent',
+  '@earendil-works/pi-tui',
+];
+
+/**
  * The pi system packages: installed into every sandbox image, loaded by every
  * pi session (apps/kortix-sandbox-agent-server/src/harness/README.md). To add
  * one from https://pi.dev/packages, append `npm:<name>@<version>`.
