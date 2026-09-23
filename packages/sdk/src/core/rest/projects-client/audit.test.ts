@@ -142,3 +142,27 @@ test('AuditEvent carries on_behalf_of_user_id (agents as principals, spec 2026-0
   };
   expect(event.on_behalf_of_user_id).toBe('u1');
 });
+
+// The API writes a request no authenticator identified as `anonymous` instead
+// of skipping it. Every read and every filter must be able to name that value.
+test('an anonymous audit row is typed and filterable on every audit surface', async () => {
+  const event: import('./audit').AuditEvent = {
+    event_id: 'e2', occurred_at: '2026-09-23T00:00:00.000Z', project_id: 'project-1',
+    session_id: null, actor_user_id: null, actor_type: 'anonymous', agent_name: null,
+    initiator_actor_type: null, initiator_actor_id: null, source: 'api', outcome: 'denied',
+    action: 'GET /v1/projects/:projectId', resource_type: 'project', resource_id: 'project-1',
+    http_status: 401, duration_ms: 1, request_id: null, trace_id: null, correlation_id: null,
+    before: null, after: null, ip: null, user_agent: null, metadata: {},
+  };
+  const iamActor: import('./iam').IamAuditEvent['actor_type'] = 'anonymous';
+  expect([event.actor_type, iamActor]).toEqual(['anonymous', 'anonymous']);
+
+  await listAccountAudit('account-1', { actorType: 'anonymous' });
+  await exportAccountAudit('account-1', { format: 'csv', actorType: 'anonymous' });
+  await listAuditEvents('account-1', { actor_type: 'anonymous' });
+  expect(calls.map((call) => new URL(call.url).searchParams.get('actor_type'))).toEqual([
+    'anonymous',
+    'anonymous',
+    'anonymous',
+  ]);
+});

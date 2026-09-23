@@ -35,7 +35,7 @@ import {
   type RefUpdate,
 } from './receive-pack';
 import { evaluateRefUpdates, principalLabel } from './ref-policy';
-import { gitAuditOutcome, gitPushRefSummary, recordGitProxyAudit } from './audit';
+import { annotateGitTransfer, bindGitProxyPrincipal, gitAuditOutcome, gitPushRefSummary } from './audit';
 import { denialsAfterScopes } from './ref-scopes';
 import {
   FORWARD_REQUEST_HEADERS,
@@ -140,7 +140,13 @@ async function authorize(c: any, projectId: string, scope: GitScope): Promise<Gi
   // Pass the request context so IP-allowlist / require-MFA policy conditions
   // evaluate on the per-project capability path the same way they do on every
   // other project route.
-  return authorizeGitProxy(token, projectId, scope, deriveRequestContext(c));
+  const auth = await authorizeGitProxy(token, projectId, scope, deriveRequestContext(c));
+  // Attribute this request's audit row. Here, not in a handler: every git
+  // route goes through this authenticator, so ref discovery is attributed as
+  // well as the transfers. A refusal inside authorizeGitProxy binds whatever
+  // it proved before refusing.
+  if (auth.ok) bindGitProxyPrincipal(auth.principal, auth.project);
+  return auth;
 }
 
 /**
@@ -460,14 +466,12 @@ async function gateReceivePack(
       principal: principalLabel(auth.principal),
       refs: denials.map((d) => d.ref),
     });
-    void recordGitProxyAudit({
+    // git reads the refusal from a 200 report-status body; the row says denied.
+    annotateGitTransfer({
       action: 'git.push',
-      project: auth.project,
-      principal: auth.principal,
-      httpStatus: 200,
+      projectId: auth.project.projectId,
       outcome: gitAuditOutcome(200, true),
       refs: gitPushRefSummary(parsed.updates, denied),
-      ...gitAuditClient(c),
     });
     const report = encodeReportStatus(
       parsed.updates.map((u) => ({ ref: u.ref, reason: denied.get(u.ref) })),
@@ -549,22 +553,16 @@ gitProxyApp.openapi(
   async (c) => {
     const projectId = validProjectIdOrResponse(c, c.req.param('project'));
     if (projectId instanceof Response) return projectId;
-    const startedAt = Date.now();
     const auth = await authorize(c, projectId, 'read');
     if (!auth.ok) {
       if (auth.status === 401) return unauthorized(c, auth.message);
       return c.text(auth.message, auth.status as 403 | 404);
     }
     const res = await forwardAuthorized(c, auth, 'read', '/git-upload-pack', c.req.raw.body);
-    // One audit row per clone/fetch transfer (ref discovery is not recorded).
-    void recordGitProxyAudit({
+    annotateGitTransfer({
       action: 'git.clone',
-      project: auth.project,
-      principal: auth.principal,
-      httpStatus: res.status,
+      projectId: auth.project.projectId,
       outcome: gitAuditOutcome(res.status, false),
-      durationMs: Date.now() - startedAt,
-      ...gitAuditClient(c),
     });
     return res;
   },
@@ -1021,32 +1019,20 @@ gitProxyApp.openapi(
     // default-denied beyond its own branch regardless of `project.gitops.ref.any`
     // / `kortix_permissions: all` — see projects/lib/git.ts.
     c.set('agentGrant', auth.agentGrant ?? null);
-    const startedAt = Date.now();
     // Ref policy runs HERE, between authorization and transmission — the only
     // point where both the principal and the refs it wants to move are known.
     const gated = await gateReceivePack(c, auth);
     if (gated instanceof Response) return gated;
     const res = await forwardAuthorized(c, auth, 'write', '/git-receive-pack', gated.body);
-    // One audit row per push with every ref's old → new sha. An HTTP 2xx means
-    // the upstream accepted the transfer; its per-ref report-status is not
-    // parsed here.
-    void recordGitProxyAudit({
+    // Every ref's old → new sha on the push's row. An HTTP 2xx means the
+    // upstream accepted the transfer; its per-ref report-status is not parsed.
+    annotateGitTransfer({
       action: 'git.push',
-      project: auth.project,
-      principal: auth.principal,
-      httpStatus: res.status,
+      projectId: auth.project.projectId,
       outcome: gitAuditOutcome(res.status, false),
       refs: gitPushRefSummary(gated.updates),
-      durationMs: Date.now() - startedAt,
-      ...gitAuditClient(c),
     });
     return res;
   },
 );
 
-function gitAuditClient(c: any): { ip: string | null; userAgent: string | null } {
-  return {
-    ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip') || null,
-    userAgent: c.req.header('user-agent') || null,
-  };
-}

@@ -27,7 +27,7 @@ import {
   serializeAuditEvent,
 } from '../../shared/audit-query';
 import { flushAuditEvents } from '../../shared/audit';
-import { AuditEventSchema, AuditListSchema } from '../../shared/audit-schema';
+import { AuditActorTypeSchema, AuditEventSchema, AuditListSchema } from '../../shared/audit-schema';
 import { parseOpenCodeAuditBatch } from '../../shared/opencode-audit-ingestion';
 import { applyOpenCodeAuditRateLimit } from '../../shared/opencode-audit-rate-guard';
 import { flagSessionAuditRateLimited } from '../lib/session-audit-rate-flag';
@@ -106,7 +106,7 @@ projectsApp.openapi(
       query: z.object({
         action: z.string().optional(),
         actor: z.string().uuid().optional(),
-        actor_type: z.enum(['human', 'agent', 'service_account', 'system']).optional(),
+        actor_type: AuditActorTypeSchema.optional(),
         session_id: z.string().optional(),
         source: z.string().optional(),
         phase: z.string().optional(),

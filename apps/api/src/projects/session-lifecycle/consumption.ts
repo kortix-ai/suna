@@ -250,10 +250,18 @@ export async function confirmInboxPromptConsumed(
   // their rows were never marked forwarded either.
   if (!wireMessageId) return 'no_prompt';
   try {
-    if ((await deps.confirm(sessionId, wireMessageId)) > 0) return 'confirmed';
-    return (await deps.markConsumedOnDelivery(sessionId, wireMessageId)) > 0
-      ? 'pending_delivery'
-      : 'no_prompt';
+    // The two writes are mutually exclusive BY PREDICATE — `confirm` only
+    // matches a `succeeded` row whose result says `forwarded`, and
+    // `markConsumedOnDelivery` only a still-claimed (`running`) one — so no row
+    // can take both, and issuing them together cannot change which one lands.
+    // It saves a round trip on the delivery path, where the first is a
+    // guaranteed miss (the row is still claimed at this point).
+    const [confirmed, markedOnDelivery] = await Promise.all([
+      deps.confirm(sessionId, wireMessageId),
+      deps.markConsumedOnDelivery(sessionId, wireMessageId),
+    ]);
+    if (confirmed > 0) return 'confirmed';
+    return markedOnDelivery > 0 ? 'pending_delivery' : 'no_prompt';
   } catch (error) {
     console.warn(
       '[session-lifecycle] inbox consumption confirm failed:',

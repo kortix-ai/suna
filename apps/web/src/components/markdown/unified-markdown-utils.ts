@@ -1,4 +1,8 @@
+import { holdPendingSetupLink } from '@/components/setup-links/util';
+import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import { looksLikeFilePath as sharedLooksLikeFilePath } from '@/lib/utils/path-detection';
+import { autoLinkUrls } from '@kortix/shared';
+import { prepareMarkdownForKatex } from '@kortix/shared/markdown-math';
 
 // Pure, deterministic helpers used by the unified markdown renderer. Extracted
 // so they can be unit-tested without pulling in React / Shiki / Streamdown.
@@ -24,6 +28,46 @@ import { looksLikeFilePath as sharedLooksLikeFilePath } from '@/lib/utils/path-d
  */
 export function shikiWasmAvailable(): boolean {
   return typeof WebAssembly !== 'undefined';
+}
+
+/**
+ * The text Streamdown parses: KaTeX delimiters normalised, system tags removed,
+ * bare URLs linked.
+ *
+ * While the message streams, a setup link whose URL is still arriving is held
+ * as a pending card first (`holdPendingSetupLink`), so the reader never sees
+ * its raw `[label](` or a card built from a partial token. Settled text is
+ * never held.
+ */
+export function prepareMarkdownSource(content: string, isStreaming: boolean): string {
+  const prepared = stripKortixSystemTags(prepareMarkdownForKatex(content));
+  return autoLinkUrls(isStreaming ? holdPendingSetupLink(prepared) : prepared);
+}
+
+/** A reference-style link target: `[label]: destination`, up to three spaces in. */
+const LINK_REFERENCE_DEFINITION = /^ {0,3}\[[^\]\n]{1,999}\]:[ \t]*\S/m;
+
+/**
+ * Does this markdown define a reference-style link target (`[1]: https://…`)?
+ *
+ * Streamdown parses a streaming message block by block, and a definition in
+ * one block cannot resolve a `[text][1]` in another: the reference renders as
+ * raw brackets. A message with a definition is therefore parsed whole, which is
+ * what Streamdown already does for footnotes.
+ */
+export function hasLinkReferenceDefinition(markdown: string): boolean {
+  return LINK_REFERENCE_DEFINITION.test(markdown);
+}
+
+/**
+ * Is this href Streamdown's stand-in for a URL that has not arrived yet?
+ *
+ * While a message streams, Streamdown's `remend` closes a half-written link as
+ * `[label](streamdown:incomplete-link)` so the label renders before the URL is
+ * complete. That href is not a destination. It must never become an anchor.
+ */
+export function isStreamingLinkPlaceholder(href: string | undefined): boolean {
+  return !!href && /^streamdown:/i.test(href);
 }
 
 /** Same-origin link? Internal links route through next/link; the rest open externally. */

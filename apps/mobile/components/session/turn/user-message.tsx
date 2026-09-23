@@ -43,9 +43,11 @@ import {
   resolveAttachmentSource,
 } from '@/lib/session/attachment-tile';
 import {
+  commandMessageText,
   isUserMessageEdited,
   parseUserMessageText,
   queuedPromptStatusLabel,
+  quoteMarginBottom,
   userMessageMetaItems,
   webSpace,
   type QueuedPromptState,
@@ -204,12 +206,13 @@ export function UserMessage({
   const { rawText, content, attachments } = parsed;
 
   const commandInfo = useMemo(() => detectCommandFromText(rawText, commands), [rawText, commands]);
-  const bodyText = commandInfo ? (commandInfo.args ?? '') : content.text;
+  // Command args arrive raw; `commandMessageText` strips their quote blocks,
+  // which the bubble already draws once from `content.quotes`.
+  const commandText = commandInfo ? commandMessageText(commandInfo.name, commandInfo.args) : null;
+  const bodyText = commandText ? commandText.body : content.text;
 
   /** The text the editor starts from and Copy writes. */
-  const promptText = commandInfo
-    ? `/${commandInfo.name}${commandInfo.args ? ` ${commandInfo.args}` : ''}`
-    : content.text;
+  const promptText = commandText ? commandText.prompt : content.text;
 
   const edited = useMemo(() => isUserMessageEdited(message.parts as never), [message.parts]);
   const timestamp = messageCreatedAt(message as unknown as MessageWithParts);
@@ -350,7 +353,7 @@ export function UserMessage({
   }
 
   const failed = uploadStatus?.state === 'failed' ? uploadStatus : undefined;
-  const hasBubble = Boolean(bodyText || content.replyContext || commandInfo);
+  const hasBubble = Boolean(bodyText || content.quotes.length > 0 || commandInfo);
 
   return (
     <Reanimated.View className="px-4" style={dimStyle}>
@@ -360,7 +363,7 @@ export function UserMessage({
         ) : null}
 
         {hasBubble ? (
-          <UserMessageBubble isDark={isDark} replyContext={content.replyContext}>
+          <UserMessageBubble isDark={isDark} quotes={content.quotes}>
             {bodyText || commandInfo ? (
               <MessageBody
                 text={bodyText}
@@ -459,11 +462,11 @@ function MessageBody({
  */
 export function UserMessageBubble({
   isDark,
-  replyContext,
+  quotes,
   children,
 }: {
   isDark: boolean;
-  replyContext?: string | null;
+  quotes: string[];
   children?: React.ReactNode;
 }) {
   const palette = paletteFor(isDark);
@@ -500,13 +503,22 @@ export function UserMessageBubble({
         overflow: 'hidden',
       }}
     >
-      {replyContext ? (
-        <View className="border-border border-l-2" style={{ paddingLeft: webSpace(2.5), marginBottom: webSpace(2) }}>
-          <Text variant="muted" numberOfLines={2} style={{ lineHeight: webSpace(5) }}>
-            {replyContext}
-          </Text>
-        </View>
-      ) : null}
+      {quotes.length > 0
+        ? quotes.map((quote, i) => (
+            <View
+              key={i}
+              className="border-border border-l-2"
+              style={{
+                paddingLeft: webSpace(2.5),
+                marginBottom: quoteMarginBottom(i, quotes.length, Boolean(children)),
+              }}
+            >
+              <Text variant="muted" numberOfLines={2} style={{ lineHeight: webSpace(5) }}>
+                {quote}
+              </Text>
+            </View>
+          ))
+        : null}
 
       {children ? (
         <View>

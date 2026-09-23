@@ -36,6 +36,7 @@ import {
 } from '../channels/install-store';
 import { approvalPageUrl } from '../setup-links/token';
 import { config } from '../config';
+import { bindIntegrationPrincipal } from '../shared/audit-scope';
 import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { authorize, PROJECT_ACTIONS } from '../iam';
 import { actorOf } from '../iam/actor';
@@ -2205,6 +2206,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     ? async (extUserId, sig) => {
         const rejected = { ok: false, connected: false } as const;
         if (!verifyWebhookSig(extUserId, sig)) return rejected;
+        bindIntegrationPrincipal('pipedream');
         const [projectId, slug, identityId] = extUserId.split(':');
         if (!projectId || !slug) return rejected;
         const conn = await loadPipedreamConnector(projectId, slug);
