@@ -2,13 +2,37 @@
 
 import { listProjectsForAccount } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
-import { useQueries } from '@tanstack/react-query';
+import { useQueries, useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
+import { useAuth } from '@/features/providers/auth-provider';
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { useMyInvites } from '@/hooks/account/use-my-invites';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
 
 import { buildAccountSections, type AccountSection } from './project-selector-model';
+
+/**
+ * The account whose project list may be read BEFORE `GET /accounts` answers.
+ *
+ * The lists fan out per account, so they used to wait for the account list:
+ * staging HAR, `/v1/accounts` (1.58 s) then `/v1/projects?account_id=` (1.40 s)
+ * in series. The account the user last worked in is already in localStorage
+ * (`kortix.currentAccount`), so its list starts in parallel.
+ *
+ * Validated after the fact, not trusted: the speculative read only fills the
+ * `qk.projects.list(id)` entry, and a section renders only for an account the
+ * account list returns. A stale or foreign id costs one request the API
+ * refuses; it never renders. Stops the moment the account list is known.
+ */
+export function speculativeProjectListAccountId(input: {
+  userId: string | null | undefined;
+  cachedAccountId: string | null | undefined;
+  accountsLoaded: boolean;
+}): string | null {
+  if (!input.userId || input.accountsLoaded) return null;
+  return input.cachedAccountId || null;
+}
 
 /**
  * Every read the selector and the `/projects/start` door need: the accounts,
@@ -25,6 +49,22 @@ export function useProjectSelectorData() {
   const accountsQuery = useAccountsList({ retry: 3 });
   const invitesQuery = useMyInvites();
   const accounts = useMemo(() => accountsQuery.data ?? [], [accountsQuery.data]);
+
+  const { user } = useAuth();
+  const cachedAccountId = useCurrentAccountStore((state) => state.selectedAccountId);
+  const speculativeAccountId = speculativeProjectListAccountId({
+    userId: user?.id,
+    cachedAccountId,
+    accountsLoaded: accountsQuery.data !== undefined,
+  });
+  // Same key, fetcher and contract as the per-account list below, so the list
+  // that renders reuses this read (in flight or cached) instead of issuing it.
+  useQuery({
+    queryKey: qk.projects.list(speculativeAccountId ?? ''),
+    queryFn: () => listProjectsForAccount(speculativeAccountId as string),
+    enabled: speculativeAccountId !== null,
+    ...contract('inventory'),
+  });
 
   const listQueries = useQueries({
     queries: accounts.map((account) => ({
