@@ -11646,6 +11646,12 @@
       "text3eb54d5ae20d": "スターターテンプレート由来です。新しいプロジェクトにはすべて含まれますが、無効になっています。",
       "text3ecb3ffd4f33": "実効権限を確認しました",
       "textae47d51077b4": "リンクを準備しています…",
+      "texte9e0b20cf289": "{value0} として接続済み",
+      "textbb7a240d3660": "{value0} の名前を変更",
+      "text64f07c825803": "変更されるのは名前だけです。アカウントは接続されたままで、再ログインは不要です。",
+      "text499d7f6dfdfc": "アカウント名を変更しました",
+      "text11ef24ea6e15": "アカウント名を変更できませんでした",
+      "text0223e507afd3": "別のアカウントを使うには、プロジェクト設定でこのコネクタのアカウントに追加し、デフォルトに設定してください。",
       "text3ed7c1e32705": "トラッカーを読むことと書き換えることは別のアクションです。書き込みをAskにすると、統合・クローズ対象の課題を正確に表示して停止し、承認後そこから再開します。",
       "text3ee7a9bba1b1": "analyst.md",
       "text3efd6742a383": "クレジットが引き落とされました",
@@ -18646,7 +18652,8 @@
       "textde340d411411": "この図は空です。",
       "textc53147a0d05b": "この図を表示できませんでした",
       "text91aec62280a3": "SVG をダウンロード",
-      "text751dfdcf3878": "{value0} 行目"
+      "text751dfdcf3878": "{value0} 行目",
+      "text0a7b76552107": "コネクタのアカウント名を変更"
     }
   },
   "projectOnboarding": {
@@ -19461,29 +19468,31 @@
     "enabled": "新しいセッションにプロジェクトリポジトリを提供します。Git の権限は引き続き適用されます。既存のセッションのアクセス設定は変わりません。"
   },
   "modelAccess": {
-    "textOnly": "テキストのみ",
-    "usProvidersTitle": "米国拠点の提供元",
-    "hiddenShort": "選択リストでは非表示です。直接リクエストは引き続き許可されます。",
-    "disableModel": "モデルを無効にする",
-    "managedTitle": "Kortix管理モデル",
-    "zdrTitle": "ゼロデータ保持",
-    "resetError": "モデル一覧をリセットできませんでした。",
+    "manageProvider": "{name}の設定",
     "enableProviderAction": "プロバイダーを有効にする",
-    "zdrDescription": "ゼロデータ保持（ZDR）とは、モデル提供元がテキストや画像を処理した後、リクエストの入力や回答を保存しないことです。Kortix はプロジェクトと会話履歴を別に保存します。",
-    "textImage": "テキスト + 画像",
-    "credentialsHint": "認証情報を削除せずに推論を無効にします。",
     "disableProviderAction": "プロバイダーを無効にする",
     "enabled": "有効",
-    "hidden": "選択リストで非表示",
-    "providerError": "プロバイダーへのアクセスを更新できませんでした。",
-    "manageProvider": "{name}の設定",
-    "defaultProviderHint": "このプロバイダーを無効にする前に、別のプロバイダーのモデルをプロジェクトのデフォルトに設定してください。",
-    "usProvidersDescription": "各 Kortix モデルは、米国に本社を置く固定の推論提供元 1 社で動作します。リクエストが別の提供元に切り替わることはありません。",
-    "managedDescription": "Kortixクレジットで課金される管理モデルです。APIキーは不要です。",
-    "hiddenHint": "選択リストでは非表示です。直接リクエストは引き続き許可されます。無効にするにはモデルのメニューを使用してください。",
-    "enableProvider": "{name}を有効にする",
     "disabled": "無効",
-    "modelError": "モデルへのアクセスを更新できませんでした。"
+    "enableProvider": "{name}を有効にする",
+    "defaultProviderHint": "このプロバイダーを無効にする前に、別のプロバイダーのモデルをプロジェクトのデフォルトに設定してください。",
+    "credentialsHint": "認証情報を削除せずに推論を無効にします。",
+    "providerError": "プロバイダーへのアクセスを更新できませんでした。",
+    "managedTitle": "Kortix管理モデル",
+    "managedDescription": "Kortixクレジットで課金される管理モデルです。APIキーは不要です。",
+    "textImage": "テキスト + 画像",
+    "textOnly": "テキストのみ",
+    "zdrTitle": "ゼロデータ保持",
+    "zdrDescription": "ゼロデータ保持（ZDR）とは、モデル提供元がテキストや画像を処理した後、リクエストの入力や回答を保存しないことです。Kortix はプロジェクトと会話履歴を別に保存します。",
+    "usProvidersTitle": "米国拠点の提供元",
+    "usProvidersDescription": "各 Kortix モデルは、米国に本社を置く固定の推論提供元 1 社で動作します。リクエストが別の提供元に切り替わることはありません。",
+    "hiddenHint": "選択リストでは非表示です。直接リクエストは引き続き許可されます。無効にするにはモデルのメニューを使用してください。",
+    "hidden": "選択リストで非表示",
+    "disableModel": "モデルを無効にする",
+    "modelError": "モデルへのアクセスを更新できませんでした。",
+    "hiddenShort": "選択リストでは非表示です。直接リクエストは引き続き許可されます。",
+    "resetError": "モデル一覧をリセットできませんでした。",
+    "appReturn": "Kortix アプリに戻る",
+    "appReturnConnected": "プロバイダーを接続しました。Kortix アプリに戻る"
   },
   "projectChooser": {
     "invitesTitle": "招待されています",
@@ -19588,5 +19597,8 @@
     "appAgentsEmpty": "このアプリを挙げているエージェントはありません。kortix.yaml の agents.<name>.apps にスラッグを追加してください。",
     "appAgentsDeclared": "{file} で宣言（agents.{agent}.apps）",
     "appAgentsGrantAll": "すべてのアプリ"
+  },
+  "connectorsAppReturn": {
+    "done": "完了。Kortix アプリに戻る"
   }
 }

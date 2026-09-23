@@ -11646,6 +11646,12 @@
       "text3eb54d5ae20d": "来自入门模板。每个新项目都会附带，但默认关闭。",
       "text3ecb3ffd4f33": "已检查有效权限",
       "textae47d51077b4": "正在准备链接…",
+      "texte9e0b20cf289": "已以 {value0} 身份连接",
+      "textbb7a240d3660": "重命名 {value0}",
+      "text64f07c825803": "只更改名称。账户保持连接，无需任何人重新登录。",
+      "text499d7f6dfdfc": "账户已重命名",
+      "text11ef24ea6e15": "无法重命名账户",
+      "text0223e507afd3": "要使用其他账户，请在项目设置中将其添加到此连接器的账户下，并设为默认。",
       "text3ed7c1e32705": "读取跟踪器和改写跟踪器是不同的操作。将写入操作设为“询问”，运行会在调用处暂停，准确显示它想合并或关闭的问题；批准后从此处继续。",
       "text3ee7a9bba1b1": "analyst.md",
       "text3efd6742a383": "已记入贷方",
@@ -18646,7 +18652,8 @@
       "textde340d411411": "此图表为空。",
       "textc53147a0d05b": "无法渲染此图表",
       "text91aec62280a3": "下载 SVG",
-      "text751dfdcf3878": "第 {value0} 行"
+      "text751dfdcf3878": "第 {value0} 行",
+      "text0a7b76552107": "已重命名连接器账户"
     }
   },
   "projectOnboarding": {
@@ -19461,29 +19468,31 @@
     "enabled": "新会话会获得项目仓库。Git 权限仍然适用。现有会话保留原有的访问设置。"
   },
   "modelAccess": {
-    "textOnly": "仅文本",
-    "usProvidersTitle": "美国服务商",
-    "hiddenShort": "已从选择器中隐藏。仍允许直接请求。",
-    "disableModel": "禁用模型",
-    "managedTitle": "Kortix 托管模型",
-    "zdrTitle": "零数据保留",
-    "resetError": "无法重置模型列表。",
+    "manageProvider": "{name} 设置",
     "enableProviderAction": "启用提供商",
-    "zdrDescription": "零数据保留（ZDR）是指模型服务商处理您的文本和图片后，不会在请求结束后保存输入或回复。Kortix 会单独保存您的项目和对话记录。",
-    "textImage": "文本 + 图像",
-    "credentialsHint": "禁用推理但保留凭据。",
     "disableProviderAction": "禁用提供商",
     "enabled": "已启用",
-    "hidden": "已从选择器中隐藏",
-    "providerError": "无法更新提供商访问权限。",
-    "manageProvider": "{name} 设置",
-    "defaultProviderHint": "禁用此提供商前，请将其他提供商的模型设为项目默认模型。",
-    "usProvidersDescription": "每个 Kortix 模型固定使用一家总部位于美国的推理服务商。请求绝不会转到其他服务商。",
-    "managedDescription": "使用 Kortix 额度计费的托管模型。无需 API 密钥。",
-    "hiddenHint": "已从选择器中隐藏。仍允许直接请求；请通过模型菜单禁用。",
-    "enableProvider": "启用{name}",
     "disabled": "已禁用",
-    "modelError": "无法更新模型访问权限。"
+    "enableProvider": "启用{name}",
+    "defaultProviderHint": "禁用此提供商前，请将其他提供商的模型设为项目默认模型。",
+    "credentialsHint": "禁用推理但保留凭据。",
+    "providerError": "无法更新提供商访问权限。",
+    "managedTitle": "Kortix 托管模型",
+    "managedDescription": "使用 Kortix 额度计费的托管模型。无需 API 密钥。",
+    "textImage": "文本 + 图像",
+    "textOnly": "仅文本",
+    "zdrTitle": "零数据保留",
+    "zdrDescription": "零数据保留（ZDR）是指模型服务商处理您的文本和图片后，不会在请求结束后保存输入或回复。Kortix 会单独保存您的项目和对话记录。",
+    "usProvidersTitle": "美国服务商",
+    "usProvidersDescription": "每个 Kortix 模型固定使用一家总部位于美国的推理服务商。请求绝不会转到其他服务商。",
+    "hiddenHint": "已从选择器中隐藏。仍允许直接请求；请通过模型菜单禁用。",
+    "hidden": "已从选择器中隐藏",
+    "disableModel": "禁用模型",
+    "modelError": "无法更新模型访问权限。",
+    "hiddenShort": "已从选择器中隐藏。仍允许直接请求。",
+    "resetError": "无法重置模型列表。",
+    "appReturn": "返回 Kortix 应用",
+    "appReturnConnected": "提供商已连接。返回 Kortix 应用"
   },
   "projectChooser": {
     "invitesTitle": "你收到了邀请",
@@ -19588,5 +19597,8 @@
     "appAgentsEmpty": "没有智能体列出此应用。请在 kortix.yaml 的 agents.<name>.apps 中添加它的 slug。",
     "appAgentsDeclared": "在 {file} 中声明（agents.{agent}.apps）",
     "appAgentsGrantAll": "全部应用"
+  },
+  "connectorsAppReturn": {
+    "done": "完成。返回 Kortix 应用"
   }
 }

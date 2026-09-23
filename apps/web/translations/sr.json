@@ -11646,6 +11646,12 @@
       "text3eb54d5ae20d": "Из почетног шаблона. Сваки нови пројекат га добија, искљученог.",
       "text3ecb3ffd4f33": "Проверене су ефективне дозволе",
       "textae47d51077b4": "Припрема линка…",
+      "texte9e0b20cf289": "Повезано као {value0}",
+      "textbb7a240d3660": "Преименуј {value0}",
+      "text64f07c825803": "Мења се само назив. Налог остаје повезан и нико не мора поново да се пријави.",
+      "text499d7f6dfdfc": "Налог је преименован",
+      "text11ef24ea6e15": "Налог није могуће преименовати",
+      "text0223e507afd3": "Да бисте користили други налог, додајте га међу налоге овог конектора у подешавањима пројекта и поставите га као подразумевани.",
       "text3ed7c1e32705": "Читање тракера и његово преписивање су различите радње. Упис подесите на Ask; покретање се зауставља на позиву и приказује тачно које проблеме жели да споји или затвори, а наставља се након одобрења.",
       "text3ee7a9bba1b1": "analyst.md",
       "text3efd6742a383": "Дебитирани кредити",
@@ -18646,7 +18652,8 @@
       "textde340d411411": "Овај дијаграм је празан.",
       "textc53147a0d05b": "Овај дијаграм није могуће приказати",
       "text91aec62280a3": "Преузми SVG",
-      "text751dfdcf3878": "Ред {value0}"
+      "text751dfdcf3878": "Ред {value0}",
+      "text0a7b76552107": "Налог конектора је преименован"
     }
   },
   "projectOnboarding": {
@@ -19461,29 +19468,31 @@
     "enabled": "Nove sesije dobijaju repozitorijum projekta. Git dozvole i dalje važe. Postojeće sesije zadržavaju svoje podešavanje pristupa."
   },
   "modelAccess": {
-    "textOnly": "Само текст",
-    "usProvidersTitle": "Pružaoci sa sedištem u SAD",
-    "hiddenShort": "Sakriven iz birača. Direktni zahtevi su i dalje dozvoljeni.",
-    "disableModel": "Onemogući model",
-    "managedTitle": "Modeli kojima upravlja Kortix",
-    "zdrTitle": "Nulto zadržavanje podataka",
-    "resetError": "Nije moguće resetovati listu modela.",
+    "manageProvider": "Podešavanja za {name}",
     "enableProviderAction": "Omogući provajdera",
-    "zdrDescription": "Nulto zadržavanje podataka (ZDR) znači da pružalac modela obrađuje vaš tekst i slike, ali ne čuva ulaz ni odgovor nakon zahteva. Kortix zasebno čuva vaše projekte i razgovore.",
-    "textImage": "Текст + слика",
-    "credentialsHint": "Onemogućite inferenciju bez uklanjanja akreditiva.",
     "disableProviderAction": "Onemogući provajdera",
     "enabled": "Omogućeno",
-    "hidden": "Sakriven iz birača",
-    "providerError": "Nije moguće ažurirati pristup provajderu.",
-    "manageProvider": "Podešavanja za {name}",
-    "defaultProviderHint": "Izaberite podrazumevani model drugog provajdera pre nego što onemogućite ovog provajdera.",
-    "usProvidersDescription": "Svaki Kortix model radi kod jednog fiksnog pružaoca inferencije sa sedištem u SAD. Zahtevi nikada ne prelaze na drugog pružaoca.",
-    "managedDescription": "Upravljani modeli se naplaćuju Kortix kreditima. API ključ nije potreban.",
-    "hiddenHint": "Sakriven iz birača. Direktni zahtevi su i dalje dozvoljeni; onemogućite ih u meniju modela.",
-    "enableProvider": "Omogući {name}",
     "disabled": "Onemogućeno",
-    "modelError": "Nije moguće ažurirati pristup modelu."
+    "enableProvider": "Omogući {name}",
+    "defaultProviderHint": "Izaberite podrazumevani model drugog provajdera pre nego što onemogućite ovog provajdera.",
+    "credentialsHint": "Onemogućite inferenciju bez uklanjanja akreditiva.",
+    "providerError": "Nije moguće ažurirati pristup provajderu.",
+    "managedTitle": "Modeli kojima upravlja Kortix",
+    "managedDescription": "Upravljani modeli se naplaćuju Kortix kreditima. API ključ nije potreban.",
+    "textImage": "Текст + слика",
+    "textOnly": "Само текст",
+    "zdrTitle": "Nulto zadržavanje podataka",
+    "zdrDescription": "Nulto zadržavanje podataka (ZDR) znači da pružalac modela obrađuje vaš tekst i slike, ali ne čuva ulaz ni odgovor nakon zahteva. Kortix zasebno čuva vaše projekte i razgovore.",
+    "usProvidersTitle": "Pružaoci sa sedištem u SAD",
+    "usProvidersDescription": "Svaki Kortix model radi kod jednog fiksnog pružaoca inferencije sa sedištem u SAD. Zahtevi nikada ne prelaze na drugog pružaoca.",
+    "hiddenHint": "Sakriven iz birača. Direktni zahtevi su i dalje dozvoljeni; onemogućite ih u meniju modela.",
+    "hidden": "Sakriven iz birača",
+    "disableModel": "Onemogući model",
+    "modelError": "Nije moguće ažurirati pristup modelu.",
+    "hiddenShort": "Sakriven iz birača. Direktni zahtevi su i dalje dozvoljeni.",
+    "resetError": "Nije moguće resetovati listu modela.",
+    "appReturn": "Nazad u Kortix aplikaciju",
+    "appReturnConnected": "Provajder je povezan. Nazad u Kortix aplikaciju"
   },
   "projectChooser": {
     "invitesTitle": "Pozvani ste",
@@ -19588,5 +19597,8 @@
     "appAgentsEmpty": "Ниједан агент не наводи ову апликацију. Додај њен slug у agents.<name>.apps у kortix.yaml.",
     "appAgentsDeclared": "Декларисано у {file} (agents.{agent}.apps)",
     "appAgentsGrantAll": "Све апликације"
+  },
+  "connectorsAppReturn": {
+    "done": "Gotovo. Nazad u Kortix aplikaciju"
   }
 }

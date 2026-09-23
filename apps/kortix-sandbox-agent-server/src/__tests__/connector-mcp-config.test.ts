@@ -109,7 +109,7 @@ describe('buildOpencodeConfigContent — optional connector MCP server', () => {
 
   test('always disables OpenCode autoupdate — the daemon owns the binary', async () => {
     // A human running `opencode` in the Session terminal triggered OpenCode's
-    // own upgrade (plain `pnpm add -g`, no postinstall) on two Essentia boxes
+    // own upgrade (plain `pnpm add -g`, no postinstall) on two SampleCo boxes
     // on 2026-08-25, leaving a 479-byte launcher stub and a dangling
     // /opt/kortix/opencode.current. The next OpenCode restart would have booted
     // the stub. Every composed config now pins autoupdate off, and a base

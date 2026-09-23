@@ -493,6 +493,8 @@ export interface ConnectorRouterDeps {
       label: string;
       owner_type: string;
       is_default: boolean;
+      /** Who the account was authorized as. `null` when unknown. */
+      connected_as?: string | null;
     }>
   >;
   /**
@@ -539,7 +541,17 @@ export interface ConnectorRouterDeps {
     selector?: { connectionId?: string; requestId?: string },
     /** Whose account the matching connect started on. Defaults to `me`. */
     owner?: ConnectorConnectOwner,
-  ): Promise<{ provider: string; connected: boolean; accountId?: string; connectionId?: string; isNoAuth?: boolean } | null>;
+  ): Promise<{
+    provider: string;
+    connected: boolean;
+    accountId?: string;
+    connectionId?: string;
+    isNoAuth?: boolean;
+    /** The authorized identity (an email, login, or name). `null` when unknown. */
+    connectedAs?: string | null;
+    /** The connection's label after finalize. A generic default becomes `connectedAs`. */
+    label?: string;
+  } | null>;
   /**
    * Does this caller hold the connections-manage capability on the project?
    * The same gate r4's project-owned connection create asserts — connecting an

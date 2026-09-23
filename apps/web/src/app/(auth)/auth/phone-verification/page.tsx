@@ -229,7 +229,7 @@ export default function PhoneVerificationPage() {
   return (
     <div className="bg-background relative flex min-h-svh flex-col">
       <AuthMobileLogo />
-      <div className="absolute top-6 right-6 z-10">
+      <div className="kx-below-titlebar absolute top-6 right-6 z-10">
         <Button
           variant="ghost"
           size="sm"

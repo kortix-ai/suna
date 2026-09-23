@@ -31,6 +31,8 @@ import {
   type WorkingTurnResolution,
 } from '@kortix/sdk';
 
+import { connectorHandoffCallIds } from './connector-handoff';
+
 /** The turn fields these rules read. Structural, so mobile and SDK turns both fit. */
 export interface TurnBodyTurn {
   userMessage: { info: { id: string }; parts: ReadonlyArray<Part> };
@@ -203,15 +205,25 @@ export function segmentInputParts(
   return parts;
 }
 
-/** Call ids with a pending permission in this session — always standalone rows. */
+/**
+ * Call ids that always render as standalone rows, never inside a burst:
+ * - a pending permission in this session;
+ * - a `kortix-connectors_call` that asks the user to connect an app or to
+ *   approve the call (`connectorHandoffCallIds`). Its Connect row and approval
+ *   prompt read the transcript's `ConnectorHandoffContext`; inside a burst they
+ *   would render in the activity sheet, outside that context, and the connect
+ *   sheet would stack on the activity sheet.
+ */
 export function standaloneCallIdsFor(
   permissions: ReadonlyArray<{ sessionID?: string; tool?: { callID?: string } }>,
   sessionId: string | undefined,
+  parts: ReadonlyArray<PartEntry> = [],
 ): Set<string> {
   const ids = new Set<string>();
   for (const permission of permissions) {
     if (permission.sessionID === sessionId && permission.tool?.callID) ids.add(permission.tool.callID);
   }
+  for (const callId of connectorHandoffCallIds(parts)) ids.add(callId);
   return ids;
 }
 

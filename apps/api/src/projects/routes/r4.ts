@@ -5,6 +5,7 @@ import {
   ConnectionMetadataSchema,
   ConnectionSchema,
   ReconcileConnectionInputSchema,
+  RenameConnectionInputSchema,
   UpdateConnectionCredentialInputSchema,
 } from '@kortix/api-contract';
 import {
@@ -16,7 +17,7 @@ import {
   projects,
   sessionSandboxes,
 } from '@kortix/db';
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import {
   agentMailProvisioningClientIds,
@@ -69,6 +70,7 @@ import {
   upsertConnectionCredential,
   upsertConnectionOAuth2Credential,
 } from '../../connectors/credentials';
+import { connectedAsOf, validateConnectionLabel } from '../../connectors/connection-identity';
 import { mutateManifestWithRetry } from '../../connectors/manifest-mutation';
 import { revokeConnectionOAuth2 } from '../../connectors/oauth2-store';
 import { composioConfigured } from '../../connectors/composio';
@@ -257,6 +259,7 @@ function serializeConnection(row: {
     status: row.status,
     is_default: row.isDefault,
     metadata: row.metadata ?? {},
+    connected_as: connectedAsOf(row.metadata),
   };
 }
 
@@ -755,6 +758,142 @@ projectsApp.openapi(
   },
 );
 
+/**
+ * The connection a caller may mutate, or `null`. `null` answers 404 so a
+ * caller cannot probe for connections they cannot reach. A member may always
+ * mutate their own private connection. Every other connection needs
+ * `project.connector.connections.manage`.
+ */
+async function loadMutableConnection(
+  c: any,
+  loaded: NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>,
+  projectId: string,
+  connectionId: string,
+) {
+  const actingPrincipalIsServiceAccount = c.get('authType') === 'service_account';
+  const mayManageSystemConnections = await projectCapabilityAllowed(
+    c,
+    loaded.userId,
+    loaded.row.accountId,
+    projectId,
+    PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
+  );
+  const [connection] = await db
+    .select({
+      connectorId: connectorConnections.connectorId,
+      ownerType: connectorConnections.ownerType,
+      ownerId: connectorConnections.ownerId,
+      isDefault: connectorConnections.isDefault,
+      label: connectorConnections.label,
+      metadata: connectorConnections.metadata,
+      providerType: connectors.providerType,
+      connectorConfig: connectors.config,
+      connectorAlias: connectors.slug,
+      status: connectorConnections.status,
+    })
+    .from(connectorConnections)
+    .innerJoin(
+      connectors,
+      and(
+        eq(connectors.connectorId, connectorConnections.connectorId),
+        eq(connectors.accountId, connectorConnections.accountId),
+        eq(connectors.projectId, connectorConnections.projectId),
+      ),
+    )
+    .where(
+      and(
+        eq(connectorConnections.connectionId, connectionId),
+        eq(connectorConnections.projectId, projectId),
+        eq(connectorConnections.accountId, loaded.row.accountId),
+      ),
+    )
+    .limit(1);
+  if (!connection) return null;
+  if (
+    !mayMutateConnection(
+      connection,
+      loaded.userId,
+      actingPrincipalIsServiceAccount,
+      mayManageSystemConnections,
+      await requestAgentPrincipalReach(c, loaded.actor),
+    )
+  ) {
+    return null;
+  }
+  return connection;
+}
+
+projectsApp.openapi(
+  createRoute({
+    method: 'put',
+    path: '/{projectId}/connections/{connectionId}/label',
+    tags: ['connectors'],
+    summary: 'Rename connection',
+    description:
+      'Change the label only. The authorized account, owner, default flag, and provider state stay as they are.',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string(), connectionId: z.string().uuid() }),
+      body: { content: { 'application/json': { schema: RenameConnectionInputSchema } } },
+    },
+    responses: {
+      200: json(ConnectionViewSchema, 'Renamed connection'),
+      ...errors(400, 403, 404, 409),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const connectionId = c.req.param('connectionId');
+    const body = await readBody(c);
+    const validated = validateConnectionLabel(body?.label);
+    if (!validated.ok) return c.json({ error: validated.error }, 400);
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const connection = await loadMutableConnection(c, loaded, projectId, connectionId);
+    if (!connection) return c.json({ error: 'Not found' }, 404);
+    const label = validated.label;
+    if (label === connection.label) {
+      return c.json(serializeConnection({ ...connection, connectionId }), 200);
+    }
+    // `--account <label>` matches case-insensitively, so two accounts of one
+    // owner that differ only by case could not be told apart. The unique
+    // index is case-sensitive, so this check is the one that refuses them.
+    const [clash] = await db
+      .select({ connectionId: connectorConnections.connectionId })
+      .from(connectorConnections)
+      .where(
+        and(
+          eq(connectorConnections.connectorId, connection.connectorId),
+          eq(connectorConnections.ownerType, connection.ownerType),
+          connection.ownerId === null
+            ? isNull(connectorConnections.ownerId)
+            : eq(connectorConnections.ownerId, connection.ownerId),
+          ne(connectorConnections.connectionId, connectionId),
+          sql`lower(btrim(${connectorConnections.label})) = ${label.toLowerCase()}`,
+        ),
+      )
+      .limit(1);
+    if (clash) {
+      return c.json({ error: `Another account of this connector is already named "${label}"` }, 409);
+    }
+    try {
+      // `updatedAt` stays as it is on purpose. Composio finalize picks the
+      // most recently updated row of an owner as the one a connect just
+      // started, so bumping it here could redirect an in-flight authorization.
+      await db
+        .update(connectorConnections)
+        .set({ label })
+        .where(eq(connectorConnections.connectionId, connectionId));
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        return c.json({ error: `Another account of this connector is already named "${label}"` }, 409);
+      }
+      throw error;
+    }
+    return c.json(serializeConnection({ ...connection, connectionId, label }), 200);
+  },
+);
+
 for (const operation of ['credential', 'revoke', 'activate', 'default'] as const) {
   projectsApp.openapi(
     createRoute({
@@ -786,53 +925,8 @@ for (const operation of ['credential', 'revoke', 'activate', 'default'] as const
       const connectionId = c.req.param('connectionId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      const actingPrincipalIsServiceAccount = c.get('authType') === 'service_account';
-      const mayManageSystemConnections = await projectCapabilityAllowed(
-        c,
-        loaded.userId,
-        loaded.row.accountId,
-        projectId,
-        PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
-      );
-      const [connection] = await db
-        .select({
-          connectorId: connectorConnections.connectorId,
-          ownerType: connectorConnections.ownerType,
-          ownerId: connectorConnections.ownerId,
-          isDefault: connectorConnections.isDefault,
-          metadata: connectorConnections.metadata,
-            providerType: connectors.providerType,
-          connectorConfig: connectors.config,
-        })
-        .from(connectorConnections)
-        .innerJoin(
-          connectors,
-          and(
-            eq(connectors.connectorId, connectorConnections.connectorId),
-            eq(connectors.accountId, connectorConnections.accountId),
-            eq(connectors.projectId, connectorConnections.projectId),
-          ),
-        )
-        .where(
-          and(
-            eq(connectorConnections.connectionId, connectionId),
-            eq(connectorConnections.projectId, projectId),
-            eq(connectorConnections.accountId, loaded.row.accountId),
-          ),
-        )
-        .limit(1);
+      const connection = await loadMutableConnection(c, loaded, projectId, connectionId);
       if (!connection) return c.json({ error: 'Not found' }, 404);
-      if (
-        !mayMutateConnection(
-          connection,
-          loaded.userId,
-          actingPrincipalIsServiceAccount,
-          mayManageSystemConnections,
-          await requestAgentPrincipalReach(c, loaded.actor),
-        )
-      ) {
-        return c.json({ error: 'Not found' }, 404);
-      }
       if (operation === 'credential') {
         const body = await readBody(c);
         const parsed = UpdateConnectionCredentialInputSchema.safeParse(body);
@@ -1060,8 +1154,14 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
       }
       if (connection.providerType === 'composio') {
         if (!composioConfigured()) return c.json({ error: 'composio not configured' }, 501);
-        const { composioConnectUrl, finalizeComposioConnection, composioUserId } = await import(
-          '../../connectors/composio'
+        const {
+          composioConnectUrl,
+          finalizeComposioConnection,
+          composioUserId,
+          probeComposioIdentity,
+        } = await import('../../connectors/composio');
+        const { relabelToIdentity, resolveConnectedAs } = await import(
+          '../../connectors/connection-identity'
         );
         const { composioConnectionMetadata } = await import('../../connectors/db-deps');
         const stableUserId = composioUserId(connectionId);
@@ -1100,6 +1200,12 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
                 authRequestId: result.authRequestId,
                 connectedAccountId: result.connectedAccountId,
                 isNoAuth: result.isNoAuth,
+                previous: metadata,
+                connectedAs:
+                  result.connectedAccountId &&
+                  result.connectedAccountId === metadata.connected_account_id
+                    ? connectedAsOf(metadata)
+                    : null,
               }),
               updatedAt: sql`now()`,
             })
@@ -1124,6 +1230,19 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
             ? { authRequestId: metadata.auth_request_id }
             : {}),
         });
+        const connectedAs = result.connected
+          ? await resolveConnectedAs({
+              previous: metadata,
+              connectedAccountId: result.connectedAccountId,
+              isNoAuth: result.isNoAuth,
+              probe: () =>
+                probeComposioIdentity({
+                  app,
+                  sessionId: result.sessionId,
+                  connectedAccountId: result.connectedAccountId!,
+                }),
+            })
+          : null;
         await db
           .update(connectorConnections)
           .set({
@@ -1135,11 +1254,19 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
               authRequestId: result.authRequestId,
               connectedAccountId: result.connectedAccountId,
               isNoAuth: result.isNoAuth,
+              previous: metadata,
+              connectedAs,
             }),
             updatedAt: sql`now()`,
           })
           .where(eq(connectorConnections.connectionId, connectionId));
-        return c.json({ connected: result.connected, accountId: result.connectedAccountId });
+        const label = connectedAs ? await relabelToIdentity({ connectionId, identity: connectedAs }) : null;
+        return c.json({
+          connected: result.connected,
+          accountId: result.connectedAccountId,
+          connected_as: connectedAs,
+          ...(label ? { label } : {}),
+        });
       }
       if (!pipedreamConfigured()) {
         return c.json({ error: 'pipedream not configured' }, 501);
@@ -2621,7 +2748,7 @@ projectsApp.openapi(
       // `opencode_session` only persists the root-session pin. Those are exactly
       // what the in-sandbox agent CLI reports over its session/CLI token, which a
       // SCOPED agent grant has no reason to hold connector.write for — gating them
-      // 403'd every turn-end report on Essentia, stranding sandboxes alive for the
+      // 403'd every turn-end report on SampleCo, stranding sandboxes alive for the
       // full idle grace (wasted compute). So exempt the lifecycle kinds and keep
       // the connector gate as the deny-by-default floor for anything that can
       // reach the send path. The IDOR scope (session_id -> projectId) below still

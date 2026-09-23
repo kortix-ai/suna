@@ -11646,6 +11646,12 @@
       "text3eb54d5ae20d": "Issu du modèle de démarrage. Chaque nouveau projet l’intègre, désactivé.",
       "text3ecb3ffd4f33": "Autorisations effectives vérifiées",
       "textae47d51077b4": "Préparation du lien…",
+      "texte9e0b20cf289": "Connecté en tant que {value0}",
+      "textbb7a240d3660": "Renommer {value0}",
+      "text64f07c825803": "Seul le nom change. Le compte reste connecté et personne ne doit se reconnecter.",
+      "text499d7f6dfdfc": "Compte renommé",
+      "text11ef24ea6e15": "Impossible de renommer le compte",
+      "text0223e507afd3": "Pour utiliser un autre compte, ajoutez-le aux comptes de ce connecteur dans les paramètres du projet et définissez-le par défaut.",
       "text3ed7c1e32705": "Lire un tracker et le réécrire sont deux actions différentes. Réglez l’écriture sur Ask : l’exécution s’arrête sur l’appel et vous montre exactement quels tickets elle veut fusionner ou clôturer, puis reprend après votre approbation.",
       "text3ee7a9bba1b1": "analyst.md",
       "text3efd6742a383": "Crédits débités",
@@ -18646,7 +18652,8 @@
       "textde340d411411": "Ce diagramme est vide.",
       "textc53147a0d05b": "Impossible d'afficher ce diagramme",
       "text91aec62280a3": "Télécharger le SVG",
-      "text751dfdcf3878": "Ligne {value0}"
+      "text751dfdcf3878": "Ligne {value0}",
+      "text0a7b76552107": "Compte de connecteur renommé"
     }
   },
   "projectOnboarding": {
@@ -19461,29 +19468,31 @@
     "enabled": "Les nouvelles sessions reçoivent le dépôt du projet. Les permissions Git restent applicables. Les sessions existantes conservent leur accès."
   },
   "modelAccess": {
-    "textOnly": "Texte uniquement",
-    "usProvidersTitle": "Fournisseurs basés aux États-Unis",
-    "hiddenShort": "Masqué dans le sélecteur. Les requêtes directes restent autorisées.",
-    "disableModel": "Désactiver le modèle",
-    "managedTitle": "Modèles gérés par Kortix",
-    "zdrTitle": "Conservation zéro des données",
-    "resetError": "Impossible de réinitialiser la liste des modèles.",
+    "manageProvider": "Paramètres de {name}",
     "enableProviderAction": "Activer le fournisseur",
-    "zdrDescription": "La conservation zéro des données (ZDR) signifie que le fournisseur traite vos textes et images, puis ne conserve ni l'entrée ni la réponse après la requête. Kortix stocke séparément vos projets et conversations.",
-    "textImage": "Texte + image",
-    "credentialsHint": "Désactivez l’inférence sans supprimer les identifiants.",
     "disableProviderAction": "Désactiver le fournisseur",
     "enabled": "Activé",
-    "hidden": "Masqué dans le sélecteur",
-    "providerError": "Impossible de modifier l’accès au fournisseur.",
-    "manageProvider": "Paramètres de {name}",
-    "defaultProviderHint": "Choisissez un modèle par défaut chez un autre fournisseur avant de désactiver celui-ci.",
-    "usProvidersDescription": "Chaque modèle Kortix utilise un seul fournisseur d'inférence fixe, basé aux États-Unis. Les requêtes ne basculent jamais vers un autre fournisseur.",
-    "managedDescription": "Modèles gérés facturés en crédits Kortix. Aucune clé API nécessaire.",
-    "hiddenHint": "Masqué dans le sélecteur. Les requêtes directes restent autorisées ; désactivez-les dans le menu du modèle.",
-    "enableProvider": "Activer {name}",
     "disabled": "Désactivé",
-    "modelError": "Impossible de modifier l’accès au modèle."
+    "enableProvider": "Activer {name}",
+    "defaultProviderHint": "Choisissez un modèle par défaut chez un autre fournisseur avant de désactiver celui-ci.",
+    "credentialsHint": "Désactivez l’inférence sans supprimer les identifiants.",
+    "providerError": "Impossible de modifier l’accès au fournisseur.",
+    "managedTitle": "Modèles gérés par Kortix",
+    "managedDescription": "Modèles gérés facturés en crédits Kortix. Aucune clé API nécessaire.",
+    "textImage": "Texte + image",
+    "textOnly": "Texte uniquement",
+    "zdrTitle": "Conservation zéro des données",
+    "zdrDescription": "La conservation zéro des données (ZDR) signifie que le fournisseur traite vos textes et images, puis ne conserve ni l'entrée ni la réponse après la requête. Kortix stocke séparément vos projets et conversations.",
+    "usProvidersTitle": "Fournisseurs basés aux États-Unis",
+    "usProvidersDescription": "Chaque modèle Kortix utilise un seul fournisseur d'inférence fixe, basé aux États-Unis. Les requêtes ne basculent jamais vers un autre fournisseur.",
+    "hiddenHint": "Masqué dans le sélecteur. Les requêtes directes restent autorisées ; désactivez-les dans le menu du modèle.",
+    "hidden": "Masqué dans le sélecteur",
+    "disableModel": "Désactiver le modèle",
+    "modelError": "Impossible de modifier l’accès au modèle.",
+    "hiddenShort": "Masqué dans le sélecteur. Les requêtes directes restent autorisées.",
+    "resetError": "Impossible de réinitialiser la liste des modèles.",
+    "appReturn": "Retour à l’app Kortix",
+    "appReturnConnected": "Fournisseur connecté. Retour à l’app Kortix"
   },
   "projectChooser": {
     "invitesTitle": "Vous êtes invité",
@@ -19588,5 +19597,8 @@
     "appAgentsEmpty": "Aucun agent ne liste cette App. Ajoutez son slug à agents.<name>.apps dans kortix.yaml.",
     "appAgentsDeclared": "Déclaré dans {file} (agents.{agent}.apps)",
     "appAgentsGrantAll": "Toutes les Apps"
+  },
+  "connectorsAppReturn": {
+    "done": "Terminé. Retour à l’app Kortix"
   }
 }

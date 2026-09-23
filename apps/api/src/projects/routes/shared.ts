@@ -769,7 +769,7 @@ export function stoppedWakeResult(
   // A STAMPED runtime-start failure — `runtime_wake_failed` from a wake that
   // ran out of budget, `runtime_boot_failed` from a park. It used to short
   // -circuit every later `/start` to a terminal payload forever, so the session
-  // could only be recovered by a human pressing Restart (Essentia 2026-08-26:
+  // could only be recovered by a human pressing Restart (SampleCo 2026-08-26:
   // e06ad0c4 answered `failed` in 47ms for a startable box; 9c8749ac replayed a
   // 03:37Z stamp for 10+ hours). Now it is a cooldown with three outcomes.
   const failureState = stampedRuntimeFailureState(metadata, now);
@@ -1369,7 +1369,7 @@ async function runOpenSession(args: {
         stopUnconfirmed = true;
         // OWN the confirmation instead of hoping someone reads again. Without
         // this the row keeps claiming `running` for as long as nothing polls —
-        // 5+ minutes on Essentia 2026-08-26, with the queued prompt delivered
+        // 5+ minutes on SampleCo 2026-08-26, with the queued prompt delivered
         // against a box the provider had already stopped. Detached: the answer
         // this call returns must not wait a confirmation window for it.
         void runStoppedObservationFollowUp({

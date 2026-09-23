@@ -11646,6 +11646,12 @@
       "text3eb54d5ae20d": "Do template inicial. Todo projeto novo vem com ele desativado.",
       "text3ecb3ffd4f33": "Permissões efetivas verificadas",
       "textae47d51077b4": "Preparando o link…",
+      "texte9e0b20cf289": "Conectado como {value0}",
+      "textbb7a240d3660": "Renomear {value0}",
+      "text64f07c825803": "Só o nome muda. A conta continua conectada e ninguém precisa entrar de novo.",
+      "text499d7f6dfdfc": "Conta renomeada",
+      "text11ef24ea6e15": "Não foi possível renomear a conta",
+      "text0223e507afd3": "Para usar outra conta, adicione-a às contas deste conector nas configurações do projeto e defina-a como padrão.",
       "text3ed7c1e32705": "Ler um tracker e reescrevê-lo são ações diferentes. Defina a gravação como Ask e a execução ficará parada na chamada, mostrando exatamente quais issues ela quer mesclar ou fechar; depois retoma quando você aprovar.",
       "text3ee7a9bba1b1": "analyst.md",
       "text3efd6742a383": "Créditos debitados",
@@ -18646,7 +18652,8 @@
       "textde340d411411": "Este diagrama está vazio.",
       "textc53147a0d05b": "Não foi possível renderizar este diagrama",
       "text91aec62280a3": "Baixar SVG",
-      "text751dfdcf3878": "Linha {value0}"
+      "text751dfdcf3878": "Linha {value0}",
+      "text0a7b76552107": "Conta do conector renomeada"
     }
   },
   "projectOnboarding": {
@@ -19461,29 +19468,31 @@
     "enabled": "As novas sessões recebem o repositório do projeto. As permissões do Git continuam em vigor. As sessões existentes mantêm a sua configuração de acesso."
   },
   "modelAccess": {
-    "textOnly": "Apenas texto",
-    "usProvidersTitle": "Provedores sediados nos EUA",
-    "hiddenShort": "Oculto no seletor. Solicitações diretas continuam permitidas.",
-    "disableModel": "Desativar modelo",
-    "managedTitle": "Modelos gerenciados pela Kortix",
-    "zdrTitle": "Retenção zero de dados",
-    "resetError": "Não foi possível redefinir a lista de modelos.",
+    "manageProvider": "Configurações de {name}",
     "enableProviderAction": "Ativar provedor",
-    "zdrDescription": "Retenção zero de dados (ZDR) significa que o provedor processa seus textos e imagens, mas não guarda a entrada nem a resposta após a solicitação. A Kortix armazena seus projetos e conversas separadamente.",
-    "textImage": "Texto + imagem",
-    "credentialsHint": "Desative a inferência sem remover as credenciais.",
     "disableProviderAction": "Desativar provedor",
     "enabled": "Ativado",
-    "hidden": "Oculto no seletor",
-    "providerError": "Não foi possível atualizar o acesso ao provedor.",
-    "manageProvider": "Configurações de {name}",
-    "defaultProviderHint": "Escolha um modelo padrão de outro provedor antes de desativar este provedor.",
-    "usProvidersDescription": "Cada modelo da Kortix usa um único provedor de inferência fixo, sediado nos EUA. As solicitações nunca passam para outro provedor.",
-    "managedDescription": "Modelos gerenciados cobrados em créditos Kortix. Não é necessária uma chave API.",
-    "hiddenHint": "Oculto no seletor. Solicitações diretas continuam permitidas; desative-as no menu do modelo.",
-    "enableProvider": "Ativar {name}",
     "disabled": "Desativado",
-    "modelError": "Não foi possível atualizar o acesso ao modelo."
+    "enableProvider": "Ativar {name}",
+    "defaultProviderHint": "Escolha um modelo padrão de outro provedor antes de desativar este provedor.",
+    "credentialsHint": "Desative a inferência sem remover as credenciais.",
+    "providerError": "Não foi possível atualizar o acesso ao provedor.",
+    "managedTitle": "Modelos gerenciados pela Kortix",
+    "managedDescription": "Modelos gerenciados cobrados em créditos Kortix. Não é necessária uma chave API.",
+    "textImage": "Texto + imagem",
+    "textOnly": "Apenas texto",
+    "zdrTitle": "Retenção zero de dados",
+    "zdrDescription": "Retenção zero de dados (ZDR) significa que o provedor processa seus textos e imagens, mas não guarda a entrada nem a resposta após a solicitação. A Kortix armazena seus projetos e conversas separadamente.",
+    "usProvidersTitle": "Provedores sediados nos EUA",
+    "usProvidersDescription": "Cada modelo da Kortix usa um único provedor de inferência fixo, sediado nos EUA. As solicitações nunca passam para outro provedor.",
+    "hiddenHint": "Oculto no seletor. Solicitações diretas continuam permitidas; desative-as no menu do modelo.",
+    "hidden": "Oculto no seletor",
+    "disableModel": "Desativar modelo",
+    "modelError": "Não foi possível atualizar o acesso ao modelo.",
+    "hiddenShort": "Oculto no seletor. Solicitações diretas continuam permitidas.",
+    "resetError": "Não foi possível redefinir a lista de modelos.",
+    "appReturn": "Voltar ao app Kortix",
+    "appReturnConnected": "Provedor conectado. Voltar ao app Kortix"
   },
   "projectChooser": {
     "invitesTitle": "Você foi convidado",
@@ -19588,5 +19597,8 @@
     "appAgentsEmpty": "Nenhum agente lista este App. Adicione o slug dele a agents.<name>.apps em kortix.yaml.",
     "appAgentsDeclared": "Declarado em {file} (agents.{agent}.apps)",
     "appAgentsGrantAll": "Todos os Apps"
+  },
+  "connectorsAppReturn": {
+    "done": "Pronto. Voltar ao app Kortix"
   }
 }

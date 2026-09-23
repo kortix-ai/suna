@@ -42,6 +42,10 @@ export interface ComposioRuntime {
       }>
     >;
   };
+  /** Read one connected account. Only the non-secret `displayName` is used. */
+  connectedAccounts?: {
+    get(id: string): Promise<{ state?: { val?: Record<string, unknown> } | null } | null | undefined>;
+  };
 }
 
 export interface ComposioSessionLike {
@@ -544,4 +548,121 @@ export async function finalizeComposioConnection(input: {
     ...(input.authRequestId ? { authRequestId: input.authRequestId } : {}),
     isNoAuth: false,
   };
+}
+
+/**
+ * The one tool per toolkit that answers "who is this account?". Used only when
+ * Composio stores no `displayName` on the connected account. Every slug below
+ * was checked against Composio's live tool catalog on 2026-09-23. Google Docs
+ * and Google Sheets expose no such tool, so they have no entry.
+ */
+const IDENTITY_TOOLS: Record<string, { slug: string; args: Record<string, unknown> }> = {
+  gmail: { slug: 'GMAIL_GET_PROFILE', args: {} },
+  googlecalendar: { slug: 'GOOGLECALENDAR_GET_CALENDAR', args: { calendar_id: 'primary' } },
+  googledrive: { slug: 'GOOGLEDRIVE_GET_ABOUT', args: { fields: 'user' } },
+  linear: { slug: 'LINEAR_GET_CURRENT_USER', args: {} },
+  github: { slug: 'GITHUB_GET_THE_AUTHENTICATED_USER', args: {} },
+  slack: { slug: 'SLACK_TEST_AUTH', args: {} },
+  notion: { slug: 'NOTION_GET_ABOUT_ME', args: {} },
+  outlook: { slug: 'OUTLOOK_GET_PROFILE', args: {} },
+  microsoft_teams: { slug: 'MICROSOFT_TEAMS_GET_MY_PROFILE', args: {} },
+  hubspot: { slug: 'HUBSPOT_GET_ACCOUNT_INFO', args: {} },
+  jira: { slug: 'JIRA_GET_CURRENT_USER', args: {} },
+  asana: { slug: 'ASANA_GET_CURRENT_USER', args: {} },
+  figma: { slug: 'FIGMA_GET_CURRENT_USER', args: {} },
+  airtable: { slug: 'AIRTABLE_GET_USER_INFO', args: {} },
+  salesforce: { slug: 'SALESFORCE_GET_USER_INFO', args: {} },
+  trello: { slug: 'TRELLO_GET_MEMBERS_ME', args: {} },
+  dropbox: { slug: 'DROPBOX_GET_ABOUT_ME', args: {} },
+  calendly: { slug: 'CALENDLY_GET_CURRENT_USER', args: {} },
+};
+
+const IDENTITY_PROBE_TIMEOUT_MS = 5_000;
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const LOGIN_KEYS = ['login', 'username', 'user_name', 'user', 'handle'];
+const NAME_KEYS = ['displayname', 'display_name', 'name'];
+
+/** An email is lower-cased so one person never reads as two accounts. */
+function normalizeIdentity(value: string): string | null {
+  const trimmed = value.trim().slice(0, 255);
+  if (!trimmed) return null;
+  return EMAIL.test(trimmed) ? trimmed.toLowerCase() : trimmed;
+}
+
+/**
+ * The best identity string in a whoami response: any email first, then a
+ * login, then a display name. Walks at most four levels, because every
+ * catalogued response nests the user one or two levels down (`data.user`,
+ * `data.viewer`).
+ */
+export function identityFromWhoami(data: unknown): string | null {
+  const found: { email?: string; login?: string; name?: string } = {};
+  const visit = (value: unknown, depth: number) => {
+    if (!value || typeof value !== 'object' || depth > 4) return;
+    for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+      if (typeof raw === 'string' && raw.trim()) {
+        const lower = key.toLowerCase();
+        const text = raw.trim();
+        // Any email-shaped value counts, whatever its key: Google Calendar's
+        // primary calendar carries the account email as its `id`.
+        if (!found.email && EMAIL.test(text)) {
+          found.email = text;
+        } else if (!found.login && LOGIN_KEYS.includes(lower)) {
+          found.login = text;
+        } else if (!found.name && NAME_KEYS.includes(lower)) {
+          found.name = text;
+        }
+      } else if (raw && typeof raw === 'object') {
+        visit(raw, depth + 1);
+      }
+    }
+  };
+  visit(data, 0);
+  const best = found.email ?? found.login ?? found.name;
+  return best ? normalizeIdentity(best) : null;
+}
+
+function withTimeout<T>(work: Promise<T>): Promise<T | null> {
+  return Promise.race([
+    work,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), IDENTITY_PROBE_TIMEOUT_MS)),
+  ]);
+}
+
+/**
+ * WHO the connected account is: an email when the provider has one, else a
+ * login or display name. It is shown as "Connected as …" and becomes the
+ * default label, so an account authorized with the wrong login is visible
+ * the moment it lands instead of months later.
+ *
+ * Best effort by contract: any failure returns `null` and never throws.
+ * Finalize must not fail because a label could not be derived.
+ */
+export async function probeComposioIdentity(input: {
+  app: string;
+  sessionId: string;
+  connectedAccountId: string;
+  runtime?: ComposioRuntime;
+}): Promise<string | null> {
+  try {
+    const runtime = input.runtime ?? getComposioRuntime();
+    const account = await withTimeout(
+      runtime.connectedAccounts?.get(input.connectedAccountId) ?? Promise.resolve(null),
+    ).catch(() => null);
+    const displayName = account?.state?.val?.displayName;
+    if (typeof displayName === 'string') {
+      const identity = normalizeIdentity(displayName);
+      if (identity) return identity;
+    }
+
+    const tool = IDENTITY_TOOLS[input.app.toLowerCase()];
+    if (!tool) return null;
+    const response = await withTimeout(
+      runtime.sessions.use(input.sessionId).then((session) => session.execute(tool.slug, tool.args)),
+    );
+    if (!response || response.error) return null;
+    return identityFromWhoami(response.data);
+  } catch {
+    return null;
+  }
 }

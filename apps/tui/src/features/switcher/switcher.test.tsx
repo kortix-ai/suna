@@ -18,7 +18,7 @@ describe('switcherItems', () => {
     sessions: [session('s1', 'Casual greeting', 3), session('s2', 'Fix claims', 90, 'stopped')],
     projects: [
       { project_id: 'p1', name: 'Project Atlas' },
-      { project_id: 'p2', name: 'Project 2' },
+      { project_id: 'p2', name: 'Project Beta' },
     ],
     activeProjectId: 'p1',
     now: NOW,
@@ -40,7 +40,7 @@ describe('switcherItems', () => {
 
   test('the active project is marked, never hidden', () => {
     expect(items[2]).toMatchObject({ label: 'project · Project Atlas', right: 'active' });
-    expect(items[3]).toMatchObject({ label: 'project · Project 2', right: '' });
+    expect(items[3]).toMatchObject({ label: 'project · Project Beta', right: '' });
   });
 
   test('an unnamed session still gets a row', () => {

@@ -10,6 +10,7 @@
 import * as React from 'react';
 import { TextInput, type TextStyle } from 'react-native';
 import { useColorScheme } from 'nativewind';
+import { MONO_FONT_FAMILY } from '@/lib/utils/mono-font';
 import { THEME } from '@/lib/utils/theme';
 
 /** Matches `Button size="lg"` (h-11, 44pt), so fields and buttons stack flush. */
@@ -41,7 +42,7 @@ export function usePillInputStyle({ height, mono }: { height: number; mono?: boo
     paddingHorizontal: 18,
     fontSize: INPUT_FONT_SIZE,
     color: c.foreground,
-    fontFamily: mono ? 'Menlo' : INPUT_FONT_FAMILY,
+    fontFamily: mono ? MONO_FONT_FAMILY : INPUT_FONT_FAMILY,
   };
   return { style, placeholderTextColor: c.mutedForeground };
 }

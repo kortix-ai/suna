@@ -87,6 +87,13 @@ import {
   resolveCredentialValue,
   resolveConnectionCredentialValue,
 } from './credentials';
+import {
+  connectedAsOf,
+  relabelToIdentity,
+  resolveConnectedAs,
+  rowMetadata,
+  CONNECTED_AS_KEY,
+} from './connection-identity';
 import type { ConnectorAuth, FetchImpl } from './call';
 import type { GatewayAction, GatewayConnector, GatewayDeps } from './gateway';
 import {
@@ -363,8 +370,13 @@ export function composioConnectionMetadata(input: {
   /** Kortix session whose agent asked for this connector. Deliberately NOT
    *  `session_id` — that key is Composio's Tool Router session (`trs_…`). */
   requestingSessionId?: string | null;
+  /** The previous metadata. Its row-level keys (`rowMetadata`) are kept. */
+  previous?: unknown;
+  /** The authorized identity (`probeComposioIdentity`). Omitted when unknown. */
+  connectedAs?: string | null;
 }): Record<string, unknown> {
   return {
+    ...rowMetadata(input.previous),
     provider: 'composio',
     toolkit: input.toolkit,
     stable_user_id: input.stableUserId,
@@ -373,6 +385,7 @@ export function composioConnectionMetadata(input: {
     connected_account_id: input.connectedAccountId ?? null,
     is_no_auth: input.isNoAuth,
     requesting_session_id: input.requestingSessionId ?? null,
+    ...(input.connectedAs ? { [CONNECTED_AS_KEY]: input.connectedAs } : {}),
   };
 }
 
@@ -920,6 +933,11 @@ type ComposioAdapter = {
     authRequestId?: string;
     expectedConnectedAccountId?: string;
   }): Promise<{ connected: boolean; connectedAccountId?: string; sessionId: string; authRequestId?: string; isNoAuth: boolean }>;
+  probeComposioIdentity?(input: {
+    app: string;
+    sessionId: string;
+    connectedAccountId: string;
+  }): Promise<string | null>;
 };
 
 async function loadComposioAdapter(): Promise<ComposioAdapter | null> {
@@ -2357,6 +2375,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
       label: connection.label,
       owner_type: connection.ownerType,
       is_default: connection.isDefault,
+      connected_as: connectedAsOf(connection.metadata),
     }));
   },
   mintConnectorConnectLink: async ({ projectId, slug, userId, sessionId }) => {
@@ -2411,6 +2430,12 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
               projectId,
               connectorId: conn.connectorId,
             });
+      const [previousRow] = await db
+        .select({ metadata: connectorConnections.metadata })
+        .from(connectorConnections)
+        .where(eq(connectorConnections.connectionId, connectionId))
+        .limit(1);
+      const previous = (previousRow?.metadata ?? {}) as Record<string, unknown>;
       await db
         .update(connectorConnections)
         .set({
@@ -2424,6 +2449,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
           // Pending rows stay active because the DB enum has no needs_auth
           // value. The gateway still fails closed on missing auth metadata.
           metadata: {
+            ...rowMetadata(previous),
             provider: 'composio',
             toolkit: conn.app,
             requesting_session_id: requestingSessionId ?? null,
@@ -2459,6 +2485,14 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
             connectedAccountId: result.connectedAccountId,
             isNoAuth: result.isNoAuth,
             requestingSessionId,
+            previous,
+            // An already-active account kept its identity. A new authorization
+            // has none until finalize probes it.
+            connectedAs:
+              result.connectedAccountId &&
+              result.connectedAccountId === previous.connected_account_id
+                ? connectedAsOf(previous)
+                : null,
           }),
           updatedAt: sql`now()`,
         })
@@ -2557,6 +2591,22 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
         authRequestId,
         expectedConnectedAccountId,
       });
+      const connectedAccountId = result.connectedAccountId ?? expectedConnectedAccountId;
+      const connectedAs = result.connected
+        ? await resolveConnectedAs({
+            previous: metadata,
+            connectedAccountId,
+            isNoAuth: result.isNoAuth,
+            probe: () =>
+              composio.probeComposioIdentity
+                ? composio.probeComposioIdentity({
+                    app: conn.app,
+                    sessionId: result.sessionId,
+                    connectedAccountId: connectedAccountId!,
+                  })
+                : Promise.resolve(null),
+          })
+        : null;
       await db
         .update(connectorConnections)
         .set({
@@ -2569,9 +2619,11 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
             stableUserId,
             sessionId: result.sessionId,
             authRequestId: result.authRequestId ?? authRequestId,
-            connectedAccountId: result.connectedAccountId ?? expectedConnectedAccountId,
+            connectedAccountId,
             isNoAuth: result.isNoAuth,
             requestingSessionId,
+            previous: metadata,
+            connectedAs,
           }),
           updatedAt: sql`now()`,
         })
@@ -2585,6 +2637,11 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
       // account landed so it resumes instead of posting a second link next run.
       // Fire-and-forget: the credential is already saved, and a notification
       // failure must never turn a successful connect into an error.
+      // A generic default label ("Private connection", the connector name)
+      // becomes the identity, so the account list shows WHO each row is.
+      const label = connectedAs
+        ? await relabelToIdentity({ connectionId: connection.connectionId, identity: connectedAs })
+        : null;
       if (result.connected && requestingSessionId) {
         void notifyConnectorSession(requestingSessionId, projectId, _userId ?? null, slug, conn.app);
       }
@@ -2594,6 +2651,8 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
         accountId: result.connectedAccountId,
         connectionId: connection.connectionId,
         isNoAuth: result.isNoAuth,
+        connectedAs,
+        ...(label ? { label } : {}),
       };
     }
     if (!pipedreamConfigured()) return null;

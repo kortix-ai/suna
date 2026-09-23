@@ -15,7 +15,7 @@ import { qk } from '../query-keys';
  * the theory that "the stream owns this value". True for a LIVE stream — and
  * exactly backwards for a dead one: the reconnect that runs this fill happens
  * BECAUSE the stream died, and the wire idle frame it left behind is what the
- * fill needs to correct. Prod, 2026-08-26 (essentia): a turn sitting inside
+ * fill needs to correct. Prod, 2026-08-26 (sampleco): a turn sitting inside
  * one long tool call moves no transcript, so the hydrate-movement evidence is
  * silent, and the frozen wire-idle slot kept vetoing the open `/turn` row for
  * the whole run.

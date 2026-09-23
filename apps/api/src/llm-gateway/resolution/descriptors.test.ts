@@ -101,7 +101,7 @@ describe('stripBedrockInferenceProfilePrefix', () => {
 });
 
 describe('normalizeBedrockInferenceProfileRegion', () => {
-  test('rewrites a wrong-geography profile to the endpoint region (the Essentia jp.→us. incident)', () => {
+  test('rewrites a wrong-geography profile to the endpoint region (the SampleCo jp.→us. incident)', () => {
     // 41 sessions on a us-east-1 box were pinned to jp.anthropic.claude-opus-5,
     // which Bedrock 400s "The provided model identifier is invalid."
     expect(

@@ -269,7 +269,7 @@ describe('AuditQueue', () => {
 });
 
 /**
- * Essentia 2026-08-26. `kortix.audit_prepare_event` takes a per-session row
+ * SampleCo 2026-08-26. `kortix.audit_prepare_event` takes a per-session row
  * lock on `kortix.audit_session_sequences` that PostgreSQL holds until COMMIT,
  * so a statement built in arrival order held EVERY session it touched. Measured
  * against a 5.09M-row `audit_events`: a 100-row cross-session statement blocked

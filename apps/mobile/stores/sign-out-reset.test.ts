@@ -37,6 +37,7 @@ const { useLastProjectStore } = await import('./last-project-store');
 const { useSelectedProjectStore } = await import('./selected-project-store');
 const { useMessageQueueStore } = await import('./message-queue-store');
 const { useTabScreenshotStore } = await import('./tab-screenshot-store');
+const { useComposerDraftStore, scheduleComposerDraftWrite } = await import('./composer-draft-store');
 
 describe('sign-out resets the in-memory account stores', () => {
   beforeEach(() => {
@@ -73,6 +74,16 @@ describe('sign-out resets the in-memory account stores', () => {
     expect(useMessageQueueStore.getState().hydrated).toBe(true);
     useMessageQueueStore.getState().enqueue('ses_2', 'user B');
     expect(useMessageQueueStore.getState().messages.map((m) => m.text)).toEqual(['user B']);
+  });
+
+  test('composer drafts: typed drafts and pending writes are dropped', async () => {
+    useComposerDraftStore.getState().write('session:ses_1', 'draft for user A');
+    scheduleComposerDraftWrite('project:p_1', 'pending for user A');
+    useComposerDraftStore.getState().reset();
+    expect(useComposerDraftStore.getState().drafts).toEqual({});
+    // The debounced write must not land after the reset.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(useComposerDraftStore.getState().drafts).toEqual({});
   });
 
   test('tab screenshots: the mapping is cleared and the image files are deleted', async () => {

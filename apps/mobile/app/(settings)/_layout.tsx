@@ -45,26 +45,12 @@ export default function SettingsLayout() {
         },
       }}
     >
-      {/* No index screen: the Account page (Account tab, or /projects/[id]/account
-          from a project) is the one settings page and pushes these sub-pages. */}
-      <Stack.Screen
-        name="name"
-        options={{
-          header: () => <SettingsHeader title={t('nameEdit.title')} />,
-          headerShown: true,
-        }}
-      />
+      {/* No index screen: the Account page (/projects/[id]/account, from
+          the project drawer's avatar) is the one settings page and pushes these sub-pages. */}
       <Stack.Screen
         name="language"
         options={{
           header: () => <SettingsHeader title={t('language.title')} />,
-          headerShown: true,
-        }}
-      />
-      <Stack.Screen
-        name="theme"
-        options={{
-          header: () => <SettingsHeader title={t('theme.title')} />,
           headerShown: true,
         }}
       />
@@ -83,23 +69,9 @@ export default function SettingsLayout() {
         }}
       />
       <Stack.Screen
-        name="transactions"
-        options={{
-          header: () => <SettingsHeader title="Transactions" />,
-          headerShown: true,
-        }}
-      />
-      <Stack.Screen
         name="instances"
         options={{
           header: () => <SettingsHeader title="Instances" />,
-          headerShown: true,
-        }}
-      />
-      <Stack.Screen
-        name="changelog"
-        options={{
-          header: () => <SettingsHeader title="Updates" />,
           headerShown: true,
         }}
       />

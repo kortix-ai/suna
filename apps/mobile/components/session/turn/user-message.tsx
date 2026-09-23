@@ -117,6 +117,9 @@ function paletteFor(isDark: boolean) {
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+/** A failed send's bubble: the queued dim's `opacity-50`. */
+const FAILED_BUBBLE_STYLE = { opacity: 0.5 };
+
 /** A failed send the host kept on screen. */
 export interface UserMessageUploadStatus {
   state: 'failed';
@@ -363,18 +366,21 @@ export function UserMessage({
         ) : null}
 
         {hasBubble ? (
-          <UserMessageBubble isDark={isDark} quotes={content.quotes}>
-            {bodyText || commandInfo ? (
-              <MessageBody
-                text={bodyText}
-                command={commandInfo?.name}
-                sessions={content.sessions}
-                agentNames={agentNames}
-                onFileMention={onFileMention}
-                onSessionMention={onSessionMention}
-              />
-            ) : null}
-          </UserMessageBubble>
+          // A failed send greys its bubble; "Try again" above stays full strength.
+          <View className="items-end" style={failed ? FAILED_BUBBLE_STYLE : undefined}>
+            <UserMessageBubble isDark={isDark} quotes={content.quotes}>
+              {bodyText || commandInfo ? (
+                <MessageBody
+                  text={bodyText}
+                  command={commandInfo?.name}
+                  sessions={content.sessions}
+                  agentNames={agentNames}
+                  onFileMention={onFileMention}
+                  onSessionMention={onSessionMention}
+                />
+              ) : null}
+            </UserMessageBubble>
+          </View>
         ) : null}
 
         {actions}
@@ -462,11 +468,12 @@ function MessageBody({
  */
 export function UserMessageBubble({
   isDark,
-  quotes,
+  quotes = [],
   children,
 }: {
   isDark: boolean;
-  quotes: string[];
+  /** Quoted passages above the text. Omitted by the connecting screen's pending-prompt bubble. */
+  quotes?: string[];
   children?: React.ReactNode;
 }) {
   const palette = paletteFor(isDark);
@@ -732,7 +739,7 @@ export function UserMessageEditor({
 /**
  * `flex flex-col items-end gap-1.5` over `flex flex-wrap justify-end gap-2`.
  * Past 8 attachments the last slot is a `+N` tile that expands the strip. A
- * failed send says "Couldn't send" (and why) with Retry.
+ * failed send says "Not sent · Try again" (COR-143); the whole line retries.
  */
 export function MessageAttachments({
   attachments,
@@ -761,20 +768,25 @@ export function MessageAttachments({
       ) : null}
       {status ? (
         <View accessibilityRole="alert" className="items-end">
-          <Text variant="muted" className="text-right" style={META_TEXT_STYLE}>
-            Couldn't send
-          </Text>
+          {status.onRetry ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onPress={status.onRetry}
+              accessibilityLabel="Message not sent. Try again">
+              <Text>Not sent · Try again</Text>
+            </Button>
+          ) : (
+            <Text variant="muted" className="text-right" style={META_TEXT_STYLE}>
+              Not sent
+            </Text>
+          )}
           {status.message ? (
             <Text variant="muted" className="text-right" style={META_TEXT_STYLE}>
               {status.message}
             </Text>
           ) : null}
         </View>
-      ) : null}
-      {status?.onRetry ? (
-        <Button variant="ghost" size="sm" onPress={status.onRetry}>
-          <Text>Retry</Text>
-        </Button>
       ) : null}
     </View>
   );
@@ -783,7 +795,7 @@ export function MessageAttachments({
 /**
  * One sent attachment. An image in the sandbox loads through `useSandboxImage`
  * (HEAD probe, tap-to-load above the size limit); until it loads, or when it
- * fails, the tile is the named tile. Tapping opens the file in FileViewer.
+ * fails, the tile is the named tile. Tapping opens the file in the file sheet.
  */
 function MessageAttachmentTile({
   file,

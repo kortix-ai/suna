@@ -318,7 +318,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     'RUN apt-get update \\',
     '    && apt-get install -y --no-install-recommends \\',
     '        ca-certificates curl git gzip libatomic1 sudo tmux iproute2 iputils-arping util-linux \\',
-    '        build-essential ffmpeg fonts-dejavu fonts-liberation fonts-noto fonts-noto-cjk \\',
+    '        build-samplecol ffmpeg fonts-dejavu fonts-liberation fonts-noto fonts-noto-cjk \\',
     '        latexmk libreoffice pandoc pkg-config poppler-utils qpdf tesseract-ocr \\',
     '        texlive-bibtex-extra texlive-fonts-recommended texlive-latex-base \\',
     '        texlive-latex-extra texlive-latex-recommended \\',
@@ -682,7 +682,7 @@ export function normalizeUserDockerfileForSnapshot(dockerfile: string): string {
   // Kortix layer installs again. Strip that exact starter block so existing
   // user Dockerfiles still build cleanly.
   const starterBlock =
-    /# Bring in baseline tooling\. The Kortix layer on top also installs\n# git\/curl\/ca-certificates\/nodejs\/npm, but having them in your base\n# makes interactive sessions snappier\.\nRUN apt-get update \\\n    && apt-get install -y --no-install-recommends \\\n        ca-certificates \\\n        curl \\\n        git \\\n        build-essential \\\n    && rm -rf \/var\/lib\/apt\/lists\/\*\n\n?/;
+    /# Bring in baseline tooling\. The Kortix layer on top also installs\n# git\/curl\/ca-certificates\/nodejs\/npm, but having them in your base\n# makes interactive sessions snappier\.\nRUN apt-get update \\\n    && apt-get install -y --no-install-recommends \\\n        ca-certificates \\\n        curl \\\n        git \\\n        build-samplecol \\\n    && rm -rf \/var\/lib\/apt\/lists\/\*\n\n?/;
   return dockerfile.replace(starterBlock, '');
 }
 

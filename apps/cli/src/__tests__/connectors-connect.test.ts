@@ -322,6 +322,25 @@ describe('kortix connectors connections', () => {
     ]);
   });
 
+  test('renames a connection by id, joining every remaining word into the label', async () => {
+    const connectionId = '11111111-1111-4111-8111-111111111111';
+    expect(await runConnectors(['connections', 'rename', connectionId, 'Support', 'inbox'])).toBe(0);
+    expect(requests.map(({ url, method, body }) => ({ url, method, body }))).toEqual([
+      {
+        url: `https://api.test/v1/projects/project-1/connections/${connectionId}/label`,
+        method: 'PUT',
+        body: { label: 'Support inbox' },
+      },
+    ]);
+  });
+
+  test('rename without a label exits 2 before calling the API', async () => {
+    expect(
+      await runConnectors(['connections', 'rename', '11111111-1111-4111-8111-111111111111']),
+    ).toBe(2);
+    expect(requests).toHaveLength(0);
+  });
+
   test('starts and finalizes Pipedream for one connection', async () => {
     const connectionId = '11111111-1111-4111-8111-111111111111';
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {

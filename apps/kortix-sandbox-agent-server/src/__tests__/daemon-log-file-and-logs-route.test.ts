@@ -2,7 +2,7 @@
  * The daemon log lands on disk and is readable through GET /kortix/logs —
  * and the sink can never hurt the box.
  *
- * 2026-08-25: two hours of an Essentia daemon reporting `starting` on the wrong
+ * 2026-08-25: two hours of an SampleCo daemon reporting `starting` on the wrong
  * port could be fenced but not proven, because its stdout lived on a stream
  * nobody kept (E2B envd). Every line now also lands in a file on the box.
  */

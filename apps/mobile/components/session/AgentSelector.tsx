@@ -53,6 +53,7 @@ export function AgentSelector({
           onPress={onClose}
           hitSlop={12}
           className="h-auto w-auto p-0 active:bg-transparent active:opacity-70"
+          accessibilityLabel="Close"
         >
           <XIcon size={20} color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />
         </Button>
