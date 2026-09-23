@@ -27,6 +27,24 @@ describe('provider-neutral preview lifecycle', () => {
     expect(previewSandboxName(6337)).toBe('kortix-preview-pr-6337');
   });
 
+  it('hands the host sandbox name to the stack as its instance id', () => {
+    const base = {
+      repository: input.repository,
+      ref: 'refs/pull/6337/head',
+      sha: input.sha,
+      prNumber: input.prNumber,
+      origin: 'https://preview.example.com/',
+    };
+    const tagged = buildPreviewBootstrapScript({ ...base, hostName: 'kortix-env-feature-x' });
+    const configure = tagged.slice(tagged.indexOf('PREVIEW_INSTANCE_DIR='));
+    expect(configure).toMatch(/PREVIEW_INSTANCE_ID='kortix-env-feature-x' \\?\s*bun tests\/bin\/preview-stack\.ts/);
+    // An untagged bootstrap leaves the stack's workers off (preview-stack.ts).
+    expect(buildPreviewBootstrapScript(base)).not.toContain('PREVIEW_INSTANCE_ID');
+    expect(() => buildPreviewBootstrapScript({ ...base, hostName: "x'; rm -rf /" })).toThrow(
+      'invalid preview host name',
+    );
+  });
+
   it('serializes remote deployments before checkout and test status reset', () => {
     const script = buildPreviewBootstrapScript({
       repository: input.repository,

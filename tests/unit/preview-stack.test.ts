@@ -261,11 +261,41 @@ describe('ephemeral self-host preview stack', () => {
     expect(wired.runtimeEnv).toContain('PLATINUM_API_URL=https://api.platinum.dev');
     expect(wired.runtimeEnv).toContain('PLATINUM_API_KEY=pt_live_example');
 
-    // Workers (and so the box reaper) are off in a preview. The Platinum idle
-    // timer is the only stop, and the 720 min default filled the shared org
-    // RAM pool on 2026-09-23.
+    // Without the host's instance id (an older bootstrap), workers (and so the
+    // box reaper) stay off. The Platinum idle timer is then the only stop, and
+    // the 720 min default filled the shared org RAM pool on 2026-09-23.
     expect(wired.runtimeEnv).toContain('KORTIX_WORKERS_ENABLED=false\n');
+    expect(wired.runtimeEnv).not.toContain('KORTIX_INSTANCE_ID');
     expect(wired.runtimeEnv).toContain('KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES=60\n');
+
+    // With it, the deadline reaper runs, scoped to this preview's own boxes.
+    const reaped = applyPreviewEnvironment(
+      base,
+      { ...input, platinumApiUrl: 'https://api.platinum.dev', instanceId: 'kortix-env-feature-x' },
+      { ...secrets, PLATINUM_API_KEY: 'pt_live_example' },
+    ).runtimeEnv;
+    for (const line of [
+      'KORTIX_INSTANCE_ID=kortix-env-feature-x',
+      'KORTIX_WORKERS_ENABLED=true',
+      'KORTIX_PROJECT_MAINTENANCE_ENABLED=true',
+      'KORTIX_ACTIVE_TURN_RENEWAL_ENABLED=true',
+      // Singleton work a test stack must not do stays off.
+      'KORTIX_TRIGGER_SCHEDULER_ENABLED=false',
+      'SCHEDULER_ENABLED=false',
+      'KORTIX_LEGACY_MIGRATION_WORKER_ENABLED=false',
+      'KORTIX_SUNA_MIGRATION_WORKER_ENABLED=false',
+      'KORTIX_SKIP_STARTUP_PREBUILD=true',
+      'KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES=60',
+    ]) {
+      expect(reaped).toContain(`${line}\n`);
+    }
+    expect(() =>
+      applyPreviewEnvironment(
+        base,
+        { ...input, platinumApiUrl: 'https://api.platinum.dev', instanceId: 'primary' },
+        { ...secrets, PLATINUM_API_KEY: 'pt_live_example' },
+      ),
+    ).toThrow('invalid preview instance id');
 
     // The preview pipeline holds no cloud identity (infra/scripts/test-ecs-preview-runtime.py):
     // AWS credentials are outside the allowlist, so the project-snapshot bucket is never named.
