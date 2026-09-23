@@ -22,7 +22,6 @@ const SiteLink = forwardRef<HTMLAnchorElement, SiteLinkProps>(function SiteLink(
       shallow: _shallow,
       passHref: _passHref,
       prefetch: _prefetch,
-      unstable_dynamicOnHover: _dynamicOnHover,
       locale: _locale,
       legacyBehavior: _legacyBehavior,
       onNavigate: _onNavigate,
