@@ -170,6 +170,11 @@ export {
   type UseSessionResult,
   type UseSessionOptions,
 } from './use-session';
+export {
+  useSessionMessages,
+  type SessionMessagesOptions,
+  type SessionMessagesSource,
+} from './use-session-messages';
 export { useSessionPicks, type SessionPicks } from './use-session-picks';
 export {
   useSessionPrompts,
