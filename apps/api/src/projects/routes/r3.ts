@@ -44,7 +44,7 @@ import {
   projects,
   type SecretEgressPolicy,
 } from '@kortix/db';
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
   loadProjectForUser,
   assertProjectCapability,
@@ -1181,8 +1181,11 @@ projectsApp.openapi(
 
 // Kortix provider id → the secret we persist the resulting auth.json under.
 // Only OpenAI (ChatGPT) is wired today; the shape generalizes to others.
-const OAUTH_PROVIDERS: Record<string, { secretName: string }> = {
-  openai: { secretName: CODEX_AUTH_JSON_SECRET_NAME },
+// `legacySecretNames` are older names for the same login. Nothing writes them
+// any more, but clients and the gateway still count them as connected, so a
+// disconnect must delete them too.
+const OAUTH_PROVIDERS: Record<string, { secretName: string; legacySecretNames?: string[] }> = {
+  openai: { secretName: CODEX_AUTH_JSON_SECRET_NAME, legacySecretNames: ['OPENCODE_AUTH_JSON'] },
 };
 
 // How long the encrypted flow handle stays valid (OpenAI expires the device
@@ -1600,6 +1603,11 @@ projectsApp.openapi(
 
 // ─── DELETE /v1/projects/:projectId/oauth/:provider ────────────────────────
 // Remove an OAuth credential (deletes the backing secret).
+// The login can be a per-user PRIVATE row (`owner_user_id` set) or the shared
+// project row. The delete covers exactly the rows `loadSecretViewsForUser`
+// shows the caller: the caller's own private rows, plus the shared row when
+// the caller may manage shared secrets. Another member's private login is
+// never touched.
 projectsApp.openapi(
   createRoute({
     method: 'delete',
@@ -1623,12 +1631,20 @@ projectsApp.openapi(
   const cfg = OAUTH_PROVIDERS[provider];
   if (!cfg) return c.json({ error: 'Not found' }, 404);
 
+  // Same test the GET secrets route uses for `can_manage_shared`.
+  const canManageShared = roleAllows(loaded.effectiveRole, 'manage');
+  const ownPrivate = eq(projectSecrets.ownerUserId, loaded.userId);
+
   await runAuditedTransaction(
     async (tx) => {
       await tx
         .delete(projectSecrets)
         .where(
-          and(eq(projectSecrets.projectId, projectId), eq(projectSecrets.name, cfg.secretName)),
+          and(
+            eq(projectSecrets.projectId, projectId),
+            inArray(projectSecrets.name, [cfg.secretName, ...(cfg.legacySecretNames ?? [])]),
+            canManageShared ? or(ownPrivate, isNull(projectSecrets.ownerUserId)) : ownPrivate,
+          ),
         );
     },
     () => ({
@@ -1642,6 +1658,7 @@ projectsApp.openapi(
       metadata: {
         identifier: cfg.secretName,
         consumer: 'llm_gateway',
+        scope: canManageShared ? 'own_private_and_shared' : 'own_private',
       },
     }),
   );
