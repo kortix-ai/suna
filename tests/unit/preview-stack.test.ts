@@ -261,6 +261,12 @@ describe('ephemeral self-host preview stack', () => {
     expect(wired.runtimeEnv).toContain('PLATINUM_API_URL=https://api.platinum.dev');
     expect(wired.runtimeEnv).toContain('PLATINUM_API_KEY=pt_live_example');
 
+    // Workers (and so the box reaper) are off in a preview. The Platinum idle
+    // timer is the only stop, and the 720 min default filled the shared org
+    // RAM pool on 2026-09-23.
+    expect(wired.runtimeEnv).toContain('KORTIX_WORKERS_ENABLED=false\n');
+    expect(wired.runtimeEnv).toContain('KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES=60\n');
+
     // The preview pipeline holds no cloud identity (infra/scripts/test-ecs-preview-runtime.py):
     // AWS credentials are outside the allowlist, so the project-snapshot bucket is never named.
     expect(() => validatePreviewRuntimeSecrets({ AWS_ACCESS_KEY_ID: 'ASIAEXAMPLE' })).toThrow('AWS_ACCESS_KEY_ID');

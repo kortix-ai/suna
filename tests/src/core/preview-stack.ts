@@ -328,6 +328,12 @@ export function applyPreviewEnvironment(
     KORTIX_BILLING_INTERNAL_ENABLED: 'true',
     KORTIX_PUBLIC_BILLING_ENABLED: 'true',
     KORTIX_WORKERS_ENABLED: 'false',
+    // Workers are off, so the box reaper never stops an idle session here.
+    // The Platinum idle timer is the only stop. At the 720 min default, one
+    // day of preview runs held 87 idle 4 GB boxes and filled the shared
+    // 512 GB org pool on 2026-09-23: every preview and dev session got 429
+    // pool_exceeded. 60 is the floor of providerAutoStopBackstopMinutes().
+    KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES: '60',
     SCHEDULER_ENABLED: 'false',
     KORTIX_TRIGGER_SCHEDULER_ENABLED: 'false',
     EMAIL_PROVIDER_ORDER: 'mailpit',
