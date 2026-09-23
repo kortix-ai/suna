@@ -10,7 +10,7 @@ import { CapabilityHero } from '@/features/marketing/component/capability-hero';
 import SectionHeader from '@/features/marketing/component/section-header';
 import { cn } from '@/lib/utils';
 import { getTranslations } from '@/i18n/get-translations';
-import Link from 'next/link';
+import Link from '@/components/site-link';
 import type { ReactNode } from 'react';
 
 function SectionDivider(): ReactNode {

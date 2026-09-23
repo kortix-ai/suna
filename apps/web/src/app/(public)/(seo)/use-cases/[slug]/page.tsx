@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { getTranslations } from '@/i18n/get-translations';
-import Link from 'next/link';
+import Link from '@/components/site-link';
 import { notFound } from 'next/navigation';
 
 import { BlogProse } from '@/components/blog/blog-prose';
