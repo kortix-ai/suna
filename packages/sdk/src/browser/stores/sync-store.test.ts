@@ -3641,6 +3641,55 @@ describe("useSyncStore — an INBOX-BACKED optimistic message survives the idle 
 		expect(useSyncStore.getState().messages["ses_1"]?.map((m) => m.id)).toEqual(["msg_reminted"]);
 	});
 
+	// A row re-minted MORE THAN ONCE (a re-POST after `not-landed`, a redelivery
+	// whose first mint never persisted) is announced with every id it was ever
+	// delivered under, and the host may announce them in any order — the
+	// server's `placed` list names the latest first. One forward alias per
+	// bubble meant the LAST registration won: announced latest-first, the
+	// standing alias was the OLDEST id, the latest echo matched nothing, and
+	// with the bubble inbox-backed (no ordinal guess) it landed BESIDE the
+	// bubble — the duplicate `placed` exists to prevent (review finding,
+	// 2026-09-22). Every registered pairing is an identity, whichever came last.
+	test("every registered pairing matches — the order the host announced them in does not", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_wire"), [
+			textPart("prt_client", "msg_wire", "hi"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_wire");
+		store.markOptimisticInboxBacked("ses_1", "msg_wire");
+		// Latest first, the way `placed.message_ids` is served; no echo on screen.
+		store.registerOptimisticEcho("ses_1", "msg_wire", "msg_x2");
+		store.registerOptimisticEcho("ses_1", "msg_wire", "msg_x1");
+
+		store.applyEvent({
+			id: "evt_x",
+			type: "message.updated",
+			properties: { info: userMessage("msg_x2") },
+		} as never);
+
+		const s = useSyncStore.getState();
+		expect(s.messages["ses_1"]?.map((m) => m.id)).toEqual(["msg_x2"]);
+		expect(s.optimisticOriginOf("ses_1", "msg_x2")).toBe("msg_wire");
+		expect(s.parts["msg_x2"]?.[0]).toMatchObject({ text: "hi" });
+	});
+
+	test("the same on a hydrate: an earlier-registered pairing claims its echo", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_wire"), [
+			textPart("prt_client", "msg_wire", "hi"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_wire");
+		store.markOptimisticInboxBacked("ses_1", "msg_wire");
+		store.registerOptimisticEcho("ses_1", "msg_wire", "msg_x2");
+		store.registerOptimisticEcho("ses_1", "msg_wire", "msg_x1");
+
+		store.hydrate("ses_1", [{ info: userMessage("msg_x2"), parts: [] }] as never);
+
+		const s = useSyncStore.getState();
+		expect(s.messages["ses_1"]?.map((m) => m.id)).toEqual(["msg_x2"]);
+		expect(s.optimisticOriginOf("ses_1", "msg_x2")).toBe("msg_wire");
+	});
+
 	test("an unrelated user echo cannot consume the sole inbox-backed waiting prompt", () => {
 		const store = useSyncStore.getState();
 		store.optimisticAdd("ses_1", userMessage("msg_waiting"), [
@@ -4254,5 +4303,58 @@ describe("a stream that lost frames mid-turn renders the whole answer after the 
 		expect(completed()).toBe(99);
 		expect(reads).toHaveLength(2);
 		controller.destroy();
+	});
+});
+
+// ============================================================================
+// A CANCELLED message stays dead on every frame, not only `message.updated`.
+//
+// 2026-09-22, Quick Queue Remove during a tool call: the DELETE's response
+// tombstoned the steer before the runtime's echo frames reached this tab. The
+// echo's `message.updated` was dropped, but its `message.part.updated` found
+// no message and the safety net INVENTED one — as an assistant, with the
+// user's own words — so the removed text rendered inside the loop's turn, next
+// to the restored bubble after Undo.
+// ============================================================================
+
+describe("useSyncStore — a cancelled message is never re-created by its part frames", () => {
+	const SID = "ses_cancelled_parts";
+
+	test("message.part.updated for a tombstoned message invents nothing and stores nothing", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage(SID, userMessage("msg_loop", SID));
+		store.forgetControlPlaneMessage(SID, "msg_removed");
+
+		store.applyEvent({
+			id: "evt_part_after_cancel",
+			type: "message.part.updated",
+			properties: { part: textPart("prt_removed", "msg_removed", "[XQ-R] removed text", SID) },
+		} as never);
+
+		const state = useSyncStore.getState();
+		expect(state.messages[SID]?.map((m) => m.id)).toEqual(["msg_loop"]);
+		expect(state.parts.msg_removed ?? []).toEqual([]);
+	});
+
+	test("message.part.delta for a tombstoned message invents nothing and stores nothing", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage(SID, userMessage("msg_loop", SID));
+		store.forgetControlPlaneMessage(SID, "msg_removed_delta");
+
+		store.applyEvent({
+			id: "evt_delta_after_cancel",
+			type: "message.part.delta",
+			properties: {
+				messageID: "msg_removed_delta",
+				partID: "prt_removed_delta",
+				sessionID: SID,
+				field: "text",
+				delta: "[XQ-R] removed text",
+			},
+		} as never);
+
+		const state = useSyncStore.getState();
+		expect(state.messages[SID]?.map((m) => m.id)).toEqual(["msg_loop"]);
+		expect(state.parts.msg_removed_delta ?? []).toEqual([]);
 	});
 });

@@ -7,7 +7,10 @@ import {
   tipIsBusy,
   mintLivePlacement,
   noteBoxClockSample,
+  openUserAbove,
+  openUsersAbove,
   parsePlacementTip,
+  promptAnsweredOnTip,
   resetBoxClockSkewForTests,
   strandedPlacement,
 } from './forwarded-placement';
@@ -59,21 +62,242 @@ describe('strandedPlacement', () => {
   });
 
   test('stranded: a higher assistant whose parent is an OLDER user message', () => {
-    // user2 was inserted at T+20 with an id below asst2 (created T+25 by a
-    // step that read the transcript before user2 existed).
+    // The late user message got an id below asst2 (its POST was minted at
+    // T+22 from a stale tip read) but was PERSISTED at T+27 — after asst2's
+    // step began at T+25, when the step read the transcript. The stamps say
+    // the step never saw it; that is the strand.
     const asst2 = id(T + 25, 1, 'ASST2ASST2ASST');
     const v = strandedPlacement(
       tipOf([
         { id: user1, role: 'user' },
         { id: asst1, role: 'assistant', parentID: user1 },
-        { id: id(T + 22, 1, 'LATEUSERLATEUS'), role: 'user' },
-        { id: asst2, role: 'assistant', parentID: user1 },
+        { id: id(T + 22, 1, 'LATEUSERLATEUS'), role: 'user', created: T + 27 },
+        { id: asst2, role: 'assistant', parentID: user1, created: T + 25 },
       ]),
       id(T + 22, 1, 'LATEUSERLATEUS'),
     );
     expect(v.stranded).toBe(true);
     expect(v.strandedBy).toBe(asst2);
+    expect(v.readBy).toBeNull();
     expect(v.newest).toBe(wireIdTime(asst2));
+  });
+
+  // Live incident 2026-09-21/22 (sessions 17e3ad83, 4f345186, f0e9b423, three
+  // of three steer runs): three Quick Queue prompts steered ~1 s apart into a
+  // tool turn. The second one was LIFTED to the box clock (id above every
+  // sibling); the third was UNDER-PLACED at its client id, below it. OpenCode
+  // parented the one merged reply on the third (newest by `time.created`),
+  // so by ID ORDER the reply has a higher id than the lifted prompt and a
+  // parent that sorts below it — the strand signature — while the box's own
+  // stamps say the step began AFTER the lifted prompt was persisted, i.e. it
+  // was in that step's input and the reply answered it. Read as stranded, it
+  // was deleted, re-queued and answered a second, paid time.
+  describe('the merged reply of a later UNDER-PLACED sibling', () => {
+    const lifted = id(T + 2_000, 1, 'LIFTDLIFTDLIFT'); // persisted T+1000, id lifted 1 s
+    const under = id(T + 1_500, 1, 'UNDERUNDERUNDE'); // persisted T+1200 under its client id
+    const merged = id(T + 3_000, 1, 'MERGEMERGEMERG');
+    const tip = (completed: number | null): PlacementTipMessage[] => [
+      { id: lifted, role: 'user', created: T + 1_000 },
+      { id: under, role: 'user', created: T + 1_200 },
+      { id: merged, role: 'assistant', parentID: under, created: T + 2_500, completed },
+    ];
+
+    test('read this prompt — not a strand; the reply is its reader', () => {
+      const v = strandedPlacement(tip(T + 2_600), lifted);
+      expect(v.answered).toBe(false);
+      expect(v.stranded).toBe(false);
+      expect(v.strandedBy).toBeNull();
+      expect(v.readBy).toBe(merged);
+      expect(v.readCompleted).toBe(true);
+    });
+
+    test('a reader still open is named, but not completed', () => {
+      const v = strandedPlacement(tip(null), lifted);
+      expect(v.stranded).toBe(false);
+      expect(v.readBy).toBe(merged);
+      expect(v.readCompleted).toBe(false);
+    });
+
+    // A completed merged reply is final even when a NEWER turn is already
+    // running: the user sent U after the reply landed, and C (open, parented
+    // on U) is a different turn. Judging only the newest reader answered
+    // "not yet" here, which let a reaper re-queue of the prompt run it a
+    // second time while C was open.
+    test('a completed reader is final even when a NEWER turn is open — its own turn ended', () => {
+      const later = id(T + 5_000, 1, 'LATERLATERLATE');
+      const open = id(T + 6_000, 1, 'OPENAOPENAOPEN');
+      const v = strandedPlacement(
+        [
+          ...tip(T + 2_600),
+          { id: later, role: 'user', created: T + 5_000 },
+          { id: open, role: 'assistant', parentID: later, created: T + 6_000, completed: null },
+        ],
+        lifted,
+      );
+      expect(v.stranded).toBe(false);
+      expect(v.readBy).toBe(open);
+      expect(v.readCompleted).toBe(true);
+    });
+
+    // The SAME turn, still running: its first step (a tool call) completed and
+    // its next step is open, both parented on the same user. The reply that
+    // answers this prompt is not final until that turn ends.
+    test('a completed step of a turn that is STILL RUNNING is not final', () => {
+      const next = id(T + 3_100, 1, 'NEXTSNEXTSNEXT');
+      const v = strandedPlacement(
+        [
+          ...tip(T + 2_600),
+          { id: next, role: 'assistant', parentID: under, created: T + 2_700, completed: null },
+        ],
+        lifted,
+      );
+      expect(v.stranded).toBe(false);
+      expect(v.readBy).toBe(next);
+      expect(v.readCompleted).toBe(false);
+    });
+
+    test('the same shape with DISAGREEING stamps is a genuine strand', () => {
+      // The reply's step began (T+2500) before the lifted prompt was
+      // persisted (T+2_700): it was not in the input.
+      const v = strandedPlacement(
+        [
+          { id: lifted, role: 'user', created: T + 2_700 },
+          { id: under, role: 'user', created: T + 1_200 },
+          { id: merged, role: 'assistant', parentID: under, created: T + 2_500, completed: T + 2_600 },
+        ],
+        lifted,
+      );
+      expect(v.stranded).toBe(true);
+      expect(v.strandedBy).toBe(merged);
+      expect(v.readBy).toBeNull();
+    });
+
+    test('a missing stamp on either side keeps the id-order verdict', () => {
+      const noOwnStamp = strandedPlacement(
+        [
+          { id: lifted, role: 'user' },
+          { id: under, role: 'user', created: T + 1_200 },
+          { id: merged, role: 'assistant', parentID: under, created: T + 2_500, completed: T + 2_600 },
+        ],
+        lifted,
+      );
+      expect(noOwnStamp.stranded).toBe(true);
+      expect(noOwnStamp.readBy).toBeNull();
+      const noReaderStamp = strandedPlacement(
+        [
+          { id: lifted, role: 'user', created: T + 1_000 },
+          { id: under, role: 'user', created: T + 1_200 },
+          { id: merged, role: 'assistant', parentID: under, completed: T + 2_600 },
+        ],
+        lifted,
+      );
+      expect(noReaderStamp.stranded).toBe(true);
+      expect(noReaderStamp.readBy).toBeNull();
+    });
+
+    test('reachedPlacement agrees: the lifted prompt was reached', () => {
+      expect(reachedPlacement(tip(T + 2_600), lifted)).toBe(true);
+    });
+
+    test('openUserAbove: a read user above is no longer OPEN', () => {
+      // The lifted prompt sits above `under` by id, unanswered by parent link,
+      // but a step has read it — nothing below it is covered by "its step".
+      expect(openUserAbove(tip(T + 2_600), under)).toBe(false);
+    });
+
+    // Pins the `readBy` clause on its own: here the reader is parented on a
+    // user ABOVE the lifted prompt by id, so id order never calls the lifted
+    // prompt stranded — the only thing that closes it is the stamp proof.
+    test('openUserAbove: a user above that a step read is not open, even when id order calls it in line', () => {
+      const newer = id(T + 2_200, 1, 'NEWERNEWERNEWE');
+      const reader = id(T + 3_000, 1, 'READRREADRREAD');
+      const read: PlacementTipMessage[] = [
+        { id: under, role: 'user', created: T + 1_200 },
+        { id: lifted, role: 'user', created: T + 1_000 },
+        { id: newer, role: 'user', created: T + 2_200 },
+        { id: reader, role: 'assistant', parentID: newer, created: T + 2_500, completed: T + 2_600 },
+      ];
+      expect(strandedPlacement(read, lifted).stranded).toBe(false);
+      expect(openUserAbove(read, under)).toBe(false);
+      // The same shape with the step begun BEFORE the lifted prompt was
+      // persisted: nothing has read it, so it is still open above `under`.
+      const unread: PlacementTipMessage[] = [
+        { id: under, role: 'user', created: T + 1_200 },
+        { id: lifted, role: 'user', created: T + 2_800 },
+        { id: newer, role: 'user', created: T + 2_200 },
+        { id: reader, role: 'assistant', parentID: newer, created: T + 2_500, completed: T + 2_600 },
+      ];
+      expect(openUserAbove(unread, under)).toBe(true);
+    });
+
+    test('promptAnsweredOnTip: read by a COMPLETED step is answered', () => {
+      expect(promptAnsweredOnTip(tip(T + 2_600), lifted)).toBe(true);
+    });
+
+    test('promptAnsweredOnTip: read by a step still OPEN is not yet answered', () => {
+      expect(promptAnsweredOnTip(tip(null), lifted)).toBe(false);
+    });
+
+    test('promptAnsweredOnTip: a completed reader counts even when a newer turn is open', () => {
+      const later = id(T + 5_000, 1, 'LATERLATERLATE');
+      const open = id(T + 6_000, 1, 'OPENAOPENAOPEN');
+      expect(
+        promptAnsweredOnTip(
+          [
+            ...tip(T + 2_600),
+            { id: later, role: 'user', created: T + 5_000 },
+            { id: open, role: 'assistant', parentID: later, created: T + 6_000, completed: null },
+          ],
+          lifted,
+        ),
+      ).toBe(true);
+    });
+
+    // The ids behind the boolean. The drain's send-order gate (engine.ts)
+    // resolves each one to its inbox row: an open sibling above that was SENT
+    // EARLIER than this prompt is a lifted id, not a later send, and this
+    // prompt must not be placed under it (2026-09-22, sessions YO/134c0d27 on
+    // the preview and 822e92a4 locally: ALPHA lifted, BRAVO under-placed
+    // below it, rendered swapped).
+    test('openUsersAbove names every OPEN user above the id; openUserAbove is its boolean', () => {
+      const alsoOpen = id(T + 2_100, 1, 'ALSOOALSOOALSO');
+      const twoOpen: PlacementTipMessage[] = [
+        { id: under, role: 'user', created: T + 1_200 },
+        { id: lifted, role: 'user', created: T + 1_000 },
+        { id: alsoOpen, role: 'user', created: T + 1_300 },
+      ];
+      expect(openUsersAbove(twoOpen, under)).toEqual([lifted, alsoOpen]);
+      expect(openUserAbove(twoOpen, under)).toBe(true);
+      // A user a step has READ is not open — the same clause the boolean has.
+      expect(openUsersAbove(tip(T + 2_600), under)).toEqual([]);
+      expect(openUserAbove(tip(T + 2_600), under)).toBe(false);
+      // Nothing above it: empty, never null.
+      expect(openUsersAbove(tip(null), lifted)).toEqual([]);
+      // The prompt's own id is never its own open sibling.
+      expect(openUsersAbove([{ id: under, role: 'user', created: T + 1_200 }], under)).toEqual([]);
+    });
+
+    test('promptAnsweredOnTip: no stamps → the parent-only rule', () => {
+      expect(
+        promptAnsweredOnTip(
+          [
+            { id: lifted, role: 'user' },
+            { id: under, role: 'user' },
+            { id: merged, role: 'assistant', parentID: under, completed: T + 2_600 },
+          ],
+          lifted,
+        ),
+      ).toBe(false);
+      expect(
+        promptAnsweredOnTip(
+          [
+            { id: lifted, role: 'user' },
+            { id: merged, role: 'assistant', parentID: lifted },
+          ],
+          lifted,
+        ),
+      ).toBe(true);
+    });
   });
 
   test('not stranded: the higher assistant is parented on a NEWER user message (answered in that step)', () => {
@@ -130,8 +354,19 @@ describe('reachedPlacement + tipIsBusy', () => {
   test('reached via a step parented on a newer user message', () => {
     expect(reachedPlacement(tipOf([{ id: u2, role: 'user' }, { id: u3, role: 'user' }, { id: a3, role: 'assistant', parentID: u3 }]), u2)).toBe(true);
   });
-  test('a stranded message is NOT reached (higher assistant, older parent)', () => {
-    expect(reachedPlacement(tipOf([{ id: u1, role: 'user' }, { id: u2, role: 'user' }, { id: id(T + 25, 1, 'ASSTXASSTXASST'), role: 'assistant', parentID: u1 }]), u2)).toBe(false);
+  test('a stranded message is NOT reached (higher assistant, older parent, step began first)', () => {
+    // u2's id is below the assistant's, and the stamps agree that the step
+    // began (T+25) before u2 was persisted (T+28): never read.
+    expect(
+      reachedPlacement(
+        tipOf([
+          { id: u1, role: 'user' },
+          { id: u2, role: 'user', created: T + 28 },
+          { id: id(T + 25, 1, 'ASSTXASSTXASST'), role: 'assistant', parentID: u1, created: T + 25 },
+        ]),
+        u2,
+      ),
+    ).toBe(false);
   });
   test('an assistant whose step STARTED before the message was persisted has not read it', () => {
     // Under-placement gives the message a LOW id on purpose; the running

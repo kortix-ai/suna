@@ -7,6 +7,7 @@ import { isRepoMaterialized } from '../../git'
 import type { Opencode } from './lifecycle'
 import type { OpenCodeBootState } from './boot-state'
 import { stripInlineAttachmentBytes } from '../../inline-attachments'
+import { openPartText } from './open-part-text'
 
 // Bound on waiting for opencode to respond to a proxied request. Applied only
 // to the wait for the response to arrive (headers), never to a streaming body
@@ -200,8 +201,14 @@ export function createOpenCodeProxyService(opencode: Opencode): HarnessProxyServ
               (messageID, partID) =>
                 `/kortix/part/${encodeURIComponent(sessionID)}/${encodeURIComponent(messageID)}/${encodeURIComponent(partID)}`,
             )
-            if (stripped.stripped > 0) {
+            // An OPEN text/reasoning part is persisted empty until it ends; carry
+            // the text streamed so far instead (see open-part-text.ts), so a
+            // reload mid-step reads the answer it just watched stream in.
+            const inFlight = openPartText().overlay(stripped.value)
+            if (stripped.stripped > 0 || inFlight > 0) {
               body = JSON.stringify(stripped.value)
+            }
+            if (stripped.stripped > 0) {
               logger.info('[proxy] stripped inline attachment bytes from message list', {
                 sessionID,
                 parts: stripped.stripped,

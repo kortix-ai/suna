@@ -4,8 +4,10 @@
  * `holdInboxPrompts(sessionId, true)` is instant and purely a marking: queued
  * rows become held, forwarded rows become stop-paused, a row the drain has
  * CLAIMED gets a payload flag its delivery consumes. The client aborts the box
- * right after. Two things that marking cannot do are done here, after the hold
- * route has answered, because each needs the box:
+ * right after, and the proxy writes the same hold again before it forwards that
+ * abort (`holdInboxForRequestedStop`), so the marking never depends on the
+ * client's request order. Two things that marking cannot do are done here,
+ * after the hold route has answered, because each needs the box:
  *
  *  1. A CLAIMED row's POST can land AFTER the abort. OpenCode's runner is idle
  *     by then, so that prompt starts a fresh loop — the agent visibly restarts

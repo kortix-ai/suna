@@ -81,3 +81,28 @@ describe('POST /sessions/warm threads exclude_session_id into the reuse lookup',
     expect(route.match(/if \(existing\)/g) ?? []).toHaveLength(1);
   });
 });
+
+// 2026-09-22: a warm session's sandbox row is inserted AFTER its session row
+// (createProjectSession provisions in detached work). In that window the only
+// owner signal is the session row itself, so the warm create stamps it with
+// this API's instance id. The behavioral proof of the lookup is
+// `../../__tests__/integration-warm-sessions-instance-scope.test.ts`.
+describe('POST /sessions/warm is instance-scoped on a shared local DB', () => {
+  test('the warm create stamps the session row with instanceStampMetadata()', () => {
+    const create = route.slice(route.indexOf('createProjectSession('));
+    const metadataLine = create.slice(create.indexOf('metadata:'), create.indexOf('\n', create.indexOf('metadata:')));
+    expect(metadataLine).toContain('WARM_SESSION_METADATA_KEY');
+    expect(metadataLine).toContain('...instanceStampMetadata()');
+  });
+
+  test('findWarmProjectSession reuses the shared instance helpers, not a second definition', () => {
+    const fn = source.slice(
+      source.indexOf('export async function findWarmProjectSession('),
+      source.indexOf('export async function dropWarmSessionMarkerOnAdopt('),
+    );
+    expect(fn).toContain('warmSessionInstanceScope()');
+    expect(source).toContain("from '../instance-scope'");
+    expect(source).toContain('currentInstanceId()');
+    expect(source).toContain('SANDBOX_INSTANCE_METADATA_KEY');
+  });
+});

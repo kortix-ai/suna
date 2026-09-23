@@ -306,11 +306,15 @@ describe.if(ENABLED)('a prompt posted MID-TURN reaches OpenCode', () => {
     expect(persistedAfterMs).toBeLessThan(20_000);
 
     // 3. IT WAS PLACED ABOVE THE RUNNING TURN. This is the whole risk of
-    //    forwarding mid-turn: OpenCode resolves "already answered?" by id
-    //    order, so an id below the turn's own messages is accepted and then
-    //    silently never runs, with no assistant message and nothing to
-    //    redeliver from. The client's id carries no lift, so the drain re-mints
-    //    against the transcript — and that is what this compares.
+    //    forwarding mid-turn on an id-ordered box (opencode <= 1.18.14, see
+    //    forwarded-placement.ts's header): its loop resolves "already
+    //    answered?" by id order, so an id below the turn's own messages is
+    //    accepted and then silently never runs, with no assistant message
+    //    and nothing to redeliver from. A >= 1.18.15 box exits on the parent
+    //    link instead and a low id no longer strands on its own — the lift
+    //    is inert there, and this assertion still holds. The client's id
+    //    carries no lift, so the drain re-mints against the transcript — and
+    //    that is what this compares.
     const p1AssistantId = p1Assistant?.info?.id;
     expect(typeof p1AssistantId).toBe('string');
     expect(wireClock(p2Delivered)).toBeGreaterThan(wireClock(p1AssistantId as string));
@@ -389,9 +393,15 @@ describe.if(ENABLED)('a prompt posted MID-TURN reaches OpenCode', () => {
     // is that a newer user message owns the root — so a reaper pass inside P1's
     // remaining runtime closes P1's ledger row early, with a never-ran reason.
     // What must NEVER follow from that is a redelivery: P1 ran, and running it
-    // again would spend a second real turn on the user's message. The reaper
-    // only redelivers on `orphanedPrompt`, which needs NO assistant message at
-    // all — and P1 has one.
+    // again would spend a second real turn on the user's message. Three doors
+    // redeliver a forwarded prompt, and every one is shut for P1: the reaper
+    // redelivers on `orphanedPrompt`, which needs NO assistant message at all
+    // (P1 has one); the turn-end reconcile re-queues a STRANDED placement,
+    // which needs an assistant above it whose step began BEFORE P1 was
+    // persisted (box `time.created` on both — its own assistant began after);
+    // and a stop-release re-posts a paused row, which P1 never was. Whatever
+    // re-queues it, the drain's answered check (`promptAnsweredOnTip`) drops
+    // the delivery on the reply parented on P1.
     const messages = await readMessages();
     expect(messages.filter((m) => m.info?.id === P1_WIRE)).toHaveLength(1);
     expect(messages.filter((m) => m.info?.parentID === P1_WIRE)).toHaveLength(1);

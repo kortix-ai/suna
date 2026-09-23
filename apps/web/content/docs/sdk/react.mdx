@@ -130,16 +130,26 @@ Pass `placement: 'transcript'` to display a pending message in the conversation.
 It runs before every `composer` entry. What it does to the active response
 depends on what that response is doing:
 
-- **Running a tool, reasoning, or between steps.** The prompt steers. The server
-  places it into the running turn and the model reads it at its next step
-  boundary. The work in progress is kept and one answer accounts for both.
-- **Streaming text.** A text stream has no step boundary, so nothing reads a
-  steer until the text finishes. The server ends that response immediately and
-  runs the prompt as the next turn. Only a prompt submitted after the response
-  started ends it; a prompt that was already waiting steers or waits.
+- **Running a tool, or between steps.** The prompt steers. The server places it
+  into the running turn and the model reads it at its next step boundary. The
+  work in progress is kept and one answer accounts for both. A step that has a
+  pending or running tool steers even while it also shows reasoning.
+- **Streaming text or reasoning.** A streaming step has no step boundary, so
+  nothing reads a steer until it finishes. The server ends that response
+  immediately and runs the prompt as the next turn. Only a prompt submitted
+  after the response started ends it; a prompt that was already waiting steers
+  or waits.
 
-Reasoning and the answer text are one step. A prompt that steers while the
-model is still reasoning is read after that step's text finishes.
+Some models write their whole answer inside the reasoning part, and the chat
+shows it streaming, so streaming reasoning is ended like streaming text. A
+reasoning step can precede a tool call; ending it discards that reasoning but
+no tool work, because no tool has started. If the runtime cannot be read
+within 6 seconds, the prompt steers.
+
+The ended response stays ended, but the model decides what to write next. A
+response stopped before it wrote any answer text leaves nothing in the
+transcript, so a model may answer the cancelled request anyway in the turn
+that follows, alongside your new prompt.
 
 **Consecutive `transcript` prompts are answered together.** The server delivers
 every pending `transcript` row of one session as one group, in submission
@@ -161,6 +171,19 @@ The web composer uses Enter for transcript placement and Command+Enter
 List rows include `full_text` for complete previews after reload. `text` remains
 the bounded preview for older clients. Attachment bytes are excluded from list
 responses. Delete returns the complete prompt for lossless undo.
+
+A row carries two ids: `wire_message_id`, the id your client minted and painted
+its bubble under, and `message_id`, the id the server delivered it under (the
+server re-mints a prompt it places into a live turn). A row is not always
+observable with both: a steered row leaves `prompts` the moment the turn
+accepts it, often inside one poll of the re-mint. `placed` on the hook result
+carries the pairings of rows that left within the last ten minutes and were delivered
+under an id other than their `wire_message_id` — `{ prompt_id,
+client_message_id, wire_message_id, message_id, message_ids, placed_at }`. A
+client that paints prompts under their wire id announces every pairing from
+`prompts` AND `placed` to its transcript store, so the runtime's echo replaces
+the bubble instead of landing beside it. `placed` is empty on servers without
+the field.
 
 `failure_code` on a row is why delivery gave up, as a stable code you map to
 your own words (`last_error` stays the server's prose). It is `null` unless
@@ -200,6 +223,26 @@ Undo re-creates a removed row with `enqueue`/`createSessionPrompt` and
 Stop does not resume the queue. Pass back the removed row's `held` so the
 restored row keeps its own hold. A restore reaches the host error sink only for
 a `402`.
+
+A `remove` that races delivery is decided on the server. If the drain has not
+yet sent the prompt, the prompt never reaches the runtime. If the runtime has
+it and no model step read it, the server takes it back out; while the agent
+loop runs, the runtime keeps a part-less copy of the message until the loop is
+idle, and the server then deletes it. Group turns with
+`groupMessagesIntoTurns(messages, { hidePartlessUserMessages: true })` so that
+copy is never drawn. Pass every id in `removed.removed_message_ids` to the sync
+store's `forgetControlPlaneMessage`: its message and part frames are then
+dropped for the rest of the session. If a step already read the prompt, the
+remove is refused with `already_sent`.
+
+Stop holds the queue on the server. Any abort of the session's root runtime
+session through the Kortix API — `cancel()`, `abort()`, a raw OpenCode
+`POST /session/:id/abort` — holds every queued prompt before the abort reaches
+the runtime, so no queued prompt runs because the turn ended. Held prompts go out
+on the next send, "send now", or `hold(false)`. `hold(true)` sends the Stop
+instant on this client's clock; a send whose `clientSentAtMs` is earlier was
+typed before the Stop, so it joins the hold instead of releasing it, even when
+its POST reaches the server after the hold.
 
 ### Pending delivery and active responses
 
@@ -255,8 +298,8 @@ Queue bubble.
 
 A restored prompt is a new row created at Undo time. Unless it was held, it
 steers into the turn that runs at that moment. It also counts as typed at Undo
-time: as the head of the Quick Queue it ends a response that is streaming text,
-even when the removed prompt was already waiting before that turn started.
+time: as the head of the Quick Queue it ends a response that is streaming text
+or reasoning, even when the removed prompt was already waiting before that turn started.
 
 ### Why a turn ended
 

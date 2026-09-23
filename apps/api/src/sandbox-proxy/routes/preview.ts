@@ -933,6 +933,22 @@ export async function forwardToSandbox(
     await markTurnStopRequested(record.sessionId, 'UserStop', {
       opencodeSessionId: abortedOpencodeSessionId,
     });
+    // Stop pauses the queue, and the SERVER holds it, before the abort is
+    // forwarded: no queued prompt can be claimed between this request and
+    // the turn end it causes, whatever order (or whether) the client sent
+    // its own hold in. See `holdInboxForRequestedStop`. Never a gate on the
+    // abort itself.
+    const stoppedSessionId = record.sessionId;
+    await import('../../projects/session-lifecycle/inbox-rows')
+      .then(({ holdInboxForRequestedStop }) =>
+        holdInboxForRequestedStop(stoppedSessionId, { opencodeSessionId: abortedOpencodeSessionId }),
+      )
+      .catch((err) =>
+        console.warn('[sandbox-proxy] could not hold the prompt inbox for a requested stop', {
+          sessionId: stoppedSessionId,
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      );
   }
 
   if (shouldSyncProjectEnvBeforeProxy(upstreamPort, method, remainingPath)) {

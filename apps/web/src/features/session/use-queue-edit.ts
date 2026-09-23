@@ -44,7 +44,7 @@ function wireText(parts: readonly SessionPromptPart[]): string {
  *   older message re-queues at the end of the list.
  * - Send now: removes the row and re-queues it in the Quick Queue
  *   (`sendNowQueuedMessage`), which runs ahead of the list and steers into
- *   the running response, or ends it if it is streaming text.
+ *   the running response, or ends it if it is streaming text or reasoning.
  */
 export function useQueueEdit(input: {
   sessionId: string;

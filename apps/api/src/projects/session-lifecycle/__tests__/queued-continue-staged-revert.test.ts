@@ -23,6 +23,7 @@
 // `mock.module` is process-global in bun:test, so this file must run on its
 // own (the repo's `--isolate` test runner already guarantees that).
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import * as realInboxDeliveryHold from '../inbox-delivery-hold';
 import { projectSessions, projects } from '@kortix/db';
 import type { SessionLifecycleCommandRow } from '../store';
 
@@ -185,6 +186,15 @@ mock.module('../../../sandbox-proxy/backend', () => ({
 }));
 mock.module('../../lib/sandbox-env-sync', () => ({
   syncSandboxEnvForPrompt: async () => {},
+}));
+
+// The POST's commit (`commitInboxPost`) is an UPDATE … RETURNING this db mock
+// cannot answer; its SQL runs against real Postgres in
+// `integration-inbox-user-action-race.test.ts`. Here it keeps the read-only
+// Stop check the mock does answer.
+mock.module('../inbox-delivery-hold', () => ({
+  ...realInboxDeliveryHold,
+  commitInboxPost: (commandId: string) => realInboxDeliveryHold.assertInboxDeliveryActive(commandId),
 }));
 
 const { executeQueuedContinue } = await import('../engine');

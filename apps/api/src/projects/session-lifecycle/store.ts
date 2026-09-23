@@ -1054,6 +1054,24 @@ export async function reArmRuntimeBlockedPrompts(
  */
 export const LIFECYCLE_RUNNING_RECLAIM_GRACE_MS = 5 * 60_000;
 
+/**
+ * Not a row the USER'S Stop is holding.
+ *
+ * A held inbox row is out of the drain for as long as the hold stands, and its
+ * clock does not say so reliably: the hold marks a CLAIMED row without moving
+ * its clock, and `requeueForAdmission` then writes a 300 ms backoff over it.
+ * The claim used to take that row every tick and bounce it off the pre-POST
+ * check. `held` on a row WITHOUT a `clientMessageId` is a different marker —
+ * the redelivery's "the box was parked" (`requeueAbandonedPrompt`) — whose
+ * only release IS its clock, so it stays claimable.
+ */
+function notHeldInboxRow() {
+  return sql`NOT (
+    COALESCE(${sessionLifecycleCommands.result}->>'held', '') = 'true'
+    AND ${sessionLifecycleCommands.payload}->>'clientMessageId' IS NOT NULL
+  )`;
+}
+
 export async function claimDueLifecycleCommands(input: {
   workerId: string;
   limit: number;
@@ -1087,6 +1105,7 @@ export async function claimDueLifecycleCommands(input: {
               isNull(sessionLifecycleCommands.lockedUntil),
               lte(sessionLifecycleCommands.lockedUntil, now),
             ),
+            notHeldInboxRow(),
           ),
           // ABANDONED CLAIM. A `running` row whose lock expired a full grace
           // ago has no live worker: the pod that claimed it is gone. Left
@@ -1118,7 +1137,10 @@ export async function claimDueLifecycleCommands(input: {
       .set({
         status: 'running',
         attempts: row.attempts + 1,
-        result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) - 'delivery_started_at'`,
+        // Both delivery marks belong to the attempt that wrote them. A stale
+        // `post_committed_at` would make a Remove of this NEW claim wait for a
+        // POST that has not happened.
+        result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) - 'delivery_started_at' - 'post_committed_at'`,
         lockedBy: input.workerId,
         lockedUntil: new Date(now.getTime() + 5 * 60_000),
         updatedAt: now,
@@ -1137,6 +1159,8 @@ export async function claimDueLifecycleCommands(input: {
           row.lockedBy
             ? eq(sessionLifecycleCommands.lockedBy, row.lockedBy)
             : isNull(sessionLifecycleCommands.lockedBy),
+          // A Stop can hold the row between the read and this claim.
+          row.status === 'queued' ? notHeldInboxRow() : undefined,
         ),
       )
       .returning();

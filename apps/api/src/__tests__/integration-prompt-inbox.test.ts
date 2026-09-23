@@ -796,10 +796,14 @@ describe('the inbox is scoped to prompts the USER made', () => {
   });
 
   test('a prompt already on the wire answers `delivering`, not `missing`', async () => {
+    // Claimed AND committed to its POST (`commitInboxPost`). A claimed row
+    // whose POST has not been committed is still the user's to remove — see
+    // `integration-inbox-user-action-race.test.ts`.
     const mine = await enqueue('q_onwire');
     await db.execute(sql`
       UPDATE kortix.session_lifecycle_commands
-         SET status = 'running'
+         SET status = 'running',
+             result = '{"post_committed_at":"2026-09-23T00:00:00Z"}'::jsonb
        WHERE command_id = ${mine.commandId}::uuid`);
     expect(await deleteInboxPrompt(SESSION_ID, mine.commandId)).toEqual({
       outcome: 'delivering',

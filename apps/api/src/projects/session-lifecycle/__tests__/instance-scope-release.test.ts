@@ -12,6 +12,7 @@
 // Same mocking caveat as the sibling engine.ts test files: `mock.module` is
 // process-global in bun:test, so this file runs on its own under `--isolate`.
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import * as realInboxDeliveryHold from '../inbox-delivery-hold';
 import { projectSessions, projects, sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
 import type { SessionLifecycleCommandRow } from '../store';
 import { mintWireMessageId } from '../../wire-message-id';
@@ -32,6 +33,9 @@ let boxRow: { status: string; metadata: Record<string, unknown> | null } | null 
 /** What `loadSandboxMetadataForSessions` answers, and whether it was asked. */
 let ownerMetadataBySession: Map<string, Record<string, unknown> | null> = new Map();
 let ownerLookups: string[][] = [];
+/** What `loadSessionMetadataForSessions` answers, and whether it was asked. */
+let sessionMetadataBySession: Map<string, Record<string, unknown> | null> = new Map();
+let sessionLookups: string[][] = [];
 let releases: Array<{ commandId: string; availableAt: Date; owner: string | null }> = [];
 let capturedBodies: Array<Record<string, unknown>> = [];
 let succeededCalls: string[] = [];
@@ -49,8 +53,8 @@ mock.module('../../../shared/db', () => ({
   db: {
     select: (projection?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
-        where: () => ({
-          limit: async () => {
+        where: () => {
+          const limit = async () => {
             if (projection && 'result' in projection && 'payload' in projection) return [{ result: {}, payload: {} }];
             if (table === projectSessions) return sessionRow ? [sessionRow] : [];
             if (table === projects) return [{ projectId: PROJECT_ID, accountId: ACCOUNT_ID }];
@@ -59,8 +63,11 @@ mock.module('../../../shared/db', () => ({
               return [{ newest: null }];
             }
             return [];
-          },
-        }),
+          };
+          // The drain's sibling sweep (`claimDueSessionInboxSiblings`) orders
+          // before it limits, and this session has no other queued inbox row.
+          return { limit, orderBy: () => ({ limit }) };
+        },
       }),
     }),
     update: () => ({
@@ -153,6 +160,10 @@ mock.module('../instance-release', () => ({
     ownerLookups.push(sessionIds);
     return ownerMetadataBySession;
   },
+  loadSessionMetadataForSessions: async (sessionIds: string[]) => {
+    sessionLookups.push(sessionIds);
+    return sessionMetadataBySession;
+  },
   releaseCommandToOwningInstance: async (
     commandId: string,
     opts: { availableAt: Date; owner: string | null },
@@ -171,6 +182,15 @@ mock.module('../../../sandbox-proxy/backend', () => ({
 }));
 mock.module('../../lib/sandbox-env-sync', () => ({
   syncSandboxEnvForPrompt: async () => {},
+}));
+
+// The POST's commit (`commitInboxPost`) is an UPDATE … RETURNING this db mock
+// cannot answer; its SQL runs against real Postgres in
+// `integration-inbox-user-action-race.test.ts`. Here it keeps the read-only
+// Stop check the mock does answer.
+mock.module('../inbox-delivery-hold', () => ({
+  ...realInboxDeliveryHold,
+  commitInboxPost: (commandId: string) => realInboxDeliveryHold.assertInboxDeliveryActive(commandId),
 }));
 
 const { drainSessionLifecycleQueue } = await import('../engine');
@@ -221,6 +241,8 @@ beforeEach(() => {
   boxRow = { status: 'active', metadata: {} };
   ownerMetadataBySession = new Map();
   ownerLookups = [];
+  sessionMetadataBySession = new Map();
+  sessionLookups = [];
   releases = [];
   capturedBodies = [];
   succeededCalls = [];
@@ -280,12 +302,55 @@ describe('drainSessionLifecycleQueue — instance scope', () => {
     expect(capturedBodies).toHaveLength(1);
   });
 
-  test('a session with no sandbox row yet is executed (nothing to be foreign to)', async () => {
+  test('a session with no sandbox row yet, and an unstamped session row, is executed (nothing to be foreign to)', async () => {
     cfg.KORTIX_INSTANCE_ID = 'wt-a';
     ownerMetadataBySession = new Map();
+    sessionMetadataBySession = new Map([[SESSION_ID, {}]]);
 
     await drainSessionLifecycleQueue({ limit: 10 });
 
+    expect(sessionLookups).toEqual([[SESSION_ID]]);
+    expect(releases).toEqual([]);
+    expect(capturedBodies).toHaveLength(1);
+  });
+
+  // 2026-09-22 (sessions of a second worktree on the shared DB): a session's
+  // FIRST prompt is inserted in the transaction that creates the session, and
+  // the sandbox row lands 0.9–4.2 s later. In that window the only owner
+  // signal is the session row. Another instance that claimed the command
+  // pushed ITS gateway URL into the box, the value flapped, and the daemon
+  // disposed OpenCode mid-turn.
+  test('a session with no sandbox row yet whose SESSION row is stamped by another instance is released', async () => {
+    cfg.KORTIX_INSTANCE_ID = 'wt-a';
+    ownerMetadataBySession = new Map();
+    sessionMetadataBySession = new Map([[SESSION_ID, { instanceId: 'primary' }]]);
+
+    const result = await drainSessionLifecycleQueue({ limit: 10 });
+
+    expect(releases.map((r) => [r.commandId, r.owner])).toEqual([['cmd-1', 'primary']]);
+    expect(capturedBodies).toEqual([]);
+    expect(result.released).toBe(1);
+  });
+
+  test('a session with no sandbox row yet whose session row is stamped by THIS instance is executed', async () => {
+    cfg.KORTIX_INSTANCE_ID = 'wt-a';
+    ownerMetadataBySession = new Map();
+    sessionMetadataBySession = new Map([[SESSION_ID, { instanceId: 'wt-a' }]]);
+
+    await drainSessionLifecycleQueue({ limit: 10 });
+
+    expect(releases).toEqual([]);
+    expect(capturedBodies).toHaveLength(1);
+  });
+
+  test('the sandbox row, once it exists, decides — the session row is not read', async () => {
+    cfg.KORTIX_INSTANCE_ID = 'wt-a';
+    ownerMetadataBySession = new Map([[SESSION_ID, { instanceId: 'wt-a' }]]);
+    sessionMetadataBySession = new Map([[SESSION_ID, { instanceId: 'primary' }]]);
+
+    await drainSessionLifecycleQueue({ limit: 10 });
+
+    expect(sessionLookups).toEqual([]);
     expect(releases).toEqual([]);
     expect(capturedBodies).toHaveLength(1);
   });

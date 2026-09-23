@@ -24,18 +24,22 @@
  *    strands anything and this branch simply finds nothing to repair. The
  *    fleet runs both, so the repair stays.
  *    The transcript tells them apart exactly (`strandedPlacement`):
- *    a stranded one has a higher assistant parented on an OLDER user message
- *    and nothing parented on itself. Those are taken out of the transcript and
- *    re-queued, so the drain delivers them again — placed above everything —
- *    instead of leaving the user's message on screen with nothing ever under
- *    it.
+ *    a stranded one has a higher assistant parented on an OLDER user message,
+ *    nothing parented on itself, and no step whose `time.created` proves it
+ *    began after the prompt was persisted. Those are taken out of the
+ *    transcript and re-queued, so the drain delivers them again — placed
+ *    above everything — instead of leaving the user's message on screen with
+ *    nothing ever under it. A candidate that is "newer" only by ID ORDER but
+ *    was READ by the ended step (a lifted steer above an under-placed later
+ *    sibling whose merged reply answered both — 2026-09-22) closes
+ *    `completed` like an older row.
  *
  * This is the safety net behind the drain's own post-insert proof
  * (`executeQueuedContinue` → `verifyLivePlacement`): a verify read that failed
  * or a repair that could not run ends up here, a turn later.
  */
 
-import { sessionLifecycleCommands, sessionTurns } from '@kortix/db';
+import { sessionLifecycleCommands, sessionSandboxes, sessionTurns } from '@kortix/db';
 import { and, desc, eq, ne, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
@@ -47,11 +51,18 @@ import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 import { wireIdTime } from '../wire-message-id';
 import { drainSessionLifecycleQueue, resolveSessionOpencodeEndpoint } from './engine';
 import { type PlacementTipMessage, isLaterTipMessage, openUserAbove, parsePlacementTip, strandedPlacement, tipIsBusy } from './forwarded-placement';
+import { INBOX_HOLD_MS, isHeldInboxRow, isStopPausedInboxRow } from './inbox-rows';
+import { sweepPendingHusks } from './husk-cleanup';
+import { readUserStopRequestedAt, stoppedAfterDelivery } from './stop-mark';
 import { promoteNextInboxRow, withNextDeliveryAttempt } from './store';
 import { wireMessageIdMatches } from './wire-id-match';
 
 const WORKSPACE = '/workspace';
-/** The stranded prompt and the assistant that proves it both sit at the tip. */
+/** The stranded prompt and the assistant that proves it both sit at the tip:
+ *  the loop exits right after the step that missed it. A READ candidate does
+ *  not — the tool work can run a dozen steps past the merged reply's first
+ *  step, one assistant message each — so a candidate the tip does not hold is
+ *  fetched by id (`readMessage`) rather than judged without its stamp. */
 const TIP_LIMIT = 12;
 const MAX_STRAND_REDELIVERIES = 3;
 
@@ -69,6 +80,13 @@ export interface ForwardedTurnReconciliation {
   /** Later, un-stranded siblings pulled back with a stranded row so the
    *  redelivery batch restores send order. */
   reordered: number;
+  /** Newer candidates the ended step READ — a merged reply parented on a
+   *  later, under-placed sibling, its step begun after the candidate was
+   *  persisted — closed `completed` like an older row. Live incident
+   *  2026-09-21/22 (sessions 4f345186, 17e3ad83, f0e9b423, 1548cb84): read
+   *  as stranded by id order, such a prompt was deleted, re-queued and
+   *  answered a second, paid time. */
+  closedRead: number;
 }
 
 export interface StrandReconcileDeps {
@@ -76,9 +94,15 @@ export interface StrandReconcileDeps {
   closeOlderTurn: (sessionId: string, opencodeSessionId: string | null, messageId: string) => Promise<void>;
   closeStrandedTurn: (sessionId: string, messageId: string) => Promise<void>;
   readTip: (sessionId: string) => Promise<PlacementTipMessage[] | null>;
+  /** One message by id, with its box stamps — for a candidate the tip read
+   *  does not hold. `null` when the runtime cannot serve it. */
+  readMessage: (sessionId: string, messageId: string) => Promise<PlacementTipMessage | null>;
   removeMessage: (sessionId: string, messageId: string) => Promise<boolean>;
   requeueStranded: (sessionId: string, messageId: string) => Promise<'requeued' | 'no_row' | 'exhausted' | 'not_open'>;
   kickDrain: (sessionId: string) => void;
+  /** Delete the copies a Remove could only empty mid-loop (`husk-cleanup.ts`).
+   *  Optional: absent, the turn end sweeps nothing. */
+  sweepHusks?: (sessionId: string) => Promise<void>;
 }
 
 const liveDeps: StrandReconcileDeps = {
@@ -129,6 +153,22 @@ const liveDeps: StrandReconcileDeps = {
     if (!res.ok) return null;
     return parsePlacementTip(await res.json().catch(() => null));
   },
+  async readMessage(sessionId, messageId) {
+    const resolved = await resolveSessionOpencodeEndpoint(sessionId);
+    if (!resolved) return null;
+    // `GET /session/:id/message/:messageID` answers `{ info, parts }` — one
+    // element of what the tip read pages, so the tip parser reads it as is.
+    const url = `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}/message/${encodeURIComponent(messageId)}?directory=${encodeURIComponent(WORKSPACE)}`;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!res.ok) return null;
+    const parsed = parsePlacementTip([await res.json().catch(() => null)]);
+    const message = parsed?.[0];
+    return message && message.id === messageId ? message : null;
+  },
   async removeMessage(sessionId, messageId) {
     const resolved = await resolveSessionOpencodeEndpoint(sessionId);
     if (!resolved) return false;
@@ -140,62 +180,100 @@ const liveDeps: StrandReconcileDeps = {
     });
     return res.ok || res.status === 404;
   },
-  async requeueStranded(sessionId, messageId) {
-    const [row] = await db
-      .select({
-        commandId: sessionLifecycleCommands.commandId,
-        status: sessionLifecycleCommands.status,
-        payload: sessionLifecycleCommands.payload,
-      })
-      .from(sessionLifecycleCommands)
-      .where(
-        and(
-          eq(sessionLifecycleCommands.sessionId, sessionId),
-          eq(sessionLifecycleCommands.commandType, 'continue_session'),
-          // Shared with every other reader — see `wire-id-match.ts`. Before
-          // 2026-08-20 this matched the payload only, so a stranded prompt
-          // delivered under an id only `result.forwarded_message_id` recorded
-          // returned 'no_row' and was never redelivered.
-          wireMessageIdMatches(messageId),
-        ),
-      )
-      .orderBy(desc(sessionLifecycleCommands.createdAt))
-      .limit(1);
-    if (!row) return 'no_row';
-    if (row.status !== 'succeeded') return 'not_open';
-    const payload = (row.payload ?? {}) as { redeliveries?: unknown };
-    const redeliveries = Number(payload.redeliveries ?? 0) + 1;
-    if (redeliveries > MAX_STRAND_REDELIVERIES) return 'exhausted';
-    await db
-      .update(sessionLifecycleCommands)
-      .set({
-        status: 'queued',
-        availableAt: new Date(),
-        attempts: 0,
-        lockedBy: null,
-        lockedUntil: null,
-        lastError: 'redelivered after stranded placement',
-        payload: withNextDeliveryAttempt(
-          sql`${sessionLifecycleCommands.payload} || ${JSON.stringify({ redeliveries, remintOnDelivery: true })}::jsonb`,
-        ),
-        // Every delivery marker goes: the row is back in line as if never sent.
-        result: { redelivered_from: 'stranded_placement' },
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(sessionLifecycleCommands.commandId, row.commandId),
-          eq(sessionLifecycleCommands.status, 'succeeded'),
-        ),
-      );
-    return 'requeued';
-  },
+  requeueStranded: (sessionId, messageId) => requeueStrandedPrompt(sessionId, messageId),
+  sweepHusks: sweepHusksAtTurnEnd,
   kickDrain(sessionId) {
     void promoteNextInboxRow(sessionId)
       .then((key) => (key ? drainSessionLifecycleQueue({ idempotencyKey: key }) : null))
       .catch(() => undefined);
   },
 };
+
+/**
+ * Put a stranded (or orphaned) forwarded prompt back in line, after its copy
+ * was taken out of the transcript.
+ *
+ * It comes back HELD — visible, not due — when a person STOPPED the session:
+ * the row is stop-paused or held (the Stop's own hold marked it), the box is
+ * no longer running, or the Stop was recorded after this prompt went out
+ * (`stop-mark.ts` — the acceptance relay closes a steer `delivered` before
+ * any step reads it, and the hold does not mark a `delivered` row). The turn this relay closes is the one the Stop ended,
+ * and a due-now requeue is a delivery the user did not ask for: measured on
+ * 2026-09-22, `POST .../stop` during a live turn with a steer in flight let
+ * this requeue ("redelivered after stranded placement") claim the prompt and
+ * wake the stopped box about 45 s to 3 min later. A held row goes out on the
+ * user's next send, "send now", or Resume — never on a timer.
+ */
+export async function requeueStrandedPrompt(
+  sessionId: string,
+  messageId: string,
+): Promise<'requeued' | 'no_row' | 'exhausted' | 'not_open'> {
+  const [row] = await db
+    .select({
+      commandId: sessionLifecycleCommands.commandId,
+      status: sessionLifecycleCommands.status,
+      payload: sessionLifecycleCommands.payload,
+      result: sessionLifecycleCommands.result,
+    })
+    .from(sessionLifecycleCommands)
+    .where(
+      and(
+        eq(sessionLifecycleCommands.sessionId, sessionId),
+        eq(sessionLifecycleCommands.commandType, 'continue_session'),
+        // Shared with every other reader — see `wire-id-match.ts`. Before
+        // 2026-08-20 this matched the payload only, so a stranded prompt
+        // delivered under an id only `result.forwarded_message_id` recorded
+        // returned 'no_row' and was never redelivered.
+        wireMessageIdMatches(messageId),
+      ),
+    )
+    .orderBy(desc(sessionLifecycleCommands.createdAt))
+    .limit(1);
+  if (!row) return 'no_row';
+  if (row.status !== 'succeeded') return 'not_open';
+  const payload = (row.payload ?? {}) as { redeliveries?: unknown };
+  const redeliveries = Number(payload.redeliveries ?? 0) + 1;
+  if (redeliveries > MAX_STRAND_REDELIVERIES) return 'exhausted';
+  const [box] = await db
+    .select({ status: sessionSandboxes.status })
+    .from(sessionSandboxes)
+    .where(eq(sessionSandboxes.sessionId, sessionId))
+    .limit(1);
+  const held =
+    isHeldInboxRow(row.result) ||
+    isStopPausedInboxRow(row.result) ||
+    (box !== undefined && box.status !== 'active') ||
+    stoppedAfterDelivery(
+      await readUserStopRequestedAt(sessionId),
+      (row.result as { forwarded_at?: unknown } | null)?.forwarded_at,
+    );
+  await db
+    .update(sessionLifecycleCommands)
+    .set({
+      status: 'queued',
+      availableAt: held ? new Date(Date.now() + INBOX_HOLD_MS) : new Date(),
+      attempts: 0,
+      lockedBy: null,
+      lockedUntil: null,
+      lastError: 'redelivered after stranded placement',
+      payload: withNextDeliveryAttempt(
+        sql`${sessionLifecycleCommands.payload} || ${JSON.stringify({ redeliveries, remintOnDelivery: true })}::jsonb`,
+      ),
+      // Every delivery marker goes: the row is back in line as if never sent.
+      // The hold stays — it is the user's, not the delivery's.
+      result: held
+        ? { redelivered_from: 'stranded_placement', held: true }
+        : { redelivered_from: 'stranded_placement' },
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(sessionLifecycleCommands.commandId, row.commandId),
+        eq(sessionLifecycleCommands.status, 'succeeded'),
+      ),
+    );
+  return 'requeued';
+}
 
 /**
  * Run at `turn-stream` `end` for `sessionId`, where `endedMessageId` is the
@@ -206,7 +284,39 @@ export async function reconcileForwardedTurnsAtEnd(
   input: { sessionId: string; opencodeSessionId?: string | null; endedMessageId?: string | null },
   deps: StrandReconcileDeps = liveDeps,
 ): Promise<ForwardedTurnReconciliation> {
-  const out: ForwardedTurnReconciliation = { closedOlder: 0, candidates: 0, stranded: 0, orphaned: 0, requeued: 0, reordered: 0 };
+  try {
+    return await reconcileForwardedTurns(input, deps);
+  } finally {
+    // EVERY turn end, whatever the reconciliation found or skipped: the end is
+    // the moment the loop is idle, and the only moment OpenCode lets a whole
+    // message go. The early returns above used to skip the husk sweep in
+    // exactly the common case — a Remove during a tool loop leaves no newer
+    // forwarded candidate at the loop's own end.
+    if (deps.sweepHusks) {
+      await deps.sweepHusks(input.sessionId).catch((err) =>
+        logger.warn('[forwarded-turns] husk sweep failed', {
+          session_id: input.sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    }
+  }
+}
+
+/** A busy loop can outlive the `end` relay by a moment: ask twice more. */
+async function sweepHusksAtTurnEnd(sessionId: string): Promise<void> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const { pending } = await sweepPendingHusks(sessionId);
+    if (pending === 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+  }
+}
+
+async function reconcileForwardedTurns(
+  input: { sessionId: string; opencodeSessionId?: string | null; endedMessageId?: string | null },
+  deps: StrandReconcileDeps,
+): Promise<ForwardedTurnReconciliation> {
+  const out: ForwardedTurnReconciliation = { closedOlder: 0, candidates: 0, stranded: 0, orphaned: 0, requeued: 0, reordered: 0, closedRead: 0 };
   let open: StoredSandboxTurn[];
   try {
     open = await deps.readOpenTurns(input.sessionId);
@@ -297,7 +407,39 @@ export async function reconcileForwardedTurnsAtEnd(
   // and it re-queues AS A WHOLE so the redelivery batch re-mints it in send
   // order. Re-queueing one row of a burst individually is what scrambled the
   // order (measured: FIRST, B3, B1, B4, B2).
-  const verdicts = newer.map((turn) => ({ turn, verdict: strandedPlacement(tip!, turn.messageId!) }));
+  // The verdict needs the candidate's OWN message — its `time.created` is
+  // what tells a read prompt from a stranded one — and the tip is only the
+  // newest TIP_LIMIT messages. A genuine strand is always on it (the loop
+  // exits right after the step that missed it), but a READ candidate is not:
+  // a tool loop that ran a dozen steps past the merged reply's first step
+  // pushed it off, one assistant message per step, every one of them a
+  // higher id parented on the under-placed sibling below it — the strand
+  // signature by id order, with no stamp left to contradict it. Fetch the
+  // message by id; judged without it, the candidate would be deleted and
+  // re-queued exactly as before the stamp rule existed. A candidate the
+  // runtime cannot serve stays untouched: the reaper's own redelivery runs
+  // through the drain's answered check with the copy still in the
+  // transcript, so a genuine never-ran prompt still comes back — later, but
+  // never twice.
+  const verdictTip: PlacementTipMessage[] = [...tip];
+  const unheld = new Set<string>();
+  for (const turn of newer) {
+    const messageId = turn.messageId!;
+    if (verdictTip.some((m) => m.id === messageId)) continue;
+    let own: PlacementTipMessage | null = null;
+    try {
+      own = await deps.readMessage(input.sessionId, messageId);
+    } catch (err) {
+      logger.warn('[forwarded-turns] candidate message read threw', {
+        session_id: input.sessionId,
+        message_id: messageId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    if (own) verdictTip.push(own);
+    else unheld.add(messageId);
+  }
+  const verdicts = newer.map((turn) => ({ turn, verdict: strandedPlacement(verdictTip, turn.messageId!) }));
   // The strand verdict has a blind spot the loop's exit exposes: a candidate
   // placed correctly AT THE TIP (no assistant above it, so not "stranded")
   // that the ended loop simply never read. With the tip's newest assistant
@@ -311,6 +453,56 @@ export async function reconcileForwardedTurnsAtEnd(
   // tip, and the tip must not be mid-step (an open newest assistant is a
   // fresh turn that will read it).
   for (const { turn, verdict } of verdicts) {
+    if (unheld.has(turn.messageId!)) {
+      logger.info('[forwarded-turns] candidate is off the tip and could not be fetched — left to the reaper', {
+        session_id: input.sessionId,
+        message_id: turn.messageId,
+      });
+      continue;
+    }
+    // A candidate the ended step READ. "Newer" was decided by ID ORDER
+    // (`endedAt`), and a steered prompt LIFTED to the box clock sorts above a
+    // later sibling that was UNDER-PLACED at its client id — so the one merged
+    // reply, parented on that sibling, is by id a higher assistant with an
+    // older parent: the strand signature. The box's `time.created` stamps say
+    // what actually happened: the reply's step began after this prompt was
+    // persisted, so it was in the input and the reply answered it. Live
+    // 2026-09-21/22, three of three steer runs (sessions 4f345186, 17e3ad83,
+    // f0e9b423, 1548cb84): read as stranded, the lifted prompt was deleted
+    // from the transcript, re-queued (`redeliveries = 1`, "redelivered after
+    // stranded placement"), its ledger row closed `abandoned`, and the model
+    // ran a second, paid turn for it — its answer on screen twice. A read
+    // candidate is handled exactly like an OLDER row: when its reader has
+    // completed, the step that just ended answered it, so its ledger row
+    // closes `completed` now; while the reader is still open (a fresh turn
+    // already running) the row stays open and that turn's end closes it.
+    // Never removed, never re-queued, never closed `abandoned`.
+    if (!verdict.answered && verdict.readBy !== null) {
+      if (!verdict.readCompleted) {
+        logger.info('[forwarded-turns] candidate read by a step still open — left to that turn\'s end', {
+          session_id: input.sessionId,
+          message_id: turn.messageId,
+          read_by: verdict.readBy,
+        });
+        continue;
+      }
+      try {
+        await deps.closeOlderTurn(input.sessionId, turn.opencodeSessionId, turn.messageId!);
+        out.closedRead += 1;
+        logger.info('[forwarded-turns] candidate was read by the ended step — closed completed', {
+          session_id: input.sessionId,
+          message_id: turn.messageId,
+          read_by: verdict.readBy,
+        });
+      } catch (err) {
+        logger.warn('[forwarded-turns] could not close a read forwarded turn', {
+          session_id: input.sessionId,
+          message_id: turn.messageId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      continue;
+    }
     const orphanedAtTip =
       !verdict.stranded &&
       !verdict.answered &&
@@ -322,7 +514,7 @@ export async function reconcileForwardedTurnsAtEnd(
     else out.orphaned += 1;
     // The tip, not just the ledger candidates: ANY placed, unanswered user
     // message above covers this one — a direct send included.
-    if (openUserAbove(tip, turn.messageId!)) {
+    if (openUserAbove(verdictTip, turn.messageId!)) {
       logger.info('[forwarded-turns] stranded prompt is covered by a later open sibling — left in place', {
         session_id: input.sessionId,
         message_id: turn.messageId,
@@ -397,3 +589,4 @@ export async function reconcileForwardedTurnsAtEnd(
   }
   return out;
 }
+

@@ -14,12 +14,35 @@ import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
  * "The first prompt response should be stopped immediately. This is only
  * happening with the text response not with the tool call thing."
  *
- *   'text'  — the turn's newest step is open and a text part is being written,
- *             with no tool call in that step. Nothing will read a steer until
- *             the text is done; the response is ended instead.
- *   'tool'  — a tool is pending or running. Its end is a step boundary.
- *   'other' — reasoning, between steps, not started, already finished, or not
+ * REASONING STREAMS TOO (2026-09-22). DeepSeek V4.1 Flash, the default managed
+ * model, wrote a whole 20-paragraph essay inside its REASONING part, and the
+ * chat unfolds live reasoning, so the user watched it stream. This file read
+ * `[step-start, reasoning]` as 'other', the Quick Queue prompt steered, and the
+ * essay ran 2 min 43 s to `completed` with the prompt unread (owner report,
+ * session 6f10c589). The owner's contract is "stop it when it is visibly
+ * streaming", so an open reasoning part counts exactly like an open text part.
+ *
+ *   'text'  — the turn's newest step is open and is STREAMING: a text or a
+ *             reasoning part is open, and the step has no tool call. Nothing
+ *             will read a steer until the step ends; the response is ended
+ *             instead. (The name is kept: it is the admission contract.)
+ *   'tool'  — a tool is pending or running, whatever the reasoning state. Its
+ *             end is a step boundary.
+ *   'other' — between parts or steps, not started, already finished, or not
  *             readable. Steer, as before.
+ *
+ * THE TRADE-OFF, decided 2026-09-22. Reasoning also opens every TOOL step, and
+ * while it streams the page cannot say whether a tool call follows. A prompt
+ * typed then ends a step that might have gone on to call a tool. What that
+ * loses is reasoning text, never work: no tool has started, so no file is
+ * half-written — the daemon's own check refuses to abort while a tool runs.
+ * The alternative left a visibly streaming response running for minutes.
+ * A FINISHED reasoning part with nothing open after it stays 'other': that is
+ * a gap of milliseconds before the next part opens, and nothing is streaming.
+ * If a tool follows, the steer is read at that tool's end, as designed. If
+ * text follows, a prompt that steered inside that gap is unread until the text
+ * ends — the one residual window, left open because it is milliseconds wide
+ * and every doubt resolves away from 'text'.
  *
  * Only 'text' ever ends anything, so EVERY doubt resolves away from it.
  */
@@ -29,9 +52,15 @@ export type LiveTurnPhase = 'text' | 'tool' | 'other';
  *  is by construction the newest assistant message, so the tip is enough — and
  *  a full read of a long session is megabytes and ~1s. */
 export const LIVE_TURN_PHASE_PAGE_LIMIT = 8;
-/** This read sits on the Enter key's critical path. Past this it is cheaper to
- *  steer (the fail-open answer) than to keep the prompt waiting. */
-export const LIVE_TURN_PHASE_READ_TIMEOUT_MS = 2_500;
+/** This read sits on the Enter key's critical path. Past this it steers (the
+ *  fail-open answer). 2.5 s until 2026-09-22: the whole read is ~155 ms
+ *  typically but was measured at 5.1 s on a loaded stack, so the bound fired,
+ *  the prompt steered into a streaming essay, and sat unread for minutes. A
+ *  late right answer costs a few seconds; an on-time wrong one costs the whole
+ *  stream. The read holds only this session's lane: lanes of one drain run
+ *  concurrently (`engine.ts`), each POST kicks its own targeted drain
+ *  (`routes/r8.ts`), and a drain already waits far longer for a cold box. */
+export const LIVE_TURN_PHASE_READ_TIMEOUT_MS = 6_000;
 
 const WORKSPACE = '/workspace';
 
@@ -85,16 +114,20 @@ export function liveTurnPhaseFromPage(page: unknown, turnMessageId: string): Liv
 
   let tool = false;
   let toolLive = false;
-  let textOpen = false;
+  let streaming = false;
   for (const part of step.parts) {
     if (!part || typeof part !== 'object') continue;
     if (part.type === 'tool') {
       tool = true;
       const status = part.state?.status;
       if (status === 'running' || status === 'pending') toolLive = true;
-    } else if (part.type === 'text' && part.time?.end == null) {
-      // WRITTEN TO, OR OPENED. OpenCode 1.18 persists a text part at
-      // `text-start` as `{ text: '', time: { start } }`, sends every
+    } else if ((part.type === 'text' || part.type === 'reasoning') && part.time?.end == null) {
+      // WRITTEN TO, OR OPENED. Reasoning follows the same lifecycle —
+      // `reasoning-start` persists `{ text: '', time: { start } }` and only
+      // `reasoning-end` writes the text and `time.end` (seen live 2026-09-22 on
+      // DeepSeek: `reasoning(start, no end, 0 chars)` for the whole essay).
+      // OpenCode 1.18 persists a text part at `text-start` as
+      // `{ text: '', time: { start } }`, sends every
       // `text-delta` through `updatePartDelta` — which is
       // `publish(Event.PartDelta)` and no storage write (read from the 1.18
       // bundle, 2026-09-21) — and writes the text only at `text-end`, together
@@ -102,10 +135,13 @@ export function liveTurnPhaseFromPage(page: unknown, turnMessageId: string): Liv
       // page shows an EMPTY text part with a start instant. Waiting for
       // characters would classify the exact case this exists for as 'other'.
       // A runtime that does persist as it streams shows the characters; both
-      // count. An empty part with no start instant is evidence of nothing.
+      // count. So does the daemon's proxied transcript list, which adds the
+      // text streamed so far to each open part (kortix-sandbox-agent-server
+      // `open-part-text.ts`). An empty part with no start instant is evidence
+      // of nothing.
       const written = typeof part.text === 'string' && part.text.trim().length > 0;
       const opened = typeof part.time?.start === 'number';
-      if (written || opened) textOpen = true;
+      if (written || opened) streaming = true;
     }
   }
   if (toolLive) return 'tool';
@@ -113,7 +149,7 @@ export function liveTurnPhaseFromPage(page: unknown, turnMessageId: string): Liv
   // finished tool in the open step the boundary a steer is read at is already
   // arriving — ending the turn there would discard its continuation for nothing.
   if (tool) return 'other';
-  return textOpen ? 'text' : 'other';
+  return streaming ? 'text' : 'other';
 }
 
 export interface LiveTurnPhaseReadDeps {

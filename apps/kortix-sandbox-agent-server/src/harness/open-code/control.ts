@@ -12,6 +12,7 @@ import { refreshRepo, syncConfigDirToBase, syncWorkspaceToBase } from '../../git
 import { scheduleRuntimeAssetsReconcile } from '../../runtime-assets'
 import { readPinnedOpencodeSessionId } from './boot'
 import type { QuickQueueInterrupt } from './quick-queue-interrupt'
+import { opencodeTurnInFlight } from './opencode-turn-state'
 
 const OPENCODE_RUNTIME_ENV_NAMES = new Set([
   'KORTIX_LLM_BASE_URL',
@@ -129,16 +130,91 @@ export function refreshMayConvergeRuntime(runtimeState: string): boolean {
   return runtimeState === 'ok'
 }
 
+export interface OpenCodeControlOptions {
+  /**
+   * Is a turn running right now? `null` = could not tell, which counts as busy.
+   * Defaults to OpenCode's own `/session/status` for the pinned root.
+   */
+  turnInFlight?: () => Promise<boolean | null>
+  /** How often a deferred reload re-checks for an idle box. */
+  deferredReloadPollMs?: number
+  /**
+   * How long an UNREADABLE turn state may hold a deferred reload. A box whose
+   * OpenCode never answers is wedged, not busy; the reload then runs anyway.
+   * A turn that is provably running holds it for as long as it runs.
+   */
+  deferredReloadUnreadableMaxMs?: number
+}
+
+const DEFERRED_RELOAD_POLL_MS = 1_000
+const DEFERRED_RELOAD_UNREADABLE_MAX_MS = 2 * 60_000
+
 /** Native control operations. HTTP parsing, authorization and status mapping stay in routes. */
 export function createOpenCodeControlService(
   opencode: Opencode,
   quickQueue: Pick<QuickQueueInterrupt, 'arm' | 'disarm'>,
+  options: OpenCodeControlOptions = {},
 ): HarnessControlService {
+  // A reload that is owed but must wait for the running turn to end. Lives
+  // across `bind` calls (warm adoption rebuilds the app, not the runtime).
+  let pendingReload: { mustRespawn: boolean; names: string[] } | null = null
+  let pendingTimer: ReturnType<typeof setTimeout> | null = null
+  let pendingUnreadableSince: number | null = null
+  let reloadChain: Promise<unknown> = Promise.resolve()
+  const pollMs = options.deferredReloadPollMs ?? DEFERRED_RELOAD_POLL_MS
+  const unreadableMaxMs = options.deferredReloadUnreadableMaxMs ?? DEFERRED_RELOAD_UNREADABLE_MAX_MS
+
+  /** One reload at a time: a poller flush and a push flush never overlap. */
+  function serialized<T>(run: () => Promise<T>): Promise<T> {
+    const next = reloadChain.then(run, run)
+    reloadChain = next.catch(() => undefined)
+    return next
+  }
+
+  function schedulePendingFlush(turnInFlight: () => Promise<boolean | null>): void {
+    if (pendingTimer) return
+    pendingTimer = setTimeout(() => {
+      pendingTimer = null
+      void serialized(async () => {
+        if (!pendingReload) return
+        const inFlight = await turnInFlight().catch(() => null)
+        const now = Date.now()
+        if (inFlight === null) pendingUnreadableSince ??= now
+        else pendingUnreadableSince = null
+        const wedged =
+          inFlight === null && pendingUnreadableSince !== null && now - pendingUnreadableSince >= unreadableMaxMs
+        if (inFlight !== false && !wedged) {
+          schedulePendingFlush(turnInFlight)
+          return
+        }
+        const owed = pendingReload
+        pendingReload = null
+        pendingUnreadableSince = null
+        const applied = await opencode.reloadConfig({ mustRespawn: owed.mustRespawn })
+        logger.info('[env] deferred reload applied to opencode', {
+          opencodeEnvNames: owed.names,
+          how: applied.how,
+          mustRespawn: owed.mustRespawn,
+          turnStateUnreadable: wedged,
+        })
+      }).catch((err) => {
+        logger.error('[env] deferred reload failed', err)
+      })
+    }, pollMs)
+    pendingTimer.unref?.()
+  }
+
   return {
     bind(context): HarnessControlOperations {
       const { projectEnv, agentEnvFile } = context
       // Resolve the current config on each app rebuild, including warm adoption.
       const cfg = requireOpenCodeConfig(context.cfg)
+      const probeTurn =
+        options.turnInFlight ?? (() => opencodeTurnInFlight(opencode.getInternalUrl(), cfg.workspace))
+      // An OpenCode that is not serving runs no turn: the reload goes ahead as
+      // it always did (boot pushes land while OpenCode is still starting).
+      const turnInFlight = async (): Promise<boolean | null> =>
+        opencode.getState() === 'ok' ? probeTurn() : false
       return {
         async applyEnvironment(body: HarnessEnvironmentInput) {
           if (!projectEnv) throw new Error('project env store is unavailable')
@@ -155,6 +231,8 @@ export function createOpenCodeControlService(
           const llmGatewayEnv = applyLlmGatewayMode(body.llmGatewayEnabled, body.llmGatewayBaseUrl)
           // null when no reload was needed at all; otherwise how it was applied.
           let reloadOutcome: 'disposed' | 'restarted' | 'kept-old' | null = null
+          // True when the reload is owed but waits for the running turn to end.
+          let reloadDeferred = false
           // Whether applying the config interrupted work someone was waiting on.
           // null = no reload happened, or the box could not tell.
           let reloadTurnEnded: boolean | null = null
@@ -192,13 +270,15 @@ export function createOpenCodeControlService(
           // store already has the requested revision. A sync replay must repair it.
           const agentEnvWritten = writeAgentEnvFile(projectEnv, { sh: agentEnvFile })
           if (!agentEnvWritten) throw new Error('failed to write live agent env file')
-          if (body.refreshModels === true && (result.changed || opencodeEnvChanged)) {
+          const reloadRequested = body.refreshModels === true && (result.changed || opencodeEnvChanged)
+          if (reloadRequested || pendingReload) {
             // reloadConfig, not restart: opencode re-reads its config file in
             // place via /global/dispose in ~51ms, against ~8s for a respawn
             // (measured on 1.17.11, dispose re-verified on the pinned 1.18.19).
             // It falls back to a restart on its
             // own if dispose is unavailable, so this is never less correct — only
-            // faster, and it does not sever an in-flight turn when dispose wins.
+            // faster. A dispose still ABORTS an in-flight turn, like a respawn;
+            // that is why the reload below waits for an idle box.
             // Some values are consumed by `spawnChild` OUTSIDE the config file —
             // the deny-list shapes the child's env, and the Codex/OpenCode auth
             // secrets are materialized into ~/.local/share/opencode/auth.json. A
@@ -222,23 +302,50 @@ export function createOpenCodeControlService(
             // preserved for pure model/auth/deny changes that touch no project
             // secret. Revocation is preserved too: `knownNames` is tracked in the
             // store, so a respawn clears a dropped secret via `mergeProjectEnv`.
-            const projectSecretsMoved = result.changedNames.length > 0
-            const mustRespawn = projectSecretsMoved || requiresRespawn(opencodeEnvNames)
-            const applied = await opencode.reloadConfig({ mustRespawn })
-            const how = applied.how
-            reloadTurnEnded = applied.turnEnded
-            // 'kept-old' means the verified swap declined: the new opencode never
-            // came up, so the running one was left serving. The config did NOT
-            // take, and the caller has to be told — logging it here and returning
-            // ok:true would report a reload that silently did nothing.
-            reloadOutcome = how
-            logger.info('[env] config-affecting env changed; applied to opencode', {
-              projectRevision: result.revision,
-              projectEnvChanged: result.changed,
-              opencodeEnvNames,
-              how,
-              mustRespawn,
-            })
+            const projectSecretsMoved = reloadRequested && result.changedNames.length > 0
+            const owedNames = [...new Set([...(pendingReload?.names ?? []), ...(reloadRequested ? opencodeEnvNames : [])])].sort()
+            const mustRespawn =
+              projectSecretsMoved ||
+              (reloadRequested && requiresRespawn(opencodeEnvNames)) ||
+              pendingReload?.mustRespawn === true
+            // NEVER reload under a running turn. A dispose aborts the in-flight
+            // message and a respawn kills the process: 2026-09-22 a pushed
+            // KORTIX_LLM_BASE_URL change disposed OpenCode ~4 s after a steer
+            // and failed a bash tool loop at tick-6 of 30. The values above are
+            // already live (process env, agent-env.sh, LLM proxy upstream); only
+            // OpenCode's re-read waits for the turn to end. Unreadable = busy.
+            const inFlight = await turnInFlight().catch(() => null)
+            if (inFlight !== false) {
+              pendingReload = { mustRespawn, names: owedNames }
+              reloadDeferred = true
+              schedulePendingFlush(turnInFlight)
+              logger.info('[env] config-affecting env changed; opencode reload deferred until the turn ends', {
+                projectRevision: result.revision,
+                projectEnvChanged: result.changed,
+                opencodeEnvNames: owedNames,
+                mustRespawn,
+                turnInFlight: inFlight,
+              })
+            } else {
+              pendingReload = null
+              pendingUnreadableSince = null
+              const applied = await serialized(() => opencode.reloadConfig({ mustRespawn }))
+              reloadTurnEnded = applied.turnEnded
+              // 'kept-old' means the verified swap declined: the new opencode never
+              // came up, so the running one was left serving. The config did NOT
+              // take, and the caller has to be told — logging it here and returning
+              // ok:true would report a reload that silently did nothing.
+              // 'unchanged' means the composed config was byte-identical, so
+              // nothing was reloaded: reported as null, "no reload needed".
+              reloadOutcome = applied.how === 'unchanged' ? null : applied.how
+              logger.info('[env] config-affecting env changed; applied to opencode', {
+                projectRevision: result.revision,
+                projectEnvChanged: result.changed,
+                opencodeEnvNames: owedNames,
+                how: applied.how,
+                mustRespawn,
+              })
+            }
           }
 
           // The daemon OWNS this write, so the projection is told rather than
@@ -285,6 +392,7 @@ export function createOpenCodeControlService(
             // boot — a successful safety outcome, and a FAILED reload.
             opencode_reload: reloadOutcome,
             opencode_turn_ended: reloadTurnEnded,
+            opencode_reload_deferred: reloadDeferred,
           }
         },
         async refresh({ syncBase, skipRestart, syncConfigDir, baseSha, forceFail }: HarnessRefreshInput) {

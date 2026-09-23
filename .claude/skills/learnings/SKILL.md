@@ -7516,7 +7516,8 @@ id. Tool case: steer delivered mid-`bash`, 0 aborts, the shell loop reached
   is still reasoning reads `'other'` and steers; if that step then streams
   text, the steer is unread until the text ends. A reasoning step is not ended
   because reasoning also opens every tool step and the page cannot say which
-  one it is.
+  one it is. SUPERSEDED 2026-09-22 by the owner — see "Streaming reasoning is
+  streaming" below.
 - A steer delivery records a second `activeTurns` entry (seen live), so a
   third Quick Queue prompt in a steered turn takes the plain `turn_active`
   wait through `turns.length !== 1` before `turnAlreadySteered` is asked.
@@ -7617,3 +7618,549 @@ starting no reply is read from the pinned SDK type, not measured; the runtime
 bundle is baked into the image and is not in `node_modules`. Verify on a real
 session before this reaches anyone: five Quick Queue prompts, five bubbles, one
 answer addressing all five in order, and no row left `delivering`.
+
+### 2026-09-22 — A strand verdict is a claim about what a step READ; id order cannot make it, the box's stamps can
+
+**Rule.** Never decide "this prompt was never read" from wire-id order alone.
+A wire id is minted by the SENDER (the client, or the drain's placement minter,
+which deliberately LIFTS a live-turn delivery to the box clock and deliberately
+UNDER-PLACES a later one below an open sibling). `time.created` is stamped by
+the box at persistence, on one clock, for every message. When both stamps
+exist, an assistant whose `time.created` is later than the prompt's was opened
+by a step that began after the prompt was persisted: the prompt was in that
+step's input and the step read it. Such a prompt is never stranded, never
+deleted, never re-queued, and its ledger row closes `completed` once the
+reader completes. The id-order strand signature (a higher assistant parented
+on an older user) is the FALLBACK for a missing stamp, nothing more.
+
+**Incident (2026-09-21/22, local, three of three steer runs; sessions
+4f345186, aaa5cc03, abc7a53f, then 17e3ad83, f0e9b423, 0b6d8f04, 1548cb84).**
+Three Quick Queue prompts steered ~1 s apart into a tool turn. The second
+went out LIFTED (`mintLivePlacement`, box-clock skew learned from the first);
+the third went out UNDER-PLACED at its client id because the lifted one sat
+open above it. OpenCode >= 1.18.15 parented the ONE merged reply on the third
+(newest by `time.created`) and the relay named it as the ended message. The
+lifted prompt was the only open ledger row with an id ABOVE it — a "newer"
+candidate — and by id order the merged reply is a higher assistant with an
+older parent: `strandedPlacement` said stranded, `openUserAbove` said nothing
+covers it, and `reconcileForwardedTurnsAtEnd` deleted the message, re-queued
+the row (`redeliveries = 1`, `last_error = 'redelivered after stranded
+placement'`), closed the ledger row `abandoned`, and the drain ran a second,
+paid turn: the marker answered twice on screen. Which prompt was hit depended
+only on which delivery was lifted above a later under-placed sibling (the
+first steer when the rest went out as a `noReply` group; the middle one when
+they went out one drain apart). The lead hypothesis — `redelivery.ts` and
+`PROMPT_NEVER_RAN_END_REASONS` — was refuted: `abandoned` was written AFTER
+the requeue, and `requeueAbandonedPrompt` saw `queued`, not `succeeded`.
+
+**Fix.** `forwarded-placement.ts`: `strandedPlacement` reads the stamps first
+and reports `readBy` / `readCompleted`; `reachedPlacement` drops its
+`parentAt < mine` exclusion when the stamps prove the step began later;
+`openUserAbove` does not call a read user "open"; `promptAnsweredOnTip` is the
+answered predicate of the drain and the turn-end reconcile (parented on it, or
+read by a turn that has ENDED — a completed reader with no open step parented
+on the same user message, so a NEWER turn already running does not mask a
+finished reply). `forwarded-strand-reconcile.ts` closes a read candidate
+`completed` (`closedRead`) or leaves it to its reader's turn end; it never
+removes or re-queues one. Its tip read is 12 messages and a read candidate can
+sit deeper (a dozen tool steps after the merged reply's first step push it
+off, each a higher-id assistant parented on the sibling below — the strand
+signature with no stamp left), so a candidate the tip does not hold is fetched
+by id (`GET /session/:id/message/:messageID`, `readMessage`); one the runtime
+cannot serve is left to the reaper, whose redelivery runs through the drain's
+answered check with the copy still in the transcript. `engine.ts`
+`readInboxTranscriptState` uses `promptAnsweredOnTip` for every delivered id,
+so a redelivery from ANY path drops a prompt answered inside a merged reply.
+`cancel-forwarded.ts` parses the tip with `parsePlacementTip` so its
+"already being answered" verdict (`strandedPlacement` + `reachedPlacement`)
+sees the same stamps — a local parse carried `completed` only, and a cancel of
+the lifted steer deleted the answered message; an Undo then ran it again.
+
+**Bounded, stated plainly.** A stamp missing on either side keeps the id-order
+verdict (the old behaviour, no regression). On an id-ordered box
+(opencode <= 1.18.14) a prompt persisted inside the ms-wide window between a
+step's message read and its assistant-row creation has `created` below the
+assistant's but was not in the input; the stamps then read it as read and it
+waits for the next send. A box clock stepped backwards can stamp a later step
+earlier than a prompt; the verdict then falls back to stranded — today's
+behaviour.
+
+**Enforcement.** `forwarded-placement.test.ts` ("the merged reply of a later
+UNDER-PLACED sibling": read, reader open, a completed reader with a NEWER turn
+open, a completed step of a turn still running, disagreeing stamps = genuine
+strand, missing stamp = id order, `reachedPlacement`, `openUserAbove` with a
+reader parented on a newer user, `promptAnsweredOnTip`);
+`forwarded-strand-reconcile.test.ts` ("a newer candidate the ended step READ":
+closes completed and is never re-queued, the three-steers shape, reader still
+open left alone, "the read candidate is OFF the tip after a long tool loop":
+fetched by id and closed read, unfetchable and left to the reaper, on-tip never
+fetched) — every genuine-strand fixture there now states its stamps explicitly
+(prompt persisted after the step began), because the `tipOf` fill silently
+encoded "read"; `queued-continue-inbox-delivery.test.ts` ("a prompt READ by a
+later sibling's merged reply is never re-sent");
+`r8-session-prompts.test.ts` ("a forwarded steer answered inside a later
+sibling's merged reply is 409 already sent, and stays in the transcript").
+Live: the double-answer harness, steer x3 (MINT=sdk, MINT=now) PASS 1-5,
+ledger `completed` x4, no `abandoned`; Queue List and the four-prompt group
+unchanged PASS 1-5.
+
+### 2026-09-22 — Send order is decided by inbox send time, not by id; a re-mint pairing must outlive its row
+
+**Rules.**
+1. Never decide where a prompt SITS from wire-id order. A wire id is minted by
+   the sender, and a live-turn delivery is LIFTED to the box clock
+   (`mintLivePlacement`), so an open user above a prompt's client id can be a
+   prompt sent BEFORE it. A first delivery keeps its client id below the open
+   siblings above it ONLY when every one of them was sent AFTER it, by the
+   inbox's send instant (`clientSentAtMs`, else `created_at`, then the client
+   wire id and command id — the FIFO tuple WITHOUT the lane) AND that
+   sibling's `created_at` is not earlier — one clock, PostgreSQL's, for every
+   producer, so a second client's skewed Enter stamp cannot pass its prompt
+   off as later; otherwise it re-mints, and the re-mint floors on every id
+   the inbox put on the wire. A sibling with no inbox row (a foreign
+   producer) keeps the old under-place.
+2. The `wire_message_id` → `message_id` pairing that retires a tab's bubble
+   must outlive the inbox row. The server strips the client's part ids
+   (`sanitizeInboxPromptParts`), the sync store refuses the ordinal fallback
+   for inbox-backed bubbles (a burst's bubbles swapped text, measured), so the
+   row is the only source of the pairing — and a steered row leaves
+   `GET .../prompts` at ACCEPTANCE, often under 1 s after the re-mint, while
+   the tab polls every 1 s. Any pairing that lives only on a pending row is a
+   race against one poll. And a pairing is EVERY id the row ever went out
+   under: a store that keeps one alias per bubble and matches only that one
+   turns the order the host announced them in into a duplicate.
+
+**Incident (2026-09-22, preview session "YO" 134c0d27 on project 0544daaf;
+reproduced locally in Firefox, sessions 6e288d75 and 822e92a4 on project
+ddbcaacf).** A long tool turn; Enter twice ~1-2 s apart (ALPHA, BRAVO), both
+steered. ALPHA was lifted to `msg_0c90a831b000` (client id `…a5f79002`).
+BRAVO then found ALPHA open above its client id `…a5f79003` and the
+under-placement rule (`openUserAbove`) kept BRAVO at that client id — BELOW
+ALPHA. Transcript by `time.created`: ALPHA 12:15:07.089, BRAVO 12:15:10.705;
+by id: BRAVO first. The SDK orders placed messages by id
+(`compareMessagesForDisplay`), so the tab drew `[LOOP, Q-BRAVO, Q-ALPHA]`
+and the one merged reply (parented on BRAVO, newest by `time.created`) left
+ALPHA's slot empty at the bottom — "the second prompt that is showing was
+actually the third". In the same run a fourth prompt's row was confirmed
+`delivered` inside the poll after its re-mint: the tab never announced the
+pairing, the echo landed as a new placed message, and the stub (client id,
+"just now", Thinking) stayed until reload — "the fourth and fifth prompts are
+duplicates".
+
+**Fix.** `forwarded-placement.ts` `openUsersAbove` returns the ids behind
+`openUserAbove`; `inbox-order.ts` `inboxSentAfter` /
+`underPlacementKeepsSendOrder` (pure) decide by send instant; `inbox-rows.ts`
+`readInboxRowsByWireIds` resolves the ids to rows through
+`wireMessageIdMatches` under `inboxScope`; `engine.ts` gates `underPlaced`
+on the pure rule and re-mints on a failed lookup. `GET .../prompts` answers
+`placed` (`listPlacedInboxPrompts`: `succeeded` + `delivered`, `updated_at`
+inside ten minutes, limit 50; `serializePlacedPrompt` keeps only rows whose
+delivered id differs from `wireMessageId`, every `redeliveredMessageIds`
+entry as `message_ids`). Ten minutes, not one: a hidden tab does not poll
+the list (`refetchIntervalInBackground` is off) and reads it once on focus,
+while the echo still lands over SSE, so a user who pressed Enter, switched
+tabs inside the second and came back after a minute got the duplicate again
+(review finding). The SDK carries it (`SessionPlacedPrompt`,
+`SessionPromptsList.placed`, `useSessionPrompts().placed`, recorded on every
+list read — a discarded read's pairings are still facts). `session-chat.tsx`
+announces every placed pairing through `registerOptimisticEcho` and folds it
+into `transcriptUserMessageIds` (`placed-pairings.ts`, latest id announced
+LAST so the standing forward alias is the id the echo carries), and the sync
+store matches an echo against every pairing ever registered for a bubble
+(`isRegisteredEcho`: forward alias or reverse origin) — one forward alias
+per bubble, announced latest-first, left the OLDEST id standing and the
+latest echo beside the bubble (review finding). `engine.ts` logs one
+`under-placement gate` line per decision with the instants it compared, so a
+live run shows which path ran (the `remint` mark is written on both). The
+session-open bundle does not serve `placed`: a fresh tab holds no bubble a
+pairing could retire; the direct list read is the one a tab with a bubble on
+screen polls.
+
+**Bounded, stated plainly.** A tab hidden LONGER than ten minutes keeps its
+bubble until reload. A sibling with NO inbox row is under-placed as before:
+an automation `continue_session` row (trigger, Slack, approval resume) posts
+with no `messageID`, `prompt_async` answers no id, and the row records none —
+an automation prompt steered into a live turn seconds before the user's Enter
+still sorts the user's prompt below it. Requiring both clocks costs one
+shape: an Enter whose POST reached the server after a LATER Enter's (a slow
+network) re-mints above it instead of keeping its client id below; ids stay
+ascending, nothing strands.
+
+**Enforcement.** `forwarded-placement.test.ts` (`openUsersAbove`);
+`inbox-order.test.ts` (`underPlacementKeepsSendOrder`: earlier sibling
+refuses, composer-before-steer keeps, lane ignored, foreign producer keeps,
+ties on wire id then command id, "a sibling later by its Enter stamp but
+EARLIER at the server is not sent after"); `queued-continue-inbox-delivery.test.ts`
+("a steer whose open sibling above was SENT EARLIER is re-minted above it",
+"a waiting composer prompt is still under-placed below a later steer");
+`forwarded-strand-reconcile.test.ts` ("a lifted ALPHA below a re-minted BRAVO
+is an older turn — closed completed, never re-queued");
+`r8-session-prompts.test.ts` (`placed`: re-minted row listed with every id,
+own-id row omitted, a nine-minute-old row still listed, beyond the window
+omitted, forwarded row omitted, automation row never listed, always
+present); `sessions.test.ts` (`placed` handed through, absent on an older
+server); `use-session-prompts.test.ts` (recorded per session, older server,
+discarded read still records, stable identity); `sync-store.test.ts` ("every
+registered pairing matches — the order the host announced them in does not",
+and the hydrate twin); `placed-pairings.test.ts` (earlier re-mints announced
+BEFORE the latest) and `session-chat-inbox-queue.test.ts` (the effect
+announces placed pairings; the projection claims them).
+
+### 2026-09-22 — A pool that hands out work must apply the same instance scope as the worker that runs it
+
+**Rule.** On a shared local database every path that SELECTS an existing
+session for a user — not only background workers — must refuse a session
+another local API instance provisioned. Use the one rule in
+`projects/instance-scope.ts` (`currentInstanceId`,
+`SANDBOX_INSTANCE_METADATA_KEY`): the sandbox's `instanceId` is ours, none, or
+''. When the sandbox row does not exist yet, the session row itself must carry
+the stamp. With `KORTIX_INSTANCE_ID` unset (deployed) the filter is absent.
+
+**Incident.** `claimDueLifecycleCommands` refuses inbox rows whose sandbox
+carries another instance's id, but `findWarmProjectSession` did not scope. Live
+on 2026-09-22: `POST /v1/projects/845053f4…/sessions/warm` on the
+`session-reply-queue` API (:17508) returned `reused: true` for warm session
+`116cd4fe…`, whose sandbox is tagged `first-chat`. Every prompt sent through
+:17508 into such a session becomes an inbox row :17508 refuses to claim; it
+stays `queued`, `attempts = 0`, until the owning API runs again. The same DB
+held 55 due-but-unclaimed `queued` rows on warm-created sandboxes of 10 other
+instances. The reported session `13f2197c…` (tagged `mobile`) was NOT a warm
+session: its sandbox has no `warm` key and its first inbox row shares the
+session's `created_at` (ordinary create with `pending_prompt`). It shows the
+wider hazard: prompts accepted by one instance for a session another instance
+provisioned park until that instance runs.
+
+**Fix.** `warmSessionInstanceScope()` in `projects/routes/warm-sessions.ts`
+(`NOT EXISTS` foreign sandbox, plus the session row's own `instanceId`), and
+the warm create stamps `...instanceStampMetadata()` on the session row. The
+deprecated `/warm/claim` uses the same lookup. On a shared DB each instance now
+keeps its own warm session per user per project.
+
+**Enforcement.** `apps/api/src/__tests__/integration-warm-sessions-instance-scope.test.ts`
+(foreign sandbox never returned; newer foreign skipped for older own; own,
+untagged and '' returned; no sandbox row: foreign-stamped refused, own and
+legacy returned; unset instance: unchanged, newest wins) and
+`projects/routes/warm-sessions.test.ts` (warm create stamps the session row;
+the lookup uses the shared helpers).
+
+---
+
+### 2026-09-22 — Streaming reasoning is streaming: Quick Queue ends it like text
+
+**When:** changing `live-turn-phase.ts`, `inbox-admission.ts`, or what a Quick
+Queue (`placement: transcript`) prompt does to a running response.
+
+**Incident (owner report, 2026-09-22, local; measured 5 runs).** Session
+6f10c589: 20-paragraph Roman Empire essay at 15:36:09Z, Enter on "STOP-LT" at
+15:36:15Z. The essay turn ended `completed` at 15:38:58Z. The new bubble sat
+under "Thinking" for 2 min 43 s. DeepSeek V4.1 Flash (the default managed
+model) writes the essay inside its REASONING part, and the chat shows that
+part live. The runtime page read `[step-start, reasoning(start, no end, 0
+chars)]`, `liveTurnPhaseFromPage` returned `'other'`, and admission steered.
+Second cause: the whole phase read was measured at 5.1 s under load against a
+2.5 s bound, which also fails open to a steer.
+
+**Rules.**
+
+1. An open reasoning part (`time.start`, no `time.end`) in a step with no tool
+   part is `'text'` — stoppable — exactly like an open text part. The owner's
+   contract: stop when the response is visibly streaming; steer while a tool
+   runs.
+2. A pending or running tool wins over any reasoning state: `'tool'`, steer.
+   A finished tool in the open step is `'other'`, as before.
+3. A finished reasoning part with nothing open after it is `'other'`. That gap
+   is milliseconds wide; a prompt inside it steers, and if text follows, the
+   steer is unread until the text ends. Accepted residual window.
+4. The trade-off, accepted: DeepSeek also reasons before every tool call, so
+   a prompt typed in that window now ends the turn instead of steering. It
+   loses reasoning, not work — no tool has started, and the daemon
+   (`quick-queue-interrupt.ts`) never aborts while a tool is `running`.
+5. The phase read still FAILS OPEN to steer. A false `'text'` during tool work
+   lets the daemon abort at the tool's end and discard the rest of the turn.
+   The bound is 6 s (`LIVE_TURN_PHASE_READ_TIMEOUT_MS`), not 2.5 s.
+6. No daemon change. The daemon aborts on `state === 'active' &&
+   !runningTool`, which is true during reasoning; it never reads part types.
+
+**Live proof (2026-09-22, real sandboxes, Firefox, DeepSeek V4.1 Flash asserted
+in the model picker).** Before: the essay ran to `completed`, 0 aborts, the
+runtime page read `[step-start, reasoning(start, no end, 0 chars)]` for 80 s
+(session c55df6b0). After, owner's exact shape three times (warm session,
+20-paragraph essay, Enter "STOP-LT" 6.1 s later — sessions de5c6e08, 3ec27d92,
+5e04d971): the essay ended `MessageAbortedError` / `QueueInterrupt`, its last
+DOM growth was 1.3-2.1 s after the Enter, the new prompt got exactly one
+answer, 0 redeliveries, and the essay never restarted. Tool work still steers:
+M1 (steer mid-`bash`, 0 aborts, the file ends BRAVO), S3 (0 aborts, `tick-30`
+reached), S6 (steer during step 3's tool, 0 extra aborts).
+
+**Open, measured, for the owner.** A response stopped while it streamed in
+REASONING leaves an aborted message with reasoning and NO answer text, so the
+cancelled request still reads as unanswered. DeepSeek then re-answers it in
+the next turn: asked "What is 2+2?" over a stopped essay it rewrote the whole
+essay (13457 chars) and appended `SUM-OK`. It ignores `quickQueueInterruptNote`
+— 3 of 3 runs with the shipped note and 3 of 3 with a stronger one naming the
+request cancelled (sessions 6966a82c, 3fc5431e, f99f6f05), so the stronger
+wording was not kept. A tightly-scoped next prompt ("reply with exactly one
+line") never triggers it (0 of 3). The stop itself is unaffected.
+
+**Enforcement.** `live-turn-phase.test.ts`: "an OPEN reasoning part with no
+tool is a streaming step", "reasoning in a step that has a RUNNING or PENDING
+tool is a tool phase", "a FINISHED reasoning part with nothing open after it
+is other", "the default bound outlasts the slowest read measured under load".
+Admission is unchanged: `inbox-admission.test.ts` still pins that only
+`'text'` ends a response and that a pre-dated row never does.
+
+
+---
+
+### 2026-09-22 — A Quick Queue group is a contiguous FIFO run, and it mints as one
+
+**When:** changing how the drain claims a session's inbox rows
+(`claimDueSessionInboxSiblings`, `claimDueLifecycleCommands`), how a Quick Queue
+group is formed (`quick-queue-group.ts`), or how a delivery picks its wire id.
+
+**Incident (measured 2026-09-22, local, DeepSeek V4.1 Flash, 2 of 2 runs).**
+Three Quick Queue prompts typed ~1 s apart over a streaming response ("T3 burst
+over text"). The interrupt worked; the burst did not. One prompt went
+UNANSWERED (markers `RF=[true,true,false]` and `[false,true,false]`), and
+another was answered out of send order ~3 s after its neighbours.
+
+**Two causes, both about what a group is allowed to be.**
+
+1. THE CLAIM LEFT A HOLE. After the interrupt each row goes back on its own
+   clock: the head on the admission gate's compounding backoff
+   (`requeueForAdmission`), each released sibling on a flat
+   `INBOX_ORDER_BACKOFF_MS` from whenever its drain reached it. Measured
+   `available_at`: 47.730 / 49.224 / 47.496 s. `claimDueLifecycleCommands`
+   takes only rows that are DUE, and the scheduler ticks every 1 s
+   (`worker.ts`), so the tick claimed rows 1 and 3 and left row 2 in the middle.
+   The sibling sweep that would have taken row 2 anyway ran only on a TARGETED
+   drain (`input.idempotencyKey`), never on the scheduler's.
+2. THE GROUPING RULE COULD NOT SEE THE HOLE. `quickQueueGroup` walks the batch
+   and groups every consecutive groupable row. A batch of two rows that are not
+   adjacent in the session's queue looks exactly like a batch of two rows that
+   are. It grouped 1 and 3 ACROSS 2.
+
+**A third defect the fix exposed, same shape.** With the sweep running
+everywhere, groups mixed a row that had WAITED with a row claimed FRESH. A row
+that waited is LIFTED above the transcript (`mintLivePlacement`); a fresh row
+keeps the id the client minted at Enter. Session 37eb6e96: group
+[Request 1 (lifted to `msg_0ca6ad25f0002V…`), Request 2 (kept
+`msg_0ca6a8a77003Qo…`)] — the tail BELOW its own head. Session aad499a9: the
+whole group of three, tail `msg_0ca6e79fd004Zs…` below both lifted siblings.
+The SDK orders placed messages by id, so the tab drew the group swapped.
+
+**Rules.**
+
+1. A DRAIN THAT HOLDS ONE OF A SESSION'S INBOX ROWS HOLDS ALL OF THEM. The
+   sibling sweep runs on EVERY claim path, not only the targeted one, and it
+   keeps ignoring `available_at` — a per-row backoff is a recovery clock, not a
+   schedule, and it is stale the moment one delivery for that session gets
+   through.
+2. A GROUP IS A CONTIGUOUS FIFO RUN of the session's transcript rows, never a
+   set of rows that happen to be in one claim. The sweep reports the earliest
+   row it could NOT take (`firstUnclaimed`, a lost CAS), and the run ends
+   before any row that sorts after it. A row that is not in hand BREAKS the
+   group; it is never skipped over.
+3. A GROUP MINTS AS ONE. If any row of a group waited, EVERY row of it
+   re-mints, and no row of a lifted group under-places. Otherwise the group's
+   own ids invert and the transcript shows the user's messages out of order.
+4. Do NOT flatten the requeue backoff to make rows come due together. That
+   treats the symptom, and the per-row clock is what recovers a lost kick.
+
+**Live proof (real Firefox, local stack, DeepSeek V4.1 Flash asserted in the
+model picker).** Before: sessions 37eb6e96 (group [1,2] then [3] alone, tail id
+below head) and aad499a9 (one group of 3, tail id below both siblings). After:
+see the run table on the branch — three T3 bursts, all three prompts delivered
+exactly once, ids strictly ascending in send order, 0 redeliveries, one
+`failed` essay turn plus one `completed` group turn per run.
+
+**Still open, unchanged by this (see the 2026-09-22 reasoning entry).** DeepSeek
+sometimes rewrites the cancelled essay in the turn that follows the stop and
+then answers only part of the group. The `do not resume` note is on the wire
+and ignored. The queue delivered every prompt in those runs; the misses are the
+model's.
+
+**Enforcement.** `quick-queue-group.test.ts`: "a gap INSIDE the batch ends the
+group at the gap", "a gap ahead of the whole batch leaves the head to answer
+for itself", "a row left behind AFTER the batch does not shorten the group",
+and the `groupRemintsTogether` block. `__tests__/queued-continue-inbox-delivery.test.ts`:
+"a claim with a HOLE sweeps the missing sibling in", "a sibling the sweep
+CANNOT take breaks the run", "a group whose HEAD was lifted lifts its tail
+too", "a group where NOTHING waited keeps every client id".
+
+### 2026-09-23 — A config reload must never run under a live turn, and a gateway URL belongs to the instance that booted the box
+
+**Incident (local, 2026-09-22, 2 of 11 steer-into-tool runs).** A 30-tick bash
+loop died at tick-5/tick-6 with `MessageAbortedError` about 4 s after a Quick
+Queue steer. It was not the Quick Queue interrupt. The daemon logged
+`[env] config-affecting env changed; applied to opencode … opencodeEnvNames:
+["KORTIX_LLM_BASE_URL"], how:"disposed"`, and OpenCode logged `disposing all
+instances`, then `error=Aborted` on the running message. Both sessions had also
+disposed once at start. Cause, in two layers:
+
+1. **The URL flapped between two API processes on one DB.** The first inbox
+   command of an ordinary session create is inserted with the session row,
+   before `session_sandboxes` exists. The lifecycle drain keeps a command whose
+   session has no sandbox row (`metadata === undefined` in `engine.ts`), so the
+   primary API (`:8008`, instance `primary`) could claim it and push ITS
+   `KORTIX_URL`-derived `KORTIX_LLM_BASE_URL` into a box the worktree API
+   booted. The steer then ran on the owning API, whose push flipped the value
+   back. All 3 sessions whose warm claim returned 409 (so they took the create
+   path) showed the flap; none of 8 warm-claimed sessions did — their sandbox
+   row exists before the first command.
+2. **Every flip disposed OpenCode, and a dispose aborts the running turn.** In
+   proxy mode that value is not even in OpenCode's config (the provider points
+   at the localhost LLM proxy, retargeted in place), so the dispose re-read
+   identical bytes. The code comment claimed a dispose "does not sever an
+   in-flight turn"; the OpenCode log proves it does.
+
+**Rules.**
+1. A daemon reload (dispose or respawn) never runs while a turn is in flight.
+   The env values land at once; OpenCode's re-read waits for the turn to end.
+   An unreadable turn state counts as busy, bounded at 2 min for a wedged box.
+2. A reload whose composed config is byte-identical to what OpenCode already
+   read is skipped. Compare bytes, not env-name deltas.
+3. A push to a sandbox another instance provisioned carries no gateway mode or
+   base URL: only the owner's `KORTIX_URL` is correct for that box.
+4. Diagnose a mid-turn `Aborted` with the daemon's `[env]` lines before
+   blaming the interrupt or the model.
+
+**Open (other owner).** `engine.ts` still executes a command whose session has
+no sandbox row on any instance, and an ordinary session create stamps no
+`instanceId` on `project_sessions.metadata`. Rule 3 neutralizes the URL flap
+only once every API on the DB runs it; the primary on `main` did not.
+
+**Enforcement.** `apps/api/src/projects/lib/sandbox-env-sync.instance-scope.test.ts`
+(foreign box push omits `llmGatewayEnabled`/`llmGatewayBaseUrl`; gateway fan-out
+skips foreign boxes). Daemon: `reload-unchanged-config.test.ts` (real lifecycle,
+fake binary counting `/global/dispose`), `env-route-defer-reload.test.ts`
+(busy → deferred, idle → immediate, unreadable = busy, pending flushed on the
+next idle push). Daemon changes reach only sandboxes running the rebuilt agent.
+
+### 2026-09-23 — A Remove that races the drain is decided by one row lock, and the runtime copy it could only empty is deleted at the turn end
+
+**Incident (local, 2026-09-22, 2 of 2 runs).** Quick Queue Remove during a
+tool call. The drain held the claimed steer `running` for about 2 s (admission,
+re-mint, readiness) and POSTed it although the DELETE was already in flight;
+the DELETE then waited for `forwarded`, found no step had read the prompt,
+and emptied it part by part — OpenCode refuses a whole-message delete while
+the loop runs (`assertNotBusy`, 409). Measured 2026-09-23 on a 20-tick loop:
+the part-less user message stays after the turn, and the loop's final answer
+is PARENTED on it (OpenCode's next step takes the newest user message as its
+parent, empty or not). The turn-end husk sweep never ran, because
+`reconcileForwardedTurnsAtEnd` returned early when no newer forwarded turn was
+open — the common case. After a reload the husk drew as an empty turn. Live,
+the tab showed the removed text twice: the DELETE's answer tombstoned the
+message before the echo arrived, `message.updated` was dropped, and
+`message.part.updated` invented the message as an ASSISTANT carrying the
+user's words.
+
+**Rules.**
+1. A claimed row whose POST is not committed is still the user's. The drain
+   writes `result.post_committed_at` in the statement right before the POST
+   (`commitInboxPost`), and the DELETE removes a `running` row only while that
+   mark is absent. Both are single statements on one row, so the row lock
+   orders them. A row claimed with a Quick Queue sibling takes the cancel path.
+2. A copy the runtime could only empty is recorded durably
+   (`session_sandboxes.metadata.pendingHuskMessageIds`) and deleted at EVERY
+   turn end, whatever the reconciliation found. Never rely on an in-process
+   retry for it: the API restarts more often than a long loop ends.
+3. A client tombstone covers every frame of a message: `message.updated`,
+   `message.part.updated`, `message.part.delta`. Hosts group turns with
+   `hidePartlessUserMessages: true`; a reply parented on a hidden husk joins
+   the turn before it.
+
+**Enforcement.** `apps/api/src/__tests__/integration-inbox-user-action-race.test.ts`
+("Remove against a claimed row", "an emptied runtime copy is deleted once the
+loop is idle"); `forwarded-strand-reconcile.test.ts` ("every turn end sweeps
+the copies a Remove emptied"); `r8-session-prompts.test.ts` ("removes a
+CLAIMED prompt whose POST has not been committed"); SDK
+`sync-store.test.ts` ("a cancelled message is never re-created by its part
+frames") and `core/turns/turns.test.ts` (`hidePartlessUserMessages`).
+
+### 2026-09-23 — Stop holds the queue on the server, in one statement, and a send is ordered against the Stop on the client's own clock
+
+**Incident (local, 2026-09-22/23).** Stop during a tool loop with three Queue
+List rows delivered the first row with no Resume (1 of 3 runs on 09-22, 1 of 5
+on 09-23). Two causes, each reproduced:
+
+1. `holdInboxPrompts(held)` was three UPDATEs (queued, forwarded, running).
+   The drain moves the head row `running` → `queued` every scheduler tick while
+   a turn is live; a row that moved between the first and the last statement
+   matched none of them and kept no hold. Reproduced deterministically with a
+   concurrent transaction holding the row lock.
+2. The browser POSTs queued sends one after another, so the second and third
+   rows reached the server after the hold (POSTs took 4–8 s under load), and
+   "any new send releases the hold" released the queue the user had just
+   paused. The head row went out the moment the Stop ended the turn.
+
+Also: `POST .../sessions/:sid/stop` with a steer on the wire let the turn-end
+strand repair re-queue the steer due now; the drain woke the stopped box 45 s
+to 3 min later. The steer was `delivered` (accepted, unread), which the hold
+does not mark.
+
+**Rules.**
+1. A state change that must cover rows in several states is ONE statement
+   with per-row `CASE` arms, never one statement per state.
+2. The server holds the queue before the abort reaches the runtime: the proxy
+   does it for every client abort of the root session, and `POST .../stop`
+   before it aborts the box. The client's own hold is not the authority.
+3. A held inbox row is never claimed, whatever its `available_at` says.
+4. Order a send against a Stop on ONE clock: the hold carries the client's
+   Stop instant (`stopped_at_ms`), every send its Enter instant
+   (`client_sent_at_ms`). A send typed before the Stop joins the hold.
+5. While a Stop is in force, every repair of a prompt that went out before it
+   comes back held (`stop-mark.ts`). A stopped session is woken only by a user
+   action.
+
+**Enforcement.** `integration-inbox-user-action-race.test.ts` ("Stop holds the
+queue in one statement", "a send made BEFORE Stop whose POST lands AFTER it",
+"a stopped session is never woken by a requeue");
+`session-lifecycle/__tests__/stop.test.ts` (hold before abort); SDK
+`sessions.test.ts` (`stopped_at_ms` on hold).
+
+### 2026-09-23 — The owner of a session's first prompt is the session row until the sandbox row exists
+
+**Incident (local, 2026-09-22).** Closes the "Open (other owner)" item above.
+The drain's instance scope kept a command whose session had no sandbox row, so
+any API instance on the shared DB could claim a session's first prompt in the
+0.9–4.2 s before the box row existed and push its own gateway URL into the box.
+
+**Rule.** Every session create stamps `project_sessions.metadata.instanceId`
+(`instanceStampMetadata()`, last in the metadata so a caller cannot override
+it), and the drain reads that stamp for any session without a sandbox row.
+
+**Enforcement.** `session-lifecycle/__tests__/instance-scope-release.test.ts`
+(the three "no sandbox row yet" cases); `lib/sessions.instance-stamp.test.ts`.
+
+### 2026-09-23 — A reload mid-step: the server names a part's type, and the daemon carries its in-flight text
+
+**Incident (local, 2026-09-23).** A page reload while the model reasoned made
+the step show its reasoning as reply prose, drop the in-flight answer line, and
+count one step fewer ("Completed 4 steps" instead of 5). Two causes:
+1. `message.part.delta` names no part type. The sync store's stub for an unseen
+   part was typed `text`, `hydrate` kept the stub because its text was longer,
+   and `upsertPart` rejected the ended reasoning snapshot because the stub (a
+   fragment) was not its prefix. The reasoning stayed a `text` part.
+2. OpenCode 1.18 persists an open text/reasoning part EMPTY until it ends. A
+   reload read the step's answer as `''` until the step finished.
+
+**Rules.**
+1. The server's copy of a part sets its type and timestamps. A client stub
+   never decides a part's type.
+2. A text-like part with `time.end` holds its complete text and always wins;
+   an open copy never reopens it.
+3. Merging streamed text with a snapshot: while deltas still arrive, the
+   result ends where the stream ends (no doubled span); a stub fragment joins
+   the snapshot at their overlap.
+4. The daemon keeps each open part's streamed text (`open-part-text.ts`) and
+   the proxied `GET /session/:id/message` extends open parts with it — only a
+   strict extension of persisted text, never an ended part. A resubscribed
+   `/event` stream clears it.
+5. Daemon changes reach only new sandboxes: rebuild `dist/kortix-agent`
+   AND `apps/cli` (the snapshot build refuses a stale CLI after an SDK edit),
+   restart the API (the image fingerprint is memoized), and assert the new
+   template on the session row.
+
+**Enforcement.** SDK `sync-store.reload-parts.test.ts`; web
+`turn/reload-mid-step.test.ts`; daemon `open-part-text.test.ts`.

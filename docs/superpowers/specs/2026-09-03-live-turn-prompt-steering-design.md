@@ -80,6 +80,18 @@ Live turn authority is not an admission refusal. The drain still reads live
 turn authority to decide whether the client wire ID needs re-minting above the
 current transcript tip.
 
+Re-minting places a prompt in SEND order, not in id order. A live-turn
+delivery is lifted to the box clock, so an open user message above this
+prompt's client id can belong to a prompt sent BEFORE it. The drain keeps the
+client id below the open siblings above it only when every one of them was
+sent AFTER this prompt (`underPlacementKeepsSendOrder`: `clientSentAtMs`, else
+`created_at`, then wire id and command id — the FIFO tuple without the lane —
+AND the sibling's `created_at` is not earlier, so a second client's skewed
+clock cannot pass a prompt off as later); otherwise it re-mints above them
+(2026-09-22: a later steer kept its client id under an earlier lifted steer
+and the tab rendered the two swapped). A sibling with no inbox row (an
+automation prompt) has no send instant and keeps the under-placement.
+
 ### 3. Runtime forwarding
 
 The drain posts the head row to OpenCode's `prompt_async` endpoint. On
@@ -109,9 +121,17 @@ then:
 
 - closes every forwarded row proven consumed by that step;
 - leaves unread forwarded rows open;
-- removes and requeues a stranded placement when the transcript proves it was
-  ordered below an answer;
-- never redelivers a row already answered.
+- removes and requeues a stranded placement when the transcript proves no step
+  read it: the answer above it (by id) was opened by a step that began before
+  the prompt was persisted (box `time.created` on both). Id order alone is not
+  proof when both stamps exist — a lifted steer sits above a later under-placed
+  sibling whose merged reply answered both (2026-09-22); a missing stamp keeps
+  the id-order verdict (the pre-2026-09-22 rule). A candidate the 12-message
+  tip read does not hold is fetched by id for its stamp; one the runtime cannot
+  serve is left to the reaper, never judged by id order alone;
+- never redelivers a row already answered, including one answered inside a
+  merged reply parented on a later sibling, whether or not a newer turn is
+  already running.
 
 ### 5. Completion and recovery
 

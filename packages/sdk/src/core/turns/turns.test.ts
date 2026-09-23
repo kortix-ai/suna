@@ -193,6 +193,51 @@ describe('groupMessagesIntoTurns', () => {
     ]);
   });
 
+  describe('hidePartlessUserMessages — a Remove the runtime could only empty', () => {
+    // A Remove during a tool loop empties the steer (OpenCode refuses the
+    // whole-message delete while the loop runs) and the loop's next step is
+    // PARENTED on the part-less husk (measured 2026-09-23). Drawn, the husk is
+    // an empty turn with only a timestamp, and the loop's own answer sits
+    // under it. The server deletes the husk when the loop goes idle; until
+    // then — and after a reload, when the tab's own tombstone is gone — a
+    // host that opts in never draws it.
+    const text = (id: string) => ({ id, type: 'text', text: 'run the loop' }) as MessageWithPartsLike['parts'][number];
+
+    test('a part-less user message makes no turn, and a reply parented on it joins the turn before', () => {
+      const turns = groupMessagesIntoTurns(
+        [
+          userMsg('u1', [text('p1')]),
+          assistantMsg('a1', 'u1'),
+          userMsg('husk'),
+          assistantMsg('a2', 'husk'),
+        ],
+        { hidePartlessUserMessages: true },
+      );
+      expect(turns.map((t) => t.userMessage.info.id)).toEqual(['u1']);
+      expect(turns[0].assistantMessages.map((m) => m.info.id)).toEqual(['a1', 'a2']);
+    });
+
+    test('a later prompt still starts its own turn after a hidden husk', () => {
+      const turns = groupMessagesIntoTurns(
+        [
+          userMsg('u1', [text('p1')]),
+          assistantMsg('a1', 'u1'),
+          userMsg('husk'),
+          userMsg('u3', [text('p3')]),
+          assistantMsg('a3', 'u3'),
+        ],
+        { hidePartlessUserMessages: true },
+      );
+      expect(turns.map((t) => t.userMessage.info.id)).toEqual(['u1', 'u3']);
+      expect(turns[1].assistantMessages.map((m) => m.info.id)).toEqual(['a3']);
+    });
+
+    test('without the option, grouping is unchanged', () => {
+      const turns = groupMessagesIntoTurns([userMsg('u1'), assistantMsg('a1', 'u1')]);
+      expect(turns.map((t) => t.userMessage.info.id)).toEqual(['u1']);
+    });
+  });
+
   test('creates a synthetic turn when no user messages exist at all', () => {
     const turns = groupMessagesIntoTurns([assistantMsg('a1')]);
     expect(turns).toHaveLength(1);

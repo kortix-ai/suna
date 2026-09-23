@@ -81,6 +81,95 @@ function isTextLikePart(part: Part): part is TextLikePart {
 	return part.type === "text" || part.type === "reasoning";
 }
 
+/**
+ * The runtime stamped `time.end` on this part: its text is COMPLETE.
+ *
+ * OpenCode persists an open text or reasoning part empty and writes its whole
+ * text once, when the part ends. So an ended snapshot is the one copy of the
+ * part that no stream, stub or overlay can improve on — it always wins, and an
+ * open snapshot never reopens it.
+ */
+function textLikeEnded(part: TextLikePart): boolean {
+	const end = (part as { time?: { end?: number } }).time?.end;
+	return typeof end === "number" && end > 0;
+}
+
+/**
+ * The fewest characters a snapshot's tail and a streamed fragment's head must
+ * share before they are joined at that overlap rather than side by side. A
+ * one-character match (a space, a full stop) is coincidence, not alignment.
+ */
+const MIN_STREAM_OVERLAP = 8;
+
+/**
+ * One open part's text, from a snapshot (`snapshot`) and this tab's stream
+ * (`streamed`).
+ *
+ * `live` — this tab is applying deltas to the part right now. The deltas
+ * already on their way here continue from `streamed`, never from the snapshot,
+ * so the result must END where `streamed` ends or they land twice.
+ *
+ * `fragment` — the stream began MID-part: the part was first seen as a delta
+ * (a page reload reconnects the stream in the middle of a part), so `streamed`
+ * lacks the part's beginning.
+ *
+ *  - The snapshot extends the stream: live keeps the stream (the in-flight
+ *    deltas fill the rest); otherwise the snapshot is newer and wins.
+ *  - The stream extends the snapshot: the stream.
+ *  - A live fragment is aligned inside the snapshot, or joined onto its tail at
+ *    their overlap. With neither, the span between them never reached this
+ *    tab; the two are kept in order and the part's ended snapshot repairs it.
+ *  - Anything else (a stream that lost a frame): the longer text.
+ */
+function mergeOpenText(
+	streamed: string,
+	snapshot: string,
+	live: boolean,
+	fragment: boolean,
+): string {
+	if (snapshot.startsWith(streamed)) return live ? streamed : snapshot;
+	if (streamed.startsWith(snapshot)) return streamed;
+	if (live && fragment) {
+		const inside = snapshot.lastIndexOf(streamed);
+		if (inside >= 0) return snapshot.slice(0, inside + streamed.length);
+		const minOverlap = Math.min(MIN_STREAM_OVERLAP, streamed.length);
+		for (let k = Math.min(snapshot.length, streamed.length); k >= minOverlap; k--) {
+			if (snapshot.endsWith(streamed.slice(0, k))) return snapshot + streamed.slice(k);
+		}
+		return snapshot + streamed;
+	}
+	return snapshot.length >= streamed.length ? snapshot : streamed;
+}
+
+/**
+ * The store's copy of a text-like part (`existing`) meets a server snapshot of
+ * the same part (`incoming`).
+ *
+ * The SERVER names the part: type, timestamps and every other field come from
+ * `incoming`. That is what keeps a reload honest — a `message.part.delta` frame
+ * carries no part type, so the stub the delta handler creates for an unseen
+ * part is typed `text` even when the part is the model's reasoning; left in
+ * place, reasoning rendered as reply prose and dropped out of the step count.
+ * Only the TEXT is reconciled, by `mergeOpenText`.
+ */
+function reconcileTextLike(
+	existing: TextLikePart,
+	incoming: TextLikePart,
+	stream: { live: boolean; fragment: boolean; messageDone: boolean },
+): TextLikePart {
+	if (textLikeEnded(incoming)) return incoming;
+	if (textLikeEnded(existing)) return existing;
+	// The message finished but this part carries no end stamp (an aborted
+	// step, an older runtime): no delta is still in flight, so neither copy is
+	// a moving target and the longer text is the better record.
+	const text = stream.messageDone
+		? incoming.text.length >= existing.text.length
+			? incoming.text
+			: existing.text
+		: mergeOpenText(existing.text, incoming.text, stream.live, stream.fragment);
+	return text === incoming.text ? incoming : ({ ...incoming, text } as TextLikePart);
+}
+
 // ============================================================================
 // Locating things in a list that is NOT id-sorted.
 //
@@ -566,6 +655,13 @@ const controlPlaneOwnedIds = new Map<string, Set<string>>();
 // transcript read would resurrect it as an empty bubble. A tombstoned id is
 // dropped from incoming reads and events. Released with the session.
 const cancelledMessageIds = new Map<string, Set<string>>();
+/** Is this message id tombstoned? A frame that names no session is checked
+ *  against every session's tombstones — ids are globally unique. */
+function isCancelledMessage(messageID: string, sessionID: string | undefined): boolean {
+	if (sessionID) return cancelledMessageIds.get(sessionID)?.has(messageID) ?? false;
+	for (const ids of cancelledMessageIds.values()) if (ids.has(messageID)) return true;
+	return false;
+}
 // Message ids that came from the DISK CACHE and have not yet been seen in a
 // runtime read. The cache is a first-paint accelerator; a message it holds
 // that the runtime's own tail — covering that message's position — does not,
@@ -586,6 +682,26 @@ function recordOptimisticEcho(sessionID: string, optimisticID: string, echoID: s
 	let rev = optimisticOrigins.get(sessionID);
 	if (!rev) optimisticOrigins.set(sessionID, (rev = new Map()));
 	rev.set(echoID, origin);
+}
+
+/**
+ * Was `echoID` ever registered as the echo of the bubble `optimisticID`?
+ *
+ * The forward map keeps ONE alias per bubble — the LAST registration — and
+ * that is the identity a host keys on. It is not the whole pairing. A row
+ * re-minted more than once (a re-POST after `not-landed`, a redelivery whose
+ * first mint never persisted) is announced with EVERY id it went out under,
+ * and the server lists them latest first: announced in that order, the
+ * standing forward alias was the OLDEST id, the latest echo matched nothing,
+ * and — the bubble being inbox-backed, so no ordinal guess — it landed
+ * BESIDE the bubble, the very duplicate the pairing exists to retire
+ * (review finding, 2026-09-22). The reverse map is written on every
+ * registration and never overwritten by a later one, so it still names the
+ * bubble for each id ever announced. Both are read.
+ */
+function isRegisteredEcho(sessionID: string, optimisticID: string, echoID: string): boolean {
+	if (optimisticEchoes.get(sessionID)?.get(optimisticID) === echoID) return true;
+	return optimisticOrigins.get(sessionID)?.get(echoID) === optimisticID;
 }
 
 /** Forget every optimistic mark for one id — confirmed, superseded, or removed. */
@@ -645,6 +761,7 @@ function forgetSessionIds(sessionID: string): void {
 	// deltaActiveParts for the lifetime of the tab — the exact leak class
 	// this function exists to prevent for optimisticIds above.
 	deltaActiveParts.delete(sessionID);
+	deltaStubParts.delete(sessionID);
 	// Same leak class, on bridgedPartIds: it used to be released only by
 	// reset() (which application code never calls), not by clearSession, so
 	// a message id stayed "bridged" forever once bridged once. If a LATER
@@ -726,6 +843,15 @@ const bridgedPartIds = new Map<string, Set<string>>();
 // delta-accumulated text. Keying by session and releasing only the ending
 // session's bucket fixes it.
 const deltaActiveParts = new Map<string, Set<string>>();
+
+// Part IDs this tab first met as a `message.part.delta` for a part it had never
+// seen — the stub the delta handler creates. Such a part's text is a FRAGMENT:
+// the stream (re)connected in the middle of it, typically after a page reload,
+// so it lacks the part's beginning and its `text` type is a guess (a delta frame
+// names no part type). The next server snapshot of the part supplies both, and
+// `reconcileTextLike` joins the fragment onto it instead of choosing one.
+// Keyed and released exactly like `deltaActiveParts`.
+const deltaStubParts = new Map<string, Set<string>>();
 
 // ---------------------------------------------------------------------------
 // Part-delta idempotency (T14).
@@ -1245,13 +1371,35 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				// Otherwise keep the existing part as-is — returning `s` avoids
 				// creating a new state reference which would cause infinite
 				// re-render loops in consuming components.
-				if (
+				//
+				// Two snapshots are exempt, both because the SERVER knows better:
+				//  - an ENDED part (`time.end`) is the complete text and replaces
+				//    whatever the stream accumulated — including a delta stub that
+				//    began mid-part after a reload, which is never its prefix;
+				//  - a snapshot naming a different type re-types a delta stub
+				//    (typed `text` because a delta frame names no type) while the
+				//    streamed text stays, so reasoning never renders as a reply.
+				if (tracksStreamingText && textLikeEnded(part as TextLikePart)) {
+					// Falls through to the replace below. The part is whole now.
+					untrackId(deltaStubParts, partSessionID, part.id);
+				} else if (tracksStreamingText && textLikeEnded(prev as TextLikePart)) {
+					// An open snapshot never reopens an ended part.
+					if (!bridgeCleared) return s;
+					const next = [...list];
+					next[result.index] = prev;
+					return { parts: { ...s.parts, [messageID]: next } };
+				} else if (
 					tracksStreamingText &&
 					prevText !== null &&
 					incomingText !== null &&
 					prevText.length > 0
 				) {
 					const isPrefixGrowth = incomingText.startsWith(prevText);
+					if (!isPrefixGrowth && prev.type !== part.type) {
+						const next = [...list];
+						next[result.index] = { ...part, text: prevText } as Part;
+						return { parts: { ...s.parts, [messageID]: next } };
+					}
 					if (!isPrefixGrowth) {
 						// Incoming text is not a prefix extension — reject the update
 						// entirely. Returning `s` preserves referential equality and
@@ -1340,6 +1488,12 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				}
 				appliedIds.add(eventID);
 			}
+			// An ENDED text/reasoning part holds its complete text. A delta that
+			// arrives after it is one the ended snapshot already contains — a tab
+			// that lags the runtime still has them in flight when the part ends —
+			// so appending it would print that span twice.
+			const target = list[result.index];
+			if (isTextLikePart(target) && textLikeEnded(target)) return s;
 			const next = [...list];
 			const part = { ...next[result.index] };
 			const existing = (part as Record<string, unknown>)[field] as
@@ -2023,9 +2177,12 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// their row's identity; position alone cannot identify their echo.
 			const claimed = new Set<string>();
 			for (const m of unmatchedOptimisticUsers) {
-				// Alias first: the inbox row announced this message's echo id.
-				const alias = optimisticEchoes.get(sessionID)?.get(m.id);
-				if (alias && unclaimedEchoes.has(alias) && !claimed.has(alias)) {
+				// Alias first: the inbox row announced this message's echo id —
+				// any id it was ever announced under (`isRegisteredEcho`).
+				const alias = [...unclaimedEchoes].find(
+					(id) => !claimed.has(id) && isRegisteredEcho(sessionID, m.id, id),
+				);
+				if (alias) {
 					claimed.add(alias);
 					supersededOptimistic.push(m.id);
 					supersededBy.set(m.id, alias);
@@ -2176,26 +2333,27 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					newParts[mid] = inParts;
 					continue;
 				}
-				// Reconcile by key: incoming parts are generally authoritative,
-				// but for text/reasoning parts during active streaming, SSE-accumulated
-				// parts may have MORE content than the server snapshot (the
-				// server may return empty/stale text for in-progress parts).
-				// In that case, prefer the existing (SSE) version.
+				// Reconcile by key: incoming parts are authoritative. For an OPEN
+				// text/reasoning part the server's copy is persisted empty (or, from
+				// a runtime that overlays streamed text, a snapshot that overlaps
+				// this tab's deltas), so its TEXT is merged with the SSE-accumulated
+				// copy — see `reconcileTextLike`. The part's type and timestamps
+				// always come from the server.
 				const exById = new Map(exParts.map((p) => [p.id, p]));
 				const inIds = new Set(inParts.map((p) => p.id));
 				const extras = exParts.filter((p) => !inIds.has(p.id));
 				const reconciled = inParts.map((inP) => {
 					const exP = exById.get(inP.id);
 					if (!exP) return inP;
-					// For text/reasoning parts: prefer whichever has more text content.
-					// This prevents hydrate from clobbering SSE-streamed content
-					// with an empty/stale server snapshot during active streaming.
-					if (
-						isTextLikePart(inP) &&
-						isTextLikePart(exP) &&
-						exP.text.length > inP.text.length
-					) {
-						return exP;
+					if (isTextLikePart(inP) && isTextLikePart(exP)) {
+						const merged = reconcileTextLike(exP, inP, {
+							live: hasTrackedId(deltaActiveParts, sessionID, exP.id),
+							fragment: hasTrackedId(deltaStubParts, sessionID, exP.id),
+							messageDone: typeof (m.info.time as { completed?: number } | undefined)?.completed === "number",
+						});
+						// Merged onto the server's copy, the part has its beginning now.
+						untrackId(deltaStubParts, sessionID, exP.id);
+						return merged;
 					}
 					return inP;
 				});
@@ -2258,6 +2416,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		optimisticOrigins.clear();
 		bridgedPartIds.clear();
 		deltaActiveParts.clear();
+		deltaStubParts.clear();
 		deltaEventTails.clear();
 		stubAssistantIds.clear();
 		// The data these holds protected is gone, so the holds are too —
@@ -2389,8 +2548,8 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 						// via `message.part.updated`).
 						// A pre-registered alias (`registerOptimisticEcho`) is an identity
 						// match: the row named this echo id before it arrived.
-						const byAlias = optimisticUsers.find(
-							(m) => optimisticEchoes.get(info.sessionID)?.get(m.id) === info.id,
+						const byAlias = optimisticUsers.find((m) =>
+							isRegisteredEcho(info.sessionID, m.id, info.id),
 						);
 						// The ordinal guess is only available when there is exactly ONE
 						// eligible send without an inbox row. With a burst in flight, a
@@ -2493,6 +2652,14 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			case "message.part.updated": {
 				const part = (event.properties as { part: Part }).part;
 				if (!part?.messageID) return;
+				// A cancelled message stays dead on its PART frames too. The echo
+				// of a removed prompt can reach this tab after the DELETE's answer
+				// tombstoned it; its `message.updated` is dropped above, and this
+				// frame would otherwise invent the message — as an ASSISTANT,
+				// carrying the user's own words.
+				const frameSessionID =
+					part.sessionID ?? (event.properties as { sessionID?: string })?.sessionID;
+				if (isCancelledMessage(part.messageID, frameSessionID)) return;
 				const eventSessionID =
 					(event.properties as { sessionID?: string })?.sessionID;
 				let resolvedSessionID: string | undefined =
@@ -2588,6 +2755,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					delta: string;
 				};
 				if (!props.messageID || !props.partID || !props.field) return;
+				if (isCancelledMessage(props.messageID, props.sessionID)) return;
 
 				// Ensure the part exists before applying the delta.
 				// message.part.delta can arrive before message.part.updated
@@ -2629,6 +2797,9 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 						type: "text",
 						[props.field]: "",
 					} as unknown as Part);
+					// A fragment of a part whose beginning and type this tab has
+					// not seen — see `deltaStubParts`.
+					if (props.sessionID) trackId(deltaStubParts, props.sessionID, props.partID);
 				}
 
 				// `event.id` is a top-level field of every wire event (see
@@ -2678,6 +2849,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// accepted normally. Never the whole map: another session may
 			// still be streaming (see comment above deltaActiveParts).
 			if (sessionID) deltaActiveParts.delete(sessionID);
+			if (sessionID) deltaStubParts.delete(sessionID);
 			// Same reasoning for the delta event-id tails (T14): a new
 			// turn's deltas use brand-new part ids anyway, so nothing realistic
 			// is lost by dropping this session's tracking here.
@@ -2709,6 +2881,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// Clear only this session's delta tracking — see the idle handler
 			// above and the comment above deltaActiveParts.
 			deltaActiveParts.delete(sid);
+			deltaStubParts.delete(sid);
 			deltaEventTails.delete(sid);
 
 			// Attach the error to the TURN THAT FAILED, which is the turn the

@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { LIVE_TURN_PHASE_PAGE_LIMIT, liveTurnPhaseFromPage, readLiveTurnPhase } from './live-turn-phase';
+import {
+  LIVE_TURN_PHASE_PAGE_LIMIT,
+  LIVE_TURN_PHASE_READ_TIMEOUT_MS,
+  liveTurnPhaseFromPage,
+  readLiveTurnPhase,
+} from './live-turn-phase';
 
 const TURN = 'msg_A';
 
@@ -89,7 +94,7 @@ describe('liveTurnPhaseFromPage', () => {
     ).toBe('other');
   });
 
-  test('a completed message, no assistant yet, and reasoning only are all "other"', () => {
+  test('a completed message and no assistant yet are "other"', () => {
     expect(
       liveTurnPhaseFromPage(
         [user(TURN), assistant('a1', TURN, [{ type: 'text', text: 'All done.' }], 99)],
@@ -97,12 +102,85 @@ describe('liveTurnPhaseFromPage', () => {
       ),
     ).toBe('other');
     expect(liveTurnPhaseFromPage([user(TURN)], TURN)).toBe('other');
+  });
+
+  test('an OPEN reasoning part with no tool is a streaming step — stoppable like text', () => {
+    // Owner report 2026-09-22 (session 6f10c589): DeepSeek V4.1 Flash wrote a
+    // whole 20-paragraph essay inside its REASONING part, which the chat
+    // unfolds live. The page read `[step-start, reasoning]`, this returned
+    // 'other', the Quick Queue prompt steered, and the essay streamed for
+    // 2 min 43 s with the new prompt unread under "Thinking".
+    // Shape as OpenCode persists it: opened at `reasoning-start` with empty
+    // text and `time.start`, written with `time.end` only at `reasoning-end`.
     expect(
       liveTurnPhaseFromPage(
-        [user(TURN), assistant('a1', TURN, [{ type: 'reasoning', text: 'thinking…', time: { start: 1 } }])],
+        [user(TURN), assistant('a1', TURN, [{ type: 'step-start' }, { type: 'reasoning', text: '', time: { start: 5 } }])],
+        TURN,
+      ),
+    ).toBe('text');
+    // A runtime that persists as it streams shows the characters; both count.
+    expect(
+      liveTurnPhaseFromPage(
+        [user(TURN), assistant('a1', TURN, [{ type: 'reasoning', text: 'P1: The Roman Empire…' }])],
+        TURN,
+      ),
+    ).toBe('text');
+  });
+
+  test('reasoning in a step that has a RUNNING or PENDING tool is a tool phase — it steers', () => {
+    for (const status of ['running', 'pending']) {
+      expect(
+        liveTurnPhaseFromPage(
+          [
+            user(TURN),
+            assistant('a1', TURN, [{ type: 'reasoning', text: '', time: { start: 5 } }, tool(status)]),
+          ],
+          TURN,
+        ),
+      ).toBe('tool');
+    }
+  });
+
+  test('reasoning in a step with a FINISHED tool is "other" — the step boundary is arriving', () => {
+    expect(
+      liveTurnPhaseFromPage(
+        [user(TURN), assistant('a1', TURN, [{ type: 'reasoning', text: '', time: { start: 5 } }, tool('completed')])],
         TURN,
       ),
     ).toBe('other');
+  });
+
+  test('a FINISHED reasoning part with nothing open after it is "other" — the model is between parts', () => {
+    // Reasoning ended, and neither a text part nor a tool part is open yet.
+    // Nothing is streaming, so nothing is ended: the prompt steers. The next
+    // part opens within milliseconds. A tool reads the steer at its end; if
+    // it is text, the steer is unread until that text ends — the one residual
+    // window, accepted because it is milliseconds wide (see the file header).
+    expect(
+      liveTurnPhaseFromPage(
+        [user(TURN), assistant('a1', TURN, [{ type: 'step-start' }, { type: 'reasoning', text: 'plan', time: { start: 5, end: 9 } }])],
+        TURN,
+      ),
+    ).toBe('other');
+    // …and an empty reasoning part with no start instant is evidence of nothing.
+    expect(
+      liveTurnPhaseFromPage([user(TURN), assistant('a1', TURN, [{ type: 'reasoning', text: '' }])], TURN),
+    ).toBe('other');
+  });
+
+  test('finished reasoning followed by an OPEN text part is a text phase', () => {
+    expect(
+      liveTurnPhaseFromPage(
+        [
+          user(TURN),
+          assistant('a1', TURN, [
+            { type: 'reasoning', text: 'plan', time: { start: 5, end: 9 } },
+            { type: 'text', text: '', time: { start: 10 } },
+          ]),
+        ],
+        TURN,
+      ),
+    ).toBe('text');
   });
 
   test('the NEWEST step decides — an earlier finished step of the same turn does not', () => {
@@ -242,8 +320,16 @@ describe('readLiveTurnPhase', () => {
       }),
     ).toBe('other');
   });
+  test('the default bound outlasts the slowest read measured under load', () => {
+    // 2026-09-22: the whole read took 5.1 s on a loaded local stack (typical
+    // ~155 ms). At the old 2.5 s bound it timed out and FAILED OPEN to steer,
+    // so a streaming essay kept running with the prompt unread. A late right
+    // answer beats an on-time wrong one here; fail-open itself stays.
+    expect(LIVE_TURN_PHASE_READ_TIMEOUT_MS).toBeGreaterThanOrEqual(6_000);
+  });
+
   test('the bound covers the WHOLE read — a hung endpoint resolution, fetch, or body steers on time', async () => {
-    // The 2.5s bound used to sit on the GET alone. Endpoint resolution (two
+    // The bound used to sit on the GET alone. Endpoint resolution (two
     // database reads plus proxy signing) ran unbounded while the row was
     // claimed, on the Enter key's critical path, and it repeats on every
     // admission attempt for the length of a streamed answer.

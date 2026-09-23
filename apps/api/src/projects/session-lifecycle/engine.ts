@@ -4,6 +4,7 @@ import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { PromptDeliveryRefused, throwIfPromptRefused } from './prompt-delivery-refusal';
 import {
   assertInboxDeliveryActive,
+  commitInboxPost,
   InboxDeliveryPaused,
   releasePausedInboxDelivery,
 } from './inbox-delivery-hold';
@@ -44,7 +45,11 @@ import {
   sandboxBelongsToThisInstance,
   sandboxInstanceId,
 } from '../instance-scope';
-import { loadSandboxMetadataForSessions, releaseCommandToOwningInstance } from './instance-release';
+import {
+  loadSandboxMetadataForSessions,
+  loadSessionMetadataForSessions,
+  releaseCommandToOwningInstance,
+} from './instance-release';
 import { db } from '../../shared/db';
 import { markTriggerRuntimeDelivered } from '../trigger-execution-store';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
@@ -91,10 +96,12 @@ import {
   admitInboxPrompt,
   sessionHoldsLiveTurn,
 } from './inbox-admission';
-import { claimDueSessionInboxSiblings } from './inbox-rows';
-import { compareInboxSendOrder, inboxFollowsRow } from './inbox-order';
+import { claimDueSessionInboxSiblings, readInboxRowsByWireIds } from './inbox-rows';
+import { compareInboxSendOrder, inboxFollowsRow, inboxSendOrderMs, underPlacementKeepsSendOrder } from './inbox-order';
 import {
   groupEndedResponse,
+  groupRemintsTogether,
+  inboxRowWaited,
   quickQueueGroup,
   quickQueueGroupHint,
   quickQueueInterruptNote,
@@ -104,7 +111,8 @@ import {
   boxClockSkewMs,
   mintLivePlacement,
   noteBoxClockSample,
-  openUserAbove,
+  openUsersAbove,
+  promptAnsweredOnTip,
   parsePlacementTip,
   strandedPlacement,
 } from './forwarded-placement';
@@ -445,7 +453,13 @@ export async function continueSession(
   // rely on for dedupe.
   commandId?: string,
   tl?: ProvisionTimeline,
-  beforeSend?: () => Promise<void>,
+  /**
+   * Re-read before the delivery touches the box (`'open'`, which may wake it)
+   * and before each POST (`'post'`). A throw stops the delivery. The queued
+   * drain makes `'post'` the row's commit (`commitInboxPost`): the instant a
+   * Remove can no longer take the prompt back without the runtime.
+   */
+  beforeSend?: (stage: 'open' | 'post') => Promise<void>,
 ): Promise<SessionDeliveryOutcome> {
   const { sessionId, text } = command;
   const idempotencyKey = commandId ?? randomUUID();
@@ -536,7 +550,7 @@ export async function continueSession(
   };
   const sendPrompt = async (externalId: string, opencodeSessionId: string): Promise<SendOutcome> => {
     await repairLegacyBeforeDelivery(externalId, opencodeSessionId);
-    await beforeSend?.();
+    await beforeSend?.('post');
     const delivery = await postPrompt(
       externalId,
       opencodeSessionId,
@@ -630,7 +644,7 @@ export async function continueSession(
 
   const loaded = { row: project, userId };
   const openOnce = async () => {
-    await beforeSend?.();
+    await beforeSend?.('open');
     const [fresh] = await db
       .select({
         status: projectSessions.status,
@@ -830,16 +844,33 @@ export async function drainSessionLifecycleQueue(
     idempotencyKey: input.idempotencyKey,
     availableBefore: input.availableBefore,
   });
+  // A DRAIN THAT HOLDS ONE OF A SESSION'S INBOX ROWS HOLDS ALL OF THEM.
+  //
   // A targeted claim (one POST's kick) takes exactly its own row — but the
   // rows already queued for the SAME session are this delivery's batch, and
   // leaving them to their own kicks is what delivered a burst of sends one
   // ~1.5 s round-trip at a time (and let a step boundary split the answers).
-  // Sweep them in so the lane batches them below.
-  if (input.idempotencyKey && rows.length > 0) {
+  //
+  // The SCHEDULER claim (`worker.ts`, every 1 s) takes only rows that are DUE,
+  // and after an interrupt a burst's rows sit on three different clocks: the
+  // head on the admission gate's compounding backoff, each released sibling on
+  // a flat 300 ms from whenever its own drain reached it. Measured 2026-09-22,
+  // 2 of 2 runs: `available_at` 47.730 / 49.224 / 47.496 s, the tick claimed
+  // rows 1 and 3, and the grouping rule merged them ACROSS row 2 — which then
+  // went out ~3 s later, out of send order, with one prompt never answered. So
+  // the sweep runs on EVERY claim path, not only the targeted one, and the
+  // batch is the session's whole queued inbox rather than the due part of it.
+  const sweepGaps = new Map<string, SessionLifecycleCommandRow | null>();
+  if (rows.length > 0) {
     const sessions = [...new Set(rows.map((r) => r.sessionId).filter((v): v is string => !!v))];
     for (const sessionId of sessions) {
-      const siblings = await claimDueSessionInboxSiblings({ workerId, sessionId });
-      rows.push(...siblings.filter((sib) => !rows.some((r) => r.commandId === sib.commandId)));
+      const sweep = await claimDueSessionInboxSiblings({ workerId, sessionId });
+      rows.push(
+        ...sweep.claimed.filter((sib) => !rows.some((r) => r.commandId === sib.commandId)),
+      );
+      // A row another worker won the CAS on is still a HOLE in this batch, and
+      // a group may not span it — see `quickQueueGroup`'s `firstUnclaimed`.
+      sweepGaps.set(sessionId, sweep.firstUnclaimed);
     }
   }
   const out = { claimed: rows.length, succeeded: 0, failed: 0, queued: 0, released: 0 };
@@ -856,6 +887,16 @@ export async function drainSessionLifecycleQueue(
     const sessionIds = [...new Set(rows.map((r) => r.sessionId).filter((v): v is string => !!v))];
     const metadataBySession =
       sessionIds.length > 0 ? await loadSandboxMetadataForSessions(sessionIds) : new Map();
+    // NO SANDBOX ROW YET: the session row is the owner. A first prompt is
+    // inserted with its session, seconds before the box row exists, and the
+    // instance that claimed it in that window pushed ITS gateway URL into the
+    // box (2026-09-22: the value flapped and the daemon disposed OpenCode
+    // mid-turn). An unstamped session row still belongs to everyone.
+    const boxless = sessionIds.filter((id) => !metadataBySession.has(id));
+    if (boxless.length > 0) {
+      const sessionMetadata = await loadSessionMetadataForSessions(boxless);
+      for (const [id, metadata] of sessionMetadata) metadataBySession.set(id, metadata);
+    }
     const availableAt = new Date(Date.now() + INSTANCE_RELEASE_DELAY_MS);
     for (let i = rows.length - 1; i >= 0; i -= 1) {
       const row = rows[i];
@@ -1006,7 +1047,11 @@ export async function drainSessionLifecycleQueue(
         while (j < lane.length && isInboxRow(lane[j])) j += 1;
         const batch = lane.slice(i, j).sort(compareInboxSendOrder);
         i = j;
-        const group = quickQueueGroup(batch);
+        // A GROUP IS A CONTIGUOUS FIFO RUN. The sweep above says where this
+        // drain's hold on the session's inbox stops; the run stops there too.
+        const group = quickQueueGroup(batch, {
+          firstUnclaimed: row.sessionId ? (sweepGaps.get(row.sessionId) ?? null) : null,
+        });
         // Claims mark every sibling `running`. Release everything outside the
         // group before the head reaches admission — `hasInFlightPrompt` reads
         // a claimed row as another delivery already on the wire. The group's
@@ -1018,9 +1063,14 @@ export async function drainSessionLifecycleQueue(
           continue;
         }
         const groupIds = group.map((entry) => entry.commandId);
+        // A GROUP MINTS AS ONE. One row of it that waited is lifted above the
+        // transcript; a fresh row beside it would keep a client id that sorts
+        // BELOW that lift, and the tab would draw the group out of order.
+        const remintWithGroup = groupRemintsTogether(group);
         for (let n = 0; n < group.length; n += 1) {
           const last = n === group.length - 1;
           const outcome = await runRow(group[n], {
+            remintWithGroup,
             // Only the HEAD is gated. The rest of the group is this delivery's
             // own, already-claimed tail: re-running admission for it would read
             // its own siblings as in-flight, and the turn state it decided on
@@ -1263,8 +1313,10 @@ async function armQuickQueueInterrupt(
 interface InboxTranscriptState {
   /** The highest id clock on record, for placing a re-mint above it. */
   newest: bigint | null;
-  /** An assistant message answers one of this prompt's delivered ids, so the
-   *  turn RAN. `false` also covers "could not read" — see `read`. */
+  /** One of this prompt's delivered ids is answered — an assistant is
+   *  parented on it, or a COMPLETED step provably read it
+   *  (`promptAnsweredOnTip`) — so the turn RAN. `false` also covers "could
+   *  not read" — see `read`. */
   answered: boolean;
   /** The transcript was actually read. A failed read answers nothing. */
   read: boolean;
@@ -1319,14 +1371,15 @@ async function readInboxTranscriptState(
     if (!tip) return empty;
 
     const newest = newestWireIdTime(tip.map((message) => message.id));
-    // Same rule the daemon's `observeOpencodeDelivery` uses: an assistant
-    // message parented on the prompt is the turn having run.
-    const answered = tip.some(
-      (message) =>
-        message.role === 'assistant' &&
-        typeof message.parentID === 'string' &&
-        deliveredIds.includes(message.parentID),
-    );
+    // An assistant message parented on the prompt is the turn having run —
+    // the rule the daemon's `observeOpencodeDelivery` uses. Not the only
+    // proof, though: a steered prompt is answered inside the ONE merged reply
+    // OpenCode parents on the newest sibling, so nothing is ever parented on
+    // its own id. `promptAnsweredOnTip` also reads the box's `time.created`
+    // stamps — a COMPLETED step that began after the prompt was persisted
+    // read it and answered it (2026-09-22: a parent-only check let a
+    // re-queued steer run a second, paid time).
+    const answered = deliveredIds.some((id) => promptAnsweredOnTip(tip, id));
     return { newest, answered, read: true, tip };
   } catch (err) {
     console.warn('[session-lifecycle] inbox transcript read failed — proceeding without it', {
@@ -1692,6 +1745,9 @@ export interface QueuedContinueOptions {
   groupCommandIds?: readonly string[];
   /** The group's HEAD already passed admission; this row is its tail. */
   admitted?: boolean;
+  /** Another row of this delivery's group WAITED, so the whole group mints
+   *  above the transcript — see `groupRemintsTogether`. */
+  remintWithGroup?: boolean;
 }
 
 export async function executeQueuedContinue(
@@ -1836,9 +1892,7 @@ export async function executeQueuedContinue(
   // Read here, above the staged-revert guard, because both questions turn on
   // it: which wire id this attempt delivers with, and whether this row is
   // allowed to commit a revert.
-  const waited =
-    payload.remintOnDelivery === true ||
-    typeof (row.result as { admission_reason?: unknown } | null)?.admission_reason === 'string';
+  const waited = inboxRowWaited(row);
   // `result.promoted` is written by `retryInboxPrompt` alone — the user pointed
   // at ONE row and pressed "send now". `requeueForAdmission` merges into
   // `result`, so it survives the row waiting again behind an in-flight sibling.
@@ -1936,7 +1990,12 @@ export async function executeQueuedContinue(
   // Asked only when nothing else has already decided to re-mint, and only for a
   // row that HAS a client id to be wrong about: an automation prompt carries
   // none, and every id-less producer would pay for this read for nothing.
-  const remintKnown = deliveryAttempt > 0 || redeliveries > 0 || waited;
+  // `remintWithGroup` is the group's answer, not this row's: a sibling of this
+  // delivery was lifted, so this row has to mint above it too
+  // (`groupRemintsTogether`). It feeds the wire id alone — a fresh row of a
+  // lifted group is still the row that may commit a staged revert.
+  const remintKnown =
+    deliveryAttempt > 0 || redeliveries > 0 || waited || options.remintWithGroup === true;
   let turnLive = false;
   if (payload.wireMessageId && !remintKnown) {
     try {
@@ -2002,14 +2061,17 @@ export async function executeQueuedContinue(
       return 'queued';
     }
     // The already-answered guard is not redelivery-only. Every re-mint path
-    // re-reads the transcript, and an assistant reply parented on one of THIS
-    // prompt's delivered ids proves the same thing on all of them: the turn
-    // ran. (On a first delivery no id was ever posted, so this cannot fire.)
+    // re-reads the transcript, and `promptAnsweredOnTip` proves the same thing
+    // on all of them: an assistant reply parented on one of THIS prompt's
+    // delivered ids, or a step that provably read it (box `time.created`
+    // after the prompt's) and whose turn has ENDED — the one merged reply a
+    // steer gets, parented on a later sibling — means the turn ran. (On a
+    // first delivery no id was ever posted, so this cannot fire.)
     if (transcript.read && transcript.answered) {
       // The record said `delivering`, but that only ever proved the ACCEPTANCE
-      // write never landed. An assistant reply under this prompt proves the
-      // turn ran, so re-sending it would run the user's message — and spend a
-      // second real LLM turn — twice.
+      // write never landed. A reply under this prompt, or a completed step
+      // that read it, proves the turn ran, so re-sending it would run the
+      // user's message — and spend a second real LLM turn — twice.
       console.warn('[session-lifecycle] dropping delivery — the prompt was already answered', {
         sessionId: row.sessionId,
         commandId: row.commandId,
@@ -2024,20 +2086,86 @@ export async function executeQueuedContinue(
     }
     // A LATE delivery does not always go to the top. When the transcript
     // still holds an OPEN sibling above this prompt's original id — placed,
-    // unanswered — the original id slots the prompt into its SEND position,
-    // and that sibling's step answers both (OpenCode hands the model the
-    // whole transcript). Re-minting was what put a delayed message below its
-    // answer— and a re-mint here put it visually LAST when it was sent
-    // first. Only a first delivery may do this: a re-POST's original id may
+    // unanswered, unread — AND that sibling was SENT AFTER this prompt, the
+    // original id slots the prompt into its SEND position, and the sibling's
+    // step answers both (OpenCode hands the model the whole transcript).
+    // That is the case this was written for: this row waited (held, the
+    // composer lane, `older_prompt_pending`) while a later send steered in;
+    // a re-mint here put it visually LAST when it was sent first.
+    //
+    // THE SIBLING'S SEND INSTANT IS THE GATE, NOT ITS ID. A wire id is minted
+    // by the SENDER, and a live-turn delivery is LIFTED to the box clock
+    // (`mintLivePlacement`) — far above every client id. So an open user
+    // above this prompt's client id can be a prompt sent BEFORE it. Measured
+    // 2026-09-22 (preview session "YO" 134c0d27 on project 0544daaf;
+    // locally 6e288d75 and 822e92a4): two Quick Queue prompts ~1-2 s apart
+    // steered into a tool turn. ALPHA (12:15:07) was lifted to …a831b000;
+    // BRAVO (12:15:10) found ALPHA open above its client id …a5f79003 and
+    // went out UNDER it. The SDK orders placed messages by id, so the tab
+    // drew BRAVO above ALPHA, and the one merged reply (parented on BRAVO,
+    // newest by `time.created`) left ALPHA's slot empty at the bottom —
+    // "the second prompt that is showing was actually the third".
+    //
+    // So every open id above is resolved to its inbox row, and this row
+    // keeps its client id only when EVERY one of them was sent after it
+    // (`underPlacementKeepsSendOrder`). Otherwise it re-mints, and the
+    // re-mint floors on every id the inbox put on the wire
+    // (`readDeliveredWireIdFloor`), so BRAVO lands ABOVE ALPHA's lifted id:
+    // send order and id order agree, and at turn end ALPHA is an OLDER
+    // candidate the ended step read — closed `completed`, never re-queued.
+    // An id with NO inbox row is a foreign producer's message (automation,
+    // CLI); its send instant is unknown and it keeps today's behaviour:
+    // under-place. A failed lookup re-mints — the safe side, since a re-mint
+    // is what every delivery did before under-placement existed.
+    //
+    // Only a first delivery may under-place: a re-POST's original id may
     // already be persisted.
+    let underPlace = false;
     if (
       deliveryAttempt === 0 &&
       redeliveries === 0 &&
+      // A ROW OF A LIFTED GROUP NEVER UNDER-PLACES. Its own head is already
+      // above it, and the head's POST may not be visible in the tip this read
+      // returned — so the gate below could miss it and put this row under its
+      // own predecessor. The group's order is decided by the group.
+      !options.remintWithGroup &&
       payload.wireMessageId &&
       transcript.read &&
-      transcript.tip &&
-      openUserAbove(transcript.tip, payload.wireMessageId)
+      transcript.tip
     ) {
+      const openAbove = openUsersAbove(transcript.tip, payload.wireMessageId);
+      if (openAbove.length > 0) {
+        try {
+          const rowsById = await readInboxRowsByWireIds(row.sessionId, openAbove);
+          const siblings = openAbove.map((id) => ({ wireMessageId: id, row: rowsById.get(id) ?? null }));
+          underPlace = underPlacementKeepsSendOrder({ row, siblings });
+          // One line per gate decision, with the instants it compared: the
+          // `remint` timeline mark is written on BOTH paths, so a live run
+          // could not show whether the gate refused under-placement or there
+          // was no open sibling at all (review finding, 2026-09-22).
+          logger.info('[session-lifecycle] under-placement gate', {
+            session_id: row.sessionId,
+            command_id: row.commandId,
+            open_above: openAbove,
+            under_place: underPlace,
+            sent_at_ms: inboxSendOrderMs(row),
+            created_at: row.createdAt.toISOString(),
+            siblings: siblings.map(({ wireMessageId: id, row: sibling }) =>
+              sibling
+                ? { id, command_id: sibling.commandId, sent_at_ms: inboxSendOrderMs(sibling), created_at: sibling.createdAt.toISOString() }
+                : { id, row: null },
+            ),
+          });
+        } catch (err) {
+          console.warn('[session-lifecycle] open-sibling row lookup failed — re-minting the wire id', {
+            sessionId: row.sessionId,
+            commandId: row.commandId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    }
+    if (underPlace && payload.wireMessageId) {
       wireMessageId = payload.wireMessageId;
       underPlaced = true;
       tl.mark('under-placed');
@@ -2097,7 +2225,12 @@ export async function executeQueuedContinue(
         // redelivery. See `withNextDeliveryAttempt`.
         attempt > 0 ? `${row.commandId}:r${attempt}` : row.commandId,
         tl,
-        payload.clientMessageId ? () => assertInboxDeliveryActive(row.commandId) : undefined,
+        payload.clientMessageId
+          ? (stage) =>
+              stage === 'post'
+                ? commitInboxPost(row.commandId)
+                : assertInboxDeliveryActive(row.commandId)
+          : undefined,
       );
       tl.mark('delivered');
       if (delivery !== 'delivered') break;

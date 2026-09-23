@@ -6,6 +6,7 @@ import {
   quickQueueGroupHint,
   groupEndedResponse,
   quickQueueInterruptNote,
+  groupRemintsTogether,
 } from './quick-queue-group';
 import type { SessionLifecycleCommandRow } from './store';
 
@@ -76,6 +77,53 @@ describe('quickQueueGroup', () => {
   });
 });
 
+// A GROUP IS A CONTIGUOUS FIFO RUN, NEVER A SET OF ROWS THAT HAPPEN TO BE IN
+// HAND. Measured 2026-09-22, 2 of 2 runs ("T3 burst over text"): three Quick
+// Queue prompts ended a streaming response, each row was requeued on its own
+// clock (available_at 47.730 / 49.224 / 47.496 s), and the 1 s scheduler drain
+// claimed rows 1 and 3 while row 2 was still 1.5 s out. `quickQueueGroup` saw a
+// batch of two groupable rows and merged them — ACROSS row 2 — so row 2 went
+// out ~3 s later, after the answer to rows 1 and 3, and one prompt was never
+// answered at all.
+//
+// The batch alone cannot tell a run from a set, so the drain hands over the
+// earliest row it left behind and the run stops there.
+describe('quickQueueGroup — a row the drain did NOT claim breaks the run', () => {
+  test('a gap INSIDE the batch ends the group at the gap', () => {
+    expect(
+      quickQueueGroup([quick('a'), quick('c')], { firstUnclaimed: quick('b') }).map(
+        (e) => e.commandId,
+      ),
+    ).toEqual(['a']);
+  });
+
+  test('a gap ahead of the whole batch leaves the head to answer for itself', () => {
+    // Nothing may jump an unclaimed older row. The head alone is safe: the
+    // admission gate refuses it on `older_prompt_pending` (`inbox-admission.ts`).
+    expect(
+      quickQueueGroup([quick('b'), quick('c')], { firstUnclaimed: quick('a') }).map(
+        (e) => e.commandId,
+      ),
+    ).toEqual(['b']);
+  });
+
+  test('a row left behind AFTER the batch does not shorten the group', () => {
+    expect(
+      quickQueueGroup([quick('a'), quick('b')], { firstUnclaimed: quick('c') }).map(
+        (e) => e.commandId,
+      ),
+    ).toEqual(['a', 'b']);
+  });
+
+  test('no gap is the ordinary case — the whole run groups', () => {
+    expect(
+      quickQueueGroup([quick('a'), quick('b'), quick('c')], { firstUnclaimed: null }).map(
+        (e) => e.commandId,
+      ),
+    ).toEqual(['a', 'b', 'c']);
+  });
+});
+
 describe('quickQueueGroupHint', () => {
   test('the hint names how many messages the reply has to address', () => {
     const hint = quickQueueGroupHint(3) ?? '';
@@ -100,6 +148,14 @@ describe('a prompt that ENDED a streaming response says so to the model', () => 
     const note = quickQueueInterruptNote(true);
     expect(note).toContain('on purpose');
     expect(note).toContain('Do not resume');
+    // IT DOES NOT MAKE DeepSeek OBEY, and no wording tried does. Measured
+    // 2026-09-22 on real sandboxes: a response stopped while it streamed in
+    // REASONING leaves an aborted message with reasoning and no answer text,
+    // so the cancelled request still reads as unanswered. DeepSeek V4.1 Flash
+    // rewrote the whole essay in the next turn before answering the new
+    // prompt, 3 of 3 runs with this note and 3 of 3 with a stronger one that
+    // named the request cancelled (sessions 6966a82c, 3fc5431e, f99f6f05).
+    // Open for the owner; the stop itself is unaffected.
   });
   test('a delivery that ended nothing carries no note', () => {
     expect(quickQueueInterruptNote(false)).toBeNull();
@@ -109,5 +165,35 @@ describe('a prompt that ENDED a streaming response says so to the model', () => 
     expect(groupEndedResponse([row(null), row({ ended_response: true })])).toBe(true);
     expect(groupEndedResponse([row({}), row({ ended_response: false })])).toBe(false);
     expect(groupEndedResponse([])).toBe(false);
+  });
+});
+
+// A GROUP MINTS AS ONE.
+//
+// Measured 2026-09-22 on a real sandbox (session 37eb6e96, T3 burst over a
+// streaming essay). Group [Request 1, Request 2]: Request 1 had waited out the
+// interrupt, so it was LIFTED above the transcript to `msg_0ca6ad25f0002V`;
+// Request 2 was claimed fresh, nothing said it had waited, and it went out
+// under its own client id `msg_0ca6a8a77003Qo` — BELOW its predecessor. The
+// SDK orders placed messages by id, so the tab drew Request 2 above Request 1.
+// Both were answered; the order was wrong.
+describe('groupRemintsTogether', () => {
+  const waitedRow = (commandId: string) =>
+    row(commandId, { placement: 'transcript', remintOnDelivery: true });
+  const refusedRow = (commandId: string) =>
+    row(commandId, { placement: 'transcript' }, { admission_reason: 'turn_active' });
+
+  test('one row of the group that waited lifts the WHOLE group', () => {
+    expect(groupRemintsTogether([waitedRow('a'), quick('b')])).toBe(true);
+    expect(groupRemintsTogether([quick('a'), refusedRow('b')])).toBe(true);
+  });
+
+  test('a group where nothing waited keeps its client ids', () => {
+    expect(groupRemintsTogether([quick('a'), quick('b')])).toBe(false);
+  });
+
+  test('a single delivery is not a group — it decides for itself', () => {
+    expect(groupRemintsTogether([waitedRow('a')])).toBe(false);
+    expect(groupRemintsTogether([])).toBe(false);
   });
 });

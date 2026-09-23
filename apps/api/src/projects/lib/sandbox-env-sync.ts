@@ -27,7 +27,7 @@ import {
   repositoryAccessFromSessionMetadata,
 } from './session-sandbox-metadata';
 import { resolveSessionNetworkBoundary } from './network-secret-boundary';
-import { sandboxBelongsToThisInstance } from '../instance-scope';
+import { currentInstanceId, sandboxBelongsToThisInstance } from '../instance-scope';
 import type { NetworkBoundarySecretBinding } from '../../secrets/network-boundary';
 
 /** Resolve the LLM gateway URL used by every supported remote provider. */
@@ -159,7 +159,8 @@ export function __resetPromptModelSignatureCacheForTests(): void {
 function promptModelSignature(input: {
   revision: string;
   capabilitiesJson: string;
-  llmGatewayEnabled: boolean;
+  /** `undefined` when this push leaves the gateway mode alone (foreign box). */
+  llmGatewayEnabled: boolean | undefined;
   llmGatewayBaseUrl?: string;
   opencodeEnv?: Record<string, string | null>;
 }): string {
@@ -169,7 +170,7 @@ function promptModelSignature(input: {
   return JSON.stringify([
     input.revision,
     input.capabilitiesJson,
-    input.llmGatewayEnabled,
+    input.llmGatewayEnabled ?? null,
     input.llmGatewayBaseUrl ?? '',
     opencodeEnvEntries,
   ]);
@@ -590,6 +591,22 @@ async function postEnvToDaemon(args: {
   };
 }
 
+/**
+ * May THIS instance push its gateway URL into this box? True when instance
+ * scoping is off (deployed envs: one `KORTIX_URL`), when the row predates the
+ * instance stamp, or when this instance provisioned it. See
+ * ../instance-scope.ts. One indexed read, only when `KORTIX_INSTANCE_ID` is set.
+ */
+async function sandboxGatewayUrlIsOurs(externalId: string): Promise<boolean> {
+  if (!currentInstanceId()) return true;
+  const [row] = await db
+    .select({ sandboxMetadata: sessionSandboxes.metadata })
+    .from(sessionSandboxes)
+    .where(eq(sessionSandboxes.externalId, externalId))
+    .limit(1);
+  return sandboxBelongsToThisInstance(row?.sandboxMetadata);
+}
+
 export async function syncSandboxEnvForPrompt(args: {
   projectId: string;
   sessionId: string;
@@ -700,7 +717,17 @@ export async function syncSandboxEnvForPrompt(args: {
     );
   }
   lap('arm');
-  const llmGatewayEnabled = await projectLlmGatewayEnabledById(args.projectId);
+  // The gateway URL is derived from THIS process's `KORTIX_URL`. On a shared
+  // local DB another API instance can end up running this push for a box it
+  // did not provision (a command enqueued before the sandbox row existed is
+  // claimable by every instance). Its URL differs from the owner's, and every
+  // flip of KORTIX_LLM_BASE_URL reloads OpenCode — 2026-09-22 a flip landed
+  // mid-turn and aborted a running tool loop. A foreign box therefore keeps
+  // the gateway mode and URL its owner gave it: this push omits both.
+  const ownsGatewayUrl = await sandboxGatewayUrlIsOurs(args.externalId);
+  const llmGatewayEnabled = ownsGatewayUrl
+    ? await projectLlmGatewayEnabledById(args.projectId)
+    : undefined;
   lap('gateway-flag');
   const llmGatewayBaseUrl = llmGatewayEnabled
     ? llmGatewayBaseUrlForProvider(args.providerName)
@@ -730,7 +757,7 @@ export async function syncSandboxEnvForPrompt(args: {
   ) {
     // Byte-identical to what this process pushed to this box moments ago:
     // nothing to say, and the daemon would no-op it. Skip the round-trip.
-    await markSandboxLlmGatewayMode(args.sessionId, llmGatewayEnabled);
+    if (llmGatewayEnabled !== undefined) await markSandboxLlmGatewayMode(args.sessionId, llmGatewayEnabled);
     lap('mark');
     console.log(`[env-sync] timing sandbox=${args.externalId} push=skipped ${JSON.stringify(timing)}`);
     return;
@@ -766,7 +793,7 @@ export async function syncSandboxEnvForPrompt(args: {
         `(ready=${ready}) session=${args.sessionId}`,
     );
   }
-  await markSandboxLlmGatewayMode(args.sessionId, llmGatewayEnabled);
+  if (llmGatewayEnabled !== undefined) await markSandboxLlmGatewayMode(args.sessionId, llmGatewayEnabled);
   lap('mark');
   console.log(`[env-sync] timing sandbox=${args.externalId} push=sent refreshModels=${refreshModels} ${JSON.stringify(timing)}`);
 }
@@ -967,11 +994,18 @@ export async function propagateLlmGatewayModeToActiveSandboxes(
         sessionId: sessionSandboxes.sessionId,
         provider: sessionSandboxes.provider,
         config: sessionSandboxes.config,
+        metadata: sessionSandboxes.metadata,
       })
       .from(sessionSandboxes)
       .where(and(eq(sessionSandboxes.projectId, projectId), eq(sessionSandboxes.status, 'active')));
 
-    const targets = rows.filter((r): r is typeof r & { externalId: string } => !!r.externalId);
+    // INSTANCE SCOPE (shared local DB — ../instance-scope.ts): this push
+    // carries THIS instance's gateway URL, so a box another instance
+    // provisioned is left to its owner. No-op when KORTIX_INSTANCE_ID is unset.
+    const targets = rows.filter(
+      (r): r is typeof r & { externalId: string } =>
+        !!r.externalId && sandboxBelongsToThisInstance(r.metadata),
+    );
     if (targets.length === 0) return;
 
     // Computed PER ROW (not once, hoisted) — a project's active sandboxes can

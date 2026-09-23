@@ -12,11 +12,19 @@
  *  - box mid-turn → that route is refused (`assertNotBusy`), but
  *    `DELETE …/part/:pid` is not, and a user message with ZERO parts is
  *    skipped by `toModelMessages` (`if (msg.parts.length === 0) continue`) —
- *    the model never sees it, the loop's id-order bookkeeping is untouched.
+ *    the model never sees it. The part-less message itself stays, and the
+ *    loop's next step is parented on it (measured 2026-09-23), so its id is
+ *    recorded and the turn-end relay deletes it once the loop is idle
+ *    (`husk-cleanup.ts`). Clients never draw a part-less user message.
  *
- * A prompt the loop HAS reached (an assistant answers it, or a step parented
- * on it/newer read it) stays: that is "already being answered", and the 409
- * remains truthful for it.
+ * A claimed row the drain has not yet POSTed never reaches this module: the
+ * DELETE route removes it outright (`deleteInboxPrompt`), and the POST's own
+ * commit (`commitInboxPost`) then refuses to send it.
+ *
+ * A prompt the loop HAS reached (an assistant answers it, or a step that
+ * began after it was persisted — box `time.created` on both — read it, or,
+ * stamps missing, a step parented on it/newer read it) stays: that is
+ * "already being answered", and the 409 remains truthful for it.
  */
 
 import { sessionLifecycleCommands } from '@kortix/db';
@@ -26,7 +34,8 @@ import { db } from '../../shared/db';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 import { closeSandboxTurnByMessageId } from '../sandbox-turn-lifecycle';
 import { resolveSessionOpencodeEndpoint } from './engine';
-import { reachedPlacement, strandedPlacement } from './forwarded-placement';
+import { type PlacementTipMessage, parsePlacementTip, reachedPlacement, strandedPlacement } from './forwarded-placement';
+import { recordPendingHusks } from './husk-cleanup';
 import { deleteInboxRowsWithAttachmentGrace, inboxScope } from './inbox-rows';
 import { wireMessageIdMatches } from './wire-id-match';
 
@@ -52,14 +61,6 @@ export type CancelForwardedOutcome =
   | { outcome: 'answered' }
   | { outcome: 'unreachable' }
   | { outcome: 'not_forwarded' };
-
-interface TipEntry {
-  id: string;
-  role: string;
-  parentID: string | null;
-  completed: number | null;
-  partIds: string[];
-}
 
 /** Find the newest inbox row that ever carried this wire/message id — the
  *  client's handle once the row left the prompt list (confirmed `delivered`
@@ -126,7 +127,7 @@ export async function cancelForwardedPrompt(
   const headers = sandboxRuntimeRequestHeaders(resolved.endpoint.headers);
   const base = `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}`;
 
-  let tip: TipEntry[];
+  let tip: PlacementTipMessage[];
   try {
     const res = await fetch(
       `${base}/message?directory=${encodeURIComponent(WORKSPACE)}&limit=${TIP_LIMIT}`,
@@ -136,26 +137,16 @@ export async function cancelForwardedPrompt(
       logger.warn('[cancel-forwarded] tip read refused', { session_id: sessionId, status: res.status });
       return { outcome: 'unreachable' };
     }
-    const body = (await res.json().catch(() => null)) as Array<{
-      info?: { id?: unknown; role?: unknown; parentID?: unknown; time?: { completed?: unknown } };
-      parts?: Array<{ id?: unknown }>;
-    }> | null;
-    if (!Array.isArray(body)) return { outcome: 'unreachable' };
-    tip = body.flatMap((entry) => {
-      const info = entry?.info;
-      if (!info || typeof info.id !== 'string' || typeof info.role !== 'string') return [];
-      return [
-        {
-          id: info.id,
-          role: info.role,
-          parentID: typeof info.parentID === 'string' ? info.parentID : null,
-          completed: typeof info.time?.completed === 'number' ? info.time.completed : null,
-          partIds: (entry.parts ?? []).flatMap((part) =>
-            typeof part?.id === 'string' ? [part.id] : [],
-          ),
-        },
-      ];
-    });
+    // The shared parser, so the verdict below sees the box's `time.created`
+    // stamps. A local parse here carried `completed` only, and without the
+    // stamps `strandedPlacement` / `reachedPlacement` fall back to id order —
+    // which reads a steer LIFTED above a later UNDER-PLACED sibling as never
+    // read once the one merged reply is parented on that sibling (2026-09-22,
+    // sessions 4f345186, 17e3ad83). A cancel then deleted the answered
+    // message and dropped its row, and an Undo ran the prompt a second time.
+    const parsed = parsePlacementTip(await res.json().catch(() => null));
+    if (!parsed) return { outcome: 'unreachable' };
+    tip = parsed;
   } catch (err) {
     logger.warn('[cancel-forwarded] tip read threw', { session_id: sessionId, error: err instanceof Error ? err.message : String(err) });
     return { outcome: 'unreachable' };
@@ -172,6 +163,7 @@ export async function cancelForwardedPrompt(
   // Take the copies out. Whole-message first (works while idle); when the
   // loop is busy that route is refused — empty the message part by part
   // instead, which the model then never sees.
+  const emptied: string[] = [];
   for (const message of present) {
     let removed = false;
     try {
@@ -184,7 +176,7 @@ export async function cancelForwardedPrompt(
       removed = false;
     }
     if (removed) continue;
-    for (const partId of message.partIds) {
+    for (const partId of message.partIds ?? []) {
       try {
         const res = await fetch(
           `${base}/message/${encodeURIComponent(message.id)}/part/${encodeURIComponent(partId)}?directory=${encodeURIComponent(WORKSPACE)}`,
@@ -203,6 +195,19 @@ export async function cancelForwardedPrompt(
         return { outcome: 'unreachable' };
       }
     }
+    emptied.push(message.id);
+  }
+  // An emptied copy is still a user message at the runtime. The turn-end
+  // relay deletes it once the loop is idle (`husk-cleanup.ts`); recorded
+  // BEFORE the row goes, so a crash between the two cannot lose the id.
+  if (emptied.length > 0) {
+    await recordPendingHusks(sessionId, emptied).catch((err) =>
+      logger.warn('[cancel-forwarded] could not record an emptied copy for deletion', {
+        session_id: sessionId,
+        message_ids: emptied,
+        error: err instanceof Error ? err.message : String(err),
+      }),
+    );
   }
 
   // The runtime no longer holds it: the row goes, and its turn authority with

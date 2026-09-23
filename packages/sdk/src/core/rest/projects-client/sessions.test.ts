@@ -29,6 +29,7 @@ import {
   listProjectSessions,
   listProjectSessionsPage,
   listSessionPrompts,
+  type SessionPlacedPrompt,
   listSessionPublicShares,
   reloadProjectSessionConfig,
   reloadProjectSessionConfigStream,
@@ -1134,6 +1135,33 @@ test('listSessionPrompts hits GET .../prompts and hands the rows through verbati
   expect(result).toEqual({ prompts: [prompt] });
 });
 
+// A row LEAVES the list at acceptance, often under 1 s after the drain
+// re-minted its wire id, and the tab polls every 1 s: a tab that missed that
+// one poll never learned the pairing and kept its own bubble beside the
+// runtime's echo until reload (measured 2026-09-22, preview session "YO"
+// 134c0d27). `placed` is the server keeping the pairing for ten minutes after the row.
+test('listSessionPrompts hands `placed` through, and an older server simply omits it', async () => {
+  const placed: SessionPlacedPrompt = {
+    prompt_id: 'cmd-1',
+    client_message_id: 'q_1',
+    wire_message_id: 'msg_client',
+    message_id: 'msg_reminted',
+    message_ids: ['msg_reminted', 'msg_earlier_remint'],
+    placed_at: '2026-09-22T12:15:11.000Z',
+  };
+  nextResponse = {
+    status: 200,
+    body: { prompts: [], observed_at: '2026-09-22T12:15:12.000Z', placed: [placed] },
+  };
+  expect(await listSessionPrompts('P1', 'S1')).toEqual({
+    prompts: [],
+    observed_at: '2026-09-22T12:15:12.000Z',
+    placed: [placed],
+  });
+  nextResponse = { status: 200, body: { prompts: [] } };
+  expect((await listSessionPrompts('P1', 'S1')).placed).toBeUndefined();
+});
+
 test('deleteSessionPrompt DELETEs one prompt and returns what it removed', async () => {
   // The removal is offered with an Undo, and the row is hard-deleted, so this
   // response is the only place the full body still exists. Restoring from the
@@ -1213,11 +1241,24 @@ test('holdSessionPrompts POSTs .../prompts/hold with the flag and returns the qu
   // browser-local drain leaves the admission gate free to deliver the very
   // message the user pressed Stop to get ahead of.
   nextResponse = { status: 200, body: { prompts: [] } };
+  const before = Date.now();
   const result = await holdSessionPrompts('P1', 'S1', true);
   expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/prompts/hold');
   expect(last().method).toBe('POST');
-  expect(last().body).toEqual({ held: true });
+  const body = last().body as { held: boolean; stopped_at_ms?: number };
+  expect(body.held).toBe(true);
   expect(result).toEqual({ prompts: [] });
+  // The Stop instant on THIS client's clock — the clock every send's
+  // `client_sent_at_ms` is on — so a prompt typed before the Stop whose POST
+  // lands after the hold joins it instead of releasing it.
+  expect(body.stopped_at_ms).toBeGreaterThanOrEqual(before);
+  expect(body.stopped_at_ms).toBeLessThanOrEqual(Date.now());
+});
+
+test('releasing the hold carries no Stop instant', async () => {
+  nextResponse = { status: 200, body: { prompts: [] } };
+  await holdSessionPrompts('P1', 'S1', false);
+  expect(last().body).toEqual({ held: false });
 });
 
 test('queue row calls never route failures to the host global error handler', async () => {

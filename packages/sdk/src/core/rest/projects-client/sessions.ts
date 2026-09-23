@@ -982,7 +982,7 @@ export interface SessionPrompt {
   /** Where the pending prompt is shown AND how the server treats the active
    *  response. `transcript` (Quick Queue) runs ahead of every `composer` row;
    *  its head steers into the running turn, or ends a response that is
-   *  streaming text and runs next. `composer` (Queue List) waits for the
+   *  streaming text or reasoning (no tool running) and runs next. `composer` (Queue List) waits for the
    *  active response to finish. Both run automatically, in submission order
    *  within their placement.
    *
@@ -1009,7 +1009,12 @@ export interface SessionPrompt {
   /** The wire id the HOST painted its bubble under (the one it minted and
    *  POSTed). Together with `message_id` these are every id this prompt has
    *  ever had; a host hides the row when the transcript shows EITHER. Absent
-   *  from servers older than this field. */
+   *  from servers older than this field.
+   *
+   *  The row is NOT always observable with both ids: a steered prompt leaves
+   *  the list at acceptance, often inside one poll of its re-mint. A pairing
+   *  the host missed here is served for ten minutes afterwards as
+   *  `SessionPromptsList.placed` — read that too. */
   wire_message_id?: string;
   state: SessionPromptState;
   /** Why admission waits: `turn_active`, `older_prompt_pending`, or `held`.
@@ -1140,16 +1145,58 @@ export async function createSessionPrompt(
   return unwrap(response);
 }
 
+/**
+ * A prompt that LEFT the pending list within the last ten minutes, reduced to the
+ * ids a host may still hold its optimistic bubble under.
+ *
+ * The host paints a prompt under the wire id it minted; the server re-mints
+ * it at delivery, and the runtime's echo carries neither the host's
+ * submission name nor its part ids. Only the row names the pairing — and a
+ * steered row leaves `prompts` at ACCEPTANCE, often under 1 s after the
+ * re-mint, while a host polls every 1 s. A host that missed that one poll
+ * kept its bubble beside the echo until reload (measured 2026-09-22). This is
+ * the server keeping the pairing alive after the row.
+ */
+export interface SessionPlacedPrompt {
+  prompt_id: string;
+  client_message_id: string;
+  /** The wire id the host minted and painted its bubble under. */
+  wire_message_id: string;
+  /** The id the delivered message carries in the transcript. Never equal to
+   *  `wire_message_id` — a prompt delivered under its own id is not listed. */
+  message_id: string;
+  /** Every id the server ever delivered this prompt under, `message_id`
+   *  first. A redelivery can leave an echo under an earlier re-minted id.
+   *  Absent from servers older than this field. */
+  message_ids?: string[];
+  /** When the row left the pending list (server clock, ISO 8601). */
+  placed_at: string;
+}
+
+/** `GET .../prompts`: the pending rows, the server's read stamp, and the
+ *  pairings of rows that just left. */
+export interface SessionPromptsList {
+  prompts: SessionPrompt[];
+  /** The SERVER's clock captured BEFORE the read. Absent from older servers. */
+  observed_at?: string;
+  /** Rows that left `prompts` within the last ten minutes and were delivered under
+   *  an id other than their `wire_message_id`. Absent from older servers;
+   *  treat a missing list as empty. */
+  placed?: SessionPlacedPrompt[];
+}
+
 /** Every prompt this session still owes the user, oldest first. Delivered
  *  prompts are omitted — they are in the transcript. `observed_at` is the
  *  SERVER's clock captured BEFORE the read: the ordering stamp this snapshot
- *  ranks with against other server observations. Absent from older servers. */
+ *  ranks with against other server observations. Absent from older servers.
+ *  `placed` carries the pairings of rows that just left — see
+ *  `SessionPlacedPrompt`. */
 export async function listSessionPrompts(
   projectId: string,
   sessionId: string,
-): Promise<{ prompts: SessionPrompt[]; observed_at?: string }> {
+): Promise<SessionPromptsList> {
   return unwrap(
-    await backendApi.get<{ prompts: SessionPrompt[]; observed_at?: string }>(
+    await backendApi.get<SessionPromptsList>(
       `/projects/${projectId}/sessions/${sessionId}/prompts`,
       // A background poll: a failed tick must not toast every second.
       { showErrors: false },
@@ -1245,7 +1292,8 @@ export async function retrySessionPrompt(
  * A hold is released by an ACTION, never by a timer: sending anything new, or
  * `retrySessionPrompt` on a row, releases it — the same rule the browser queue
  * always had. A restore (`CreateSessionPromptInput.restore`) is not a new send
- * and releases nothing.
+ * and releases nothing, and neither is a send whose `clientSentAtMs` precedes
+ * the Stop: it was typed before the Stop, so it joins the hold.
  */
 export async function holdSessionPrompts(
   projectId: string,
@@ -1255,7 +1303,11 @@ export async function holdSessionPrompts(
   return unwrap(
     await backendApi.post<{ prompts: SessionPrompt[]; observed_at?: string }>(
       `/projects/${projectId}/sessions/${sessionId}/prompts/hold`,
-      { held },
+      // A hold carries the Stop instant on THIS client's clock — the clock
+      // every send's `client_sent_at_ms` is on. A prompt typed before the Stop
+      // whose POST reaches the server after the hold then joins the hold
+      // instead of releasing it.
+      held ? { held, stopped_at_ms: Date.now() } : { held },
       // The caller toasts its own message; the host sink would add a second.
       { showErrors: false },
     ),

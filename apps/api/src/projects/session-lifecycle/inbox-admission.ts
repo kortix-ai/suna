@@ -18,8 +18,9 @@ import type { InboxAdmissionReason, SessionLifecycleCommandRow } from './store';
  * A prompt sits in `session_lifecycle_commands` until the session's turn is
  * over AND every older prompt has left the delivery path. Queue List prompts
  * always wait for natural turn completion. Quick Queue STEERS into the running
- * turn. The one exception is a response that is STREAMING TEXT: a prompt typed
- * over it ENDS it and runs next (below).
+ * turn. The one exception is a response that is STREAMING — text or
+ * reasoning, with no tool call in the step: a prompt typed over it ENDS it and
+ * runs next (below).
  *
  * WHY THE MERGE IS THE WHOLE QUESTION. OpenCode picks up new user messages at
  * STEP boundaries INSIDE a running turn, and it "parents each step on the
@@ -93,16 +94,32 @@ import type { InboxAdmissionReason, SessionLifecycleCommandRow } from './store';
  * cannot end it. A burst therefore loses at most the first successor's partial
  * answer, never N-1.
  *
+ * STREAMING REASONING IS ENDED TOO (2026-09-22). This was an open window by
+ * decision until the owner reported it: DeepSeek V4.1 Flash, the default
+ * managed model, wrote a whole essay inside its reasoning part, the chat
+ * showed it streaming, and a Quick Queue prompt steered into it and sat under
+ * "Thinking" for 2 min 43 s while the essay ran to `completed` (session
+ * 6f10c589). The owner's contract is "stop it immediately when it is visibly
+ * streaming; steer while a tool runs". So `liveTurnPhaseFromPage` returns
+ * 'text' for an open reasoning part in a step with no tool. That also ends a
+ * step whose reasoning would have led to a tool call — accepted: it loses
+ * reasoning text, not work, because no tool has started and the daemon never
+ * aborts while one runs. A step with a pending or running tool still steers.
+ *
  * TWO WINDOWS THIS DOES NOT CLOSE, both by decision, both still the reported
  * symptom for the prompt inside them:
- *   • REASONING AND THE ANSWER ARE ONE STEP. A prompt sent while the model is
- *     still reasoning reads 'other' and steers; if that step goes on to stream
- *     text, the steer sits unread until the text ends. A reasoning step is not
- *     ended because reasoning opens every TOOL step as well, and the page
- *     cannot say which one this is; ending those is the half-finished-work
- *     loss steering exists to prevent. Open product decision, recorded in the
- *     learnings register.
+ *   • THE GAP BETWEEN PARTS. A prompt that arrives after a reasoning part has
+ *     ended and before the next part opens reads 'other' and steers; if that
+ *     next part is text, the steer sits unread until the text ends. The gap is
+ *     milliseconds wide.
  *   • A PRE-DATED row steered into a text stream is unread until the text ends.
+ *
+ * AN UNREADABLE RUNTIME STEERS, and that direction is kept. A false 'text'
+ * during tool work lets the daemon abort at the tool's end and throw away the
+ * rest of a multi-step turn — the loss steering exists to prevent. What
+ * changed 2026-09-22 is the bound: the read took 5.1 s under load against a
+ * 2.5 s bound and steered into a streaming essay, so the bound is now 6 s
+ * (`LIVE_TURN_PHASE_READ_TIMEOUT_MS`).
  *
  * For every prompt that does NOT steer, the gap forwarding was removing is
  * gone by other means: `promoteNextInboxRow` is AWAITED on the daemon's own
@@ -158,7 +175,7 @@ export type InboxAdmission =
       reason: InboxAdmissionReason;
       retryAfterMs: number;
       /** Set only for the head Quick Queue row typed over a response that is
-       *  streaming text: the drain arms the daemon's interrupt against exactly
+       *  streaming (text or reasoning): the drain arms the daemon's interrupt against exactly
        *  this turn AFTER the row is durably requeued. With no tool running the
        *  daemon aborts at once. */
       interruptAtBoundary?: { opencodeSessionId: string; messageId: string };
@@ -416,7 +433,8 @@ export async function admitInboxPrompt(
   // A live turn holds delivery for Queue List, and for a row with no
   // placement, always. For the head Quick Queue row it depends on what the
   // turn is doing:
-  //   • streaming text, and the row was typed over it — held, with the
+  //   • streaming text or reasoning with no tool, and the row was typed
+  //     over it — held, with the
   //     interrupt: the response ends NOW and this row runs as the next turn.
   //   • anything else — the prompt is PLACED INTO the running turn and the
   //     model reads it at its next step boundary. The whole pending Quick Queue

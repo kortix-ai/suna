@@ -4,7 +4,11 @@ import { ApiError } from '../core/http/api-client';
 import { configureKortix } from '../core/http/config';
 import { countLiveInboxPrompts, INBOX_OBSERVATION_MAX_MS } from '../core/session/working';
 import { openSessionBundle, resetSessionOpenBundles } from '../core/session/open-bundle';
-import { deleteSessionPrompt, type SessionPrompt } from '../core/rest/projects-client/sessions';
+import {
+  deleteSessionPrompt,
+  type SessionPlacedPrompt,
+  type SessionPrompt,
+} from '../core/rest/projects-client/sessions';
 import {
   applyOptimisticPrompt,
   applyInboxObservation,
@@ -17,6 +21,7 @@ import {
   SESSION_PROMPTS_IDLE_POLL_MS,
   SESSION_PROMPTS_POLL_MS,
   noteInboxObservation,
+  readPlacedPrompts,
   readSessionPromptsInbox,
   releaseHeldPrompts,
   releaseRemovedPromptTombstone,
@@ -591,6 +596,85 @@ describe('removed-prompt tombstones', () => {
     } finally {
       globalThis.fetch = original;
       configureKortix({ backendUrl: '', getToken: async () => null });
+    }
+  });
+});
+
+/**
+ * A PAIRING OUTLIVES ITS ROW.
+ *
+ * The tab paints a prompt under its client wire id and the drain re-mints it;
+ * only the row's `wire_message_id`/`message_id` pair tells the store which
+ * bubble the runtime's echo replaces (the server strips the client's part
+ * ids). A steered prompt's row leaves the list at ACCEPTANCE, often under 1 s
+ * after the re-mint, and the list polls every 1 s — a tab that missed that one
+ * poll kept its bubble beside the echo until reload (2026-09-22, preview
+ * session "YO" 134c0d27). The server now serves the pairings of rows that
+ * left inside the last ten minutes as `placed`; this hook keeps them per session, so
+ * the host reads them from the same object it reads `prompts` from.
+ */
+describe('placed pairings', () => {
+  const pairing: SessionPlacedPrompt = {
+    prompt_id: 'cmd-p',
+    client_message_id: 'q_p',
+    wire_message_id: 'msg_client_p',
+    message_id: 'msg_reminted_p',
+    placed_at: '2026-09-22T12:15:11.000Z',
+  };
+  const serve = (body: unknown) => {
+    const original = globalThis.fetch;
+    globalThis.fetch = (async () => Response.json(body)) as unknown as typeof fetch;
+    return () => void (globalThis.fetch = original);
+  };
+
+  beforeEach(() => {
+    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
+  });
+
+  test('a list read records its session\'s pairings; another session sees none', async () => {
+    const restore = serve({ prompts: [], observed_at: '2026-09-22T12:15:12.000Z', placed: [pairing] });
+    try {
+      await readSessionPromptsInbox('proj-1', 'sess-placed-1', []);
+      expect(readPlacedPrompts('sess-placed-1')).toEqual([pairing]);
+      expect(readPlacedPrompts('sess-placed-other')).toEqual([]);
+    } finally {
+      restore();
+    }
+  });
+
+  test('an older server (no `placed`) reads as no pairings, not as a crash', async () => {
+    const restore = serve({ prompts: [] });
+    try {
+      await readSessionPromptsInbox('proj-1', 'sess-placed-2', []);
+      expect(readPlacedPrompts('sess-placed-2')).toEqual([]);
+    } finally {
+      restore();
+    }
+  });
+
+  test('a read the freshness rule DISCARDS still records the pairings — an identity is never stale', async () => {
+    // A newer observation is on record for this session…
+    useSessionWorkingStore.getState().noteInboxPending('sess-placed-3', 1, Date.now(), Date.now() + 60_000);
+    // …so this older-stamped read cannot change the rows, but its pairings
+    // are facts about ids, not a snapshot of the queue.
+    const restore = serve({ prompts: [], observed_at: '2026-09-22T12:15:12.000Z', placed: [pairing] });
+    try {
+      await readSessionPromptsInbox('proj-1', 'sess-placed-3', []);
+      expect(readPlacedPrompts('sess-placed-3')).toEqual([pairing]);
+    } finally {
+      restore();
+    }
+  });
+
+  test('an unchanged list keeps its identity, so a subscriber does not re-render every poll', async () => {
+    const restore = serve({ prompts: [], placed: [pairing] });
+    try {
+      await readSessionPromptsInbox('proj-1', 'sess-placed-4', []);
+      const first = readPlacedPrompts('sess-placed-4');
+      await readSessionPromptsInbox('proj-1', 'sess-placed-4', []);
+      expect(readPlacedPrompts('sess-placed-4')).toBe(first);
+    } finally {
+      restore();
     }
   });
 });

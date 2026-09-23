@@ -6,6 +6,7 @@ import {
   type CreateSessionPromptInput,
   type CreateSessionPromptResult,
   type RemovedSessionPrompt,
+  type SessionPlacedPrompt,
   type SessionPrompt,
   type SessionPromptOverrides,
   type SessionPromptPart,
@@ -181,6 +182,81 @@ export function applyInboxObservation(
   return reconcileOptimisticPrompts(cached, prompts);
 }
 
+
+// ============================================================================
+// Placed pairings — the pairing outlives its row
+// ============================================================================
+
+/**
+ * The pairings of rows that just LEFT this session's list, per session.
+ *
+ * A host paints a prompt under the wire id it minted and retires that bubble
+ * by the row's `wire_message_id` → `message_id` pairing when the server
+ * re-mints it. A steered row leaves `prompts` at ACCEPTANCE, often under 1 s
+ * after the re-mint, and this list polls every 1 s (`SESSION_PROMPTS_POLL_MS`)
+ * — a host that missed that one poll never learned the pairing, and the
+ * runtime's echo landed as a new message beside the bubble until reload
+ * (measured 2026-09-22, preview session "YO" 134c0d27). The server serves
+ * the pairings of rows that left inside the last ten minutes as `placed`; every
+ * list read records them here, and `useSessionPrompts` hands them out beside
+ * `prompts` so a host reads both from one object.
+ *
+ * Module-level and keyed by session, like `promptRowActions`: every mounted
+ * `useSessionPrompts` of a session sees one list. Recorded on EVERY read the
+ * server answered — including one the freshness rule discards — because a
+ * pairing is a fact about ids, never a snapshot of the queue, and an older
+ * read cannot make it false.
+ */
+const placedBySession = new Map<string, readonly SessionPlacedPrompt[]>();
+const placedListeners = new Set<() => void>();
+const NO_PLACED: readonly SessionPlacedPrompt[] = Object.freeze([]);
+
+/** Record one read's `placed` list for `sessionId`. An unchanged list keeps
+ *  its identity so a `useSyncExternalStore` subscriber does not re-render on
+ *  every poll. An older server answers no list: that reads as none. */
+export function notePlacedPrompts(
+  sessionId: string,
+  placed: readonly SessionPlacedPrompt[] | undefined,
+): void {
+  const next = placed && placed.length > 0 ? placed : NO_PLACED;
+  const current = placedBySession.get(sessionId) ?? NO_PLACED;
+  if (samePlacedPrompts(current, next)) return;
+  if (next === NO_PLACED) placedBySession.delete(sessionId);
+  else placedBySession.set(sessionId, Object.freeze([...next]));
+  for (const listener of placedListeners) listener();
+}
+
+function samePlacedPrompts(
+  a: readonly SessionPlacedPrompt[],
+  b: readonly SessionPlacedPrompt[],
+): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    const x = a[i]!;
+    const y = b[i]!;
+    if (
+      x.prompt_id !== y.prompt_id ||
+      x.wire_message_id !== y.wire_message_id ||
+      x.message_id !== y.message_id ||
+      (x.message_ids ?? []).join('\n') !== (y.message_ids ?? []).join('\n')
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** The pairings last read for `sessionId`; empty when none, or no session. */
+export function readPlacedPrompts(sessionId: string | undefined): readonly SessionPlacedPrompt[] {
+  return (sessionId && placedBySession.get(sessionId)) || NO_PLACED;
+}
+
+function subscribePlacedPrompts(listener: () => void): () => void {
+  placedListeners.add(listener);
+  return () => {
+    placedListeners.delete(listener);
+  };
+}
 
 // ============================================================================
 // Resume and remove answer on the click
@@ -676,7 +752,11 @@ export async function readSessionPromptsInbox(
   // Age stamped BEFORE the request, like `/turn`'s: an answer is only as fresh
   // as the moment it was asked.
   const atMs = Date.now();
-  const { prompts, observed_at } = await listSessionPrompts(projectId, sessionId);
+  const { prompts, observed_at, placed } = await listSessionPrompts(projectId, sessionId);
+  // Before the freshness rule below: a pairing is an identity, not a snapshot,
+  // and a read the rule discards still names ids the host may be holding a
+  // bubble under.
+  notePlacedPrompts(sessionId, placed);
   const serverAtMs = observed_at ? Date.parse(observed_at) : Number.NaN;
   // Keep this tab's not-yet-confirmed rows on screen across a poll that landed
   // before their POST returned.
@@ -695,6 +775,12 @@ export async function readSessionPromptsInbox(
 
 export interface UseSessionPromptsResult {
   prompts: SessionPrompt[];
+  /** Pairings of rows that left `prompts` within the last ten minutes and were
+   *  delivered under an id other than the one the host painted with. A host
+   *  that paints prompts under their wire id announces each pairing to its
+   *  transcript store so the bubble is retired even when the row itself was
+   *  never observed re-minted. Empty on servers without the field. */
+  placed: readonly SessionPlacedPrompt[];
   isLoading: boolean;
   /** Put one prompt in the inbox. Resolving means DURABLE, not delivered. */
   enqueue: (input: CreateSessionPromptInput) => Promise<CreateSessionPromptResult>;
@@ -954,9 +1040,15 @@ export function useSessionPrompts(
     () => readPendingActions(sessionId),
     () => NO_PENDING_ACTIONS,
   );
+  const placed = useSyncExternalStore(
+    subscribePlacedPrompts,
+    () => readPlacedPrompts(sessionId),
+    () => NO_PLACED,
+  );
 
   return {
     prompts: query.data ?? [],
+    placed,
     isLoading: query.isLoading,
     enqueue: enqueueMutation.mutateAsync,
     remove,

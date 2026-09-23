@@ -770,6 +770,22 @@ message completes, at most 5 reads. Those repair reads call `hydrate` with
 `{ stampActivity: false }`: the page is not evidence that the runtime is
 producing, so it must not restart the liveness clock.
 
+A reload in the middle of a step meets the open step from two sides. The
+stream delivers `message.part.delta` frames for parts the tab has not seen,
+and a delta frame names no part type. The transcript page names the type, but
+OpenCode persists an open text or reasoning part with empty text until the part
+ends. The Kortix daemon adds the text streamed so far to each open part in the
+page. `hydrate` and `message.part.updated` apply three rules to text and
+reasoning parts:
+
+- The server's copy sets the part's type and timestamps. A delta stub never
+  turns reasoning into reply text.
+- A part with `time.end` holds its complete text, and that copy replaces the
+  streamed text. An open copy never reopens an ended part.
+- Streamed text and the page's text merge at their overlap. When deltas are
+  still arriving, the merged text ends where the stream ends, so no span shows
+  twice.
+
 ## Rules of the road
 
 - **No `@opencode-ai/sdk` in host code.** Import opencode types/client from

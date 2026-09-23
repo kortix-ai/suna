@@ -1,4 +1,5 @@
 import { publishOpenCodeEvent } from './event-bus'
+import { openPartText } from './open-part-text'
 import { writeFileSync, readFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { agentEnvDirIsTmpfs, writeAgentEnvFile } from '../../agent-env-file'
@@ -759,6 +760,7 @@ async function startSessionRuntime(
     // follows, which IS allowed to mark the runtime unhealthy.
     try {
       publishOpenCodeEvent(kortixEventBus(), event)
+      openPartText().noteEvent(event)
       runtimeStateStore()?.noteEvent(event)
       // A catalog-moving frame re-pushes the projection (debounced, etag-gated).
       // Same set noteEvent invalidates its catalog on.
@@ -885,7 +887,12 @@ async function startSessionRuntime(
     onSessionIdle,
     onSessionError,
     onSessionStatus,
-    onConnected,
+    // A (re)subscribed stream may have missed deltas: forget every open part's
+    // text rather than serve it with a hole (see open-part-text.ts).
+    onConnected: () => {
+      openPartText().clear()
+      onConnected()
+    },
     onReconcile: onConnected,
   }
   let loopStarted = false

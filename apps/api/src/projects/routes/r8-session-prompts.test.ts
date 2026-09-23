@@ -14,6 +14,7 @@ import { Hono } from 'hono';
 import * as realAccess from '../lib/access';
 import * as realLifecycle from '../session-lifecycle';
 import * as realEngine from '../session-lifecycle/engine';
+import { PLACED_INBOX_WINDOW_MS } from '../session-lifecycle/inbox-rows';
 
 const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
 const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
@@ -34,6 +35,7 @@ type CommandRow = {
   lastError: string | null;
   createdAt: Date;
   availableAt: Date;
+  updatedAt: Date;
 };
 
 let commandTable: CommandRow[] = [];
@@ -58,6 +60,7 @@ function row(overrides: Partial<CommandRow> = {}): CommandRow {
     lastError: null,
     createdAt: new Date('2026-08-18T00:00:00.000Z'),
     availableAt: new Date('2026-08-18T00:00:00.000Z'),
+    updatedAt: new Date('2026-08-18T00:00:00.000Z'),
     ...overrides,
   };
 }
@@ -159,6 +162,23 @@ const databaseMock = {
  */
 function applyValues(r: CommandRow, values: Record<string, unknown>) {
   for (const [key, value] of Object.entries(values)) {
+    // A per-row CASE on the row's status (the Stop hold writes one statement
+    // for every state a row can be in): take the branch THIS row matches.
+    const branch = caseBranchFor(value, r.status);
+    if (branch !== null) {
+      const at = /^\$?"?([^"]+?)"?::timestamptz$/.exec(branch);
+      if (at) {
+        (r as Record<string, unknown>)[key] = new Date(at[1]);
+        continue;
+      }
+      const literal = /^'(\{[^']*\})'::jsonb$/.exec(branch);
+      if (literal) {
+        const current = ((r as Record<string, unknown>)[key] ?? {}) as Record<string, unknown>;
+        (r as Record<string, unknown>)[key] = { ...current, ...(JSON.parse(literal[1]) as Record<string, unknown>) };
+      }
+      // `col:…` — the column keeps its own value.
+      continue;
+    }
     const patch = jsonbPatch(value);
     if (!patch) {
       (r as Record<string, unknown>)[key] = value;
@@ -169,6 +189,18 @@ function applyValues(r: CommandRow, values: Record<string, unknown>) {
     for (const dropped of patch.remove) delete next[dropped];
     (r as Record<string, unknown>)[key] = next;
   }
+}
+
+/** The expression a `CASE WHEN col:status = '<s>' THEN … ELSE … END` picks for
+ *  a row in `status`, or null when the value is no such CASE. */
+function caseBranchFor(value: unknown, status: string): string | null {
+  if (!value || typeof value !== 'object' || !('queryChunks' in (value as object))) return null;
+  const rendered = render(value).replace(/\s+/g, ' ');
+  if (!/CASE WHEN col:status = '/.test(rendered)) return null;
+  for (const m of rendered.matchAll(/WHEN col:status = '(\w+)' THEN (.+?) (?=WHEN|ELSE)/g)) {
+    if (m[1] === status) return m[2].trim();
+  }
+  return /ELSE (.+?) END/.exec(rendered)?.[1]?.trim() ?? null;
 }
 
 /** The jsonb literals a `col || '{…}'::jsonb - 'key'` expression applies. */
@@ -187,7 +219,12 @@ function jsonbPatch(
 /** The handler passes drizzle SQL nodes; the mock reads the ids and statuses
  *  the route bound into them and re-applies them as a predicate. */
 function predicateOf(predicate: unknown): (r: CommandRow) => boolean {
-  const rendered = render(predicate);
+  // The claimed-sibling subquery is re-expressed below as its own check; its
+  // `<>` and literals are not the outer predicate's.
+  const rendered = render(predicate).replace(
+    /NOT EXISTS \([\s\S]*?::uuid\s*\)/,
+    "NOT EXISTS (sibling.status = 'running')",
+  );
   const ids = [...rendered.matchAll(/"([0-9a-f-]{36})"/g)].map((m) => m[1]);
   const statuses = [...rendered.matchAll(/"(queued|running|succeeded|failed|dead_lettered)"/g)].map(
     (m) => m[1],
@@ -198,7 +235,33 @@ function predicateOf(predicate: unknown): (r: CommandRow) => boolean {
   const excludesStopPaused = rendered.includes("->>'stop_paused', '') <> 'true'");
   const wantsStopPaused = rendered.includes("->>'stop_paused', '') = 'true'");
   const wantsHeld = rendered.includes("->>'held', '') = 'true'");
+  // `placed`: rows that LEFT the pending list (`delivered`), inside a window on
+  // `updated_at`. `inboxScope` is honoured too, so an automation row (no
+  // `clientMessageId`) is refused here the way Postgres refuses it.
+  const wantsDelivered = rendered.includes("->>'status' = 'delivered'");
+  const wantsClientMessageId = rendered.includes("->>'clientMessageId' is not null");
+  const updatedSince = /col:updated_at >= \$"([^"]+)"/.exec(rendered)?.[1];
+  // The Remove of a claimed row: only before its POST commit, and only while
+  // no sibling of the session is claimed with it (`deleteInboxPrompt`).
+  const wantsUncommitted = rendered.includes("->>'post_committed_at' IS NULL");
+  const wantsNoClaimedSibling = rendered.includes('NOT EXISTS') && rendered.includes("sibling.status = 'running'");
+  // The Stop hold: queued or claimed, OR forwarded (`holdInboxPrompts`).
+  const holdArms =
+    rendered.includes(' or ') &&
+    !rendered.includes('<>') &&
+    ['queued', 'running', 'succeeded'].every((st) => statuses.includes(st)) &&
+    wantsForwarded;
   return (r) => {
+    if (wantsUncommitted && r.result?.post_committed_at) return false;
+    if (
+      wantsNoClaimedSibling &&
+      commandTable.some((o) => o !== r && o.sessionId === r.sessionId && o.status === 'running')
+    ) {
+      return false;
+    }
+    if (wantsDelivered && r.result?.status !== 'delivered') return false;
+    if (wantsClientMessageId && typeof r.payload?.clientMessageId !== 'string') return false;
+    if (updatedSince && r.updatedAt.getTime() < Date.parse(updatedSince)) return false;
     if (ids.length > 0) {
       const wanted = new Set(ids);
       if (!wanted.has(r.commandId) && !wanted.has(r.sessionId ?? '')) return false;
@@ -213,6 +276,7 @@ function predicateOf(predicate: unknown): (r: CommandRow) => boolean {
     if (wantsStopPaused && r.result?.stop_paused !== true) return false;
     if (excludesStopPaused && r.result?.stop_paused === true) return false;
     const forwarded = r.result?.status === 'forwarded';
+    if (holdArms) return r.status === 'queued' || r.status === 'running' || (r.status === 'succeeded' && forwarded);
     if (statuses.length > 0) {
       const wanted = new Set(statuses);
       // `listInboxPrompts`: NOT succeeded, OR forwarded. The forwarded arm is
@@ -357,7 +421,7 @@ mock.module('../session-lifecycle/engine', () => ({
 }));
 
 type RuntimeMessage = {
-  info: { id: string; role: string; parentID?: string };
+  info: { id: string; role: string; parentID?: string; time?: { created?: number; completed?: number } };
   parts: Array<{ id: string }>;
 };
 let runtimeMessages: RuntimeMessage[] = [];
@@ -909,6 +973,130 @@ describe('GET .../prompts', () => {
     expect(body.prompts[0].state).toBe('failed');
   });
 
+  // THE PAIRING OUTLIVES THE ROW. A steered prompt is confirmed `delivered` at
+  // ACCEPTANCE (`acceptSandboxTurn` → `confirmInboxPromptConsumed`), often
+  // under 1 s after the drain re-minted it, and the tab polls this list every
+  // 1 s. A tab that missed that one poll never learned the re-minted id: the
+  // runtime's echo landed as a NEW message beside the tab's own bubble (the
+  // client id), which stayed on screen until reload — measured 2026-09-22
+  // (preview session "YO" 134c0d27: bubble 4 the echo, bubble 5 the stub with
+  // "just now" and Thinking under it; the transcript held the text once).
+  describe('placed — pairings of rows that just left the list', () => {
+    const REMINTED_ID = 'msg_0198f3a1c9f0ReMiNtEdReMiNt';
+    const EARLIER_REMINT = 'msg_0198f3a1c8e0EaRlIeReMiNtEa';
+    async function placed() {
+      const body = (await list()) as unknown as { placed: Array<Record<string, unknown>> };
+      return body.placed;
+    }
+
+    test('lists a re-minted delivered row: every id the bubble may be on screen under', async () => {
+      commandTable = [
+        row({
+          status: 'succeeded',
+          payload: {
+            text: 'say hi',
+            clientMessageId: 'q_1',
+            wireMessageId: WIRE_ID,
+            redeliveredMessageId: REMINTED_ID,
+            redeliveredMessageIds: [EARLIER_REMINT, REMINTED_ID],
+          },
+          result: { status: 'delivered', forwarded_message_id: REMINTED_ID },
+          updatedAt: new Date('2026-09-22T12:15:11.000Z'),
+        }),
+      ];
+      const now = Date.parse('2026-09-22T12:15:30.000Z');
+      const realNow = Date.now;
+      Date.now = () => now;
+      try {
+        expect(await placed()).toEqual([
+          {
+            prompt_id: PROMPT_ID,
+            client_message_id: 'q_1',
+            wire_message_id: WIRE_ID,
+            message_id: REMINTED_ID,
+            message_ids: [REMINTED_ID, EARLIER_REMINT],
+            placed_at: '2026-09-22T12:15:11.000Z',
+          },
+        ]);
+      } finally {
+        Date.now = realNow;
+      }
+    });
+
+    test('is always present — an empty list, never absent', async () => {
+      commandTable = [];
+      expect(await placed()).toEqual([]);
+    });
+
+    test('omits a row delivered under its own client id — nothing to pair', async () => {
+      commandTable = [
+        row({
+          status: 'succeeded',
+          result: { status: 'delivered', forwarded_message_id: WIRE_ID },
+          updatedAt: new Date(),
+        }),
+      ];
+      expect(await placed()).toEqual([]);
+    });
+
+    // The window is ten minutes, not one: a hidden tab does not poll
+    // (`refetchIntervalInBackground` is off) and refetches once on focus, so
+    // the pairing has to still be there when the user comes back. Beyond the
+    // window the tab keeps its bubble until reload — stated in
+    // `PLACED_INBOX_WINDOW_MS`.
+    test('still lists a row that left the list minutes ago — a hidden tab reads it on focus', async () => {
+      commandTable = [
+        row({
+          status: 'succeeded',
+          payload: { text: 'say hi', clientMessageId: 'q_1', wireMessageId: WIRE_ID, redeliveredMessageId: REMINTED_ID },
+          result: { status: 'delivered', forwarded_message_id: REMINTED_ID },
+          updatedAt: new Date(Date.now() - 9 * 60_000),
+        }),
+      ];
+      expect(PLACED_INBOX_WINDOW_MS).toBe(10 * 60_000);
+      expect((await placed()).map((p) => p.message_id)).toEqual([REMINTED_ID]);
+    });
+
+    test('omits a row that left the list longer ago than the window', async () => {
+      commandTable = [
+        row({
+          status: 'succeeded',
+          payload: { text: 'say hi', clientMessageId: 'q_1', wireMessageId: WIRE_ID, redeliveredMessageId: REMINTED_ID },
+          result: { status: 'delivered', forwarded_message_id: REMINTED_ID },
+          updatedAt: new Date(Date.now() - PLACED_INBOX_WINDOW_MS - 1_000),
+        }),
+      ];
+      expect(await placed()).toEqual([]);
+    });
+
+    test('omits a row still PENDING (forwarded) — the prompts list carries that pairing', async () => {
+      commandTable = [
+        row({
+          status: 'succeeded',
+          payload: { text: 'say hi', clientMessageId: 'q_1', wireMessageId: WIRE_ID, redeliveredMessageId: REMINTED_ID },
+          result: { status: 'forwarded', forwarded_message_id: REMINTED_ID },
+          updatedAt: new Date(),
+        }),
+      ];
+      const body = (await list()) as unknown as { prompts: unknown[]; placed: unknown[] };
+      expect(body.prompts).toHaveLength(1);
+      expect(body.placed).toEqual([]);
+    });
+
+    test('never lists an automation row — no clientMessageId, no bubble to retire', async () => {
+      commandTable = [
+        row({
+          status: 'succeeded',
+          idempotencyKey: null,
+          payload: { text: 'scheduled', wireMessageId: WIRE_ID, redeliveredMessageId: REMINTED_ID },
+          result: { status: 'delivered', forwarded_message_id: REMINTED_ID },
+          updatedAt: new Date(),
+        }),
+      ];
+      expect(await placed()).toEqual([]);
+    });
+  });
+
   test('reads through the read tier and the session-read leaf', async () => {
     await list();
     expect(loadProjectCalls).toEqual([{ projectId: PROJECT_ID, action: 'read' }]);
@@ -968,9 +1156,41 @@ describe('DELETE .../prompts/:promptId', () => {
     expect(body.removed.held).toBe(true);
   });
 
-  test('refuses to remove a prompt that is already on the wire', async () => {
-    // Cancelling a running delivery is not possible without lying about it.
+  test('removes a CLAIMED prompt whose POST has not been committed — the Remove wins the race', async () => {
+    // The drain holds a claimed steer for ~2 s (admission, re-mint, readiness)
+    // before it POSTs. A Remove inside that window used to wait for the POST,
+    // then empty the runtime's copy; the transcript kept a part-less husk.
     commandTable = [row({ status: 'running' })];
+    const response = await remove();
+    expect(response.status).toBe(200);
+    expect(commandTable).toEqual([]);
+    const body = (await response.json()) as { removed: { prompt_id: string } };
+    expect(body.removed.prompt_id).toBe(PROMPT_ID);
+  });
+
+  test('a claimed prompt delivered in a GROUP with a claimed sibling takes the cancel path', async () => {
+    // Its earlier siblings go out `noReply`; removing one row mid-delivery
+    // would leave them with no reply to read them.
+    commandTable = [
+      row({ status: 'running' }),
+      row({
+        commandId: '77777777-7777-4777-8777-777777777777',
+        idempotencyKey: `prompt:${SESSION_ID}:q_2`,
+        status: 'running',
+        payload: { text: 'two', clientMessageId: 'q_2', wireMessageId: WIRE_ID },
+      }),
+    ];
+    setTimeout(() => {
+      commandTable = commandTable.filter((r) => r.commandId !== PROMPT_ID);
+    }, 50);
+    const response = await remove();
+    expect(response.status).not.toBe(200);
+  });
+
+  test('refuses to remove a prompt that is already on the wire', async () => {
+    // Cancelling a running delivery whose POST is committed is not possible
+    // without lying about it.
+    commandTable = [row({ status: 'running', result: { post_committed_at: '2026-09-23T00:00:00Z' } })];
     const response = await remove();
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({
@@ -1017,10 +1237,47 @@ describe('DELETE .../prompts/:promptId', () => {
     expect(commandTable).toHaveLength(1);
   });
 
+  // Live incident 2026-09-21/22 (sessions 4f345186, 17e3ad83): a steered
+  // prompt LIFTED to the box clock sits above a later sibling UNDER-PLACED at
+  // its client id, and OpenCode parents the one merged reply on the sibling.
+  // By id order that reply is a higher assistant with an older parent — the
+  // strand signature — so a cancel judged without the box's `time.created`
+  // stamps read the lifted prompt as never read, deleted the answered message
+  // from the transcript and dropped its row; an Undo then ran it a second,
+  // paid time. The stamps say the reply's step began after the prompt was
+  // persisted: it was read, and it is being answered.
+  test('a forwarded steer answered inside a later sibling\'s merged reply is 409 already sent, and stays in the transcript', async () => {
+    opencodeEndpoint = { endpoint: { url: 'http://box.test', headers: {} }, opencodeSessionId: 'ses_1' };
+    const T = 1_800_000_000_000;
+    // WIRE_ID's clock is 0x0198f3a1b2c4: the under-placed sibling sorts
+    // below it, the merged reply above it.
+    const under = 'msg_0198f3a1b2b0UnderUnderUnde';
+    const merged = 'msg_0198f3a1b2d0MergeMergeMerg';
+    runtimeMessages = [
+      { info: { id: WIRE_ID, role: 'user', time: { created: T + 1_000 } }, parts: [{ id: 'prt_1' }] },
+      { info: { id: under, role: 'user', time: { created: T + 1_200 } }, parts: [{ id: 'prt_2' }] },
+      {
+        info: { id: merged, role: 'assistant', parentID: under, time: { created: T + 2_500, completed: T + 2_600 } },
+        parts: [{ id: 'prt_3' }],
+      },
+    ];
+    commandTable = [
+      row({ status: 'succeeded', result: { status: 'delivered', forwarded_message_id: WIRE_ID } }),
+    ];
+    const response = await remove();
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: 'Prompt is already being answered',
+      code: 'prompt_already_sent',
+    });
+    expect(commandTable).toHaveLength(1);
+    expect(runtimeMessages.map((m) => m.info.id)).toEqual([WIRE_ID, under, merged]);
+  });
+
   test('a running prompt that disappears while the cancel watches it is 404, not a 409', async () => {
     // Another tab removed it, or the drain requeued and a second DELETE took
     // it, while this request polled for the delivery to settle.
-    commandTable = [row({ status: 'running' })];
+    commandTable = [row({ status: 'running', result: { post_committed_at: '2026-09-23T00:00:00Z' } })];
     setTimeout(() => {
       commandTable = [];
     }, 50);
@@ -1030,7 +1287,7 @@ describe('DELETE .../prompts/:promptId', () => {
   });
 
   test('a running prompt the drain closes as skipped while the cancel watches is 409 already sent', async () => {
-    commandTable = [row({ status: 'running' })];
+    commandTable = [row({ status: 'running', result: { post_committed_at: '2026-09-23T00:00:00Z' } })];
     setTimeout(() => {
       commandTable[0].status = 'succeeded';
       commandTable[0].result = { status: 'skipped', reason: 'already_answered' };

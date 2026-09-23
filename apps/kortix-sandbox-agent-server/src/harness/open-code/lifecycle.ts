@@ -13,11 +13,17 @@ import { spawn, type ChildProcess } from 'node:child_process'
 /**
  * How a config reload was applied, and what it cost.
  *
- * `turnEnded` is only ever true for the respawn path — a dispose re-reads the
- * config in place and interrupts nothing.
+ * `turnEnded` is only ever true for the respawn path. A dispose re-reads the
+ * config in place, but it still ABORTS any in-flight message (OpenCode logs
+ * `disposing all instances`, then `error=Aborted`); the env route therefore
+ * never reloads while a turn is running.
  */
 export interface ReloadConfigResult {
-  how: 'disposed' | 'restarted' | 'kept-old'
+  /**
+   * `unchanged`: the composed config is byte-identical to the one OpenCode
+   * already read, so nothing was disposed or restarted.
+   */
+  how: 'unchanged' | 'disposed' | 'restarted' | 'kept-old'
   turnEnded: boolean | null
 }
 
@@ -2240,12 +2246,14 @@ export function createOpencodeLifecycle(
    *     exist: it falls through to opencode's SPA catch-all and answers 200
    *     text/html. Hence `/global/dispose` directly.
    */
-  async function tryDisposeReload(): Promise<boolean> {
+  async function tryDisposeReload(): Promise<'unchanged' | 'disposed' | false> {
     // The SAME env spawnChild composes the config from, so a dispose and a
     // respawn can never disagree about what the config should be.
     const baseEnv = currentProjectEnv
       ? mergeProjectEnv(process.env, currentProjectEnv)
       : process.env
+    const configPath = options.configPathOverride ?? KORTIX_OPENCODE_CONFIG_PATH
+    const before = readConfigBytes(configPath)
     const written = await writeComposedConfig(baseEnv).catch((err) => {
       logger.warn('[opencode] could not rewrite config for reload', {
         err: (err as Error).message,
@@ -2253,7 +2261,25 @@ export function createOpencodeLifecycle(
       return null
     })
     if (!written) return false
-    return disposeInstances()
+    // A dispose ABORTS every in-flight turn: OpenCode logs `disposing all
+    // instances` and fails the running message with `Aborted` (2026-09-22, a
+    // tool loop killed at tick-6). Identical bytes give OpenCode nothing new
+    // to read, so skip it. The common case is a KORTIX_LLM_BASE_URL change in
+    // proxy mode: the provider points at the localhost proxy, which the env
+    // route has already retargeted in place.
+    if (before !== null && before === readConfigBytes(written)) {
+      logger.info('[opencode] composed config unchanged; no dispose needed')
+      return 'unchanged'
+    }
+    return (await disposeInstances()) ? 'disposed' : false
+  }
+
+  function readConfigBytes(path: string): string | null {
+    try {
+      return readFileSync(path, 'utf8')
+    } catch {
+      return null
+    }
   }
 
   /** `POST /global/dispose`: every instance re-reads config on its next request. */
@@ -2553,9 +2579,15 @@ export function createOpencodeLifecycle(
       return false
     },
     async reloadConfig(opts: { mustRespawn?: boolean } = {}): Promise<ReloadConfigResult> {
-      // A dispose re-reads the config in place — same process, no turn lost.
-      if (!opts.mustRespawn && (await tryDisposeReload())) {
-        return { how: 'disposed', turnEnded: false }
+      // A dispose re-reads the config in place in the same process. It still
+      // aborts any turn in flight — callers that must not interrupt a turn
+      // defer the reload (see the env route in control.ts). `turnEnded` stays
+      // false here because a dispose does not end the turn's lifecycle row;
+      // the aborted message ends it through OpenCode's own events.
+      if (!opts.mustRespawn) {
+        const disposed = await tryDisposeReload()
+        if (disposed === 'unchanged') return { how: 'unchanged', turnEnded: false }
+        if (disposed === 'disposed') return { how: 'disposed', turnEnded: false }
       }
       // Verified swap instead of the old kill-then-hope restart. A config that
       // cannot boot now leaves the running opencode in place and reports why,

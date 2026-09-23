@@ -4,6 +4,7 @@ import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import type { SessionTurnEndReason } from '../sandbox-turn-lifecycle';
 import { INBOX_HOLD_MS, isStopPausedInboxRow } from './inbox-rows';
+import { readUserStopRequestedAt, stoppedAfterDelivery } from './stop-mark';
 import {
   type QueuedContinueSessionPayload,
   type SessionLifecycleCommandRow,
@@ -66,6 +67,9 @@ export interface RedeliveryDeps {
     /** Come back VISIBLE but not due — see `requeueAbandonedPrompt`'s `hold`. */
     held?: boolean;
   }) => Promise<void>;
+  /** When a person last stopped the session (epoch ms), or null. Optional:
+   *  absent, no stop instant is known — see `stop-mark.ts`. */
+  readUserStopRequestedAt?: (sessionId: string) => Promise<number | null>;
   deadLetter: (input: {
     commandId: string;
     redeliveries: number;
@@ -76,6 +80,7 @@ export interface RedeliveryDeps {
 }
 
 const liveDeps: RedeliveryDeps = {
+  readUserStopRequestedAt,
   async findPromptByWireId(sessionId, wireMessageId) {
     const [row] = await db
       .select()
@@ -216,7 +221,16 @@ export async function requeueAbandonedPrompt(
   // must not do is deliver it: coming back DUE would put the stopped prompt
   // back on the wire one reaper pass after the abort. It comes back HELD
   // instead — visible, and released by the user's next send or "send now".
-  const stopPaused = isStopPausedInboxRow(row.result);
+  //
+  // The same holds for a steer the runtime already ACCEPTED when the Stop came:
+  // its row is `delivered`, which the hold does not mark, so the Stop's
+  // recorded instant decides (`stop-mark.ts`).
+  const stopPaused =
+    isStopPausedInboxRow(row.result) ||
+    stoppedAfterDelivery(
+      (await deps.readUserStopRequestedAt?.(input.sessionId)) ?? null,
+      (row.result as { forwarded_at?: unknown } | null)?.forwarded_at,
+    );
 
   if (redeliveries > MAX_PROMPT_REDELIVERIES) {
     await deps.deadLetter({

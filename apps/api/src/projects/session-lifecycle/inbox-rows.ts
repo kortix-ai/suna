@@ -1,8 +1,10 @@
-import { sessionLifecycleCommands } from '@kortix/db';
-import { and, eq, inArray, isNotNull, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
+import { projectSessions, sessionLifecycleCommands } from '@kortix/db';
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { inboxOrderBy } from './inbox-order';
+import { clearUserStop, markUserStopRequested, readUserStop } from './stop-mark';
 import { type SessionLifecycleCommandRow, withNextDeliveryAttempt } from './store';
+import { wireMessageIdMatches } from './wire-id-match';
 
 /**
  * The inbox's row operations — everything `GET/DELETE/retry/hold …/prompts`
@@ -69,6 +71,123 @@ export async function listInboxPrompts(
     )
     .orderBy(...inboxOrderBy())
     .limit(limit);
+}
+
+/**
+ * How long a row that LEFT the pending list is still served as a PLACED
+ * pairing (`GET .../prompts` `placed`).
+ *
+ * A tab paints a prompt under the client wire id and the drain re-mints it;
+ * the runtime's echo carries neither the client id nor the client's part ids
+ * (`sanitizeInboxPromptParts` drops them), so the ROW is the only thing that
+ * names the pairing. A steered row is confirmed `delivered` at ACCEPTANCE
+ * (`acceptSandboxTurn` → `confirmInboxPromptConsumed`), often under 1 s after
+ * the re-mint, while the tab polls the list every 1 s: a tab that missed
+ * that one poll never learned the pairing, and the echo landed as a NEW
+ * message beside its own bubble until reload (2026-09-22, preview session
+ * "YO" 134c0d27). The pairing is an identity, so serving it late costs
+ * nothing; the query is bounded by `PLACED_INBOX_LIMIT` and served by the
+ * session index either way.
+ *
+ * WHAT TEN MINUTES COVERS, EXACTLY. A visible tab polls every 1 s live and
+ * every 15 s idle, so any window covers it. A HIDDEN tab does not poll at
+ * all (`useSessionPrompts` leaves react-query's `refetchIntervalInBackground`
+ * off) and refetches ONCE on focus — while the SSE echo still lands in the
+ * hidden tab as a new message. Sixty seconds left that focus read empty for
+ * a user who pressed Enter, switched tabs inside the second, and came back
+ * later than a minute: the reported symptom again (review finding,
+ * 2026-09-22). Ten minutes is the horizon the forwarded-row settle sweep
+ * already uses (`inbox-hold-settle.ts`). A tab hidden LONGER than that
+ * keeps its bubble until reload — bounded, and stated.
+ */
+export const PLACED_INBOX_WINDOW_MS = 10 * 60_000;
+export const PLACED_INBOX_LIMIT = 50;
+
+/**
+ * This session's inbox rows that left the pending list inside
+ * `PLACED_INBOX_WINDOW_MS` — `succeeded` AND confirmed `delivered` (a
+ * `forwarded` row is still listed by `listInboxPrompts`, which already
+ * carries its pairing; a skipped row never went out under a new id). One
+ * bounded query, newest first. The caller keeps only rows whose delivered id
+ * differs from the client wire id (`serializePlacedPrompt`).
+ */
+export async function listPlacedInboxPrompts(
+  sessionId: string,
+  nowMs: number = Date.now(),
+  limit: number = PLACED_INBOX_LIMIT,
+): Promise<SessionLifecycleCommandRow[]> {
+  return db
+    .select()
+    .from(sessionLifecycleCommands)
+    .where(
+      and(
+        inboxScope(sessionId),
+        eq(sessionLifecycleCommands.status, 'succeeded'),
+        sql`${sessionLifecycleCommands.result}->>'status' = 'delivered'`,
+        gte(sessionLifecycleCommands.updatedAt, new Date(nowMs - PLACED_INBOX_WINDOW_MS)),
+      ),
+    )
+    .orderBy(desc(sessionLifecycleCommands.updatedAt))
+    .limit(limit);
+}
+
+/** What the send-order gate needs of a sibling's row: its send instant and
+ *  the two tiebreaks (`inboxSentAfter`). */
+export type InboxSendOrderRow = Pick<
+  SessionLifecycleCommandRow,
+  'commandId' | 'payload' | 'result' | 'createdAt'
+>;
+
+/** Every id one row ever carried on the wire — the same four columns
+ *  `wireMessageIdMatches` reads, so a lookup by any of them lands here. */
+function inboxRowWireIds(row: InboxSendOrderRow): string[] {
+  const payload = (row.payload ?? {}) as Record<string, unknown>;
+  const result = (row.result ?? {}) as Record<string, unknown>;
+  const ids = [
+    payload.wireMessageId,
+    payload.redeliveredMessageId,
+    result.forwarded_message_id,
+    ...(Array.isArray(payload.redeliveredMessageIds) ? payload.redeliveredMessageIds : []),
+  ];
+  return ids.filter((id): id is string => typeof id === 'string' && id.length > 0);
+}
+
+/**
+ * Which inbox row put each of these wire ids on the wire — the send-order
+ * gate's lookup (`underPlacementKeepsSendOrder`, engine.ts).
+ *
+ * One query over `inboxScope`, matched on every id column
+ * (`wireMessageIdMatches`), newest row first so an id two rows ever shared
+ * (a redelivery's earlier mint) resolves to the newer one, the way
+ * `findInboxRowIdByMessageId` resolves it. An id with no row is ABSENT from
+ * the map — a foreign producer's message — and the gate keeps today's
+ * behaviour for it.
+ */
+export async function readInboxRowsByWireIds(
+  sessionId: string,
+  messageIds: readonly string[],
+): Promise<Map<string, InboxSendOrderRow>> {
+  const byId = new Map<string, InboxSendOrderRow>();
+  const wanted = [...new Set(messageIds.filter((id) => id.length > 0))];
+  if (wanted.length === 0) return byId;
+  const rows = await db
+    .select({
+      commandId: sessionLifecycleCommands.commandId,
+      payload: sessionLifecycleCommands.payload,
+      result: sessionLifecycleCommands.result,
+      createdAt: sessionLifecycleCommands.createdAt,
+    })
+    .from(sessionLifecycleCommands)
+    .where(and(inboxScope(sessionId), or(...wanted.map((id) => wireMessageIdMatches(id)))))
+    .orderBy(desc(sessionLifecycleCommands.createdAt))
+    .limit(wanted.length * 2);
+  const wantedSet = new Set(wanted);
+  for (const row of rows) {
+    for (const id of inboxRowWireIds(row as InboxSendOrderRow)) {
+      if (wantedSet.has(id) && !byId.has(id)) byId.set(id, row as InboxSendOrderRow);
+    }
+  }
+  return byId;
 }
 
 export type InboxPromptDeletion =
@@ -148,6 +267,39 @@ export async function deleteInboxPrompt(
       ),
     );
   if (deleted[0]) return { outcome: 'deleted', row: deleted[0] };
+
+  // A row the drain has CLAIMED but not yet POSTed is still the user's.
+  //
+  // The claim is `running` for the whole of admission, the wire-id re-mint and
+  // the readiness wait — about 2 s for a steer (measured: Remove clicked 0.8 s
+  // after Enter, the POST left 1.2 s after that). Refusing that window sent the
+  // prompt to the runtime after the user had removed it; the cancel then had
+  // to empty a message the loop could not delete mid-step, and the transcript
+  // kept a part-less husk. The drain writes `post_committed_at`
+  // (`commitInboxPost`) in the statement that immediately precedes the POST,
+  // so this delete and that write are ordered by the row lock: whichever runs
+  // first wins, and the loser sees it.
+  //
+  // Only while it is the session's ONLY claimed row. A Quick Queue group is
+  // claimed together and its earlier rows go out `noReply`; taking one row out
+  // of the middle of that delivery would leave the rows already persisted with
+  // no reply to read them. A grouped row takes the cancel path below.
+  const claimedUnposted = await deleteInboxRowsWithAttachmentGrace(
+    and(
+      eq(sessionLifecycleCommands.commandId, promptId),
+      inboxScope(sessionId),
+      eq(sessionLifecycleCommands.status, 'running'),
+      sql`${sessionLifecycleCommands.result}->>'post_committed_at' IS NULL`,
+      sql`NOT EXISTS (
+        SELECT 1 FROM kortix.session_lifecycle_commands AS sibling
+         WHERE sibling.session_id = ${sessionId}
+           AND sibling.command_type = 'continue_session'
+           AND sibling.status = 'running'
+           AND sibling.command_id <> ${promptId}::uuid
+      )`,
+    ),
+  );
+  if (claimedUnposted[0]) return { outcome: 'deleted', row: claimedUnposted[0] };
 
   // A STOP-PAUSED row is the user's to remove, and a separate statement so the
   // predicate above stays one readable status list.
@@ -335,45 +487,26 @@ export async function retryInboxPrompt(
  */
 export async function holdInboxPrompts(sessionId: string, held: boolean): Promise<number> {
   if (held) {
-    const queued = await db
+    // ONE STATEMENT, three arms. It was three UPDATEs — queued, then
+    // forwarded, then running — and the drain moves a row between those
+    // states while they run: the head Queue List row is claimed every
+    // scheduler tick, refused (`turn_active`) and written back to `queued`.
+    // A row that was `running` when the queued arm looked and `queued` again
+    // when the running arm looked matched neither, kept no hold, and was
+    // delivered the moment the Stop ended the turn (measured: 1 of 3 live
+    // runs, 2026-09-22). One statement closes that window: Postgres waits
+    // for the drain's write, re-checks the predicate against the row it
+    // committed, and computes every CASE below from that same row.
+    const rows = await db
       .update(sessionLifecycleCommands)
-      .set(heldQueuedRowValues())
-      .where(and(inboxScope(sessionId), eq(sessionLifecycleCommands.status, 'queued')))
+      .set(heldRowValues())
+      .where(and(inboxScope(sessionId), holdableRowPredicate()))
       .returning({ commandId: sessionLifecycleCommands.commandId });
-
-    const forwarded = await db
-      .update(sessionLifecycleCommands)
-      .set({
-        // `stop_paused` is its OWN key, beside `held`, rather than a value of
-        // `result.status`: the row is still forwarded — OpenCode holds that
-        // message — and every reader of "is this row on the wire"
-        // (`isForwardedInboxRow`, the confirmation, the sweep) must keep saying
-        // yes. What changed is only who is waiting on it: the user.
-        result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) || '{"stop_paused": true, "held": true}'::jsonb`,
-        payload: sql`${sessionLifecycleCommands.payload} || '{"remintOnDelivery": true}'::jsonb`,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          inboxScope(sessionId),
-          eq(sessionLifecycleCommands.status, 'succeeded'),
-          sql`${sessionLifecycleCommands.result}->>'status' = 'forwarded'`,
-        ),
-      )
-      .returning({ commandId: sessionLifecycleCommands.commandId });
-
-    // A row the drain has already CLAIMED. `result` is replaced wholesale by
-    // `markCommandForwarded` when the delivery lands, so the mark has to live
-    // in the PAYLOAD, which is merged — the same asymmetry `remintOnDelivery`
-    // is written for.
-    const running = await db
-      .update(sessionLifecycleCommands)
-      .set(heldRunningRowValues())
-      .where(and(inboxScope(sessionId), eq(sessionLifecycleCommands.status, 'running')))
-      .returning({ commandId: sessionLifecycleCommands.commandId });
-
-    return queued.length + forwarded.length + running.length;
+    return rows.length;
   }
+
+  // The Stop is over: repairs deliver again, and no later send joins it.
+  await clearUserStop(sessionId).catch(() => undefined);
 
   // FIRST, so nothing below can be undone by it: a delivery that lands after
   // this clear is an ordinary forwarded row (the user released the hold), and
@@ -483,27 +616,109 @@ export function releaseInboxHold(sessionId: string): Promise<number> {
   return holdInboxPrompts(sessionId, false);
 }
 
-/** The Stop hold's marker on a QUEUED row: out of the drain's way for
- *  `INBOX_HOLD_MS`, and re-minted when it does go out. */
-function heldQueuedRowValues() {
+/**
+ * The hold a STOP REQUESTED BY A PERSON writes on the server, before the
+ * abort reaches the runtime.
+ *
+ * The browser's own hold (`POST .../prompts/hold`) runs before its abort, but
+ * that order was the client's to keep: a hold slower than the client's bound
+ * let the abort go first, and a host that never sends a hold (mobile, the CLI,
+ * a raw SDK abort) had none at all. Either way the turn ended, the turn-end
+ * relay promoted the next queued row, and the drain delivered the prompt the
+ * user pressed Stop to get ahead of. The proxy calls this for every
+ * client-requested abort, and `POST .../stop` calls it before it aborts the
+ * box, so no queued row is claimable between the Stop and the turn end.
+ *
+ * It also records WHEN the Stop happened, for the prompts the hold cannot
+ * mark — see `stop-mark.ts`.
+ */
+export async function holdInboxForRequestedStop(
+  sessionId: string,
+  scope: {
+    /** The OpenCode session the abort names. A SUBAGENT's abort stops that
+     *  child, not the conversation, so it holds nothing. */
+    opencodeSessionId?: string | null;
+    /** The Stop instant on the client's clock — see `sendJoinsHold`. */
+    clientStoppedAtMs?: number | null;
+  } = {},
+): Promise<number> {
+  if (scope.opencodeSessionId) {
+    const [session] = await db
+      .select({ root: projectSessions.opencodeSessionId })
+      .from(projectSessions)
+      .where(eq(projectSessions.sessionId, sessionId))
+      .limit(1);
+    if (session?.root && session.root !== scope.opencodeSessionId) return 0;
+  }
+  // The instant first: a requeue that runs between the two statements must
+  // already see it (`stop-mark.ts`).
+  await markUserStopRequested(sessionId, { clientStoppedAtMs: scope.clientStoppedAtMs });
+  return holdInboxPrompts(sessionId, true);
+}
+
+/**
+ * Does a send that just landed belong to the queue a Stop paused?
+ *
+ * Yes when a Stop is in force and the send's Enter instant precedes the Stop
+ * instant the same client recorded: the prompt was typed before the user
+ * pressed Stop, and its POST only arrived after the hold. It then joins the
+ * hold instead of releasing it. Anything else — a send typed after the Stop,
+ * a send or a hold with no client instant — keeps the rule that a new send
+ * releases the hold. A read that fails keeps that rule too.
+ */
+export async function sendJoinsHold(
+  sessionId: string,
+  clientSentAtMs: number | null,
+): Promise<boolean> {
+  if (typeof clientSentAtMs !== 'number' || !Number.isFinite(clientSentAtMs)) return false;
+  const stop = await readUserStop(sessionId).catch(() => null);
+  return stop !== null && stop.clientAtMs !== null && clientSentAtMs <= stop.clientAtMs;
+}
+
+/**
+ * The Stop hold's markers, by the state the row is in WHEN THE STATEMENT
+ * WRITES IT — every arm is a CASE on the row being written, never on a read
+ * taken earlier:
+ *
+ *  - QUEUED: out of the drain's way for `INBOX_HOLD_MS`, and re-minted when it
+ *    does go out (a held row is by definition one that did not go out on its
+ *    first claim — see `retryInboxPrompt` for why this lives in the payload).
+ *  - RUNNING (claimed): `result` is replaced wholesale by
+ *    `markCommandForwarded` when the delivery lands, so the stop mark lives in
+ *    the PAYLOAD, which is merged. `held` is written too: it is what the claim
+ *    and the pre-POST commit read, whatever the row's clock says.
+ *  - FORWARDED: STOP-PAUSED. `stop_paused` is its OWN key beside `held`
+ *    rather than a value of `result.status`: the row is still forwarded —
+ *    OpenCode holds that message — and every reader of "is this row on the
+ *    wire" (`isForwardedInboxRow`, the confirmation, the sweep) must keep
+ *    saying yes.
+ */
+function heldRowValues() {
+  const status = sessionLifecycleCommands.status;
+  const horizon = new Date(Date.now() + INBOX_HOLD_MS).toISOString();
   return {
-    availableAt: new Date(Date.now() + INBOX_HOLD_MS),
-    result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) || '{"held": true}'::jsonb`,
-    // A held row is by definition one that did not go out on its first
-    // claim — see `retryInboxPrompt` for why this lives in the payload.
-    payload: sql`${sessionLifecycleCommands.payload} || '{"remintOnDelivery": true}'::jsonb`,
+    availableAt: sql`CASE WHEN ${status} = 'queued' THEN ${horizon}::timestamptz ELSE ${sessionLifecycleCommands.availableAt} END`,
+    result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) || CASE
+      WHEN ${status} = 'succeeded' THEN '{"stop_paused": true, "held": true}'::jsonb
+      ELSE '{"held": true}'::jsonb
+    END`,
+    payload: sql`${sessionLifecycleCommands.payload} || CASE
+      WHEN ${status} = 'running' THEN '{"stopPausedOnDelivery": true, "remintOnDelivery": true}'::jsonb
+      ELSE '{"remintOnDelivery": true}'::jsonb
+    END`,
     updatedAt: new Date(),
   };
 }
 
-/** The Stop hold's marker on a row the drain already CLAIMED — see the running
- *  arm of `holdInboxPrompts`. */
-function heldRunningRowValues() {
-  return {
-    result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) || '{"held": true}'::jsonb`,
-    payload: sql`${sessionLifecycleCommands.payload} || '{"stopPausedOnDelivery": true, "remintOnDelivery": true}'::jsonb`,
-    updatedAt: new Date(),
-  };
+/** The rows a Stop is about: queued, claimed, or forwarded and unconsumed. */
+function holdableRowPredicate() {
+  return or(
+    inArray(sessionLifecycleCommands.status, ['queued', 'running']),
+    and(
+      eq(sessionLifecycleCommands.status, 'succeeded'),
+      sql`${sessionLifecycleCommands.result}->>'status' = 'forwarded'`,
+    ),
+  );
 }
 
 /**
@@ -515,24 +730,25 @@ function heldRunningRowValues() {
  * row's own held bit back and touches nothing else.
  *
  * The caller inserts the row already not due (`availableAt` at the hold
- * horizon), so the scheduler cannot claim it before this lands. A targeted
- * sibling sweep ignores `availableAt`, so a row it claimed in that window gets
- * the running-arm marker instead.
+ * horizon), so a plain claim cannot take it before this lands. The drain's
+ * sibling sweep ignores `availableAt` on every path, so a row it claimed in
+ * that window gets the running-arm marker instead.
  */
 export async function holdInboxPrompt(sessionId: string, promptId: string): Promise<boolean> {
-  const scope = and(eq(sessionLifecycleCommands.commandId, promptId), inboxScope(sessionId));
-  const [queued] = await db
+  // One statement for the same reason as `holdInboxPrompts`: the row can move
+  // between `queued` and `running` under two separate ones.
+  const [held] = await db
     .update(sessionLifecycleCommands)
-    .set(heldQueuedRowValues())
-    .where(and(scope, eq(sessionLifecycleCommands.status, 'queued')))
+    .set(heldRowValues())
+    .where(
+      and(
+        eq(sessionLifecycleCommands.commandId, promptId),
+        inboxScope(sessionId),
+        inArray(sessionLifecycleCommands.status, ['queued', 'running']),
+      ),
+    )
     .returning({ commandId: sessionLifecycleCommands.commandId });
-  if (queued) return true;
-  const [running] = await db
-    .update(sessionLifecycleCommands)
-    .set(heldRunningRowValues())
-    .where(and(scope, eq(sessionLifecycleCommands.status, 'running')))
-    .returning({ commandId: sessionLifecycleCommands.commandId });
-  return !!running;
+  return !!held;
 }
 
 /** Is this row deliberately held out of the drain? */
@@ -546,18 +762,40 @@ export function isStopPausedInboxRow(result: unknown): boolean {
   return (result as { stop_paused?: unknown } | null)?.stop_paused === true;
 }
 
+/** What one session's sibling sweep took, and where it stopped. */
+export interface SessionInboxSweep {
+  /** Claimed, in the canonical FIFO order of {@link inboxOrderBy}. */
+  claimed: SessionLifecycleCommandRow[];
+  /**
+   * The EARLIEST queued row the sweep saw and could NOT take, or null when it
+   * took every one.
+   *
+   * A row is left behind only when another worker won the CAS between the read
+   * and the claim — it is on the wire elsewhere. It is still a HOLE in this
+   * drain's batch, and a Quick Queue group may not span it
+   * (`quickQueueGroup`'s `firstUnclaimed`).
+   */
+  firstUnclaimed: SessionLifecycleCommandRow | null;
+}
+
 /**
- * Claim every DUE queued inbox prompt of one session — the siblings a targeted
- * drain sweeps into its delivery batch (see `drainSessionLifecycleQueue`).
- * Only rows with a `clientMessageId` (the composer's own submissions); an
- * admission-backoff row is due later and is left to its backoff.
+ * Claim every queued inbox prompt of one session — the siblings a drain sweeps
+ * into its delivery batch (see `drainSessionLifecycleQueue`). Only rows with a
+ * `clientMessageId` (the composer's own submissions).
+ *
+ * A DRAIN THAT HOLDS ONE OF A SESSION'S INBOX ROWS HOLDS ALL OF THEM. That is
+ * the whole point of the sweep, and it is why it ignores `available_at` below.
+ * Measured 2026-09-22: three Quick Queue prompts that ended one streaming
+ * response were put back on three different clocks (47.730 / 49.224 / 47.496 s),
+ * the 1 s scheduler drain claimed only the two that were due, and the grouping
+ * rule merged rows 1 and 3 across row 2.
  */
 export async function claimDueSessionInboxSiblings(input: {
   workerId: string;
   sessionId: string;
   now?: Date;
   limit?: number;
-}): Promise<SessionLifecycleCommandRow[]> {
+}): Promise<SessionInboxSweep> {
   const now = input.now ?? new Date();
   const rows = await db
     .select()
@@ -585,12 +823,16 @@ export async function claimDueSessionInboxSiblings(input: {
     .orderBy(...inboxOrderBy())
     .limit(input.limit ?? 20);
   const claimed: SessionLifecycleCommandRow[] = [];
+  let firstUnclaimed: SessionLifecycleCommandRow | null = null;
   for (const row of rows) {
     const [locked] = await db
       .update(sessionLifecycleCommands)
       .set({
         status: 'running',
         attempts: row.attempts + 1,
+        // A previous attempt's commit belongs to that attempt — see
+        // `claimDueLifecycleCommands`.
+        result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) - 'post_committed_at'`,
         lockedBy: input.workerId,
         lockedUntil: new Date(now.getTime() + 5 * 60_000),
         updatedAt: now,
@@ -599,10 +841,15 @@ export async function claimDueSessionInboxSiblings(input: {
         and(
           eq(sessionLifecycleCommands.commandId, row.commandId),
           eq(sessionLifecycleCommands.status, 'queued'),
+          // The hold may have landed between the read above and this claim.
+          sql`COALESCE(${sessionLifecycleCommands.result}->>'held', '') <> 'true'`,
         ),
       )
       .returning();
     if (locked) claimed.push(locked as SessionLifecycleCommandRow);
+    else if (firstUnclaimed === null) firstUnclaimed = row as SessionLifecycleCommandRow;
   }
-  return claimed;
+  return { claimed, firstUnclaimed };
 }
+
+

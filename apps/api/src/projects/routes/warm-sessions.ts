@@ -9,7 +9,7 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { projectSessions, sessionLifecycleCommands } from '@kortix/db';
+import { projectSessions, sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import { callerHasManagerStanding, loadProjectForUser } from '../lib/access';
 import { canUseAnyAgent } from '../lib/agent-access';
@@ -25,6 +25,8 @@ import { ACTIVE_SESSION_STATUSES } from '../lib/session-status';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { GitOperationError } from '../git/mirror';
+import { SANDBOX_INSTANCE_METADATA_KEY, currentInstanceId, instanceStampMetadata } from '../instance-scope';
+import { qualifiedColumn } from '../../shared/sql-qualified-column';
 
 /**
  * Warming is SPECULATIVE. The browser fires it on every project view and
@@ -49,6 +51,44 @@ const NO_REFRESH = { status: 'skipped' as const };
 const WARM_SESSION_MARKER = sql`${projectSessions.metadata}->>${WARM_SESSION_METADATA_KEY}::text = 'true'`;
 
 /**
+ * INSTANCE SCOPE for the warm pool (local dev on a shared DB — see
+ * ../instance-scope.ts). `undefined` (no filter) when `KORTIX_INSTANCE_ID` is
+ * unset, so deployed environments are unchanged.
+ *
+ * A warm session is handed out only when it belongs to this API instance:
+ *  - its sandbox row carries this instance's `instanceId`, none, or '' (legacy);
+ *  - and, for the window before that row exists (createProjectSession inserts
+ *    it in detached work after the session row), the session row's own
+ *    `instanceId` — stamped by the warm create below — is ours, none, or ''.
+ * Same rule as `claimDueLifecycleCommands` (session-lifecycle/store.ts).
+ *
+ * 2026-09-22: without this, the `session-reply-queue` API answered
+ * `POST /sessions/warm` with `reused: true` for a warm session whose sandbox
+ * was tagged `first-chat`. Every prompt sent through this API into such a
+ * session is an inbox row this API refuses to claim, so it stays `queued`
+ * with `attempts = 0` until the owning API runs again.
+ *
+ * Consequence: on a shared local DB each instance keeps its own warm session
+ * per user per project (one per instance, not one in total).
+ */
+function warmSessionInstanceScope() {
+  const mine = currentInstanceId();
+  if (!mine) return undefined;
+  // The session's own stamp is an OUTER column, and this template also carries
+  // a subquery: written bare it renders as `"metadata"`, which Postgres binds
+  // to `box` inside the NOT EXISTS (INC-2026-09-15, and the guard in
+  // `shared/sql-correlated-subquery-guard.test.ts`).
+  return sql`(
+    COALESCE(${qualifiedColumn(projectSessions.metadata)}->>${SANDBOX_INSTANCE_METADATA_KEY}::text, '') IN ('', ${mine})
+    AND NOT EXISTS (
+      SELECT 1 FROM ${sessionSandboxes} AS box
+      WHERE box.session_id = ${qualifiedColumn(projectSessions.sessionId)}
+        AND COALESCE(box.metadata->>${SANDBOX_INSTANCE_METADATA_KEY}::text, '') NOT IN ('', ${mine})
+    )
+  )`;
+}
+
+/**
  * The caller's live, still-unused warm session for this project, or null.
  *
  * ACTIVE statuses only, so a box the idle reaper already stopped is never handed
@@ -56,6 +96,9 @@ const WARM_SESSION_MARKER = sql`${projectSessions.metadata}->>${WARM_SESSION_MET
  * client compares what comes back against what the user actually selected and
  * falls back to an ordinary create when they differ, which is why the server
  * needs no notion of compatibility at all.
+ *
+ * Instance-scoped on a shared local DB (`warmSessionInstanceScope`): a warm
+ * session another local API instance provisioned is never returned here.
  *
  * `excludeSessionId` skips one session id — the one the caller just took. The
  * warm marker only drops when the FIRST PROMPT reaches the preview proxy
@@ -80,6 +123,7 @@ export async function findWarmProjectSession(scope: {
         inArray(projectSessions.status, [...ACTIVE_SESSION_STATUSES]),
         WARM_SESSION_MARKER,
         sql`coalesce(${projectSessions.metadata}->>'deletedAt', '') = ''`,
+        warmSessionInstanceScope(),
         ...(scope.excludeSessionId ? [ne(projectSessions.sessionId, scope.excludeSessionId)] : []),
       ),
     )
@@ -246,7 +290,10 @@ projectsApp.openapi(
         // default agent and default sandbox slug exactly as it does for a "New
         // session" click with no overrides. Nothing to keep in sync.
         body: {},
-        metadata: { source: 'ui', [WARM_SESSION_METADATA_KEY]: true },
+        // `instanceStampMetadata()` (`{}` when KORTIX_INSTANCE_ID is unset)
+        // marks which local API instance owns this warm session before its
+        // sandbox row exists — see warmSessionInstanceScope.
+        metadata: { source: 'ui', [WARM_SESSION_METADATA_KEY]: true, ...instanceStampMetadata() },
         // A warm box is real, billed compute holding a concurrent-session slot.
         // It must never take the LAST one and 429 the next genuine start.
         reserveConcurrentSlots: 1,

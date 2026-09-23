@@ -174,3 +174,48 @@ function readableDeliveryError(error: string | null): string | null {
   const outcome = error?.match(/^delivery outcome: (pending|unreachable|not-landed|no-session|failed)$/)?.[1];
   return outcome ? DELIVERY_FAILURE_COPY[outcome as keyof typeof DELIVERY_FAILURE_COPY] : error ?? null;
 }
+
+/** One PLACED pairing in wire shape — the element type of `{ placed: [...] }`. */
+export type SessionPlacedPromptView = NonNullable<ReturnType<typeof serializePlacedPrompt>>;
+
+/**
+ * A row that has LEFT the pending list, reduced to the ids a tab may still
+ * hold its bubble under: the client wire id it painted with, and every id the
+ * drain delivered it under. `null` when the row went out under its own client
+ * id — there is nothing to pair, and the transcript already agrees with the
+ * bubble.
+ *
+ * Served beside `prompts` by `GET .../prompts` for rows that left inside
+ * `PLACED_INBOX_WINDOW_MS`, because the pairing has to outlive the row: see
+ * `listPlacedInboxPrompts`.
+ */
+export function serializePlacedPrompt(row: PromptRow) {
+  const payload = (row.payload ?? {}) as Record<string, unknown>;
+  const result = (row.result ?? {}) as Record<string, unknown>;
+  const wireMessageId = typeof payload.wireMessageId === 'string' ? payload.wireMessageId : '';
+  if (!wireMessageId) return null;
+  // The id the message carries in the transcript, by the same precedence
+  // `serializePrompt` serves as `message_id`.
+  const delivered =
+    typeof result.forwarded_message_id === 'string'
+      ? result.forwarded_message_id
+      : typeof payload.redeliveredMessageId === 'string'
+        ? payload.redeliveredMessageId
+        : '';
+  // Every id a re-mint ever placed the row under: an echo can land under an
+  // EARLIER re-minted id when a redelivery re-placed the prompt.
+  const ids = [delivered];
+  for (const id of Array.isArray(payload.redeliveredMessageIds) ? payload.redeliveredMessageIds : []) {
+    if (typeof id === 'string' && id && !ids.includes(id)) ids.push(id);
+  }
+  const messageIds = ids.filter((id) => id && id !== wireMessageId);
+  if (messageIds.length === 0) return null;
+  return {
+    prompt_id: row.commandId,
+    client_message_id: typeof payload.clientMessageId === 'string' ? payload.clientMessageId : '',
+    wire_message_id: wireMessageId,
+    message_id: delivered || messageIds[0]!,
+    message_ids: messageIds,
+    placed_at: row.updatedAt.toISOString(),
+  };
+}

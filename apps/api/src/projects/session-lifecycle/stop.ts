@@ -6,6 +6,7 @@ import { db } from '../../shared/db';
 import { isAlreadyNotRunning, isLifecycleTransitionInProgress } from '../reaping/policy';
 import { applyStoppedState } from '../reaping/sandbox-state-sync';
 import { abortLiveTurnBeforeStop } from '../reaping/stop-box';
+import { holdInboxForRequestedStop } from './inbox-rows';
 import { RUNTIME_WAKE_LATE_START_GUARD_MS, runtimeWakeInProgress } from './runtime-wake-fence';
 
 /**
@@ -58,6 +59,19 @@ export async function stopSession(input: {
 
   const provider = getProvider(sandbox.provider as SandboxProviderName);
   const now = new Date();
+  // THE QUEUE STOPS WITH THE BOX, and before the abort below ends the turn.
+  // Without the hold, the turn-end relay promoted the next queued prompt and
+  // the strand repair re-queued a steer the abort left unread — due now — so
+  // the drain woke the box this request powers off (measured 2026-09-22: a
+  // steer in flight at Stop was redelivered and re-woke the session ~45 s to
+  // 3 min later). Held rows go out on the user's next send, "send now", or
+  // Resume. Best effort: a failed hold never blocks the stop.
+  await holdInboxForRequestedStop(sessionId).catch((err) =>
+    console.warn('[stop] could not hold the prompt inbox before stopping', {
+      sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    }),
+  );
   if (cancellingWake) {
     // Cancel the durable wake before the provider call. The in-flight wake task
     // then loses its finalize CAS and stops any provider start that completes

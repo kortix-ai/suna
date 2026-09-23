@@ -31,6 +31,12 @@ export interface HarnessEnvironmentResult {
   opencode_pid: number | null
   opencode_reload: 'disposed' | 'restarted' | 'kept-old' | null
   opencode_turn_ended: boolean | null
+  /**
+   * True when the env landed but the runtime reload waits for the running turn
+   * to end. `opencode_reload` is then null; the reload runs once the box is
+   * idle. Absent on harnesses that never defer.
+   */
+  opencode_reload_deferred?: boolean
 }
 
 export interface HarnessRefreshInput {

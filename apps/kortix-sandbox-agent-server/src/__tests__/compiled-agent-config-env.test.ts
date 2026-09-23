@@ -53,9 +53,9 @@ describe('the live-env allowlist', () => {
     //
     // reloadConfig, not restart: it re-reads in place via dispose (~51ms) and
     // falls back to a restart by itself, so this is never less correct.
-    expect(ENV_ROUTE).toContain('await opencode.reloadConfig({ mustRespawn })')
+    expect(ENV_ROUTE).toContain('opencode.reloadConfig({ mustRespawn })')
     expect(ENV_ROUTE).toContain(
-      'if (body.refreshModels === true && (result.changed || opencodeEnvChanged))',
+      'const reloadRequested = body.refreshModels === true && (result.changed || opencodeEnvChanged)',
     )
   })
 })

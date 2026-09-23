@@ -111,6 +111,7 @@ import {
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { claimFirstTurnRow } from '@/features/session/inbox-row-claims';
+import { claimPlacedPairingIds, placedEchoPairings } from '@/features/session/placed-pairings';
 import {
   ConnectProviderDialog,
   type ModelDefaultControls,
@@ -2863,6 +2864,12 @@ export function SessionChat({
   // reports the original id until its next poll — stays hidden through the
   // swap. Without both, the same text is on screen twice for a frame or a
   // second: once as the bubble, once as a queued row.
+  //
+  // The row is not the only source of the pairing. A steered row leaves
+  // `GET .../prompts` at acceptance, often inside one 1 s poll of its
+  // re-mint; the server keeps the pairing for ten minutes afterwards as `placed`
+  // (2026-09-22, preview session "YO" 134c0d27), and it is folded in here
+  // exactly like a row's ids — see `claimPlacedPairingIds`.
   const transcriptUserMessageIds = useMemo(() => {
     const ids = new Set<string>();
     const store = useSessionStateStore.getState();
@@ -2885,8 +2892,9 @@ export function SessionChat({
         ids.add(prompt.client_message_id);
       }
     }
+    claimPlacedPairingIds(ids, promptInbox.placed);
     return ids;
-  }, [messages, sessionId, promptInbox.prompts]);
+  }, [messages, sessionId, promptInbox.prompts, promptInbox.placed]);
   /**
    * The transcript's ONE user message, when there is exactly one and this tab
    * did not paint it — the only shape in which a row can be claimed by
@@ -2947,11 +2955,32 @@ export function SessionChat({
     return ids;
   }, [transcriptUserMessageIds, firstTurnClaim]);
   // The row names the re-minted id, and it is the ONLY thing that does: the
-  // runtime's echo carries no client id, and this tab strips the part ids that
-  // would otherwise correlate it. So every prompt in the inbox announces its
-  // pairing here — which lets the echo supersede ITS OWN bubble rather than the
-  // oldest one in flight, and (when the echo already landed unmatched, which a
-  // burst makes the common case) retires that bubble on the spot.
+  // runtime's echo carries no client id, and the server strips the part ids
+  // that would otherwise correlate it (`sanitizeInboxPromptParts`). So every
+  // prompt in the inbox announces its pairing here — which lets the echo
+  // supersede ITS OWN bubble rather than the oldest one in flight, and (when
+  // the echo already landed unmatched, which a burst makes the common case)
+  // retires that bubble on the spot.
+  //
+  // THE ROW IS NOT ALWAYS OBSERVED WITH BOTH IDS. The pairing exists on the
+  // row only between the drain's re-mint and the row leaving the list, and a
+  // steered row is confirmed `delivered` at ACCEPTANCE — often under 1 s after
+  // the re-mint — while this list polls every 1 s. A tab that missed that one
+  // poll never announced the pairing: the echo landed as a NEW message and
+  // the stub (client id, "just now", Thinking) stayed until reload
+  // (2026-09-22, preview session "YO" 134c0d27, bubbles 4 and 5 of the
+  // user's screenshot). The server keeps the pairing for ten minutes after
+  // the row as `placed`, and it is announced here exactly like a row's — the
+  // store's retire-on-late-alias rule then retires the stub on the spot.
+  // Ten minutes, because a HIDDEN tab does not poll this list at all and
+  // reads it once on focus, while the echo still lands over SSE: the focus
+  // read has to still carry the pairing. A tab hidden longer than that keeps
+  // its bubble until reload (`PLACED_INBOX_WINDOW_MS`).
+  //
+  // A row re-minted more than once carries every id it went out under, and
+  // `placedEchoPairings` announces the latest LAST: the store keeps one
+  // forward alias per bubble, and that alias is the identity the host keys
+  // on. The store matches every announced pairing either way.
   //
   // An EFFECT, not the memo below that reads the result: `registerOptimisticEcho`
   // writes to the sync store, and a store write during render re-renders every
@@ -2964,7 +2993,10 @@ export function SessionChat({
       if (prompt.wire_message_id === prompt.message_id) continue;
       store.registerOptimisticEcho(sessionId, prompt.wire_message_id, prompt.message_id);
     }
-  }, [promptInbox.prompts, sessionId]);
+    for (const pairing of placedEchoPairings(promptInbox.placed)) {
+      store.registerOptimisticEcho(sessionId, pairing.wireMessageId, pairing.messageId);
+    }
+  }, [promptInbox.prompts, promptInbox.placed, sessionId]);
   // WHAT THE QUEUED LIST ABOVE THE COMPOSER RENDERS — see `projectQueueRows`.
   // This tab's own queued sends add the text as typed, the original files, and
   // a row for the upload window (`queued-draft-store.ts`).
@@ -3443,7 +3475,14 @@ export function SessionChat({
   const rawTurns = useMemo(
     () =>
       messages || queuedSyntheticMessages.length > 0
-        ? groupMessagesIntoTurns([...(messages ?? []), ...queuedSyntheticMessages], { pendingMessageIds: pendingDisplayIds })
+        ? groupMessagesIntoTurns([...(messages ?? []), ...queuedSyntheticMessages], {
+            pendingMessageIds: pendingDisplayIds,
+            // A prompt removed while the agent loop ran leaves a part-less
+            // copy at the runtime until the loop goes idle (the server then
+            // deletes it). It is never drawn — not as an empty turn after a
+            // reload, and not as the parent of the loop's own answer.
+            hidePartlessUserMessages: true,
+          })
         : [],
     [messages, queuedSyntheticMessages, pendingDisplayIds],
   );

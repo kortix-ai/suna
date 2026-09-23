@@ -62,10 +62,13 @@ import { disarmAllQuickQueueInterrupt, disarmQuickQueueInterrupt } from '../sess
 import { cancelForwardedPrompt, findInboxRowIdByMessageId } from '../session-lifecycle/cancel-forwarded';
 import {
   INBOX_HOLD_MS,
+  holdInboxForRequestedStop,
   holdInboxPrompt,
   isHeldInboxRow,
   isStopPausedInboxRow,
+  listPlacedInboxPrompts,
   readInboxPromptPresence,
+  sendJoinsHold,
 } from '../session-lifecycle/inbox-rows';
 import {
   flattenPromptText,
@@ -79,6 +82,7 @@ import { readSessionTurnState } from '../lib/session-turn-read';
 import {
   type PromptRow,
   promptState,
+  serializePlacedPrompt,
   serializePrompt,
 } from '../lib/session-prompt-view';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
@@ -489,6 +493,26 @@ const SessionPromptSchema = z.object({
   available_at: z.string(),
 });
 
+/**
+ * A row that LEFT the pending list within the last minute, reduced to the ids
+ * a client may still hold its optimistic bubble under. Additive — absent from
+ * older servers; a client treats a missing list as empty.
+ */
+const SessionPlacedPromptSchema = z.object({
+  prompt_id: z.string(),
+  client_message_id: z.string(),
+  wire_message_id: z.string().openapi({
+    description: 'The wire id the client minted and painted its bubble under.',
+  }),
+  message_id: z.string().openapi({
+    description: 'The id the delivered message carries in the transcript (re-minted by the server).',
+  }),
+  message_ids: z.array(z.string()).openapi({
+    description: 'Every id the server ever delivered this prompt under, `message_id` first.',
+  }),
+  placed_at: z.string().openapi({ description: 'When the row left the pending list (server clock).' }),
+});
+
 /** Everything `POST .../prompts` needs to re-create ONE removed prompt byte for
  *  byte. Not a subset of `SessionPromptSchema`: that one carries a truncated
  *  text PREVIEW and no parts at all, which is a display shape, not a restore
@@ -759,6 +783,10 @@ projectsApp.openapi(
     // changes no other row.
     const restore = body.restore === true;
     const restoreHeld = restore && body.held === true;
+    const clientSentAtMs =
+      typeof body.client_sent_at_ms === 'number' && Math.abs(Date.now() - body.client_sent_at_ms) < 10 * 60_000
+        ? Math.trunc(body.client_sent_at_ms)
+        : null;
 
     // The unique index on `idempotency_key` IS the "retry = same
     // clientMessageId = same row" contract — enforced by the database, not by a
@@ -784,10 +812,7 @@ projectsApp.openapi(
       // SEND order across surfaces whose POSTs race — see the batch sort in
       // the drain. Bounded to the near past/future so a wrong client clock
       // cannot pin its prompts to the head or tail of every future batch.
-      ...(typeof body.client_sent_at_ms === 'number' &&
-      Math.abs(Date.now() - body.client_sent_at_ms) < 10 * 60_000
-        ? { clientSentAtMs: Math.trunc(body.client_sent_at_ms) }
-        : {}),
+      ...(clientSentAtMs !== null ? { clientSentAtMs } : {}),
       parts,
       overrides,
       // A held restore is inserted NOT DUE, at the hold horizon, so the
@@ -821,7 +846,15 @@ projectsApp.openapi(
     // A dedupe answers before either hold decision: this call wrote nothing.
     if (enqueued.deduped) return c.json(respond(promptState(enqueued.row)), 200);
 
-    if (restoreHeld) {
+    // A SEND TYPED BEFORE THE STOP whose POST lands after it belongs to the
+    // queue the Stop paused. The browser dispatches queued sends one after
+    // another, so the second and third of three Queue List rows reached the
+    // server after the hold — and each one released it, delivering the head
+    // row the moment the Stop ended the turn (measured 2026-09-23). Read after
+    // the insert, so a hold that lands between the two is still seen.
+    const joinsHold = !restore && (await sendJoinsHold(sessionId, clientSentAtMs));
+
+    if (restoreHeld || joinsHold) {
       // A held restore is two statements: the insert above, then the held
       // marker. A row whose marker failed is neither held (a release does not
       // free it) nor due (nothing delivers it), and every later prompt of the
@@ -873,7 +906,16 @@ projectsApp.openapi(
     },
     responses: {
       200: json(
-        z.object({ prompts: z.array(SessionPromptSchema), observed_at: z.string() }),
+        z.object({
+          prompts: z.array(SessionPromptSchema),
+          observed_at: z.string(),
+          placed: z.array(SessionPlacedPromptSchema).openapi({
+            description: [
+              'Pairings of prompts that left `prompts` within the last ten minutes and were delivered under an id other than their `wire_message_id`.',
+              'A client that painted a prompt under its wire id retires that bubble by the pairing, even when it never saw the row re-minted.',
+            ].join(' '),
+          }),
+        }),
         'Pending prompts',
       ),
       ...errors(400, 404),
@@ -902,9 +944,27 @@ projectsApp.openapi(
     // Scoped to INBOX rows — see `listInboxPrompts`. `continue_session` is also
     // how triggers, Slack and approval-resume deliver, and listing those put an
     // automation's internal prompt in the user's own queue.
-    const rows = await listInboxPrompts(sessionId, PROMPT_LIST_LIMIT);
+    // TWO reads, one snapshot: the rows still pending, and the rows that just
+    // LEFT — the pairing a client needs outlives the row (a steer is confirmed
+    // `delivered` at acceptance, often inside one 1 s poll of its re-mint).
+    // See `listPlacedInboxPrompts`. A failure of the second read must not
+    // cost the queue: it degrades to no pairings, never to a 500.
+    const [rows, placedRows] = await Promise.all([
+      listInboxPrompts(sessionId, PROMPT_LIST_LIMIT),
+      listPlacedInboxPrompts(sessionId).catch((err: unknown) => {
+        console.warn('[session-prompts] placed read failed — serving no pairings', {
+          sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return [] as PromptRow[];
+      }),
+    ]);
 
-    return c.json({ prompts: rows.map(serializePrompt), observed_at: observedAt });
+    return c.json({
+      prompts: rows.map(serializePrompt),
+      observed_at: observedAt,
+      placed: placedRows.map(serializePlacedPrompt).filter((pairing) => pairing !== null),
+    });
   },
 );
 
@@ -983,10 +1043,16 @@ projectsApp.openapi(
       return c.json({ removed: serializeRemovedPrompt(outcome.row) }, 200);
     }
     if (outcome.outcome === 'delivering') {
+      // `delivering` here means the drain has COMMITTED the POST (or the row
+      // is already forwarded): a claimed row it had not yet sent was deleted
+      // above, and the drain's commit then refused it (`commitInboxPost`).
+      //
       // On the wire is no longer the point of no return: a forwarded prompt
       // the loop has not READ is taken back out of the runtime — whole
       // message when idle, part by part when busy (an empty user message is
-      // invisible to the model). Only "a step is answering it" still refuses.
+      // invisible to the model, and the turn-end relay deletes it once the
+      // loop is idle — `husk-cleanup.ts`). Only "a step is answering it"
+      // still refuses.
       const cancelled = await cancelForwardedPrompt(sessionId, effectivePromptId);
       if (cancelled.outcome === 'cancelled') {
         await disarmQuickQueueInterrupt(sessionId, loaded.userId, effectivePromptId);
@@ -1145,8 +1211,20 @@ projectsApp.openapi(
       return c.json({ error: 'held must be a boolean' }, 400);
     }
 
-    await holdInboxPrompts(sessionId, body.held);
-    if (body.held) await disarmAllQuickQueueInterrupt(sessionId, loaded.userId);
+    if (body.held) {
+      // The Stop instant on the CLIENT's clock, beside the server's: every send
+      // carries its Enter instant on that same clock, so a prompt typed before
+      // this Stop whose POST lands after it joins the hold instead of lifting
+      // it (`sendJoinsHold`). Bounded like `client_sent_at_ms`.
+      const stoppedAtMs =
+        typeof body.stopped_at_ms === 'number' && Math.abs(Date.now() - body.stopped_at_ms) < 10 * 60_000
+          ? body.stopped_at_ms
+          : null;
+      await holdInboxForRequestedStop(sessionId, { clientStoppedAtMs: stoppedAtMs });
+      await disarmAllQuickQueueInterrupt(sessionId, loaded.userId);
+    } else {
+      await holdInboxPrompts(sessionId, false);
+    }
     // After the write, before the read-back — either instant orders this
     // snapshot correctly against the hold it just applied (JAY-728).
     const observedAt = new Date().toISOString();

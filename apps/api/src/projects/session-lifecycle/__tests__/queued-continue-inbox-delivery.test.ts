@@ -18,6 +18,7 @@
 // process-global in bun:test, so this file must run on its own (the repo's
 // `--isolate` test runner already guarantees that).
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import * as realInboxDeliveryHold from '../inbox-delivery-hold';
 import { projectSessions, projects, sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
 import type { SessionLifecycleCommandRow } from '../store';
 import { drizzle } from 'drizzle-orm/pg-proxy';
@@ -63,6 +64,21 @@ let boxRow: { status: string; metadata: Record<string, unknown> | null } | null 
  *  as `readDeliveredWireIdFloor` reads it back. Null = nothing delivered yet. */
 let deliveredFloor: bigint | null = null;
 let transcript: Array<Record<string, unknown>> = [];
+/** This session's inbox rows, as the under-placement send-order gate resolves
+ *  a transcript id to the row that put it on the wire (`readInboxRowsByWireIds`).
+ *  Every row is answered; the helper itself maps ids to rows. */
+let inboxRows: Array<{
+  commandId: string;
+  payload: Record<string, unknown>;
+  result: Record<string, unknown>;
+  createdAt: Date;
+}> = [];
+/** What the drain's sibling sweep SEES queued for this session — the rows the
+ *  claim itself did not take because their `available_at` was still out. */
+let sweepQueued: Array<Record<string, unknown>> = [];
+/** What each sweep CAS answers, in order. An empty answer is a row another
+ *  worker took first: the sweep leaves it, and it becomes the run's gap. */
+let sweepClaims: Array<Array<Record<string, unknown>>> = [];
 let capturedBodies: Array<Record<string, unknown>> = [];
 let quickQueueControlRequests: Array<{ url: string; method: string; body: Record<string, unknown> }> = [];
 let capturedKeys: string[] = [];
@@ -136,6 +152,17 @@ mock.module('../../../shared/db', () => ({
         where: () => {
           if (projection?.projectMetadata) projectMetadataExpression = projection.projectMetadata as SQL;
           const limit = async () => {
+            // The drain's SIBLING SWEEP (`claimDueSessionInboxSiblings`): the
+            // only read of this table that projects nothing — it selects whole
+            // rows. It answers with the session's remaining QUEUED inbox rows,
+            // whatever their `available_at`.
+            if (table === sessionLifecycleCommands && !projection) return sweepQueued;
+            // The send-order gate's row lookup: keyed on its projection (it is
+            // the only read of this table that selects `createdAt`). Before the
+            // hold read below, which keys on `result` + `payload` alone.
+            if (table === sessionLifecycleCommands && projection && 'createdAt' in projection) {
+              return inboxRows;
+            }
             if (projection && 'result' in projection && 'payload' in projection) {
               return [{ result: { held: pauseAfterPosts !== null && capturedBodies.length >= pauseAfterPosts }, payload: {} }];
             }
@@ -180,7 +207,14 @@ mock.module('../../../shared/db', () => ({
     update: () => ({
       set: (values: Record<string, unknown>) => {
         payloadPatches.push(values);
-        return { where: async () => {} };
+        // Awaitable AND `.returning()`-able: the sibling sweep's claim is a
+        // CAS UPDATE … RETURNING, and it takes the row only when a row comes
+        // back. `sweepClaims` is the per-row answer, in sweep order.
+        const where = () =>
+          Object.assign(Promise.resolve([]), {
+            returning: async () => sweepClaims.shift() ?? [],
+          });
+        return { where };
       },
     }),
   },
@@ -427,6 +461,15 @@ mock.module('../runtime-prompt-file', () => ({
   },
 }));
 
+// The POST's commit (`commitInboxPost`) is an UPDATE … RETURNING this db mock
+// cannot answer; its SQL runs against real Postgres in
+// `integration-inbox-user-action-race.test.ts`. Here it keeps the read-only
+// Stop check the mock does answer.
+mock.module('../inbox-delivery-hold', () => ({
+  ...realInboxDeliveryHold,
+  commitInboxPost: (commandId: string) => realInboxDeliveryHold.assertInboxDeliveryActive(commandId),
+}));
+
 const { drainSessionLifecycleQueue, executeQueuedContinue } = await import('../engine');
 
 /** Every `redeliveredMessageId` the drain persisted, read out of the jsonb
@@ -501,6 +544,9 @@ beforeEach(() => {
   boxRow = null;
   deliveredFloor = null;
   transcript = [];
+  inboxRows = [];
+  sweepQueued = [];
+  sweepClaims = [];
   capturedBodies = [];
   quickQueueControlRequests = [];
   capturedKeys = [];
@@ -638,6 +684,78 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
       // The wrapper is process-wide; a failed assertion must not leave it on.
       globalThis.fetch = realFetch;
     }
+  });
+
+  // THE SEND-ORDER GATE ON UNDER-PLACEMENT. Measured 2026-09-22 (preview
+  // session "YO" 134c0d27, and locally 6e288d75/822e92a4): two Quick Queue
+  // prompts ~1-2 s apart steered into a tool turn. ALPHA was LIFTED to the
+  // box clock (id far above every client id); BRAVO then found ALPHA as an
+  // open user above its client id and was UNDER-PLACED at that client id —
+  // BELOW ALPHA. The SDK orders placed messages by id, so the tab drew BRAVO
+  // above ALPHA, and the merged reply (parented on BRAVO, newest by
+  // `time.created`) left ALPHA's slot empty at the bottom. Under-placement
+  // is right only when every open sibling above was SENT AFTER this prompt.
+  test('a steer whose open sibling above was SENT EARLIER is re-minted above it', async () => {
+    boxRow = liveTurn();
+    // ALPHA's lifted id: minted the way `mintLivePlacement` does, at the box
+    // clock — 3 s ago, far above BRAVO's client id (SUBMITTED_WIRE_ID, ~10 min).
+    const alphaLifted = `msg_${(((BigInt(NOW_MS - 3_000) * BigInt(0x1000)) & BigInt(0xffffffffffff)).toString(16).padStart(12, '0'))}ALPHAALPHAALPH`;
+    const alphaClient = mintWireMessageId({ nowMs: NOW_MS - 10 * 60_000 - 2_000, random: () => 0.4 }).id;
+    transcript = [
+      ...openStep([{ type: 'tool', tool: 'bash', state: { status: 'running' } }]),
+      { info: { id: alphaLifted, role: 'user', time: { created: NOW_MS - 3_000 } }, parts: [{ type: 'text', text: 'ALPHA' }] },
+    ];
+    inboxRows = [
+      {
+        commandId: 'cmd-alpha',
+        payload: { clientMessageId: 'client-alpha', wireMessageId: alphaClient, redeliveredMessageId: alphaLifted, clientSentAtMs: NOW_MS - 4_000, placement: 'transcript' },
+        result: { status: 'forwarded', forwarded_message_id: alphaLifted },
+        createdAt: new Date(NOW_MS - 4_000),
+      },
+    ];
+    const bravo = baseRow({
+      commandId: 'cmd-bravo',
+      payload: { ...baseRow().payload, placement: 'transcript', clientSentAtMs: NOW_MS - 2_000 },
+      createdAt: new Date(NOW_MS - 2_000),
+    });
+    expect(await executeQueuedContinue(bravo)).toBe('succeeded');
+    expect(capturedBodies).toHaveLength(1);
+    const sent = capturedBodies[0].messageID as string;
+    expect(sent).not.toBe(SUBMITTED_WIRE_ID);
+    // Above ALPHA's lifted id: the re-mint floors on every id the inbox put
+    // on the wire, so send order and id order agree again.
+    expect(wireIdTime(sent)!).toBeGreaterThan(wireIdTime(alphaLifted)!);
+    expect(persistedWireIds()).toEqual([sent]);
+  });
+
+  // The case under-placement was written for, unchanged: P1 (composer lane)
+  // waited for the turn; P2 (Quick Queue) steered in LATER and was lifted;
+  // P1 goes out afterwards. P2's row was created after P1's, so P1's client
+  // id below P2 IS its send position, and P2's step answers both.
+  test('a waiting composer prompt is still under-placed below a later steer', async () => {
+    const p2Lifted = `msg_${(((BigInt(NOW_MS - 3_000) * BigInt(0x1000)) & BigInt(0xffffffffffff)).toString(16).padStart(12, '0'))}PTWOPTWOPTWOPT`;
+    transcript = [
+      ...openStep([{ type: 'tool', tool: 'bash', state: { status: 'running' } }]),
+      { info: { id: p2Lifted, role: 'user', time: { created: NOW_MS - 3_000 } }, parts: [{ type: 'text', text: 'P2' }] },
+    ];
+    inboxRows = [
+      {
+        commandId: 'cmd-p2',
+        payload: { clientMessageId: 'client-p2', wireMessageId: mintWireMessageId({ nowMs: NOW_MS - 5_000, random: () => 0.3 }).id, redeliveredMessageId: p2Lifted, clientSentAtMs: NOW_MS - 4_000, placement: 'transcript' },
+        result: { status: 'forwarded', forwarded_message_id: p2Lifted },
+        createdAt: new Date(NOW_MS - 4_000),
+      },
+    ];
+    const p1 = baseRow({
+      commandId: 'cmd-p1',
+      payload: { ...baseRow().payload, placement: 'composer', clientSentAtMs: NOW_MS - 10 * 60_000 },
+      result: { admission_reason: 'turn_active' },
+      createdAt: new Date(NOW_MS - 10 * 60_000),
+    });
+    expect(await executeQueuedContinue(p1)).toBe('succeeded');
+    expect(capturedBodies).toHaveLength(1);
+    expect(capturedBodies[0].messageID).toBe(SUBMITTED_WIRE_ID);
+    expect(persistedWireIds()).toEqual([]);
   });
 
   test('Queue List waits for the whole turn without arming a boundary interrupt', async () => {
@@ -1409,6 +1527,42 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     ]);
   });
 
+  test('a prompt READ by a later sibling\'s merged reply is never re-sent', async () => {
+    // Live incident 2026-09-22 (three of three steer runs, e.g. session
+    // 4f345186): a steered Quick Queue prompt was answered inside ONE merged
+    // reply parented on a LATER, under-placed sibling (OpenCode parents each
+    // step on the newest user message by `time.created`). Nothing is parented
+    // on this prompt's id, so a parent-only check reads it as unanswered and a
+    // redelivery — whatever re-queued it — runs it a second, paid time. The
+    // box's stamps prove the reply's step began after this prompt was
+    // persisted: it was in that step's input.
+    const siblingId = mintWireMessageId({ nowMs: NOW_MS - 11 * 60_000, random: () => 0.5 }).id;
+    transcript = [
+      { info: { id: SUBMITTED_WIRE_ID, role: 'user', time: { created: NOW_MS - 90_000 } } },
+      { info: { id: siblingId, role: 'user', time: { created: NOW_MS - 89_000 } } },
+      {
+        info: {
+          id: NEWER_TRANSCRIPT_ID,
+          role: 'assistant',
+          parentID: siblingId,
+          time: { created: NOW_MS - 60_000, completed: NOW_MS - 30_000 },
+        },
+      },
+    ];
+
+    const outcome = await executeQueuedContinue(
+      baseRow({
+        payload: { ...baseRow().payload, remintOnDelivery: true, redeliveries: 1 },
+      }),
+    );
+
+    expect(outcome).toBe('succeeded');
+    expect(capturedBodies).toEqual([]);
+    expect(succeededCalls).toEqual([
+      { commandId: 'cmd-1', result: { status: 'skipped', reason: 'already_answered' } },
+    ]);
+  });
+
   test('a prompt that never waited keeps the client-minted id verbatim', async () => {
     transcript = [];
     const outcome = await executeQueuedContinue(baseRow());
@@ -1982,6 +2136,97 @@ describe('a Quick Queue GROUP is one grouped turn', () => {
     expect(sent[1]).toBeGreaterThan(sent[0]!);
     expect(hintOf(capturedBodies[1])).toHaveLength(1);
     expect(forwardedCalls.map((call) => call.commandId)).toEqual(['cmd-b']);
+  });
+
+  // A GROUP IS A CONTIGUOUS FIFO RUN OF THE SESSION'S TRANSCRIPT ROWS.
+  //
+  // Measured 2026-09-22, 2 of 2 runs ("T3 burst over text"): three Quick Queue
+  // prompts typed ~1 s apart over a streaming response ended it; each row was
+  // then put back on its OWN clock — the head on the admission gate's
+  // compounding backoff, the released siblings on a flat 300 ms from whenever
+  // their drain reached them (available_at 47.730 / 49.224 / 47.496 s). The
+  // 1 s scheduler drain claims only rows that are DUE, so it took rows 1 and 3
+  // and left row 2 in the middle. Nothing told the grouping rule that a row was
+  // missing, so rows 1 and 3 went out as one grouped answer and row 2 followed
+  // ~3 s later, out of send order — and one prompt was never answered.
+  //
+  // The sweep is the fix: a drain that holds ONE of a session's inbox rows
+  // holds ALL of them, whatever their `available_at`.
+  test('a claim with a HOLE sweeps the missing sibling in — all three group, in send order', async () => {
+    const rowB = quickRow('cmd-b', 'PROMPT-B', wireB, NOW_MS - 2_000);
+    claimed = [
+      quickRow('cmd-a', 'PROMPT-A', wireA, NOW_MS - 3_000),
+      quickRow('cmd-c', 'PROMPT-C', wireC, NOW_MS - 1_000),
+    ];
+    sweepQueued = [rowB];
+    sweepClaims = [[rowB]];
+
+    const result = await drainSessionLifecycleQueue({ limit: 10 });
+
+    expect(capturedBodies.map((body) => body.messageID)).toEqual([wireA, wireB, wireC]);
+    expect(capturedBodies.map((body) => body.noReply)).toEqual([true, true, undefined]);
+    expect(hintOf(capturedBodies[2])[0]?.text).toContain('3 messages');
+    expect(forwardedCalls.map((call) => call.commandId)).toEqual(['cmd-c']);
+    expect(requeues).toEqual([]);
+    expect(result).toMatchObject({ claimed: 3, succeeded: 3, queued: 0 });
+  });
+
+  // A GROUP MINTS AS ONE.
+  //
+  // Measured 2026-09-22 on a real sandbox (session 37eb6e96): the group was
+  // [Request 1, Request 2]. Request 1 had waited out the interrupt, so it was
+  // LIFTED above the transcript to `msg_0ca6ad25f0002V…`; Request 2 was claimed
+  // fresh, nothing said it had waited, and it went out under its own client id
+  // `msg_0ca6a8a77003Qo…` — BELOW its predecessor. The SDK orders placed
+  // messages by id, so the tab drew Request 2 above Request 1. Both were
+  // answered; the order was wrong.
+  test('a group whose HEAD was lifted lifts its tail too — ids ascend in send order', async () => {
+    transcript = [
+      { info: { id: SUBMITTED_WIRE_ID, role: 'user' } },
+      { info: { id: NEWER_TRANSCRIPT_ID, role: 'assistant', parentID: 'msg_other' } },
+    ];
+    const head = quickRow('cmd-a', 'PROMPT-A', wireA, NOW_MS - 3_000);
+    (head.payload as Record<string, unknown>).remintOnDelivery = true;
+    claimed = [head, quickRow('cmd-b', 'PROMPT-B', wireB, NOW_MS - 2_000)];
+
+    await drainSessionLifecycleQueue({ limit: 10 });
+
+    const sent = capturedBodies.map((body) => String(body.messageID));
+    expect(sent).toHaveLength(2);
+    expect(sent[0]).not.toBe(wireA);
+    // The tail may NOT keep its client id: the head is now above it.
+    expect(sent[1]).not.toBe(wireB);
+    expect(wireIdTime(sent[0])!).toBeGreaterThan(wireIdTime(NEWER_TRANSCRIPT_ID)!);
+    expect(wireIdTime(sent[1])!).toBeGreaterThan(wireIdTime(sent[0])!);
+  });
+
+  test('a group where NOTHING waited keeps every client id', async () => {
+    claimed = [
+      quickRow('cmd-a', 'PROMPT-A', wireA, NOW_MS - 3_000),
+      quickRow('cmd-b', 'PROMPT-B', wireB, NOW_MS - 2_000),
+    ];
+
+    await drainSessionLifecycleQueue({ limit: 10 });
+
+    expect(capturedBodies.map((body) => body.messageID)).toEqual([wireA, wireB]);
+  });
+
+  test('a sibling the sweep CANNOT take breaks the run — nothing jumps over it', async () => {
+    // Another worker won the CAS, so row B is on the wire somewhere else. The
+    // group stops at the gap; row C goes back in line rather than overtaking B.
+    claimed = [
+      quickRow('cmd-a', 'PROMPT-A', wireA, NOW_MS - 3_000),
+      quickRow('cmd-c', 'PROMPT-C', wireC, NOW_MS - 1_000),
+    ];
+    sweepQueued = [quickRow('cmd-b', 'PROMPT-B', wireB, NOW_MS - 2_000)];
+    sweepClaims = [[]];
+
+    await drainSessionLifecycleQueue({ limit: 10 });
+
+    expect(capturedBodies.map((body) => body.messageID)).toEqual([wireA]);
+    expect(capturedBodies[0].noReply).toBeUndefined();
+    expect(hintOf(capturedBodies[0])).toHaveLength(0);
+    expect(requeues.map((entry) => entry.commandId)).toEqual(['cmd-c']);
   });
 });
 

@@ -430,11 +430,29 @@ describe('ONE prompt = ONE id = ONE bubble, from Enter', () => {
     const effect = between(
       chat,
       'const store = useSessionStateStore.getState();\n    for (const prompt of promptInbox.prompts) {',
-      '}, [promptInbox.prompts, sessionId]);',
+      '}, [promptInbox.prompts, promptInbox.placed, sessionId]);',
     );
     expect(effect).toContain('store.registerOptimisticEcho(');
     const queueRows = between(chat, 'const queueRows = useMemo(', 'const canTakeBackQueue');
     expect(queueRows).not.toContain('registerOptimisticEcho');
+  });
+
+  test('the pairings of rows that already LEFT the list are announced from the same effect', () => {
+    // A steered row leaves `GET .../prompts` at acceptance, often inside one
+    // 1 s poll of the re-mint. The server keeps its pairing as `placed` for
+    // ten minutes; announcing it here is what retires a bubble whose row this
+    // tab never saw re-minted (2026-09-22, preview session "YO" 134c0d27).
+    const effect = between(
+      chat,
+      'const store = useSessionStateStore.getState();\n    for (const prompt of promptInbox.prompts) {',
+      '}, [promptInbox.prompts, promptInbox.placed, sessionId]);',
+    );
+    expect(effect).toContain('placedEchoPairings(promptInbox.placed)');
+    expect(effect).toContain('store.registerOptimisticEcho(sessionId, pairing.wireMessageId, pairing.messageId)');
+    // And the claimed-ids projection reads them, so the queue's hide clause
+    // stays live after the row is gone.
+    const claimed = between(chat, 'const transcriptUserMessageIds = useMemo(() => {', '}, [messages, sessionId, promptInbox.prompts, promptInbox.placed]);');
+    expect(claimed).toContain('claimPlacedPairingIds(ids, promptInbox.placed)');
   });
 
   test('the turn is keyed by the id the bubble was FIRST painted under — uniquely', () => {

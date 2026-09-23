@@ -7,7 +7,7 @@
  * keeps the existing harnesses byte-identical and lets the one test that cares
  * mock exactly this.
  */
-import { sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
+import { projectSessions, sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 
@@ -28,6 +28,31 @@ export async function loadSandboxMetadataForSessions(
     .select({ sessionId: sessionSandboxes.sessionId, metadata: sessionSandboxes.metadata })
     .from(sessionSandboxes)
     .where(inArray(sessionSandboxes.sessionId, sessionIds));
+  for (const row of rows) {
+    out.set(row.sessionId, (row.metadata as Record<string, unknown> | null) ?? null);
+  }
+  return out;
+}
+
+/**
+ * The `project_sessions.metadata` of each session, keyed by session id — the
+ * owner signal BEFORE a sandbox row exists.
+ *
+ * A session's first prompt is inserted in the same transaction as the
+ * session row, and the sandbox row lands 0.9–4.2 s later (measured
+ * 2026-09-22). `createProjectSession` stamps the session row with the owning
+ * instance (`instanceStampMetadata`), so the drain asks this for exactly the
+ * sessions `loadSandboxMetadataForSessions` found no box for.
+ */
+export async function loadSessionMetadataForSessions(
+  sessionIds: string[],
+): Promise<Map<string, Record<string, unknown> | null>> {
+  const out = new Map<string, Record<string, unknown> | null>();
+  if (sessionIds.length === 0) return out;
+  const rows = await db
+    .select({ sessionId: projectSessions.sessionId, metadata: projectSessions.metadata })
+    .from(projectSessions)
+    .where(inArray(projectSessions.sessionId, sessionIds));
   for (const row of rows) {
     out.set(row.sessionId, (row.metadata as Record<string, unknown> | null) ?? null);
   }

@@ -100,6 +100,7 @@ import {
   generateSessionTitleFromFirstPrompt,
   titleSourceForCreate,
 } from '../session-title-generate';
+import { instanceStampMetadata } from '../instance-scope';
 import { prepareInitialSandboxTurn } from '../sandbox-turn-lifecycle';
 import { canOverride, resolveSessionOrigin } from './session-origin';
 import { sessionCreatedAuditAttribution } from './session-audit';
@@ -1557,6 +1558,13 @@ export async function createProjectSession(input: {
       initiator_actor_id: auditAttribution.initiatorActorId,
       delegation_depth: auditAttribution.delegationDepth,
     },
+    // The API instance that owns this session, LAST so no caller-supplied key
+    // can claim another instance's work. The first prompt is inserted with
+    // this row, seconds before the sandbox row that carries the same stamp,
+    // and the drain's instance scope reads this one in that window
+    // (`loadSessionMetadataForSessions`). `{}` when KORTIX_INSTANCE_ID is
+    // unset — every deployed environment.
+    ...instanceStampMetadata(),
   };
 
   let sessionRow: ProjectSessionRow | null = null;

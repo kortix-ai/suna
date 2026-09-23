@@ -117,14 +117,30 @@ export function compareMessagesForDisplay(
  */
 export function groupMessagesIntoTurns<M extends MessageWithPartsLike>(
   input: readonly M[],
-  options?: { pendingMessageIds?: ReadonlySet<string> },
+  options?: {
+    pendingMessageIds?: ReadonlySet<string>;
+    /**
+     * Draw no turn for a USER message with zero parts. Such a message is what
+     * a Remove leaves at the runtime while the agent loop runs: OpenCode
+     * refuses the whole-message delete mid-loop, so the prompt's parts are
+     * deleted instead, and the loop's next step is parented on the part-less
+     * message. Kortix deletes it once the loop is idle. With this option an
+     * assistant parented on it joins the turn before it, which is the turn
+     * that is actually answering.
+     */
+    hidePartlessUserMessages?: boolean;
+  },
 ): TurnLike<M>[] {
   // Client-minted wire IDs are not proof of delivery. Keep inbox placeholders
   // after the transcript, in the durable queue's order, until they are released.
   const pendingOrder = new Map(
     [...(options?.pendingMessageIds ?? [])].map((id, index) => [id, index]),
   );
-  const messages = [...input].sort((a, b) => {
+  const isHiddenHusk = (msg: M) =>
+    options?.hidePartlessUserMessages === true &&
+    msg.info.role === 'user' &&
+    msg.parts.length === 0;
+  const messages = [...input].filter((msg) => !isHiddenHusk(msg)).sort((a, b) => {
     const aPending = pendingOrder.get(a.info.id);
     const bPending = pendingOrder.get(b.info.id);
     if (aPending !== undefined && bPending !== undefined) return aPending - bPending;

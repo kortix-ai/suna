@@ -98,7 +98,9 @@ describe('tryDisposeReload', () => {
     expect(ENV_ROUTE).toContain('reloadConfig({ mustRespawn })')
     // And the lifecycle must honour it BEFORE trying dispose.
     const reload = OPENCODE_SRC.split('async reloadConfig(')[1]?.split('\n    },')[0]
-    expect(reload).toContain('!opts.mustRespawn && (await tryDisposeReload())')
+    const gateAt = (reload as string).indexOf('if (!opts.mustRespawn)')
+    expect(gateAt).toBeGreaterThanOrEqual(0)
+    expect((reload as string).indexOf('await tryDisposeReload()')).toBeGreaterThan(gateAt)
   })
 
   test('reloadConfig falls back to a full restart when dispose does not win', () => {
@@ -142,8 +144,8 @@ describe('requiresRespawn', () => {
   })
 
   test('an ordinary secret takes the fast path', () => {
-    // ~51ms vs ~8s, and it does not sever an in-flight turn. Respawning for
-    // every secret would make the fast path pointless.
+    // ~51ms vs ~8s. Both abort an in-flight turn, so the env route waits for an
+    // idle box either way; respawning for every secret would still cost ~8s.
     expect(requiresRespawn(['STRIPE_SECRET_KEY', 'DATABASE_URL'])).toBe(false)
     expect(requiresRespawn([])).toBe(false)
   })
