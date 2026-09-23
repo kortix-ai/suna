@@ -1,4 +1,4 @@
-import { SHARE_FILE_IFRAME_CLASS } from '@/app/(public)/share/session/[token]/share-layout';
+import { SHARE_FILE_IFRAME_CLASS } from '@/app/[locale]/(public)/share/session/[token]/share-layout';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { HTML_PREVIEW_IFRAME_CLASS, HtmlPreview } from './html-preview';

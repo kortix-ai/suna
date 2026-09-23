@@ -332,11 +332,12 @@ const nextConfig = (): NextConfig => ({
   //     is a compiler swap with its own diagnostics surface, not part of a
   //     framework bump. Deliberately left for its own change.
   //
-  // Not applicable to this app:
-  //   · next/root-params — root params only exist for a dynamic segment ABOVE
-  //     the root layout. src/app's top level is (app)/(auth)/(public)/(system)/
-  //     (utility)/admin/docs/api — all static. Locale comes from next-intl's
-  //     request.ts, not a [lang] segment.
+  // In use:
+  //   · next/root-params — every page lives under app/[locale] (the root
+  //     layout's segment). i18n/request.ts reads the locale with
+  //     `locale()` from next/root-params instead of headers()/cookies(), so
+  //     marketing pages prerender once per locale. The middleware rewrites
+  //     unprefixed URLs onto the segment.
   //
   // Deliberately NOT enabled — each is a migration, not a flag flip:
   //   · cacheComponents + partialPrefetching (Instant Navigations). Requires
@@ -567,7 +568,26 @@ const nextConfig = (): NextConfig => ({
   },
 
   async rewrites() {
-    return [
+    // /docs is served from public/docs without the middleware (see the
+    // middleware matcher). Its Markdown representation is negotiated here
+    // instead: an explicit `Accept: text/markdown` request is rewritten to the
+    // negotiation route BEFORE the static file lookup. Browsers keep HTML.
+    const acceptsMarkdown = [
+      { type: 'header' as const, key: 'accept', value: '(?:.*,)?\\s*text/markdown.*' },
+    ];
+    const beforeFiles = [
+      {
+        source: '/docs',
+        has: acceptsMarkdown,
+        destination: '/markdown-negotiation?path=/docs',
+      },
+      {
+        source: '/docs/:path*',
+        has: acceptsMarkdown,
+        destination: '/markdown-negotiation?path=/docs/:path*',
+      },
+    ];
+    const afterFiles = [
       // Proxy API calls to backend to avoid CORS in local dev. The target is
       // env-driven so an isolated `pnpm worktree` instance proxies the browser
       // to ITS api port; unset (primary `pnpm dev`) keeps the default :8008.
@@ -614,7 +634,7 @@ const nextConfig = (): NextConfig => ({
       },
       // /docs is a Blume static build in public/docs/. Astro writes clean URLs as
       // directories, and Next's static handler does not resolve a directory index,
-      // so map them explicitly. These are afterFiles rules (a flat array is), so an
+      // so map them explicitly. These are afterFiles rules, so an
       // existing file such as /docs/_astro/app.css is served before they ever fire.
       {
         source: '/docs',
@@ -625,6 +645,7 @@ const nextConfig = (): NextConfig => ({
         destination: '/docs/:path*/index.html',
       },
     ];
+    return { beforeFiles, afterFiles, fallback: [] };
   },
 
   // HTTP headers for security, caching and performance

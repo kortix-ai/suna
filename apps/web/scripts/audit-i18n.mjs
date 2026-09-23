@@ -130,7 +130,7 @@ const ignoredPathParts = [
   '/node_modules/',
   '/src/components/ui/',
   '/src/app/fonts/',
-  '/src/app/(system)/debug/',
+  '/src/app/[locale]/(system)/debug/',
   '/src/types/',
   '/__harness__/',
 ];
