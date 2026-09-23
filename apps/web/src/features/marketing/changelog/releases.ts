@@ -2,7 +2,7 @@ import 'server-only';
 
 import { unstable_cache } from 'next/cache';
 
-import { paginateReleases } from './paging';
+import { CHANGELOG_PAGE_SIZE, paginateReleases } from './paging';
 import { renderReleaseMarkdown } from './render';
 import type { ChangelogPage, ChangelogRelease, GitHubRelease } from './types';
 
@@ -92,10 +92,13 @@ async function buildChangelogPage(page: number): Promise<ChangelogPage | null> {
  */
 export async function getChangelogPage(page: number): Promise<ChangelogPage | null> {
   try {
-    return await unstable_cache(() => buildChangelogPage(page), ['changelog-page', 'v1', String(page)], {
-      revalidate: CHANGELOG_REVALIDATE_SECONDS,
-      tags: ['changelog'],
-    })();
+    // The data cache outlives deploys, so the key names everything that
+    // shapes an entry: bump `v1` when ChangelogPage changes shape.
+    return await unstable_cache(
+      () => buildChangelogPage(page),
+      ['changelog-page', 'v1', `size-${CHANGELOG_PAGE_SIZE}`, String(page)],
+      { revalidate: CHANGELOG_REVALIDATE_SECONDS, tags: ['changelog'] },
+    )();
   } catch {
     return page === 1 ? { page: 1, pageCount: 1, releases: [], tagPages: {} } : null;
   }
