@@ -1,7 +1,7 @@
 /**
  * URL builder for the account admin surfaces mobile hands off to web
  * (Members, Groups and permissions, Git, Audit log). Mobile has no in-app
- * screens for these (see apps/mobile/design.md → Account tab and account
+ * screens for these (see apps/mobile/design.md → Account page and account
  * screens): the account detail page opens the equivalent web tab in the
  * in-app browser (`expo-web-browser`).
  */

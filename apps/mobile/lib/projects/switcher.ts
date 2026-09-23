@@ -42,7 +42,7 @@ export function filterProjectsByQuery(projects: KortixProject[], query: string):
 
 /**
  * The route a project opens at — shared by the switcher sheet and the
- * Projects tab (`router.replace`). expo-router's typed routes need the
+ * Projects page (`router.replace`). expo-router's typed routes need the
  * dynamic segment as `params`, not interpolated into `pathname`, so this
  * returns the `Href` shape directly rather than a path string.
  */

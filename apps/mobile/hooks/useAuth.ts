@@ -11,6 +11,7 @@ import { shouldUseRevenueCat } from '@/lib/billing/provider';
 import { consumeAuthCallbackState, createAuthCallbackRedirect } from '@/lib/auth/callback-state';
 import { admitMobileOAuthSession } from '@/lib/auth/mobile-admission';
 import { parsePersistedSession, sessionForNullAuthResult } from '@/lib/auth/persisted-session';
+import { sessionExpiry } from '@/lib/auth/session-expiry-monitor';
 import { keysToClear } from '@/lib/auth/sign-out-keys';
 import { applyProfileLocale } from '@/lib/utils/i18n';
 import { withDeadline } from '@/lib/utils/with-deadline';
@@ -324,6 +325,7 @@ export function useAuth() {
               '🚫 New direct OAuth user on mobile — signing out (register on the web first)'
             );
             setOauthRejection('No account found. Create an account on the web first.');
+            sessionExpiry.disarm();
             await supabase.auth.signOut().catch(() => {});
             return;
           }
@@ -1037,6 +1039,8 @@ export function useAuth() {
     try {
       log.log('🎯 Sign out initiated');
       setIsSigningOut(true);
+      // The SIGNED_OUT this causes is expected: no "session ended" dialog.
+      sessionExpiry.disarm();
 
       if (shouldUseRevenueCat()) {
         try {

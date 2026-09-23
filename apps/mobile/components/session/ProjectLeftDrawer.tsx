@@ -48,6 +48,7 @@ import { useColorScheme } from 'nativewind';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   ArrowElbowDownRightIcon,
+  CaretUpDownIcon,
   FoldersIcon,
   MagnifyingGlassIcon,
   NavigationArrowIcon,
@@ -227,9 +228,12 @@ function SwitcherRow({
   return (
     // Minimal (Jay, 2026-09-23): the project's avatar top left (Jay,
     // 2026-09-24: in place of the Kortix symbol) — the chalk tile the
-    // switcher sheet and the Projects tab draw for the same project — then
-    // the project name over the account, no caret. The avatar is 32pt, the
-    // height of the two text lines (20pt + 17pt line boxes), so it spans both. One button edge to edge; inner views ignore touches so
+    // switcher sheet and the Projects page draw for the same project — then
+    // the project name over the account. The avatar is 32pt, the height of
+    // the two text lines (20pt + 17pt line boxes), so it spans both. The row
+    // reads as a control (Jay, 2026-09-24): a `bg-card` fill at rest,
+    // `bg-secondary` pressed, and a trailing up/down caret — the switcher
+    // affordance. One button edge to edge; inner views ignore touches so
     // every part presses it.
     <View className="px-2 pb-1">
       <Pressable
@@ -237,7 +241,7 @@ function SwitcherRow({
         hitSlop={4}
         accessibilityRole="button"
         accessibilityLabel={label}
-        className="flex-row items-center gap-3 rounded-2xl px-3 py-2 active:bg-accent">
+        className="flex-row items-center gap-3 rounded-2xl bg-card px-3 py-2 active:bg-secondary">
         <View pointerEvents="none" className="w-8 items-center">
           <Avatar chalk size={32} fallbackText={projectName} />
         </View>
@@ -252,6 +256,7 @@ function SwitcherRow({
             {accountName}
           </Text>
         </View>
+        <Icon as={CaretUpDownIcon} size={16} className="shrink-0 text-muted-foreground" />
       </Pressable>
     </View>
   );
@@ -470,7 +475,7 @@ export function ProjectLeftDrawer({
     onNewSession();
   }, [onClose, onNewSession]);
 
-  // The same Account page as the Account tab, inside the project stack, so
+  // The app's one settings page (AccountPage), inside the project stack, so
   // its hamburger opens this drawer.
   const goToAccount = useCallback(
     () => navigateOnce(() => onNavigateRoute(PROJECT_ACCOUNT_ROUTE)),

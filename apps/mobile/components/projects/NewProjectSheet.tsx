@@ -17,6 +17,11 @@
  *    account rows, a repository search, the repository rows, an optional
  *    name, and Import repository. With no GitHub App installation: a
  *    Connect GitHub pill that opens the install page in the browser.
+ *
+ * `initialView="github"` opens straight on Import from GitHub, with no Back
+ * (the full-screen `/new` uses it for its own Import from GitHub row). The
+ * create path and the form rules are shared with `/new`
+ * (`useCreateManagedProject`, `lib/projects/new-project-form.ts`).
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -36,20 +41,13 @@ import { KortixBottomSheetModal, SheetTitleRow } from '@/components/kortix/sheet
 import { POP_IN, PUSH_IN, SheetBackButton } from '@/components/kortix/sheet-push';
 import { haptics } from '@/lib/haptics';
 import { useToast } from '@/components/kortix/toast-provider';
-import { starterTemplateForManagedProject } from './project-starter-template';
-import {
-  useGitHubInstallations,
-  useGitHubRepositories,
-  useLinkRepository,
-  useProvisionProject,
-} from '@/lib/projects/hooks';
+import { useCreateManagedProject } from './useCreateManagedProject';
+import { useGitHubInstallations, useGitHubRepositories, useLinkRepository } from '@/lib/projects/hooks';
 import { creatableAccounts } from '@/lib/projects/landing';
+import { PROJECT_NAME_MAX_LENGTH, resolveCreateAccountId } from '@/lib/projects/new-project-form';
 import { sheetOpenMove } from '@/lib/ui/sheet-open';
 import type { KortixAccount, KortixProject } from '@/lib/projects/projects-client';
 import { openLink } from '@/lib/utils/open-link';
-
-// Mirrors the API's PROJECT_NAME_MAX_LENGTH (projects.name is varchar(255)).
-const PROJECT_NAME_MAX_LENGTH = 120;
 
 interface NewProjectSheetProps {
   open: boolean;
@@ -59,14 +57,23 @@ interface NewProjectSheetProps {
   accounts: KortixAccount[];
   onClose: () => void;
   onCreated: (project: KortixProject) => void;
+  /** The view the sheet opens on. `github` has no Back: X closes the sheet. */
+  initialView?: 'managed' | 'github';
 }
 
-export function NewProjectSheet({ open, accountId: initialAccountId, accounts, onClose, onCreated }: NewProjectSheetProps) {
+export function NewProjectSheet({
+  open,
+  accountId: initialAccountId,
+  accounts,
+  onClose,
+  onCreated,
+  initialView = 'managed',
+}: NewProjectSheetProps) {
   const sheetRef = useRef<BottomSheetModal>(null);
   const insets = useSafeAreaInsets();
   const toast = useToast();
 
-  const [view, setView] = useState<'managed' | 'account' | 'github'>('managed');
+  const [view, setView] = useState<'managed' | 'account' | 'github'>(initialView);
   // The first view slides back in only after another view was open.
   const [returning, setReturning] = useState(false);
   const [pickedAccountId, setPickedAccountId] = useState<string | null>(null);
@@ -78,12 +85,10 @@ export function NewProjectSheet({ open, accountId: initialAccountId, accounts, o
   const creatable = useMemo(() => creatableAccounts(accounts), [accounts]);
   // The pick wins; else the account the sheet opened on, when a project can
   // be created in it; else the first creatable account.
-  const accountId =
-    pickedAccountId ??
-    (creatable.some((a) => a.account_id === initialAccountId) ? initialAccountId : (creatable[0]?.account_id ?? null));
+  const accountId = resolveCreateAccountId({ accounts, picked: pickedAccountId, preferred: initialAccountId });
   const account = creatable.find((a) => a.account_id === accountId) ?? null;
 
-  const provision = useProvisionProject();
+  const createManaged = useCreateManagedProject();
   const link = useLinkRepository();
   const github = open && view === 'github';
   const installationsQuery = useGitHubInstallations(accountId, github);
@@ -94,7 +99,7 @@ export function NewProjectSheet({ open, accountId: initialAccountId, accounts, o
     [installationsQuery.data?.installations]
   );
   const repos = reposQuery.data?.repositories ?? [];
-  const submitting = provision.isPending || link.isPending;
+  const submitting = createManaged.isPending || link.isPending;
 
   // True while the sheet is on screen. The project switcher mounts this
   // sheet closed, and a gorhom modal dismissed before its first present never
@@ -125,14 +130,14 @@ export function NewProjectSheet({ open, accountId: initialAccountId, accounts, o
   }, [selectedInstallationId]);
 
   const reset = useCallback(() => {
-    setView('managed');
+    setView(initialView);
     setReturning(false);
     setPickedAccountId(null);
     setName('');
     setSelectedInstallationId('');
     setSelectedRepo('');
     setRepoSearch('');
-  }, []);
+  }, [initialView]);
 
   const handleDismiss = useCallback(() => {
     presentedRef.current = false;
@@ -161,29 +166,13 @@ export function NewProjectSheet({ open, accountId: initialAccountId, accounts, o
     setView('managed');
   }, []);
 
+  const { create } = createManaged;
   const handleCreateManaged = useCallback(async () => {
-    if (!accountId) return toast.error('Select an account first');
-    const cleaned = name.replace(/[^a-zA-Z0-9._ -]+/g, '').trim();
-    if (!cleaned) return toast.error('Project name is required');
-    if (cleaned.length > PROJECT_NAME_MAX_LENGTH) {
-      return toast.error(`Project name must be ${PROJECT_NAME_MAX_LENGTH} characters or fewer`);
-    }
-    try {
-      haptics.medium();
-      const project = await provision.mutateAsync({
-        account_id: accountId,
-        name: cleaned,
-        starter_template: starterTemplateForManagedProject(),
-      });
-      haptics.success();
-      toast.success('Project created');
-      onCreated(project);
-      sheetRef.current?.dismiss();
-    } catch (err: any) {
-      haptics.warning();
-      toast.error(err?.message || 'Failed to create project');
-    }
-  }, [accountId, name, provision, toast, onCreated]);
+    const project = await create(accountId, name);
+    if (!project) return;
+    onCreated(project);
+    sheetRef.current?.dismiss();
+  }, [accountId, name, create, onCreated]);
 
   const handleLinkGitHub = useCallback(async () => {
     if (!accountId) return toast.error('Select an account first');
@@ -268,7 +257,11 @@ export function NewProjectSheet({ open, accountId: initialAccountId, accounts, o
         </Animated.View>
       ) : view === 'github' ? (
         <Animated.View key="github" entering={PUSH_IN} style={{ flex: 1 }}>
-          <SheetTitleRow title="Import from GitHub" onClose={close} leading={<SheetBackButton onPress={back} />} />
+          <SheetTitleRow
+            title="Import from GitHub"
+            onClose={close}
+            leading={initialView === 'github' ? undefined : <SheetBackButton onPress={back} />}
+          />
           <BottomSheetScrollView
             style={{ flex: 1 }}
             contentContainerStyle={contentStyle}
@@ -401,7 +394,7 @@ export function NewProjectSheet({ open, accountId: initialAccountId, accounts, o
             </SettingsGroup>
 
             <Button size="lg" className="rounded-full" disabled={!canCreate} onPress={handleCreateManaged}>
-              <Text>{provision.isPending ? 'Creating…' : 'Create project'}</Text>
+              <Text>{createManaged.isPending ? 'Creating…' : 'Create project'}</Text>
             </Button>
           </BottomSheetScrollView>
         </Animated.View>

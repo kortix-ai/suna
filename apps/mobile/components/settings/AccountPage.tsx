@@ -1,25 +1,22 @@
 /**
  * Account page — the app's one settings page (COR-120: "less is more").
  *
- * Two entry points render this same component:
- * - the Account tab (`presentation="tab"`): the page title is scroll content,
- *   and the page clears the tab bar;
- * - the project sidebar's avatar (`presentation="project"`, route
- *   `/projects/[id]/account`): a header with the hamburger that opens the
- *   project drawer. No Go back.
+ * One entry point: the project sidebar's avatar (`presentation="project"`,
+ * route `/projects/[id]/account`): a header with the hamburger that opens the
+ * project drawer. No Go back. (The Account tab that also rendered it is gone
+ * with the tab bar, COR-161.)
  *
  * Top to bottom: profile tile (photo; name over email, the one two-line row;
  * opens EditProfileSheet),
- * an untitled group for the current project (project presentation only) and
+ * an untitled group for the current project and
  * the active account, Preferences, Help, Log out, the version footer, and a
  * quiet "Delete account" link. Layout rules:
- * apps/mobile/design.md → Account tab and account screens.
+ * apps/mobile/design.md → Account page and account screens.
  */
 
 import * as React from 'react';
 import { Pressable, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   BellIcon as Bell,
   BookOpenIcon as BookOpen,
@@ -55,11 +52,6 @@ import {
 } from '@/components/kortix/settings-list';
 import type { SheetRef } from '@/components/kortix/sheet';
 import { PricingTierBadge } from '@/components/billing/PricingTierBadge';
-import {
-  TAB_SCROLL_INSET_ADJUSTMENT,
-  usesNativeTabBar,
-  useTabBarClearance,
-} from '@/components/navigation/tab-bar-layout';
 import { EditProfileSheet } from '@/components/settings/EditProfileSheet';
 import { ProfilePicture } from '@/components/settings/ProfilePicture';
 import { KORTIX_WEB_URL } from '@/lib/kortix-web';
@@ -73,11 +65,8 @@ import { openLink } from '@/lib/utils/open-link';
 import { LANGUAGE_PICKER_ENABLED } from '@/lib/utils/locale-config';
 
 export interface AccountPageProps {
-  /**
-   * `tab`: the Account tab root. `project`: a route in the project stack, with
-   * the hamburger header.
-   */
-  presentation: 'tab' | 'project';
+  /** `project`: a route in the project stack, with the hamburger header. */
+  presentation: 'project';
   /** `project` only: open the project drawer (the header hamburger). */
   onOpenMenu?: () => void;
   /** `project` only: the open project's name, for the "current context" row. */
@@ -96,18 +85,10 @@ export function AccountPage({
   projectName,
   onOpenProjectSettings,
 }: AccountPageProps) {
-  const isTab = presentation === 'tab';
   const isProject = presentation === 'project';
   const { user, signOut, isSigningOut } = useAuthContext();
   const { t, currentLanguage, availableLanguages } = useLanguage();
   const router = useRouter();
-  const tabBarClearance = useTabBarClearance();
-  const insets = useSafeAreaInsets();
-  // The tab has no screen header. iOS scroll views inset the status bar
-  // themselves (contentInsetAdjustmentBehavior="automatic"); the Android
-  // floating tab bar screens pad for it here. 14pt matches the Projects tab
-  // header's py-3.5, so both tab titles sit at the same height.
-  const topPadding = usesNativeTabBar ? 14 : insets.top + 14;
 
   const profile = useProfileEditor();
   const editProfileRef = React.useRef<SheetRef>(null);
@@ -185,21 +166,8 @@ export function AccountPage({
 
   return (
     <View className="flex-1 bg-background">
-      {isTab ? null : (
-        <SettingsHeader title={title} onOpenMenu={onOpenMenu} />
-      )}
-      <SettingsPage
-        paddingBottom={isTab ? tabBarClearance : undefined}
-        contentInsetAdjustmentBehavior={isTab ? TAB_SCROLL_INSET_ADJUSTMENT : undefined}
-        header={
-          isTab ? (
-            // The page title is page content (no header bar), so it shares the
-            // page background; h-10 matches the Projects header row height.
-            <View className="h-10 justify-center" style={{ paddingTop: topPadding }}>
-              <Text variant="h3">{title}</Text>
-            </View>
-          ) : undefined
-        }>
+      <SettingsHeader title={title} onOpenMenu={onOpenMenu} />
+      <SettingsPage>
         {/* Profile tile: photo, name over email — opens EditProfileSheet. */}
         <SettingsGroup>
           <ProfileTile

@@ -45,8 +45,8 @@ export default function SettingsLayout() {
         },
       }}
     >
-      {/* No index screen: the Account page (Account tab, or /projects/[id]/account
-          from a project) is the one settings page and pushes these sub-pages. */}
+      {/* No index screen: the Account page (/projects/[id]/account, from
+          the project drawer's avatar) is the one settings page and pushes these sub-pages. */}
       <Stack.Screen
         name="language"
         options={{

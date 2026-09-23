@@ -6,7 +6,7 @@
  * account's projects as a `SettingsGroup`. Opened from the project drawer's
  * switcher row (`ProjectLeftDrawer` → `onOpenSwitcher`; the sheet itself is
  * mounted once by `ProjectScreen`, next to the other project sheets) and
- * from the Projects tab's account control (`app/(tabs)/projects.tsx`) — one
+ * from the Projects page's account control (`app/projects/index.tsx`) — one
  * sheet, two call sites.
  *
  * Both call sites mount it closed. `open` drives it through `sheetOpenMove`
@@ -15,11 +15,11 @@
  * before its first present (the device bug: the sheet never appeared).
  *
  * Picking a chip only swaps the list in place, and fires `onAccountSelect`
- * when the caller passed one (the Projects tab, so its own list follows) —
+ * when the caller passed one (the Projects page, so its own list follows) —
  * no navigation, no write to `useCurrentAccountStore` here. Picking a project
  * commits it — sets the current
  * account, closes this sheet, and opens the project the same way the
- * Projects tab does (`router.replace`, the last-project store follows from
+ * Projects page does (`router.replace`, the last-project store follows from
  * `ProjectScreen` as it always has).
  *
  * `+` and the empty state's "Create project" open `NewProjectSheet` preset to
@@ -58,7 +58,7 @@ import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { sheetOpenMove } from '@/lib/ui/sheet-open';
 import type { KortixAccount, KortixProject } from '@/lib/projects/projects-client';
 
-/** The bottom tabs: the app's own tab bar items and icons, Account left, Projects right (Jay, 2026-09-23). */
+/** The bottom tabs: the old root tab bar's items and icons, Account left, Projects right (Jay, 2026-09-23). */
 const SWITCHER_TABS: FloatingTabItem[] = [
   { key: 'account', label: 'Account', icon: <Icon as={UserIcon} size={20} className="text-foreground" /> },
   { key: 'projects', label: 'Projects', icon: <Icon as={FolderIcon} size={20} className="text-foreground" /> },
@@ -76,12 +76,12 @@ export interface ProjectSwitcherSheetProps {
   /**
    * Fires once, right before an existing or freshly created project opens —
    * so a caller with its own chrome (the project drawer) can close it too.
-   * The Projects tab, which has none, omits it.
+   * The Projects page, which has none, omits it.
    */
   onProjectOpen?: () => void;
   /**
    * Fires when an account chip is tapped, with that account's id. The
-   * Projects tab passes `setSelectedAccountId` so its list switches with the
+   * Projects page passes `setSelectedAccountId` so its list switches with the
    * chip; the drawer omits it — there a chip only swaps this sheet's project
    * list, and the account is written when a project is picked.
    */

@@ -1,17 +1,21 @@
 /**
- * Projects tab — post-login landing, reskinned to the web design system.
+ * Projects — `/projects`, the list of the current account's projects, a plain
+ * root-stack page (COR-161 removed the Projects/Account tab bar that used to
+ * host it). The app never lands here on its own: app start opens the last
+ * project, or `/welcome` → `/new` when there is none (`app/index.tsx`). It is
+ * reached from the start screen's failure state (All projects) and after a
+ * project is deleted; the project drawer's switcher sheet
+ * (`ProjectSwitcherSheet`) is the everyday way between projects.
  *
  * Repo-first model: lists projects for the current account (GET /accounts +
- * GET /projects?account_id=). Data wiring is ported verbatim from the
- * original `app/projects/index.tsx` (now retired) — only the presentation
- * layer changed (tokens + shared primitives instead of inline hex).
+ * GET /projects?account_id=).
  */
 
 import * as React from 'react';
 import { Animated, FlatList, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useColorScheme } from 'nativewind';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PressableSurface } from '@/components/kortix/pressable-surface';
 import {
   WarningCircleIcon as AlertCircle,
@@ -33,10 +37,6 @@ import { NewProjectSheet } from '@/components/projects/NewProjectSheet';
 import { ProjectActions } from '@/components/projects/ProjectActions';
 import { PlatformButton } from '@/components/kortix/platform-button';
 import { SearchHeader } from '@/components/kortix/search-header';
-import {
-  TAB_SCROLL_INSET_ADJUSTMENT,
-  useTabBarClearance,
-} from '@/components/navigation/tab-bar-layout';
 import { useAuthContext } from '@/contexts';
 import { useAccounts, useProjects } from '@/lib/projects/hooks';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
@@ -62,12 +62,16 @@ function SkeletonRow() {
   return <Animated.View style={{ opacity }} className="mb-2 h-14 rounded-md bg-primary/10" />;
 }
 
-export default function ProjectsTab() {
+/** Scroll content never adjusts for the safe area itself: the header pads the top, `bottomPadding` the bottom. */
+const SCROLL_INSET_ADJUSTMENT = 'never';
+
+export default function ProjectsPage() {
   const router = useRouter();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const { user } = useAuthContext();
-  const tabBarClearance = useTabBarClearance();
+  // The last row clears the home indicator by 24pt.
+  const bottomPadding = useSafeAreaInsets().bottom + 24;
 
   const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
   const openUpgradeSheet = useUpgradeSheetStore((s) => s.openUpgradeSheet);
@@ -298,8 +302,8 @@ export default function ProjectsTab() {
 
       {loading ? (
         <ScrollView
-          contentInsetAdjustmentBehavior={TAB_SCROLL_INSET_ADJUSTMENT}
-          contentContainerStyle={{ flexGrow: 1, paddingBottom: tabBarClearance }}
+          contentInsetAdjustmentBehavior={SCROLL_INSET_ADJUSTMENT}
+          contentContainerStyle={{ flexGrow: 1, paddingBottom: bottomPadding }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />}>
           <View className="flex-1 px-4 pt-4">
             {[0, 1, 2, 3, 4, 5].map((i) => (
@@ -309,8 +313,8 @@ export default function ProjectsTab() {
         </ScrollView>
       ) : projectsQuery.isError ? (
         <ScrollView
-          contentInsetAdjustmentBehavior={TAB_SCROLL_INSET_ADJUSTMENT}
-          contentContainerStyle={{ flexGrow: 1, paddingBottom: tabBarClearance }}
+          contentInsetAdjustmentBehavior={SCROLL_INSET_ADJUSTMENT}
+          contentContainerStyle={{ flexGrow: 1, paddingBottom: bottomPadding }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />}>
           <View className="flex-1 px-4 pt-4">
             <EmptyState
@@ -324,11 +328,11 @@ export default function ProjectsTab() {
         </ScrollView>
       ) : showEmpty ? (
         <ScrollView
-          contentInsetAdjustmentBehavior={TAB_SCROLL_INSET_ADJUSTMENT}
-          contentContainerStyle={{ flexGrow: 1, paddingBottom: tabBarClearance }}
+          contentInsetAdjustmentBehavior={SCROLL_INSET_ADJUSTMENT}
+          contentContainerStyle={{ flexGrow: 1, paddingBottom: bottomPadding }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />}>
           {/* Plain page: no card, no icon, no description — title and one pill,
-              centred in the space between the header and the tab bar. */}
+              centred below the header. */}
           <View className="flex-1 items-center justify-center gap-6 px-8">
             <Text variant="large">No projects yet</Text>
             {canCreate && (
@@ -346,8 +350,8 @@ export default function ProjectsTab() {
         </ScrollView>
       ) : showNoResults ? (
         <ScrollView
-          contentInsetAdjustmentBehavior={TAB_SCROLL_INSET_ADJUSTMENT}
-          contentContainerStyle={{ flexGrow: 1, paddingBottom: tabBarClearance }}
+          contentInsetAdjustmentBehavior={SCROLL_INSET_ADJUSTMENT}
+          contentContainerStyle={{ flexGrow: 1, paddingBottom: bottomPadding }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />}>
           <View className="flex-1 px-4 pt-4">
             <EmptyState
@@ -362,8 +366,8 @@ export default function ProjectsTab() {
           data={filtered}
           keyExtractor={(item) => item.project_id}
           renderItem={renderItem}
-          contentInsetAdjustmentBehavior={TAB_SCROLL_INSET_ADJUSTMENT}
-          contentContainerStyle={{ paddingTop: 12, paddingBottom: tabBarClearance }}
+          contentInsetAdjustmentBehavior={SCROLL_INSET_ADJUSTMENT}
+          contentContainerStyle={{ paddingTop: 12, paddingBottom: bottomPadding }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />}
           keyboardShouldPersistTaps="handled"
         />

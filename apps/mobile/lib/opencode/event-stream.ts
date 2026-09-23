@@ -45,6 +45,8 @@ import {
 import { platformKeys } from '@/lib/platform/hooks';
 import type { Session } from '@/lib/platform/types';
 import { useCompactionStore } from '@/stores/compaction-store';
+import { reportUnauthorized } from '@/lib/auth/session-expiry-monitor';
+import { useStreamHealthStore } from './stream-health';
 import type { Part, PermissionRequest, QuestionRequest, SessionStatus } from './types';
 
 /** Frames that only prove the connection is alive; they never reach the store. */
@@ -453,7 +455,11 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
  * - backoff has jitter; after `MAX_HARD_FAILURES` consecutive failures the
  *   stream parks and probes once per `PARKED_RETRY_MS`; foreground, offline →
  *   online, and a new `sandboxUrl` retry at once;
- * - 401/403 halts until Supabase refreshes the token or `sandboxUrl` changes.
+ * - 401/403 halts until Supabase refreshes the token or `sandboxUrl` changes,
+ *   and asks the expired-login monitor to check the login once;
+ * - every transition is reported to `useStreamHealthStore` (`stream-health.ts`)
+ *   for the thread's "Live updates paused · Reconnect" pill, whose Reconnect
+ *   calls back into `retryNow` here.
  */
 export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
   const queryClient = useQueryClient();
@@ -484,6 +490,9 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
     let sawEvent = false;
     let stable = false;
     let appActive = AppState.currentState !== 'background' && AppState.currentState !== 'inactive';
+    // Last frame received, for the thread's "Last update … ago" (null before any).
+    let lastReceivedAt: number | null = null;
+    const health = useStreamHealthStore.getState();
 
     // Event batching: queue SSE events and apply them at most once per
     // FLUSH_INTERVAL_MS (status changes on the next tick). Applying every raw
@@ -577,6 +586,7 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
         log.warn(`🅿️ [SSE] ${hardFailures} consecutive failures; parked, probing every ${retry.delayMs}ms`);
       }
       parked = retry.parked;
+      health.dispatch({ type: retry.parked ? 'parked' : 'lost', at: Date.now(), lastEventAt: lastReceivedAt });
       reconnectAttempts++;
       log.log(`🔄 [SSE] Reconnecting in ${retry.delayMs}ms (attempt ${reconnectAttempts})`);
       reconnectTimer = setTimeout(() => {
@@ -638,6 +648,7 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
       }
       const generation = ++connectGeneration;
       connectStartedAt = Date.now();
+      health.dispatch({ type: 'connecting', at: connectStartedAt });
 
       let token: string | null;
       try {
@@ -689,6 +700,8 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
         parked = false;
         openedAt = Date.now();
         lastFrameAt = openedAt;
+        lastReceivedAt = openedAt;
+        health.dispatch({ type: 'open', at: openedAt });
         armHeartbeat(HEARTBEAT_TIMEOUT_MS);
         stableTimer = setTimeout(() => {
           stableTimer = null;
@@ -708,6 +721,7 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
         if (disposed || es !== source) return;
         // Any frame (including keepalives) counts as server activity.
         lastFrameAt = Date.now();
+        lastReceivedAt = lastFrameAt;
         const data = evt.data;
         if (!data) return;
         charsSinceOpen += data.length;
@@ -745,6 +759,10 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
         if (status === 401 || status === 403) {
           log.warn(`🚫 [SSE] Not authorized for sandbox (status ${status}); halting reconnect`);
           authFailed = true;
+          health.dispatch({ type: 'auth-failed', at: Date.now(), lastEventAt: lastReceivedAt });
+          // A stale token refreshes and retries below; a dead login shows
+          // "Your session has ended" once.
+          reportUnauthorized();
           return;
         }
         log.warn(`⚠️ [SSE] Connection error (${evt.type}, status ${status ?? 'none'})`);
@@ -807,6 +825,15 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
       }, 0);
     });
 
+    // The pill's Reconnect: a user retry also clears a 401 halt, so a sandbox
+    // that answered 401 once gets one fresh try with the current token.
+    const unregisterReconnect = health.registerReconnect(() => {
+      if (disposed) return;
+      log.log('🔄 [SSE] Reconnect requested');
+      authFailed = false;
+      retryNow();
+    });
+
     void connect();
 
     return () => {
@@ -819,6 +846,8 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
       appStateSubscription.remove();
       unsubscribeOnline();
       authSubscription.unsubscribe();
+      unregisterReconnect();
+      health.dispatch({ type: 'stopped' });
     };
   }, [sandboxUrl, queryClient]);
 }

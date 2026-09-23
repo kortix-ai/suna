@@ -1,5 +1,5 @@
 /**
- * ProjectActions — the ⋯ menu on a Projects tab row.
+ * ProjectActions — the ⋯ menu on a Projects page row (`/projects`).
  *
  * A bottom sheet lists the actions: Open project, and Archive project for
  * managers. Archive is destructive, so it confirms in an AlertDialog. The

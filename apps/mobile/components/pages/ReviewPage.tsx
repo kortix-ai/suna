@@ -13,9 +13,9 @@
  * `+` opens one (`OpenCRSheet`), and the header's history button opens the
  * project's versions (branches) in a sheet.
  *
- * The segment switcher is the root tab bar's capsule (`FloatingTabCapsule`:
+ * The segment switcher is the floating capsule (`FloatingTabCapsule`:
  * icon over label, a sliding thumb), pinned at the bottom over a fade of the
- * page — the same bar as Projects · Account (Jay, 2026-09-24). No counts on
+ * page — the same bar as the switcher sheet's Account · Projects (Jay, 2026-09-24). No counts on
  * the tabs. Three tabs fill the capsule's width on a 360pt phone, so the `+`
  * lives in the header. The list is one `SettingsGroup` of `SettingsRow`s, the
  * app's list (Jay, 2026-09-23).
@@ -252,8 +252,8 @@ export function ReviewPage({
             )}
           </ScrollView>
 
-          {/* Pinned bottom bar: the root tab bar's capsule, over a fade of
-              the page — the same bar as Projects · Account. */}
+          {/* Pinned bottom bar: the floating capsule, over a fade of
+              the page — the same bar as the switcher sheet's. */}
           <PinnedBar controlHeight={FLOATING_BAR_HEIGHT} background={pageBackground} className="justify-center px-4">
             <FloatingTabCapsule
               items={SEGMENT_TABS}

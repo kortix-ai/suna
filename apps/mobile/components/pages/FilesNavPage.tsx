@@ -57,7 +57,6 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Text } from '@/components/ui/text';
 import { FileGlyph } from '@/components/files/file-icons';
 import { downloadFailureMessage } from '@/lib/files/download-status';
-import { displayNames } from '@/lib/files/file-icon';
 import { buildFilesListItems, type FilesListItem } from '@/lib/files/files-list-items';
 import { searchFileTree, searchResultLocation } from '@/lib/files/tree-search';
 import { folderTone } from '@/lib/files/folder-tone';
@@ -531,8 +530,6 @@ export function FilesNavPage({
     }));
   }, [entries, rows, search, searching]);
   const folders = useMemo(() => visible.filter((r) => r.type === 'directory'), [visible]);
-  // Extensions dropped, unless two names in this folder would then collide.
-  const labels = useMemo(() => displayNames(visible.map((r) => r.name)), [visible]);
   const files = useMemo(() => visible.filter((r) => r.type === 'file'), [visible]);
   const listItems = useMemo(() => buildFilesListItems(folders, files, viewMode), [folders, files, viewMode]);
   const segments = path ? path.split('/').filter(Boolean) : [];
@@ -586,7 +583,7 @@ export function FilesNavPage({
             <SettingsGroupItem index={item.index} count={item.count}>
               <SettingsRow
                 leading={<EntryIcon file={file} size={22} />}
-                label={labels[file.name]}
+                label={file.name}
                 description={searching ? searchResultLocation(file) : undefined}
                 value={file.type === 'file' ? fileSizeLabel(file.size) : undefined}
                 onPress={() => onRowPress(file)}
@@ -601,7 +598,7 @@ export function FilesNavPage({
             <View key={file.path} style={{ width: '50%', paddingHorizontal: 4, marginBottom: 8 }}>
               <FileTile
                 file={file}
-                label={labels[file.name]}
+                label={file.name}
                 detail={searching ? searchResultLocation(file) : undefined}
                 onPress={onRowPress}
               />
@@ -610,7 +607,7 @@ export function FilesNavPage({
         </View>
       );
     },
-    [labels, onRowPress, searching],
+    [onRowPress, searching],
   );
 
   const cycleSort = () => {

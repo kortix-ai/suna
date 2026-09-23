@@ -2,7 +2,10 @@
  * SessionThreadTitle — the floating thread header's centred title, sitting
  * between the hamburger and the right-side controls (`FloatingMenuButton`'s
  * `title` slot, `SessionPage.tsx`). The session name only: no status or time
- * line under it (Jay, 2026-09-23).
+ * line under it (Jay, 2026-09-23) — with one exception: while live updates are
+ * paused, a 12pt muted `status` line reads "Last update 6 min ago" (COR-144),
+ * so a frozen thread never looks idle. Title (20pt line) + status (16pt line)
+ * fit the header's 40pt row.
  *
  * Title: 16pt `font-roobert-medium`, one line, truncates. Tap opens the
  * session's rename flow — the SAME flow the "···" sheet's Rename row opens
@@ -20,6 +23,8 @@ interface SessionThreadTitleProps {
   title: string;
   /** Opens the rename flow. Omit to disable the tap (title reads inert). */
   onPress?: () => void;
+  /** One muted line under the title; only "Last update … ago" today. */
+  status?: string | null;
 }
 
 /**
@@ -27,20 +32,27 @@ interface SessionThreadTitleProps {
  * button shape, and a Button takes no size or padding classes. It fills the
  * header's title column (`FloatingMenuButton`) and dims while pressed.
  */
-export function SessionThreadTitle({ title, onPress }: SessionThreadTitleProps) {
+export function SessionThreadTitle({ title, onPress, status }: SessionThreadTitleProps) {
   return (
     <PressableSurface
       disabled={!onPress}
       onPress={onPress}
       hitSlop={{ top: 10, bottom: 10 }}
       accessibilityRole={onPress ? 'button' : 'header'}
-      accessibilityLabel={title}
+      accessibilityLabel={status ? `${title}, ${status}` : title}
       accessibilityHint={onPress ? 'Opens rename' : undefined}
       className="flex-1 items-center justify-center"
       style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
-      <Text className="max-w-full font-roobert-medium text-base text-foreground" numberOfLines={1}>
+      <Text
+        className={`max-w-full font-roobert-medium text-base text-foreground${status ? ' leading-5' : ''}`}
+        numberOfLines={1}>
         {title}
       </Text>
+      {status ? (
+        <Text variant="muted" className="max-w-full text-xs leading-4" numberOfLines={1}>
+          {status}
+        </Text>
+      ) : null}
     </PressableSurface>
   );
 }

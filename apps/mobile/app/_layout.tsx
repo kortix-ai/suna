@@ -28,6 +28,8 @@ import { PortalHost } from '@rn-primitives/portal';
 import { OVERLAY_PORTAL_HOST } from '@/lib/ui/portal-hosts';
 import { ToastProvider } from '@/components/kortix/toast-provider';
 import { OfflineBanner } from '@/components/kortix/OfflineBanner';
+import { SessionEndedDialog } from '@/components/kortix/SessionEndedDialog';
+import { reportUnauthorized } from '@/lib/auth/session-expiry-monitor';
 import {
   GlobalUpgradeSheet,
   SandboxUpgradeGateListener,
@@ -78,6 +80,8 @@ configureKortix({
   getToken: getAuthToken,
   onError: (error, context) => {
     log.error('❌ [kortix-sdk] request failed:', error, context);
+    // A 401 may mean the login ended: the monitor checks once (COR-144).
+    if ((error as { status?: unknown } | null)?.status === 401) reportUnauthorized();
   },
 });
 
@@ -482,8 +486,17 @@ export default function RootLayout() {
                                         gestureEnabled: true,
                                       }}>
                                       <Stack.Screen name="index" options={{ animation: 'none' }} />
+                                      {/* First run (COR-161): the upgrade screen, then
+                                          the first project. Both open with replace from
+                                          `index`; nothing sits under them to swipe to. */}
                                       <Stack.Screen
-                                        name="(tabs)"
+                                        name="welcome"
+                                        options={{ gestureEnabled: false }}
+                                      />
+                                      <Stack.Screen name="new" options={{ gestureEnabled: false }} />
+                                      {/* The Projects list: a plain page, no tab bar. */}
+                                      <Stack.Screen
+                                        name="projects/index"
                                         options={{ gestureEnabled: false }}
                                       />
                                       <Stack.Screen
@@ -520,6 +533,7 @@ export default function RootLayout() {
                                 <GlobalUpgradeSheet />
                                 <PortalHost />
                                 <OfflineBanner />
+                                <SessionEndedDialog />
                               </ThemeProvider>
                             </BottomSheetModalProvider>
                             {/* Above every bottom sheet: dropdowns opened from inside a sheet. */}

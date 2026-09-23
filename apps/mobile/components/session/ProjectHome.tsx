@@ -42,6 +42,7 @@ import { ProjectHero } from '@/components/session/ProjectHero';
 import { AttachSheet, type AttachSheetRef } from '@/components/session/AttachSheet';
 import { useProjectDetail, useProjectModelCatalog } from '@/lib/projects/hooks';
 import type { AttachedFile } from '@/lib/session/attachments';
+import { takeComposerFocus } from '@/lib/onboarding/composer-handoff';
 import { draftKey } from '@/lib/session/composer-draft';
 import { useComposerDraft } from '@/lib/session/use-composer-draft';
 import {
@@ -112,6 +113,9 @@ export function ProjectHome({
   // Survives the OS killing the app (COR-143). ProjectScreen clears it once a
   // send starts a session.
   useComposerDraft(draftKey({ kind: 'project', projectId }), draft, setDraft);
+  // The first project, just created on `/new` (COR-161): open with the
+  // keyboard up. One-shot, read once at mount.
+  const [focusComposer] = React.useState(() => takeComposerFocus(projectId));
   const [files, setFiles] = React.useState<AttachedFile[]>([]);
   const [model, setModel] = React.useState<string | null>(null);
   const modelSheetRef = React.useRef<SheetRef>(null);
@@ -262,6 +266,7 @@ export function ProjectHome({
               onChangeText={setDraft}
               onSubmit={handleSubmit}
               placeholder="Ask anything"
+              autoFocus={focusComposer}
               disabled={sending}
               attachments={files}
               onAttach={() => {

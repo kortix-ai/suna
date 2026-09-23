@@ -129,6 +129,9 @@ import { log } from '@/lib/logger';
 
 import { SessionChatInput, type PromptOptions, type TrackedMention } from './SessionChatInput';
 import { SandboxHealthPill } from './SandboxHealthPill';
+import { LiveUpdatesPausedPill } from './LiveUpdatesPausedPill';
+import { useLiveUpdates } from '@/hooks/useLiveUpdates';
+import { OLDER_HOLD_POSITION_MS, olderHistoryControl } from '@/lib/session/older-history';
 import { useRouter } from 'expo-router';
 import { SessionTurn } from './SessionTurn';
 import { SessionBusyIndicator } from './session-busy-indicator';
@@ -218,6 +221,9 @@ function useShallowStableArray<T>(next: T[]): T[] {
 // low; opening a thread jumps to the end instead of rendering every turn.
 const INITIAL_TURNS_TO_RENDER = 4;
 
+/** Keeps the first visible turn in place while older turns prepend (COR-144). */
+const MAINTAIN_FIRST_VISIBLE = { minIndexForVisible: 0 } as const;
+
 function readSavedScrollOffset(sessionId: string): number {
   const saved = useTabStore.getState().tabStateById[sessionId] as { scrollOffset?: number } | undefined;
   return typeof saved?.scrollOffset === 'number' ? saved.scrollOffset : 0;
@@ -271,8 +277,15 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
   const { data: session } = useSession(sandboxUrl, sessionId);
   const { data: allSessions = EMPTY_SESSIONS } = useSessions(sandboxUrl);
 
-  // Hydrate messages from REST on mount; SSE keeps store updated after
-  useSessionSync(sandboxUrl, sessionId);
+  // Hydrate messages from REST on mount; SSE keeps store updated after.
+  // The newest page only: `loadOlder` pulls the next older page (COR-144).
+  const { hasOlder, isLoadingOlder, loadOlder } = useSessionSync(sandboxUrl, sessionId);
+  const loadOlderRef = useRef(loadOlder);
+  loadOlderRef.current = loadOlder;
+
+  // Live stream health (COR-144): "Last update … ago" in the header and the
+  // "Live updates paused · Reconnect" pill above the composer.
+  const liveUpdates = useLiveUpdates();
 
   // Pull to refresh (Jay, 2026-09-23): re-reads this session's transcript
   // through its sync controller (`reconcile('manual')`) — the chat refreshes,
@@ -1659,6 +1672,52 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
     isDark,
   ]);
 
+  // ── Older history (COR-144) ─────────────────────────────────────────────
+  // "Show 100 earlier messages" above the first turn. While a page loads and
+  // lays out, `maintainVisibleContentPosition` keeps the turn the reader sees
+  // in place as older turns prepend above it. It is on only for that window:
+  // always on, it would move the list under the auto-scroll physics above.
+  const [holdPosition, setHoldPosition] = useState(false);
+  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+  }, []);
+  const handleLoadOlder = useCallback(() => {
+    haptics.tap();
+    if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+    setHoldPosition(true);
+    void loadOlderRef.current()
+      .catch((error: unknown) => {
+        log.warn('[SessionPage] Loading older messages failed:', error instanceof Error ? error.message : error);
+        toast.error('Could not load earlier messages');
+      })
+      .finally(() => {
+        // The native position fix scrolls the list: not the reader's scroll.
+        markOwnScroll(OLDER_HOLD_POSITION_MS);
+        holdTimerRef.current = setTimeout(() => {
+          holdTimerRef.current = null;
+          setHoldPosition(false);
+        }, OLDER_HOLD_POSITION_MS);
+      });
+  }, [markOwnScroll, toast]);
+  const olderControl = olderHistoryControl({ hasOlder, isLoadingOlder, turnCount: turns.length });
+  const olderHistoryHeader = useMemo(
+    () =>
+      olderControl ? (
+        <View className="items-center px-4 pb-6">
+          <Button
+            variant="secondary"
+            size="sm"
+            className="rounded-full"
+            disabled={olderControl.disabled}
+            onPress={handleLoadOlder}>
+            <Text>{olderControl.label}</Text>
+          </Button>
+        </View>
+      ) : null,
+    [olderControl?.label, olderControl?.disabled, handleLoadOlder],
+  );
+
   const title = sessionTitle ?? (session?.title || 'New Session');
 
   // ── Sub-agent relationship (COR-162) ────────────────────────────────────
@@ -1700,7 +1759,13 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
       <FloatingMenuButton
         onPress={onOpenDrawer}
         fade
-        title={<SessionThreadTitle title={title} onPress={onRenamePress} />}
+        title={
+          <SessionThreadTitle
+            title={title}
+            onPress={onRenamePress}
+            status={liveUpdates.paused ? liveUpdates.statusLabel : null}
+          />
+        }
       >
         {/* The agent is picked in the model sheet's Agent tab (Jay,
             2026-09-23), not here. The `···` button opens the session actions
@@ -1732,6 +1797,8 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
           windowSize={11}
           updateCellsBatchingPeriod={32}
           contentContainerStyle={{ paddingTop: listTopInset }}
+          ListHeaderComponent={olderHistoryHeader}
+          maintainVisibleContentPosition={holdPosition ? MAINTAIN_FIRST_VISIBLE : undefined}
           showsVerticalScrollIndicator={false}
           scrollEventThrottle={16}
           onScroll={handleListScroll}
@@ -1806,6 +1873,9 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
       {!hasQuestion && (
         <SandboxHealthPill
           onSwitch={() => router.push('/(settings)/instances')}
+          whenReachable={
+            liveUpdates.paused ? <LiveUpdatesPausedPill onReconnect={liveUpdates.reconnect} /> : null
+          }
         />
       )}
 
