@@ -923,10 +923,16 @@ function rekeyStubParent(
  *     when unauthenticated, and then nothing was ever written to disk to
  *     return to.
  *
- * Small, because memory must be TIGHTER than disk: `idb-sync-cache.ts` bounds
- * the on-disk cache at 50 sessions / 7 days.
+ * Eight, measured: a resident transcript costs about 1.1x its wire JSON in
+ * heap (bun heapStats, synthetic transcript with 6 KB tool outputs: 467 KB for
+ * a 40-message tail, 2.2 MB for 200 messages). Eight detached sessions is
+ * therefore ~4-18 MB at those sizes. The disk mirror this used to lean on is
+ * gone (5a7a43517f), so a session pushed out of this window costs a snapshot
+ * read plus a runtime tail read on the way back — seconds, on a staging
+ * session switch. Three made that the common case for anyone moving between
+ * more than three sessions.
  */
-const DETACHED_SESSION_LIMIT = 3;
+const DETACHED_SESSION_LIMIT = 8;
 
 /**
  * The joined `MessageWithParts[]` rows, per session — see
