@@ -117,7 +117,7 @@ RUN bun build src/main.ts --target=node --format=esm --minify --outfile dist/wor
 
 # ---- Deps Stage ----
 # Install with pnpm (matches lockfile), run with bun
-FROM node:22-slim AS deps
+FROM node:25-slim AS deps
 
 WORKDIR /app
 
