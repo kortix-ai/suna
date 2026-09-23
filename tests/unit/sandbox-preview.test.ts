@@ -84,7 +84,6 @@ describe('provider-neutral preview lifecycle', () => {
     expect(previewSandboxIdentity({ prNumber: 6337 })).toEqual({
       name: 'kortix-preview-pr-6337',
       owner: 'kortix-preview',
-      autoStopMinutes: 30,
       autoArchiveDays: 7,
       autoDeleteDays: 7,
       reuseExisting: false,
@@ -92,7 +91,6 @@ describe('provider-neutral preview lifecycle', () => {
     expect(previewSandboxIdentity({ prNumber: 6998, branchEnv: 'pi-worker' })).toEqual({
       name: 'kortix-env-pi-worker',
       owner: 'kortix-branch-env',
-      autoStopMinutes: 30,
       autoArchiveDays: 0,
       autoDeleteDays: 0,
       reuseExisting: true,

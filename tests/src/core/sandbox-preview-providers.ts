@@ -371,7 +371,7 @@ export async function deployPlatinumPreview(
             name: identity.name,
             template: template.id,
             type: 'persistent',
-            auto_stop_minutes: identity.autoStopMinutes,
+            auto_stop_minutes: 0,
             auto_archive_days: identity.autoArchiveDays,
             auto_delete_days: identity.autoDeleteDays,
             cpu: 8,
