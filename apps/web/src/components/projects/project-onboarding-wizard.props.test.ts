@@ -38,9 +38,43 @@ describe('ProjectOnboardingWizard: completion wiring', () => {
     expect(code).not.toMatch(/const complete = useCallback\(\(\) => onboarding\.complete\(\)/);
   });
 
-  test('skipSurvey is untouched — it is step navigation, not an exit', () => {
-    expect(code).toContain('const skipSurvey = useCallback(');
-    expect(code).not.toContain('completeThenNotify(skipSurvey');
+  // The stamp is optimistic, so `isPending` flips in the same tick as the
+  // last click. On `/new` the wizard must hold the screen until the route
+  // swaps, or it uncovers the "Creating …" loader. On the project shell (no
+  // callbacks) it still disappears in place.
+  test('an exit that navigates keeps the wizard up until the route swaps', () => {
+    expect(code).toContain('if (onSkip) setLeaving(true);');
+    expect(code).toContain('if (onCompleted) setLeaving(true);');
+    expect(code).toContain('if (!isPending && !leaving) return null;');
+  });
+
+  // `/new` has no effects by contract, so the wizard prefetches the project
+  // route it is about to open.
+  test('prefetches the project route when an exit navigates', () => {
+    expect(code).toContain(
+      'if (navigatesOnExit) router.prefetch(`/projects/${encodeURIComponent(projectId)}`);',
+    );
+  });
+
+  test('both exits start the first chat', () => {
+    expect(code).toMatch(/const skip = useCallback\(\(\) => \{\s*startFirstChat\(\);/);
+    expect(code).toMatch(/const openProject = useCallback\(\(\) => \{\s*startFirstChat\(\);/);
+  });
+
+  // The popup must open inside the click. Any await before `connectApp` would
+  // let the browser block it.
+  test('a tile click reaches the popup with no await in between', () => {
+    const connect = code.slice(
+      code.indexOf('const connect = useCallback'),
+      code.indexOf('const connectionStateOf'),
+    );
+    expect(connect).toContain('connectApp({ projectId, app, connectorSlug, created }');
+    expect(connect.slice(0, connect.indexOf('connectApp('))).not.toContain('await');
+  });
+
+  // A second click on a tile that is connecting or connected does nothing.
+  test('ignores a click on a tile that is not idle', () => {
+    expect(code).toContain("if (current && current.state !== 'idle') return;");
   });
 });
 

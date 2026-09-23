@@ -559,7 +559,6 @@ test('composioCatalogPage uses a discovery-only identity and session.toolkits pa
 
   const result = await composioCatalogPage({
     projectId: 'project-1',
-    q: 'search',
     cursor: 'cursor-1',
     limit: 20,
     runtime: fakeRuntime({ created, calls }),
@@ -589,9 +588,38 @@ test('composioCatalogPage uses a discovery-only identity and session.toolkits pa
     },
     {
       type: 'toolkits',
-      options: { search: 'search', cursor: 'cursor-1', limit: 20 },
+      options: { cursor: 'cursor-1', limit: 20 },
     },
   ]);
+});
+
+// Every search answers from the full catalogue snapshot, whatever its length,
+// so typing a category ("crm", "email") finds that category's apps. The
+// provider's session search matches names only.
+test('composioCatalogPage answers any search from the catalogue, categories included', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const catalogClient = {
+    toolkits: {
+      async list() {
+        return {
+          items: [
+            { slug: 'hubspot', name: 'HubSpot', meta: { categories: [{ id: 'crm', name: 'CRM' }] } },
+            { slug: 'gmail', name: 'Gmail', meta: { categories: [{ id: 'email', name: 'Email' }] } },
+          ],
+        };
+      },
+    },
+  };
+
+  const result = await composioCatalogPage({
+    projectId: 'project-1',
+    q: 'crm',
+    catalogClient,
+    runtime: fakeRuntime({ created: session({}), calls }),
+  });
+
+  expect('toolkits' in result && result.toolkits.map((t) => t.slug)).toEqual(['hubspot']);
+  expect(calls).toEqual([]);
 });
 
 test('composioCatalogPage applies category filtering to the provider catalogue', async () => {

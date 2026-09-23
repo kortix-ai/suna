@@ -5,11 +5,13 @@ import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 import { registerPersistedStore, resetPersistedStore } from '@/stores/persisted-store-registry';
 
 /**
- * Projects whose first chat is waiting for its first message.
+ * Projects that have a first chat.
  *
- * Onboarding starts it. While it is pending, project home opens on the welcome
- * chat (`project-layout/home/first-chat.tsx`) and an empty sidebar list shows
- * one "Your first chat with Kortix" row. The first successful send finishes it.
+ * Onboarding starts it, and it stays. Project home opens on the welcome chat
+ * (`project-layout/home/first-chat.tsx`), and the sidebar pins one "Your first
+ * chat with Kortix" row above the sessions. Each send from it starts a new
+ * session; the welcome chat is never replaced by one. `finish` remains for
+ * sign-out cleanup and tests.
  *
  * The welcome chat is not a session. Nothing is created and no turn runs until
  * the person sends something, so the state lives here in the browser, not on

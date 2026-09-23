@@ -527,6 +527,11 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
             ))}
           </SessionListSection>
         ))}
+        {/* The first chat never leaves. It is the oldest conversation, so it
+            sits at the very bottom — after the last page, never mid-list. */}
+        {firstChatPending && !hasNextPage && (
+          <FirstChatRow projectId={projectId} isActive={pathname === `/projects/${projectId}`} />
+        )}
         {hasNextPage && (
           <div className="px-2 pt-1 pb-2">
             <Button
@@ -1112,8 +1117,9 @@ function ProjectSessionRow({
 }
 
 /**
- * The one row an empty list shows while the project's first chat is waiting
- * (`first-chat-store.ts`). It opens project home, where that chat lives.
+ * The project's first chat (`first-chat-store.ts`), at the bottom of the list
+ * (it is the oldest conversation) and shown alone when there are no sessions. It opens project home,
+ * where that chat lives.
  *
  * The same box as `ProjectSessionRow`, with the Kortix mark in the status slot
  * and nothing after the title: no status, no hover card, no `⋯`. It is not a

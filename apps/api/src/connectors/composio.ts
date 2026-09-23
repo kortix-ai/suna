@@ -295,8 +295,11 @@ export async function composioCatalogPage(input: {
       hasMore: false,
     };
   }
+  // Every search answers from the catalogue snapshot: it matches category
+  // names as well as app names, and it has no three-character floor. The
+  // provider's session search matches names only.
   const query = input.q?.trim();
-  if (query && query.length < 3) {
+  if (query) {
     return searchComposioCatalog({ ...input, q: query });
   }
   const session = await runtime.sessions.create(`kortix-discovery:${input.projectId}`, {
@@ -305,7 +308,6 @@ export async function composioCatalogPage(input: {
   });
   const [page, meta] = await Promise.all([
     session.toolkits({
-      ...(input.q?.trim() ? { search: input.q.trim() } : {}),
       ...(input.cursor ? { cursor: input.cursor } : {}),
       ...(input.limit != null ? { limit: input.limit } : {}),
     }),

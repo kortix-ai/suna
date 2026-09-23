@@ -80,6 +80,7 @@ export function StepShell({
   onPrimary,
   skipLabel,
   onSkip,
+  footerNote,
 }: {
   title: string;
   description?: string;
@@ -89,6 +90,8 @@ export function StepShell({
   onPrimary: () => void;
   skipLabel?: string;
   onSkip?: () => void;
+  /** Quiet status on the footer's left, e.g. "4 selected". */
+  footerNote?: string;
 }) {
   const generatedId = useId();
   const idPrefix = useContext(StepIdentityContext) ?? `onboarding-step-${generatedId}`;
@@ -121,6 +124,14 @@ export function StepShell({
           footnote to it; side by side it reads as the other choice, which is
           what it is. */}
       <div className="mt-8 flex flex-col gap-3 md:flex-row md:items-center md:justify-end">
+        {footerNote && (
+          <p
+            aria-live="polite"
+            className="text-muted-foreground order-last text-center text-sm tabular-nums md:order-first md:mr-auto md:text-left"
+          >
+            {footerNote}
+          </p>
+        )}
         {skipLabel && onSkip && (
           <Button
             size="lg"
@@ -147,12 +158,15 @@ export function StepShell({
 export function SelectionRow({
   value,
   label,
+  badge,
   description,
   leading,
   disabled,
 }: {
   value: string;
   label: string;
+  /** Sits after the label, e.g. "Recommended". */
+  badge?: ReactNode;
   description?: string;
   leading?: ReactNode;
   disabled?: boolean;
@@ -171,7 +185,10 @@ export function SelectionRow({
     >
       <span className="flex size-5 shrink-0 items-center justify-center">{leading}</span>
       <span className="min-w-0 flex-1">
-        <span className="block text-sm font-medium">{label}</span>
+        <span className="flex items-center gap-2 text-sm font-medium">
+          {label}
+          {badge}
+        </span>
         {description && (
           <span className="text-muted-foreground block text-xs text-pretty">{description}</span>
         )}

@@ -172,6 +172,41 @@ describe('profile writes', () => {
   });
 });
 
+describe('the work question', () => {
+  for (const useCase of ['founder', 'product_design']) {
+    test(`accepts ${useCase}`, async () => {
+      await patch({ profile: { use_case: useCase } });
+
+      expect(metadataQuery().params).toContain(JSON.stringify({ use_case: useCase }));
+    });
+  }
+});
+
+describe('the "Something else" note', () => {
+  test('stores the typed answer, trimmed', async () => {
+    await patch({ profile: { use_case: 'other', use_case_note: '  Recruiting for an agency  ' } });
+
+    const { params } = metadataQuery();
+    expect(params).toContain(
+      JSON.stringify({ use_case: 'other', use_case_note: 'Recruiting for an agency' }),
+    );
+  });
+
+  test('caps it at 120 characters', async () => {
+    await patch({ profile: { use_case_note: 'x'.repeat(500) } });
+
+    const { params } = metadataQuery();
+    expect(params).toContain(JSON.stringify({ use_case_note: 'x'.repeat(120) }));
+  });
+
+  test('drops a blank or non-string note', async () => {
+    await patch({ profile: { use_case_note: '   ' } });
+    await patch({ profile: { use_case_note: 42 } });
+
+    expect(setCalls).toHaveLength(0);
+  });
+});
+
 describe('completion writes', () => {
   test('completed:true writes the top-level flag and no nested merge', async () => {
     const res = await patch({ completed: true });

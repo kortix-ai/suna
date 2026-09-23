@@ -146,9 +146,25 @@ export async function composioCatalogSections(input: {
   };
 }
 
-/** Composio rejects searches shorter than three characters. Search its complete
- * public catalogue here; session toolkits omit descriptions and connection data
- * must never enter this deployment-wide cache. */
+/**
+ * Where a query matches an app: name, slug, category (id or label), then
+ * description. `-1` is no match. "sla" puts Slack first; "crm" also lists
+ * every CRM app.
+ */
+function matchRank(item: CatalogToolkit, query: string): number {
+  if (item.name.toLowerCase().includes(query)) return 0;
+  if (item.slug.toLowerCase().includes(query)) return 1;
+  const categories = item.meta.categories ?? [];
+  if (categories.some((c) => `${c.id} ${c.name ?? ''}`.toLowerCase().includes(query))) return 2;
+  if ((item.meta.description ?? '').toLowerCase().includes(query)) return 3;
+  return -1;
+}
+
+/**
+ * Search the complete public catalogue. Session toolkits omit descriptions and
+ * categories, and connection data must never enter this deployment-wide cache.
+ * Matches sort by `matchRank`; within a rank the catalogue's usage order holds.
+ */
 export async function searchComposioCatalog(input: {
   q: string;
   cursor?: string;
@@ -158,9 +174,11 @@ export async function searchComposioCatalog(input: {
   const catalogClient = input.catalogClient ?? defaultCatalogClient();
   const catalog = await catalogSnapshot(catalogClient);
   const query = input.q.trim().toLowerCase();
-  const matches = catalog.filter((item) =>
-    `${item.name} ${item.slug} ${item.meta.description ?? ''}`.toLowerCase().includes(query),
-  );
+  const matches = catalog
+    .map((item, index) => ({ item, index, rank: matchRank(item, query) }))
+    .filter((match) => match.rank >= 0)
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map((match) => match.item);
   const limit = Math.min(Math.max(input.limit ?? 48, 1), 100);
   const offset = Math.min(offsetFromCursor(input.cursor), matches.length);
   const nextOffset = offset + limit;

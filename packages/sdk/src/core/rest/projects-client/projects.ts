@@ -974,6 +974,8 @@ export async function setProjectOnboardingComplete(projectId: string, completed:
 
 /** Use case the account picked during guided project onboarding. */
 export type OnboardingUseCase =
+  | 'founder'
+  | 'product_design'
   | 'sales'
   | 'support'
   | 'marketing'
@@ -990,6 +992,8 @@ export type OnboardingCompanySize = '1-10' | '11-50' | '51-200' | '201-1000' | '
  *  partial profile is the normal case, not an error case. */
 export interface OnboardingProfile {
   use_case?: OnboardingUseCase;
+  /** The typed answer when `use_case` is `'other'`. The API trims it and caps it at 120 characters. */
+  use_case_note?: string;
   company_domain?: string;
   company_size?: OnboardingCompanySize;
 }

@@ -158,9 +158,9 @@ test('a pending first chat docks the composer under the welcome', () => {
   expect(composer.slashMenuPlacement).toBe('above');
 });
 
-// Neither starter may call `onSend` itself. "Recommend tools" only fills the
-// box; "Update memory" submits through the composer (`prefill.submit`), so the
-// send carries the composer's agent and model and meets its refusals.
+// Neither starter may call `onSend` itself. Both submit through the composer
+// (`prefill.submit`), so each send carries the composer's agent and model and
+// meets its refusals.
 test('neither starter sends around the composer', async () => {
   firstChatPending = true;
   const onSend = mock(async () => {});

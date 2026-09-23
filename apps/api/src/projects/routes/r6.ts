@@ -59,6 +59,8 @@ function serializeProjectAccessRequest(row: typeof projectAccessRequests.$inferS
 }
 
 const ONBOARDING_USE_CASES = new Set([
+  'founder',
+  'product_design',
   'sales',
   'support',
   'marketing',
@@ -93,6 +95,11 @@ function pickOnboardingProfile(input: unknown): Record<string, string> | null {
     // 253 is the maximum length of a DNS name.
     const domain = raw.company_domain.trim().toLowerCase().slice(0, 253);
     if (domain) out.company_domain = domain;
+  }
+  if (typeof raw.use_case_note === 'string') {
+    // The "Something else" answer, typed free-form. 120 matches the input cap.
+    const note = raw.use_case_note.trim().slice(0, 120);
+    if (note) out.use_case_note = note;
   }
 
   return Object.keys(out).length > 0 ? out : null;

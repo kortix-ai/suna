@@ -1,43 +1,42 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { ArrowLeftIcon as ArrowLeft } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, m, useReducedMotion, type Variants } from 'motion/react';
-import { useTranslations } from '@/i18n/use-translations';
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
 
 import { DesktopCloseButton } from '@/components/desktop/desktop-close-button';
 import { Button } from '@/components/ui/button';
 import { Modal, ModalContent } from '@/components/ui/modal';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { DemoQualifierModal } from '@/features/contact/demo-qualifier-modal';
 import { useAuth } from '@/features/providers/auth-provider';
+import { connectorConnectionQueryKeys } from '@/features/workspace/customize/sections/connector-connection-form';
 import { useProjectOnboarding } from '@/hooks/projects/use-project-onboarding';
-import { usePersonalContactTier } from '@/hooks/use-show-personal-contact';
 import { isConnectorsEnabled } from '@/lib/config';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectPageCans } from '@/lib/use-project-can';
 import { useFirstChatStore } from '@/stores/first-chat-store';
-import { listConnectors } from '@kortix/sdk';
+import { listConnectors, type OnboardingUseCase } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 
 import { completeThenNotify } from './onboarding/complete-then';
+import { connectApp, connectionSlugFor, type CatalogApp } from './onboarding/connect-app';
 import { slideVariants } from './onboarding/motion';
-import {
-  buildSteps,
-  deriveCompanyDomain,
-  firstStepAfterSurvey,
-} from './onboarding/onboarding-profile';
+import { buildSteps, deriveCompanyDomain } from './onboarding/onboarding-profile';
 import { StepIdentityProvider, StepProgress } from './onboarding/step-shell';
-import { CompanyStep } from './onboarding/steps/company-step';
-import { DoneStep } from './onboarding/steps/done-step';
+import { AppsStep, type AppConnectionState } from './onboarding/steps/apps-step';
 import { PlanStep } from './onboarding/steps/plan-step';
-import { SlackStep } from './onboarding/steps/slack-step';
-import { ToolsStep } from './onboarding/steps/tools-step';
+import { WorkStep } from './onboarding/steps/work-step';
 import { useOnboardingAnswers } from './onboarding/use-onboarding-answers';
 
-const CAL_LINK = 'team/kortix/demo';
-const CAL_NAMESPACE = 'kortix-onboarding-wizard';
+interface AppConnection {
+  connectorSlug: string;
+  /** The connector exists, so a retry signs in without adding another. */
+  created: boolean;
+  state: AppConnectionState;
+}
 
 function AnimatedStep({
   children,
@@ -103,43 +102,51 @@ export function ProjectOnboardingWizard({
   onSkip?: () => void;
 }) {
   const t = useTranslations('projectOnboarding');
-  const contactTier = usePersonalContactTier();
-  const showFounderStep = contactTier === 'personal';
   const { user } = useAuth();
-  const defaultName =
-    (user?.user_metadata?.full_name as string | undefined) ||
-    (user?.user_metadata?.name as string | undefined) ||
-    '';
-  const defaultEmail = user?.email ?? '';
 
   const onboarding = useProjectOnboarding(projectId);
   const queryClient = useQueryClient();
+  const router = useRouter();
+
+  // A host that navigates on exit (`/new`) always lands on the project page.
+  // Fetching that route while the questions are answered means the last click
+  // swaps pages at once instead of loading one.
+  const navigatesOnExit = Boolean(onCompleted || onSkip);
+  useEffect(() => {
+    if (navigatesOnExit) router.prefetch(`/projects/${encodeURIComponent(projectId)}`);
+  }, [navigatesOnExit, projectId, router]);
 
   const reduced = useReducedMotion() ?? false;
   const stepVariants = useMemo(() => slideVariants(reduced), [reduced]);
 
-  const [calOpen, setCalOpen] = useState(false);
   const [index, setIndex] = useState(0);
+  // Set when an exit navigates away (`/new`). The stamp is optimistic, so
+  // `isPending` flips false in the same tick as the click; without this the
+  // wizard would unmount and uncover `/new`'s "Creating …" loader until the
+  // project page paints. The route change unmounts the wizard instead.
+  const [leaving, setLeaving] = useState(false);
 
-  const { answers, save } = useOnboardingAnswers(projectId);
-  // Prefilled once from the signup email, then owned by the user. A lazy
-  // initializer, not an effect — an effect would re-run and clobber typing.
-  const [domain, setDomain] = useState(() => deriveCompanyDomain(user?.email));
+  const { save } = useOnboardingAnswers(projectId);
+  const [useCase, setUseCase] = useState<OnboardingUseCase | null>(null);
+  const [note, setNote] = useState('');
+  // Keyed by catalogue app slug. Held here, not in the step, so Back and
+  // Continue keep what was connected.
+  const [connections, setConnections] = useState<Record<string, AppConnection>>({});
 
   const connectorsEnabled = isConnectorsEnabled();
   // Both leaves in one batched probe — this component mounts on every project
   // load, so two singular `/effective` GETs here are two on every load.
   const caps = useProjectPageCans(projectId);
-  // `project.connector.read` is manager-tier (#6522). Without it the Tools and
-  // Slack steps cannot load anything — see `buildSteps`. Hide them on a
-  // RECEIVED denial only, so a slow probe never shortens the wizard for
-  // someone who does hold the leaf.
+  // `project.connector.read` is manager-tier (#6522). Without it the apps step
+  // cannot load anything — see `buildSteps`. Hide it on a RECEIVED denial
+  // only, so a slow probe never shortens the wizard for someone who does hold
+  // the leaf.
   const canReadConnectors = caps[PROJECT_ACTIONS.PROJECT_CONNECTOR_READ]?.allowed !== false;
   const steps = useMemo(
     () => buildSteps(connectorsEnabled, canReadConnectors),
     [connectorsEnabled, canReadConnectors],
   );
-  const stepId = steps[index] ?? 'company';
+  const stepId = steps[index] ?? 'work';
 
   // `?onboarding-reset` reopens the wizard from the top (clears completion flag).
   const resetFn = onboarding.reset;
@@ -191,9 +198,16 @@ export function ProjectOnboardingWizard({
     () => (connectors.data?.connectors ?? []).map((connector) => connector.slug),
     [connectors.data],
   );
-  const refreshConnectors = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: qk.project.connectors(projectId) });
-  }, [queryClient, projectId]);
+
+  // The company domain is no longer asked. A work email already says it, so it
+  // is saved once, silently. A consumer inbox yields '' and saves nothing.
+  const domainSavedRef = useRef(false);
+  useEffect(() => {
+    if (!isPending || domainSavedRef.current) return;
+    domainSavedRef.current = true;
+    const domain = deriveCompanyDomain(user?.email);
+    if (domain) save({ company_domain: domain });
+  }, [isPending, user?.email, save]);
 
   // Direction drives the slide. Without it, Back and Continue animate
   // identically and the motion lies about which way the user moved.
@@ -212,9 +226,57 @@ export function ProjectOnboardingWizard({
     [goTo, steps.length],
   );
   const back = useCallback(() => goTo((i) => Math.max(i - 1, 0)), [goTo]);
-  // ONE exit for the whole wizard: `DoneStep`'s `onStart` (`openProject`) comes
-  // through here, so `onCompleted` needs exactly one wrapping site.
-  // `skipSurvey` below is NOT an exit — it moves between steps.
+  // Both exits land on the project's first chat (`first-chat-store.ts`): a
+  // calm welcome and an idle composer. Nothing is sent for the person.
+  const startFirstChat = useCallback(() => {
+    useFirstChatStore.getState().start(projectId);
+  }, [projectId]);
+
+  const patchConnection = useCallback((appSlug: string, patch: Partial<AppConnection>) => {
+    setConnections((current) => {
+      const existing = current[appSlug];
+      return existing ? { ...current, [appSlug]: { ...existing, ...patch } } : current;
+    });
+  }, []);
+
+  // Synchronous up to the popup: `connectApp` opens it before any await.
+  const connect = useCallback(
+    (app: CatalogApp) => {
+      const current = connections[app.slug];
+      if (current && current.state !== 'idle') return;
+      const taken = [...connectorSlugs, ...Object.values(connections).map((c) => c.connectorSlug)];
+      const connectorSlug = connectionSlugFor(app, current?.connectorSlug, taken);
+      const created = current?.created ?? false;
+      setConnections((all) => ({
+        ...all,
+        [app.slug]: { connectorSlug, created, state: 'connecting' },
+      }));
+      connectApp({ projectId, app, connectorSlug, created }, undefined, () =>
+        patchConnection(app.slug, { created: true }),
+      )
+        .then(() => patchConnection(app.slug, { state: 'connected' }))
+        .catch((error: unknown) => {
+          patchConnection(app.slug, { state: 'idle' });
+          const message = error instanceof Error ? error.message : String(error);
+          // Closing the popup is the person changing their mind, not a failure.
+          if (!/popup closed/i.test(message)) errorToast(message);
+        })
+        .finally(() => {
+          for (const queryKey of connectorConnectionQueryKeys(projectId)) {
+            void queryClient.invalidateQueries({ queryKey });
+          }
+        });
+    },
+    [projectId, connections, connectorSlugs, patchConnection, queryClient],
+  );
+  const connectionStateOf = useCallback(
+    (appSlug: string): AppConnectionState => connections[appSlug]?.state ?? 'idle',
+    [connections],
+  );
+  const connectedCount = Object.values(connections).filter((c) => c.state === 'connected').length;
+
+  // ONE finishing exit: the models step's primary and "Decide later" both
+  // come through here, so `onCompleted` needs exactly one wrapping site.
   const complete = useCallback(
     () => completeThenNotify(() => onboarding.complete(), onCompleted),
     [onboarding, onCompleted],
@@ -228,25 +290,30 @@ export function ProjectOnboardingWizard({
   // `closeOnOutsideClick={false}` and Escape intercepted. Skipping was strictly
   // worse than not skipping. Stamping is what makes "Skip for now" mean what it
   // says.
-  //
-  // Both exits open the project on its first chat (`first-chat-store.ts`): a
-  // calm welcome and an idle composer. Nothing is sent for the person. They
-  // did not ask for a turn yet, and they do not know what Kortix can do yet.
   const skip = useCallback(() => {
-    useFirstChatStore.getState().start(projectId);
+    startFirstChat();
+    if (onSkip) setLeaving(true);
     return completeThenNotify(() => onboarding.complete(), onSkip);
-  }, [projectId, onboarding, onSkip]);
+  }, [startFirstChat, onboarding, onSkip]);
 
   const openProject = useCallback(() => {
-    useFirstChatStore.getState().start(projectId);
+    startFirstChat();
+    if (onCompleted) setLeaving(true);
     void complete();
-  }, [projectId, complete]);
+  }, [startFirstChat, onCompleted, complete]);
 
-  // Skipping the survey jumps past BOTH questions to whatever comes next —
-  // `tools` normally, `slack` when connectors are disabled.
-  const skipSurvey = useCallback(() => goTo(() => firstStepAfterSurvey(steps)), [goTo, steps]);
+  const saveWork = useCallback(() => {
+    if (!useCase) return;
+    const trimmed = note.trim();
+    save(
+      useCase === 'other' && trimmed
+        ? { use_case: useCase, use_case_note: trimmed }
+        : { use_case: useCase },
+    );
+    next();
+  }, [useCase, note, save, next]);
 
-  if (!isPending) return null;
+  if (!isPending && !leaving) return null;
 
   return (
     <>
@@ -349,43 +416,26 @@ export function ProjectOnboardingWizard({
                     variants={stepVariants}
                     idPrefix={`onboarding-${stepId}`}
                   >
-                    {stepId === 'company' && (
-                      <CompanyStep
-                        domain={domain}
-                        onDomainChange={setDomain}
-                        onContinue={() => {
-                          // The domain is free text, so it saves on Continue
-                          // rather than per keystroke.
-                          const trimmed = domain.trim();
-                          if (trimmed && trimmed !== answers.company_domain) {
-                            save({ company_domain: trimmed });
-                          }
-                          next();
-                        }}
-                        onSkip={skipSurvey}
+                    {stepId === 'work' && (
+                      <WorkStep
+                        value={useCase}
+                        note={note}
+                        onValueChange={setUseCase}
+                        onNoteChange={setNote}
+                        onContinue={saveWork}
                       />
                     )}
-                    {stepId === 'tools' && (
-                      <ToolsStep
+                    {stepId === 'apps' && (
+                      <AppsStep
                         projectId={projectId}
-                        existingSlugs={connectorSlugs}
-                        onConnected={refreshConnectors}
+                        stateOf={connectionStateOf}
+                        connectedCount={connectedCount}
+                        onConnect={connect}
                         onContinue={next}
-                        onSkip={next}
                       />
                     )}
-                    {stepId === 'slack' && (
-                      <SlackStep projectId={projectId} onContinue={next} onSkip={next} />
-                    )}
-                    {stepId === 'plan' && <PlanStep projectId={projectId} onContinue={next} />}
-                    {stepId === 'done' && (
-                      <DoneStep
-                        projectId={projectId}
-                        connectedCount={connectorSlugs.length}
-                        showFounderCall={showFounderStep}
-                        onBookCall={() => setCalOpen(true)}
-                        onStart={openProject}
-                      />
+                    {stepId === 'models' && (
+                      <PlanStep projectId={projectId} onContinue={openProject} />
                     )}
                   </AnimatedStep>
                 </AnimatePresence>
@@ -394,21 +444,6 @@ export function ProjectOnboardingWizard({
           </div>
         </ModalContent>
       </Modal>
-
-      {showFounderStep && (
-        <DemoQualifierModal
-          open={calOpen}
-          onOpenChange={setCalOpen}
-          calLink={CAL_LINK}
-          calNamespace={CAL_NAMESPACE}
-          source="onboarding-wizard"
-          title={t('demo.title')}
-          description={t('demo.description')}
-          defaultName={defaultName}
-          defaultEmail={defaultEmail}
-          onBookingSuccessful={() => setCalOpen(false)}
-        />
-      )}
     </>
   );
 }

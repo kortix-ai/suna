@@ -69,13 +69,8 @@ export function ProjectHome({
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tFirstChat = useTranslations('firstChat');
-  // `FirstChatWatcher` (project shell) finishes the first chat as soon as the
-  // project has a session, which for a send from here is BEFORE the route
-  // changes. Once a send from the first chat succeeds, this view keeps the
-  // welcome until it unmounts, so it never flashes the usual greeting on its
-  // way out.
-  const [sentFromFirstChat, setSentFromFirstChat] = useState(false);
-  const firstChat = useFirstChatPending(projectId) || sentFromFirstChat;
+  // The first chat never ends: this home keeps the welcome for good.
+  const firstChat = useFirstChatPending(projectId);
 
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
@@ -159,17 +154,9 @@ export function ProjectHome({
         },
         attachments,
       );
-      if (firstChat) {
-        // A second branch of the same promise: the caller still receives the
-        // original, rejection included.
-        void Promise.resolve(sent).then(
-          () => setSentFromFirstChat(true),
-          () => undefined,
-        );
-      }
       return sent;
     },
-    [metaSelected, selectedSlug, onSend, firstChat],
+    [metaSelected, selectedSlug, onSend],
   );
 
   const isMobile = useIsMobile();
@@ -284,12 +271,17 @@ export function ProjectHome({
           here left a slow or stuck create looking like a live session. */}
       {firstChat ? (
         <FirstChat
+          projectId={projectId}
+          inviteTo={canManageMembers ? accessRequestsTo : null}
           composer={composer}
           busy={busy}
-          onRecommendTools={() => applySuggestion(tFirstChat('toolsPrompt'))}
-          // Through the composer's own submit, not `sendOutsideComposer`: the
-          // send carries the agent and model the composer shows, and a missing
-          // model refuses it the same way a typed message is refused.
+          // Both starters send at once, each into a new session. Through the
+          // composer's own submit, not `sendOutsideComposer`: the send carries
+          // the agent and model the composer shows, and a missing model refuses
+          // it the same way a typed message is refused.
+          onRecommendTools={() =>
+            setPrefill({ text: tFirstChat('toolsPrompt'), id: Date.now(), submit: true })
+          }
           onUpdateMemory={() =>
             setPrefill({ text: tFirstChat('memoryPrompt'), id: Date.now(), submit: true })
           }

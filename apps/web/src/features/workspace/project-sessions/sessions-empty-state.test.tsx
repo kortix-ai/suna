@@ -68,4 +68,13 @@ describe('both empty session lists use it', () => {
     expect(empty).toContain('<FirstChatRow');
     expect(empty).toContain('<SessionsEmptyState');
   });
+
+  // The first chat never leaves: once sessions exist it sits at the bottom,
+  // after the last page.
+  test('the sidebar, with sessions', () => {
+    const list = sidebar.slice(sidebar.indexOf('<FadedScrollArea fadeColor="from-background"'));
+    expect(list.indexOf('{firstChatPending && !hasNextPage && (')).toBeGreaterThan(
+      list.indexOf('grouped.sections.map('),
+    );
+  });
 });

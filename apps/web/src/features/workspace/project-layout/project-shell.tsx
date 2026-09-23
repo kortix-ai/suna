@@ -14,7 +14,6 @@ import { SidebarEdgePeek, useSidebar } from '@/components/ui/sidebar';
 import { useBrandingScope } from '@/features/branding/branding-provider';
 import { AppProviders } from '@/features/layout/app-providers';
 import { useAuth } from '@/features/providers/auth-provider';
-import { FirstChatWatcher } from '@/features/workspace/project-layout/first-chat-watcher';
 import { parseSidebarStateCookie } from '@/features/workspace/project-layout/sidebar-cookie';
 import { useDesktopShell } from '@/features/workspace/project-layout/sidebar-opener';
 import { ProjectSidebar } from '@/features/workspace/project-sidebar/project-sidebar';
@@ -261,7 +260,6 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
 
         <ProjectOnboardingWizard projectId={projectId} />
 
-        <FirstChatWatcher projectId={projectId} />
 
         <PersonalOnboardingWelcome projectId={projectId} />
       </AppProviders>
