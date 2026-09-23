@@ -13,6 +13,7 @@ import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { validateRef } from '../git-ref';
 import type { GitBackedProject } from './types';
+import { timeStage } from '../../lib/server-timing';
 
 export const execFileAsync = promisify(execFile);
 
@@ -355,12 +356,13 @@ export async function runGit(
 ) {
   const authEnv = auth ? gitAuthEnv(authToken, authHost, authHeaders) : {};
   try {
-    const result = await execFileAsync('git', args, {
+    // `Server-Timing: git` — clone/fetch/ls-tree/show on the request path.
+    const result = await timeStage('git', () => execFileAsync('git', args, {
       cwd,
       env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...authEnv, ...(extraEnv || {}) },
       maxBuffer: 10 * 1024 * 1024,
       timeout: timeoutMs,
-    });
+    }));
     return {
       stdout: result.stdout.toString(),
       stderr: result.stderr.toString(),
@@ -385,12 +387,12 @@ export async function runGitCapture(
   authHeaders?: Record<string, string>,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   try {
-    const result = await execFileAsync('git', args, {
+    const result = await timeStage('git', () => execFileAsync('git', args, {
       cwd,
       env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...gitAuthEnv(authToken, authHost, authHeaders), ...(extraEnv || {}) },
       maxBuffer: 10 * 1024 * 1024,
       timeout: 30_000,
-    });
+    }));
     return { stdout: result.stdout.toString(), stderr: result.stderr.toString(), exitCode: 0 };
   } catch (error) {
     const err = error as { stderr?: Buffer | string; stdout?: Buffer | string; code?: number };
