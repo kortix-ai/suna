@@ -6,6 +6,7 @@ import { useRuntimeMessages, useSessionStateStore } from '@kortix/sdk/react';
 import { Profiler, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { SESSION_TRANSCRIPT_CLASS } from '@/features/session/session-body';
+import { SessionChat } from '@/features/session/session-chat';
 import { stabilizeTurns } from '@/features/session/turn/stable-turns';
 import { TurnViewport } from '@/features/session/turn/turn-viewport';
 import type { MessageWithParts, SessionStatus, Turn } from '@/ui';
@@ -137,7 +138,7 @@ const BenchRow = memo(function BenchRow({
 interface BenchResult {
   messages: number;
   deltas: number;
-  rows: 'turn' | 'row';
+  rows: 'turn' | 'row' | 'chat';
   settledTurnRenders: number;
   commits: number;
   renderMs: number;
@@ -209,6 +210,9 @@ export function SessionFixtureBench() {
   const deltaCount = Number(params.get('deltas') ?? 200);
   const autorun = params.get('autorun') === '1';
   const memoRows = params.get('rows') === 'row';
+  // `?chat=1` renders the real `SessionChat` (read-only, no `useSession`)
+  // over the seeded store instead of the fixture composition.
+  const realChat = params.get('chat') === '1';
   const [queryClient] = useState(
     () => new QueryClient({ defaultOptions: { queries: { enabled: false, retry: false } } }),
   );
@@ -257,6 +261,12 @@ export function SessionFixtureBench() {
     settledRenders.active = true;
     settledRenders.count = 0;
     settledRenders.streamingTurnId = target.userId;
+    // Read by an optional render counter a harness may install as the React
+    // DevTools hook (it counts fibers that performed work during the replay).
+    const win = window as unknown as { __benchCounting?: boolean; __benchStreamingTurnId?: string };
+    win.__benchStreamingTurnId = target.userId;
+    win.__benchCounting = true;
+    useSessionStateStore.getState().setStatus(SESSION_ID, BUSY);
     const started = performance.now();
     const frames = { slow: 0, jank: 0, last: started, on: true };
     const tick = (now: number) => {
@@ -277,6 +287,8 @@ export function SessionFixtureBench() {
         // Stop counting before the turn ends: the end flips `sessionWorking`
         // for every turn once, which is not per-delta cost.
         settledRenders.active = false;
+        (window as unknown as { __benchCounting?: boolean }).__benchCounting = false;
+        useSessionStateStore.getState().setStatus(SESSION_ID, IDLE);
         setStreaming(false);
         setTimeout(() => {
           const wallMs = performance.now() - started;
@@ -288,7 +300,7 @@ export function SessionFixtureBench() {
           const next: BenchResult = {
             messages: messageCount,
             deltas: deltaCount,
-            rows: memoRows ? 'row' : 'turn',
+            rows: realChat ? 'chat' : memoRows ? 'row' : 'turn',
             settledTurnRenders: settledRenders.count,
             commits: profile.current.commits,
             renderMs: Math.round(profile.current.renderMs),
@@ -347,7 +359,11 @@ export function SessionFixtureBench() {
           </header>
           <div className="min-w-0 flex-1 pb-12">
             <Profiler id="transcript" onRender={onRender}>
-              <Transcript streaming={streaming} memoRows={memoRows} />
+              {realChat ? (
+                <SessionChat sessionId={SESSION_ID} hideHeader readOnly />
+              ) : (
+                <Transcript streaming={streaming} memoRows={memoRows} />
+              )}
             </Profiler>
           </div>
         </div>
