@@ -571,7 +571,8 @@ const nextConfig = (): NextConfig => ({
     // /docs is served from public/docs without the middleware (see the
     // middleware matcher). Its Markdown representation is negotiated here
     // instead: an explicit `Accept: text/markdown` request is rewritten to the
-    // negotiation route BEFORE the static file lookup. Browsers keep HTML.
+    // page's Markdown route (/markdown/docs/<slug>.md, the record's
+    // markdownPath) BEFORE the static file lookup. Browsers keep HTML.
     const acceptsMarkdown = [
       { type: 'header' as const, key: 'accept', value: '(?:.*,)?\\s*text/markdown.*' },
     ];
@@ -579,12 +580,12 @@ const nextConfig = (): NextConfig => ({
       {
         source: '/docs',
         has: acceptsMarkdown,
-        destination: '/markdown-negotiation?path=/docs',
+        destination: '/markdown/docs/index.md',
       },
       {
         source: '/docs/:path*',
         has: acceptsMarkdown,
-        destination: '/markdown-negotiation?path=/docs/:path*',
+        destination: '/markdown/docs/:path*.md',
       },
     ];
     const afterFiles = [

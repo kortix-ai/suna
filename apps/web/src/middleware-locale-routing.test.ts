@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { NextRequest } from 'next/server';
-import { readdirSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 
 import { isNonPagePath } from '@/i18n/routing';
@@ -67,7 +67,13 @@ describe('locale rewrite onto app/[locale]', () => {
   });
 
   test('non-page paths pass through without a locale', async () => {
-    for (const path of ['/mcp', '/install', '/download/macos', '/auth/callback', '/scim/v2/Users']) {
+    for (const path of [
+      '/mcp',
+      '/install',
+      '/download/macos',
+      '/auth/callback',
+      '/scim/v2/Users',
+    ]) {
       const response = await middleware(request(path));
       expect(response.headers.get('x-middleware-rewrite')).toBeNull();
     }
@@ -94,7 +100,14 @@ describe('matcher', () => {
   });
 
   test('still runs for pages and text Route Handlers', () => {
-    for (const path of ['/', '/pricing', '/de/pricing', '/projects/abc', '/robots.txt', '/llms.txt']) {
+    for (const path of [
+      '/',
+      '/pricing',
+      '/de/pricing',
+      '/projects/abc',
+      '/robots.txt',
+      '/llms.txt',
+    ]) {
       expect(matcher.test(path)).toBe(true);
     }
   });
@@ -131,6 +144,39 @@ describe('Route Handler coverage', () => {
           .map((segment) => segment.replace(/^\[\.\.\.(.+)\]$/, 'a/b').replace(/^\[(.+)\]$/, 'x'))
           .join('/');
       expect({ urlPath, nonPage: isNonPagePath(urlPath) }).toEqual({ urlPath, nonPage: true });
+    }
+  });
+});
+
+describe('docs Markdown negotiation without the middleware', () => {
+  // /docs skips the middleware (matcher). next.config.ts negotiates its
+  // Markdown with a beforeFiles rewrite on the Accept header instead.
+  const source = readFileSync(join(import.meta.dir, '..', 'next.config.ts'), 'utf8');
+
+  test('the Accept matcher selects explicit Markdown requests only', () => {
+    const value = source.match(/key: 'accept', value: '([^']+)'/)?.[1]?.replace(/\\\\/g, '\\');
+    expect(value).toBeDefined();
+    // Next matches `has` values as ^value$.
+    const accept = new RegExp(`^${value}$`);
+    expect(accept.test('text/markdown')).toBe(true);
+    expect(accept.test('text/html;q=0.9, text/markdown')).toBe(true);
+    expect(accept.test('text/html,application/xhtml+xml,*/*;q=0.8')).toBe(false);
+  });
+
+  test('the rewrite targets resolve to the docs Markdown records', async () => {
+    const { resolvePublicMarkdown, getPublicContentRecords } =
+      await import('@/lib/seo/public-content');
+    expect(source).toContain("destination: '/markdown/docs/index.md'");
+    expect(source).toContain("destination: '/markdown/docs/:path*.md'");
+    const docs = getPublicContentRecords().filter((record) => record.htmlPath.startsWith('/docs'));
+    expect(docs.length).toBeGreaterThan(5);
+    for (const record of docs.slice(0, 20)) {
+      const target =
+        record.htmlPath === '/docs'
+          ? '/markdown/docs/index.md'
+          : `/markdown/docs/${record.htmlPath.slice('/docs/'.length)}.md`;
+      expect(target).toBe(record.markdownPath);
+      expect(resolvePublicMarkdown(target.replace(/^\/markdown\//, '').split('/'))).toBeTruthy();
     }
   });
 });

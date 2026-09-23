@@ -41,7 +41,15 @@ describe('locale routing', () => {
     ]) {
       expect(isNonPagePath(path)).toBe(true);
     }
-    for (const path of ['/', '/pricing', '/download', '/auth', '/auth/signup', '/projects', '/docsearch']) {
+    for (const path of [
+      '/',
+      '/pricing',
+      '/download',
+      '/auth',
+      '/auth/signup',
+      '/projects',
+      '/docsearch',
+    ]) {
       expect(isNonPagePath(path)).toBe(false);
     }
   });

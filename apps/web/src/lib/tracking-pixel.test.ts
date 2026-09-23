@@ -33,7 +33,11 @@ describe('visitor pixel gate', () => {
 
   test('loads only on kortix.com hosts and never in the desktop app', () => {
     for (const [host, ua, expected] of cases) {
-      expect({ host, ua, gate: shouldLoadVisitorPixel(host, ua) }).toEqual({ host, ua, gate: expected });
+      expect({ host, ua, gate: shouldLoadVisitorPixel(host, ua) }).toEqual({
+        host,
+        ua,
+        gate: expected,
+      });
       expect(runPixel(host, ua)).toEqual(expected ? [VISITOR_PIXEL_SRC] : []);
     }
   });

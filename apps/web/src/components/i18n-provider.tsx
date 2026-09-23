@@ -78,10 +78,7 @@ export function I18nProvider({
   const [locale, setLocale] = useState<Locale>(initialLocale);
   const [messages, setMessages] = useState<MessageTree>(
     () =>
-      recorder?.messages ??
-      getLoadedCatalog(initialLocale) ??
-      readClientBoot(initialLocale) ??
-      {},
+      recorder?.messages ?? getLoadedCatalog(initialLocale) ?? readClientBoot(initialLocale) ?? {},
   );
   const [catalogReady, setCatalogReady] = useState<boolean>(
     () => recorder !== null || getLoadedCatalog(initialLocale) !== undefined,
