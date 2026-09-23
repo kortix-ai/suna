@@ -75,6 +75,7 @@ export function LegacyChatsSection({ iconColor, mutedColor }: LegacyChatsSection
           disabled={buttonBusy || !sandboxId}
           className="ml-1"
           hitSlop={6}
+          accessibilityLabel="Migrate previous chats"
         >
           {migrateDone ? (
             <CheckCircleIcon size={16} color={THEME.accent.green} weight="fill" />

@@ -22,6 +22,7 @@ import { COMPOSER_CONTROL_HIT_SLOP } from '@/components/kortix/composer';
 import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { INPUT_FONT_FAMILY, INPUT_FONT_SIZE } from '@/components/kortix/pill-input';
 import { ArrowUpIcon, CheckIcon } from '@/lib/icons';
+import { BUTTON_LABEL_MAX_FONT_SCALE } from '@/lib/ui/font-scale';
 import { THEME } from '@/lib/utils/theme';
 import {
   pickQuestionOption,
@@ -181,7 +182,7 @@ export function QuestionPrompt({ request, onReply, onReject }: QuestionPromptPro
             hitSlop={COMPOSER_CONTROL_HIT_SLOP}
             onPress={skip}
           >
-            <Text>Skip</Text>
+            <Text maxFontSizeMultiplier={BUTTON_LABEL_MAX_FONT_SCALE.sm}>Skip</Text>
           </Button>
           {step > 0 ? (
             <Button
@@ -191,7 +192,7 @@ export function QuestionPrompt({ request, onReply, onReject }: QuestionPromptPro
               hitSlop={COMPOSER_CONTROL_HIT_SLOP}
               onPress={() => setStep(step - 1)}
             >
-              <Text>Back</Text>
+              <Text maxFontSizeMultiplier={BUTTON_LABEL_MAX_FONT_SCALE.sm}>Back</Text>
             </Button>
           ) : null}
           <View className="flex-1" />

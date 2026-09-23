@@ -23,6 +23,9 @@ import {
 } from './sync-store';
 import { isLiveSession, reconcileLiveSession, reconcileLiveSessions } from './session-sync';
 import { createEventBatcher, type StreamEvent } from './event-batcher';
+import { createCueTracker, cueForEvent, type EventCue } from './event-cues';
+import { haptics } from '@/lib/haptics';
+import { playSound } from '@/lib/sounds';
 import {
   HEARTBEAT_TIMEOUT_MS,
   STREAM_STABLE_MS,
@@ -46,6 +49,12 @@ import type { Part, PermissionRequest, QuestionRequest, SessionStatus } from './
 
 /** Frames that only prove the connection is alive; they never reach the store. */
 const IGNORED_EVENT_TYPES = new Set(['server.heartbeat', 'kortix.keepalive']);
+
+/** Play a live-event cue. `playSound` and `haptics` read the Sounds settings. */
+function playCue(cue: EventCue) {
+  void playSound(cue.sound);
+  if (cue.haptic === 'success') haptics.success();
+}
 
 // ---------------------------------------------------------------------------
 // Event reducer
@@ -480,10 +489,18 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
     // FLUSH_INTERVAL_MS (status changes on the next tick). Applying every raw
     // delta saturated the JS thread and blocked tab switches / drawer opens
     // while the assistant was streaming.
+    // Sounds and haptics for live events (reply complete, prompt, error);
+    // decisions and de-dup live in `event-cues.ts`.
+    const cueTracker = createCueTracker();
+
     const batcher = createEventBatcher({
       apply: (events) => {
         if (disposed) return;
-        for (const event of events) applyEvent(event, queryClient);
+        for (const event of events) {
+          applyEvent(event, queryClient);
+          const cue = cueForEvent(cueTracker, event, { foreground: appActive });
+          if (cue) playCue(cue);
+        }
       },
     });
 

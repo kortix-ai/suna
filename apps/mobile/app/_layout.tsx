@@ -38,6 +38,8 @@ import { StatusBar, setStatusBarStyle } from 'expo-status-bar';
 import { NavigationBar } from 'expo-navigation-bar';
 import * as SystemUI from 'expo-system-ui';
 import * as Linking from 'expo-linking';
+import * as WebBrowser from 'expo-web-browser';
+import { resolveShareLinkUrl } from '@/lib/share-link';
 import React, { useEffect, useState } from 'react';
 import { useColorScheme } from 'nativewind';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -189,6 +191,7 @@ export default function RootLayout() {
 
       const url = event.url;
       const parsedUrl = Linking.parse(url);
+      const shareUrl = resolveShareLinkUrl(url);
 
       log.log('🔗 Deep link received:', {
         hostname: parsedUrl.hostname,
@@ -410,10 +413,16 @@ export default function RootLayout() {
           isHandlingDeepLink = false;
           router.replace('/auth');
         }
-      } else if (parsedUrl.path?.startsWith('share/') || parsedUrl.hostname === 'share') {
-        // Thread sharing is no longer supported in-app; ignore share deep links.
-        log.warn('⚠️ Share link received but sharing is no longer supported:', parsedUrl.path);
+      } else if (shareUrl) {
+        // No in-app share screen: open the web share page in the in-app
+        // browser. `+native-intent.ts` keeps the router from navigating.
+        log.log('🔗 Share link received, opening in the in-app browser');
         isHandlingDeepLink = false;
+        WebBrowser.openBrowserAsync(shareUrl, {
+          presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
+        }).catch((error) => {
+          log.warn('⚠️ Failed to open share link:', error);
+        });
       } else {
         log.log('ℹ️ Not an auth callback, path:', parsedUrl.path);
         isHandlingDeepLink = false;
@@ -549,12 +558,11 @@ function AuthProtection({ children }: { children: React.ReactNode }) {
 
     const currentSegment = segments[0] as string | undefined;
     const inAuthGroup = currentSegment === 'auth';
-    const inPublicShare = currentSegment === 'share';
     // Index/splash screen has no segment or empty segment
     const onSplashScreen = !currentSegment;
 
     // RULE 1: Unauthenticated users can only be on auth or splash screens
-    if (!isAuthenticated && !inAuthGroup && !inPublicShare && !onSplashScreen) {
+    if (!isAuthenticated && !inAuthGroup && !onSplashScreen) {
       log.log('🚫 Unauthenticated user on protected route, redirecting to /auth');
       router.replace('/auth');
       return;

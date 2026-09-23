@@ -36,6 +36,7 @@ import Svg, { Line } from 'react-native-svg';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { uploadAttachments, withAttachments, type AttachedFile } from '@/lib/session/attachments';
+import { useComposerDraft } from '@/lib/session/use-composer-draft';
 import { AttachSheet, type AttachSheetRef } from './AttachSheet';
 import { SessionFilesSheet } from './SessionFilesSheet';
 
@@ -209,12 +210,12 @@ interface SessionChatInputProps {
   commands?: Command[];
   /** Called when a command is submitted (staged command + optional args) */
   onCommand?: (command: Command, args?: string) => void;
-  /** Hides the add button and the model pill — used for onboarding */
-  onboardingMode?: boolean;
   /** Initial text to populate the input with (e.g. restored after question prompt) */
   initialText?: string;
   /** Called whenever the input text changes — used to track current text externally */
   onTextChange?: (text: string) => void;
+  /** Persists the typed text under this key (`draftKey`, COR-143). Omit for no draft. */
+  draftKey?: string | null;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -253,11 +254,12 @@ function SessionChatInputImpl({
   onDraftChange,
   commands = EMPTY_COMMANDS,
   onCommand,
-  onboardingMode = false,
   initialText = '',
   onTextChange,
+  draftKey = null,
 }: SessionChatInputProps) {
   const [text, setText] = useState(initialText);
+  useComposerDraft(draftKey, text, setText);
   const inputRef = useRef<TextInput>(null);
   const cursorRef = useRef(0);
   const { colorScheme } = useColorScheme();
@@ -642,11 +644,11 @@ function SessionChatInputImpl({
             onStop={onStop}
             header={cardHeader}
             attachments={attachedFiles}
-            onAttach={onboardingMode ? undefined : handleAddPress}
+            onAttach={handleAddPress}
             attachLabel="Add"
             onRemoveAttachment={removeAttachedFile}
             modelLabel={
-              onboardingMode || modelsLoading
+              modelsLoading
                 ? null
                 : noModelConnected
                   ? 'Connect model'
@@ -824,6 +826,7 @@ function AutoContinueSheet({
               className="h-auto w-auto gap-0 rounded-full p-0 active:bg-transparent active:opacity-20"
               onPress={() => setDetailAlg(null)}
               hitSlop={12}
+              accessibilityLabel="Back"
               style={{ marginRight: 12 }}
             >
               <CaretLeftIcon size={22} color={muted} />
@@ -850,21 +853,21 @@ function AutoContinueSheet({
           </View>
 
           <View style={{ paddingHorizontal: 20 }}>
-            <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+            <Text style={{ color: muted, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
               Role
             </Text>
             <Text style={{ fontSize: 14, marginBottom: 16, color: isDark ? THEME.dark.foreground : THEME.light.foreground }}>
               {detailAlg.role}
             </Text>
 
-            <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+            <Text style={{ color: muted, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
               Description
             </Text>
             <Text style={{ fontSize: 14, color: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground, marginBottom: 16 }}>
               {detailAlg.description}
             </Text>
 
-            <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+            <Text style={{ color: muted, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
               Best for
             </Text>
             <Text style={{ fontSize: 14, color: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground, marginBottom: 16 }}>
@@ -873,7 +876,7 @@ function AutoContinueSheet({
 
             <View style={{ flexDirection: 'row', marginTop: 4 }}>
               <View style={{ flex: 1, marginRight: 12 }}>
-                <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+                <Text style={{ color: muted, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
                   Strengths
                 </Text>
                 {detailAlg.strengths.map((s, idx) => (
@@ -883,7 +886,7 @@ function AutoContinueSheet({
                 ))}
               </View>
               <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+                <Text style={{ color: muted, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
                   Weaknesses
                 </Text>
                 {detailAlg.weaknesses.map((s, idx) => (
@@ -894,7 +897,7 @@ function AutoContinueSheet({
               </View>
             </View>
 
-            <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginTop: 20, marginBottom: 8 }}>
+            <Text style={{ color: muted, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, marginTop: 20, marginBottom: 8 }}>
               How it works
             </Text>
             <Text style={{ fontSize: 13, lineHeight: 20, color: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground }}>
@@ -935,7 +938,7 @@ function AutoContinueSheet({
                 <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: isDark ? THEME.dark.foreground : THEME.light.foreground }}>
                   Off
                 </Text>
-                <Text style={{ fontSize: 12, color: muted, marginTop: 2 }}>
+                <Text style={{ fontSize: 13, color: muted, marginTop: 2 }}>
                   Manual — you send each message
                 </Text>
               </View>
@@ -963,7 +966,7 @@ function AutoContinueSheet({
                 <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: isDark ? THEME.dark.foreground : THEME.light.foreground }}>
                   On
                 </Text>
-                <Text style={{ fontSize: 12, color: muted, marginTop: 2 }}>
+                <Text style={{ fontSize: 13, color: muted, marginTop: 2 }}>
                   {isActive && currentAlg
                     ? `Running ${currentAlg.label}`
                     : 'Pick an algorithm and the agent will continue on its own'}
@@ -974,7 +977,7 @@ function AutoContinueSheet({
           </View>
 
           <View style={{ marginTop: 20, paddingHorizontal: 20 }}>
-            <Text style={{ fontSize: 12, color: muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+            <Text style={{ fontSize: 13, color: muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
               Algorithms
             </Text>
           </View>
@@ -1003,10 +1006,10 @@ function AutoContinueSheet({
                     <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: isDark ? THEME.dark.foreground : THEME.light.foreground }}>
                       {alg.label}
                     </Text>
-                    <Text style={{ fontSize: 11, color: muted, marginTop: 1 }}>
+                    <Text style={{ fontSize: 13, color: muted, marginTop: 1 }}>
                       {alg.role}
                     </Text>
-                    <Text style={{ fontSize: 12, color: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground, marginTop: 6 }} numberOfLines={1}>
+                    <Text style={{ fontSize: 13, color: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground, marginTop: 6 }} numberOfLines={1}>
                       {alg.description}
                     </Text>
                   </View>
@@ -1014,6 +1017,7 @@ function AutoContinueSheet({
                     variant="ghost"
                     className="h-auto w-auto gap-0 rounded-md p-0 active:bg-transparent active:opacity-20"
                     hitSlop={10}
+                    accessibilityLabel={`About ${alg.label}`}
                     onPress={() => setDetailAlg(alg)}
                     style={{ padding: 6, marginHorizontal: 4 }}
                   >

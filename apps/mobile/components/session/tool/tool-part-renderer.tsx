@@ -228,16 +228,12 @@ function ToolPartRendererImpl({
     const idMatch = output.match(/proj-[a-z0-9-]+/);
     const projectId = idMatch ? idMatch[0] : (input.name as string) || (input.project as string) || '';
     if (!projectId) return null;
-    const displayName =
-      (normalized === 'project_select' ? (input.project as string) : (input.name as string)) || projectId;
-    return { projectId, displayName };
+    return { projectId };
   }, [part.tool, part.state, input]);
 
   const openProject = useCallback(() => {
     if (!projectTarget) return;
-    const tabs = useTabStore.getState();
-    tabs.setTabState(`page:project:${projectTarget.projectId}`, { projectName: projectTarget.displayName });
-    tabs.navigateToPage(`page:project:${projectTarget.projectId}`);
+    useTabStore.getState().navigateToPage(`page:project:${projectTarget.projectId}`);
   }, [projectTarget]);
 
   if (part.tool === 'todoread') return null;

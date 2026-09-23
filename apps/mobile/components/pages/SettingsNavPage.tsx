@@ -38,7 +38,7 @@
  */
 
 import React, { useRef, useState } from 'react';
-import { View, Alert, Linking } from 'react-native';
+import { View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import * as WebBrowser from 'expo-web-browser';
@@ -70,6 +70,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { PageHeader } from '@/components/kortix/page-header';
+import { useToast } from '@/components/kortix/toast-provider';
 import { PageContent } from '@/components/kortix/page-content';
 import { PageList } from '@/components/kortix/page-list';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
@@ -85,9 +86,9 @@ import { projectCustomizeWebUrl, projectMembersWebUrl } from '@/lib/projects/web
 import { PROJECT_CUSTOMIZE_ITEMS } from '@/lib/session/dock-menu';
 import type { SubPageId } from '@/lib/session/project-stack';
 import { DOCK_ICONS } from '@/components/session/dock-icons';
-import { useTabStore } from '@/stores/tab-store';
 import { haptics } from '@/lib/haptics';
 import { log } from '@/lib/logger';
+import { openLink } from '@/lib/utils/open-link';
 
 interface PageTabLike {
   id: string;
@@ -99,11 +100,8 @@ interface SettingsNavPageProps {
   projectId: string;
   /** Pushed as a sub-page: Go back in the header, in place of the hamburger. */
   onBack?: () => void;
-  /**
-   * Open a Customize row's page (Schedules, Secrets) as a sub-page over this
-   * one. Without it the row goes through the tab store (`navigateToPage`).
-   */
-  onOpenPage?: (pageId: SubPageId) => void;
+  /** Open a Customize row's page (Schedules, Secrets) as a sub-page over this one. */
+  onOpenPage: (pageId: SubPageId) => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
   isDrawerOpen?: boolean;
@@ -147,6 +145,7 @@ const EditFieldSheet = React.forwardRef<EditFieldSheetRef, unknown>(function Edi
   const [config, setConfig] = useState<EditFieldConfig | null>(null);
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
+  const toast = useToast();
 
   React.useImperativeHandle(ref, () => ({
     open: (next) => {
@@ -168,7 +167,8 @@ const EditFieldSheet = React.forwardRef<EditFieldSheetRef, unknown>(function Edi
       haptics.success();
       modalRef.current?.dismiss();
     } catch (e: any) {
-      Alert.alert('Failed', e?.message || `Failed to update ${config.title.toLowerCase()}.`);
+      haptics.warning();
+      toast.error(`Unable to update the ${config.title.toLowerCase()}`, { description: e?.message || 'Try again.' });
     } finally {
       setSaving(false);
     }
@@ -211,6 +211,7 @@ function AddCollaboratorSheet({ projectId, modalRef }: { projectId: string; moda
   const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
   const [username, setUsername] = useState('');
   const [permission, setPermission] = useState<'read' | 'write'>('write');
+  const toast = useToast();
 
   const invite = useMutation({
     mutationFn: () => inviteRepoCollaborator(projectId, username.trim(), permission),
@@ -218,14 +219,13 @@ function AddCollaboratorSheet({ projectId, modalRef }: { projectId: string; moda
       haptics.success();
       setUsername('');
       modalRef.current?.dismiss();
-      Alert.alert(
-        res.alreadyCollaborator ? 'Already has access' : 'Invite sent',
-        res.alreadyCollaborator
+      toast.success(res.alreadyCollaborator ? 'Already has access' : 'Invite sent', {
+        description: res.alreadyCollaborator
           ? `@${res.username} already has access to this repo.`
-          : `Invite sent to @${res.username} — they accept it on GitHub to get access.`
-      );
+          : `@${res.username} accepts it on GitHub to get access.`,
+      });
     },
-    onError: (e: any) => Alert.alert('Failed', e?.message || 'Failed to add collaborator.'),
+    onError: (e: any) => toast.error('Unable to add the collaborator', { description: e?.message || 'Try again.' }),
   });
   const canSubmit = username.trim().length > 0 && !invite.isPending;
 
@@ -352,6 +352,7 @@ export function SettingsNavPage({
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const router = useRouter();
+  const toast = useToast();
 
   const { data: project, isLoading, isError, error, refetch } = useProject(projectId);
   const canManage = project?.effective_project_role === 'manager';
@@ -405,7 +406,7 @@ export function SettingsNavPage({
         haptics.success();
         router.replace('/projects');
       },
-      onError: (e: any) => Alert.alert('Failed', e?.message || 'Failed to delete project.'),
+      onError: (e: any) => toast.error('Unable to delete the project', { description: e?.message || 'Try again.' }),
     });
   };
 
@@ -453,8 +454,7 @@ export function SettingsNavPage({
                     label={item.label}
                     onPress={() => {
                       haptics.tap();
-                      if (onOpenPage) onOpenPage(item.pageId);
-                      else useTabStore.getState().navigateToPage(item.pageId);
+                      onOpenPage(item.pageId);
                     }}
                   />
                 ))}
@@ -473,7 +473,7 @@ export function SettingsNavPage({
                   label="Repository"
                   value={repoLabel ?? '—'}
                   external={!!githubUrl}
-                  onPress={githubUrl ? () => { haptics.tap(); void Linking.openURL(githubUrl); } : undefined}
+                  onPress={githubUrl ? () => { haptics.tap(); void openLink(githubUrl).catch(() => {}); } : undefined}
                 />
                 <SettingsRow
                   label="Default branch"

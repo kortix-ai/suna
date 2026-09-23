@@ -27,7 +27,7 @@ Kortix-specific: 23 files, built on top of `components/ui/`. **There is no
 | Field label | `@/components/ui/label` → `<Label>` | ad-hoc label `<Text>` with custom size/weight |
 | Icons | `@/components/ui/icon` → `<Icon as={XIcon} />`, or `<XIcon />`, with icons from `@/lib/icons` — see **Icons** below | importing `phosphor-react-native`, `lucide-react-native`, or `@expo/vector-icons`; ad-hoc svg in screens |
 | Dialog (centered overlay) | `@/components/ui/dialog` → `<Dialog>` + parts | custom centered overlay, raw `Modal` |
-| Alert dialog (confirm/cancel) | `@/components/ui/alert-dialog` → `<AlertDialog>` + parts | `Alert.alert`, custom confirm overlays |
+| Alert dialog (confirm/cancel) | `@/components/ui/alert-dialog` → `<AlertDialog>` + parts; a plain title · description · Cancel · action confirm is `useConfirmDialog()` from `@/components/kortix/confirm-dialog` | `Alert.alert`, custom confirm overlays |
 | Inline alert | `@/components/ui/alert` → `<Alert>` + `AlertTitle` / `AlertDescription` | custom banner boxes |
 | Badge | `@/components/ui/badge` → `<Badge variant="…">` | ad-hoc pill `View` |
 | Skeleton loading state | `@/components/ui/skeleton` → `<Skeleton>` | ad-hoc `animate-pulse` boxes — see also **Loading** rule below |
@@ -79,6 +79,7 @@ Kortix-specific: 23 files, built on top of `components/ui/`. **There is no
 | `StopIcon.tsx` | Stop-square SVG icon used on the composer's stop button. |
 | `OfflineBanner.tsx` | Global connectivity banner (slides in on disconnect / brief "Back online" flash). |
 | `selectable-markdown.tsx` | Selectable markdown text via `@expensify/react-native-live-markdown`. |
+| `confirm-dialog.tsx` | `useConfirmDialog()` → `{ confirm, dialog }`: the app's one confirm (COR-151), an `AlertDialog` with a secondary Cancel pill and a `default`/`destructive` action pill, portalled above open sheets. Replaces `Alert.alert(title, msg, [cancel, action])` 1:1. External web links go through `openLink` (`lib/utils/open-link.ts`): kortix.com in the in-app browser, other hosts in the system browser. |
 | `toast.tsx` / `toast-provider.tsx` | The toast seam. `sonner-native` renders toasts (Jay, 2026-09-22); `toast-provider.tsx` owns `useToast()` and mounts `<Toaster>`, `toast.tsx` owns the Kortix look, `lib/ui/toast-model.ts` owns durations/haptics. `const toast = useToast(); toast.error(...)`. Never import `sonner-native` in a screen. See design.md §11 |
 
 Plurality rule: if you find yourself writing the same `className` string on more
@@ -132,6 +133,11 @@ children.
   message (Copy, Edit, turn details). Always pair it with `hitSlop` so the touch target
   stays 44pt tall (`TURN_ACTION_HIT_SLOP`). Every icon button outside the composer row and
   the message actions stays `icon` (40pt).
+  A `Button` with no `hitSlop` prop grows its touch target to 44pt by itself
+  (`defaultButtonHitSlop` in `lib/ui/hit-target.ts`: `icon` 2pt, `icon-md` 4pt,
+  `icon-sm` 8pt tall / 4pt wide, `default` / `sm` vertical only; COR-153).
+  Pass `hitSlop` only to differ, or when a `className` overrides the box.
+  Every icon-only button needs an `accessibilityLabel`.
   `xl` is added to the registry output. Only the auth welcome screen's
   three sign-in pills use it (Jay, 2026-09-17). Every other pill stays `lg`.
 
@@ -335,14 +341,13 @@ that drops props silently breaks the screens that still pass them.
 
 ## Known unmigrated state (not a TODO — don't convert without owning it)
 
-- **Raw `Modal` from `react-native`** still ships in several screens
-  (session, billing, files, menu, threads, updates). Converting one to
+- **Raw `Modal` from `react-native`** still ships in a few screens
+  (billing, files, menu). Converting one to
   `<Dialog>` is a structural change with no gate behind it. New code uses
   `<Dialog>` / `<AlertDialog>`; existing `Modal` sites stay until someone
   owns that conversion end to end.
 - **Raw `Text` from `react-native`** still ships in a handful of files with
-  dense custom typography — notably `components/pages/ApiKeysPage.tsx` and
-  `components/session/SessionChatInput.tsx`. New code uses
+  dense custom typography — notably `components/session/SessionPage.tsx`. New code uses
   `<Text variant="…">`.
 
 ## Invariants (mechanically checked)

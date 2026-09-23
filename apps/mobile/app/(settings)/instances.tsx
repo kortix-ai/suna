@@ -30,6 +30,7 @@ import { setInstanceProgress, useInstanceProgress } from '@/stores/instance-prog
 import { useThemeColors } from '@/lib/theme-colors';
 import { useGlobalSandboxUpdate } from '@/hooks/useSandboxUpdate';
 import { SheetBackdrop, KortixBottomSheetModal } from '@/components/kortix/sheet';
+import { useToast } from '@/components/kortix/toast-provider';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -139,7 +140,7 @@ export default function InstancesScreen() {
           {/* Instances */}
           {((instances && instances.length > 0) || creatingProgress) && (
             <View className="px-1">
-              <Text className="mb-2 text-[11px] font-roobert-medium uppercase tracking-wider text-muted-foreground/80">
+              <Text className="mb-2 text-[13px] font-roobert-medium uppercase tracking-wider text-muted-foreground/80">
                 Instances
               </Text>
               <View>
@@ -151,11 +152,11 @@ export default function InstancesScreen() {
                         <View className="h-2.5 w-2.5 rounded-full mr-3" style={{ backgroundColor: THEME.accent.orange }} />
                         <View className="flex-1">
                           <Text className="font-roobert-medium text-[15px] text-foreground">Sandbox</Text>
-                          <Text className="mt-0.5 font-roobert text-xs text-muted-foreground">
+                          <Text className="mt-0.5 font-roobert text-[13px] text-muted-foreground">
                             {creatingProgress.message}
                           </Text>
                         </View>
-                        <Text className="font-roobert text-xs tabular-nums text-muted-foreground">
+                        <Text className="font-roobert text-[13px] tabular-nums text-muted-foreground">
                           {Math.round(creatingProgress.percent)}%
                         </Text>
                       </View>
@@ -195,7 +196,7 @@ export default function InstancesScreen() {
                             <Text className="font-roobert-medium text-[15px] text-foreground" numberOfLines={1}>
                               {instance.name}
                             </Text>
-                            <Text className="mt-0.5 font-roobert text-xs text-muted-foreground">
+                            <Text className="mt-0.5 font-roobert text-[13px] text-muted-foreground">
                               {isProvisioning ? 'Provisioning...' : statusLabel(instance.status)}
                               {effectiveVersion ? ` · v${effectiveVersion}` : ''}
                               {` · ${providerLabel(instance.provider)}`}
@@ -233,7 +234,7 @@ export default function InstancesScreen() {
             <View className="items-center justify-center py-12">
               <Icon as={Server} size={32} className="text-muted-foreground/40" />
               <Text className="mt-3 font-roobert-medium text-[15px] text-foreground">No Instances</Text>
-              <Text className="mt-1 text-center font-roobert text-xs text-muted-foreground">
+              <Text className="mt-1 text-center font-roobert text-[13px] text-muted-foreground">
                 Tap the button below to add one.
               </Text>
             </View>
@@ -269,6 +270,7 @@ const AddInstanceSheet = React.forwardRef<
   { isDark: boolean; onCreated: () => void; onProgress: (p: { percent: number; message: string } | null) => void }
 >(function AddInstanceSheet({ isDark, onCreated, onProgress }, ref) {
   const insets = useSafeAreaInsets();
+  const toast = useToast();
   const [step, setStep] = React.useState<AddStep>('select');
   const [customUrl, setCustomUrl] = React.useState('');
   const [customLabel, setCustomLabel] = React.useState('');
@@ -308,9 +310,11 @@ const AddInstanceSheet = React.forwardRef<
       resetState();
     } else {
       haptics.warning();
-      Alert.alert('Unreachable', 'Could not connect to the instance. Check the URL and try again.');
+      toast.error('Unable to reach the instance', {
+        description: 'Check the URL and try again.',
+      });
     }
-  }, [customUrl, onCreated, resetState]);
+  }, [customUrl, onCreated, resetState, toast]);
 
   return (
     <KortixBottomSheetModal
@@ -324,7 +328,7 @@ const AddInstanceSheet = React.forwardRef<
       <BottomSheetView style={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: Math.max(insets.bottom, 20) + 16 }}>
         {isCreating && progress ? (
           <View className="px-1">
-            <Text className="mb-2 text-[11px] font-roobert-medium uppercase tracking-wider text-muted-foreground/80">
+            <Text className="mb-2 text-[13px] font-roobert-medium uppercase tracking-wider text-muted-foreground/80">
               Creating Instance
             </Text>
             <View className="py-4">
@@ -332,9 +336,9 @@ const AddInstanceSheet = React.forwardRef<
                 <Icon as={Monitor} size={18} className="text-foreground/80" />
                 <View className="ml-4 flex-1">
                   <Text className="font-roobert-medium text-[15px] text-foreground">Sandbox</Text>
-                  <Text className="mt-0.5 font-roobert text-xs text-muted-foreground">{progress.message}</Text>
+                  <Text className="mt-0.5 font-roobert text-[13px] text-muted-foreground">{progress.message}</Text>
                 </View>
-                <Text className="font-roobert text-xs tabular-nums text-muted-foreground">
+                <Text className="font-roobert text-[13px] tabular-nums text-muted-foreground">
                   {Math.round(progress.percent)}%
                 </Text>
               </View>
@@ -354,10 +358,10 @@ const AddInstanceSheet = React.forwardRef<
           </View>
         ) : step === 'select' ? (
           <View className="px-1">
-            <Text className="mb-2 text-[11px] font-roobert-medium uppercase tracking-wider text-muted-foreground/80">
+            <Text className="mb-2 text-[13px] font-roobert-medium uppercase tracking-wider text-muted-foreground/80">
               New Instance
             </Text>
-            <Text className="mb-3 font-roobert text-xs text-muted-foreground">
+            <Text className="mb-3 font-roobert text-[13px] text-muted-foreground">
               Choose how to connect.
             </Text>
 
@@ -371,7 +375,7 @@ const AddInstanceSheet = React.forwardRef<
                   <Icon as={Globe} size={18} className="text-foreground/80" />
                   <View className="ml-4 flex-1">
                     <Text className="font-roobert-medium text-[15px] text-foreground">Custom URL</Text>
-                    <Text className="mt-0.5 font-roobert text-xs text-muted-foreground">Connect to any Kortix instance by address</Text>
+                    <Text className="mt-0.5 font-roobert text-[13px] text-muted-foreground">Connect to any Kortix instance by address</Text>
                   </View>
                 </View>
               </Pressable>
@@ -379,10 +383,10 @@ const AddInstanceSheet = React.forwardRef<
           </View>
         ) : (
           <View className="px-1">
-            <Text className="mb-2 text-[11px] font-roobert-medium uppercase tracking-wider text-muted-foreground/80">
+            <Text className="mb-2 text-[13px] font-roobert-medium uppercase tracking-wider text-muted-foreground/80">
               Custom URL
             </Text>
-            <Text className="mb-4 font-roobert text-xs text-muted-foreground">
+            <Text className="mb-4 font-roobert text-[13px] text-muted-foreground">
               Enter the address of your Kortix instance.
             </Text>
 

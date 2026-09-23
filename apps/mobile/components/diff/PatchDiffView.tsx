@@ -12,9 +12,10 @@ import { View, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { FilePlusIcon as FilePlus, FileMinusIcon as FileMinus, NotePencilIcon as FilePen, type AppIcon } from '@/lib/icons';
 import type { ProjectCommitFile } from '@/lib/projects/projects-client';
+import { MONO_FONT_FAMILY } from '@/lib/utils/mono-font';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 
-const MONO = 'Menlo';
+const MONO = MONO_FONT_FAMILY;
 const MAX_DIFF_ROWS = 2000;
 
 export interface DiffRow {

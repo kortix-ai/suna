@@ -1,6 +1,6 @@
 // apps/mobile/components/kortix/sheet.tsx
 import * as React from 'react';
-import { View, Dimensions, type ViewStyle } from 'react-native';
+import { View, useWindowDimensions, type ViewStyle } from 'react-native';
 import {
   BottomSheetModal,
   BottomSheetView,
@@ -263,6 +263,16 @@ export const KortixBottomSheetModal = React.forwardRef<
       snapPoints={detents as BottomSheetModalProps['snapPoints']}
       topInset={topInset ?? insets.top}
       {...props}
+      // Android keyboard: ONE mode app-wide. The window is `adjustResize`
+      // (app.json `softwareKeyboardLayoutMode: "resize"`), but the root
+      // KeyboardProvider draws edge-to-edge, so the window never actually
+      // resizes or pans. The sheet must lift itself above the keyboard,
+      // which is gorhom's `adjustPan` path (the same path iOS uses). gorhom's
+      // `adjustResize` assumes the OS already resized and does nothing, so a
+      // field near the sheet bottom stays under the keyboard. Inputs inside a
+      // sheet must be `BottomSheetTextInput` (or `SheetTextInput`): gorhom only
+      // lifts for a focused input it registered.
+      android_keyboardInputMode="adjustPan"
       backgroundStyle={[
         {
           backgroundColor: background,
@@ -354,6 +364,7 @@ export const Sheet = React.forwardRef<SheetRef, SheetProps>(
   ({ snapPoints, fullScreen, enablePanDownToClose, onDismiss, children }, ref) => {
     const modalRef = React.useRef<BottomSheetModal>(null);
     const insets = useSafeAreaInsets();
+    const { height: windowHeight } = useWindowDimensions();
     React.useImperativeHandle(ref, () => ({
       open: () => modalRef.current?.present(),
       close: () => modalRef.current?.dismiss(),
@@ -367,8 +378,7 @@ export const Sheet = React.forwardRef<SheetRef, SheetProps>(
         enablePanDownToClose={enablePanDownToClose}
         onDismiss={onDismiss}
         keyboardBehavior="interactive"
-        keyboardBlurBehavior="restore"
-        android_keyboardInputMode="adjustResize">
+        keyboardBlurBehavior="restore">
         <BottomSheetView style={fullScreen ? { flex: 1 } : undefined}>
           {fullScreen ? (
             // BottomSheetView content-sizes, so a concrete min-height is what
@@ -376,7 +386,7 @@ export const Sheet = React.forwardRef<SheetRef, SheetProps>(
             <View
               style={{
                 flex: 1,
-                minHeight: Dimensions.get('window').height - insets.top - insets.bottom - 20,
+                minHeight: windowHeight - insets.top - insets.bottom - 20,
               }}>
               {children}
             </View>

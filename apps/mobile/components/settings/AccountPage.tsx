@@ -17,7 +17,7 @@
  */
 
 import * as React from 'react';
-import { Linking, Pressable, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -69,6 +69,8 @@ import { useActiveAccount } from '@/hooks/useActiveAccount';
 import { useProfileEditor } from '@/hooks/useProfileEditor';
 import { useActivePlanName } from '@/hooks/useActivePlanName';
 import { haptics } from '@/lib/haptics';
+import { openLink } from '@/lib/utils/open-link';
+import { LANGUAGE_PICKER_ENABLED } from '@/lib/utils/locale-config';
 
 export interface AccountPageProps {
   /**
@@ -129,10 +131,10 @@ export function AccountPage({
     [router]
   );
 
-  // Docs and Support open kortix.com in the browser.
+  // Docs and Support open kortix.com in the in-app browser (`openLink`).
   const openWebPage = React.useCallback((path: string) => {
     haptics.tap();
-    void Linking.openURL(`${KORTIX_WEB_URL}${path}`).catch(() => {});
+    void openLink(`${KORTIX_WEB_URL}${path}`).catch(() => {});
   }, []);
 
   const openEditProfile = React.useCallback(() => {
@@ -241,12 +243,14 @@ export function AccountPage({
             label={t('notifications.title', 'Notifications')}
             onPress={() => go('/(settings)/notifications')}
           />
-          <SettingsRow
-            icon={Globe}
-            label={t('settings.language', 'Language')}
-            value={languageName}
-            onPress={() => go('/(settings)/language')}
-          />
+          {LANGUAGE_PICKER_ENABLED && (
+            <SettingsRow
+              icon={Globe}
+              label={t('settings.language', 'Language')}
+              value={languageName}
+              onPress={() => go('/(settings)/language')}
+            />
+          )}
         </SettingsGroup>
 
         <SettingsGroup title={t('account.help', 'Help')}>

@@ -286,8 +286,7 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
           enablePanDownToClose
           onDismiss={handleSheetDismiss}
           keyboardBehavior="interactive"
-          keyboardBlurBehavior="restore"
-          android_keyboardInputMode="adjustResize">
+          keyboardBlurBehavior="restore">
           {/* One scrollable child: dynamic sizing needs it, and Share's member
               list can be taller than the screen. */}
           <BottomSheetScrollView

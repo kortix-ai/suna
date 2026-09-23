@@ -25,8 +25,7 @@
  * `+` and the empty state's "Create project" open `NewProjectSheet` preset to
  * the picked account; the chip row's last "New account" chip opens the
  * existing `NewAccountSheet`. Both are a real second `BottomSheetModal`, so
- * this sheet dismisses itself first (`go`, the `AccountSwitcherSheet`
- * pattern) — a `dismiss()` inside `go` must not fire `onClose` (the caller
+ * this sheet dismisses itself first (`go`) — a `dismiss()` inside `go` must not fire `onClose` (the caller
  * would think the whole switcher closed), so `handleDismiss` swallows one
  * dismiss per `go` call via `suppressCloseRef`. New account returns to this
  * sheet, on the fresh account's (empty) project list; New project finishes

@@ -20,6 +20,7 @@ import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useLastProjectStore } from '@/stores/last-project-store';
 import { useSelectedProjectStore } from '@/stores/selected-project-store';
 import { useTabScreenshotStore } from '@/stores/tab-screenshot-store';
+import { useComposerDraftStore } from '@/stores/composer-draft-store';
 
 let useTracking: any = null;
 try {
@@ -53,6 +54,8 @@ function resetUserStores() {
   useCurrentAccountStore.getState().reset();
   useLastProjectStore.getState().reset();
   useSelectedProjectStore.getState().reset();
+  // Typed drafts are the user's text; drops pending writes too.
+  useComposerDraftStore.getState().reset();
   // Also deletes the screenshot files.
   useTabScreenshotStore.getState().clear();
   // A warm session belongs to the signed-in user.

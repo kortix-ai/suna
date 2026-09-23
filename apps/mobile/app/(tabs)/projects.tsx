@@ -187,6 +187,13 @@ export default function ProjectsTab() {
       return (
         <PressableSurface
           onPress={() => openProject(item)}
+          // The row is one accessibility element, which hides the ⋯ button
+          // inside it from VoiceOver/TalkBack; expose the menu as an action.
+          accessibilityRole="button"
+          accessibilityActions={[{ name: 'menu', label: 'Project actions' }]}
+          onAccessibilityAction={(e) => {
+            if (e.nativeEvent.actionName === 'menu') onRowMenu(item);
+          }}
           style={({ pressed }) => (pressed ? { transform: [{ scale: 0.99 }] } : undefined)}
           className="mx-4 mb-2.5 flex-row items-center gap-3 rounded-xl bg-secondary/70 px-4 py-3.5 active:bg-secondary">
           <Avatar chalk fallbackText={item.name} size={42} />
@@ -194,13 +201,15 @@ export default function ProjectsTab() {
             <Text variant="small" className="leading-5 text-foreground" numberOfLines={1}>
               {row.title}
             </Text>
-            <Text variant="muted" className="mt-0.5 text-xs" numberOfLines={1}>
+            <Text variant="muted" className="mt-0.5 text-[13px]" numberOfLines={1}>
               {row.subtitle}
             </Text>
           </View>
           <Pressable
             onPress={() => onRowMenu(item)}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityRole="button"
+            accessibilityLabel={`Project actions, ${item.name}`}
             className="p-1">
             <Icon as={MoreVertical} size={18} className="text-muted-foreground" />
           </Pressable>

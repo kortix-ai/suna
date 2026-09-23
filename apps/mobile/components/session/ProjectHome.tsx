@@ -42,6 +42,8 @@ import { ProjectHero } from '@/components/session/ProjectHero';
 import { AttachSheet, type AttachSheetRef } from '@/components/session/AttachSheet';
 import { useProjectDetail, useProjectModelCatalog } from '@/lib/projects/hooks';
 import type { AttachedFile } from '@/lib/session/attachments';
+import { draftKey } from '@/lib/session/composer-draft';
+import { useComposerDraft } from '@/lib/session/use-composer-draft';
 import {
   composerModelLabel,
   effectiveComposerModel,
@@ -107,6 +109,9 @@ export function ProjectHome({
 }: ProjectHomeProps) {
   const insets = useSafeAreaInsets();
   const [draft, setDraft] = React.useState(() => takeInitialDraft?.() ?? '');
+  // Survives the OS killing the app (COR-143). ProjectScreen clears it once a
+  // send starts a session.
+  useComposerDraft(draftKey({ kind: 'project', projectId }), draft, setDraft);
   const [files, setFiles] = React.useState<AttachedFile[]>([]);
   const [model, setModel] = React.useState<string | null>(null);
   const modelSheetRef = React.useRef<SheetRef>(null);

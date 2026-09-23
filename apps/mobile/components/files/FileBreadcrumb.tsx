@@ -52,6 +52,8 @@ export function FileBreadcrumb({ segments, onNavigate }: FileBreadcrumbProps) {
         onPress={() => handlePress('/workspace', segments.length === 0)}
         disabled={segments.length === 0}
         className="flex-row items-center px-2 py-1 rounded-lg active:opacity-70"
+        accessibilityRole="button"
+        accessibilityLabel="Workspace"
       >
         <Icon
           as={Folder}

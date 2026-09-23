@@ -20,7 +20,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Linking, View } from 'react-native';
+import { View } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -46,6 +46,7 @@ import {
 import { creatableAccounts } from '@/lib/projects/landing';
 import { sheetOpenMove } from '@/lib/ui/sheet-open';
 import type { KortixAccount, KortixProject } from '@/lib/projects/projects-client';
+import { openLink } from '@/lib/utils/open-link';
 
 // Mirrors the API's PROJECT_NAME_MAX_LENGTH (projects.name is varchar(255)).
 const PROJECT_NAME_MAX_LENGTH = 120;
@@ -215,7 +216,7 @@ export function NewProjectSheet({ open, accountId: initialAccountId, accounts, o
         toast.error(result.data?.configured === false ? 'GitHub App is not configured' : 'GitHub install URL unavailable');
         return;
       }
-      await Linking.openURL(url);
+      await openLink(url);
     } catch (err: any) {
       toast.error(err?.message || 'Failed to start GitHub setup');
     }
@@ -241,7 +242,6 @@ export function NewProjectSheet({ open, accountId: initialAccountId, accounts, o
       enablePanDownToClose
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"
-      android_keyboardInputMode="adjustResize"
       onDismiss={handleDismiss}>
       {view === 'account' ? (
         <Animated.View key="account" entering={PUSH_IN} style={{ flex: 1 }}>

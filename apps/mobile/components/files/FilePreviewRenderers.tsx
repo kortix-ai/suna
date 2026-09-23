@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { View, Image, ScrollView, Dimensions, Platform, Linking } from 'react-native';
+import { View, Image, ScrollView, Platform, useWindowDimensions } from 'react-native';
 import { WebView } from 'react-native-webview';
 import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTypes';
 import { Text } from '@/components/ui/text';
@@ -17,6 +17,7 @@ import { SelectableMarkdownText } from '@/components/kortix/selectable-markdown'
 import { autoLinkUrls } from '@kortix/shared';
 import * as FileSystem from 'expo-file-system/legacy';
 import { log } from '@/lib/logger';
+import { MONO_FONT_FAMILY } from '@/lib/utils/mono-font';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import {
   HTML_SANITIZER_SCRIPT,
@@ -31,8 +32,7 @@ import {
   previewDecision,
   truncateForPreview,
 } from '@/lib/files/preview-limits';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+import { openLink } from '@/lib/utils/open-link';
 
 /**
  * Constructs a preview URL for HTML files in the sandbox environment.
@@ -214,7 +214,7 @@ function usePreviewNavigationGuard({
         navigationType: request.navigationType,
       });
       if (action === 'open-external') {
-        Linking.openURL(request.url).catch((error) => {
+        openLink(request.url).catch((error) => {
           log.warn('[FilePreview] Failed to open link:', error);
         });
       }
@@ -232,7 +232,10 @@ function ImagePreview({ blobUrl, fileName }: { blobUrl?: string; fileName: strin
   const isDark = colorScheme === 'dark';
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
-  const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
+  // Width/height ratio of the loaded image; the box follows the live window width.
+  const [aspectRatio, setAspectRatio] = useState(0);
+  const { width: screenWidth } = useWindowDimensions();
+  const maxWidth = screenWidth - 32;
 
   if (!blobUrl) {
     return (
@@ -273,20 +276,13 @@ function ImagePreview({ blobUrl, fileName }: { blobUrl?: string; fileName: strin
           <Image
             source={{ uri: blobUrl }}
             style={{
-              width: imageSize.width || SCREEN_WIDTH - 32,
-              height: imageSize.height || 300,
+              width: maxWidth,
+              height: aspectRatio ? maxWidth / aspectRatio : 300,
             }}
             resizeMode="contain"
             onLoad={(event) => {
               const { width, height } = event.nativeEvent.source;
-              const aspectRatio = width / height;
-              const maxWidth = SCREEN_WIDTH - 32;
-              const calculatedHeight = maxWidth / aspectRatio;
-
-              setImageSize({
-                width: maxWidth,
-                height: calculatedHeight,
-              });
+              setAspectRatio(width / height);
               setIsLoading(false);
             }}
             onError={() => {
@@ -651,7 +647,7 @@ function TextPreview({ content }: { content: string }) {
       <Text
         style={{
           color: isDark ? THEME.dark.foreground : THEME.light.foreground,
-          fontFamily: 'monospace',
+          fontFamily: MONO_FONT_FAMILY,
           fontSize: 13,
           lineHeight: 20,
         }}

@@ -13,9 +13,16 @@
  * The list fades at both ends (`scroll-fade`): the bottom always, the top once a
  * row has scrolled under the search field. The content pads by the bottom fade,
  * so the last row can rest above it.
+ *
+ * Rows come one of two ways:
+ * - `data` + `renderItem` + `keyExtractor`: a virtualised `FlatList` (COR-155),
+ *   so a project with hundreds of schedules or secrets mounts only the rows on
+ *   screen. Draw each row as a `SettingsGroupItem` (settings-list) to keep the
+ *   group's look. `header` / `footer` scroll with the rows.
+ * - `children`: a plain `ScrollView`, for a short fixed page (project Settings).
  */
 import * as React from 'react';
-import { RefreshControl, View } from 'react-native';
+import { RefreshControl, View, type ListRenderItem } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -30,7 +37,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
 import { haptics } from '@/lib/haptics';
 
-interface PageListProps {
+interface PageListProps<T = unknown> {
   isLoading?: boolean;
   /** Shown with "Try again" when set. Pass it only when there is nothing to list. */
   errorMessage?: string | null;
@@ -44,9 +51,13 @@ interface PageListProps {
   /** Content below the rows that scrolls with them. */
   footer?: React.ReactNode;
   children?: React.ReactNode;
+  /** Virtualised rows. With `data`, `children` is ignored. */
+  data?: readonly T[];
+  renderItem?: (item: T, index: number) => React.ReactElement | null;
+  keyExtractor?: (item: T, index: number) => string;
 }
 
-export function PageList({
+export function PageList<T = unknown>({
   isLoading = false,
   errorMessage = null,
   onRetry,
@@ -55,7 +66,10 @@ export function PageList({
   header,
   footer,
   children,
-}: PageListProps) {
+  data,
+  renderItem,
+  keyExtractor,
+}: PageListProps<T>) {
   const insets = useSafeAreaInsets();
   const { onScroll, topFadeStyle } = useScrollFade();
   const [pulling, setPulling] = React.useState(false);
@@ -65,58 +79,133 @@ export function PageList({
     void onRefresh().finally(() => setPulling(false));
   }, [onRefresh]);
 
+  const refreshControl = onRefresh ? (
+    <RefreshControl refreshing={pulling} onRefresh={handlePull} />
+  ) : undefined;
+  const contentContainerStyle = { paddingBottom: BOTTOM_FADE_HEIGHT + insets.bottom };
+  const state = isLoading ? 'loading' : errorMessage ? 'error' : emptyLabel ? 'empty' : 'rows';
+
+  const flatRenderItem = React.useCallback<ListRenderItem<T>>(
+    ({ item, index }) => (renderItem ? renderItem(item, index) : null),
+    [renderItem]
+  );
+
+  if (data) {
+    return (
+      <View className="flex-1">
+        <Animated.FlatList
+          style={{ flex: 1 }}
+          data={state === 'rows' ? (data as T[]) : EMPTY}
+          renderItem={flatRenderItem}
+          keyExtractor={keyExtractor}
+          ListHeaderComponent={
+            state === 'rows' ? (
+              <>{header}</>
+            ) : (
+              <PageListState
+                state={state}
+                errorMessage={errorMessage}
+                emptyLabel={emptyLabel}
+                onRetry={onRetry}
+              />
+            )
+          }
+          ListFooterComponent={footer ? <>{footer}</> : null}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+          contentContainerStyle={contentContainerStyle}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          initialNumToRender={16}
+          windowSize={11}
+          refreshControl={refreshControl}
+        />
+        <TopFade style={topFadeStyle} />
+        <BottomFade />
+      </View>
+    );
+  }
+
   return (
     <View className="flex-1">
       <Animated.ScrollView
         className="flex-1"
         onScroll={onScroll}
         scrollEventThrottle={16}
-        contentContainerStyle={{ paddingBottom: BOTTOM_FADE_HEIGHT + insets.bottom }}
+        contentContainerStyle={contentContainerStyle}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        refreshControl={
-          onRefresh ? <RefreshControl refreshing={pulling} onRefresh={handlePull} /> : undefined
-        }>
-        {isLoading ? (
-          <View className="gap-3 px-4 pt-3">
-            <Skeleton className="h-12 w-full rounded-xl" />
-            <Skeleton className="h-12 w-full rounded-xl" />
-            <Skeleton className="h-12 w-full rounded-xl" />
-          </View>
-        ) : errorMessage ? (
-          <View className="items-center gap-4 px-6 pt-16">
-            <Text variant="muted" className="text-center">
-              {errorMessage}
-            </Text>
-            {onRetry ? (
-              <Button
-                variant="secondary"
-                size="lg"
-                className="rounded-full"
-                onPress={() => {
-                  haptics.tap();
-                  onRetry();
-                }}>
-                <Text>Try again</Text>
-              </Button>
-            ) : null}
-          </View>
-        ) : emptyLabel ? (
-          <View className="items-center px-6 pt-16">
-            <Text variant="muted" className="text-center">
-              {emptyLabel}
-            </Text>
-          </View>
-        ) : (
+        refreshControl={refreshControl}>
+        {state === 'rows' ? (
           <>
             {header}
             {children}
           </>
+        ) : (
+          <PageListState
+            state={state}
+            errorMessage={errorMessage}
+            emptyLabel={emptyLabel}
+            onRetry={onRetry}
+          />
         )}
         {footer}
       </Animated.ScrollView>
       <TopFade style={topFadeStyle} />
       <BottomFade />
+    </View>
+  );
+}
+
+const EMPTY: never[] = [];
+
+/** The loading / error / empty body, shared by both modes. */
+function PageListState({
+  state,
+  errorMessage,
+  emptyLabel,
+  onRetry,
+}: {
+  state: 'loading' | 'error' | 'empty';
+  errorMessage: string | null;
+  emptyLabel: string | null;
+  onRetry?: () => void;
+}) {
+  if (state === 'loading') {
+    return (
+      <View className="gap-3 px-4 pt-3">
+        <Skeleton className="h-12 w-full rounded-xl" />
+        <Skeleton className="h-12 w-full rounded-xl" />
+        <Skeleton className="h-12 w-full rounded-xl" />
+      </View>
+    );
+  }
+  if (state === 'error') {
+    return (
+      <View className="items-center gap-4 px-6 pt-16">
+        <Text variant="muted" className="text-center">
+          {errorMessage}
+        </Text>
+        {onRetry ? (
+          <Button
+            variant="secondary"
+            size="lg"
+            className="rounded-full"
+            onPress={() => {
+              haptics.tap();
+              onRetry();
+            }}>
+            <Text>Try again</Text>
+          </Button>
+        ) : null}
+      </View>
+    );
+  }
+  return (
+    <View className="items-center px-6 pt-16">
+      <Text variant="muted" className="text-center">
+        {emptyLabel}
+      </Text>
     </View>
   );
 }

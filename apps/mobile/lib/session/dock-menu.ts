@@ -1,21 +1,17 @@
 /**
- * dock-menu — small pure-data tables for two unrelated project surfaces.
+ * dock-menu — the project Settings page's ("page:settings", `SettingsNavPage`)
+ * "Customize" group: Schedules and Secrets, the two sections mobile still
+ * keeps as in-app pages. Each row opens its page as a sub-page of project
+ * Settings (`openSubPage`). Nothing here opens a provider or models page:
+ * mobile has no models screen.
  *
- * `DockIconKey` / `PageContextMenuSheet`: icon keys for the per-page `···`
- * context menu (`components/session/PageContextMenuSheet.tsx`) — the
- * Workspace page's New agent / New skill / New command / New project
- * prompts, and the Files page's rename/delete rows. These start an
- * agent-led session or a file action; they do not open a page.
- *
- * `PROJECT_CUSTOMIZE_ITEMS`: the project Settings page's ("page:settings",
- * `SettingsNavPage`) "Customize" group — Schedules and Secrets, the two
- * sections mobile still keeps as in-app pages. The project sheet
- * (`CustomizeSheet`, `CUSTOMIZE_SHEET_GROUPS`) that used to list every
- * section is deleted (COR-123/COR-160 Task 3): Agents, Skills, Members and
- * Terminal have no mobile page any more; Review moves into the drawer
- * (Task 4); Files stays reachable from the drawer only. Members and "More on
- * kortix.com" are web-handoff rows `SettingsNavPage` adds itself
- * (`lib/projects/web-project-links.ts`), not data here.
+ * The project sheet (`CustomizeSheet`) that used to list every section is
+ * deleted (COR-123/COR-160 Task 3): Agents, Skills, Members and Terminal
+ * have no mobile page any more; Review is in the drawer; Files is the
+ * drawer's `files` route. The per-page `···` menu (`PageContextMenuSheet`)
+ * is deleted with the Workspace and Files pages it served (COR-156).
+ * Members and "More on kortix.com" are web-handoff rows `SettingsNavPage`
+ * adds itself (`lib/projects/web-project-links.ts`), not data here.
  *
  * Pure data only. No React, no icons, no zustand: this module is
  * unit-tested under `bun test`, which cannot load native modules. Icon keys
@@ -24,13 +20,8 @@
 
 import type { SubPageId } from './project-stack';
 
-export type DockIconKey =
-  // page context menu rows (PageContextMenuSheet)
-  | 'files' | 'settings' | 'rename' | 'delete'
-  // Workspace "···" prompts (PageContextMenuSheet)
-  | 'agents' | 'skills' | 'terminal'
-  // project Settings page, Customize group
-  | 'schedules' | 'secrets';
+/** The Customize group's row icons. */
+export type DockIconKey = 'schedules' | 'secrets';
 
 export interface ProjectCustomizeItem {
   kind: 'item';

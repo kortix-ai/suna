@@ -14,7 +14,6 @@ import {
   Pressable,
   ScrollView,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -43,8 +42,9 @@ import { SheetTextInput } from '@/components/kortix/SheetInput';
 import { POP_IN, PUSH_IN, SheetBackButton } from '@/components/kortix/sheet-push';
 import { Icon } from '@/components/ui/icon';
 import { PageList } from '@/components/kortix/page-list';
-import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
+import { SettingsGroup, SettingsGroupItem, SettingsRow } from '@/components/kortix/settings-list';
 import { useThemeColors } from '@/lib/theme-colors';
+import { MONO_FONT_FAMILY } from '@/lib/utils/mono-font';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import {
   useProjectSecrets,
@@ -57,6 +57,8 @@ import {
 import type { ProjectSecret, ConnectorSharing } from '@/lib/projects/projects-client';
 import { haptics } from '@/lib/haptics';
 import { KortixBottomSheetModal, SheetTitleRow } from '@/components/kortix/sheet';
+import { useConfirmDialog } from '@/components/kortix/confirm-dialog';
+import { useToast } from '@/components/kortix/toast-provider';
 
 interface PageTabLike {
   id: string;
@@ -74,7 +76,7 @@ interface SecretsNavPageProps {
   isRightDrawerOpen?: boolean;
 }
 
-const MONO = 'Menlo';
+const MONO = MONO_FONT_FAMILY;
 const SECRET_NAME_RE = /^[A-Z_][A-Z0-9_]{0,63}$/;
 const sanitizeName = (t: string) => t.toUpperCase().replace(/[^A-Z0-9_]/g, '');
 
@@ -257,6 +259,7 @@ function SharedSecretForm({
   const theme = useThemeColors();
   const insets = useSafeAreaInsets();
   const upsert = useUpsertProjectSecret(projectId);
+  const toast = useToast();
 
   const [name, setName] = useState(initialName);
   const [value, setValue] = useState('');
@@ -279,7 +282,7 @@ function SharedSecretForm({
       { name, ...(value.trim() ? { value } : {}), sharing },
       {
         onSuccess: onClose,
-        onError: (err: any) => Alert.alert('Save failed', err?.message || 'Could not save secret.'),
+        onError: (err: any) => toast.error('Unable to save the secret', { description: err?.message || 'Try again.' }),
       },
     );
   };
@@ -354,6 +357,7 @@ function PersonalSecretForm({
   const theme = useThemeColors();
   const insets = useSafeAreaInsets();
   const setPersonal = useSetPersonalProjectSecret(projectId);
+  const toast = useToast();
 
   const [name, setName] = useState(initialName);
   const [value, setValue] = useState('');
@@ -373,7 +377,7 @@ function PersonalSecretForm({
       { name, value, active: true },
       {
         onSuccess: onClose,
-        onError: (err: any) => Alert.alert('Save failed', err?.message || 'Could not save your value.'),
+        onError: (err: any) => toast.error('Unable to save your value', { description: err?.message || 'Try again.' }),
       },
     );
   };
@@ -475,6 +479,8 @@ function SecretDetailSheet({
   const setPersonal = useSetPersonalProjectSecret(projectId);
   const deletePersonal = useDeletePersonalProjectSecret(projectId);
   const deleteShared = useDeleteProjectSecret(projectId);
+  const toast = useToast();
+  const { confirm, dialog: confirmDialog } = useConfirmDialog();
 
   const s = row.secret;
   const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
@@ -505,26 +511,32 @@ function SecretDetailSheet({
   };
 
   const confirmRemovePersonal = () => {
-    Alert.alert('Remove your value', `Remove your personal value for ${row.name}?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove', style: 'destructive', onPress: () => {
-          haptics.medium();
-          deletePersonal.mutate(row.name, { onError: (e: any) => Alert.alert('Failed', e?.message || 'Could not remove.') });
-        },
+    confirm({
+      title: 'Remove your value',
+      description: `Remove your personal value for ${row.name}?`,
+      confirmLabel: 'Remove',
+      destructive: true,
+      onConfirm: () => {
+        haptics.medium();
+        deletePersonal.mutate(row.name, {
+          onError: (e: any) => toast.error('Unable to remove your value', { description: e?.message || 'Try again.' }),
+        });
       },
-    ]);
+    });
   };
   const confirmDeleteShared = () => {
-    Alert.alert('Delete shared value', `Delete the shared value for ${row.name}? Members' own values stay.`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete', style: 'destructive', onPress: () => {
-          haptics.medium();
-          deleteShared.mutate(row.name, { onError: (e: any) => Alert.alert('Failed', e?.message || 'Could not delete.') });
-        },
+    confirm({
+      title: 'Delete shared value',
+      description: `Delete the shared value for ${row.name}? Members' own values stay.`,
+      confirmLabel: 'Delete',
+      destructive: true,
+      onConfirm: () => {
+        haptics.medium();
+        deleteShared.mutate(row.name, {
+          onError: (e: any) => toast.error('Unable to delete the shared value', { description: e?.message || 'Try again.' }),
+        });
       },
-    ]);
+    });
   };
 
   // A value form pushes in over the detail, the activity sheet's motion
@@ -611,6 +623,7 @@ function SecretDetailSheet({
           </SettingsGroup>
         ) : null}
       </BottomSheetScrollView>
+      {confirmDialog}
     </Animated.View>
   );
 }
@@ -716,22 +729,25 @@ export function SecretsNavPage({
           placeholder="Search secrets"
         />
 
-        <PageList
+        <PageList<Row>
           isLoading={isLoading}
           errorMessage={isError && rows.length === 0 ? ((error as Error)?.message ?? 'Unable to load secrets') : null}
           onRetry={() => void refetch()}
           onRefresh={() => refetch()}
-          emptyLabel={filtered.length === 0 ? (rows.length === 0 ? 'No secrets yet' : 'No matching secrets') : null}>
-          {/* Settings rows in a group (Jay, 2026-09-22), the Agents list's layout. */}
-          <View className="px-4 pt-1">
-            <SettingsGroup>
-              {filtered.map((row) => {
-                const s = row.secret;
-                const scope = sharingScopeLabel(s?.sharing);
-                const need = row.required ? 'Required' : row.optional ? 'Optional' : null;
-                return (
+          emptyLabel={filtered.length === 0 ? (rows.length === 0 ? 'No secrets yet' : 'No matching secrets') : null}
+          // Settings rows in a group (Jay, 2026-09-22), the Agents list's
+          // layout; virtualised, one `SettingsGroupItem` per row (COR-155).
+          header={<View className="h-1" />}
+          data={filtered}
+          keyExtractor={(row) => row.name}
+          renderItem={(row, index) => {
+            const s = row.secret;
+            const scope = sharingScopeLabel(s?.sharing);
+            const need = row.required ? 'Required' : row.optional ? 'Optional' : null;
+            return (
+              <View className="px-4">
+                <SettingsGroupItem index={index} count={filtered.length}>
                   <SettingsRow
-                    key={row.name}
                     label={row.name}
                     description={[need, statusText(s), scope].filter(Boolean).join(' · ')}
                     onPress={() => openRow(row.name)}
@@ -745,11 +761,11 @@ export function SecretsNavPage({
                       </View>
                     }
                   />
-                );
-              })}
-            </SettingsGroup>
-          </View>
-        </PageList>
+                </SettingsGroupItem>
+              </View>
+            );
+          }}
+        />
       </PageContent>
 
       {/* Add */}

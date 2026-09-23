@@ -492,7 +492,7 @@ export function ComposioConnectorContent({
         {/* Header with back button, title, and description */}
         <View className="mb-4 flex-row items-center">
           {onBack && (
-            <Pressable onPress={onBack} className="flex-row items-center active:opacity-70">
+            <Pressable onPress={onBack} className="flex-row items-center active:opacity-70" accessibilityRole="button" accessibilityLabel="Back">
               <Icon as={ArrowLeft} size={20} className="text-foreground" />
             </Pressable>
           )}
@@ -883,7 +883,7 @@ export function ComposioConnectorContent({
       <View className="mb-4">
         {/* Header with back button, title, and description */}
         <View className="mb-4 flex-row items-center">
-          <Pressable onPress={handleBack} className="flex-row items-center active:opacity-70">
+          <Pressable onPress={handleBack} className="flex-row items-center active:opacity-70" accessibilityRole="button" accessibilityLabel="Back">
             <Icon as={ArrowLeft} size={20} className="text-foreground" />
           </Pressable>
           <View className="ml-3 flex-1">
@@ -1040,7 +1040,7 @@ export function ComposioConnector({
       <View className="px-6 pt-6">
         {/* Header with back button */}
         <View className="mb-4 flex-row items-center">
-          <Pressable onPress={onClose} className="flex-row items-center active:opacity-70">
+          <Pressable onPress={onClose} className="flex-row items-center active:opacity-70" accessibilityRole="button" accessibilityLabel="Back">
             <Icon as={ArrowLeft} size={20} className="text-foreground" />
           </Pressable>
           <View className="ml-3 flex-1">

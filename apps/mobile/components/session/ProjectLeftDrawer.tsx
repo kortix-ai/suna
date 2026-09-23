@@ -95,6 +95,7 @@ import {
 } from '@/lib/session/session-list';
 import { useTabStore } from '@/stores/tab-store';
 import { cn } from '@/lib/utils/index';
+import { BUTTON_LABEL_MAX_FONT_SCALE } from '@/lib/ui/font-scale';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 
 /** `Button size="lg"` height: the New session pill and the avatar match it. */
@@ -546,7 +547,7 @@ export function ProjectLeftDrawer({
                   </Text>
                   <View className="mt-1">
                     <Button variant="secondary" size="sm" className="rounded-full" onPress={handleRetrySessions}>
-                      <Text>Try again</Text>
+                      <Text maxFontSizeMultiplier={BUTTON_LABEL_MAX_FONT_SCALE.sm}>Try again</Text>
                     </Button>
                   </View>
                 </View>
@@ -613,7 +614,7 @@ export function ProjectLeftDrawer({
           <Button size="lg" className="rounded-full" onPress={handleNewSession}>
             {/* Web's New session glyph (project-sidebar.tsx), flipped horizontally: tip up-right. */}
             <Icon as={NavigationArrowIcon} size={20} style={{ transform: [{ scaleX: -1 }] }} />
-            <Text>New session</Text>
+            <Text maxFontSizeMultiplier={BUTTON_LABEL_MAX_FONT_SCALE.lg}>New session</Text>
           </Button>
         </View>
       </View>

@@ -278,6 +278,42 @@ export function SettingsGroup({
   );
 }
 
+/**
+ * One row of a `SettingsGroup`, drawn on its own — for a virtualised list
+ * (`FlatList`, `PageList` `data`), where the rows cannot share one group
+ * `View`. `index` / `count` place it in its group: the first row takes the
+ * group's top corners, the last its bottom corners, and every row after the
+ * first sits `ROW_GAP` below the one before. It reads the same as the row
+ * inside a `SettingsGroup` (COR-155).
+ */
+export function SettingsGroupItem({
+  index,
+  count,
+  className,
+  children,
+}: {
+  index: number;
+  count: number;
+  /** Row surface override, as `SettingsGroup`'s `className`. */
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const surface = React.useContext(SurfaceContext);
+  return (
+    <View
+      style={index > 0 ? { marginTop: ROW_GAP } : undefined}
+      className={cn(
+        'overflow-hidden rounded-sm',
+        surface === 'sheet' ? SHEET_ROW_SURFACE : 'bg-card',
+        index === 0 && 'rounded-t-2xl',
+        index === count - 1 && 'rounded-b-2xl',
+        className
+      )}>
+      {children}
+    </View>
+  );
+}
+
 export interface SettingsRowProps {
   /** Icon (from `@/lib/icons`) in the 20pt leading slot. */
   icon?: AppIcon;

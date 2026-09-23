@@ -13,7 +13,6 @@ import {
   Pressable,
   ScrollView,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -39,6 +38,7 @@ import { SearchListHeader } from '@/components/kortix/search-list-header';
 import { PageList, StatusDot } from '@/components/kortix/page-list';
 import { PinnedBar, usePinnedBarInset } from '@/components/kortix/pinned-bar';
 import { useThemeColors } from '@/lib/theme-colors';
+import { MONO_FONT_FAMILY } from '@/lib/utils/mono-font';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import { AgentPickerField, ModelPickerField } from './TriggerAgentModelFields';
 import { PromptEditView, PromptPreview } from './TriggerPromptField';
@@ -55,15 +55,22 @@ import type { ProjectTrigger } from '@/lib/projects/projects-client';
 import {
   CRON_PRESETS,
   DEFAULT_CRON,
-  TIMEZONES,
   RUN_AT_PRESETS,
   describeCron,
   describeRunAt,
   relativeTime,
 } from '@/lib/projects/triggers-format';
+import {
+  deviceTimezone,
+  normalizeCron,
+  timezoneOptions,
+  toFiveFieldCron,
+} from '@/lib/projects/schedule-input';
 import { haptics } from '@/lib/haptics';
 import { KortixBottomSheetModal, SheetTitleRow, useSheetBackground } from '@/components/kortix/sheet';
-import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
+import { SettingsGroup, SettingsGroupItem, SettingsRow } from '@/components/kortix/settings-list';
+import { useConfirmDialog } from '@/components/kortix/confirm-dialog';
+import { useToast } from '@/components/kortix/toast-provider';
 
 interface PageTabLike {
   id: string;
@@ -81,7 +88,7 @@ interface SchedulesPageProps {
   isRightDrawerOpen?: boolean;
 }
 
-const MONO = 'Menlo';
+const MONO = MONO_FONT_FAMILY;
 /** The detail sheet's pinned action row: `Button size="lg"`, 44pt. */
 const ACTION_BAR_HEIGHT = 44;
 
@@ -101,9 +108,15 @@ function ScheduleCreateSheet({
   const create = useCreateProjectTrigger(projectId);
 
   const [mode, setMode] = useState<'recurring' | 'once'>('recurring');
-  const [cron, setCron] = useState(DEFAULT_CRON);
+  // The field shows the usual 5-field cron; `normalizeCron` sends the stored
+  // 6-field form (COR-155).
+  const [cron, setCron] = useState(() => toFiveFieldCron(DEFAULT_CRON));
   const [runAt, setRunAt] = useState<string | null>(null);
-  const [timezone, setTimezone] = useState('UTC');
+  // The device's zone, not UTC (COR-155). The picker lists it first when the
+  // fixed list lacks it.
+  const [timezone, setTimezone] = useState(deviceTimezone);
+  const zones = useMemo(() => timezoneOptions(deviceTimezone()), []);
+  const cronResult = useMemo(() => normalizeCron(cron), [cron]);
   const [tzOpen, setTzOpen] = useState(false);
   const [name, setName] = useState('');
   const [prompt, setPrompt] = useState('');
@@ -121,7 +134,7 @@ function ScheduleCreateSheet({
   const canSave =
     name.trim().length > 0 &&
     prompt.trim().length > 0 &&
-    (mode === 'recurring' ? cron.trim().length > 0 : !!runAt) &&
+    (mode === 'recurring' ? cronResult.ok : !!runAt) &&
     !create.isPending;
 
   const handleSave = () => {
@@ -136,7 +149,9 @@ function ScheduleCreateSheet({
         ...(agent ? { agent } : {}),
         ...(model ? { model } : {}),
         enabled: true,
-        ...(mode === 'recurring' ? { cron: cron.trim(), timezone } : { run_at: runAt!, timezone }),
+        ...(mode === 'recurring' && cronResult.ok
+          ? { cron: cronResult.cron, timezone }
+          : { run_at: runAt!, timezone }),
       },
       {
         onSuccess: () => { haptics.success(); onClose(); },
@@ -167,17 +182,22 @@ function ScheduleCreateSheet({
             <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 8 }}>Schedule</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
               {CRON_PRESETS.map((p) => {
-                const on = cron === p.cron;
+                const on = cronResult.ok && cronResult.cron === p.cron;
                 return (
-                  <Pressable key={p.cron} onPress={() => { haptics.selection(); setCron(p.cron); }} style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 9999, borderWidth: 1.5, borderColor: on ? theme.primary : border, backgroundColor: on ? theme.primaryLight : 'transparent' }}>
+                  <Pressable key={p.cron} onPress={() => { haptics.selection(); setCron(toFiveFieldCron(p.cron)); }} style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 9999, borderWidth: 1.5, borderColor: on ? theme.primary : border, backgroundColor: on ? theme.primaryLight : 'transparent' }}>
                     <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: on ? theme.primary : muted }}>{p.label}</Text>
                   </Pressable>
                 );
               })}
             </View>
             <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 6 }}>Custom cron</Text>
-            <BottomSheetTextInput value={cron} onChangeText={setCron} placeholder="0 0 9 * * *" placeholderTextColor={muted} autoCapitalize="none" autoCorrect={false} style={[input, { fontFamily: MONO }]} />
-            <Text style={{ fontSize: 11.5, color: muted, marginTop: 6 }}>6 fields: sec min hour day month weekday</Text>
+            <BottomSheetTextInput value={cron} onChangeText={setCron} placeholder="0 9 * * *" placeholderTextColor={muted} autoCapitalize="none" autoCorrect={false} style={[input, { fontFamily: MONO }]} />
+            {/* No helper line (inputs carry no descriptions); a line shows only
+                when the cron is invalid: it names the field and the range, or
+                the 5-field format. Create stays disabled until it is valid. */}
+            {!cronResult.ok ? (
+              <Text style={{ fontSize: 11.5, color: destructiveColor, marginTop: 6 }}>{cronResult.error}</Text>
+            ) : null}
 
             {/* timezone */}
             <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted, marginTop: 16, marginBottom: 6 }}>Timezone</Text>
@@ -187,7 +207,7 @@ function ScheduleCreateSheet({
             </Pressable>
             {tzOpen && (
               <View style={{ marginTop: 8, borderRadius: 11, borderWidth: 1, borderColor: border, overflow: 'hidden' }}>
-                {TIMEZONES.map((tz, i) => (
+                {zones.map((tz, i) => (
                   <Pressable key={tz} onPress={() => { haptics.selection(); setTimezone(tz); setTzOpen(false); }} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 11, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: border }}>
                     <Text style={{ flex: 1, fontSize: 13.5, fontFamily: MONO, color: fg }}>{tz}</Text>
                     {timezone === tz && <Icon as={Check} size={15} color={theme.primary} />}
@@ -256,6 +276,8 @@ function ScheduleDetailSheet({
   const fire = useFireProjectTrigger(projectId);
   const update = useUpdateProjectTrigger(projectId);
   const del = useDeleteProjectTrigger(projectId);
+  const toast = useToast();
+  const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const [editingPrompt, setEditingPrompt] = useState(false);
   // The detail slides back in only after the editor was open, never on first open.
   const [returning, setReturning] = useState(false);
@@ -272,44 +294,53 @@ function ScheduleDetailSheet({
   const handleFire = () => {
     haptics.tap();
     fire.mutate(trigger.slug, {
-      onSuccess: (res) => Alert.alert(
-        res.status === 'failed' ? 'Failed to fire' : res.status === 'queued' ? 'Queued' : 'Fired',
-        res.status === 'failed' ? (res.error || res.reason || 'Could not fire.') : 'The schedule was triggered.',
-      ),
-      onError: (e: any) => Alert.alert('Failed', e?.message || 'Could not fire.'),
+      onSuccess: (res) => {
+        if (res.status === 'failed') {
+          toast.error('Unable to fire the schedule', { description: res.error || res.reason || 'Try again.' });
+        } else {
+          toast.success(res.status === 'queued' ? 'Schedule queued' : 'Schedule fired');
+        }
+      },
+      onError: (e: any) => toast.error('Unable to fire the schedule', { description: e?.message || 'Try again.' }),
     });
   };
   const togglePaused = () => {
     haptics.tap();
     update.mutate({ slug: trigger.slug, input: { enabled: !trigger.enabled } }, {
-      onError: (e: any) => Alert.alert('Failed', e?.message || 'Could not update.'),
+      onError: (e: any) => toast.error('Unable to update the schedule', { description: e?.message || 'Try again.' }),
     });
   };
   const handleSavePrompt = (next: string) => {
     haptics.tap();
     update.mutate({ slug: trigger.slug, input: { prompt_template: next } }, {
       onSuccess: closePromptEditor,
-      onError: (e: any) => Alert.alert('Failed', e?.message || 'Could not save prompt.'),
+      onError: (e: any) => toast.error('Unable to save the prompt', { description: e?.message || 'Try again.' }),
     });
   };
   const handleAgentChange = (agent: string) => {
     update.mutate({ slug: trigger.slug, input: { agent } }, {
-      onError: (e: any) => Alert.alert('Failed', e?.message || 'Could not update agent.'),
+      onError: (e: any) => toast.error('Unable to change the agent', { description: e?.message || 'Try again.' }),
     });
   };
   const handleModelChange = (model: string | null) => {
     update.mutate({ slug: trigger.slug, input: { model } }, {
-      onError: (e: any) => Alert.alert('Failed', e?.message || 'Could not update model.'),
+      onError: (e: any) => toast.error('Unable to change the model', { description: e?.message || 'Try again.' }),
     });
   };
   const handleDelete = () => {
-    Alert.alert('Remove schedule', `Remove "${trigger.name || trigger.slug}"? This stops future runs.`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: () => {
+    confirm({
+      title: 'Remove schedule',
+      description: `Remove "${trigger.name || trigger.slug}"? This stops future runs.`,
+      confirmLabel: 'Remove',
+      destructive: true,
+      onConfirm: () => {
         haptics.medium();
-        del.mutate(trigger.slug, { onSuccess: onClose, onError: (e: any) => Alert.alert('Failed', e?.message || 'Could not remove.') });
-      } },
-    ]);
+        del.mutate(trigger.slug, {
+          onSuccess: onClose,
+          onError: (e: any) => toast.error('Unable to remove the schedule', { description: e?.message || 'Try again.' }),
+        });
+      },
+    });
   };
 
   if (editingPrompt) {
@@ -384,6 +415,7 @@ function ScheduleDetailSheet({
         </Button>
       </PinnedBar>
       </View>
+      {confirmDialog}
     </Animated.View>
   );
 }
@@ -457,7 +489,7 @@ export function SchedulesPage({
 
         <SearchListHeader value={search} onChangeText={setSearch} placeholder="Search schedules" />
 
-        <PageList
+        <PageList<ProjectTrigger>
           isLoading={isLoading}
           errorMessage={!forbidden && isError && all.length === 0 ? ((error as Error)?.message ?? 'Unable to load schedules') : null}
           onRetry={() => void refetch()}
@@ -469,13 +501,15 @@ export function SchedulesPage({
                 ? all.length === 0 ? 'No schedules yet' : 'No matching schedules'
                 : null
           }
->
-          {/* Settings rows in a group (Jay, 2026-09-22), the Agents list's layout. */}
-          <View className="px-4 pt-1">
-            <SettingsGroup>
-              {filtered.map((t) => (
+          // Settings rows in a group (Jay, 2026-09-22), the Agents list's
+          // layout; virtualised, one `SettingsGroupItem` per row (COR-155).
+          header={<View className="h-1" />}
+          data={filtered}
+          keyExtractor={(t) => t.slug}
+          renderItem={(t, index) => (
+            <View className="px-4">
+              <SettingsGroupItem index={index} count={filtered.length}>
                 <SettingsRow
-                  key={t.slug}
                   label={t.name || describeCron(t.cron)}
                   description={`${t.run_at ? 'One-off' : describeCron(t.cron)} · ${relativeTime(t.last_fired_at)} · ${t.agent || 'default'}`}
                   onPress={() => openRow(t.slug)}
@@ -486,10 +520,10 @@ export function SchedulesPage({
                     </View>
                   }
                 />
-              ))}
-            </SettingsGroup>
-          </View>
-        </PageList>
+              </SettingsGroupItem>
+            </View>
+          )}
+        />
       </PageContent>
 
       <KortixBottomSheetModal

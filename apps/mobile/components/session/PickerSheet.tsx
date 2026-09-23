@@ -124,8 +124,7 @@ export const PickerSheet = React.forwardRef<SheetRef, PickerSheetProps>(
           action?.();
         }}
         keyboardBehavior="interactive"
-        keyboardBlurBehavior="restore"
-        android_keyboardInputMode="adjustResize">
+        keyboardBlurBehavior="restore">
         <View style={tabs ? { flex: 1 } : undefined}>
         <BottomSheetScrollView
           style={tabs ? { flex: 1 } : undefined}

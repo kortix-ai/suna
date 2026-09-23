@@ -31,7 +31,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react';
-import { Image, Linking, View } from 'react-native';
+import { Image, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTypes';
 import { useColorScheme } from 'nativewind';
@@ -64,6 +64,7 @@ import { THEME } from '@/lib/utils/theme';
 import { HighlightedCode, MarkdownFrontmatterCard, ToolMarkdown, useToolNavigation } from '../shared/infrastructure';
 import { ToolScroll } from '../shared/surface';
 import { FONT_MEDIUM, TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from '../shared/styles';
+import { openLink } from '@/lib/utils/open-link';
 
 /** Web `h-[420px]` — media and file viewers in the inline card. */
 export const SHOW_MEDIA_HEIGHT = 420;
@@ -232,7 +233,7 @@ function HtmlPreview({ html, title, aspectRatio, fill }: { html: string; title: 
       navigationType: request.navigationType,
       externalRequiresClick: true,
     });
-    if (action === 'open-external') Linking.openURL(request.url).catch(() => {});
+    if (action === 'open-external') openLink(request.url).catch(() => {});
     return action === 'allow';
   }, []);
   const frame = fill ? { flex: 1 } : aspectRatio ? { width: '100%' as const, aspectRatio } : { height: SHOW_HTML_HEIGHT };

@@ -92,8 +92,7 @@ export const SessionFilesSheet = React.forwardRef<SheetRef, SessionFilesSheetPro
           enablePanDownToClose
           onDismiss={() => setOpen(false)}
           keyboardBehavior="extend"
-          keyboardBlurBehavior="restore"
-          android_keyboardInputMode="adjustResize">
+          keyboardBlurBehavior="restore">
           {open && sessionId ? (
             <SessionFilesBody
               sessionId={sessionId}

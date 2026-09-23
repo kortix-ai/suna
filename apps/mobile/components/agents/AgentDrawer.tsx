@@ -76,7 +76,7 @@ function BackButton({ onPress }: { onPress: () => void }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   return (
-    <Button variant="ghost" size="icon" onPress={onPress}>
+    <Button variant="ghost" size="icon" onPress={onPress} accessibilityLabel="Back">
       <ArrowLeft size={20} color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
     </Button>
   );
@@ -313,6 +313,7 @@ export function AgentDrawer({
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                     hasFreeTier ? handleUpgradeRequired() : onCreateAgent();
                   }}
+                  accessibilityLabel={hasFreeTier ? 'Upgrade to create an agent' : 'Create agent'}
                 >
                   {hasFreeTier ? (
                     <Sparkles size={16} color={THEME.accent.green} />
@@ -384,6 +385,7 @@ export function AgentDrawer({
                     onClose?.();
                   }
                 }}
+                accessibilityLabel="Instructions"
               >
                 <Brain size={18} color={c.foreground} />
               </Button>
@@ -398,6 +400,7 @@ export function AgentDrawer({
                     onClose?.();
                   }
                 }}
+                accessibilityLabel="Tools"
               >
                 <Wrench size={18} color={c.foreground} />
               </Button>
@@ -412,6 +415,7 @@ export function AgentDrawer({
                     onClose?.();
                   }
                 }}
+                accessibilityLabel="Connections"
               >
                 <Server size={18} color={c.foreground} />
               </Button>
@@ -426,6 +430,7 @@ export function AgentDrawer({
                     onClose?.();
                   }
                 }}
+                accessibilityLabel="Triggers"
               >
                 <Zap size={18} color={c.foreground} />
               </Button>
@@ -474,6 +479,7 @@ export function AgentDrawer({
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               hasFreeTier ? handleUpgradeRequired() : onCreateAgent();
             }}
+            accessibilityLabel={hasFreeTier ? 'Upgrade to create an agent' : 'Create agent'}
           >
             {hasFreeTier ? (
               <Sparkles size={16} color={THEME.accent.green} />
