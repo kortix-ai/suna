@@ -33,12 +33,14 @@ import {
   PNPM_SHA256_AMD64,
   PNPM_SHA256_ARM64,
   PNPM_VERSION,
+  PI_SYSTEM_PACKAGES,
   PYTHON_PACKAGE_FLOOR,
   PYTHON_PACKAGE_FLOOR_IMPORTS,
   PYTHON_VERSION,
   UV_SHA256_AMD64,
   UV_SHA256_ARM64,
   UV_VERSION,
+  assertPiSystemPackage,
 } from '../runtime-versions';
 import {
   SANDBOX_SHELL_TOOL_APT_LIST,
@@ -276,6 +278,29 @@ function buildOpencodeInstanceWarmupLines(opts: {
     // ours and limits cleanup accordingly.
     // Three cases, and only one of them may delete indiscriminately:
     `RUN bash /tmp/kortix-opencode-warmup instance ${cleanup} && rm -f /tmp/kortix-opencode-warmup`,
+    '',
+  ];
+}
+
+/** pi's global agent dir in the image; the daemon's KORTIX_PI_AGENT_DIR default. */
+export const PI_AGENT_DIR = '/opt/kortix/pi-agent';
+
+/**
+ * Install the pi system packages the way `pi install` installs a global one:
+ * the packages under `<agentDir>/npm`, the sources in `<agentDir>/settings.json`.
+ * Peers stay out (`--omit=peer`): pi supplies `typebox` and `@earendil-works/pi-*`
+ * to extensions itself. Install scripts do not run. An empty list adds no layer.
+ */
+export function piSystemPackageLines(packages: readonly string[]): string[] {
+  if (packages.length === 0) return [];
+  for (const source of packages) assertPiSystemPackage(source);
+  const specs = packages.map((source) => source.slice('npm:'.length)).join(' ');
+  return [
+    `RUN mkdir -p ${PI_AGENT_DIR}/npm \\`,
+    `    && cd ${PI_AGENT_DIR}/npm \\`,
+    `    && printf '{"name":"kortix-pi-system-packages","private":true}' > package.json \\`,
+    `    && npm install --omit=dev --omit=peer --ignore-scripts --no-audit --no-fund ${specs} \\`,
+    `    && printf '%s' '${JSON.stringify({ packages })}' > ${PI_AGENT_DIR}/settings.json`,
     '',
   ];
 }
@@ -592,6 +617,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     '    && rm -rf /tmp/opencode-deps-bundle-check \\',
     '    && echo "opencode-config-deps: baked tree bundles cleanly"',
     '',
+    ...piSystemPackageLines(PI_SYSTEM_PACKAGES),
     // Placed AFTER the agent-browser/Chromium layer above — see that block's
     // comment for why the order matters (this step's RUN text is never
     // cache-stable, so nothing cache-sensitive may sit downstream of it).

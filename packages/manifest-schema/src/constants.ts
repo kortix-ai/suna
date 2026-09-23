@@ -357,3 +357,7 @@ export const AGENT_THEME_COLORS_V2 = [
   'info',
 ] as const;
 export const HEX_COLOR_RE_V2 = /^#[0-9a-fA-F]{6}$/;
+
+/** A pi package source (`harnesses.pi.packages`): an exact npm pin, or a repo path starting with `./` that never climbs out with `..`. */
+export const PI_PACKAGE_NPM_RE = /^npm:(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*@\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
+export const PI_PACKAGE_PATH_RE = /^\.\/(?!.*(^|\/)\.\.(\/|$))[^\s:]+$/;

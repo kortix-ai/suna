@@ -792,6 +792,43 @@ connectors:
       'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nconnectors:\n  - slug: wat\n    provider: made-up\n',
   },
   {
+    name: 'v2: harnesses.pi.packages with npm pins, a filtered entry and a repo path is accepted',
+    format: 'yaml',
+    valid: true,
+    input:
+      'kortix_version: 2\ndefault_agent: w\nruntime: pi\nagents:\n  w: {}\nharnesses:\n  pi:\n    packages:\n      - npm:pi-web-access@0.30.0\n      - source: npm:@juicesharp/rpiv-todo@1.2.0\n        extensions: ["extensions/*.ts"]\n        skills: []\n      - ./.kortix/pi/audit.ts\n',
+  },
+  {
+    name: 'v2: harnesses.pi.packages npm source without an exact version rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nharnesses:\n  pi:\n    packages:\n      - npm:pi-web-access@^0.30.0\n',
+  },
+  {
+    name: 'v2: harnesses.pi.packages git source rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nharnesses:\n  pi:\n    packages:\n      - git:github.com/acme/pi-tools@v1\n',
+  },
+  {
+    name: 'v2: harnesses.pi.packages path escaping the repo rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nharnesses:\n  pi:\n    packages:\n      - ../outside.ts\n',
+  },
+  {
+    name: 'v2: an unknown harness rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nharnesses:\n  codex:\n    packages: []\n',
+  },
+  {
+    name: 'v2: an unknown key under harnesses.pi rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nharnesses:\n  pi:\n    extensions: [npm:pi-web-access@0.30.0]\n',
+  },
+  {
     name: 'v2: Kortix Apps map is accepted',
     format: 'yaml',
     valid: true,

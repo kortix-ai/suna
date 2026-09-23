@@ -52,6 +52,8 @@ import {
   DEPRECATED_KORTIX_PERMISSION_ALIASES,
   GRANTABLE_KORTIX_PERMISSIONS,
   HEX_COLOR_RE_V2,
+  PI_PACKAGE_NPM_RE,
+  PI_PACKAGE_PATH_RE,
   LEGACY_SANDBOX_KEYS,
   LEGACY_TOLERATED_KORTIX_PERMISSIONS,
   PERMISSION_ACTION_ONLY_KEYS_V2,
@@ -763,6 +765,41 @@ export function buildManifestV2Schema(): JsonSchemaFragment {
       // left to the imperative validator.
       default_agent: NON_EMPTY_STRING,
       runtime: { type: 'string', enum: [...V2_RUNTIME_VALUES] },
+      // Per-harness native settings. `pi.packages`: pi packages
+      // (https://pi.dev/packages) in pi's own settings format.
+      harnesses: {
+        type: 'object',
+        properties: {
+          pi: {
+            type: 'object',
+            properties: {
+              packages: {
+                type: 'array',
+                maxItems: 20,
+                items: {
+                  oneOf: [
+                    { type: 'string', anyOf: [{ pattern: PI_PACKAGE_NPM_RE.source }, { pattern: PI_PACKAGE_PATH_RE.source }] },
+                    {
+                      type: 'object',
+                      required: ['source'],
+                      properties: {
+                        source: { type: 'string', anyOf: [{ pattern: PI_PACKAGE_NPM_RE.source }, { pattern: PI_PACKAGE_PATH_RE.source }] },
+                        extensions: { type: 'array', items: { type: 'string' } },
+                        skills: { type: 'array', items: { type: 'string' } },
+                        prompts: { type: 'array', items: { type: 'string' } },
+                        themes: { type: 'array', items: { type: 'string' } },
+                      },
+                      additionalProperties: false,
+                    },
+                  ],
+                },
+              },
+            },
+            additionalProperties: false,
+          },
+        },
+        additionalProperties: false,
+      },
       agents: {
         type: 'object',
         minProperties: 1,

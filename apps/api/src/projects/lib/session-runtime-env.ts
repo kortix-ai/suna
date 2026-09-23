@@ -66,6 +66,8 @@ export interface SessionRuntimeEnvInput {
    * byte-for-byte unchanged. The daemon's `resolveHarness` rejects any other id.
    */
   harness?: 'opencode' | 'pi';
+  /** kortix.yaml `harnesses.pi.packages`; sent as `KORTIX_PI_PACKAGES` to a pi session only. */
+  piPackages?: unknown[];
 }
 
 /**
@@ -176,6 +178,7 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     KORTIX_REPOSITORY_ACCESS: allowsFullRepository ? '1' : '0',
     // Which harness kortixd boots. Absent = OpenCode (the daemon default).
     ...(input.harness === 'pi' ? { KORTIX_HARNESS: 'pi' } : {}),
+    ...(input.harness === 'pi' && input.piPackages?.length ? { KORTIX_PI_PACKAGES: JSON.stringify(input.piPackages) } : {}),
     // Frontend base for user-facing dashboard links — the agent/CLI must never
     // surface KORTIX_API_URL (the API host) to a human. See sandboxFrontendBaseUrl().
     ...(input.frontendUrl ? { KORTIX_FRONTEND_URL: input.frontendUrl } : {}),

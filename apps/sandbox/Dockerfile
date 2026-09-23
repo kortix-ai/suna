@@ -238,6 +238,18 @@ RUN mkdir -p /opt/kortix/opencode-config-deps \
     && bun build node_modules/axios/lib/utils.js node_modules/form-data/lib/form_data.js --target=bun --outdir=/tmp/opencode-deps-bundle-check \
     && rm -rf /tmp/opencode-deps-bundle-check
 
+# pi system packages (runtime-versions.json `piSystemPackages`), installed the
+# way `pi install` installs a global one. Same step as `piSystemPackageLines` in
+# packages/shared/src/sandbox/dockerfile-layer.ts; keep both in sync.
+RUN PI_PACKAGES="$(node -e "console.log((require('/tmp/kortix-runtime-versions.json').piSystemPackages || []).map((s) => s.slice(4)).join(' '))")" \
+    && if [ -n "$PI_PACKAGES" ]; then \
+         mkdir -p /opt/kortix/pi-agent/npm \
+         && cd /opt/kortix/pi-agent/npm \
+         && printf '{"name":"kortix-pi-system-packages","private":true}' > package.json \
+         && npm install --omit=dev --omit=peer --ignore-scripts --no-audit --no-fund $PI_PACKAGES \
+         && node -e "require('fs').writeFileSync('/opt/kortix/pi-agent/settings.json', JSON.stringify({ packages: require('/tmp/kortix-runtime-versions.json').piSystemPackages }))"; \
+       fi
+
 USER root
 # Modes and ownership are set BY THE COPY, never by a later chmod/chown.
 # A RUN that changes a file's mode or owner copies that file into a NEW layer,

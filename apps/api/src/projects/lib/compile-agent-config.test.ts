@@ -60,6 +60,7 @@ const {
   OpencodeAgentConfigSchema,
   agentMarkdownPath,
   compileAgentConfig,
+  manifestPiPackages,
   manifestRuntime,
   resolveCompiledAgentConfigForSession,
   resolveSelectedAgentConfigForSession,
@@ -517,6 +518,20 @@ describe('manifestRuntime — the harness a manifest selects', () => {
     expect(manifestRuntime(parseYaml('kortix_version: 2\nruntime: opencode\n'))).toBe('opencode');
     expect(manifestRuntime(parseYaml('runtime: pi\n'))).toBe('opencode');
     expect(manifestRuntime(null)).toBe('opencode');
+  });
+});
+
+describe('manifestPiPackages — the project pi packages a manifest declares', () => {
+  test('the v2 harnesses.pi.packages list, entries kept as written', () => {
+    const raw = parseYaml('kortix_version: 2\nruntime: pi\nagents:\n  a: {}\nharnesses:\n  pi:\n    packages:\n      - npm:pi-web-access@0.30.0\n      - source: ./x.ts\n        skills: []\n');
+    expect(manifestPiPackages(raw)).toEqual(['npm:pi-web-access@0.30.0', { source: './x.ts', skills: [] }]);
+  });
+
+  test('empty for a v1 manifest, no harnesses block, or a malformed one', () => {
+    expect(manifestPiPackages(parseYaml('harnesses:\n  pi:\n    packages: [npm:a@1.0.0]\n'))).toEqual([]);
+    expect(manifestPiPackages(parseYaml('kortix_version: 2\nagents:\n  a: {}\n'))).toEqual([]);
+    expect(manifestPiPackages(parseYaml('kortix_version: 2\nharnesses:\n  pi:\n    packages: npm:a@1.0.0\n'))).toEqual([]);
+    expect(manifestPiPackages(null)).toEqual([]);
   });
 });
 

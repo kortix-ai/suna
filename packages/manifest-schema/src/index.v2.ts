@@ -35,6 +35,8 @@ import {
   AGENT_MODES_V2,
   AGENT_THEME_COLORS_V2,
   HEX_COLOR_RE_V2,
+  PI_PACKAGE_NPM_RE,
+  PI_PACKAGE_PATH_RE,
   PERMISSION_ACTION_ONLY_KEYS_V2,
   PERMISSION_ACTIONS_V2,
   SLUG_RE,
@@ -179,6 +181,7 @@ export interface ManifestV2 {
   kortix_version: 2;
   default_agent: string;
   runtime?: RuntimeV2;
+  harnesses?: HarnessesV2;
   agents: Record<string, AgentBlockV2>;
   project?: Record<string, unknown>;
   env?: Record<string, unknown>;
@@ -324,6 +327,78 @@ export function validateRequiredConnectorFields(
       path: `${where}.connectors_required`,
       message: `must be a subset of the resolved connectors grant; not granted: ${missing.join(', ')}.`,
       severity: 'error',
+    });
+  }
+}
+
+const PI_PACKAGE_FILTERS = ['extensions', 'skills', 'prompts', 'themes'] as const;
+const PI_PACKAGES_MAX = 20;
+
+/** One `harnesses.pi.packages` entry: pi's own settings `packages` shape. */
+export type PiPackageEntryV2 = string | { source: string; extensions?: string[]; skills?: string[]; prompts?: string[]; themes?: string[] };
+
+export interface HarnessesV2 {
+  pi?: { packages?: PiPackageEntryV2[] };
+}
+
+function validatePiPackageSource(source: unknown, where: string, issues: ManifestIssue[]): void {
+  if (typeof source === 'string' && (PI_PACKAGE_NPM_RE.test(source) || PI_PACKAGE_PATH_RE.test(source))) return;
+  issues.push({
+    path: where,
+    message: `must be an exact npm pin (npm:<name>@<x.y.z>) or a repo path starting with ./ (got ${JSON.stringify(source)}).`,
+    severity: 'error',
+  });
+}
+
+/**
+ * `harnesses:` — per-harness native settings. Only `pi.packages` exists: pi
+ * packages (https://pi.dev/packages) the project's pi sessions load, in pi's
+ * own settings format. Installed before the session starts; never at boot.
+ */
+export function validateHarnessesV2(node: unknown, path: string, issues: ManifestIssue[]): void {
+  if (node === undefined || node === null) return;
+  if (!isTable(node)) {
+    issues.push({ path, message: 'harnesses must be a map of harness name to settings.', severity: 'error' });
+    return;
+  }
+  for (const [harness, settings] of Object.entries(node)) {
+    const where = `${path}.${harness}`;
+    if (harness !== 'pi') {
+      issues.push({ path: where, message: 'only the pi harness takes settings here.', severity: 'error' });
+      continue;
+    }
+    if (settings === undefined || settings === null) continue;
+    if (!isTable(settings)) {
+      issues.push({ path: where, message: 'must be a map.', severity: 'error' });
+      continue;
+    }
+    for (const key of Object.keys(settings)) {
+      if (key !== 'packages') issues.push({ path: `${where}.${key}`, message: 'unknown key; harnesses.pi takes only `packages`.', severity: 'error' });
+    }
+    const packages = settings.packages;
+    if (packages === undefined || packages === null) continue;
+    if (!Array.isArray(packages)) {
+      issues.push({ path: `${where}.packages`, message: 'must be a list of package sources.', severity: 'error' });
+      continue;
+    }
+    if (packages.length > PI_PACKAGES_MAX) {
+      issues.push({ path: `${where}.packages`, message: `at most ${PI_PACKAGES_MAX} packages.`, severity: 'error' });
+    }
+    packages.forEach((entry, index) => {
+      const at = `${where}.packages[${index}]`;
+      if (!isTable(entry)) return validatePiPackageSource(entry, at, issues);
+      validatePiPackageSource(entry.source, `${at}.source`, issues);
+      for (const key of Object.keys(entry)) {
+        if (key === 'source') continue;
+        if (!(PI_PACKAGE_FILTERS as readonly string[]).includes(key)) {
+          issues.push({ path: `${at}.${key}`, message: `unknown key; use ${PI_PACKAGE_FILTERS.join(', ')}.`, severity: 'error' });
+          continue;
+        }
+        const filter = entry[key];
+        if (!Array.isArray(filter) || filter.some((pattern) => typeof pattern !== 'string')) {
+          issues.push({ path: `${at}.${key}`, message: 'must be a list of glob patterns.', severity: 'error' });
+        }
+      }
     });
   }
 }

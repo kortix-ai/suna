@@ -1244,3 +1244,22 @@ describe('validateAgentMdFrontmatter', () => {
     expect(issues.find((i) => i.path === 'agents/w.md.maxSteps')?.message).toContain('steps');
   });
 });
+
+describe('v2 harnesses.pi.packages', () => {
+  const manifest = (packages: string) =>
+    `kortix_version: 2\ndefault_agent: w\nruntime: pi\nagents:\n  w: {}\nharnesses:\n  pi:\n    packages:\n${packages}`;
+
+  test('an author sees which entry is wrong and what to write instead', () => {
+    const result = validateManifest(manifest('      - npm:pi-web-access\n      - source: ./ok.ts\n        commands: []\n'), 'yaml');
+    expect(result.valid).toBe(false);
+    const errors = result.issues.filter((issue: ManifestIssue) => issue.severity === 'error');
+    expect(errors.map((issue: ManifestIssue) => issue.path)).toEqual(['harnesses.pi.packages[0]', 'harnesses.pi.packages[1].commands']);
+    expect(errors[0]!.message).toContain('npm:<name>@<x.y.z>');
+    expect(errors[1]!.message).toContain('extensions, skills, prompts, themes');
+  });
+
+  test('more than 20 packages is an error', () => {
+    const many = Array.from({ length: 21 }, (_, i) => `      - npm:pkg-${i}@1.0.0\n`).join('');
+    expect(validateManifest(manifest(many), 'yaml').valid).toBe(false);
+  });
+});

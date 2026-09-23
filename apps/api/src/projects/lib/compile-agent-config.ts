@@ -473,6 +473,17 @@ export function manifestRuntime(raw: unknown): RuntimeV2 {
   return (raw as Record<string, unknown>).runtime === 'pi' ? 'pi' : 'opencode';
 }
 
+/**
+ * The project's pi packages: v2 `harnesses.pi.packages`, entries as written
+ * (pi's own settings shape). The manifest validator already gated each entry at
+ * merge; anything that is not a list reads as none.
+ */
+export function manifestPiPackages(raw: unknown): unknown[] {
+  if (!raw || typeof raw !== 'object' || manifestSchemaVersion(raw as Record<string, unknown>) !== 2) return [];
+  const pi = ((raw as Record<string, unknown>).harnesses as { pi?: { packages?: unknown } } | undefined)?.pi;
+  return Array.isArray(pi?.packages) ? pi.packages : [];
+}
+
 export async function resolveManifestRuntime(
   project: GitBackedProject,
   baseRef?: string | null,

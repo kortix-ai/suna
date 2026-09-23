@@ -66,6 +66,7 @@ import {
 } from '../secrets';
 import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
 import {
+  manifestPiPackages,
   manifestRuntime,
   resolveCompiledAgentConfigForSession,
   resolveManifestRuntime,
@@ -497,6 +498,7 @@ export async function buildSessionSandboxEnvVars(input: {
   // the one exception: it routes `runtime: pi` to the split worker topology
   // BEFORE this builder runs (createSession), and never reaches it.
   let manifestHarness: 'opencode' | 'pi' | null = null;
+  let manifestPackages: unknown[] = [];
   let harness: 'opencode' | 'pi' = 'opencode';
   if (input.defaultBranch && !input.platformMetaAgent) {
     const gitProject = {
@@ -508,6 +510,7 @@ export async function buildSessionSandboxEnvVars(input: {
     };
     const onManifest = (raw: Record<string, unknown>) => {
       manifestHarness = manifestRuntime(raw);
+      manifestPackages = manifestPiPackages(raw);
     };
     compiledAgentConfig =
       !(input.repositoryAccess ?? true)
@@ -708,6 +711,7 @@ export async function buildSessionSandboxEnvVars(input: {
       opencodeModel: input.opencodeModel,
       compiledAgentConfig,
       harness,
+      piPackages: manifestPackages,
       repositoryAccess: input.repositoryAccess,
       compiledBootMode: config.KORTIX_COMPILED_BOOT_MODE,
       freshSession: input.freshSession,
