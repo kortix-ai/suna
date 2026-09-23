@@ -3745,6 +3745,7 @@
     "permissionProbeBatchKey",
     "permissionProbeKey",
     "prefetchSession",
+    "prefetchSessionOpen",
     "prefetchSessionStart",
     "projectAppsKey",
     "projectConfigAgentsToOpenCodeAgents",

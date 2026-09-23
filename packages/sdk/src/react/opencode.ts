@@ -130,6 +130,7 @@ export * from './use-session-prefetch';
 // Relocated from `platform/projects-client/session-sandbox` — it types against
 // react-query's QueryClient, which the framework-free REST layer must not.
 export { prefetchSessionStart } from './prefetch-session-start';
+export { prefetchSessionOpen } from './prefetch-session-open';
 export * from './use-canonical-opencode-session';
 export * from './use-gateway-catalog-sync';
 export * from './use-visible-agents';

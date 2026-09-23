@@ -2004,7 +2004,12 @@ describe("useSyncStore — session retention (memory eviction)", () => {
 	// a tab flip) reclaims the transcript instead of repainting it from disk.
 
 	/** Mirrors `DETACHED_SESSION_LIMIT` in sync-store.ts. */
-	const RETENTION_BOUND = 3;
+	const RETENTION_BOUND = 8;
+
+	/** `RETENTION_BOUND + 1` session ids, `first` being the oldest to detach. */
+	function overBound(first: string): string[] {
+		return [first, ...Array.from({ length: RETENTION_BOUND }, (_, i) => `ses_over_${i}`)];
+	}
 
 	function seedSession(sessionID: string): string {
 		const messageID = `msg_${sessionID}`;
@@ -2039,20 +2044,21 @@ describe("useSyncStore — session retention (memory eviction)", () => {
 	}
 
 	test("the last consumer leaving eventually frees the session's messages and parts", () => {
-		const messageIDs = ["ses_a", "ses_b", "ses_c", "ses_d"].map((id) => {
+		const detached = overBound("ses_a");
+		const messageIDs = detached.map((id) => {
 			const messageID = seedSession(id);
 			useSyncStore.getState().retainSession(id)();
 			return messageID;
 		});
 
-		// Four detached, three fit in the window — the oldest goes on the next
-		// mount.
+		// One more detached than fit in the window — the oldest goes on the
+		// next mount.
 		seedSession("ses_e");
 		useSyncStore.getState().retainSession("ses_e");
 
 		expect(isResident("ses_a")).toBe(false);
 		expect(useSyncStore.getState().parts[messageIDs[0]]).toBeUndefined();
-		for (const id of ["ses_b", "ses_c", "ses_d"]) expect(isResident(id)).toBe(true);
+		for (const id of detached.slice(1)) expect(isResident(id)).toBe(true);
 	});
 
 	test("freeing a session drops its diffs and todos too", () => {
@@ -2089,9 +2095,10 @@ describe("useSyncStore — session retention (memory eviction)", () => {
 	// transcript when nothing was ever written to disk (unauthenticated:
 	// `getCurrentCacheScope()` returns null and `saveSessionToIDB` no-ops).
 	test("returning to the oldest detached session does not evict it — unmount never frees", () => {
-		for (const id of ["ses_a", "ses_x", "ses_y", "ses_b"]) visit(id);
-		// Four detached and ses_a is the oldest. Now go back to it: React
-		// destroys ses_b's effects first, then creates ses_a's.
+		for (const id of overBound("ses_a")) visit(id);
+		// One more detached than the window holds, and ses_a is the oldest. Now
+		// go back to it: React destroys the last one's effects first, then
+		// creates ses_a's.
 		const messageID = `msg_ses_a`;
 
 		useSyncStore.getState().retainSession("ses_a");
@@ -2101,9 +2108,9 @@ describe("useSyncStore — session retention (memory eviction)", () => {
 	});
 
 	test("nothing is freed by a release on its own — only by the next mount", () => {
-		for (const id of ["ses_a", "ses_b", "ses_c", "ses_d"]) visit(id);
+		for (const id of overBound("ses_a")) visit(id);
 		// Over the bound, but no session has mounted since.
-		for (const id of ["ses_a", "ses_b", "ses_c", "ses_d"]) {
+		for (const id of overBound("ses_a")) {
 			expect(isResident(id)).toBe(true);
 		}
 
@@ -2523,7 +2530,8 @@ describe("useSyncStore — buildSessionMessages (the one shared join)", () => {
 		expect(held.rebuild()).toBe(held.rows); // memoized while resident
 
 		store.retainSession("ses_1")();
-		for (let i = 0; i < 4; i++) {
+		// `DETACHED_SESSION_LIMIT` (8) + 1 detaches push ses_1 out of the window.
+		for (let i = 0; i < 9; i++) {
 			const id = `ses_churn_${i}`;
 			useSyncStore.getState().upsertMessage(id, userMessage(`msg_c${i}`, id));
 			useSyncStore.getState().retainSession(id)();
