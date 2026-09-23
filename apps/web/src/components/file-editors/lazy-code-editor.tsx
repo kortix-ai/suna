@@ -7,10 +7,10 @@ import dynamic from 'next/dynamic';
  * diagnostics layer). The file viewer is part of many routes; the editor
  * loads only when a text/code file actually renders.
  *
- * The placeholder matches the editor surface's own background, which is all
- * `CodeEditor` paints before its mount effect runs anyway.
+ * The placeholder only holds the editor's space; `CodeEditor` itself paints an
+ * empty surface until its mount effect runs.
  */
 export const CodeEditor = dynamic(() => import('./code-editor').then((mod) => mod.CodeEditor), {
   ssr: false,
-  loading: () => <div className="min-h-full w-full flex-1 bg-white dark:bg-zinc-900" />,
+  loading: () => <div className="min-h-full w-full flex-1" />,
 });
