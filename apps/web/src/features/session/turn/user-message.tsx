@@ -848,8 +848,8 @@ export function QuotedMessageBody({
 
 /**
  * The text the inline edit-from-here editor starts from. That editor is a
- * plain `<textarea>` (`UserMessageEditor`), not the TipTap composer, so it has
- * no quote node to hold a `<reply_context>` block — it would show raw XML.
+ * plain `<textarea>` (`UserMessageEditor`), not the composer, so it has no
+ * quote list to hold a `<reply_context>` block — it would show raw XML.
  * Quotes are dropped; the reply text stays, in order.
  */
 export function editablePromptText(
@@ -857,8 +857,8 @@ export function editablePromptText(
   command?: { name: string; args?: string } | null,
 ): string {
   if (command) {
-    // A command's args carry its quotes too (the composer serializes a quote
-    // node inside them).
+    // A command's args carry its quotes too (the composer writes them ahead
+    // of the args).
     const args = command.args ? stripReplyContexts(command.args) : '';
     return `/${command.name}${args ? ` ${args}` : ''}`;
   }
@@ -1545,8 +1545,9 @@ export function UserMessage({
    * `@` mentions from the run's own text.
    *
    * A command message is parsed from its own halves, not from the part text:
-   * the composer writes each quote node inside the args, as raw
-   * `<reply_context>` blocks, on either side of the chip. The part text is
+   * the composer writes its quotes into the args and into `split.before`, as
+   * raw `<reply_context>` blocks ahead of the chip (older messages can hold
+   * them on either side). The part text is
    * the expanded template, which repeats the args — so the part's `quotes`
    * are ignored here, or every quote would draw twice. `COMMAND_SLOT` marks
    * where the chip goes between the two halves.

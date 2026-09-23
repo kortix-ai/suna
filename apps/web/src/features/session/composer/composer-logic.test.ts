@@ -3,15 +3,21 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   acknowledgeQuoteRequests,
+  appendComposerQuote,
+  extractReplyQuotes,
+  mergeComposerQuotes,
   planDraftSubmission,
   planFailedSendRecovery,
   planPrefillMerge,
   planQuoteRequests,
+  removeComposerQuote,
   resolveEditorPlaceholder,
+  restoreComposerQuotes,
   shouldApplyPrefill,
   shouldFocusEditorFromPadding,
   textToDocument,
   textToParagraphs,
+  withReplyQuotes,
 } from './composer-logic';
 import type { AttachedFile } from './types';
 
@@ -432,19 +438,6 @@ describe('planDraftSubmission', () => {
     { name: 'compact', description: 'Compact the thread' },
   ] as never as Parameters<typeof planDraftSubmission>[0]['commands'];
 
-  test('unknown command with args that start with a quote: the quote keeps its own line', () => {
-    expect(
-      planDraftSubmission({
-        commandName: 'gone',
-        text: '<reply_context>a passage</reply_context>\nrun it',
-        commands,
-      }),
-    ).toEqual({
-      kind: 'message',
-      text: '/gone\n<reply_context>a passage</reply_context>\nrun it',
-    });
-  });
-
   test('unknown command with plain args still joins them with one space', () => {
     expect(planDraftSubmission({ commandName: 'gone', text: 'run it', commands })).toEqual({
       kind: 'message',
@@ -536,8 +529,15 @@ describe('shouldFocusEditorFromPadding', () => {
   });
 });
 
-describe('textToParagraphs — <reply_context> blocks become quote nodes', () => {
-  test('text with no reply block is unchanged: one paragraph per line, blanks kept', () => {
+
+// ── Reply quotes ───────────────────────────────────────────────────────────
+//
+// A quote is not part of the editor document. The composer holds an ordered
+// list of quotes in a card above the input, and a normal send writes each one
+// as its own `<reply_context>` line ahead of the typed text.
+
+describe('textToParagraphs — plain lines only', () => {
+  test('one paragraph per line, blank lines kept', () => {
     expect(textToParagraphs('one\n\ntwo')).toEqual([
       { type: 'paragraph', content: [{ type: 'text', text: 'one' }] },
       { type: 'paragraph' },
@@ -546,80 +546,233 @@ describe('textToParagraphs — <reply_context> blocks become quote nodes', () =>
     expect(textToParagraphs('')).toEqual([{ type: 'paragraph' }]);
   });
 
-  test('each block becomes a replyQuote at its position, interleaved with the text', () => {
+  test('never builds a quote node — a reply block is text to this function', () => {
+    const doc = textToDocument('<reply_context>a passage</reply_context>\nreply');
+    expect(doc.content?.every((node) => node.type === 'paragraph')).toBe(true);
+  });
+});
+
+describe('extractReplyQuotes — reply blocks go to the list, the rest to the document', () => {
+  test('text without a block is returned unchanged, whitespace included', () => {
+    expect(extractReplyQuotes('  keep\n\nme  ')).toEqual({ quotes: [], text: '  keep\n\nme  ' });
+  });
+
+  test('every block becomes a quote, in order; the remaining text is kept', () => {
     const wire = [
-      '<reply_context>first quoted passage</reply_context>',
-      'my reply to the first',
-      '<reply_context>second quoted passage</reply_context>',
-      'my reply to the second',
+      '<reply_context>first passage</reply_context>',
+      '<reply_context>second passage</reply_context>',
+      'my message',
     ].join('\n');
-    expect(textToParagraphs(wire)).toEqual([
-      { type: 'replyQuote', attrs: { text: 'first quoted passage' } },
-      { type: 'paragraph', content: [{ type: 'text', text: 'my reply to the first' }] },
-      { type: 'replyQuote', attrs: { text: 'second quoted passage' } },
-      { type: 'paragraph', content: [{ type: 'text', text: 'my reply to the second' }] },
-    ]);
-  });
-
-  test('a document that would end on a quote gets a trailing empty paragraph for the caret', () => {
-    expect(textToParagraphs('intro\n<reply_context>a passage</reply_context>')).toEqual([
-      { type: 'paragraph', content: [{ type: 'text', text: 'intro' }] },
-      { type: 'replyQuote', attrs: { text: 'a passage' } },
-      { type: 'paragraph' },
-    ]);
-  });
-
-  test('the old single leading block (blank line after it) still parses', () => {
-    expect(textToDocument('<reply_context>old quote</reply_context>\n\nold reply')).toEqual({
-      type: 'doc',
-      content: [
-        { type: 'replyQuote', attrs: { text: 'old quote' } },
-        { type: 'paragraph', content: [{ type: 'text', text: 'old reply' }] },
-      ],
+    expect(extractReplyQuotes(wire)).toEqual({
+      quotes: ['first passage', 'second passage'],
+      text: 'my message',
     });
   });
 
-  test('an escaped closing tag inside the body is restored in the node text', () => {
-    expect(
-      textToParagraphs('<reply_context>a &lt;/reply_context&gt; b</reply_context>\nreply'),
-    ).toEqual([
-      { type: 'replyQuote', attrs: { text: 'a </reply_context> b' } },
-      { type: 'paragraph', content: [{ type: 'text', text: 'reply' }] },
-    ]);
+  test('blocks interleaved with text are all lifted out; the text lines keep their order', () => {
+    const wire = [
+      '<reply_context>first passage</reply_context>',
+      'reply one',
+      '<reply_context>second passage</reply_context>',
+      'reply two',
+    ].join('\n');
+    expect(extractReplyQuotes(wire)).toEqual({
+      quotes: ['first passage', 'second passage'],
+      text: 'reply one\nreply two',
+    });
+  });
+
+  test('the old single leading block with a blank line after it', () => {
+    expect(extractReplyQuotes('<reply_context>old quote</reply_context>\n\nold reply')).toEqual({
+      quotes: ['old quote'],
+      text: 'old reply',
+    });
+  });
+
+  test('an escaped closing tag inside a body is restored; blank and repeated quotes are dropped', () => {
+    const wire = [
+      '<reply_context>a &lt;/reply_context&gt; b</reply_context>',
+      '<reply_context>   </reply_context>',
+      '<reply_context>a &lt;/reply_context&gt; b</reply_context>',
+    ].join('\n');
+    expect(extractReplyQuotes(wire)).toEqual({ quotes: ['a </reply_context> b'], text: '' });
   });
 });
-describe('planQuoteRequests — a FIFO, applied once per id, held while locked', () => {
+
+describe('appendComposerQuote / removeComposerQuote / mergeComposerQuotes', () => {
+  const first = { id: 'q1', text: 'first passage' };
+  const second = { id: 'q2', text: 'second passage' };
+
+  test('appends at the end, trimmed', () => {
+    expect(appendComposerQuote([first], '  second passage  ', 'q2')).toEqual([first, second]);
+  });
+
+  test('a quote already in the list is not added twice; the same array comes back', () => {
+    const quotes = [first];
+    expect(appendComposerQuote(quotes, 'first passage', 'q9')).toBe(quotes);
+    expect(appendComposerQuote(quotes, '  first passage ', 'q9')).toBe(quotes);
+  });
+
+  test('blank text adds nothing', () => {
+    const quotes = [first];
+    expect(appendComposerQuote(quotes, '   ', 'q9')).toBe(quotes);
+  });
+
+  test('remove takes exactly that quote out and keeps the order', () => {
+    const third = { id: 'q3', text: 'third passage' };
+    expect(removeComposerQuote([first, second, third], 'q2')).toEqual([first, third]);
+  });
+
+  test('remove of an unknown id returns the same array', () => {
+    const quotes = [first];
+    expect(removeComposerQuote(quotes, 'nope')).toBe(quotes);
+  });
+
+  test('merge puts the restored quotes first, then new ones not already restored', () => {
+    const later = { id: 'q7', text: 'added after send' };
+    const dup = { id: 'q8', text: 'first passage' };
+    expect(mergeComposerQuotes([first, second], [dup, later])).toEqual([first, second, later]);
+    expect(mergeComposerQuotes([first], [])).toEqual([first]);
+    expect(mergeComposerQuotes([], [later])).toEqual([later]);
+  });
+});
+
+describe('withReplyQuotes — the wire shape of a quoted send', () => {
+  test('each quote on its own line, in order, then the typed text', () => {
+    expect(withReplyQuotes(['first', 'second'], 'my message')).toBe(
+      '<reply_context>first</reply_context>\n<reply_context>second</reply_context>\nmy message',
+    );
+  });
+
+  test('no quotes: the text is unchanged', () => {
+    expect(withReplyQuotes([], 'my message')).toBe('my message');
+  });
+
+  test('quotes alone are a message; no trailing newline', () => {
+    expect(withReplyQuotes(['only'], '')).toBe('<reply_context>only</reply_context>');
+  });
+
+  test('a closing tag inside a quote is escaped', () => {
+    expect(withReplyQuotes(['a </reply_context> b'], 'x')).toBe(
+      '<reply_context>a &lt;/reply_context&gt; b</reply_context>\nx',
+    );
+  });
+});
+
+describe('planDraftSubmission — quotes', () => {
+  const commands = [
+    { name: 'deep-research', description: 'Research deeply' },
+  ] as never as Parameters<typeof planDraftSubmission>[0]['commands'];
+
+  test('a message leads with every quote, in order', () => {
+    expect(
+      planDraftSubmission({
+        commandName: undefined,
+        text: '  my message ',
+        commands,
+        quotes: ['first', 'second'],
+      }),
+    ).toEqual({
+      kind: 'message',
+      text: '<reply_context>first</reply_context>\n<reply_context>second</reply_context>\nmy message',
+    });
+  });
+
+  test('quotes with no typed text still make a message', () => {
+    expect(
+      planDraftSubmission({ commandName: undefined, text: '  ', commands, quotes: ['only'] }),
+    ).toEqual({ kind: 'message', text: '<reply_context>only</reply_context>' });
+  });
+
+  test('a command gets the quote blocks ahead of its args, separated by a newline', () => {
+    const plan = planDraftSubmission({
+      commandName: 'deep-research',
+      text: 'the docs',
+      commands,
+      quotes: ['first', 'second'],
+    });
+    if (plan.kind !== 'command') throw new Error('expected a command');
+    expect(plan.args).toBe(
+      '<reply_context>first</reply_context>\n<reply_context>second</reply_context>\nthe docs',
+    );
+  });
+
+  test('a command with quotes and no args passes the quotes alone as args', () => {
+    const plan = planDraftSubmission({
+      commandName: 'deep-research',
+      text: '',
+      commands,
+      quotes: ['first'],
+    });
+    if (plan.kind !== 'command') throw new Error('expected a command');
+    expect(plan.args).toBe('<reply_context>first</reply_context>');
+  });
+
+  test('the command split carries the quotes ahead of the prose before the chip', () => {
+    const plan = planDraftSubmission({
+      commandName: 'deep-research',
+      text: 'explain the docs',
+      commandSplit: { before: 'explain', after: 'the docs' },
+      commands,
+      quotes: ['first'],
+    });
+    if (plan.kind !== 'command') throw new Error('expected a command');
+    expect(plan.split).toEqual({
+      before: '<reply_context>first</reply_context>\nexplain',
+      after: 'the docs',
+    });
+    const leading = planDraftSubmission({
+      commandName: 'deep-research',
+      text: 'the docs',
+      commandSplit: { before: '', after: 'the docs' },
+      commands,
+      quotes: ['first'],
+    });
+    if (leading.kind !== 'command') throw new Error('expected a command');
+    expect(leading.split).toEqual({ before: '<reply_context>first</reply_context>', after: 'the docs' });
+  });
+
+  test('without quotes the split passes through untouched', () => {
+    const split = { before: 'explain', after: 'the docs' };
+    const plan = planDraftSubmission({
+      commandName: 'deep-research',
+      text: 'explain the docs',
+      commandSplit: split,
+      commands,
+    });
+    if (plan.kind !== 'command') throw new Error('expected a command');
+    expect(plan.split).toBe(split);
+  });
+
+  test('an unresolvable chip degrades to a message that still leads with the quotes', () => {
+    expect(
+      planDraftSubmission({ commandName: 'gone', text: 'run it', commands, quotes: ['first'] }),
+    ).toEqual({ kind: 'message', text: '<reply_context>first</reply_context>\n/gone run it' });
+  });
+});
+
+describe('planQuoteRequests — a FIFO, applied once per id, never held', () => {
   const first = { id: 1, text: 'first passage' };
   const second = { id: 2, text: 'second passage' };
-  const ready = { editorReady: true, locked: false, appliedIds: new Set<number>() };
 
   test('nothing to apply with no requests', () => {
-    expect(planQuoteRequests({ ...ready, requests: [] })).toEqual([]);
-  });
-
-  test('held while the lazy editor is not ready — waits, is not dropped', () => {
-    expect(planQuoteRequests({ ...ready, editorReady: false, requests: [first] })).toEqual([]);
-    expect(planQuoteRequests({ ...ready, requests: [first] })).toEqual([first]);
-  });
-
-  test('held while the composer is locked (question or approval), applied on unlock', () => {
-    // Inserting into a locked composer sent raw XML as a custom answer, or
-    // lost the quote to the unlock restore. It stays pending instead.
-    expect(planQuoteRequests({ ...ready, locked: true, requests: [first] })).toEqual([]);
-    expect(planQuoteRequests({ ...ready, locked: false, requests: [first] })).toEqual([first]);
+    expect(planQuoteRequests({ requests: [], appliedIds: new Set() })).toEqual([]);
   });
 
   test('two requests queued before the composer applies either are BOTH applied, in order', () => {
-    expect(planQuoteRequests({ ...ready, requests: [first, second] })).toEqual([first, second]);
+    expect(planQuoteRequests({ requests: [first, second], appliedIds: new Set() })).toEqual([
+      first,
+      second,
+    ]);
   });
 
-  test('an id already applied is never applied again (no double insert on re-render)', () => {
-    expect(
-      planQuoteRequests({ ...ready, appliedIds: new Set([1]), requests: [first, second] }),
-    ).toEqual([second]);
-    expect(
-      planQuoteRequests({ ...ready, appliedIds: new Set([1, 2]), requests: [first, second] }),
-    ).toEqual([]);
+  test('an id already applied is never applied again (no double append on re-render)', () => {
+    expect(planQuoteRequests({ requests: [first, second], appliedIds: new Set([1]) })).toEqual([
+      second,
+    ]);
+    expect(planQuoteRequests({ requests: [first, second], appliedIds: new Set([1, 2]) })).toEqual(
+      [],
+    );
   });
 });
 
@@ -634,21 +787,48 @@ describe('acknowledgeQuoteRequests — the holder drops only acknowledged ids', 
 
   test('a request added after the composer applied the others survives the ack', () => {
     // Remount safety: an acknowledged request is gone from the holder, so a
-    // fresh composer (empty applied set) cannot insert it a second time.
+    // fresh composer (empty applied set) cannot append it a second time.
     const remaining = acknowledgeQuoteRequests([first, second, third], [1, 2]);
     expect(remaining).toEqual([third]);
-    expect(
-      planQuoteRequests({
-        editorReady: true,
-        locked: false,
-        appliedIds: new Set(),
-        requests: remaining,
-      }),
-    ).toEqual([third]);
+    expect(planQuoteRequests({ requests: remaining, appliedIds: new Set() })).toEqual([third]);
   });
 
   test('returns the same array when no id matches, so a no-op ack does not re-render', () => {
     const requests = [first];
     expect(acknowledgeQuoteRequests(requests, [9])).toBe(requests);
+  });
+});
+
+describe('restoreComposerQuotes — quotes that left with a draft come back at the head', () => {
+  const ids = () => {
+    let n = 0;
+    return () => `new-${++n}`;
+  };
+
+  test('restored texts lead, in their order; quotes added since stay after them', () => {
+    const current = [{ id: 'q5', text: 'added later' }];
+    expect(restoreComposerQuotes(current, ['first', 'second'], ids())).toEqual([
+      { id: 'new-1', text: 'first' },
+      { id: 'new-2', text: 'second' },
+      { id: 'q5', text: 'added later' },
+    ]);
+  });
+
+  test('a restored text already in the list keeps its id and moves to its restored place', () => {
+    const current = [
+      { id: 'q1', text: 'added later' },
+      { id: 'q2', text: 'second' },
+    ];
+    expect(restoreComposerQuotes(current, ['first', ' second '], ids())).toEqual([
+      { id: 'new-1', text: 'first' },
+      { id: 'q2', text: 'second' },
+      { id: 'q1', text: 'added later' },
+    ]);
+  });
+
+  test('nothing to restore returns the same array; blank and repeated texts are skipped', () => {
+    const current = [{ id: 'q1', text: 'kept' }];
+    expect(restoreComposerQuotes(current, [], ids())).toBe(current);
+    expect(restoreComposerQuotes([], ['a', '  ', 'a'], ids())).toEqual([{ id: 'new-1', text: 'a' }]);
   });
 });

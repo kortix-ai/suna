@@ -7,7 +7,6 @@ import { Node as PMNode } from '@tiptap/pm/model';
 import { describe, expect, test } from 'bun:test';
 
 import { MentionNode } from './mention-node';
-import { QuoteNode } from './quote-node';
 import { collectMentions, serializeDocument, type SerializableNode } from './serialize';
 
 const mention = (kind: string, label: string, value = ''): SerializableNode => ({
@@ -47,7 +46,7 @@ describe('collectMentions', () => {
 // ── serializeDocument — built on a real ProseMirror doc, same house pattern
 // as mention-node.test.ts (getSchema + PMNode.fromJSON, no jsdom). ──────────
 
-const schema = getSchema([Document, Paragraph, Text, HardBreak, MentionNode, QuoteNode]);
+const schema = getSchema([Document, Paragraph, Text, HardBreak, MentionNode]);
 
 function docWith(...paragraphContent: unknown[]) {
   return PMNode.fromJSON(schema, {
@@ -279,107 +278,5 @@ describe('serializeDocument — command split across blocks', () => {
     );
     const result = serializeDocument(doc);
     expect(result.commandSplit).toEqual({ before: 'line one\nline two', after: 'end' });
-  });
-});
-
-// ── quote blocks serialize inline, at their position ────────────────
-
-function blocksDoc(...blocks: unknown[]) {
-  return PMNode.fromJSON(schema, { type: 'doc', content: blocks });
-}
-const quoteBlock = (quote: string) => ({ type: 'replyQuote', attrs: { text: quote } });
-const para = (...content: unknown[]) => ({
-  type: 'paragraph',
-  ...(content.length ? { content } : {}),
-});
-
-describe('serializeDocument — reply quotes', () => {
-  test('a quote then a paragraph: the block sits on its own line before the reply', () => {
-    const doc = blocksDoc(quoteBlock('first quoted passage'), para(textJSON('my reply')));
-    expect(serializeDocument(doc).text).toBe(
-      '<reply_context>first quoted passage</reply_context>\nmy reply',
-    );
-  });
-
-  test('paragraph, quote, paragraph, quote, paragraph keep document order', () => {
-    const doc = blocksDoc(
-      para(textJSON('intro')),
-      quoteBlock('first quoted passage'),
-      para(textJSON('my reply to the first')),
-      quoteBlock('second quoted passage'),
-      para(textJSON('my reply to the second')),
-    );
-    expect(serializeDocument(doc).text).toBe(
-      [
-        'intro',
-        '<reply_context>first quoted passage</reply_context>',
-        'my reply to the first',
-        '<reply_context>second quoted passage</reply_context>',
-        'my reply to the second',
-      ].join('\n'),
-    );
-  });
-
-  test('a quote alone (with the trailing empty paragraph insert leaves) is the whole text', () => {
-    const doc = blocksDoc(quoteBlock('only a quote'), para());
-    expect(serializeDocument(doc).text).toBe('<reply_context>only a quote</reply_context>');
-  });
-
-  test('the quote body is trimmed and a literal closing tag inside it is escaped', () => {
-    const doc = blocksDoc(quoteBlock('  see </reply_context> here  '), para());
-    expect(serializeDocument(doc).text).toBe(
-      '<reply_context>see &lt;/reply_context&gt; here</reply_context>',
-    );
-  });
-
-  test('mentions next to quotes are still collected, and quotes add none', () => {
-    const doc = blocksDoc(
-      quoteBlock('a passage'),
-      para(textJSON('look at '), mentionJSON('file', 'README.md')),
-    );
-    const result = serializeDocument(doc);
-    expect(result.text).toBe('<reply_context>a passage</reply_context>\nlook at @README.md');
-    expect(result.mentions).toEqual([{ kind: 'file', label: 'README.md' }]);
-  });
-
-  test('a command chip split is unaffected by a quote in another block', () => {
-    const doc = blocksDoc(
-      quoteBlock('a passage'),
-      para(mentionJSON('command', 'review'), textJSON(' this part')),
-    );
-    const result = serializeDocument(doc);
-    expect(result.commandName).toBe('review');
-    expect(result.commandSplit).toEqual({
-      before: '<reply_context>a passage</reply_context>',
-      after: 'this part',
-    });
-  });
-});
-
-describe('serializeDocument — a quote next to a command chip keeps its own line', () => {
-  test('a quote BEFORE the chip is joined to the args with a newline, not a space', () => {
-    const doc = blocksDoc(
-      quoteBlock('a passage'),
-      para(mentionJSON('command', 'review'), textJSON(' run it')),
-    );
-    // `$ARGUMENTS` must keep the block on its own line: a space glued the
-    // closing tag to the args, and the reloaded bubble drew a leading space.
-    expect(serializeDocument(doc).text).toBe('<reply_context>a passage</reply_context>\nrun it');
-  });
-
-  test('a quote AFTER a chip that ends its paragraph is also on its own line', () => {
-    const doc = blocksDoc(
-      para(textJSON('explain '), mentionJSON('command', 'review')),
-      quoteBlock('a passage'),
-      para(textJSON('run it')),
-    );
-    expect(serializeDocument(doc).text).toBe(
-      'explain\n<reply_context>a passage</reply_context>\nrun it',
-    );
-  });
-
-  test('a chip between two words still joins them with one space', () => {
-    const doc = docWith(textJSON('explain '), mentionJSON('command', 'review'), textJSON(' to me'));
-    expect(serializeDocument(doc).text).toBe('explain to me');
   });
 });

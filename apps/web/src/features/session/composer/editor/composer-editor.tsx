@@ -4,7 +4,6 @@ import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import type { Agent, Command, Session } from '@kortix/sdk/react';
 import type { Editor, JSONContent } from '@tiptap/core';
-import { TextSelection } from '@tiptap/pm/state';
 import type { EditorView } from '@tiptap/pm/view';
 import { EditorContent, useEditor } from '@tiptap/react';
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
@@ -20,7 +19,6 @@ import type { TrackedMention } from '../types';
 import { baseExtensions } from './extensions';
 import { isCursorOnFirstVisualLine } from './first-visual-line';
 import { MentionNode } from './mention-node';
-import { QuoteNode } from './quote-node';
 import { serializeDocument } from './serialize';
 import { createSuggestionExtension } from './suggestion';
 
@@ -60,9 +58,8 @@ export interface ComposerEditorHandle {
    * has no path back to those nodes from the returned `{ text, mentions }`
    * pair. A caller that snapshots via `getContent()` and later tries to
    * restore via `setContent(text)` therefore can never bring the mention
-   * nodes back — `setContent` builds paragraphs (`textToParagraphs`, below)
-   * and reply-quote blocks from `<reply_context>` text, but
-   * never mention atoms. `getDocument`/`setDocument`
+   * nodes back — `setContent` only ever builds plain paragraph text
+   * (`textToParagraphs`, below), never atoms. `getDocument`/`setDocument`
    * round-trip the actual ProseMirror JSON, atoms included, which is what a
    * failed-send retry or a question-lock save/restore needs: the mentions
    * the user typed must survive the round trip, not flatten into `"@label"`
@@ -98,14 +95,6 @@ export interface ComposerEditorHandle {
    * string (ProseMirror text nodes must be non-empty).
    */
   insertAtCursor(text: string): void;
-  /**
-   * Append a reply quote — see `insertQuoteAtEnd`. Always at the
-   * END of the document, never at the caret: the transcript selection that
-   * produced the quote has already taken focus and selection away from the
-   * editor, so "the caret" is wherever it was last left, not a choice the
-   * user just made.
-   */
-  insertQuote(text: string): void;
   clear(): void;
   focus(): void;
   isEmpty(): boolean;
@@ -370,36 +359,6 @@ export function insertTextAtCursor(editor: Editor | null, text: string): void {
   editor.commands.insertContent(content);
 }
 
-/**
- * `insertQuote`'s implementation, standalone for the same headless-testing
- * reason as the three functions above.
- *
- * Appends `[replyQuote, empty paragraph]` at the end of the document. When
- * the last block is already an empty paragraph (a fresh composer, or the
- * line the previous quote left), the quote replaces it instead of stacking
- * below a blank line. The caret goes into the new trailing paragraph, so the
- * user types their reply directly under the quote. `text` is trimmed; blank
- * text inserts nothing.
- */
-export function insertQuoteAtEnd(editor: Editor | null, text: string): void {
-  const quote = text.trim();
-  if (!editor || !quote) return;
-  const { state } = editor;
-  const { doc, schema } = state;
-  const end = doc.content.size;
-  const last = doc.lastChild;
-  const replaceLast = last?.type.name === 'paragraph' && last.content.size === 0;
-  const from = replaceLast && last ? end - last.nodeSize : end;
-  const tr = state.tr.replaceWith(from, end, [
-    schema.nodes[QuoteNode.name]!.create({ text: quote }),
-    schema.nodes.paragraph!.create(),
-  ]);
-  // Inside the trailing paragraph: its content starts one past its own start.
-  tr.setSelection(TextSelection.create(tr.doc, tr.doc.content.size - 1));
-  editor.view.dispatch(tr);
-  editor.commands.focus();
-}
-
 export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorProps>(
   function ComposerEditor(
     {
@@ -425,7 +384,6 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
   ) {
     const t = useTranslations('threads');
     const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-    const tHardcodedUi = useTranslations('hardcodedUi');
     const defaultActions = useMemo(() => localizedSlashActions(tI18nComplete), [tI18nComplete]);
     // Mirrors use-composer-focus.ts's onTypeAheadRef: @tiptap/react only
     // resyncs `onUpdate`/other callback options when some OTHER option also
@@ -461,17 +419,6 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     useEffect(() => {
       placeholderRef.current = placeholder;
     }, [placeholder]);
-
-    // The quote remove button's aria-label ("Remove quote"). Read through a
-    // ref for the same frozen-extension reason as `placeholderRef`:
-    // QuoteNode's plain-DOM node view reads it on render.
-    const removeQuoteLabel = tHardcodedUi.raw(
-      'componentsSessionSessionChatInput.removeQuoteAriaLabel',
-    ) as string;
-    const removeQuoteLabelRef = useRef(removeQuoteLabel);
-    useEffect(() => {
-      removeQuoteLabelRef.current = removeQuoteLabel;
-    }, [removeQuoteLabel]);
 
     // Same "extensions are frozen at construction" reasoning as
     // `placeholderRef` above (see extensions.ts) — the mention/slash
@@ -629,7 +576,6 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       extensions: [
         ...baseExtensions(() => placeholderRef.current),
         MentionNode,
-        QuoteNode.configure({ getRemoveLabel: () => removeQuoteLabelRef.current }),
         // The one `@tiptap/suggestion` code path both `@` and `/` register
         // through (editor/suggestion.ts's `createSuggestionExtension`).
         // Built fresh every render like every extension above, but only the
@@ -785,7 +731,6 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
         getDocument: () => getEditorDocument(editor),
         setDocument: (doc) => setEditorDocument(editor, doc),
         insertAtCursor: (text) => insertTextAtCursor(editor, text),
-        insertQuote: (text) => insertQuoteAtEnd(editor, text),
         clear: () => editor?.commands.setContent(EMPTY_DOC),
         focus: () => editor?.commands.focus('end'),
         isEmpty: () => editor?.isEmpty ?? true,

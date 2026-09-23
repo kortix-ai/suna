@@ -1,9 +1,9 @@
 /**
  * The `<reply_context>` wire format for reply quotes, React-free.
  *
- * Lives outside `message-parsing.tsx` so the composer (serialize.ts,
- * quote-node.ts, composer-logic.ts) can import it without pulling that
- * module's React components into its graph.
+ * Lives outside `message-parsing.tsx` so the composer (composer-logic.ts)
+ * can import it without pulling that module's React components into its
+ * graph.
  * `message-parsing.tsx` re-exports everything here, so its importers are
  * unchanged. Its only import is `@kortix/shared` (pure string helpers).
  */
@@ -12,8 +12,9 @@ import { removeSpans, replaceSpans, type TagBlock } from '@kortix/shared';
 
 // ── Inline reply-context quotes ────────────────────────────
 //
-// The composer can insert more than one <reply_context> block into a single
-// message, interleaved with the user's text. The old single-block parser only
+// One message can carry more than one <reply_context> block. The composer
+// writes its quotes as leading blocks, one per line; older messages can hold
+// blocks interleaved with the user's text. The old single-block parser only
 // ever looked at the FIRST block and left any later ones as literal text —
 // which the generic XML notification parser below then picked up and
 // rendered as a system-notification card. These functions replaced it.
@@ -170,22 +171,4 @@ export function splitAtQuoteMarkers(
   const rest = text.slice(cursor).replace(/^\n+/, '').replace(/\n+$/, '');
   if (rest) pieces.push({ kind: 'text', text: rest });
   return pieces;
-}
-
-/**
- * Join two already-trimmed pieces of one message with ONE separator: a space,
- * or a newline where either side meets a `<reply_context>` block.
- *
- * Used where text is rejoined around a command chip (`serializeDocument`,
- * `planDraftSubmission`). A space there glued the block to the args —
- * `<reply_context>q</reply_context> run it` — so `$ARGUMENTS` lost the
- * quote's own line and the reloaded bubble drew a leading space after the
- * quote. The newline is the separator every other quote position already
- * gets from the block-level serializer. Empty pieces are dropped.
- */
-export function joinAtQuoteBoundary(before: string, after: string): string {
-  if (!before) return after;
-  if (!after) return before;
-  const atQuote = before.endsWith('</reply_context>') || after.startsWith('<reply_context');
-  return `${before}${atQuote ? '\n' : ' '}${after}`;
 }

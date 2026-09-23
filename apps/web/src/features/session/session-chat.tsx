@@ -2139,13 +2139,13 @@ export function SessionChat({
     setQuestionAction({ label, canAct });
   }, []);
 
-  // ---- Reply quotes (text selection → quote block in the composer) ----
-  // Each "Reply" asks the composer to insert one quote block. The
-  // quote lives in the composer document from then on and serializes inline
-  // as `<reply_context>` on send, so there is no reply state to hold here —
-  // only the id-keyed requests, each removed once the composer has applied it.
-  // A FIFO: two "Reply" clicks before the composer can apply the first (it
-  // holds requests while question-locked or disabled) keep both, in order.
+  // ---- Reply quotes (text selection → the composer's quote list) ----
+  // Each "Reply" asks the composer to add one quote to the card above its
+  // input. The composer owns the list from then on and writes each quote as a
+  // leading `<reply_context>` line on send, so there is no reply state to
+  // hold here — only the id-keyed requests, each removed once the composer
+  // has applied it. A FIFO: two "Reply" clicks in one render keep both, in
+  // order.
   const [quoteRequests, setQuoteRequests] = useState<QuoteRequest[]>([]);
   const quoteRequestIdRef = useRef(0);
   const handleQuoteRequestsApplied = useCallback((requestIds: number[]) => {
@@ -4005,8 +4005,8 @@ export function SessionChat({
     ) => {
       setCommandError(null);
 
-      // Reply quotes are already in `rawText`: the composer serializes each
-      // quote block inline as `<reply_context>` (composer/editor/serialize.ts).
+      // Reply quotes are already in `rawText`: the composer prepends each
+      // quote as its own `<reply_context>` line (`withReplyQuotes`).
       const text = rawText;
 
       // Structured @-mention refs — emitted as <file_ref /> / <agent_ref />

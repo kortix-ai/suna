@@ -11,14 +11,12 @@ import {
   createSubmitOnEnterHandler,
   createUpdateHandler,
   getEditorDocument,
-  insertQuoteAtEnd,
   insertTextAtCursor,
   setEditorDocument,
   trackEmptyBoundary,
 } from './composer-editor';
 import { baseExtensions } from './extensions';
 import { MentionNode } from './mention-node';
-import { QuoteNode } from './quote-node';
 import { serializeDocument } from './serialize';
 
 /**
@@ -66,7 +64,7 @@ function createHeadlessEditor(
   getPlaceholder: () => string = () => 'Type a message',
 ): Editor {
   return new Editor({
-    extensions: [...baseExtensions(getPlaceholder), MentionNode, QuoteNode],
+    extensions: [...baseExtensions(getPlaceholder), MentionNode],
     onUpdate: trackEmptyBoundary(onEmptyChange),
     content: { type: 'doc', content: [{ type: 'paragraph' }] },
   });
@@ -921,149 +919,5 @@ describe('createUpdateHandler — per-change doc snapshots alongside the empty b
     // The final snapshot reports empty, which is what makes the host delete
     // the stored draft rather than persist an empty document.
     expect(emptiness).toEqual([false, true]);
-  });
-});
-
-// ── reply quotes in the composer document ──────────────────────────
-
-const para = (text?: string): JSONContent => ({
-  type: 'paragraph',
-  ...(text ? { content: [{ type: 'text', text }] } : {}),
-});
-const quote = (text: string): JSONContent => ({ type: 'replyQuote', attrs: { text } });
-
-describe('insertQuoteAtEnd — each Reply appends a quote and a fresh line for the reply', () => {
-  test('an empty composer: the empty paragraph is replaced, caret lands in the new trailing one', () => {
-    const editor = createHeadlessEditor(() => {});
-
-    insertQuoteAtEnd(editor, 'first quoted passage');
-
-    expect(editor.getJSON().content).toEqual([quote('first quoted passage'), para()]);
-    const { selection, doc } = editor.state;
-    expect(selection.empty).toBe(true);
-    expect(selection.$from.parent).toBe(doc.lastChild);
-  });
-
-  test('appends at the END even when the caret is earlier in the document', () => {
-    const editor = createHeadlessEditor(() => {});
-    setEditorDocument(editor, { type: 'doc', content: [para('typed first'), para('then more')] });
-    editor.commands.setTextSelection(2);
-
-    insertQuoteAtEnd(editor, 'a passage');
-
-    expect(editor.getJSON().content).toEqual([
-      para('typed first'),
-      para('then more'),
-      quote('a passage'),
-      para(),
-    ]);
-    expect(editor.state.selection.$from.parent).toBe(editor.state.doc.lastChild);
-  });
-
-  test('N replies interleave: quote, reply, quote, reply — and serialize in that order', () => {
-    const editor = createHeadlessEditor(() => {});
-
-    insertQuoteAtEnd(editor, 'first quoted passage');
-    typeChar(editor, 'my reply to the first');
-    insertQuoteAtEnd(editor, 'second quoted passage');
-    typeChar(editor, 'my reply to the second');
-
-    expect(editor.getJSON().content).toEqual([
-      quote('first quoted passage'),
-      para('my reply to the first'),
-      quote('second quoted passage'),
-      para('my reply to the second'),
-    ]);
-    expect(serializeDocument(editor.state.doc).text).toBe(
-      [
-        '<reply_context>first quoted passage</reply_context>',
-        'my reply to the first',
-        '<reply_context>second quoted passage</reply_context>',
-        'my reply to the second',
-      ].join('\n'),
-    );
-  });
-
-  test('the quote text is trimmed; blank text and a null editor are no-ops', () => {
-    const editor = createHeadlessEditor(() => {});
-    insertQuoteAtEnd(editor, '   ');
-    expect(editor.getJSON().content).toEqual([para()]);
-
-    insertQuoteAtEnd(editor, '  padded  ');
-    expect(editor.getJSON().content?.[0]).toEqual(quote('padded'));
-
-    expect(() => insertQuoteAtEnd(null, 'x')).not.toThrow();
-  });
-
-  test('a doc holding only a quote is NOT empty, so it can be sent', () => {
-    const calls: boolean[] = [];
-    const editor = createHeadlessEditor((isEmpty) => calls.push(isEmpty));
-
-    insertQuoteAtEnd(editor, 'send me alone');
-
-    expect(editor.isEmpty).toBe(false);
-    expect(calls).toEqual([false]);
-  });
-});
-
-describe('reply quotes survive the text and JSON round trips', () => {
-  test('text -> setContent document -> serializeDocument gives back the same wire text', () => {
-    const wire = [
-      '<reply_context>first quoted passage</reply_context>',
-      'my reply to the first',
-      '<reply_context>second quoted passage</reply_context>',
-      'my reply to the second',
-    ].join('\n');
-    const editor = createHeadlessEditor(() => {});
-
-    setEditorDocument(editor, textToDocument(wire));
-
-    expect(serializeDocument(editor.state.doc).text).toBe(wire);
-    expect(editor.state.doc.child(0).type.name).toBe('replyQuote');
-  });
-
-  test('a draft doc with a quote survives getDocument -> setDocument in a fresh editor', () => {
-    const source = createHeadlessEditor(() => {});
-    insertQuoteAtEnd(source, 'kept across reloads');
-    typeChar(source, 'and my reply');
-    const snapshot = JSON.parse(JSON.stringify(getEditorDocument(source))) as JSONContent;
-
-    const target = createHeadlessEditor(() => {});
-    setEditorDocument(target, snapshot);
-
-    expect(target.getJSON().content).toEqual([quote('kept across reloads'), para('and my reply')]);
-  });
-});
-
-describe('a held quote request is inserted AFTER the question-lock restore', () => {
-  // composer.tsx declares the quote effect after the question-lock effect, so
-  // on the unlock render the pre-question draft is restored first and the
-  // held quote is appended to it. These drive the same two editor calls, in
-  // both orders, to pin why that order is the one that keeps the quote.
-  function lockedDraftEditor() {
-    const editor = createHeadlessEditor(() => {});
-    setEditorDocument(editor, { type: 'doc', content: [para('my draft')] });
-    const saved = getEditorDocument(editor);
-    // What the handle's `clear()` does on lock: JSON, never a bare string.
-    editor.commands.setContent({ type: 'doc', content: [para()] });
-    return { editor, saved };
-  }
-
-  test('restore, then insert: the draft and the quote are both in the document', () => {
-    const { editor, saved } = lockedDraftEditor();
-
-    setEditorDocument(editor, saved);
-    insertQuoteAtEnd(editor, 'held passage');
-
-    expect(editor.getJSON().content).toEqual([para('my draft'), quote('held passage'), para()]);
-  });
-
-  test('insert, then restore (the order composer.tsx avoids) loses the quote', () => {
-    const { editor, saved } = lockedDraftEditor();
-
-    insertQuoteAtEnd(editor, 'held passage');
-    setEditorDocument(editor, saved);
-
-    expect(editor.getJSON().content).toEqual([para('my draft')]);
   });
 });

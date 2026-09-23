@@ -70,12 +70,17 @@ import {
   readCommandChipLabel,
 } from './command-attachments';
 import {
+  appendComposerQuote,
+  type ComposerQuote,
+  extractReplyQuotes,
   planDraftSubmission,
   planFailedSendRecovery,
   planPrefillMerge,
   planQuoteRequests,
   type QuoteRequest,
+  removeComposerQuote,
   resolveEditorPlaceholder,
+  restoreComposerQuotes,
   shouldApplyPrefill,
   shouldFocusEditorFromPadding,
   textToDocument,
@@ -88,6 +93,7 @@ import { useComposerFocus } from './hooks/use-composer-focus';
 import { useMenuRevalidation } from './hooks/use-file-search';
 import { controlToOpenFor, localizedSlashActions, type SlashAction } from './menus/slash-actions';
 import type { SlashFile } from './menus/slash-files';
+import { QuoteList } from './quote-list';
 import { createSubmitLatch } from './submit-latch';
 import type { AttachedFile, TrackedMention } from './types';
 
@@ -97,6 +103,8 @@ interface StashedDraft {
   content: ReturnType<ComposerEditorHandle['getContent']>;
   doc: JSONContent | null;
   files: AttachedFile[];
+  /** The reply quotes, taken out of the list with the draft. */
+  quotes: ComposerQuote[];
   attachmentSubmission: AttachmentSubmission;
 }
 
@@ -319,19 +327,20 @@ export interface SessionChatInputProps {
   cardClassName?: string;
 
   /**
-   * Reply quotes to insert — transcript selections the user clicked
-   * "Reply" on, oldest first. Id-keyed like `prefill`: each id inserts ONE
-   * quote block at the end of the document (`ComposerEditorHandle.insertQuote`),
-   * in array order. A request that arrives before the lazy editor mounts, or
-   * while the composer is question-locked or disabled, is held and inserted
-   * once that clears. The same id is never inserted twice.
+   * Reply quotes to add — transcript selections the user clicked "Reply" on,
+   * oldest first. Id-keyed like `prefill`: each id appends ONE quote to the
+   * list drawn above the input (`QuoteList`), in array order. Accepted at any
+   * time, question lock and disabled editor included: the list never touches
+   * the editor document. A quote already in the list is not added twice, and
+   * the same id is never applied twice. The next normal send carries every
+   * quote as a leading `<reply_context>` line (`withReplyQuotes`).
    */
   quoteRequests?: readonly QuoteRequest[];
   /**
-   * Called with the ids just inserted — the consume half of the handoff, same
+   * Called with the ids just applied — the consume half of the handoff, same
    * contract as `onPrefillApplied`. A holder removes those ids on this
    * (`acknowledgeQuoteRequests`) so a later remount of the composer cannot
-   * insert them again.
+   * apply them again.
    */
   onQuoteRequestsApplied?: (requestIds: number[]) => void;
   lockForQuestion?: boolean;
@@ -504,6 +513,7 @@ function ComposerImpl({
   const tModelGate = useTranslations('sessionUi.modelGate');
   const tComposerAttachments = useTranslations('hardcodedUi.composerAttachments');
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tThreads = useTranslations('threads');
 
   const dockId = `composer-slash-dock-${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
 
@@ -514,6 +524,60 @@ function ComposerImpl({
   useEffect(() => {
     attachedFilesRef.current = attachedFiles;
   }, [attachedFiles]);
+  /**
+   * The reply quotes, in send order — the card above the input. Not part of
+   * the editor document: a send prepends them (`planDraftSubmission`).
+   * `quotesRef` is the synchronous mirror, for the same reader
+   * `attachedFilesRef` exists for, and `setQuoteList` writes both.
+   */
+  const [quotes, setQuotes] = useState<ComposerQuote[]>([]);
+  const quotesRef = useRef<ComposerQuote[]>([]);
+  const nextQuoteIdRef = useRef(0);
+  const setQuoteList = useCallback(
+    (update: (current: ComposerQuote[]) => ComposerQuote[]) => {
+      const next = update(quotesRef.current);
+      if (next === quotesRef.current) return;
+      quotesRef.current = next;
+      setQuotes(next);
+    },
+    [],
+  );
+  /** Append quote texts, each with a fresh local id. Blank and repeated texts are skipped. */
+  const appendQuoteTexts = useCallback(
+    (texts: readonly string[]) => {
+      setQuoteList((current) =>
+        texts.reduce((list, text) => {
+          const next = appendComposerQuote(list, text, `quote-${nextQuoteIdRef.current + 1}`);
+          if (next !== list) nextQuoteIdRef.current += 1;
+          return next;
+        }, current),
+      );
+    },
+    [setQuoteList],
+  );
+  /** Put quotes that left with a draft back at the head of the list (`restoreComposerQuotes`). */
+  const restoreQuoteTexts = useCallback(
+    (texts: readonly string[]) => {
+      setQuoteList((current) =>
+        restoreComposerQuotes(current, texts, () => `quote-${++nextQuoteIdRef.current}`),
+      );
+    },
+    [setQuoteList],
+  );
+  const handleRemoveQuote = useCallback(
+    (id: string) => setQuoteList((current) => removeComposerQuote(current, id)),
+    [setQuoteList],
+  );
+  const quoteTexts = useMemo(() => quotes.map((quote) => quote.text), [quotes]);
+  const quoteListLabels = useMemo(
+    () => ({
+      count: tThreads('quoteCount', { count: quotes.length }),
+      expand: tThreads('expandQuotes'),
+      collapse: tThreads('collapseQuotes'),
+      remove: tHardcodedUi.raw('componentsSessionSessionChatInput.removeQuoteAriaLabel') as string,
+    }),
+    [tThreads, tHardcodedUi, quotes.length],
+  );
   const [isDragOver, setIsDragOver] = useState(false);
   const [isEmpty, setIsEmpty] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -565,12 +629,16 @@ function ComposerImpl({
    * was added by the person in this mount and outranks a stored list. Local
    * attachments were never storable, so nothing is restored for them.
    */
-  const handleDraftRestore = useCallback((draft: StoredDraft) => {
-    setDocumentWithoutStealingFocus(editorRef.current, draft.doc);
-    if (draft.files.length > 0) {
-      setAttachedFiles((current) => (current.length > 0 ? current : [...draft.files]));
-    }
-  }, []);
+  const handleDraftRestore = useCallback(
+    (draft: StoredDraft) => {
+      setDocumentWithoutStealingFocus(editorRef.current, draft.doc);
+      if (draft.files.length > 0) {
+        setAttachedFiles((current) => (current.length > 0 ? current : [...draft.files]));
+      }
+      restoreQuoteTexts(draft.quotes ?? []);
+    },
+    [restoreQuoteTexts],
+  );
 
   const { handleDocChange, clearSavedDraft } = useComposerDraft({
     active: draftActive,
@@ -578,6 +646,7 @@ function ComposerImpl({
     editorRef,
     editorReady: editorElement != null,
     attachedFiles,
+    quotes: quoteTexts,
     hasPrefill: !!prefill,
     onRestore: handleDraftRestore,
   });
@@ -930,7 +999,10 @@ function ComposerImpl({
     !modelsLoading &&
     !entitlementsPending &&
     (!availableSelectedModel || !hasSelectableModels);
-  const canSubmit = !isEmpty || attachedFiles.length > 0;
+  // Quotes alone are a message — but not an answer: a question-locked send
+  // takes only the typed text, so quotes cannot enable it there.
+  const canSubmit =
+    !isEmpty || attachedFiles.length > 0 || (!lockForQuestion && quotes.length > 0);
   /**
    * No agent may run this prompt. Refused here rather than at the server:
    * `lockForQuestion` is exempt because answering an open question is not a new
@@ -986,17 +1058,25 @@ function ComposerImpl({
     ) {
       return;
     }
+    // `<reply_context>` blocks in the prefill (a failed send coming back, a
+    // rewind, a queued message taken back) go to the quote list, never into
+    // the document as raw XML the next send would wrap again. They lead the
+    // list, ahead of quotes already there, in both modes: a replace prefill
+    // replaces the typed text, but it does not throw away quotes the user
+    // collected.
+    const incoming = extractReplyQuotes(prefillText);
     if (prefillMode === 'merge') {
       const merged = planPrefillMerge({
-        prefillDoc: textToDocument(prefillText),
-        prefillIsEmpty: prefillText.length === 0,
+        prefillDoc: textToDocument(incoming.text),
+        prefillIsEmpty: incoming.text.length === 0,
         currentDoc: editorRef.current?.getDocument() ?? EMPTY_DOCUMENT,
         currentIsEmpty: editorRef.current?.isEmpty() ?? true,
       });
       if (merged) editorRef.current?.setDocument(merged);
     } else {
-      editorRef.current?.setContent(prefillText);
+      editorRef.current?.setContent(incoming.text);
     }
+    restoreQuoteTexts(incoming.quotes);
     if (prefillFiles?.length) {
       try {
         const liveIds = new Set(
@@ -1059,6 +1139,7 @@ function ComposerImpl({
     addPromptAttachments,
     removePromptAttachment,
     tComposerAttachments,
+    restoreQuoteTexts,
   ]);
 
   useEffect(() => {
@@ -1074,10 +1155,9 @@ function ComposerImpl({
     }
   }, [lockForQuestion]);
 
-  // Declared AFTER the question-lock effect on purpose: on the render that
-  // unlocks, that effect restores the pre-question document first, and only
-  // then are held quotes appended. The other order let the restore overwrite
-  // a quote inserted a moment earlier.
+  // Each quote request appends to the list, at once — locked, disabled or
+  // not, editor mounted or not. The list is not the editor document, so the
+  // question lock's save/restore of that document cannot touch it.
   const appliedQuoteRequestIdsRef = useRef(new Set<number>());
   const onQuoteRequestsAppliedRef = useRef(onQuoteRequestsApplied);
   useEffect(() => {
@@ -1087,19 +1167,12 @@ function ComposerImpl({
     const pending = planQuoteRequests({
       requests: quoteRequests,
       appliedIds: appliedQuoteRequestIdsRef.current,
-      editorReady: editorElement != null,
-      locked: lockForQuestion || editorDisabled,
     });
     if (pending.length === 0) return;
-    // Recorded BEFORE the insert: the insert's own update re-renders this
-    // component, and a quote is not idempotent — a second pass would add a
-    // second copy.
-    for (const request of pending) {
-      appliedQuoteRequestIdsRef.current.add(request.id);
-      editorRef.current?.insertQuote(request.text);
-    }
+    for (const request of pending) appliedQuoteRequestIdsRef.current.add(request.id);
+    appendQuoteTexts(pending.map((request) => request.text));
     onQuoteRequestsAppliedRef.current?.(pending.map((request) => request.id));
-  }, [quoteRequests, editorElement, lockForQuestion, editorDisabled]);
+  }, [quoteRequests, appendQuoteTexts]);
 
   /**
    * The model popover's open state, hoisted out of `ModelSelector` so the `/`
@@ -1267,10 +1340,16 @@ function ComposerImpl({
       // typed since.
       const draft = stash ? stash.content : editorRef.current?.getContent();
       const filesNow = stash ? stash.files : attachedFilesRef.current;
+      const quotesNow = stash ? stash.quotes : quotesRef.current;
+      // Every quote leads the message, or the command args, as its own
+      // `<reply_context>` line. A question's custom answer below reads
+      // `draft.text`, so it never carries them.
       const plan = planDraftSubmission({
         commandName: draft?.commandName,
         text: draft?.text ?? '',
         commands: commands ?? [],
+        commandSplit: draft?.commandSplit,
+        quotes: quotesNow.map((quote) => quote.text),
       });
       if (plan.kind === 'command') {
         // A command cannot deliver the attached files, and the code below is
@@ -1327,7 +1406,7 @@ function ComposerImpl({
           );
           return;
         }
-        onCommand?.(plan.command, plan.args, draft?.commandSplit);
+        onCommand?.(plan.command, plan.args, plan.split);
         // The command is on its way; the draft that produced it is spent.
         // Deliberately NOT on either refusal path above (`guard.kind ===
         // 'refuse'`, `blocker`) — those keep the text in the editor on
@@ -1339,6 +1418,7 @@ function ComposerImpl({
         const commandReset = resolveComposerResetOnSend(clearOnSend, attachedFilesRef.current);
         if (commandReset.clear && !stash) {
           editorRef.current?.clear();
+          setQuoteList(() => []);
           for (const url of commandReset.urlsToRevoke) revokeUnsentPreview(url);
           attachedFilesRef.current = [];
           setAttachedFiles([]);
@@ -1379,6 +1459,7 @@ function ComposerImpl({
       const reset = resolveComposerResetOnSend(clearOnSend, filesNow);
       if (reset.clear && !stash) {
         editorRef.current?.clear();
+        setQuoteList(() => []);
         attachedFilesRef.current = [];
         setAttachedFiles([]);
       }
@@ -1431,6 +1512,9 @@ function ComposerImpl({
             attachedFilesRef.current = plan.attachedFiles;
             setAttachedFiles(plan.attachedFiles);
           }
+          // The quotes left the list with this send (a direct send cleared
+          // it, a stash took them); they lead it again.
+          if (reset.clear || stash) restoreQuoteTexts(quotesNow.map((quote) => quote.text));
           // The tray draws these files again, so the sent cache no longer owns their pictures.
           disownSentAttachmentPreviews(sentFiles);
           // The draft was cleared at hand-off; the editor holds it again, so save it. Only where
@@ -1461,6 +1545,8 @@ function ComposerImpl({
       onCommand,
       clearSavedDraft,
       handleDocChange,
+      setQuoteList,
+      restoreQuoteTexts,
       onCustomAnswer,
       onQuestionAction,
       onSend,
@@ -1492,6 +1578,9 @@ function ComposerImpl({
     const restoreStashedDraft = (stash: StashedDraft, withText: boolean) => {
       // The stash handed its pictures to the sent cache at capture. The tray draws them again.
       disownSentAttachmentPreviews(stash.files);
+      // A question answer takes only the text, so the quotes come back
+      // whatever the outcome.
+      restoreQuoteTexts(stash.quotes.map((quote) => quote.text));
       const editor = editorRef.current;
       const plan = planFailedSendRecovery({
         clearOnSend: true,
@@ -1527,7 +1616,11 @@ function ComposerImpl({
       () => {
         const editor = editorRef.current;
         const content = editor?.getContent();
+        // Typed text only. Quotes alone do not arm the stash: a question-locked
+        // double-fire keeps its quotes in the list, and would run the question
+        // action twice. A quote-only Enter mid-send is ignored; the quotes stay.
         if (!editor || !content || !content.text.trim()) return null;
+        const quotes = quotesRef.current;
         const doc = editor.getDocument() ?? null;
         const files = attachedFilesRef.current;
         // Handed off before the editor clears. A failed upload keeps the draft
@@ -1535,18 +1628,22 @@ function ComposerImpl({
         const attachmentSubmission = captureAttachmentSubmission(files, promptAttachmentsRef.current);
         if (!attachmentSubmission) return null;
         editor.clear();
+        setQuoteList(() => []);
         attachedFilesRef.current = [];
         setAttachedFiles([]);
         return {
           content,
           doc,
           files,
+          quotes,
           attachmentSubmission,
           placement: submitPlacementRef.current,
         };
       },
     );
     return submitLatchRef.current();
+    // `restoreQuoteTexts` and `setQuoteList` are stable (`useCallback` over
+    // refs), so the handler stays created once, like its other ref inputs.
   }, []);
 
   // A question lock owns the editor: Up there is a caret move, never a take-back.
@@ -1612,6 +1709,23 @@ function ComposerImpl({
         exists to remove.
       */}
       {slashMenuPlacement === 'above' && <div id={dockId} />}
+
+      {/*
+        The reply quotes, as their own card above everything else in the
+        stack — the queued-messages card's chrome and mount. `QuoteList`
+        renders nothing for an empty list, and `empty:hidden` then drops this
+        wrapper and its margin.
+      */}
+      <div className="mb-2 w-full empty:hidden">
+        {/* Keyed on emptiness: an emptied card remounts, so the next quote
+            always opens it expanded, whatever the user collapsed last time. */}
+        <QuoteList
+          key={quotes.length === 0 ? 'empty' : 'quotes'}
+          quotes={quotes}
+          labels={quoteListLabels}
+          onRemove={handleRemoveQuote}
+        />
+      </div>
 
       {/*
         The stack above the card. Each layer owns its OWN top rounding rather

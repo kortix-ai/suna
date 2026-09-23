@@ -1,6 +1,5 @@
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 
-import { joinAtQuoteBoundary, serializeReplyContext } from '../../reply-context';
 import type { MentionKind, TrackedMention } from '../types';
 
 /**
@@ -179,14 +178,6 @@ export function serializeDocument(doc: ProseMirrorNode): {
     // reported "line one\nline two", which is why the pre-existing
     // `getText()`-based assertions could not see this.
     if (node.type.name === 'hardBreak') return '\n';
-    // A reply quote (quote-node.ts) is a block leaf: `textBetween` writes the
-    // '\n' block separator before it because its leaf text is non-empty, and
-    // the paragraph after it gets its own separator. So each quote lands on
-    // its own line, at its position — the wire shape `parseReplyContexts`
-    // (reply-context.ts) reads back.
-    if (node.type.name === 'replyQuote') {
-      return serializeReplyContext(String(node.attrs.text ?? '').trim());
-    }
     return '';
   };
   const rawText = doc.textBetween(0, doc.content.size, '\n', leafText);
@@ -213,10 +204,9 @@ export function serializeDocument(doc: ProseMirrorNode): {
     // do not match is how the next bug gets written; deriving one from the
     // other makes them agree by construction. Non-command drafts keep
     // `rawText` untouched — collapsing whitespace in ordinary prose is not
-    // this function's business. Where a half meets a quote block the one
-    // separator is a newline, not a space (`joinAtQuoteBoundary`).
+    // this function's business.
     text: commandSplit
-      ? joinAtQuoteBoundary(commandSplit.before, commandSplit.after)
+      ? [commandSplit.before, commandSplit.after].filter(Boolean).join(' ')
       : rawText.trim(),
     mentions: collectMentions(flat),
     commandName: collectCommandName(flat),

@@ -481,7 +481,9 @@ describe('a `/` command is REFUSED mid-turn, not queued', () => {
     expect(branch).toContain('commandBlocker({');
     expect(branch).toContain('isWorking: sessionWorking ?? isBusy');
     expect(branch).toContain('if (blocker) {');
-    expect(branch).toContain('onCommand?.(plan.command, plan.args, draft?.commandSplit)');
+    // The split comes from the plan: it carries the reply quotes ahead of
+    // the chip, so the sent bubble draws them (`planDraftSubmission`).
+    expect(branch).toContain('onCommand?.(plan.command, plan.args, plan.split)');
     expect(branch).not.toContain('onQueueMessage');
   });
 
