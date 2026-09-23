@@ -1024,7 +1024,19 @@ jobs:
       # makes clients stop using the path proxy, so it goes in only once the
       # certificate pack for that wildcard is active. Unset = path proxy, which
       # is also the complete rollback.
-      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com"}'
+      #
+      # KORTIX_PROJECT_SNAPSHOT_S3_BUCKET/REGION name the bucket Terraform owns
+      # in infra/terraform/environments/prod (module.project_snapshots; the
+      # task role's grant comes with it). The bucket sits in eu-west-2, next
+      # to the prod API and the EU sandbox placement. Naming it turns on the
+      # PRODUCER (the leader worker prepares snapshots).
+      # KORTIX_PROJECT_SNAPSHOT_MODE=prefer-s3 makes fresh sessions boot from
+      # the prepared archive, falling back to Git when none is ready yet (that
+      # session queues the build) or the download fails; see deploy-dev.yml
+      # for the full rules. A project's metadata.project_snapshot_mode
+      # overrides it. Rollback: "git" (or drop the keys).
+      # docs/runbooks/project-snapshot-s3.md#aws
+      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PROJECT_SNAPSHOT_MODE":"prefer-s3","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-prod-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"eu-west-2","KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE":"false"}'
     steps:
       - uses: actions/checkout@v7
       - name: Configure AWS credentials (OIDC)
