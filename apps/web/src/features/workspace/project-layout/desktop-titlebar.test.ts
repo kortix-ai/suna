@@ -36,6 +36,15 @@ const chrome = require_(join(repoRoot, 'apps/desktop-electron/src/window-chrome.
 
 const css = readFileSync(join(repoRoot, 'apps/web/src/app/globals.css'), 'utf8');
 
+test('account settings keeps Back to app left and utilities right in web browsers', () => {
+  const sidebar = readFileSync(
+    join(repoRoot, 'apps/web/src/features/accounts/hub/account-settings-sidebar.tsx'),
+    'utf8',
+  );
+  expect(codeOnly(sidebar)).toMatch(/kx-overlay-sidebar-titlebar[^'"\n]*justify-between/);
+  expect(css).toMatch(/html\[data-desktop-platform='macos'\] \.kx-overlay-sidebar-titlebar\s*\{[^}]*justify-content:\s*flex-end/);
+});
+
 test('desktop chrome never resizes or drags generic product tab lists', () => {
   const desktopRules = css
     .replace(/\/\*[\s\S]*?\*\//g, '')
