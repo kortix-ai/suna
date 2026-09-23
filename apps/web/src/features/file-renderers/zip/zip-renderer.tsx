@@ -28,7 +28,7 @@ import { useTranslations } from '@/i18n/use-translations';
  * pixels only.
  */
 
-import { CodeEditor } from '@/components/file-editors/code-editor';
+import { CodeEditor } from '@/components/file-editors/lazy-code-editor';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
