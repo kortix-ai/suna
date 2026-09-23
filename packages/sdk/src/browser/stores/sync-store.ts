@@ -1776,24 +1776,37 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		// Reuse the previous row object for every message whose `info` and
 		// part array are unchanged, so per-message consumers (a memoized row,
 		// a selector) keep a stable identity while another message streams.
-		const previousRows = new Map<string, MessageWithParts>();
-		if (cached) {
-			for (let i = 0; i < cached.result.length; i++) {
-				const row = cached.result[i];
-				if (cached.partRefs[i] === parts[row.info.id]) previousRows.set(row.info.id, row);
-			}
-		}
+		// Index alignment answers the common case (a delta changed one row) in
+		// one pointer compare per row; a by-id index is built only once the
+		// alignment breaks (a message inserted or removed mid-transcript).
+		let previousById: Map<string, { row: MessageWithParts; partRef: Part[] | undefined }> | null =
+			null;
 		const partRefs: (Part[] | undefined)[] = [];
 		const result: MessageWithParts[] = [];
-		for (const info of msgs) {
+		for (let i = 0; i < msgs.length; i++) {
+			const info = msgs[i];
 			const messageParts = parts[info.id];
 			partRefs.push(messageParts);
-			const previous = previousRows.get(info.id);
-			result.push(
-				previous && previous.info === info
-					? previous
-					: { info, parts: messageParts ?? [] },
-			);
+			let reuse: MessageWithParts | undefined;
+			const aligned = cached?.result[i];
+			if (aligned && aligned.info === info) {
+				if (cached.partRefs[i] === messageParts) reuse = aligned;
+			} else if (cached) {
+				if (!previousById) {
+					previousById = new Map();
+					for (let j = 0; j < cached.result.length; j++) {
+						previousById.set(cached.result[j].info.id, {
+							row: cached.result[j],
+							partRef: cached.partRefs[j],
+						});
+					}
+				}
+				const previous = previousById.get(info.id);
+				if (previous && previous.row.info === info && previous.partRef === messageParts) {
+					reuse = previous.row;
+				}
+			}
+			result.push(reuse ?? { info, parts: messageParts ?? [] });
 		}
 		touchSessionMessageRows(sessionID, { msgs, partRefs, result });
 		return result;

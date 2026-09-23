@@ -2561,6 +2561,22 @@ describe("useSyncStore — buildSessionMessages (the one shared join)", () => {
 		expect(after[1].info.time).toEqual({ created: 1, completed: 2 });
 	});
 
+	test("a message inserted mid-transcript keeps the identity of every row around it", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_1"));
+		store.upsertMessage("ses_1", userMessage("msg_3"));
+		store.upsertMessage("ses_1", userMessage("msg_4"));
+		const before = rowsFor("ses_1");
+
+		store.upsertMessage("ses_1", userMessage("msg_2"));
+
+		const after = rowsFor("ses_1");
+		expect(after.map((row) => row.info.id)).toEqual(["msg_1", "msg_2", "msg_3", "msg_4"]);
+		expect(after[0]).toBe(before[0]);
+		expect(after[2]).toBe(before[1]);
+		expect(after[3]).toBe(before[2]);
+	});
+
 	test("an empty session is a stable empty array, never a fresh one", () => {
 		expect(rowsFor("ses_missing")).toBe(rowsFor("ses_other_missing"));
 		expect(rowsFor("ses_missing")).toEqual([]);
