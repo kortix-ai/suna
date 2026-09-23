@@ -70,7 +70,7 @@ async function ChangelogPagination({ page, pageCount }: { page: number; pageCoun
   return (
     <nav aria-label={tI18nComplete.raw('textead07c84baac')}>
       <Separator />
-      <div className="flex flex-wrap items-center justify-between gap-4 py-14 sm:py-20">
+      <div className="flex items-center justify-between gap-4 py-14 sm:py-20">
         <div className="min-w-0">
           {page > 1 ? (
             <Button asChild variant="ghost">
@@ -80,7 +80,7 @@ async function ChangelogPagination({ page, pageCount }: { page: number; pageCoun
             </Button>
           ) : null}
         </div>
-        <ol className="flex items-center gap-1">
+        <ol className="hidden items-center gap-1 sm:flex">
           {pages.map((n) => (
             <li key={n}>
               <Link
