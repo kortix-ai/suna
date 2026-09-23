@@ -11,6 +11,7 @@ import { SHIPPED_ICON_WEIGHTS } from './src/lib/icons/icon-config';
 import { refreshContentTimestamps } from './scripts/build-content-timestamps.mjs';
 import { copyEmojibaseData, getEmojibaseDataOutputPaths } from './scripts/emojibase-data.mjs';
 import { copyViewerWasm, getViewerWasmOutputPaths } from './scripts/viewer-wasm.mjs';
+import { writePublicCatalogs } from './scripts/i18n-public-catalogs.mjs';
 
 // --- Content timestamps manifest -----------------------------------------
 // Public AEO surfaces (/api/ai, /llms.txt) expose a `last_modified` field per
@@ -172,6 +173,9 @@ function resolveKortixVersion(): string {
   return base;
 }
 const KORTIX_VERSION = resolveKortixVersion();
+// Writes public/i18n/<locale>.<hash>.json (see the script for why) and returns
+// the hashes the browser uses to build each catalog URL.
+const I18N_CATALOG_VERSIONS = writePublicCatalogs();
 const KORTIX_COMMIT =
   process.env.NEXT_PUBLIC_KORTIX_COMMIT || process.env.VERCEL_GIT_COMMIT_SHA || 'unknown';
 
@@ -282,6 +286,8 @@ const nextConfig = (): NextConfig => ({
   env: {
     NEXT_PUBLIC_KORTIX_VERSION: KORTIX_VERSION,
     NEXT_PUBLIC_KORTIX_COMMIT: KORTIX_COMMIT,
+    // Content hash per locale catalog; versions the /i18n/<locale>.json URL.
+    NEXT_PUBLIC_KORTIX_I18N_VERSIONS: JSON.stringify(I18N_CATALOG_VERSIONS),
   },
   // Hide Next.js's persistent dev badge in the corner. It only ever
   // really matters when there's a build error / route compile issue —
@@ -726,6 +732,16 @@ const nextConfig = (): NextConfig => ({
             : []),
         ],
       },
+      // Locale catalogs: the file name carries a content hash, so a response
+      // never changes under its URL. Production builds only.
+      ...(process.env.NODE_ENV === 'production'
+        ? [
+            {
+              source: '/i18n/:file',
+              headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
+            },
+          ]
+        : []),
       {
         source: '/fonts/:path*',
         headers: [
