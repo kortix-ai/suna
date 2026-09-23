@@ -184,7 +184,7 @@ export function DateRangePicker({
                 <Text className="text-lg font-roobert-semibold text-foreground">
                   {t('usage.selectPeriod', 'Select Period')}
                 </Text>
-                <Pressable onPress={handleClose}>
+                <Pressable onPress={handleClose} accessibilityRole="button" accessibilityLabel="Close">
                   <Icon as={X} size={20} className="text-muted-foreground" />
                 </Pressable>
               </View>

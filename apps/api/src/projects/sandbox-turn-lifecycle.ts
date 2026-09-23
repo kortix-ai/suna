@@ -814,7 +814,7 @@ export type RuntimeTurnAdoption = 'adopted' | 'open_turn_exists' | 'known_messag
  * `activeTurns` record, and therefore no deadline grant: `GET .../turn`
  * reported idle for minutes of live streaming, the composer read "not
  * running" over a working session, and a long pty-driven work phase ran on
- * the 15-minute idle tail (live incident 2026-08-20, Essentia session
+ * the 15-minute idle tail (live incident 2026-08-20, SampleCo session
  * d1b74954). The daemon now relays `turn_begin` when it observes the root go
  * busy; this is that relay's write.
  *

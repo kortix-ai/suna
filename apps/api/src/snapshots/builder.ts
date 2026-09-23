@@ -265,7 +265,7 @@ export async function ensureSandboxImage(
   // release in prod, and on EVERY `self-host update`), or it is being built
   // right now by someone else. Either way a session must NEVER wait for a full
   // image build: 14-minute builds turned session starts into 10–34 minutes of
-  // `provisioning` on Essentia 2026-08-26.
+  // `provisioning` on SampleCo 2026-08-26.
   //
   // So boot off the last image this template lineage actually shipped and let
   // the new one bake behind us. The runtime assets the deploy actually changed
@@ -1151,7 +1151,7 @@ export function metaSnapshotName(contentHash: string): string {
  * Delete this environment's superseded meta images.
  *
  * The meta fingerprint hashes the source trees of the agent, CLI, SDK, shared,
- * starter and friends, so it changes on essentially every commit that touches
+ * starter and friends, so it changes on samplecolly every commit that touches
  * them — roughly every deploy. Nothing reaped the old ones: `ensureMetaSandboxImage`
  * deleted a snapshot only when its own build had FAILED, never when a newer one
  * superseded it. Measured 2026-08-12: 118 `kortix-meta-*` snapshots, all under

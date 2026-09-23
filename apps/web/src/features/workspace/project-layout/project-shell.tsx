@@ -8,6 +8,7 @@ import { Suspense, lazy, useCallback, useEffect, useLayoutEffect } from 'react';
 import { TITLEBAR_CONTROL_CLASS } from '@/components/desktop/titlebar-control';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
 import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
+import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { SidebarEdgePeek, useSidebar } from '@/components/ui/sidebar';
@@ -74,7 +75,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   const resolvedSidebarOpen = initialSidebarOpen ?? readSidebarOpenCookie();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, isLoading: authLoading, bootstrapError } = useAuth();
 
   const { data: projectDetail, error: projectDetailError } = useQuery({
     queryKey: qk.project.detail(projectId),
@@ -224,6 +225,8 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
     if (activeSessionId) openTab(projectId, activeSessionId);
   }, [projectId, activeSessionId, openTab]);
 
+  if (bootstrapError) return <ProjectPendingScreen />;
+
   if (authLoading || !user) {
     return <div className="bg-background min-h-screen" />;
   }
@@ -282,6 +285,9 @@ const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
         'bg-background relative flex min-h-0 flex-1 flex-col overflow-hidden',
         isExpanded && 'border-border border-l',
       )}
+      // The sidebar navigates and the toggle below owns the band's corner, so
+      // the window's desktop Back (root layout) steps aside on every project view.
+      data-kx-titlebar-owner=""
     >
       {/* Collapsed: an invisible strip on the viewport's left edge summons
           the sidebar as a hover flyout; it self-hides while docked open. */}
@@ -291,6 +297,9 @@ const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
           the opener lives here, always mounted, on every project view. The
           session header indents its leading buttons past it below md. */}
 
+      {/* Page headers can share z-50 with this fixed control. Paint the
+          control after them so their macOS drag regions cannot take its click. */}
+      {children}
       {desktopShell && !isExpanded && (
         <Hint
           label={
@@ -328,7 +337,6 @@ const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
           draws its own, in its own layout, gated by
           useShowPageSidebarOpener(). Only the desktop shell needs a
           shell-level one, because only there is the corner owned by the OS. */}
-      {children}
     </div>
   );
 };

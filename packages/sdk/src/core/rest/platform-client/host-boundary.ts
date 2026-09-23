@@ -214,10 +214,34 @@ export function getConnectorSetupLink(
   return requestJson(`/setup-links/connectors/${encodeURIComponent(token)}`, options);
 }
 
+/**
+ * What `POST /setup-links/connectors/:token/start` answers.
+ *
+ * `connect_url` is `null` when there is nothing to authorize: the toolkit
+ * needs no auth, or the slot already holds an active account, which the
+ * provider reuses rather than re-authorizing. `connected` is then `true`, and
+ * `already_connected` tells the two apart. Neither case is an error.
+ */
+export interface ConnectorSetupLinkStart {
+  connect_url: string | null;
+  connected?: boolean;
+  already_connected?: boolean;
+}
+
+/** What `POST /setup-links/connectors/:token/finalize` answers. */
+export interface ConnectorSetupLinkFinalize {
+  connected: boolean;
+  /**
+   * Who the account was authorized as: an email, a login, or a display name.
+   * `null` (or absent, on older servers) when the provider exposes none.
+   */
+  connected_as?: string | null;
+}
+
 export function startConnectorSetupLink(
   token: string,
   options: HostRequestOptions,
-): Promise<{ connect_url: string }> {
+): Promise<ConnectorSetupLinkStart> {
   return requestJson(`/setup-links/connectors/${encodeURIComponent(token)}/start`, options, {
     method: 'POST',
     body: {},
@@ -234,7 +258,7 @@ export function startConnectorSetupLink(
 export function finalizeConnectorSetupLink(
   token: string,
   options: HostRequestOptions,
-): Promise<{ connected: boolean }> {
+): Promise<ConnectorSetupLinkFinalize> {
   return requestJson(`/setup-links/connectors/${encodeURIComponent(token)}/finalize`, options, {
     method: 'POST',
     body: {},

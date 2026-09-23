@@ -11643,6 +11643,12 @@
       "text3eb54d5ae20d": "Aus der Startervorlage. Jedes neue Projekt wird damit ausgeliefert, standardmäßig deaktiviert.",
       "text3ecb3ffd4f33": "Effektive Berechtigungen geprüft",
       "textae47d51077b4": "Link wird vorbereitet…",
+      "texte9e0b20cf289": "Verbunden als {value0}",
+      "textbb7a240d3660": "{value0} umbenennen",
+      "text64f07c825803": "Nur der Name ändert sich. Das Konto bleibt verbunden, niemand muss sich erneut anmelden.",
+      "text499d7f6dfdfc": "Konto umbenannt",
+      "text11ef24ea6e15": "Das Konto konnte nicht umbenannt werden",
+      "text0223e507afd3": "Um ein anderes Konto zu verwenden, füge es in den Projekteinstellungen unter den Konten dieses Connectors hinzu und lege es als Standard fest.",
       "text3ed7c1e32705": "Einen Tracker zu lesen und ihn umzuschreiben sind verschiedene Aktionen. Setze den Schreibvorgang auf Ask; der Lauf hält beim Aufruf an und zeigt genau, welche Issues zusammengeführt oder geschlossen werden sollen. Nach deiner Freigabe wird er dort fortgesetzt.",
       "text3ee7a9bba1b1": "analyst.md",
       "text3efd6742a383": "Credits abgebucht",
@@ -18655,7 +18661,8 @@
       "textde340d411411": "Dieses Diagramm ist leer.",
       "textc53147a0d05b": "Dieses Diagramm konnte nicht gerendert werden",
       "text91aec62280a3": "SVG herunterladen",
-      "text751dfdcf3878": "Zeile {value0}"
+      "text751dfdcf3878": "Zeile {value0}",
+      "text0a7b76552107": "Connector-Konto umbenannt"
     }
   },
   "projectOnboarding": {
@@ -19548,7 +19555,9 @@
     "disableModel": "Modell deaktivieren",
     "modelError": "Der Modellzugriff konnte nicht aktualisiert werden.",
     "hiddenShort": "In der Auswahl ausgeblendet. Direkte Anfragen sind weiterhin erlaubt.",
-    "resetError": "Die Modellliste konnte nicht zurückgesetzt werden."
+    "resetError": "Die Modellliste konnte nicht zurückgesetzt werden.",
+    "appReturn": "Zurück zur Kortix-App",
+    "appReturnConnected": "Anbieter verbunden. Zurück zur Kortix-App"
   },
   "projectChooser": {
     "invitations": "Einladungen",
@@ -19653,5 +19662,8 @@
     "appAgentsEmpty": "Kein Agent listet diese App. Füge ihren Slug zu agents.<name>.apps in kortix.yaml hinzu.",
     "appAgentsDeclared": "Deklariert in {file} (agents.{agent}.apps)",
     "appAgentsGrantAll": "Alle Apps"
+  },
+  "connectorsAppReturn": {
+    "done": "Fertig. Zurück zur Kortix-App"
   }
 }

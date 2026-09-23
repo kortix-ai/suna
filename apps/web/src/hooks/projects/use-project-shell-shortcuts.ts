@@ -72,6 +72,23 @@ export function useProjectShellShortcuts({
   }, [openTabs, recentlyClosed, projectId, router]);
 
   useEffect(() => {
+    const onCommand = (event: Event) => {
+      const command = (event as CustomEvent<string>).detail;
+      if (command === 'new-session') {
+        onNewSession();
+        return;
+      }
+      if (command !== 'close-tab') return;
+      const session = pathname?.match(/^\/projects\/[^/]+\/sessions\/([^/]+)/)?.[1];
+      const customize = pathname?.match(/^\/projects\/[^/]+\/customize/) ? CUSTOMIZE_TAB_ID : null;
+      const activeTabId = session ?? customize;
+      if (activeTabId) closeProjectTab(activeTabId);
+    };
+    window.addEventListener('kortix-desktop-command', onCommand);
+    return () => window.removeEventListener('kortix-desktop-command', onCommand);
+  }, [closeProjectTab, onNewSession, pathname]);
+
+  useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const modHeld = tabSwitchModifier === 'meta' ? e.metaKey : e.ctrlKey;
       const modOther = tabSwitchModifier === 'meta' ? e.ctrlKey : e.metaKey;

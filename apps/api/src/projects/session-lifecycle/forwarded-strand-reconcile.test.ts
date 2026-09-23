@@ -350,7 +350,7 @@ describe('reconcileForwardedTurnsAtEnd', () => {
     });
   });
 
-  // EXPECTATION FLIPPED 2026-08-20 (live incident, Essentia session
+  // EXPECTATION FLIPPED 2026-08-20 (live incident, SampleCo session
   // d1b74954): an unreached prompt at the TIP with the loop exited (the tip's
   // newest assistant is COMPLETED) is not "in line" — nothing will ever read
   // it. Left alone, the reaper cleared its turn `unknown` and the prompt was

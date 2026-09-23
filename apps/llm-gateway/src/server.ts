@@ -67,7 +67,7 @@ export interface GatewayServer {
 // public gateway host sits behind a proxied Cloudflare hostname, so a JSON
 // `502 upstream_error` reached OpenCode as an HTML page and surfaced as
 // "AI_APICallError: Bad Gateway" with no code, no request id and no
-// suggestion (dev 2026-08-24; Essentia 2026-08-22). 503 passes through
+// suggestion (dev 2026-08-24; SampleCo 2026-08-22). 503 passes through
 // unchanged. The original status is kept on a header and in the body so
 // nothing is lost — only the transport-level rewrite is avoided.
 const CLOUDFLARE_REWRITTEN_STATUSES = new Set([502, 504]);

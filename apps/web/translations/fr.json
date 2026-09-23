@@ -11643,6 +11643,12 @@
       "text3eb54d5ae20d": "Issu du modèle de démarrage. Chaque nouveau projet l’intègre, désactivé.",
       "text3ecb3ffd4f33": "Autorisations effectives vérifiées",
       "textae47d51077b4": "Préparation du lien…",
+      "texte9e0b20cf289": "Connecté en tant que {value0}",
+      "textbb7a240d3660": "Renommer {value0}",
+      "text64f07c825803": "Seul le nom change. Le compte reste connecté et personne ne doit se reconnecter.",
+      "text499d7f6dfdfc": "Compte renommé",
+      "text11ef24ea6e15": "Impossible de renommer le compte",
+      "text0223e507afd3": "Pour utiliser un autre compte, ajoutez-le aux comptes de ce connecteur dans les paramètres du projet et définissez-le par défaut.",
       "text3ed7c1e32705": "Lire un tracker et le réécrire sont deux actions différentes. Réglez l’écriture sur Ask : l’exécution s’arrête sur l’appel et vous montre exactement quels tickets elle veut fusionner ou clôturer, puis reprend après votre approbation.",
       "text3ee7a9bba1b1": "analyst.md",
       "text3efd6742a383": "Crédits débités",
@@ -18655,7 +18661,8 @@
       "textde340d411411": "Ce diagramme est vide.",
       "textc53147a0d05b": "Impossible d'afficher ce diagramme",
       "text91aec62280a3": "Télécharger le SVG",
-      "text751dfdcf3878": "Ligne {value0}"
+      "text751dfdcf3878": "Ligne {value0}",
+      "text0a7b76552107": "Compte de connecteur renommé"
     }
   },
   "projectOnboarding": {
@@ -19548,7 +19555,9 @@
     "disableModel": "Désactiver le modèle",
     "modelError": "Impossible de modifier l’accès au modèle.",
     "hiddenShort": "Masqué dans le sélecteur. Les requêtes directes restent autorisées.",
-    "resetError": "Impossible de réinitialiser la liste des modèles."
+    "resetError": "Impossible de réinitialiser la liste des modèles.",
+    "appReturn": "Retour à l’app Kortix",
+    "appReturnConnected": "Fournisseur connecté. Retour à l’app Kortix"
   },
   "projectChooser": {
     "invitations": "Invitations",
@@ -19653,5 +19662,8 @@
     "appAgentsEmpty": "Aucun agent ne liste cette App. Ajoutez son slug à agents.<name>.apps dans kortix.yaml.",
     "appAgentsDeclared": "Déclaré dans {file} (agents.{agent}.apps)",
     "appAgentsGrantAll": "Toutes les Apps"
+  },
+  "connectorsAppReturn": {
+    "done": "Terminé. Retour à l’app Kortix"
   }
 }

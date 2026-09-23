@@ -123,7 +123,7 @@ function nonEmptyUserContent(content: string | UserContentPart[]): string | User
 // ~13x the base64 length in resident memory per image (89 MB for a 6.7 MB
 // image) and then had provider-utils re-encode the bytes through a
 // `String.fromCodePoint` concat loop. A 28 MB, 40-screenshot request went
-// through that path and OOM-killed a 512 MiB gateway (Essentia, 2026-08-22).
+// through that path and OOM-killed a 512 MiB gateway (SampleCo, 2026-08-22).
 //
 // Bedrock's Converse API still needs inline data rather than a URL reference
 // (`UnsupportedFunctionalityError: File URL data`), which the tagged inline

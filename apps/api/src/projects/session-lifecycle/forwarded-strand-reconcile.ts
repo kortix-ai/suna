@@ -71,7 +71,7 @@ export interface ForwardedTurnReconciliation {
   candidates: number;
   stranded: number;
   /** Newer candidates the loop exited PAST: placed at the tip, never read,
-   *  nothing running. Live incident 2026-08-20 (Essentia session d1b74954):
+   *  nothing running. Live incident 2026-08-20 (SampleCo session d1b74954):
    *  a prompt forwarded at 12:59:05Z sat at the tip; the loop completed at
    *  12:59:17Z without reading it and its queued continuation was rejected —
    *  "not stranded" left it in place forever. */
@@ -444,7 +444,7 @@ async function reconcileForwardedTurns(
   // placed correctly AT THE TIP (no assistant above it, so not "stranded")
   // that the ended loop simply never read. With the tip's newest assistant
   // CLOSED, nothing will ever answer it — OpenCode's queued continuation for
-  // it can be rejected at turn end (observed live 2026-08-20, Essentia
+  // it can be rejected at turn end (observed live 2026-08-20, SampleCo
   // session d1b74954: "Bro no fucking idea whats happening here lol",
   // delivered 12:59:05Z, loop completed 12:59:17Z past it, queue request
   // rejected, prompt swallowed). Requeue it exactly like a stranded row.

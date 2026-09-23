@@ -11643,6 +11643,12 @@
       "text3eb54d5ae20d": "来自入门模板。每个新项目都会附带，但默认关闭。",
       "text3ecb3ffd4f33": "已检查有效权限",
       "textae47d51077b4": "正在准备链接…",
+      "texte9e0b20cf289": "已以 {value0} 身份连接",
+      "textbb7a240d3660": "重命名 {value0}",
+      "text64f07c825803": "只更改名称。账户保持连接，无需任何人重新登录。",
+      "text499d7f6dfdfc": "账户已重命名",
+      "text11ef24ea6e15": "无法重命名账户",
+      "text0223e507afd3": "要使用其他账户，请在项目设置中将其添加到此连接器的账户下，并设为默认。",
       "text3ed7c1e32705": "读取跟踪器和改写跟踪器是不同的操作。将写入操作设为“询问”，运行会在调用处暂停，准确显示它想合并或关闭的问题；批准后从此处继续。",
       "text3ee7a9bba1b1": "analyst.md",
       "text3efd6742a383": "已记入贷方",
@@ -18655,7 +18661,8 @@
       "textde340d411411": "此图表为空。",
       "textc53147a0d05b": "无法渲染此图表",
       "text91aec62280a3": "下载 SVG",
-      "text751dfdcf3878": "第 {value0} 行"
+      "text751dfdcf3878": "第 {value0} 行",
+      "text0a7b76552107": "已重命名连接器账户"
     }
   },
   "projectOnboarding": {
@@ -19548,7 +19555,9 @@
     "disableModel": "禁用模型",
     "modelError": "无法更新模型访问权限。",
     "hiddenShort": "已从选择器中隐藏。仍允许直接请求。",
-    "resetError": "无法重置模型列表。"
+    "resetError": "无法重置模型列表。",
+    "appReturn": "返回 Kortix 应用",
+    "appReturnConnected": "提供商已连接。返回 Kortix 应用"
   },
   "projectChooser": {
     "invitations": "邀请",
@@ -19653,5 +19662,8 @@
     "appAgentsEmpty": "没有智能体列出此应用。请在 kortix.yaml 的 agents.<name>.apps 中添加它的 slug。",
     "appAgentsDeclared": "在 {file} 中声明（agents.{agent}.apps）",
     "appAgentsGrantAll": "全部应用"
+  },
+  "connectorsAppReturn": {
+    "done": "完成。返回 Kortix 应用"
   }
 }

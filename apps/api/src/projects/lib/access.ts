@@ -221,7 +221,7 @@ export async function viewerManagerStanding(
  * inventory), so any route that loads a session by id and then acts on it must
  * ask this first — `/start` and `/restart` used to skip it, answer
  * `stage: "stopped"` / 202 on a deleted session, and leave the UI looping on a
- * Restart button that could never work (essentia session b04a9911, 2026-08-24).
+ * Restart button that could never work (sampleco session b04a9911, 2026-08-24).
  */
 export function sessionIsTombstoned(row: { metadata: unknown }): boolean {
   const metadata = (row.metadata ?? {}) as Record<string, unknown>;
@@ -646,7 +646,7 @@ export interface UserIdentity {
  * /:projectId/sessions` resolves every distinct `created_by` in the project, so
  * a project with a human owner plus a few trigger/service actors paid one auth
  * round trip PER OWNER, on every one of the ~6 list fetches a single session
- * open issues (measured on the Essentia corpus, 2026-08-26). The rest of the
+ * open issues (measured on the SampleCo corpus, 2026-08-26). The rest of the
  * endpoint is four indexed queries totalling under 3 ms; these calls were the
  * only unbounded work in it.
  *

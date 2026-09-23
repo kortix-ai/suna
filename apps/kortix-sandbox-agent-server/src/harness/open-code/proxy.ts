@@ -182,7 +182,7 @@ export function createOpenCodeProxyService(opencode: Opencode): HarnessProxyServ
         //
         // Every `data:` url in a file part is the whole file, base64'd, and the
         // list re-ships every one of them on every read. Measured on a real
-        // session (essentia, 2026-08-24): 20 messages = 7-19 MB, reads dying on
+        // session (2026-08-24): 20 messages = 7-19 MB, reads dying on
         // the browser's 30s deadline, and a retry re-issuing the whole thing.
         // The same read answered here, in-VM, in 276 ms — the cost was entirely
         // the bytes leaving. They now leave one part at a time, on demand, via

@@ -14,7 +14,7 @@
  *     "Couldn't start session <id> — The session runtime did not become
  *      reachable. Restart the session to try again."
  *
- * Measured on Essentia (2026-08-26, box `inqwpv4a1cc1kynlg46k8`): that card
+ * Measured on SampleCo (2026-08-26, box `inqwpv4a1cc1kynlg46k8`): that card
  * painted while the box was SECONDS from ready — its daemon logged
  * `opencode ready` at 06:10:02, right after the budget expired. The card is a
  * dead end with no auto-recovery, and the human's fix is always the same one
@@ -44,7 +44,7 @@
  *
  * ## Why `runtimeReachable` is a separate input from `waking`
  *
- * The session row is NOT proof the runtime is up. Observed on Essentia the same
+ * The session row is NOT proof the runtime is up. Observed on SampleCo the same
  * day: `POST …/start` answered 202 and the row stayed `running` for 5+ minutes
  * while the E2B resume had silently failed — the provider reported the sandbox
  * `stopped` and the daemon proxy answered `503 sandbox_not_ready`. A ladder that

@@ -41,6 +41,55 @@ Each account's `owner_type` decides who may run a call as it:
 Multiple connectors can reference the same provider app. Use separate
 connectors when one app needs different policies.
 
+### Which identity an account acts as
+
+An account's `label` is a name chosen before authorization. It does not say
+which login was used. `connected_as` does: the email, login, or display name
+the provider reports for the authorized account.
+
+- Kortix reads it when a Composio authorization finalizes: first the connected
+  account's display name, then the toolkit's "who am I" tool (Gmail, Google
+  Calendar, Google Drive, Linear, GitHub, Slack, Notion, Outlook, Microsoft
+  Teams, HubSpot, Jira, Asana, Figma, Airtable, Salesforce, Trello, Dropbox,
+  Calendly). Google Docs and Google Sheets expose no such tool, so their
+  `connected_as` stays `null`.
+- An account still carrying a default label (`Private connection`,
+  `Project connection`, or the connector name) is relabelled to that identity.
+  A label someone chose is never replaced.
+- The connect page shows "Connected as …" the moment the account lands, so a
+  shared account authorized with a personal login is visible right away.
+- `connected_as` is on every connection (`GET /projects/{projectId}/connections`),
+  on the accounts list, in `kortix connectors accounts <slug>` and
+  `kortix connectors connections ls` (the `CONNECTED AS` column), and on the
+  account rows in **Customize → Connectors**.
+
+### Rename an account
+
+Rename an account without re-authorizing it:
+
+```text
+PUT /projects/{projectId}/connections/{connectionId}/label   {"label": "Support inbox"}
+kortix connectors connections rename <connection-id> Support inbox
+```
+
+In the dashboard, open the connector, then **⋯ → Rename** on the account row.
+Only the label changes. The authorized account, its owner, its default flag,
+and the provider state stay as they are. The same gate applies as for
+disconnect: your own private account, or `project.connector.connections.manage`
+for a shared one.
+
+A rename is refused with `400` for `me`, `project`, or a UUID-shaped label,
+because `--account` resolves those before labels. It is refused with `409` when
+another account of the same owner already has that label, compared
+case-insensitively.
+
+### Connect a different account
+
+A connect link for a slot that already holds an active account does not
+re-authorize it. The provider reuses the account, and the connect page shows
+**Already connected**. To use a different login, add a new account on the
+connector, make it the default, then disconnect the old one.
+
 A call that names no account resolves to the caller's own default private
 account first, then the project's default shared account. Every call result
 echoes which account it ran as (`account: { connection_id, label,
@@ -374,8 +423,8 @@ GET /connectors/projects/{projectId}/connectors/{slug}/accounts
 {
   "connector": "stripe-read",
   "accounts": [
-    { "connection_id": "...", "label": "Shared workspace", "owner_type": "project", "is_default": true },
-    { "connection_id": "...", "label": "My Stripe", "owner_type": "member", "is_default": false }
+    { "connection_id": "...", "label": "Shared workspace", "owner_type": "project", "is_default": true, "connected_as": "billing@example.com" },
+    { "connection_id": "...", "label": "My Stripe", "owner_type": "member", "is_default": false, "connected_as": null }
   ]
 }
 ```

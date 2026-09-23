@@ -108,6 +108,7 @@ export function UsageDrawer({ visible, onClose, onUpgradePress, onThreadPress }:
             size="icon"
             onPress={handleClose}
             className="rounded-full"
+            accessibilityLabel="Close"
           >
             <Icon
               as={X}

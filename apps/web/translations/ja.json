@@ -11643,6 +11643,12 @@
       "text3eb54d5ae20d": "スターターテンプレート由来です。新しいプロジェクトにはすべて含まれますが、無効になっています。",
       "text3ecb3ffd4f33": "実効権限を確認しました",
       "textae47d51077b4": "リンクを準備しています…",
+      "texte9e0b20cf289": "{value0} として接続済み",
+      "textbb7a240d3660": "{value0} の名前を変更",
+      "text64f07c825803": "変更されるのは名前だけです。アカウントは接続されたままで、再ログインは不要です。",
+      "text499d7f6dfdfc": "アカウント名を変更しました",
+      "text11ef24ea6e15": "アカウント名を変更できませんでした",
+      "text0223e507afd3": "別のアカウントを使うには、プロジェクト設定でこのコネクタのアカウントに追加し、デフォルトに設定してください。",
       "text3ed7c1e32705": "トラッカーを読むことと書き換えることは別のアクションです。書き込みをAskにすると、統合・クローズ対象の課題を正確に表示して停止し、承認後そこから再開します。",
       "text3ee7a9bba1b1": "analyst.md",
       "text3efd6742a383": "クレジットが引き落とされました",
@@ -18655,7 +18661,8 @@
       "textde340d411411": "この図は空です。",
       "textc53147a0d05b": "この図を表示できませんでした",
       "text91aec62280a3": "SVG をダウンロード",
-      "text751dfdcf3878": "{value0} 行目"
+      "text751dfdcf3878": "{value0} 行目",
+      "text0a7b76552107": "コネクタのアカウント名を変更"
     }
   },
   "projectOnboarding": {
@@ -19548,7 +19555,9 @@
     "disableModel": "モデルを無効にする",
     "modelError": "モデルへのアクセスを更新できませんでした。",
     "hiddenShort": "選択リストでは非表示です。直接リクエストは引き続き許可されます。",
-    "resetError": "モデル一覧をリセットできませんでした。"
+    "resetError": "モデル一覧をリセットできませんでした。",
+    "appReturn": "Kortix アプリに戻る",
+    "appReturnConnected": "プロバイダーを接続しました。Kortix アプリに戻る"
   },
   "projectChooser": {
     "invitations": "招待",
@@ -19653,5 +19662,8 @@
     "appAgentsEmpty": "このアプリを挙げているエージェントはありません。kortix.yaml の agents.<name>.apps にスラッグを追加してください。",
     "appAgentsDeclared": "{file} で宣言（agents.{agent}.apps）",
     "appAgentsGrantAll": "すべてのアプリ"
+  },
+  "connectorsAppReturn": {
+    "done": "完了。Kortix アプリに戻る"
   }
 }

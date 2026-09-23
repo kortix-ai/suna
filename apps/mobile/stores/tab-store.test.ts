@@ -29,7 +29,6 @@ function resetStore() {
     openTabOrder: [],
     sessionHistory: [],
     historyIndex: -1,
-    showTabsOverview: false,
     tabStateById: {},
     scopeKey: null,
     scopes: {},

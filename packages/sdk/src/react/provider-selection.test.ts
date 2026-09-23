@@ -23,7 +23,7 @@ describe('LLM_PROVIDER_CREDENTIALS — Kortix auth requirements, not raw catalog
 });
 
 describe('connectedGatewayProviderIdsFromSecretNames (SDK native-mode path)', () => {
-  test('amazon-bedrock connects via bearer token + region alone — the essentia case', () => {
+  test('amazon-bedrock connects via bearer token + region alone — the sampleco case', () => {
     const ids = connectedGatewayProviderIdsFromSecretNames(
       new Set(['AWS_BEARER_TOKEN_BEDROCK', 'AWS_REGION']),
     );
@@ -381,7 +381,7 @@ describe('nativeProviderListFromCatalog — default pick quality', () => {
   });
 });
 
-// PROVEN LIVE on the Essentia self-host 2026-08-26: a brand-new workspace with
+// PROVEN LIVE on the SampleCo self-host 2026-08-26: a brand-new workspace with
 // Bedrock BYOK creds (AWS_BEARER_TOKEN_BEDROCK + AWS_REGION, native path,
 // llm_gateway OFF) auto-selected `xai.grok-4.6` — the newest Bedrock model in
 // the catalog and the one family with NO `global.`/`us.` twin. Bedrock refused

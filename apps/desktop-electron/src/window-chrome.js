@@ -22,20 +22,20 @@ const MAC_TITLEBAR = {
   band: 40,
   /** Traffic-light diameter (macOS Big Sur and later). */
   lightSize: 12,
-  /**
-   * Height of the button frame AppKit positions for each light. The 12px
-   * circle is centred in this frame, and `trafficLightPosition.y` is the top of
-   * the FRAME, not of the circle. Measured in #6178: with `y: 18` the lights
-   * occupied y 24–36, centred at 30 = 18 + 24 / 2. Treating `y` as the circle's
-   * top put the lights 6px below every control centred in the band.
-   */
+  /** Height of the button frame positioned by AppKit. */
   lightFrame: 24,
+  /**
+   * The supplied Retina capture places the visible native circle 10 image
+   * pixels above the project row even though the old 24px-frame model said
+   * they matched. Move AppKit's origin by five window pixels, not the web row.
+   */
+  nativeCenterCorrectionY: 5,
   /** Traffic-light centre-to-centre spacing. */
   lightPitch: 20,
   /** Left inset of the first (close) light. */
   lightInsetX: 10,
   /** Clear space between the last light and the app's first control. */
-  gutter: 10,
+  gutter: 16,
   /** Box of a web-rendered control sitting in the band. */
   control: 28,
   /** Optical gap between that control and the content following it. */
@@ -54,7 +54,7 @@ function centerInBand(size) {
 function macTrafficLightPosition() {
   return {
     x: MAC_TITLEBAR.lightInsetX,
-    y: centerInBand(MAC_TITLEBAR.lightFrame),
+    y: centerInBand(MAC_TITLEBAR.lightFrame) + MAC_TITLEBAR.nativeCenterCorrectionY,
   };
 }
 

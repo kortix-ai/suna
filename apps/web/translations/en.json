@@ -11643,6 +11643,12 @@
       "text3eb54d5ae20d": "From the starter template. Every new project ships with it, switched off.",
       "text3ecb3ffd4f33": "Checked effective permissions",
       "textae47d51077b4": "Preparing link…",
+      "texte9e0b20cf289": "Connected as {value0}",
+      "textbb7a240d3660": "Rename {value0}",
+      "text64f07c825803": "Only the name changes. The account stays connected, and nobody signs in again.",
+      "text499d7f6dfdfc": "Account renamed",
+      "text11ef24ea6e15": "Could not rename the account",
+      "text0223e507afd3": "To use a different account, add it under this connector's accounts in project settings and make it the default.",
       "text3ed7c1e32705": "Reading a tracker and rewriting it are different actions. Set the write to Ask and the run holds at the call, showing you exactly which issues it wants to merge or close, and resumes from there when you approve.",
       "text3ee7a9bba1b1": "analyst.md",
       "text3efd6742a383": "Credits debited",
@@ -18655,7 +18661,8 @@
       "textde340d411411": "This diagram is empty.",
       "textc53147a0d05b": "Couldn't render this diagram",
       "text91aec62280a3": "Download SVG",
-      "text751dfdcf3878": "Line {value0}"
+      "text751dfdcf3878": "Line {value0}",
+      "text0a7b76552107": "Renamed connector account"
     }
   },
   "projectOnboarding": {
@@ -19548,7 +19555,9 @@
     "disableModel": "Disable model",
     "modelError": "Could not update model access.",
     "hiddenShort": "Hidden from the picker. Direct requests are still allowed.",
-    "resetError": "Could not reset the model list."
+    "resetError": "Could not reset the model list.",
+    "appReturn": "Back to the Kortix app",
+    "appReturnConnected": "Provider connected. Back to the Kortix app"
   },
   "projectChooser": {
     "invitations": "Invitations",
@@ -19653,5 +19662,8 @@
     "appAgentsEmpty": "No agent lists this App. Add its slug to agents.<name>.apps in kortix.yaml.",
     "appAgentsDeclared": "Declared in {file} (agents.{agent}.apps)",
     "appAgentsGrantAll": "All Apps"
+  },
+  "connectorsAppReturn": {
+    "done": "Done. Back to the Kortix app"
   }
 }

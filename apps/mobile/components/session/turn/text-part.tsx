@@ -28,14 +28,15 @@ export const TextPartBlock = React.memo(function TextPartBlock({
       <SelectableMarkdownText isDark={isDark} isStreaming={isStreaming}>
         {text}
       </SelectableMarkdownText>
+      {/* The row names itself: "App preview · localhost:3000". Passing the URL
+          as the title and "Tap to open in browser" as the description said the
+          same thing three times (Jay, 2026-09-22). */}
       {detectedUrls.map((detected) => (
-        <SandboxPreviewCard
-          key={`preview-${detected.port}`}
-          port={detected.port}
-          path={detected.path}
-          title={`localhost:${detected.port}${detected.path}`}
-          description="Tap to open in browser"
-        />
+        // 12pt (`pt-3`) off the message above it: the old bordered card carried
+        // its own `my-2`, and the row has no margin of its own (Jay, 2026-09-22).
+        <View key={`preview-${detected.port}`} className="pt-3">
+          <SandboxPreviewCard port={detected.port} path={detected.path} />
+        </View>
       ))}
     </View>
   );

@@ -57,3 +57,28 @@ export function shouldLoadMoreSessions(state: {
 }): boolean {
   return state.hasNextPage && !state.isFetchingNextPage && !state.isRefreshing;
 }
+
+/**
+ * Which state a paged session list shows (COR-146: a failure must never look
+ * like an empty list). The drawer's session list and the Sessions page share
+ * this decision so they never drift apart:
+ *
+ * - `loading` — the first fetch, no rows yet.
+ * - `error` — the query failed and no session survived (nothing loaded
+ *   before the failure, or a refetch failed with nothing cached).
+ * - `empty` — the query succeeded with zero sessions.
+ * - `rows` — at least one session loaded. A background poll or pull-refresh
+ *   failure that still has rows counts as `rows`, not `error`: the failure
+ *   never hides data the user already saw.
+ */
+export type SessionListState = 'loading' | 'error' | 'empty' | 'rows';
+
+export function sessionListState(state: {
+  isLoading: boolean;
+  isError: boolean;
+  hasSessions: boolean;
+}): SessionListState {
+  if (state.isLoading) return 'loading';
+  if (state.hasSessions) return 'rows';
+  return state.isError ? 'error' : 'empty';
+}

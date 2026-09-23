@@ -46,7 +46,7 @@ export interface AuditQueueOptions {
 }
 
 export const AUDIT_FLUSH_MS_DEFAULT = 250;
-// 100, lowered from 500 (Essentia convoy fix): each row's BEFORE INSERT trigger
+// 100, lowered from 500 (SampleCo convoy fix): each row's BEFORE INSERT trigger
 // takes a per-session FOR UPDATE lock held to the batch's COMMIT, so a large
 // batch holds every touched session's lock for the whole commit and cross-blocks
 // the other replica. Smaller batches commit sooner. Tunable via KORTIX_AUDIT_FLUSH_MAX.
@@ -72,7 +72,7 @@ export interface AuditQueueStats {
 /**
  * Split one flush snapshot into the statements that will actually run.
  *
- * ONE STATEMENT NEVER SPANS TWO SESSIONS (Essentia convoy, 2026-08-26).
+ * ONE STATEMENT NEVER SPANS TWO SESSIONS (SampleCo convoy, 2026-08-26).
  * `kortix.audit_prepare_event` takes a per-session row lock on
  * `kortix.audit_session_sequences` for every row, and PostgreSQL holds a row
  * lock until COMMIT. A 100-row statement built in arrival order therefore held

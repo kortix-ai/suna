@@ -2693,7 +2693,7 @@ const goodBusinessesDontNeedMoats: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: 'Is there a moat? Not really. Anyone can spin up a WordPress site. Anyone can build a competing hosting service. The code is open-source. The plugins are open-source. The barriers to entry are essentially zero.',
+      text: 'Is there a moat? Not really. Anyone can spin up a WordPress site. Anyone can build a competing hosting service. The code is open-source. The plugins are open-source. The barriers to entry are samplecolly zero.',
     },
     {
       type: 'p',
