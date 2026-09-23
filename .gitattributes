@@ -2,4 +2,7 @@
 # flags it as binary and hides line diffs. It's plain UTF-8 — treat it as text.
 scripts/worktree/*.ts text
 
-# Generated QA reports are binary artifacts.
+# Translation catalogs merge key by key and keep key order
+# (apps/web/scripts/i18n-catalogs.mjs). `pnpm install` registers the driver
+# through scripts/register-merge-drivers.sh; until then git's text merge runs.
+apps/web/translations/*.json merge=i18n-catalog

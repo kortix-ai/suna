@@ -13,6 +13,7 @@
     "wallpapers:generate": "node scripts/generate-wallpapers.mjs",
     "i18n:audit": "node scripts/audit-i18n.mjs",
     "i18n:strict": "node scripts/audit-i18n.mjs --max-hardcoded=0",
+    "i18n:catalogs": "node scripts/i18n-catalogs.mjs check",
     "test:workspace-search": "node --experimental-strip-types --test src/features/files/search/workspace-search-core.test.mts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

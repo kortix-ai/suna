@@ -140,6 +140,24 @@ The two live on two surfaces, because they belong to two different owners. Your 
 
 See [SDK authentication](/docs/sdk/auth) for the full token model.
 
+## Audit log
+
+The audit log records every request that reaches the API, whether or not the request identified its caller. The server writes one row per HTTP request, WebSocket upgrade, preview request, Git transfer, and SCIM call. Coverage does not depend on the route.
+
+Each row names the caller that the request proved:
+
+| `actor_type` | Caller |
+| --- | --- |
+| `human` | A signed-in person, or a person's token (`source: api_key`). |
+| `agent` | A session's agent credential. The row also names the human the agent acts on behalf of. |
+| `service_account` | A service account token. |
+| `system` | An account API key, a SCIM directory token, or an integration webhook with a verified signature. |
+| `anonymous` | A request with no credential, or with an invalid or forged one. |
+
+A refused request is a row with `outcome: denied`. `metadata.auth` records how the caller authenticated: the token id, never the secret. A Git clone is the action `git.clone`. A push is `git.push`, and `metadata.refs` lists each ref it created, updated, or deleted.
+
+An anonymous request that names one of your projects is written to your log. Select these rows with `actor_type=anonymous`. Anonymous rows are rate-limited on each API process, so a flood of them cannot displace attributed rows. Health probes, CORS preflights, and anonymous traffic to a deployed App are not recorded.
+
 ## Billing
 
 Billing applies at the account level and covers every project in the account. Kortix offers a free tier, a pro tier, and a per-seat team tier, each with its own model access and credits. Using your own model key does not make usage free: Kortix still charges a platform fee on top of it, except on the free tier. For what a credit buys, the per-service markups, and how to make a balance last, see [Credits & usage](/docs/credits).

@@ -282,6 +282,36 @@ export async function resolveSandboxProjectId(previewSandboxId: string): Promise
   return ref?.projectId ?? null;
 }
 
+export interface SandboxOwner {
+  sandboxId: string;
+  accountId: string;
+  projectId: string;
+}
+
+const OWNER_TTL_MS = 5 * 60 * 1000;
+const ownerCache = new Map<string, { value: SandboxOwner; expiresAt: number }>();
+
+/**
+ * The account and project that own a preview sandbox. For the audit log: a
+ * preview request's row belongs in the OWNER's log, whoever made it. Cached
+ * because a preview page load is hundreds of requests, and a sandbox's owner
+ * never changes. Only a found owner is cached.
+ */
+export async function resolveSandboxOwner(previewSandboxId: string): Promise<SandboxOwner | null> {
+  const key = previewSandboxId.toLowerCase();
+  const now = Date.now();
+  const hit = ownerCache.get(key);
+  if (hit && hit.expiresAt > now) return hit.value;
+  const value = await resolveSandboxRef(previewSandboxId);
+  if (value) {
+    ownerCache.set(key, { value, expiresAt: now + OWNER_TTL_MS });
+    if (ownerCache.size > 10_000) {
+      for (const [k, v] of ownerCache) if (v.expiresAt <= now) ownerCache.delete(k);
+    }
+  }
+  return value;
+}
+
 async function isAccountMember(userId: string, accountId: string): Promise<boolean> {
   const [row] = await db
     .select({ accountId: accountMembers.accountId })
@@ -377,6 +407,7 @@ export async function resolvePreviewUserContext(
 }
 
 export function clearPreviewOwnershipCache(): void {
+  ownerCache.clear();
   previewContextCache.clear();
 }
 

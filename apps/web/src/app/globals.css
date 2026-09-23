@@ -819,25 +819,6 @@
   background: oklch(0.7 0 0 / 0.3);
 }
 
-.kortix-markdown [data-streamdown-animating='true'] > * {
-  animation: stream-fade-in 200ms ease-out forwards;
-}
-
-.kortix-markdown [data-streamdown-animating='true'] p,
-.kortix-markdown [data-streamdown-animating='true'] li,
-.kortix-markdown [data-streamdown-animating='true'] h1,
-.kortix-markdown [data-streamdown-animating='true'] h2,
-.kortix-markdown [data-streamdown-animating='true'] h3,
-.kortix-markdown [data-streamdown-animating='true'] h4,
-.kortix-markdown [data-streamdown-animating='true'] h5,
-.kortix-markdown [data-streamdown-animating='true'] h6 {
-  animation: stream-word-pop 180ms ease-out forwards;
-}
-
-.kortix-markdown [data-streamdown-animating='true'] code {
-  animation: stream-char-reveal 150ms ease-out forwards;
-}
-
 /* Page-enter motion: soft fade-up for standalone pages (/projects). `both`
    keeps delayed elements hidden until their turn. Stagger delays are capped
    so long lists never feel slow — everything past the sixth child enters
@@ -993,15 +974,11 @@
    survived `prefers-reduced-motion` on `.kx-fade-up` — the movement stopped
    but the staged reveal did not. */
 
+/* No `display` rule belongs under `.streaming-active`: a streaming message
+   must lay out exactly like the settled one. See
+   components/markdown/streaming-layout.test.ts. */
 .kortix-markdown.streaming-active {
   position: relative;
-}
-
-.kortix-markdown.streaming-active p:last-child,
-.kortix-markdown.streaming-active li:last-child,
-.kortix-markdown.streaming-active
-  div:last-child:not(:has(table)):not(:has(.katex)):not(.katex-math-block) {
-  display: inline;
 }
 
 /* KaTeX — block/display math scrolls horizontally; keep inline math in flow */

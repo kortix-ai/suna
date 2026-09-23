@@ -4,7 +4,11 @@ import { HostBoundaryError } from '@kortix/sdk';
 import {
   classifySetupLinkError,
   describeLinkExpiry,
+  holdPendingSetupLink,
+  parsePendingSetupLinkHref,
   parseSetupLinkHref,
+  partialSetupLinkKind,
+  pendingSetupLinkHref,
   setupLinkChipLabel,
   splitTextLinks,
 } from './util';
@@ -124,6 +128,13 @@ describe('setupLinkChipLabel', () => {
     expect(setupLinkChipLabel('  ', TOKEN, 'Connect app')).toBe('Connect app');
   });
 
+  test('no token yet (the URL is still streaming) keeps a human label', () => {
+    // An empty token is a substring of every string, so a bare
+    // `text.includes(token)` would send every pending card to the fallback.
+    expect(setupLinkChipLabel('Connect Outlook', '', 'Connect app')).toBe('Connect Outlook');
+    expect(setupLinkChipLabel('', '', 'Connect app')).toBe('Connect app');
+  });
+
   test('a human-authored label is kept', () => {
     expect(setupLinkChipLabel('Enter your Slack credentials', TOKEN, 'Enter credentials')).toBe(
       'Enter your Slack credentials',
@@ -174,5 +185,122 @@ describe('describeLinkExpiry', () => {
   test('past or unparseable expiry yields null', () => {
     expect(describeLinkExpiry('2026-08-07T11:00:00.000Z', now)).toBeNull();
     expect(describeLinkExpiry('not-a-date', now)).toBeNull();
+  });
+});
+
+// ─── A setup link whose URL is still streaming ──────────────────────────────
+// The token is several hundred characters, so a setup link takes a second or
+// two to stream. Until its closing paren arrives the renderer only has the
+// part so far, and the reader should see the card it will become, with
+// nothing to click, instead of the raw `[label](` text.
+// ────────────────────────────────────────────────────────────────────────────
+
+describe('partialSetupLinkKind', () => {
+  test('answers as soon as the path names a setup route', () => {
+    withWindowOrigin('https://kortix.com');
+    expect(partialSetupLinkKind('https://kortix.com/connect/')).toBe('connector');
+    expect(partialSetupLinkKind('https://kortix.com/connect/ksl_AB')).toBe('connector');
+    expect(partialSetupLinkKind('https://kortix.com/secret-intake/k')).toBe('secret');
+    expect(partialSetupLinkKind('/connect/ksl_AB')).toBe('connector');
+  });
+
+  test('says nothing while the URL could still be anything', () => {
+    withWindowOrigin('https://kortix.com');
+    for (const partial of [
+      '',
+      'h',
+      'https:/',
+      'https://kort',
+      'https://kortix.com/co',
+      '/connect',
+    ]) {
+      expect(partialSetupLinkKind(partial)).toBeNull();
+    }
+  });
+
+  test('a cross-origin URL counts only while its token can still be ksl_', () => {
+    withWindowOrigin('https://staging.kortix.com');
+    expect(partialSetupLinkKind('https://kortix.com/connect/')).toBe('connector');
+    expect(partialSetupLinkKind('https://kortix.com/connect/ks')).toBe('connector');
+    expect(partialSetupLinkKind('https://kortix.com/connect/ksl_AB')).toBe('connector');
+    expect(partialSetupLinkKind('https://example.com/connect/other-token')).toBeNull();
+  });
+
+  test('other routes and schemes are not setup links', () => {
+    expect(partialSetupLinkKind('https://kortix.com/docs/connect/')).toBeNull();
+    expect(partialSetupLinkKind('javascript:/connect/')).toBeNull();
+    expect(partialSetupLinkKind('Connect Outlook')).toBeNull();
+  });
+});
+
+describe('pending setup-link href', () => {
+  test('round-trips each kind', () => {
+    expect(parsePendingSetupLinkHref(pendingSetupLinkHref('connector'))).toBe('connector');
+    expect(parsePendingSetupLinkHref(pendingSetupLinkHref('secret'))).toBe('secret');
+  });
+
+  test('is a fragment, so it can never navigate anywhere', () => {
+    expect(pendingSetupLinkHref('connector').startsWith('#')).toBe(true);
+  });
+
+  test('anything else is not a pending setup link', () => {
+    expect(parsePendingSetupLinkHref(undefined)).toBeNull();
+    expect(parsePendingSetupLinkHref('#section')).toBeNull();
+    expect(parsePendingSetupLinkHref(`${pendingSetupLinkHref('connector')}x`)).toBeNull();
+    expect(parsePendingSetupLinkHref(`/connect/${TOKEN}`)).toBeNull();
+  });
+});
+
+describe('holdPendingSetupLink', () => {
+  const LEAD = "Here's a fresh authorization link:\n\n";
+  const URL = `https://kortix.com/connect/${TOKEN}`;
+  const LINK = `[Connect Outlook](${URL})`;
+
+  test('holds the link as a pending card from the moment the path names a setup route', () => {
+    withWindowOrigin('https://kortix.com');
+    const pending = `${LEAD}[Connect Outlook](${pendingSetupLinkHref('connector')})`;
+    for (const cut of ['https://kortix.com/connect/', 'https://kortix.com/connect/ksl_AAA', URL]) {
+      expect(holdPendingSetupLink(`${LEAD}[Connect Outlook](${cut}`)).toBe(pending);
+    }
+  });
+
+  test('leaves the text alone before the route is known and after the link closes', () => {
+    withWindowOrigin('https://kortix.com');
+    for (const text of [
+      `${LEAD}[Connect Outl`,
+      `${LEAD}[Connect Outlook](`,
+      `${LEAD}[Connect Outlook](https://kortix.com/co`,
+      `${LEAD}${LINK}`,
+      `${LEAD}${LINK}\n\nIt expires in about 30 minutes.`,
+    ]) {
+      expect(holdPendingSetupLink(text)).toBe(text);
+    }
+  });
+
+  test('holds a link on the line after a bold heading in the same paragraph', () => {
+    withWindowOrigin('https://kortix.com');
+    const heading = `${LEAD}📅 **Google Calendar (member level):**\n`;
+    expect(holdPendingSetupLink(`${heading}[Authorize my Calendar](${URL.slice(0, 40)}`)).toBe(
+      `${heading}[Authorize my Calendar](${pendingSetupLinkHref('connector')})`,
+    );
+  });
+
+  test('a label that is itself the setup URL holds with no label, like the bare URL it becomes', () => {
+    withWindowOrigin('https://kortix.com');
+    expect(holdPendingSetupLink(`${LEAD}[https://kortix.com/secret-intake/ksl_A`)).toBe(
+      `${LEAD}[](${pendingSetupLinkHref('secret')})`,
+    );
+  });
+
+  test('ordinary links are never held', () => {
+    withWindowOrigin('https://kortix.com');
+    const text = `${LEAD}[the docs](https://kortix.com/docs/conn`;
+    expect(holdPendingSetupLink(text)).toBe(text);
+  });
+
+  test('a label with brackets inside is left to the generic path', () => {
+    withWindowOrigin('https://kortix.com');
+    const text = `${LEAD}[a] b](https://kortix.com/connect/ksl_A`;
+    expect(holdPendingSetupLink(text)).toBe(text);
   });
 });
