@@ -81,6 +81,7 @@ import { combinedAuth, supabaseAuth } from './middleware/auth';
 import { createCorsMiddleware } from './middleware/cors';
 import { compressResponse } from './middleware/compress';
 import { upstreamTiming } from './middleware/upstream-timing';
+import { installFetchTiming } from './lib/server-timing';
 import { isRequestDeadlineHTTPException, requestDeadline } from './middleware/request-deadline';
 import { oauthApp } from './oauth';
 import { oauthAuthorizationServerMetadata } from './oauth/discovery';
@@ -323,6 +324,8 @@ app.use('*', async (c, next) => {
 // INSIDE the request-context middleware above, because it reads the
 // AsyncLocalStorage scope that one creates. See middleware/upstream-timing.ts.
 app.use('*', upstreamTiming);
+// Outbound HTTP made inside a request is attributed as `gotrue` or `http`.
+installFetchTiming(config.SUPABASE_URL);
 
 // Request logger — uses Hono's built-in logger for stdout (Docker captures these)
 app.use('*', logger());
