@@ -11,21 +11,52 @@ import { markdownToCardElements } from '../channels/teams/markdown';
 
 type El = Record<string, unknown>;
 
+// Teams does not break a TextBlock at a single `\n` outside a list —
+// Microsoft: "If you require newlines elsewhere in the TextBlock, use \n\n"
+// (learn.microsoft.com, "Format cards in Teams", 2026-09). A fenced block sent
+// as one monospace TextBlock ran its lines together; Microsoft's own renderer
+// with the Teams host config shows the same. Teams has a native `CodeBlock`
+// for this (web and desktop), and mobile gets the fallback.
 describe('markdownToCardElements — code', () => {
-  test('a fenced block becomes a monospace TextBlock that keeps its line breaks', () => {
+  const code = (els: El[]) => els.find((e) => e.type === 'CodeBlock') as El & { fallback: El };
+
+  test('a fenced block becomes a Teams CodeBlock that keeps its line breaks', () => {
     const md = ['Structure:', '', '```', 'kaab-demo/', '├── README.md', '└── kortix.yaml', '```', '', 'Done.'].join('\n');
     const els = markdownToCardElements(md) as El[];
     expect(els).toHaveLength(3);
     expect(els[0]).toMatchObject({ type: 'TextBlock', text: 'Structure:' });
-    expect(els[1]).toMatchObject({ type: 'TextBlock', fontType: 'Monospace', wrap: true });
-    expect(els[1].text).toBe('kaab-demo/\n├── README.md\n└── kortix.yaml');
+    expect(els[1]).toMatchObject({ type: 'CodeBlock', language: 'PlainText' });
+    expect(els[1].codeSnippet).toBe('kaab-demo/\n├── README.md\n└── kortix.yaml');
     expect(els[2]).toMatchObject({ type: 'TextBlock', text: 'Done.' });
   });
 
-  test('markdown control characters inside a fenced block are escaped, not interpreted', () => {
-    const md = ['```', 'const a = *b* + _c_;', 'x[0] = `y`', '```'].join('\n');
-    const [code] = markdownToCardElements(md) as El[];
-    expect(code.text).toBe('const a = \\*b\\* + \\_c\\_;\nx\\[0\\] = y');
+  test('the fence language picks the highlighter; an unknown one is plain text', () => {
+    expect(code(markdownToCardElements('```ts\nconst a = 1;\n```') as El[]).language).toBe('TypeScript');
+    expect(code(markdownToCardElements('```sh\nls -la\n```') as El[]).language).toBe('Bash');
+    expect(code(markdownToCardElements('```python\nprint(1)\n```') as El[]).language).toBe('Python');
+    expect(code(markdownToCardElements('```brainfuck\n+++\n```') as El[]).language).toBe('PlainText');
+  });
+
+  test('mobile, which has no CodeBlock, falls back to monospace with each line kept apart', () => {
+    const block = code(markdownToCardElements('```\na\nb\n```') as El[]);
+    expect(block.fallback).toMatchObject({ type: 'TextBlock', fontType: 'Monospace', wrap: true });
+    // `\n\n` is the only line break Teams honours outside a list.
+    expect(block.fallback.text).toBe('a\n\nb');
+  });
+
+  test('the snippet is the code verbatim; only the fallback escapes markdown', () => {
+    const block = code(markdownToCardElements(['```', 'const a = *b* + _c_;', 'x[0] = `y`', '```'].join('\n')) as El[]);
+    expect(block.codeSnippet).toBe('const a = *b* + _c_;\nx[0] = `y`');
+    expect(block.fallback.text).toBe('const a = \\*b\\* + \\_c\\_;\n\nx\\[0\\] = y');
+  });
+
+  test('a long block keeps the whole snippet but a bounded fallback', () => {
+    const lines = Array.from({ length: 120 }, (_, i) => `line ${i}`);
+    const block = code(markdownToCardElements(['```', ...lines, '```'].join('\n')) as El[]);
+    expect(block.codeSnippet).toBe(lines.join('\n'));
+    expect(String(block.fallback.text)).toContain('line 0');
+    expect(String(block.fallback.text)).not.toContain('line 119');
+    expect(String(block.fallback.text)).toContain('more lines');
   });
 
   test('inline code is rendered bold with the backticks removed', () => {
@@ -35,7 +66,36 @@ describe('markdownToCardElements — code', () => {
 
   test('an unterminated fence still renders as code to the end', () => {
     const els = markdownToCardElements('before\n\n```sh\nls -la') as El[];
-    expect(els[1]).toMatchObject({ fontType: 'Monospace', text: 'ls -la' });
+    expect(els[1]).toMatchObject({ type: 'CodeBlock', codeSnippet: 'ls -la', language: 'Bash' });
+  });
+});
+
+// Same rule for prose: "Deployed.\nVersion 1.2" ran together on one line in
+// Teams where Slack shows two. Each prose line is its own block, tight to the
+// line above; a run of list items stays one block, where `\n` does break.
+describe('markdownToCardElements — line breaks', () => {
+  test('each line of a paragraph is its own block, with no gap between them', () => {
+    const els = markdownToCardElements('Deployed to prod.\nVersion: 1.2.3\nDuration: 4 min') as El[];
+    expect(els.map((e) => e.text)).toEqual(['Deployed to prod.', 'Version: 1.2.3', 'Duration: 4 min']);
+    expect(els[0].spacing).toBeUndefined();
+    expect(els[1].spacing).toBe('none');
+    expect(els[2].spacing).toBe('none');
+  });
+
+  test('a list stays one block, and prose around it keeps its own lines', () => {
+    const els = markdownToCardElements('Found 2 files:\n- a.ts\n- b.ts\nBoth changed.') as El[];
+    expect(els.map((e) => e.text)).toEqual(['Found 2 files:', '- a.ts\n- b.ts', 'Both changed.']);
+  });
+
+  test('a list item continued on an indented line stays in the list', () => {
+    const [list] = markdownToCardElements('- first item\n  that wraps\n- second') as El[];
+    expect(list.text).toBe('- first item\n  that wraps\n- second');
+  });
+
+  test('a separator above a multi-line paragraph lands on its first line only', () => {
+    const els = markdownToCardElements('before\n\n---\n\none\ntwo') as El[];
+    expect(els[1]).toMatchObject({ text: 'one', separator: true });
+    expect(els[2].separator).toBeUndefined();
   });
 });
 

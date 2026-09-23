@@ -54,6 +54,120 @@ describe('sanitizeParts', () => {
     });
   });
 
+  test('a show card keeps the input it is DRAWN from — and still loses its output', () => {
+    // The SDK's `isEmptyShowPart` drops a completed show whose input is empty,
+    // so stripping it made every result an agent had shown vanish from the
+    // saved transcript while the sandbox was off.
+    const [part] = sanitizeParts([
+      {
+        id: 'prt_show',
+        type: 'tool',
+        tool: 'show',
+        callID: 'call_show',
+        state: {
+          status: 'completed',
+          title: 'Revenue chart',
+          time: { start: 1, end: 2 },
+          input: {
+            type: 'image',
+            title: 'Revenue chart',
+            description: 'Q3 by region',
+            path: '/workspace/out/revenue.png',
+            aspect_ratio: '16:9',
+            metadata: { unbounded: 'A'.repeat(10_000) },
+          },
+          output: 'A'.repeat(100_000),
+        },
+      },
+    ]);
+    expect(part.state).toEqual({
+      status: 'completed',
+      title: 'Revenue chart',
+      time: { start: 1, end: 2 },
+      input: {
+        type: 'image',
+        title: 'Revenue chart',
+        description: 'Q3 by region',
+        path: '/workspace/out/revenue.png',
+        aspect_ratio: '16:9',
+      },
+    });
+  });
+
+  test('every spelling the SDK treats as show keeps its input', () => {
+    for (const tool of ['show', 'show_user', 'oc-show', 'show-user']) {
+      const [part] = sanitizeParts([
+        { id: 'p', type: 'tool', tool, state: { status: 'completed', input: { url: 'https://x.test' } } },
+      ]);
+      expect((part.state as { input?: unknown }).input).toEqual({ url: 'https://x.test' });
+    }
+  });
+
+  test('a show input never smuggles a data: URL past the 7-19 MB guard', () => {
+    const bytes = `data:image/png;base64,${'A'.repeat(5_000)}`;
+    const [part] = sanitizeParts([
+      {
+        id: 'p',
+        type: 'tool',
+        tool: 'show',
+        state: {
+          status: 'completed',
+          input: {
+            type: 'image',
+            title: 'kept',
+            url: bytes,
+            content: bytes,
+            // `items` as the JSON STRING the model often sends: stored verbatim
+            // it would carry the bytes past every check on the top-level fields.
+            items: JSON.stringify([{ type: 'image', url: bytes }, { type: 'image', path: '/workspace/a.png' }]),
+          },
+        },
+      },
+    ]);
+    const input = (part.state as { input: Record<string, unknown> }).input;
+    expect(JSON.stringify(input)).not.toContain('base64');
+    expect(input).toEqual({
+      type: 'image',
+      title: 'kept',
+      items: [{ type: 'image' }, { type: 'image', path: '/workspace/a.png' }],
+    });
+  });
+
+  test('show content spends the same per-message budget as text', () => {
+    const [text, show] = sanitizeParts([
+      { id: 'a', type: 'text', text: 'A'.repeat(MIRROR_MAX_PART_CHARS) },
+      {
+        id: 'b',
+        type: 'tool',
+        tool: 'show',
+        state: { status: 'completed', input: { type: 'markdown', content: 'B'.repeat(MIRROR_MAX_PART_CHARS * 10) } },
+      },
+    ]);
+    expect((text.text as string).length).toBe(MIRROR_MAX_PART_CHARS);
+    const content = (show.state as { input: { content: string } }).input.content;
+    expect(content.length).toBe(MIRROR_MAX_PART_CHARS);
+  });
+
+  test('a reference that would have to be cut is dropped, never truncated', () => {
+    // A truncated path or URL points somewhere WRONG; an absent one is honest.
+    const [part] = sanitizeParts([
+      {
+        id: 'p',
+        type: 'tool',
+        tool: 'show',
+        state: { status: 'completed', input: { title: 't', path: `/workspace/${'x'.repeat(5_000)}` } },
+      },
+    ]);
+    expect((part.state as { input: Record<string, unknown> }).input).toEqual({ title: 't' });
+  });
+
+  test('a show with nothing drawable keeps no empty input object', () => {
+    const [part] = sanitizeParts([
+      { id: 'p', type: 'tool', tool: 'show', state: { status: 'completed', input: { items: 'not json' } } },
+    ]);
+    expect('input' in (part.state as object)).toBe(false);
+  });
+
   test('a text part survives intact — it is the transcript', () => {
     expect(sanitizeParts([{ id: 'p', type: 'text', text: 'hello world' }])).toEqual([
       { id: 'p', type: 'text', text: 'hello world' },

@@ -197,3 +197,91 @@ describe('buildQuestionCard — the answer carries its question', () => {
     expect(String(card.actions?.[0].data.question)).toHaveLength(200);
   });
 });
+
+// Measured against the Kortix web question UI, a realistic three-question ask
+// rendered with two identical bold "Something else" labels, one question whose
+// options were hidden in a dropdown, and every question header dropped.
+describe('buildQuestionCard — the form reads like the web question UI', () => {
+  const ask = () =>
+    buildQuestionCard([
+      {
+        question: 'Which surface are you testing?',
+        header: 'Test focus',
+        options: [
+          { label: 'The question UI', description: 'single/multi select' },
+          { label: 'Rendering', description: 'long labels and wrapping' },
+        ],
+        multiple: false,
+        custom: true,
+      },
+      {
+        question: 'Which UI elements?',
+        header: 'Multi-select',
+        options: [{ label: 'messages' }, { label: 'images' }, { label: 'tables' }],
+        multiple: true,
+        custom: true,
+      },
+      { question: 'Anything clipped?', header: 'Confirm', options: [], custom: true },
+    ]) as unknown as Card;
+
+  test('every option is visible — no choice hides behind a dropdown', () => {
+    for (const set of ofType(ask(), 'Input.ChoiceSet')) expect(set.style).toBe('expanded');
+  });
+
+  test('the "type your own" box carries no label of its own', () => {
+    // `custom` defaults to true, so this box sits under nearly every question.
+    // A repeated bold "Something else" read as a second question.
+    const text = allText(ask());
+    expect(text).not.toContain('Something else');
+    const others = ofType(ask(), 'Input.Text').filter((b) => String(b.id).endsWith('(other)'));
+    expect(others.length).toBe(2);
+    for (const box of others) expect(box.placeholder).toBe('Or type your own answer');
+  });
+
+  test('each question keeps its short header', () => {
+    const text = allText(ask());
+    for (const h of ['Test focus', 'Multi-select', 'Confirm']) expect(text).toContain(h);
+  });
+
+  test('several questions carry their position in the caption, and the relayed id stays the bare question', () => {
+    const card = ask();
+    const text = allText(card);
+    expect(text).toContain('1 of 3 · Test focus');
+    expect(text).toContain('2 of 3 · Multi-select');
+    // `handleForm` relays `- <id>: <value>` — the agent should read the
+    // question, not its position.
+    expect(String(card.actions?.[0].data.fieldIds)).toStartWith('Which surface are you testing?,');
+  });
+
+  test('no question label starts like a markdown list item', () => {
+    // Teams renders TextBlock markdown: "1. Which surface…" became an
+    // indented ordered list, out of line with its caption and its choices
+    // (seen in the Adaptive Cards renderer with the Teams host config).
+    const labels = ofType(ask(), 'TextBlock').map((b) => String(b.text));
+    for (const label of labels) expect(label).not.toMatch(/^\d+[.)]\s/);
+  });
+
+  test('a single question carries no position', () => {
+    const card = buildQuestionCard([
+      { question: 'Which env?', header: 'Env', multiple: true, options: [{ label: 'dev' }, { label: 'prod' }] },
+    ]);
+    expect(allText(card)).not.toContain('1 of 1');
+  });
+
+  test('past six options the picker becomes a dropdown again', () => {
+    // A column of eight radios stops being scannable.
+    const card = buildQuestionCard([
+      { question: 'Pick a model', options: Array.from({ length: 8 }, (_, i) => ({ label: `m${i}` })) },
+    ]);
+    expect(ofType(card, 'Input.ChoiceSet')[0].style).toBe('compact');
+  });
+});
+
+describe('buildFormCard — agent-authored forms are unchanged', () => {
+  test('a choice field with no style keeps the Adaptive Cards default', async () => {
+    // `teams ask --form-file` forms predate `style`; they must not change shape.
+    const { buildFormCard } = await import('../channels/teams/cards');
+    const card = buildFormCard({ fields: [{ id: 'env', label: 'Env', type: 'choice', choices: ['dev', 'prod'] }] });
+    expect(ofType(card, 'Input.ChoiceSet')[0].style).toBeUndefined();
+  });
+});
