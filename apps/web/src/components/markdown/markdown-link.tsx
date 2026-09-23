@@ -70,6 +70,9 @@ const ACTION_ICON: Record<MarkdownActionIcon, Icon> = {
   'arrow-up-right': ArrowUpRightIcon,
 };
 
+/** The placeholder scheme Streamdown's `remend` uses; never a navigable href. */
+const STREAMDOWN_SCHEME = /^streamdown:/i;
+
 const INLINE_LINK_CLASS = cn(
   'font-medium text-kortix-blue',
   'underline decoration-kortix-blue/40 decoration-[1px] underline-offset-[3px]',
@@ -93,8 +96,11 @@ export function MarkdownInlineLink({
   children?: React.ReactNode;
   proxy: MarkdownProxy;
 }): React.ReactElement {
-  // A link still streaming in has no destination yet: show its text, link-styled, inert.
-  if (href === INCOMPLETE_LINK_HREF) {
+  // `streamdown:` passes sanitize only so the streaming placeholder
+  // (`streamdown:incomplete-link`) reaches this renderer. A link still
+  // streaming in has no destination yet, and no other `streamdown:` href is a
+  // real destination: show the text, link-styled, and never emit the href.
+  if (href && STREAMDOWN_SCHEME.test(href)) {
     return <span className={INLINE_LINK_CLASS}>{children}</span>;
   }
 

@@ -330,3 +330,62 @@ describe('MarkdownActionBlock internal chip target', () => {
     expect(html).not.toContain('target="_blank"');
   });
 });
+
+describe('streamdown: hrefs never render as live links', () => {
+  const MATRIX: Array<
+    [string, ComponentType<{ content: string; actionLinks?: boolean }>, boolean]
+  > = [];
+  for (const [name, R] of RENDERERS) {
+    MATRIX.push([`${name} actionLinks on`, R, true], [`${name} actionLinks off`, R, false]);
+  }
+
+  for (const [label, R, actionLinks] of MATRIX) {
+    const render = (content: string) =>
+      renderToStaticMarkup(withIntl(<R content={content} actionLinks={actionLinks} />));
+
+    test(`${label}: a standalone streamdown: link has no href`, () => {
+      const html = render('[x](streamdown:other)');
+
+      expect(html).not.toMatch(/href="streamdown:/i);
+      expect(html).toContain('x');
+    });
+
+    test(`${label}: a streamdown: link in prose has no href`, () => {
+      const html = render('See [x](streamdown:other) for details.');
+
+      expect(html).not.toMatch(/href="streamdown:/i);
+      expect(html).toContain('x');
+    });
+
+    test(`${label}: an uppercase STREAMDOWN: link has no href`, () => {
+      expect(render('[x](STREAMDOWN:other)')).not.toMatch(/href="streamdown:/i);
+    });
+
+    test(`${label}: a raw HTML streamdown: anchor has no href`, () => {
+      const html = render('<a href="streamdown:evil">raw</a>');
+
+      expect(html).not.toMatch(/href="streamdown:/i);
+      expect(html).toContain('raw');
+    });
+
+    test(`${label}: a javascript: link still renders blocked`, () => {
+      const html = render('[x](javascript:alert(1))');
+
+      expect(html).not.toContain('href="javascript:');
+      expect(html).toContain('[blocked]');
+    });
+  }
+
+  for (const [name, R] of RENDERERS) {
+    test(`${name}: the placeholder still renders the disabled pending chip`, () => {
+      const html = renderToStaticMarkup(
+        withIntl(<R content={`[Connect Shopify](${INCOMPLETE_LINK_HREF})`} actionLinks />),
+      );
+
+      expect(html).toContain('disabled=""');
+      expect(html).toContain('aria-disabled="true"');
+      expect(html).toContain('Connect Shopify');
+      expect(html).not.toMatch(/href="streamdown:/i);
+    });
+  }
+});

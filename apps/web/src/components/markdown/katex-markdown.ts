@@ -64,7 +64,9 @@ const katexSanitizeSchema = {
   // whose `(url)` is still streaming in. The default schema strips it, and
   // rehype-harden then swaps the link for a "[blocked]" span. Keeping it lets
   // markdown-link.tsx render the partial link as inert text or a pending chip.
-  // No href with this scheme is ever emitted to the DOM.
+  // This admits EVERY `streamdown:` href, so markdown-link.tsx must never emit
+  // one: `MarkdownInlineLink` renders any `streamdown:` href as an inert span,
+  // and only the exact placeholder becomes a pending chip.
   protocols: {
     ...defaultSchema.protocols,
     href: [...(defaultSchema.protocols?.href ?? []), 'streamdown'],
