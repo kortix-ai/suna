@@ -335,11 +335,11 @@ export async function deployPlatinumPreview(
           1,
         ),
     });
-    // Target-full creates real session sandboxes. Workers are disabled inside a
-    // preview, so nothing else reaps them when the suite exits. Stop them here:
-    // their disks remain available for inspection and restart, while their RAM
-    // returns to the shared provider pool before the workflow completes.
-    await stopPreviewSessions(api, identity.name);
+    // An ephemeral target-full preview creates real session sandboxes. Workers
+    // are disabled inside it, so nothing else reaps them when the suite exits.
+    // A persistent branch environment can contain interactive user sessions;
+    // a redeploy must not interrupt those sessions.
+    if (!identity.reuseExisting) await stopPreviewSessions(api, identity.name);
     const result: SandboxPreviewResult = {
       provider: 'platinum',
       exitCode,
@@ -354,7 +354,7 @@ export async function deployPlatinumPreview(
     return result;
   } catch (error) {
     if (launched) {
-      await stopPreviewSessions(api, identity.name).catch(() => {});
+      if (!identity.reuseExisting) await stopPreviewSessions(api, identity.name).catch(() => {});
       throw error;
     }
     // Clean up only a sandbox THIS run created. Deleting a reused branch
