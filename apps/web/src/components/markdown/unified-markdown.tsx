@@ -4,7 +4,6 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { wrapChildrenWithPaths } from '@/components/common/clickable-path';
 import { MarkdownCode } from '@/components/markdown/code';
-import { InsideLinkContext } from '@/components/markdown/code/inside-link-context';
 import {
   buildKatexRehypePlugins,
   isKatexClassName,
@@ -12,23 +11,14 @@ import {
   normalizeClassName,
   prepareMarkdownForKatex,
 } from '@/components/markdown/katex-markdown';
+import { MarkdownInlineLink, withActionBlock } from '@/components/markdown/markdown-link';
 import { MarkdownOrderedList } from '@/components/markdown/ordered-list';
-import { isInternalUrl, shouldUseNextLink } from '@/components/markdown/unified-markdown-utils';
-import { SetupLinkButton } from '@/components/setup-links/setup-link-button';
-import { parseSetupLinkHref } from '@/components/setup-links/util';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { cn } from '@/lib/utils';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import { autoLinkUrls } from '@kortix/shared';
-import Link from 'next/link';
 import React, { useCallback, useMemo } from 'react';
 import { Streamdown } from 'streamdown';
-
-function handleHashClick(e: React.MouseEvent<HTMLAnchorElement>, href: string) {
-  if (!href.startsWith('#')) return;
-  e.preventDefault();
-  document.getElementById(href.slice(1))?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
 
 export interface UnifiedMarkdownProps {
   content: string;
@@ -56,36 +46,63 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
         // Headings — graduated hierarchy bounded by text-base (h6) → text-xl (h1).
         // Only 3 named sizes live in that range, so deeper levels step down via
         // weight, colour, and top-margin instead.
-        h1: ({ children }: { children?: React.ReactNode }) => (
-          <h1 className="text-foreground mt-10 mb-4 text-xl font-semibold first:mt-0">
-            {children}
-          </h1>
-        ),
-        h2: ({ children }: { children?: React.ReactNode }) => (
-          <h2 className="text-foreground mt-8 mb-3 text-xl font-semibold first:mt-0">{children}</h2>
-        ),
-        h3: ({ children }: { children?: React.ReactNode }) => (
-          <h3 className="text-foreground mt-6 mb-2 text-lg font-semibold first:mt-0">{children}</h3>
-        ),
-        h4: ({ children }: { children?: React.ReactNode }) => (
-          <h4 className="text-foreground mt-6 mb-2 text-lg font-semibold first:mt-0">{children}</h4>
-        ),
-        h5: ({ children }: { children?: React.ReactNode }) => (
-          <h5 className="text-foreground mt-4 mb-1 text-base font-semibold first:mt-0">
-            {children}
-          </h5>
-        ),
-        h6: ({ children }: { children?: React.ReactNode }) => (
-          <h6 className="text-foreground mt-4 mb-1 text-base font-semibold tracking-wide first:mt-0">
-            {children}
-          </h6>
-        ),
+        h1: ({ children, node }: { children?: React.ReactNode; node?: unknown }) =>
+          withActionBlock(
+            node,
+            proxy,
+            <h1 className="text-foreground mt-10 mb-4 text-xl font-semibold first:mt-0">
+              {children}
+            </h1>,
+          ),
+        h2: ({ children, node }: { children?: React.ReactNode; node?: unknown }) =>
+          withActionBlock(
+            node,
+            proxy,
+            <h2 className="text-foreground mt-8 mb-3 text-xl font-semibold first:mt-0">
+              {children}
+            </h2>,
+          ),
+        h3: ({ children, node }: { children?: React.ReactNode; node?: unknown }) =>
+          withActionBlock(
+            node,
+            proxy,
+            <h3 className="text-foreground mt-6 mb-2 text-lg font-semibold first:mt-0">
+              {children}
+            </h3>,
+          ),
+        h4: ({ children, node }: { children?: React.ReactNode; node?: unknown }) =>
+          withActionBlock(
+            node,
+            proxy,
+            <h4 className="text-foreground mt-6 mb-2 text-lg font-semibold first:mt-0">
+              {children}
+            </h4>,
+          ),
+        h5: ({ children, node }: { children?: React.ReactNode; node?: unknown }) =>
+          withActionBlock(
+            node,
+            proxy,
+            <h5 className="text-foreground mt-4 mb-1 text-base font-semibold first:mt-0">
+              {children}
+            </h5>,
+          ),
+        h6: ({ children, node }: { children?: React.ReactNode; node?: unknown }) =>
+          withActionBlock(
+            node,
+            proxy,
+            <h6 className="text-foreground mt-4 mb-1 text-base font-semibold tracking-wide first:mt-0">
+              {children}
+            </h6>,
+          ),
 
-        p: ({ children }: { children?: React.ReactNode }) => (
-          <div className="text-foreground/95 my-4 leading-relaxed font-medium [overflow-wrap:anywhere] first:mt-0 last:mb-0 [&:has(img)]:my-0">
-            {wrapChildrenWithPaths(children)}
-          </div>
-        ),
+        p: ({ children, node }: { children?: React.ReactNode; node?: unknown }) =>
+          withActionBlock(
+            node,
+            proxy,
+            <div className="text-foreground/95 my-4 leading-relaxed font-medium [overflow-wrap:anywhere] first:mt-0 last:mb-0 [&:has(img)]:my-0">
+              {wrapChildrenWithPaths(children)}
+            </div>,
+          ),
 
         ul: ({ children }: { children?: React.ReactNode }) => (
           <ul className="marker:text-muted-foreground/60 my-4 list-outside list-disc space-y-1 pl-6 first:mt-0 last:mb-0 [&_p]:mb-2 [&_p]:last:mb-0">
@@ -99,54 +116,20 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
           </li>
         ),
 
-        // Links — brand-blue, routed through next/link. Setup links open an in-app modal.
-        a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
-          const setupLink = parseSetupLinkHref(href);
-          if (setupLink) {
-            return (
-              <SetupLinkButton kind={setupLink.kind} token={setupLink.token}>
-                {children}
-              </SetupLinkButton>
-            );
-          }
-
-          const resolvedHref = proxy(href) ?? href ?? '#';
-          const isHash = resolvedHref.startsWith('#');
-          const isExternal = !isInternalUrl(resolvedHref);
-          const linkClass = cn(
-            'font-medium text-kortix-blue',
-            'underline decoration-kortix-blue/40 decoration-[1px] underline-offset-[3px]',
-            'transition-colors hover:decoration-kortix-blue',
-            '[overflow-wrap:anywhere]',
-          );
-
-          // Markdown can contain arbitrary same-origin absolute URLs. Next.js
-          // treats those as app routes and prefetches them, including typos such
-          // as `/legal/terms.`. Only trusted root-relative/hash paths belong in
-          // the app router; every other href stays a plain anchor.
-          if (!shouldUseNextLink(resolvedHref)) {
-            return (
-              <a
-                href={resolvedHref}
-                className={linkClass}
-                {...(isExternal && !isHash ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-              >
-                <InsideLinkContext.Provider value={true}>{children}</InsideLinkContext.Provider>
-              </a>
-            );
-          }
-
-          return (
-            <Link
-              href={resolvedHref}
-              onClick={isHash ? (e) => handleHashClick(e, resolvedHref) : undefined}
-              className={linkClass}
-              {...(isExternal && !isHash ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-            >
-              <InsideLinkContext.Provider value={true}>{children}</InsideLinkContext.Provider>
-            </Link>
-          );
-        },
+        // Links — see markdown-link.tsx; setup links open an in-app modal.
+        a: ({
+          href,
+          children,
+          node: _node,
+        }: {
+          href?: string;
+          children?: React.ReactNode;
+          node?: unknown;
+        }) => (
+          <MarkdownInlineLink href={href} proxy={proxy}>
+            {children}
+          </MarkdownInlineLink>
+        ),
 
         // Every fence kind and inline code resolve in one shared place; see
         // components/markdown/code. Both this renderer and DocMarkdown pass the
