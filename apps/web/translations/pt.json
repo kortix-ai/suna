@@ -1118,6 +1118,10 @@
         "pi_harness": {
           "name": "Harness Pi (na sandbox)",
           "description": "Executa as sessões com o harness Pi dentro da sandbox da sessão em vez do OpenCode. Desativado, `runtime: pi` no manifesto continua a selecionar o Pi."
+        },
+        "config_releases": {
+          "name": "Versões de configuração",
+          "description": "Executa as sessões com a configuração de agente atual do branch base, servida apenas para leitura, para que um agente, skill ou ferramenta integrado chegue a todas as sessões em curso. Desativado, cada sessão lê a sua própria pasta de configuração no workspace."
         }
       }
     },
