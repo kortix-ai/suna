@@ -2454,6 +2454,19 @@
     "appAgentsDeclared": "{file} で宣言（agents.{agent}.apps）",
     "appAgentsGrantAll": "すべてのアプリ"
   },
+  "agentApps": {
+    "title": "アプリ",
+    "description": "アプリのアクセスが制限付きまたは非公開のときに、このエージェントが開ける Kortix Apps。",
+    "manageApps": "すべてのアプリ",
+    "allLabel": "このプロジェクトのすべてのアプリ（後から追加されるものも含む）。",
+    "needsGrant": "許可が判定",
+    "openWithoutGrant": "許可は不要",
+    "grantNote": "エージェントには Kortix 権限に project.app.read も必要です。",
+    "emptyTitle": "アプリはまだありません",
+    "emptyDescription": "このプロジェクトにデプロイしたアプリが、エージェントの選択肢としてここに表示されます。",
+    "flagOffHint": "このプロジェクトではエージェントプリンシパルがオフです。許可は保存されますが、まだアプリを制御しません。",
+    "featureFlags": "機能フラグ"
+  },
   "errors": {
     "network": "ネットワークエラー",
     "generic": "エラーが発生しました",

@@ -2454,6 +2454,19 @@
     "appAgentsDeclared": "Deklariert in {file} (agents.{agent}.apps)",
     "appAgentsGrantAll": "Alle Apps"
   },
+  "agentApps": {
+    "title": "Apps",
+    "description": "Kortix Apps, die dieser Agent öffnen darf, wenn der Zugriff der App eingeschränkt oder privat ist.",
+    "manageApps": "Alle Apps",
+    "allLabel": "Jede App in diesem Projekt, auch später hinzugefügte.",
+    "needsGrant": "Freigabe entscheidet",
+    "openWithoutGrant": "Keine Freigabe nötig",
+    "grantNote": "Der Agent benötigt außerdem project.app.read in seinen Kortix-Berechtigungen.",
+    "emptyTitle": "Noch keine Apps",
+    "emptyDescription": "In diesem Projekt bereitgestellte Apps erscheinen hier zur Auswahl für den Agenten.",
+    "flagOffHint": "Agent-Prinzipal ist für dieses Projekt aus. Die Freigabe wird gespeichert, steuert aber noch keinen App-Zugriff.",
+    "featureFlags": "Feature-Flags"
+  },
   "errors": {
     "network": "Netzwerkfehler",
     "generic": "Ein Fehler ist aufgetreten",

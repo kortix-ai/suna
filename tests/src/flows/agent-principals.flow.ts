@@ -820,6 +820,7 @@ flow(
       'POST /v1/projects/:projectId/apps',
       'PATCH /v1/projects/:projectId/apps/:appId/access',
       'GET /v1/projects/:projectId/apps/:appId/agents',
+      'PUT /v1/projects/:projectId/agents/:agentName/scope',
       'DELETE /v1/projects/:projectId/apps/:appId',
       'POST /v1/projects/:projectId/resource-grants',
       'POST /v1/accounts/tokens',
@@ -865,6 +866,49 @@ flow(
         }
         if (agents[0]!.grant !== 'listed' || !agents[0]!.path.endsWith('#agents.reporter')) {
           throw new Error(`unexpected grant row ${JSON.stringify(agents[0])}`);
+        }
+      });
+      // The editor and `kortix agents scope --apps` both write the grant
+      // through the scope route, so `apps` has to round-trip on it exactly
+      // like `connectors` does — no whole-block /config PUT for one list.
+      await ctx.step('PUT /agents/bystander/scope {apps} writes the grant and answers with it', async () => {
+        const scoped = await world.owner.put('/v1/projects/:projectId/agents/:agentName/scope',
+          { apps: [appSlug] },
+          { params: { projectId: project.id, agentName: 'bystander' } });
+        scoped.status(200).body().has('$.apps[0]', appSlug);
+        const r = await world.owner.get('/v1/projects/:projectId/apps/:appId/agents',
+          { params: { projectId: project.id, appId } });
+        r.status(200);
+        const names = r.json<{ agents: Array<{ agent_name: string }> }>().agents.map((a) => a.agent_name).sort();
+        if (JSON.stringify(names) !== JSON.stringify(['bystander', 'reporter'])) {
+          throw new Error(`expected [bystander, reporter] after the scope write, got ${JSON.stringify(names)}`);
+        }
+      });
+      await ctx.step('PUT the same route with apps `all` replaces the list with the sentinel', async () => {
+        const scoped = await world.owner.put('/v1/projects/:projectId/agents/:agentName/scope',
+          { apps: 'all' },
+          { params: { projectId: project.id, agentName: 'bystander' } });
+        scoped.status(200).body().has('$.apps', 'all');
+        const r = await world.owner.get('/v1/projects/:projectId/apps/:appId/agents',
+          { params: { projectId: project.id, appId } });
+        r.status(200);
+        const row = r.json<{ agents: Array<{ agent_name: string; grant: string }> }>().agents
+          .find((a) => a.agent_name === 'bystander');
+        if (row?.grant !== 'all') {
+          throw new Error(`expected bystander to hold grant "all", got ${JSON.stringify(row)}`);
+        }
+      });
+      await ctx.step('PUT with apps `[]` clears the grant again', async () => {
+        const scoped = await world.owner.put('/v1/projects/:projectId/agents/:agentName/scope',
+          { apps: [] },
+          { params: { projectId: project.id, agentName: 'bystander' } });
+        scoped.status(200);
+        const r = await world.owner.get('/v1/projects/:projectId/apps/:appId/agents',
+          { params: { projectId: project.id, appId } });
+        r.status(200);
+        const names = r.json<{ agents: Array<{ agent_name: string }> }>().agents.map((a) => a.agent_name);
+        if (JSON.stringify(names) !== JSON.stringify(['reporter'])) {
+          throw new Error(`expected exactly [reporter] after clearing, got ${JSON.stringify(names)}`);
         }
       });
       await enableFlag(ctx, world);

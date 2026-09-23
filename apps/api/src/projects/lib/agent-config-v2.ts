@@ -338,6 +338,8 @@ export function applyAgentScopeV2(
     env?: string[] | 'all';
     connectors?: string[] | 'all';
     connectorsRequired?: string[];
+    /** Kortix App slugs, same grant-set shape as `connectors`. */
+    apps?: string[] | 'all';
   },
 ): ApplyAgentBlockResult & { notFound?: boolean } {
   if (manifest.schemaVersion !== 2) {
@@ -374,6 +376,11 @@ export function applyAgentScopeV2(
     if (scope.connectors === 'all') merged.connectors = 'all';
     else if (scope.connectors.length === 0) delete merged.connectors;
     else merged.connectors = scope.connectors;
+  }
+  if (scope.apps !== undefined) {
+    if (scope.apps === 'all') merged.apps = 'all';
+    else if (scope.apps.length === 0) delete merged.apps;
+    else merged.apps = scope.apps;
   }
   if (scope.connectorsRequired !== undefined) {
     const required = Array.from(new Set(scope.connectorsRequired));

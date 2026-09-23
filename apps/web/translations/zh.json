@@ -2454,6 +2454,19 @@
     "appAgentsDeclared": "在 {file} 中声明（agents.{agent}.apps）",
     "appAgentsGrantAll": "全部应用"
   },
+  "agentApps": {
+    "title": "应用",
+    "description": "当应用的访问模式为受限或私有时，此智能体可以打开的 Kortix Apps。",
+    "manageApps": "全部应用",
+    "allLabel": "本项目中的每个应用，包括之后新增的。",
+    "needsGrant": "由授权决定",
+    "openWithoutGrant": "无需授权",
+    "grantNote": "智能体的 Kortix 权限还需要包含 project.app.read。",
+    "emptyTitle": "尚无应用",
+    "emptyDescription": "部署到本项目的应用会显示在这里，供智能体选择。",
+    "flagOffHint": "本项目未开启智能体主体，因此该授权会被保存，但尚未对任何应用生效。",
+    "featureFlags": "功能开关"
+  },
   "errors": {
     "network": "网络错误",
     "generic": "发生错误",

@@ -257,6 +257,18 @@ agents:
 An agent session only opens Apps of its own project. A refused request answers
 `401 app_auth_required`.
 
+Three paths write the same `apps` list:
+
+- **Dashboard** — Customize → Agents → the agent → **Apps**. Pick App slugs, or
+  choose `All` to cover Apps added later. The page appears only when this flag
+  is on for the project.
+- **CLI** — `kortix agents scope <agent> --apps reports-dashboard,example-org`
+  (also `--apps all` and `--apps none`). Needs a v2 `kortix.yaml`.
+- **A change request** that edits `kortix.yaml` directly.
+
+The App's **Access** dialog reads the list back and shows every agent admitted
+to that App.
+
 A connector whose base URL is an App of the same project (an `openapi` or `http`
 connector built from the App's OpenAPI document) needs no Kortix credential in
 its configuration. When an agent session calls it, the connector gateway adds a

@@ -2454,6 +2454,19 @@
     "appAgentsDeclared": "Dichiarato in {file} (agents.{agent}.apps)",
     "appAgentsGrantAll": "Tutte le App"
   },
+  "agentApps": {
+    "title": "App",
+    "description": "Kortix Apps che questo agente può aprire quando l'accesso dell'App è ristretto o privato.",
+    "manageApps": "Tutte le App",
+    "allLabel": "Ogni App di questo progetto, comprese quelle aggiunte in seguito.",
+    "needsGrant": "Decide la concessione",
+    "openWithoutGrant": "Nessuna concessione necessaria",
+    "grantNote": "L'agente ha bisogno anche di project.app.read nei suoi permessi Kortix.",
+    "emptyTitle": "Ancora nessuna App",
+    "emptyDescription": "Le App distribuite in questo progetto compaiono qui perché l'agente le scelga.",
+    "flagOffHint": "Agente come principal è disattivato per questo progetto: la concessione viene salvata ma non controlla ancora nessuna App.",
+    "featureFlags": "Feature flag"
+  },
   "errors": {
     "network": "Errore di rete",
     "generic": "Si è verificato un errore",

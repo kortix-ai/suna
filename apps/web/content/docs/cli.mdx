@@ -529,7 +529,7 @@ Per-agent model settings on the linked project.
 | `kortix agents model <agent> --clear` | Clear the pin — the agent follows the default again. |
 | `kortix agents default <agent>` | Make this the project's default agent. |
 | `kortix agents default --show [--json]` | Print the current default agent. |
-| `kortix agents scope <agent> [--secrets all\|none\|A,B] [--connectors all\|none\|a,b] [--require-connector <slug>]` | Replace which secrets and connectors the agent may use. `--require-connector` is repeatable and must resolve before a session starts. |
+| `kortix agents scope <agent> [--secrets all\|none\|A,B] [--connectors all\|none\|a,b] [--apps all\|none\|a,b] [--require-connector <slug>]` | Replace which secrets, connectors and Kortix Apps the agent may use. `--apps` takes App slugs and needs a v2 `kortix.yaml`; the agent also needs `project.app.read`. `--require-connector` is repeatable and must resolve before a session starts. |
 | `kortix agents scope <agent> --show [--json]` | Print the agent's current scope. |
 | `kortix agents config <agent> [--json]` | Print the full agent config block. |
 | `kortix agents config <agent> --file <path>` | Replace the block with a JSON file's contents. `-` reads stdin. |

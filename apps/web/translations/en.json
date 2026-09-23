@@ -2454,6 +2454,19 @@
     "appAgentsDeclared": "Declared in {file} (agents.{agent}.apps)",
     "appAgentsGrantAll": "All Apps"
   },
+  "agentApps": {
+    "title": "Apps",
+    "description": "Kortix Apps this agent may open when the App's access is restricted or private.",
+    "manageApps": "All Apps",
+    "allLabel": "Every App in this project, including ones added later.",
+    "needsGrant": "Grant decides",
+    "openWithoutGrant": "No grant needed",
+    "grantNote": "The agent also needs project.app.read in its Kortix permissions.",
+    "emptyTitle": "No Apps yet",
+    "emptyDescription": "Apps deployed to this project appear here for the agent to pick from.",
+    "flagOffHint": "Agent principal is off for this project, so this grant is stored but does not gate an App yet.",
+    "featureFlags": "Feature flags"
+  },
   "errors": {
     "network": "Network error",
     "generic": "An error occurred",
