@@ -94,15 +94,16 @@ export function SendStopControl({
   if (saveMode) {
     return (
       <Button
-        size="icon-base"
+        variant="default"
+        size="sm"
         disabled={!canSubmit || submitDisabled}
         onClick={onSubmit}
-        aria-label={t('saveEdit')}
-        className={ICON_BUTTON}
+        className="hit-area-1 shrink-0 rounded-lg transition-[color,background-color,opacity,scale] duration-(--duration-slow) ease-out active:scale-[0.96] active:duration-(--duration-normal)"
       >
         <AnimatePresence mode="popLayout" initial={false}>
-          <m.span key="save" className="flex items-center" {...ICON_SWAP}>
+          <m.span key="save" className="flex items-center gap-1.5" {...ICON_SWAP}>
             <CheckIcon className="size-4" />
+            {t('saveEdit')}
           </m.span>
         </AnimatePresence>
       </Button>
