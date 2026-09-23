@@ -10,6 +10,7 @@ import type {
 } from "@opencode-ai/sdk/v2/client";
 import { getTurnError, groupMessagesIntoTurns } from "../../core/turns";
 import { ascendingId, Binary, sameSessionStatus, useSyncStore } from "./sync-store";
+import { DELTA_EVENT_TAIL_LIMIT } from "./sync-store/delta-event-window";
 
 // ============================================================================
 // Fixtures — minimal-but-valid Message/Part objects matching the real SDK
@@ -1149,6 +1150,37 @@ describe("useSyncStore — applyPartDelta idempotency (part-delta duplicate deli
 		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "Hi", "evt_1");
 
 		expect((useSyncStore.getState().parts.msg_1[0] as TextPart).text).toBe("Hi");
+	});
+});
+
+// The dedupe window is BOUNDED. It used to keep one entry per applied delta
+// for the whole turn — a long answer streamed a few characters at a time held
+// tens of thousands of event ids until `session.idle`. Duplicate deliveries
+// (a stacked connection, a reconnect replay) re-send RECENT events, so only a
+// recent window has to be remembered.
+describe("useSyncStore — applyPartDelta dedupe window is bounded", () => {
+	test("the newest DELTA_EVENT_TAIL_LIMIT ids still dedupe; older ids fall out of the window", () => {
+		const store = useSyncStore.getState();
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", ""));
+		const total = DELTA_EVENT_TAIL_LIMIT + 10;
+		for (let i = 0; i < total; i++) {
+			store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "a", `evt_${i}`);
+		}
+		const text = () => (useSyncStore.getState().parts.msg_1[0] as TextPart).text;
+		expect(text().length).toBe(total);
+
+		// Recent redelivery: still a no-op.
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "a", `evt_${total - 1}`);
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "a", `evt_${total - DELTA_EVENT_TAIL_LIMIT}`);
+		expect(text().length).toBe(total);
+
+		// The oldest id is no longer remembered — proof the window is bounded.
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "a", "evt_0");
+		expect(text().length).toBe(total + 1);
+	});
+
+	test("the window is large enough for a realistic reconnect replay", () => {
+		expect(DELTA_EVENT_TAIL_LIMIT).toBeGreaterThanOrEqual(1024);
 	});
 });
 
@@ -2491,6 +2523,42 @@ describe("useSyncStore — buildSessionMessages (the one shared join)", () => {
 		const after = rowsFor("ses_1");
 		expect(after).not.toBe(before);
 		expect((after[0].parts[0] as TextPart).text).toBe("hi there");
+	});
+
+	// Per-message identity. A frame that changes ONE message's parts must hand
+	// back the other rows as the very same objects, so a per-message memo in a
+	// host (a `React.memo` row, a selector) holds for every settled message
+	// while one streams. Rebuilding every `{ info, parts }` wrapper made each
+	// row look new on every frame.
+	test("rows whose info and parts did not change keep their identity across a rebuild", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_1"));
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", "question"), "ses_1");
+		store.upsertMessage("ses_1", assistantMessage("msg_2"));
+		store.upsertPart("msg_2", textPart("prt_2", "msg_2", "ans"), "ses_1");
+		const before = rowsFor("ses_1");
+
+		store.applyPartDelta("ses_1", "msg_2", "prt_2", "text", "wer", "evt_1");
+
+		const after = rowsFor("ses_1");
+		expect(after).not.toBe(before);
+		expect(after[0]).toBe(before[0]);
+		expect(after[1]).not.toBe(before[1]);
+		expect((after[1].parts[0] as TextPart).text).toBe("answer");
+	});
+
+	test("a changed message info gets a new row; its unchanged neighbours do not", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_1"));
+		store.upsertMessage("ses_1", assistantMessage("msg_2"));
+		const before = rowsFor("ses_1");
+
+		store.upsertMessage("ses_1", { ...assistantMessage("msg_2"), time: { created: 1, completed: 2 } });
+
+		const after = rowsFor("ses_1");
+		expect(after[0]).toBe(before[0]);
+		expect(after[1]).not.toBe(before[1]);
+		expect(after[1].info.time).toEqual({ created: 1, completed: 2 });
 	});
 
 	test("an empty session is a stable empty array, never a fresh one", () => {

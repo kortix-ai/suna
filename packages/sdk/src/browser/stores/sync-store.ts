@@ -19,6 +19,7 @@ import {
 import { isRetryableTurnError } from "../../core/turns/open-turn";
 import { ascendingId } from "./sync-store/ascending-id";
 import { Binary } from "./sync-store/binary";
+import { DELTA_EVENT_TAIL_LIMIT } from "./sync-store/delta-event-window";
 import { writeStreamCache } from "./sync-store/stream-cache";
 import type {
 	FileDiff,
@@ -1333,6 +1334,12 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					sessionTails.set(tailKey, appliedIds);
 				}
 				appliedIds.add(eventID);
+				// Bounded window: a Set iterates in insertion order, so the
+				// first key is the oldest applied id.
+				if (appliedIds.size > DELTA_EVENT_TAIL_LIMIT) {
+					const oldest = appliedIds.values().next().value;
+					if (oldest !== undefined) appliedIds.delete(oldest);
+				}
 			}
 			const next = [...list];
 			const part = { ...next[result.index] };
@@ -1766,12 +1773,27 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			}
 		}
 
+		// Reuse the previous row object for every message whose `info` and
+		// part array are unchanged, so per-message consumers (a memoized row,
+		// a selector) keep a stable identity while another message streams.
+		const previousRows = new Map<string, MessageWithParts>();
+		if (cached) {
+			for (let i = 0; i < cached.result.length; i++) {
+				const row = cached.result[i];
+				if (cached.partRefs[i] === parts[row.info.id]) previousRows.set(row.info.id, row);
+			}
+		}
 		const partRefs: (Part[] | undefined)[] = [];
 		const result: MessageWithParts[] = [];
 		for (const info of msgs) {
 			const messageParts = parts[info.id];
 			partRefs.push(messageParts);
-			result.push({ info, parts: messageParts ?? [] });
+			const previous = previousRows.get(info.id);
+			result.push(
+				previous && previous.info === info
+					? previous
+					: { info, parts: messageParts ?? [] },
+			);
 		}
 		touchSessionMessageRows(sessionID, { msgs, partRefs, result });
 		return result;
