@@ -229,6 +229,10 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     replayStartStash: false,
     initialOpenCodeSessionId,
     repositoryMode,
+    // This view renders lifecycle UI around the transcript. `SessionChat`
+    // reads the live rows itself (`useSessionMessages`), so a streamed delta
+    // re-renders the transcript only, not this whole page.
+    subscribeMessages: false,
   });
   const previousRepositorySession = isPreviousRepositorySessionError(session.startError);
   const previousRepositoryRuntimeUnavailable = isPreviousRepositoryRuntimeUnavailableError(

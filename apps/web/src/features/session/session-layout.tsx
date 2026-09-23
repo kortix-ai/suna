@@ -61,7 +61,10 @@ export const SessionLayout = memo(function SessionLayout({
   const isMobile = useIsMobile();
   const booting = !!bootStage;
 
-  const { data: messages } = useRuntimeMessages(sessionId);
+  // Tool parts and message info only: the action panel and the deliverable
+  // detector never read streamed text, so a text delta must not re-render the
+  // layout (and every panel consumer under its provider) once per ~16 ms batch.
+  const { data: messages } = useRuntimeMessages(sessionId, { ignoreStreamedText: true });
 
   // Use individual selectors to avoid re-rendering on unrelated store changes
   // (e.g. pendingToolNavIndex, focusedToolCallId). Destructuring the whole

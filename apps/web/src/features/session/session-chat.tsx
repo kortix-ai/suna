@@ -282,11 +282,13 @@ import {
   useSessionPrompts,
   isOptimisticSessionPrompt,
   useSessionStateStore,
+  useSessionMessages,
   useSessionSync,
   useSessionTurnOutcome,
   useSessionWorking,
   useSessionWorkingStore,
 } from '@kortix/sdk/react';
+import { useStableCallback } from '@/hooks/use-stable-callback';
 import { useReloadForensics } from './reload-forensics';
 import { CodeBlockEndpoints, SandboxUrlDetector } from './sandbox-url-detector';
 import {
@@ -2066,6 +2068,9 @@ interface SessionChatProps {
   deferComposerFocus?: boolean;
 }
 
+/** `useSessionMessages` input when no `useSession` owns this chat: reads nothing. */
+const DETACHED_SESSION_MESSAGES = { projectId: '', sessionId: '', opencodeSessionId: null };
+
 export function SessionChat({
   sessionId,
   projectSessionId,
@@ -2242,8 +2247,12 @@ export function SessionChat({
   // It fetches on first access, then SSE events keep it up to date.
   // No React Query fallback — prevents stale refetches from overwriting live data.
   const localSync = useSessionSync(sessionState ? '' : sessionId);
+  // The page's `useSession` runs with `subscribeMessages: false`, so its
+  // `messages` is a render-time snapshot and the page does not re-render per
+  // streamed delta. The live rows are read HERE, where they are drawn.
+  const liveSessionMessages = useSessionMessages(sessionState ?? DETACHED_SESSION_MESSAGES);
   const {
-    messages: syncMessages,
+    messages: hookMessages,
     isLoading: syncMessagesLoading,
     // Transcript-read state. `loading` with no messages is a WAIT (the box may
     // be waking — the SDK keeps retrying), `error` with no messages is a
@@ -2255,6 +2264,7 @@ export function SessionChat({
     isLoadingOlder,
     loadOlder,
   } = sessionState ?? localSync;
+  const syncMessages = sessionState ? liveSessionMessages : hookMessages;
   const messages = syncMessages.length > 0 ? syncMessages : undefined;
   const messagesLoading = syncMessagesLoading;
   // Project sessions use the server-side project agent roster. Non-project
@@ -5192,6 +5202,18 @@ export function SessionChat({
     [tHardcodedUi],
   );
 
+  // Stable identities for every handler a memoized `SessionTurn` receives.
+  // Several of these close over the live transcript (`handleEditSend` →
+  // `handleSend` → `messages`), so their `useCallback` identity changed on
+  // every streamed delta and re-rendered every settled turn with it.
+  const stableRetryQueued = useStableCallback(handleRetryQueuedMessage);
+  const stableRemoveQueued = useStableCallback(handleRemoveQueuedMessage);
+  const stableOpenCompactionSummary = useStableCallback(handleOpenCompactionSummary);
+  const stablePermissionReply = useStableCallback(handlePermissionReply);
+  const stableRewind = useStableCallback(handleRewind);
+  const stableEditCancel = useStableCallback(handleEditCancel);
+  const stableEditSend = useStableCallback(handleEditSend);
+
   /**
    * The session's files, handed to the composer so the `/` palette can offer
    * them — the Outputs card's deliverables and the Context card's reads, as
@@ -5938,29 +5960,29 @@ export function SessionChat({
                                       pendingTurnIds.has(turn.userMessage.info.id))
                                   }
                                   pendingPrompt={pendingPrompt}
-                                  onRetryQueued={handleRetryQueuedMessage}
-                                  onRemoveQueued={handleRemoveQueuedMessage}
+                                  onRetryQueued={stableRetryQueued}
+                                  onRemoveQueued={stableRemoveQueued}
                                   interruptedBeforeRun={interruptedTurnIds.has(
                                     turn.userMessage.info.id,
                                   )}
                                   isCompaction={hasCompaction}
                                   onOpenCompactionSummary={
-                                    panel ? handleOpenCompactionSummary : undefined
+                                    panel ? stableOpenCompactionSummary : undefined
                                   }
                                   providers={providers}
                                   commandMessages={commandMessagesRef.current}
                                   commands={commands}
                                   disableToolNavigation={disableToolNavigation}
-                                  onPermissionReply={handlePermissionReply}
-                                  onRewind={handleRewind}
+                                  onPermissionReply={stablePermissionReply}
+                                  onRewind={stableRewind}
                                   editingText={
                                     rewindTarget?.messageId === turn.userMessage.info.id
                                       ? rewindTarget.text
                                       : null
                                   }
                                   editPending={editSendPending || !!sessionState?.rewindPending}
-                                  onEditCancel={handleEditCancel}
-                                  onEditSend={handleEditSend}
+                                  onEditCancel={stableEditCancel}
+                                  onEditSend={stableEditSend}
                                   rewindDisabled={
                                     !!readOnly ||
                                     !sessionState ||
