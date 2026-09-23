@@ -23,7 +23,7 @@ import {
 import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
-import { DEFAULT_ICON_WEIGHT, ICON_WEIGHTS } from '@/lib/icons/icon-config';
+import { DEFAULT_ICON_WEIGHT, SHIPPED_ICON_WEIGHTS } from '@/lib/icons/icon-config';
 import { cn } from '@/lib/utils';
 
 const SAMPLE_ICONS: Icon[] = [
@@ -61,7 +61,8 @@ export function IconsSection() {
       </p>
       <div className="space-y-4">
         <div className="flex w-fit items-center gap-0.5 rounded-md border p-1">
-          {ICON_WEIGHTS.map((w) => (
+          {/* Only the weights the bundle carries (see SHIPPED_ICON_WEIGHTS). */}
+          {SHIPPED_ICON_WEIGHTS.map((w) => (
             <button
               key={w}
               type="button"
