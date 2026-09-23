@@ -52,7 +52,7 @@ describe('prefetchSessionOpen', () => {
     expect(urls.filter((u) => u.includes('/sessions/S1/snapshot'))).toHaveLength(1);
     // The row came from the snapshot's `session` leg — no second request.
     expect(urls.filter((u) => u.endsWith('/sessions/S1'))).toHaveLength(0);
-    expect(client.getQueryData(qk.project.session('P1', 'S1'))).toEqual(ROW);
+    expect(client.getQueryData<unknown>(qk.project.session('P1', 'S1'))).toEqual(ROW);
     client.clear();
   });
 
