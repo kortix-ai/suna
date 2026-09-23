@@ -13,6 +13,7 @@ import {
 import {
   daytonaPreviewLabelsFilter,
   platinumPreviewIdempotencyKey,
+  stopPreviousPreviewWorkerCommand,
 } from '../src/core/sandbox-preview-providers';
 
 const input = {
@@ -57,6 +58,14 @@ describe('provider-neutral preview lifecycle', () => {
     expect(lock).toBeGreaterThan(-1);
     expect(lock).toBeLessThan(script.indexOf('rm -f "$STATUS" "$PHASE"'));
     expect(lock).toBeLessThan(script.indexOf('git -C "$ROOT" checkout'));
+  });
+
+  it('terminates a cancelled detached worker before host reuse', () => {
+    const command = stopPreviousPreviewWorkerCommand();
+    expect(command).toContain("pgrep -f '^bash /workspace/run-kortix-preview\\.sh$'");
+    expect(command).toContain('kill -TERM -- "-$pgid"');
+    expect(command).toContain('kill -KILL -- "-$pgid"');
+    expect(command).not.toContain('pkill');
   });
 
   it('isolates completion records by workflow run and attempt', () => {

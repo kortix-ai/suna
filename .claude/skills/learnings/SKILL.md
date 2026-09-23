@@ -21,6 +21,16 @@ linked, not inlined.
 
 ## Register
 
+### A cancelled controller does not stop detached work on a reused remote host (2026-09-24)
+
+**Rule:** Before a controller launches work on a reused remote host, stop the
+previous detached process group. Controller cancellation is not a remote
+lifecycle signal. **Trigger surface:** preview deploys and remote test workers.
+**Near-miss:** A cancelled preview suite continued creating cloud session boxes
+and held the next deploy behind its lock. **Enforcer:** the Platinum deploy
+sends `TERM`, waits 10 seconds, then sends `KILL`; `sandbox-preview.test.ts`
+asserts the anchored process match and both signals.
+
 ### Turning workers off in a stack also turns off the deadline reaper; a shared provider org needs an owner tag on every child box (2026-09-24)
 
 **Rule:** A stack that sets `KORTIX_WORKERS_ENABLED=false` runs no project

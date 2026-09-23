@@ -59,6 +59,24 @@ import {
 const PREVIEW_TIMEOUT_MS = 90 * 60_000;
 const LOG_CHUNK_BYTES = 1024 * 1024;
 
+/** Stop a detached bootstrap that survived cancellation of its Actions job. */
+export function stopPreviousPreviewWorkerCommand(): string {
+  return `for pid in $(pgrep -f '^bash /workspace/run-kortix-preview\\.sh$' || true); do
+  pgid="$(ps -o pgid= -p "$pid" | tr -d ' ')"
+  case "$pgid" in ''|*[!0-9]*) continue ;; esac
+  kill -TERM -- "-$pgid" 2>/dev/null || true
+done
+for _ in $(seq 1 10); do
+  pgrep -f '^bash /workspace/run-kortix-preview\\.sh$' >/dev/null || exit 0
+  sleep 1
+done
+for pid in $(pgrep -f '^bash /workspace/run-kortix-preview\\.sh$' || true); do
+  pgid="$(ps -o pgid= -p "$pid" | tr -d ' ')"
+  case "$pgid" in ''|*[!0-9]*) continue ;; esac
+  kill -KILL -- "-$pgid" 2>/dev/null || true
+done`;
+}
+
 export interface SandboxPreviewDeploymentInput {
   repository: string;
   ref: string;
@@ -416,6 +434,16 @@ export async function deployPlatinumPreview(
     // while the browser is on the stable name and every auth redirect leaves it.
     const origin = input.publicOrigin ? validatedPreviewUrl(input.publicOrigin) : sandboxOrigin;
     await execPlatinum(api, sandboxId, ['bash', '-lc', 'mkdir -p /workspace/kortix-preview']);
+    // Cancelling Actions cannot signal a detached process inside this host.
+    // Stop the prior suite before it can keep creating session boxes or hold
+    // deploy.lock while this replacement waits.
+    if (reusable) {
+      await execPlatinum(api, sandboxId, [
+        'bash',
+        '-lc',
+        stopPreviousPreviewWorkerCommand(),
+      ]);
+    }
     await api.write(
       `${sandboxId}:/workspace/kortix-preview/runtime-secrets.json`,
       `${JSON.stringify(input.secrets)}\n`,
