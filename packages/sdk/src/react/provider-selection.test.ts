@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+
+import { CATALOG, providerAuthRequirement } from '@kortix/llm-catalog';
 
 import {
   applyEnablementToProviderList,
@@ -12,6 +15,25 @@ import {
   projectLlmCatalogToProviderList,
 } from './provider-selection';
 import { flattenModels } from './model-flatten';
+
+describe('LLM_PROVIDER_CREDENTIALS — built without the full catalog snapshot', () => {
+  // Every browser route imports this module (useOpenCodeProviders). Reading
+  // `CATALOG` here shipped the ~7.6 MB models.dev snapshot to every page.
+  test('provider-selection.ts does not import CATALOG', () => {
+    const source = readFileSync(new URL('./provider-selection.ts', import.meta.url), 'utf8');
+    const catalogImport = source.match(/import \{([^}]*)\} from '@kortix\/llm-catalog'/)?.[1] ?? '';
+    expect(catalogImport.split(',').map((name) => name.trim())).not.toContain('CATALOG');
+  });
+
+  test('covers every catalog provider with its Kortix auth requirement', () => {
+    expect(LLM_PROVIDER_CREDENTIALS).toEqual(
+      CATALOG.providers.map((provider) => ({
+        id: provider.id,
+        authRequirement: providerAuthRequirement(provider),
+      })),
+    );
+  });
+});
 
 describe('LLM_PROVIDER_CREDENTIALS — Kortix auth requirements, not raw catalog env', () => {
   test('amazon-bedrock requires only the bearer token + region', () => {

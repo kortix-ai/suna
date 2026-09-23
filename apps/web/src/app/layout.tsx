@@ -1,11 +1,11 @@
 import { WebMcpTools } from '@/components/agent-discovery/webmcp-tools';
 import { BrowserNoiseGuard } from '@/components/browser-noise-guard';
 import { DesktopChrome } from '@/components/desktop/desktop-chrome';
-import { DesktopUrlPrompt } from '@/components/desktop/desktop-url-prompt';
 import { ThemeProvider } from '@/components/home/theme-provider';
 import { I18nProvider } from '@/components/i18n-provider';
 import { KortixProjectScope } from '@/components/kortix-project-scope';
 import { LazyMotionProvider } from '@/components/lazy-motion-provider';
+import { RootClientHosts, RootQueryHosts } from '@/components/root-client-hosts';
 import { IconProvider } from '@/components/ui/icon-provider';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { MfaStepUpProvider } from '@/features/auth/mfa-step-up';
@@ -22,71 +22,16 @@ import { safeJsonForHtml } from '@/lib/security/safe-json';
 import { siteMetadata } from '@/lib/site-metadata';
 import { cn } from '@/lib/utils';
 import { featureFlags } from '@kortix/sdk';
+import { GoogleTagManager } from '@next/third-parties/google';
 import type { Metadata, Viewport } from 'next';
 import { getLocale, getMessages, getTranslations } from '@/i18n/get-translations';
 import { headers } from 'next/headers';
 import { connection } from 'next/server';
-import { Suspense, lazy } from 'react';
 import { Toaster } from 'sonner';
 import { roobert } from './(system)/fonts/roobert';
 import { roobertMono } from './(system)/fonts/roobert-mono';
 import './globals.css';
 import { ReactQueryProvider } from './react-query-provider';
-
-// Lazy load non-critical analytics and global components
-const Analytics = lazy(() =>
-  import('@vercel/analytics/react').then((mod) => ({ default: mod.Analytics })),
-);
-const SpeedInsights = lazy(() =>
-  import('@vercel/speed-insights/next').then((mod) => ({
-    default: mod.SpeedInsights,
-  })),
-);
-const GoogleTagManager = lazy(() =>
-  import('@next/third-parties/google').then((mod) => ({
-    default: mod.GoogleTagManager,
-  })),
-);
-const PostHogIdentify = lazy(() =>
-  import('@/components/posthog-identify').then((mod) => ({
-    default: mod.PostHogIdentify,
-  })),
-);
-const AnnouncementDialog = lazy(() =>
-  import('@/components/announcements/announcement-dialog').then((mod) => ({
-    default: mod.AnnouncementDialog,
-  })),
-);
-const RouteChangeTracker = lazy(() =>
-  import('@/components/analytics/route-change-tracker').then((mod) => ({
-    default: mod.RouteChangeTracker,
-  })),
-);
-const AuthEventTracker = lazy(() =>
-  import('@/components/analytics/auth-event-tracker').then((mod) => ({
-    default: mod.AuthEventTracker,
-  })),
-);
-const LocalhostLinkInterceptor = lazy(() =>
-  import('@/components/localhost-link-interceptor').then((mod) => ({
-    default: mod.LocalhostLinkInterceptor,
-  })),
-);
-const MaintenanceBannerHost = lazy(() =>
-  import('@/components/announcements/maintenance-banner-host').then((mod) => ({
-    default: mod.MaintenanceBannerHost,
-  })),
-);
-const AppFilePreviewHost = lazy(() =>
-  import('@/components/app-file-preview-host').then((mod) => ({
-    default: mod.AppFilePreviewHost,
-  })),
-);
-const ImpersonationBanner = lazy(() =>
-  import('@/components/impersonation/impersonation-banner').then((mod) => ({
-    default: mod.ImpersonationBanner,
-  })),
-);
 
 export const viewport: Viewport = {
   themeColor: [
@@ -391,7 +336,6 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                     <RouterBridge />
                     <BrowserNoiseGuard />
                     <DesktopChrome />
-                    <DesktopUrlPrompt />
                     <ReactQueryProvider>
                       <Toaster />
                       {/* Global "Request a demo" qualifier modal — mounted once here
@@ -412,51 +356,17 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                           </MfaStepUpProvider>
                         </RequestDemoProvider>
                       </BrandingProvider>
-                      {/* Global maintenance/incident banner (info/warning/critical).
-                      Needs the query client, so it mounts inside ReactQueryProvider. */}
-                      <Suspense fallback={null}>
-                        <MaintenanceBannerHost />
-                      </Suspense>
-                      {/* Fallback file-preview modal for surfaces with no session side
-                      panel (dashboard, project pages). Its file/history hooks need
-                      the query client, so it mounts inside ReactQueryProvider like
-                      MaintenanceBannerHost above. */}
-                      <Suspense fallback={null}>
-                        <AppFilePreviewHost />
-                      </Suspense>
-                      {/* Act-as banner. Mounted at the ROOT, not under (app):
-                      a platform admin acting as a customer carries the grant on
-                      every request from this tab, including the admin console
-                      and account settings, so the banner has to be true
-                      everywhere too. Renders nothing when no grant is held. */}
-                      <Suspense fallback={null}>
-                        <ImpersonationBanner />
-                      </Suspense>
+                      {/* Maintenance banner, fallback file preview, act-as
+                      banner: they read React Query, so they mount inside
+                      ReactQueryProvider. Each loads after hydration. */}
+                      <RootQueryHosts />
                     </ReactQueryProvider>
-                    {/* Analytics - lazy loaded to not block FCP */}
-                    <Suspense fallback={null}>
-                      {process.env.VERCEL === '1' && <Analytics />}
-                    </Suspense>
                     {process.env.NEXT_PUBLIC_GTM_ID && !isDesktopApp && (
-                      <Suspense fallback={null}>
-                        <GoogleTagManager gtmId={process.env.NEXT_PUBLIC_GTM_ID} />
-                      </Suspense>
+                      <GoogleTagManager gtmId={process.env.NEXT_PUBLIC_GTM_ID} />
                     )}
-                    <Suspense fallback={null}>
-                      {process.env.VERCEL === '1' && <SpeedInsights />}
-                    </Suspense>
-                    <Suspense fallback={null}>
-                      <PostHogIdentify />
-                    </Suspense>
-                    <Suspense fallback={null}>
-                      <RouteChangeTracker />
-                    </Suspense>
-                    <Suspense fallback={null}>
-                      <AuthEventTracker />
-                    </Suspense>
-                    <Suspense fallback={null}>
-                      <LocalhostLinkInterceptor />
-                    </Suspense>
+                    {/* Desktop URL prompt, analytics, trackers, localhost link
+                    interceptor — each a post-hydration dynamic chunk. */}
+                    <RootClientHosts vercel={process.env.VERCEL === '1'} />
                   </I18nProvider>
                 </AuthProvider>
               </TooltipProvider>

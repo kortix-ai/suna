@@ -7,6 +7,7 @@ import { PHASE_PRODUCTION_BUILD } from 'next/constants';
 import createNextIntlPlugin from 'next-intl/plugin';
 import path from 'path';
 import { buildBlumeDocs, getBlumeDocsOutputPaths } from './scripts/blume-docs.mjs';
+import { SHIPPED_ICON_WEIGHTS } from './src/lib/icons/icon-config';
 import { refreshContentTimestamps } from './scripts/build-content-timestamps.mjs';
 import { copyEmojibaseData, getEmojibaseDataOutputPaths } from './scripts/emojibase-data.mjs';
 import { copyViewerWasm, getViewerWasmOutputPaths } from './scripts/viewer-wasm.mjs';
@@ -372,6 +373,23 @@ const nextConfig = (): NextConfig => ({
     resolveAlias: {
       canvas: {
         browser: './src/lib/empty-module.ts', // Exclude canvas from browser builds
+      },
+    },
+    rules: {
+      // Phosphor ships all six weights of every icon in one defs module. Keep
+      // only SHIPPED_ICON_WEIGHTS in the browser build (~1/3 of each icon's
+      // bytes). Server/SSR builds keep every weight; the markup is identical
+      // for every shipped weight. See scripts/phosphor-weights-loader.cjs.
+      '*.es.js': {
+        condition: {
+          all: ['browser', { path: /@phosphor-icons\/react\/dist\/defs\/[^/]+\.es\.js$/ }],
+        },
+        loaders: [
+          {
+            loader: path.join(__dirname, 'scripts/phosphor-weights-loader.cjs'),
+            options: { weights: [...SHIPPED_ICON_WEIGHTS] },
+          },
+        ],
       },
     },
   },

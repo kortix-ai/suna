@@ -37,7 +37,6 @@ import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { Button } from '@/components/ui/button';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import Loading from '@/components/ui/loading';
-import { FileContentRenderer } from '@/features/files/components/file-content-renderer';
 import { useBinaryBlob } from '@/features/files/hooks/use-binary-blob';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
 import { useHeicBlob } from '@/hooks/use-heic-url';
@@ -83,6 +82,14 @@ const DocxRenderer = lazy(() =>
 );
 const PptxRenderer = lazy(() =>
   import('./pptx-renderer').then((m) => ({ default: m.PptxRenderer })),
+);
+// The whole file viewer (CodeMirror, diffs, HTML preview). Show rows render in
+// every transcript — the marketing home demo included — and most never reach
+// the generic-file branch below.
+const FileContentRenderer = lazy(() =>
+  import('@/features/files/components/file-content-renderer').then((m) => ({
+    default: m.FileContentRenderer,
+  })),
 );
 
 // ── Extension regexes + type resolution (pure, unit-tested sibling module) ──
@@ -822,6 +829,7 @@ export function ShowContentRenderer({
     return (
       <div className={mediaH}>
         {alwaysFramed(
+          <Suspense fallback={<RendererFallback className="h-full" />}>
           <FileContentRenderer
             filePath={sandboxPath!}
             showHeader={false}
@@ -833,7 +841,8 @@ export function ShowContentRenderer({
             className="h-full"
             errorFallback={fileErrorFallback}
             onStatusChange={onStatusChange}
-          />,
+          />
+          </Suspense>,
         )}
       </div>
     );
