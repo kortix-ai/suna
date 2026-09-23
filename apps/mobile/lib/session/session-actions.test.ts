@@ -2,7 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import {
   changedFilesLabel,
   isOpenThreadSession,
-  openChangeRequestPrefill,
+  changeRequestBaseRef,
+  openChangeRequestPrompt,
   patchForFile,
   sessionActionRows,
   splitChangePath,
@@ -95,25 +96,16 @@ describe('isOpenThreadSession', () => {
   });
 });
 
-describe('openChangeRequestPrefill', () => {
-  test('branch into base, with the session title', () => {
-    expect(openChangeRequestPrefill({ branch_name: 'b-1', base_ref: 'main' }, ' Fix login ')).toEqual({
-      headRef: 'b-1',
-      baseRef: 'main',
-      title: 'Fix login',
-    });
+describe('open change request prompt', () => {
+  test('merges into the session base, else main', () => {
+    expect(changeRequestBaseRef({ base_ref: ' develop ' })).toBe('develop');
+    expect(changeRequestBaseRef({ base_ref: null })).toBe('main');
+    expect(changeRequestBaseRef({ base_ref: '' })).toBe('main');
   });
-  test('no branch, or a branch equal to its base, has nothing to propose', () => {
-    expect(openChangeRequestPrefill({ branch_name: '', base_ref: 'main' }, 't')).toBeNull();
-    expect(openChangeRequestPrefill({ branch_name: null, base_ref: 'main' }, 't')).toBeNull();
-    expect(openChangeRequestPrefill({ branch_name: 'main', base_ref: 'main' }, 't')).toBeNull();
-  });
-  test('a missing base still prefills the branch (the sheet defaults the base)', () => {
-    expect(openChangeRequestPrefill({ branch_name: 'b-1', base_ref: undefined }, 't')).toEqual({
-      headRef: 'b-1',
-      baseRef: '',
-      title: 't',
-    });
+  test("is web's prompt, naming the base", () => {
+    expect(openChangeRequestPrompt('main')).toBe(
+      'Load the kortix-system skill and read about Versions & Change Requests. Then review the changes in this session, commit them, and open a change request to merge into `main`. Give it a clear title and a description of what changed and why.',
+    );
   });
 });
 
@@ -122,7 +114,6 @@ describe('sessionActionRows', () => {
     isOpenThread: true,
     hasRuntime: true,
     canManageLifecycle: true,
-    hasBranch: true,
     changes: { pending: false, error: false, count: 3 },
     busy: false,
     compacting: false,
@@ -164,9 +155,9 @@ describe('sessionActionRows', () => {
     });
   });
 
-  test('another session (drawer long press): only Open change request', () => {
+  test('another session (drawer long press): no work rows', () => {
     const rows = sessionActionRows({ ...base, isOpenThread: false });
-    expect(rows.openChangeRequest.visible).toBe(true);
+    expect(rows.openChangeRequest.visible).toBe(false);
     expect(rows.viewChanges.visible).toBe(false);
     expect(rows.compact.visible).toBe(false);
   });
@@ -183,7 +174,16 @@ describe('sessionActionRows', () => {
     expect(rows.viewChanges.visible).toBe(true);
   });
 
-  test('no branch hides Open change request', () => {
-    expect(sessionActionRows({ ...base, hasBranch: false }).openChangeRequest.visible).toBe(false);
+  test('Open change request shows only while the session has changes', () => {
+    const at = (changes: SessionActionRowsInput['changes']) =>
+      sessionActionRows({ ...base, changes }).openChangeRequest.visible;
+    expect(at({ pending: false, error: false, count: 0 })).toBe(false);
+    expect(at({ pending: true, error: false, count: 0 })).toBe(false);
+    expect(at({ pending: false, error: true, count: 0 })).toBe(false);
+    expect(at({ pending: false, error: false, count: 2 })).toBe(true);
+  });
+
+  test('Open change request stays enabled while the session works (the prompt queues)', () => {
+    expect(sessionActionRows({ ...base, busy: true }).openChangeRequest).toEqual({ visible: true, enabled: true });
   });
 });

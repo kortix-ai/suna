@@ -19532,7 +19532,9 @@
     "disableModel": "Disable model",
     "modelError": "Could not update model access.",
     "hiddenShort": "Hidden from the picker. Direct requests are still allowed.",
-    "resetError": "Could not reset the model list."
+    "resetError": "Could not reset the model list.",
+    "appReturn": "Back to the Kortix app",
+    "appReturnConnected": "Provider connected. Back to the Kortix app"
   },
   "projectChooser": {
     "invitations": "Invitations",

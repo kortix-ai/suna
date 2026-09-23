@@ -46,6 +46,7 @@ import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { PixelDeadFlower } from '@/components/kortix/PixelDeadFlower';
 import { PageContent } from '@/components/kortix/page-content';
 import { PageHeader } from '@/components/kortix/page-header';
 import { PinnedBar, usePinnedBarInset } from '@/components/kortix/pinned-bar';
@@ -288,6 +289,7 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
   // ── New session: the project drawer's pinned button, at the bottom right ──
   const listBottomInset = usePinnedBarInset(NEW_SESSION_BUTTON_HEIGHT);
   const pageBackground = isDark ? THEME.dark.background : THEME.light.background;
+  const mutedColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
   const handleNewSession = React.useCallback(() => {
     haptics.tap();
     newSession();
@@ -381,11 +383,23 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
                 paddingBottom: listBottomInset,
               }}
               ListEmptyComponent={
-                <View className="flex-1 items-center justify-center px-8">
-                  <Text variant="muted" className="text-center">
-                    {emptyMessage}
-                  </Text>
-                </View>
+                !loadFailed && !hasSessions ? (
+                  // The project has no sessions at all: the drawer's wilted
+                  // flower. Errors and empty filter results keep their text.
+                  <View
+                    className="flex-1 items-center justify-center px-8"
+                    accessible
+                    accessibilityRole="image"
+                    accessibilityLabel={emptyMessage}>
+                    <PixelDeadFlower color={mutedColor} size={96} animate={isFocused} />
+                  </View>
+                ) : (
+                  <View className="flex-1 items-center justify-center px-8">
+                    <Text variant="muted" className="text-center">
+                      {emptyMessage}
+                    </Text>
+                  </View>
+                )
               }
               refreshControl={
                 <RefreshControl

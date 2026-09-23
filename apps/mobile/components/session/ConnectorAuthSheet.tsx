@@ -41,6 +41,7 @@ import { Text } from '@/components/ui/text';
 import { ArrowUpRightIcon, PlugIcon } from '@/lib/icons';
 import { projectKeys } from '@/lib/projects/hooks';
 import { listConnectors, pipedreamConnect, pipedreamFinalize } from '@/lib/projects/projects-client';
+import { openBrowserUntilClosed } from '@/lib/utils/open-browser';
 import {
   connectorHandoffCopy,
   connectorHandoffToast,
@@ -101,7 +102,7 @@ export const ConnectorAuthSheet = React.forwardRef<SheetRef, ConnectorAuthSheetP
             connected = finalized?.connected ?? false;
           }
         } else {
-          await WebBrowser.openBrowserAsync(fallbackConnectUrl);
+          await openBrowserUntilClosed(fallbackConnectUrl);
         }
       } catch {
         // The project-scoped connect couldn't even start (connector isn't a
@@ -109,7 +110,7 @@ export const ConnectorAuthSheet = React.forwardRef<SheetRef, ConnectorAuthSheetP
         // agent's own link is the fallback, opened plain since it carries no
         // redirect the browser can detect.
         try {
-          await WebBrowser.openBrowserAsync(fallbackConnectUrl);
+          await openBrowserUntilClosed(fallbackConnectUrl);
         } catch {
           // The browser trip itself failed to open; the status re-check below
           // still runs, in case the connector was completed another way.

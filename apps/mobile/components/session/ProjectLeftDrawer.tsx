@@ -70,6 +70,7 @@ import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { PixelDeadFlower } from '@/components/kortix/PixelDeadFlower';
 import { Avatar } from '@/components/kortix/avatar';
 import { LegacyChatsSection } from '@/components/menu/LegacyChatsSection';
 import { SessionStatusMark } from '@/components/session/SessionStatusMark';
@@ -115,6 +116,23 @@ const LIST_END_GAP = 16;
 const LIST_TOP_FADE_HEIGHT = 24;
 /** Drawer progress at or below this counts as closed (fully off screen). */
 const DRAWER_CLOSED_PROGRESS = 0.01;
+
+/**
+ * The empty session list's art. The petal loop runs only while the drawer is
+ * open: the drawer content stays mounted while closed. The visibility state
+ * lives here, so opening the drawer re-renders this node only.
+ */
+function DrawerEmptyFlower({ color }: { color: string }) {
+  const progress = useDrawerProgress();
+  const [visible, setVisible] = useState(false);
+  useAnimatedReaction(
+    () => progress.value > DRAWER_CLOSED_PROGRESS,
+    (next, prev) => {
+      if (next !== prev) scheduleOnRN(setVisible, next);
+    }
+  );
+  return <PixelDeadFlower color={color} animate={visible} />;
+}
 
 // ─── Session row ─────────────────────────────────────────────────────────────
 
@@ -557,9 +575,13 @@ export function ProjectLeftDrawer({
                   </View>
                 </View>
               ) : (
-                <Text variant="muted" className="px-3 py-2">
-                  No sessions yet
-                </Text>
+                <View
+                  className="items-center py-8"
+                  accessible
+                  accessibilityRole="image"
+                  accessibilityLabel="No sessions yet">
+                  <DrawerEmptyFlower color={mutedColor} />
+                </View>
               )}
             </View>
           }

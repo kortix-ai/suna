@@ -19532,7 +19532,9 @@
     "disableModel": "モデルを無効にする",
     "modelError": "モデルへのアクセスを更新できませんでした。",
     "hiddenShort": "選択リストでは非表示です。直接リクエストは引き続き許可されます。",
-    "resetError": "モデル一覧をリセットできませんでした。"
+    "resetError": "モデル一覧をリセットできませんでした。",
+    "appReturn": "Kortix アプリに戻る",
+    "appReturnConnected": "プロバイダーを接続しました。Kortix アプリに戻る"
   },
   "projectChooser": {
     "invitations": "招待",

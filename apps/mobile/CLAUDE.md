@@ -77,6 +77,7 @@ Kortix-specific: 23 files, built on top of `components/ui/`. **There is no
 | `kortix-loader.tsx` | Lottie brand loading spinner. |
 | `ShimmerText.tsx` | Gradient-sweep shimmer text for "AI is working" status lines. |
 | `StopIcon.tsx` | Stop-square SVG icon used on the composer's stop button. |
+| `PixelDeadFlower.tsx` | 16×16 pixel-art wilted flower, one `color` prop at 6 opacities (one `Path` per tone, no seams). One petal falls in a loop: whole-cell steps on the UI thread (Reanimated), off under Reduce Motion and while `animate={false}`. The empty session list in the project drawer (`DrawerEmptyFlower` runs the loop only while the drawer is open) and on the Sessions page (loop only while focused; errors and empty filter results keep their text) (Jay, 2026-09-24). The wrapper carries the "No sessions yet" `accessibilityLabel`. |
 | `OfflineBanner.tsx` | Global connectivity banner (slides in on disconnect / brief "Back online" flash). |
 | `SessionEndedDialog.tsx` | The one "Your session has ended" dialog (COR-144), mounted once in `app/_layout.tsx`; opens when `lib/auth/session-expiry.ts` confirms the login is gone. A new code path that signs out calls `sessionExpiry.disarm()` before `supabase.auth.signOut`, or the user sees this dialog. |
 | `selectable-markdown.tsx` | Selectable markdown text via `@expensify/react-native-live-markdown`. |

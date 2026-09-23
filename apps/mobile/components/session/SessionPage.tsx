@@ -109,6 +109,7 @@ import { questionsToHydrate } from '@/lib/opencode/stream-policy';
 import { useSession, replyToQuestion, rejectQuestion, replyToPermission } from '@/lib/platform/hooks';
 import { useTabStore } from '@/stores/tab-store';
 import { useMessageQueueStore } from '@/stores/message-queue-store';
+import { useSessionPromptRequestStore } from '@/stores/session-prompt-request-store';
 import type { QueuedMessage } from '@/stores/message-queue-store';
 import { useCompactionStore } from '@/stores/compaction-store';
 import { useSandboxContext } from '@/contexts/SandboxContext';
@@ -773,6 +774,29 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
   // through a ref that always calls the latest resolved config.
   const resolvedRef = useRef(resolved);
   resolvedRef.current = resolved;
+
+  // A prompt the session actions sheet asks this thread to send (Open change
+  // request): sent as the composer sends it — at once when idle, with the
+  // composer's agent/model/variant; into the queue while the agent works or a
+  // question waits.
+  const promptRequest = useSessionPromptRequestStore((s) =>
+    s.request?.sessionId === sessionId ? s.request : null,
+  );
+  useEffect(() => {
+    if (!promptRequest) return;
+    const request = useSessionPromptRequestStore.getState().take(sessionId);
+    if (!request) return;
+    if (isBusy || hasQuestion) {
+      queueEnqueue(sessionId, request.text);
+      return;
+    }
+    const { agent, modelKey, variant } = resolvedRef.current;
+    const options: PromptOptions = {};
+    if (agent?.name) options.agent = agent.name;
+    if (modelKey) options.model = modelKey;
+    if (variant) options.variant = variant;
+    void handleSend(request.text, options);
+  }, [promptRequest, sessionId, isBusy, hasQuestion, queueEnqueue, handleSend]);
   const resolvedAgents = useShallowStableArray(resolved.agents);
   const resolvedVariants = useShallowStableArray(resolved.variants);
   const resolvedModel = resolved.model;

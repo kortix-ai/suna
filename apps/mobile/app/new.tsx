@@ -16,6 +16,11 @@
  * the starter prompt as its draft (`project:<id>` in the composer draft
  * store). Nothing sits under this screen, so Sign out (header) is the way out.
  * A user who can create in no account sees why, and Sign out.
+ *
+ * Never a dead end (COR-186): a create whose answer was lost may still have
+ * made the project, and a retry on the free plan then hits the project limit.
+ * So a limit error opens the account's newest project, and whenever the
+ * account already has a project, an "Open <project>" row sits above the form.
  */
 
 import * as React from 'react';
@@ -37,11 +42,12 @@ import { haptics } from '@/lib/haptics';
 import {
   ChartBarIcon,
   GithubLogoIcon,
+  FolderIcon,
   GlobeIcon,
   MagnifyingGlassIcon,
 } from '@/lib/icons';
 import { markComposerFocus } from '@/lib/onboarding/composer-handoff';
-import { useAccounts } from '@/lib/projects/hooks';
+import { useAccounts, useProjects } from '@/lib/projects/hooks';
 import { creatableAccounts } from '@/lib/projects/landing';
 import {
   nameAfterStarterPick,
@@ -51,7 +57,8 @@ import {
   showAccountPicker,
   type ProjectStarter,
 } from '@/lib/projects/new-project-form';
-import type { KortixProject } from '@/lib/projects/projects-client';
+import { listProjectsForAccount, type KortixProject } from '@/lib/projects/projects-client';
+import { newestProject } from '@/lib/projects/provision-attempt';
 import { projectHref } from '@/lib/projects/switcher';
 import { draftKey } from '@/lib/session/composer-draft';
 import { useComposerDraftStore } from '@/stores/composer-draft-store';
@@ -94,11 +101,26 @@ export default function NewProjectScreen() {
     [router, setSelectedAccountId]
   );
 
+  // The account's projects: empty on a true first run. Not empty after a
+  // create whose answer was lost — then "Open <project>" is the way on.
+  const projectsQuery = useProjects(accountId);
+  const existingProject = React.useMemo(() => newestProject(projectsQuery.data ?? []), [projectsQuery.data]);
+
   const handleCreate = React.useCallback(async () => {
     if (isPending) return;
-    const project = await create(accountId, name);
-    if (project) openProject(project, starter?.prompt ?? null);
-  }, [isPending, create, accountId, name, openProject, starter]);
+    const prompt = starter?.prompt ?? null;
+    const project = await create(accountId, name, {
+      // At the limit: the project this user already has is the one to open.
+      onLimitReached: async (limitAccountId) => {
+        const existing = newestProject(await listProjectsForAccount(limitAccountId));
+        if (!existing) return false;
+        openProject(existing, prompt);
+        return true;
+      },
+    });
+    if (project) openProject(project, prompt);
+    else void projectsQuery.refetch();
+  }, [isPending, create, accountId, name, openProject, starter, projectsQuery]);
 
   const pickStarter = React.useCallback(
     (next: ProjectStarter) => {
@@ -150,6 +172,23 @@ export default function NewProjectScreen() {
     body = (
       <>
         <View className="gap-4">
+          {existingProject ? (
+            <SettingsGroup title="Your project">
+              <SettingsRow
+                icon={FolderIcon}
+                label={`Open ${existingProject.name}`}
+                onPress={
+                  isPending
+                    ? undefined
+                    : () => {
+                        haptics.tap();
+                        openProject(existingProject, starter?.prompt ?? null);
+                      }
+                }
+              />
+            </SettingsGroup>
+          ) : null}
+
           <Text variant="h3">What should Kortix work on?</Text>
 
           <PillInput

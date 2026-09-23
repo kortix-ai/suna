@@ -18,8 +18,10 @@
  *
  * COR-148 (Jay, 2026-09-24): three rows sit above Rename, in their own
  * untitled group — Open change request · View changes · Compact. Open change
- * request opens `OpenCRSheet` as its own sheet after this one has closed,
- * prefilled with the session's branch → its base. View changes pushes the
+ * request is web's "Propose changes": shown while the session has changes, it
+ * closes the sheet and sends web's prompt to the thread (the agent commits and
+ * runs `kortix cr open` into the session's base), queued if the agent works.
+ * View changes pushes the
  * session's changed files in place (`SessionChangesList`), and a file pushes
  * its diff (`SessionChangeFileView`); disabled with "No changes" when the
  * runtime reports none. Compact confirms (`useConfirmDialog`) after the sheet
@@ -27,7 +29,7 @@
  * is the progress, and only a failure toasts (web `compact-modal.tsx`).
  * Disabled while the session works. View changes and Compact need the live
  * runtime, so they show only for the thread on screen; a drawer long press on
- * another session shows Open change request alone. Rules:
+ * another session shows none of the three. Rules:
  * `lib/session/session-actions.ts`. Export transcript and Archive are not on
  * mobile.
  *
@@ -41,7 +43,6 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { BottomSheetScrollView, type BottomSheetModal } from '@gorhom/bottom-sheet';
 import Animated from 'react-native-reanimated';
 import { View } from 'react-native';
-import { useColorScheme } from 'nativewind';
 import {
   GitDiffIcon,
   GitPullRequestIcon,
@@ -69,7 +70,7 @@ import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 import { POP_IN, PUSH_IN, SheetBackButton } from '@/components/kortix/sheet-push';
 import { useToast } from '@/components/kortix/toast-provider';
 import { useConfirmDialog } from '@/components/kortix/confirm-dialog';
-import { OpenCRSheet } from '@/components/review/OpenCRSheet';
+import { useSessionPromptRequestStore } from '@/stores/session-prompt-request-store';
 import { SessionChangeFileView, SessionChangesList } from '@/components/session/SessionChangesView';
 import { SessionRenameForm } from '@/components/session/SessionRenameForm';
 import { SessionShareForm } from '@/components/session/SessionShareForm';
@@ -78,10 +79,10 @@ import { haptics } from '@/lib/haptics';
 import { useCompactSession } from '@/lib/opencode/hooks/use-compact-session';
 import { useSessionChanges } from '@/lib/opencode/hooks/use-session-changes';
 import { useSyncStore } from '@/lib/opencode/sync-store';
-import { reviewKeys } from '@/lib/review/use-review';
 import {
   isOpenThreadSession,
-  openChangeRequestPrefill,
+  changeRequestBaseRef,
+  openChangeRequestPrompt,
   sessionActionRows,
   type ChangedFile,
 } from '@/lib/session/session-actions';
@@ -170,8 +171,6 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
     const afterCloseRef = React.useRef<AfterClose>(null);
 
     // ── COR-148: Open change request · View changes · Compact ──
-    const { colorScheme } = useColorScheme();
-    const isDark = colorScheme === 'dark';
     const { sandboxUrl } = useSandboxContext();
     // The thread on screen, keyed by its OpenCode id (SessionPage's `sessionId`).
     const activeSessionId = useTabStore((s) => s.activeSessionId);
@@ -185,10 +184,6 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
     );
     const compactSession = useCompactSession();
     const { confirm, dialog: confirmDialog } = useConfirmDialog();
-    const openCRSheetRef = React.useRef<BottomSheetModal>(null);
-    const [openCRPrefill, setOpenCRPrefill] = React.useState<ReturnType<
-      typeof openChangeRequestPrefill
-    >>(null);
     // The session and runtime a Compact tap was for, kept past the sheet's close.
     const compactTargetRef = React.useRef<{ sessionId: string; sandboxUrl: string } | null>(null);
 
@@ -252,8 +247,12 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
         setDeleteTitle(sessionDisplayTitle(session));
         setConfirmDelete(session);
       } else if (next === 'open-cr') {
-        setOpenCRPrefill(openChangeRequestPrefill(session, sessionDisplayTitle(session)));
-        openCRSheetRef.current?.present();
+        if (!liveSessionId) return;
+        useSessionPromptRequestStore
+          .getState()
+          .requestSend(liveSessionId, openChangeRequestPrompt(changeRequestBaseRef(session)));
+        haptics.success();
+        toast.success('Asked your agent to propose these changes for review.');
       } else if (next === 'compact') {
         confirm({
           title: 'Compact session',
@@ -263,7 +262,7 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
           onConfirm: runCompact,
         });
       }
-    }, [menuSession, confirm, runCompact]);
+    }, [menuSession, confirm, runCompact, liveSessionId, toast]);
 
     const pushView = React.useCallback((view: Exclude<SheetView, 'options'>) => {
       haptics.tap();
@@ -381,7 +380,6 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
       isOpenThread,
       hasRuntime: !!sandboxUrl,
       canManageLifecycle,
-      hasBranch: !!menuSession && openChangeRequestPrefill(menuSession, '') !== null,
       changes: {
         pending: changesQuery.isPending,
         error: changesQuery.isError,
@@ -574,31 +572,6 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-
-        {/* Open change request (COR-148): the Review page's `OpenCRSheet`,
-            same sheet values as there, opened after this sheet has closed,
-            prefilled with the session's branch → its base and its title. */}
-        <KortixBottomSheetModal
-          ref={openCRSheetRef}
-          snapPoints={['88%']}
-          enableDynamicSizing={false}
-          keyboardBehavior="interactive"
-          keyboardBlurBehavior="restore"
-          onDismiss={() => setOpenCRPrefill(null)}>
-          <OpenCRSheet
-            projectId={projectId}
-            isDark={isDark}
-            initialHeadRef={openCRPrefill?.headRef ?? null}
-            initialBaseRef={openCRPrefill?.baseRef || null}
-            initialTitle={openCRPrefill?.title}
-            onClose={() => openCRSheetRef.current?.dismiss()}
-            onCreated={(_crId, number) => {
-              openCRSheetRef.current?.dismiss();
-              void queryClient.invalidateQueries({ queryKey: reviewKeys.list(projectId) });
-              toast.success(`Opened change request #${number}`);
-            }}
-          />
-        </KortixBottomSheetModal>
 
         {/* Compact's confirm. */}
         {confirmDialog}

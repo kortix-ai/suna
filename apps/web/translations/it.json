@@ -19532,7 +19532,9 @@
     "disableModel": "Disattiva modello",
     "modelError": "Impossibile aggiornare l’accesso al modello.",
     "hiddenShort": "Nascosto nel selettore. Le richieste dirette sono ancora consentite.",
-    "resetError": "Impossibile reimpostare l’elenco dei modelli."
+    "resetError": "Impossibile reimpostare l’elenco dei modelli.",
+    "appReturn": "Torna all’app Kortix",
+    "appReturnConnected": "Provider collegato. Torna all’app Kortix"
   },
   "projectChooser": {
     "invitations": "Inviti",

@@ -19532,7 +19532,9 @@
     "disableModel": "禁用模型",
     "modelError": "无法更新模型访问权限。",
     "hiddenShort": "已从选择器中隐藏。仍允许直接请求。",
-    "resetError": "无法重置模型列表。"
+    "resetError": "无法重置模型列表。",
+    "appReturn": "返回 Kortix 应用",
+    "appReturnConnected": "提供商已连接。返回 Kortix 应用"
   },
   "projectChooser": {
     "invitations": "邀请",

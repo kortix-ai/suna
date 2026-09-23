@@ -5,7 +5,9 @@
  * Handle only, no title row: two 56pt tiles (a plug icon on `bg-secondary`,
  * the Kortix symbol on `bg-foreground`, joined by a dashed connector) over a
  * title and one muted line, then a primary "Continue" pill (opens
- * `/projects/:id/customize/models` in the in-app browser) and a ghost
+ * `/projects/:id/customize/models?return_to=kortix://providers/connected` in
+ * an in-app auth session that closes itself once a provider is connected)
+ * and a secondary
  * "Not now".
  *
  * Every "Connect provider" / "Connect model" entry (`ModelPickerSheet`'s
@@ -42,7 +44,11 @@ import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { ArrowUpRightIcon, PlugIcon } from '@/lib/icons';
-import { projectModelsWebUrl } from '@/lib/session/connect-model';
+import {
+  PROVIDER_CONNECTED_URI,
+  PROVIDER_RETURN_URL,
+  projectModelsWebUrl,
+} from '@/lib/session/connect-model';
 import { useHandoffDismiss } from './handoff-sheet';
 
 const TILE_SIZE = 56;
@@ -63,7 +69,15 @@ export const ConnectProviderSheet = React.forwardRef<SheetRef, ConnectProviderSh
 
     const { requestContinue, handleDismiss } = useHandoffDismiss(async () => {
       try {
-        await WebBrowser.openBrowserAsync(projectModelsWebUrl(KORTIX_WEB_URL, projectId));
+        // The page redirects to PROVIDER_CONNECTED_URI once the project has a
+        // usable model; the auth session closes itself on that redirect. It
+        // also resolves when the user closes the browser by hand (Android:
+        // on return to the app), so the refetch below always runs after the
+        // trip, never at launch.
+        await WebBrowser.openAuthSessionAsync(
+          projectModelsWebUrl(KORTIX_WEB_URL, projectId, PROVIDER_CONNECTED_URI),
+          PROVIDER_RETURN_URL,
+        );
       } catch {
         // The browser trip failed to open; still check in case something
         // changed (e.g. the provider was added another way).
@@ -118,7 +132,7 @@ export const ConnectProviderSheet = React.forwardRef<SheetRef, ConnectProviderSh
               </View>
             </Button>
             <Button
-              variant="ghost"
+              variant="secondary"
               size="lg"
               className="rounded-full"
               onPress={() => sheetRef.current?.close()}>

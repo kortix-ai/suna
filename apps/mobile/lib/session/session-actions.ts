@@ -129,24 +129,18 @@ export function isOpenThreadSession(
   return session.opencode_session_id === activeSessionId || session.session_id === activeSessionId;
 }
 
-export interface OpenChangeRequestPrefill {
-  headRef: string;
-  baseRef: string;
-  title: string;
+/** The branch a session's change request merges into: its base, else `main` (web). */
+export function changeRequestBaseRef(session: { base_ref: string | null | undefined }): string {
+  return session.base_ref?.trim() || 'main';
 }
 
 /**
- * The Open change request sheet's starting values, or `null` when the session
- * has no branch of its own to propose (no branch, or it works on its base).
+ * What Open change request sends to the session — web's prompt
+ * (`session-changes-shared.tsx` `useOpenChangeRequest`), word for word: the
+ * agent commits the session's work and runs `kortix cr open` into `baseRef`.
  */
-export function openChangeRequestPrefill(
-  session: { branch_name: string | null | undefined; base_ref: string | null | undefined },
-  title: string,
-): OpenChangeRequestPrefill | null {
-  const headRef = session.branch_name?.trim() ?? '';
-  const baseRef = session.base_ref?.trim() ?? '';
-  if (!headRef || headRef === baseRef) return null;
-  return { headRef, baseRef, title: title.trim() };
+export function openChangeRequestPrompt(baseRef: string): string {
+  return `Load the kortix-system skill and read about Versions & Change Requests. Then review the changes in this session, commit them, and open a change request to merge into \`${baseRef}\`. Give it a clear title and a description of what changed and why.`;
 }
 
 export interface ActionRowState {
@@ -164,7 +158,6 @@ export interface SessionActionRowsInput {
   hasRuntime: boolean;
   /** The viewer may manage the session (`can_manage_lifecycle !== false`). */
   canManageLifecycle: boolean;
-  hasBranch: boolean;
   changes: { pending: boolean; error: boolean; count: number };
   /** The session is working (`busy` or `retry`). */
   busy: boolean;
@@ -183,9 +176,11 @@ const HIDDEN: ActionRowState = { visible: false, enabled: false };
 export function sessionActionRows(input: SessionActionRowsInput): SessionActionRows {
   const live = input.isOpenThread && input.hasRuntime;
 
-  const openChangeRequest: ActionRowState = input.hasBranch
-    ? { visible: true, enabled: true }
-    : HIDDEN;
+  // Web shows "Propose changes" only while the session has changes; so does
+  // this row. It needs the changes read, so only for the thread on screen.
+  const { pending: changesPending, error: changesError, count: changesCount } = input.changes;
+  const openChangeRequest: ActionRowState =
+    live && !changesPending && !changesError && changesCount > 0 ? { visible: true, enabled: true } : HIDDEN;
 
   let viewChanges: ActionRowState = HIDDEN;
   if (live) {
