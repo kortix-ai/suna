@@ -1,5 +1,5 @@
 /**
- * Account page — the app's one settings page.
+ * Account page — the app's one settings page (COR-120: "less is more").
  *
  * Two entry points render this same component:
  * - the Account tab (`presentation="tab"`): the page title is scroll content,
@@ -8,9 +8,12 @@
  *   `/projects/[id]/account`): a header with the hamburger that opens the
  *   project drawer. No Go back.
  *
- * Top to bottom: profile photo (tap to change) and name, the signed-in email
- * with the plan badge, Edit profile, Preferences, Workspace, Help, Advanced.
- * Layout rules: apps/mobile/design.md → Account tab and account screens.
+ * Top to bottom: profile tile (photo; name over email, the one two-line row;
+ * opens EditProfileSheet),
+ * an untitled group for the current project (project presentation only) and
+ * the active account, Preferences, Help, Log out, the version footer, and a
+ * quiet "Delete account" link. Layout rules:
+ * apps/mobile/design.md → Account tab and account screens.
  */
 
 import * as React from 'react';
@@ -20,14 +23,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   BellIcon as Bell,
   BookOpenIcon as BookOpen,
-  CameraIcon as Camera,
+  CaretRightIcon as ChevronRight,
   GlobeIcon as Globe,
   LifebuoyIcon as LifeBuoy,
   SignOutIcon as LogOut,
-  TrashIcon as Trash2,
-  UsersIcon as Users,
   SpeakerHighIcon as Volume2,
-  WalletIcon as Wallet,
 } from '@/lib/icons';
 
 import {
@@ -44,7 +44,7 @@ import { useColorScheme } from 'nativewind';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
-import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { Avatar } from '@/components/kortix/avatar';
 import { KortixLogo } from '@/components/kortix/KortixLogo';
 import {
   AppearanceRow,
@@ -62,7 +62,7 @@ import {
 } from '@/components/navigation/tab-bar-layout';
 import { EditProfileSheet } from '@/components/settings/EditProfileSheet';
 import { ProfilePicture } from '@/components/settings/ProfilePicture';
-import { getFrontendUrl } from '@/api/config';
+import { KORTIX_WEB_URL } from '@/lib/kortix-web';
 import { useAuthContext, useLanguage } from '@/contexts';
 import { useAccountDeletionStatus } from '@/hooks/useAccountDeletion';
 import { useActiveAccount } from '@/hooks/useActiveAccount';
@@ -78,10 +78,24 @@ export interface AccountPageProps {
   presentation: 'tab' | 'project';
   /** `project` only: open the project drawer (the header hamburger). */
   onOpenMenu?: () => void;
+  /** `project` only: the open project's name, for the "current context" row. */
+  projectName?: string;
+  /**
+   * `project` only: open the project Settings page (`page:settings`) — the
+   * same navigation the project drawer's gear button uses
+   * (`ProjectScreen.openProjectSettings`).
+   */
+  onOpenProjectSettings?: () => void;
 }
 
-export function AccountPage({ presentation, onOpenMenu }: AccountPageProps) {
+export function AccountPage({
+  presentation,
+  onOpenMenu,
+  projectName,
+  onOpenProjectSettings,
+}: AccountPageProps) {
   const isTab = presentation === 'tab';
+  const isProject = presentation === 'project';
   const { user, signOut, isSigningOut } = useAuthContext();
   const { t, currentLanguage, availableLanguages } = useLanguage();
   const router = useRouter();
@@ -97,7 +111,7 @@ export function AccountPage({ presentation, onOpenMenu }: AccountPageProps) {
   const editProfileRef = React.useRef<SheetRef>(null);
 
   const { account: activeAccount } = useActiveAccount();
-  // Plan of the active account, shown as the plan badge next to the email.
+  // Plan of the active account, shown as the plan badge next to its name.
   const planName = useActivePlanName();
 
   const { data: deletionStatus } = useAccountDeletionStatus({ enabled: !!user });
@@ -105,7 +119,7 @@ export function AccountPage({ presentation, onOpenMenu }: AccountPageProps) {
   const accountDeletionSupported = deletionStatus?.supported ?? true;
 
   const languageName = availableLanguages.find((l) => l.code === currentLanguage)?.nativeName;
-  const title = t('account.title', 'Account');
+  const title = t('account.title', 'Settings');
 
   const go = React.useCallback(
     (path: string) => {
@@ -118,14 +132,28 @@ export function AccountPage({ presentation, onOpenMenu }: AccountPageProps) {
   // Docs and Support open kortix.com in the browser.
   const openWebPage = React.useCallback((path: string) => {
     haptics.tap();
-    const frontend = getFrontendUrl().replace(/\/$/, '');
-    void Linking.openURL(`${frontend}${path}`).catch(() => {});
+    void Linking.openURL(`${KORTIX_WEB_URL}${path}`).catch(() => {});
   }, []);
 
   const openEditProfile = React.useCallback(() => {
     haptics.tap();
     editProfileRef.current?.open();
   }, []);
+
+  const openProjectSettings = React.useCallback(() => {
+    haptics.tap();
+    onOpenProjectSettings?.();
+  }, [onOpenProjectSettings]);
+
+  const openAccount = React.useCallback(() => {
+    if (!activeAccount) return;
+    go(`/accounts/${activeAccount.account_id}`);
+  }, [activeAccount, go]);
+
+  const openDeleteAccount = React.useCallback(
+    () => go('/(settings)/account-deletion'),
+    [go]
+  );
 
   // Sign out confirms in an AlertDialog. The dialog stays open while signing
   // out, so a failure is shown in place instead of in a second alert.
@@ -153,15 +181,6 @@ export function AccountPage({ presentation, onOpenMenu }: AccountPageProps) {
     }
   }, [router, signOut]);
 
-  const profileHeader = (
-    <ProfileHeader
-      name={profile.displayName}
-      avatarUrl={profile.avatarUrl}
-      uploading={profile.isUploadingPhoto}
-      onChangePhoto={profile.changePhoto}
-    />
-  );
-
   return (
     <View className="flex-1 bg-background">
       {isTab ? null : (
@@ -174,23 +193,44 @@ export function AccountPage({ presentation, onOpenMenu }: AccountPageProps) {
           isTab ? (
             // The page title is page content (no header bar), so it shares the
             // page background; h-10 matches the Projects header row height.
-            <View className="gap-3.5" style={{ paddingTop: topPadding }}>
-              <View className="h-10 justify-center">
-                <Text variant="h3">{title}</Text>
-              </View>
-              {profileHeader}
+            <View className="h-10 justify-center" style={{ paddingTop: topPadding }}>
+              <Text variant="h3">{title}</Text>
             </View>
-          ) : (
-            profileHeader
-          )
+          ) : undefined
         }>
-        {/* Who is signed in and on which plan, then the profile editor. */}
+        {/* Profile tile: photo, name over email — opens EditProfileSheet. */}
         <SettingsGroup>
-          <SettingsRow
-            label={profile.email}
-            right={planName ? <PricingTierBadge planName={planName} size="md" /> : null}
+          <ProfileTile
+            avatarUrl={profile.avatarUrl}
+            name={profile.displayName}
+            email={profile.email}
+            hint={t('account.editProfile', 'Edit profile')}
+            onPress={openEditProfile}
           />
-          <SettingsRow label={t('nameEdit.title', 'Edit profile')} onPress={openEditProfile} />
+        </SettingsGroup>
+
+        {/* Current context: the open project (project presentation only) and
+            the active account. */}
+        <SettingsGroup>
+          {isProject && projectName ? (
+            <SettingsRow
+              leading={<Avatar chalk size={28} fallbackText={projectName} />}
+              label={projectName}
+              value={t('account.project', 'Project')}
+              onPress={openProjectSettings}
+            />
+          ) : null}
+          <SettingsRow
+            leading={<Avatar chalk size={28} fallbackText={activeAccount?.name} />}
+            label={activeAccount?.name ?? ''}
+            onPress={openAccount}
+            right={
+              <View className="flex-row items-center gap-2">
+                {planName ? <PricingTierBadge planName={planName} size="md" /> : null}
+                <Icon as={ChevronRight} size={16} className="text-muted-foreground/70" />
+              </View>
+            }
+          />
         </SettingsGroup>
 
         <SettingsGroup title={t('account.preferences', 'Preferences')}>
@@ -209,16 +249,6 @@ export function AccountPage({ presentation, onOpenMenu }: AccountPageProps) {
           />
         </SettingsGroup>
 
-        <SettingsGroup title={t('account.workspace', 'Workspace')}>
-          <SettingsRow
-            icon={Users}
-            label={t('account.accounts', 'Accounts')}
-            value={activeAccount?.name}
-            onPress={() => go('/accounts')}
-          />
-          <SettingsRow icon={Wallet} label={t('billing.title', 'Billing')} onPress={() => go('/billing')} />
-        </SettingsGroup>
-
         <SettingsGroup title={t('account.help', 'Help')}>
           <SettingsRow icon={BookOpen} label={t('account.docs', 'Docs')} external onPress={() => openWebPage('/docs')} />
           <SettingsRow
@@ -229,36 +259,24 @@ export function AccountPage({ presentation, onOpenMenu }: AccountPageProps) {
           />
         </SettingsGroup>
 
-        {/* Destructive actions last: account deletion and sign out. */}
         {!!user && (
-          <SettingsGroup title={t('account.advanced', 'Advanced')}>
-            {accountDeletionSupported && (
-              <SettingsRow
-                icon={Trash2}
-                label={
-                  deletionStatus?.has_pending_deletion
-                    ? t('accountDeletion.deletionScheduled', 'Deletion scheduled')
-                    : t('accountDeletion.deleteAccount', 'Delete account')
-                }
-                badge={
-                  deletionStatus?.has_pending_deletion
-                    ? t('accountDeletion.scheduledBadge', 'Scheduled')
-                    : undefined
-                }
-                destructive
-                onPress={() => go('/(settings)/account-deletion')}
-              />
-            )}
+          <SettingsGroup>
             <SettingsRow
               icon={LogOut}
-              label={t('settings.signOut')}
-              destructive
+              label={t('account.logOut', 'Log out')}
               onPress={isSigningOut ? undefined : openSignOut}
             />
           </SettingsGroup>
         )}
 
         <AppVersionFooter />
+
+        {!!user && accountDeletionSupported && (
+          <DeleteAccountLink
+            scheduled={!!deletionStatus?.has_pending_deletion}
+            onPress={openDeleteAccount}
+          />
+        )}
       </SettingsPage>
 
       <EditProfileSheet
@@ -266,6 +284,9 @@ export function AccountPage({ presentation, onOpenMenu }: AccountPageProps) {
         name={profile.displayName}
         saving={profile.isSavingName}
         onSave={profile.saveName}
+        avatarUrl={profile.avatarUrl}
+        uploading={profile.isUploadingPhoto}
+        onChangePhoto={profile.changePhoto}
       />
 
       <AlertDialog
@@ -276,7 +297,7 @@ export function AccountPage({ presentation, onOpenMenu }: AccountPageProps) {
         }}>
         <AlertDialogContent className="rounded-3xl">
           <AlertDialogHeader>
-            <AlertDialogTitle>{t('settings.signOut')}</AlertDialogTitle>
+            <AlertDialogTitle>{t('account.logOut', 'Log out')}</AlertDialogTitle>
             <AlertDialogDescription className={signOutFailed ? 'text-destructive' : undefined}>
               {signOutFailed
                 ? t('auth.signOutFailed', 'Unable to sign out. Check your connection and try again.')
@@ -296,7 +317,7 @@ export function AccountPage({ presentation, onOpenMenu }: AccountPageProps) {
               disabled={isSigningOut}
               onPress={confirmSignOut}>
               <Text>
-                {isSigningOut ? t('auth.signingOut', 'Signing out…') : t('settings.signOut')}
+                {isSigningOut ? t('auth.signingOut', 'Signing out…') : t('account.logOut', 'Log out')}
               </Text>
             </Button>
           </AlertDialogFooter>
@@ -307,47 +328,78 @@ export function AccountPage({ presentation, onOpenMenu }: AccountPageProps) {
 }
 
 /**
- * Profile photo and display name, centred above the first group. Tapping the
- * photo opens the system photo picker; the camera badge marks it as editable.
+ * The profile tile (Paper board 04, "Profile"): 48pt photo, the display name
+ * (16pt semibold, one line) over the email (14pt muted, one line), and the
+ * row chevron. The one settings row with a second line (design.md §1 Row).
+ * It sits in a `SettingsGroup`, so it has the same `bg-card` surface and
+ * `rounded-2xl` corners as every other row, and the row's `px-4 py-3`.
  */
-function ProfileHeader({
-  name,
+function ProfileTile({
   avatarUrl,
-  uploading,
-  onChangePhoto,
+  name,
+  email,
+  hint,
+  onPress,
 }: {
+  avatarUrl?: string | null;
   name: string;
-  avatarUrl: string;
-  uploading: boolean;
-  onChangePhoto: () => void;
+  email: string;
+  hint: string;
+  onPress: () => void;
 }) {
-  const { t } = useLanguage();
   return (
-    <View className="items-center">
-      <Pressable
-        onPress={onChangePhoto}
-        disabled={uploading}
-        accessibilityRole="button"
-        accessibilityLabel={t('profile.changePhoto', 'Change profile photo')}
-        hitSlop={8}
-        className="active:opacity-80">
-        <ProfilePicture imageUrl={avatarUrl} size={20} fallbackText={name} />
-        {uploading ? (
-          <View className="absolute inset-0 items-center justify-center rounded-full bg-background/60">
-            <KortixLoader size="small" />
-          </View>
-        ) : null}
-        {/* The ring in the page colour cuts the badge out of the photo edge. */}
-        <View className="absolute -bottom-0.5 -right-0.5 size-7 items-center justify-center rounded-full border-2 border-background bg-secondary">
-          <Icon as={Camera} size={14} className="text-foreground" />
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={email ? `${name}, ${email}` : name}
+      accessibilityHint={hint}
+      className="active:bg-accent">
+      <View className="flex-row items-center px-4 py-3">
+        <View className="mr-3">
+          <ProfilePicture imageUrl={avatarUrl} size={12} fallbackText={name} />
         </View>
-      </Pressable>
-      {name ? (
-        <Text variant="large" className="mt-3 text-center" numberOfLines={1}>
-          {name}
-        </Text>
-      ) : null}
-    </View>
+        <View className="min-w-0 flex-1">
+          <Text className="font-roobert-semibold" numberOfLines={1}>
+            {name}
+          </Text>
+          {email ? (
+            <Text variant="muted" numberOfLines={1}>
+              {email}
+            </Text>
+          ) : null}
+        </View>
+        <View className="ml-3">
+          <Icon as={ChevronRight} size={16} className="text-muted-foreground/70" />
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+/**
+ * Quiet centred text link, below the version footer: opens account deletion.
+ * Reads "Deletion scheduled" once a deletion is pending. `minHeight: 44`
+ * keeps the tap target at the HIG minimum despite the small, quiet label.
+ */
+function DeleteAccountLink({ scheduled, onPress }: { scheduled: boolean; onPress: () => void }) {
+  const { t } = useLanguage();
+  const label = scheduled
+    ? t('accountDeletion.deletionScheduled', 'Deletion scheduled')
+    : t('accountDeletion.deleteAccount', 'Delete account');
+  return (
+    <Pressable
+      onPress={() => {
+        haptics.tap();
+        onPress();
+      }}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      className="items-center justify-center active:opacity-70"
+      style={{ minHeight: 44 }}>
+      <Text variant="muted" className="text-center underline">
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 

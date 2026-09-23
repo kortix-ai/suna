@@ -163,10 +163,12 @@ export interface BurstView {
   running: boolean;
   steps: BurstStep[];
   summary: BurstSummary;
-  /** "Working · N steps", "Completed N steps", … */
+  /**
+   * "Working · N steps", "Completed N steps", … Every burst, even one thought
+   * or one call, renders only this line; tapping it opens the activity sheet.
+   * Mobile never expands a step inline (Jay, 2026-09-24).
+   */
   title: string;
-  /** Exactly one call: no summary line, no rail, the row IS the burst. */
-  bare: boolean;
   /** Every part merged to nothing (plumbing only): render no burst at all. */
   hidden: boolean;
 }
@@ -190,7 +192,6 @@ export function burstView(
     steps,
     summary,
     title: burstSummaryLabel(summary, running),
-    bare: steps.length === 1 && summary.total === 1,
     hidden: steps.length === 0,
   };
 }

@@ -45,6 +45,7 @@ import { ComposioConnectorContent } from '@/components/settings/connections/Comp
 import { ComposioToolsContent } from '@/components/settings/connections/ComposioToolsSelector';
 import { CustomMcpContent } from '@/components/settings/connections/CustomMcpDialog';
 import { CustomMcpToolsContent } from '@/components/settings/connections/CustomMcpToolsSelector';
+import { canShowExternalPurchase } from '@/lib/billing/store-policy';
 import { log } from '@/lib/logger';
 import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 import { THEME, withAlpha } from '@/lib/utils/theme';
@@ -162,6 +163,9 @@ export function AgentDrawer({
 
   const handleUpgradeRequired = React.useCallback(() => {
     log.log('🔒 Upgrade required');
+    // iOS: Plans opens web checkout, which App Store guideline 3.1.1
+    // forbids linking to from the app — stay put instead of navigating.
+    if (!canShowExternalPurchase(Platform.OS)) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     onClose?.();
     setTimeout(() => router.push('/plans'), 100);

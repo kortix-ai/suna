@@ -22,7 +22,6 @@ export interface PageTab {
 /** All known page tabs */
 export const PAGE_TABS: Record<string, PageTab> = {
   'page:files':             { id: 'page:files',             label: 'Files' },
-  'page:terminal':          { id: 'page:terminal',          label: 'Terminal' },
   'page:memory':            { id: 'page:memory',            label: 'Memory' },
   'page:workspace':         { id: 'page:workspace',         label: 'Workspace' },
   'page:secrets':           { id: 'page:secrets',           label: 'Secrets Manager' },
@@ -37,8 +36,6 @@ export const PAGE_TABS: Record<string, PageTab> = {
   'page:updates':           { id: 'page:updates',           label: 'Updates' },
   'page:projects':          { id: 'page:projects',          label: 'Projects' },
   // ── Right-drawer navigation (web sidebar parity) — placeholder pages for now ──
-  'page:agents':            { id: 'page:agents',            label: 'Agents' },
-  'page:skills':            { id: 'page:skills',            label: 'Skills' },
   'page:connectors':        { id: 'page:connectors',        label: 'Connectors' },
   'page:secrets-nav':       { id: 'page:secrets-nav',       label: 'Secrets' },
   'page:schedules':         { id: 'page:schedules',         label: 'Schedules' },
@@ -46,7 +43,6 @@ export const PAGE_TABS: Record<string, PageTab> = {
   'page:review':            { id: 'page:review',            label: 'Review' },
   'page:files-nav':         { id: 'page:files-nav',         label: 'Files' },
   'page:dev':               { id: 'page:dev',               label: 'Dev' },
-  'page:members':           { id: 'page:members',           label: 'Members' },
   'page:settings':          { id: 'page:settings',          label: 'Settings' },
 };
 

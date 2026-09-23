@@ -72,6 +72,8 @@ export {
   shouldUseStripe,
   isRevenueCatConfigured,
 } from './provider';
+export { canShowExternalPurchase } from './store-policy';
+export { getUpgradeSheetIncludedItems } from './upgrade-sheet-included';
 
 // =============================================================================
 // REVENUECAT

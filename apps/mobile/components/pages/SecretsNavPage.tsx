@@ -66,6 +66,8 @@ interface PageTabLike {
 interface SecretsNavPageProps {
   page: PageTabLike;
   projectId: string;
+  /** Pushed as a sub-page of project Settings: Go back in place of the hamburger. */
+  onBack?: () => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
   isDrawerOpen?: boolean;
@@ -636,6 +638,7 @@ function ManifestBanner({ status, path, error, isDark }: { status?: string; path
 export function SecretsNavPage({
   page,
   projectId,
+  onBack,
   onOpenDrawer,
   onOpenRightDrawer,
   isDrawerOpen,
@@ -686,7 +689,8 @@ export function SecretsNavPage({
     <View style={{ flex: 1, backgroundColor: bgColor }}>
       <PageHeader
         title={page.label}
-        onOpenDrawer={onOpenDrawer}
+        onBack={onBack}
+        onOpenDrawer={onBack ? undefined : onOpenDrawer}
         onOpenRightDrawer={onOpenRightDrawer}
         isDrawerOpen={isDrawerOpen}
         isRightDrawerOpen={isRightDrawerOpen}

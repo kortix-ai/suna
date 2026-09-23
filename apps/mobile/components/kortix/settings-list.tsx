@@ -1,8 +1,8 @@
 /**
  * Settings list — the one layout for every settings-style screen: the
- * (settings) stack, the Account tab, Accounts, Billing.
+ * (settings) stack, the Account tab, an account's own page, Billing.
  *
- *   <SettingsHeader title="Accounts" right={<PlatformButton … />} />
+ *   <SettingsHeader title="Account" right={<PlatformButton … />} />
  *   <SettingsPage>
  *     <SettingsGroup title="Preferences">
  *       <SettingsRow icon={User} label="General" onPress={…} />

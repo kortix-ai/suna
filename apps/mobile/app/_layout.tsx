@@ -500,19 +500,7 @@ export default function RootLayout() {
                                       <Stack.Screen name="plans" />
                                       <Stack.Screen name="billing" />
                                       <Stack.Screen
-                                        name="accounts/index"
-                                        options={{ fullScreenGestureEnabled: true }}
-                                      />
-                                      <Stack.Screen
                                         name="accounts/[id]"
-                                        options={{ fullScreenGestureEnabled: true }}
-                                      />
-                                      <Stack.Screen
-                                        name="accounts/[id]/groups/[groupId]"
-                                        options={{ fullScreenGestureEnabled: true }}
-                                      />
-                                      <Stack.Screen
-                                        name="accounts/[id]/members/[userId]"
                                         options={{ fullScreenGestureEnabled: true }}
                                       />
                                     </Stack>

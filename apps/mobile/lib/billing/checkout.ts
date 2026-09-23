@@ -20,6 +20,7 @@ import {
 import { API_URL, getAuthHeaders } from '@/api/config';
 import { log } from '@/lib/logger';
 import { APP_SCHEME, buildSuccessUrl, buildCancelUrl } from './return-link';
+import { getWebBillingUrl } from './web-links';
 
 // ============================================================================
 // API Helper
@@ -263,12 +264,9 @@ export async function openBillingPortal(returnUrl?: string): Promise<void> {
   log.log('🌐 Opening web billing portal...');
 
   try {
-    // Direct users to the web app's billing management page
-    const webBillingUrl = process.env.EXPO_PUBLIC_WEB_APP_URL 
-      ? `${process.env.EXPO_PUBLIC_WEB_APP_URL}/subscription`
-      : 'https://www.kortix.com/subscription';
-
-    await openExternalUrl(webBillingUrl);
+    // Web billing on kortix.com. `/subscription` has no route in apps/web
+    // (it 404'd after sign-in); `/settings/billing` is the billing page.
+    await openExternalUrl(getWebBillingUrl());
   } catch (error) {
     log.error('❌ Error opening billing portal:', error);
     throw error;

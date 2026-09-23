@@ -38,6 +38,7 @@ import type {
 } from '@/lib/utils/auth-types';
 import type { Session, AuthChangeEvent } from '@supabase/supabase-js';
 import { log, setLoggerUserId } from '@/lib/logger';
+import { warmSessionPool } from '@/lib/session/warm-session-pool';
 
 /**
  * Sign-out: reset the in-memory stores that hold the previous user's data.
@@ -54,6 +55,8 @@ function resetUserStores() {
   useSelectedProjectStore.getState().reset();
   // Also deletes the screenshot files.
   useTabScreenshotStore.getState().clear();
+  // A warm session belongs to the signed-in user.
+  warmSessionPool.reset();
 }
 
 // Complete any pending auth sessions (required for web)

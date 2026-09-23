@@ -13,7 +13,6 @@ import {
   View,
   FlatList,
   ScrollView,
-  TextInput,
   Animated,
   Easing,
   Platform,
@@ -36,14 +35,23 @@ import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ListIcon as MenuIcon, XIcon as CloseIcon, ListIcon, XIcon, PaperPlaneTiltIcon, ArrowUpIcon, ArrowDownIcon, CaretUpIcon, CaretDownIcon, DotsThreeIcon } from '@/lib/icons';
-import { MenuButton } from '@/components/kortix/menu-button';
+import { ListIcon as MenuIcon, XIcon as CloseIcon, ListIcon, XIcon, PaperPlaneTiltIcon, ArrowUpIcon, ArrowDownIcon, CaretUpIcon, CaretDownIcon } from '@/lib/icons';
+import type { SheetRef } from '@/components/kortix/sheet';
 import { FLOATING_MENU_CLEARANCE, FloatingMenuButton } from '@/components/session/FloatingMenuButton';
-import { AgentPill } from '@/components/session/AgentPill';
+import { ConnectProviderSheet } from '@/components/session/ConnectProviderSheet';
+import { ConnectorAuthSheet } from '@/components/session/ConnectorAuthSheet';
+import {
+  ConnectorHandoffContext,
+  type ConnectorHandoffRequest,
+} from '@/components/session/tool/shared/connector-handoff-context';
 import { ProjectHeaderActions } from '@/components/session/ProjectHeaderActions';
+import { SessionThreadTitle } from '@/components/session/SessionThreadTitle';
+import { SubAgentHeaderChip } from '@/components/session/SubAgentHeaderChip';
+import { SubAgentListSheet } from '@/components/session/SubAgentListSheet';
 import { useProjectModelCatalog } from '@/lib/projects/hooks';
-import { openProjectModelsOnWeb } from '@/lib/session/connect-model';
-import { offeredSessionModels, type PickerCatalogModel, type PickerModel } from '@/lib/session/model-picker';
+import { catalogPickerModels, offeredSessionModels, type PickerCatalogModel, type PickerModel } from '@/lib/session/model-picker';
+import type { SubAgentRelation } from '@/lib/session/sub-agents';
+import type { ProjectSession } from '@/lib/projects/projects-client';
 import { haptics } from '@/lib/haptics';
 import { Icon } from '@/components/ui/icon';
 import { Text as RNText } from 'react-native';
@@ -93,7 +101,9 @@ import {
   nextQuestionPollDelay,
   shouldPollQuestions as shouldPollQuestionsFor,
 } from '@/lib/session/question-poll';
-import { useSession, replyToQuestion, rejectQuestion, replyToPermission, useRenameSession } from '@/lib/platform/hooks';
+import { pinnedPermission } from '@/lib/session/permission-prompt';
+import { questionsToHydrate } from '@/lib/opencode/stream-policy';
+import { useSession, replyToQuestion, rejectQuestion, replyToPermission } from '@/lib/platform/hooks';
 import { useTabStore } from '@/stores/tab-store';
 import { useMessageQueueStore } from '@/stores/message-queue-store';
 import type { QueuedMessage } from '@/stores/message-queue-store';
@@ -121,6 +131,7 @@ import { SessionTurn } from './SessionTurn';
 import { SessionBusyIndicator } from './session-busy-indicator';
 import { CompactionMarker } from './turn/compaction-divider';
 import { QuestionPrompt } from './QuestionPrompt';
+import { PermissionPromptCard } from './PermissionPromptCard';
 import { useSessions } from '@/lib/platform/hooks';
 import { FileViewer } from '@/components/files/FileViewer';
 import { MarkdownActionsProvider } from '@/components/markdown/inline-code';
@@ -131,27 +142,44 @@ import type { SandboxFile } from '@/api/types';
 import type { Session } from '@/lib/platform/types';
 import { ProjectHero } from '@/components/session/ProjectHero';
 
-// AnimatedToggleIcon was extracted to components/kortix/animated-toggle-icon.tsx
-// so it can be shared with PageHeader and page-level headers across the app.
-import { AnimatedToggleIcon } from '@/components/kortix/animated-toggle-icon';
-
 interface SessionPageProps {
   sessionId: string;
   /** The session's project: its model catalog is the thread's model list. */
   projectId?: string;
   onBack: () => void;
   onOpenDrawer?: () => void;
+  /** Opens the session actions sheet (floating chrome's `···`). */
   onOpenRightDrawer?: () => void;
+  /**
+   * Opens the same sheet, straight to its Rename view (COR-140) — what the
+   * header's title tap uses, so there is exactly one rename implementation.
+   * Omit while the sheet has nowhere to open yet (the project session row
+   * has not resolved) — the same guard `onOpenRightDrawer` already needs.
+   */
+  onRenamePress?: () => void;
+  /**
+   * The title to show in the header (COR-140): `sessionDisplayTitle` of the
+   * project session, when the caller has resolved one. Falls back to the
+   * OpenCode session's own `title` — the only signal available for a
+   * sub-agent thread, which has no project-session row of its own.
+   */
+  sessionTitle?: string;
+  /**
+   * The open session's sub-agent relation (COR-162): `subAgentRelation` over
+   * the project session rows — the relation the session list nests by. The
+   * caller computes it; this page only renders it.
+   */
+  subAgentRelation?: SubAgentRelation | null;
+  /** The project sessions this session spawned (`subAgentsOf`), for the "N sub-agents" sheet. */
+  subAgents?: ProjectSession[];
+  /** Opens a project session — the parent, or a sub-agent picked in the sheet. */
+  onOpenProjectSession?: (session: ProjectSession) => void;
+  /** The model sheet's Agent tab `+`: starts a new session that creates an agent. */
+  onCreateAgent?: () => void;
   /** True when the left drawer is currently open — swaps the menu icon for an X */
   isDrawerOpen?: boolean;
   /** True when the right drawer is currently open — swaps the grid icon for an X */
   isRightDrawerOpen?: boolean;
-  /**
-   * 'header'   — the legacy top bar (back/title/drawer buttons). Default, so
-   *              ProjectScreenLegacy is unaffected.
-   * 'floating' — no header; a floating menu button.
-   */
-  chrome?: 'header' | 'floating';
   /** Hides drawer buttons, model/variant selectors — used for onboarding */
   onboardingMode?: boolean;
   /** Skip callback shown in header during onboarding */
@@ -173,6 +201,7 @@ const EMPTY_COMMANDS = frozenEmpty<Command>();
 const EMPTY_MODELS = frozenEmpty<FlatModel>();
 const EMPTY_DEFAULTS = Object.freeze({}) as Record<string, string>;
 const EMPTY_IDS = frozenEmpty<string>();
+const EMPTY_PROJECT_SESSIONS = frozenEmpty<ProjectSession>();
 
 /** Returns the previous array while its elements are reference-equal to `next`. */
 function useShallowStableArray<T>(next: T[]): T[] {
@@ -206,30 +235,28 @@ function flatModelFromCatalog(model: PickerModel, entry: PickerCatalogModel): Fl
   };
 }
 
-function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, chrome = 'header', onboardingMode, onSkipOnboarding }: SessionPageProps) {
+function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRightDrawer, onRenamePress, sessionTitle, subAgentRelation: subAgentRelationValue, subAgents, onOpenProjectSession, onCreateAgent, isDrawerOpen, isRightDrawerOpen, onboardingMode, onSkipOnboarding }: SessionPageProps) {
   const router = useRouter();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
-  // Onboarding always uses header chrome (no floating menu). Explicit guard against any call site
-  // that might accidentally pass both onboardingMode and chrome="floating".
-  const effectiveChrome = onboardingMode ? 'header' : chrome;
-  // Top inset for the message list. Floating chrome has no header, so the
-  // list would start under the status bar and the floating menu button —
-  // inset it below them (FLOATING_MENU_CLEARANCE, where the top fade ends).
-  // Header chrome keeps the original 16pt breathing room below the header.
-  const listTopInset = effectiveChrome === 'floating' ? insets.top + FLOATING_MENU_CLEARANCE : 16;
+  // Top inset for the message list. The chrome is the floating menu button
+  // only (the static header bar is gone, COR-140): the list would start under
+  // the status bar and that button — inset it below them
+  // (FLOATING_MENU_CLEARANCE, where the top fade ends).
+  const listTopInset = insets.top + FLOATING_MENU_CLEARANCE;
   // The bottom area rests above the home indicator (`insets.bottom`). While
   // the keyboard is up the indicator is covered, so the inset collapses with
   // the keyboard's progress: the composer then sits its own 12pt (`pb-3`) above
   // the keyboard, the same gap as the project home composer (design.md §5).
-  const padsSafeArea = onboardingMode || effectiveChrome === 'floating';
   const bottomInset = insets.bottom;
   const { progress: keyboardProgress } = useReanimatedKeyboardAnimation();
   const bottomAreaStyle = useAnimatedStyle(() => ({
     paddingBottom: bottomInset * (1 - keyboardProgress.value),
   }));
   const { sandboxUrl } = useSandboxContext();
+  // Declared early: `handleStop` (below) needs it for a failed-abort toast.
+  const toast = useToast();
   const flatListRef = useRef<FlatList>(null);
   // Saved scroll offset: read once per session, not subscribed. Subscribing
   // re-rendered the whole thread on every persisted offset write.
@@ -369,6 +396,47 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
       appStateSubscription.remove();
     };
   }, [shouldPollQuestions, sandboxUrl, sessionId, sessionStatusType]);
+
+  // ── Self-heal: restore pending permissions on session open ─────────────
+  // GET /permission mirrors GET /question above: a `permission.asked` event
+  // sent before this page (or the SSE stream) was up is lost, and the agent
+  // then waits on a blocked tool call with nothing pinned above the composer.
+  // One read per session open covers that gap; the event stream's own
+  // `hydratePermissionsAfterGap` (`lib/opencode/event-stream.ts`) covers a
+  // later reconnect gap the same way.
+  useEffect(() => {
+    if (!sandboxUrl) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const token = await getAuthToken();
+        const res = await fetch(`${sandboxUrl}/permission`, {
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        });
+        if (!res.ok || cancelled) return;
+        const body: unknown = await res.json();
+        if (cancelled) return;
+        const store = useSyncStore.getState();
+        for (const permission of questionsToHydrate<PermissionRequest>(
+          body,
+          store.permissions,
+          (sid) => sid === sessionId,
+        )) {
+          store.addPermission(sessionId, permission);
+          log.log('🔄 [SessionPage] Self-healed pending permission:', permission.id);
+        }
+      } catch {
+        // Best effort: the SSE stream and its own reconnect-gap hydrate
+        // still cover this session going forward.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sandboxUrl, sessionId]);
 
   // ── Message Queue ──────────────────────────────────────────────────────
   const queueHydrated = useMessageQueueStore((s) => s.hydrated);
@@ -510,20 +578,33 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
 
   const handleStop = useCallback(async () => {
     if (!sandboxUrl) return;
+    // Optimistic idle, same as the success path always showed. On failure
+    // (network error or a non-2xx abort response) the session is still
+    // running on the server — roll the status back and say so, instead of
+    // leaving the UI idle for work that never stopped (COR-146).
+    const previousStatus = useSyncStore.getState().getStatus(sessionId);
     useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
     try {
       const token = await getAuthToken();
-      await fetch(`${sandboxUrl}/session/${sessionId}/abort`, {
+      const res = await fetch(`${sandboxUrl}/session/${sessionId}/abort`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
       });
+      if (!res.ok) {
+        const errorText = await res.text().catch(() => '');
+        log.error('[SessionPage] Abort failed:', res.status, errorText);
+        if (previousStatus) useSyncStore.getState().setStatus(sessionId, previousStatus);
+        toast.error("Couldn't stop. Kortix is still working.");
+      }
     } catch (err: any) {
       log.error('[SessionPage] Abort error:', err?.message || err);
+      if (previousStatus) useSyncStore.getState().setStatus(sessionId, previousStatus);
+      toast.error("Couldn't stop. Kortix is still working.");
     }
-  }, [sandboxUrl, sessionId]);
+  }, [sandboxUrl, sessionId, toast]);
 
   // ── Queue drain logic ───────────────────────────────────────────────────
 
@@ -607,7 +688,8 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
   // The models this thread can run on: web's rule (`lib/session/model-picker.ts`).
   // A gateway project lists its `/model-picker` catalog — the list project home
   // and web show; any other project lists its sandbox's own providers.
-  const { catalog: modelCatalog, isLoading: catalogLoading } = useProjectModelCatalog(projectId ?? null);
+  const { catalog: modelCatalog, isLoading: catalogLoading, refetch: refetchModelCatalog } =
+    useProjectModelCatalog(projectId ?? null);
   const allModels = useMemo(
     () => offeredSessionModels(sandboxModels, modelCatalog, flatModelFromCatalog),
     [sandboxModels, modelCatalog],
@@ -619,9 +701,30 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
     [modelCatalog, allModels],
   );
   const modelsLoading = catalogLoading || (!modelCatalog && !providers);
+  // `ConnectProviderSheet` refetches once the in-app browser closes, to toast
+  // "Provider connected" only once the catalog actually turns up a model.
+  const refetchModelCount = useCallback(async () => {
+    const result = await refetchModelCatalog();
+    return catalogPickerModels(result.data?.models).length;
+  }, [refetchModelCatalog]);
+  const connectSheetRef = useRef<SheetRef>(null);
   const handleConnectModel = useCallback(() => {
-    if (projectId) openProjectModelsOnWeb(projectId);
+    if (projectId) connectSheetRef.current?.open();
   }, [projectId]);
+  // The in-chat connector hand-off (COR-158): one `ConnectorAuthSheet`
+  // instance, shared by every `ConnectorConnectRow` in the transcript — same
+  // "one shared sheet" shape as `connectSheetRef` above.
+  const connectorAuthSheetRef = useRef<SheetRef>(null);
+  const [connectorHandoffRequest, setConnectorHandoffRequest] =
+    useState<ConnectorHandoffRequest | null>(null);
+  const requestConnectorConnect = useCallback((request: ConnectorHandoffRequest) => {
+    setConnectorHandoffRequest(request);
+    connectorAuthSheetRef.current?.open();
+  }, []);
+  const connectorHandoffApi = useMemo(
+    () => ({ projectId: projectId ?? null, requestConnect: requestConnectorConnect }),
+    [projectId, requestConnectorConnect],
+  );
   const defaults = providers?.default ?? EMPTY_DEFAULTS;
   const { data: config } = useOpenCodeConfig(sandboxUrl);
   const { data: commands = EMPTY_COMMANDS } = useOpenCodeCommands(sandboxUrl);
@@ -681,7 +784,6 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
   // session to the message (`POST /session/:id/revert`, what the SDK's
   // `useSession().rewind` calls), then send the edited text. The server
   // stages the revert; that send commits it and deletes the reverted messages.
-  const toast = useToast();
   const [rewindTarget, setRewindTarget] = useState<{ messageId: string; text: string } | null>(null);
   const [editPending, setEditPending] = useState(false);
   const editPendingRef = useRef(false);
@@ -1487,10 +1589,25 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
 
   const handleToggleQueue = useCallback(() => setQueueExpanded((v) => !v), []);
   const handleClearQueue = useCallback(() => queueClearSession(sessionId), [queueClearSession, sessionId]);
-  const inputSlot = useMemo(
-    () =>
-      queuedMessages.length > 0 ? (
+  // The oldest pending permission, pinned above the composer (COR-137 Task 7)
+  // — above the queue panel in the same top slot, so it is never missed
+  // off-screen while a tool call waits on it.
+  const pinnedPermissionRequest = useMemo(() => pinnedPermission(pendingPermissions), [pendingPermissions]);
+  const inputSlot = useMemo(() => {
+    const slots: React.ReactNode[] = [];
+    if (pinnedPermissionRequest) {
+      slots.push(
+        <PermissionPromptCard
+          key={`permission-${pinnedPermissionRequest.id}`}
+          permission={pinnedPermissionRequest}
+          onReply={handlePermissionReply}
+        />,
+      );
+    }
+    if (queuedMessages.length > 0) {
+      slots.push(
         <QueuePanel
+          key="queue"
           messages={queuedMessages}
           expanded={queueExpanded}
           onToggle={handleToggleQueue}
@@ -1500,51 +1617,46 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
           onClear={handleClearQueue}
           onSendNow={handleQueueSendNow}
           isDark={isDark}
-        />
-      ) : undefined,
-    [queuedMessages, queueExpanded, handleToggleQueue, queueRemove, queueMoveUp, queueMoveDown, handleClearQueue, handleQueueSendNow, isDark],
+        />,
+      );
+    }
+    return slots.length > 0 ? slots : undefined;
+  }, [
+    pinnedPermissionRequest,
+    handlePermissionReply,
+    queuedMessages,
+    queueExpanded,
+    handleToggleQueue,
+    queueRemove,
+    queueMoveUp,
+    queueMoveDown,
+    handleClearQueue,
+    handleQueueSendNow,
+    isDark,
+  ]);
+
+  const title = sessionTitle ?? (session?.title || 'New Session');
+
+  // ── Sub-agent relationship (COR-162) ────────────────────────────────────
+  // The same relation as the session list (`metadata.spawned_by_session`,
+  // `lib/session/sub-agents.ts`), computed by `ProjectScreen` over the
+  // project session rows. The parent and every sub-agent open through the
+  // project-session open path (`onOpenProjectSession`), like a drawer row.
+  const subAgentListSheetRef = useRef<SheetRef>(null);
+  // No open path, nothing to open: the chip hides rather than dead-ends.
+  const headerRelation = onOpenProjectSession ? (subAgentRelationValue ?? null) : null;
+  const handleSubAgentRelationPress = useCallback(() => {
+    if (!headerRelation) return;
+    if (headerRelation.type === 'child') {
+      onOpenProjectSession?.(headerRelation.parent);
+    } else {
+      subAgentListSheetRef.current?.open();
+    }
+  }, [headerRelation, onOpenProjectSession]);
+  const handleSubAgentSelect = useCallback(
+    (child: ProjectSession) => onOpenProjectSession?.(child),
+    [onOpenProjectSession],
   );
-
-  const title = session?.title || 'New Session';
-
-  // ── Inline title edit ──────────────────────────────────────────────────
-  // Tap the title → it becomes a TextInput in place. Commit on blur or Return;
-  // revert if the user clears the field. Disabled in onboarding mode.
-  const renameSession = useRenameSession(sandboxUrl);
-  const titleInputRef = useRef<TextInput>(null);
-  const [isEditingTitle, setIsEditingTitle] = useState(false);
-  const [titleDraft, setTitleDraft] = useState(title);
-
-  const beginTitleEdit = useCallback(() => {
-    if (onboardingMode) return;
-    const current = session?.title || '';
-    setTitleDraft(current);
-    setIsEditingTitle(true);
-    // Focus on the next frame so the TextInput is mounted, then place the
-    // caret at the end of the text (native default would select the whole
-    // string when selectTextOnFocus is set).
-    requestAnimationFrame(() => {
-      titleInputRef.current?.focus();
-      titleInputRef.current?.setNativeProps({
-        selection: { start: current.length, end: current.length },
-      });
-    });
-  }, [onboardingMode, session?.title]);
-
-  const commitTitleEdit = useCallback(() => {
-    if (!isEditingTitle) return;
-    const trimmed = titleDraft.trim();
-    const previous = (session?.title || '').trim();
-    setIsEditingTitle(false);
-    // No change or empty → revert silently
-    if (!trimmed || trimmed === previous) return;
-    renameSession.mutate({ sessionId, title: trimmed });
-  }, [isEditingTitle, titleDraft, session?.title, renameSession, sessionId]);
-
-  const cancelTitleEdit = useCallback(() => {
-    setIsEditingTitle(false);
-    setTitleDraft(session?.title || '');
-  }, [session?.title]);
 
   return (
     <KeyboardAvoidingView
@@ -1552,117 +1664,43 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
       behavior="padding"
       className="bg-background"
     >
-      {effectiveChrome === 'header' ? (
-        /* Header — flat bar on the page surface, matches PageHeader */
-        <View
-          style={{ paddingTop: insets.top, paddingBottom: 12 }}
-          className="px-4 bg-background"
-        >
-          <View className="flex-row items-center">
-            {!onboardingMode && (
-              <View className="mr-3">
-                <MenuButton onPress={onOpenDrawer} />
-              </View>
-            )}
-            <View className="flex-1 flex-row items-center">
-              {/* Status dot before the title (matches web session-list):
-                  amber when a question is waiting, green while working,
-                  hidden otherwise. */}
-              {!onboardingMode && !isEditingTitle && (isBusy || pendingQuestions.length > 0) && (
-                <View
-                  style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: 3,
-                    backgroundColor: pendingQuestions.length > 0 ? THEME.accent.orange : THEME.accent.green,
-                    marginRight: 8,
-                  }}
-                />
-              )}
-              {isEditingTitle ? (
-                <TextInput
-                  ref={titleInputRef}
-                  value={titleDraft}
-                  onChangeText={setTitleDraft}
-                  onBlur={commitTitleEdit}
-                  onSubmitEditing={commitTitleEdit}
-                  returnKeyType="done"
-                  blurOnSubmit
-                  maxLength={200}
-                  placeholder="Session title"
-                  placeholderTextColor={isDark ? withAlpha(THEME.dark.foreground, 0.3) : withAlpha(THEME.light.foreground, 0.3)}
-                  style={{
-                    flex: 1,
-                    fontSize: 16,
-                    fontFamily: 'Roobert-Medium',
-                    color: isDark ? THEME.dark.foreground : THEME.light.foreground,
-                    padding: 0,
-                    margin: 0,
-                  }}
-                />
-              ) : (
-                <Button
-                  variant="ghost"
-                  onPress={beginTitleEdit}
-                  disabled={onboardingMode}
-                  className={`h-auto w-auto flex-1 justify-start p-0 active:bg-transparent ${onboardingMode ? 'active:opacity-100' : 'active:opacity-70'}`}
-                  hitSlop={{ top: 8, bottom: 8 }}
-                >
-                  <Text
-                    className="text-base font-medium text-muted-foreground"
-                    numberOfLines={1}
-                  >
-                    {title}
-                  </Text>
-                </Button>
-              )}
-            </View>
-            {!onboardingMode && (
-              <Button
-                variant="ghost"
-                onPress={onOpenRightDrawer}
-                className="h-auto w-auto ml-3 p-1 active:bg-transparent active:opacity-70"
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <AnimatedToggleIcon open={!!isRightDrawerOpen} color={isDark ? THEME.dark.foreground : THEME.light.foreground} icon={DotsThreeIcon} size={20} />
-              </Button>
-            )}
-            {onboardingMode && onSkipOnboarding && (
-              <Button
-                variant="ghost"
-                onPress={onSkipOnboarding}
-                className="h-auto w-auto ml-3 py-1 px-3 active:bg-transparent active:opacity-70"
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.4) }}>
-                  Skip
-                </Text>
-              </Button>
-            )}
-          </View>
-        </View>
-      ) : (
-        /* Floating menu button — opens the project drawer (every project page
-           shows it, Jay 2026-09-16). `fade`: turns scroll under the button and
-           the status bar, so they fade out there instead of showing through. */
-        <FloatingMenuButton onPress={onOpenDrawer} fade>
-          {/* The agent is a thread-level choice: it sits in the header, not in
-              the composer (design.md §5). Hidden with fewer than two agents.
-              The `···` button after it opens the project sheet. Onboarding
-              has no project sheet, so the pill holds the edge there. */}
-          {onOpenRightDrawer && !onboardingMode ? (
-            <ProjectHeaderActions onOpenMore={onOpenRightDrawer}>
-              <AgentPill agents={resolvedAgents} activeName={resolved.agent?.name ?? null} onChange={handleAgentChange} edge={false} />
-            </ProjectHeaderActions>
-          ) : (
-            <AgentPill agents={resolvedAgents} activeName={resolved.agent?.name ?? null} onChange={handleAgentChange} />
-          )}
-        </FloatingMenuButton>
-      )}
+      {/* Floating menu button — opens the project drawer (every project page
+          shows it, Jay 2026-09-16). `fade`: turns scroll under the button and
+          the status bar, so they fade out there instead of showing through.
+          `title`: the thread's title (COR-140), centred between the
+          hamburger and the right-side controls. The legacy static header bar
+          this used to branch on (`chrome === 'header'`) rendered nowhere —
+          no call site ever passed it, and nothing ever set `onboardingMode`,
+          its only other trigger — so it was deleted with the inline-rename
+          state that belonged only to it (COR-140 remaining part). */}
+      <FloatingMenuButton
+        onPress={onOpenDrawer}
+        fade
+        title={
+          !onboardingMode ? (
+            <SessionThreadTitle title={title} onPress={onRenamePress} />
+          ) : undefined
+        }
+      >
+        {/* The agent is picked in the model sheet's Agent tab (Jay,
+            2026-09-23), not here. The `···` button opens the session actions
+            sheet (COR-140 Task 5) for the open thread's session. Onboarding,
+            and a thread whose project session has not loaded yet, have no
+            `···`, so the relation chip (or nothing) holds the edge there. */}
+        {onOpenRightDrawer && !onboardingMode ? (
+          <ProjectHeaderActions onOpenMore={onOpenRightDrawer}>
+            <SubAgentHeaderChip relation={headerRelation} onPress={handleSubAgentRelationPress} />
+          </ProjectHeaderActions>
+        ) : (
+          <SubAgentHeaderChip relation={headerRelation} onPress={handleSubAgentRelationPress} />
+        )}
+      </FloatingMenuButton>
+      <SubAgentListSheet ref={subAgentListSheetRef} subAgents={subAgents ?? EMPTY_PROJECT_SESSIONS} onSelect={handleSubAgentSelect} />
 
       {/* Messages + Fresh Session Hero — flat continuation of the page
           surface (the rounded "sheet" card treatment was removed app-wide). */}
       <View style={{ flex: 1 }} className="bg-background">
+        <ConnectorHandoffContext.Provider value={connectorHandoffApi}>
         <MarkdownActionsProvider value={markdownActions}>
         <FlatList
           ref={flatListRef}
@@ -1723,6 +1761,7 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
           onScrollToIndexFailed={handleScrollToIndexFailed}
         />
         </MarkdownActionsProvider>
+        </ConnectorHandoffContext.Provider>
 
         <ScrollToBottomButton visible={showScrollButton} onPress={jumpToEnd} />
 
@@ -1750,10 +1789,8 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
         />
       )}
 
-      {/* Bottom area — question prompt OR chat input. `floating` no longer
-          clears a dock (removed): it just sits above the safe area, same as
-          onboarding. */}
-      <Reanimated.View style={padsSafeArea ? bottomAreaStyle : undefined}>
+      {/* Bottom area — question prompt OR chat input, above the safe area. */}
+      <Reanimated.View style={bottomAreaStyle}>
         {hasQuestion && activeQuestion ? (
           <QuestionPrompt
             key={activeQuestion.id}
@@ -1771,6 +1808,8 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
             onTextChange={handleTextChange}
             agent={resolved.agent}
             agents={resolvedAgents}
+            onAgentChange={handleAgentChange}
+            onCreateAgent={onCreateAgent}
             model={resolvedModel}
             models={visibleModels}
             modelsLoading={modelsLoading}
@@ -1791,6 +1830,14 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
         )}
       </Reanimated.View>
 
+      <ConnectProviderSheet
+        ref={connectSheetRef}
+        projectId={projectId ?? ''}
+        onRefetchModels={refetchModelCount}
+      />
+
+      <ConnectorAuthSheet ref={connectorAuthSheetRef} request={connectorHandoffRequest} />
+
       {/* File mention viewer */}
       <FileViewer
         visible={mentionFileViewerVisible}
@@ -1807,7 +1854,9 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
       <ToolFilePreviewHost />
 
       {/* The activity summary rows' sheet (ActivityBurst) */}
-      <ActivitySheetHost sessionId={sessionId} markdownActions={markdownActions} />
+      {/* Given the connector hand-off so a Connect inside it dismisses the
+          activity sheet before the auth sheet opens (never two overlays). */}
+      <ActivitySheetHost sessionId={sessionId} markdownActions={markdownActions} connectorHandoff={connectorHandoffApi} />
     </KeyboardAvoidingView>
   );
 }

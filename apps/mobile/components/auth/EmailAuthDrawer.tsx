@@ -19,6 +19,7 @@ import { useToast } from '@/components/kortix/toast-provider';
 import { log } from '@/lib/logger';
 import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 import { THEME } from '@/lib/utils/theme';
+import { KORTIX_WEB_URL } from '@/lib/kortix-web';
 
 export interface EmailAuthDrawerRef {
   open: () => void;
@@ -288,7 +289,7 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
                     <BottomSheetTouchable onPress={async () => {
                       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                       const WebBrowser = await import('expo-web-browser');
-                      await WebBrowser.openBrowserAsync('https://www.kortix.com/legal?tab=terms', {
+                      await WebBrowser.openBrowserAsync(`${KORTIX_WEB_URL}/legal?tab=terms`, {
                         presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
                         controlsColor: isDark ? THEME.dark.foreground : THEME.light.foreground,
                       });
@@ -303,7 +304,7 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
                     <BottomSheetTouchable onPress={async () => {
                       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                       const WebBrowser = await import('expo-web-browser');
-                      await WebBrowser.openBrowserAsync('https://www.kortix.com/legal?tab=privacy', {
+                      await WebBrowser.openBrowserAsync(`${KORTIX_WEB_URL}/legal?tab=privacy`, {
                         presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
                         controlsColor: isDark ? THEME.dark.foreground : THEME.light.foreground,
                       });

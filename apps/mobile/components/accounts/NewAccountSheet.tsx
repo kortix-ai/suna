@@ -19,6 +19,7 @@ import { haptics } from '@/lib/haptics';
 import type { KortixAccount } from '@/lib/projects/projects-client';
 import { InitialsAvatar, PrimaryButton, SheetCloseButton, accountColors } from './account-shared';
 import { KortixBottomSheetModal } from '@/components/kortix/sheet';
+import { sheetOpenMove } from '@/lib/ui/sheet-open';
 
 interface NewAccountSheetProps {
   open: boolean;
@@ -36,14 +37,24 @@ export function NewAccountSheet({ open, onClose, onCreated }: NewAccountSheetPro
   const createAccount = useCreateAccount();
   const [name, setName] = useState('');
 
+  // True while the sheet is on screen. It is mounted closed inside the
+  // project switcher, and a gorhom modal dismissed before its first present
+  // never renders (`sheetOpenMove`, lib/ui/sheet-open.ts).
+  const presentedRef = useRef(false);
   useEffect(() => {
-    if (open) {
+    const move = sheetOpenMove(open, presentedRef.current);
+    if (move === 'present') {
       setName('');
+      presentedRef.current = true;
       sheetRef.current?.present();
-    } else {
+    } else if (move === 'dismiss') {
       sheetRef.current?.dismiss();
     }
   }, [open]);
+  const handleDismiss = useCallback(() => {
+    presentedRef.current = false;
+    onClose();
+  }, [onClose]);
 
 
   const submit = useCallback(async () => {
@@ -70,7 +81,7 @@ export function NewAccountSheet({ open, onClose, onCreated }: NewAccountSheetPro
       ref={sheetRef}
       enableDynamicSizing
       enablePanDownToClose
-      onDismiss={onClose}
+      onDismiss={handleDismiss}
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"
     >

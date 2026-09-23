@@ -26,11 +26,13 @@
  * last button), like the floating header.
  *
  * Project pages show the hamburger: the project drawer opens from every
- * project page (see ProjectRoutes), and **nothing ever takes its place** (Jay,
- * 2026-09-22). `onBack` is for a detail shown inside a page (an agent, a
- * skill): the app's Go back button (`PlatformButton`, the one `SettingsHeader`
- * uses) sits beside the hamburger, back to the page's list. A folder view
- * passes no `onBack`: its breadcrumb goes up.
+ * project page (see ProjectRoutes) (Jay, 2026-09-22). One exception: a
+ * pushed sub-page (project Settings from Settings, Schedules or Secrets from
+ * project Settings; Jay, 2026-09-23) passes `onBack` and no `onOpenDrawer`,
+ * so the app's Go back button (`PlatformButton`, the one `SettingsHeader`
+ * uses) takes the hamburger's place and returns to the page it was opened
+ * from. A page that passes both shows Go back beside the hamburger, back to
+ * a detail's list. A folder view passes no `onBack`: its breadcrumb goes up.
  */
 
 import * as React from 'react';
@@ -59,7 +61,10 @@ export interface PageHeaderProps {
 
   /** Left hamburger handler. Omit to hide the left icon entirely. */
   onOpenDrawer?: () => void;
-  /** A detail inside the page: Go back takes the hamburger's place. */
+  /**
+   * Go back (`PlatformButton` chevron). Alone for a pushed sub-page (no
+   * `onOpenDrawer`), in the hamburger's place; beside the hamburger otherwise.
+   */
   onBack?: () => void;
   /** Right "···" more-button handler. Omit or combine with `hideRightDrawerToggle`. */
   onOpenRightDrawer?: () => void;

@@ -213,7 +213,9 @@ that balances the button. `hideClose` drops the button. `titleTrailing` puts one
 40pt icon `Button` (`variant="ghost" size="icon" rounded-full`) at the far right in
 place of that spacer — the file preview's Copy (`SessionFilesSheet`); the slot
 mirrors the close button's, so the title stays centred. One control only: a second
-action belongs in the sheet's content. Do not hand-roll a title
+action belongs in the sheet's content. `titleLeading` replaces the close button with a Back
+chevron (`SheetBackButton`) while a pushed view shows — the session actions
+sheet's Rename and Share (Jay, 2026-09-23). Do not hand-roll a title
 row inside a sheet's content.
 
 `components/kortix/sheet.tsx` also gives:

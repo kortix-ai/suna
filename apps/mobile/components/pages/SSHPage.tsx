@@ -87,7 +87,7 @@ interface SSHPageProps {
   page: PageTab;
   onBack: () => void;
   onOpenDrawer: () => void;
-  onOpenRightDrawer: () => void;
+  onOpenRightDrawer?: () => void;
   isDrawerOpen?: boolean;
   isRightDrawerOpen?: boolean;
 }

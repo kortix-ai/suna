@@ -142,12 +142,15 @@ export function SheetTitleRow({
   hideClose = false,
   leading,
   trailing,
+  center,
 }: {
   title?: string;
   onClose?: () => void;
   hideClose?: boolean;
   leading?: React.ReactNode;
   trailing?: React.ReactNode;
+  /** Replaces the centred title text (e.g. a tab list). */
+  center?: React.ReactNode;
 }) {
   return (
     <View
@@ -172,13 +175,17 @@ export function SheetTitleRow({
           <Icon as={XIcon} size={20} className="text-foreground" />
         </Button>
       )}
-      <Text
-        variant="large"
-        accessibilityRole="header"
-        className="flex-1 text-center"
-        numberOfLines={1}>
-        {title ?? ''}
-      </Text>
+      {center ? (
+        <View className="flex-1 items-center">{center}</View>
+      ) : (
+        <Text
+          variant="large"
+          accessibilityRole="header"
+          className="flex-1 text-center"
+          numberOfLines={1}>
+          {title ?? ''}
+        </Text>
+      )}
       {trailing ? (
         <View className="-mr-2.5">{trailing}</View>
       ) : (
@@ -194,15 +201,22 @@ export interface KortixBottomSheetModalProps extends BottomSheetModalProps {
   title?: string;
   /** A titled sheet without the close button. */
   hideClose?: boolean;
+  /**
+   * Replaces the close button at the far left of the title row (a Back
+   * chevron while a pushed view shows). Needs `title`.
+   */
+  titleLeading?: React.ReactNode;
   /** One 40pt icon `Button` at the far right of the title row. Needs `title`. */
   titleTrailing?: React.ReactNode;
+  /** Replaces the centred title text with a control (a tab list). Needs `title` (used as the accessible name). */
+  titleCenter?: React.ReactNode;
 }
 
 export const KortixBottomSheetModal = React.forwardRef<
   BottomSheetModal,
   KortixBottomSheetModalProps
 >(({ title, hideClose = false, backgroundStyle, handleComponent, snapPoints, topInset, children, ...rest }, ref) => {
-  const { titleTrailing, ...props } = rest;
+  const { titleLeading, titleTrailing, titleCenter, ...props } = rest;
   // gorhom sizes the content box to the HIGHEST detent, which is now always
   // 100%. A fixed-detent sheet shown at 92% would lay its content out
   // full-screen tall and push a bottom Save row off-screen, so its body is
@@ -230,12 +244,14 @@ export const KortixBottomSheetModal = React.forwardRef<
         <SheetTitleRow
           title={title}
           hideClose={hideClose}
+          leading={titleLeading}
           trailing={titleTrailing}
+          center={titleCenter}
           onClose={() => innerRef.current?.dismiss()}
         />
       </View>
     ),
-    [indicatorStyle, hideClose, title, titleTrailing]
+    [indicatorStyle, hideClose, title, titleLeading, titleTrailing, titleCenter]
   );
 
   return (

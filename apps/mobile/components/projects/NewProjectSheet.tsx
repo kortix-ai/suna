@@ -44,6 +44,7 @@ import {
   useProvisionProject,
 } from '@/lib/projects/hooks';
 import { creatableAccounts } from '@/lib/projects/landing';
+import { sheetOpenMove } from '@/lib/ui/sheet-open';
 import type { KortixAccount, KortixProject } from '@/lib/projects/projects-client';
 
 // Mirrors the API's PROJECT_NAME_MAX_LENGTH (projects.name is varchar(255)).
@@ -94,12 +95,18 @@ export function NewProjectSheet({ open, accountId: initialAccountId, accounts, o
   const repos = reposQuery.data?.repositories ?? [];
   const submitting = provision.isPending || link.isPending;
 
+  // True while the sheet is on screen. The project switcher mounts this
+  // sheet closed, and a gorhom modal dismissed before its first present never
+  // renders (`sheetOpenMove`, lib/ui/sheet-open.ts).
+  const presentedRef = useRef(false);
   useEffect(() => {
-    if (!open) {
-      sheetRef.current?.dismiss();
+    const move = sheetOpenMove(open, presentedRef.current);
+    if (move !== 'present') {
+      if (move === 'dismiss') sheetRef.current?.dismiss();
       return;
     }
     const frame = requestAnimationFrame(() => {
+      presentedRef.current = true;
       sheetRef.current?.present();
     });
     return () => cancelAnimationFrame(frame);
@@ -127,6 +134,7 @@ export function NewProjectSheet({ open, accountId: initialAccountId, accounts, o
   }, []);
 
   const handleDismiss = useCallback(() => {
+    presentedRef.current = false;
     reset();
     onClose();
   }, [reset, onClose]);
@@ -243,7 +251,7 @@ export function NewProjectSheet({ open, accountId: initialAccountId, accounts, o
               {creatable.map((a) => (
                 <SettingsRow
                   key={a.account_id}
-                  leading={<Avatar variant="custom" size={28} fallbackText={a.name} />}
+                  leading={<Avatar chalk size={28} fallbackText={a.name} />}
                   label={a.name}
                   checked={a.account_id === accountId}
                   right={null}

@@ -2,8 +2,9 @@ import type { ProjectScreen as ProjectScreenComponent } from '@/components/sessi
 
 /**
  * The project stack: home (index), the open page or thread (view), the
- * Sessions page (sessions), the Files page (files), and the Account page
- * (account).
+ * Sessions page (sessions), the Files page (files), the Account page
+ * (account), and a sub-page pushed over the page it was opened from (page:
+ * project Settings, Schedules, Secrets).
  */
 export default function ProjectLayout() {
   // expo-router loads every layout module while it builds the route tree at

@@ -10,6 +10,11 @@
  *
  * A short list sizes the sheet to its content. A searchable list opens at a
  * fixed height, so the sheet does not resize while the results filter.
+ *
+ * `tabs` pins a tab bar at the bottom (`FloatingTabCapsule` over a
+ * `PinnedBar` fade — the project/account switcher's bar). The caller swaps
+ * the title, options, and `children` for the active tab. A tabbed sheet
+ * always opens at a fixed height, so switching tabs never resizes it.
  */
 import * as React from 'react';
 import { View, useWindowDimensions } from 'react-native';
@@ -20,9 +25,13 @@ import { useColorScheme } from 'nativewind';
 import {
   type SheetRef,
   KortixBottomSheetModal,
+  useSheetBackground,
 } from '@/components/kortix/sheet';
 import { SheetTextInput } from '@/components/kortix/SheetInput';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
+import { PinnedBar, usePinnedBarInset } from '@/components/kortix/pinned-bar';
+import { FloatingTabCapsule, type FloatingTabItem } from '@/components/navigation/FloatingTabBar';
+import { FLOATING_BAR_HEIGHT } from '@/components/navigation/tab-bar-layout';
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { haptics } from '@/lib/haptics';
@@ -37,6 +46,12 @@ import { pickerSections, showsPickerSearch, type PickerOption } from '@/lib/sess
  */
 const SEARCH_SNAP_POINTS = ['85%', '100%'];
 const FULL_SCREEN_SNAP = ['100%'];
+
+export interface PickerSheetTabs {
+  items: FloatingTabItem[];
+  activeIndex: number;
+  onSelect: (index: number) => void;
+}
 
 interface PickerSheetProps {
   title: string;
@@ -60,15 +75,29 @@ interface PickerSheetProps {
    * Projects empty state: `large` title, one primary pill, nothing else).
    */
   empty?: { title: string; actionLabel: string; onAction: () => void };
+  /** A tab bar pinned at the bottom. The caller swaps the content per tab. */
+  tabs?: PickerSheetTabs;
+  /** One 40pt icon `Button` at the far right of the title row (the Agent tab's `+`). */
+  titleTrailing?: React.ReactNode;
 }
 
 export const PickerSheet = React.forwardRef<SheetRef, PickerSheetProps>(
-  ({ title, options, activeKey, onSelect, searchLabel, emptyLabel, children, empty, closeOnSelect = true }, ref) => {
+  ({ title, options, activeKey, onSelect, searchLabel, emptyLabel, children, empty, closeOnSelect = true, tabs, titleTrailing }, ref) => {
     const modalRef = React.useRef<BottomSheetModal>(null);
     const { height } = useWindowDimensions();
     const insets = useSafeAreaInsets();
     const { colorScheme } = useColorScheme();
     const [query, setQuery] = React.useState('');
+    const sheetBackground = useSheetBackground();
+    const tabBarInset = usePinnedBarInset(FLOATING_BAR_HEIGHT);
+    // A new tab is a new list: its search starts empty.
+    const activeTab = tabs?.activeIndex;
+    React.useEffect(() => setQuery(''), [activeTab]);
+    // The empty state's action (e.g. `ConnectProviderSheet`) must not present
+    // while this sheet is still animating closed — never two overlays at
+    // once (same `closeThen` shape as `AttachSheet`). `onDismiss` fires once
+    // the close animation actually finishes.
+    const afterCloseRef = React.useRef<(() => void) | null>(null);
 
     React.useImperativeHandle(ref, () => ({
       open: () => modalRef.current?.present(),
@@ -82,16 +111,24 @@ export const PickerSheet = React.forwardRef<SheetRef, PickerSheetProps>(
       <KortixBottomSheetModal
         ref={modalRef}
         title={title}
-        snapPoints={searchable ? SEARCH_SNAP_POINTS : FULL_SCREEN_SNAP}
-        enableDynamicSizing={!searchable}
+        titleTrailing={titleTrailing}
+        snapPoints={searchable || tabs ? SEARCH_SNAP_POINTS : FULL_SCREEN_SNAP}
+        enableDynamicSizing={!searchable && !tabs}
         maxDynamicContentSize={Math.floor(height * 0.7)}
         topInset={insets.top}
         enablePanDownToClose
-        onDismiss={() => setQuery('')}
+        onDismiss={() => {
+          setQuery('');
+          const action = afterCloseRef.current;
+          afterCloseRef.current = null;
+          action?.();
+        }}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
         android_keyboardInputMode="adjustResize">
+        <View style={tabs ? { flex: 1 } : undefined}>
         <BottomSheetScrollView
+          style={tabs ? { flex: 1 } : undefined}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{
@@ -102,7 +139,8 @@ export const PickerSheet = React.forwardRef<SheetRef, PickerSheetProps>(
             // `KortixBottomSheetModal title`, above this scroll view.
             paddingHorizontal: 16,
             paddingTop: 4,
-            paddingBottom: Math.max(insets.bottom, 16) + 8,
+            // A tab bar floats over the list's end: pad past it.
+            paddingBottom: tabs ? tabBarInset : Math.max(insets.bottom, 16) + 8,
             gap: 16,
           }}>
           {searchable ? (
@@ -156,8 +194,10 @@ export const PickerSheet = React.forwardRef<SheetRef, PickerSheetProps>(
                 className="rounded-full"
                 onPress={() => {
                   haptics.tap();
+                  // Defer to `onDismiss`: never present the next sheet while
+                  // this one is still animating closed.
+                  afterCloseRef.current = empty.onAction;
                   modalRef.current?.dismiss();
-                  empty.onAction();
                 }}>
                 <Text>{empty.actionLabel}</Text>
               </Button>
@@ -168,6 +208,19 @@ export const PickerSheet = React.forwardRef<SheetRef, PickerSheetProps>(
             </View>
           ) : null}
         </BottomSheetScrollView>
+        {tabs ? (
+          <PinnedBar controlHeight={FLOATING_BAR_HEIGHT} background={sheetBackground} className="justify-center px-4">
+            <FloatingTabCapsule
+              items={tabs.items}
+              activeIndex={tabs.activeIndex}
+              onSelect={(index) => {
+                if (index !== tabs.activeIndex) haptics.selection();
+                tabs.onSelect(index);
+              }}
+            />
+          </PinnedBar>
+        ) : null}
+        </View>
       </KortixBottomSheetModal>
     );
   },

@@ -5,14 +5,13 @@
  * §5): text on top, then add · model · send. This file adds what only a thread
  * has: @mentions, slash commands, the message queue slot, file upload on send,
  * AutoContinue, and the model sheet with the active model's thinking levels.
- * The agent is not here: it is the thread header's `AgentPill`.
+ * The agent is chosen in the model sheet's Agent tab (`ModelPickerSheet`).
  */
 
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   TextInput,
-  ScrollView,
   Pressable,
   StyleSheet,
   Keyboard,
@@ -42,9 +41,10 @@ import { SessionFilesSheet } from './SessionFilesSheet';
 
 import type { Agent, FlatModel, Command } from '@/lib/opencode/hooks/use-opencode-data';
 import type { Session } from '@/lib/platform/types';
-import { MentionSuggestions } from './MentionSuggestions';
+import { MentionSuggestions, SuggestionCard, SuggestionRow } from './MentionSuggestions';
 import { useMentions, type TrackedMention, type MentionItem } from './useMentions';
-import { Text as RNText } from 'react-native';
+import { useSkillMentions } from './useSkillMentions';
+import { suggestionMenuTakesSubmit } from '@/lib/session/skill-mentions';
 import { getSheetBg } from '@/lib/theme-colors';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import {
@@ -177,9 +177,13 @@ interface SessionChatInputProps {
   isBusy?: boolean;
   disabled?: boolean;
   placeholder?: string;
-  /** The agent a send runs on (chosen in the thread header), and all agents for @mentions. */
+  /** The agent a send runs on, and all agents for @mentions and the model sheet's Agent tab. */
   agent?: Agent | null;
   agents?: Agent[];
+  /** Picks the agent from the model sheet's Agent tab. Omit to hide the tab. */
+  onAgentChange?: (name: string) => void;
+  /** The Agent tab's `+`: starts a new session that creates an agent. */
+  onCreateAgent?: () => void;
   model?: FlatModel | null;
   models?: FlatModel[];
   /** The model list is not known yet: the pill hides instead of reading "Connect model". */
@@ -230,6 +234,8 @@ function SessionChatInputImpl({
   placeholder = 'Ask anything',
   agent,
   agents = EMPTY_AGENTS,
+  onAgentChange,
+  onCreateAgent,
   model,
   models = EMPTY_MODELS,
   modelsLoading = false,
@@ -258,6 +264,14 @@ function SessionChatInputImpl({
   const isDark = colorScheme === 'dark';
 
   const modelSheetRef = useRef<SheetRef>(null);
+  // The model sheet's Agent tab: the thread's agents, the active one checked.
+  const agentChoice = useMemo(
+    () =>
+      onAgentChange
+        ? { agents, activeName: agent?.name ?? null, onSelect: onAgentChange, onCreate: onCreateAgent }
+        : undefined,
+    [agents, agent?.name, onAgentChange, onCreateAgent],
+  );
   const openModelSheet = useCallback(() => {
     Keyboard.dismiss();
     requestAnimationFrame(() => {
@@ -279,6 +293,13 @@ function SessionChatInputImpl({
     currentSessionId,
     sandboxUrl,
   });
+
+  // ── Skills ("#") ──────────────────────────────────────────────────────
+  // The Skills page was removed from mobile (COR-160): a skill stays
+  // reachable through the composer's own "#" trigger instead. Reuses the
+  // project's `Command[]` list `/` already fetches, filtered to
+  // `source === 'skill'` — see `lib/session/skill-mentions.ts`.
+  const skill = useSkillMentions({ commands });
 
   const [autocontinueMode, setAutocontinueMode] = useState<AutoContinueMode | null>(null);
   const [showAutoSheet, setShowAutoSheet] = useState(false);
@@ -323,6 +344,7 @@ function SessionChatInputImpl({
       onTextChange?.(newText);
       cursorRef.current = newText.length;
       mention.handleTextChange(newText, newText.length);
+      skill.handleTextChange(newText, newText.length);
 
       // Slash command detection (disabled while a command is staged)
       if (!stagedCommand) {
@@ -335,7 +357,7 @@ function SessionChatInputImpl({
         }
       }
     },
-    [mention, stagedCommand],
+    [mention, skill, stagedCommand],
   );
 
   const handleSelectionChange = useCallback(
@@ -353,6 +375,16 @@ function SessionChatInputImpl({
       setTimeout(() => inputRef.current?.focus(), 50);
     },
     [mention, text],
+  );
+
+  const handleSkillSelect = useCallback(
+    (item: MentionItem) => {
+      const newText = skill.selectSkill(item, text);
+      setText(newText);
+      cursorRef.current = newText.length;
+      setTimeout(() => inputRef.current?.focus(), 50);
+    },
+    [skill, text],
   );
 
   const filteredCommands = useMemo(() => {
@@ -394,6 +426,13 @@ function SessionChatInputImpl({
       return;
     }
 
+    // The `#` menu takes Send only while it shows rows. A draft ending in
+    // `#word` that names no skill draws no menu, so Send sends it.
+    if (suggestionMenuTakesSubmit({ isOpen: skill.isOpen, itemCount: skill.items.length })) {
+      skill.dismiss();
+      return;
+    }
+
     // Staged command — execute it with args
     if (stagedCommand) {
       const args = text.trim();
@@ -403,12 +442,33 @@ function SessionChatInputImpl({
       return;
     }
 
-    const trimmed = text.trim();
-    if (!trimmed || disabled) return;
+    const trimmedRaw = text.trim();
+    if (!trimmedRaw || disabled) return;
 
     // Dismiss the keyboard on send so the user sees the new message land
     // (matches WhatsApp / iMessage behavior on phones).
     Keyboard.dismiss();
+
+    // A picked "#skill" token resolves like the staged "/" command above —
+    // a structured dispatch that runs immediately, mirroring apps/web's
+    // `planDraftSubmission` exactly (see `lib/session/skill-mentions.ts`).
+    // A skill deleted since it was picked — or a draft that carries files or
+    // `@` mentions, which a command dispatch cannot carry — degrades to the
+    // "/name args" plain-text fallback and falls through to the normal send
+    // path below, which uploads the files and keeps the mentions.
+    let trimmed = trimmedRaw;
+    if (skill.mentions.length > 0) {
+      const plan = skill.resolveSubmission(text, attachedFiles.length > 0 || mention.mentions.length > 0);
+      if (plan.kind === 'command') {
+        onCommand?.(plan.command, plan.args);
+        setText('');
+        setAttachedFiles([]);
+        mention.reset();
+        skill.reset();
+        return;
+      }
+      trimmed = plan.text;
+    }
 
     if (autocontinueMode && onCommand) {
       const alg = AUTOCONTINUE_ALGORITHMS.find((a) => a.id === autocontinueMode);
@@ -419,6 +479,7 @@ function SessionChatInputImpl({
         setSlashFilter(null);
         setSlashIndex(0);
         mention.reset();
+        skill.reset();
         return;
       }
     }
@@ -428,6 +489,7 @@ function SessionChatInputImpl({
       onEnqueue(trimmed);
       setText('');
       mention.reset();
+      skill.reset();
       return;
     }
 
@@ -443,6 +505,7 @@ function SessionChatInputImpl({
     setText('');
     setAttachedFiles([]);
     mention.reset();
+    skill.reset();
 
     if (filesToUpload.length > 0 && sandboxUrl) {
       setIsUploading(true);
@@ -459,7 +522,7 @@ function SessionChatInputImpl({
     } else {
       onSend(trimmed, options, trackedMentions);
     }
-  }, [text, disabled, onSend, agent, modelKey, variant, mention, isBusy, onEnqueue, slashFilter, filteredCommands, slashIndex, handleSelectCommand, stagedCommand, onCommand, autocontinueMode, commands, attachedFiles, sandboxUrl]);
+  }, [text, disabled, onSend, agent, modelKey, variant, mention, skill, isBusy, onEnqueue, slashFilter, filteredCommands, slashIndex, handleSelectCommand, stagedCommand, onCommand, autocontinueMode, commands, attachedFiles, sandboxUrl]);
 
   // Web's groups and order (`lib/session/model-picker.ts`): the real upstream
   // provider, never the raw provider name (always "Kortix" under the gateway).
@@ -539,7 +602,6 @@ function SessionChatInputImpl({
             commands={filteredCommands}
             selectedIndex={slashIndex}
             onSelect={handleSelectCommand}
-            isDark={isDark}
           />
         )}
 
@@ -550,6 +612,15 @@ function SessionChatInputImpl({
             selectedIndex={mention.selectedIndex}
             isLoading={mention.fileSearchLoading}
             onSelect={handleMentionSelect}
+          />
+        )}
+
+        {/* Skill suggestions — above the input, opened by "#" (COR-160) */}
+        {slashFilter === null && !mention.isOpen && skill.isOpen && skill.items.length > 0 && (
+          <MentionSuggestions
+            items={skill.items}
+            selectedIndex={skill.selectedIndex}
+            onSelect={handleSkillSelect}
           />
         )}
 
@@ -634,6 +705,7 @@ function SessionChatInputImpl({
         onSelect={handleModelSelect}
         thinking={thinking}
         onConnect={onConnectModel}
+        agent={agentChoice}
       />
 
       <AutoContinueSheet
@@ -963,82 +1035,21 @@ function AutoContinueSheet({
 
 // ─── Slash Command Suggestions ───────────────────────────────────────────────
 
+/** `/` commands: the mention list's card and rows, the command's name only. */
 function SlashCommandSuggestions({
   commands,
   selectedIndex,
   onSelect,
-  isDark,
 }: {
   commands: Command[];
   selectedIndex: number;
   onSelect: (cmd: Command) => void;
-  isDark: boolean;
 }) {
-  const bgColor = getSheetBg(isDark);
-  const borderColor = isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.08);
-  const selectedBg = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.05);
-  const fgColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
-  // Original literal pair (#888 dark / #999 light) put dark mode's value
-  // *below* light mode's in lightness — the inverted "muted()" shape, not
-  // the direct mutedStrong() shape used elsewhere in this file.
-  const mutedColor = isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground;
-
   return (
-    <View
-      style={{
-        marginHorizontal: 16,
-        marginBottom: 4,
-        borderRadius: 12,
-        backgroundColor: bgColor,
-        borderWidth: 1,
-        borderColor,
-        maxHeight: 220,
-        overflow: 'hidden',
-      }}
-    >
-      <ScrollView
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        {commands.map((cmd, i) => (
-          <Button
-            key={cmd.name}
-            variant="ghost"
-            className="h-auto w-full gap-0 rounded-none justify-start p-0 active:bg-transparent active:opacity-60"
-            onPress={() => onSelect(cmd)}
-            style={{
-              paddingHorizontal: 14,
-              paddingVertical: 10,
-              backgroundColor: i === selectedIndex ? selectedBg : 'transparent',
-              borderBottomWidth: i < commands.length - 1 ? 1 : 0,
-              borderBottomColor: borderColor,
-            }}
-          >
-            <RNText
-              style={{
-                fontSize: 14,
-                fontFamily: 'Roobert-Medium',
-                color: fgColor,
-              }}
-            >
-              /{cmd.name}
-            </RNText>
-            {cmd.description && (
-              <RNText
-                numberOfLines={2}
-                style={{
-                  fontSize: 12,
-                  fontFamily: 'Roobert',
-                  color: mutedColor,
-                  marginTop: 2,
-                }}
-              >
-                {cmd.description}
-              </RNText>
-            )}
-          </Button>
-        ))}
-      </ScrollView>
-    </View>
+    <SuggestionCard>
+      {commands.map((cmd, i) => (
+        <SuggestionRow key={cmd.name} label={cmd.name} selected={i === selectedIndex} onPress={() => onSelect(cmd)} />
+      ))}
+    </SuggestionCard>
   );
 }

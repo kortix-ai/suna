@@ -73,6 +73,8 @@ interface PageTabLike {
 interface SchedulesPageProps {
   page: PageTabLike;
   projectId: string;
+  /** Pushed as a sub-page of project Settings: Go back in place of the hamburger. */
+  onBack?: () => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
   isDrawerOpen?: boolean;
@@ -391,6 +393,7 @@ function ScheduleDetailSheet({
 export function SchedulesPage({
   page,
   projectId,
+  onBack,
   onOpenDrawer,
   onOpenRightDrawer,
   isDrawerOpen,
@@ -430,7 +433,8 @@ export function SchedulesPage({
     <View style={{ flex: 1, backgroundColor: bgColor }}>
       <PageHeader
         title={page.label}
-        onOpenDrawer={onOpenDrawer}
+        onBack={onBack}
+        onOpenDrawer={onBack ? undefined : onOpenDrawer}
         onOpenRightDrawer={onOpenRightDrawer}
         isDrawerOpen={isDrawerOpen}
         isRightDrawerOpen={isRightDrawerOpen}

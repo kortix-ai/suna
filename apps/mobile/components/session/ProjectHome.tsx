@@ -24,6 +24,7 @@
  */
 
 import * as React from 'react';
+import { newConfigPrompt } from '@kortix/shared';
 import { Keyboard, Pressable, View } from 'react-native';
 import {
   KeyboardAvoidingView,
@@ -34,9 +35,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Composer } from '@/components/kortix/composer';
 import type { SheetRef } from '@/components/kortix/sheet';
-import { AgentPill } from '@/components/session/AgentPill';
-import { ProjectHeaderActions } from '@/components/session/ProjectHeaderActions';
 import { FloatingMenuButton } from '@/components/session/FloatingMenuButton';
+import { ConnectProviderSheet } from '@/components/session/ConnectProviderSheet';
 import { ModelPickerSheet } from '@/components/session/ModelPickerSheet';
 import { ProjectHero } from '@/components/session/ProjectHero';
 import { AttachSheet, type AttachSheetRef } from '@/components/session/AttachSheet';
@@ -54,7 +54,6 @@ import {
   pickableAgents,
   type PickerOption,
 } from '@/lib/session/composer-config';
-import { openProjectModelsOnWeb } from '@/lib/session/connect-model';
 import { catalogPickerModels, firstPromptPicks, modelPickerOptions } from '@/lib/session/model-picker';
 
 /** One identity while the project detail loads, so the agent memo does not churn. */
@@ -88,8 +87,15 @@ export interface ProjectHomeProps {
   /** Parent handles the create+connect flow for a brand-new session. */
   onSubmitNewSession: (input: ProjectHomeSubmit) => void;
   onOpenDrawer: () => void;
-  /** Opens the project sheet (agents, skills, schedules, review, models, secrets). */
-  onOpenMore: () => void;
+  /**
+   * Read-and-clear the draft text to seed the composer with, if any — e.g. a
+   * project-home send the user cancelled from `SessionConnecting` before it
+   * connected (COR-146: `ProjectScreen.handleCancelConnect`). Called once, at
+   * mount; the parent's `homeKey` bump remounts this screen whenever it has
+   * text to hand back, so a lazy initial read is enough — no effect needed,
+   * and nothing here re-reads it on a later re-render.
+   */
+  takeInitialDraft?: () => string;
 }
 
 export function ProjectHome({
@@ -97,19 +103,27 @@ export function ProjectHome({
   sending = false,
   onSubmitNewSession,
   onOpenDrawer,
-  onOpenMore,
+  takeInitialDraft,
 }: ProjectHomeProps) {
   const insets = useSafeAreaInsets();
-  const [draft, setDraft] = React.useState('');
+  const [draft, setDraft] = React.useState(() => takeInitialDraft?.() ?? '');
   const [files, setFiles] = React.useState<AttachedFile[]>([]);
   const [model, setModel] = React.useState<string | null>(null);
   const modelSheetRef = React.useRef<SheetRef>(null);
+  const connectSheetRef = React.useRef<SheetRef>(null);
   const attachSheetRef = React.useRef<AttachSheetRef>(null);
 
   // The same catalog, groups, and order as web and the thread
   // (`lib/session/model-picker.ts`).
-  const { catalog, defaultModel, isLoading: catalogLoading } = useProjectModelCatalog(projectId);
+  const { catalog, defaultModel, isLoading: catalogLoading, refetch: refetchCatalog } =
+    useProjectModelCatalog(projectId);
   const catalogModels = React.useMemo(() => catalogPickerModels(catalog), [catalog]);
+  // `ConnectProviderSheet` refetches once the in-app browser closes, to toast
+  // "Provider connected" only once the catalog actually turns up a model.
+  const refetchModelCount = React.useCallback(async () => {
+    const result = await refetchCatalog();
+    return catalogPickerModels(result.data?.models).length;
+  }, [refetchCatalog]);
   const modelOptions = React.useMemo<PickerOption[]>(
     () => modelPickerOptions(catalogModels, (m) => m.modelID),
     [catalogModels],
@@ -177,6 +191,16 @@ export function ProjectHome({
     },
     [setLastUsedAgent],
   );
+  // The model sheet's Agent tab: the project config's agents. Its `+` starts
+  // a new session on the shared "configure a new agent" prompt, through the
+  // same path as a composer send.
+  const handleCreateAgent = React.useCallback(() => {
+    onSubmitNewSession({ text: newConfigPrompt('agent'), files: [], model: null, picks: null, agent: null });
+  }, [onSubmitNewSession]);
+  const agentChoice = React.useMemo(
+    () => ({ agents: projectAgents, activeName: agentName, onSelect: handleAgentChange, onCreate: handleCreateAgent }),
+    [projectAgents, agentName, handleAgentChange, handleCreateAgent],
+  );
 
   const addFiles = React.useCallback((picked: AttachedFile[]) => {
     setFiles((prev) => [...prev, ...picked]);
@@ -210,12 +234,9 @@ export function ProjectHome({
   return (
     <View className="flex-1 bg-background">
       {/* Floating menu button — opens the left drawer. */}
-      <FloatingMenuButton onPress={onOpenDrawer}>
-        {/* The agent, then the `···` button that opens the project sheet. */}
-        <ProjectHeaderActions onOpenMore={onOpenMore}>
-          <AgentPill agents={projectAgents} activeName={agentName} onChange={handleAgentChange} edge={false} />
-        </ProjectHeaderActions>
-      </FloatingMenuButton>
+      {/* No header controls: the agent is picked in the model sheet's Agent
+          tab (Jay, 2026-09-23). */}
+      <FloatingMenuButton onPress={onOpenDrawer} />
 
       <KeyboardAvoidingView className="flex-1" behavior="padding">
         <View className="flex-1">
@@ -263,7 +284,14 @@ export function ProjectHome({
         activeKey={activeModel}
         thinking={thinking}
         onSelect={(modelID) => setModel(selectComposerModel(modelID, defaultModel))}
-        onConnect={() => openProjectModelsOnWeb(projectId)}
+        onConnect={() => connectSheetRef.current?.open()}
+        agent={agentChoice}
+      />
+
+      <ConnectProviderSheet
+        ref={connectSheetRef}
+        projectId={projectId}
+        onRefetchModels={refetchModelCount}
       />
     </View>
   );

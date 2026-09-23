@@ -21,7 +21,6 @@ import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { View } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { getToolInfo, partOutcome, stripAnsi, type ToolPart as SdkToolPart } from '@kortix/sdk';
-import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import type { PermissionRequest, ToolPart } from '@/lib/opencode/types';
 import { useSyncStore } from '@/lib/opencode/sync-store';
@@ -29,7 +28,6 @@ import { getDiffStats } from '@/lib/opencode/diff-utils';
 import {
   isStalePending,
   isToolRunning,
-  permissionLabel,
   toolDisplayName,
   toolDurationMs,
 } from '@/lib/session/activity';
@@ -45,7 +43,7 @@ import {
   ToolRunningContext,
   TurnLiveContext,
 } from './shared/infrastructure';
-import { FONT_MEDIUM, TURN_SPACE, TURN_TYPE, useTurnPalette } from './shared/styles';
+import { TURN_SPACE, TURN_TYPE, useTurnPalette } from './shared/styles';
 import { ToolCardFrame } from './shared/surface';
 import { getToolIconByName } from './shared/tool-icons';
 import { getToolInput } from './shared/tool-part';
@@ -140,67 +138,31 @@ export function toolHasExpandableContent(tool: ToolPart): boolean {
 // ─── Permission prompt ───────────────────────────────────────────────────────
 
 /**
- * Web `PermissionPromptInline`: `px-2.5 py-2 gap-2`, "Permission: <label>"
- * (`text-xs text-foreground`, label medium), then Deny / Allow always /
- * Allow once. Appears 50ms after mount; one reply per prompt.
+ * The blocked tool row's marker for a pending permission. Deny / Allow
+ * always / Allow once now live on `PermissionPromptCard`, pinned above the
+ * composer (COR-137 Task 7) so the ask is never missed off-screen; this row
+ * keeps only a quiet line so the reader can see which call is waiting.
+ * Appears 50ms after mount, matching the previous inline prompt's timing.
  */
-function PermissionPromptInline({
-  permission,
-  onReply,
-}: {
-  permission: PermissionRequest;
-  onReply: (requestId: string, reply: PermissionReply) => void | Promise<void>;
-}) {
+function PermissionPromptInline({ permission }: { permission: PermissionRequest }) {
   const palette = useTurnPalette();
   const [visible, setVisible] = useState(false);
-  const [replying, setReplying] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setVisible(true), 50);
     return () => clearTimeout(timer);
   }, []);
 
-  const reply = useCallback(
-    (value: PermissionReply) => {
-      if (replying) return;
-      setReplying(true);
-      // The caller removes the prompt once the runtime accepts the reply. When the
-      // reply fails, the prompt stays, so re-enable its buttons for a retry.
-      void Promise.resolve(onReply(permission.id, value)).finally(() => setReplying(false));
-    },
-    [replying, permission.id, onReply],
-  );
-
   if (!visible) return null;
 
   return (
     <View
       style={{
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        alignItems: 'center',
-        gap: TURN_SPACE.gap2,
         paddingHorizontal: webSpace(2.5),
         paddingVertical: TURN_SPACE.gap2,
       }}
     >
-      <Text style={[TURN_TYPE.xs, { flex: 1, minWidth: 120, color: palette.foreground }]}>
-        Permission:{' '}
-        <Text variant="small" style={[TURN_TYPE.xs, { fontFamily: FONT_MEDIUM, color: palette.foreground }]}>
-          {permissionLabel(permission.permission)}
-        </Text>
-      </Text>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: TURN_SPACE.gap1_5 }}>
-        <Button variant="ghost" size="sm" disabled={replying} onPress={() => reply('reject')}>
-          <Text>Deny</Text>
-        </Button>
-        <Button variant="outline" size="sm" disabled={replying} onPress={() => reply('always')}>
-          <Text>Allow always</Text>
-        </Button>
-        <Button variant="default" size="sm" disabled={replying} onPress={() => reply('once')}>
-          <Text>Allow once</Text>
-        </Button>
-      </View>
+      <Text style={[TURN_TYPE.xs, { color: palette.mutedForeground }]}>Waiting for your permission</Text>
     </View>
   );
 }
@@ -318,7 +280,7 @@ function ToolPartRendererImpl({
                 />
                 {permission && onPermissionReply ? (
                   <View style={{ marginTop: TURN_SPACE.gap1_5 }}>
-                    <PermissionPromptInline permission={permission} onReply={onPermissionReply} />
+                    <PermissionPromptInline permission={permission} />
                   </View>
                 ) : null}
               </View>
@@ -360,7 +322,7 @@ function ToolPartRendererImpl({
               </BasicTool>
               {permission && onPermissionReply ? (
                 <View style={{ marginTop: TURN_SPACE.gap1_5 }}>
-                  <PermissionPromptInline permission={permission} onReply={onPermissionReply} />
+                  <PermissionPromptInline permission={permission} />
                 </View>
               ) : null}
             </View>

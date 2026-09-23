@@ -1,63 +1,47 @@
 /**
- * dock-menu — the project sheet's data.
+ * dock-menu — small pure-data tables for two unrelated project surfaces.
  *
- * The sheet opens from the `···` button at the right end of the header, on
- * project home and in a thread (`ProjectHeaderActions`), and from a tool
- * page's `PageHeader` "···" button (Jay, 2026-09-21).
+ * `DockIconKey` / `PageContextMenuSheet`: icon keys for the per-page `···`
+ * context menu (`components/session/PageContextMenuSheet.tsx`) — the
+ * Workspace page's New agent / New skill / New command / New project
+ * prompts, and the Files page's rename/delete rows. These start an
+ * agent-led session or a file action; they do not open a page.
  *
- * Group one is the project's core sections, untitled. Group two keeps every
- * other page. Connectors have no row: mobile leaves them to web. Changes has no
- * row and no other entry point: Review holds change requests, opens new ones
- * (`+`), and lists the branches (history button). Dev has no row: it is web's
- * "Develop on your own machine" guide, terminal commands for a laptop. Models opens the provider page until its own page exists.
+ * `PROJECT_CUSTOMIZE_ITEMS`: the project Settings page's ("page:settings",
+ * `SettingsNavPage`) "Customize" group — Schedules and Secrets, the two
+ * sections mobile still keeps as in-app pages. The project sheet
+ * (`CustomizeSheet`, `CUSTOMIZE_SHEET_GROUPS`) that used to list every
+ * section is deleted (COR-123/COR-160 Task 3): Agents, Skills, Members and
+ * Terminal have no mobile page any more; Review moves into the drawer
+ * (Task 4); Files stays reachable from the drawer only. Members and "More on
+ * kortix.com" are web-handoff rows `SettingsNavPage` adds itself
+ * (`lib/projects/web-project-links.ts`), not data here.
  *
  * Pure data only. No React, no icons, no zustand: this module is
  * unit-tested under `bun test`, which cannot load native modules. Icon keys
  * are resolved to components in `components/session/dock-icons.ts`.
  */
 
+import type { SubPageId } from './project-stack';
+
 export type DockIconKey =
   // page context menu rows (PageContextMenuSheet)
   | 'files' | 'settings' | 'rename' | 'delete'
-  // project sheet, core sections
-  | 'agents' | 'skills' | 'schedules' | 'review' | 'secrets'
-  // project sheet, more
-  | 'members' | 'terminal';
+  // Workspace "···" prompts (PageContextMenuSheet)
+  | 'agents' | 'skills' | 'terminal'
+  // project Settings page, Customize group
+  | 'schedules' | 'secrets';
 
-export interface DockMenuItem {
+export interface ProjectCustomizeItem {
   kind: 'item';
   label: string;
   icon: DockIconKey;
-  /** A `tab-store` page id — pass to `navigateToPage`. */
-  pageId: string;
+  /** A `tab-store` page id that opens as a sub-page of project Settings. */
+  pageId: SubPageId;
 }
 
-export interface CustomizeSheetGroup {
-  /** Null: the group has no title (the core sections). */
-  title: string | null;
-  items: DockMenuItem[];
-}
-
-/** The page the Review row opens. It carries the row's badge. */
-export const REVIEW_PAGE_ID = 'page:review';
-/** The page the Models row opens. The Secrets page links to it ("Manage providers"). */
-export const CUSTOMIZE_SHEET_GROUPS: CustomizeSheetGroup[] = [
-  {
-    title: null,
-    items: [
-      { kind: 'item', label: 'Agents', icon: 'agents', pageId: 'page:agents' },
-      { kind: 'item', label: 'Skills', icon: 'skills', pageId: 'page:skills' },
-      { kind: 'item', label: 'Schedules', icon: 'schedules', pageId: 'page:schedules' },
-      { kind: 'item', label: 'Review', icon: 'review', pageId: REVIEW_PAGE_ID },
-      { kind: 'item', label: 'Secrets', icon: 'secrets', pageId: 'page:secrets-nav' },
-    ],
-  },
-  {
-    title: 'More',
-    items: [
-      { kind: 'item', label: 'Files', icon: 'files', pageId: 'page:files-nav' },
-      { kind: 'item', label: 'Members', icon: 'members', pageId: 'page:members' },
-      { kind: 'item', label: 'Terminal', icon: 'terminal', pageId: 'page:terminal' },
-    ],
-  },
+/** The project Settings page's "Customize" group: Schedules and Secrets. */
+export const PROJECT_CUSTOMIZE_ITEMS: ProjectCustomizeItem[] = [
+  { kind: 'item', label: 'Schedules', icon: 'schedules', pageId: 'page:schedules' },
+  { kind: 'item', label: 'Secrets', icon: 'secrets', pageId: 'page:secrets-nav' },
 ];

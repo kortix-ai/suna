@@ -16,10 +16,8 @@ import {
   LinkIcon,
   PulseIcon,
   PuzzlePieceIcon,
-  SparkleIcon,
   SquaresFourIcon,
   TerminalIcon,
-  UsersIcon,
   QuestionIcon,
   type AppIcon,
   SealCheckIcon,
@@ -31,7 +29,6 @@ import {
  */
 const PAGE_TAB_ICONS: Record<string, AppIcon> = {
   'page:files': FolderOpenIcon,
-  'page:terminal': TerminalIcon,
   'page:memory': CpuIcon,
   'page:workspace': SquaresFourIcon,
   'page:secrets': KeyIcon,
@@ -45,8 +42,6 @@ const PAGE_TAB_ICONS: Record<string, AppIcon> = {
   'page:agent-browser': GlobeIcon,
   'page:updates': ArrowCircleDownIcon,
   'page:projects': FolderIcon,
-  'page:agents': CpuIcon,
-  'page:skills': SparkleIcon,
   'page:connectors': PuzzlePieceIcon,
   'page:secrets-nav': KeyIcon,
   'page:schedules': ClockIcon,
@@ -54,7 +49,6 @@ const PAGE_TAB_ICONS: Record<string, AppIcon> = {
   'page:review': SealCheckIcon,
   'page:files-nav': FolderIcon,
   'page:dev': TerminalIcon,
-  'page:members': UsersIcon,
   'page:settings': GearSixIcon,
 };
 

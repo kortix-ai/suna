@@ -9,16 +9,16 @@
  * Mobile leaves out web's bulk select, keyboard layer and per-session grouping.
  *
  * Review is the one page for changes (Jay, 2026-09-21). The separate Changes
- * page has no entry point: a change request is a review item, the pinned
- * bar's `+` opens one (`OpenCRSheet`), and the header's history button opens
- * the project's versions (branches) in a sheet.
+ * page has no entry point: a change request is a review item, the header's
+ * `+` opens one (`OpenCRSheet`), and the header's history button opens the
+ * project's versions (branches) in a sheet.
  *
- * The segment switcher is a pinned bar over a fade of the page (the project
- * drawer's bottom bar, `PinnedBar`), not a control under the header: three
- * pill `Button`s — the active one `default`, the others `ghost` (Jay,
- * 2026-09-23; the segmented control looked off on Android) — and the `+`
- * beside them in the same row. The list is one `SettingsGroup` of
- * `SettingsRow`s, the app's list (Jay, 2026-09-23).
+ * The segment switcher is the root tab bar's capsule (`FloatingTabCapsule`:
+ * icon over label, a sliding thumb), pinned at the bottom over a fade of the
+ * page — the same bar as Projects · Account (Jay, 2026-09-24). No counts on
+ * the tabs. Three tabs fill the capsule's width on a 360pt phone, so the `+`
+ * lives in the header. The list is one `SettingsGroup` of `SettingsRow`s, the
+ * app's list (Jay, 2026-09-23).
  */
 import * as React from 'react';
 import { RefreshControl, ScrollView, View, useWindowDimensions } from 'react-native';
@@ -26,7 +26,6 @@ import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useQueryClient } from '@tanstack/react-query';
 import { useColorScheme } from 'nativewind';
 import {
-  countReviewItemsBySegment,
   reviewSegmentForStatus,
   type ReviewItem,
   type ReviewSegment,
@@ -35,6 +34,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PageContent } from '@/components/kortix/page-content';
 import { PageHeader } from '@/components/kortix/page-header';
+import { FloatingTabCapsule, type FloatingTabItem } from '@/components/navigation/FloatingTabBar';
+import { FLOATING_BAR_HEIGHT } from '@/components/navigation/tab-bar-layout';
 import { PinnedBar, usePinnedBarInset } from '@/components/kortix/pinned-bar';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import {
@@ -50,7 +51,7 @@ import { Icon } from '@/components/ui/icon';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
 import { haptics } from '@/lib/haptics';
-import { ClockCounterClockwiseIcon, PlusIcon } from '@/lib/icons';
+import { BellIcon, CheckCircleIcon, ClockCounterClockwiseIcon, ClockIcon } from '@/lib/icons';
 import { useProjectBranches, useProjectSessions } from '@/lib/projects/hooks';
 import { relativeTime } from '@/lib/projects/triggers-format';
 import {
@@ -65,8 +66,18 @@ import { THEME } from '@/lib/utils/theme';
 import { sessionDisplayTitle } from '@/lib/session/session-list';
 import type { PageTab } from '@/stores/tab-store';
 
-/** The pinned bar's tallest control: the `+` icon button (`size="icon"`, h-10). */
-const BAR_CONTROL_HEIGHT = 40;
+const SEGMENT_ICONS: Record<ReviewSegment, typeof BellIcon> = {
+  needs_you: BellIcon,
+  waiting: ClockIcon,
+  done: CheckCircleIcon,
+};
+
+/** The pinned tab bar: the root tab bar's capsule, one tab per segment, no counts. */
+const SEGMENT_TABS: FloatingTabItem[] = REVIEW_SEGMENTS.map(({ key, label }) => ({
+  key,
+  label,
+  icon: <Icon as={SEGMENT_ICONS[key]} size={20} className="text-foreground" />,
+}));
 
 interface ReviewPageProps {
   page: PageTab;
@@ -103,7 +114,7 @@ export function ReviewPage({
   const versionsSheetRef = React.useRef<BottomSheetModal>(null);
   const { height } = useWindowDimensions();
   const pageBackground = THEME[isDark ? 'dark' : 'light'].background;
-  const contentInset = usePinnedBarInset(BAR_CONTROL_HEIGHT);
+  const contentInset = usePinnedBarInset(FLOATING_BAR_HEIGHT);
   const [segment, setSegment] = React.useState<ReviewSegment>('needs_you');
   // The project's branches load when the versions sheet first opens.
   const [versionsOpened, setVersionsOpened] = React.useState(false);
@@ -132,7 +143,6 @@ export function ReviewPage({
   }, [refetch]);
   const items = data ?? [];
 
-  const counts = React.useMemo(() => countReviewItemsBySegment(items), [items]);
   const visible = React.useMemo(
     () => items.filter((item) => reviewSegmentForStatus(item.status) === segment),
     [items, segment],
@@ -164,6 +174,11 @@ export function ReviewPage({
         onOpenRightDrawer={onOpenRightDrawer}
         isDrawerOpen={isDrawerOpen}
         isRightDrawerOpen={isRightDrawerOpen}
+        onAdd={() => {
+          haptics.tap();
+          createSheetRef.current?.present();
+        }}
+        addLabel="Open a change request"
         rightActions={
           <Button
             variant="ghost"
@@ -237,45 +252,19 @@ export function ReviewPage({
             )}
           </ScrollView>
 
-          {/* Pinned bottom bar: the segments · `+`, over a fade of the
-              page — the project drawer's bottom bar, same values. The
-              segments are plain pill Buttons, not a tab list (Jay,
-              2026-09-23: the segmented control looked off on Android):
-              the active one `default`, the others `ghost`. */}
-          <PinnedBar controlHeight={BAR_CONTROL_HEIGHT} background={pageBackground} className="gap-2 px-4">
-            <View className="flex-1 flex-row items-center gap-1" accessibilityRole="tablist">
-              {REVIEW_SEGMENTS.map(({ key, label }) => {
-                const active = key === segment;
-                return (
-                  <Button
-                    key={key}
-                    variant={active ? 'default' : 'ghost'}
-                    className="rounded-full"
-                    accessibilityRole="tab"
-                    accessibilityState={{ selected: active }}
-                    accessibilityLabel={`${label}, ${counts[key]}`}
-                    onPress={() => {
-                      if (active) return;
-                      haptics.selection();
-                      setSegment(key);
-                    }}>
-                    {/* Only "Needs you" shows a count: it's the actionable queue. */}
-                    <Text>{key === 'needs_you' && counts[key] > 0 ? `${label} ${counts[key]}` : label}</Text>
-                  </Button>
-                );
-              })}
-            </View>
-            <Button
-              variant="secondary"
-              size="icon"
-              className="rounded-full"
-              onPress={() => {
-                haptics.tap();
-                createSheetRef.current?.present();
+          {/* Pinned bottom bar: the root tab bar's capsule, over a fade of
+              the page — the same bar as Projects · Account. */}
+          <PinnedBar controlHeight={FLOATING_BAR_HEIGHT} background={pageBackground} className="justify-center px-4">
+            <FloatingTabCapsule
+              items={SEGMENT_TABS}
+              activeIndex={REVIEW_SEGMENTS.findIndex(({ key }) => key === segment)}
+              onSelect={(index) => {
+                const next = REVIEW_SEGMENTS[index].key;
+                if (next === segment) return;
+                haptics.selection();
+                setSegment(next);
               }}
-              accessibilityLabel="Open a change request">
-              <Icon as={PlusIcon} size={18} className="text-foreground" />
-            </Button>
+            />
           </PinnedBar>
         </View>
       </PageContent>

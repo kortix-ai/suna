@@ -42,7 +42,7 @@ import {
 import { platformKeys } from '@/lib/platform/hooks';
 import type { Session } from '@/lib/platform/types';
 import { useCompactionStore } from '@/stores/compaction-store';
-import type { Part, QuestionRequest, SessionStatus } from './types';
+import type { Part, PermissionRequest, QuestionRequest, SessionStatus } from './types';
 
 /** Frames that only prove the connection is alive; they never reach the store. */
 const IGNORED_EVENT_TYPES = new Set(['server.heartbeat', 'kortix.keepalive']);
@@ -366,6 +366,33 @@ async function hydrateQuestionsAfterGap(sandboxUrl: string, isStale: () => boole
   }
 }
 
+/**
+ * One `/permission` read after a reconnect gap — the permission twin of
+ * `hydrateQuestionsAfterGap` above. A `permission.asked` frame sent while the
+ * stream was down is lost, and a blocked tool call then waits with nothing
+ * pinned above the composer until the caller notices and reopens the app.
+ */
+async function hydratePermissionsAfterGap(sandboxUrl: string, isStale: () => boolean) {
+  try {
+    const token = await getAuthToken();
+    const res = await fetch(`${sandboxUrl}/permission`, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    if (!res.ok || isStale()) return;
+    const body: unknown = await res.json();
+    if (isStale()) return;
+    const store = useSyncStore.getState();
+    for (const permission of questionsToHydrate<PermissionRequest>(body, store.permissions, isLiveSession)) {
+      store.addPermission(permission.sessionID, permission);
+    }
+  } catch {
+    // The next gap, or the session page's own self-heal, retries.
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
@@ -652,10 +679,11 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
         }, STREAM_STABLE_MS);
         if (reconcile) {
           // Events emitted while disconnected were dropped. Re-read one tail
-          // page per open session and pending questions once.
+          // page per open session and pending questions/permissions once.
           log.log(`🔄 [SSE] Reopened after ${Math.round(gapMs / 1000)}s; reconciling`);
           void reconcileLiveSessions('sse-gap', sandboxUrl);
           void hydrateQuestionsAfterGap(sandboxUrl, () => disposed);
+          void hydratePermissionsAfterGap(sandboxUrl, () => disposed);
         }
       });
 

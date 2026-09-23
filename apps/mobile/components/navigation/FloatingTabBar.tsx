@@ -120,8 +120,30 @@ function TabItem({
   );
 }
 
-export function FloatingTabBar({ state, descriptors, navigation }: TabBarProps) {
-  const insets = useSafeAreaInsets();
+/** One tab of a `FloatingTabCapsule`: icon over label. */
+export interface FloatingTabItem {
+  key: string;
+  label: string;
+  icon: React.ReactNode;
+}
+
+/**
+ * FloatingTabCapsule — the tab bar's capsule on its own: 60pt, a pill thumb
+ * sliding behind the active tab, icon over a 12px label. The root tab bar
+ * draws it, and so does any sheet that switches between views the same way
+ * (the project/account switcher, Jay 2026-09-23) — one look for both.
+ */
+export function FloatingTabCapsule({
+  items,
+  activeIndex,
+  onSelect,
+  onLongPress,
+}: {
+  items: FloatingTabItem[];
+  activeIndex: number;
+  onSelect: (index: number) => void;
+  onLongPress?: (index: number) => void;
+}) {
   const reduced = useReducedMotion();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -129,6 +151,53 @@ export function FloatingTabBar({ state, descriptors, navigation }: TabBarProps) 
   const [segmentWidth, setSegmentWidth] = React.useState(0);
   const thumbX = useSharedValue(0);
   const settled = React.useRef(false);
+
+  React.useEffect(() => {
+    if (segmentWidth <= 0) return;
+    const target = activeIndex * segmentWidth;
+    if (!settled.current || reduced) {
+      thumbX.value = target;
+      settled.current = true;
+    } else {
+      thumbX.value = withTiming(target, SLIDE);
+    }
+  }, [activeIndex, segmentWidth, reduced, thumbX]);
+
+  const thumbStyle = useAnimatedStyle(() => ({ transform: [{ translateX: thumbX.value }] }));
+
+  return (
+    <View
+      className={`rounded-full p-1 ${isDark ? 'border border-border bg-card' : 'bg-background'}`}
+      style={{ height: FLOATING_BAR_HEIGHT, boxShadow: isDark ? undefined : LIGHT_SHADOW }}>
+      <View
+        className="relative h-full flex-row"
+        onLayout={(e) => setSegmentWidth(e.nativeEvent.layout.width / Math.max(items.length, 1))}>
+        {segmentWidth > 0 ? (
+          <Reanimated.View
+            style={[thumbStyle, { width: segmentWidth }]}
+            className="absolute bottom-0 left-0 top-0 rounded-full bg-secondary"
+          />
+        ) : null}
+        {items.map((item, index) => (
+          <TabItem
+            key={item.key}
+            label={item.label}
+            icon={item.icon}
+            focused={index === activeIndex}
+            reduced={reduced}
+            onPress={() => onSelect(index)}
+            onLongPress={() => onLongPress?.(index)}
+          />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+export function FloatingTabBar({ state, descriptors, navigation }: TabBarProps) {
+  const insets = useSafeAreaInsets();
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
 
   // 0 = keyboard closed, 1 = open. See the header comment for why this uses
   // React Native Keyboard events.
@@ -147,18 +216,6 @@ export function FloatingTabBar({ state, descriptors, navigation }: TabBarProps) 
   }, [keyboardShown]);
   const hiddenOffset = insets.bottom + FLOATING_BAR_GAP + FLOATING_BAR_HEIGHT;
 
-  React.useEffect(() => {
-    if (segmentWidth <= 0) return;
-    const target = state.index * segmentWidth;
-    if (!settled.current || reduced) {
-      thumbX.value = target;
-      settled.current = true;
-    } else {
-      thumbX.value = withTiming(target, SLIDE);
-    }
-  }, [state.index, segmentWidth, reduced, thumbX]);
-
-  const thumbStyle = useAnimatedStyle(() => ({ transform: [{ translateX: thumbX.value }] }));
   const barStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: keyboardShown.value * hiddenOffset }],
     opacity: 1 - keyboardShown.value,
@@ -173,6 +230,29 @@ export function FloatingTabBar({ state, descriptors, navigation }: TabBarProps) 
   ] as const;
   const fadeHeight = insets.bottom + FLOATING_BAR_GAP + FLOATING_BAR_HEIGHT + FADE_ABOVE_BAR;
 
+  const items: FloatingTabItem[] = state.routes.map((route, index) => {
+    const { options } = descriptors[route.key];
+    return {
+      key: route.key,
+      label: options.title ?? route.name,
+      icon: options.tabBarIcon?.({ focused: state.index === index, color: '', size: 20 }),
+    };
+  });
+
+  const onSelect = (index: number) => {
+    const route = state.routes[index];
+    const focused = state.index === index;
+    const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+    if (!focused && !event.defaultPrevented) {
+      haptics.selection();
+      navigation.navigate(route.name, route.params);
+    }
+  };
+
+  const onLongPress = (index: number) => {
+    navigation.emit({ type: 'tabLongPress', target: state.routes[index].key });
+  };
+
   return (
     <>
       {/* Scroll-edge fade behind the capsule (see header comment). */}
@@ -183,59 +263,12 @@ export function FloatingTabBar({ state, descriptors, navigation }: TabBarProps) 
         <LinearGradient colors={fadeColors} locations={[0, 0.45, 1]} style={StyleSheet.absoluteFill} />
       </Reanimated.View>
 
-    <Reanimated.View
-      pointerEvents="box-none"
-      style={[barStyle, { bottom: insets.bottom + FLOATING_BAR_GAP }]}
-      className="absolute inset-x-0 items-center">
-      <View
-        className={`rounded-full p-1 ${isDark ? 'border border-border bg-card' : 'bg-background'}`}
-        style={{ height: FLOATING_BAR_HEIGHT, boxShadow: isDark ? undefined : LIGHT_SHADOW }}>
-        <View
-          className="relative h-full flex-row"
-          onLayout={(e) => setSegmentWidth(e.nativeEvent.layout.width / state.routes.length)}>
-          {segmentWidth > 0 ? (
-            <Reanimated.View
-              style={[thumbStyle, { width: segmentWidth }]}
-              className="absolute bottom-0 left-0 top-0 rounded-full bg-secondary"
-            />
-          ) : null}
-
-          {state.routes.map((route, index) => {
-            const { options } = descriptors[route.key];
-            const focused = state.index === index;
-            const label = options.title ?? route.name;
-
-            const onPress = () => {
-              const event = navigation.emit({
-                type: 'tabPress',
-                target: route.key,
-                canPreventDefault: true,
-              });
-              if (!focused && !event.defaultPrevented) {
-                haptics.selection();
-                navigation.navigate(route.name, route.params);
-              }
-            };
-
-            const onLongPress = () => {
-              navigation.emit({ type: 'tabLongPress', target: route.key });
-            };
-
-            return (
-              <TabItem
-                key={route.key}
-                label={label}
-                icon={options.tabBarIcon?.({ focused, color: '', size: 20 })}
-                focused={focused}
-                reduced={reduced}
-                onPress={onPress}
-                onLongPress={onLongPress}
-              />
-            );
-          })}
-        </View>
-      </View>
-    </Reanimated.View>
+      <Reanimated.View
+        pointerEvents="box-none"
+        style={[barStyle, { bottom: insets.bottom + FLOATING_BAR_GAP }]}
+        className="absolute inset-x-0 items-center">
+        <FloatingTabCapsule items={items} activeIndex={state.index} onSelect={onSelect} onLongPress={onLongPress} />
+      </Reanimated.View>
     </>
   );
 }

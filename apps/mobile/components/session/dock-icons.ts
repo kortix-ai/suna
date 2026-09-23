@@ -1,5 +1,7 @@
 /**
- * dock-icons — icon lookup for `CustomizeSheet` and `PageContextMenuSheet`.
+ * dock-icons — icon lookup for `SettingsNavPage`'s Customize group and
+ * `PageContextMenuSheet` (`CustomizeSheet`, the icon lookup's other consumer,
+ * is deleted — COR-123/COR-160 Task 3).
  *
  * Typed as a total Record, so adding a DockIconKey without an icon fails
  * typecheck rather than rendering nothing.
@@ -13,9 +15,7 @@ import {
   SparkleIcon as Sparkles,
   TerminalIcon as Terminal,
   TrashIcon as Trash2,
-  UsersIcon as Users,
   ClockIcon as Clock,
-  SealCheckIcon as SealCheck,
   type AppIcon,
 } from '@/lib/icons';
 import type { DockIconKey } from '@/lib/session/dock-menu';
@@ -26,13 +26,11 @@ export const DOCK_ICONS: Record<DockIconKey, AppIcon> = {
   settings: Settings,
   rename: Pencil,
   delete: Trash2,
-  // project sheet, core sections
+  // Workspace "···" prompts (PageContextMenuSheet)
   agents: Bot,
   skills: Sparkles,
-  schedules: Clock,
-  review: SealCheck,
-  secrets: Key,
-  // project sheet, more
-  members: Users,
   terminal: Terminal,
+  // project Settings page, Customize group
+  schedules: Clock,
+  secrets: Key,
 };

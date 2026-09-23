@@ -13,7 +13,14 @@ import { useRouter } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { PressableSurface } from '@/components/kortix/pressable-surface';
-import { WarningCircleIcon as AlertCircle, DotsThreeVerticalIcon as MoreVertical, PlusIcon as Plus, MagnifyingGlassIcon as Search, SparkleIcon as Sparkles } from '@/lib/icons';
+import {
+  WarningCircleIcon as AlertCircle,
+  CaretUpDownIcon,
+  DotsThreeVerticalIcon as MoreVertical,
+  PlusIcon as Plus,
+  MagnifyingGlassIcon as Search,
+  SparkleIcon as Sparkles,
+} from '@/lib/icons';
 
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
@@ -21,7 +28,7 @@ import { Avatar } from '@/components/kortix/avatar';
 import { Button } from '@/components/ui/button';
 import { KortixLogo } from '@/components/kortix/KortixLogo';
 import { EmptyState } from '@/components/shared/EmptyState';
-import { AccountSwitcherSheet } from '@/components/projects/AccountSwitcherSheet';
+import { ProjectSwitcherSheet } from '@/components/projects/ProjectSwitcherSheet';
 import { NewProjectSheet } from '@/components/projects/NewProjectSheet';
 import { ProjectActions } from '@/components/projects/ProjectActions';
 import { PlatformButton } from '@/components/kortix/platform-button';
@@ -37,7 +44,6 @@ import { useUpgradeSheetStore } from '@/stores/upgrade-sheet-store';
 import { useAccountState, accountStateSelectors } from '@/lib/billing/hooks';
 import { haptics } from '@/lib/haptics';
 import { projectToRow } from '@/lib/ui/format';
-import { chalkColors } from '@kortix/shared';
 import type { KortixProject } from '@/lib/projects/projects-client';
 import { THEME } from '@/lib/utils/theme';
 
@@ -72,7 +78,7 @@ export default function ProjectsTab() {
     setQuery('');
     setSearchOpen(false);
   }, []);
-  const [accountSheetOpen, setAccountSheetOpen] = React.useState(false);
+  const [switcherOpen, setSwitcherOpen] = React.useState(false);
   const [newProjectOpen, setNewProjectOpen] = React.useState(false);
   const [refreshing, setRefreshing] = React.useState(false);
 
@@ -144,7 +150,6 @@ export default function ProjectsTab() {
 
   const canCreate =
     activeAccount?.account_role === 'owner' || activeAccount?.account_role === 'admin';
-  const accountCount = accountsQuery.data?.length ?? 0;
 
   // Row ⋯ menu: a bottom sheet of actions (Open, Archive) with an
   // AlertDialog confirm for Archive. See components/projects/ProjectActions.
@@ -179,20 +184,12 @@ export default function ProjectsTab() {
   const renderItem = React.useCallback(
     ({ item }: { item: KortixProject }) => {
       const row = projectToRow(item);
-      const chalk = chalkColors(item.name);
       return (
         <PressableSurface
           onPress={() => openProject(item)}
           style={({ pressed }) => (pressed ? { transform: [{ scale: 0.99 }] } : undefined)}
           className="mx-4 mb-2.5 flex-row items-center gap-3 rounded-xl bg-secondary/70 px-4 py-3.5 active:bg-secondary">
-          <Avatar
-            variant="custom"
-            fallbackText={item.name}
-            size={42}
-            backgroundColor={chalk.background}
-            iconColor={chalk.foreground}
-            borderColor={chalk.border}
-          />
+          <Avatar chalk fallbackText={item.name} size={42} />
           <View className="min-w-0 flex-1">
             <Text variant="small" className="leading-5 text-foreground" numberOfLines={1}>
               {row.title}
@@ -228,8 +225,27 @@ export default function ProjectsTab() {
             />
           ) : (
           <>
-          <View className="min-w-0 flex-1 flex-row items-center">
+          <View className="min-w-0 flex-1 flex-row items-center gap-2.5">
             <KortixLogo variant="logomark" size={18} color={isDark ? 'dark' : 'light'} />
+            {/* Account control (R1, COR-124/COR-157 Task 4): name + caret,
+                opens the same switcher as the project drawer. Always enabled
+                — the switcher's chip row always ends in "New account", so
+                even a one-account user has somewhere to go. */}
+            {activeAccount ? (
+              <Pressable
+                onPress={() => {
+                  haptics.selection();
+                  setSwitcherOpen(true);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={`Switch account, ${activeAccount.name}`}
+                className="min-w-0 shrink flex-row items-center gap-1 active:opacity-70">
+                <Text variant="small" numberOfLines={1}>
+                  {activeAccount.name}
+                </Text>
+                <Icon as={CaretUpDownIcon} size={14} className="shrink-0 text-muted-foreground" />
+              </Pressable>
+            ) : null}
           </View>
 
           <View className="flex-row items-center gap-2">
@@ -344,15 +360,13 @@ export default function ProjectsTab() {
         />
       )}
 
-      {accountSheetOpen ? (
-        <AccountSwitcherSheet
-          open
-          accounts={accountsQuery.data ?? []}
-          selectedAccountId={activeAccountId}
-          onSelect={(id) => setSelectedAccountId(id)}
-          onClose={() => setAccountSheetOpen(false)}
-        />
-      ) : null}
+      <ProjectSwitcherSheet
+        open={switcherOpen}
+        accounts={accountsQuery.data ?? []}
+        selectedAccountId={activeAccountId}
+        onClose={() => setSwitcherOpen(false)}
+        onAccountSelect={setSelectedAccountId}
+      />
 
       <ProjectActions project={menuProject} onOpenProject={openProject} onClose={closeRowMenu} />
 

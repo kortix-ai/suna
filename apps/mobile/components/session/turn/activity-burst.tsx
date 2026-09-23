@@ -12,7 +12,9 @@
  * `ActivitySheetHost`), a timeline of every step with a detail view per step.
  * While this row owns the open sheet it republishes its live view to the store.
  *
- * - a burst of ONE call is bare: no summary line, the row itself, as on web;
+ * - every burst is this line, even ONE thought or ONE call ("Completed 1
+ *   step"): web shows those bare, mobile never expands a step inline
+ *   (Jay, 2026-09-24);
  * - a burst that merges to nothing (plumbing only) renders nothing.
  */
 
@@ -22,38 +24,12 @@ import type { Part } from '@kortix/sdk';
 import { Text } from '@/components/ui/text';
 import { TextShimmer } from '@/components/kortix/text-shimmer';
 import { CaretRightIcon } from '@/lib/icons';
-import { burstView, isFileChipPart, samePartsList, type BurstView } from '@/lib/session/activity';
+import { burstView, samePartsList } from '@/lib/session/activity';
 import { ownsBurst } from '@/lib/session/activity-sheet';
 import { useActivitySheetStore } from '@/lib/session/activity-sheet-store';
-import { ChainOfThought, ChainOfThoughtStep } from '@/components/session/chain-of-thought';
 import { TURN_SPACE, TURN_TYPE, useTurnPalette } from '@/components/session/tool/shared/styles';
 import type { PermissionReply } from '@/components/session/tool/tool-part-renderer';
-import { ActivityFileChipStep } from './activity-file-chips';
-import { ActivityContext, ActivityStep, type ActivityContextValue } from './activity-step';
-import { ThoughtStep } from './thought-step';
-
-// ─── Bare burst ──────────────────────────────────────────────────────────────
-
-function BareStep({ view }: { view: BurstView }) {
-  const step = view.steps[0];
-  // A group holds two or more counted calls, so it is never bare.
-  if (!step || step.kind === 'group') return null;
-  if (step.kind === 'thought') {
-    return (
-      <ThoughtStep
-        id={step.key}
-        texts={step.texts}
-        running={view.running && step.running}
-        durationMs={step.durationMs}
-        bare
-      />
-    );
-  }
-  if (isFileChipPart(step.part)) {
-    return <ActivityFileChipStep parts={[step.part]} bare running={view.running} />;
-  }
-  return <ActivityStep part={step.part} bare running={view.running} />;
-}
+import type { ActivityContextValue } from './activity-step';
 
 // ─── Burst ───────────────────────────────────────────────────────────────────
 
@@ -95,18 +71,6 @@ function ActivityBurstImpl({
   const openSheet = useCallback(() => useActivitySheetStore.getState().show(parts, view, context), [parts, view, context]);
 
   if (view.hidden) return null;
-
-  if (view.bare) {
-    return (
-      <ActivityContext.Provider value={context}>
-        <ChainOfThought>
-          <ChainOfThoughtStep>
-            <BareStep view={view} />
-          </ChainOfThoughtStep>
-        </ChainOfThought>
-      </ActivityContext.Provider>
-    );
-  }
 
   return (
     <Pressable
