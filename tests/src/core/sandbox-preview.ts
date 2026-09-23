@@ -328,6 +328,7 @@ export function previewSandboxName(prNumber: number): string {
 export interface PreviewSandboxIdentity {
   name: string;
   owner: 'kortix-preview' | 'kortix-branch-env';
+  autoStopMinutes: number;
   autoArchiveDays: number;
   autoDeleteDays: number;
   reuseExisting: boolean;
@@ -349,7 +350,16 @@ export interface PreviewSandboxIdentity {
  * webhook target, and keep its Postgres volume across deploys. The distinct
  * owner is what makes the sweep judge it by its BRANCH rather than by its pull
  * request, so closing the pull request does not retire it.
+ *
+ * Both modes idle-stop after PREVIEW_HOST_AUTO_STOP_MINUTES. A stopped host
+ * holds no pool RAM. The Platinum edge wakes it on the next request to its
+ * URL, and a redeploy starts it before reuse. Measured 2026-09-23 on a branch
+ * environment: the first request after a stop returns 502, and the API reports
+ * healthy about 20 s later. Before this, 10 always-on 16 GB hosts held 160 GB
+ * of the shared 512 GB org pool.
  */
+export const PREVIEW_HOST_AUTO_STOP_MINUTES = 30;
+
 export function previewSandboxIdentity(input: {
   prNumber: number;
   branchEnv?: string;
@@ -358,6 +368,7 @@ export function previewSandboxIdentity(input: {
     return {
       name: branchEnvSandboxName(input.branchEnv),
       owner: 'kortix-branch-env',
+      autoStopMinutes: PREVIEW_HOST_AUTO_STOP_MINUTES,
       autoArchiveDays: 0,
       autoDeleteDays: 0,
       reuseExisting: true,
@@ -366,6 +377,7 @@ export function previewSandboxIdentity(input: {
   return {
     name: previewSandboxName(input.prNumber),
     owner: 'kortix-preview',
+    autoStopMinutes: PREVIEW_HOST_AUTO_STOP_MINUTES,
     autoArchiveDays: 7,
     autoDeleteDays: 7,
     reuseExisting: false,
