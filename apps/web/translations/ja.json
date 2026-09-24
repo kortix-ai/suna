@@ -19142,6 +19142,11 @@
       "title": "公開リンクを作成しますか？",
       "description": "リンクを知っている人は誰でもサインインせずに閲覧できます。リンクは取り消すまで有効です。",
       "confirm": "リンクを作成"
+    },
+    "chatIdentityConnect": {
+      "chatAccount": "{service} アカウント",
+      "chatWorkspace": "{service} ワークスペース",
+      "checking": "リンクを確認中…"
     }
   },
   "projectOnboarding": {

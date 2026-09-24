@@ -19142,6 +19142,11 @@
       "title": "Öffentlichen Link erstellen?",
       "description": "Jeder mit dem Link kann dies ohne Anmeldung ansehen. Der Link bleibt aktiv, bis du ihn widerrufst.",
       "confirm": "Link erstellen"
+    },
+    "chatIdentityConnect": {
+      "chatAccount": "{service}-Konto",
+      "chatWorkspace": "{service}-Workspace",
+      "checking": "Link wird geprüft…"
     }
   },
   "projectOnboarding": {

@@ -19142,6 +19142,11 @@
       "title": "Направити јавни линк?",
       "description": "Свако ко има линк може ово да види без пријаве. Линк остаје активан док га не опозовеш.",
       "confirm": "Направи линк"
+    },
+    "chatIdentityConnect": {
+      "chatAccount": "{service} налог",
+      "chatWorkspace": "{service} радни простор",
+      "checking": "Провера линка…"
     }
   },
   "projectOnboarding": {

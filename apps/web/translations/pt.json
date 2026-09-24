@@ -19142,6 +19142,11 @@
       "title": "Criar um link público?",
       "description": "Qualquer pessoa com o link pode ver isto sem iniciar sessão. O link fica ativo até você revogá-lo.",
       "confirm": "Criar link"
+    },
+    "chatIdentityConnect": {
+      "chatAccount": "Conta do {service}",
+      "chatWorkspace": "Workspace do {service}",
+      "checking": "Verificando o link…"
     }
   },
   "projectOnboarding": {

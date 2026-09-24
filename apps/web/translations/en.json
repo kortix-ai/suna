@@ -19155,6 +19155,11 @@
       "title": "Create a public link?",
       "description": "Anyone with the link can view this without signing in. The link stays active until you revoke it.",
       "confirm": "Create link"
+    },
+    "chatIdentityConnect": {
+      "chatAccount": "{service} account",
+      "chatWorkspace": "{service} workspace",
+      "checking": "Checking link…"
     }
   },
   "projectOnboarding": {
