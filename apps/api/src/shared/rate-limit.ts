@@ -1,5 +1,6 @@
 import type { Context, Next } from 'hono';
 import { config } from '../config';
+import { requestClientIp } from './client-ip';
 import { recordAuditEvent } from './audit';
 import { RATE_LIMIT_EXCEEDED_ACTION } from './rate-limit-audit';
 
@@ -102,10 +103,10 @@ function positiveInt(value: unknown, fallback: number) {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
 }
 
+// Every IP-keyed limiter reads the caller through the trusted-proxy rule in
+// shared/client-ip.ts. The leftmost X-Forwarded-For entry is caller-written.
 function clientIp(c: Context) {
-  return (
-    c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip') || 'unknown'
-  );
+  return requestClientIp(c);
 }
 
 function setHeaders(c: Context, result: RateLimitResult) {
@@ -353,9 +354,11 @@ export function createDemoRequestRateLimitMiddleware() {
  * Guards the public, unauthenticated `POST /v1/access/check-email` endpoint.
  * Its response drives the unified auth flow (sign-in vs registration), which
  * makes it an account-existence oracle by construction — the limiter is what
- * keeps it useless for bulk enumeration. Keyed on client IP: the web server
- * action forwards the visitor's `x-forwarded-for`, and direct browser calls
- * carry their own address.
+ * keeps it useless for bulk enumeration. Keyed on client IP through the
+ * trusted-proxy rule (shared/client-ip.ts), so a caller cannot choose its own
+ * bucket with a forged `x-forwarded-for`. A call relayed by the web server
+ * action is keyed on the web server's address; that action treats a 429 as
+ * `unknown` and continues through the adaptive flow.
  */
 export function createCheckEmailRateLimitMiddleware() {
   return async (c: Context, next: Next) => {

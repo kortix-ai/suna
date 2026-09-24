@@ -700,6 +700,15 @@ const envSchema = z.object({
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: optInt(60),
   KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: optInt(600),
   KORTIX_PROXY_REQS_PER_MIN: optInt(600),
+  // Proxies in front of the API that APPEND to X-Forwarded-For. The client is
+  // the entry this many places from the right; everything to its left was
+  // written by the client. Cloud: Cloudflare + ALB = 2. Self-host Caddy
+  // replaces an untrusted header with one entry, which the rule also reads
+  // correctly. See shared/client-ip.ts.
+  KORTIX_TRUSTED_PROXY_HOPS: optInt(2),
+  // Per client IP: Kortix bearer tokens that need a fresh hash (not seen by
+  // this process recently). A token already validated here is not counted.
+  KORTIX_UNKNOWN_TOKEN_ATTEMPTS_PER_MIN: optInt(120),
   KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT: optInt(3),
   KORTIX_TRIGGER_SCHEDULER_ENABLED: optBoolTrue,
   KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS: optInt(1_000),
@@ -1324,6 +1333,8 @@ export const config = {
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE,
   KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID,
   KORTIX_PROXY_REQS_PER_MIN: env.KORTIX_PROXY_REQS_PER_MIN,
+  KORTIX_TRUSTED_PROXY_HOPS: env.KORTIX_TRUSTED_PROXY_HOPS,
+  KORTIX_UNKNOWN_TOKEN_ATTEMPTS_PER_MIN: env.KORTIX_UNKNOWN_TOKEN_ATTEMPTS_PER_MIN,
   KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT:
     env.KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT,
   KORTIX_TRIGGER_SCHEDULER_ENABLED: env.KORTIX_TRIGGER_SCHEDULER_ENABLED,
