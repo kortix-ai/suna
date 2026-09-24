@@ -69,6 +69,25 @@ mock.module('../projects/git', () => ({
   readRepoFile: async () => null,
 }));
 
+// The model and key plan is pinned in unit-channel-model-access; here it only
+// must not touch the FIFO of query results the thread routing is tested with.
+const followUpPlans: Array<Record<string, unknown>> = [];
+mock.module('../channels/model-access', () => ({
+  agentGrantEnvFor: () => async () => null,
+  projectChannelModelScope: async () => null,
+  planChannelSessionStart: async () => ({ model: null }),
+  planChannelFollowUp: async (input: Record<string, unknown>) => {
+    followUpPlans.push(input);
+    return null;
+  },
+}));
+mock.module('../channels/slack/model-choice', () => ({
+  applySlackModelChoice: async () => '',
+  buildSlackModelsResponse: async () => ({ response_type: 'ephemeral' }),
+  slackChannelIsDm: (id: string) => id.startsWith('D'),
+  slackModelScope: async () => null,
+}));
+
 // ─── Lifecycle delivery: the outcome under test ───────────────────────────────
 let deliverOutcome: SessionDeliveryOutcome = 'delivered';
 let deliverCalls = 0;
@@ -257,6 +276,35 @@ describe('Slack authorization matrix — project access and session visibility',
     expect(createSessionInputs[0]?.metadata?.slack?.conversation_policy).toBe('project_open');
   });
 
+  test('a DM with the bot starts a session private to the linked person', async () => {
+    // Only a private session reaches that person's own API keys and ChatGPT
+    // subscription (spec 2026-09-22 §2.3).
+    config.SLACK_REQUIRE_USER_IDENTITY = true;
+    dbResults = [
+      [project], // project account lookup
+      [{ userId: 'user-1' }], // Slack identity exists
+      [{ userId: 'user-1' }], // account membership hit
+      [], // no existing chat thread
+      [project], // createOrJoinThreadSession project lookup
+      [{ eventId: 'claim' }], // claimThreadCreate won
+      [], // re-check chat_threads -> none
+      [], // channel selection -> default policy
+      [], // remember owner participant
+    ];
+
+    await spawnAgentTurn('proj-1', envelope, {
+      type: 'message',
+      channel_type: 'im',
+      channel: 'D1',
+      ts: '130.1',
+      user: 'U1',
+      text: 'do the thing',
+    } as any);
+
+    expect(createSessionCalls).toBe(1);
+    expect(createSessionInputs[0]?.visibility).toBe('private');
+  });
+
   test('manual owner-approval policy creates a restricted Slack session', async () => {
     config.SLACK_REQUIRE_USER_IDENTITY = true;
     dbResults = [
@@ -375,6 +423,26 @@ describe('spawnAgentTurn — permanent 1:1 thread↔session, never a second sess
     await spawnAgentTurn('proj-1', envelope, event);
     expect(deliverCalls).toBe(1);
     expect(createSessionCalls).toBe(0);
+  });
+
+  test('a thread follow-up plans its model from the session row it already read', async () => {
+    // It used to send no model at all: an image on a text-only model, or a
+    // ChatGPT pin the shared thread can no longer run, failed the turn.
+    deliverOutcome = 'delivered';
+    followUpPlans.length = 0;
+    dbResults = [
+      [project],
+      [{ sessionId: 'sess-1', createdBy: 'user-1', metadata: { opencode_model: 'kortix/codex/gpt-6-astra' }, agentName: 'reviewer' }],
+      [],
+    ];
+    await spawnAgentTurn('proj-1', envelope, event);
+    expect(followUpPlans).toHaveLength(1);
+    expect(followUpPlans[0]).toMatchObject({
+      userId: 'user-1',
+      session: { sessionId: 'sess-1', ownerUserId: 'user-1', pinnedModel: 'kortix/codex/gpt-6-astra' },
+      // A channel's `/kortix model` starts new threads; a thread keeps its own.
+      chosenModel: null,
+    });
   });
 
   test('pending (session waking) → keep mapping, NEVER recreate', async () => {

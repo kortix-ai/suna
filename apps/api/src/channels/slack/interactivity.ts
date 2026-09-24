@@ -21,13 +21,9 @@ import { decideSlackThreadJoin } from './participants';
 import { attachPendingSlackAuthResponseUrl } from './auth-resume';
 import { verifyLoginState } from './login';
 import { escapeMrkdwn, respondViaUrl, sessionWebUrl } from './util';
-import { setChannelAgent, setChannelModel } from './selection';
-import { channelModelContext } from './model-gate';
+import { setChannelAgent } from './selection';
+import { applySlackModelChoice } from './model-choice';
 import { type SlashCtx, handleSlashCommand } from './commands';
-import { labelForModelRef } from '../../llm-gateway/models/picker';
-import { isModelServableForAccount } from '../../llm-gateway/resolution/default-model';
-import { validateNativeOpencodeModelRef } from '../../projects/lib/session-model-change';
-import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import type { SlackEnvelope, SlackEvent, SlackInteractionPayload } from './types';
 
 // Agent-emitted button click (carousel cards, actions blocks). Routes the
@@ -406,69 +402,16 @@ async function handleSetSelection(
     return;
   }
 
-  const requested = value.m && value.m.length > 0 ? value.m : null;
-  if (!requested) {
-    const ok = await setChannelModel(ctx, null);
-    await respondViaUrl(payload.response_url, {
-      response_type: 'ephemeral',
-      replace_original: true,
-      text: ok
-        ? '✓ Model reset to the project default.'
-        : 'That channel is no longer connected to a project — run `/kortix` first.',
-    });
-    return;
-  }
-  // Picker options are already servable, but re-validate before persisting so a
-  // stored model can NEVER 404 at request time ("model isn't available").
-  const gate = await channelModelContext(ctx);
-  // Native mode (gateway off): the picker that produced this action no longer
-  // renders, but a stale panel can still post — accept only a native
-  // `provider/model` ref and store it verbatim.
-  if (gate && !gate.llmGatewayEnabled) {
-    const nativeShapeError = validateNativeOpencodeModelRef(requested);
-    if (nativeShapeError) {
-      await respondViaUrl(payload.response_url, {
-        response_type: 'ephemeral',
-        replace_original: true,
-        text: `⚠️ \`${escapeMrkdwn(requested)}\` isn't usable here — this project runs native OpenCode models (LLM gateway off). Use \`provider/model\`.`,
-      });
-      return;
-    }
-    const okNative = await setChannelModel(ctx, requested);
-    await respondViaUrl(payload.response_url, {
-      response_type: 'ephemeral',
-      replace_original: true,
-      text: okNative
-        ? `✓ Model for this channel set to \`${escapeMrkdwn(requested)}\`. New sessions will use it.`
-        : 'That channel is no longer connected to a project — run `/kortix` first.',
-    });
-    return;
-  }
-  if (gate) {
-    const servable = await isModelServableForAccount({
-      userId: gate.ownerUserId,
-      accountId: gate.accountId,
-      projectId: gate.projectId,
-      freeModelsOnly: gate.freeManagedOnly,
-      model: requested,
-    });
-    if (!servable) {
-      await respondViaUrl(payload.response_url, {
-        response_type: 'ephemeral',
-        replace_original: true,
-        text: `⚠️ \`${escapeMrkdwn(requested)}\` isn't available for this workspace. Pick another, or connect that provider's API key in Kortix.`,
-      });
-      return;
-    }
-  }
-  const stored = toOpencodeModelRef(requested);
-  const ok = await setChannelModel(ctx, stored);
+  // One path for `/kortix model <id>` and the picker: checked as the person
+  // who clicked, with this conversation's keys (channels/slack/model-choice.ts).
+  const text = await applySlackModelChoice(
+    { teamId, channelId, slackUserId: payload.user?.id ?? '', command: '/kortix' },
+    value.m ?? '',
+  );
   await respondViaUrl(payload.response_url, {
     response_type: 'ephemeral',
     replace_original: true,
-    text: ok
-      ? `✓ Model for this channel set to *${escapeMrkdwn(labelForModelRef(stored))}* (\`${escapeMrkdwn(stored)}\`). New sessions will use it.`
-      : 'That channel is no longer connected to a project — run `/kortix` first.',
+    text,
   });
 }
 
@@ -841,7 +784,8 @@ export async function handleBlockAction(payload: SlackInteractionPayload): Promi
   }
 
   if (action.action_id.startsWith('set_model')) {
-    await handleSetSelection(payload, action.value ?? '', 'model');
+    // A button carries its pick in `value`; the long list's select in `selected_option`.
+    await handleSetSelection(payload, action.selected_option?.value ?? action.value ?? '', 'model');
     return;
   }
 
