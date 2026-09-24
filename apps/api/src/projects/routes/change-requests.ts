@@ -201,7 +201,7 @@ projectsApp.openapi(
     // moments ago never bounces.
     let baseSha: string | null = null;
     let headSha: string | null = null;
-    let headAhead = true;
+    let headAhead: boolean;
     try {
       const projectForGit = await withProjectGitAuth(loaded.row);
       const aheadState = await resolveBranchAheadState(projectForGit, baseRef, headRef);

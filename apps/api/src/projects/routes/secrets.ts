@@ -106,7 +106,7 @@ projectsApp.openapi(
   // UI can distinguish "no envs declared" from "we couldn't read the manifest".
   let required: string[] = [];
   let optional: string[] = [];
-  let manifestStatus: 'loaded' | 'missing' | 'error' = 'missing';
+  let manifestStatus: 'loaded' | 'missing' | 'error';
   let manifestError: string | null = null;
   // The same load answers `delivery_blocked_reason` (which agents may receive an
   // egress/broker secret). Threading the config costs no extra I/O; leaving it
