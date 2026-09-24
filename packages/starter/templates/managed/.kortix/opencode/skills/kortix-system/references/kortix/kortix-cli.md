@@ -210,6 +210,8 @@ package**. JSON output.
 | `kortix connectors accounts <slug>` | List the accounts a connector holds, default first. Use this whenever it matters which account runs, or a human asks which/how many are connected — never infer it from one call's result. |
 | `kortix connectors accounts <slug> --default <label>` | Pin one account as the one an unnamed call uses. |
 | `kortix connectors call <connector> <action> '<json>' [--account <label\|id\|me\|project>]` | Invoke an action, optionally naming which account. Omit `--account` for the default. The gateway resolves the account, enforces policy, and audits. Every successful result echoes `account` — say which one ran when it matters. |
+| `kortix connectors call <connector> <action> @args.json --attach <file>` | Attach a file from `/workspace/{output,artifacts,reports,deliverables}`. The gateway writes it into the action's attachments array as the provider's item (e.g. Microsoft Graph `body.message.attachments`). `@file` / `-` read large args. |
+| `kortix connectors upload <file> --connector <slug>` | Stage one file; prints `ref` (`{"$kortix_attachment":"<id>"}`) to place in args — an attachments[] element or a base64 field such as `contentBytes`. |
 | `kortix connectors add <slug> --provider composio --app <toolkit> --apply` | Add a managed SaaS connector now, commit it to `kortix.yaml` on main, and sync it. |
 | `kortix connectors rm <slug> --apply` | Remove a connector from `kortix.yaml` on main and sync it. |
 | `kortix connectors connect <slug> [--owner me\|project]` | Mint the configured provider's authorization URL for a NEW account. `me` (default) is yours alone; `project` shares it with the whole project. |

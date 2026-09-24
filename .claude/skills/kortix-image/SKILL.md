@@ -40,7 +40,7 @@ Never let the image model invent, redraw, or restyle the mark, and never generat
 - **Palette:** neutral Kortix surfaces (`#0A0A0A` / `#FAFAFA`), exactly one accent. Never a rainbow.
 - **Style:** premium utilitarian minimalism. Product-grounded — agents, repos, sandboxes, sessions, terminals, pull requests, traces. Not sci-fi.
 - **Composition:** strong whitespace, one focal point, one icon family, 1px borders, soft shadows.
-- **Text:** avoid rendering text in-image (models corrupt it). Reserve the space and add real Roobert copy after. If text is samplecol, use 1–5 user-supplied words only.
+- **Text:** avoid rendering text in-image (models corrupt it). Reserve the space and add real Roobert copy after. If text is essential, use 1–5 user-supplied words only.
 
 ## Specs
 

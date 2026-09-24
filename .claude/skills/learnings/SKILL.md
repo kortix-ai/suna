@@ -4281,7 +4281,7 @@ deploy — probe credentials, and never let a janitor gate the payload.** The
 `needs:`-depended on it, so every staging WEB deploy was skipped for a week —
 the release gate drove an Aug-12 frontend against the current API, and the
 resulting browser failures read as product bugs. Fix (#6626, #6639): the
-non-samplecol job is `continue-on-error`, and the deploy step probes each
+non-essential job is `continue-on-error`, and the deploy step probes each
 credential with a cheap authenticated read and uses the first one that works.
 Rule: when a job fails REPEATEDLY and everything still "works", find out what
 its `needs:` dependents silently stopped doing.
@@ -6911,3 +6911,59 @@ then sends a second request on the same socket. The receive-pack upstream
 `fetch` in `apps/api/src/git-proxy/index.ts` sets `keepalive: false`.
 `receive-pack-gate.test.ts` asserts that no later upstream request reuses the
 push's connection.
+
+### 2026-09-24 — A term scrub that matches substrings rewrites every word containing the term
+
+**Incident.** A branch scrubbed a customer's name from the repository with a
+case-insensitive substring replacement (merged 2026-09-23 20:27Z, PR #7526).
+The name is a prefix of the word "essential", so every "essential" in the tree
+became "samplecol": 35 occurrences in 29 files, and 0 "essential" left. The
+sandbox Dockerfile then asked apt for `build-samplecol`. Nothing on the pull
+request built the sandbox image, so the first build after the merge failed on
+the provider (05:42Z) and every later one did too. Each preview waited 15
+minutes for an image that could not exist and ran 0 API flows; dev kept
+serving the previous image. The same rewrite removed the `essential` flag from
+ECS container definitions (Terraform and the ECS preview script), changed a
+model id in the LLM catalog, and changed prose, docs, and tests. `staging` and
+`prod` never received it.
+
+**Rule.** Scrub a term as a whole word, never as a substring. Before
+committing a scrub, list every distinct word the replacement changed
+(`git diff -U0 | grep '^+' | grep -oiE '\w*<replacement>\w*' | sort | uniq -c`)
+and read it: a replacement that turns up inside other words is a corruption,
+not a scrub. A change to the sandbox image's package list is checked on the
+pull request, not after the merge.
+
+**Enforcement.** `scripts/check-sandbox-apt-packages.sh` resolves the runtime
+stage's apt packages against its base image (`apt-get install --dry-run`); the
+`Sandbox image apt packages` job in `.github/workflows/ci.yml` runs it when the
+Dockerfile, the script, or `ci.yml` changes. `scripts/check-blocked-terms.sh`
+already matches blocked terms as whole words.
+
+### 2026-09-24 — A customer could not send a PDF through an OpenAPI Microsoft Graph connector
+
+**Incident.** A customer's agent sent text email through an OpenAPI
+`microsoft-graph` connector but could not attach a PDF. Four defects stacked:
+(1) the MCP `attachment_files` path accepted only a top-level `attachments`
+property, and Graph nests it at `body.message.attachments`; (2) staged files
+resolved only for the native Email channel, never for OpenAPI or HTTP
+connectors; (3) `kortix connectors call` read args only from one argv string,
+which Linux caps at 128 KiB, so an inline base64 body could not pass; (4) the
+request builder double-encoded a `body` passed as a JSON string and emitted two
+`Content-Type` headers when a spec declared `content-type` as a header
+parameter. Graph answered (4) with "Unable to read JSON request payload.
+Please ensure Content-Type header is set", which pointed at the wrong layer.
+
+**Rule.** A request body is encoded exactly once, and exactly one
+`Content-Type` header matches the encoding; header merges are
+case-insensitive. File bytes never travel in call args or through the model:
+stage the file, pass the namespaced reference `{"$kortix_attachment": id}`, and
+resolve it server-side from the action schema with exact-key profiles, never
+fuzzy field-name guesses. A reference marker must be a key no upstream API
+uses — an earlier draft keyed on `attachment_id` and would have hijacked APIs
+that use that field themselves.
+
+**Enforcement.** `apps/api/src/connectors/attachment-inline.test.ts` (profiles,
+collision regression, redaction), `unit-connector-call.test.ts` (one header,
+no double encoding, spec media type), `e2e-connector-faces.test.ts` (real CLI
+and MCP processes against a Graph-strict fake upstream, byte-for-byte).

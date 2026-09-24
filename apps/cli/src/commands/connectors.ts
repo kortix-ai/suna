@@ -164,7 +164,20 @@ Subcommands:
                                     several accounts and none named or pinned,
                                     the call is denied (reason account_required)
                                     instead of guessing.
-  accounts <slug> [--json]          The connected accounts a call may run as,
+       [--attach <file>]...         Attach a file from /workspace/{output,
+                                    artifacts,reports,deliverables}: stages the
+                                    bytes and appends a reference to the
+                                    action's attachments array (e.g. Graph
+                                    body.message.attachments). The gateway
+                                    builds the provider's attachment item.
+       [--attach-path <a.b.c>]      Name that array when auto-detection fails.
+       [json] as @file.json or -    Read large JSON args from a file or stdin.
+  upload <file> --connector <slug>  Stage one file for a call. Prints \`ref\`,
+                                    {"$kortix_attachment":"<id>"}: as an
+                                    attachments[] element it becomes the
+                                    provider's item; in a string field
+                                    (contentBytes, content) it becomes base64.
+  accounts <slug> [--json]        The connected accounts a call may run as,
                                     default first. Shared accounts belong to the
                                     project, private ones to you. These are the
                                     names \`call --account\` accepts.
@@ -324,7 +337,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
     process.stdout.write(HELP);
     return 0;
   }
-  if (sub === 'discover' || sub === 'call' || sub === 'mcp') {
+  if (sub === 'discover' || sub === 'call' || sub === 'upload' || sub === 'mcp') {
     return runConnector([sub, ...rest]);
   }
   // `accounts` is the one gateway read a HUMAN also runs, so it is NOT

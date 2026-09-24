@@ -977,8 +977,11 @@ flow(
           actor_type: 'human',
           authoritative_source: 'api_key',
           http_status: 403,
-          action: 'GET /v1/git/:project/info/refs',
+          action: 'git.ref.list',
         }, 'account member refusal');
+        if (row.metadata.http !== 'GET /v1/git/:project/info/refs') {
+          throw new Error(`the refusal keeps its HTTP identity: ${JSON.stringify(row.metadata)}`);
+        }
         if (row.metadata.auth?.token_id !== outsiderToken.token_id) {
           throw new Error(`the refusal must name the refused token: ${JSON.stringify(row.metadata)}`);
         }
@@ -990,7 +993,7 @@ flow(
           { actor: projectMemberId, outcome: 'denied' },
           'the project member’s denied push row',
         );
-        expectRow(rows[0], { actor_type: 'human', http_status: 403, action: 'GET /v1/git/:project/info/refs' }, 'project member refusal');
+        expectRow(rows[0], { actor_type: 'human', http_status: 403, action: 'git.ref.list' }, 'project member refusal');
       });
 
       await ctx.step('an unauthenticated request to the project is an anonymous row in the owner’s log', async () => {
@@ -1017,10 +1020,11 @@ flow(
             resource_type: 'project',
             resource_id: project.id,
           }, 'anonymous probe');
-          // The auth middleware refuses before a handler matches, so the row
-          // names the middleware's pattern. It never carries the raw path.
-          if (!row.action.startsWith('GET /v1/projects/') || row.action.includes(project.id)) {
-            throw new Error(`anonymous probe: unexpected action ${row.action}`);
+          // The auth middleware refuses before the handler runs, and the row
+          // still names the endpoint the request asked for: its label, and
+          // its template in `metadata.http`. Never the raw path.
+          if (row.action !== 'project.read' || row.metadata.http !== 'GET /v1/projects/:projectId') {
+            throw new Error(`anonymous probe: expected project.read, got ${JSON.stringify(row)}`);
           }
         }
       });
@@ -1044,6 +1048,105 @@ flow(
       if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
       await db.end();
       await rm(root, { recursive: true, force: true });
+    }
+  },
+);
+
+// ── AUD-8: a request row is named by its route's audit label ────────────────
+// Every route has one label in `@kortix/shared/audit-labels`: a
+// `domain.resource.verb` action that filters by prefix, and a title the web
+// and the CLI show. The row keeps the route template in `metadata.http`. A
+// handler that records its own event for the request makes that event the
+// request's only row. A request no endpoint matched is `api.route.unmatched`.
+flow(
+  'AUD-8',
+  {
+    domain: 'audit',
+    routes: [
+      'GET /v1/projects/:projectId',
+      'POST /v1/accounts/:accountId/iam/groups',
+      'DELETE /v1/accounts/:accountId/iam/groups/:groupId',
+      'GET /v1/accounts/:accountId/audit',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const project = await team.project();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { accountId: team.id };
+    let groupId: string | null = null;
+    const auditRows = (query: Record<string, string>, description: string) =>
+      waitFor(
+        () => owner.get('/v1/accounts/:accountId/audit', { params, query: { limit: '50', ...query } }),
+        {
+          until: (res) => res.statusCode === 200 && (res.json<{ events?: unknown[] }>().events?.length ?? 0) > 0,
+          timeoutMs: 20_000,
+          intervalMs: 500,
+          description,
+          retryOnError: isKe2eRetryableError,
+        },
+      ).then((res) => {
+        res.status(200);
+        return res.json<{ events: AuditRow[] }>().events;
+      });
+
+    try {
+      await ctx.step('the owner reads the project; its row is `project.read`, with the route in metadata.http', async () => {
+        const read = await owner.get('/v1/projects/:projectId', { params: { projectId: project.id } });
+        read.status(200);
+        const requestId = required(read.header('x-request-id'), 'the request id header');
+        const rows = await auditRows({ request_id: requestId }, 'the project read row');
+        const row = rows[0];
+        if (!row || row.action !== 'project.read' || row.metadata.http !== 'GET /v1/projects/:projectId') {
+          throw new Error(`expected project.read with its HTTP identity, got ${JSON.stringify(rows)}`);
+        }
+        if (JSON.stringify(row.metadata).includes(project.id)) {
+          throw new Error(`metadata must carry the template, not the path: ${JSON.stringify(row.metadata)}`);
+        }
+      });
+
+      await ctx.step('the `project.` action prefix selects the labelled row', async () => {
+        const rows = await auditRows({ action: 'project.', project_id: project.id }, 'project.* rows');
+        const off = rows.filter((row) => !row.action.startsWith('project.'));
+        if (off.length > 0) throw new Error(`the prefix filter returned ${JSON.stringify(off.map((row) => row.action))}`);
+      });
+
+      await ctx.step("creating a group writes one row: the handler's own `iam.group.create` event", async () => {
+        const created = await owner.post(
+          '/v1/accounts/:accountId/iam/groups',
+          { name: ctx.fixtures.name('aud8-group') },
+          { params },
+        );
+        created.status(201);
+        groupId = created.json<{ group_id: string }>().group_id;
+        const requestId = required(created.header('x-request-id'), 'the request id header');
+        const rows = await auditRows({ request_id: requestId }, 'the group create row');
+        if (rows.length !== 1 || rows[0]?.action !== 'iam.group.create') {
+          throw new Error(`expected exactly one iam.group.create row, got ${JSON.stringify(rows.map((row) => row.action))}`);
+        }
+      });
+
+      await ctx.step('a request no endpoint matched is `api.route.unmatched`, never its raw path', async () => {
+        const missing = await owner.get('/v1/projects/:projectId/aud8-no-such-route', {
+          params: { projectId: project.id },
+        });
+        missing.status(404);
+        const requestId = required(missing.header('x-request-id'), 'the request id header');
+        const rows = await auditRows({ request_id: requestId }, 'the unmatched request row');
+        const row = rows[0];
+        if (!row || row.action !== 'api.route.unmatched' || row.http_status !== 404) {
+          throw new Error(`expected api.route.unmatched 404, got ${JSON.stringify(rows)}`);
+        }
+        if (JSON.stringify(row).includes('aud8-no-such-route')) {
+          throw new Error(`the unmatched row must not carry the raw path: ${JSON.stringify(row)}`);
+        }
+      });
+    } finally {
+      if (groupId) {
+        await owner.del('/v1/accounts/:accountId/iam/groups/:groupId', {
+          params: { ...params, groupId },
+        });
+      }
     }
   },
 );
