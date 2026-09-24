@@ -17,6 +17,7 @@
  */
 
 import type { ToolPart } from '@kortix/sdk';
+import { stripBashMetadata } from '@kortix/shared/tool-output';
 import { isHighlightLang, normalizeLanguage } from '@/lib/code-theme';
 
 export {
@@ -142,8 +143,7 @@ export function partOutput(part: ToolPart): string {
   const cached = OUTPUT_CACHE.get(part);
   if (cached && cached.state === part.state) return cached.output;
 
-  const output = (state.output ?? '')
-    .replace(/<bash_metadata>[\s\S]*?<\/bash_metadata>/g, '')
+  const output = stripBashMetadata(state.output ?? '')
     .replace(/<\/?(?:system_info|exit_code|stderr_note)>[\s\S]*?(?:<\/\w+>)?$/g, '')
     .trim();
 

@@ -47,6 +47,7 @@ import {
   MagnifyingGlassIcon as Search,
 } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
+import { stripBashMetadata } from '@kortix/shared/tool-output';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
@@ -524,8 +525,7 @@ export function partOutput(part: ToolPart): string {
   const cached = OUTPUT_CACHE.get(part);
   if (cached && cached.state === part.state) return cached.output;
 
-  const output = (part.state.output ?? '')
-    .replace(/<bash_metadata>[\s\S]*?<\/bash_metadata>/g, '')
+  const output = stripBashMetadata(part.state.output ?? '')
     .replace(/<\/?(?:system_info|exit_code|stderr_note)>[\s\S]*?(?:<\/\w+>)?$/g, '')
     .trim();
 

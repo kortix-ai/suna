@@ -15,6 +15,7 @@
     "./sandbox-runtime-artifact": "./src/sandbox-runtime-artifact.ts",
     "./connector-sections": "./src/connector-sections.ts",
     "./markdown-math": "./src/markdown-math.ts",
+    "./tool-output": "./src/tool-output/index.ts",
     "./session-fixture": "./src/session-fixture/index.ts"
   },
   "scripts": {
