@@ -6226,7 +6226,8 @@
       "line64JsxTextAllWorkerExecutionsAreCurrentlyPaused": "現在、すべてのWorker実行は一時停止されています。"
     },
     "componentsMarkdownUnifiedMarkdown": {
-      "line1115JsxTextNoContent": "コンテンツなし"
+      "line1115JsxTextNoContent": "コンテンツなし",
+      "loadRemoteImage": "{host} から画像を読み込む"
     },
     "componentsOnboardingBootOverlay": {
       "line135JsxTextPressEnterToBoot": "Enterキーを押して起動..."

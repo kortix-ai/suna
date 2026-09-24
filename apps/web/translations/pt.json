@@ -6226,7 +6226,8 @@
       "line64JsxTextAllWorkerExecutionsAreCurrentlyPaused": "Todas as execuções do Worker estão pausadas no momento."
     },
     "componentsMarkdownUnifiedMarkdown": {
-      "line1115JsxTextNoContent": "Sem conteúdo"
+      "line1115JsxTextNoContent": "Sem conteúdo",
+      "loadRemoteImage": "Carregar imagem de {host}"
     },
     "componentsOnboardingBootOverlay": {
       "line135JsxTextPressEnterToBoot": "Pressione Enter para iniciar..."

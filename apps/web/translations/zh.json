@@ -6226,7 +6226,8 @@
       "line64JsxTextAllWorkerExecutionsAreCurrentlyPaused": "所有 Worker 执行当前已暂停。"
     },
     "componentsMarkdownUnifiedMarkdown": {
-      "line1115JsxTextNoContent": "无内容"
+      "line1115JsxTextNoContent": "无内容",
+      "loadRemoteImage": "从 {host} 加载图片"
     },
     "componentsOnboardingBootOverlay": {
       "line135JsxTextPressEnterToBoot": "按 Enter 启动..."

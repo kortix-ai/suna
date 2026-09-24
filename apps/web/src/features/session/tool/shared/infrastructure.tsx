@@ -707,7 +707,11 @@ export function ToolOutputFallback({
   return (
     <ToolOutputCard copyText={output}>
       <div className={cn('text-sm', MD_FLUSH_CLASSES)}>
-        <UnifiedMarkdown content={output} isStreaming={isStreaming} />
+        <UnifiedMarkdown
+          content={output}
+          isStreaming={isStreaming}
+          remoteImages="click-to-load"
+        />
       </div>
     </ToolOutputCard>
   );
@@ -794,7 +798,7 @@ export function RawOutputBlock({ output, maxChars = 2000 }: { output: string; ma
     <ToolOutputCard copyText={output}>
       {isMarkdown ? (
         <div className={cn('text-sm', MD_FLUSH_CLASSES)}>
-          <UnifiedMarkdown content={text} />
+          <UnifiedMarkdown content={text} remoteImages="click-to-load" />
         </div>
       ) : (
         <pre className="text-muted-foreground font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap">

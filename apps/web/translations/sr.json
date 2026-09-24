@@ -6226,7 +6226,8 @@
       "line64JsxTextAllWorkerExecutionsAreCurrentlyPaused": "Сва Воркер извршења су тренутно паузирана."
     },
     "componentsMarkdownUnifiedMarkdown": {
-      "line1115JsxTextNoContent": "Нема садржаја"
+      "line1115JsxTextNoContent": "Нема садржаја",
+      "loadRemoteImage": "Учитај слику са {host}"
     },
     "componentsOnboardingBootOverlay": {
       "line135JsxTextPressEnterToBoot": "Притисните Enter да покренете..."

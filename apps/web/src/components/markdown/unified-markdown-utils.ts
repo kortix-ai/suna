@@ -56,6 +56,28 @@ export function isInternalUrl(href: string | undefined): boolean {
 }
 
 /**
+ * The host a markdown image would be fetched from, when that host is not this
+ * app. `null` for a same-origin or relative source, and for one the sandbox
+ * proxy rewrote (`proxiedSrc !== src`): that is the session's own file served
+ * through the API, not a third party.
+ *
+ * Without a window (server render, tests) every absolute http(s) URL counts as
+ * remote, so the answer never widens on the server.
+ */
+export function remoteImageHost(src: string, proxiedSrc: string = src): string | null {
+  if (proxiedSrc !== src) return null;
+  if (!/^https?:\/\//i.test(src)) return null;
+  let url: URL;
+  try {
+    url = new URL(src);
+  } catch {
+    return null;
+  }
+  if (typeof window !== 'undefined' && url.origin === window.location.origin) return null;
+  return url.host;
+}
+
+/**
  * Can this href be handed to `next/link` without crashing the prefetch path?
  *
  * Next.js' app-router `createPrefetchURL` (in `app-router.tsx`) does
