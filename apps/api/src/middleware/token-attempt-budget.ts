@@ -14,6 +14,12 @@ import { isTokenHashCached, isTokenValidated } from '../shared/token-hash';
  * never-seen tokens from it are answered 429 before any hashing. Tokens this
  * process already knows keep working from the same address, so a real client
  * behind a shared NAT is not locked out by a neighbour.
+ *
+ * A repeated token is hashed once and then served from the cache, so it counts
+ * at most once per cache lifetime: many sandboxes behind one provider egress
+ * address that keep retrying a revoked token do not exhaust the budget. The
+ * default (300 per minute) bounds one address to 5 scrypt computations per
+ * second on the thread pool.
  */
 
 const WINDOW_MS = 60_000;
@@ -26,7 +32,7 @@ function limit(): number {
   const raw = Number(
     (config as { KORTIX_UNKNOWN_TOKEN_ATTEMPTS_PER_MIN?: unknown }).KORTIX_UNKNOWN_TOKEN_ATTEMPTS_PER_MIN,
   );
-  return Number.isInteger(raw) && raw > 0 ? raw : 120;
+  return Number.isInteger(raw) && raw > 0 ? raw : 300;
 }
 
 function current(address: string, now: number): Window | null {

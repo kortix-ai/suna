@@ -708,7 +708,7 @@ const envSchema = z.object({
   KORTIX_TRUSTED_PROXY_HOPS: optInt(2),
   // Per client IP: Kortix bearer tokens that need a fresh hash (not seen by
   // this process recently). A token already validated here is not counted.
-  KORTIX_UNKNOWN_TOKEN_ATTEMPTS_PER_MIN: optInt(120),
+  KORTIX_UNKNOWN_TOKEN_ATTEMPTS_PER_MIN: optInt(300),
   KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT: optInt(3),
   KORTIX_TRIGGER_SCHEDULER_ENABLED: optBoolTrue,
   KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS: optInt(1_000),
