@@ -1,7 +1,7 @@
 /**
  * Attachment offload: inline image bytes out of OpenCode's SQLite transcript.
  *
- * The fixture mirrors opencode.db on Essentia box i67m4 (1.18.23, 2026-08-25):
+ * The fixture mirrors opencode.db on SampleCo box i67m4 (1.18.23, 2026-08-25):
  * `part` rows whose `data` JSON is a tool part with `state.attachments[]` of
  * file-shaped objects carrying base64 `data:` URLs.
  */

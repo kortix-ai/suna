@@ -53,8 +53,15 @@ export function evaluateOpenCodePressure(
   )
 }
 
+/** RAM-backed files at or above this share of memory are named in the guard's reason. */
+const NAMED_SHMEM_MIN_MB = 256
+
 export function formatOpenCodeMemoryGuardReason(snapshot: ResourceSnapshot, pct: number): string {
-  return `sandbox memory at ${pct}% (opencode ${snapshot.runtime?.rssMb ?? '?'} MB RSS of ` +
+  // A RAM-backed /tmp was half of a 4 GiB box when the guard fired on prod
+  // (2026-09-24), and the message named only OpenCode. Say what else holds it.
+  const shmem = snapshot.memory.shmemMb ?? 0
+  const files = shmem >= NAMED_SHMEM_MIN_MB ? `, ${shmem} MB in RAM-backed files such as /tmp,` : ''
+  return `sandbox memory at ${pct}% (opencode ${snapshot.runtime?.rssMb ?? '?'} MB RSS${files} of ` +
     `${snapshot.cgroup.maxMb ?? snapshot.memory.totalMb ?? '?'} MB): turn stopped before the kernel would kill opencode`
 }
 

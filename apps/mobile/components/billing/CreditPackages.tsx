@@ -2,7 +2,7 @@ import React, { memo, useState, useEffect } from 'react';
 import { View, Pressable, ActivityIndicator } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Sparkles, Zap } from 'lucide-react-native';
+import { SparkleIcon as Sparkles, LightningIcon as Zap } from '@/lib/icons';
 import { getOfferingById } from '@/lib/billing';
 import type { PurchasesPackage } from 'react-native-purchases';
 import { log } from '@/lib/logger';
@@ -51,7 +51,12 @@ const PackageCard = memo(({
     <View className="relative">
       {pkg.popular && (
         <View className="absolute -top-2 left-4 z-10 h-5 px-3 items-center justify-center rounded-full bg-primary">
-          <Text className="text-[11px] font-roobert-semibold text-primary-foreground tracking-wide">POPULAR</Text>
+          <Text
+            className="font-roobert-semibold text-primary-foreground tracking-wide"
+            style={{ fontSize: 11 }}
+          >
+            POPULAR
+          </Text>
         </View>
       )}
       <Pressable

@@ -16,6 +16,7 @@ import { checkBillingAdmission } from '../../billing/services/billing-gate';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { type SandboxProviderName, config } from '../../config';
 import { consumeProjectSessionCreateBudget } from '../../shared/rate-limit';
+import { RATE_LIMIT_EXCEEDED_ACTION } from '../../shared/rate-limit-audit';
 import { agentMayUseConnector } from '../../iam/agent-scope';
 import {
   loadSessionGrants,
@@ -120,6 +121,7 @@ import {
   resolvePlatformMetaSandbox,
 } from './platform-meta-agent';
 import { prebuildCompiledBootArtifacts } from '../../git-proxy/compiled-prebuild';
+import { resolveSessionPersonalOwner } from './personal-resources';
 import {
   resolveProjectSnapshotMode,
   resolveProjectSnapshotPinForSession,
@@ -239,7 +241,7 @@ export async function enforceConcurrentSessionCap(
   recordAuditEvent({
     accountId,
     actorUserId: userId,
-    action: `RATE_LIMIT ${request?.method ?? 'SYSTEM'} ${request?.path ?? 'project_session'}`,
+    action: RATE_LIMIT_EXCEEDED_ACTION,
     resourceType: 'project_session',
     resourceId: accountId,
     ip: request?.ip ?? null,
@@ -302,7 +304,7 @@ export async function checkConcurrentSessionCap(
       recordAuditEvent({
         accountId,
         actorUserId: userId,
-        action: `RATE_LIMIT ${request?.method ?? 'SYSTEM'} ${request?.path ?? 'project_session'}`,
+        action: RATE_LIMIT_EXCEEDED_ACTION,
         resourceType: 'project_session',
         resourceId: projectId,
         ip: request?.ip ?? null,
@@ -351,7 +353,7 @@ export async function checkConcurrentSessionCap(
       recordAuditEvent({
         accountId,
         actorUserId: userId,
-        action: `RATE_LIMIT ${request?.method ?? 'SYSTEM'} ${request?.path ?? 'project_session'}`,
+        action: RATE_LIMIT_EXCEEDED_ACTION,
         resourceType: 'project_session',
         resourceId: projectId,
         ip: request?.ip ?? null,
@@ -588,7 +590,16 @@ export async function buildSessionSandboxEnvVars(input: {
   // `input.userId` only if the row somehow isn't found (create races its own row
   // in some callers). The agent grant — not the human — remains the authority on
   // WHICH identifiers are eligible; this only picks the per-user override owner.
-  const secretsPrincipalUserId = sessionPolicyRow?.createdBy ?? input.userId;
+  //
+  // Spec 2026-09-22 §2.3 (agent-principal model, flag ON): the override owner
+  // is the session's on-behalf-of human, and only in a private session. A
+  // trigger/channel run or a shared session gets shared values only.
+  const secretsPrincipalUserId = await resolveSessionPersonalOwner({
+    projectId: input.projectId,
+    sessionId: input.sessionId,
+    accountId: input.accountId,
+    legacyUserId: sessionPolicyRow?.createdBy ?? input.userId,
+  });
 
   let runtimeSecrets: {
     env: Record<string, string>;

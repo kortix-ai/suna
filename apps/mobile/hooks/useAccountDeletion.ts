@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { API_URL } from '@/api/config';
 import { supabase } from '@/api/supabase';
+import { sessionExpiry } from '@/lib/auth/session-expiry-monitor';
 
 // Ported from web's use-account-deletion.ts (commit 325e62d).
 // Talks to the same backend routes mounted at /v1/account/*.
@@ -210,6 +211,7 @@ export function useDeleteAccountImmediately() {
             });
 
             // Sign out locally — the server has already deleted the account
+            sessionExpiry.disarm();
             supabase.auth.signOut().catch(() => {});
 
             // Clear all cached data

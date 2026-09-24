@@ -203,7 +203,7 @@ export function indicatesUpstreamDown(err: unknown): boolean {
  * other 400: the request is fine without that one field, so the caller can
  * strip it and try once more instead of failing the turn.
  *
- * Essentia 2026-08-25: Bedrock's `global.openai.gpt-5.6-sol` profile answered
+ * SampleCo 2026-08-25: Bedrock's `global.openai.gpt-5.6-sol` profile answered
  * `{"code":"unknown_parameter","param":"reasoning_effort"}` to a wire shape the
  * gateway believed was right (#6879; corrected to the nested `reasoning.effort`
  * by #6893). Whatever the next wrong claim is, it must cost one retry, never

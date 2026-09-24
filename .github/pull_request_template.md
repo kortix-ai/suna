@@ -34,6 +34,7 @@ Closes #
 - [ ] Authorization checks are in place for any new/changed endpoints (IAM / access control)
 - [ ] User input is validated (e.g. Zod) and output is safe
 - [ ] No sensitive data (tokens, PII, secrets) is written to logs
+- [ ] No customer names, people's names, emails, or real prod IDs in the code, commits, or this PR text (AGENTS.md → "NEVER write customer data or PII")
 - [ ] DB schema / migration changes are reviewed and reversible
 - [ ] Touches auth / IAM / crypto / billing / migrations → requested the relevant code owner
 

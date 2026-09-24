@@ -49,10 +49,9 @@ export function createInternalGatewayRoutes() {
     return c.json({ principal: await authenticatePrincipal(token) });
   });
 
-  // Combined gate (auth + billing + budget) — lets the standalone gateway fold
-  // three sequential RPCs into one on the chat-completions hot path.
+  // Combined authentication + budget gate. Billing runs after model resolution.
   app.post('/authorize', async (c) => {
-    const { token } = await c.req.json();
+    const { token, deferBilling } = await c.req.json();
     if (typeof token !== 'string' || !token) {
       return c.json({
         ok: false,
@@ -61,7 +60,7 @@ export function createInternalGatewayRoutes() {
         message: 'Invalid token',
       });
     }
-    return c.json(await authorizeRequest(token));
+    return c.json(await authorizeRequest(token, { deferBilling: deferBilling === true }));
   });
 
   app.post('/resolve-upstream', async (c) => {
@@ -131,7 +130,7 @@ export function createInternalGatewayRoutes() {
       const catalog = await servableProjectCatalog({
         projectId: p.projectId,
         accountId: p.accountId,
-        principalUserId: p.userId,
+        principalUserId: p.personalUserId === undefined ? p.userId : p.personalUserId,
       });
       return c.json({ models: catalog.models });
     }
@@ -154,6 +153,9 @@ export function createInternalGatewayRoutes() {
     } catch (err) {
       return c.json({
         active: false,
+        reason: typeof (err as { reason?: unknown })?.reason === 'string'
+          ? (err as { reason: string }).reason
+          : 'subscription_required',
         message: err instanceof Error ? err.message : 'subscription required',
       });
     }

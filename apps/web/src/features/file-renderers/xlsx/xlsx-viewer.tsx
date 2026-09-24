@@ -19,7 +19,6 @@ import {
   CaretRightIcon as ChevronRight,
   MinusCircleIcon as CircleMinus,
   PlusCircleIcon as CirclePlus,
-  DownloadIcon as Download,
   DotsThreeIcon as Ellipsis,
   MagnifyingGlassIcon as Search,
   UploadIcon as Upload,
@@ -51,6 +50,7 @@ import {
   SelectValue,
 } from '@/features/file-renderers/shared/select-compat';
 import { Spinner } from '@/features/file-renderers/shared/spinner';
+import { ViewerDownloadButton } from '@/features/file-renderers/shared/viewer-download-button';
 import { ViewerFileName } from '@/features/file-renderers/shared/viewer-file-name';
 import { cn } from '@/lib/utils';
 
@@ -433,27 +433,20 @@ function ViewerLoadingSurface({ showSpinner = true }: { showSpinner?: boolean })
   );
 }
 
+/**
+ * Upload is the only action left behind a menu here. Download is a visible
+ * button (`ViewerDownloadButton`) in the toolbar itself, so a menu that would
+ * hold nothing but Download is not rendered at all.
+ */
 function WorkbookFileActionsMenu({
-  isDark,
-  onDownload,
-  onIsDarkChange,
   onUploadClick,
-  showDownloadButton,
-  showNightRenderToggle = false,
   showUploadButton,
 }: {
-  isDark?: boolean;
-  onDownload?: () => void;
-  onIsDarkChange?: (checked: boolean) => void;
   onUploadClick: () => void;
-  showDownloadButton: boolean;
-  showNightRenderToggle?: boolean;
   showUploadButton: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const showThemeControl = showNightRenderToggle && Boolean(onIsDarkChange);
-  const showFileActions = (showDownloadButton && onDownload) || showUploadButton;
-  if (!showThemeControl && !showFileActions) return null;
+  if (!showUploadButton) return null;
 
   return (
     <DropdownMenu>
@@ -469,18 +462,10 @@ function WorkbookFileActionsMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className={cn('w-52', XLSX_DROPDOWN_Z_INDEX_CLASS)}>
-        {showDownloadButton && onDownload ? (
-          <DropdownMenuItem onClick={onDownload}>
-            <Download className="size-4" />
-            {tI18nComplete.raw('textd6eafe823591')}
-          </DropdownMenuItem>
-        ) : null}
-        {showUploadButton ? (
-          <DropdownMenuItem onClick={onUploadClick}>
-            <Upload className="size-4" />
-            {tI18nComplete.raw('text865e89de78d9')}
-          </DropdownMenuItem>
-        ) : null}
+        <DropdownMenuItem onClick={onUploadClick}>
+          <Upload className="size-4" />
+          {tI18nComplete.raw('text865e89de78d9')}
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -867,18 +852,16 @@ function WorkbookToolbar({
               {toolbarActions}
             </>
           ) : null}
-          {(showDownloadButton && onDownload) || showUploadButton || showNightRenderToggle ? (
+          {(showDownloadButton && onDownload) || showUploadButton ? (
             <>
               <Separator orientation="vertical" className="mx-1 h-4 self-center" />
               <WorkbookFileActionsMenu
-                isDark={isDark}
-                onDownload={onDownload}
-                onIsDarkChange={onIsDarkChange}
                 onUploadClick={onUploadClick}
-                showDownloadButton={showDownloadButton}
-                showNightRenderToggle={showNightRenderToggle}
                 showUploadButton={showUploadButton}
               />
+              {showDownloadButton && onDownload ? (
+                <ViewerDownloadButton onDownload={onDownload} />
+              ) : null}
             </>
           ) : null}
         </div>
@@ -908,7 +891,6 @@ function WorkbookStandaloneToolbar({
               ) : null}
               <WorkbookFileActionsMenu
                 onUploadClick={onUploadClick}
-                showDownloadButton={false}
                 showUploadButton={showUploadButton}
               />
             </>

@@ -53,7 +53,7 @@ describe('repairPromptWireId', () => {
   });
 
   test('a client id at-or-below the newest known message is RE-MINTED above it', () => {
-    // The Essentia case: a steering prompt into a continuously-streaming child
+    // The SampleCo case: a steering prompt into a continuously-streaming child
     // session, minted by a tab whose store held none of that child's messages,
     // fell back to the 2-minute backdate and sorted below the tip. OpenCode
     // read it as already answered and the turn never ran.
@@ -95,5 +95,17 @@ describe('repairPromptWireId', () => {
     const result = repairPromptWireId({ body, newestKnownTime: null, nowMs: NOW });
     expect(result.outcome).toBe('none');
     expect(result.body).toBe(body);
+  });
+
+  test('a far-future client id (the pre-fix CLI shape) is RE-MINTED, even with no transcript read', () => {
+    // `msg_1a0d…` sits ~40 days ahead of the clock. Kept, it renders every
+    // later turn ABOVE this prompt. It is positive evidence on its own.
+    const nowMs = Date.parse('2026-09-24T16:11:24.000Z');
+    const body = enc({ messageID: 'msg_1a0d42f86f80SyntheticCli03', parts: [] });
+    const result = repairPromptWireId({ body, newestKnownTime: null, nowMs });
+    expect(result.outcome).toBe('reminted');
+    const forwarded = dec(result.body).messageID as string;
+    expect(forwarded).toMatch(WIRE_MESSAGE_ID);
+    expect(forwarded.startsWith('msg_0d42')).toBe(true);
   });
 });

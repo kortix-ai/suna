@@ -2,13 +2,19 @@ import { upstreamFetch } from '../upstream-fetch';
 import type {
   AuthedPrincipal,
   AuthorizeResult,
+  GatewayAttemptFailure,
   GatewayHooks,
   GatewayLogger,
   TokenCounts,
   UpstreamDescriptor,
   UsageEvent,
 } from '../domain';
-import { GatewayResolutionError, UpstreamHttpError, isUnknownParameterRejection } from '../errors';
+import {
+  ClientAbortError,
+  GatewayResolutionError,
+  UpstreamHttpError,
+  isUnknownParameterRejection,
+} from '../errors';
 import { type FetchImpl, callUpstream } from '../http';
 import { noteBedrockOpenAiRejectsReasoningEffort } from '../transports/ai-sdk/request';
 import { resolveTransportKind } from '../transports/route-kind';
@@ -17,6 +23,14 @@ import { calculateCost } from '../usage/pricing';
 import { clampRetryAfterSeconds, gatewayErrorResponse } from './error-response';
 import { applyGenerationDefaults } from './generation-defaults';
 import { DEFAULT_IMAGE_WINDOW, type ImageWindowOptions, applyImageWindow } from './image-window';
+import {
+  publicPayload,
+  publicResponseHeaders,
+  publicSseLines,
+  publicUpstreamError,
+  shownModel,
+  shownProvider,
+} from './public-identity';
 import { relayStream } from './streaming';
 import { createTraceEmitter } from './trace';
 
@@ -158,13 +172,11 @@ const ADMISSION_UNAVAILABLE = 'admission_unavailable';
 
 async function authorize(hooks: GatewayHooks, token: string): Promise<AuthorizeResult> {
   if (hooks.authorize) return hooks.authorize(token);
-  let principal = await hooks.authenticate(token);
+  const principal = await hooks.authenticate(token);
   if (!principal) {
     return { ok: false, status: 401, errorCode: 'invalid_token', message: 'Invalid token' };
   }
   try {
-    const billing = await hooks.assertBillingActive(principal.accountId);
-    if (billing?.holdUsd) principal = { ...principal, billingHold: { amountUsd: billing.holdUsd } };
     await hooks.assertBudget?.(principal);
     return { ok: true, principal };
   } catch (error) {
@@ -341,7 +353,7 @@ export async function handleChatCompletions(
       suggestion: 'Check authentication, billing, and budget settings.',
     });
   }
-  const principal = admission.principal;
+  let principal = admission.principal;
 
   // `body` is the ONLY reference to the parsed request graph from here on.
   // It is nulled the moment dispatch has taken it (below), so a slow
@@ -439,6 +451,26 @@ export async function handleChatCompletions(
     });
   }
 
+  // Resolve the payee before touching the wallet. BYOK descriptors use the
+  // customer's provider account and must never create a Kortix hold or debit.
+  if (descriptor.billingMode !== 'none' && !principal.billingHold) {
+    try {
+      const billing = await hooks.assertBillingActive(principal.accountId);
+      if (billing?.holdUsd) principal = { ...principal, billingHold: { amountUsd: billing.holdUsd } };
+    } catch (error) {
+      const reason = (error as { reason?: unknown })?.reason;
+      return gatewayErrorResponse(402, {
+        message: error instanceof Error ? error.message : 'Billing inactive',
+        code: typeof reason === 'string' ? reason : 'subscription_required',
+        provider: shownProvider(descriptor),
+        requestedModel,
+        resolvedModel: shownModel(descriptor, routedModel),
+        requestId: id,
+        suggestion: 'Check your subscription or add credits, then retry.',
+      });
+    }
+  }
+
   const streaming = body.stream === true;
   if (streaming) body.stream_options = { include_usage: true };
   const dispatchFetch = withUpstreamHeadersTimeout(
@@ -451,7 +483,9 @@ export async function handleChatCompletions(
   // The descriptor actually served — swapped for its inference-profile twin
   // when Bedrock refuses the bare id (see the retry below).
   let served: UpstreamDescriptor = descriptor;
-  let upstream: Response;
+  // Assigned by the first dispatch, or by a failover candidate when the first
+  // dispatch threw (`dispatchError`); the failover block rethrows otherwise.
+  let upstream!: Response;
   // The one retry this handler performs itself for a PARAMETER: an upstream
   // that refuses `reasoning_effort` (not the request) gets the same request
   // once more without it. Kept only while such a retry is possible — the
@@ -475,6 +509,45 @@ export async function handleChatCompletions(
   const poolCandidates = served.poolSecretId
     ? resolvedCandidates.filter((candidate) => Boolean(candidate.poolSecretId) && candidate.provider === served.provider)
     : [];
+  // Provider failover (descriptor.failover): the same request moves to the
+  // next opted-in candidate when a dispatch throws or answers non-2xx. Only a
+  // failover primary reaches failover candidates, so BYOK keeps one upstream.
+  const failoverCandidates = descriptor.failover
+    ? resolvedCandidates.slice(1).filter((candidate) => candidate.failover)
+    : [];
+  const failoverBody = failoverCandidates.length ? structuredClone(body) : null;
+  const attemptFailures: GatewayAttemptFailure[] = [];
+  let dispatchError: unknown;
+  const clientGone = (error: unknown): boolean =>
+    error instanceof ClientAbortError || Boolean(req.signal?.aborted);
+  const noteFailure = async (candidate: UpstreamDescriptor): Promise<void> => {
+    let status: number | undefined;
+    let message: string;
+    if (dispatchError !== undefined) {
+      status = dispatchError instanceof UpstreamHttpError ? dispatchError.status : undefined;
+      message = dispatchError instanceof Error ? dispatchError.message : String(dispatchError);
+    } else {
+      status = upstream.status;
+      message = (await upstream.text().catch(() => '')).slice(0, 500);
+    }
+    // Server log: the one place the upstream identity and text are kept.
+    logger.warn(
+      `[gateway] ${id}: ${candidate.provider} failed for ${candidate.resolvedModel ?? routedModel} (${status ?? 'network error'}); failing over: ${message.slice(0, 300)}`,
+    );
+    const shown = candidate.publicProvider
+      ? publicUpstreamError(status ?? 0, message, routedModel)
+      : null;
+    attemptFailures.push({
+      attempt: attemptFailures.length + 1,
+      provider: shownProvider(candidate),
+      routeModel: routedModel,
+      resolvedModel: shownModel(candidate, routedModel),
+      stage: 'dispatch',
+      status,
+      code: shown ? shown.code : status ?? 'network_error',
+      message: shown ? shown.message : message,
+    });
+  };
   let earliestPoolRetryAt = Infinity;
   const noteRateLimit = async (candidate: UpstreamDescriptor, response: Response): Promise<void> => {
     const seconds = clampRetryAfterSeconds(response.headers.get('retry-after')) ?? 30;
@@ -490,7 +563,7 @@ export async function handleChatCompletions(
     }
   };
   let attempts = 1;
-  const candidatesTried = [served.provider];
+  const candidatesTried = [shownProvider(served)];
   try {
     const dispatch = callUpstream(body, served, {
       fetchImpl: dispatchFetch,
@@ -542,11 +615,13 @@ export async function handleChatCompletions(
         }
         if (!retried) throw lastError;
         upstream = retried;
+      } else if (failoverBody && !clientGone(error)) {
+        dispatchError = error;
       } else {
         throw error;
       }
     }
-    if (poolRetryBody && upstream.status === 429) {
+    if (poolRetryBody && dispatchError === undefined && upstream.status === 429) {
       await noteRateLimit(served, upstream);
       for (const candidate of poolCandidates.slice(1)) {
         attempts += 1;
@@ -571,23 +646,74 @@ export async function handleChatCompletions(
         upstream = new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers });
       }
     }
+    if (failoverBody && (dispatchError !== undefined || !upstream.ok)) {
+      for (const candidate of failoverCandidates) {
+        await noteFailure(served);
+        dispatchError = undefined;
+        attempts += 1;
+        candidatesTried.push(shownProvider(candidate));
+        served = candidate;
+        try {
+          upstream = await callUpstream(structuredClone(failoverBody), candidate, {
+            fetchImpl: dispatchFetch,
+            signal: req.signal,
+            requestId: id,
+          });
+        } catch (error) {
+          if (clientGone(error)) throw error;
+          dispatchError = error;
+          continue;
+        }
+        if (upstream.ok) break;
+      }
+      if (dispatchError !== undefined) throw dispatchError;
+    }
     retryWithoutEffort = null;
   } catch (error) {
     refundHold(hooks, principal, logger);
+    const errorText =
+      error instanceof UpstreamHttpError
+        ? `${error.message} ${error.body}`
+        : error instanceof Error ? error.message : String(error);
+    const publicError = served.publicProvider
+      ? publicUpstreamError(error instanceof UpstreamHttpError ? error.status : 0, errorText, routedModel)
+      : null;
+    if (publicError) {
+      logger.warn(
+        `[gateway] ${id}: ${served.provider} failed for ${served.resolvedModel ?? routedModel}: ${errorText.slice(0, 300)}`,
+      );
+    }
     emit({
       ...identity(principal),
       requestedModel,
-      resolvedModel: served.resolvedModel ?? routedModel,
-      provider: served.provider,
+      resolvedModel: shownModel(served, routedModel),
+      provider: shownProvider(served),
+      ...(served.publicProvider
+        ? { upstream: { provider: served.provider, model: served.resolvedModel ?? routedModel } }
+        : {}),
       billingMode: served.billingMode,
       streaming,
-      status: error instanceof UpstreamHttpError ? error.status : 502,
+      status: publicError?.status ?? (error instanceof UpstreamHttpError ? error.status : 502),
       ok: false,
-      errorCode: 'upstream_error',
-      errorMessage: error instanceof Error ? error.message : String(error),
+      errorCode: publicError?.code ?? 'upstream_error',
+      errorMessage: publicError?.message ?? (error instanceof Error ? error.message : String(error)),
       attempts,
       candidatesTried,
+      attemptFailures,
     });
+    if (publicError) {
+      return gatewayErrorResponse(publicError.status, {
+        message: publicError.message,
+        code: publicError.code,
+        provider: shownProvider(served),
+        requestedModel,
+        resolvedModel: routedModel,
+        requestId: id,
+        suggestion: publicError.suggestion,
+        retryAfterSeconds:
+          error instanceof UpstreamHttpError ? clampRetryAfterSeconds(error.headers?.['retry-after']) : undefined,
+      });
+    }
     if (error instanceof UpstreamHttpError) return rawProviderError(error);
     // A headers timeout is "try again", not "this request is malformed".
     const timedOut = (error as { name?: unknown })?.name === 'TimeoutError' && !req.signal?.aborted;
@@ -612,6 +738,17 @@ export async function handleChatCompletions(
     });
   }
 
+  // Gateway-authored stream endings; their text names no upstream.
+  const GATEWAY_STREAM_CODES = new Set(['client_aborted', 'upstream_inactivity_timeout']);
+  const publicStreamError = (streamError: SseErrorFrame): SseErrorFrame => {
+    if (GATEWAY_STREAM_CODES.has(String(streamError.code))) return streamError;
+    const code = Number(streamError.code);
+    const classified = publicUpstreamError(Number.isFinite(code) ? code : 0, streamError.message ?? '', routedModel);
+    return { message: classified.message, code: classified.code };
+  };
+  // Set when a managed-model upstream answered non-2xx: the trace records the
+  // public error the client received.
+  let publicFailure: { status: number; code: string; message: string } | null = null;
   const settle = async (
     usage: ExtractedUsage | null,
     streamError: SseErrorFrame | null = null,
@@ -638,8 +775,11 @@ export async function handleChatCompletions(
         actorUserId: principal.userId,
         projectId: principal.projectId,
         sessionId: principal.sessionId,
-        provider: served.provider,
-        model: served.resolvedModel ?? routedModel,
+        provider: shownProvider(served),
+        model: shownModel(served, routedModel),
+        ...(served.publicProvider
+          ? { upstream: { provider: served.provider, model: served.resolvedModel ?? routedModel } }
+          : {}),
         upstreamCost,
         finalCost,
         billingMode: served.billingMode,
@@ -648,24 +788,52 @@ export async function handleChatCompletions(
         ...(principal.billingHold ? { billingHoldUsd: principal.billingHold.amountUsd } : {}),
       });
     }
+    const shownStreamError =
+      streamError && served.publicProvider ? publicStreamError(streamError) : streamError;
     emit({
       ...identity(principal),
       requestedModel,
-      resolvedModel: served.resolvedModel ?? routedModel,
-      provider: served.provider,
+      resolvedModel: shownModel(served, routedModel),
+      provider: shownProvider(served),
+      ...(served.publicProvider
+        ? { upstream: { provider: served.provider, model: served.resolvedModel ?? routedModel } }
+        : {}),
       billingMode: served.billingMode,
       streaming,
-      status: streamError ? streamErrorTraceStatus(streamError) : upstream.status,
+      status: publicFailure?.status ?? (streamError ? streamErrorTraceStatus(streamError) : upstream.status),
       ok: !streamError && upstream.ok,
-      errorCode: streamError ? String(streamError.code ?? 'upstream_stream_error') : undefined,
-      errorMessage: streamError?.message,
+      errorCode:
+        publicFailure?.code ??
+        (shownStreamError ? String(shownStreamError.code ?? 'upstream_stream_error') : undefined),
+      errorMessage: publicFailure?.message ?? shownStreamError?.message,
       attempts,
       candidatesTried,
+      attemptFailures,
       usage: counts,
       upstreamCost,
       finalCost,
     });
   };
+
+  if (served.publicProvider && !upstream.ok) {
+    const upstreamText = await upstream.text().catch(() => '');
+    logger.warn(
+      `[gateway] ${id}: ${served.provider} ${upstream.status} for ${served.resolvedModel ?? routedModel}: ${upstreamText.slice(0, 300)}`,
+    );
+    const classified = publicUpstreamError(upstream.status, upstreamText, routedModel);
+    publicFailure = classified;
+    await settle(null);
+    return gatewayErrorResponse(classified.status, {
+      message: classified.message,
+      code: classified.code,
+      provider: shownProvider(served),
+      requestedModel,
+      resolvedModel: routedModel,
+      requestId: id,
+      suggestion: classified.suggestion,
+      retryAfterSeconds: clampRetryAfterSeconds(upstream.headers.get('retry-after')),
+    });
+  }
 
   if (streaming && upstream.body) {
     return new Response(
@@ -675,8 +843,16 @@ export async function handleChatCompletions(
         logger,
         signal: req.signal,
         settle,
+        ...(served.publicProvider
+          ? { rewriteLines: (text: string) => publicSseLines(text, routedModel) }
+          : {}),
       }),
-      { status: upstream.status, headers: passthroughHeaders(upstream.headers) },
+      {
+        status: upstream.status,
+        headers: served.publicProvider
+          ? publicResponseHeaders(upstream.headers)
+          : passthroughHeaders(upstream.headers),
+      },
     );
   }
 
@@ -689,6 +865,17 @@ export async function handleChatCompletions(
     }
   })();
   await settle(extractUsageFromJson(data));
+  if (served.publicProvider) {
+    const publicText =
+      data && typeof data === 'object' && !Array.isArray(data)
+        ? JSON.stringify(publicPayload(data as Record<string, unknown>, routedModel))
+        : responseText;
+    return new Response(publicText, {
+      status: upstream.status,
+      statusText: upstream.statusText,
+      headers: publicResponseHeaders(upstream.headers),
+    });
+  }
   return new Response(responseText, {
     status: upstream.status,
     statusText: upstream.statusText,

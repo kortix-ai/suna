@@ -14,7 +14,7 @@ import { AppHostingProvider } from './hosting';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { enqueueCurrentAppRuntime } from './deployment-worker';
 import { resolveAppHost, type ResolvedAppHost } from './hostnames';
-import { validateAccountToken } from '../repositories/account-tokens';
+import { validateAccountToken, validateAccountTokenById } from '../repositories/account-tokens';
 import { validateServiceAccountToken } from '../repositories/service-accounts';
 import { isAccountToken, isServiceAccountToken } from '../shared/crypto';
 import {
@@ -32,15 +32,22 @@ import {
   normalizeViewerTokenScope,
   resolveAppViewerIdentity,
 } from './viewer';
+import { annotateAuditEvent, bindAuditPrincipal } from '../shared/audit-scope';
+import type { AgentGrant } from '@kortix/db';
 import {
+  agentPrincipalEnabled,
   appAccessCookie,
   appAccessCookieName,
+  appAccessibleToAgentSession,
   appAccessibleToUser,
   appAccessSecret,
   cookieValue,
   createAppAccessToken,
+  isAppAgentAssertion,
   verifyAppAccessToken,
+  verifyAppAgentAssertion,
   type AppAccessMode,
+  type AppAgentSessionPrincipal,
 } from './access';
 
 const EDGE_HOST_HEADER = APP_EDGE_HEADERS.host;
@@ -51,7 +58,7 @@ const ACTIVITY_LEASE_MS = 60_000;
 // The `frame-ancestors` directive for App responses. It decides which origins
 // may embed an App in an iframe — the dashboard's App preview does exactly this.
 // Managed cloud embeds from kortix.com; a SELF-HOST box embeds from the
-// operator's OWN frontend origin (e.g. https://essentia.kortix.cloud), which is
+// operator's OWN frontend origin (e.g. https://sampleco.kortix.cloud), which is
 // NOT kortix.com, so the browser would block the preview. Build the allowlist
 // dynamically to ALWAYS include the configured frontend origin (config.FRONTEND_URL)
 // plus a wildcard for its domain, so the preview frames reliably on any
@@ -74,7 +81,7 @@ function appFrameAncestors(): string {
     if ((u.protocol === 'https:' || u.protocol === 'http:') && !isLocal) {
       parts.add(u.origin);
       // Also allow any sibling subdomain of the operator's registrable-ish
-      // domain (drop the leftmost label): essentia.kortix.cloud -> *.kortix.cloud.
+      // domain (drop the leftmost label): sampleco.kortix.cloud -> *.kortix.cloud.
       const labels = host.split('.');
       if (labels.length >= 3 && !/^\d+$/.test(labels[labels.length - 1])) {
         parts.add(`${u.protocol}//*.${labels.slice(1).join('.')}`);
@@ -360,17 +367,26 @@ type AppAccessRow = {
   accountId: string;
   projectId: string;
   name: string;
+  /** The App slug — what an agent's `apps` grant lists (spec §2.5). */
+  slug?: string | null;
   accessMode: string;
   accessPasswordHash: string | null;
   accessRevision: number;
   createdBy: string | null;
   updatedAt: Date;
+  /** The project's `agent_principal` flag. Absent = off (today's model). */
+  agentPrincipal?: boolean;
 };
 
 type AppUserAccessVerifier = (
   app: AppAccessRow,
   userId: string,
   actingTokenId?: string,
+) => Promise<boolean>;
+
+type AppAgentAccessVerifier = (
+  app: AppAccessRow,
+  principal: AppAgentSessionPrincipal,
 ) => Promise<boolean>;
 
 async function accessTokenAuthorizesRequest(
@@ -453,33 +469,144 @@ interface AppBearerPrincipal {
    * B, because token-scope is only evaluated when this id is supplied.
    */
   actingTokenId: string;
+  /** Set for a session token (`account_tokens.session_id`). */
+  sessionId?: string | null;
+  /** The token's project binding. */
+  projectId?: string | null;
+  /** The running agent's grant, for an agent-session token. */
+  agentGrant?: AgentGrant | null;
+  /** A direct service-account bearer: `userId` is the service account's id. */
+  serviceAccount?: boolean;
 }
 
-async function kortixCredentialUser(request: Request): Promise<AppBearerPrincipal | null> {
-  const header = request.headers.get('authorization') ?? '';
-  if (!/^bearer /i.test(header)) return null;
-  const token = header.slice(7).trim();
-  if (!token) return null;
+/**
+ * The header that carries a Kortix credential for the App gate WITHOUT taking
+ * `Authorization` from the App (spec 2026-09-22 §2.5). An App that authorizes
+ * its own API with `Authorization: Bearer <app key>` keeps that header; the
+ * caller's Kortix identity travels here. `appUpstreamHeaders` deletes it, so
+ * the App never sees it.
+ */
+export const APP_AUTHORIZATION_HEADER = 'x-kortix-app-authorization';
 
+/**
+ * Bearer values a request offers the gate, in the order they are tried:
+ * `X-Kortix-App-Authorization` first (it exists only for the gate), then
+ * `Authorization` (which may equally be the App's own key — a value that is
+ * not a Kortix credential resolves to no identity).
+ */
+export function appCredentialFromRequest(
+  request: Request,
+  opts: { agentPrincipal: boolean },
+): Array<{ token: string; via: 'x-kortix-app-authorization' | 'authorization' }> {
+  const out: Array<{ token: string; via: 'x-kortix-app-authorization' | 'authorization' }> = [];
+  // Flag OFF = today's gate byte for byte: only `Authorization` is read, so a
+  // bearer or a connector assertion in `X-Kortix-App-Authorization` is ignored
+  // (the header is still deleted before the request reaches the App).
+  const headers = opts.agentPrincipal
+    ? ([APP_AUTHORIZATION_HEADER, 'authorization'] as const)
+    : (['authorization'] as const);
+  for (const via of headers) {
+    const header = request.headers.get(via) ?? '';
+    if (!/^bearer /i.test(header)) continue;
+    const token = header.slice(7).trim();
+    if (token) out.push({ token, via });
+  }
+  return out;
+}
+
+function principalFromTokenResult(
+  pat: Awaited<ReturnType<typeof validateAccountToken>>,
+): AppBearerPrincipal | null {
+  return pat.isValid && pat.userId && pat.tokenId
+    ? {
+        userId: pat.userId,
+        actingTokenId: pat.tokenId,
+        sessionId: pat.sessionId ?? null,
+        projectId: pat.projectId ?? null,
+        agentGrant: pat.agentGrant ?? null,
+      }
+    : null;
+}
+
+async function resolveOneCredential(
+  token: string,
+  via: 'x-kortix-app-authorization' | 'authorization',
+  app: Pick<AppAccessRow, 'appId' | 'projectId' | 'agentPrincipal'>,
+): Promise<AppBearerPrincipal | null> {
   try {
+    if (isAppAgentAssertion(token)) {
+      // Minted only by the connector gateway, only for this header, and
+      // honoured only on an `agent_principal` project.
+      if (via !== APP_AUTHORIZATION_HEADER || !app.agentPrincipal) return null;
+      const verified = verifyAppAgentAssertion(token, { appId: app.appId, projectId: app.projectId });
+      if (!verified) return null;
+      const principal = principalFromTokenResult(await validateAccountTokenById(verified.tokenId));
+      // An assertion stands for a live SESSION token of this App's project.
+      if (!principal?.sessionId || principal.projectId !== app.projectId) return null;
+      return principal;
+    }
     if (isServiceAccountToken(token)) {
       const account = await validateServiceAccountToken(token);
       // A direct service-account bearer has no `account_tokens` row; its own
       // id is the acting id, and the engine scopes it by its policies.
       return account.isValid && account.serviceAccountId
-        ? { userId: account.serviceAccountId, actingTokenId: account.serviceAccountId }
+        ? {
+            userId: account.serviceAccountId,
+            actingTokenId: account.serviceAccountId,
+            serviceAccount: true,
+          }
         : null;
     }
     if (isAccountToken(token)) {
-      const pat = await validateAccountToken(token);
-      return pat.isValid && pat.userId && pat.tokenId
-        ? { userId: pat.userId, actingTokenId: pat.tokenId }
-        : null;
+      return principalFromTokenResult(await validateAccountToken(token));
     }
   } catch {
     // A malformed or revoked credential is "no identity", not a 500.
   }
   return null;
+}
+
+async function kortixCredentialUser(
+  request: Request,
+  app: Pick<AppAccessRow, 'appId' | 'projectId' | 'agentPrincipal'>,
+): Promise<AppBearerPrincipal | null> {
+  for (const { token, via } of appCredentialFromRequest(request, { agentPrincipal: Boolean(app.agentPrincipal) })) {
+    const principal = await resolveOneCredential(token, via, app);
+    if (principal) return principal;
+  }
+  return null;
+}
+
+/**
+ * True when this principal is judged as an AGENT (spec §2.5) rather than as
+ * the human behind the token: a session token carrying an agent grant, on a
+ * project with the `agent_principal` flag on. Everything else — flag off, a
+ * null grant (ungoverned project), a laptop PAT, a service account — keeps the
+ * existing member/group decision.
+ */
+function judgedAsAgent(
+  app: AppAccessRow,
+  principal: AppBearerPrincipal,
+): principal is AppBearerPrincipal & { sessionId: string; agentGrant: AgentGrant } {
+  return Boolean(app.agentPrincipal && principal.sessionId && principal.agentGrant);
+}
+
+async function credentialMayOpenApp(
+  app: AppAccessRow,
+  principal: AppBearerPrincipal,
+  verifyUserAccess: AppUserAccessVerifier,
+  verifyAgentAccess: AppAgentAccessVerifier,
+): Promise<boolean> {
+  if (judgedAsAgent(app, principal)) {
+    return verifyAgentAccess(app, {
+      userId: principal.userId,
+      actingTokenId: principal.actingTokenId,
+      sessionId: principal.sessionId,
+      projectId: principal.projectId ?? null,
+      agentGrant: principal.agentGrant,
+    });
+  }
+  return verifyUserAccess(app, principal.userId, principal.actingTokenId);
 }
 
 /**
@@ -594,12 +721,20 @@ export async function appViewerEndpointResponse(
     );
   }
   let userId = resolveAppViewerUserId(request, url, app);
+  let agentViewer = false;
   if (!userId && app.accessMode !== 'password') {
     // A server-side caller inside the App can present its own Kortix credential
     // instead of a browser cookie. It still has to pass the App's access policy.
-    const principal = await kortixCredentialUser(request);
-    if (principal && (await appAccessibleToUser(app, principal.userId, principal.actingTokenId))) {
+    const principal = await kortixCredentialUser(request, app);
+    if (
+      principal &&
+      (await credentialMayOpenApp(app, principal, appAccessibleToUser, appAccessibleToAgentSession))
+    ) {
       userId = principal.userId;
+      // An agent session is admitted as the AGENT. Minting an `api` viewer
+      // token would hand it the launching human's own App authority, so it
+      // gets the identity and no token.
+      agentViewer = judgedAsAgent(app, principal);
     }
   }
   if (!userId) {
@@ -617,10 +752,12 @@ export async function appViewerEndpointResponse(
   }
   const [identity, minted] = await Promise.all([
     resolveAppViewerIdentity(userId),
-    mintAppViewerToken(
-      { appId: app.appId, accountId: app.accountId, name: app.name, viewerTokenScope: scope },
-      userId,
-    ),
+    agentViewer
+      ? Promise.resolve(null)
+      : mintAppViewerToken(
+          { appId: app.appId, accountId: app.accountId, name: app.name, viewerTokenScope: scope },
+          userId,
+        ),
   ]);
   return Response.json(
     {
@@ -638,14 +775,61 @@ export async function appViewerEndpointResponse(
   );
 }
 
+/**
+ * The audit actor for a Kortix credential presented to the App gate. A
+ * service-account bearer's `userId` is the service account, never a user;
+ * an agent-session token is the agent.
+ */
+function bindAppBearerPrincipal(app: AppAccessRow, principal: AppBearerPrincipal): void {
+  if (principal.serviceAccount) {
+    bindAuditPrincipal({
+      actorType: 'service_account',
+      actorUserId: null,
+      authoritativeSource: 'automation',
+      authMethod: { kind: 'service_account', service_account_id: principal.userId },
+    });
+    return;
+  }
+  const tokenAuth = {
+    kind: 'account_token',
+    token_id: principal.actingTokenId,
+    ...(principal.sessionId ? { session_id: principal.sessionId } : {}),
+  };
+  bindAuditPrincipal(
+    judgedAsAgent(app, principal)
+      ? { actorType: 'agent', actorUserId: null, authoritativeSource: 'agent', authMethod: tokenAuth }
+      : { actorType: 'human', actorUserId: principal.userId, authoritativeSource: 'api_key', authMethod: tokenAuth },
+  );
+}
+
+/**
+ * Name the Kortix user the App's signed session proves. Called once the gate
+ * has let the request through, for public Apps too: a public App still
+ * recognises a signed-in viewer, and that viewer is audited. An anonymous
+ * visitor binds nothing and is not audited (shared/audit.ts).
+ */
+export function bindAppViewerSession(userId: string): void {
+  bindAuditPrincipal({
+    actorType: 'human',
+    actorUserId: userId,
+    authoritativeSource: 'human',
+    authMethod: { kind: 'app_session' },
+  });
+}
+
 export async function authorizeAppRequest(
   request: Request,
   url: URL,
   app: AppAccessRow,
   verifyUserAccess: AppUserAccessVerifier = appAccessibleToUser,
+  verifyAgentAccess: AppAgentAccessVerifier = appAccessibleToAgentSession,
 ): Promise<Response | null> {
   const localHttp = url.protocol === 'http:' && url.hostname.endsWith('.apps.localhost');
   const secret = appAccessSecret();
+  // The App is the resource. Its account is resolved from the project when
+  // the audit row is written.
+  annotateAuditEvent({ resourceType: 'app', resourceId: app.appId });
+  bindAuditPrincipal({ projectId: app.projectId });
   const queryToken = url.searchParams.get('__kortix_access');
   // NOTE the public App does not return early here any more. It still redeems
   // an access link — that exchange is the only way its identity cookie can ever
@@ -694,8 +878,10 @@ export async function authorizeAppRequest(
   // work, and before the challenge so an API client gets its answer instead of
   // an HTML login page it cannot read.
   if (app.accessMode !== 'password') {
-    const principal = await kortixCredentialUser(request);
-    if (principal && await verifyUserAccess(app, principal.userId, principal.actingTokenId)) {
+    const principal = await kortixCredentialUser(request, app);
+    // Name the caller before the decision, so a refused credential is audited.
+    if (principal) bindAppBearerPrincipal(app, principal);
+    if (principal && await credentialMayOpenApp(app, principal, verifyUserAccess, verifyAgentAccess)) {
       return null;
     }
   }
@@ -823,7 +1009,13 @@ export async function loadPublicAppState(routeKey: string) {
         .where(eq(appRuntimes.deploymentId, deployment.deploymentId))
         .orderBy(desc(appRuntimes.createdAt)).limit(1)
     : [];
-  return { app, deployment: deployment ?? null, runtime: runtime ?? null };
+  return {
+    app,
+    deployment: deployment ?? null,
+    runtime: runtime ?? null,
+    /** The project's `agent_principal` flag — the App gate's §2.5 switch. */
+    agentPrincipal: agentPrincipalEnabled(loaded.projectMetadata),
+  };
 }
 
 export async function loadPublicApp(routeKey: string) {
@@ -834,7 +1026,12 @@ export async function loadPublicApp(routeKey: string) {
     state.deployment.status !== 'ready' ||
     !state.runtime
   ) return null;
-  return { app: state.app, deployment: state.deployment, runtime: state.runtime };
+  return {
+    app: state.app,
+    deployment: state.deployment,
+    runtime: state.runtime,
+    agentPrincipal: state.agentPrincipal,
+  };
 }
 
 async function waitForWake(runtimeId: string, deadline: number) {
@@ -869,7 +1066,7 @@ export function appRuntimeNeedsWake(
 }
 
 export async function ensureAppRuntimeRunning(
-  loaded: NonNullable<Awaited<ReturnType<typeof loadPublicApp>>>,
+  loaded: Omit<NonNullable<Awaited<ReturnType<typeof loadPublicApp>>>, 'agentPrincipal'>,
   hosting: AppHostingProvider,
   options: { forceProviderStart?: boolean } = {},
 ) {
@@ -1018,6 +1215,9 @@ export function appUpstreamHeaders(
     // must never be able to hand the App an identity of its own choosing.
     APP_VIEWER_HEADER,
     APP_VIEWER_TOKEN_HEADER,
+    // The gate's own credential header: consumed here, never forwarded. The
+    // App's `Authorization` is left untouched.
+    APP_AUTHORIZATION_HEADER,
   ]) headers.delete(name);
   if (viewer) {
     headers.set(APP_VIEWER_HEADER, viewer.context);
@@ -1068,12 +1268,15 @@ export async function handleAppPublicRequest(request: Request): Promise<Response
   }
   const state = await loadPublicAppState(matched.routeKey);
   if (!state) return Response.json({ error: 'App not found' }, { status: 404 });
-  const accessResponse = await authorizeAppRequest(request, url, state.app);
+  const gateApp = { ...state.app, agentPrincipal: state.agentPrincipal };
+  const accessResponse = await authorizeAppRequest(request, url, gateApp);
   if (accessResponse) return accessResponse;
+  const sessionViewer = resolveAppViewerUserId(request, url, gateApp);
+  if (sessionViewer) bindAppViewerSession(sessionViewer);
   // Answered by the gate itself, before any runtime work: reading who you are
   // must never wake a sleeping sandbox.
   if (url.pathname === '/_kortix/viewer') {
-    return appViewerEndpointResponse(request, url, state.app);
+    return appViewerEndpointResponse(request, url, gateApp);
   }
   const viewer = await appViewerContextHeader(request, url, state.app);
   if (

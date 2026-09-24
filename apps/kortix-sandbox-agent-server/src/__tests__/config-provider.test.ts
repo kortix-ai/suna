@@ -893,3 +893,61 @@ describe('archive safety guards', () => {
     expect(existsSync(join(target, '.git'))).toBe(false)
   })
 })
+
+describe('short transfers resume with a Range request', () => {
+  /**
+   * An object store that closes the body early — what the sandbox sees at boot
+   * (`transfer closed after 1572864 of 1573214 bytes`, 3 of 12 dev S3 boots on
+   * 2026-09-18). Every response declares its full length; `firstBytes` and
+   * `resumeBytes` set how many bytes it delivers before the stream closes.
+   */
+  function shortStore(body: Buffer, opts: { firstBytes: number; range: 'honor' | 'ignore'; resumeBytes?: number }) {
+    const ranges: Array<string | null> = []
+    const fetchImpl = (async (_url: string | URL | Request, init?: RequestInit) => {
+      const range = new Headers(init?.headers).get('range')
+      ranges.push(range)
+      const deliver = (bytes: Buffer, status: number, headers: Record<string, string>) =>
+        new Response(new ReadableStream({ start(c) { c.enqueue(new Uint8Array(bytes)); c.close() } }), { status, headers })
+      if (!range || opts.range === 'ignore') {
+        return deliver(body.subarray(0, range ? body.length : opts.firstBytes), 200, { 'content-length': String(body.length) })
+      }
+      const from = Number(/^bytes=(\d+)-$/.exec(range)?.[1])
+      const until = opts.resumeBytes === undefined ? body.length : Math.min(body.length, from + opts.resumeBytes)
+      return deliver(body.subarray(from, until), 206, {
+        'content-length': String(body.length - from),
+        'content-range': `bytes ${from}-${body.length - 1}/${body.length}`,
+      })
+    }) as typeof fetch
+    return { fetchImpl, ranges }
+  }
+
+  const stageFor = (name: string) => join(root, 'ws', `.kortix-snapshot-${name}`)
+
+  test('a body that closes early is completed from its byte offset, not re-downloaded', async () => {
+    const cut = archive.bytes.length - 350
+    const store = shortStore(archive.bytes, { firstBytes: cut, range: 'honor' })
+    const downloaded = await downloadAndExtractProjectSnapshot(descriptorFor(api, archive.sha), stageFor('resume'), {
+      timeoutMs: 10_000,
+      fetchImpl: store.fetchImpl,
+    })
+    expect(downloaded.bytes).toBe(archive.bytes.length)
+    expect(store.ranges).toEqual([null, `bytes=${cut}-`])
+    expect(existsSync(join(stageFor('resume'), 'README.md'))).toBe(true)
+  })
+
+  test('a store that ignores Range fails the attempt as a closed transfer (the provider retries)', async () => {
+    const cut = archive.bytes.length - 350
+    const store = shortStore(archive.bytes, { firstBytes: cut, range: 'ignore' })
+    await expect(
+      downloadAndExtractProjectSnapshot(descriptorFor(api, archive.sha), stageFor('ignore'), { timeoutMs: 10_000, fetchImpl: store.fetchImpl }),
+    ).rejects.toMatchObject({ stage: 'download', reason: 'unavailable', message: expect.stringMatching(new RegExp(`transfer (closed|ended) after ${cut} of`)) })
+  })
+
+  test('a body that keeps closing early gives up after a bounded number of resumes', async () => {
+    const store = shortStore(archive.bytes, { firstBytes: 1024, range: 'honor', resumeBytes: 512 })
+    await expect(
+      downloadAndExtractProjectSnapshot(descriptorFor(api, archive.sha), stageFor('bounded'), { timeoutMs: 10_000, fetchImpl: store.fetchImpl }),
+    ).rejects.toMatchObject({ stage: 'download', reason: 'unavailable', message: expect.stringMatching(/transfer (closed|ended) after/) })
+    expect(store.ranges.filter((r) => r !== null)).toHaveLength(3)
+  })
+})

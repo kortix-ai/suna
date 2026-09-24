@@ -22,7 +22,7 @@ import { projectSessions, projects, sessionLifecycleCommands, sessionSandboxes }
 import type { SessionLifecycleCommandRow } from '../store';
 import { drizzle } from 'drizzle-orm/pg-proxy';
 import type { SQL } from 'drizzle-orm';
-import { mintWireMessageId, wireIdTime } from '../../wire-message-id';
+import { isWireIdAheadOf, mintWireMessageId, wireIdTime } from '../../wire-message-id';
 
 const SESSION_ID = 'sess-inbox-delivery-1';
 const ACCOUNT_ID = 'acct-1';
@@ -1373,6 +1373,42 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(outcome).toBe('succeeded');
     const sent = capturedBodies[0].messageID as string;
     expect(wireIdTime(sent)!).toBeGreaterThan(firstDelivered);
+  });
+
+  // `kortix sessions send` ≤ 2026-09 minted the HIGH 12 hex digits of the id
+  // clock: ~40 days ahead of every id OpenCode writes. POST stamps such a row
+  // `remintOnDelivery`; the drain must then place it against the transcript and
+  // must never let the far-future value act as a floor.
+  const CLI_HIGH_BITS_ID = `msg_${((BigInt(NOW_MS) * BigInt(0x1000)) >> BigInt(8)).toString(16).slice(0, 12)}SyntheticCli03`;
+
+  test('a far-future CLI id goes out re-placed just above the transcript, not ~40 days ahead', async () => {
+    transcript = [{ info: { id: OPENCODE_MINTED_ID, role: 'assistant', parentID: 'msg_other' } }];
+
+    const outcome = await executeQueuedContinue(
+      baseRow({
+        payload: { ...baseRow().payload, wireMessageId: CLI_HIGH_BITS_ID, remintOnDelivery: true },
+      }),
+    );
+
+    expect(outcome).toBe('succeeded');
+    const sent = capturedBodies[0].messageID as string;
+    expect(sent).not.toBe(CLI_HIGH_BITS_ID);
+    expect(isWireIdAheadOf(sent, NOW_MS)).toBe(false);
+    expect(wireIdTime(sent)!).toBeGreaterThan(wireIdTime(OPENCODE_MINTED_ID)!);
+  });
+
+  test('a far-future id on an earlier row does not veto the lift above the transcript', async () => {
+    deliveredFloor = wireIdTime(CLI_HIGH_BITS_ID);
+    transcript = [{ info: { id: OPENCODE_MINTED_ID, role: 'assistant', parentID: 'msg_other' } }];
+
+    const outcome = await executeQueuedContinue(
+      baseRow({ result: { admission_reason: 'older_prompt_pending' } }),
+    );
+
+    expect(outcome).toBe('succeeded');
+    const sent = capturedBodies[0].messageID as string;
+    expect(isWireIdAheadOf(sent, NOW_MS)).toBe(false);
+    expect(wireIdTime(sent)!).toBeGreaterThan(wireIdTime(OPENCODE_MINTED_ID)!);
   });
 
   test('a STOPPED box holds no turn, so an idle send still keeps its id', async () => {

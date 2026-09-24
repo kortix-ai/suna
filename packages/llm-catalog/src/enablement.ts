@@ -134,7 +134,7 @@ export function defaultEnabledModelIds(
  * id Bedrock refuses ("Invocation of model ID xai.grok-4.6 with on-demand
  * throughput isn't supported. Retry your request with the ID or ARN of an
  * inference profile"), then looped "Retrying in Ns" forever. Proven live on
- * the Essentia self-host 2026-08-26.
+ * the SampleCo self-host 2026-08-26.
  *
  * Rule: when a set carries ANY inference-profile id, its bare ids are not
  * auto-selectable. An inference profile is always invokable; a bare id may

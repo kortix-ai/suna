@@ -2,7 +2,7 @@
   "name": "kortix",
   "private": true,
   "scripts": {
-    "prepare": "git config core.hooksPath .githooks 2>/dev/null || true",
+    "prepare": "git config core.hooksPath .githooks 2>/dev/null || true; sh scripts/register-merge-drivers.sh 2>/dev/null || true",
     "secrets:check": "bash scripts/check-env-encrypted.sh",
     "dev": "bash scripts/dev-local.sh",
     "preview": "bash scripts/dev-local.sh --build",
@@ -112,7 +112,8 @@
     },
     "patchedDependencies": {
       "e2b@2.37.0": "patches/e2b@2.37.0.patch",
-      "blume@1.5.3": "patches/blume@1.5.3.patch"
+      "blume@1.5.3": "patches/blume@1.5.3.patch",
+      "shaders@2.5.135": "patches/shaders@2.5.135.patch"
     }
   },
   "version": "1.0.0",

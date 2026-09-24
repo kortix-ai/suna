@@ -202,7 +202,7 @@ If a guard fires, the fix is to **encrypt the value**, never to bypass it.
 
 `apps/web` has the **same four encrypted profiles** (`apps/web/.env` / `.env.dev` / `.env.staging` / `.env.prod`) and its own keypairs in `apps/web/.env.keys`. All keys live in the `kortix` Armor organization. Decrypted the same way: `pnpm dev` (via `load_local_env`) and the environment-specific web scripts.
 
-Maintenance flags are **DB-backed** now (was Vercel Edge Config): stored in `kortix.platform_settings['maintenance_config']`, read via public `GET /v1/system/maintenance`, written via admin-only `PUT /v1/system/maintenance`, set from `/admin/utils`. The `EDGE_CONFIG`/`EDGE_CONFIG_ID`/`VERCEL_API_TOKEN` secrets + the `@vercel/edge-config` dep are gone.
+Maintenance state: the database is the source of truth (`kortix.platform_settings['maintenance_config']`, public `GET /v1/system/maintenance`, admin-only `PUT /v1/system/maintenance`, set from `/admin/utils`). The web app mirrors it into Vercel Edge Config (`EDGE_CONFIG`, `EDGE_CONFIG_ID`, `VERCEL_API_TOKEN` in `apps/web/.env.{dev,staging,prod}`) so middleware and the prod api-router Worker (`/api/maintenance/edge`) read it without the API. dev, staging and prod share ONE Edge Config store, so each environment owns its own key `maintenance_config_<prod|staging|dev>`, derived from the API host (`apps/web/src/lib/maintenance-store.ts`). The legacy shared key `maintenance_config` in that store is no longer read.
 
 ## Out of scope (not dotenvx-managed)
 

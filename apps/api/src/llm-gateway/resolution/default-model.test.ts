@@ -130,7 +130,7 @@ describe('resolveEffectiveModel — the /model-defaults GET + picker resolution 
     expect(result).toEqual({ model: 'openai/gpt-5.5', source: 'project' });
   });
 
-  test('THE ESSENTIA BUG: a stale/unservable configured default (e.g. disconnected openrouter) never 500s, and degrades to a provider the project HAS connected', async () => {
+  test('THE SAMPLECO BUG: a stale/unservable configured default (e.g. disconnected openrouter) never 500s, and degrades to a provider the project HAS connected', async () => {
     accountDefaults = { account: null, agents: {}, projects: { p1: 'openrouter/some-model' } };
     // The configured openrouter default is no longer servable — no key connected.
     resolveCandidatesImpl = async (model) => {

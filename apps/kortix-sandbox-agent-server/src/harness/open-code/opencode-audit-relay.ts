@@ -417,7 +417,7 @@ export interface AuditRelay {
 /**
  * EMISSION CONTRACT — how many POSTs one sandbox is allowed to cost.
  * ------------------------------------------------------------------
- * Measured on Essentia 2026-08-26: POST
+ * Measured on SampleCo 2026-08-26: POST
  * `/v1/projects/:p/sessions/:s/audit/events` ran 3,395 times across 20 session
  * opens in one hour — 680 ms median, 2,265 s cumulative, the single largest
  * line in the whole performance corpus. One local session
@@ -701,7 +701,7 @@ export function auditRelayToken(env: NodeJS.ProcessEnv): string | null {
  * A flat 1s retry is an amplifier, not a recovery. When the API rejects a batch
  * because `kortix.audit_events` inserts are queued on that session's
  * `audit_session_sequences` row lock, retrying one second later re-enters the
- * same lock queue and keeps it alive — Essentia 2026-08-26 held that livelock
+ * same lock queue and keeps it alive — SampleCo 2026-08-26 held that livelock
  * for three hours (445 rejections, one roughly every 11s per stuck session,
  * each costing the API a full 10s statement_timeout). Double the wait each
  * time up to `maxRetryMs`, jitter it +/-25% so two sandboxes never

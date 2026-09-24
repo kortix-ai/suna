@@ -610,29 +610,39 @@ jobs:
             '{orgId:$org, projectId:$project}' > .vercel/project.json
           export VERCEL_ORG_ID="$VERCEL_TEAM_ID"
 
+          # Staging values go to the build AND the runtime. Vercel builds bake the
+          # runtime config into prerendered marketing pages (lib/runtime-config-mode.ts),
+          # and `-e` alone reaches only the runtime: the build would bake the
+          # project's generic Preview values instead of staging's.
+          staging_env=(
+            NEXT_PUBLIC_BACKEND_URL="https://${PUBLIC_API_HOST}/v1"
+            KORTIX_PUBLIC_BACKEND_URL="https://${PUBLIC_API_HOST}/v1"
+            NEXT_PUBLIC_APP_URL="https://${WEB_HOST}"
+            KORTIX_PUBLIC_APP_URL="https://${WEB_HOST}"
+            NEXT_PUBLIC_URL="https://${WEB_HOST}"
+            SUPABASE_URL="$NEXT_PUBLIC_SUPABASE_URL"
+            SUPABASE_ANON_KEY="$NEXT_PUBLIC_SUPABASE_ANON_KEY"
+            NEXT_PUBLIC_SUPABASE_URL="$NEXT_PUBLIC_SUPABASE_URL"
+            KORTIX_PUBLIC_SUPABASE_URL="$NEXT_PUBLIC_SUPABASE_URL"
+            NEXT_PUBLIC_SUPABASE_ANON_KEY="$NEXT_PUBLIC_SUPABASE_ANON_KEY"
+            KORTIX_PUBLIC_SUPABASE_ANON_KEY="$NEXT_PUBLIC_SUPABASE_ANON_KEY"
+            BACKEND_URL="https://${PUBLIC_API_HOST}/v1"
+            APP_URL="https://${WEB_HOST}"
+            NEXT_PUBLIC_BILLING_ENABLED="true"
+            KORTIX_PUBLIC_BILLING_ENABLED="true"
+            AUTH_PROVIDERS="google"
+            NEXT_PUBLIC_AUTH_PROVIDERS="google"
+            KORTIX_PUBLIC_AUTH_PROVIDERS="google"
+            AUTH_METHODS="magic,password"
+            NEXT_PUBLIC_AUTH_METHODS="magic,password"
+            KORTIX_PUBLIC_AUTH_METHODS="magic,password"
+          )
+          env_flags=()
+          for kv in "${staging_env[@]}"; do env_flags+=(-e "$kv" -b "$kv"); done
+
           url="$(npx vercel deploy --yes --target preview --archive=tgz \
             --token "$VERCEL_TOKEN" \
-            -e NEXT_PUBLIC_BACKEND_URL="https://${PUBLIC_API_HOST}/v1" \
-            -e KORTIX_PUBLIC_BACKEND_URL="https://${PUBLIC_API_HOST}/v1" \
-            -e NEXT_PUBLIC_APP_URL="https://${WEB_HOST}" \
-            -e KORTIX_PUBLIC_APP_URL="https://${WEB_HOST}" \
-            -e NEXT_PUBLIC_URL="https://${WEB_HOST}" \
-            -e SUPABASE_URL="$NEXT_PUBLIC_SUPABASE_URL" \
-            -e SUPABASE_ANON_KEY="$NEXT_PUBLIC_SUPABASE_ANON_KEY" \
-            -e NEXT_PUBLIC_SUPABASE_URL="$NEXT_PUBLIC_SUPABASE_URL" \
-            -e KORTIX_PUBLIC_SUPABASE_URL="$NEXT_PUBLIC_SUPABASE_URL" \
-            -e NEXT_PUBLIC_SUPABASE_ANON_KEY="$NEXT_PUBLIC_SUPABASE_ANON_KEY" \
-            -e KORTIX_PUBLIC_SUPABASE_ANON_KEY="$NEXT_PUBLIC_SUPABASE_ANON_KEY" \
-            -e BACKEND_URL="https://${PUBLIC_API_HOST}/v1" \
-            -e APP_URL="https://${WEB_HOST}" \
-            -e NEXT_PUBLIC_BILLING_ENABLED="true" \
-            -e KORTIX_PUBLIC_BILLING_ENABLED="true" \
-            -e AUTH_PROVIDERS="google" \
-            -e NEXT_PUBLIC_AUTH_PROVIDERS="google" \
-            -e KORTIX_PUBLIC_AUTH_PROVIDERS="google" \
-            -e AUTH_METHODS="magic,password" \
-            -e NEXT_PUBLIC_AUTH_METHODS="magic,password" \
-            -e KORTIX_PUBLIC_AUTH_METHODS="magic,password" \
+            "${env_flags[@]}" \
             -b NEXT_PUBLIC_KORTIX_VERSION="$VERSION" \
             -b NEXT_PUBLIC_KORTIX_COMMIT="$SOURCE_SHA" \
             | tail -n1)"

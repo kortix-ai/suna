@@ -24,9 +24,11 @@ change the user's signed-in profile.
 The journey covers the workspace selector, settings navigation, agent section
 navigation, and connector filters. It asserts rendered row geometry, titlebar
 clearance, selected state, route changes, and a successful connector request.
-Native mode checks zoom, full document navigation, and rejection of native
-commands from a second window. The configured frontend origin owns the native
-bridge; embedded content and other windows must not inherit that permission.
+Native mode checks zoom through keyboard and menu commands, full screen, the
+sidebar hover peek, opener-preserving OAuth popups, native theme sync, full
+document navigation, and rejection of native commands from a second window.
+The configured frontend origin owns the native bridge. Embedded content and
+other windows must not inherit that permission.
 Screenshots and failures appear under `tests/test-results/artifacts`.
 Electron unit tests run in the existing packages lane through
 `pnpm --filter @kortix/desktop-electron test`.
@@ -37,9 +39,17 @@ Electron unit tests run in the existing packages lane through
 - Open and close the sidebar. Repeat navigation with the sidebar collapsed.
 - Open fullscreen settings. Verify Back to app and the final navigation row.
 - Open a full-screen frame with no sidebar, such as `/oauth/authorize` with no
-  `request_id`. Verify Back sits in the title-bar band and leaves the page.
+  `request_id`, or `/new` from the project switcher. Verify Back sits in the
+  title-bar band and leaves the page. Inside a project, verify no Back shows.
+- Use Go → Back, Forward and Home, their shortcuts, and the mouse side buttons.
 - Check light and dark themes at 1440 × 900 and 720 × 480 window sizes.
 - Check default zoom, zoom in, zoom out, and reset. Native controls do not zoom.
+- Relaunch after moving, resizing, and maximizing the window. The window must
+  restore on a connected display and stay at least 720 × 480.
+- Trigger an unsaved-change guard. Close, Reload, Home, Back, and Quit must show
+  the native Leave/Stay confirmation.
+- Leave only an OAuth popup open, then click the Dock icon. The main window must
+  reappear.
 - Use Tab, arrows, Enter, and Escape. Focus must remain visible and reachable.
 - Scroll long lists. Check empty, loading, error, and disabled states where relevant.
 - Repeat on the PR preview with Electron's Frontend URL set to the preview origin.
@@ -74,17 +84,44 @@ verify the deployed SHA and repeat the affected interaction against dev.
 The CSS variables in `apps/web/src/app/globals.css` mirror it. The focused
 `desktop-titlebar.test.ts` tests keep these values synchronized.
 
-`.kx-titlebar-tabs` marks only the top capability bar. Product tab lists keep
-the shared Tabs component's layout. `.kx-titlebar-spacer` reserves native chrome
-for fullscreen overlays. It cannot shrink inside a flex column.
+macOS uses AppKit's traffic lights through Electron's `titleBarStyle: hidden`.
+Windows and Linux use the OS-native frame. The web layer does not draw minimize,
+maximize, or close controls on any platform.
 
-The shell has no browser toolbar. Every page must offer an exit. `AuthFrame`
-draws `DesktopBackButton` (`apps/web/src/components/desktop/desktop-back-button.tsx`)
-in the title-bar band for a signed-in user. `.kx-desktop-back` shows it only
-under `html[data-desktop='true']`, and that rule must stay unlayered. Every
-control in the band takes `TITLEBAR_CONTROL_CLASS`
-(`apps/web/src/components/desktop/titlebar-control.ts`). A new full-screen
-surface outside `AuthFrame` needs its own visible exit.
+`.kx-titlebar-tabs` marks only the top capability bar. Product tab lists keep
+the shared Tabs component's layout. The docked project sidebar, Settings, and
+account overlays put their first control rows in the native-light band. The
+project sidebar's hover peek keeps its normal padding and one toggle. At narrow
+width, Settings sizes both the mobile tab list and its indicator wrapper to the
+zoom-safe control height. Do not add `.kx-titlebar-spacer` to either overlay;
+it creates a blank strip above the breadcrumb.
+
+The shell has no browser toolbar. No screen may be a soft lock. Two layers
+guarantee an exit:
+
+1. **Native, every page.** The Go menu has Back (`Cmd+[`), Forward (`Cmd+]`)
+   and Home (`Cmd+Shift+H`); Windows and Linux use `Alt+Left`, `Alt+Right`,
+   `Alt+Home`. The mouse side buttons step history too. Traversal skips
+   history entries the navigation gate keeps out of the window (a server
+   redirect to github.com). Policy: `apps/desktop-electron/src/navigation.js`.
+2. **Visible, every web screen.** The root layout mounts one
+   `DesktopBackButton` (`apps/web/src/components/desktop/desktop-back-button.tsx`)
+   in the title-bar band for a signed-in user. It is on by default: a new
+   screen needs no opt-in. It hides when a click would replace home with home.
+   - A shell that navigates and draws in the band's corner wears
+     `data-kx-titlebar-owner` (project shell, admin shell, marketing navbar).
+     Back steps aside for it.
+   - A screen that knows where its flow started calls
+     `useDesktopBackTarget(href)`. `AuthFrame` forwards its `backHref` there.
+   - A row pinned to the top of a shell-less screen wears `.kx-below-titlebar`
+     so it clears Back and the window controls (`/new`, `/projects/start`,
+     `/auth/phone-verification`).
+
+`.kx-desktop-back` shows only under `html[data-desktop='true']`, and its
+three rules must stay unlayered. Every control in the band takes
+`TITLEBAR_CONTROL_CLASS` (`apps/web/src/components/desktop/titlebar-control.ts`).
+`APP_PATH_PREFIXES` in `navigation.js` must cover the middleware's
+`DESKTOP_ALLOWED_ROUTES`; `navigation.test.js` fails on a gap.
 
 Do not inject layout CSS from Electron. Do not mark all `[role="tablist"]` or
 `[data-sidebar="sidebar"]` elements as window drag regions. Reserve dragging for

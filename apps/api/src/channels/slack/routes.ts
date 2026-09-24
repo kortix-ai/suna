@@ -23,6 +23,7 @@ import { publishHomeForUser } from './home';
 import { handleBlockAction, handleMessageShortcut, handleViewSubmission } from './interactivity';
 import { handleSlashCommand } from './commands';
 import type { SlackInteractionPayload, SlashResponse } from './types';
+import { bindIntegrationPrincipal } from '../../shared/audit-scope';
 
 // ── Shared slash + interactivity processing ───────────────────────────────────
 // The canonical OAuth app and per-project (BYO) apps run the SAME logic — they
@@ -125,6 +126,7 @@ slackWebhookApp.openapi(
   if (!verifySlackSignature(rawBody, timestamp, signature, mode.signingSecret)) {
     return c.json({ error: 'Invalid signature' }, 401);
   }
+  bindIntegrationPrincipal('slack');
 
   const envelope = parseEnvelope(rawBody);
   if (!envelope) return c.json({ error: 'Invalid JSON' }, 400);
@@ -204,6 +206,7 @@ slackWebhookApp.openapi(
   if (!verifySlackSignature(rawBody, timestamp, signature, mode.signingSecret)) {
     return c.json({ error: 'Invalid signature' }, 401);
   }
+  bindIntegrationPrincipal('slack');
   // An empty body closes a modal; `{ok:true}` would be read as a malformed
   // `response_action` and show the reviewer an error.
   if (runInteractivityBody(rawBody) === 'view_submission') return c.body('', 200);
@@ -238,6 +241,7 @@ slackWebhookApp.openapi(
   if (!verifySlackSignature(rawBody, timestamp, signature, mode.signingSecret)) {
     return c.json({ error: 'Invalid signature' }, 401);
   }
+  bindIntegrationPrincipal('slack');
 
   return c.json(await runSlashCommandBody(rawBody));
 },
@@ -278,6 +282,7 @@ slackWebhookApp.openapi(
   if (!verifySlackSignature(rawBody, timestamp, signature, signingSecret)) {
     return c.json({ error: 'Invalid signature' }, 401);
   }
+  bindIntegrationPrincipal('slack', { projectId });
 
   if (envelope.type !== 'event_callback' || !envelope.event) return c.json({ ok: true });
   if (await alreadyHandled(envelope.event_id)) return c.json({ ok: true });
@@ -287,7 +292,7 @@ slackWebhookApp.openapi(
     if (envelope.event && (await maybeHandleDmCommand(teamId, envelope.event, projectId))) {
       return;
     }
-    await dispatchSlackEvent(projectId, envelope);
+    await dispatchSlackEvent(projectId, envelope, { ownThreadsOnly: true });
   })().catch((err) => console.error('[slack-webhook] byo handler failed', err));
   return c.json({ ok: true });
 },
@@ -321,6 +326,7 @@ slackWebhookApp.openapi(
   if (!verifySlackSignature(rawBody, timestamp, signature, signingSecret)) {
     return c.json({ error: 'Invalid signature' }, 401);
   }
+  bindIntegrationPrincipal('slack', { projectId });
   return c.json(await runSlashCommandBody(rawBody, projectId));
 },
 );
@@ -353,6 +359,7 @@ slackWebhookApp.openapi(
   if (!verifySlackSignature(rawBody, timestamp, signature, signingSecret)) {
     return c.json({ error: 'Invalid signature' }, 401);
   }
+  bindIntegrationPrincipal('slack', { projectId });
   runInteractivityBody(rawBody);
   return c.body('', 200);
 },

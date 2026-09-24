@@ -308,3 +308,55 @@ describe('native test-lane workflow', () => {
     expect(shardedTargetCallers.map(({ name }) => name).sort()).toEqual(['tests-release.yml']);
   });
 });
+
+/**
+ * The preview comment and its deployment status must not claim a test run that
+ * did not happen.
+ *
+ * A labelled preview is a persistent branch environment, and a redeploy from a
+ * push deliberately SKIPS the suite (`PREVIEW_RUN_TESTS`). Both surfaces branched
+ * on the deploy's outcome alone, so every such redeploy published "Preview
+ * environment - live and tested" and "`pnpm test -- --target-full` passed" —
+ * the most reassuring sentence on the pull request, over a deploy that ran
+ * nothing. Observed on #7506, whose last deploy carried `PREVIEW_RUN_TESTS: 0`.
+ */
+describe('the preview status tells the truth about the suite', () => {
+  const previewWorkflow = readFileSync(
+    resolve(root, '.github/workflows/deploy-preview.yml'),
+    'utf8',
+  );
+  const deployScript = readFileSync(resolve(root, 'tests/bin/sandbox-preview.ts'), 'utf8');
+
+  test('the deploy reports whether it tested, from the value it decided with', () => {
+    // One authority. Re-deriving `PREVIEW_RUN_TESTS === '1'` in YAML would be a
+    // second copy of a rule that is really `... || !branchEnv`.
+    expect(deployScript).toContain("const runTests = process.env.PREVIEW_RUN_TESTS?.trim() === '1' || !branchEnv;");
+    expect(deployScript).toContain("await writeOutput('tests_ran', runTests ? '1' : '0');");
+  });
+
+  test('a skipped suite links no report — the persistent box still holds the last one', () => {
+    // Asserted on the CONDITION, not the whole call: the formatter wraps this
+    // line and a byte-exact expectation would fail on its wrapping rather than
+    // on the rule.
+    const report = deployScript.slice(deployScript.indexOf("await writeOutput(\n    'report_url'"));
+    expect(report.slice(0, 200)).toContain(
+      "runTests && result.previewUrl ? `${result.previewUrl}/_tests/` : ''",
+    );
+  });
+
+  test('both surfaces read it, and neither says "tested" without it', () => {
+    for (const surface of ['TESTS_RAN: ${{ steps.preview.outputs.tests_ran }}']) {
+      // Once for the deployment status, once for the sticky comment.
+      expect(previewWorkflow.split(surface).length - 1).toBe(2);
+    }
+    expect(previewWorkflow).toContain(
+      'if [ "$PREVIEW_OUTCOME" = success ] && [ "$TESTS_RAN" = 1 ]; then',
+    );
+    expect(previewWorkflow).toContain("title='## Preview environment - live; NOT tested'");
+    expect(previewWorkflow).toContain("description='Full self-host preview deployed; target-full did not run'");
+    // The old collapse: success alone meant tested.
+    expect(previewWorkflow).not.toContain(
+      "if [ \"$PREVIEW_OUTCOME\" = success ]; then\n            title='## Preview environment - live and tested'",
+    );
+  });
+});

@@ -1,41 +1,52 @@
 /**
- * Shared Agent + Model picker fields for the git-backed trigger (Schedules /
- * Webhooks) create + detail sheets — mobile parity for
- * apps/web/src/components/projects/schedule-view.tsx's AgentModelSection.
+ * Agent and Model fields of the Schedules and Webhooks sheets (create + detail).
  *
- * Inline expand/collapse rows (matching this file family's existing Timezone
- * picker pattern) rather than a nested bottom sheet — @gorhom/bottom-sheet
- * doesn't stack modals here, so pickers expand in place instead.
+ * Both are the app's dropdown (`@/components/ui/select`; Jay, 2026-09-22), not
+ * an inline list that pushes the form down. The content portals into
+ * `OVERLAY_PORTAL_HOST`, the host above every bottom sheet: the default host
+ * sits under the open sheet on Android.
+ *
+ * The trigger is the app's filled, borderless field (`bg-secondary`,
+ * `rounded-xl`, 44pt, no border, no shadow), not RNR's bordered default.
+ *
+ * Model options come from `/model-picker` (8 to 13 enabled models), never from
+ * `/llm-catalog` (thousands): see `useProjectModelCatalogForTrigger`.
  */
+import * as React from 'react';
+import { View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import React, { useState } from 'react';
-import { View, Text as RNText, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { ChevronRight, Check } from 'lucide-react-native';
-import { Text } from '@/components/ui/text';
-import { useThemeColors } from '@/lib/theme-colors';
 import {
-  useProjectAgentsForTrigger,
-  useProjectModelCatalogForTrigger,
-} from '@/lib/projects/hooks';
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  type Option,
+} from '@/components/ui/select';
+import { Text } from '@/components/ui/text';
 import { haptics } from '@/lib/haptics';
+import { useProjectAgentsForTrigger, useProjectModelCatalogForTrigger } from '@/lib/projects/hooks';
+import { agentDisplayName } from '@/lib/session/composer-config';
+import { OVERLAY_PORTAL_HOST } from '@/lib/ui/portal-hosts';
 
-const MONO = 'Menlo';
+/** The model field's "no pin" choice: the agent / project / account default applies. */
+const DEFAULT_MODEL_VALUE = '__default__';
 
-function useFieldColors(isDark: boolean) {
-  return {
-    fg: isDark ? '#F8F8F8' : '#121215',
-    muted: isDark ? '#9b9b9b' : '#6e6e6e',
-    border: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)',
-    inputBg: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-  };
-}
-
-function FieldLabel({ children, muted }: { children: React.ReactNode; muted: string }) {
+/** The field's title: a settings group title (muted, 16pt inset), like "Prompt" beside it. */
+function FieldTitle({ nativeID, children }: { nativeID?: string; children: string }) {
   return (
-    <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted, marginTop: 14, marginBottom: 6 }}>
+    <Text variant="muted" nativeID={nativeID} className="px-4">
       {children}
     </Text>
   );
+}
+
+const TRIGGER_CLASS = 'h-11 rounded-xl border-0 bg-secondary px-4 shadow-none';
+
+function useContentInsets() {
+  const insets = useSafeAreaInsets();
+  return { top: insets.top, bottom: insets.bottom + 12, left: 16, right: 16 };
 }
 
 // ─── Agent ────────────────────────────────────────────────────────────────────
@@ -44,64 +55,46 @@ export function AgentPickerField({
   projectId,
   value,
   onChange,
-  isDark,
+  flush = false,
 }: {
   projectId: string;
-  /** Selected agent name, or null to leave unset (server defaults to "default"). */
+  /** Selected agent name, or null to leave unset (the server runs the default agent). */
   value: string | null;
   onChange: (name: string) => void;
-  isDark: boolean;
+  /** No top margin: the parent's gap spaces the field. */
+  flush?: boolean;
+  /** @deprecated The field reads the theme itself. Ignored. */
+  isDark?: boolean;
 }) {
-  const theme = useThemeColors();
-  const { fg, muted, border, inputBg } = useFieldColors(isDark);
-  const [open, setOpen] = useState(false);
+  const contentInsets = useContentInsets();
   const { agents, isLoading } = useProjectAgentsForTrigger(projectId);
+  const selected: Option = value ? { value, label: agentDisplayName(value) } : undefined;
 
   return (
-    <View>
-      <FieldLabel muted={muted}>Agent</FieldLabel>
-      <TouchableOpacity
-        onPress={() => { haptics.tap(); setOpen((v) => !v); }}
-        activeOpacity={0.7}
-        style={{ height: 44, borderRadius: 11, borderWidth: 1, borderColor: border, backgroundColor: inputBg, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center' }}
-      >
-        <RNText style={{ flex: 1, fontSize: 14, color: fg, fontFamily: MONO }} numberOfLines={1}>
-          {value || 'default'}
-        </RNText>
-        {isLoading ? (
-          <ActivityIndicator size="small" color={muted} />
-        ) : (
-          <ChevronRight size={16} color={muted} style={{ transform: [{ rotate: open ? '90deg' : '0deg' }] }} />
-        )}
-      </TouchableOpacity>
-      {open && (
-        <View style={{ marginTop: 8, borderRadius: 11, borderWidth: 1, borderColor: border, overflow: 'hidden' }}>
-          {agents.length === 0 && !isLoading && (
-            <View style={{ paddingHorizontal: 12, paddingVertical: 11 }}>
-              <Text style={{ fontSize: 13, color: muted }}>No agents found for this project.</Text>
-            </View>
+    <View className={flush ? 'gap-2' : 'mt-5 gap-2'}>
+      <FieldTitle nativeID="trigger-agent">Agent</FieldTitle>
+      <Select
+        value={selected}
+        onValueChange={(option) => {
+          if (!option) return;
+          haptics.selection();
+          onChange(option.value);
+        }}>
+        <SelectTrigger aria-labelledby="trigger-agent" className={TRIGGER_CLASS} disabled={isLoading}>
+          <SelectValue placeholder={isLoading ? 'Loading agents…' : 'Default agent'} className="text-base" />
+        </SelectTrigger>
+        <SelectContent portalHost={OVERLAY_PORTAL_HOST} insets={contentInsets} className="w-64">
+          {agents.length === 0 ? (
+            <Text variant="muted" className="px-2 py-2">
+              No agents in this project
+            </Text>
+          ) : (
+            agents.map((agent) => (
+              <SelectItem key={agent.name} value={agent.name} label={agentDisplayName(agent.name)} />
+            ))
           )}
-          {agents.map((a, i) => {
-            const selected = value === a.name;
-            return (
-              <TouchableOpacity
-                key={a.name}
-                onPress={() => { haptics.selection(); onChange(a.name); setOpen(false); }}
-                activeOpacity={0.6}
-                style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 11, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: border }}
-              >
-                <View style={{ flex: 1 }}>
-                  <RNText style={{ fontSize: 13.5, fontFamily: MONO, color: fg }}>{a.name}</RNText>
-                  {a.description ? (
-                    <RNText style={{ fontSize: 11.5, color: muted, marginTop: 2 }} numberOfLines={1}>{a.description}</RNText>
-                  ) : null}
-                </View>
-                {selected && <Check size={15} color={theme.primary} strokeWidth={3} />}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      )}
+        </SelectContent>
+      </Select>
     </View>
   );
 }
@@ -112,81 +105,54 @@ export function ModelPickerField({
   projectId,
   value,
   onChange,
-  isDark,
+  flush = false,
 }: {
   projectId: string;
   /** Selected wire model id, or null to resolve the agent/account/platform default at fire time. */
   value: string | null;
   onChange: (modelID: string | null) => void;
-  isDark: boolean;
+  /** No top margin: the parent's gap spaces the field. */
+  flush?: boolean;
+  /** @deprecated The field reads the theme itself. Ignored. */
+  isDark?: boolean;
 }) {
-  const theme = useThemeColors();
-  const { fg, muted, border, inputBg } = useFieldColors(isDark);
-  const [open, setOpen] = useState(false);
+  const contentInsets = useContentInsets();
   const { models, isLoading, gatewayDisabled } = useProjectModelCatalogForTrigger(projectId);
-  const current = models.find((m) => m.modelID === value);
 
   if (gatewayDisabled) {
     return (
-      <View>
-        <FieldLabel muted={muted}>Model</FieldLabel>
-        <Text style={{ fontSize: 12.5, color: muted, lineHeight: 18 }}>
-          Enable the LLM gateway for this project (Settings → LLM) to pin a model for this trigger.
-        </Text>
+      <View className={flush ? 'gap-2' : 'mt-5 gap-2'}>
+        <FieldTitle>Model</FieldTitle>
+        <Text variant="muted">Turn on the LLM gateway for this project to pin a model.</Text>
       </View>
     );
   }
 
+  const current = value ? models.find((model) => model.modelID === value) : undefined;
+  const selected: Option = value
+    ? { value, label: current?.modelName ?? value }
+    : { value: DEFAULT_MODEL_VALUE, label: 'Default model' };
+
   return (
-    <View>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14 }}>
-        <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted }}>Model</Text>
-        {value && (
-          <TouchableOpacity onPress={() => { haptics.tap(); onChange(null); }} hitSlop={6}>
-            <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: theme.primary }}>Use default</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-      <TouchableOpacity
-        onPress={() => { haptics.tap(); setOpen((v) => !v); }}
-        activeOpacity={0.7}
-        style={{ height: 44, borderRadius: 11, borderWidth: 1, borderColor: border, backgroundColor: inputBg, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', marginTop: 6 }}
-      >
-        <RNText style={{ flex: 1, fontSize: 14, color: fg }} numberOfLines={1}>
-          {current?.modelName ?? 'Default'}
-        </RNText>
-        {isLoading ? (
-          <ActivityIndicator size="small" color={muted} />
-        ) : (
-          <ChevronRight size={16} color={muted} style={{ transform: [{ rotate: open ? '90deg' : '0deg' }] }} />
-        )}
-      </TouchableOpacity>
-      {open && (
-        <View style={{ marginTop: 8, borderRadius: 11, borderWidth: 1, borderColor: border, overflow: 'hidden' }}>
-          <TouchableOpacity
-            onPress={() => { haptics.selection(); onChange(null); setOpen(false); }}
-            activeOpacity={0.6}
-            style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 11 }}
-          >
-            <RNText style={{ flex: 1, fontSize: 13.5, color: fg }}>Default</RNText>
-            {value == null && <Check size={15} color={theme.primary} strokeWidth={3} />}
-          </TouchableOpacity>
-          {models.map((m) => {
-            const selected = value === m.modelID;
-            return (
-              <TouchableOpacity
-                key={m.modelID}
-                onPress={() => { haptics.selection(); onChange(m.modelID); setOpen(false); }}
-                activeOpacity={0.6}
-                style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 11, borderTopWidth: 1, borderTopColor: border }}
-              >
-                <RNText style={{ flex: 1, fontSize: 13.5, color: fg }} numberOfLines={1}>{m.modelName}</RNText>
-                {selected && <Check size={15} color={theme.primary} strokeWidth={3} />}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      )}
+    <View className={flush ? 'gap-2' : 'mt-5 gap-2'}>
+      <FieldTitle nativeID="trigger-model">Model</FieldTitle>
+      <Select
+        value={selected}
+        onValueChange={(option) => {
+          if (!option) return;
+          haptics.selection();
+          onChange(option.value === DEFAULT_MODEL_VALUE ? null : option.value);
+        }}>
+        <SelectTrigger aria-labelledby="trigger-model" className={TRIGGER_CLASS} disabled={isLoading}>
+          <SelectValue placeholder={isLoading ? 'Loading models…' : 'Default model'} className="text-base" />
+        </SelectTrigger>
+        <SelectContent portalHost={OVERLAY_PORTAL_HOST} insets={contentInsets} className="w-72">
+          <SelectItem value={DEFAULT_MODEL_VALUE} label="Default model" />
+          {models.map((model) => (
+            <SelectItem key={model.modelID} value={model.modelID} label={model.modelName} />
+          ))}
+        </SelectContent>
+      </Select>
     </View>
   );
 }

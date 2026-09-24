@@ -156,3 +156,6 @@ botkube-comm-real.yaml
 
 # Playwright MCP session artifacts (console logs, page snapshots)
 .playwright-mcp/
+
+# Local agent evidence (screenshots, logs). May hold customer data — never commit.
+/output/

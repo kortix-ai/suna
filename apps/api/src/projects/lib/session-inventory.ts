@@ -7,6 +7,7 @@ import {
 } from '../../connectors/share';
 import type { projectSessions, sessionSandboxes } from '@kortix/db';
 import { isWarmProjectSession } from './warm-sessions';
+import { agentSessionStanding } from './agent-session-standing';
 
 type ProjectSessionRow = typeof projectSessions.$inferSelect;
 type RuntimeStatus = typeof sessionSandboxes.$inferSelect.status;
@@ -95,6 +96,12 @@ export function selectSessionRowsForViewer(input: {
    * must not get every member's private session there.
    */
   accountSessionOversight?: boolean;
+  /**
+   * The caller is an agent session under the `agent_principal` model (spec §2).
+   * It lists only its own session, its children, and project-visible sessions —
+   * never the launcher's other private or restricted ones.
+   */
+  agentPrincipal?: boolean;
 }): { authorized: boolean; items: SessionInventoryItem[] } {
   if (input.scope === 'project' && !input.canManageProject) {
     return { authorized: false, items: [] };
@@ -125,7 +132,10 @@ export function selectSessionRowsForViewer(input: {
         accountSessionOversight: input.scope === 'project' && input.accountSessionOversight === true,
       },
     );
-    return { row, canAccess, runtimeStatus, deletedAt, deletedBy };
+    const access = input.agentPrincipal
+      ? agentSessionStanding(input.boundCredentialSessionId, row, canAccess).visible
+      : canAccess;
+    return { row, canAccess: access, runtimeStatus, deletedAt, deletedBy };
   });
 
   if (input.scope === 'project') {

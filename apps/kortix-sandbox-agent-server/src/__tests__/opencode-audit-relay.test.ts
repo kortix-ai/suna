@@ -434,7 +434,7 @@ describe('OpenCode canonical audit relay', () => {
 });
 
 /**
- * Essentia 2026-08-26: the API returned 500 [57014] to this relay 445 times in
+ * SampleCo 2026-08-26: the API returned 500 [57014] to this relay 445 times in
  * 3 hours because every audit insert for one session queues on that session's
  * `audit_session_sequences` row lock. The relay's flat 1s retry re-entered the
  * lock queue every ~11s and kept the convoy alive.
@@ -503,7 +503,7 @@ describe('audit relay backoff', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Emission volume. Essentia 2026-08-26: 3,395 POSTs to
+// Emission volume. SampleCo 2026-08-26: 3,395 POSTs to
 // /v1/projects/:p/sessions/:s/audit/events across 20 sessions in one hour,
 // 680 ms median, 2,265 s cumulative. One local session
 // (08891820-0cd9-4fe7-bcfd-2431375ff75d) shows the mechanism: 117,437 relayed
@@ -710,7 +710,7 @@ describe('audit relay emission volume', () => {
     expect(auditRelayConfigFromEnv({ KORTIX_AUDIT_RELAY_COALESCE: '0' }).coalesceTypes).toEqual([]);
   });
 
-  test('replays the real Essentia-shaped event mix into ~1 POST per 200 kept events', async () => {
+  test('replays the real SampleCo-shaped event mix into ~1 POST per 200 kept events', async () => {
     // Ratios measured on kortix.audit_events for session
     // 08891820-0cd9-4fe7-bcfd-2431375ff75d (117,437 relayed events / 64 min).
     const sent: OpenCodeAuditEvent[][] = [];

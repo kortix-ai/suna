@@ -172,6 +172,16 @@ test.describe("19 — Feature flags UI", () => {
       const flags = before.experimental_features.filter((f) => f.available);
       expect(flags.length).toBeGreaterThan(0);
 
+      // A `catalogHidden` flag is resolvable but never offered as a toggle
+      // (apps/api/src/feature-flags/registry.ts, "Hidden flags").
+      // `agent_principal` is how Kortix works now, so the catalog omits it and
+      // the page cannot render a row for it. The effective map still carries
+      // it — support switches one project back through
+      // `PATCH /projects/:id/features`, which flow AGP-3 exercises.
+      expect(
+        before.experimental_features.map((f) => f.key),
+      ).not.toContain("agent_principal");
+
       // Toggle target: prefer `connectors_api_discover` — it is always
       // available, defaults OFF, and has no toggle effect (no connector
       // materialization, no sandbox env fan-out). Fall back to any available
@@ -202,6 +212,10 @@ test.describe("19 — Feature flags UI", () => {
       // asserting a badge here was asserting a deleted element.
       const panel = await openFeatureFlags(page, project.id);
       await expect(panel.getByRole("switch")).toHaveCount(flags.length);
+      // The hidden flag's display name never reaches the page. Asserted on the
+      // rendered text, not only on the catalog, so a UI that hard-coded a row
+      // back in would still fail here.
+      await expect(panel.getByText("Agents as Principals")).toHaveCount(0);
       for (const flag of flags) {
         const row = flagRow(panel, page, flag.name);
         await expect(row).toHaveCount(1);

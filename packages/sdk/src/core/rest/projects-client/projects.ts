@@ -48,7 +48,8 @@ export type FeatureFlagKey =
   | 'session_transcript_history'
   | 'pooled_provider_secrets'
   | 'pi_harness'
-  | 'config_releases';
+  | 'config_releases'
+  | 'agent_principal';
 
 /**
  * Every {@link FeatureFlagKey} the API serves, at runtime. Kept in the same
@@ -72,6 +73,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'pooled_provider_secrets',
   'pi_harness',
   'config_releases',
+  'agent_principal',
 ] as const;
 
 /**
@@ -177,7 +179,14 @@ export interface ProjectConfigSummary {
     scope?: {
       env: string[] | 'all';
       connectors: string[] | 'all';
+      /** Kortix permissions (`project.*` actions). Absent on servers released
+       *  before 2026-09-22 — fall back to `kortix_cli`. */
+      kortix_permissions?: string[] | 'all';
+      /** @deprecated Renamed to `kortix_permissions` (same value). Removed in the next major. */
       kortix_cli: string[] | 'all';
+      /** Kortix Apps (by slug) the agent may open when restricted/private.
+       *  `[]` = none. Absent on servers released before 2026-09-22 (= none). */
+      apps?: string[] | 'all';
     };
   }>;
   skills: Array<{ name: string; path: string; description: string | null }>;

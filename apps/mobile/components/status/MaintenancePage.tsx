@@ -2,9 +2,9 @@ import React from 'react';
 import { View, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { KortixLoader } from '@/components/ui/kortix-loader';
-import { KortixLogo } from '@/components/ui/KortixLogo';
-import { RefreshCw } from 'lucide-react-native';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { KortixLogo } from '@/components/kortix/KortixLogo';
+import { ArrowClockwiseIcon as RefreshCw } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 
 interface MaintenancePageProps {
@@ -47,6 +47,8 @@ export function MaintenancePage({ onRefresh, isRefreshing = false }: Maintenance
               onPress={onRefresh}
               disabled={isRefreshing}
               className="h-12 w-12 items-center justify-center rounded-xl bg-muted active:opacity-80"
+              accessibilityRole="button"
+              accessibilityLabel="Refresh"
             >
               {isRefreshing ? (
                 <KortixLoader size="small" customSize={20} />

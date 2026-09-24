@@ -50,6 +50,7 @@ import {
   runSessionsWarm,
 } from './sessions-lifecycle.ts';
 import { runSessionsQueue, wireMessageId } from './sessions-queue.ts';
+import { runSessionsAttachments } from './sessions-attachments.ts';
 import { runSessionsFiles } from './sessions-sandbox-files.ts';
 import { runSessionsScope } from './sessions-scope.ts';
 import { runSessionsLinks, runSessionsShare } from './sessions-share.ts';
@@ -114,8 +115,15 @@ Subcommands:
                                     to end one.
   log [<session-id>]                Print a session's recent messages
                                     (read-only) — peek at what an agent is
-                                    doing without sending it anything.
-                                    --limit <N>, --json. Aliases: messages.
+                                    doing without sending it anything. A
+                                    stopped session is read from its saved
+                                    transcript. --limit <N>, --json.
+                                    Aliases: messages.
+  attachments <session-id>          List a session's stored files — uploads
+                                    and copies of what the agent showed —
+                                    and download them (--download <id>,
+                                    --all, --out <dir>). Works while the
+                                    session is stopped. --json.
   pending <session-id>              List open interactive prompts the agent
                                     is blocked on: tool-permission asks +
                                     questions. --json. Aliases: prompts.
@@ -267,6 +275,10 @@ export async function runSessions(argv: string[]): Promise<number> {
   }
   if (sub === 'files') {
     return runSessionsFiles(argv.slice(1));
+  }
+  // `attachments` reads the platform's private store, never the sandbox.
+  if (sub === 'attachments') {
+    return runSessionsAttachments(argv.slice(1));
   }
   if (sub === 'stop' || sub === 'pause') {
     return runSessionsStop(argv.slice(1));
@@ -676,6 +688,8 @@ async function sendPromptToSession(
   await handle.prompts.create({
     clientMessageId: randomUUID(),
     messageId: wireMessageId(),
+    // The CLI cannot read the transcript; the server places the id.
+    remintOnDelivery: true,
     parts: [{ type: 'text', text }],
     ...(defaults.agent || defaults.model
       ? {

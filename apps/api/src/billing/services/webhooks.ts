@@ -30,6 +30,7 @@ import { cancelFreeSubscriptionForUpgrade } from './subscriptions';
 import { calculateNextCreditGrant } from './credit-grant-schedule';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
 import { resolveAccountId } from '../../shared/resolve-account';
+import { bindIntegrationPrincipal } from '../../shared/audit-scope';
 
 /**
  * The plan a Stripe object names in its metadata.
@@ -72,6 +73,7 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
   let event: Stripe.Event;
   try {
     event = stripe.webhooks.constructEvent(rawBody, signature, config.STRIPE_WEBHOOK_SECRET);
+    bindIntegrationPrincipal('stripe');
   } catch (err) {
     throw new WebhookError(`Signature verification failed: ${(err as Error).message}`);
   }

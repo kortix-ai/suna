@@ -1,7 +1,7 @@
 // A prompt that met a DOWN RUNTIME must be kept, re-attempted, and only given
 // up on after a bounded number of tries.
 //
-// The incident (Essentia, 2026-08-26): a queued prompt was delivered while its
+// The incident (SampleCo, 2026-08-26): a queued prompt was delivered while its
 // box was unreachable. `deliverWithRetry` answered 'failed', the drain read
 // 'failed' as terminal, and the row went `state:failed, attempts:1,
 // last_error:"delivery outcome: failed"` — dead-lettered on its FIRST attempt

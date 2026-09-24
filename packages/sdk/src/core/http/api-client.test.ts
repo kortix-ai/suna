@@ -375,6 +375,150 @@ describe('makeRequest retries transient transport failures on idempotent reads',
   });
 });
 
+// Regression for incident-20260922T210537Z-kxhourly: `kortix sessions rm`
+// (a DELETE) hung >120s and left the child session running. A single stalled
+// DELETE got ZERO client retries (only GET/HEAD were retryable), so a transient
+// transport stall rode the CLI's long request deadline and blew past the
+// heartbeat runner's 120s wall; a fresh retry deleted the session in ~1.1s.
+//
+// A DELETE that fails at the TRANSPORT layer never received an HTTP response,
+// so the server may not have processed it — replaying it is safe. The session
+// delete is an idempotent soft-tombstone (session-lifecycle/actions.ts stamps
+// metadata.deletedAt and returns 404 for an already-absent row), so a replay
+// re-tombstones (a no-op) or 404s. DELETE therefore joins GET/HEAD as retryable
+// on a transport failure ONLY — never on a received response status, where the
+// server may already have applied the delete.
+describe('makeRequest retries a DELETE on transport failure (idempotent soft-delete)', () => {
+  test('a single DELETE transport failure is retried and succeeds', async () => {
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+    });
+    const originalFetch = globalThis.fetch;
+    let attempts = 0;
+    globalThis.fetch = (async () => {
+      attempts++;
+      if (attempts === 1) throw new TypeError('Failed to fetch');
+      return Response.json({ ok: true });
+    }) as unknown as typeof fetch;
+    try {
+      const response = await backendApi.delete('/projects/p1/sessions/s1');
+      expect(response.success).toBe(true);
+      expect(response.data).toEqual({ ok: true });
+      expect(attempts).toBe(2);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('persistent DELETE transport failures exhaust the same 3 attempts as a read', async () => {
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+    });
+    const originalFetch = globalThis.fetch;
+    let attempts = 0;
+    globalThis.fetch = (async () => {
+      attempts++;
+      throw new TypeError('Failed to fetch');
+    }) as unknown as typeof fetch;
+    try {
+      const response = await backendApi.delete('/projects/p1/sessions/s1');
+      expect(response.success).toBe(false);
+      expect(response.error?.message).toBe('Failed to fetch');
+      expect(attempts).toBe(3);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('a DELETE that RECEIVES a 502 is NOT retried (server may have applied it)', async () => {
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+    });
+    const originalFetch = globalThis.fetch;
+    let attempts = 0;
+    globalThis.fetch = (async () => {
+      attempts++;
+      return new Response('', {
+        status: 502,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as unknown as typeof fetch;
+    try {
+      const response = await backendApi.delete('/projects/p1/sessions/s1');
+      expect(response.success).toBe(false);
+      expect(response.error?.status).toBe(502);
+      expect(attempts).toBe(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('a POST transport failure is still NOT retried (unchanged)', async () => {
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+    });
+    const originalFetch = globalThis.fetch;
+    let attempts = 0;
+    globalThis.fetch = (async () => {
+      attempts++;
+      throw new TypeError('Failed to fetch');
+    }) as unknown as typeof fetch;
+    try {
+      const response = await backendApi.post('/projects/p1/sessions', {});
+      expect(response.success).toBe(false);
+      expect(attempts).toBe(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  // The incident's DELETE STALLED (no response) until the client deadline fired.
+  // A self-timeout on a retryable-transport method means the attempt never got a
+  // response, so it is safe to abort that attempt and retry — the exact recovery
+  // the manual retry performed. An EXTERNAL abort (tab close, caller signal) is
+  // still terminal (that path is tested elsewhere).
+  test('a DELETE whose first attempt STALLS past the deadline is retried and succeeds', async () => {
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+    });
+    const originalFetch = globalThis.fetch;
+    let attempts = 0;
+    globalThis.fetch = ((_url: string, init?: RequestInit) => {
+      attempts++;
+      if (attempts === 1) {
+        // First attempt hangs until ITS deadline aborts it.
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            'abort',
+            () => {
+              const error = new Error('aborted');
+              error.name = 'AbortError';
+              reject(error);
+            },
+            { once: true },
+          );
+        });
+      }
+      return Promise.resolve(Response.json({ ok: true }));
+    }) as unknown as typeof fetch;
+    try {
+      const response = await backendApi.delete('/projects/p1/sessions/s1', {
+        timeout: 10,
+      });
+      expect(response.success).toBe(true);
+      expect(response.data).toEqual({ ok: true });
+      expect(attempts).toBe(2);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
 describe('makeRequest keeps request deadlines silent to the global host error handler', () => {
   test('a client request deadline returns TIMEOUT without invoking onError', async () => {
     const errors: Error[] = [];

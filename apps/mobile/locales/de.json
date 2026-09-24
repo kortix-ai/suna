@@ -135,7 +135,9 @@
     "openEmailApp": "E-Mail-App öffnen",
     "goToSignIn": "Gehen Sie zur Anmeldung",
     "verifyEmailInstructions": "Klicken Sie auf den Link in der E-Mail, um Ihr Konto zu bestätigen, und melden Sie sich dann an.",
-    "browseAsGuest": "Als Gast durchsuchen"
+    "browseAsGuest": "Als Gast durchsuchen",
+    "signOutFailed": "Abmelden fehlgeschlagen. Prüfe deine Verbindung und versuche es erneut.",
+    "signingOut": "Wird abgemeldet…"
   },
   "onboarding": {
     "welcome": "Sehen Sie, was Kortix kann",
@@ -531,7 +533,22 @@
     "buyCredits": "Credits Kaufen",
     "availableCredits": "Verfügbare Credits",
     "creditPackages": "Credit-Pakete",
-    "choosePackageBoost": "Wähle ein Paket und erhöhe dein Credit-Guthaben"
+    "choosePackageBoost": "Wähle ein Paket und erhöhe dein Credit-Guthaben",
+    "title": "Abrechnung",
+    "nextDailyRefresh": "Nächste tägliche Aufladung",
+    "in1Hour": "in 1 Stunde",
+    "cancelsOn": "Endet am",
+    "manageOnWeb": "Auf kortix.com verwalten",
+    "openWebFailed": "kortix.com konnte nicht geöffnet werden. Versuche es erneut.",
+    "scheduledChange": "Geplante Änderung",
+    "newPlan": "Neuer Tarif",
+    "startsOn": "Beginnt am",
+    "keepCurrentPlan": "Aktuellen Tarif behalten",
+    "keepPlanTitle": "{{plan}} behalten?",
+    "keepPlanFailed": "Die Änderung konnte nicht abgebrochen werden. Versuche es erneut.",
+    "keepPlanDescription": "Die Änderung zu {{plan}} am {{date}} wird abgebrochen.",
+    "keepPlan": "Tarif behalten",
+    "keepingPlan": "Tarif wird behalten…"
   },
   "theme": {
     "title": "Aussehen",
@@ -587,7 +604,25 @@
     "deletionCancelledSuccess": "Dein Konto ist sicher. Die Löschung wurde abgebrochen.",
     "failedToRequest": "Fehler beim Anfordern der Kontolöschung",
     "failedToCancel": "Fehler beim Abbrechen der Kontolöschung",
-    "cancelRequestDescription": "Du kannst diese Anfrage jederzeit vor dem Löschungsdatum abbrechen. Alle deine Daten werden erhalten, wenn du abbrichst."
+    "cancelRequestDescription": "Du kannst diese Anfrage jederzeit vor dem Löschungsdatum abbrechen. Alle deine Daten werden erhalten, wenn du abbrichst.",
+    "scheduledBadge": "Geplant",
+    "notAvailableTitle": "Auf diesem Server nicht verfügbar",
+    "projectsAndSessions": "Projekte und Sitzungen",
+    "credentialsAndConnections": "Zugangsdaten und Verbindungen",
+    "subscriptionAndBilling": "Abonnement und Abrechnung",
+    "when": "Wann",
+    "in30Days": "In 30 Tagen",
+    "immediately": "Sofort",
+    "deleteTitle": "Konto löschen?",
+    "deleteNowTitle": "Konto jetzt löschen?",
+    "deleteScheduledDescription": "Dein Konto wird in 30 Tagen gelöscht. Bis dahin kannst du abbrechen.",
+    "deleteNowDescription": "Dein Konto und seine Daten werden sofort gelöscht. Das kann nicht rückgängig gemacht werden.",
+    "deleteNow": "Jetzt löschen",
+    "deleting": "Wird gelöscht…",
+    "cancelling": "Wird abgebrochen…",
+    "finalTitle": "Bist du sicher?",
+    "finalDescriptionNow": "Alles in deinem Konto wird sofort gelöscht: Projekte, Sitzungen, Zugangsdaten und Abrechnung. Das kann nicht rückgängig gemacht werden.",
+    "finalDescriptionScheduled": "Alles in deinem Konto wird in 30 Tagen gelöscht: Projekte, Sitzungen, Zugangsdaten und Abrechnung. Bis dahin kannst du abbrechen."
   },
   "models": {
     "selectModel": "Modell wählen",
@@ -1112,5 +1147,40 @@
     "openSettings": "Öffnen Sie Einstellungen",
     "enableAll": "Alle aktivieren",
     "disableAll": "Alle deaktivieren"
+  },
+  "account": {
+    "title": "Konto",
+    "preferences": "Einstellungen",
+    "sounds": "Töne",
+    "workspace": "Arbeitsbereich",
+    "accounts": "Konten",
+    "help": "Hilfe",
+    "docs": "Dokumentation",
+    "support": "Support",
+    "advanced": "Erweitert"
+  },
+  "profile": {
+    "changePhoto": "Profilfoto ändern",
+    "photoFailed": "Dein Foto konnte nicht aktualisiert werden. Versuche es erneut."
+  },
+  "plans": {
+    "title": "Tarife",
+    "plan": "Tarif",
+    "current": "Aktuell",
+    "currentPlan": "Aktueller Tarif",
+    "seats": "{{count}} Plätze × ${{price}}",
+    "perMonth": "${{total}} / Monat",
+    "includes": "{{plan}} enthält",
+    "askOwner": "Bitte einen Kontoinhaber um ein Upgrade",
+    "contactSales": "Vertrieb kontaktieren",
+    "upgradeTo": "Upgrade auf {{plan}}",
+    "switchTo": "Zu {{plan}} wechseln"
+  },
+  "upgrade": {
+    "teamPlan": "Kortix Team",
+    "perSeatMonthly": "pro Platz / Monat",
+    "includes": "Enthalten",
+    "askOwner": "Bitte einen Kontoinhaber um einen Platz",
+    "notNow": "Nicht jetzt"
   }
 }

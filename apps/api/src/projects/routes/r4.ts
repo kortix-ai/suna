@@ -5,6 +5,7 @@ import {
   ConnectionMetadataSchema,
   ConnectionSchema,
   ReconcileConnectionInputSchema,
+  RenameConnectionInputSchema,
   UpdateConnectionCredentialInputSchema,
 } from '@kortix/api-contract';
 import {
@@ -16,7 +17,7 @@ import {
   projects,
   sessionSandboxes,
 } from '@kortix/db';
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import {
   agentMailProvisioningClientIds,
@@ -61,6 +62,7 @@ import {
   relayTurnQuestion,
   relayTurnStepDetailed,
 } from '../../channels/turn-relay';
+import { channelOfSessionMetadata, releaseChannelQuestion } from '../../channels/question-release';
 import { config } from '../../config';
 import {
   connectionIsEffectiveProjectDefault,
@@ -68,6 +70,7 @@ import {
   upsertConnectionCredential,
   upsertConnectionOAuth2Credential,
 } from '../../connectors/credentials';
+import { connectedAsOf, validateConnectionLabel } from '../../connectors/connection-identity';
 import { mutateManifestWithRetry } from '../../connectors/manifest-mutation';
 import { revokeConnectionOAuth2 } from '../../connectors/oauth2-store';
 import { composioConfigured } from '../../connectors/composio';
@@ -81,6 +84,7 @@ import {
   rematerializeCatalogAfterCredentialUpdate,
 } from '../../connectors/sync';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { assertMayRunAgent } from '../lib/agent-access';
 import { featureDisabledBody } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
 import { setContextField } from '../../lib/request-context';
@@ -131,6 +135,9 @@ import {
   isTrustedManagedChannelAuthorization,
 } from '../lib/connection-access';
 import { sessionMayEnumerateConnection } from '../lib/connector-connection-visibility';
+import { requestAgentPrincipalReach, requestPersonalOwner } from '../lib/personal-resources';
+
+type AgentPrincipalReach = Awaited<ReturnType<typeof requestAgentPrincipalReach>>;
 import { withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
@@ -173,6 +180,7 @@ import {
   acceptSandboxTurn,
   adoptRuntimeSandboxTurn,
   completeSandboxTurn,
+  recordUnidentifiedTurnCause,
   turnCompletionAllowsQueuePromotion,
 } from '../sandbox-turn-lifecycle';
 
@@ -251,6 +259,7 @@ function serializeConnection(row: {
     status: row.status,
     is_default: row.isDefault,
     metadata: row.metadata ?? {},
+    connected_as: connectedAsOf(row.metadata),
   };
 }
 
@@ -271,6 +280,8 @@ function mayReadConnection(
    *  carries the WRAPPER's user id, so without this every end-user's agent could
    *  enumerate every other end-user's connection and then bind it. */
   sessionBoundConnectionIds: ReadonlySet<string> | null,
+  /** Agent-principal reach (spec 2026-09-22 §2.3); null = legacy rule. */
+  agentPrincipal: AgentPrincipalReach | null = null,
 ): boolean {
   if (!sessionMayEnumerateConnection(connection, sessionBoundConnectionIds)) return false;
   return connectionIsReachable({
@@ -278,6 +289,7 @@ function mayReadConnection(
     ownerId: connection.ownerId,
     actingUserId: userId,
     actingPrincipalIsServiceAccount,
+    agentPrincipal,
     trustedManagedSystem: isTrustedManagedChannelAuthorization({
       providerType: connection.providerType,
       platform:
@@ -302,12 +314,15 @@ function mayMutateConnection(
   userId: string,
   actingPrincipalIsServiceAccount: boolean,
   mayManageSystemConnections: boolean,
+  /** Agent-principal reach (spec 2026-09-22 §2.3); null = legacy rule. */
+  agentPrincipal: AgentPrincipalReach | null = null,
 ): boolean {
   const reachable = connectionIsReachable({
     ownerType: connection.ownerType,
     ownerId: connection.ownerId,
     actingUserId: userId,
     actingPrincipalIsServiceAccount,
+    agentPrincipal,
     trustedManagedSystem: isTrustedManagedChannelAuthorization({
       providerType: connection.providerType,
       platform:
@@ -412,6 +427,7 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     const actingPrincipalIsServiceAccount = c.get('authType') === 'service_account';
+    const agentReach = await requestAgentPrincipalReach(c, loaded.actor);
     // A sandbox connector token is bound to ONE session. Load what that session was
     // actually GIVEN so the enumeration below can be narrowed to it. null for
     // every non-session caller, which leaves the operator's view unchanged.
@@ -453,6 +469,7 @@ projectsApp.openapi(
             loaded.userId,
             actingPrincipalIsServiceAccount,
             sessionBoundConnectionIds,
+            agentReach,
           ),
         )
         .map(serializeConnection),
@@ -714,6 +731,7 @@ projectsApp.openapi(
         ownerId: normalizedOwnerId,
         actingUserId: loaded.userId,
         actingPrincipalIsServiceAccount: c.get('authType') === 'service_account',
+        agentPrincipal: await requestAgentPrincipalReach(c, loaded.actor),
       })
     ) {
       return c.json(
@@ -737,6 +755,142 @@ projectsApp.openapi(
     if (!connection) return c.json({ error: 'Connection could not be reconciled' }, 409);
     const view = serializeConnection({ ...connection, connectorAlias });
     return c.json(view, created ? 201 : 200);
+  },
+);
+
+/**
+ * The connection a caller may mutate, or `null`. `null` answers 404 so a
+ * caller cannot probe for connections they cannot reach. A member may always
+ * mutate their own private connection. Every other connection needs
+ * `project.connector.connections.manage`.
+ */
+async function loadMutableConnection(
+  c: any,
+  loaded: NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>,
+  projectId: string,
+  connectionId: string,
+) {
+  const actingPrincipalIsServiceAccount = c.get('authType') === 'service_account';
+  const mayManageSystemConnections = await projectCapabilityAllowed(
+    c,
+    loaded.userId,
+    loaded.row.accountId,
+    projectId,
+    PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
+  );
+  const [connection] = await db
+    .select({
+      connectorId: connectorConnections.connectorId,
+      ownerType: connectorConnections.ownerType,
+      ownerId: connectorConnections.ownerId,
+      isDefault: connectorConnections.isDefault,
+      label: connectorConnections.label,
+      metadata: connectorConnections.metadata,
+      providerType: connectors.providerType,
+      connectorConfig: connectors.config,
+      connectorAlias: connectors.slug,
+      status: connectorConnections.status,
+    })
+    .from(connectorConnections)
+    .innerJoin(
+      connectors,
+      and(
+        eq(connectors.connectorId, connectorConnections.connectorId),
+        eq(connectors.accountId, connectorConnections.accountId),
+        eq(connectors.projectId, connectorConnections.projectId),
+      ),
+    )
+    .where(
+      and(
+        eq(connectorConnections.connectionId, connectionId),
+        eq(connectorConnections.projectId, projectId),
+        eq(connectorConnections.accountId, loaded.row.accountId),
+      ),
+    )
+    .limit(1);
+  if (!connection) return null;
+  if (
+    !mayMutateConnection(
+      connection,
+      loaded.userId,
+      actingPrincipalIsServiceAccount,
+      mayManageSystemConnections,
+      await requestAgentPrincipalReach(c, loaded.actor),
+    )
+  ) {
+    return null;
+  }
+  return connection;
+}
+
+projectsApp.openapi(
+  createRoute({
+    method: 'put',
+    path: '/{projectId}/connections/{connectionId}/label',
+    tags: ['connectors'],
+    summary: 'Rename connection',
+    description:
+      'Change the label only. The authorized account, owner, default flag, and provider state stay as they are.',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string(), connectionId: z.string().uuid() }),
+      body: { content: { 'application/json': { schema: RenameConnectionInputSchema } } },
+    },
+    responses: {
+      200: json(ConnectionViewSchema, 'Renamed connection'),
+      ...errors(400, 403, 404, 409),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const connectionId = c.req.param('connectionId');
+    const body = await readBody(c);
+    const validated = validateConnectionLabel(body?.label);
+    if (!validated.ok) return c.json({ error: validated.error }, 400);
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const connection = await loadMutableConnection(c, loaded, projectId, connectionId);
+    if (!connection) return c.json({ error: 'Not found' }, 404);
+    const label = validated.label;
+    if (label === connection.label) {
+      return c.json(serializeConnection({ ...connection, connectionId }), 200);
+    }
+    // `--account <label>` matches case-insensitively, so two accounts of one
+    // owner that differ only by case could not be told apart. The unique
+    // index is case-sensitive, so this check is the one that refuses them.
+    const [clash] = await db
+      .select({ connectionId: connectorConnections.connectionId })
+      .from(connectorConnections)
+      .where(
+        and(
+          eq(connectorConnections.connectorId, connection.connectorId),
+          eq(connectorConnections.ownerType, connection.ownerType),
+          connection.ownerId === null
+            ? isNull(connectorConnections.ownerId)
+            : eq(connectorConnections.ownerId, connection.ownerId),
+          ne(connectorConnections.connectionId, connectionId),
+          sql`lower(btrim(${connectorConnections.label})) = ${label.toLowerCase()}`,
+        ),
+      )
+      .limit(1);
+    if (clash) {
+      return c.json({ error: `Another account of this connector is already named "${label}"` }, 409);
+    }
+    try {
+      // `updatedAt` stays as it is on purpose. Composio finalize picks the
+      // most recently updated row of an owner as the one a connect just
+      // started, so bumping it here could redirect an in-flight authorization.
+      await db
+        .update(connectorConnections)
+        .set({ label })
+        .where(eq(connectorConnections.connectionId, connectionId));
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        return c.json({ error: `Another account of this connector is already named "${label}"` }, 409);
+      }
+      throw error;
+    }
+    return c.json(serializeConnection({ ...connection, connectionId, label }), 200);
   },
 );
 
@@ -771,52 +925,8 @@ for (const operation of ['credential', 'revoke', 'activate', 'default'] as const
       const connectionId = c.req.param('connectionId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      const actingPrincipalIsServiceAccount = c.get('authType') === 'service_account';
-      const mayManageSystemConnections = await projectCapabilityAllowed(
-        c,
-        loaded.userId,
-        loaded.row.accountId,
-        projectId,
-        PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
-      );
-      const [connection] = await db
-        .select({
-          connectorId: connectorConnections.connectorId,
-          ownerType: connectorConnections.ownerType,
-          ownerId: connectorConnections.ownerId,
-          isDefault: connectorConnections.isDefault,
-          metadata: connectorConnections.metadata,
-            providerType: connectors.providerType,
-          connectorConfig: connectors.config,
-        })
-        .from(connectorConnections)
-        .innerJoin(
-          connectors,
-          and(
-            eq(connectors.connectorId, connectorConnections.connectorId),
-            eq(connectors.accountId, connectorConnections.accountId),
-            eq(connectors.projectId, connectorConnections.projectId),
-          ),
-        )
-        .where(
-          and(
-            eq(connectorConnections.connectionId, connectionId),
-            eq(connectorConnections.projectId, projectId),
-            eq(connectorConnections.accountId, loaded.row.accountId),
-          ),
-        )
-        .limit(1);
+      const connection = await loadMutableConnection(c, loaded, projectId, connectionId);
       if (!connection) return c.json({ error: 'Not found' }, 404);
-      if (
-        !mayMutateConnection(
-          connection,
-          loaded.userId,
-          actingPrincipalIsServiceAccount,
-          mayManageSystemConnections,
-        )
-      ) {
-        return c.json({ error: 'Not found' }, 404);
-      }
       if (operation === 'credential') {
         const body = await readBody(c);
         const parsed = UpdateConnectionCredentialInputSchema.safeParse(body);
@@ -1011,6 +1121,7 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
           loaded.userId,
           actingPrincipalIsServiceAccount,
           mayManageSystemConnections,
+          await requestAgentPrincipalReach(c, loaded.actor),
         )
       ) {
         return c.json({ error: 'Not found' }, 404);
@@ -1043,8 +1154,14 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
       }
       if (connection.providerType === 'composio') {
         if (!composioConfigured()) return c.json({ error: 'composio not configured' }, 501);
-        const { composioConnectUrl, finalizeComposioConnection, composioUserId } = await import(
-          '../../connectors/composio'
+        const {
+          composioConnectUrl,
+          finalizeComposioConnection,
+          composioUserId,
+          probeComposioIdentity,
+        } = await import('../../connectors/composio');
+        const { relabelToIdentity, resolveConnectedAs } = await import(
+          '../../connectors/connection-identity'
         );
         const { composioConnectionMetadata } = await import('../../connectors/db-deps');
         const stableUserId = composioUserId(connectionId);
@@ -1083,6 +1200,12 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
                 authRequestId: result.authRequestId,
                 connectedAccountId: result.connectedAccountId,
                 isNoAuth: result.isNoAuth,
+                previous: metadata,
+                connectedAs:
+                  result.connectedAccountId &&
+                  result.connectedAccountId === metadata.connected_account_id
+                    ? connectedAsOf(metadata)
+                    : null,
               }),
               updatedAt: sql`now()`,
             })
@@ -1107,6 +1230,19 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
             ? { authRequestId: metadata.auth_request_id }
             : {}),
         });
+        const connectedAs = result.connected
+          ? await resolveConnectedAs({
+              previous: metadata,
+              connectedAccountId: result.connectedAccountId,
+              isNoAuth: result.isNoAuth,
+              probe: () =>
+                probeComposioIdentity({
+                  app,
+                  sessionId: result.sessionId,
+                  connectedAccountId: result.connectedAccountId!,
+                }),
+            })
+          : null;
         await db
           .update(connectorConnections)
           .set({
@@ -1118,11 +1254,19 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
               authRequestId: result.authRequestId,
               connectedAccountId: result.connectedAccountId,
               isNoAuth: result.isNoAuth,
+              previous: metadata,
+              connectedAs,
             }),
             updatedAt: sql`now()`,
           })
           .where(eq(connectorConnections.connectionId, connectionId));
-        return c.json({ connected: result.connected, accountId: result.connectedAccountId });
+        const label = connectedAs ? await relabelToIdentity({ connectionId, identity: connectedAs }) : null;
+        return c.json({
+          connected: result.connected,
+          accountId: result.connectedAccountId,
+          connected_as: connectedAs,
+          ...(label ? { label } : {}),
+        });
       }
       if (!pipedreamConfigured()) {
         return c.json({ error: 'pipedream not configured' }, 501);
@@ -1190,7 +1334,7 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Leaf-gate the read (a custom role can omit project.trigger.read) — and, via
-    // the central agent-grant fold, an agent token must hold it in its kortixCli.
+    // the central agent-grant fold, an agent token must hold it in its Kortix permissions.
     await assertProjectCapability(
       c,
       loaded.userId,
@@ -2604,7 +2748,7 @@ projectsApp.openapi(
       // `opencode_session` only persists the root-session pin. Those are exactly
       // what the in-sandbox agent CLI reports over its session/CLI token, which a
       // SCOPED agent grant has no reason to hold connector.write for — gating them
-      // 403'd every turn-end report on Essentia, stranding sandboxes alive for the
+      // 403'd every turn-end report on SampleCo, stranding sandboxes alive for the
       // full idle grace (wasted compute). So exempt the lifecycle kinds and keep
       // the connector gate as the deny-by-default floor for anything that can
       // reach the send path. The IDOR scope (session_id -> projectId) below still
@@ -2812,6 +2956,31 @@ projectsApp.openapi(
         errorInfo,
         childSession ? childIdleGraceMs() : undefined,
       );
+      // The memory guard reports its cause in a frame of its own, after the
+      // abort. A daemon built before 2026-09-21 sends it with no
+      // `turn_message_id` and `error_retryable: true`, which settles nothing
+      // above. Attach the cause to the turn it stopped, or the UI says "No
+      // reason was reported" under a turn the sandbox killed on purpose.
+      if (
+        status === 'error' &&
+        body.error_name === 'SandboxMemoryGuard' &&
+        typeof body.turn_message_id !== 'string' &&
+        turnCompletion.outcome !== 'closed'
+      ) {
+        const causeOutcome = await recordUnidentifiedTurnCause(
+          sessionId,
+          typeof body.opencode_session_id === 'string' ? body.opencode_session_id : null,
+          {
+            name: body.error_name,
+            message: typeof body.error_message === 'string' ? body.error_message : null,
+          },
+        );
+        console.info('[turn-stream] unidentified turn cause', {
+          sessionId,
+          name: body.error_name,
+          outcome: causeOutcome,
+        });
+      }
       // Prompts forwarded INTO the turn that just ended: close the ones the
       // step answered (older than the ended message), and re-queue any that
       // the loop stranded below a newer assistant — see
@@ -3306,7 +3475,8 @@ projectsApp.openapi(
     const catalog = await servableProjectCatalog({
       projectId,
       accountId,
-      principalUserId: loaded.userId,
+      // Spec 2026-09-22 §2.3: personal provider keys of the on-behalf-of human only.
+      principalUserId: await requestPersonalOwner(c, loaded),
     });
     return c.json(catalog);
   },
@@ -3796,7 +3966,7 @@ projectsApp.openapi(
     }
 
     const [turnQuestionSession] = await db
-      .select({ sessionId: projectSessions.sessionId })
+      .select({ sessionId: projectSessions.sessionId, metadata: projectSessions.metadata })
       .from(projectSessions)
       .where(
         and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)),
@@ -3882,6 +4052,24 @@ projectsApp.openapi(
     // that the question is durable: it is the ordinary web case, and failing here
     // would make the relay look broken for every non-Slack session.
     const result = await relayTurnQuestion(sessionId, questions);
+
+    // Release the runtime's BLOCKING `question` call for a chat-channel session
+    // — see channels/question-release.ts. Keyed on the session's own metadata,
+    // not the live-turn row, and only with a real runtime question id: the
+    // `q-<session>` fallback above names nothing the runtime can answer.
+    // A dashboard session is left alone; its UI answers the question itself.
+    const channel = channelOfSessionMetadata(turnQuestionSession.metadata);
+    const runtimeRequestId = body.request_id?.trim();
+    if (channel && runtimeRequestId) {
+      await releaseChannelQuestion({
+        sessionId,
+        requestId: runtimeRequestId,
+        questionCount: questions.length,
+        channel,
+        posted: result.ok,
+      });
+    }
+
     if (!result.ok) {
       return c.json({ ok: true, persisted: true, answers: [], channel_error: result.error });
     }
@@ -4054,6 +4242,24 @@ projectsApp.openapi(
 
     const spec = await findProjectTriggerBySlug(await withProjectGitAuth(loaded.row), slug);
     if (!spec) return c.json({ error: 'Not found' }, 404);
+    // Agents as principals (spec 2026-09-22 §2.2, closes V2): the fired run
+    // acts as the trigger's agent, so the FIRER must be allowed to run that
+    // agent. Under the legacy model (flag off) the fire keeps today's gate.
+    if (resolveFeatureFlag(loaded.row.metadata, 'agent_principal')) {
+      // `default` selects the project's default agent; ask about that agent.
+      const mirroredDefault = (loaded.row.metadata as Record<string, unknown> | null)?.default_agent;
+      const firedAgent =
+        spec.agent === 'default' && typeof mirroredDefault === 'string' && mirroredDefault.trim()
+          ? mirroredDefault.trim()
+          : spec.agent;
+      await assertMayRunAgent(
+        c,
+        loaded.row.accountId,
+        projectId,
+        firedAgent,
+        PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE,
+      );
+    }
 
     const now = new Date();
     const payload = {

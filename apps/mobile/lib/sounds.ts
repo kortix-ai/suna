@@ -1,4 +1,4 @@
-import { Audio, type AVPlaybackSource } from 'expo-av';
+import { createAudioPlayer, setAudioModeAsync, type AudioSource } from 'expo-audio';
 import { useSoundStore, type SoundEvent } from '@/stores/sound-store';
 
 // ---------------------------------------------------------------------------
@@ -7,12 +7,12 @@ import { useSoundStore, type SoundEvent } from '@/stores/sound-store';
 // The opencode pack has no files yet, so it falls back to kortix.
 // ---------------------------------------------------------------------------
 
-const KORTIX_ASSETS: Partial<Record<SoundEvent, AVPlaybackSource>> = {
+const KORTIX_ASSETS: Partial<Record<SoundEvent, AudioSource>> = {
   completion: require('@/assets/sounds/kortix/completion.mp3'),
   send: require('@/assets/sounds/kortix/send.mp3'),
 };
 
-function resolveAsset(pack: string, event: SoundEvent): AVPlaybackSource | null {
+function resolveAsset(pack: string, event: SoundEvent): AudioSource | null {
   if (pack === 'kortix') {
     return KORTIX_ASSETS[event] ?? KORTIX_ASSETS.completion ?? null;
   }
@@ -22,7 +22,7 @@ function resolveAsset(pack: string, event: SoundEvent): AVPlaybackSource | null 
 
 // ---------------------------------------------------------------------------
 // Audio mode — call once before first playback so sounds work in silent mode
-// on iOS and mix with background audio instead of pausing it.
+// on iOS and duck background audio instead of pausing it.
 // ---------------------------------------------------------------------------
 
 let audioModeConfigured = false;
@@ -30,10 +30,10 @@ let audioModeConfigured = false;
 async function ensureAudioMode() {
   if (audioModeConfigured) return;
   try {
-    await Audio.setAudioModeAsync({
-      playsInSilentModeIOS: true,
-      staysActiveInBackground: false,
-      shouldDuckAndroid: true,
+    await setAudioModeAsync({
+      playsInSilentMode: true,
+      shouldPlayInBackground: false,
+      interruptionMode: 'duckOthers',
     });
     audioModeConfigured = true;
   } catch {
@@ -42,23 +42,23 @@ async function ensureAudioMode() {
 }
 
 // ---------------------------------------------------------------------------
-// Playback — each call creates a fresh Sound instance so rapid taps don't
-// conflict. Instances are unloaded after playback finishes to avoid leaks.
+// Playback — each call creates a fresh player so rapid taps don't conflict.
+// A player is not garbage-collected on its own: `remove()` releases it once
+// playback finishes to avoid leaking native players.
 // ---------------------------------------------------------------------------
 
-async function play(asset: AVPlaybackSource, volume: number) {
+async function play(asset: AudioSource, volume: number) {
   await ensureAudioMode();
 
-  const { sound } = await Audio.Sound.createAsync(asset, {
-    volume,
-    shouldPlay: true,
-  });
-
-  sound.setOnPlaybackStatusUpdate((status) => {
-    if (status.isLoaded && status.didJustFinish) {
-      sound.unloadAsync().catch(() => {});
+  const player = createAudioPlayer(asset);
+  player.volume = volume;
+  const subscription = player.addListener('playbackStatusUpdate', (status) => {
+    if (status.didJustFinish) {
+      subscription.remove();
+      player.remove();
     }
   });
+  player.play();
 }
 
 // ---------------------------------------------------------------------------

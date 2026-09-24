@@ -3,21 +3,36 @@
  * Components for previewing different file types
  */
 
-import React, { useState, useMemo, useEffect } from 'react';
-import { View, Image, ScrollView, Dimensions, Platform } from 'react-native';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { View, Image, ScrollView, Platform, useWindowDimensions } from 'react-native';
 import { WebView } from 'react-native-webview';
+import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTypes';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { KortixLoader } from '@/components/ui';
-import { AlertCircle, FileText } from 'lucide-react-native';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { WarningCircleIcon as AlertCircle, FileTextIcon as FileText } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
+import { SelectableMarkdownText } from '@/components/kortix/selectable-markdown';
 import { autoLinkUrls } from '@kortix/shared';
 import * as FileSystem from 'expo-file-system/legacy';
 import { log } from '@/lib/logger';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+import { MONO_FONT_FAMILY } from '@/lib/utils/mono-font';
+import { THEME, withAlpha } from '@/lib/utils/theme';
+import {
+  HTML_SANITIZER_SCRIPT,
+  decidePreviewNavigation,
+  escapeForInlineScript,
+  type PreviewNavigationOptions,
+} from '@/lib/utils/html-embed';
+import {
+  CSV_MAX_COLUMNS,
+  JSON_PRETTY_PRINT_MAX_CHARS,
+  TEXT_TRUNCATE_DISPLAY_BYTES,
+  previewDecision,
+  truncateForPreview,
+} from '@/lib/files/preview-limits';
+import { openLink } from '@/lib/utils/open-link';
 
 /**
  * Constructs a preview URL for HTML files in the sandbox environment.
@@ -65,7 +80,7 @@ export enum FilePreviewType {
 export function getFilePreviewType(filename: string): FilePreviewType {
   const ext = filename.split('.').pop()?.toLowerCase() || '';
 
-  const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'heic', 'heif', 'tiff'];
+  const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'ico', 'heic', 'heif', 'tiff'];
   const documentExtensions = ['pdf'];
   const markdownExtensions = ['md', 'markdown', 'mdx'];
   const csvExtensions = ['csv', 'tsv'];
@@ -93,6 +108,10 @@ export function getFilePreviewType(filename: string): FilePreviewType {
   const textExtensions = ['txt', 'log', 'rtf', 'tex', 'rst', 'org', 'nfo', 'info'];
   const binaryExtensions = ['zip', 'tar', 'gz', 'rar', '7z', 'exe', 'dmg', 'pkg', 'deb', 'rpm'];
 
+  // SVG is never drawn on mobile (Jay, 2026-09-22, `lib/files/svg-policy`):
+  // it reads as its markup, so Copy works, and Download hands the real file to
+  // the device. The `SvgXml` renderer that briefly lived here is gone.
+  if (ext === 'svg') return FilePreviewType.TEXT;
   if (imageExtensions.includes(ext)) return FilePreviewType.IMAGE;
   if (documentExtensions.includes(ext)) return FilePreviewType.PDF;
   if (markdownExtensions.includes(ext)) return FilePreviewType.MARKDOWN;
@@ -156,6 +175,14 @@ export function getLanguageFromFilename(filename: string): string {
   return languageMap[ext] || 'plaintext';
 }
 
+/**
+ * Space the host keeps clear at the bottom of a preview, for controls that float
+ * over it (the session file sheet's pinned bar, the project drawer's approach).
+ * Each renderer ends its content that far above the edge, so the last line of a
+ * document rests above the controls. 0 (the default) changes nothing.
+ */
+export const FilePreviewBottomInsetContext = React.createContext(0);
+
 interface FilePreviewProps {
   content: string | Blob | null;
   fileName: string;
@@ -163,6 +190,38 @@ interface FilePreviewProps {
   blobUrl?: string;
   filePath?: string;
   sandboxUrl?: string;
+  /** File size in bytes, when known. Files over the preview limits are not rendered. */
+  size?: number;
+}
+
+/**
+ * onShouldStartLoadWithRequest handler for preview WebViews. Inline loads stay
+ * in the WebView, web and mail links open outside the app, and every other
+ * navigation is blocked.
+ */
+function usePreviewNavigationGuard({
+  allowedOrigin,
+  allowFileUrls,
+  externalRequiresClick,
+}: Omit<PreviewNavigationOptions, 'isTopFrame' | 'navigationType'> = {}) {
+  return useCallback(
+    (request: ShouldStartLoadRequest) => {
+      const action = decidePreviewNavigation(request.url, {
+        allowedOrigin,
+        allowFileUrls,
+        externalRequiresClick,
+        isTopFrame: request.isTopFrame,
+        navigationType: request.navigationType,
+      });
+      if (action === 'open-external') {
+        openLink(request.url).catch((error) => {
+          log.warn('[FilePreview] Failed to open link:', error);
+        });
+      }
+      return action === 'allow';
+    },
+    [allowedOrigin, allowFileUrls, externalRequiresClick],
+  );
 }
 
 /**
@@ -173,7 +232,10 @@ function ImagePreview({ blobUrl, fileName }: { blobUrl?: string; fileName: strin
   const isDark = colorScheme === 'dark';
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
-  const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
+  // Width/height ratio of the loaded image; the box follows the live window width.
+  const [aspectRatio, setAspectRatio] = useState(0);
+  const { width: screenWidth } = useWindowDimensions();
+  const maxWidth = screenWidth - 32;
 
   if (!blobUrl) {
     return (
@@ -191,7 +253,7 @@ function ImagePreview({ blobUrl, fileName }: { blobUrl?: string; fileName: strin
       className="flex-1"
       contentContainerStyle={{ padding: 16 }}
       showsVerticalScrollIndicator={false}
-      style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}
+      style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}
     >
       {hasError ? (
         <View className="items-center justify-center p-8">
@@ -199,7 +261,6 @@ function ImagePreview({ blobUrl, fileName }: { blobUrl?: string; fileName: strin
             as={AlertCircle}
             size={48}
             className="text-destructive mb-4"
-            strokeWidth={1.5}
           />
           <Text className="text-sm text-muted-foreground text-center">
             Failed to load image
@@ -215,20 +276,13 @@ function ImagePreview({ blobUrl, fileName }: { blobUrl?: string; fileName: strin
           <Image
             source={{ uri: blobUrl }}
             style={{
-              width: imageSize.width || SCREEN_WIDTH - 32,
-              height: imageSize.height || 300,
+              width: maxWidth,
+              height: aspectRatio ? maxWidth / aspectRatio : 300,
             }}
             resizeMode="contain"
             onLoad={(event) => {
               const { width, height } = event.nativeEvent.source;
-              const aspectRatio = width / height;
-              const maxWidth = SCREEN_WIDTH - 32;
-              const calculatedHeight = maxWidth / aspectRatio;
-
-              setImageSize({
-                width: maxWidth,
-                height: calculatedHeight,
-              });
+              setAspectRatio(width / height);
               setIsLoading(false);
             }}
             onError={() => {
@@ -248,12 +302,14 @@ function ImagePreview({ blobUrl, fileName }: { blobUrl?: string; fileName: strin
 function MarkdownPreview({ content }: { content: string }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const bottomInset = React.useContext(FilePreviewBottomInsetContext);
 
   return (
     <ScrollView
       className="flex-1 px-4 py-4"
       showsVerticalScrollIndicator={true}
-      style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}
+      contentContainerStyle={{ paddingBottom: bottomInset }}
+      style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}
     >
       <SelectableMarkdownText isDark={isDark}>
         {autoLinkUrls(content)}
@@ -266,12 +322,17 @@ function MarkdownPreview({ content }: { content: string }) {
  * JSON Preview Component with syntax highlighting
  */
 function JsonPreview({ content }: { content: string }) {
+  const bottomInset = React.useContext(FilePreviewBottomInsetContext);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
 
-  // Format JSON for better readability
+  const onShouldStartLoadWithRequest = usePreviewNavigationGuard();
+
+  // Format JSON for better readability. Large documents are shown as-is:
+  // parse + stringify runs synchronously on the JS thread.
   const formattedJson = useMemo(() => {
+    if (content.length >= JSON_PRETTY_PRINT_MAX_CHARS) return content;
     try {
       const parsed = JSON.parse(content);
       return JSON.stringify(parsed, null, 2);
@@ -281,16 +342,17 @@ function JsonPreview({ content }: { content: string }) {
   }, [content]);
 
   const html = useMemo(
-    () => generateHighlightedCodeHtml(formattedJson, 'json', isDark),
-    [formattedJson, isDark],
+    () => generateHighlightedCodeHtml(formattedJson, 'json', isDark, bottomInset),
+    [formattedJson, isDark, bottomInset],
   );
 
   return (
-    <View className="flex-1" style={{ backgroundColor: isDark ? '#1e1e1e' : '#ffffff' }}>
+    <View className="flex-1" style={{ backgroundColor: isDark ? THEME.dark.card : THEME.light.card }}>
       <WebView
         source={{ html }}
         style={{ flex: 1, backgroundColor: 'transparent' }}
         originWhitelist={['*']}
+        onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
         javaScriptEnabled
         scrollEnabled
         showsVerticalScrollIndicator
@@ -300,34 +362,32 @@ function JsonPreview({ content }: { content: string }) {
         renderLoading={() => (
           <View
             className="absolute inset-0 items-center justify-center"
-            style={{ backgroundColor: isDark ? '#1e1e1e' : '#ffffff' }}
+            style={{ backgroundColor: isDark ? THEME.dark.card : THEME.light.card }}
           >
             <KortixLoader size="large" />
           </View>
         )}
       />
-      {/* Language badge at bottom */}
-      <View
-        className="px-4 pt-2 border-t"
-        style={{
-          borderTopColor: isDark
-            ? 'rgba(248, 248, 248, 0.08)'
-            : 'rgba(18, 18, 21, 0.06)',
-          backgroundColor: isDark ? '#121215' : '#ffffff',
-          paddingBottom: Math.max(insets.bottom, 8),
-        }}
-      >
-        <Text
-          className="text-xs font-roobert-medium"
+      {/* Language badge at bottom. Hidden under a host's floating controls. */}
+      {bottomInset === 0 ? (
+        <View
+          className="px-4 pt-2 border-t"
           style={{
-            color: isDark
-              ? 'rgba(248, 248, 248, 0.4)'
-              : 'rgba(18, 18, 21, 0.4)',
+            borderTopColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06),
+            backgroundColor: isDark ? THEME.dark.background : THEME.light.background,
+            paddingBottom: Math.max(insets.bottom, 8),
           }}
         >
-          JSON
-        </Text>
-      </View>
+          <Text
+            className="text-xs font-roobert-medium"
+            style={{
+              color: isDark ? withAlpha(THEME.dark.foreground, 0.4) : withAlpha(THEME.light.foreground, 0.4),
+            }}
+          >
+            JSON
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -339,17 +399,12 @@ function generateHighlightedCodeHtml(
   code: string,
   language: string,
   isDark: boolean,
+  bottomInset = 0,
 ): string {
-  const bgColor = isDark ? '#1e1e1e' : '#ffffff';
+  const bgColor = isDark ? THEME.dark.card : THEME.light.card;
   const theme = isDark ? 'github-dark' : 'github';
-  const lineNumColor = isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)';
-  const lineNumBorder = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
-  // Escape HTML entities in code
-  const escaped = code
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+  const lineNumColor = withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.2);
+  const lineNumBorder = withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.06);
 
   return `<!DOCTYPE html>
 <html>
@@ -367,6 +422,7 @@ function generateHighlightedCodeHtml(
     line-height: 20px;
     -webkit-text-size-adjust: none;
   }
+  body { padding-bottom: ${bottomInset}px; }
   .code-wrapper {
     position: relative;
     display: flex;
@@ -413,8 +469,8 @@ function generateHighlightedCodeHtml(
   <div class="code-area" id="code-area"></div>
 </div>
 <script>
-  var codeStr = ${JSON.stringify(code)};
-  var lang = ${JSON.stringify(language)};
+  var codeStr = ${escapeForInlineScript(JSON.stringify(code))};
+  var lang = ${escapeForInlineScript(JSON.stringify(language))};
   var highlighted;
   try {
     var result = hljs.highlight(codeStr, { language: lang, ignoreIllegals: true });
@@ -452,23 +508,26 @@ function generateHighlightedCodeHtml(
  * Code Preview Component with syntax highlighting via highlight.js WebView.
  */
 function CodePreview({ content, fileName }: { content: string; fileName: string }) {
+  const bottomInset = React.useContext(FilePreviewBottomInsetContext);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
   const language = getLanguageFromFilename(fileName);
+  const onShouldStartLoadWithRequest = usePreviewNavigationGuard();
 
   const html = useMemo(
-    () => generateHighlightedCodeHtml(content, language, isDark),
-    [content, language, isDark],
+    () => generateHighlightedCodeHtml(content, language, isDark, bottomInset),
+    [content, language, isDark, bottomInset],
   );
 
   return (
-    <View className="flex-1" style={{ backgroundColor: isDark ? '#1e1e1e' : '#ffffff' }}>
+    <View className="flex-1" style={{ backgroundColor: isDark ? THEME.dark.card : THEME.light.card }}>
       {/* Highlighted code */}
       <WebView
         source={{ html }}
         style={{ flex: 1, backgroundColor: 'transparent' }}
         originWhitelist={['*']}
+        onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
         javaScriptEnabled
         scrollEnabled
         showsVerticalScrollIndicator
@@ -478,34 +537,32 @@ function CodePreview({ content, fileName }: { content: string; fileName: string 
         renderLoading={() => (
           <View
             className="absolute inset-0 items-center justify-center"
-            style={{ backgroundColor: isDark ? '#1e1e1e' : '#ffffff' }}
+            style={{ backgroundColor: isDark ? THEME.dark.card : THEME.light.card }}
           >
             <KortixLoader size="large" />
           </View>
         )}
       />
-      {/* Language badge at bottom */}
-      <View
-        className="px-4 pt-2 border-t"
-        style={{
-          borderTopColor: isDark
-            ? 'rgba(248, 248, 248, 0.08)'
-            : 'rgba(18, 18, 21, 0.06)',
-          backgroundColor: isDark ? '#121215' : '#ffffff',
-          paddingBottom: Math.max(insets.bottom, 8),
-        }}
-      >
-        <Text
-          className="text-xs font-roobert-medium"
+      {/* Language badge at bottom. Hidden under a host's floating controls. */}
+      {bottomInset === 0 ? (
+        <View
+          className="px-4 pt-2 border-t"
           style={{
-            color: isDark
-              ? 'rgba(248, 248, 248, 0.4)'
-              : 'rgba(18, 18, 21, 0.4)',
+            borderTopColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06),
+            backgroundColor: isDark ? THEME.dark.background : THEME.light.background,
+            paddingBottom: Math.max(insets.bottom, 8),
           }}
         >
-          {language.toUpperCase()}
-        </Text>
-      </View>
+          <Text
+            className="text-xs font-roobert-medium"
+            style={{
+              color: isDark ? withAlpha(THEME.dark.foreground, 0.4) : withAlpha(THEME.light.foreground, 0.4),
+            }}
+          >
+            {language.toUpperCase()}
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -524,16 +581,29 @@ function HtmlPreview({
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
 
+  const bottomInset = React.useContext(FilePreviewBottomInsetContext);
   // If we have sandbox URL and file path, use Daytona iframe to preview
   const htmlPreviewUrl = constructHtmlPreviewUrl(sandboxUrl, filePath);
+  // Pages of the previewed site stay in the WebView. Another site opens outside
+  // the app only for a user click, so a script redirect or an iframe in the
+  // page cannot launch the browser. Tradeoff: only iOS reports clicks
+  // (navigationType 'click'). Android sends no click or frame information, so
+  // on Android a tap on an external link in an HTML preview does nothing.
+  const onShouldStartLoadWithRequest = usePreviewNavigationGuard({
+    allowedOrigin: htmlPreviewUrl,
+    externalRequiresClick: true,
+  });
 
   if (htmlPreviewUrl) {
     return (
       <View className="flex-1">
         <WebView
           source={{ uri: htmlPreviewUrl }}
-          style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#ffffff' }}
+          // iOS only: the page's end rests above a host's floating controls.
+          contentInset={{ bottom: bottomInset }}
+          style={{ flex: 1, backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}
           originWhitelist={['*']}
+          onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
           javaScriptEnabled={true}
           domStorageEnabled={true}
           startInLoadingState={true}
@@ -542,7 +612,7 @@ function HtmlPreview({
               <KortixLoader size="large" />
               <Text
                 className="text-sm mt-4 font-roobert"
-                style={{ color: isDark ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
+                style={{ color: isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5) }}
               >
                 Loading preview...
               </Text>
@@ -560,20 +630,24 @@ function HtmlPreview({
 /**
  * Text Preview Component
  */
+
+
 function TextPreview({ content }: { content: string }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const bottomInset = React.useContext(FilePreviewBottomInsetContext);
 
   return (
     <ScrollView
       className="flex-1 px-4 py-4"
       showsVerticalScrollIndicator={true}
-      style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}
+      contentContainerStyle={{ paddingBottom: bottomInset }}
+      style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}
     >
       <Text
         style={{
-          color: isDark ? '#f8f8f8' : '#121215',
-          fontFamily: 'monospace',
+          color: isDark ? THEME.dark.foreground : THEME.light.foreground,
+          fontFamily: MONO_FONT_FAMILY,
           fontSize: 13,
           lineHeight: 20,
         }}
@@ -591,10 +665,11 @@ function TextPreview({ content }: { content: string }) {
 function CsvPreview({ content }: { content: string }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const bottomInset = React.useContext(FilePreviewBottomInsetContext);
 
   // Parse CSV content
   const rows = content.split('\n').filter(row => row.trim());
-  const headers = rows[0]?.split(',').map(h => h.trim()) || [];
+  const headers = rows[0]?.split(',').slice(0, CSV_MAX_COLUMNS).map(h => h.trim()) || [];
   const dataRows = rows.slice(1);
 
   return (
@@ -602,17 +677,18 @@ function CsvPreview({ content }: { content: string }) {
       horizontal
       showsHorizontalScrollIndicator={true}
       className="flex-1"
-      style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}
+      style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}
     >
       <ScrollView
         showsVerticalScrollIndicator={true}
         className="px-4 py-4"
-        style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}
+        contentContainerStyle={{ paddingBottom: bottomInset }}
+        style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}
       >
         {/* Headers */}
         <View className="flex-row border-b pb-2 mb-2"
           style={{
-            borderBottomColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.1)',
+            borderBottomColor: isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.1),
           }}
         >
           {headers.map((header, index) => (
@@ -621,7 +697,7 @@ function CsvPreview({ content }: { content: string }) {
               style={{ width: 120, marginRight: 12 }}
             >
               <Text
-                style={{ color: isDark ? '#f8f8f8' : '#121215' }}
+                style={{ color: isDark ? THEME.dark.foreground : THEME.light.foreground }}
                 className="text-xs font-roobert-semibold"
                 numberOfLines={1}
               >
@@ -633,13 +709,13 @@ function CsvPreview({ content }: { content: string }) {
 
         {/* Data Rows */}
         {dataRows.slice(0, 100).map((row, rowIndex) => {
-          const cells = row.split(',').map(c => c.trim());
+          const cells = row.split(',').slice(0, CSV_MAX_COLUMNS).map(c => c.trim());
           return (
             <View
               key={rowIndex}
               className="flex-row py-2 border-b"
               style={{
-                borderBottomColor: isDark ? 'rgba(248, 248, 248, 0.05)' : 'rgba(18, 18, 21, 0.05)',
+                borderBottomColor: isDark ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.05),
               }}
             >
               {cells.map((cell, cellIndex) => (
@@ -648,7 +724,7 @@ function CsvPreview({ content }: { content: string }) {
                   style={{ width: 120, marginRight: 12 }}
                 >
                   <Text
-                    style={{ color: isDark ? 'rgba(248, 248, 248, 0.8)' : 'rgba(18, 18, 21, 0.8)' }}
+                    style={{ color: isDark ? withAlpha(THEME.dark.foreground, 0.8) : withAlpha(THEME.light.foreground, 0.8) }}
                     className="text-xs font-roobert"
                     numberOfLines={2}
                   >
@@ -675,8 +751,9 @@ function CsvPreview({ content }: { content: string }) {
  * Android WebView doesn't support native PDF rendering, so we use pdf.js
  */
 function generatePdfJsHtml(base64Data: string, isDark: boolean): string {
-  const bgColor = isDark ? '#121215' : '#ffffff';
-  const textColor = isDark ? '#f8f8f8' : '#121215';
+  const bgColor = isDark ? THEME.dark.background : THEME.light.background;
+  const textColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
   
   return `
 <!DOCTYPE html>
@@ -704,8 +781,8 @@ function generatePdfJsHtml(base64Data: string, isDark: boolean): string {
     canvas {
       max-width: 100%;
       height: auto;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-      background: white;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15); /* hex-allowlist: fixed black drop-shadow, theme-independent (matches app's shadowColor:'#000' convention) */
+      background: white; /* hex-allowlist: rendered PDF page is always paper-white, independent of app theme */
     }
     #loading, #error {
       position: fixed;
@@ -717,9 +794,9 @@ function generatePdfJsHtml(base64Data: string, isDark: boolean): string {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       font-size: 14px;
     }
-    #error { color: #ef4444; display: none; }
+    #error { color: ${destructiveColor}; display: none; }
     .page-num {
-      color: ${isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)'};
+      color: ${isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5)};
       font-size: 12px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       margin-top: 4px;
@@ -743,7 +820,8 @@ function generatePdfJsHtml(base64Data: string, isDark: boolean): string {
           bytes[i] = binaryData.charCodeAt(i);
         }
         
-        const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+        // isEvalSupported: false stops font data from compiling to JS (CVE-2024-4367).
+        const pdf = await pdfjsLib.getDocument({ data: bytes, isEvalSupported: false }).promise;
         document.getElementById('loading').style.display = 'none';
         
         const container = document.getElementById('container');
@@ -793,12 +871,17 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
   const [hasError, setHasError] = useState(false);
   const [pdfFileUri, setPdfFileUri] = useState<string | null>(null);
   const [pdfHtml, setPdfHtml] = useState<string | null>(null);
+  // The cleanup closure must read the latest temp file, not the value captured
+  // when the effect ran.
+  const pdfFileUriRef = useRef<string | null>(null);
   
   const isAndroid = Platform.OS === 'android';
+  const onShouldStartLoadWithRequest = usePreviewNavigationGuard({ allowFileUrls: !isAndroid });
 
   // Process the PDF data based on platform
   useEffect(() => {
     if (!blobUrl) return;
+    let cancelled = false;
 
     const processPdf = async () => {
       try {
@@ -827,6 +910,11 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
           await FileSystem.writeAsStringAsync(tempFilePath, base64Data, {
             encoding: FileSystem.EncodingType.Base64,
           });
+          if (cancelled) {
+            FileSystem.deleteAsync(tempFilePath, { idempotent: true }).catch(() => {});
+            return;
+          }
+          pdfFileUriRef.current = tempFilePath;
           setPdfFileUri(tempFilePath);
           setIsLoading(false);
         }
@@ -839,10 +927,13 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
 
     processPdf();
 
-    // Cleanup temp file on unmount (iOS only)
+    // Delete the temp file when the PDF changes or the preview unmounts (iOS only)
     return () => {
-      if (pdfFileUri) {
-        FileSystem.deleteAsync(pdfFileUri, { idempotent: true }).catch(() => {});
+      cancelled = true;
+      const tempFile = pdfFileUriRef.current;
+      pdfFileUriRef.current = null;
+      if (tempFile) {
+        FileSystem.deleteAsync(tempFile, { idempotent: true }).catch(() => {});
       }
     };
   }, [blobUrl, fileName, isAndroid, isDark]);
@@ -860,7 +951,7 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
 
   if (isLoading) {
     return (
-      <View className="flex-1 items-center justify-center" style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}>
+      <View className="flex-1 items-center justify-center" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
         <KortixLoader size="large" />
         <Text className="text-sm text-muted-foreground mt-4">
           Preparing PDF...
@@ -876,7 +967,6 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
           as={AlertCircle}
           size={48}
           className="text-destructive mb-4"
-          strokeWidth={1.5}
         />
         <Text className="text-sm text-muted-foreground text-center mb-2">
           Failed to load PDF
@@ -891,18 +981,19 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
   // Android: Use pdf.js HTML
   if (isAndroid && pdfHtml) {
     return (
-      <View className="flex-1" style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}>
+      <View className="flex-1" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
         <WebView
           source={{ html: pdfHtml }}
           style={{ flex: 1, backgroundColor: 'transparent' }}
           originWhitelist={['*']}
+          onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
           javaScriptEnabled={true}
           domStorageEnabled={true}
           mixedContentMode="compatibility"
           allowFileAccess={true}
           startInLoadingState={true}
           renderLoading={() => (
-            <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}>
+            <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
               <KortixLoader size="large" />
               <Text className="text-sm text-muted-foreground mt-4">
                 Rendering PDF...
@@ -920,19 +1011,18 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
 
   // iOS: Use native file:// URL rendering
   return (
-    <View className="flex-1" style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}>
+    <View className="flex-1" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
       <WebView
         source={{ uri: pdfFileUri! }}
         style={{ flex: 1, backgroundColor: 'transparent' }}
         originWhitelist={['*']}
+        onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
         javaScriptEnabled={true}
         domStorageEnabled={true}
         allowFileAccess={true}
-        allowFileAccessFromFileURLs={true}
-        allowUniversalAccessFromFileURLs={true}
         startInLoadingState={true}
         renderLoading={() => (
-          <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}>
+          <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
             <KortixLoader size="large" />
             <Text className="text-sm text-muted-foreground mt-4">
               Rendering PDF...
@@ -957,8 +1047,13 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
  * mammoth.js works reliably in WebView and converts DOCX to clean HTML
  */
 function generateDocxHtml(base64Data: string, isDark: boolean): string {
-  const bgColor = isDark ? '#121215' : '#ffffff';
-  const textColor = isDark ? '#f8f8f8' : '#121215';
+  const bgColor = isDark ? THEME.dark.background : THEME.light.background;
+  const textColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
+  const borderColor = isDark ? THEME.dark.border : THEME.light.border;
+  const mutedBgColor = isDark ? THEME.dark.muted : THEME.light.muted;
+  const mutedForegroundColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const zebraStripeColor = withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, isDark ? 0.03 : 0.02);
 
   return `
 <!DOCTYPE html>
@@ -993,7 +1088,7 @@ function generateDocxHtml(base64Data: string, isDark: boolean): string {
       left: 50%;
       transform: translate(-50%, -50%);
       text-align: center;
-      color: #ef4444;
+      color: ${destructiveColor};
       display: none;
       padding: 20px;
     }
@@ -1043,17 +1138,17 @@ function generateDocxHtml(base64Data: string, isDark: boolean): string {
       font-size: 14px;
     }
     #container th, #container td {
-      border: 1px solid ${isDark ? 'rgba(248,248,248,0.3)' : '#d1d5db'};
+      border: 1px solid ${borderColor};
       padding: 10px 12px;
       text-align: left;
       vertical-align: top;
     }
     #container th {
-      background: ${isDark ? 'rgba(248,248,248,0.1)' : '#f3f4f6'};
+      background: ${mutedBgColor};
       font-weight: 600;
     }
     #container tr:nth-child(even) {
-      background: ${isDark ? 'rgba(248,248,248,0.03)' : '#f9fafb'};
+      background: ${zebraStripeColor};
     }
     #container img {
       max-width: 100%;
@@ -1061,14 +1156,14 @@ function generateDocxHtml(base64Data: string, isDark: boolean): string {
       margin: 1em 0;
     }
     #container a {
-      color: ${isDark ? '#60a5fa' : '#2563eb'};
+      color: ${THEME.accent.blue};
       text-decoration: underline;
     }
     #container blockquote {
-      border-left: 4px solid ${isDark ? 'rgba(248,248,248,0.3)' : '#d1d5db'};
+      border-left: 4px solid ${borderColor};
       padding-left: 1em;
       margin: 1em 0;
-      color: ${isDark ? 'rgba(248,248,248,0.7)' : '#6b7280'};
+      color: ${mutedForegroundColor};
       font-style: italic;
     }
     #container strong, #container b {
@@ -1081,14 +1176,14 @@ function generateDocxHtml(base64Data: string, isDark: boolean): string {
       text-decoration: underline;
     }
     #container code {
-      background: ${isDark ? 'rgba(248,248,248,0.1)' : '#f3f4f6'};
+      background: ${mutedBgColor};
       padding: 2px 6px;
       border-radius: 4px;
       font-family: ui-monospace, monospace;
       font-size: 0.9em;
     }
     #container pre {
-      background: ${isDark ? 'rgba(248,248,248,0.1)' : '#f3f4f6'};
+      background: ${mutedBgColor};
       padding: 12px;
       border-radius: 6px;
       overflow-x: auto;
@@ -1096,7 +1191,7 @@ function generateDocxHtml(base64Data: string, isDark: boolean): string {
     }
     #container hr {
       border: none;
-      border-top: 1px solid ${isDark ? 'rgba(248,248,248,0.2)' : '#e5e7eb'};
+      border-top: 1px solid ${borderColor};
       margin: 2em 0;
     }
   </style>
@@ -1106,6 +1201,8 @@ function generateDocxHtml(base64Data: string, isDark: boolean): string {
   <div id="error">Failed to load document</div>
   <div id="container"></div>
   <script>
+    ${HTML_SANITIZER_SCRIPT}
+
     async function renderDocx() {
       try {
         const base64 = '${base64Data}';
@@ -1129,12 +1226,15 @@ function generateDocxHtml(base64Data: string, isDark: boolean): string {
           }
         );
 
-        document.getElementById('loading').style.display = 'none';
-        document.getElementById('container').innerHTML = result.value;
-
-        if (result.messages && result.messages.length > 0) {
-          console.log('Mammoth messages:', result.messages);
+        // Parse into an inert document, sanitize, then move the nodes into the
+        // page. Nothing from the file runs or loads before sanitizing.
+        const parsed = new DOMParser().parseFromString(result.value, 'text/html');
+        sanitizeUntrustedHtml(parsed.body);
+        const container = document.getElementById('container');
+        while (parsed.body.firstChild) {
+          container.appendChild(document.adoptNode(parsed.body.firstChild));
         }
+        document.getElementById('loading').style.display = 'none';
       } catch (err) {
         console.error('DOCX render error:', err);
         document.getElementById('loading').style.display = 'none';
@@ -1173,6 +1273,7 @@ function DocxPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [docxHtml, setDocxHtml] = useState<string | null>(null);
+  const onShouldStartLoadWithRequest = usePreviewNavigationGuard();
 
   useEffect(() => {
     if (!blobUrl) return;
@@ -1218,7 +1319,7 @@ function DocxPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string
 
   if (isLoading) {
     return (
-      <View className="flex-1 items-center justify-center" style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}>
+      <View className="flex-1 items-center justify-center" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
         <KortixLoader size="large" />
         <Text className="text-sm text-muted-foreground mt-4">
           Preparing document...
@@ -1234,7 +1335,6 @@ function DocxPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string
           as={AlertCircle}
           size={48}
           className="text-destructive mb-4"
-          strokeWidth={1.5}
         />
         <Text className="text-sm text-muted-foreground text-center mb-2">
           Failed to load document
@@ -1247,17 +1347,18 @@ function DocxPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string
   }
 
   return (
-    <View className="flex-1" style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}>
+    <View className="flex-1" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
       <WebView
         source={{ html: docxHtml }}
         style={{ flex: 1, backgroundColor: 'transparent' }}
         originWhitelist={['*']}
+        onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
         javaScriptEnabled={true}
         domStorageEnabled={true}
         mixedContentMode="compatibility"
         startInLoadingState={true}
         renderLoading={() => (
-          <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}>
+          <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
             <KortixLoader size="large" />
             <Text className="text-sm text-muted-foreground mt-4">
               Rendering document...
@@ -1276,12 +1377,22 @@ function DocxPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string
 /**
  * Fallback Preview Component
  */
-function FallbackPreview({ fileName, previewType }: { fileName: string; previewType: FilePreviewType }) {
+function FallbackPreview({
+  fileName,
+  previewType,
+  tooLarge = false,
+}: {
+  fileName: string;
+  previewType: FilePreviewType;
+  tooLarge?: boolean;
+}) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
 
   let message = 'Preview not available';
-  if (previewType === FilePreviewType.XLSX) {
+  if (tooLarge) {
+    message = 'This file is too large to preview. Download it instead.';
+  } else if (previewType === FilePreviewType.XLSX) {
     message = 'Spreadsheet preview requires download';
   }
 
@@ -1290,8 +1401,7 @@ function FallbackPreview({ fileName, previewType }: { fileName: string; previewT
       <Icon
         as={FileText}
         size={48}
-        color={isDark ? 'rgba(248, 248, 248, 0.3)' : 'rgba(18, 18, 21, 0.3)'}
-        strokeWidth={1.5}
+        color={isDark ? withAlpha(THEME.dark.foreground, 0.3) : withAlpha(THEME.light.foreground, 0.3)}
         className="mb-4"
       />
       <Text className="text-sm font-roobert-medium text-center mb-2">
@@ -1305,36 +1415,37 @@ function FallbackPreview({ fileName, previewType }: { fileName: string; previewT
 }
 
 /**
- * Main File Preview Component
+ * Notice above a text preview that shows only the start of the file.
  */
-export function FilePreview({
+function TruncationNotice() {
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+
+  return (
+    <View
+      className="px-4 py-2"
+      style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}
+    >
+      <Text variant="muted" className="text-center">
+        Showing the first {Math.round(TEXT_TRUNCATE_DISPLAY_BYTES / 1024)} KB. Download the file to see all of it.
+      </Text>
+    </View>
+  );
+}
+
+function TextContentPreview({
   content,
   fileName,
   previewType,
-  blobUrl,
   filePath,
-  sandboxUrl
-}: FilePreviewProps) {
-  // For images, we need the blob URL
-  if (previewType === FilePreviewType.IMAGE) {
-    return <ImagePreview blobUrl={blobUrl} fileName={fileName} />;
-  }
-
-  // For PDFs, we need the blob URL
-  if (previewType === FilePreviewType.PDF) {
-    return <PdfPreview blobUrl={blobUrl} fileName={fileName} />;
-  }
-
-  // For DOCX, we need the blob URL
-  if (previewType === FilePreviewType.DOCX) {
-    return <DocxPreview blobUrl={blobUrl} fileName={fileName} />;
-  }
-
-  // For other types, we need text content
-  if (!content || typeof content !== 'string') {
-    return <FallbackPreview fileName={fileName} previewType={previewType} />;
-  }
-
+  sandboxUrl,
+}: {
+  content: string;
+  fileName: string;
+  previewType: FilePreviewType;
+  filePath?: string;
+  sandboxUrl?: string;
+}) {
   switch (previewType) {
     case FilePreviewType.MARKDOWN:
       return <MarkdownPreview content={content} />;
@@ -1351,6 +1462,7 @@ export function FilePreview({
     case FilePreviewType.TEXT:
       return <TextPreview content={content} />;
 
+
     case FilePreviewType.CSV:
       return <CsvPreview content={content} />;
 
@@ -1363,4 +1475,86 @@ export function FilePreview({
       // Any unrecognized file with text content — render as plain text
       return <TextPreview content={content} />;
   }
+}
+
+/**
+ * Main File Preview Component
+ */
+export function FilePreview({
+  content,
+  fileName,
+  previewType,
+  blobUrl,
+  filePath,
+  sandboxUrl,
+  size,
+}: FilePreviewProps) {
+  // Size gate for text content. Memoized so a parent re-render does not hand
+  // the renderers a new truncated string (which would rebuild WebView HTML).
+  const textPreview = useMemo(() => {
+    if (typeof content !== 'string' || !content) return null;
+    const decision = previewDecision({ size: content.length, previewType });
+    if (decision !== 'truncate') return { decision, text: content };
+    return { decision, text: truncateForPreview(content).text };
+  }, [content, previewType]);
+
+  const sizeDecision = previewDecision({ size, previewType });
+
+  // An HTML file with a sandbox URL loads the page by URL, not through JS, so
+  // the size limits do not apply to it.
+  const loadsFromSandbox =
+    previewType === FilePreviewType.HTML && !!constructHtmlPreviewUrl(sandboxUrl, filePath);
+  if (loadsFromSandbox && (textPreview || sizeDecision === 'too-large')) {
+    return <HtmlPreview content={textPreview?.text ?? ''} filePath={filePath} sandboxUrl={sandboxUrl} />;
+  }
+
+  // Files known to exceed the limits are never rendered; Download stays available.
+  if (sizeDecision === 'too-large') {
+    return <FallbackPreview fileName={fileName} previewType={previewType} tooLarge />;
+  }
+
+  // For images, we need the blob URL
+  if (previewType === FilePreviewType.IMAGE) {
+    return <ImagePreview blobUrl={blobUrl} fileName={fileName} />;
+  }
+
+  // For PDFs, we need the blob URL
+  if (previewType === FilePreviewType.PDF) {
+    return <PdfPreview blobUrl={blobUrl} fileName={fileName} />;
+  }
+
+  // For DOCX, we need the blob URL
+  if (previewType === FilePreviewType.DOCX) {
+    return <DocxPreview blobUrl={blobUrl} fileName={fileName} />;
+  }
+
+  // For other types, we need text content
+  if (!textPreview) {
+    return <FallbackPreview fileName={fileName} previewType={previewType} />;
+  }
+
+  if (textPreview.decision === 'too-large') {
+    return <FallbackPreview fileName={fileName} previewType={previewType} tooLarge />;
+  }
+
+  const preview = (
+    <TextContentPreview
+      content={textPreview.text}
+      fileName={fileName}
+      previewType={previewType}
+      filePath={filePath}
+      sandboxUrl={sandboxUrl}
+    />
+  );
+
+  if (textPreview.decision === 'truncate') {
+    return (
+      <View className="flex-1">
+        <TruncationNotice />
+        {preview}
+      </View>
+    );
+  }
+
+  return preview;
 }

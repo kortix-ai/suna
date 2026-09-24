@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 667,
+  "count": 671,
   "routes": [
     {
       "method": "GET",
@@ -1456,6 +1456,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/apps/:appId/agents"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/apps/:appId/deployments"
     },
     {
@@ -1705,6 +1709,10 @@
     {
       "method": "PUT",
       "path": "/v1/projects/:projectId/connections/:connectionId/default"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/connections/:connectionId/label"
     },
     {
       "method": "GET",

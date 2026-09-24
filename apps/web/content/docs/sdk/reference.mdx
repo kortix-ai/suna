@@ -308,7 +308,7 @@ project manager as much as a member.
 | `search(query, options?)` · `describe(tool)` | find · inspect one callable tool |
 | `call(tool, args?, options?)` | call one `<connector>.<action>` tool through the server-side gateway. `options.account` names which account to run as — see below. |
 | `accounts(slug)` | the accounts this caller may call `slug` as, default first — what `options.account` matches against |
-| `uploadAttachment(content, input)` | upload bytes and receive an opaque attachment handle for a later call |
+| `uploadAttachment(content, input)` | stage bytes for `input.connector`; returns `ref` (`{ $kortix_attachment }`) to place in a later call's args — see [Attach files](/docs/connect/connectors#attach-files) |
 | `list()` · `config(connectorId)` | configured connectors · one connector's config |
 | `create(input)` | add a connector |
 | `auth.discover(input)` | preview auth from an OpenAPI spec, Postman collection, or endpoint |
@@ -320,6 +320,8 @@ project manager as much as a member.
 | `connections.list()` · `connections.reconcile(input)` | list · create/update connected accounts |
 | `connections.updateCredential(connectionId, input)` | rotate a connection credential |
 | `connections.revoke(connectionId)` · `connections.activate(connectionId)` | deny · restore a connection |
+| `connections.setDefault(connectionId)` | make it the default for its owner scope |
+| `connections.rename(connectionId, label)` | change the label only; the account stays authorized. Each connection carries `connected_as`, the identity it was authorized as. |
 
 `p.connectors.discover` browses the direct-connector catalog. It is **experimental** and off by default — enable it per project under [Settings → Experimental](/docs/feature-flags) → "Connectors API Discover". Easy Connect (Pipedream) remains the default connector marketplace.
 

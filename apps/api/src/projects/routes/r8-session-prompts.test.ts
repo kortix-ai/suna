@@ -437,6 +437,18 @@ describe('POST .../prompts', () => {
     expect(enqueued[0].remintOnDelivery).toBeUndefined();
   });
 
+  // `kortix sessions send` ≤ 2026-09 minted the HIGH bits of the id clock
+  // (`msg_1a0d…`, ~40 days ahead of every id OpenCode writes). Refusing it
+  // would break every installed CLI; delivering it as-is renders every later
+  // turn above it. The server places it instead.
+  test('a far-future message_id is accepted and re-placed on delivery', async () => {
+    const cliId = `msg_${((BigInt(Date.now()) * BigInt(0x1000)) >> BigInt(8)).toString(16).slice(0, 12)}SyntheticCli03`;
+    const res = await post({ ...validBody, message_id: cliId });
+    expect(res.status).toBe(202);
+    expect(enqueued[0].wireMessageId).toBe(cliId);
+    expect(enqueued[0].remintOnDelivery).toBe(true);
+  });
+
   test('the idempotency key is the submission name, so a repeat POST is one row', async () => {
     await post(validBody);
     expect(enqueued[0].idempotencyKey).toBe(`prompt:${SESSION_ID}:q_1`);

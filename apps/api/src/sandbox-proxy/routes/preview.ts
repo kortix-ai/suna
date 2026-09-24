@@ -1,3 +1,4 @@
+import { isWireIdAheadOf } from '../../projects/wire-message-id';
 import { clientAbortTarget } from '../client-abort';
 import { markTurnStopRequested } from '../../projects/sandbox-turn-lifecycle';
 import { stripInlineAttachmentBytes } from '../inline-attachments';
@@ -1293,21 +1294,28 @@ export async function forwardToSandbox(
       // read keeps the client's id); runs after every refusal point and before
       // the ledger begins, so the identity recorded is the one delivered. Once
       // per request: a retry attempt keeps the placement the first computed.
+      // The inbox drain already placed its id and says so with a header — one
+      // fewer round-trip. Any client can send that header, so it skips only
+      // the READ: an id far ahead of the clock (the pre-fix CLI's high-bits
+      // mint) is re-minted on the id alone either way.
+      const clientWireId = promptBodyMessageId(requestBody);
+      const placedByInbox = incomingHeaders.get(WIRE_ID_PLACED_HEADER) === '1';
       if (
         promptDelivery &&
         !sandboxAuthored &&
         effectiveMessageId === null &&
         isPromptWireIdRepairPath(remainingPath) &&
-        // The inbox drain already placed it — one fewer round-trip.
-        incomingHeaders.get(WIRE_ID_PLACED_HEADER) !== '1' &&
         // No client id, nothing to place — OpenCode mints, and the read is
         // skipped entirely so a plain body pays nothing.
-        promptBodyMessageId(requestBody) !== null
+        clientWireId !== null &&
+        (!placedByInbox || isWireIdAheadOf(clientWireId, Date.now()))
       ) {
         const readUrl =
           previewUrl.replace(/\/$/, '') +
           promptTranscriptReadPath(remainingPath, PROMPT_TRANSCRIPT_READ_LIMIT);
-        const newestKnownTime = await readNewestWireIdTime({ url: readUrl, headers: authHeaders });
+        const newestKnownTime = placedByInbox
+          ? null
+          : await readNewestWireIdTime({ url: readUrl, headers: authHeaders });
         ptl.mark('wire-id-read');
         const placed = repairPromptWireId({
           body: requestBody,
