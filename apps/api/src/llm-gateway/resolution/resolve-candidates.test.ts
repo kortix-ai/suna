@@ -395,7 +395,7 @@ describe('resolveCandidates — BYOK billing', () => {
     expect(livePricingCalls).toEqual(['amazon-bedrock/anthropic.claude-opus-4-8']);
   });
 
-  // The Essentia incident, at the resolve-candidates layer: a session pinned to
+  // The SampleCo incident, at the resolve-candidates layer: a session pinned to
   // a `jp.` opus profile on a us-east-1 box must resolve to the `us.` invoke id
   // so it stops 400ing "The provided model identifier is invalid."
   test('BYOK Bedrock: a wrong-geography jp. pin on a us-east-1 box is normalized to us.', async () => {

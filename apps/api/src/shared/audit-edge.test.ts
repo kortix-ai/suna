@@ -7,6 +7,7 @@
  * entrypoint — including Hono — is written exactly once.
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { auditLabelForEntrypoint, auditLabelForRoute } from '@kortix/shared/audit-labels';
 import { Hono } from 'hono';
 
 let auditRows: Array<Record<string, unknown>> = [];
@@ -65,12 +66,15 @@ describe('every entrypoint is written exactly once', () => {
       actorUserId: USER,
       accountId: ACCOUNT,
       actorType: 'human',
-      action: 'GET preview_origin',
+      action: auditLabelForEntrypoint('preview_origin')?.action,
       resourceType: 'sandbox_preview_origin',
       httpStatus: 200,
       userAgent: 'Mozilla/5.0',
     });
-    expect(auditRows[0]?.metadata).toMatchObject({ entrypoint: 'preview_origin' });
+    expect(auditRows[0]?.metadata).toMatchObject({
+      entrypoint: 'preview_origin',
+      http: 'GET preview_origin',
+    });
   });
 
   test('a WebSocket upgrade is written as a 101', async () => {
@@ -87,7 +91,7 @@ describe('every entrypoint is written exactly once', () => {
     expect(res).toBeUndefined();
     expect(auditRows).toHaveLength(1);
     expect(auditRows[0]).toMatchObject({
-      action: 'GET ws:/v1/p/:sandboxId/:port/*',
+      action: auditLabelForEntrypoint('ws:/v1/p/:sandboxId/:port/*')?.action,
       resourceType: 'websocket',
       httpStatus: 101,
       outcome: 'success',
@@ -128,7 +132,7 @@ describe('every entrypoint is written exactly once', () => {
     expect(res?.status).toBe(503);
     expect(auditRows).toHaveLength(1);
     expect(auditRows[0]).toMatchObject({
-      action: 'POST /v1/projects/:projectId/secrets',
+      action: auditLabelForRoute('POST', '/v1/projects/:projectId/secrets')?.action,
       actorUserId: USER,
       actorType: 'human',
       httpStatus: 502,
@@ -177,7 +181,10 @@ describe('deployed apps', () => {
       return new Response('app');
     });
     expect(auditRows).toHaveLength(1);
-    expect(auditRows[0]).toMatchObject({ action: 'GET app_origin', resourceType: 'app' });
+    expect(auditRows[0]).toMatchObject({
+      action: auditLabelForEntrypoint('app_origin')?.action,
+      resourceType: 'app',
+    });
   });
 });
 

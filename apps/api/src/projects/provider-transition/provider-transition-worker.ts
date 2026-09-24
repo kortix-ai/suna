@@ -7,6 +7,7 @@
  * building, ready, activating) — a crash at ready or mid-activating converges.
  */
 import { db as appDb } from '../../shared/db';
+import { runWorkerTick } from '../../shared/audit-scope';
 import { logger } from '../../lib/logger';
 import { driveProviderTransition } from './provider-transition-runner';
 import { defaultTransitionDeps } from './provider-transition-service';
@@ -61,7 +62,7 @@ export function startProviderTransitionWorker(): void {
   timer = setInterval(() => {
     if (running) return;
     running = true;
-    runProviderTransitionTick()
+    runWorkerTick('provider-transition', runProviderTransitionTick)
       .catch((err) =>
         logger.error('[provider-transition-worker] tick failed', {
           error: err instanceof Error ? err.message : String(err),

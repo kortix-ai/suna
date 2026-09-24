@@ -949,7 +949,7 @@ async function startSessionRuntime(
     // or a claim/setup failure. Until 2026-08-26 this was a dead end: nothing
     // ever retried, `runtimeReady` stayed false forever, the proxy 503'd every
     // request `initial_opencode_session_pending`, and the session spun "Waking
-    // the agent" until a human clicked Restart (Essentia ef9f344b, 10+ min).
+    // the agent" until a human clicked Restart (reported session, 10+ min).
     // The runtime is unusable without the root, so retry until established —
     // bounded interval, detached so the rest of boot (readiness probe, event
     // loop fallback below) proceeds and the box stays observable meanwhile.
@@ -2680,7 +2680,7 @@ export function __resetRelayedTurnBegins(): void {
  * user message it injects when a background pty finishes. Those turns had no
  * authority at all: `GET .../turn` read idle over minutes of live streaming
  * and the box ran on its 15-minute idle tail (live incident 2026-08-20,
- * Essentia session d1b74954). This relay fires on the root's `busy`/`retry`
+ * a reported session). This relay fires on the root's `busy`/`retry`
  * status frames and names the newest user message; apps/api adopts it only
  * when no open turn exists and the message was never seen — so relaying for
  * an ordinary delivered prompt is a cheap no-op.
@@ -2786,7 +2786,7 @@ export async function relayTurnEndToApi(
   // the real error. The completed timestamp doubles as the per-turn dedup key.
   //
   // Read BEFORE the root filter, because the runaway guard below must see EVERY
-  // session's completions: the 2026-08-18 Essentia incident was a CHILD session
+  // session's completions: the 2026-08-18 incident was a CHILD session
   // re-answering the same standing prompt indefinitely, and with the guard
   // placed after the root filter it never saw a single one of those repeats.
   let turn = await readRootTurnState(opencodeSessionId, opencode, cfg)
@@ -2981,8 +2981,8 @@ async function readRootTurnState(
     // USER rows are SKIPPED, not a boundary: a prompt forwarded into a live
     // turn — and OpenCode's own synthetic `<pty_exited>` wake-ups — leave a
     // user message as the newest row at almost every turn end, and bailing
-    // there unnamed EVERY relay for such sessions (live 2026-08-20, Essentia
-    // session d1b74954: `relay_named:false` on each end, double finalizes
+    // there unnamed EVERY relay for such sessions (live 2026-08-20:
+    // `relay_named:false` on each end, double finalizes
     // because the unnamed relay has no dedup signature, and the forwarded-turn
     // reconciler lost its primary key). Attribution is message-scoped — the
     // assistant's own `parentID` names the turn it answered — so a pending

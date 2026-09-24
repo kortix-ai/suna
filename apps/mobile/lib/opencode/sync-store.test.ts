@@ -310,3 +310,29 @@ describe('session eviction', () => {
     expect(useSyncStore.getState().messages).toBe(before.messages);
   });
 });
+
+describe('addPermission', () => {
+  beforeEach(() => useSyncStore.getState().reset());
+
+  function permission(id: string) {
+    return { id, sessionID: 'session-1', permission: 'bash', input: {} } as const;
+  }
+
+  test('appends a new permission to the session list', () => {
+    useSyncStore.getState().addPermission('session-1', permission('perm-1'));
+    expect(useSyncStore.getState().permissions['session-1']).toEqual([permission('perm-1')]);
+  });
+
+  test('skips a permission whose id is already in that session\'s list', () => {
+    useSyncStore.getState().addPermission('session-1', permission('perm-1'));
+    useSyncStore.getState().addPermission('session-1', permission('perm-1'));
+    expect(useSyncStore.getState().permissions['session-1']).toEqual([permission('perm-1')]);
+  });
+
+  test('a duplicate id in one session does not block the same id in another', () => {
+    useSyncStore.getState().addPermission('session-1', permission('perm-1'));
+    useSyncStore.getState().addPermission('session-2', permission('perm-1'));
+    expect(useSyncStore.getState().permissions['session-1']).toEqual([permission('perm-1')]);
+    expect(useSyncStore.getState().permissions['session-2']).toEqual([permission('perm-1')]);
+  });
+});

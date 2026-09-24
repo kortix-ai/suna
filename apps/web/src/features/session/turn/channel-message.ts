@@ -24,7 +24,7 @@
  * took 22 s and 7 s.
  */
 
-import { indexOfIgnoreCase } from '@kortix/shared';
+import { indexOfIgnoreCase, readLegacyChannelHeader } from '@kortix/shared';
 
 export type ChannelPlatform = 'Slack' | 'Teams' | 'Telegram';
 
@@ -143,11 +143,6 @@ const FOLLOW_UP_HEADERS: Array<{ platform: ChannelPlatform; header: RegExp }> = 
   { platform: 'Slack', header: /^New message from (.+?) in the same Slack thread:$/m },
 ];
 
-// `[Slack · #general · message from <user>]`. The groups keep surrounding spaces;
-// the parser trims them. Written as `\s*([^·]+?)\s*·` and `\s+([^\]]+)\]`, it
-// matched the same text but tried every split of a long space run: quadratic.
-const LEGACY_HEADER = /^\[(\w+)\s*·([^·]+)·\s*message from(\s[^\]]+)\]\s*/;
-
 /** A header only counts when it opens the prompt (a revived-thread NOTE may precede it). */
 function opensPrompt(text: string, headerIndex: number): boolean {
   const before = text.slice(0, headerIndex).trim();
@@ -158,14 +153,15 @@ export function parseChannelMessage(rawText: string | null | undefined): Channel
   const text = (rawText ?? '').trim();
   if (!text) return undefined;
 
-  const legacy = LEGACY_HEADER.exec(text);
+  // `[Slack · #general · message from <user>]`, read by `@kortix/shared/channel-header`.
+  const legacy = readLegacyChannelHeader(text);
   if (legacy) {
-    const platform = legacy[1] === 'Teams' ? 'Teams' : legacy[1] === 'Telegram' ? 'Telegram' : 'Slack';
+    const platform = legacy.platform === 'Teams' ? 'Teams' : legacy.platform === 'Telegram' ? 'Telegram' : 'Slack';
     return {
       platform,
-      context: legacy[2].trim(),
-      userName: legacy[3].trim(),
-      messageText: cutAtTail(text.slice(legacy[0].length)),
+      context: legacy.context,
+      userName: legacy.userName,
+      messageText: cutAtTail(text.slice(legacy.length)),
       followUp: false,
     };
   }

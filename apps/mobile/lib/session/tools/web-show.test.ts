@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  showRowModel,
   getShowCarouselItemAriaLabel,
   getShowCarouselItemLabel,
   isShowBinaryPath,
@@ -11,8 +12,10 @@ import {
   showBodyKind,
   showContentBranch,
   showDisplayTitle,
+  showFileActions,
   showHeaderIconType,
   showInlineToolbarKind,
+  showOpenTarget,
   showUnavailableLabel,
   shouldRenderFromSandboxFile,
 } from './web-show';
@@ -92,8 +95,16 @@ describe('show inline toolbar', () => {
     expect(showInlineToolbarKind({ ...base, canActivate: false })).toBeNull();
   });
 
-  test('file-backed inline show places file actions (Refresh / Full screen / Open) in the header', () => {
+  test('file-backed inline show places file actions in the header', () => {
     expect(showInlineToolbarKind({ ...base, activePath: '/workspace/report.pdf', content: '' })).toBe('file');
+  });
+
+  test('inline file actions are Refresh · Preview — one control per target, no duplicate open', () => {
+    expect(showFileActions({ inPanel: false })).toEqual(['refresh', 'preview']);
+  });
+
+  test('panel file actions drop Preview and keep Full screen, as on web', () => {
+    expect(showFileActions({ inPanel: true })).toEqual(['refresh', 'full-screen']);
   });
 
   test('a website preview gets the preview actions', () => {
@@ -236,6 +247,46 @@ describe('show preview target', () => {
   });
 });
 
+describe('show open target (useShowOpenInTab)', () => {
+  test('an HTML file opens its static-server preview', () => {
+    const target = showOpenTarget({ type: 'file', url: '', path: '/workspace/site/index.html' });
+    expect(target?.kind).toBe('html-file');
+    expect(target && 'staticUrl' in target ? target.staticUrl : '').toContain('index.html');
+  });
+
+  test('a localhost URL opens the sandbox preview, never the external browser', () => {
+    expect(showOpenTarget({ type: 'url', url: 'http://localhost:5173/app', path: '' })).toEqual({ kind: 'localhost' });
+  });
+
+  test('a safe http(s) URL opens externally, normalised like web safeHttpUrl', () => {
+    expect(showOpenTarget({ type: 'url', url: ' https://kortix.com ', path: '' })).toEqual({
+      kind: 'external',
+      url: 'https://kortix.com/',
+    });
+  });
+
+  test('an unsafe or malformed URL never opens externally', () => {
+    expect(showOpenTarget({ type: 'url', url: 'https://', path: '' })).toBeNull();
+    expect(showOpenTarget({ type: 'url', url: 'javascript:alert(1)', path: '' })).toBeNull();
+    expect(showOpenTarget({ type: 'url', url: '/internal/x', path: '/workspace/a.pdf' })).toEqual({
+      kind: 'file',
+      path: '/workspace/a.pdf',
+    });
+  });
+
+  test('a non-HTML path opens the file viewer; nothing at all opens nothing', () => {
+    expect(showOpenTarget({ type: 'file', url: '', path: '/workspace/a.pdf' })).toEqual({
+      kind: 'file',
+      path: '/workspace/a.pdf',
+    });
+    expect(showOpenTarget({ type: 'html', url: '', path: '/workspace/a.htm.bak' })).toEqual({
+      kind: 'file',
+      path: '/workspace/a.htm.bak',
+    });
+    expect(showOpenTarget({ type: 'text', url: '', path: '' })).toBeNull();
+  });
+});
+
 describe('show sandbox file text read', () => {
   test('binary files are never read as text; text and code files are', () => {
     expect(isShowBinaryPath('/workspace/build.zip')).toBe(true);
@@ -244,5 +295,74 @@ describe('show sandbox file text read', () => {
     expect(isShowBinaryPath('/workspace/config.yaml')).toBe(false);
     expect(isShowBinaryPath('/workspace/notes.md')).toBe(false);
     expect(isShowBinaryPath('/workspace/Makefile')).toBe(false);
+  });
+});
+
+describe('showRowModel — the transcript row (option B)', () => {
+  test('a file names itself and its kind, and only an image carries a still', () => {
+    expect(showRowModel({ type: 'html', path: '/workspace/hello.html', url: '', title: 'Hello' })).toEqual({
+      title: 'hello.html',
+      subtitle: 'Page',
+      thumb: 'glyph',
+    });
+    expect(showRowModel({ type: 'file', path: '/workspace/revenue.png', url: '', title: '' })).toEqual({
+      title: 'revenue.png',
+      subtitle: 'Image',
+      thumb: 'image',
+    });
+    expect(showRowModel({ type: 'file', path: '/workspace/q3.pdf', url: '', title: 'Quarter' })).toEqual({
+      title: 'q3.pdf',
+      subtitle: 'PDF',
+      thumb: 'glyph',
+    });
+  });
+
+  test('a link reads as its domain; a direct image URL still gets its still', () => {
+    expect(showRowModel({ type: 'link', path: '', url: 'https://kortix.ai/pricing', title: '' })).toEqual({
+      title: 'kortix.ai',
+      subtitle: 'kortix.ai',
+      thumb: 'glyph',
+    });
+    expect(showRowModel({ type: 'link', path: '', url: 'https://cdn.test/a/chart.png', title: 'Chart' })).toEqual({
+      title: 'Chart',
+      subtitle: 'cdn.test',
+      thumb: 'image',
+    });
+  });
+
+  test('with neither a path nor a URL it falls back to the title, then the kind', () => {
+    expect(showRowModel({ type: 'markdown', path: '', url: '', title: 'Launch notes' }).title).toBe('Launch notes');
+    expect(showRowModel({ type: 'markdown', path: '', url: '', title: '' })).toEqual({
+      title: 'Markdown',
+      subtitle: 'Markdown',
+      thumb: 'glyph',
+    });
+  });
+});
+
+describe('showRowModel — a running app', () => {
+  test('a localhost URL reads as a preview and its port, never the proxy URL', () => {
+    expect(showRowModel({ type: 'website', path: '', url: 'http://localhost:3000', title: '' })).toEqual({
+      title: 'App preview',
+      subtitle: 'localhost:3000',
+      thumb: 'glyph',
+    });
+    expect(showRowModel({ type: 'website', path: '', url: 'http://localhost:5173/dashboard', title: 'Dashboard' })).toEqual({
+      title: 'Dashboard',
+      subtitle: 'localhost:5173/dashboard',
+      thumb: 'glyph',
+    });
+  });
+});
+
+describe('showRowModel — SVG never previews in the row', () => {
+  test('an SVG keeps its glyph; a PNG beside it still shows its still', () => {
+    expect(showRowModel({ type: 'image', path: '/workspace/logo.svg', url: '', title: '' })).toEqual({
+      title: 'logo.svg',
+      subtitle: 'Image',
+      thumb: 'glyph',
+    });
+    expect(showRowModel({ type: 'image', path: '/workspace/logo.png', url: '', title: '' }).thumb).toBe('image');
+    expect(showRowModel({ type: 'link', path: '', url: 'https://cdn.test/logo.svg', title: '' }).thumb).toBe('glyph');
   });
 });

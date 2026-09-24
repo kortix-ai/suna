@@ -210,7 +210,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     available: () => config.LLM_GATEWAY_ENABLED,
     // Fleet rollout switch, default ON (config.ts LLM_GATEWAY_DEFAULT_ENABLED).
     // Turning the flag OFF per project is the first-class native path — the
-    // deliberate lever for deployments (e.g. Essentia) that bring their own
+    // deliberate lever for deployments (e.g. SampleCo) that bring their own
     // keys end to end. Explicit project overrides always win, and the master
     // availability gate above remains the emergency kill switch.
     platformDefault: () => config.LLM_GATEWAY_DEFAULT_ENABLED,

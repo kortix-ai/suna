@@ -2748,7 +2748,7 @@ projectsApp.openapi(
       // `opencode_session` only persists the root-session pin. Those are exactly
       // what the in-sandbox agent CLI reports over its session/CLI token, which a
       // SCOPED agent grant has no reason to hold connector.write for — gating them
-      // 403'd every turn-end report on Essentia, stranding sandboxes alive for the
+      // 403'd every turn-end report on SampleCo, stranding sandboxes alive for the
       // full idle grace (wasted compute). So exempt the lifecycle kinds and keep
       // the connector gate as the deny-by-default floor for anything that can
       // reach the send path. The IDOR scope (session_id -> projectId) below still

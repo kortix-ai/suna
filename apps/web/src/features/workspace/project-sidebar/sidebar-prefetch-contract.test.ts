@@ -13,7 +13,7 @@ import { join } from 'node:path';
  *
  * Twenty of those 21 were `<Link>`'s automatic viewport prefetch firing for
  * every OTHER session row — each one a dynamic server render of a full session
- * page (~24KB of flight payload, median 480ms on the Essentia deployment,
+ * page (~24KB of flight payload, median 480ms on the SampleCo deployment,
  * 423 hits across a 20-open HAR corpus). The same shape charged /files,
  * /apps and /customize two requests each per open.
  *

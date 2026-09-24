@@ -16,7 +16,11 @@ import { appendFileMention } from '@/lib/session/session-files';
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface MentionItem {
-  kind: 'file' | 'agent' | 'session';
+  // 'skill' is produced by `useSkillMentions.ts` (the composer's separate
+  // `#` trigger), not by this hook — the kind is widened here so
+  // `MentionSuggestions.tsx` can render both @-mention and #-skill rows
+  // through one component. `@` itself never produces a 'skill' item.
+  kind: 'file' | 'agent' | 'session' | 'skill';
   label: string;
   value?: string;       // session ID for sessions, file path for files
   description?: string;
@@ -232,7 +236,10 @@ export function useMentions({
       setMentions((prev) => [
         ...prev,
         {
-          kind: item.kind,
+          // This hook's own `mentionItems` never produces a 'skill' item —
+          // that kind only exists on `MentionItem` so `MentionSuggestions`
+          // can render `useSkillMentions.ts`'s rows too. Safe to narrow here.
+          kind: item.kind as TrackedMention['kind'],
           label: item.label,
           ...(item.kind === 'session' ? { value: item.value } : {}),
         },

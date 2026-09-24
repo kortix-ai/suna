@@ -142,6 +142,20 @@ export function stripReplyContexts(text: string): string {
 }
 
 /**
+ * `text` without its leading and trailing `\n`, as
+ * `text.replace(/^\n+/, '').replace(/\n+$/, '')` returned it, in one pass.
+ * `/\n+$/` retried every newline of a blank run that did not reach the end,
+ * so a long blank run between two words took seconds.
+ */
+function trimNewlines(text: string): string {
+  let start = 0;
+  let end = text.length;
+  while (start < end && text.charCodeAt(start) === 10) start++;
+  while (end > start && text.charCodeAt(end - 1) === 10) end--;
+  return text.slice(start, end);
+}
+
+/**
  * Split text produced by `parseReplyContexts` back into ordered pieces.
  * Text pieces are trimmed of leading/trailing newlines; empty text pieces dropped.
  */
@@ -162,13 +176,13 @@ export function splitAtQuoteMarkers(
   let cursor = 0;
   let match: RegExpExecArray | null;
   while ((match = re.exec(text))) {
-    const before = text.slice(cursor, match.index).replace(/^\n+/, '').replace(/\n+$/, '');
+    const before = trimNewlines(text.slice(cursor, match.index));
     if (before) pieces.push({ kind: 'text', text: before });
     const index = Number(match[1]);
     pieces.push({ kind: 'quote', text: quotes[index] ?? '', index });
     cursor = re.lastIndex;
   }
-  const rest = text.slice(cursor).replace(/^\n+/, '').replace(/\n+$/, '');
+  const rest = trimNewlines(text.slice(cursor));
   if (rest) pieces.push({ kind: 'text', text: rest });
   return pieces;
 }

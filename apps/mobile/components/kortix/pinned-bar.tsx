@@ -42,10 +42,16 @@ export interface PinnedBarProps {
   background: string;
   /** Layout of the controls row, e.g. `gap-2 px-4`. */
   className?: string;
+  /**
+   * Draw the fade behind the controls. Default true. `false` floats the
+   * controls straight over the content (the Browser toolbar: its capsules are
+   * opaque, the site shows to the edge; Jay, 2026-09-23).
+   */
+  fade?: boolean;
   children: React.ReactNode;
 }
 
-export function PinnedBar({ controlHeight, background, className, children }: PinnedBarProps) {
+export function PinnedBar({ controlHeight, background, className, fade = true, children }: PinnedBarProps) {
   const insets = useSafeAreaInsets();
   const barBottom = insets.bottom + PINNED_BAR_BOTTOM_GAP;
 
@@ -54,12 +60,14 @@ export function PinnedBar({ controlHeight, background, className, children }: Pi
       pointerEvents="box-none"
       className="absolute inset-x-0 bottom-0"
       style={{ height: barBottom + controlHeight + PINNED_BAR_FADE_ABOVE }}>
-      <LinearGradient
-        pointerEvents="none"
-        colors={[withAlpha(background, 0), withAlpha(background, 0.85), withAlpha(background, 1)]}
-        locations={[0, 0.45, 1]}
-        style={StyleSheet.absoluteFill}
-      />
+      {fade ? (
+        <LinearGradient
+          pointerEvents="none"
+          colors={[withAlpha(background, 0), withAlpha(background, 0.85), withAlpha(background, 1)]}
+          locations={[0, 0.45, 1]}
+          style={StyleSheet.absoluteFill}
+        />
+      ) : null}
       <View
         pointerEvents="box-none"
         className={cn('absolute inset-x-0 flex-row items-center', className)}

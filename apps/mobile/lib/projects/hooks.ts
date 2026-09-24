@@ -817,6 +817,9 @@ export function useProjectModelCatalog(projectId: string | null) {
     defaultModel: query.data?.defaultModel,
     /** First load only: consumers hide the model pill instead of flashing "Connect model". */
     isLoading: query.isLoading,
+    /** `ConnectProviderSheet` refetches after the in-app browser closes, to
+     *  toast once a provider connects. */
+    refetch: query.refetch,
   };
 }
 

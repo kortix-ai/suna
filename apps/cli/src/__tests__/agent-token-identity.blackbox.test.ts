@@ -54,7 +54,7 @@ function startApi() {
             kortix_cli: ['project.secret.read', 'project.secret.write'],
           },
           accounts: [
-            { account_id: ACCOUNT_ID, slug: '3b1fc472', name: 'Essentia', role: 'owner' },
+            { account_id: ACCOUNT_ID, slug: '3b1fc472', name: 'SampleCo', role: 'owner' },
           ],
         });
       }

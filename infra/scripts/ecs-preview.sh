@@ -334,7 +334,7 @@ task = {
         {
             "name": "api",
             "image": api_image,
-            "essential": True,
+            "samplecol": True,
             "portMappings": [{"containerPort": 8008, "protocol": "tcp"}],
             "environment": [
                 {"name": "PORT", "value": "8008"},
@@ -350,7 +350,7 @@ task = {
         {
             "name": "gateway",
             "image": gateway_image,
-            "essential": True,
+            "samplecol": True,
             "portMappings": [{"containerPort": 8090, "protocol": "tcp"}],
             "environment": [
                 {"name": "PORT", "value": "8090"},
@@ -365,7 +365,7 @@ task = {
         {
             "name": "web",
             "image": web_image,
-            "essential": True,
+            "samplecol": True,
             "portMappings": [{"containerPort": 3000, "protocol": "tcp"}],
             "environment": [
                 {"name": "PORT", "value": "3000"},

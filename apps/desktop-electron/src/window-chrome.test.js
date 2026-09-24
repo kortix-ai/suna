@@ -50,18 +50,20 @@ describe('desktop window chrome', () => {
    files), so a control drawn "on the traffic-light line" was 4px off it. These
    pin the derivation. */
 describe('macOS title-bar band geometry', () => {
+  test('native light origin accounts for the measured macOS visual offset', () => {
+    // The supplied 2x capture puts the native circle 10 image pixels above
+    // the project row. Five window pixels brings it onto that line.
+    expect(macTrafficLightPosition().y).toBe(13);
+  });
   test('traffic lights are vertically centered in the band', () => {
     const { y } = macTrafficLightPosition();
-    expect(y + MAC_TITLEBAR.lightFrame / 2).toBe(MAC_TITLEBAR.band / 2);
+    expect(y + MAC_TITLEBAR.lightFrame / 2 - MAC_TITLEBAR.nativeCenterCorrectionY).toBe(MAC_TITLEBAR.band / 2);
   });
 
-  // #6178 measured the lights at y 24–36 with `trafficLightPosition.y = 18`.
-  // Reading `y` as the circle's top predicted 18–30 and left the lights 6px
-  // below every control in the band.
-  test('the model reproduces the measured light position', () => {
-    const circleTop = 18 + (MAC_TITLEBAR.lightFrame - MAC_TITLEBAR.lightSize) / 2;
-    expect([circleTop, circleTop + MAC_TITLEBAR.lightSize]).toEqual([24, 36]);
-    expect(macTrafficLightPosition().y).toBe(8);
+  test('the visible circle occupies the centered 12px band', () => {
+    const circleTop = macTrafficLightPosition().y + MAC_TITLEBAR.lightFrame / 2
+      - MAC_TITLEBAR.nativeCenterCorrectionY - MAC_TITLEBAR.lightSize / 2;
+    expect([circleTop, circleTop + MAC_TITLEBAR.lightSize]).toEqual([14, 26]);
   });
 
   test('the light cluster is three lights wide', () => {
@@ -73,19 +75,19 @@ describe('macOS title-bar band geometry', () => {
   test('the app control shares the lights’ centre line', () => {
     const { controlTop } = macBandMetrics();
     const { y } = macTrafficLightPosition();
-    expect(controlTop + MAC_TITLEBAR.control / 2).toBe(y + MAC_TITLEBAR.lightFrame / 2);
+    expect(controlTop + MAC_TITLEBAR.control / 2).toBe(y + MAC_TITLEBAR.lightFrame / 2 - MAC_TITLEBAR.nativeCenterCorrectionY);
   });
 
   test('the app control clears the lights by the full gutter', () => {
     const { controlLeft } = macBandMetrics();
     expect(controlLeft - macLightsEndX()).toBe(MAC_TITLEBAR.gutter);
-    expect(controlLeft).toBe(72);
+    expect(controlLeft).toBe(78);
   });
 
   test('content starts after the control, not on top of it', () => {
     const { contentLeft, controlLeft } = macBandMetrics();
     expect(contentLeft).toBe(controlLeft + MAC_TITLEBAR.control + MAC_TITLEBAR.contentGap);
-    expect(contentLeft).toBe(108);
+    expect(contentLeft).toBe(114);
   });
 
   test('every derived offset is a whole pixel', () => {

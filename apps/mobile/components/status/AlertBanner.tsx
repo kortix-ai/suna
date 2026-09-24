@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { View, Pressable, Linking } from 'react-native';
+import { View, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { XIcon as X, ArrowSquareOutIcon as ExternalLink, type AppIcon } from '@/lib/icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import { openLink } from '@/lib/utils/open-link';
 
 export type AlertBannerVariant = 'warning' | 'error' | 'info';
 
@@ -80,7 +81,7 @@ export function AlertBanner({
   const handleStatusPress = () => {
     if (statusUrl) {
       const url = statusUrl.startsWith('http') ? statusUrl : `https://kortix.ai${statusUrl}`;
-      Linking.openURL(url).catch(() => {});
+      openLink(url).catch(() => {});
     }
   };
 
@@ -115,6 +116,8 @@ export function AlertBanner({
             onPress={handleDismiss}
             hitSlop={8}
             className="h-6 w-6 items-center justify-center rounded-full"
+            accessibilityRole="button"
+            accessibilityLabel="Dismiss"
           >
             <Icon as={X} size={12} className={styles.textColor} />
           </Pressable>

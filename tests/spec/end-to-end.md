@@ -621,7 +621,6 @@ connector and assert its returned digest and persisted bytes. Same-length corrup
 checksum fail without replacing the destination. Malformed base64 returns 400.
 Cleanup removes the connection and temporary files.
 
-
 ### Ops (platform admin)
 
 `OPS-1` `GET /ops/overview` → `requireAdmin` (platform admin/super_admin) → 200; non-admin → 403.
@@ -861,7 +860,8 @@ sends the key on create.
 `AUD-4` `POST`/`PATCH`/`DELETE /accounts/:id/audit/webhooks[/:id]` → 201 secret-once; bad url → 400; unknown → 404; delete 200.
 `AUD-5` Audit edge cases: ANON → 401 on every audit route; MEMBER (in-team, no audit.read/account.write) → 403; malformed/zero/negative/oversized limits, malformed timestamps, malformed UUID filters, and malformed cursors → 400; cursor pagination has no overlap, including PostgreSQL microsecond timestamps serialized through JavaScript milliseconds; export responses expose resumable row-count/complete/next-cursor headers; webhook create validation (missing name, >128 name, malformed URL, SSRF 169.254.169.254 → 400); webhook secret-once invariant (no leak on GET list / PATCH); cross-account isolation (teamA hook via teamB path → 404).
 `AUD-6` Canonical v2 operations: `GET /projects/:id/audit` → the project-bound canonical page; `POST /accounts/:id/audit/reconcile` → bounded idempotent reconciliation result; `GET /accounts/:id/audit/webhooks/:webhookId/deliveries` → durable delivery rows; `POST .../deliveries/:deliveryId/replay` → `{replayed:true}`; human auth on `POST /projects/:id/sessions/:sid/audit/events` → 403 because ingestion requires the session-bound sandbox token.
-`AUD-7` Every inbound request is audited, whoever it names. Real Git processes use API-minted personal tokens through the Git proxy. The owner's clone writes a `git.clone` row that names the owner and the token id, never the secret. The owner's push of a new branch writes a `git.push` row with the created ref (`kind: create`, zero old sha, pushed commit as new sha). Deleting the branch writes `kind: delete`. An account member with no project role, and a project member without `project.gitops.push`, are refused with 403; each refusal is a `denied` row that names that member. An unauthenticated request to the project writes an `anonymous` row (401, `denied`) into the owner's account log, selectable with `actor_type=anonymous`. An unknown `actor_type` → 400.
+`AUD-7` Every inbound request is audited, whoever it names. Real Git processes use API-minted personal tokens through the Git proxy. The owner's clone writes a `git.clone` row that names the owner and the token id, never the secret. The owner's push of a new branch writes a `git.push` row with the created ref (`kind: create`, zero old sha, pushed commit as new sha). Deleting the branch writes `kind: delete`. An account member with no project role, and a project member without `project.gitops.push`, are refused with 403; each refusal is a `denied` row that names that member, labelled `git.ref.list` with `GET /v1/git/:project/info/refs` in `metadata.http`. An unauthenticated request to the project writes an `anonymous` row (401, `denied`) into the owner's account log, selectable with `actor_type=anonymous`; the auth middleware refused it before the handler ran, and the row still names the endpoint (`project.read`, `GET /v1/projects/:projectId` in `metadata.http`). An unknown `actor_type` → 400.
+`AUD-8` A request row is named by its route's audit label. Every route has one label in `@kortix/shared/audit-labels`: a `domain.resource.verb` action and a title. Reading a project writes a `project.read` row whose `metadata.http` is `GET /v1/projects/:projectId` and whose metadata carries no project id. The `project.` action prefix selects labelled rows only. Creating an IAM group writes exactly one row for that request id: the handler's own `iam.group.create` event, not a second request row. An authenticated request to a route that does not exist (404) writes `api.route.unmatched` and never the raw path segment.
 `SCIM-1` `GET /scim/v2/accounts/:id/ServiceProviderConfig` → SCIM bearer 200; OWNER JWT/no bearer → 401.
 `SCIM-2` `GET/POST /scim/v2/accounts/:id/Users` · `GET/PATCH/DELETE …/:userId` → ListResponse; missing userName → 400; idempotent deletes 204; OWNER JWT → 401.
 `SCIM-3` `GET/POST /scim/v2/accounts/:id/Groups` · `GET/PATCH/DELETE …/:groupId` → list; missing displayName → 400; create 201.
@@ -1099,7 +1099,7 @@ These contracts use product IDs. They replace the old route-coverage bucket IDs.
 `SESS-17` A project member reads session previews. Unknown sessions and non-members are rejected.
 `SESS-18` Warming a project creates one ordinary session marked unused, and returns that same session until it is used. The unused session is hidden from the `visible` session list and present in the manager's `project` inventory. First use drops the marker and the session lists normally; a second use returns `409 WARM_SESSION_ALREADY_CLAIMED`. The next warm creates a replacement. Adoption via `POST /start` (the path the browser actually takes) drops the marker in the same statement that stamps `last_activity_at` and advances `updated_at` beyond `created_at`, so the adopted session lists immediately and its activity sort is current. The contract requires `last_activity_at > created_at` and `updated_at >= last_activity_at` on the adopted row. Later lifecycle writes can advance `updated_at` before read-back. A warm ensure after adoption never returns the adopted session — handing a used session back is how a project-home send lands its prompt inside an existing conversation. A warm ensure carrying `exclude_session_id` creates a fresh session even while the excluded session's marker is still set.
 `SESS-19` Session configuration freshness, reload, and streamed reload routes reject anonymous callers and hide unknown projects.
-`SESS-20` The session transcript route returns 404 for an unknown session. The session-open bundle answers the session row, the turn, the prompt queue, the transcript mirror, the config essentials and the model defaults in ONE round trip, tags every leg with `known` so a degraded leg reads as unknown rather than as an empty answer, serves the same turn projection `GET .../turn` serves, 404s an unknown session and refuses an anonymous caller.
+`SESS-20` The session transcript route returns 404 for an unknown session. The session-open bundle answers the session row, the turn, the prompt queue, the transcript mirror, the config samplecols and the model defaults in ONE round trip, tags every leg with `known` so a degraded leg reads as unknown rather than as an empty answer, serves the same turn projection `GET .../turn` serves, 404s an unknown session and refuses an anonymous caller.
 `SYS-8` Live and ready health aliases return the same service-state contract.
 `SYS-9` Metrics requires internal authorization and router health returns its configured availability state.
 `TOK-5` Revoking a project CLI token immediately blocks its project, secret, and trigger mutations.
@@ -1132,8 +1132,40 @@ GET, and select the Connected filter. Light and dark settings retain row geometr
 
 At 720 × 480, the sidebar opener must remain reachable and open the workspace
 selector. The Settings capability tab must scroll into view and load its route.
-Native zoom-in and reset shortcuts must change and restore the zoom factor;
-the workspace selector must remain clickable afterward.
+When a collapsed desktop sidebar opens on hover, it must show exactly one Pin
+sidebar control and leave no empty titlebar gap. Native zoom-in, zoom-out, and
+reset menu commands must change and restore the zoom factor. The workspace
+selector must remain clickable afterward. Entering and leaving native fullscreen
+must remove and restore the macOS traffic-light gutter.
+
+The Electron shell must use native macOS traffic lights. Windows and Linux must
+use the native window frame and must not render web-drawn window controls. Light,
+dark, and system theme choices must synchronize with Electron's native theme.
+The File menu must expose New Session, Close Tab, and Close Window with native
+accelerators and enable route-dependent actions only when their target exists.
+The Settings menu command must open Settings.
+
+When a page prevents unload, Reload, Back, Home, Close Window, and Quit must
+show the native Leave/Stay confirmation. Stay must preserve the current page.
+Leave must complete the requested action. Dock activation must restore a
+minimized main window. When only a popup remains, Dock activation must create a
+new main window without closing the popup.
+
+The shell must persist the last normal window bounds and maximized state. A
+process relaunch must restore both values. Saved bounds that no longer fit any
+connected display must be clamped or centered until the full window is visible.
+Full-document reloads while macOS fullscreen is active must keep the
+traffic-light gutter removed.
+
+Connector authorization must be able to create an opener-preserving blank child
+window and then navigate it to an HTTP(S) provider URL. Ordinary links remain
+external. Unsafe child-window navigation schemes remain blocked.
+An authenticating HTTP proxy must receive credentials from a native prompt and
+must not reuse origin credentials. If Supabase auth does not answer within 15
+seconds, the splash must expose Retry and Sign out instead of loading forever.
+A failed tunnel permission decision must retain its error, expose Retry and
+Dismiss, and remain dismissible through Escape or the close button. Dismissed
+permission requests must not reopen when their SSE event repeats.
 Native commands trust only the configured frontend origin in the main window's
 main frame. A second window at that same origin must receive an unauthorized
 sender error. Full document navigation within the configured frontend stays in
@@ -1147,6 +1179,7 @@ Creation ignores caller-supplied policy metadata. PATCH rejects policy changes.
 Changing the agent policy does not widen the existing restricted session.
 
 `GW-ACCESS-1` Project provider and model access. New projects have no explicit restrictions. Anonymous and nonmember reads/writes are denied; members cannot write. Managers disable managed or BYOK providers and individual models. The current default model/provider cannot be disabled. Concurrent edits persist together. Disables survive reads, hide models from the picker, and reject direct gateway requests with `provider_disabled` or `model_disabled` before upstream inference. Provider re-enable retains individual model restrictions. Model re-enable restores access; invalid payloads do not change policy. A disabled target cannot become the routing default. Other project metadata survives. The web app uses one Models list for provider browsing and access controls. Provider model-count links open the Models tab with all provider groups listed together and no provider selector. Enabled providers have no status label; provider menus expose enable/disable and explain default protection.
+`GW-MANAGED-1` Every managed model answers. A subscribed account's project picker offers Claude Opus 5.5, GPT-6 Sol, and GPT-6 Luna as enabled, image-capable managed models. Each managed model the picker offers answers a text-and-image request through `POST /v1/llm/chat/completions` with a project gateway key, naming the image's color. An upstream 429 is retried twice; a model still throttled is logged, not failed. Any other status or a wrong answer fails, and so does a run in which no model answers. Real model calls: runs on previews and the staging gate, excluded locally (`stripe`).
 
 ChatGPT usage regression: `GW-5` asserts published model rates remain visible in ChatGPT picker rows. Browser journey 26 reads persisted historical transcripts and asserts `$0.00` for subscription usage, preserved token counts, and `$2.40` for a mixed session with `$2.00` raw API cost.
 
@@ -1191,7 +1224,7 @@ a trigger run. Every denial is `403 {code, action}` (spec §4).
 `AGP-6` Trigger fire. A project `member` without `run(nightly)` fires the pinned trigger → 403 `agent_not_accessible`, and no command is queued. After the owner grants `run(member, nightly)`, the fire → 202 with the pinned `session_id`, and exactly one `trigger:manual` command is queued. The trigger run's token has `on_behalf_of_user_id` NULL. A `member` ceiling on `nightly` denies its files with `agent_ceiling_insufficient`, which proves it authorizes as the agent and not as the account owner.
 `AGP-7` Child spawn. A member may run `coordinator` but not `vault`. The member's own JWT cannot start `vault` (403). The member's `coordinator` session starting `vault` → 403 `agent_not_accessible` and no `vault` session row exists; starting `coordinator` passes the run gate (201/202, or local `503 KORTIX_URL_UNREACHABLE`). A trigger run of `coordinator` (no human) → 403 `agent_not_accessible` for `vault` and passes the gate for `coordinator`.
 `AGP-8` Personal connector. A connector has one project-owned and one member-owned account (owner H). H's private session (`on_behalf_of_user_id` = H) lists both through `GET /connectors/projects/:id/connectors/:slug/accounts`. H's project-visible session and a trigger run list only the shared account. With session oversight on, an account admin prompts H's private session (202); the token's `on_behalf_of_user_id` becomes NULL and the personal account disappears. H prompting again does not restore it.
-`AGP-9` Restricted App. The App is restricted to the owner. Agent `reporter` lists the App slug in `apps:`; agent `bystander` does not; both are launched by a project member who is not on the App. `GET /apps/:appId/agents` lists `reporter` with grant `listed` and omits `bystander`. Anonymous → 401 `app_auth_required`. `reporter` passes the gate with `Authorization: Bearer` and with `X-Kortix-App-Authorization: Bearer`. `bystander` → 401 `app_auth_required` through either header. Not asserted locally: that the App upstream never receives `X-Kortix-App-Authorization`, because a local App has no runtime.
+`AGP-9` Restricted App. The App is restricted to the owner. Agent `reporter` lists the App slug in `apps:`; agent `bystander` does not; both are launched by a project member who is not on the App. `GET /apps/:appId/agents` lists `reporter` with grant `listed` and omits `bystander`. `PUT /agents/bystander/scope` with `{apps:[slug]}` answers `200` with `apps[0]` = the slug and the agents list then names both; `{apps:'all'}` answers `apps: "all"` and the row's grant becomes `all`; `{apps:[]}` clears it and the list is `[reporter]` again. Anonymous → 401 `app_auth_required`. `reporter` passes the gate with `Authorization: Bearer` and with `X-Kortix-App-Authorization: Bearer`. `bystander` → 401 `app_auth_required` through either header. Not asserted locally: that the App upstream never receives `X-Kortix-App-Authorization`, because a local App has no runtime.
 `AGP-13` The App gate itself, at the App's own public hostname (`requires: appHost` — local Apps answer under `*.apps.localhost`; a preview sandbox origin has no Apps DNS). Same fixture as AGP-9: an anonymous request → `401 app_auth_required`; the agent listed in `apps` is admitted through `Authorization: Bearer` and through `X-Kortix-App-Authorization: Bearer`; an agent not listed is refused through either header.
 `AGP-10` Governance. Agent `builder` holds push and merge. Through the Kortix Git proxy it pushes its own branch. A CR that touches only `README.md` is merged by the agent (200). A CR that widens `agents.builder.kortix_permissions` → agent merge 403 `CR_AGENT_GOVERNANCE_CHANGE`, and `main` does not move; the owner merges the same CR (200) and `main` carries the change. A CR that only adds a trigger → agent merge 403 `CR_AGENT_GOVERNANCE_CHANGE`; the owner closes it.
 `AGP-11` Audit. On an enterprise team, a correlated `GET /projects/:id/files` from a human's private `reader` run records `actor_type: agent`, `agent_name: reader`, `on_behalf_of_user_id` = the human, and `initiator_actor_type: human` with the human's id. The same request from a trigger run records `initiator_actor_type: trigger`, `on_behalf_of_user_id: null`, and no human id in `actor_user_id`, `initiator_actor_id`, or `on_behalf_of_user_id`. A human's private `shipper` run that clones and pushes its own branch through the Git proxy (real `git` processes) records one `git.clone` and one `git.push` row for the session (`resource_type: git_repository`, `outcome: success`) with the same agent, on-behalf-of, and initiator fields; the `git.push` row's `metadata.refs` names `refs/heads/<session>` as a `create` from the zero sha to the pushed commit.

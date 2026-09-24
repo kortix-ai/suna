@@ -718,6 +718,9 @@ importers:
       shiki:
         specifier: 4.4.3
         version: 4.4.3
+      sonner-native:
+        specifier: ^0.27.0
+        version: 0.27.0(react-native-gesture-handler@2.31.2)(react-native-reanimated@4.3.1)(react-native-safe-area-context@5.7.0)(react-native-screens@4.26.2)(react-native-svg@15.15.4)(react-native-worklets@0.8.3)(react-native@0.85.3)(react@19.2.3)
       tailwind-merge:
         specifier: ^3.3.1
         version: 3.7.0
@@ -29383,6 +29386,28 @@ packages:
       '@solid-primitives/refs': 1.1.4(solid-js@1.9.15)
       '@solid-primitives/transition-group': 1.1.2(solid-js@1.9.15)
       solid-js: 1.9.15
+    dev: false
+
+  /sonner-native@0.27.0(react-native-gesture-handler@2.31.2)(react-native-reanimated@4.3.1)(react-native-safe-area-context@5.7.0)(react-native-screens@4.26.2)(react-native-svg@15.15.4)(react-native-worklets@0.8.3)(react-native@0.85.3)(react@19.2.3):
+    resolution: {integrity: sha512-TKX4mXoMnwx3m51bSTqrbmiImIjs18g9L6t0sv4XemR+s6XsKf1+l3yn3C4/psOHj3E+sdc2Bh5P/7+AG/41eA==}
+    peerDependencies:
+      react: '*'
+      react-native: '*'
+      react-native-gesture-handler: '>=2.28.0'
+      react-native-reanimated: ^4.1.1
+      react-native-safe-area-context: ^5.6.0
+      react-native-screens: ^4.16.0
+      react-native-svg: ^15.12.1
+      react-native-worklets: '>=0.6.1'
+    dependencies:
+      react: 19.2.3
+      react-native: 0.85.3(@babel/core@7.29.7)(@react-native/metro-config@0.87.1)(@types/react@19.2.18)(react@19.2.3)
+      react-native-gesture-handler: 2.31.2(react-native@0.85.3)(react@19.2.3)
+      react-native-reanimated: 4.3.1(react-native-worklets@0.8.3)(react-native@0.85.3)(react@19.2.3)
+      react-native-safe-area-context: 5.7.0(react-native@0.85.3)(react@19.2.3)
+      react-native-screens: 4.26.2(react-native@0.85.3)(react@19.2.3)
+      react-native-svg: 15.15.4(react-native@0.85.3)(react@19.2.3)
+      react-native-worklets: 0.8.3(@babel/core@7.29.7)(@react-native/metro-config@0.87.1)(react-native@0.85.3)(react@19.2.3)
     dev: false
 
   /sonner@2.0.8(@types/react@19.2.18)(react-dom@19.3.0)(react@19.3.0):

@@ -7,7 +7,7 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Alert, Keyboard } from 'react-native';
+import { View, Keyboard } from 'react-native';
 import { BottomSheetModal, BottomSheetView } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,6 +19,7 @@ import { haptics } from '@/lib/haptics';
 import type { KortixAccount } from '@/lib/projects/projects-client';
 import { InitialsAvatar, PrimaryButton, SheetCloseButton, accountColors } from './account-shared';
 import { KortixBottomSheetModal } from '@/components/kortix/sheet';
+import { sheetOpenMove } from '@/lib/ui/sheet-open';
 
 interface NewAccountSheetProps {
   open: boolean;
@@ -36,14 +37,24 @@ export function NewAccountSheet({ open, onClose, onCreated }: NewAccountSheetPro
   const createAccount = useCreateAccount();
   const [name, setName] = useState('');
 
+  // True while the sheet is on screen. It is mounted closed inside the
+  // project switcher, and a gorhom modal dismissed before its first present
+  // never renders (`sheetOpenMove`, lib/ui/sheet-open.ts).
+  const presentedRef = useRef(false);
   useEffect(() => {
-    if (open) {
+    const move = sheetOpenMove(open, presentedRef.current);
+    if (move === 'present') {
       setName('');
+      presentedRef.current = true;
       sheetRef.current?.present();
-    } else {
+    } else if (move === 'dismiss') {
       sheetRef.current?.dismiss();
     }
   }, [open]);
+  const handleDismiss = useCallback(() => {
+    presentedRef.current = false;
+    onClose();
+  }, [onClose]);
 
 
   const submit = useCallback(async () => {
@@ -58,7 +69,8 @@ export function NewAccountSheet({ open, onClose, onCreated }: NewAccountSheetPro
       sheetRef.current?.dismiss();
       onCreated(account);
     } catch (e: any) {
-      Alert.alert('Failed', e?.message || 'Failed to create account.');
+      haptics.warning();
+      toast.error('Unable to create the account', { description: e?.message || 'Try again.' });
     }
   }, [name, createAccount, onCreated, toast]);
 
@@ -70,7 +82,7 @@ export function NewAccountSheet({ open, onClose, onCreated }: NewAccountSheetPro
       ref={sheetRef}
       enableDynamicSizing
       enablePanDownToClose
-      onDismiss={onClose}
+      onDismiss={handleDismiss}
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"
     >
@@ -82,13 +94,13 @@ export function NewAccountSheet({ open, onClose, onCreated }: NewAccountSheetPro
             <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: preview ? c.fg : c.muted }} numberOfLines={1}>
               {preview || 'Your account name'}
             </Text>
-            <Text style={{ fontSize: 12.5, lineHeight: 17, color: c.muted, marginTop: 2 }}>
+            <Text style={{ fontSize: 13, lineHeight: 18, color: c.muted, marginTop: 2 }}>
               A shared workspace for your team and projects.
             </Text>
           </View>
         </View>
 
-        <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: c.muted, marginBottom: 6 }}>Account name</Text>
+        <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: c.muted, marginBottom: 6 }}>Account name</Text>
         <SheetTextInput
           value={name}
           onChangeText={setName}

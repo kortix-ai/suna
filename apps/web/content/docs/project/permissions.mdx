@@ -124,7 +124,11 @@ permissions include `project.app.read`.
 | Password | Never |
 
 The App's **Access** dialog lists the agents with access, read from
-`agents.<name>.apps`. Change the list with a change request to `kortix.yaml`.
+`agents.<name>.apps`. Change the list on the agent's **Apps** page
+(Customize → Agents → the agent → Apps), with
+`kortix agents scope <agent> --apps <slug,slug>`, or with a change request to
+`kortix.yaml`. The Apps page appears only when the project has the
+[Apps](/docs/feature-flags/apps) feature flag on.
 
 ## Widening an agent needs a person
 

@@ -21,6 +21,14 @@ linked, not inlined.
 
 ## Register
 
+### A background job runs its tick as a named worker, or its changes read as API traffic (2026-09-24)
+
+**Rule:** Wrap every background job's tick in `runWorkerTick('<name>', tick)` (`shared/audit-scope.ts`), at the tick function when handlers also kick it. A tenant-state change the job makes writes its own semantic row, which inherits the worker.
+
+**Near-miss (2026-09-24):** none of the API's 21 background jobs ran with a request context. IAM grant expiry and audit reconciliation rows read `source: api`. Expired tunnel permissions, deleted session branches, App deployment outcomes, and provider transitions wrote no row.
+
+**Enforcement:** `unit-worker-scope-wiring.test.ts` fails when a job stops wrapping its tick, a new `setInterval` file is unclassified, or `index.ts` starts an unclassified job.
+
 ### A get-or-create that finds its row by a mutable field duplicates the row once that field changes (2026-09-23)
 
 **Rule:** When a get-or-create finds "its" row again, match on a field nothing
@@ -1273,6 +1281,21 @@ mobile dialog width, awaits dialog removal, and disables capture animations.
 ### Match an actual PEM block before calling a 404 page a private-key leak (2026-09-15)
 
 **When:** checking web error pages for secret content. A bare `BEGIN PRIVATE KEY` phrase can occur in bundled parser code on a 404 page. Require PEM delimiters and encoded key material. *Near-miss:* the v0.13.15 preview gate marked `/.env` exposed although it returned 404; the 1.4 MB frontend error page contained only the phrase. *Enforcer:* `SEC-J` in `tests/src/flows/security-backlog.flow.ts` matches a complete key block.
+
+### Every desktop screen needs an exit, and web history steps in Electron go through the shell (2026-09-14)
+
+**When:** adding a full-screen web surface, or navigating history from web code
+inside the desktop shell. (1) The shell has no toolbar: never ship a screen
+whose only exit is a browser Back. The root layout's `DesktopBackButton` is
+on by default; a shell that navigates opts out with `data-kx-titlebar-owner`.
+(2) A renderer `history.back()` DOES fire Electron's `will-navigate`; the gate
+cancels a step into a non-app entry and opens it in the system browser, so
+the window does not move. Step through `window.kortixDesktop.navigate`.
+*Incident:* `/new` soft-locked desktop users (report 2026-09-14); #7200's
+"`will-navigate` does not run for traversal" was false — native journey 27
+showed Back on `/oauth/authorize` doing nothing and `shell.openExternal
+(/favicon.png)`. *Enforcer:* `27-desktop-parity.spec.ts` (web, desktop UA,
+`E2E_DESKTOP_NATIVE=1`), `desktop-back-button.test.tsx`, `navigation.test.js`.
 
 ### Stop proxy maintenance timers and isolate background writers in package tests (2026-09-14)
 
@@ -2535,7 +2558,7 @@ is held per chunk and committed chunks survive a later failure; (3) give the
 audit pool a `lock_timeout` far below its `statement_timeout` — a lock wait is
 not work; (4) report contention (57014/55P03/40001/40P01) as a retryable 503 with
 `Retry-After`, never a 500, and back the client off exponentially.
-*Incident:* Essentia self-host 2026-08-26 — `POST …/audit/events` returned
+*Incident:* SampleCo self-host 2026-08-26 — `POST …/audit/events` returned
 500 [57014] 445 times in 3h, each at ~10s, while the sandbox relay's flat 1s
 retry re-entered the same lock queue and kept the convoy alive. Predecessor:
 PR #6702's dedicated audit pool isolated the damage but did not remove it.
@@ -2660,7 +2683,7 @@ Measure the largest runtime process during a representative turn and leave headr
 daemon, tools, and filesystem cache. A 4 GiB sandbox with no swap cannot safely run an
 OpenCode process at 3.07 GiB anonymous RSS. Bind the agent to a larger ready template before
 the next session; changing the default does not migrate existing sessions. *Incident:*
-Essentia session `fea31312` lost its active turn when Linux OOM-killed OpenCode after a
+SampleCo session `fea31312` lost its active turn when Linux OOM-killed OpenCode after a
 141k-token image workflow. *Enforcer:* template and fresh-session slug read-back; no RSS gate.
 
 ### A snapshot build stuck in progress silently rolls every later resume back (2026-08-24)
@@ -2674,7 +2697,7 @@ good lineage deeper on each cycle. User data vanishes with zero errors on any
 surface — the session opens fast and empty. Repair = finalize the wedged
 `env_builds` row (`status='success'`, `finished_at=created_at`), mark the
 stale-branch builds `failed`, resume. Verify the rootfs object exists in the
-`fc-templates` bucket before finalizing. *Incident:* essentia session
+`fc-templates` bucket before finalizing. *Incident:* sampleco session
 `70f64114` resumed with an empty transcript on 2026-08-24; wedged build
 `4b583212` (03:34:23Z, during the wake-race window fixed by `b250949eb1`) had
 its full 660 MB rootfs in S3 but the status never flipped; 4 stale builds
@@ -2691,7 +2714,7 @@ say so instead of serving an empty transcript.
 CAS the exact observed `active` row, including `updated_at`, before closing
 compute or calling `provider.stop()`. Never write a stale metadata object after
 an external stop. Persist stop intent so a parked-row sweep retries after a
-crash. *Incident:* overlapping Essentia `/start` requests paused each new E2B
+crash. *Incident:* overlapping SampleCo `/start` requests paused each new E2B
 boot after about 8 seconds and erased its wake fence; OpenCode needed 11.574
 seconds. *Enforcer:* runtime-identity and parked-runtime verification tests pin
 the CAS and durable retry.
@@ -2702,7 +2725,7 @@ the CAS and durable retry.
 Apply the deadline to the provider `fetch`, then clear it when `fetch` resolves.
 Do not use that deadline as the full-stream abort signal; AI SDK returns
 synthetic gateway headers before Bedrock `/converse-stream` returns. Keep client
-cancellation attached for the full body. *Incident:* Essentia Fable produced 14
+cancellation attached for the full body. *Incident:* SampleCo Fable produced 14
 zero-token turns at 89-91 seconds, recorded as `200 ok=true`. *Enforcer:* gateway
 header/body/cancellation and timeout-classification tests.
 
@@ -2720,7 +2743,7 @@ corrected. *Enforcer:* `deploy-prod.yml` version preflight and workflow unit tes
 **When:** caching a provider handle that carries a private ingress token. Bound
 the cache lifetime and refresh it with single-flight connection work. A resume
 can rotate the token in one API replica while every other replica retains the
-old handle indefinitely. *Incident:* an Essentia E2B guest was locally ready in
+old handle indefinitely. *Incident:* an SampleCo E2B guest was locally ready in
 12.9 seconds, but `/start` failed because another API replica used its stale
 traffic token and received repeated `502 port not ready` responses.
 *Enforcer:* E2B ingress rotation and concurrent-refresh tests.
@@ -2730,7 +2753,7 @@ traffic token and received repeated `502 port not ready` responses.
 **When:** returning a stopped sandbox after `runtime_boot_failed` or
 `runtime_wake_failed`. Do not classify that row as an ordinary hibernated
 sandbox. Automatic `/start` retries can otherwise resume the same broken runtime
-and repeat the full readiness timeout forever. *Incident:* an Essentia E2B
+and repeat the full readiness timeout forever. *Incident:* an SampleCo E2B
 session issued consecutive 9.6–10.2 second `/start` calls for over 80 seconds;
 the existing 5-minute server window then parked and auto-resumed the same box.
 *Enforcer:* API repeated-start and web resumability regression tests.
@@ -2741,7 +2764,7 @@ the existing 5-minute server window then parked and auto-resumed the same box.
 generation before the provider read. Cache the result only if that generation
 is unchanged. Invalidate before and after start, stop, and remove operations.
 An in-flight status read can otherwise finish after a stop and resurrect stale
-`running` state. *Near-miss:* the Essentia `/start` latency optimization added
+`running` state. *Near-miss:* the SampleCo `/start` latency optimization added
 an E2B cache that could hide a completed pause for 1.5 seconds.
 *Enforcer:* `e2b.test.ts` holds `getInfo()` across `stop()` and rejects revival.
 
@@ -2751,7 +2774,7 @@ an E2B cache that could hide a completed pause for 1.5 seconds.
 exactly one stable route-level observer a `refetchInterval`; make every other
 observer a cache reader with `refetchOnMount: false`. In-flight deduplication
 does not merge independent timers or late stale mounts. *Incident:* five audit
-observers produced 9 requests during one Essentia session load.
+observers produced 9 requests during one SampleCo session load.
 *Enforcer:* `session-audit-shared.test.ts` pins one owner and cache-reader mounts.
 
 ### Browser idle is not network idle (2026-08-24)
@@ -2881,7 +2904,7 @@ past `last_activity_at`. *Enforcer:* `SESS-18` requires
 **When:** provisioning a session or adding daemon boot data. Inject only the
 session-bound `KORTIX_TOKEN`. The daemon must claim prompts and lifecycle
 identifiers from the API with that token. Connector, provider, prompt, and
-turn-ledger values must not enter the VM environment. *Incident:* an Essentia
+turn-ledger values must not enter the VM environment. *Incident:* an SampleCo
 `env` dump exposed connector credentials and four Kortix aliases; a real
 Platinum probe then found the initial-turn nonce still inherited by OpenCode.
 *Enforcer:* runtime-env tests reject all boot payload keys, daemon wire tests
@@ -2931,7 +2954,7 @@ visibility and rejects public framework prefixes. *Incident:* v0.13.3 left
 **When:** diagnosing a self-host that is "on latest", or shipping any feature
 whose config the CLI renders (Caddyfile, `.env` keys, compose services).
 
-Essentia ran API/gateway/frontend images from `main` while `/usr/local/bin/kortix`
+SampleCo ran API/gateway/frontend images from `main` while `/usr/local/bin/kortix`
 was **1565 commits stale**. The CLI renders the Caddyfile and owns the `.env`
 schema, so the box silently lacked every CLI-side feature that had shipped since:
 preview origins could not be configured (no such flag existed), and the Caddy
@@ -2960,7 +2983,7 @@ and blocked a customer feature.
 **When:** enabling a wildcard site block, or writing any "did it come back up?"
 check against a server doing on-demand TLS.
 
-Enabling preview origins on Essentia crash-looped Caddy for ~4 minutes:
+Enabling preview origins on SampleCo crash-looped Caddy for ~4 minutes:
 `subject does not qualify for certificate: '*.'`. A wildcard site address and the
 env var it interpolates are **two separate writes** — the Caddyfile gained
 `*.{$KORTIX_PREVIEW_BASE_DOMAIN}` while the running container's baked env still
@@ -2978,7 +3001,7 @@ had that var empty, and Caddy refuses to adapt a config containing a bare `*.`.
    It fired a needless rollback here. Use `--resolve <real-host>:443:127.0.0.1`.
    Prove any guard by running it against the *known-good* state first.
 4. **Never infer "no DNS" from a bare-label lookup when the record is a wildcard.**
-   `dig apps.essentia.kortix.cloud` returns nothing while `*.apps.essentia…`
+   `dig apps.sampleco.kortix.cloud` returns nothing while `*.apps.sampleco…`
    exists and serves live traffic. That inference led to clearing a live
    `KORTIX_APPS_BASE_DOMAIN` and taking deployed Apps down for ~25 min. Confirm
    with the *authoritative* NS and a synthesized name, and prefer an empirical
@@ -2986,7 +3009,7 @@ had that var empty, and Caddy refuses to adapt a config containing a bare `*.`.
 5. Querying a name before its record exists poisons public resolvers for the
    SOA negative TTL (1800s here). Create the record first, then resolve.
 
-*Incident:* Essentia self-host, 2026-08-22. Two self-inflicted outages (~4 min
+*Incident:* SampleCo self-host, 2026-08-22. Two self-inflicted outages (~4 min
 API, ~25 min Apps), both caused by the operator's own verification, not by the
 change. Enforcer: `kortix self-host doctor` now fails on a domain-mode instance
 with no preview base domain (PR #6732).
@@ -3380,7 +3403,7 @@ headers used by tool execution, including OAuth refresh. Reject non-2xx,
 protocol-error, and malformed responses; persist a safe error instead of an
 apparently healthy empty catalog. Re-run discovery after credentials change,
 and never include raw or encoded credential material in diagnostics.
-*Incident:* Essentia Dev Sage Intacct authenticated successfully and exposed
+*Incident:* SampleCo Dev Sage Intacct authenticated successfully and exposed
 four MCP tools, while Kortix sent no credential, parsed an empty HTTP 401 body,
 and materialized zero actions without an error.
 *Enforcer:* `sync-mcp.test.ts`, `unit-connector-call.test.ts`, and
@@ -4212,7 +4235,7 @@ against a real provider, which is precisely why all three shipped unnoticed.
 
 ## Transcript shape alone may never end a turn — and every turn needs a record, whoever started it
 
-Session/turn truth rules paid for on Essentia, 2026-08-20 (session `d1b74954`:
+Session/turn truth rules paid for on SampleCo, 2026-08-20 (session `d1b74954`:
 composer flapped "not running" over a visibly streaming session; a user prompt
 delivered mid-turn was silently swallowed; PR #6657):
 
@@ -4259,7 +4282,7 @@ deploy — probe credentials, and never let a janitor gate the payload.** The
 `needs:`-depended on it, so every staging WEB deploy was skipped for a week —
 the release gate drove an Aug-12 frontend against the current API, and the
 resulting browser failures read as product bugs. Fix (#6626, #6639): the
-non-essential job is `continue-on-error`, and the deploy step probes each
+non-samplecol job is `continue-on-error`, and the deploy step probes each
 credential with a cheap authenticated read and uses the first one that works.
 Rule: when a job fails REPEATEDLY and everything still "works", find out what
 its `needs:` dependents silently stopped doing.
@@ -4305,7 +4328,7 @@ symptoms were a perfect alibi: opencode emitted the frames, the deployed
 binary carried the new symbols, the env was complete, the root check passed,
 and a hand-made POST with the sandbox credential returned
 `{ok:true,outcome:'adopted'}` — while the ledger held zero rows. This is the
-same failure class as the Essentia turn-end 403s that `r4.ts`'s kind-gate
+same failure class as the SampleCo turn-end 403s that `r4.ts`'s kind-gate
 comment already records; the sibling relay (`relayInitialTurnAcceptedToApi`)
 had already established the correct pattern.
 
@@ -4602,7 +4625,7 @@ protocol translators lazily, retains no response body, and stores metadata-only
 traces. A container memory increase can raise throughput. It cannot repair an
 unbounded allocation path.
 
-*Incident:* Essentia standalone gateway, repeated cgroup OOM kills and Caddy
+*Incident:* SampleCo standalone gateway, repeated cgroup OOM kills and Caddy
 `502 Bad Gateway`. Enforcement: `readAdmittedBody` allocation-order tests,
 response-lifetime lease tests, one-dispatch tests, and a mounted 28 MiB request
 test that asserts one provider call and an intact response.
@@ -4880,7 +4903,7 @@ pins the pure transform, including "unrecognised payload passes through
 untouched" — the strip runs on every response on that path and must never be
 the reason a read fails.
 
-*Incident:* essentia `5306fd8d`, five consecutive reads at 29.23–30.08 s,
+*Incident:* sampleco `5306fd8d`, five consecutive reads at 29.23–30.08 s,
 78 MB transferred, nothing rendered. PR #6829.
 
 ## A wake budget is a deadline, not an attempt count
@@ -4899,7 +4922,7 @@ how many times we asked. A count describes our retry spacing, not the machine.
 asserts `AUTO_RESUME_WINDOW_MS >= 60_000` and that a null clock is
 "just started", not "expired".
 
-*Incident:* essentia, every stopped session, 2026-08-24. PR #6827.
+*Incident:* sampleco, every stopped session, 2026-08-24. PR #6827.
 
 ## Sandbox-isolation guards read the agent binding, never the caller's session id
 
@@ -4921,7 +4944,7 @@ that question.
 pins a human with a login session id passing, a sibling sandbox credential
 still blocked, and the own-session credential still allowed.
 
-*Incident:* essentia project `e7170bf8`, origin counts user 568 / backend 43.
+*Incident:* sampleco project `e7170bf8`, origin counts user 568 / backend 43.
 PR #6828.
 
 ## Measure the amplification factor; never decode what you can forward
@@ -4946,7 +4969,7 @@ per request (Bedrock Converse: 20). The gateway keeps the newest 12 of >20 and
 replaces older ones with a one-line notice, with hysteresis so the prefix
 stays cache-stable for 8 turns.
 
-*Incident:* Essentia 2026-08-22, 40-screenshot / 28 MB request, cgroup OOM.
+*Incident:* SampleCo 2026-08-22, 40-screenshot / 28 MB request, cgroup OOM.
 Enforcement: `memory-envelope.test.ts` (peak factor < 6x, all 40 images
 forwarded byte-for-byte on both routes), `image-window.test.ts`.
 
@@ -5027,7 +5050,7 @@ and stays healthy. Enforcement: `read-bounded-body.test.ts` abort cases,
 
 ## A sandbox model failure is a version question before it is a code question
 
-Found 2026-08-25 on the Essentia box. Native-mode sessions on
+Found 2026-08-25 on the SampleCo box. Native-mode sessions on
 `amazon-bedrock/global.openai.gpt-5.6-sol` failed every reasoning stream:
 `Type validation failed` on `contentBlockDelta.delta.reasoningContent.redactedContent`.
 The first diagnosis blamed an "old SDK in the opencode fork" and planned a
@@ -5056,19 +5079,19 @@ Our pin in `packages/shared/src/runtime-versions.json` was 1.18.19.
 *Automation:* `apps/api/src/snapshots/__tests__/config-deps-version.test.ts`
 guards the lockstep pins; the shared sandbox goldens fail on a pin drift.
 
-*Incident:* no outage. Essentia's Bedrock model was unusable in native mode
+*Incident:* no outage. SampleCo's Bedrock model was unusable in native mode
 until PR #6873 (1.18.23) deployed and the box updated with
 `kortix self-host update --version dev`.
 
 ## A provider's 204 is not a renewal; read the deadline back
 
-*Incident (2026-08-25, Essentia self-host):* four agent turns died mid-work,
+*Incident (2026-08-25, SampleCo self-host):* four agent turns died mid-work,
 each exactly one hour after the sandbox was created or resumed. The last
 assistant message of each was `tokens 0/0/0, parts: []` — an LLM call that was
 in flight when the VM froze. Kortix had renewed every box every 20 s
 (`[active-turn-renewal]`, `errors:0`; E2B API log: 375 × `POST
 /sandboxes/<id>/timeout → 204`). E2B's `KeepAliveFor` clamps every renewal to
-the team's `max_length_hours`; the Essentia team sat on tier `base_v1`
+the team's `max_length_hours`; the SampleCo team sat on tier `base_v1`
 (`max_length_hours = 1`, the upstream migration default) with a matching
 `project_limits` row, so `endAt` never moved past `startedAt + 1h` and E2B
 paused the box (`sandbox_pause_initiated pause_reason=timeout`).
@@ -5095,7 +5118,7 @@ report a renewal the provider clamped".
 
 ## The runtime's body limit is the one that logs, never the one that is silent
 
-*Incident (2026-08-25, Essentia):* three empty assistant messages in two
+*Incident (2026-08-25, SampleCo):* three empty assistant messages in two
 sessions were `413 Request Entity Too Large` on image-heavy turns (381k input
 tokens, 118 inline screenshots). Nothing in the gateway log explained them:
 Bun's own `maxRequestBodySize` default (128 MiB) equals
@@ -5118,7 +5141,7 @@ the first attempt (`Cannot connect to API: The socket…`).
 
 ## The daemon owns the OpenCode binary; OpenCode must never upgrade itself
 
-*Incident (2026-08-22 and again 2026-08-25, Essentia):* a human ran `opencode`
+*Incident (2026-08-22 and again 2026-08-25, SampleCo):* a human ran `opencode`
 in the Session terminal. OpenCode's autoupdate (`autoupdate` unset = on)
 installed the newer version with plain `pnpm add -g` — no postinstall — leaving
 a 479-byte launcher stub, deleting the old global dir and dangling
@@ -5137,7 +5160,7 @@ autoupdate".
 
 ## A boot budget measures lack of progress, not wall-clock
 
-*Incident (2026-08-25 17:23–17:25, Essentia):* both reopened sessions failed
+*Incident (2026-08-25 17:23–17:25, SampleCo):* both reopened sessions failed
 to wake. The resume converged OpenCode 1.18.19 → 1.18.23 (manifest bump live
 since the updater restarted the API) and then sat through the new version's
 53 s first init. `/start` polled `starting` for 83 s and the fixed
@@ -5163,7 +5186,7 @@ boot phase").
 
 ## A runtime started from `stopped` owns no turn; settle and redeliver on the wake
 
-*Incident (2026-08-25, Essentia):* the provider paused two boxes mid-turn. One
+*Incident (2026-08-25, SampleCo):* the provider paused two boxes mid-turn. One
 was woken by the UI through the proxy before the reaper confirmed the stop:
 the fresh runtime answered `idle`, the open turn closed `completed`, and the
 user saw the agent "just stop" with nothing to resume. The other closed
@@ -5183,7 +5206,7 @@ never-accepted deliveries were), so the user typed "go on".
 
 ## A refresh never converges a booting runtime; a stub launcher is never spawned
 
-*Incident (2026-08-25, Essentia):* the session-open refresh (env-sync) ran the
+*Incident (2026-08-25, SampleCo):* the session-open refresh (env-sync) ran the
 runtime-assets pass during a resume, installing OpenCode 1.18.23 and
 restarting it under the boot; and the PATH launcher on two boxes was the
 479-byte pnpm postinstall stub, one restart away from a dead session.
@@ -5199,7 +5222,7 @@ restarting it under the boot; and the PATH launcher on two boxes was the
 
 ## Window inline images inside the sandbox; the edge is too late
 
-*Incident (2026-08-25, Essentia):* vision-heavy turns accumulated 118 inline
+*Incident (2026-08-25, SampleCo):* vision-heavy turns accumulated 118 inline
 screenshots (>128 MiB per request). The gateway's image window keeps 12, but
 only after the body has crossed the wire; the runtime's body ceiling refused it
 first and the turn died with an empty assistant message.
@@ -5236,7 +5259,7 @@ Reverted in #6893 to a documented drop.
    The AI SDK's mapping is a hint: `@ai-sdk/amazon-bedrock` 5.0.59 emits
    `reasoning_effort` for OpenAI ids; Bedrock GPT-5.6 rejects it with
    `unknown_parameter` and accepts `reasoning: { effort }` (verified with the
-   Essentia account, us-west-2, every published tier).
+   SampleCo account, us-west-2, every published tier).
 3. Prefer "drop and document" over "refuse" for a field with no verified
    mapping; log the drop so the gap is visible.
 4. A dev verification with a fake provider key proves routing only. Use a real
@@ -5252,7 +5275,7 @@ Prod was not promoted in that window. No data loss.
 
 ## A 400 that names one parameter is never the turn's final answer
 
-*Incident (2026-08-25 19:40Z, Essentia session 58da74d4):* the gateway
+*Incident (2026-08-25 19:40Z, SampleCo session 58da74d4):* the gateway
 forwarded a reasoning field in a shape Bedrock's GPT-5.6 profile rejects
 (`400 unknown_parameter: reasoning_effort`); every turn on the model died with
 an empty assistant message until the wire shape was verified and corrected
@@ -5326,7 +5349,7 @@ paths ship to prod, where every /compact would have 503'd the same way.
 
 ## A turn probe never lists the whole root — the list is unbounded, the budget is not
 
-*Incident (2026-08-25, Essentia sessions 9c8749ac and 9df2a873):* the reaper
+*Incident (2026-08-25, SampleCo sessions 9c8749ac and 9df2a873):* the reaper
 asks the daemon `GET /kortix/health?turn=1&turn_session_id&turn_message_id`
 and acts on `turn_in_flight`. The daemon answered it by fetching the root's
 ENTIRE OpenCode message list inside a 5 s budget. On 9c8749ac that list was
@@ -5382,7 +5405,7 @@ window, never the whole root"); the stub fetch there serves `?limit=` and
 
 ## Bun's fetch has a hidden 300 s idle timeout — every model hop opts out
 
-*Incident (2026-08-25 22:04Z, Essentia session 9c27242e):* a turn on
+*Incident (2026-08-25 22:04Z, SampleCo session 9c27242e):* a turn on
 `codex/gpt-5.6-sol` at reasoning effort `max` died after 273.8 s with
 `{"message":"The operation timed out.","code":"upstream_timeout"}`. Nothing in
 this repo sets a 300 s timer; the gateway's own budgets are 90 s / 5 min for
@@ -5409,7 +5432,7 @@ forwarded; Bun accepts it on a real request).
 
 ## Image bytes never live in the transcript; memory is guarded before the kernel; an unknown probe backs off
 
-*Incident (2026-08-25 23:12Z, Essentia session 9df2a873):* the kernel OOM-killed
+*Incident (2026-08-25 23:12Z, SampleCo session 9df2a873):* the kernel OOM-killed
 OpenCode at 6.48 GB RSS on an 8 GB box (`dmesg`: `Killed process 1506
 (opencode.exe) anon-rss:6484532kB`), mid-turn, leaving an empty assistant
 husk. Two forces met: the transcript held 275 MB of base64 tool screenshots in
@@ -5484,7 +5507,7 @@ vendor credentials remain to be rotated per the allowlist (PR #6910).
 
 ## A stamped failure is a cooldown, never a gravestone — and a negative is a claim
 
-*Incident (2026-08-26, Essentia).* Two sessions could only be recovered by a
+*Incident (2026-08-26, SampleCo).* Two sessions could only be recovered by a
 human pressing Restart.
 
 - Session `e06ad0c4` answered `POST …/start` with `stage:"failed"` in **47 ms**,
@@ -5594,7 +5617,7 @@ consults a template at all).
 
 ## A retry that inherits the previous attempt's budget is not a retry
 
-*Incident (2026-08-26, Essentia, session `29861dfa` / box `inqwpv4a`).* The
+*Incident (2026-08-26, SampleCo, session `29861dfa` / box `inqwpv4a`).* The
 first production outing of the automatic wake-cooldown ladder (see "A stamped
 failure is a cooldown, never a gravestone") defeated itself.
 
@@ -5693,12 +5716,12 @@ change verified.** *Enforcer:*
 regions).
 
 ## Local Bun is not image Bun — feature-detect web APIs, and a green health gate proves only /health
-- **Incident (2026-08-26):** compress middleware (round-7 perf PR) called `CompressionStream`. Local dev + CI run Bun 1.3.14 (has it); the API image is `oven/bun:1.2-slim` = Bun 1.2.23 (does not). Every response ≥1KB on a compressible type 500'd (`ReferenceError`) on dev-api and Essentia; `/health` is <1KB, skipped the path, stayed 200 — so the deploy verification gate passed while `GET /v1/projects/:id` 500'd and the project shell showed "This project didn't load".
+- **Incident (2026-08-26):** compress middleware (round-7 perf PR) called `CompressionStream`. Local dev + CI run Bun 1.3.14 (has it); the API image is `oven/bun:1.2-slim` = Bun 1.2.23 (does not). Every response ≥1KB on a compressible type 500'd (`ReferenceError`) on dev-api and SampleCo; `/health` is <1KB, skipped the path, stayed 200 — so the deploy verification gate passed while `GET /v1/projects/:id` 500'd and the project shell showed "This project didn't load".
 - **Rule:** any Web/runtime global used in `apps/api` (or anything shipped in the Bun image) must exist in the image's Bun line (`ARG BUN_VERSION` in `apps/api/Dockerfile`), not just locally. Feature-detect (`typeof X !== 'undefined'`) with a `node:*` fallback, or bump and test the image's Bun. Deployed-SHA health checks do not exercise real routes — after a deploy that touches the response path, hit one real authenticated >1KB route.
 - **Enforcement:** `compressedStream()` in `apps/api/src/middleware/compress.ts` feature-detects and falls back to `node:zlib`; `compress.test.ts` pins the forced-fallback path (`useNative:false`) so the image path is exercised by CI forever.
 
 ## Self-host update health-gate deadlock: the bug that sickens a replica blocks the update that fixes it
-- **Incident (2026-08-27, Essentia):** the compress 500 bug made the scheduler-leader API replica fail its own docker healthcheck (`/health` JSON >1KB on the leader → gzip path → 500). `kortix self-host update` then aborted every roll with `dependency failed to start: container ... is unhealthy` — compose's health gate refused to replace the sick container with the image that cures it. The box stayed broken through three roll attempts that all reported the same abort.
+- **Incident (2026-08-27, SampleCo):** the compress 500 bug made the scheduler-leader API replica fail its own docker healthcheck (`/health` JSON >1KB on the leader → gzip path → 500). `kortix self-host update` then aborted every roll with `dependency failed to start: container ... is unhealthy` — compose's health gate refused to replace the sick container with the image that cures it. The box stayed broken through three roll attempts that all reported the same abort.
 - **Rule:** when a self-host update aborts on an unhealthy EXISTING container and the update contains the fix for that unhealthiness, `docker rm -f` the unhealthy replicas first, then re-run the update. Read the update's full output — an aborted roll leaves old containers running, so a later health probe answering does NOT mean the roll landed; verify the running commit, not liveness.
 - **Enforcement:** none automated yet; candidate = updater flag to replace unhealthy replicas of the service being updated.
 
@@ -5718,7 +5741,7 @@ regions).
 - **Enforcement:** `projectionConfigured()` guards the top of `scheduleRuntimeProjectionPush`; the relay's own test still sets the three env vars so the push path stays exercised (25/0).
 
 ## Under the gateway every model is `providerID: 'kortix'` — a "same provider" heuristic keyed on `providerID` spans the whole catalog
-- **Incident (2026-08-27, Essentia self-host, web `39685da4`):** the composer model picker looked dead — every click left the chip on "Claude Opus 5 (Global)" and every prompt was sent with it. The click DID persist the pick; `healBedrockModelKey` (#6915, 2026-08-26) then replaced it at resolution time. The heal finds "the key's own provider" by `providerID` equality and detects Bedrock by any sibling ranking as an inference profile. On the gateway all 481 catalog models share `providerID: 'kortix'`, `bedrockInferenceProfileRank` strips the `amazon-bedrock/` prefix so `amazon-bedrock/global.anthropic.claude-opus-5` still ranks 2, and OpenRouter/Codex/bare-Bedrock picks (no `global.` twin) fell through to the auto-seed fallback = the newest profile in the whole catalog. The unit suite (16/0) was green because every fixture used native ids (`amazon-bedrock` / `xai.grok-4.6`); no test flattened a gateway catalog.
+- **Incident (2026-08-27, SampleCo self-host, web `39685da4`):** the composer model picker looked dead — every click left the chip on "Claude Opus 5 (Global)" and every prompt was sent with it. The click DID persist the pick; `healBedrockModelKey` (#6915, 2026-08-26) then replaced it at resolution time. The heal finds "the key's own provider" by `providerID` equality and detects Bedrock by any sibling ranking as an inference profile. On the gateway all 481 catalog models share `providerID: 'kortix'`, `bedrockInferenceProfileRank` strips the `amazon-bedrock/` prefix so `amazon-bedrock/global.anthropic.claude-opus-5` still ranks 2, and OpenRouter/Codex/bare-Bedrock picks (no `global.` twin) fell through to the auto-seed fallback = the newest profile in the whole catalog. The unit suite (16/0) was green because every fixture used native ids (`amazon-bedrock` / `xai.grok-4.6`); no test flattened a gateway catalog.
 - **Rule:** any SDK/web logic that groups, filters, or "heals" models by provider must resolve the REAL provider (`FlatModel.provider`, or the modelID prefix under the gateway), never `providerID` alone — and must be tested against BOTH shapes: a native list and a `projectLlmCatalogToProviderList` gateway list. A native-only guard (the gateway already retries bare Bedrock ids after the 400, #6897) must short-circuit on `GATEWAY_PROVIDER_IDS`.
 - **Enforcement:** `healBedrockModelKey` step 0 returns gateway keys untouched; `bedrock-invokable.test.ts` "under the gateway the heal is inert" builds the fixture through the real `projectLlmCatalogToProviderList` → `flattenModels` and pins OpenRouter, bare-Bedrock and Codex picks as untouched.
 
@@ -6307,7 +6330,7 @@ uses an explicit essay cancellation followed by the same exact reply marker.
 
 ## Self-host memory adjustments must survive CLI regeneration (2026-09-10)
 
-**Incident.** Before the Essentia update, both frontend replicas had restarted
+**Incident.** Before the SampleCo update, both frontend replicas had restarted
 234 times. Logs repeatedly reported `Reached heap limit`. Each container
 had a 512 MiB limit while the 16 GiB host had about 9.9 GiB available.
 The CLI hardcoded the frontend limit, so editing generated Compose would
@@ -6322,7 +6345,7 @@ with a 512 MiB default. Its service mapping selects only `frontend`.
 The CLI regression verifies `env set` and a later `init` preserve the value.
 A real CLI/Docker Compose check resolves 536870912 bytes by default and
 1073741824 bytes after configuring `1024m`, including after another `init`.
-All 134 focused self-host tests pass. Live Essentia verification follows
+All 134 focused self-host tests pass. Live SampleCo verification follows
 the production release and manual update.
 
 ## Session-token fixtures must not require the server signing secret (2026-09-10)
@@ -7793,10 +7816,10 @@ covered by the hooks.
 
 ## A per-project Slack webhook must only act on rows its own project owns
 
-- **Incident (2026-09-22, prod, workspace T07FUFNT3RV):** a plain reply in a
+- **Incident (2026-09-22, prod, `<workspace>`):** a plain reply in a
   `Kortix Company` Slack thread made the `kortix-incident-reporter` bot post
   "Open session in Kortix". The link combined the reporter's project
-  (`0825e40b…`) with Kortix Company's session (`b27cc3c2…`). Kortix Company
+  (`<project_id>`) with Kortix Company's session (`<session_id>`). Kortix Company
   then went silent in that thread. Cause: every BYO Slack app in a workspace
   receives every `message.channels` event. `threadIsOwned` read `chat_threads`
   by workspace and thread only. The reporter took the reply as a follow-up and
@@ -7815,3 +7838,28 @@ covered by the hooks.
   `unit-slack-classify-event.test.ts` asserts the bound SQL parameters include
   the project. The shared OAuth route stays workspace-wide on purpose: it is
   one app, and `/kortix use` can re-bind a channel under older threads.
+
+### 2026-09-24 — A server that answers before the request body ends desyncs every keep-alive client
+
+**Near-miss.** The core lane failed about one run in five on `main` and on
+PRs: 5 of 23 runs on 2026-09-23/24. A flow pushed through the Git proxy. The
+next `git ls-remote` or `git pull` got a bare `400`. GH-17 also failed as
+"expected a Git ref-policy rejection", which is the same fault on a push that
+was meant to be rejected. The local-git fixture answered when `git
+receive-pack` exited. At that time the chunked push body had not ended. Bun's
+`fetch` put the socket back in its pool and wrote the next request onto it.
+The fixture was still parsing the old body. It refused the new request at
+parse level (`HPE_INTERNAL`) and answered `400` before its handler ran, so
+its own error logging never fired. PR #7577.
+
+**Rule.** An HTTP handler answers only after the request body has ended, or
+it closes the connection. A handler that must answer early reads and discards
+the rest of the body. A client that forwards a body the upstream may refuse
+early does not reuse that connection.
+
+**Enforcement.** `tests/unit/local-git-fixture.test.ts` holds back a push
+body's terminator on a raw socket. It asserts that no answer arrives first,
+then sends a second request on the same socket. The receive-pack upstream
+`fetch` in `apps/api/src/git-proxy/index.ts` sets `keepalive: false`.
+`receive-pack-gate.test.ts` asserts that no later upstream request reuses the
+push's connection.
