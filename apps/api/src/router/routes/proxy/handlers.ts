@@ -1,6 +1,6 @@
 import { HTTPException } from 'hono/http-exception';
 import { type ProxyServiceConfig } from '../../config/proxy-services';
-import { config, KORTIX_MARKUP, PLATFORM_FEE_MARKUP } from '../../../config';
+import { config, KORTIX_MARKUP } from '../../../config';
 import { requireModelPricing } from '../../config/models';
 import {
   accumulateUsageChunk,
@@ -55,7 +55,7 @@ function usageRoute(service: ProxyServiceConfig, subPath: string): string {
 //    → Inject Kortix's API key, forward, bill at KORTIX_MARKUP (1.2×).
 //
 // 2. User's own API key in Authorization + Kortix token in X-Kortix-Token header
-//    → Passthrough (no key injection), bill at PLATFORM_FEE_MARKUP (0.1×).
+//    → Passthrough (no key injection), with no Kortix LLM charge.
 //
 // 3. User's own API key, no Kortix token anywhere
 //    → Pure passthrough. No billing, no gating (self-hosted / non-Kortix user).
@@ -75,7 +75,7 @@ export async function handleProxy(c: any, service: ProxyServiceConfig, prefix: s
     // Mode 1: Kortix-owned key — inject our key, bill at 1.2×
     return handleKortixProxy(c, service, subPath, queryString, method, auth.accountId);
   } else if (auth.isPassthrough && auth.accountId) {
-    // Mode 2: User's own key — passthrough, bill at 0.1×
+    // Mode 2: User's own key — passthrough with no Kortix LLM charge.
     return handleKortixPassthrough(c, service, subPath, queryString, method, auth.accountId);
   } else {
     // Mode 3: No Kortix token — pure passthrough, no billing.
@@ -453,7 +453,7 @@ async function extractUsageFromKortixProxyStream(
   }
 }
 
-// === Kortix user with own key: passthrough + bill at platform fee (0.1×) ===
+// === Kortix user with own key: passthrough with no Kortix LLM charge ===
 
 async function handleKortixPassthrough(
   c: any,
@@ -473,17 +473,8 @@ async function handleKortixPassthrough(
 
   const billingToolName = service.billingToolName;
   const isLlm = service.isLlm === true;
-  let reservation: LlmCreditReservation | null = null;
   let toolReservation: ToolCreditReservation | null = null;
-  if (isLlm) {
-    reservation = await reserveEstimatedLlmCredits(
-      accountId,
-      body,
-      PLATFORM_FEE_MARKUP,
-      null,
-      pricingProvider(service, false),
-    );
-  } else {
+  if (!isLlm) {
     toolReservation = await reserveToolProxyCredits(
       accountId,
       billingToolName,
@@ -493,7 +484,7 @@ async function handleKortixPassthrough(
   }
 
   console.log(
-    `[PROXY] ${service.name} (passthrough:${accountId}) ${method} ${subPath} → ${targetUrl} [bill:${billingToolName}@${PLATFORM_FEE_MARKUP}x]`,
+    `[PROXY] ${service.name} (passthrough:${accountId}) ${method} ${subPath} → ${targetUrl} [llm-bill:none]`,
   );
 
   let upstream: Response;
@@ -506,14 +497,7 @@ async function handleKortixPassthrough(
       duplex: 'half',
     });
   } catch (error) {
-    if (isLlm) {
-      await refundLlmReservation(
-        reservation,
-        `LLM reservation refund after dispatch error: ${service.name}`,
-      ).catch((refundError) =>
-        console.error('[PROXY] LLM reservation refund failed:', refundError),
-      );
-    } else {
+    if (!isLlm) {
       await refundToolReservation(
         toolReservation,
         `Tool reservation refund after dispatch error: ${service.name}`,
@@ -524,20 +508,9 @@ async function handleKortixPassthrough(
     throw error;
   }
 
-  if (isLlm && upstream.ok) {
-    // For LLM passthrough: extract token usage and bill at platform fee
-    return billLlmPassthrough(upstream, service, subPath, accountId, reservation);
-  }
-
   if (isLlm) {
-    // LLM call failed upstream — don't bill for failed requests
-    console.warn(
-      `[PROXY] LLM passthrough ${service.name} upstream error ${upstream.status} — no billing`,
-    );
-    await refundLlmReservation(
-      reservation,
-      `LLM reservation refund after upstream error: ${service.name}`,
-    ).catch((err) => console.error('[PROXY] LLM reservation refund failed:', err));
+    // BYOK provider usage belongs to the provider account. Do not create a
+    // Kortix reservation, debit, or refund for either success or failure.
     return new Response(upstream.body, {
       status: upstream.status,
       statusText: upstream.statusText,
@@ -588,222 +561,4 @@ async function handlePassthrough(
     statusText: upstream.statusText,
     headers: upstream.headers,
   });
-}
-
-// === LLM Passthrough Billing ===
-//
-// For LLM calls using the user's own key routed through our proxy,
-// extract token usage from the response and bill at PLATFORM_FEE_MARKUP.
-
-async function billLlmPassthrough(
-  upstream: Response,
-  service: ProxyServiceConfig,
-  subPath: string,
-  accountId: string,
-  reservation: LlmCreditReservation | null,
-) {
-  const contentType = upstream.headers.get('Content-Type') || '';
-  const isStreaming = contentType.includes('text/event-stream');
-
-  if (isStreaming) {
-    const upstreamBody = upstream.body;
-    if (!upstreamBody) {
-      await refundLlmReservation(
-        reservation,
-        `LLM reservation refund after missing stream body: ${service.name}`,
-      );
-      return new Response(null, { status: 502 });
-    }
-
-    const [clientStream, billingStream] = upstreamBody.tee();
-
-    // Fire-and-forget: extract usage from billing stream
-    extractUsageFromPassthroughStream(billingStream, service, subPath, accountId, reservation);
-
-    return new Response(clientStream, {
-      status: upstream.status,
-      headers: {
-        'Content-Type': contentType,
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-      },
-    });
-  }
-
-  // Non-streaming: read response, extract usage, bill, return
-  let responseBody: any;
-  try {
-    responseBody = await upstream.json();
-  } catch {
-    await refundLlmReservation(
-      reservation,
-      `LLM reservation refund after invalid JSON response: ${service.name}`,
-    );
-    throw new HTTPException(502, {
-      message: `${service.name} returned an invalid JSON response`,
-    });
-  }
-  const provider = usageProvider(service);
-  let modelId = 'unknown';
-  const usage = extractUsage(responseBody, provider);
-  modelId = responseBody?.model || modelId;
-
-  if (usage && (usage.promptTokens > 0 || usage.completionTokens > 0)) {
-    const modelConfig =
-      reservation?.modelConfig ??
-      requireModelPricing(modelId, pricingProvider(service, false));
-    const cost = calculateCost(
-      modelConfig,
-      usage.promptTokens,
-      usage.completionTokens,
-      usage.cachedTokens,
-      usage.cacheWriteTokens,
-      PLATFORM_FEE_MARKUP,
-      usage.upstreamCost,
-    );
-
-    await settleLlmReservation({
-      accountId,
-      modelId,
-      promptTokens: usage.promptTokens,
-      completionTokens: usage.completionTokens,
-      actualCost: cost,
-      reservation,
-      actor: null,
-      logPrefix: 'LLM passthrough billing',
-      provider: pricingProvider(service, false),
-      route: usageRoute(service, subPath),
-      cachedTokens: usage.cachedTokens,
-      cacheWriteTokens: usage.cacheWriteTokens,
-      upstreamCost: usage.upstreamCost,
-      upstreamStatus: upstream.status,
-    });
-
-    console.log(
-      `[PROXY] LLM passthrough ${modelId}: ${usage.promptTokens}/${usage.completionTokens} tokens, cost=$${cost.toFixed(6)} (${PLATFORM_FEE_MARKUP}x)`,
-    );
-  } else {
-    console.warn(`[PROXY] LLM passthrough ${service.name}: no usage data — billing skipped`);
-    await refundLlmReservation(
-      reservation,
-      `LLM reservation refund after missing usage: ${service.name}`,
-    ).catch((err) => console.error('[PROXY] LLM reservation refund failed:', err));
-  }
-
-  return new Response(JSON.stringify(responseBody), {
-    status: upstream.status,
-    headers: { 'Content-Type': 'application/json' },
-  });
-}
-
-/**
- * Extract usage from an SSE stream and bill at platform fee.
- * Runs in background (fire-and-forget).
- *
- * Handles both SSE formats:
- *   - OpenAI-compatible: usage in final chunk's `usage` field
- *   - Anthropic: input tokens in `message_start`, output in `message_delta`
- */
-async function extractUsageFromPassthroughStream(
-  stream: ReadableStream<Uint8Array>,
-  service: ProxyServiceConfig,
-  subPath: string,
-  accountId: string,
-  reservation: LlmCreditReservation | null,
-) {
-  let settlementStarted = false;
-  try {
-    const reader = stream.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let detectedModel = 'unknown';
-    const provider = usageProvider(service);
-    let usageState: UsageAccumulator | null = null;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
-        try {
-          const chunk = JSON.parse(line.slice(6));
-
-          usageState = accumulateUsageChunk(usageState, chunk, provider);
-          detectedModel = usageState?.model ?? detectedModel;
-        } catch {
-          // Not valid JSON — skip
-        }
-      }
-    }
-
-    if (!usageState) {
-      console.warn(
-        `[PROXY] LLM passthrough stream (${service.name}): no usage data — billing skipped`,
-      );
-      await refundLlmReservation(
-        reservation,
-        `LLM reservation refund after missing stream usage: ${service.name}`,
-      );
-      return;
-    }
-
-    const { promptTokens, completionTokens, cachedTokens, cacheWriteTokens, upstreamCost } =
-      usageState.usage;
-    if (promptTokens > 0 || completionTokens > 0) {
-      const modelConfig =
-        reservation?.modelConfig ??
-        requireModelPricing(detectedModel, pricingProvider(service, false));
-      const cost = calculateCost(
-        modelConfig,
-        promptTokens,
-        completionTokens,
-        cachedTokens,
-        cacheWriteTokens,
-        PLATFORM_FEE_MARKUP,
-        upstreamCost,
-      );
-      settlementStarted = true;
-      await settleLlmReservation({
-        accountId,
-        modelId: detectedModel,
-        promptTokens,
-        completionTokens,
-        actualCost: cost,
-        reservation,
-        actor: null,
-        logPrefix: 'LLM passthrough stream billing',
-        provider: pricingProvider(service, false),
-        route: usageRoute(service, subPath),
-        cachedTokens,
-        cacheWriteTokens,
-        upstreamCost,
-        streaming: true,
-        upstreamStatus: 200,
-      });
-      console.log(
-        `[PROXY] LLM passthrough stream ${detectedModel}: ${promptTokens}/${completionTokens} tokens, cost=$${cost.toFixed(6)} (${PLATFORM_FEE_MARKUP}x)`,
-      );
-    } else {
-      console.warn(
-        `[PROXY] LLM passthrough stream (${service.name}): zero tokens — billing skipped`,
-      );
-      await refundLlmReservation(
-        reservation,
-        `LLM reservation refund after zero stream usage: ${service.name}`,
-      );
-    }
-  } catch (err) {
-    console.error(`[PROXY] Error extracting usage from passthrough stream:`, err);
-    if (!settlementStarted) {
-      await refundLlmReservation(
-        reservation,
-        `LLM reservation refund after stream usage error: ${service.name}`,
-      ).catch((refundErr) => console.error('[PROXY] LLM reservation refund failed:', refundErr));
-    }
-  }
 }

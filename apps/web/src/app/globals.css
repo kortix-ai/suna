@@ -819,25 +819,6 @@
   background: oklch(0.7 0 0 / 0.3);
 }
 
-.kortix-markdown [data-streamdown-animating='true'] > * {
-  animation: stream-fade-in 200ms ease-out forwards;
-}
-
-.kortix-markdown [data-streamdown-animating='true'] p,
-.kortix-markdown [data-streamdown-animating='true'] li,
-.kortix-markdown [data-streamdown-animating='true'] h1,
-.kortix-markdown [data-streamdown-animating='true'] h2,
-.kortix-markdown [data-streamdown-animating='true'] h3,
-.kortix-markdown [data-streamdown-animating='true'] h4,
-.kortix-markdown [data-streamdown-animating='true'] h5,
-.kortix-markdown [data-streamdown-animating='true'] h6 {
-  animation: stream-word-pop 180ms ease-out forwards;
-}
-
-.kortix-markdown [data-streamdown-animating='true'] code {
-  animation: stream-char-reveal 150ms ease-out forwards;
-}
-
 /* Page-enter motion: soft fade-up for standalone pages (/projects). `both`
    keeps delayed elements hidden until their turn. Stagger delays are capped
    so long lists never feel slow — everything past the sixth child enters
@@ -993,15 +974,11 @@
    survived `prefers-reduced-motion` on `.kx-fade-up` — the movement stopped
    but the staged reveal did not. */
 
+/* No `display` rule belongs under `.streaming-active`: a streaming message
+   must lay out exactly like the settled one. See
+   components/markdown/streaming-layout.test.ts. */
 .kortix-markdown.streaming-active {
   position: relative;
-}
-
-.kortix-markdown.streaming-active p:last-child,
-.kortix-markdown.streaming-active li:last-child,
-.kortix-markdown.streaming-active
-  div:last-child:not(:has(table)):not(:has(.katex)):not(.katex-math-block) {
-  display: inline;
 }
 
 /* KaTeX — block/display math scrolls horizontally; keep inline math in flow */
@@ -1209,7 +1186,7 @@ html[data-desktop='true'] .kx-desktop-chrome {
   right: 0;
   height: 32px;
   z-index: 100;
-  display: flex;
+  display: none;
   align-items: stretch;
   background: transparent;
   pointer-events: none;
@@ -1229,52 +1206,20 @@ html[data-desktop='true'] .kx-desktop-drag {
 html[data-desktop-platform='macos'] .kx-desktop-drag {
   margin-left: 80px;
 }
-html[data-desktop='true'] .kx-desktop-controls {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding-right: 4px;
-}
-html[data-desktop-platform='macos'] .kx-desktop-controls {
-  display: none;
-}
-html[data-desktop='true'] .kx-desktop-ctrl {
-  width: 36px;
-  height: 24px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: 0;
-  color: var(--foreground, #111);
-  opacity: 0.7;
-  cursor: default;
-  border-radius: 4px;
-  transition:
-    background-color 120ms ease,
-    opacity 120ms ease;
-}
-html[data-desktop='true'] .kx-desktop-ctrl:hover {
-  background: color-mix(in oklab, currentColor 12%, transparent);
-  opacity: 1;
-}
-html[data-desktop='true'] .kx-desktop-ctrl-close:hover {
-  background: #e81123;
-  color: #fff;
-  opacity: 1;
-}
-
-/* ─── Native macOS feel — Linear-style title-bar zone ───────────────────
-   Both columns reserve the same 32px title-bar zone at top so their
-   first content rows align (sidebar workspace selector ↔ inset page
-   header), exactly like Linear. The OS traffic lights live in that zone
-   on the sidebar side; the inset side stays clean. The collapse chevron
-   sits underneath the lights in the sidebar's chevron-row, then the
-   workspace selector below — full width, untouched. */
-html[data-desktop-platform='macos'] [data-side='left'] [data-sidebar='header'] {
-  padding-top: var(--kx-titlebar-inset);
+/* The docked project sidebar shares the native-light band. The hover-peek card
+   keeps its normal 8px padding and must not gain a 40px blank strip. */
+html[data-desktop-platform='macos'] .kx-project-sidebar-header {
   -webkit-app-region: drag;
   app-region: drag;
+}
+html[data-desktop-platform='macos'] .kx-project-sidebar-header:not([data-peek]) {
+  padding-top: 0;
+}
+html[data-desktop-platform='macos'] .kx-project-sidebar-titlebar {
+  padding-left: var(--kx-titlebar-control-left);
+}
+html[data-desktop-platform='macos'][data-desktop-fullscreen='true'] .kx-project-sidebar-titlebar {
+  padding-left: 0.5rem;
 }
 /* Right sidebar header sits in the same vertical band as the inset's
    tab bar so the expand/collapse toggle aligns visually with the
@@ -1301,10 +1246,10 @@ html[data-desktop-platform='macos'] .kx-titlebar-tabs {
   app-region: drag;
   height: var(--kx-titlebar-inset) !important;
 }
-html[data-desktop-platform='macos'] [data-side='left'] [data-sidebar='header'] button,
-html[data-desktop-platform='macos'] [data-side='left'] [data-sidebar='header'] a,
-html[data-desktop-platform='macos'] [data-side='left'] [data-sidebar='header'] input,
-html[data-desktop-platform='macos'] [data-side='left'] [data-sidebar='header'] [role='button'],
+html[data-desktop-platform='macos'] .kx-project-sidebar-header button,
+html[data-desktop-platform='macos'] .kx-project-sidebar-header a,
+html[data-desktop-platform='macos'] .kx-project-sidebar-header input,
+html[data-desktop-platform='macos'] .kx-project-sidebar-header [role='button'],
 html[data-desktop-platform='macos'] .kx-titlebar-tabs button,
 html[data-desktop-platform='macos'] .kx-titlebar-tabs a,
 html[data-desktop-platform='macos'] .kx-titlebar-tabs input,
@@ -1341,9 +1286,6 @@ html[data-desktop-platform='macos'] .kx-desktop-drag {
   height: 100%;
   width: 100%;
 }
-html[data-desktop-platform='macos'] .kx-desktop-controls {
-  display: none;
-}
 /* Drag region: the chrome strip covers the title-bar zone. On macOS the
    first 80px is the OS traffic-light area; rest is freely draggable. */
 
@@ -1352,31 +1294,22 @@ html[data-desktop-platform='macos'] .kx-desktop-controls {
    controls, so top-reaching surfaces (the AppHeader, full-screen modals)
    never sit under them. Zero on the web; on desktop, tall enough to clear
    the macOS traffic lights / the Win-Linux control cluster. */
-/* Win/Linux baseline. The window controls are drawn by the web layer
-   (.kx-desktop-ctrl) top-RIGHT, so the top-LEFT corner is free and the app's
-   own control can hug it.
+/* Win/Linux baseline. Electron keeps the OS-native frame, so the web content
+   starts below the native title bar and reserves no duplicate control area.
 
    ─── The shell zoom, and who has to cancel it ───
    The shell runs the page at DESKTOP_BASE_ZOOM (lib/desktop.ts) — real browser
    zoom via webContents.setZoomFactor, which rescales the CSS pixel itself.
 
-   These baseline values are NOT compensated, on purpose. Every control this
-   block clears is drawn by the WEB layer (.kx-desktop-ctrl), so it shrinks by
-   exactly the same factor the reservation does; cancelling the zoom here would
-   reserve 124 window px for a cluster that now occupies 111.6. On Win/Linux
-   the top-LEFT corner has no OS chrome to align to at all, so the band simply
-   scales with the page.
-
-   macOS is the exception and compensates below — see that block. */
+   macOS is the exception because `titleBarStyle: hidden` places AppKit's
+   traffic lights inside the web content area. */
 html[data-desktop='true'] {
   --kx-desktop-zoom: 0.94;
   /* Box of a control sitting IN the band. `control-top` is derived from this
      size, so the two must share a coordinate space or the centring drifts. */
   --kx-titlebar-control-size: 28px;
-  --kx-titlebar-inset: 28px;
-  /* min/max/close: 3 × 36px + 2px gaps + 4px padding. Any row reaching the top
-     of the window keeps its trailing controls out from under them. */
-  --kx-titlebar-controls-width: 124px;
+  --kx-titlebar-inset: 0px;
+  --kx-titlebar-controls-width: 0px;
   /* Placement of the one control the app draws in the band, and of whatever
      follows it. Consumed as `top-[var(…)]` / `left-[var(…)]` so the React
      components carry no platform branch of their own. */
@@ -1395,7 +1328,7 @@ html[data-desktop-platform='macos'] {
      `left: 72px` would render at 72 × 0.9 = 64.8 window px and slide back
      toward them — the exact overlap this file exists to prevent.
 
-     Dividing cancels it: 72/0.9 = 80 CSS px × 0.9 = 72 window px, whatever the
+     Dividing cancels it: 78/0.94 CSS px × 0.94 = 78 window px, whatever the
      user's Cmd+/Cmd- has done. Numerators stay the true window-pixel geometry
      from window-chrome.js, so there is still one source of truth.
      setDesktopZoom() keeps the variable current; the seed above means the
@@ -1408,16 +1341,26 @@ html[data-desktop-platform='macos'] {
   /* Top of a 28px control centered on the lights' midline. */
   --kx-titlebar-control-top: calc(6px / var(--kx-desktop-zoom));
   /* Left of that control — one gutter clear of the lights. */
-  --kx-titlebar-control-left: calc(72px / var(--kx-desktop-zoom));
+  --kx-titlebar-control-left: calc(78px / var(--kx-desktop-zoom));
   /* Where content after that control starts. */
-  --kx-titlebar-content-left: calc(108px / var(--kx-desktop-zoom));
+  --kx-titlebar-content-left: calc(114px / var(--kx-desktop-zoom));
   /* macOS controls are on the LEFT, so the right edge is free. */
   --kx-titlebar-controls-width: 0px;
 }
 
+/* AppKit hides the traffic lights in native full screen. Remove their gutter
+   until Electron reports that the window has left full screen. */
+html[data-desktop-platform='macos'][data-desktop-fullscreen='true'] {
+  --kx-titlebar-inset: 0px;
+  --kx-titlebar-lights-end: 0px;
+  --kx-titlebar-control-top: 6px;
+  --kx-titlebar-control-left: 8px;
+  --kx-titlebar-content-left: 44px;
+}
+
 /* AppHeader (the breadcrumb bar on standalone pages like /projects, /accounts):
-   Win/Linux shells clear the OS window controls by reserving space ABOVE the
-   header (a blank strip that holds the control cluster). */
+   Only macOS needs a web-content band; the Win/Linux native frame already
+   keeps its controls outside the page. */
 html[data-desktop='true'] .kx-app-header {
   padding-top: calc(var(--kx-titlebar-inset) + 1rem);
 }
@@ -1455,12 +1398,17 @@ html[data-desktop-platform='macos'] .kx-app-header [role='button'] {
   app-region: no-drag;
 }
 
-/* Back on frames with no product navigation (AuthFrame). The desktop shell has
-   no browser toolbar, so a consent or status screen without an in-page exit is
-   a dead end there. The web keeps the browser's own Back, so the control stays
-   hidden unless the shell set data-desktop before first paint.
+/* The window's one Back (root layout, `DesktopBackButton`). The desktop shell
+   has no browser toolbar, so any screen without an in-page exit is a dead end
+   there. The web keeps the browser's own Back, so the control stays hidden
+   unless the shell set data-desktop before first paint.
 
-   Both rules MUST stay unlayered: the control is a Button, whose `flex`
+   A shell that navigates already, and draws its own control in this corner of
+   the band, wears `data-kx-titlebar-owner`: the project shell, the admin shell,
+   the marketing navbar. Back steps aside for it. The marker is an opt-out, so a
+   new screen has an exit without doing anything.
+
+   All three rules MUST stay unlayered: the control is a Button, whose `flex`
    utility lives in a cascade layer and would otherwise show it on the web.
    Placement comes from the band variables on the element itself, the same as
    the project shell's sidebar toggle. */
@@ -1470,19 +1418,35 @@ html[data-desktop-platform='macos'] .kx-app-header [role='button'] {
 html[data-desktop='true'] .kx-desktop-back {
   display: flex;
 }
+html[data-desktop='true'] body:has([data-kx-titlebar-owner]) .kx-desktop-back {
+  display: none;
+}
+/* A row pinned to the top of a screen without a shell (`/new`, the landing
+   door's Log out) sits in the band on desktop: under Back and the traffic
+   lights on the left, below Back on every platform. Wear
+   `.kx-below-titlebar` and it drops below the band and clears the controls. */
+html[data-desktop='true'] .kx-below-titlebar {
+  margin-top: var(--kx-titlebar-inset);
+  margin-right: var(--kx-titlebar-controls-width);
+}
 
 /* A top row positioned on a full-screen frame with no product navigation:
    `/new` and the `/projects/start` sign-out. The top of the window is the
-   title-bar band, where the traffic lights (macOS) and the web-drawn window
-   controls (Win/Linux) sit. On desktop the row drops below the band, with one
-   spacing step of air, and keeps its own side padding.
+   title-bar band, where the traffic lights (macOS) and Back sit. On desktop
+   the row clears both the band and Back, with one spacing step of air.
 
    Positioned rows only: `top` does nothing in flow. An in-flow header (the
    onboarding wizard) puts `.kx-titlebar-spacer` above itself instead.
 
    Unlayered, so it beats the row's own `top-*` utilities. */
 html[data-desktop='true'] .kx-desktop-band-row {
-  top: calc(var(--kx-titlebar-inset) + var(--spacing) * 2);
+  top: max(
+    calc(var(--kx-titlebar-inset) + var(--spacing) * 2),
+    calc(var(--kx-titlebar-control-top) + var(--kx-titlebar-control-size) + var(--spacing))
+  );
+}
+html[data-desktop='true'] .kx-web-only-back {
+  display: none;
 }
 /* Below `md` the auth mark pins to the top-left corner. On desktop that corner
    is the band (traffic lights on macOS, Back on every platform), so the mark
@@ -1514,32 +1478,103 @@ html[data-desktop='true'] .kx-titlebar-spacer {
 
 /* ─── Rows that reach the top of the window ──────────────────────────────
    A row rendered as the first in-flow child of the project shell starts at
-   y=0, so it shares the band with the OS window controls: the macOS traffic
-   lights on the left, the Win/Linux cluster on the right. Wear
-   `.kx-titlebar-row` and it indents past whichever applies. Indent only — the
-   row keeps its own height.
+   y=0, so it shares the band with the native macOS traffic lights. Win/Linux
+   keep their native frame outside web content. Wear `.kx-titlebar-row` for
+   drag and left clearance; use `.kx-titlebar-band-height` when the row must
+   center on the traffic-light band.
 
    The standalone Files header (/projects/[id]/files) wears this too. It used
    to carry a Files-only near-duplicate of these rules, with its own md+ and
    per-platform split, for a header that no longer exists in that shape — see
-   `drive-header.tsx`. One class, one rule.
+   `drive-header.tsx`.
 
    `data-sidebar-collapsed` gates the left indent: an expanded sidebar covers
    the lights (and the shell's toggle self-hides), so indenting then would
    leave a visible hole. Set it from the same `state === 'collapsed'` the row
-   already reads. The right indent is unconditional — the Win/Linux controls
-   are always there, and the variable is 0px on macOS. */
+   already reads. The right indent remains zero with native frames. */
 html[data-desktop='true'] .kx-titlebar-row {
   padding-right: calc(0.5rem + var(--kx-titlebar-controls-width));
 }
 html[data-desktop='true'] .kx-titlebar-row[data-sidebar-collapsed] {
   padding-left: var(--kx-titlebar-content-left);
 }
+html[data-desktop-platform='macos'] .kx-titlebar-row {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+/* The shell's fixed sidebar opener overlaps this row's left padding when the
+   sidebar is closed. A drag rectangle there consumes its click in Electron.
+   Keep the tab controls and the native-light clearance, but release that row. */
+html[data-desktop-platform='macos'] .kx-capability-titlebar[data-sidebar-collapsed] {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+html[data-desktop-platform='macos'] .kx-titlebar-band-height {
+  height: var(--kx-titlebar-inset);
+}
+html[data-desktop-platform='macos'][data-desktop-fullscreen='true'] .kx-titlebar-band-height {
+  height: auto;
+  min-height: 2.75rem;
+}
+html[data-desktop-platform='macos'] .kx-titlebar-row button,
+html[data-desktop-platform='macos'] .kx-titlebar-row a,
+html[data-desktop-platform='macos'] .kx-titlebar-row input,
+html[data-desktop-platform='macos'] .kx-titlebar-row [role='button'],
+html[data-desktop-platform='macos'] .kx-titlebar-row [role='tab'] {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+/* Overlay sidebars share the native-light row instead of adding a blank strip.
+   Keep their controls out of AppKit's hit area at every renderer zoom. */
+html[data-desktop-platform='macos'] .kx-overlay-sidebar-titlebar {
+  padding-left: var(--kx-titlebar-control-left);
+  justify-content: flex-end;
+}
+/* With the account sidebar hidden, its opener occupies the first web-control
+   slot. The breadcrumb follows it, rather than starting under the lights. */
+html[data-desktop-platform='macos'] .kx-account-hub-header[data-sidebar-collapsed] {
+  padding-left: var(--kx-titlebar-control-left);
+}
+html[data-desktop-platform='macos'][data-desktop-fullscreen='true'] .kx-overlay-sidebar-titlebar {
+  padding-left: 0.5rem;
+}
+html[data-desktop-platform='macos'][data-desktop-fullscreen='true'] .kx-account-hub-header[data-sidebar-collapsed] {
+  padding-left: 0.5rem;
+}
+/* The narrow Settings rail is a horizontal tab strip. Its default 36px list,
+   32px tabs, and 8px vertical padding exceed the 40px physical band at zoom. */
+html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar .kx-settings-mobile-scroll {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+/* TabsList wraps its Radix list in the sliding-indicator container. Size both
+   boxes; sizing only the inner list leaves the 36px wrapper clipped at zoom. */
+html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar .kx-settings-mobile-tabs {
+  height: var(--kx-titlebar-control-size);
+}
+html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar [data-slot='tabs-trigger'] {
+  height: var(--kx-titlebar-control-size);
+  padding-top: 0;
+  padding-bottom: 0;
+}
+html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar .kx-settings-mobile-org-link,
+html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar .kx-settings-mobile-close {
+  height: var(--kx-titlebar-control-size);
+}
+html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar .kx-settings-mobile-close {
+  width: var(--kx-titlebar-control-size);
+}
 /* Below the sidebar breakpoint, its docked cookie does not describe the
    visible layout. Every top row clears the native controls and shell opener. */
 @media (max-width: 767px) {
   html[data-desktop='true'] .kx-titlebar-row {
     padding-left: var(--kx-titlebar-content-left);
+  }
+  /* A mobile sheet can be closed while the desktop sidebar cookie still says
+     expanded. The shell opener is visible in that state as well. */
+  html[data-desktop-platform='macos'] .kx-capability-titlebar {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
   }
 }
 

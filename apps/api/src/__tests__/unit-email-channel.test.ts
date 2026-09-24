@@ -366,6 +366,10 @@ describe('dispatchAgentMailEvent', () => {
     });
     expect(createCalls[0].body.agent_name).toBe('veyris');
     expect(createCalls[0].body.initial_prompt).toBeUndefined();
+    // One lifecycle key per message: the lifecycle keeps a key forever, and
+    // under the thread's key a failed first start answered every later reply
+    // in the thread with the same failure.
+    expect(createCalls[0].idempotencyKey).toBe('email:create:inb-1:thr-1:msg-1');
   });
 
   test("accepts AgentMail's unwrapped message.received payload without top-level thread metadata", async () => {

@@ -974,6 +974,152 @@ flow(
 );
 
 flow(
+  'CONN-RENAME',
+  {
+    domain: 'connectors',
+    routes: [
+      'POST /v1/accounts/tokens',
+      'GET /v1/projects/:projectId/connections',
+      'POST /v1/projects/:projectId/connections',
+      'PUT /v1/projects/:projectId/connections/:connectionId/label',
+    ],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project({ managedGit: true });
+    const slug = `ke2e-rename-${Date.now().toString(36)}`;
+    const rename = (connectionId: string, body: unknown, as = ctx.P.OWNER) =>
+      ctx.client.as(as).put('/v1/projects/:projectId/connections/:connectionId/label', body, {
+        params: { projectId: p.id, connectionId },
+      });
+    const listed = async () =>
+      (
+        await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/connections', {
+          params: { projectId: p.id },
+        })
+      ).json<{ connections: Array<Record<string, unknown>> }>().connections;
+
+    await ctx.step('seed a connector with two project connections', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/connectors/projects/:projectId/connectors',
+        { slug, provider: 'mcp', url: 'https://ke2e.kortix.test/mcp', auth: { type: 'none' } },
+        { params: { projectId: p.id } },
+      );
+      r.status(200).body().has('$.ok', true);
+    });
+
+    let primaryId = '';
+    let backupId = '';
+    await ctx.step('create "Project connection" and "Backup" → 201 each', async () => {
+      for (const label of ['Project connection', 'Backup']) {
+        const r = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/projects/:projectId/connections',
+          { connector_alias: slug, owner_type: 'project', label },
+          { params: { projectId: p.id } },
+        );
+        r.status(201).body().has('$.label', label);
+        if (label === 'Backup') backupId = r.json<any>().connection_id;
+        else primaryId = r.json<any>().connection_id;
+      }
+    });
+
+    await ctx.step(
+      'rename "Project connection" → 200 with the new label; id, owner, status, and default are unchanged',
+      async () => {
+        const [before] = (await listed()).filter((row) => row.connection_id === primaryId);
+        const r = await rename(primaryId, { label: '  Shared support inbox  ' });
+        r.status(200)
+          .body()
+          .has('$.connection_id', primaryId)
+          .has('$.label', 'Shared support inbox')
+          .has('$.owner_type', 'project')
+          .has('$.status', before!.status as string)
+          .has('$.is_default', before!.is_default as boolean);
+      },
+    );
+
+    await ctx.step('the connection list reads back the new label and a connected_as field', async () => {
+      const row = (await listed()).find((item) => item.connection_id === primaryId);
+      if (row?.label !== 'Shared support inbox') {
+        throw new Error(`list returned label ${JSON.stringify(row?.label)}`);
+      }
+      if (!('connected_as' in row)) throw new Error('list row has no connected_as field');
+      if (row.connected_as !== null) {
+        throw new Error(`an unauthorized MCP row reported connected_as ${JSON.stringify(row.connected_as)}`);
+      }
+    });
+
+    await ctx.step('renaming to the current label → 200, no change', async () => {
+      (await rename(primaryId, { label: 'Shared support inbox' }))
+        .status(200)
+        .body()
+        .has('$.label', 'Shared support inbox');
+    });
+
+    await ctx.step('a label another account of the same owner has, in any case → 409', async () => {
+      (await rename(primaryId, { label: 'BACKUP' })).status(409);
+      const row = (await listed()).find((item) => item.connection_id === primaryId);
+      if (row?.label !== 'Shared support inbox') throw new Error('a refused rename changed the label');
+    });
+
+    await ctx.step('reserved selector words, an id-shaped label, and an empty label → 400', async () => {
+      for (const label of ['me', 'Project', '00000000-0000-4000-a000-000000000000', '   ']) {
+        (await rename(backupId, { label })).status(400);
+      }
+      (await rename(backupId, { label: 'Fine', extra: true })).status(400);
+      (await rename(backupId, {})).status(400);
+    });
+
+    await ctx.step('an unknown connection → 404; a non-member → 403/404; anonymous → 401', async () => {
+      (await rename('00000000-0000-4000-a000-000000000000', { label: 'Nope' })).status(404);
+      (await rename(backupId, { label: 'Nope' }, ctx.P.NONMEMBER)).status([403, 404]);
+      (await rename(backupId, { label: 'Nope' }, ctx.P.ANON)).status(401);
+    });
+
+    await ctx.step(
+      'the real CLI renames by id (`connections rename <id> <label…>`) and lists the new label',
+      async () => {
+        const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name('rename-cli') });
+        const cli = new CliSandbox('connections-rename');
+        const env = { KORTIX_TOKEN: pat, KORTIX_PROJECT_ID: p.id, KORTIX_API_URL: ctx.env.apiUrl };
+        try {
+          const renamed = parseCliJson<{ connection_id: string; label: string }>(
+            await cli.run(['connectors', 'connections', 'rename', backupId, 'Backup', 'inbox', '--json'], {
+              env,
+            }),
+            'kortix connectors connections rename',
+          );
+          if (renamed.connection_id !== backupId || renamed.label !== 'Backup inbox') {
+            throw new Error(`CLI rename returned ${JSON.stringify(renamed)}`);
+          }
+          const plain = await cli.run(['connectors', 'connections', 'rename', backupId, 'Backup mailbox'], {
+            env,
+          });
+          throwIfCliInfraFailure(plain, 'kortix connectors connections rename (text)');
+          if (plain.exitCode !== 0 || !plain.stdout.includes('Backup mailbox')) {
+            throw new Error(`CLI text rename exited ${plain.exitCode}: ${plain.all}`);
+          }
+          const refused = await cli.run(['connectors', 'connections', 'rename', backupId, 'me'], { env });
+          throwIfCliInfraFailure(refused, 'kortix connectors connections rename me');
+          if (refused.exitCode === 0 || !/reserved/i.test(refused.all)) {
+            throw new Error(`CLI accepted a reserved label: ${refused.all}`);
+          }
+          const rows = parseCliJson<{ connections: Array<{ connection_id: string; label: string }> }>(
+            await cli.run(['connectors', 'connections', 'ls', '--json'], { env }),
+            'kortix connectors connections ls',
+          ).connections;
+          const row = rows.find((item) => item.connection_id === backupId);
+          if (row?.label !== 'Backup mailbox') {
+            throw new Error(`CLI list returned ${JSON.stringify(row)}`);
+          }
+        } finally {
+          cli.dispose();
+        }
+      },
+    );
+  },
+);
+
+flow(
   'CONN-24',
   {
     domain: 'connectors',
@@ -2087,7 +2233,7 @@ flow(
     // repository) so the gateway has something to derive the grant from.
     const declare = await ctx.client.as(ctx.P.OWNER).put(
       '/v1/projects/:projectId/agents/:agentName/config',
-      { connectors: 'all', secrets: 'all', kortix_cli: 'all', skills: 'all' },
+      { connectors: 'all', secrets: 'all', kortix_permissions: 'all', skills: 'all' },
       { params: { projectId: p.id, agentName: 'kortix' }, timeoutMs: 60_000 },
     );
     declare.status(200);
@@ -2163,7 +2309,7 @@ flow(
             ownerUserId,
             p.id,
             sessionId,
-            JSON.stringify({ agent: 'kortix', connectors: ['stripe'], kortixCli: [], env: [] }),
+            JSON.stringify({ agent: 'kortix', connectors: ['stripe'], permissions: [], env: [] }),
           ],
         );
         // A declared openapi connector with bearer auth and NO credential
@@ -2245,7 +2391,7 @@ flow(
         'a glitched deny-all grant on the SAME manifest blob is repaired by two consistent reads',
         async () => {
           const before = await readGrant();
-          const glitched = { ...(before ?? {}), connectors: [], kortixCli: [], env: [] };
+          const glitched = { ...(before ?? {}), connectors: [], permissions: [], env: [] };
           await db.query(`UPDATE kortix.account_tokens SET agent_grant = $1::jsonb WHERE session_id = $2`, [
             JSON.stringify(glitched),
             sessionId,
@@ -2266,7 +2412,7 @@ flow(
         async () => {
           const put = await ctx.client.as(ctx.P.OWNER).put(
             '/v1/projects/:projectId/agents/:agentName/config',
-            { connectors: ['stripe'], secrets: 'all', kortix_cli: 'all', skills: 'all' },
+            { connectors: ['stripe'], secrets: 'all', kortix_permissions: 'all', skills: 'all' },
             { params: { projectId: p.id, agentName: 'kortix' }, timeoutMs: 60_000 },
           );
           put.status(200);
@@ -2434,7 +2580,7 @@ flow(
     const declareAgent = (connectorsGrant: 'all' | string[]) =>
       ctx.client.as(ctx.P.OWNER).put(
         '/v1/projects/:projectId/agents/:agentName/config',
-        { connectors: connectorsGrant, secrets: 'all', kortix_cli: 'all', skills: 'all' },
+        { connectors: connectorsGrant, secrets: 'all', kortix_permissions: 'all', skills: 'all' },
         { params: { projectId: p.id, agentName: 'kortix' }, timeoutMs: 60_000 },
       );
 
@@ -2477,7 +2623,7 @@ flow(
               ownerUserId,
               p.id,
               sessionId,
-              JSON.stringify({ agent: 'kortix', connectors: 'all', kortixCli: [], env: [] }),
+              JSON.stringify({ agent: 'kortix', connectors: 'all', permissions: [], env: [] }),
             ],
           );
           // `auth: {type:'none'}` is the fixture's whole point: the connector

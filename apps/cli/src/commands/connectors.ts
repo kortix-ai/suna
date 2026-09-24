@@ -13,7 +13,7 @@ import {
   removeArrayBlock,
   setTableScalar,
 } from '../manifest-edit.ts';
-import { setConnectorSecretBinding } from '@kortix/sdk';
+import { renameConnection, setConnectorSecretBinding } from '@kortix/sdk';
 import { withKortixScope } from '../api/sdk.ts';
 import { C, help, pad, status } from '../style.ts';
 import { runConnector } from './connector-gateway.ts';
@@ -60,6 +60,8 @@ interface Connection {
   status: 'active' | 'revoked' | 'error';
   is_default?: boolean;
   metadata?: Record<string, unknown>;
+  /** Who the account was authorized as. Absent on older servers. */
+  connected_as?: string | null;
 }
 
 /**
@@ -72,6 +74,8 @@ interface ConnectorAccountRow {
   label: string;
   owner_type: string;
   is_default: boolean;
+  /** Who the account was authorized as. Absent on older servers. */
+  connected_as?: string | null;
 }
 
 /** One condition on a policy rule: a dot path into the call's arguments, the
@@ -292,6 +296,8 @@ Subcommands:
   revoke <id>                       Revoke a connection.
   activate <id>                     Activate a connection.
   default <id>                      Make a connection its owner-scope default.
+  rename <id> <label…>              Rename a connection. Label only: the account,
+                                    owner, and default stay; no re-authorization.
   connect <id> [options]            Start Pipedream OAuth for a connection.
   finalize <id> [--json]            Finalize Pipedream OAuth for a connection.
 
@@ -898,13 +904,15 @@ export async function runConnectors(argv: string[]): Promise<number> {
           return 0;
         }
         const labelWidth = Math.max(5, ...accounts.map((account) => account.label.length));
+        const asWidth = connectedAsWidth(accounts);
         process.stdout.write('\n');
         process.stdout.write(
-          `  ${C.dim}${pad('LABEL', labelWidth)}  OWNER    DEFAULT  CONNECTION ID${C.reset}\n`,
+          `  ${C.dim}${pad('LABEL', labelWidth)}  ${pad('CONNECTED AS', asWidth)}  OWNER    DEFAULT  CONNECTION ID${C.reset}\n`,
         );
         for (const account of accounts) {
           process.stdout.write(
-            `  ${pad(account.label, labelWidth)}  ${pad(accountOwnerLabel(account.owner_type), 8)} ` +
+            `  ${pad(account.label, labelWidth)}  ${pad(account.connected_as ?? '—', asWidth)}  ` +
+              `${pad(accountOwnerLabel(account.owner_type), 8)} ` +
               `${pad(account.is_default ? 'yes' : 'no', 8)} ${account.connection_id}` +
               `${account.is_default ? `  ${C.dim}(pinned default)${C.reset}` : ''}\n`,
           );
@@ -1420,13 +1428,15 @@ async function runConnections(input: {
         5,
         ...response.connections.map((connection) => (connection.label ?? '').length),
       );
+      const asWidth = connectedAsWidth(response.connections);
       process.stdout.write('\n');
       process.stdout.write(
-        `  ${C.dim}${pad('CONNECTOR', connectorWidth)}  ${pad('LABEL', labelWidth)}  OWNER     STATUS   DEFAULT  CONNECTION ID${C.reset}\n`,
+        `  ${C.dim}${pad('CONNECTOR', connectorWidth)}  ${pad('LABEL', labelWidth)}  ${pad('CONNECTED AS', asWidth)}  OWNER     STATUS   DEFAULT  CONNECTION ID${C.reset}\n`,
       );
       for (const connection of response.connections) {
         process.stdout.write(
           `  ${pad(connection.connector_alias, connectorWidth)}  ${pad(connection.label ?? '—', labelWidth)}  ` +
+            `${pad(connection.connected_as ?? '—', asWidth)}  ` +
             `${pad(connection.owner_type, 9)} ${pad(connection.status, 8)} ` +
             `${pad(connection.is_default ? 'yes' : 'no', 8)} ${connection.connection_id}\n`,
         );
@@ -1518,6 +1528,25 @@ async function runConnections(input: {
         );
       return 0;
     }
+    case 'rename': {
+      const connectionId = positional[0];
+      if (!connectionId) return missing('a connection id');
+      // The label is every remaining word, so `rename <id> Support inbox`
+      // needs no quotes — the same shape as `kortix connectors rename`.
+      const label = positional.slice(1).join(' ').trim();
+      if (!label) return missing('a new label');
+      const response = await withKortixScope(ctx.auth, () =>
+        renameConnection(ctx.projectId, connectionId, label),
+      );
+      if (json) {
+        emitJson(response);
+        return 0;
+      }
+      process.stdout.write(
+        `${status.ok(`Renamed connection ${C.bold}${connectionId}${C.reset} → ${C.bold}${response.label}${C.reset}`)}\n`,
+      );
+      return 0;
+    }
     case 'connect': {
       const connectionId = positional[0];
       if (!connectionId) return missing('a connection id');
@@ -1574,6 +1603,11 @@ function parseMetadata(value: string | undefined): Record<string, unknown> | und
   } catch {
     return new Error('--metadata must be valid JSON');
   }
+}
+
+/** Column width for CONNECTED AS: the longest identity, or the header. */
+function connectedAsWidth(rows: Array<{ connected_as?: string | null }>): number {
+  return Math.max(12, ...rows.map((row) => (row.connected_as ?? '—').length));
 }
 
 function connectionActionPastTense(action: 'revoke' | 'activate' | 'default'): string {

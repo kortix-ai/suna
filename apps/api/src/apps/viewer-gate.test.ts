@@ -29,6 +29,8 @@ mock.module('../shared/crypto', () => ({
 }));
 
 mock.module('../repositories/account-tokens', () => ({
+  // The connector → App assertion path; not exercised in this suite.
+  validateAccountTokenById: async () => ({ isValid: false, error: 'not in this suite' }),
   validateAccountToken: async (t: string) =>
     t === 'kortix_pat_member'
       ? { isValid: true, userId: OTHER_USER, accountId: ACCOUNT_ID, projectId: null, tokenId: 'tok-1' }

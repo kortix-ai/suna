@@ -45,7 +45,7 @@ mock.module('../resources', () => ({
               load: [2.17, 1.42, 0.74],
               cpus: 2,
               memory: { totalMb: 3915, availableMb: 128, usedPct: 97, swapTotalMb: 0, swapFreeMb: 0 },
-              cgroup: { currentMb: null, maxMb: null, usedPct: null, oomKills: null },
+              cgroup: { currentMb: null, workingSetMb: null, maxMb: null, usedPct: null, oomKills: null },
               disks: [],
               daemon: { pid: 451, rssMb: 180, threads: 10, state: 'S' },
               runtime: { pid: 166, rssMb: 513, threads: 8, state: 'R' },

@@ -3,8 +3,10 @@ import { describe, expect, test } from 'bun:test';
 import { PRELOAD_LANGS } from './code/shiki-highlighter';
 import {
   LANGUAGE_ALIASES,
+  hasLinkReferenceDefinition,
   isInternalUrl,
   isLinkSafeHref,
+  isStreamingLinkPlaceholder,
   languageLabel,
   looksLikeFilePath,
   looksLikeUrl,
@@ -30,6 +32,38 @@ describe('isInternalUrl', () => {
     expect(isInternalUrl(undefined)).toBe(false);
     expect(isInternalUrl('')).toBe(false);
     expect(isInternalUrl('relative/path')).toBe(false);
+  });
+});
+
+describe('hasLinkReferenceDefinition', () => {
+  test('finds a reference-style link target anywhere in the text', () => {
+    expect(hasLinkReferenceDefinition('See [the docs][1].\n\n[1]: https://kortix.com/docs')).toBe(
+      true,
+    );
+    expect(hasLinkReferenceDefinition('[docs]: <https://kortix.com> "Docs"')).toBe(true);
+    expect(hasLinkReferenceDefinition('   [x]: /relative/path')).toBe(true);
+  });
+
+  test('inline links, plain brackets, and indented code are not definitions', () => {
+    expect(hasLinkReferenceDefinition('[docs](https://kortix.com/docs)')).toBe(false);
+    expect(hasLinkReferenceDefinition('Array access: arr[0]: first element')).toBe(false);
+    expect(hasLinkReferenceDefinition('    [1]: https://kortix.com')).toBe(false);
+    expect(hasLinkReferenceDefinition('[1]:')).toBe(false);
+  });
+});
+
+describe('isStreamingLinkPlaceholder', () => {
+  test("recognises remend's stand-in for a URL that has not arrived", () => {
+    expect(isStreamingLinkPlaceholder('streamdown:incomplete-link')).toBe(true);
+    expect(isStreamingLinkPlaceholder('STREAMDOWN:incomplete-link')).toBe(true);
+  });
+
+  test('real destinations are not placeholders', () => {
+    expect(isStreamingLinkPlaceholder(undefined)).toBe(false);
+    expect(isStreamingLinkPlaceholder('')).toBe(false);
+    expect(isStreamingLinkPlaceholder('https://kortix.com/streamdown:x')).toBe(false);
+    expect(isStreamingLinkPlaceholder('#streamdown')).toBe(false);
+    expect(isStreamingLinkPlaceholder('/connect/ksl_abc')).toBe(false);
   });
 });
 

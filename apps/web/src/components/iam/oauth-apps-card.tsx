@@ -4,7 +4,7 @@ import { useTranslations } from '@/i18n/use-translations';
 /**
  * OAuth apps: the account's "Sign in with Kortix" client registry.
  *
- * A row here is a third-party app (Essentia's dashboards, a partner portal,
+ * A row here is a third-party app (SampleCo's dashboards, a partner portal,
  * an internal tool on its own origin) that sends people to `/v1/oauth/authorize`
  * and gets back a `kortix_oat_` token for them. The app pairs the client id and
  * secret with `createKortixAuth` from `@kortix/sdk/server`; everything else —

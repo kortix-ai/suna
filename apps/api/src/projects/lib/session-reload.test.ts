@@ -112,7 +112,7 @@ describe('the reload never hard-resets the session branch', () => {
 
   test('both entry points drop the mirror TTL before reading it', () => {
     // The mirror caches for 60s. "I merged, now reload" happens inside that
-    // window essentially every time, so without this the reload compiles the
+    // window samplecolly every time, so without this the reload compiles the
     // pre-merge manifest and `--status` cheerfully agrees you are up to date.
     // `\n}\n` — a closing brace alone on a line. Splitting on `\n}` alone stops
     // at the end of the destructured input TYPE (`\n}): Promise<…>`), which cuts

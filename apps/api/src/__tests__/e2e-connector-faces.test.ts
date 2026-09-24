@@ -209,7 +209,7 @@ function principal(): ConnectorPrincipal {
     agentGrant: {
       agent: 'test-agent',
       connectors: ['echo', 'graph', 'kortix_email'],
-      kortixCli: 'all',
+      permissions: 'all',
     },
   };
 }
@@ -352,7 +352,7 @@ function makeDeps(): ConnectorRouterDeps {
       if (authorization === `Bearer ${DENIED_TOKEN}`) {
         return {
           ...principal(),
-          agentGrant: { agent: 'test-agent', connectors: [], kortixCli: 'all' },
+          agentGrant: { agent: 'test-agent', connectors: [], permissions: 'all' },
         };
       }
       return null;
@@ -367,7 +367,7 @@ function makeDeps(): ConnectorRouterDeps {
       if (authorization === `Bearer ${DENIED_TOKEN}`) {
         return {
           ...principal(),
-          agentGrant: { agent: 'test-agent', connectors: [], kortixCli: 'all' },
+          agentGrant: { agent: 'test-agent', connectors: [], permissions: 'all' },
         };
       }
       return null;

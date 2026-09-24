@@ -135,7 +135,9 @@
     "openEmailApp": "打开电子邮件应用程序",
     "goToSignIn": "前往登录",
     "verifyEmailInstructions": "单击电子邮件中的链接以验证您的帐户，然后登录。",
-    "browseAsGuest": "以访客身份浏览"
+    "browseAsGuest": "以访客身份浏览",
+    "signOutFailed": "无法退出登录，请检查网络连接后重试。",
+    "signingOut": "正在退出登录…"
   },
   "onboarding": {
     "welcome": "看看Kortix能做什么",
@@ -531,7 +533,22 @@
     "buyCredits": "购买积分",
     "availableCredits": "可用积分",
     "creditPackages": "积分包",
-    "choosePackageBoost": "选择一个包来提升你的积分余额"
+    "choosePackageBoost": "选择一个包来提升你的积分余额",
+    "title": "账单",
+    "nextDailyRefresh": "下次每日刷新",
+    "in1Hour": "1 小时后",
+    "cancelsOn": "取消日期",
+    "manageOnWeb": "在 kortix.com 管理",
+    "openWebFailed": "无法打开 kortix.com，请重试。",
+    "scheduledChange": "计划变更",
+    "newPlan": "新套餐",
+    "startsOn": "生效日期",
+    "keepCurrentPlan": "保留当前套餐",
+    "keepPlanTitle": "保留 {{plan}}？",
+    "keepPlanFailed": "无法取消变更，请重试。",
+    "keepPlanDescription": "将取消 {{date}} 变更为 {{plan}} 的计划。",
+    "keepPlan": "保留套餐",
+    "keepingPlan": "正在保留套餐…"
   },
   "theme": {
     "title": "外观",
@@ -587,7 +604,25 @@
     "deletionCancelledSuccess": "你的账户安全了。删除已被取消。",
     "failedToRequest": "请求账户删除失败",
     "failedToCancel": "取消账户删除失败",
-    "cancelRequestDescription": "你可以在删除日期前随时取消此请求。如果取消，你的所有数据将被保留。"
+    "cancelRequestDescription": "你可以在删除日期前随时取消此请求。如果取消，你的所有数据将被保留。",
+    "scheduledBadge": "已安排",
+    "notAvailableTitle": "此服务器不支持",
+    "projectsAndSessions": "项目和会话",
+    "credentialsAndConnections": "凭据和连接",
+    "subscriptionAndBilling": "订阅和账单",
+    "when": "删除时间",
+    "in30Days": "30 天后",
+    "immediately": "立即",
+    "deleteTitle": "删除账户？",
+    "deleteNowTitle": "立即删除账户？",
+    "deleteScheduledDescription": "你的账户将在 30 天后删除，在此之前可以取消。",
+    "deleteNowDescription": "你的账户及其数据将立即删除，且无法撤销。",
+    "deleteNow": "立即删除",
+    "deleting": "正在删除…",
+    "cancelling": "正在取消…",
+    "finalTitle": "确定吗？",
+    "finalDescriptionNow": "你账户中的所有内容（项目、会话、凭据和账单）将立即删除，且无法撤销。",
+    "finalDescriptionScheduled": "你账户中的所有内容（项目、会话、凭据和账单）将在 30 天后删除，在此之前可以取消。"
   },
   "models": {
     "selectModel": "选择模型",
@@ -1112,5 +1147,40 @@
     "openSettings": "打开设置",
     "enableAll": "全部启用",
     "disableAll": "全部禁用"
+  },
+  "account": {
+    "title": "账户",
+    "preferences": "偏好设置",
+    "sounds": "声音",
+    "workspace": "工作区",
+    "accounts": "账户",
+    "help": "帮助",
+    "docs": "文档",
+    "support": "支持",
+    "advanced": "高级"
+  },
+  "profile": {
+    "changePhoto": "更换头像",
+    "photoFailed": "无法更新你的头像，请重试。"
+  },
+  "plans": {
+    "title": "套餐",
+    "plan": "套餐",
+    "current": "当前",
+    "currentPlan": "当前套餐",
+    "seats": "{{count}} 个席位 × ${{price}}",
+    "perMonth": "${{total}} / 月",
+    "includes": "{{plan}} 包含",
+    "askOwner": "请联系账户所有者升级",
+    "contactSales": "联系销售",
+    "upgradeTo": "升级到 {{plan}}",
+    "switchTo": "切换到 {{plan}}"
+  },
+  "upgrade": {
+    "teamPlan": "Kortix Team",
+    "perSeatMonthly": "每席位 / 月",
+    "includes": "包含",
+    "askOwner": "请向账户所有者申请席位",
+    "notNow": "以后再说"
   }
 }

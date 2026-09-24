@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle } from 'lucide-react-native';
+import { WarningIcon as AlertTriangle } from '@/lib/icons';
 import { AlertBanner } from './AlertBanner';
 
 interface TechnicalIssueBannerProps {

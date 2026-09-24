@@ -13,6 +13,7 @@ import {
 } from '../../connectors/share';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
+import { isAgentPrincipalActor } from '../../iam/actor';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 
@@ -51,6 +52,12 @@ const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   'trigger_slug',
   'name',
   'title_source',
+  // Agents as principals (spec 2026-09-22 §2.3): the mint reads these to decide
+  // `on_behalf_of`. A client that could set `spawned_by_session` would inherit
+  // another session's human; one that could forge the cleared stamp is harmless
+  // but still not the client's to write.
+  'spawned_by_session',
+  'on_behalf_of_cleared_at',
 ] as const;
 
 const PATCH_SERVER_MANAGED_SESSION_METADATA_KEYS = [
@@ -291,6 +298,7 @@ projectsApp.openapi(
     limit: query.limit,
     cursor: query.cursor ?? null,
     boundCredentialSessionId: callerKortixSessionId(c),
+    agentPrincipal: loaded.actor ? isAgentPrincipalActor(loaded.actor) : false,
     probeManageCapability: () =>
       projectCapabilityAllowed(
         c,
@@ -328,7 +336,7 @@ projectsApp.openapi(
   });
 
   // The sidebar re-fetches this list several times per session open (six in the
-  // measured Essentia corpus, 2026-08-26) and the answer is usually byte-identical
+  // measured SampleCo corpus, 2026-08-26) and the answer is usually byte-identical
   // between them. A weak ETag lets those repeats end as a 304 with no body.
   // `no-cache` — not `no-store` — is what makes a client revalidate rather than
   // serve a stale inventory: the response is private and always re-validated,

@@ -176,6 +176,9 @@ export interface ConnectorPrincipal {
   accountId: string;
   projectId: string;
   sessionId: string | null;
+  /** The presented account token's id, when the caller used one. With
+   *  `sessionId`, identifies the agent session a Kortix App assertion names. */
+  tokenId?: string | null;
   /** The acting identity resolved to its group memberships. */
   subject: { userId: string; groupIds: string[] };
   /** Per-agent grant from the session token — restricts which connectors this
@@ -195,6 +198,14 @@ export interface ConnectorPrincipal {
    * a connector could hold more than one reachable account.
    */
   requestedConnectorAccount?: string | null;
+  /**
+   * Present when the caller is an agent session under the agent-principal
+   * model (flag `agent_principal` ON, governed grant — spec
+   * docs/specs/2026-09-22-agents-as-principals.md §2.3). Personal resources
+   * (member-owned accounts, own computers) then key on `onBehalfOfUserId` AND
+   * a private session, never on `userId` (the launcher). Absent = legacy.
+   */
+  agentPrincipal?: { onBehalfOfUserId: string | null } | null;
 }
 
 interface CatalogAction {
@@ -478,12 +489,15 @@ export interface ConnectorRouterDeps {
     slug: string;
     userId: string;
     sessionId: string | null;
+    agentPrincipal?: { onBehalfOfUserId: string | null } | null;
   }): Promise<
     Array<{
       connection_id: string;
       label: string;
       owner_type: string;
       is_default: boolean;
+      /** Who the account was authorized as. `null` when unknown. */
+      connected_as?: string | null;
     }>
   >;
   /**
@@ -530,7 +544,17 @@ export interface ConnectorRouterDeps {
     selector?: { connectionId?: string; requestId?: string },
     /** Whose account the matching connect started on. Defaults to `me`. */
     owner?: ConnectorConnectOwner,
-  ): Promise<{ provider: string; connected: boolean; accountId?: string; connectionId?: string; isNoAuth?: boolean } | null>;
+  ): Promise<{
+    provider: string;
+    connected: boolean;
+    accountId?: string;
+    connectionId?: string;
+    isNoAuth?: boolean;
+    /** The authorized identity (an email, login, or name). `null` when unknown. */
+    connectedAs?: string | null;
+    /** The connection's label after finalize. A generic default becomes `connectedAs`. */
+    label?: string;
+  } | null>;
   /**
    * Does this caller hold the connections-manage capability on the project?
    * The same gate r4's project-owned connection create asserts — connecting an
@@ -880,6 +904,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       accountId: p.accountId,
       subject: p.subject,
       sessionId: p.sessionId,
+      actingTokenId: p.tokenId ?? null,
       connectorSlug,
       actionPath,
       args,
@@ -936,6 +961,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
                   slug: connectorSlug,
                   userId: p.userId,
                   sessionId: p.sessionId,
+                  agentPrincipal: p.agentPrincipal ?? null,
                 })
                 .then((rows) => rows.map((row) => row.label))
                 .catch(() => [])
@@ -1411,6 +1437,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
         slug,
         userId: p.userId,
         sessionId: p.sessionId,
+        agentPrincipal: p.agentPrincipal ?? null,
       });
       // The pinned account, when exactly one is pinned — the SAME "is a
       // default reachable" question an unnamed `/call` answers. Two or more

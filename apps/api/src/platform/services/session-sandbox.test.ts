@@ -453,7 +453,7 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
       sessionId: SANDBOX_ID,
       agentGrant: {
         agent: 'meta',
-        kortixCli: 'all',
+        permissions: 'all',
         connectors: [],
         env: [],
       },

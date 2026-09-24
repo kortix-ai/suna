@@ -134,6 +134,18 @@ export interface EmailConnectorContext {
 export interface GatewayDeps {
   loadConnectorBySlug(projectId: string, slug: string): Promise<GatewayConnector | null>;
   /**
+   * Spec 2026-09-22 §2.5: the `X-Kortix-App-Authorization` value for a call
+   * whose base URL is a Kortix App of THIS deployment in the caller's OWN
+   * project — a ≤ 60 s signed assertion naming the calling session token.
+   * Null for any other host. Optional: absent = never attach.
+   */
+  appAuthorizationFor?(input: {
+    projectId: string;
+    baseUrl: string;
+    sessionId: string;
+    tokenId: string;
+  }): Promise<string | null>;
+  /**
    * WHY `loadConnectorBySlug` answered null. That function collapses three
    * states into one null — no such row, a disabled row, and a row with no
    * usable connection for this session — and the gateway used to report all
@@ -279,6 +291,10 @@ export interface CallInput {
   accountId: string;
   subject: ShareSubject;
   sessionId?: string | null;
+  /** The presented account token's id (`account_tokens.token_id`), when the
+   *  caller authenticated with one. With `sessionId` it identifies an agent
+   *  session — the only caller that gets a Kortix App assertion. */
+  actingTokenId?: string | null;
   connectorSlug: string;
   /** Connector-relative action path (e.g. `charges.create`). */
   actionPath: string;
@@ -481,6 +497,42 @@ async function resolveEmailExecutionContext(
 }
 
 /** Run one connector call through the full gateway path. */
+/**
+ * The App gate credential for this call, or null. Only an agent session (a
+ * session id AND the token it presented) calling an openapi/http connector is
+ * considered, and `deps.appAuthorizationFor` decides whether the base URL is an
+ * App of the same project. A lookup failure never fails the call: the request
+ * goes out exactly as it did before this existed.
+ */
+async function appAuthorizationForCall(
+  deps: GatewayDeps,
+  input: CallInput,
+  connector: GatewayConnector,
+  binding: ActionBinding,
+): Promise<string | null> {
+  if (!deps.appAuthorizationFor || !input.sessionId || !input.actingTokenId) return null;
+  const baseUrl =
+    binding.kind === 'openapi'
+      ? (connector.baseUrl ?? binding.server)
+      : binding.kind === 'http'
+        ? connector.baseUrl
+        : null;
+  if (!baseUrl) return null;
+  try {
+    return await deps.appAuthorizationFor({
+      projectId: input.projectId,
+      baseUrl,
+      sessionId: input.sessionId,
+      tokenId: input.actingTokenId,
+    });
+  } catch (error) {
+    logger.warn('[connector] App assertion lookup failed; calling without it', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
 export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<CallResult> {
   const resolved = await resolveConnectorForCall(deps, input);
   const fullPath = `${resolved.slug}.${input.actionPath}`;
@@ -871,6 +923,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         secret: executionSecret,
         args: providerArgs,
         paramHints: paramHintsFromSchema(action.inputSchema),
+        appAuthorization: await appAuthorizationForCall(deps, input, connector, action.binding),
         fetchImpl: deps.fetchImpl,
       });
       // Channel platforms (Slack) reply HTTP 200 with an `{ ok:false, error }`

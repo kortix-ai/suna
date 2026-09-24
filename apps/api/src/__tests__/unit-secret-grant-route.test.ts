@@ -45,11 +45,11 @@ agents:
   support:
     connectors: [gmail]
     connectors_required: [gmail]
-    kortix_cli: [project.cr.open]
+    kortix_permissions: [project.cr.open]
     skills: all
     secrets: [OTHER_KEY]
   scout:
-    kortix_cli: all
+    kortix_permissions: all
 `;
 
 const ALL_GRANT_YAML = `kortix_version: 2
@@ -203,10 +203,10 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/grant', () => {
     expect(support.secrets).toEqual(['OTHER_KEY', 'BROKER_KEY']);
     expect(support.connectors).toEqual(['gmail']);
     expect(support.connectors_required).toEqual(['gmail']);
-    expect(support.kortix_cli).toEqual(['project.cr.open']);
+    expect(support.kortix_permissions).toEqual(['project.cr.open']);
     expect(support.skills).toBe('all');
     // The other agent's block is untouched.
-    expect(agentsOf(commits[0]!.raw).scout).toEqual({ kortix_cli: 'all' });
+    expect(agentsOf(commits[0]!.raw).scout).toEqual({ kortix_permissions: 'all' });
   });
 
   test('creates the entry for an agent the roster does not declare', async () => {

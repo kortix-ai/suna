@@ -43,8 +43,8 @@ describe('provisioningFailurePresentation', () => {
   });
 
   test('uses provider-neutral fallback copy', () => {
-    expect(provisioningFailurePresentation({}, 'Essentia runtime', testUiTranslator)).toEqual({
-      title: "Couldn't start Essentia runtime",
+    expect(provisioningFailurePresentation({}, 'SampleCo runtime', testUiTranslator)).toEqual({
+      title: "Couldn't start SampleCo runtime",
       message: 'The sandbox provider could not start this session. Try again.',
       retryable: true,
     });

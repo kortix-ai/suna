@@ -12,6 +12,7 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
 import { StatusDot } from '@/components/ui/status';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { MermaidDiagram } from '@/features/file-renderers/mermaid/mermaid-diagram';
 import { useHeicBlob } from '@/hooks/use-heic-url';
 import { cn } from '@/lib/utils';
 import { isHeicFile } from '@/lib/utils/heic-convert';
@@ -191,6 +192,8 @@ export function getLanguageFromExt(filename: string): string {
     fish: 'bash',
     md: 'markdown',
     mdx: 'markdown',
+    mmd: 'mermaid',
+    mermaid: 'mermaid',
     txt: 'plaintext',
     dockerfile: 'dockerfile',
     makefile: 'makefile',
@@ -372,6 +375,10 @@ export function FileContentRenderer({
   const language = getLanguageFromExt(fileName);
   const fileCategory = getFileCategory(fileName, fileContent?.mimeType);
   const isMarkdownFile = language === 'markdown';
+  // `.mmd` / `.mermaid` share the markdown Preview/Source toggle and its state:
+  // both are text files whose rendered form is the default view.
+  const isMermaidFile = language === 'mermaid';
+  const hasPreviewToggle = isMarkdownFile || isMermaidFile;
   const isJsonFile = language === 'json';
   const isHtmlFile = fileCategory === 'html';
   // Markdown defaults to rendered preview (UnifiedMarkdown). Users can flip to
@@ -813,8 +820,8 @@ export function FileContentRenderer({
               </Hint>
             )}
 
-            {/* Markdown preview toggle */}
-            {isMarkdownFile && fileContent?.type === 'text' && (
+            {/* Markdown / Mermaid preview toggle */}
+            {hasPreviewToggle && fileContent?.type === 'text' && (
               <Hint
                 label={
                   isMarkdownPreview
@@ -948,6 +955,11 @@ export function FileContentRenderer({
             </Suspense>
           )}
 
+          {/* The rich renderers below get `showDownload={false}`: every host of
+              this component (the session panel, the file preview modal, the
+              public share page) already shows Download in its own toolbar, and
+              a second one inside the viewer is the duplicate we removed. */}
+
           {/* PDF preview */}
           {isContentReady && fileCategory === 'pdf' && fileContent?.content && (
             <Suspense fallback={<RendererFallback />}>
@@ -956,6 +968,7 @@ export function FileContentRenderer({
                 fileName={fileName}
                 className="h-full"
                 fitOnOpen={fitOnOpen}
+                showDownload={false}
               />
             </Suspense>
           )}
@@ -963,7 +976,12 @@ export function FileContentRenderer({
           {/* DOCX preview */}
           {isContentReady && fileCategory === 'docx' && rawBlob && (
             <Suspense fallback={<RendererFallback />}>
-              <DocxRenderer blob={rawBlob} fileName={fileName} className="h-full" />
+              <DocxRenderer
+                blob={rawBlob}
+                fileName={fileName}
+                className="h-full"
+                showDownload={false}
+              />
             </Suspense>
           )}
 
@@ -982,7 +1000,12 @@ export function FileContentRenderer({
           {/* XLSX / XLS preview */}
           {!isLoading && !error && !isNotFound && fileCategory === 'xlsx' && (
             <Suspense fallback={<RendererFallback />}>
-              <XlsxRenderer filePath={filePath} fileName={fileName} className="h-full" />
+              <XlsxRenderer
+                filePath={filePath}
+                fileName={fileName}
+                className="h-full"
+                showDownload={false}
+              />
             </Suspense>
           )}
 
@@ -1001,14 +1024,19 @@ export function FileContentRenderer({
           {/* CSV / TSV preview */}
           {!isLoading && !error && fileCategory === 'csv' && fileContent && (
             <Suspense fallback={<RendererFallback />}>
-              <CsvRenderer content={fileContent.content} fileName={fileName} className="h-full" />
+              <CsvRenderer
+                content={fileContent.content}
+                fileName={fileName}
+                className="h-full"
+                showDownload={false}
+              />
             </Suspense>
           )}
 
           {/* Video preview */}
           {isContentReady && fileCategory === 'video' && blobUrl && (
             <Suspense fallback={<RendererFallback />}>
-              <VideoRenderer url={blobUrl} className="h-full" onDownload={handleDownload} />
+              <VideoRenderer url={blobUrl} className="h-full" />
             </Suspense>
           )}
 
@@ -1103,7 +1131,14 @@ export function FileContentRenderer({
             !imageDataUrl &&
             fileCategory !== 'csv' &&
             fileCategory !== 'html' && (
-              <div className={cn('relative flex flex-col', readOnly ? 'min-h-full' : 'h-full')}>
+              <div
+                className={cn(
+                  'relative flex flex-col',
+                  // The diagram fits the pane, so it needs a definite height
+                  // even read-only; `min-h-full` would collapse it to zero.
+                  readOnly && !(isMermaidFile && isMarkdownPreview) ? 'min-h-full' : 'h-full',
+                )}
+              >
                 {/* Diff indicator */}
                 {fileContent.patch && fileContent.patch.hunks.length > 0 && (
                   <InfoBanner
@@ -1122,6 +1157,16 @@ export function FileContentRenderer({
                       content={hasUnsavedChanges ? latestContentRef.current : displayContent}
                     />
                   </div>
+                ) : isMarkdownPreview && isMermaidFile ? (
+                  // Reads the unsaved editor text, like the markdown preview
+                  // below, so an edit in Source shows up here before saving.
+                  <MermaidDiagram
+                    key={filePath}
+                    source={hasUnsavedChanges ? latestContentRef.current : displayContent}
+                    fileName={fileName}
+                    onShowSource={() => setIsMarkdownPreview(false)}
+                    className="h-full"
+                  />
                 ) : isMarkdownPreview && isMarkdownFile ? (
                   // Markdown is prose, so it gets a measure. The markdown root
                   // renders at text-[15px]; full-bleed on a wide viewport that

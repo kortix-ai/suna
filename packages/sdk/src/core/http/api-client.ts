@@ -154,6 +154,18 @@ const isIdempotentMethod = (method?: string): boolean => {
   return m === 'GET' || m === 'HEAD';
 };
 
+/** A DELETE that fails at the TRANSPORT layer (fetch throws, no HTTP response)
+ *  never reached the server as a completed request, so replaying it is safe —
+ *  the server never confirmed it applied the delete. Kortix DELETEs are
+ *  idempotent by design (a soft-tombstone stamp, then 404 for an already-absent
+ *  row), so a replay re-tombstones (a no-op) or 404s. This is retried ONLY on a
+ *  transport failure, NEVER on a received response status, where the server may
+ *  already have applied the delete. Regression: incident-20260922T210537Z (a
+ *  `sessions rm` DELETE stalled once, got zero retries, and blew past the
+ *  heartbeat runner's 120s wall; a fresh retry deleted the session in ~1.1s). */
+const isRetryableOnTransportFailure = (method?: string): boolean =>
+  isIdempotentMethod(method) || (method ?? 'GET').toUpperCase() === 'DELETE';
+
 const TRANSIENT_READ_RETRIES = 2;
 
 const isAbortError = (error: unknown): boolean =>
@@ -193,7 +205,7 @@ async function makeRequest<T = any>(
   let activeController = controller;
   const abortFromCaller = () => activeController.abort();
   fetchOptions.signal?.addEventListener('abort', abortFromCaller, { once: true });
-  let timeoutId: NodeJS.Timeout | null = null;
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
   let isAborted = false;
   // Tracks whether *our* timer fired the abort, vs. an external abort
   // (client navigation, tab close, dropped connection). Only the former is a
@@ -258,7 +270,11 @@ async function makeRequest<T = any>(
     // The backend handles token refresh via Supabase directly.
 
     const retryableRead = isIdempotentMethod(fetchOptions.method);
-    const maxAttempts = retryableRead ? TRANSIENT_READ_RETRIES + 1 : 1;
+    // A DELETE is retried on a TRANSPORT failure only (see the predicate). It is
+    // NOT retried on a received response status, so `retryableRead` still gates
+    // the transient-gateway (502/503/504) response path below.
+    const retryableTransport = isRetryableOnTransportFailure(fetchOptions.method);
+    const maxAttempts = retryableTransport ? TRANSIENT_READ_RETRIES + 1 : 1;
     let response!: Response;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -291,6 +307,18 @@ async function makeRequest<T = any>(
         if (timeoutId) {
           clearTimeout(timeoutId);
           timeoutId = null;
+        }
+        // A self-timeout (OUR deadline fired, the caller did not abort) means
+        // this attempt got no response, so replaying it is safe for a
+        // retryable-transport method — the exact recovery the manual retry of a
+        // stalled `sessions rm` performed. Reset the flag so the next attempt
+        // classifies its own outcome, and re-arm a fresh attempt controller
+        // (the current one is aborted). An EXTERNAL abort stays terminal.
+        const selfTimedOut =
+          didTimeout && isAbortError(error) && !fetchOptions.signal?.aborted;
+        if (selfTimedOut && retryableTransport && attempt < maxAttempts - 1) {
+          didTimeout = false;
+          continue;
         }
         if (isAbortError(error) || attempt === maxAttempts - 1) {
           throw error;

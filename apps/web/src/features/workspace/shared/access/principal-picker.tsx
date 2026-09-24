@@ -34,6 +34,7 @@ import { contract, qk } from '@kortix/sdk/react';
 import {
   CheckCircleIcon,
   MagnifyingGlassIcon,
+  RobotIcon,
   UserPlusIcon,
   UsersIcon,
 } from '@phosphor-icons/react';
@@ -41,8 +42,9 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 
 import { principalLabel } from './access-shared';
+import { useAgentIdentities } from './agent-principals';
 
-export type PrincipalKind = 'member' | 'group';
+export type PrincipalKind = 'member' | 'group' | 'agent';
 
 export type PrincipalPickerScope =
   { kind: 'account'; accountId: string } | { kind: 'project'; projectId: string };
@@ -53,16 +55,27 @@ export interface PrincipalSelection {
   groupIds: string[];
   /** Not-yet-member emails chosen for invite. Only fills when `allowInvite`. */
   inviteEmails: string[];
+  /** Agent service-account ids. Only fills when `kinds` includes `agent`
+   *  (project scope): the agent is then the principal a role binds to — its
+   *  ceiling (spec 2026-09-22 agents as principals). Optional so existing
+   *  literals stay valid. */
+  agentIds?: string[];
 }
 
 export const EMPTY_PRINCIPAL_SELECTION: PrincipalSelection = {
   memberIds: [],
   groupIds: [],
   inviteEmails: [],
+  agentIds: [],
 };
 
 export function principalSelectionCount(value: PrincipalSelection): number {
-  return value.memberIds.length + value.groupIds.length + value.inviteEmails.length;
+  return (
+    value.memberIds.length +
+    value.groupIds.length +
+    value.inviteEmails.length +
+    (value.agentIds?.length ?? 0)
+  );
 }
 
 export function isPrincipalSelectionEmpty(value: PrincipalSelection): boolean {
@@ -76,7 +89,10 @@ export function isInviteEmail(value: string): boolean {
 }
 
 export type PrincipalTarget =
-  { kind: 'member'; id: string } | { kind: 'group'; id: string } | { kind: 'invite'; id: string };
+  | { kind: 'member'; id: string }
+  | { kind: 'group'; id: string }
+  | { kind: 'invite'; id: string }
+  | { kind: 'agent'; id: string };
 
 /**
  * The whole selection model, as one pure reducer.
@@ -96,11 +112,18 @@ export function togglePrincipal(
       memberIds: target.kind === 'member' ? [target.id] : [],
       groupIds: target.kind === 'group' ? [target.id] : [],
       inviteEmails: target.kind === 'invite' ? [target.id] : [],
+      agentIds: target.kind === 'agent' ? [target.id] : [],
     };
   }
   const bucket: keyof PrincipalSelection =
-    target.kind === 'member' ? 'memberIds' : target.kind === 'group' ? 'groupIds' : 'inviteEmails';
-  const current = value[bucket];
+    target.kind === 'member'
+      ? 'memberIds'
+      : target.kind === 'group'
+        ? 'groupIds'
+        : target.kind === 'agent'
+          ? 'agentIds'
+          : 'inviteEmails';
+  const current = value[bucket] ?? [];
   return {
     ...value,
     [bucket]: current.includes(target.id)
@@ -114,6 +137,7 @@ export function singlePrincipal(value: PrincipalSelection): PrincipalTarget | nu
   if (value.memberIds.length > 0) return { kind: 'member', id: value.memberIds[0]! };
   if (value.groupIds.length > 0) return { kind: 'group', id: value.groupIds[0]! };
   if (value.inviteEmails.length > 0) return { kind: 'invite', id: value.inviteEmails[0]! };
+  if (value.agentIds && value.agentIds.length > 0) return { kind: 'agent', id: value.agentIds[0]! };
   return null;
 }
 
@@ -160,6 +184,7 @@ export function PrincipalPicker({
   className,
 }: PrincipalPickerProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tAgents = useTranslations('agentPrincipals');
   const [query, setQuery] = useState('');
   // Single mode collapses to a "selected + Change" row once something is
   // chosen; `editing` re-opens the list without clearing the value.
@@ -168,6 +193,8 @@ export function PrincipalPicker({
 
   const showMembers = kinds.includes('member');
   const showGroups = kinds.includes('group');
+  // Agents are project-bound identities: listed only in project scope.
+  const showAgents = kinds.includes('agent') && scope.kind === 'project';
   const projectId = scope.kind === 'project' ? scope.projectId : undefined;
 
   const projectAccessQuery = useQuery({
@@ -195,6 +222,19 @@ export function PrincipalPicker({
     staleTime: 60_000,
   });
 
+  // An agent is its service account, one per (project, agent). The route is
+  // admin-only (`policy.read`); a 403 simply lists no agents.
+  const agentIdentitiesQuery = useAgentIdentities(derivedAccountId, showAgents);
+  const agents = useMemo(
+    () =>
+      showAgents
+        ? (agentIdentitiesQuery.data ?? []).filter(
+            (a) => a.project_id === projectId && !!a.agent_name,
+          )
+        : [],
+    [showAgents, agentIdentitiesQuery.data, projectId],
+  );
+
   const rosterMembers: RosterMember[] = useMemo(
     () => (projectId ? (projectAccessQuery.data?.members ?? []) : (accountMembersQuery.data ?? [])),
     [projectId, projectAccessQuery.data, accountMembersQuery.data],
@@ -216,6 +256,7 @@ export function PrincipalPicker({
   const memberSet = useMemo(() => new Set(value.memberIds), [value.memberIds]);
   const groupSet = useMemo(() => new Set(value.groupIds), [value.groupIds]);
   const inviteSet = useMemo(() => new Set(value.inviteEmails), [value.inviteEmails]);
+  const agentSet = useMemo(() => new Set(value.agentIds ?? []), [value.agentIds]);
   const selectedCount = principalSelectionCount(value);
 
   const q = query.trim().toLowerCase();
@@ -240,6 +281,15 @@ export function PrincipalPicker({
     });
   }, [members, q, memberSet, showMembers]);
 
+  const filteredAgents = useMemo(() => {
+    const list = q ? agents.filter((a) => (a.agent_name ?? '').toLowerCase().includes(q)) : agents;
+    return [...list].sort((a, b) => {
+      const d =
+        (agentSet.has(a.service_account_id) ? 0 : 1) - (agentSet.has(b.service_account_id) ? 0 : 1);
+      return d !== 0 ? d : (a.agent_name ?? '').localeCompare(b.agent_name ?? '');
+    });
+  }, [agents, q, agentSet]);
+
   const inviteCandidate = useMemo(() => {
     if (!allowInvite || !INVITE_EMAIL_RE.test(q)) return null;
     const alreadyAMember = rosterMembers.some((m) => (m.email ?? '').toLowerCase() === q);
@@ -248,7 +298,9 @@ export function PrincipalPicker({
 
   const rosterLoading = projectId ? projectAccessQuery.isLoading : accountMembersQuery.isLoading;
   const loading =
-    (showMembers && rosterLoading) || (showGroups && !!derivedAccountId && groupsQuery.isLoading);
+    (showMembers && rosterLoading) ||
+    (showGroups && !!derivedAccountId && groupsQuery.isLoading) ||
+    (showAgents && !!derivedAccountId && agentIdentitiesQuery.isLoading);
 
   function pick(target: PrincipalTarget) {
     onChange(togglePrincipal(value, target, selection));
@@ -264,7 +316,9 @@ export function PrincipalPicker({
     const label =
       selected.kind === 'group'
         ? (groups.find((g) => g.group_id === selected.id)?.name ?? selected.id)
-        : selected.kind === 'member'
+        : selected.kind === 'agent'
+          ? (agents.find((a) => a.service_account_id === selected.id)?.agent_name ?? selected.id)
+          : selected.kind === 'member'
           ? principalLabel(rosterMembers.find((m) => m.user_id === selected.id)) || selected.id
           : selected.id;
     return (
@@ -276,12 +330,20 @@ export function PrincipalPicker({
       >
         {selected.kind === 'group' ? (
           <EntityAvatar icon={UsersIcon} label={label} size="sm" />
+        ) : selected.kind === 'agent' ? (
+          <EntityAvatar icon={RobotIcon} label={label} size="sm" />
         ) : (
           <UserAvatar email={label} size="sm" />
         )}
         <span className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">{label}</span>
         <Badge variant="outline" size="sm">
-          {selected.kind === 'group' ? 'Group' : selected.kind === 'invite' ? 'Invite' : 'Member'}
+          {selected.kind === 'group'
+            ? 'Group'
+            : selected.kind === 'invite'
+              ? 'Invite'
+              : selected.kind === 'agent'
+                ? tAgents('agentBadge')
+                : 'Member'}
         </Badge>
         <Button
           type="button"
@@ -299,12 +361,20 @@ export function PrincipalPicker({
   // Two distinct empty states: nobody is eligible at all (fresh
   // project/account) vs. the roster has people but every one was filtered
   // out by `excludeUserIds`. They read differently to the person here.
-  const nothing = rosterMembers.length === 0 && groups.length === 0 && !inviteCandidate;
-  const allExcluded = !nothing && members.length === 0 && groups.length === 0 && !inviteCandidate;
+  const nothing =
+    rosterMembers.length === 0 && groups.length === 0 && agents.length === 0 && !inviteCandidate;
+  const allExcluded =
+    !nothing &&
+    members.length === 0 &&
+    groups.length === 0 &&
+    agents.length === 0 &&
+    !inviteCandidate;
 
   const placeholder =
     searchPlaceholder ??
-    (showMembers && showGroups
+    (showAgents && showMembers && showGroups
+      ? tAgents('searchWithAgents')
+      : showMembers && showGroups
       ? 'Search members or groups'
       : showGroups
         ? 'Search groups'
@@ -363,7 +433,10 @@ export function PrincipalPicker({
           <p className="text-muted-foreground px-3 py-6 text-center text-xs">{emptyLabel}</p>
         ) : allExcluded ? (
           <p className="text-muted-foreground px-3 py-6 text-center text-xs">{allExcludedLabel}</p>
-        ) : filteredGroups.length === 0 && filteredMembers.length === 0 && !inviteCandidate ? (
+        ) : filteredGroups.length === 0 &&
+          filteredMembers.length === 0 &&
+          filteredAgents.length === 0 &&
+          !inviteCandidate ? (
           <p className="text-muted-foreground px-3 py-6 text-center text-xs">
             {tI18nComplete.raw('texte8dd87902b91')}
           </p>
@@ -425,6 +498,26 @@ export function PrincipalPicker({
                 })}
               </>
             ) : null}
+
+            {filteredAgents.length > 0 ? (
+              <>
+                <PickerSectionLabel>{tAgents('agentsSection')}</PickerSectionLabel>
+                {filteredAgents.map((agent) => (
+                  <PickerRow
+                    key={agent.service_account_id}
+                    selected={agentSet.has(agent.service_account_id)}
+                    selection={selection}
+                    disabled={disabled}
+                    onSelect={() => pick({ kind: 'agent', id: agent.service_account_id })}
+                    leading={
+                      <EntityAvatar icon={RobotIcon} label={agent.agent_name ?? ''} size="sm" />
+                    }
+                    label={agent.agent_name ?? agent.name}
+                    suffix={tAgents('agentBadge')}
+                  />
+                ))}
+              </>
+            ) : null}
           </>
         )}
       </div>
@@ -434,7 +527,7 @@ export function PrincipalPicker({
 
 function PickerSectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="text-muted-foreground/70 px-2 pt-2 pb-1 text-[11px] font-medium tracking-wide uppercase first:pt-1.5">
+    <p className="text-muted-foreground px-2 pt-2 pb-1 text-xs font-medium first:pt-1.5">
       {children}
     </p>
   );

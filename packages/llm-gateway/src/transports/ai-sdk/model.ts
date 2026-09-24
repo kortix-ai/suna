@@ -256,7 +256,7 @@ export function resolveAiModel(
       return provider(anthropicModelName(modelId));
     }
     case 'bedrock': {
-      // Essentia + the enterprise appliance authenticate with a long-lived bearer
+      // SampleCo + the enterprise appliance authenticate with a long-lived bearer
       // token (apiKey), not SigV4 — it takes precedence over AWS credentials in the
       // provider. Region is required by the SDK for the endpoint host.
       const provider = createAmazonBedrock({

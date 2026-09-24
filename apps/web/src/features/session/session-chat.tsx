@@ -86,6 +86,10 @@ import { ProjectFilesProvider } from '@/features/project-files/context';
 import { useOptionalSessionPanel } from '@/features/session/action-panel/session-panel-provider';
 import { Composer as SessionChatInput } from '@/features/session/composer/composer';
 import { resolveComposerAgent } from '@/features/session/composer/composer-agent-access';
+import {
+  acknowledgeQuoteRequests,
+  type QuoteRequest,
+} from '@/features/session/composer/composer-logic';
 import { sessionSlashFiles } from '@/features/session/composer/menus/slash-files';
 import {
   resolveFirstPromptHandover,
@@ -299,15 +303,6 @@ import {
 } from './session-older-autoload';
 import { useHeldOlderLoading } from './session-older-loading';
 import { useReadinessSettling } from './use-readiness-settling';
-
-// ============================================================================
-// Reply-to context (select & reply feature)
-// ============================================================================
-
-/** Selected text the user wants to reference in their next message. */
-export interface ReplyToContext {
-  text: string;
-}
 
 // ============================================================================
 // Sub-Session Breadcrumb
@@ -2144,9 +2139,18 @@ export function SessionChat({
     setQuestionAction({ label, canAct });
   }, []);
 
-  // ---- Reply-to state (text selection → reply) ----
-  const [replyTo, setReplyTo] = useState<ReplyToContext | null>(null);
-  const handleClearReply = useCallback(() => setReplyTo(null), []);
+  // ---- Reply quotes (text selection → the composer's quote list) ----
+  // Each "Reply" asks the composer to add one quote to the card above its
+  // input. The composer owns the list from then on and writes each quote as a
+  // leading `<reply_context>` line on send, so there is no reply state to
+  // hold here — only the id-keyed requests, each removed once the composer
+  // has applied it. A FIFO: two "Reply" clicks in one render keep both, in
+  // order.
+  const [quoteRequests, setQuoteRequests] = useState<QuoteRequest[]>([]);
+  const quoteRequestIdRef = useRef(0);
+  const handleQuoteRequestsApplied = useCallback((requestIds: number[]) => {
+    setQuoteRequests((current) => acknowledgeQuoteRequests(current, requestIds));
+  }, []);
 
   // Floating "Reply" popup — shown near selected text in the chat area
   const [selectionPopup, setSelectionPopup] = useState<{
@@ -2208,7 +2212,9 @@ export function SessionChat({
   // When user clicks "Reply" in the popup
   const handleSelectionReply = useCallback(() => {
     if (!selectionPopup) return;
-    setReplyTo({ text: selectionPopup.text });
+    quoteRequestIdRef.current += 1;
+    const request = { id: quoteRequestIdRef.current, text: selectionPopup.text };
+    setQuoteRequests((current) => [...current, request]);
     setSelectionPopup(null);
     window.getSelection()?.removeAllRanges();
   }, [selectionPopup]);
@@ -3999,12 +4005,9 @@ export function SessionChat({
     ) => {
       setCommandError(null);
 
-      // Wrap reply context in XML if present, then clear it
-      let text = rawText;
-      if (replyTo) {
-        text = `<reply_context>${replyTo.text}</reply_context>\n\n${rawText}`;
-        setReplyTo(null);
-      }
+      // Reply quotes are already in `rawText`: the composer prepends each
+      // quote as its own `<reply_context>` line (`withReplyQuotes`).
+      const text = rawText;
 
       // Structured @-mention refs — emitted as <file_ref /> / <agent_ref />
       // blocks appended to the outgoing text. Same shape as
@@ -4482,7 +4485,6 @@ export function SessionChat({
       anchorTurn,
       smoothScrollToAbsoluteBottom,
       scrollRef,
-      replyTo,
       messages,
       sessionState,
       tComposerAttachments,
@@ -6148,8 +6150,8 @@ export function SessionChat({
                 threadContext={threadContext}
                 onContextClick={handleContextClick}
                 onCompactClick={handleCompactClick}
-                replyTo={replyTo}
-                onClearReply={handleClearReply}
+                quoteRequests={quoteRequests}
+                onQuoteRequestsApplied={handleQuoteRequestsApplied}
                 // Only lock the input into question-answer mode while the session is
                 // actually busy (a live question keeps the run busy). If a question
                 // chip is ever showing while the session is idle — e.g. a dead /

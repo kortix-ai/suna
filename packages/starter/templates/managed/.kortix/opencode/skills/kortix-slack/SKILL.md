@@ -225,7 +225,7 @@ When the answer is a *list of things the user might pick between or browse* (dep
 
 **Important constraints (Slack rules, not ours):**
 - Cards live ONLY inside a `carousel` block.
-- Cards support `body` (mrkdwn) and `actions` (buttons / select menus) — they do **NOT** support `input` / `radio_buttons` / `checkboxes`. If you need form inputs, use the `question` tool instead.
+- Cards support `body` (mrkdwn) and `actions` (buttons / select menus) — they do **NOT** support `input` / `radio_buttons` / `checkboxes`. To ask the user to choose, use the `question` tool instead.
 - Each card's button click fires a `block_actions` interaction; the platform routes it back as a follow-up Slack message (`Picked: <button label>`) into the same thread, the agent's next turn starts from that.
 - 2–10 cards per carousel.
 
@@ -268,9 +268,9 @@ slack send --text "Pick a deploy candidate" --blocks-file /tmp/candidates.json
 - The agent expects the user's button click to become the *next* prompt, not a fill-in form.
 
 **When NOT to:**
-- For mid-turn structured input (use `question` instead — carousel can't host inputs).
+- For plain choices with no card-worthy context (use `question` instead).
 - For 1 item (just a section) or 7+ items (split, paginate, or summarize).
-- For a quick yes/no (use `question` with single-select).
+- For a quick yes/no (use `question`).
 
 Full Block Kit reference: <https://docs.slack.dev/reference/block-kit/blocks/>
 
@@ -294,24 +294,30 @@ A `slack send` with no `--channel` is the turn's answer. When it cannot be deliv
 </final-answer>
 
 <asking-the-user>
-### Use opencode's built-in `question` tool — Slack renders the form
+### Use opencode's built-in `question` tool — Slack renders the buttons
 
-**Rule: if your reply contains a question, call the `question` tool. Never put questions inside `slack send`.**
+**Rule: if your reply asks the user to choose, call the `question` tool. Never put a list of choices inside `slack send`.**
 
-`slack send` finalizes the turn and closes the live stream — once it fires, the user can only reply with a free-text message. If you posted multi-choice questions via `slack send`, the answers come back as unstructured prose and you have to re-parse them. Don't.
+`slack send` finalizes the turn and closes the live stream — once it fires, the user can only reply with free text. A list of choices written into it cannot be clicked.
 
-opencode ships a native `question` tool. Call it the same way you would in any other host (dashboard, TUI). When the turn is Slack-triggered, the sandbox automatically catches the `question.asked` event and renders a Block Kit form (radio buttons / checkboxes / a free-text box) in the same thread. The user submits → opencode resumes your tool call with their answers. Zero Slack-specific glue from your side.
+When the turn is Slack-triggered, the Kortix server posts the question(s) into the thread: each question in bold, the option descriptions listed under it, and one clickable button per option. The tool returns **at once** with a note telling you to end your turn — it does not block, and it does not return the user's answer. END the turn.
+
+The answer arrives as your NEXT turn, with full context:
+
+- a button click → `Answering your question "<question>":` and the picked label;
+- a reply typed in the thread → the message itself.
 
 | When you want to… | Use |
 | --- | --- |
-| Ask a question or set of questions | `question` tool |
+| Ask the user to choose | `question` tool |
+| Ask something genuinely open-ended | `slack send` with the question |
 | Deliver the final answer / summary | `slack send` |
 | Show progress along the way | `slack step` |
 | Post a separate message to another channel | `slack send --channel ...` |
 
 ### Calling the `question` tool
 
-Per opencode's schema (`Array<QuestionInfo>`):
+Per opencode's schema, every option has a `label` (1–5 words) and a `description`:
 
 ```jsonc
 {
@@ -320,72 +326,21 @@ Per opencode's schema (`Array<QuestionInfo>`):
       "question": "Which environment should I deploy to?",
       "header": "Environment",          // short label (max 30 chars)
       "options": [
-        { "value": "prod",    "label": "Production" },
-        { "value": "staging", "label": "Staging" },
-        { "value": "dev",     "label": "Dev (sandbox)" }
-      ],
-      "multiple": false,                 // false = radio, true = checkboxes
-      "custom":   true                   // true = also show a free-text box
+        { "label": "Production", "description": "Live traffic; needs a rollback plan" },
+        { "label": "Staging",    "description": "Mirrors prod data; safe to break" },
+        { "label": "Dev",        "description": "Sandbox; no real users" }
+      ]
     }
   ]
 }
-```
-
-Multiple questions in one call:
-
-```jsonc
-{
-  "questions": [
-    {
-      "question": "Priority for next sprint",
-      "header":   "Priority",
-      "options": [
-        { "value": "auth",    "label": "Finish the auth migration" },
-        { "value": "billing", "label": "Ship metered billing v2" },
-        { "value": "ingest",  "label": "Rebuild the ingest pipeline" }
-      ],
-      "multiple": false
-    },
-    {
-      "question": "What risks should I flag?",
-      "header":   "Risks",
-      "options": [
-        { "value": "rollback", "label": "Rollback complexity" },
-        { "value": "perf",     "label": "Performance regressions" },
-        { "value": "data",     "label": "Data migrations" }
-      ],
-      "multiple": true
-    },
-    {
-      "question": "Any constraints I should know about?",
-      "header":   "Constraints",
-      "options":  [],
-      "custom":   true
-    }
-  ]
-}
-```
-
-### Reading the answer
-
-The `question` tool's return value is `answers: string[][]` — one array per question, in the same order you sent them. Each inner array contains every value the user picked, plus any free-text they typed into the custom field (concatenated at the end).
-
-```jsonc
-// for the 3-question example above
-[
-  ["auth"],                              // single-select
-  ["rollback", "data"],                  // multi-select
-  ["Vendor X freeze ends Tuesday."]      // custom text only
-]
 ```
 
 ### Rules
 
-- **Use the `question` tool, not chat prose.** A free-text reply loses structure.
-- **Keep it focused.** 1–3 questions per call. If you need more, split into multiple `question` calls across the turn (each is its own pause).
-- **Form expires after 15 minutes.** If the user doesn't click Submit, the form resolves with empty arrays — opencode treats that as a reject; the tool returns and you can adapt.
-- **The Stop button still works.** A user who clicks 🛑 Stop aborts the turn; the form is closed and the tool returns empty.
-- **Skip trivial yes/no when context implies the answer.** Use judgment — the form is for *real* decisions, not "are you sure?" rituals.
+- **One question per call when the answers depend on each other.** Each click starts its own turn and carries one answer. Several questions in one call post several rows of buttons, and the user clicks them one at a time.
+- **`multiple` and `custom` change nothing in Slack.** Every option is a one-click button, and a reply typed in the thread always works.
+- **Put the tradeoff in `description`.** A button shows only its label; the descriptions are listed above the buttons.
+- **Skip trivial yes/no when context implies the answer.** Ask only what blocks you — not "are you sure?" rituals.
 </asking-the-user>
 
 <files-and-artifacts>

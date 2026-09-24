@@ -1,0 +1,179 @@
+---
+title: Agent permissions
+description: What an agent may do, who decides it, and what the person who runs it contributes.
+---
+
+An agent acts on your project through the CLI, the API, git, connectors, and
+Apps. This page explains how Kortix decides what an agent may do.
+
+**An agent acts as itself, not as the person who started it.** Its authority is
+its Kortix permissions ∩ its ceiling role − the human-only permissions. Nobody
+lends an agent their own role, so the agent does the same thing whoever runs
+it.
+
+## The agent is the acting principal
+
+Every agent session has two identities:
+
+| Identity | What it decides |
+|---|---|
+| **Acting principal — the agent** | Everything on shared resources: project permissions, shared connector accounts, project secrets, Apps, git. |
+| **On behalf of — the person** | Only that person's own resources, and only in that person's own private session. |
+
+Each agent has one identity per project: a service account that Kortix
+creates for it. You never hold a credential for it.
+
+## Kortix permissions — the manifest decides
+
+Each agent declares its Kortix permissions in `kortix.yaml`, under
+`agents.<name>.kortix_permissions`. The manifest on the default branch is the
+source of truth.
+
+```yaml
+agents:
+  report-writer:
+    kortix_permissions: [project.file.read, project.connector.read, project.app.read]
+    connectors: [reports-dashboard-api]
+    secrets: [REPORTS_API_KEY]
+    apps: [reports-dashboard]
+```
+
+- The list is deny-by-default. An agent without `kortix_permissions` gets none.
+- `all` grants every project permission, still capped by the ceiling.
+- `kortix_cli` is the deprecated spelling. It still validates, with a warning.
+  Both keys with different values on one agent is a validation error.
+
+Edit the list in **Customize → Agents → the agent → Kortix permissions**. A
+save commits `kortix.yaml`. See [the manifest reference](/docs/project/manifest).
+
+## The ceiling — an admin decides
+
+The ceiling is a project role that an admin binds to the agent's service
+account. The agent's Kortix permissions never exceed it.
+
+- **No role bound:** the default agent ceiling applies. It is every project
+  permission except the human-only ones.
+- **A role bound:** built-in `member` or `manager`, or a custom role. The agent
+  keeps only the Kortix permissions that the role also grants.
+- A ceiling never adds a permission. A `manager` ceiling does not give an
+  agent a permission its manifest does not list.
+
+Set the ceiling in the **Access hub → Projects → the project → Add**. Pick the
+agent under **Agents** and choose a role. Only admins who manage roles see
+agents in the picker. The project's access list shows each agent ceiling with
+an **Agent** badge.
+
+## Human-only permissions
+
+Three permissions stay with people. An agent never holds them, whatever its
+manifest or ceiling says:
+
+| Permission | What it does |
+|---|---|
+| `project.members.manage` | Add, change, or remove project members and grants |
+| `project.delete` | Delete the project |
+| `project.credentials.issue` | Mint a project token or a project-scoped PAT |
+
+`project.read` is the reverse: an agent always holds it inside its own project.
+
+## Running an agent lends its authority
+
+The person who runs an agent does not cap it. So the right to
+run an agent is the delegation. Kortix checks "may this person run this agent"
+at every entry point:
+
+| Entry point | Required |
+|---|---|
+| Create, start, or prompt a session; switch its agent | The person may run the agent |
+| Fire a trigger by hand | The person who fires it may run the trigger's agent |
+| Start a child session from an agent session | The person behind the parent may run the child's agent. With no person behind it, only the same agent. |
+
+Grant "may run" on the agent's **People** tab, or in the Access hub. Agents
+are closed by default: a member runs an agent only when an assignment names
+them or one of their groups.
+
+## Personal resources stay personal
+
+An agent session reaches a resource that one person owns only when both are
+true:
+
+1. The session runs on behalf of that person.
+2. The session is private.
+
+Personal resources are member-owned connector connections, personal project
+secrets, personal provider keys, and the person's own computer. A shared
+session, a trigger or channel session, and an unattended run reach none of
+them.
+
+When another person prompts a private session — for example an account admin
+who can open members' private sessions — the session stops acting on behalf of
+its creator, for good. The agent keeps its own permissions. The person who
+prompts never acts through someone else's accounts.
+
+## Apps
+
+An agent opens a restricted or private [App](/docs/feature-flags/apps) only
+when its `apps:` grant names the App's slug, or is `all`, and its effective
+permissions include `project.app.read`.
+
+| App access mode | The agent is admitted when |
+|---|---|
+| Public | Always |
+| Project | `project.app.read` is effective |
+| Restricted or private | The slug is in `apps:` and `project.app.read` is effective |
+| Password | Never |
+
+The App's **Access** dialog lists the agents with access, read from
+`agents.<name>.apps`. Change the list on the agent's **Apps** page
+(Customize → Agents → the agent → Apps), with
+`kortix agents scope <agent> --apps <slug,slug>`, or with a change request to
+`kortix.yaml`. The Apps page appears only when the project has the
+[Apps](/docs/feature-flags/apps) feature flag on.
+
+## Widening an agent needs a person
+
+`kortix.yaml` shapes what agents may do, so whoever lands a change on the
+default branch shapes agents. Two guards apply:
+
+1. The ceiling is admin-only IAM state. The manifest never exceeds it.
+2. An agent session cannot merge a change request whose diff touches
+   `kortix.yaml` `agents.*` or `triggers`. The merge answers `403` with
+   `code: "CR_AGENT_GOVERNANCE_CHANGE"`. A person with `project.gitops.merge`
+   merges it.
+
+## Read a denial
+
+Every `403` from an authorization check carries `code` and `action`:
+
+| `code` | Meaning | Fix |
+|---|---|---|
+| `agent_scope_insufficient` | `action` is not in the agent's Kortix permissions | Add it to `agents.<name>.kortix_permissions` |
+| `agent_ceiling_insufficient` | `action` is outside the agent's ceiling role | An admin raises the ceiling |
+| `agent_not_accessible` | The person may not run this agent | Grant them the agent |
+| `project_role_insufficient` | The person's own role denies `action` | Change their project role |
+
+## Audit
+
+Every agent action records three fields: `actor` is the agent,
+`on_behalf_of` is the person or `null`, and `initiator` is `human`,
+`trigger`, or `channel`. A trigger run records no person.
+
+## See it in the dashboard
+
+Open **Customize → Agents → the agent → Kortix permissions**. The **What this
+agent can do** panel shows:
+
+- the Kortix permissions declared in `kortix.yaml`,
+- the ceiling role, or **Default agent ceiling**,
+- the human-only permissions,
+- the effective permissions: "People who may run this agent act with these
+  permissions."
+
+## Scope
+
+This page applies to every agent a project declares under `agents:` in
+`kortix.yaml`. A project with no `agents:` map declares no governed agent, so
+there is nothing to switch on — and nothing on **Settings → Feature flags** to
+find. One project can be put back on the old launcher-role model for a single
+release; ask support, who set it with `PATCH /v1/projects/:id/features`. That
+switch is removed in the release after this one.

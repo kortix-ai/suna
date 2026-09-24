@@ -3,7 +3,7 @@ import {
   validateManifest,
   formatIssues,
   ENV_NAME_RE,
-  GRANTABLE_KORTIX_CLI_ACTIONS,
+  GRANTABLE_KORTIX_PERMISSIONS,
   type ManifestIssue,
 } from '../index.ts';
 
@@ -144,19 +144,19 @@ describe('validateManifest — [[agents]]', () => {
     );
   });
 
-  test('kortix_cli accepts a grantable action', () => {
+  test('kortix_permissions accepts a grantable action', () => {
     expect(
-      validateManifest('kortix_version = 1\n[[agents]]\nname = "w"\nkortix_cli = ["project.read"]').valid,
+      validateManifest('kortix_version = 1\n[[agents]]\nname = "w"\nkortix_permissions = ["project.read"]').valid,
     ).toBe(true);
   });
 
-  test('kortix_cli accepts the wildcard star', () => {
-    expect(validateManifest('kortix_version = 1\n[[agents]]\nname = "w"\nkortix_cli = ["*"]').valid).toBe(true);
+  test('kortix_permissions accepts the wildcard star', () => {
+    expect(validateManifest('kortix_version = 1\n[[agents]]\nname = "w"\nkortix_permissions = ["*"]').valid).toBe(true);
   });
 
-  test('kortix_cli rejects a non-grantable account-scoped action', () => {
-    expect(errorPaths('kortix_version = 1\n[[agents]]\nname = "w"\nkortix_cli = ["billing.read"]')).toContain(
-      'agents[0].kortix_cli[0]',
+  test('kortix_permissions rejects a non-grantable account-scoped action', () => {
+    expect(errorPaths('kortix_version = 1\n[[agents]]\nname = "w"\nkortix_permissions = ["billing.read"]')).toContain(
+      'agents[0].kortix_permissions[0]',
     );
   });
 
@@ -464,12 +464,12 @@ describe('exported constants', () => {
     expect(ENV_NAME_RE.test('lower')).toBe(false);
   });
 
-  test('GRANTABLE_KORTIX_CLI_ACTIONS includes project actions but not billing or channel.*', () => {
-    expect(GRANTABLE_KORTIX_CLI_ACTIONS).toContain('project.read');
-    expect(GRANTABLE_KORTIX_CLI_ACTIONS).toContain('project.connector.write');
-    expect(GRANTABLE_KORTIX_CLI_ACTIONS).not.toContain('billing.read');
+  test('GRANTABLE_KORTIX_PERMISSIONS includes project actions but not billing or channel.*', () => {
+    expect(GRANTABLE_KORTIX_PERMISSIONS).toContain('project.read');
+    expect(GRANTABLE_KORTIX_PERMISSIONS).toContain('project.connector.write');
+    expect(GRANTABLE_KORTIX_PERMISSIONS).not.toContain('billing.read');
     // channel.* was removed from the catalog — never wired to any route.
-    expect(GRANTABLE_KORTIX_CLI_ACTIONS).not.toContain('channel.send');
+    expect(GRANTABLE_KORTIX_PERMISSIONS).not.toContain('channel.send');
   });
 });
 

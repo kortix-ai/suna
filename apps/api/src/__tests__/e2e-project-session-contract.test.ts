@@ -216,7 +216,7 @@ mock.module('../middleware/auth', () => ({
       c.set('agentGrant', {
         agent: 'contract-agent',
         connectors: 'all',
-        kortixCli: 'all',
+        permissions: 'all',
         env: 'all',
       });
       await next();
@@ -1490,7 +1490,7 @@ describe('project session API contract', () => {
       },
     ];
 
-    // Essentia 2026-08-26: this gate used to answer `false` for ever, so the
+    // SampleCo 2026-08-26: this gate used to answer `false` for ever, so the
     // stamp could only be cleared by a human pressing Restart (sessions
     // e06ad0c4 and 9c8749ac). Past the cooldown it is permission to try again.
     expect(
@@ -1520,7 +1520,7 @@ describe('project session API contract', () => {
   });
 
   test('the automatic rung re-baselines the boot clocks but KEEPS the failure accounting', async () => {
-    // Essentia 2026-08-26, session 29861dfa / box inqwpv4a. Attempt 1's
+    // SampleCo 2026-08-26, session 29861dfa / box inqwpv4a. Attempt 1's
     // `opencodeBootWaitFirstSeenAt` survived the cooldown rung, so attempt 2's
     // boot was judged against a 10-minute cap that had already run ~7 minutes.
     // It was parked at 13:34:49.202 — 14 ms before its daemon claimed its first

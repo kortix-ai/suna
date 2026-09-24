@@ -320,6 +320,8 @@ project manager as much as a member.
 | `connections.list()` · `connections.reconcile(input)` | list · create/update connected accounts |
 | `connections.updateCredential(connectionId, input)` | rotate a connection credential |
 | `connections.revoke(connectionId)` · `connections.activate(connectionId)` | deny · restore a connection |
+| `connections.setDefault(connectionId)` | make it the default for its owner scope |
+| `connections.rename(connectionId, label)` | change the label only; the account stays authorized. Each connection carries `connected_as`, the identity it was authorized as. |
 
 `p.connectors.discover` browses the direct-connector catalog. It is **experimental** and off by default — enable it per project under [Settings → Experimental](/docs/feature-flags) → "Connectors API Discover". Easy Connect (Pipedream) remains the default connector marketplace.
 

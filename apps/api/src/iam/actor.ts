@@ -17,11 +17,12 @@
  */
 import type { Context } from 'hono';
 import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
-import { accountTokens, roleAssignments, serviceAccounts, type AgentGrant } from '@kortix/db';
+import { accountTokens, readStoredAgentGrant, roleAssignments, serviceAccounts, type AgentGrant } from '@kortix/db';
 import { createHash } from 'node:crypto';
 import { db } from '../shared/db';
 import { ttlMemo } from '../shared/ttl-memo';
 import { registerPrincipalScopedMemo } from './cache-invalidation';
+import { agentPrincipalModeFor } from './agent-principal';
 
 /**
  * uuid5 namespace for a `pending` principal — the invitee of an
@@ -70,6 +71,16 @@ export type Credential =
       agentGrant: AgentGrant | null;
       serviceAccountId: string;
       activated: boolean;
+      /** The project flag `agent_principal` is on and the grant is governed
+       *  (spec docs/specs/2026-09-22-agents-as-principals.md): the session
+       *  authorizes AS the agent, capped by its ceiling, never as the
+       *  launcher. Optional so a literal built by an older caller reads as
+       *  the legacy model. */
+      agentPrincipal?: boolean;
+      /** The human this session acts on behalf of, or null for an unattended
+       *  run or once another human prompted it (spec §2.3). Decides personal
+       *  resources only, never shared authority. */
+      onBehalfOfUserId?: string | null;
     }
   /** A direct `kortix_sa_` bearer. Fail-closed: no membership baseline, no
    *  built-in role, authority is exactly its own assignments. */
@@ -123,7 +134,7 @@ export interface PrincipalRef {
  */
 export function actingPrincipal(actor: Actor): PrincipalRef {
   const c = actor.credential;
-  if (c.kind === 'agent_session' && c.activated) {
+  if (c.kind === 'agent_session' && (c.activated || c.agentPrincipal)) {
     return { type: 'service_account', id: c.serviceAccountId };
   }
   if (c.kind === 'service_account') {
@@ -147,6 +158,25 @@ export function credentialProjectId(actor: Actor): string | null {
   return null;
 }
 
+/**
+ * True when this request authorizes under the agent-principal model: an agent
+ * session whose project has `agent_principal` on and whose grant is governed.
+ */
+export function isAgentPrincipalActor(actor: Actor): boolean {
+  return actor.credential.kind === 'agent_session' && actor.credential.agentPrincipal === true;
+}
+
+/**
+ * The human an agent session acts on behalf of (spec §2.3), or null: an
+ * unattended run, a session another human prompted, or any non-agent
+ * credential. Read from the token binding (15 s memo); a clear busts the
+ * memo on the writing replica. For the per-request fresh value read the
+ * `onBehalfOfUserId` context field set by the auth middleware.
+ */
+export function credentialOnBehalfOf(actor: Actor): string | null {
+  return actor.credential.kind === 'agent_session' ? (actor.credential.onBehalfOfUserId ?? null) : null;
+}
+
 /** The agent-session narrowing, or null when there is none. */
 export function credentialAgentGrant(actor: Actor): AgentGrant | null {
   return actor.credential.kind === 'agent_session' ? actor.credential.agentGrant : null;
@@ -163,6 +193,7 @@ interface TokenBinding {
   projectId: string | null;
   agentGrant: AgentGrant | null;
   serviceAccountId: string | null;
+  onBehalfOfUserId: string | null;
 }
 
 /**
@@ -186,6 +217,7 @@ const loadTokenBinding = ttlMemo({
         projectId: accountTokens.projectId,
         agentGrant: accountTokens.agentGrant,
         serviceAccountId: accountTokens.serviceAccountId,
+        onBehalfOfUserId: accountTokens.onBehalfOfUserId,
       })
       .from(accountTokens)
       .where(eq(accountTokens.tokenId, tokenId))
@@ -193,8 +225,9 @@ const loadTokenBinding = ttlMemo({
     return row
       ? {
           projectId: row.projectId,
-          agentGrant: row.agentGrant ?? null,
+          agentGrant: readStoredAgentGrant(row.agentGrant),
           serviceAccountId: row.serviceAccountId ?? null,
+          onBehalfOfUserId: row.onBehalfOfUserId ?? null,
         }
       : null;
   },
@@ -312,7 +345,10 @@ async function tokenCredential(
   const binding = await loadTokenBinding(tokenId);
   const serviceAccountId = binding?.serviceAccountId ?? null;
   if (serviceAccountId) {
-    const activated = accountId ? await loadServiceAccountActivation(serviceAccountId, accountId) : false;
+    const [activated, agentPrincipal] = await Promise.all([
+      accountId ? loadServiceAccountActivation(serviceAccountId, accountId) : Promise.resolve(false),
+      agentPrincipalModeFor(binding?.projectId ?? null, binding?.agentGrant ?? null),
+    ]);
     return {
       kind: 'agent_session',
       tokenId,
@@ -321,6 +357,8 @@ async function tokenCredential(
       agentGrant: binding?.agentGrant ?? null,
       serviceAccountId,
       activated,
+      agentPrincipal,
+      onBehalfOfUserId: binding?.onBehalfOfUserId ?? null,
     };
   }
   // A null binding for a PAT means the token row is gone (revoked). Keeping

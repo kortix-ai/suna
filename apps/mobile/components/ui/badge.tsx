@@ -1,53 +1,66 @@
-import * as React from 'react';
-import { View, Text } from 'react-native';
+import { TextClassContext } from '@/components/ui/text';
+import { cn } from '@/lib/utils/index';
+import { Slot } from '@rn-primitives/slot';
 import { cva, type VariantProps } from 'class-variance-authority';
-import { cn } from '@/lib/utils';
+import { Platform, View } from 'react-native';
 
 const badgeVariants = cva(
-  'inline-flex items-center justify-center rounded-2xl border px-3 py-1.5 text-xs font-medium',
+  cn(
+    'border-border group shrink-0 flex-row items-center justify-center gap-1 overflow-hidden rounded-full border px-2 py-0.5',
+    Platform.select({
+      web: 'focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive w-fit whitespace-nowrap transition-[color,box-shadow] focus-visible:ring-[3px] [&>svg]:pointer-events-none [&>svg]:size-3',
+    })
+  ),
   {
     variants: {
       variant: {
-        default:
-          'border-transparent bg-primary text-primary-foreground',
-        secondary:
-          'border-transparent bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
-        destructive:
-          'border-transparent bg-destructive text-white dark:bg-destructive/60',
-        outline:
-          'text-foreground border-border',
-        new:
-          'text-purple-600 dark:text-purple-300 bg-purple-600/30 dark:bg-purple-600/30',
-        beta:
-          'text-blue-600 dark:text-blue-300 bg-blue-600/30 dark:bg-blue-600/30',
-        highlight:
-          'text-green-800 dark:text-green-300 bg-green-600/30 dark:bg-green-600/30',
+        default: cn(
+          'bg-primary border-transparent',
+          Platform.select({ web: '[a&]:hover:bg-primary/90' })
+        ),
+        secondary: cn(
+          'bg-secondary border-transparent',
+          Platform.select({ web: '[a&]:hover:bg-secondary/90' })
+        ),
+        destructive: cn(
+          'bg-destructive border-transparent',
+          Platform.select({ web: '[a&]:hover:bg-destructive/90' })
+        ),
+        outline: Platform.select({ web: '[a&]:hover:bg-accent [a&]:hover:text-accent-foreground' }),
       },
     },
     defaultVariants: {
       variant: 'default',
     },
-  },
+  }
 );
 
-export interface BadgeProps
-  extends React.ComponentProps<typeof View>,
-    VariantProps<typeof badgeVariants> {
-  children: React.ReactNode;
-}
+const badgeTextVariants = cva('text-xs font-medium', {
+  variants: {
+    variant: {
+      default: 'text-primary-foreground',
+      secondary: 'text-secondary-foreground',
+      destructive: 'text-white',
+      outline: 'text-foreground',
+    },
+  },
+  defaultVariants: {
+    variant: 'default',
+  },
+});
 
-function Badge({ className, variant, children, ...props }: BadgeProps) {
+type BadgeProps = React.ComponentProps<typeof View> & React.RefAttributes<View> & {
+  asChild?: boolean;
+} & VariantProps<typeof badgeVariants>;
+
+function Badge({ className, variant, asChild, ...props }: BadgeProps) {
+  const Component = asChild ? Slot : View;
   return (
-    <View
-      className={cn(badgeVariants({ variant }), className)}
-      {...props}
-    >
-      <Text className="text-xs font-roobert-medium">
-        {children}
-      </Text>
-    </View>
+    <TextClassContext.Provider value={badgeTextVariants({ variant })}>
+      <Component className={cn(badgeVariants({ variant }), className)} {...props} />
+    </TextClassContext.Provider>
   );
 }
 
-export { Badge, badgeVariants };
-
+export { Badge, badgeTextVariants, badgeVariants };
+export type { BadgeProps };

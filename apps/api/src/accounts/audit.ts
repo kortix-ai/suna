@@ -33,7 +33,7 @@ import {
   parseAuditLimit,
   serializeAuditEvent,
 } from '../shared/audit-query';
-import { AuditListSchema } from '../shared/audit-schema';
+import { AuditActorTypeSchema, AuditListSchema } from '../shared/audit-schema';
 import { reconcileAuditEvents } from '../shared/audit-reconciliation';
 import type { AppEnv } from '../types';
 import { type AuditFilterInput, buildFilters } from './audit-filters';
@@ -92,7 +92,7 @@ export { buildFilters, type AuditFilterInput } from './audit-filters';
 // GET /v1/accounts/:accountId/audit
 //   ?action=connector.       — prefix match on action
 //   ?actor=<uuid>           — only events performed by this user
-//   ?actor_type=agent       — human, agent, service_account, or system
+//   ?actor_type=agent       — human, agent, service_account, system, or anonymous
 //   ?project_id=<uuid>      — one project
 //   ?session_id=<id>        — one session
 //   ?source=cli             — one client or execution source
@@ -118,7 +118,7 @@ auditRouter.openapi(
       query: z.object({
         action: z.string().optional(),
         actor: z.string().uuid().optional(),
-        actor_type: z.enum(['human', 'agent', 'service_account', 'system']).optional(),
+        actor_type: AuditActorTypeSchema.optional(),
         project_id: z.string().uuid().optional(),
         session_id: z.string().optional(),
         source: z.string().optional(),
@@ -252,6 +252,7 @@ const CSV_HEADERS = [
   'agent_name',
   'initiator_actor_type',
   'initiator_actor_id',
+  'on_behalf_of_user_id',
   'parent_event_id',
   'delegation_depth',
   'source',
@@ -299,7 +300,7 @@ auditRouter.openapi(
         format: z.enum(['csv', 'jsonl']).optional(),
         action: z.string().optional(),
         actor: z.string().uuid().optional(),
-        actor_type: z.enum(['human', 'agent', 'service_account', 'system']).optional(),
+        actor_type: AuditActorTypeSchema.optional(),
         project_id: z.string().uuid().optional(),
         session_id: z.string().optional(),
         source: z.string().optional(),

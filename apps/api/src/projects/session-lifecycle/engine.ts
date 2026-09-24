@@ -46,6 +46,7 @@ import {
 } from '../instance-scope';
 import { loadSandboxMetadataForSessions, releaseCommandToOwningInstance } from './instance-release';
 import { db } from '../../shared/db';
+import { runWorkerTick } from '../../shared/audit-scope';
 import { markTriggerRuntimeDelivered } from '../trigger-execution-store';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
 import { secretsAllowlistPayloadConflicts } from '../secrets';
@@ -410,6 +411,12 @@ export async function continueSession(
 ): Promise<SessionDeliveryOutcome> {
   const { sessionId, text } = command;
   const idempotencyKey = commandId ?? randomUUID();
+  // The fast-path target is one JOINED read of the session and its sandbox, and
+  // it does not depend on the session read below — so it goes out with it
+  // instead of two round trips after it. A box that turns out not to be awake
+  // yields null and the slow path runs exactly as before.
+  const awakeEarly = awakeDeliveryTarget(command.sessionId);
+  awakeEarly.catch(() => undefined);
   const [session] = await db
     .select({
       accountId: projectSessions.accountId,
@@ -572,12 +579,14 @@ export async function continueSession(
     firstPromptText: text,
   });
 
-  const [project] = await db
-    .select()
-    .from(projects)
-    .where(eq(projects.projectId, session.projectId))
-    .limit(1);
-  if (!project) return 'no-session';
+  // Loaded LAZILY: only `openSession` (the slow path that wakes a box) reads
+  // the project row, and the session's foreign key already proves it exists.
+  // On the fast path this saved a full round trip per delivery.
+  let projectRow: typeof projects.$inferSelect | undefined;
+  const loadProject = async () =>
+    (projectRow ??= (
+      await db.select().from(projects).where(eq(projects.projectId, session.projectId)).limit(1)
+    )[0]);
 
   if (session.status === 'stopped' || session.status === 'completed') {
     await db
@@ -586,8 +595,10 @@ export async function continueSession(
       .where(eq(projectSessions.sessionId, sessionId));
   }
 
-  const loaded = { row: project, userId };
   const openOnce = async () => {
+    const project = await loadProject();
+    if (!project) return null;
+    const loaded = { row: project, userId };
     await beforeSend?.();
     const [fresh] = await db
       .select({
@@ -621,7 +632,7 @@ export async function continueSession(
   // proxy, whose own wake-and-retry loop and `deliverWithRetry.reopen` (the
   // full open) cover a box that turns out to be asleep after all. A cold or
   // stopping session takes the slow path below exactly as before.
-  const awake = await awakeDeliveryTarget(sessionId);
+  const awake = await awakeEarly;
   if (awake && !command.opencodeEnv) {
     tl?.mark('open-ready-fast');
     return deliverWithRetry({
@@ -760,7 +771,18 @@ const NOT_LANDED_RETRY_DELAY_MS = 2_000;
 /** How far out a released foreign command is re-queued; the owner's drain ticks every 1s. */
 const INSTANCE_RELEASE_DELAY_MS = 2_000;
 
-export async function drainSessionLifecycleQueue(
+/**
+ * Drain queued lifecycle commands as the `session-lifecycle` worker. Request
+ * handlers kick this for their own command, but a drain also runs commands
+ * other principals queued; each command row names its own actor.
+ */
+export function drainSessionLifecycleQueue(
+  input: Parameters<typeof drainSessionLifecycleQueueTick>[0] = {},
+): ReturnType<typeof drainSessionLifecycleQueueTick> {
+  return runWorkerTick('session-lifecycle', () => drainSessionLifecycleQueueTick(input));
+}
+
+async function drainSessionLifecycleQueueTick(
   input: {
     workerId?: string;
     limit?: number;
@@ -2350,22 +2372,29 @@ function isRetryableCreateError(status?: number): boolean {
  * The delivery target for a session whose box is ALREADY awake, from the DB
  * alone — or null, which means "take the full open path". Cheap: two indexed
  * reads, no provider or daemon round-trip.
+ *
+ * The two reads are keyed on the same session id and neither consumes the
+ * other's result, so they go out TOGETHER: one round trip instead of two on
+ * every delivery, which is ~100 ms wherever the API and its database sit in
+ * different regions.
  */
 async function awakeDeliveryTarget(sessionId: string): Promise<DeliveryTarget | null> {
-  const [session] = await db
-    .select({
-      status: projectSessions.status,
-      opencodeSessionId: projectSessions.opencodeSessionId,
-    })
-    .from(projectSessions)
-    .where(eq(projectSessions.sessionId, sessionId))
-    .limit(1);
+  const [[session], [box]] = await Promise.all([
+    db
+      .select({
+        status: projectSessions.status,
+        opencodeSessionId: projectSessions.opencodeSessionId,
+      })
+      .from(projectSessions)
+      .where(eq(projectSessions.sessionId, sessionId))
+      .limit(1),
+    db
+      .select({ status: sessionSandboxes.status, externalId: sessionSandboxes.externalId })
+      .from(sessionSandboxes)
+      .where(eq(sessionSandboxes.sessionId, sessionId))
+      .limit(1),
+  ]);
   if (!session || session.status !== 'running' || !session.opencodeSessionId) return null;
-  const [box] = await db
-    .select({ status: sessionSandboxes.status, externalId: sessionSandboxes.externalId })
-    .from(sessionSandboxes)
-    .where(eq(sessionSandboxes.sessionId, sessionId))
-    .limit(1);
   if (!box || box.status !== 'active' || !box.externalId) return null;
   return {
     stage: 'ready',
