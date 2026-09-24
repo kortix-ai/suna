@@ -226,16 +226,17 @@ const FLAGS: readonly FeatureFlagDef[] = [
   },
   {
     key: 'meta_agent',
-    name: 'Meta Agent',
+    name: 'Kortix Agent',
     description:
-      'A reserved coordinator agent that spawns and manages specialized sessions, transfers files between them, and orchestrates multi-step work across the project. Adds a platform-owned meta agent to the project and changes the default agent for new sessions without an explicit --agent flag.',
-    stability: 'experimental',
+      'The platform-owned Kortix Agent: one agent you talk to that picks the right project agent, starts sessions, and reports verified results. It is the default in the composer; turn it off to pick project agents directly.',
+    stability: 'stable',
     available: () => true,
-    platformDefault: () => false,
+    platformDefault: () => true,
     enforcement: 'behavioral',
     enforcementNote:
-      'Off ⇒ the platform meta agent is not added to the agent list and is not ' +
-      'the default for new sessions (projects/lib/platform-meta-agent.ts).',
+      'Off ⇒ the Kortix Agent (wire name `meta`) is not added to the agent roster ' +
+      'and an explicit `meta` request is an unknown agent ' +
+      '(projects/lib/platform-meta-agent.ts, projects/lib/sessions.ts).',
   },
   {
     key: 'apps',

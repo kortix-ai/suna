@@ -24,6 +24,8 @@ import { convertPendingPromptToInboxRow } from '../session-lifecycle/pending-pro
 import { ACTIVE_SESSION_STATUSES } from '../lib/session-status';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { requireFeatureFlag } from '../../feature-flags/gate';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { META_AGENT_NAME } from '@kortix/shared';
 import { GitOperationError } from '../git/mirror';
 
 /**
@@ -242,10 +244,13 @@ projectsApp.openapi(
         userId: loaded.userId,
         requestingPrincipalType:
           c.get('authType') === 'service_account' ? 'service_account' : 'human',
-        // Empty: `createProjectSession` resolves the project's default branch,
-        // default agent and default sandbox slug exactly as it does for a "New
-        // session" click with no overrides. Nothing to keep in sync.
-        body: {},
+        // The agent the composer sends by default: the Kortix Agent when it is
+        // on (the composer names it explicitly), else the project default. A
+        // mismatch makes every claim 409 and wastes the warm box. Branch and
+        // sandbox slug resolve exactly as for a "New session" click.
+        body: resolveFeatureFlag(loaded.row.metadata, 'meta_agent')
+          ? { agent_name: META_AGENT_NAME }
+          : {},
         metadata: { source: 'ui', [WARM_SESSION_METADATA_KEY]: true },
         // A warm box is real, billed compute holding a concurrent-session slot.
         // It must never take the LAST one and 429 the next genuine start.

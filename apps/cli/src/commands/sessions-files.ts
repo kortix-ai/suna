@@ -19,6 +19,7 @@ import { kortixFromAuth } from '../api/sdk.ts';
 import { emitJson, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
 import { loadSessionForChat } from './sessions-chat.ts';
+import { isMetaAgentName } from '@kortix/shared';
 
 const HELP = help`Usage: kortix sessions cp <src> <dst> [options]
 
@@ -171,9 +172,16 @@ export const SESSION_CONTRACT = [
   'Write your deliverables to files under /workspace/out/ and state the exact paths in your final reply.',
 ].join('\n');
 
-/** Compose the outgoing spawn prompt; in-sandbox callers get the contract. */
-export function buildSpawnPrompt(prompt: string, opts: { fromSandbox: boolean }): string {
-  if (!opts.fromSandbox) return prompt;
+/**
+ * Compose the outgoing spawn prompt; in-sandbox callers get the contract.
+ * A Kortix Agent (`meta`) target never does: it is the coordinator, and the
+ * contract would tell it not to start sessions.
+ */
+export function buildSpawnPrompt(
+  prompt: string,
+  opts: { fromSandbox: boolean; agent?: string | null },
+): string {
+  if (!opts.fromSandbox || isMetaAgentName(opts.agent)) return prompt;
   return `${prompt}\n\n${SESSION_CONTRACT}`;
 }
 

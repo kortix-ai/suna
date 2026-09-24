@@ -1089,9 +1089,8 @@ describe('project session API contract', () => {
 
   beforeEach(() => resetState());
 
-  // The platform coordinator is a per-project experimental opt-in. Every other
-  // test in this file runs with the flag OFF and asserts the pre-meta default
-  // behavior byte-for-byte.
+  // The fixture project has no `experimental` key; these tests set the flag
+  // explicitly so they do not depend on its platform default.
   function enableMetaAgent() {
     projectRow.metadata = {
       ...(projectRow.metadata as Record<string, unknown>),
@@ -1099,13 +1098,30 @@ describe('project session API contract', () => {
     };
   }
 
-  test('creates an omitted-agent session with the meta REST runtime', async () => {
+  test('an omitted agent runs the project default even with the Kortix Agent on', async () => {
     enableMetaAgent();
     const app = createApp();
     const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+
+    expect(response.status).toBe(201);
+    const created = await response.json();
+    // The fixture project declares `default_agent: 'kortix'`. The Kortix Agent
+    // runs only when a caller names it (the web composer does by default).
+    expect(created.agent_name).toBe('kortix');
+    expect(created.metadata?.sandbox_slug).not.toBe('meta');
+  });
+
+  test('creates a named Kortix Agent session with the meta REST runtime', async () => {
+    enableMetaAgent();
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', agent_name: 'meta' }),
     });
 
     expect(response.status).toBe(201);

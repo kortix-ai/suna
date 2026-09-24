@@ -134,9 +134,9 @@ projectsApp.openapi(
     actingTokenId: (c.get('iamTokenId') as string | undefined) ?? undefined,
   };
   const filteredConfig = await filterConfigResourcesForUser(rawConfig, denierCtx);
-  // The platform coordinator appears in the agent list (and becomes the
-  // default) only for projects that opted into the `meta_agent` experimental
-  // feature. Flag off: the config is exactly the repo-declared surface.
+  // The Kortix Agent (`meta_agent`, default on) leads the agent list and is the
+  // composer's default. Flag off: the config is exactly the repo-declared
+  // surface.
   const config = resolveFeatureFlag(loaded.row.metadata, 'meta_agent')
     ? addPlatformMetaAgent(filteredConfig)
     : filteredConfig;

@@ -223,8 +223,8 @@
       "confetti": "Баци конфете"
     },
     "runtime": {
-      "metaLabel": "Meta окружење",
-      "metaDescription": "Meta користи фиксно минимално изоловано окружење и покреће специјализоване сесије за рад на пројекту."
+      "metaLabel": "Kortix okruženje",
+      "metaDescription": "Kortix Agent radi u sandbox-u platforme i pokreće sesije projekta za posao."
     },
     "sandbox": {
       "label": "Шаблон изолованог окружења",
@@ -1084,8 +1084,8 @@
           "description": "Усмерите овај пројекат кроз управљани Kortix LLM пролаз за моделе, мерење и буџете."
         },
         "meta_agent": {
-          "name": "Мета агент",
-          "description": "Додајте координатора који управља специјализованим сесијама и пословима у више корака у оквиру пројекта."
+          "name": "Kortix Agent",
+          "description": "Jedan agent sa kojim razgovarate. Bira pravog agenta projekta, pokreće sesije i javlja proverene rezultate."
         },
         "apps": {
           "name": "Апликације",
@@ -1374,7 +1374,7 @@
     "sessionViewOptions": "Опције приказа сесија",
     "sectionOptions": "Опције одељка",
     "allSectionsHidden": "Сви одељци су сакривени.",
-    "metaCoordinator": "Meta координатор",
+    "metaCoordinator": "Kortix Agent",
     "files": "Датотеке",
     "retry": "Покушај поново",
     "review": "Преглед",

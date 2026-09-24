@@ -223,8 +223,8 @@
       "confetti": "Lanzar confeti"
     },
     "runtime": {
-      "metaLabel": "Entorno Meta",
-      "metaDescription": "Meta usa un entorno aislado mínimo fijo e inicia sesiones especializadas para el trabajo del proyecto."
+      "metaLabel": "Entorno Kortix",
+      "metaDescription": "Kortix Agent se ejecuta en un sandbox de la plataforma e inicia sesiones del proyecto para el trabajo."
     },
     "sandbox": {
       "label": "Plantilla del entorno aislado",
@@ -1084,8 +1084,8 @@
           "description": "Dirige este proyecto mediante la puerta de enlace LLM administrada de Kortix para modelos, medición y presupuestos."
         },
         "meta_agent": {
-          "name": "Metaagente",
-          "description": "Añade un coordinador que gestione sesiones especializadas y trabajos de varios pasos dentro del proyecto."
+          "name": "Kortix Agent",
+          "description": "Un solo agente con el que hablas. Elige el agente de proyecto adecuado, inicia sesiones e informa resultados verificados."
         },
         "apps": {
           "name": "Aplicaciones",
@@ -1374,7 +1374,7 @@
     "sessionViewOptions": "Opciones de vista de sesiones",
     "sectionOptions": "Opciones de la sección",
     "allSectionsHidden": "Todas las secciones están ocultas.",
-    "metaCoordinator": "Coordinador Meta",
+    "metaCoordinator": "Kortix Agent",
     "files": "Archivos",
     "retry": "Reintentar",
     "review": "Revisar",

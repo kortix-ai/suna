@@ -223,8 +223,8 @@
       "confetti": "紙吹雪を投げる"
     },
     "runtime": {
-      "metaLabel": "Meta ランタイム",
-      "metaDescription": "Meta は固定の最小サンドボックスを使用し、プロジェクト作業用の専門セッションを開始します。"
+      "metaLabel": "Kortix ランタイム",
+      "metaDescription": "Kortix Agent はプラットフォームのサンドボックスで動作し、作業のためにプロジェクトセッションを開始します。"
     },
     "sandbox": {
       "label": "サンドボックステンプレート",
@@ -1084,8 +1084,8 @@
           "description": "管理モデル、計測、予算のために、Kortix の管理対象 LLM ゲートウェイ経由でこのプロジェクトを処理します。"
         },
         "meta_agent": {
-          "name": "メタエージェント",
-          "description": "専門セッションとプロジェクト内の複数手順の作業を管理するコーディネーターを追加します。"
+          "name": "Kortix Agent",
+          "description": "話しかけるのは 1 つのエージェントだけ。適切なプロジェクトエージェントを選び、セッションを開始し、検証済みの結果を報告します。"
         },
         "apps": {
           "name": "アプリ",
@@ -1374,7 +1374,7 @@
     "sessionViewOptions": "セッション表示オプション",
     "sectionOptions": "セクションオプション",
     "allSectionsHidden": "すべてのセクションが非表示です。",
-    "metaCoordinator": "Meta コーディネーター",
+    "metaCoordinator": "Kortix Agent",
     "files": "ファイル",
     "retry": "もう一度",
     "review": "確認",

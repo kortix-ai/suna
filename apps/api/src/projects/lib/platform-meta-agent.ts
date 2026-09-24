@@ -6,6 +6,8 @@
 // per-project opt-in is read at its two call sites with the canonical
 // `resolveFeatureFlag(metadata, 'meta_agent')`.
 import {
+  KORTIX_AGENT_DESCRIPTION,
+  KORTIX_AGENT_PROMPT,
   META_AGENT_NAME,
   META_SANDBOX_SLUG,
 } from '@kortix/shared';
@@ -20,7 +22,7 @@ export function addPlatformMetaAgent(config: ProjectConfigSummary): ProjectConfi
       {
         name: META_AGENT_NAME,
         path: '/workspace/AGENTS.md',
-        description: 'Starts specialized Kortix sessions and coordinates their work.',
+        description: KORTIX_AGENT_DESCRIPTION,
         mode: 'primary',
         source: 'opencode',
         enabled: true,
@@ -42,10 +44,9 @@ export function buildPlatformMetaOpenCodeConfig(): string {
   return JSON.stringify({
     agent: {
       [META_AGENT_NAME]: {
-        description: 'Starts specialized Kortix sessions and coordinates their work.',
+        description: KORTIX_AGENT_DESCRIPTION,
         mode: 'primary',
-        prompt:
-          'Follow /workspace/AGENTS.md. Coordinate work through the Kortix CLI. You are the only coordinator: spawn specialized sessions to do the work, give each one bounded task via --prompt, and never ask a session to spawn further sessions.',
+        prompt: KORTIX_AGENT_PROMPT,
       },
     },
   });

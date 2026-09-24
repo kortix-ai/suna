@@ -96,8 +96,9 @@ instantly, with no kortix.yaml commit; \`default\` and \`config\` commit to
 kortix.yaml on the project's default branch.
 
 Subcommands:
-  ls [--json]                     Show every agent's pinned model + the fallback
-                                  default. (Alias: \`models\`.)
+  ls [--json]                     List the agents a session can start with: name,
+                                  pinned model or default marker, description.
+                                  (Alias: \`models\`.)
   model <agent> <model-id>        Pin an agent to a plain model id (e.g. deepseek-v4.1-flash).
   model <agent> --clear           Clear the pin — the agent follows the default again.
   default <agent>                 Make this the project's default agent.
@@ -192,18 +193,38 @@ export async function runAgents(argv: string[]): Promise<number> {
       case 'models':
       case 'ls':
       case 'list': {
-        const d = await ctx.client.get<ModelDefaults>(base);
+        // The detail read is best-effort: a caller without it still gets the
+        // model defaults this command has always printed.
+        const [d, detail] = await Promise.all([
+          ctx.client.get<ModelDefaults>(base),
+          ctx.client
+            .get<ProjectDetail>(`/projects/${ctx.projectId}/detail`)
+            .catch(() => null),
+        ]);
+        const agents = routableAgents(detail, d);
         if (json) {
-          emitJson(d);
+          emitJson({ ...d, agents });
           return 0;
         }
         const fallback =
           d.projectDefault ?? d.accountDefault ?? d.platformDefault ?? 'unavailable';
-        const entries = Object.entries(d.agentDefaults ?? {});
         process.stdout.write('\n');
         process.stdout.write(
           `  ${C.dim}Default (project → account → platform): ${C.reset}${C.bold}${fallback}${C.reset}\n\n`,
         );
+        if (agents.length > 0) {
+          const nameW = Math.max(...agents.map((a) => a.name.length), 5);
+          const tags = agents.map((a) => a.model ?? (a.default ? 'default' : ''));
+          const tagW = Math.max(...tags.map((t) => t.length), 7);
+          agents.forEach((a, i) => {
+            process.stdout.write(
+              `  ${C.bold}${pad(a.name, nameW)}${C.reset}   ${C.cyan}${pad(tags[i]!, tagW)}${C.reset}   ${a.description ?? `${C.faded}no description${C.reset}`}\n`,
+            );
+          });
+          process.stdout.write('\n');
+          return 0;
+        }
+        const entries = Object.entries(d.agentDefaults ?? {});
         if (entries.length === 0) {
           process.stdout.write(
             `  ${C.dim}No per-agent model pins — every agent follows the default.${C.reset}\n` +
@@ -260,6 +281,34 @@ export async function runAgents(argv: string[]): Promise<number> {
   } catch (err) {
     return surfaceApiError(err);
   }
+}
+
+// ── routable agents ─────────────────────────────────────────────────────────
+
+interface RoutableAgent {
+  name: string;
+  description: string | null;
+  default: boolean;
+  /** The pinned model, or null when the agent follows the default. */
+  model: string | null;
+}
+
+/**
+ * The agents a session can be started with, for a human or the Kortix Agent to
+ * route work by description. The platform agent (`meta`) is excluded: it is
+ * the router, never a routing target. Subagents and disabled agents are
+ * excluded because `sessions new --agent` cannot start them.
+ */
+function routableAgents(detail: ProjectDetail | null, d: ModelDefaults): RoutableAgent[] {
+  const defaultAgent = detail?.config?.default_agent ?? null;
+  return (detail?.config?.agents ?? [])
+    .filter((a) => a.name !== 'meta' && a.mode !== 'subagent' && a.enabled !== false)
+    .map((a) => ({
+      name: a.name,
+      description: a.description ?? null,
+      default: a.name === defaultAgent,
+      model: d.agentDefaults?.[a.name] ?? null,
+    }));
 }
 
 // ── default agent ───────────────────────────────────────────────────────────

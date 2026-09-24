@@ -223,8 +223,8 @@
       "confetti": "Throw some confetti"
     },
     "runtime": {
-      "metaLabel": "Meta runtime",
-      "metaDescription": "Meta uses a fixed minimal sandbox. It starts specialized sessions for project work."
+      "metaLabel": "Kortix runtime",
+      "metaDescription": "The Kortix Agent runs in a platform sandbox and starts project sessions for the work."
     },
     "sandbox": {
       "label": "Sandbox template",
@@ -910,8 +910,8 @@
           "description": "Route this project through the managed Kortix LLM gateway for managed models, metering, and budgets."
         },
         "meta_agent": {
-          "name": "Meta Agent",
-          "description": "Add a coordinator agent that manages specialized sessions and multi-step work across the project."
+          "name": "Kortix Agent",
+          "description": "One agent you talk to. It picks the right project agent, starts sessions, and reports verified results."
         },
         "apps": {
           "name": "Apps",
@@ -1374,7 +1374,7 @@
     "sessionViewOptions": "Session view options",
     "sectionOptions": "Section options",
     "allSectionsHidden": "All sections are hidden.",
-    "metaCoordinator": "Meta coordinator",
+    "metaCoordinator": "Kortix Agent",
     "files": "Files",
     "retry": "Try again",
     "review": "Review",

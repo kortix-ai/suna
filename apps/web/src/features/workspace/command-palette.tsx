@@ -130,7 +130,7 @@ import {
   useRuntimeAgents,
   useRuntimeProviders,
 } from '@kortix/sdk/react';
-import { capitalizeWords, chalkColors, formatRelativeTime } from '@kortix/shared';
+import { agentDisplayName, chalkColors, formatRelativeTime } from '@kortix/shared';
 import {
   ArrowDownIcon as ArrowDown,
   ArrowUpIcon as ArrowUp,
@@ -2609,7 +2609,7 @@ export function CommandPalette() {
                           </div>
                           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
                             <span className="truncate text-sm font-medium">
-                              {capitalizeWords(agent.name)}
+                              {agentDisplayName(agent.name)}
                             </span>
                             {agent.description && (
                               <span className="text-muted-foreground/50 truncate text-xs">
@@ -2653,7 +2653,7 @@ export function CommandPalette() {
                             )}
                           </div>
                           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-                            <span className="truncate text-sm">{capitalizeWords(agent.name)}</span>
+                            <span className="truncate text-sm">{agentDisplayName(agent.name)}</span>
                             {agent.description && (
                               <span className="text-muted-foreground/50 truncate text-xs">
                                 {agent.description}

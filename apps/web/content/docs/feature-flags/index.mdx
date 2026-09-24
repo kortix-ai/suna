@@ -119,7 +119,7 @@ Registry order — the same order **Settings → Feature flags** shows.
 | `agentmail_email` | AgentMail Email | Experimental | Off | `routes` |
 | `teams` | Microsoft Teams | Experimental | Off | `routes` |
 | `llm_gateway` | LLM Gateway | Experimental | On (operator can default off) | `behavioral` |
-| `meta_agent` | Meta Agent | Experimental | Off | `behavioral` |
+| `meta_agent` | Kortix Agent | Stable | On | `behavioral` |
 | `apps` | Apps | Stable | Off | `routes` |
 | `monitors` | Monitors | Experimental | Off | `routes` |
 | `warm_sessions` | Warm Sessions | Beta | On | `routes` |
@@ -148,8 +148,11 @@ refs). An explicit project choice always wins.
   continue sessions. See [Slack & channels](/docs/connect/slack).
 - **`llm_gateway`** — route the project through the managed Kortix LLM
   gateway. See [Models](/docs/project/models).
-- **`meta_agent`** — add a platform-owned coordinator agent that spawns and
-  manages specialized sessions.
+- **`meta_agent`** — the platform-owned Kortix Agent. It is the composer's
+  default: you talk to it, it picks the right project agent, starts sessions,
+  and reports verified results. Turn it off to pick project agents directly.
+  API, CLI, trigger, and channel sessions that name no agent keep running the
+  project default.
 - **`apps`** — deploy static sites, bundles, Dockerfiles, and OCI images to
   stable serverless URLs. See [Apps](/docs/feature-flags/apps).
 - **`monitors`** — run 24/7 watchers from your repo that fire trigger events

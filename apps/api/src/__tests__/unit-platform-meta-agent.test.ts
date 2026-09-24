@@ -7,6 +7,7 @@ import {
   resolvePlatformMetaSandbox,
 } from '../projects/lib/platform-meta-agent';
 import { resolveFeatureFlag } from '../feature-flags/registry';
+import { KORTIX_AGENT_DESCRIPTION, KORTIX_AGENT_PROMPT } from '@kortix/shared';
 import { resolveManifestVerdict } from '../projects/lib/manifest-verdict';
 
 describe('platform meta agent', () => {
@@ -51,17 +52,27 @@ describe('platform meta agent', () => {
     expect(config.open_code_default_agent).toBe('meta');
   });
 
-  test('defines an OpenCode agent that follows the platform guide', () => {
+  test('defines the Kortix Agent with the platform prompt', () => {
     expect(JSON.parse(buildPlatformMetaOpenCodeConfig())).toEqual({
       agent: {
         meta: {
-          description: 'Starts specialized Kortix sessions and coordinates their work.',
+          description: KORTIX_AGENT_DESCRIPTION,
           mode: 'primary',
-          prompt:
-            'Follow /workspace/AGENTS.md. Coordinate work through the Kortix CLI. You are the only coordinator: spawn specialized sessions to do the work, give each one bounded task via --prompt, and never ask a session to spawn further sessions.',
+          prompt: KORTIX_AGENT_PROMPT,
         },
       },
     });
+  });
+
+  test('the prompt keeps the conversation, routing, and confirmation contract', () => {
+    // The behaviors the product promises. A prompt edit that drops one of
+    // these changes what users get from the default agent.
+    expect(KORTIX_AGENT_PROMPT).toContain('kortix agents list');
+    expect(KORTIX_AGENT_PROMPT).toContain('kortix sessions wait-for');
+    expect(KORTIX_AGENT_PROMPT).toContain('The worker does not see this conversation');
+    expect(KORTIX_AGENT_PROMPT).toContain('Confirm with the user before you delete anything');
+    // Delivered through an env var: stay far below Linux's 128 KiB per-var cap.
+    expect(buildPlatformMetaOpenCodeConfig().length).toBeLessThan(16 * 1024);
   });
 
   test('forces the meta sandbox and rejects an explicit alternate sandbox', () => {
@@ -81,10 +92,10 @@ describe('platform meta agent', () => {
 
   // Read through the canonical registry helper at every call site — the module
   // above must stay free of runtime imports, see its header comment.
-  test('is gated on the meta_agent feature flag, default off', () => {
-    expect(resolveFeatureFlag(null, 'meta_agent')).toBe(false);
-    expect(resolveFeatureFlag({}, 'meta_agent')).toBe(false);
-    expect(resolveFeatureFlag({ experimental: {} }, 'meta_agent')).toBe(false);
+  test('is gated on the meta_agent feature flag, default on', () => {
+    expect(resolveFeatureFlag(null, 'meta_agent')).toBe(true);
+    expect(resolveFeatureFlag({}, 'meta_agent')).toBe(true);
+    expect(resolveFeatureFlag({ experimental: {} }, 'meta_agent')).toBe(true);
     expect(resolveFeatureFlag({ experimental: { meta_agent: false } }, 'meta_agent')).toBe(false);
     expect(resolveFeatureFlag({ experimental: { meta_agent: true } }, 'meta_agent')).toBe(true);
   });

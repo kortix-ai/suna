@@ -223,8 +223,8 @@
       "confetti": "Lancia coriandoli"
     },
     "runtime": {
-      "metaLabel": "Runtime Meta",
-      "metaDescription": "Meta usa una sandbox minima fissa e avvia sessioni specializzate per il lavoro sul progetto."
+      "metaLabel": "Runtime Kortix",
+      "metaDescription": "Kortix Agent viene eseguito in una sandbox della piattaforma e avvia sessioni di progetto per il lavoro."
     },
     "sandbox": {
       "label": "Modello sandbox",
@@ -1084,8 +1084,8 @@
           "description": "Instrada il progetto tramite il gateway LLM gestito da Kortix per modelli, misurazione e budget."
         },
         "meta_agent": {
-          "name": "Meta-agente",
-          "description": "Aggiungi un coordinatore che gestisce sessioni specializzate e attività in più passaggi nel progetto."
+          "name": "Kortix Agent",
+          "description": "Un unico agente con cui parli. Sceglie l'agente di progetto giusto, avvia sessioni e riporta risultati verificati."
         },
         "apps": {
           "name": "App",
@@ -1374,7 +1374,7 @@
     "sessionViewOptions": "Opzioni di visualizzazione delle sessioni",
     "sectionOptions": "Opzioni della sezione",
     "allSectionsHidden": "Tutte le sezioni sono nascoste.",
-    "metaCoordinator": "Coordinatore Meta",
+    "metaCoordinator": "Kortix Agent",
     "files": "File",
     "retry": "Riprova",
     "review": "Rivedi",

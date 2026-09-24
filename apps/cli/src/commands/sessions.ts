@@ -506,7 +506,7 @@ async function sessionsNew(
 
   const body: Record<string, unknown> = {};
   if (prompt && uploads.length === 0) {
-    body.initial_prompt = buildSpawnPrompt(prompt, { fromSandbox });
+    body.initial_prompt = buildSpawnPrompt(prompt, { fromSandbox, agent });
   }
   // Titles derive from the user's words, not from the session-contract or the
   // --with-file manifest the CLI appends around them.
@@ -617,7 +617,7 @@ async function sessionsNew(
               prompt,
               uploads.map((u) => u.target),
             ),
-            { fromSandbox },
+            { fromSandbox, agent },
           ),
         );
       }

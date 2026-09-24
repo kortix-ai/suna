@@ -223,8 +223,8 @@
       "confetti": "Lancer des confettis"
     },
     "runtime": {
-      "metaLabel": "Environnement Meta",
-      "metaDescription": "Meta utilise un bac à sable minimal fixe et lance des sessions spécialisées pour le projet."
+      "metaLabel": "Environnement Kortix",
+      "metaDescription": "Kortix Agent s'exécute dans un sandbox de la plateforme et démarre des sessions de projet pour le travail."
     },
     "sandbox": {
       "label": "Modèle de bac à sable",
@@ -1084,8 +1084,8 @@
           "description": "Acheminez ce projet via la passerelle LLM gérée de Kortix pour les modèles, la mesure et les budgets."
         },
         "meta_agent": {
-          "name": "Méta-agent",
-          "description": "Ajoutez un coordinateur qui gère les sessions spécialisées et les travaux en plusieurs étapes du projet."
+          "name": "Kortix Agent",
+          "description": "Un seul agent avec qui vous parlez. Il choisit le bon agent de projet, démarre des sessions et rapporte des résultats vérifiés."
         },
         "apps": {
           "name": "Applications",
@@ -1374,7 +1374,7 @@
     "sessionViewOptions": "Options d'affichage des sessions",
     "sectionOptions": "Options de la section",
     "allSectionsHidden": "Toutes les sections sont masquées.",
-    "metaCoordinator": "Coordinateur Meta",
+    "metaCoordinator": "Kortix Agent",
     "files": "Fichiers",
     "retry": "Réessayer",
     "review": "Examiner",

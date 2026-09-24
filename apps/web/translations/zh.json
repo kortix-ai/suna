@@ -223,8 +223,8 @@
       "confetti": "撒些彩纸"
     },
     "runtime": {
-      "metaLabel": "Meta 运行环境",
-      "metaDescription": "Meta 使用固定的最小沙盒，并为项目工作启动专门会话。"
+      "metaLabel": "Kortix 运行时",
+      "metaDescription": "Kortix Agent 在平台沙箱中运行，并为工作启动项目会话。"
     },
     "sandbox": {
       "label": "沙盒模板",
@@ -1084,8 +1084,8 @@
           "description": "通过 Kortix 托管 LLM 网关路由此项目，以使用托管模型、计量和预算。"
         },
         "meta_agent": {
-          "name": "元智能体",
-          "description": "添加一个协调智能体，用于管理项目中的专业会话和多步骤工作。"
+          "name": "Kortix Agent",
+          "description": "你只需与一个智能体对话。它会选择合适的项目智能体、启动会话，并汇报经过验证的结果。"
         },
         "apps": {
           "name": "应用",
@@ -1374,7 +1374,7 @@
     "sessionViewOptions": "会话视图选项",
     "sectionOptions": "分组选项",
     "allSectionsHidden": "所有分组均已隐藏。",
-    "metaCoordinator": "Meta 协调器",
+    "metaCoordinator": "Kortix Agent",
     "files": "文件",
     "retry": "重试",
     "review": "审阅",

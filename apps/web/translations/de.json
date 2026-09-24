@@ -223,8 +223,8 @@
       "confetti": "Konfetti werfen"
     },
     "runtime": {
-      "metaLabel": "Meta-Laufzeit",
-      "metaDescription": "Meta verwendet eine feste minimale Sandbox. Für Projektarbeit startet Meta spezialisierte Sitzungen."
+      "metaLabel": "Kortix-Laufzeit",
+      "metaDescription": "Der Kortix Agent läuft in einer Plattform-Sandbox und startet Projektsitzungen für die Arbeit."
     },
     "sandbox": {
       "label": "Sandbox-Vorlage",
@@ -1084,8 +1084,8 @@
           "description": "Leiten Sie dieses Projekt über das verwaltete Kortix-LLM-Gateway für Modelle, Messung und Budgets."
         },
         "meta_agent": {
-          "name": "Meta-Agent",
-          "description": "Fügen Sie einen Koordinator hinzu, der spezialisierte Sitzungen und mehrstufige Arbeiten im Projekt verwaltet."
+          "name": "Kortix Agent",
+          "description": "Ein Agent, mit dem Sie sprechen. Er wählt den passenden Projektagenten, startet Sitzungen und meldet geprüfte Ergebnisse."
         },
         "apps": {
           "name": "Apps",
@@ -1374,7 +1374,7 @@
     "sessionViewOptions": "Optionen der Sitzungsansicht",
     "sectionOptions": "Abschnittsoptionen",
     "allSectionsHidden": "Alle Abschnitte sind ausgeblendet.",
-    "metaCoordinator": "Meta-Koordinator",
+    "metaCoordinator": "Kortix Agent",
     "files": "Dateien",
     "retry": "Nochmal versuchen",
     "review": "Prüfen",

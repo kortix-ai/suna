@@ -33,20 +33,38 @@ function writeConfig(apiBase: string): string {
   return path;
 }
 
-function startServer(): string {
+function startServer(detail?: unknown): string {
   server = Bun.serve({
     port: 0,
-    fetch: () =>
-      Response.json({
+    fetch: (req) => {
+      if (detail !== undefined && new URL(req.url).pathname.endsWith('/detail')) {
+        return Response.json(detail);
+      }
+      return Response.json({
         platformDefault: null,
         accountDefault: null,
         projectDefault: null,
-        agentDefaults: {},
+        agentDefaults: detail === undefined ? {} : { reviewer: 'glm-5.3-flash' },
         resolvedForCaller: null,
-      }),
+      });
+    },
   });
   return `http://127.0.0.1:${server.port}`;
 }
+
+const DETAIL = {
+  project_id: PROJECT,
+  config: {
+    default_agent: 'kortix',
+    agents: [
+      { name: 'meta', path: '/workspace/AGENTS.md', description: 'Talks with you.', mode: 'primary' },
+      { name: 'kortix', path: 'a.md', description: 'General project work.', mode: 'primary' },
+      { name: 'reviewer', path: 'b.md', description: 'Reviews pull requests.', mode: 'primary' },
+      { name: 'helper', path: 'c.md', description: 'Internal helper.', mode: 'subagent' },
+      { name: 'old', path: 'd.md', description: 'Retired.', mode: 'primary', enabled: false },
+    ],
+  },
+};
 
 async function runCli(args: string[], configFile?: string) {
   const env: Record<string, string | undefined> = {
@@ -112,5 +130,29 @@ describe('kortix agents command', () => {
     expect(result.code).toBe(0);
     expect(result.stdout).toContain('unavailable');
     expect(result.stdout.toLowerCase()).not.toContain('auto');
+  });
+
+  test('ls lists every launchable agent with its description for routing', async () => {
+    const config = writeConfig(startServer(DETAIL));
+    const result = await runCli(['agents', 'ls', '--project', PROJECT], config);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toMatch(/kortix\s+default\s+General project work\./);
+    expect(result.stdout).toMatch(/reviewer\s+glm-5\.3-flash\s+Reviews pull requests\./);
+    // The platform agent, subagents and disabled agents are not routing targets.
+    expect(result.stdout).not.toContain('Talks with you.');
+    expect(result.stdout).not.toContain('Internal helper.');
+    expect(result.stdout).not.toContain('Retired.');
+  });
+
+  test('ls --json keeps the model-defaults keys and adds the agents', async () => {
+    const config = writeConfig(startServer(DETAIL));
+    const result = await runCli(['agents', 'ls', '--project', PROJECT, '--json'], config);
+    expect(result.code).toBe(0);
+    const out = JSON.parse(result.stdout);
+    expect(out.agentDefaults).toEqual({ reviewer: 'glm-5.3-flash' });
+    expect(out.agents).toEqual([
+      { name: 'kortix', description: 'General project work.', default: true, model: null },
+      { name: 'reviewer', description: 'Reviews pull requests.', default: false, model: 'glm-5.3-flash' },
+    ]);
   });
 });

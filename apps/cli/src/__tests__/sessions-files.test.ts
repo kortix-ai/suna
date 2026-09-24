@@ -168,6 +168,18 @@ describe('buildSpawnPrompt', () => {
     );
   });
 
+  test('never tells a Kortix Agent session it is a worker', () => {
+    // The contract says "do not spawn sessions" — the opposite of the Kortix
+    // Agent's job. A token-authenticated host (a sandbox, or a script using
+    // KORTIX_TOKEN) starting `--agent meta` must send the prompt as written.
+    expect(
+      buildSpawnPrompt('Plan the launch.', { fromSandbox: true, agent: 'meta' }),
+    ).toBe('Plan the launch.');
+    expect(buildSpawnPrompt('Plan the launch.', { fromSandbox: true, agent: 'kortix' })).toContain(
+      'session contract',
+    );
+  });
+
   test('composes after the --with-file manifest', () => {
     const withFiles = buildPromptWithFiles('Summarize.', ['/workspace/incoming/a.pdf']);
     const text = buildSpawnPrompt(withFiles, { fromSandbox: true });

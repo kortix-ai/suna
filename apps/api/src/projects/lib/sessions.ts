@@ -11,7 +11,7 @@ import {
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG, PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
+import { isMetaAgentName, META_SANDBOX_SLUG, PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
 import { checkBillingAdmission } from '../../billing/services/billing-gate';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { type SandboxProviderName, config } from '../../config';
@@ -1051,19 +1051,23 @@ export async function createProjectSession(input: {
     (project.metadata as Record<string, unknown> | null | undefined)?.default_agent,
   );
   const projectDefaultAgent = normalizeString(loadedAgents.defaultAgent) ?? mirroredDefaultAgent;
-  // The meta coordinator is a per-project experimental opt-in
-  // (`meta_agent`). Flag off: agent resolution below is byte-for-byte the
-  // pre-meta behavior, and an explicit "meta" request is an ordinary (unknown)
-  // agent name.
+  // The Kortix Agent (wire name `meta`) runs only when a caller names it. The
+  // web composer names it by default; every other caller — CLI, SDK, build-fix,
+  // change-request recovery, triggers, channels — gets the project default.
+  // It used to be the silent default for an omitted agent, which broke callers
+  // that need a repo checkout or a non-meta sandbox, and made `POST /sessions`
+  // authorize the project default while running meta. Flag off: an explicit
+  // "meta" is an ordinary (unknown) agent name.
   const metaAgentEnabled = resolveFeatureFlag(project.metadata, 'meta_agent');
-  // Meta→meta recursion stop. Anyone — dashboard users included — may spawn
-  // the meta coordinator, and an omitted agent still defaults to it. The one
-  // exception is a caller that IS a meta session: its omitted agent resolves
-  // to the project default (the observed failure was meta "spawning a worker"
-  // and getting another coordinator), and an explicit meta request is
-  // rejected.
+  const agentName = resolveSessionAgentName({
+    requestedAgent,
+    manifestDefaultAgent: normalizeString(loadedAgents.defaultAgent),
+    mirroredDefaultAgent,
+  });
+  // Meta→meta recursion stop: a Kortix Agent session delegates to project
+  // agents, never to another Kortix Agent.
   let callerIsMeta = false;
-  if (metaAgentEnabled && input.callerSessionId) {
+  if (metaAgentEnabled && isMetaAgentName(agentName) && input.callerSessionId) {
     const [caller] = await db
       .select({ agentName: projectSessions.agentName })
       .from(projectSessions)
@@ -1076,14 +1080,6 @@ export async function createProjectSession(input: {
       .limit(1);
     callerIsMeta = !!caller && isMetaAgentName(caller.agentName);
   }
-  const agentName =
-    metaAgentEnabled && !requestedAgent && !callerIsMeta
-      ? META_AGENT_NAME
-      : resolveSessionAgentName({
-          requestedAgent,
-          manifestDefaultAgent: normalizeString(loadedAgents.defaultAgent),
-          mirroredDefaultAgent,
-        });
   const platformMetaAgent = metaAgentEnabled && isMetaAgentName(agentName);
   if (platformMetaAgent && callerIsMeta) {
     return {
@@ -1091,7 +1087,7 @@ export async function createProjectSession(input: {
         status: 400,
         body: {
           error:
-            'The meta coordinator cannot spawn another meta coordinator — pick a project agent',
+            'The Kortix Agent cannot start another Kortix Agent session — pick a project agent',
           code: 'META_AGENT_RECURSION',
         },
       },

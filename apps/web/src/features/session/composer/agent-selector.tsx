@@ -14,7 +14,7 @@ import {
 import Hint from '@/components/ui/hint';
 import { cn } from '@/lib/utils';
 import type { Agent } from '@kortix/sdk/react';
-import { capitalizeWords, isMetaAgentName } from '@kortix/shared';
+import { agentDisplayName, isMetaAgentName } from '@kortix/shared';
 import { CaretDownIcon, CheckIcon, FolderSimpleIcon as MetaFolder } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useMemo, useState } from 'react';
@@ -100,7 +100,7 @@ export function AgentSelector({
   // matching the resolver's own first-accessible pre-selection.
   const currentAgent = primaryAgents.find((a) => a.name === selectedAgent);
   const displayedName = currentAgent?.name ?? selectedAgent ?? primaryAgents[0]?.name;
-  const displayName = displayedName ? capitalizeWords(displayedName) : 'Agent';
+  const displayName = displayedName ? agentDisplayName(displayedName) : 'Agent';
   const metaSelected = isMetaAgentName(displayedName);
 
   /**
@@ -140,7 +140,7 @@ export function AgentSelector({
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-1.5">
             <span className="text-foreground truncate text-sm font-medium">
-              {capitalizeWords(agent.name)}
+              {agentDisplayName(agent.name)}
             </span>
             {meta && (
               <Badge variant="outline" size="xs" className="shrink-0 font-normal">
