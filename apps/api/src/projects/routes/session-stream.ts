@@ -251,7 +251,7 @@ projectsApp.openapi(
       start(controller) {
         controllerRef = controller;
 
-        const reconciler = acquireControlReconciler(sessionId);
+        const reconciler = acquireControlReconciler(sessionId, projectId);
         let heartbeat: ReturnType<typeof setInterval> | null = null;
 
         // Replay + live listener in the SAME synchronous tick — the handoff
