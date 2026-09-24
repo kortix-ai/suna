@@ -20,6 +20,7 @@ describe('keysToClear', () => {
       'presence_session_id',
       'kortix:ssh-access-meta:v1',
       'tab-screenshots',
+      'kortix.composerDrafts',
     ];
     expect(keysToClear(userData)).toEqual(userData);
   });

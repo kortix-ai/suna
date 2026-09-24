@@ -9,8 +9,8 @@
  *   an avatar group), or the loader while the input streams · the label
  *   (title, else "Error" / the URL's domain / "Link" / "Output"; a carousel
  *   "N items") · ONE toolbar: preview actions for a localhost / HTML-file
- *   preview, `ShowFileActions` (Refresh · Full screen · Open) for a file,
- *   "Preview" for content when a panel activation exists;
+ *   preview, `ShowFileActions` (Refresh · "Preview") for a file, "Preview"
+ *   for content when a panel activation exists;
  * - body: nothing for a finished show with no artifact; a quiet "Preview
  *   unavailable — title" row (with "Open link") when the artifact failed to
  *   load; else the carousel, the preview card, or `ShowContentRenderer`, with a
@@ -20,33 +20,37 @@
  * card, as on web. Mobile hosts only the inline surface today.
  *
  * Mobile keeps its open actions (`navigation.tsx`): previews open the Browser
- * tab, files open `FileViewer` full screen, links open externally. A show with
+ * tab, files open the app's file sheet (`FilePreviewSheet`), links open
+ * externally. A show with
  * no toolbar but a safe external URL gets an open-link control
  * (`useShowOpenInTab`), because a phone has no hover target to reach it.
  *
- * `ShowExpandedContent`, `ShowToolCard`, `SandboxImage` and `isImagePath` are
- * re-exported from `show-legacy.tsx` for `tool-part-renderer.tsx`'s legacy
- * switch.
+ * Refresh in the file toolbar re-reads the file queries and remounts the body
+ * (`refreshNonce`), so a sandbox image requests its bytes again too.
  */
 
-import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import { View } from 'react-native';
 import { useColorScheme } from 'nativewind';
-import { isShowContentUnavailable, isShowPayloadEmpty, type ShowLoadStatus } from '@kortix/sdk';
+import { isShowContentUnavailable, isShowPayloadEmpty, parseLocalhostUrl, type ShowLoadStatus } from '@kortix/sdk';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { TextShimmer } from '@/components/kortix/text-shimmer';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
-import { ArrowSquareOutIcon, GlobeIcon } from '@/lib/icons';
+import { ArrowSquareOutIcon, GlobeIcon, MonitorIcon } from '@/lib/icons';
 import { prefersPreviewLink, safeHttpUrl } from '@/lib/session/tools/web-fetch';
 import {
+  SHOW_IMAGE_EXT_RE,
   parseShowItems,
   resolveShowPreviewUrl,
+  resolveShowType,
   showBodyKind,
   showDisplayTitle,
   showHeaderIconType,
   showInlineToolbarKind,
+  showOpenTarget,
+  showRowModel,
   showUnavailableLabel,
 } from '@/lib/session/tools/web-show';
 import { webSpace } from '@/lib/session/user-message';
@@ -67,13 +71,12 @@ import {
   type ServicePreviewState,
 } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
-import { ShowFileActions, showFileTypeIcon, useShowOpenInTab } from '../shared/show-helpers';
+import { SettingsGroup } from '@/components/kortix/settings-list';
+import { ShowFileActions, ShowResultRow, showFileTypeIcon, useShowOpenInTab } from '../shared/show-helpers';
 import { TURN_SPACE, TURN_TYPE, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
 import { ShowCarousel } from './show-carousel';
 import { ShowContentRenderer } from './show-content-renderer';
-
-export { ShowExpandedContent, ShowToolCard, SandboxImage, isImagePath } from './show-legacy';
 
 // The header owns one preview state for the active item; the carousel reads it
 // through context so its viewport and the header controls drive the same target.
@@ -110,6 +113,8 @@ export function ShowTool({ part, sessionId }: ToolProps) {
   const [carouselIndex, setCarouselIndex] = useState(0);
   const currentItem = isCarousel ? items[carouselIndex] || items[0] : null;
   const [contentStatus, setContentStatus] = useState<ShowLoadStatus>('loading');
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  const bumpRefresh = useCallback(() => setRefreshNonce((n) => n + 1), []);
 
   const activeType = isCarousel ? currentItem?.type || '' : type;
   const activeUrl = isCarousel ? currentItem?.url || '' : url;
@@ -140,7 +145,8 @@ export function ShowTool({ part, sessionId }: ToolProps) {
     canActivate: Boolean(activate),
     navigationEnabled,
   });
-  const fileActions = toolbarKind === 'file' ? <ShowFileActions path={activePath} inPanel={fill} /> : undefined;
+  const fileActions =
+    toolbarKind === 'file' ? <ShowFileActions path={activePath} inPanel={fill} onRefresh={bumpRefresh} /> : undefined;
 
   let inlineToolbar: ReactNode = null;
   if (toolbarKind === 'preview') inlineToolbar = <ServicePreviewActions preview={preview} />;
@@ -158,6 +164,34 @@ export function ShowTool({ part, sessionId }: ToolProps) {
       </Button>
     );
   }
+
+  // One row per output: a carousel's items, else the single payload. A row
+  // exists only for something that can be opened — a file or a URL; inline
+  // content with neither keeps the renderer below.
+  const rows = useMemo(() => {
+    const list = isCarousel
+      ? (items ?? []).map((item, index) => ({
+          key: `${item.path || item.url || index}`,
+          type: item.type || '',
+          path: item.path || '',
+          url: item.url || '',
+          title: item.title || '',
+        }))
+      : [{ key: 'single', type, path, url, title }];
+    return list
+      .filter((entry) => entry.path || entry.url)
+      .map((entry) => ({
+        key: entry.key,
+        entry: { type: entry.type, url: entry.url, path: entry.path, title: entry.title },
+        directImageUrl: !entry.path && entry.url && SHOW_IMAGE_EXT_RE.test(entry.url) ? entry.url : '',
+        model: showRowModel(entry),
+        // A running app gets the screen glyph, never the globe (Jay, 2026-09-22).
+        icon:
+          !entry.path && parseLocalhostUrl(entry.url)
+            ? MonitorIcon
+            : showFileTypeIcon(resolveShowType(entry.type, entry.path), entry.path || undefined),
+      }));
+  }, [isCarousel, items, path, title, type, url]);
 
   const hasNothingToShow = useMemo(() => isShowPayloadEmpty({ items, path, url, content }), [items, path, url, content]);
   const bodyKind = showBodyKind({
@@ -243,6 +277,7 @@ export function ShowTool({ part, sessionId }: ToolProps) {
               onIndexChange={setCarouselIndex}
               fill={fill}
               toolbarActions={fill ? fileActions : undefined}
+              refreshKey={refreshNonce}
             />
           </ActiveServicePreviewContext.Provider>
         ) : isWebsitePreview ? (
@@ -250,6 +285,7 @@ export function ShowTool({ part, sessionId }: ToolProps) {
         ) : (
           <>
             <ShowContentRenderer
+              key={refreshNonce}
               type={type}
               title={title}
               description={description}
@@ -277,6 +313,27 @@ export function ShowTool({ part, sessionId }: ToolProps) {
   }
 
   if (fill) return <>{body}</>;
+
+  // ── The transcript's surface: one row per output (COR-107, option B) ──
+  //
+  // A row names the output and opens it in the file sheet; the payload is
+  // never embedded in the bubble. The panel and the activity sheet's detail
+  // body keep the full renderer above.
+  if (!detailBody && rows.length > 0 && bodyKind === 'content') {
+    return (
+      <SettingsGroup parentClassName='rounded-lg'>
+        {rows.map((row) => (
+          <ShowResultRow
+            key={row.key}
+            entry={row.entry}
+            model={row.model}
+            icon={row.icon}
+            directImageUrl={row.directImageUrl || undefined}
+          />
+        ))}
+      </SettingsGroup>
+    );
+  }
 
   return (
     <View

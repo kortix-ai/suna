@@ -354,7 +354,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // a slow provider. See `core/session/wake-escalation.ts` for the incident.
   //
   // `runtimeReachable` is the DAEMON's answer, not the session row's. Observed
-  // on Essentia 2026-08-26: `/start` answered 202 and the row stayed `running`
+  // on SampleCo 2026-08-26: `/start` answered 202 and the row stayed `running`
   // for 5+ minutes while the E2B resume had silently failed and the proxy
   // answered `503 sandbox_not_ready`. `initialCheckDone` is what makes this
   // real evidence — `useSession` optimistically seeds `healthy: true` the
@@ -415,7 +415,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   });
   // THE progress-aware budget. Every consumer below reads time-since-CHANGE,
   // never time-since-wake-started — the fixed clock this replaces expired
-  // mid-wake on a box that was seconds from ready (Essentia 29861dfa, box
+  // mid-wake on a box that was seconds from ready (SampleCo 29861dfa, box
   // daemon logged `opencode ready` right after the budget ran out).
   const wakeSilentMs = wake.msSinceProgress;
   // A BOOLEAN, not the raw millisecond count, because this is an effect

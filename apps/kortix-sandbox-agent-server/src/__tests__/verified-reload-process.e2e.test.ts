@@ -122,7 +122,7 @@ describe('verified reload process promotion', () => {
 })
 
 describe('the live port is a property of the process, never a variable beside it', () => {
-  // Essentia 2026-08-25: the daemon reported `starting` + `opencode_port: 4096`
+  // SampleCo 2026-08-25: the daemon reported `starting` + `opencode_port: 4096`
   // for two hours while its own child (pid 2423) served on 4097. `activePort`
   // had drifted from the process. Now every reader asks the process.
   function fakeOpencode(): { workspace: string; configDir: string; binary: string } {

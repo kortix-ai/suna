@@ -178,7 +178,7 @@ export function CustomMcpContent({
           {!hideBackButton && (
             <View className="mb-4 flex-row items-center">
               {onBack && (
-                <Pressable onPress={onBack} className="flex-row items-center active:opacity-70">
+                <Pressable onPress={onBack} className="flex-row items-center active:opacity-70" accessibilityRole="button" accessibilityLabel="Back">
                   <Icon as={ArrowLeft} size={20} className="text-foreground" />
                 </Pressable>
               )}
@@ -396,7 +396,9 @@ export function CustomMcpDialog({ open, onOpenChange, onSave }: CustomMcpDialogP
                 <View className="mb-4 mt-4 flex-row items-center">
                   <Pressable
                     onPress={handleClose}
-                    className="flex-row items-center active:opacity-70">
+                    className="flex-row items-center active:opacity-70"
+                    accessibilityRole="button"
+                    accessibilityLabel="Back">
                     <Icon as={ArrowLeft} size={20} className="text-foreground" />
                   </Pressable>
                   <View className="ml-3 flex-1">

@@ -7,8 +7,9 @@
  * deck, page, image, media), then "Other files" (source, config). A row is
  * file glyph · name · kind (no kind on "Other files" rows).
  *
- * A tap opens the file's preview in a second sheet pushed over the list
- * (`FilePreviewSheet`): the file name as the title, `FilePreview` as the body
+ * A tap opens the file's preview in the app's one file sheet, pushed over the
+ * list (`components/files/FilePreviewSheet`): the file name as the title, the
+ * document as the body
  * (markdown, HTML, CSV, JSON, code, text, image). A file it does not render —
  * a PDF, an Office file, an archive, media (`previewsInline`) — shows its file
  * card and fetches nothing. Copy (text files) sits at the far right of the
@@ -31,27 +32,13 @@ import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import type { SandboxFile } from '@/api/types';
-import {
-  FilePreview,
-  FilePreviewBottomInsetContext,
-} from '@/components/files/FilePreviewRenderers';
-import { useFilePreviewData } from '@/components/files/use-file-preview-data';
-import { KortixLoader } from '@/components/kortix/kortix-loader';
-import { PinnedBar, usePinnedBarInset } from '@/components/kortix/pinned-bar';
-import { CopyContentButton, KortixBottomSheetModal, type SheetRef } from '@/components/kortix/sheet';
+import { FilePreviewSheet } from '@/components/files/FilePreviewSheet';
+import { KortixBottomSheetModal, type SheetRef } from '@/components/kortix/sheet';
 import { SheetTextInput } from '@/components/kortix/SheetInput';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
-import { useToast } from '@/components/kortix/toast-provider';
-import { Button } from '@/components/ui/button';
-import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
-import { downloadOpenCodeFileToCache } from '@/lib/files/hooks';
-import { openFileOnDevice } from '@/lib/files/open-on-device';
-import { previewFailure } from '@/lib/files/preview-failure';
 import { haptics } from '@/lib/haptics';
 import { THEME } from '@/lib/utils/theme';
-import { DownloadSimpleIcon, PlusIcon } from '@/lib/icons';
 import { useSyncStore } from '@/lib/opencode/sync-store';
 import {
   deriveSessionFiles,
@@ -64,8 +51,6 @@ import {
 import { showFileTypeIcon } from './tool/shared/show-helpers';
 
 const SNAP_POINTS = ['100%'];
-/** `Button` default size (`h-10`): the pinned bar's controls. */
-const BAR_CONTROL_HEIGHT = 40;
 /** How long Copy shows its check. */
 
 export interface SessionFilesSheetProps {
@@ -79,7 +64,7 @@ export interface SessionFilesSheetProps {
 export const SessionFilesSheet = React.forwardRef<SheetRef, SessionFilesSheetProps>(
   ({ sessionId, sandboxUrl, onSelect }, ref) => {
     const modalRef = React.useRef<BottomSheetModal>(null);
-    const previewRef = React.useRef<BottomSheetModal>(null);
+    const previewSheetRef = React.useRef<SheetRef>(null);
     const insets = useSafeAreaInsets();
     const { colorScheme } = useColorScheme();
     const pageBackground = THEME[colorScheme === 'dark' ? 'dark' : 'light'].background;
@@ -107,213 +92,38 @@ export const SessionFilesSheet = React.forwardRef<SheetRef, SessionFilesSheetPro
           enablePanDownToClose
           onDismiss={() => setOpen(false)}
           keyboardBehavior="extend"
-          keyboardBlurBehavior="restore"
-          android_keyboardInputMode="adjustResize">
+          keyboardBlurBehavior="restore">
           {open && sessionId ? (
             <SessionFilesBody
               sessionId={sessionId}
               onPreview={(file) => {
                 haptics.tap();
                 setPreviewFile(file);
-                previewRef.current?.present();
+                previewSheetRef.current?.open();
               }}
             />
           ) : null}
         </KortixBottomSheetModal>
 
-        {/* Pushed over the list: closing it returns to the list. Only the handle
-          and title bar drag this sheet, so a page or a long document scrolls
-          inside it. Copy sits at the far right of the title row. */}
-        <KortixBottomSheetModal
-          ref={previewRef}
-          title={previewFile?.name}
-          titleTrailing={copyText ? <CopyContentButton text={copyText} /> : undefined}
-          stackBehavior="push"
-          snapPoints={SNAP_POINTS}
-          enableDynamicSizing={false}
-          topInset={insets.top}
-          enablePanDownToClose
-          enableContentPanningGesture={false}
-          // The file renderers paint the page background, so this sheet's surface
-          // is that colour too: title row, preview, fades and actions are one plane.
-          backgroundStyle={{ backgroundColor: pageBackground }}
-          onDismiss={() => {
-            setPreviewFile(null);
-            setCopyText('');
-          }}>
-          {previewFile ? (
-            <FilePreviewBody
-              file={previewFile}
-              sandboxUrl={sandboxUrl}
-              onCopyTextChange={setCopyText}
-              onAdd={() => {
-                haptics.selection();
-                previewRef.current?.dismiss();
-                modalRef.current?.dismiss();
-                onSelect(previewFile);
-              }}
-            />
-          ) : null}
-        </KortixBottomSheetModal>
+        {/* Pushed over the list: closing it returns to the list. The one file
+          preview of the app (`FilePreviewSheet`), the same sheet a tool row
+          opens. */}
+        <FilePreviewSheet
+          ref={previewSheetRef}
+          file={previewFile}
+          sandboxUrl={sandboxUrl}
+          pushed
+          onAdd={() => {
+            modalRef.current?.dismiss();
+            if (previewFile) onSelect(previewFile);
+          }}
+          onDismiss={() => setPreviewFile(null)}
+        />
       </>
     );
   }
 );
 SessionFilesSheet.displayName = 'SessionFilesSheet';
-
-/** Sandbox paths are absolute; a relative one is workspace-relative (`ToolFilePreviewHost`'s rule). */
-function toSandboxFile(file: SessionFile): SandboxFile {
-  const path = file.path.startsWith('/') ? file.path : `/workspace/${file.path}`;
-  return { name: file.name, path, type: 'file' } as SandboxFile;
-}
-
-/** The title row's Copy: the file's text to the clipboard, a check for 1.5 s. */
-
-function FilePreviewBody({
-  file,
-  sandboxUrl,
-  onCopyTextChange,
-  onAdd,
-}: {
-  file: SessionFile;
-  sandboxUrl: string | undefined;
-  /** The file's text once it has loaded, else ''. */
-  onCopyTextChange: (text: string) => void;
-  onAdd: () => void;
-}) {
-  const { colorScheme } = useColorScheme();
-  const pageBackground = THEME[colorScheme === 'dark' ? 'dark' : 'light'].background;
-  const contentInset = usePinnedBarInset(BAR_CONTROL_HEIGHT);
-  const toast = useToast();
-  const sandboxFile = React.useMemo(() => toSandboxFile(file), [file]);
-  // A PDF, an Office file, an archive or media is not rendered here and nothing
-  // is fetched for it (Jay, 2026-09-22): the body is its file card.
-  const inline = previewsInline(file.name);
-  const preview = useFilePreviewData(sandboxFile, sandboxUrl, { enabled: inline });
-
-  const failed = inline && (Boolean(preview.error) || !sandboxUrl);
-  const failure = failed ? previewFailure(preview.error, Boolean(sandboxUrl)) : null;
-
-  const copyText =
-    inline && !failed && typeof preview.textContent === 'string' ? preview.textContent : '';
-  React.useEffect(() => {
-    onCopyTextChange(copyText);
-  }, [copyText, onCopyTextChange]);
-
-  const [downloading, setDownloading] = React.useState(false);
-  const handleDownload = async () => {
-    if (!sandboxUrl || downloading) return;
-    haptics.tap();
-    setDownloading(true);
-    let uri: string;
-    try {
-      // Streams to disk natively, so it works for a file of any size or type.
-      uri = await downloadOpenCodeFileToCache(sandboxUrl, sandboxFile.path, sandboxFile.name);
-    } catch {
-      haptics.warning();
-      toast.error('Unable to download the file. Try again.');
-      setDownloading(false);
-      return;
-    }
-    try {
-      // The device opens it in its own app: the PDF, slides, sheet or text app
-      // on Android, Quick Look on iOS. Never the share sheet, never an in-app
-      // viewer (Jay, 2026-09-22).
-      const result = await openFileOnDevice(uri, sandboxFile.name);
-      if (result === 'no-app') toast.info('File downloaded. No app on this device can open it.');
-      else if (result === 'unavailable') toast.info('File downloaded. Update the app to open it.');
-    } catch {
-      haptics.warning();
-      toast.error('File downloaded, but it did not open. Try again.');
-    } finally {
-      setDownloading(false);
-    }
-  };
-
-  return (
-    // A plain `View`: `BottomSheetView` sizes to its content, and this sheet has a
-    // fixed height, so the preview fills it and the bar pins to its bottom edge.
-    <View className="flex-1">
-      {/* The document fills the sheet and scrolls under the pinned bar; the
-          renderers end their content `contentInset` above the edge. */}
-      <FilePreviewBottomInsetContext.Provider value={contentInset}>
-        {!inline ? (
-          <View
-            className="flex-1 items-center justify-center gap-3 px-8"
-            style={{ paddingBottom: contentInset }}>
-            <Icon
-              as={showFileTypeIcon(file.kind, file.name)}
-              size={40}
-              className="text-muted-foreground"
-            />
-            <Text variant="large" className="text-center" numberOfLines={2}>
-              {file.name}
-            </Text>
-            <Text variant="muted">{sessionFileKindLabel(file)}</Text>
-          </View>
-        ) : preview.isLoading ? (
-          <View
-            className="flex-1 items-center justify-center"
-            style={{ paddingBottom: contentInset }}>
-            <KortixLoader size="large" />
-          </View>
-        ) : failure ? (
-          <View
-            className="flex-1 items-center justify-center gap-6 px-8"
-            style={{ paddingBottom: contentInset }}>
-            <Text variant="muted" className="text-center">
-              {failure.message}
-            </Text>
-            {failure.canRetry && sandboxUrl ? (
-              <Button
-                variant="secondary"
-                size="lg"
-                className="rounded-full"
-                onPress={() => {
-                  haptics.tap();
-                  preview.retry();
-                }}>
-                <Text>Try again</Text>
-              </Button>
-            ) : null}
-          </View>
-        ) : (
-          <FilePreview
-            content={preview.textContent || null}
-            fileName={sandboxFile.name}
-            previewType={preview.previewType}
-            blobUrl={preview.blobUrl}
-            filePath={sandboxFile.path}
-            sandboxUrl={sandboxUrl}
-            size={preview.size}
-          />
-        )}
-      </FilePreviewBottomInsetContext.Provider>
-
-      {/* The project drawer's pinned bar: two equal cells, default button size,
-          floating over a fade of the surface. Download · Add to chat. */}
-      <PinnedBar
-        controlHeight={BAR_CONTROL_HEIGHT}
-        background={pageBackground}
-        className="gap-2 px-4">
-        <Button
-          variant="secondary"
-          className="flex-1 rounded-full"
-          disabled={!sandboxUrl || downloading || failure?.kind === 'missing'}
-          onPress={handleDownload}
-          accessibilityLabel={downloading ? 'Downloading' : 'Download file'}>
-          {downloading ? <KortixLoader size="small" /> : <Icon as={DownloadSimpleIcon} size={18} />}
-          <Text>Download</Text>
-        </Button>
-        {/* A file that did not load is not offered to the chat either. */}
-        <Button className="flex-1 rounded-full" disabled={failed} onPress={onAdd}>
-          <Icon as={PlusIcon} size={18} />
-          <Text>Add to chat</Text>
-        </Button>
-      </PinnedBar>
-    </View>
-  );
-}
 
 function SessionFilesBody({
   sessionId,
@@ -367,7 +177,7 @@ function SessionFilesBody({
             </Text>
           ) : null}
           {/* `bg-secondary`: in dark mode `card` equals the sheet's `popover`. */}
-          <SettingsGroup className="bg-secondary">
+          <SettingsGroup>
             {group.files.map((file) => (
               <SettingsRow
                 key={file.key}

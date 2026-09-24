@@ -27,7 +27,7 @@ function deps(lost: LostTurn[], overrides: Partial<RuntimeRestartRecoveryDeps> =
   return { d, requeued, logs, reArmedSessions, drains };
 }
 
-describe('recoverTurnsAfterRuntimeRestart (Essentia 2026-08-25: wake under an open turn)', () => {
+describe('recoverTurnsAfterRuntimeRestart (SampleCo 2026-08-25: wake under an open turn)', () => {
   test('a box with no open turn is untouched', async () => {
     const { d, requeued, logs } = deps([]);
     const result = await recoverTurnsAfterRuntimeRestart({ sandboxId: 'sb', sessionId: 'ses' }, d);

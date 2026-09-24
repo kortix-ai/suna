@@ -50,7 +50,7 @@ RUN apt-get update \\
         ca-certificates \\
         curl \\
         git \\
-        build-essential \\
+        build-samplecol \\
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace

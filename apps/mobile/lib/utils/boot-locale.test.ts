@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { loadLocaleBundle, resolveBootLocale } from './boot-locale';
+import { loadLocaleBundle, resolveBootLocale, resolveUiLocale } from './boot-locale';
 import { SUPPORTED_LOCALES } from './locale-config';
 
 describe('resolveBootLocale', () => {
@@ -22,6 +22,20 @@ describe('resolveBootLocale', () => {
   test('a supported profile locale wins', () => {
     expect(resolveBootLocale({ user_metadata: { locale: 'fr' } })).toBe('fr');
     expect(resolveBootLocale({ user_metadata: { locale: 'ja' } })).toBe('ja');
+  });
+});
+
+describe('resolveUiLocale', () => {
+  test('picker off: English even for a user with another profile locale', () => {
+    expect(resolveUiLocale({ user_metadata: { locale: 'fr' } }, false)).toBe('en');
+    expect(resolveUiLocale({ user_metadata: { locale: 'ja' } }, false)).toBe('en');
+    expect(resolveUiLocale(null, false)).toBe('en');
+  });
+
+  test('picker on: the profile locale wins, as resolveBootLocale', () => {
+    expect(resolveUiLocale({ user_metadata: { locale: 'fr' } }, true)).toBe('fr');
+    expect(resolveUiLocale({ user_metadata: { locale: 'ko' } }, true)).toBe('en');
+    expect(resolveUiLocale(null, true)).toBe('en');
   });
 });
 

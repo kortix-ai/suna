@@ -8,6 +8,7 @@
 import { and, inArray, isNull, lt, or } from 'drizzle-orm';
 import { sunaAccountMigrations } from '@kortix/db';
 import { db } from '../../shared/db';
+import { runWorkerTick } from '../../shared/audit-scope';
 import { logger as appLogger } from '../../lib/logger';
 import { driveSunaMigration, LEASE_TTL_MS } from './suna-migration-runner';
 
@@ -56,7 +57,7 @@ export function startSunaMigrationWorker(): void {
   if (process.env.KORTIX_SUNA_MIGRATION_WORKER_ENABLED === 'false') return;
   if (g.__kortixSunaMigrationTimer) clearInterval(g.__kortixSunaMigrationTimer);
   timer = setInterval(() => {
-    tick().catch((err) => appLogger.error('[suna-migration-worker] tick failed', { error: err instanceof Error ? err.message : String(err) }));
+    runWorkerTick('suna-migration', tick).catch((err) => appLogger.error('[suna-migration-worker] tick failed', { error: err instanceof Error ? err.message : String(err) }));
   }, intervalMs());
   g.__kortixSunaMigrationTimer = timer;
 }

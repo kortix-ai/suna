@@ -615,6 +615,9 @@ Connectors an agent calls as tools. `add`, `rm`, and `policy set` edit the local
 | `kortix connectors credential <slug> [value]` | Set a connector's credential. |
 | `kortix connectors connect <slug>` | Start a one-click connect flow. |
 | `kortix connectors link <slug> [--expires <min>]` | Mint a shareable connect link for a human. |
+| `kortix connectors accounts <slug> [--default <label\|id>] [--json]` | List the accounts your calls may run as, with the identity each is connected as. `--default` pins one. |
+| `kortix connectors connections ls [--all] [--json]` | List connections with label, `CONNECTED AS`, owner, status, and default. |
+| `kortix connectors connections rename <id> <label…>` | Rename a connection. Only the label changes; no re-authorization. |
 | `kortix connectors apps [<query>] [--category <c>] [--cursor <c>] [--limit <n>] [--json]` | Search the Composio toolkit catalog — the slugs `add --provider composio --app <slug>` accepts. Alias: `kortix connectors toolkits`. Add `--pipedream` for the legacy Pipedream catalog. |
 | `kortix connectors catalog [<query>] [--cursor <c>] [--json]` | Browse the direct-connector catalogue. Needs the `connectors_api_discover` flag. |
 | `kortix connectors catalog show <id> [--json]` | Show one catalogue record's surfaces. |
@@ -811,7 +814,10 @@ allow. See [One vocabulary, two bindings](/docs/accounts#one-vocabulary-two-bind
 
 The audit commands read the centralized reconstruction log. Account and project
 lists are newest first. A session timeline is ordered by its monotonic
-`session_sequence`. `--all` follows every continuation cursor.
+`session_sequence`. `--all` follows every continuation cursor. The table shows
+each row's title (`EVENT`, for example "Revoked LLM gateway key") next to its
+`ACTION` (`gateway.key.revoke`); `--action` filters by action prefix. Every
+action and title: [Audit log actions](/docs/audit-actions).
 
 | Command | Effect |
 | --- | --- |

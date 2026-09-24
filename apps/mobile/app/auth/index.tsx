@@ -12,7 +12,7 @@
  */
 
 import * as React from 'react';
-import { View, Dimensions, Platform, ActivityIndicator } from 'react-native';
+import { View, Platform, ActivityIndicator, useWindowDimensions } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useColorScheme } from 'nativewind';
@@ -29,12 +29,11 @@ import { useAuthContext } from '@/contexts';
 import { useOAuthSignIn } from '@/hooks/useOAuthSignIn';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 
-const SCREEN_H = Dimensions.get('window').height;
-const HERO_H = Math.round(SCREEN_H * 0.8);
-
 export default function AuthScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { height: screenHeight } = useWindowDimensions();
+  const heroH = Math.round(screenHeight * 0.8);
   // NativeWind's resolved scheme drives the CSS variables behind every
   // Button fill, so the screen's own colors read from the same source.
   const { colorScheme } = useColorScheme();
@@ -59,7 +58,7 @@ export default function AuthScreen() {
       <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
       <View style={{ flex: 1, backgroundColor: colors.background }}>
         {/* Hero — the Kortix mark forming out of a flow field (top half) */}
-        <View style={{ height: HERO_H, width: '100%' }}>
+        <View style={{ height: heroH, width: '100%' }}>
           {/* The hero runs 80% of the screen, so a centred mark lands near the
               middle. Bias it up into the field's clear upper half. */}
           <KortixCurrents markCenterY={0.4} tone={scheme} paused={!isFocused} />
@@ -74,7 +73,7 @@ export default function AuthScreen() {
               colors.background,
             ]}
             locations={[0, 0.35, 0.78, 1]}
-            style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: HERO_H * 0.5 }}
+            style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: heroH * 0.5 }}
             pointerEvents="none"
           />
         </View>

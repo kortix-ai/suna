@@ -15,7 +15,6 @@ import {
   Alert,
   RefreshControl,
   ActivityIndicator,
-  Platform,
   LayoutAnimation,
 } from 'react-native';
 import { Pressable as GestureHandlerPressable } from 'react-native-gesture-handler';
@@ -48,6 +47,7 @@ import { SearchBar } from '@/components/kortix/SearchBar';
 import type { PageTab } from '@/stores/tab-store';
 import { PageHeader } from '@/components/kortix/page-header';
 import { PageContent } from '@/components/kortix/page-content';
+import { MONO_FONT_FAMILY } from '@/lib/utils/mono-font';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 
@@ -171,7 +171,7 @@ function useMemory(sandboxUrl: string | undefined) {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const monoFont = Platform.OS === 'ios' ? 'Menlo' : 'monospace';
+const monoFont = MONO_FONT_FAMILY;
 
 function formatDate(dateStr: string): string {
   try {

@@ -1451,7 +1451,7 @@ export function CommandPalette() {
    *
    * This was `if (!hasQuery || projectId) return []` — workspaces were
    * suppressed the moment a workspace was open, which is where the palette
-   * lives essentially all the time. The effect was that typing a workspace
+   * lives samplecolly all the time. The effect was that typing a workspace
    * name into ⌘K found nothing, and the switcher was reachable only by first
    * selecting a row buried in Navigation. Removing the `projectId` clause is
    * the single change that makes ⌘K → name → Enter work.

@@ -450,6 +450,18 @@ Consumers of `size="icon-md"`: `components/kortix/composer.tsx` (add, Stop,
 send) and `components/session/SessionChatInput.tsx` (AutoContinue). Each passes
 `hitSlop={COMPOSER_CONTROL_HIT_SLOP}` (4pt), so the touch target stays 44pt.
 
+### button.tsx default `hitSlop` — DEVIATES (2026-09-24, COR-153)
+
+Stock passes `hitSlop` through untouched, so every `Button` under 44pt had a
+touch target under the 44pt HIG minimum unless the call site remembered a
+slop. Decision: when the caller passes no `hitSlop`, `Button` uses
+`defaultButtonHitSlop(size)` from `lib/ui/hit-target.ts` (pure, pinned by
+`hit-target.test.ts`): `icon` 2pt all sides, `icon-md` 4pt all sides,
+`icon-sm` 8pt above/below and 4pt at the sides (its neighbours sit 2pt away),
+`default` 2pt and `sm` 4pt above/below, `lg`/`xl` none. An explicit `hitSlop`
+always wins. No visual change. Part of the same `button.tsx` deviation.
+Re-apply after any `add --all --overwrite`.
+
 ### input.tsx chrome — DEVIATES (2026-09-14, supersedes the 2026-09-05 decision below)
 Jay: no input has a border, the placeholder was too small, and input text
 used a different font from the rest of the UI. Stock renders a bordered

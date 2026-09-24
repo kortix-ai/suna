@@ -7,8 +7,8 @@ import {
   parseFileMentionReferences,
   parseFileReferences,
   parseProjectReferences,
-  parseReplyContext,
   parseSessionReferences,
+  stripReplyContexts,
   stripSystemPtyText,
 } from './message-parsing';
 
@@ -214,7 +214,7 @@ export function extractMinimapItem(turn: Turn): MinimapItem | null {
   const fileParts = parts.filter(isFilePart) as FilePart[];
 
   const raw = stripSystemPtyText(textParts.map((p) => p.text ?? '').join('\n'));
-  const { cleanText: afterReply } = parseReplyContext(raw);
+  const afterReply = stripReplyContexts(raw);
   const { cleanText: afterFiles, files: uploads } = parseFileReferences(afterReply);
   const { cleanText: afterProjects } = parseProjectReferences(afterFiles);
   const { cleanText: afterFileMentions, files: fileMentions } =

@@ -21,7 +21,7 @@ import { logger } from './logger'
 /**
  * What the convergence pass is doing RIGHT NOW, for the proxy's not-ready
  * answers (X-Kortix-Boot-Phase). A pass that installs a new OpenCode pin can
- * hold a box in "not ready" for a minute or more (Essentia 2026-08-25:
+ * hold a box in "not ready" for a minute or more (SampleCo 2026-08-25:
  * 1.18.19 → 1.18.23 on resume, 53 s first init on top); the API's boot budget
  * must be able to tell "still working" from "stuck", and this is the signal.
  */

@@ -1,5 +1,6 @@
 import { WebMcpTools } from '@/components/agent-discovery/webmcp-tools';
 import { BrowserNoiseGuard } from '@/components/browser-noise-guard';
+import { DesktopBackButton } from '@/components/desktop/desktop-back-button';
 import { DesktopChrome } from '@/components/desktop/desktop-chrome';
 import { DesktopUrlPrompt } from '@/components/desktop/desktop-url-prompt';
 import { ThemeProvider } from '@/components/home/theme-provider';
@@ -391,6 +392,9 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                     <RouterBridge />
                     <BrowserNoiseGuard />
                     <DesktopChrome />
+                    {/* The window's one Back: every screen gets an exit on the
+                    desktop shell unless its shell navigates already. */}
+                    <DesktopBackButton />
                     <DesktopUrlPrompt />
                     <ReactQueryProvider>
                       <Toaster />

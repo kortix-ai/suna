@@ -10,6 +10,7 @@ import { SettingsHeader } from './SettingsHeader';
 import * as Haptics from 'expo-haptics';
 import Constants from 'expo-constants';
 import { log } from '@/lib/logger';
+import { KORTIX_WEB_URL } from '@/lib/kortix-web';
 
 interface BetaPageProps {
   visible: boolean;
@@ -34,7 +35,7 @@ export function BetaPage({ visible, onClose }: BetaPageProps) {
 
   const handleVisitWeb = React.useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Linking.openURL('https://kortix.com');
+    Linking.openURL(KORTIX_WEB_URL);
   }, []);
 
   if (!visible) return null;

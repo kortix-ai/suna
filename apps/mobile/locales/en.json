@@ -1149,7 +1149,7 @@
     "connected": "Connected"
   },
   "account": {
-    "title": "Account",
+    "title": "Settings",
     "preferences": "Preferences",
     "sounds": "Sounds",
     "workspace": "Workspace",
@@ -1157,7 +1157,9 @@
     "help": "Help",
     "docs": "Docs",
     "support": "Support",
-    "advanced": "Advanced"
+    "advanced": "Advanced",
+    "logOut": "Log out",
+    "project": "Project"
   },
   "profile": {
     "changePhoto": "Change profile photo",

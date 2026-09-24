@@ -1,22 +1,25 @@
 /**
- * Audit rows for the Kortix Git proxy (`/v1/git/*`).
+ * Audit attribution for the Kortix Git proxy (`/v1/git/*`).
  *
- * The proxy authenticates its own git Basic/Bearer credential, so the API
- * request middleware (`auditApiRequest`) never sees an identity here and wrote
- * no row for a clone or a push. Every transfer now writes one canonical row:
+ * The proxy authenticates its own git Basic/Bearer credential, so the auth
+ * middleware never sees an identity here. It used to write its own row per
+ * clone and push; it now writes INTO the request's audit scope and the server
+ * edge writes the one row (shared/audit-scope.ts):
  *
- *   git.clone  POST git-upload-pack  (clone and fetch; ref discovery is not a
- *              transfer and is not recorded)
- *   git.push   POST git-receive-pack, with every ref update (ref, old → new
- *              sha, create|update|delete) and, for a refused push, the reason
- *              per ref.
+ *   - `bindGitProxyPrincipal` — called by the proxy's authenticator the moment
+ *     the credential is proven, so EVERY git request is attributed: ref
+ *     discovery, upload-pack, receive-pack, and a refused attempt too.
+ *   - `annotateGitTransfer` — names the transfer on its row:
+ *       git.clone  POST git-upload-pack (clone and fetch)
+ *       git.push   POST git-receive-pack, with every ref update (ref, old → new
+ *                  sha, create|update|delete) and, when refused, the reason
+ *                  per ref.
  *
  * Attribution follows spec docs/specs/2026-09-22-agents-as-principals.md §2:
  * a session credential names the agent, the human it acts on behalf of, and
- * the initiator (shared/agent-audit-attribution.ts); a person names the user;
- * a monitor box or an account API key is `system`.
- *
- * Best effort: an audit failure never fails the git operation.
+ * the initiator (shared/agent-audit-attribution.ts, resolved when the row is
+ * written); a person names the user; a monitor box or an account API key is
+ * `system`.
  */
 import type { GitPrincipal } from './ref-policy';
 import type { RefUpdate } from './receive-pack';
@@ -24,7 +27,8 @@ import { isCreate, isDelete } from './receive-pack';
 import type { ProjectRow } from '../projects/lib/serializers';
 import { loadTokenBinding } from '../iam/actor';
 import { agentPrincipalModeFor } from '../iam/agent-principal';
-import { recordAuditEvent, type AuditActorType, type AuditOutcome } from '../shared/audit';
+import type { AuditActorType, AuditOutcome } from '../shared/audit';
+import { annotateAuditEvent, bindAuditPrincipal } from '../shared/audit-scope';
 import { resolveAgentAuditAttribution, type AgentAuditAttribution } from '../shared/agent-audit-attribution';
 
 export type GitAuditAction = 'git.clone' | 'git.push';
@@ -106,54 +110,61 @@ async function resolveGitPrincipalAttribution(
   });
 }
 
-export async function recordGitProxyAudit(input: {
+/**
+ * Record who is calling, in the request's audit scope. Called by the proxy's
+ * authenticator on success (memoized or not). A session's on-behalf-of human
+ * needs a token-binding lookup; it is resolved when the row is written, never
+ * on the git request path.
+ */
+export function bindGitProxyPrincipal(principal: GitPrincipal, project: ProjectRow): void {
+  const envelope = gitPrincipalEnvelope(principal);
+  const tokenId = 'tokenId' in principal ? principal.tokenId : null;
+  bindAuditPrincipal({
+    accountId: project.accountId,
+    projectId: project.projectId,
+    sessionId: envelope.sessionId,
+    actorType: envelope.actorType,
+    actorUserId: envelope.actorUserId,
+    authoritativeSource: envelope.source,
+    authMethod: {
+      kind: 'git',
+      principal: principal.kind,
+      ...(tokenId ? { token_id: tokenId } : {}),
+    },
+    lateAttribution:
+      principal.kind === 'session'
+        ? async () => {
+            const agent = await resolveGitPrincipalAttribution(principal, project.projectId);
+            return agent
+              ? {
+                  actorUserId: agent.actorUserId,
+                  agentId: agent.agentId,
+                  agentName: agent.agentName,
+                  onBehalfOfUserId: agent.onBehalfOfUserId,
+                  initiatorActorType: agent.initiatorActorType,
+                  initiatorActorId: agent.initiatorActorId,
+                }
+              : null;
+          }
+        : undefined,
+  });
+}
+
+/** Name a clone or push on its request's row, with the refs a push moved. */
+export function annotateGitTransfer(input: {
   action: GitAuditAction;
-  project: ProjectRow;
-  principal: GitPrincipal;
-  httpStatus: number;
+  projectId: string;
   outcome: AuditOutcome;
   refs?: GitRefAuditEntry[];
-  durationMs?: number;
-  ip?: string | null;
-  userAgent?: string | null;
-}): Promise<void> {
-  try {
-    const envelope = gitPrincipalEnvelope(input.principal);
-    const agent = await resolveGitPrincipalAttribution(input.principal, input.project.projectId);
-    await recordAuditEvent({
-      accountId: input.project.accountId,
-      projectId: input.project.projectId,
-      sessionId: envelope.sessionId,
-      actorType: envelope.actorType,
-      actorUserId: agent ? agent.actorUserId : envelope.actorUserId,
-      ...(agent
-        ? {
-            agentId: agent.agentId,
-            agentName: agent.agentName,
-            onBehalfOfUserId: agent.onBehalfOfUserId,
-            initiatorActorType: agent.initiatorActorType,
-            initiatorActorId: agent.initiatorActorId,
-          }
-        : {}),
-      authoritativeSource: envelope.source,
-      outcome: input.outcome,
-      action: input.action,
-      resourceType: 'git_repository',
-      resourceId: input.project.projectId,
-      httpStatus: input.httpStatus,
-      durationMs: input.durationMs ?? null,
-      ip: input.ip ?? null,
-      userAgent: input.userAgent ?? null,
-      metadata: {
-        via: 'git_proxy',
-        ...(input.refs ? { refs: input.refs } : {}),
-      },
-    });
-  } catch (error) {
-    console.warn('[git-proxy] audit write failed', {
-      action: input.action,
-      projectId: input.project.projectId,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
+}): void {
+  annotateAuditEvent({
+    action: input.action,
+    resourceType: 'git_repository',
+    resourceId: input.projectId,
+    outcome: input.outcome,
+    metadata: {
+      via: 'git_proxy',
+      ...(input.refs ? { refs: input.refs } : {}),
+    },
+  });
 }

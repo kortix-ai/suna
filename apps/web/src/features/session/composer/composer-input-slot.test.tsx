@@ -5,8 +5,8 @@
  * This is a real bug that shipped: the approval and permission notices had no
  * `w-full`, so `items-center` sized them to their CONTENT — the card was as
  * wide as whatever tool name happened to be pending, which is why it looked
- * broken only sometimes. `QuestionPrompt` and the reply bar already carried
- * `w-full`; nothing enforced it, so the next notice added forgot again.
+ * broken only sometimes. `QuestionPrompt` already carried `w-full`; nothing
+ * enforced it, so the next notice added forgot again.
  *
  * Renders the REAL component and reads its root class, so the guard cannot
  * drift from what the session actually mounts. `SessionPermissionPrompt` needs

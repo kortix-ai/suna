@@ -196,7 +196,7 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
                     <Text style={{ fontSize: 18, fontFamily: 'Roobert-Medium', color: fg }}>
                       {displayName}
                     </Text>
-                    <Pressable onPress={handleOpenRename} hitSlop={8}>
+                    <Pressable onPress={handleOpenRename} hitSlop={8} accessibilityRole="button" accessibilityLabel="Rename">
                       <Pencil size={14} color={muted} />
                     </Pressable>
                   </View>
@@ -324,7 +324,6 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
         enablePanDownToClose
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
-        android_keyboardInputMode="adjustResize"
         onDismiss={() => setRenameDraft('')}
       >
         <BottomSheetView

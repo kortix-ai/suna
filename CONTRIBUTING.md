@@ -62,6 +62,27 @@ Editing `.gitleaks.toml`? Every allowlist must be `condition = "AND"` with `rege
 allowlist exempts the whole file — that is exactly how a plaintext `apps/api/.env` once scanned as
 `no leaks found`. `secrets-guard.yml` fails the build if a path-only allowlist reappears.
 
+## Translation catalogs
+
+`apps/web/translations/<locale>.json` holds the UI text for 9 locales. Each catalog is exactly
+what `JSON.stringify(value, null, 2)` writes, and keeps its keys in the order they were added.
+Nothing at runtime reads that order, but every merge and review diff does, and
+`starterPrompts.items` must follow `STARTER_PROMPTS` (`src/lib/starter-prompts.test.ts`).
+
+- **Merges go key by key.** `.gitattributes` routes the catalogs to an order-preserving merge
+  driver, and `pnpm install` registers it (`scripts/register-merge-drivers.sh`). Two branches
+  that add keys do not conflict. A key changed two different ways gets conflict markers around
+  that key only.
+- **Never resolve a catalog conflict with a program that rebuilds the file.** On 2026-09-22 one
+  did: it reordered 473 of 840 objects in every catalog and brought back 4 deleted keys. To redo
+  a conflicted catalog with the driver, run `pnpm install`, then
+  `git checkout -m apps/web/translations/<locale>.json` and `git add` it.
+- **CI checks it.** `i18n-catalogs.yml` runs on every pull request that touches a catalog: each
+  one must be canonical and keep the base branch's key order. The same check, locally:
+  `node apps/web/scripts/i18n-catalogs.mjs check --base=origin/main`. Repair a reorder without
+  changing a value: `node apps/web/scripts/i18n-catalogs.mjs restore-order --from=origin/main`.
+  An intentional reorder takes the `i18n-reorder` label.
+
 ## Testing
 
 This repo has one local-first test system. See **[tests/README.md](./tests/README.md)**

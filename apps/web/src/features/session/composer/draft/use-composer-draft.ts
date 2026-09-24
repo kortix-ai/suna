@@ -23,6 +23,8 @@ import { clearDraft, readDraft, writeDraft } from './composer-draft-store';
  */
 const SAVE_DEBOUNCE_MS = 400;
 
+const NO_QUOTES: readonly string[] = [];
+
 export interface UseComposerDraftInput {
   active?: boolean;
   /** Omitted or null → the composer persists nothing (marketing demo, tests). */
@@ -31,6 +33,12 @@ export interface UseComposerDraftInput {
   /** The editor element exists, so the handle's methods are safe to call. */
   editorReady: boolean;
   attachedFiles: readonly AttachedFile[];
+  /**
+   * The reply quotes in the card above the input, in order. Saved with the
+   * document; a change to the list schedules a save on its own, because a
+   * quote can arrive with no keystroke after it.
+   */
+  quotes?: readonly string[];
   /** An explicit prefill outranks a stored draft — see `shouldRestoreDraft`. */
   hasPrefill: boolean;
   /** Called once, with the validated draft, when it is this draft's turn. */
@@ -59,6 +67,7 @@ export function useComposerDraft({
   editorRef,
   editorReady,
   attachedFiles,
+  quotes = NO_QUOTES,
   hasPrefill,
   onRestore,
 }: UseComposerDraftInput): UseComposerDraftResult {
@@ -72,6 +81,7 @@ export function useComposerDraft({
   const scopeRef = useRef(scope);
   const userIdRef = useRef(userId);
   const filesRef = useRef(attachedFiles);
+  const quotesRef = useRef(quotes);
   const pendingRef = useRef<{ doc: JSONContent; isEmpty: boolean } | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const restoredKeyRef = useRef<string | null>(null);
@@ -111,6 +121,7 @@ export function useComposerDraft({
         doc: pending.doc,
         documentIsEmpty: pending.isEmpty,
         files: filesRef.current,
+        quotes: quotesRef.current,
         userId: userIdRef.current,
       }),
     );
@@ -135,6 +146,21 @@ export function useComposerDraft({
     },
     [flush],
   );
+
+  /**
+   * A quote list change is a draft change. The snapshot is the live editor's
+   * document, read now, the same pair `handleDocChange` would receive.
+   * Skipped while the list is unchanged, so the mount itself never writes: an
+   * empty first snapshot would overwrite the stored draft before it restores.
+   */
+  useEffect(() => {
+    if (quotesRef.current === quotes) return;
+    quotesRef.current = quotes;
+    const editor = editorRef.current;
+    if (!editorReady || !editor) return;
+    const doc = editor.getDocument();
+    if (doc) handleDocChange(doc, editor.isEmpty());
+  }, [quotes, editorReady, editorRef, handleDocChange]);
 
   const clearSavedDraft = useCallback(() => {
     if (timerRef.current !== null) {
