@@ -58,6 +58,12 @@ export interface TagBlockOptions {
   ignoreCase?: boolean;
   /** Stop after this many blocks. `limit: 1` is what a non-global regex matched. */
   limit?: number;
+  /**
+   * The body may not cross a line terminator, as `.*?` read it without the `s`
+   * flag: an opening tag whose closing tag is on a later line opens nothing, and
+   * the scan goes on to the next opening tag.
+   */
+  singleLine?: boolean;
 }
 
 /** A `<name …/>` element. */
@@ -81,6 +87,15 @@ const NEWLINE = 10; // \n
 const WHITESPACE = /\s/;
 /** A regex `\w` without the `u` flag: `[A-Za-z0-9_]`. */
 const WORD = /\w/;
+
+/** The first line terminator (`\n`, `\r`, U+2028, U+2029) at or after `from`, or the length of the text. */
+function lineEnd(text: string, from: number): number {
+  for (let i = from; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code === 10 || code === 13 || code === 0x2028 || code === 0x2029) return i;
+  }
+  return text.length;
+}
 
 /** `A`–`Z` to `a`–`z` and nothing else: the case folding of a regex `i` flag without `u`. */
 function fold(code: number): number {
@@ -122,13 +137,20 @@ export function indexOfIgnoreCase(text: string, needle: string, from = 0): numbe
 export function tagBlocks(text: string, name: string, options: TagBlockOptions = {}): TagBlock[] {
   const blocks: TagBlock[] = [];
   if (typeof text !== 'string') return blocks;
-  const { attributes = 'none', ignoreCase = false, limit = Number.POSITIVE_INFINITY } = options;
+  const { attributes = 'none', ignoreCase = false, limit = Number.POSITIVE_INFINITY, singleLine = false } = options;
   const open = `<${name}`;
   const close = `</${name}>`;
   const find = ignoreCase
     ? (needle: string, from: number) => indexOfIgnoreCase(text, needle, from)
     : (needle: string, from: number) => text.indexOf(needle, from);
   let from = 0;
+  // A `singleLine` opener can fail after its searches ran, and the next opener
+  // may start before where they stopped. These remember the next `>`, closing
+  // tag, and line end at or after the last position each was searched from, so
+  // no stretch of text is searched twice. -2: not searched yet.
+  let nextGt = -2;
+  let nextClose = -2;
+  let nextLineEnd = -2;
   while (blocks.length < limit) {
     const index = find(open, from);
     if (index === -1) break;
@@ -146,13 +168,22 @@ export function tagBlocks(text: string, name: string, options: TagBlockOptions =
         from = after;
         continue;
       }
-      gt = text.indexOf('>', after);
+      if (nextGt < after) nextGt = text.indexOf('>', after);
+      gt = nextGt;
       // No `>` after this opener means none after any later opener either.
       if (gt === -1) break;
     }
-    const closeAt = find(close, gt + 1);
+    if (nextClose < gt + 1) nextClose = find(close, gt + 1);
+    const closeAt = nextClose;
     // Likewise: no closing tag after this opener, none after a later one.
     if (closeAt === -1) break;
+    if (singleLine) {
+      if (nextLineEnd < gt + 1) nextLineEnd = lineEnd(text, gt + 1);
+      if (nextLineEnd < closeAt) {
+        from = after;
+        continue;
+      }
+    }
     const end = closeAt + close.length;
     const raw = attributes === 'none' ? '' : text.slice(after, gt);
     blocks.push({
