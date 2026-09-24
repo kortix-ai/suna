@@ -129,8 +129,7 @@ export function registerAccountRoutes(): void {
       // abstraction that hides the one real asymmetry that matters — this
       // route's bootstrap failure is fatal (500 below), /me's is not.
       let memberships = await loadMemberships();
-      const bootstrapped = memberships.length === 0;
-      if (bootstrapped) {
+      if (memberships.length === 0) {
         try {
           await bootstrapPersonalAccount(userId, userEmail);
         } catch (err) {
@@ -151,12 +150,14 @@ export function registerAccountRoutes(): void {
       // wrapping both in one transaction would contradict the per-invite
       // isolation `autoClaimPendingInvites` already does internally (one bad
       // invite must not roll back the others, or the account just bootstrapped).
-      const claimed = await autoClaimPendingInvites(userId, userEmail);
+      await autoClaimPendingInvites(userId, userEmail);
 
-      // Re-read only when the set can have changed. On a high-latency DB link
-      // the unconditional re-read was one extra round trip (2 queries) on every
-      // list, which is the call every page load starts with.
-      if (bootstrapped || claimed > 0) memberships = await loadMemberships();
+      // Re-read unconditionally. Skipping it when this request claimed nothing
+      // races a concurrent list: the first call of a fresh sign-in claims the
+      // invite between this call's first read and its claim, so this call sees
+      // no pending invite, claims 0, and would return the list without the
+      // workspace the user was just added to.
+      memberships = await loadMemberships();
       if (memberships.length === 0) {
         console.warn(`[accounts] No memberships for ${userId} after bootstrap+claim`);
         return c.json({ error: 'Failed to initialize account' }, 500);
