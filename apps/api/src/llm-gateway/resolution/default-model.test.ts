@@ -70,6 +70,32 @@ afterEach(() => {
 
 const PRINCIPAL_BASE = { userId: 'u1', accountId: 'a1', projectId: 'p1' };
 
+describe('isModelServableForAccount — whose personal keys the probe may use', () => {
+  const principals: Array<Record<string, unknown>> = [];
+  beforeEach(() => {
+    principals.length = 0;
+    spyOn(resolveCandidatesModule, 'resolveCandidates').mockImplementation(
+      (async (principal: Record<string, unknown>) => {
+        principals.push(principal);
+        return [{ provider: 'anthropic' }];
+      }) as unknown as typeof resolveCandidatesModule.resolveCandidates,
+    );
+  });
+
+  test('a shared session probes with no personal user, so a personal key cannot pass', async () => {
+    // A Teams group chat or channel: its session is shared, and the gateway
+    // will resolve it with personalUserId null. A probe that let the
+    // checker's own keys count would approve a model that then fails.
+    await isModelServableForAccount({ ...PRINCIPAL_BASE, freeModelsOnly: false, model: 'anthropic/x', personalUserId: null });
+    expect(principals[0]).toMatchObject({ userId: 'u1', personalUserId: null });
+  });
+
+  test('absent keeps the legacy principal — the checker is its own personal user', async () => {
+    await isModelServableForAccount({ ...PRINCIPAL_BASE, freeModelsOnly: false, model: 'anthropic/x' });
+    expect(principals[0]).not.toHaveProperty('personalUserId');
+  });
+});
+
 describe('isModelServableForAccount — never 500s a passive servability check', () => {
   test('resolveCandidates throwing a typed GatewayResolutionError → false, not a throw', async () => {
     resolveCandidatesImpl = async () => {

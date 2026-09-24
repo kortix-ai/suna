@@ -3475,8 +3475,11 @@ projectsApp.openapi(
     const catalog = await servableProjectCatalog({
       projectId,
       accountId,
-      // Spec 2026-09-22 §2.3: personal provider keys of the on-behalf-of human only.
-      principalUserId: await requestPersonalOwner(c, loaded),
+      // Keys shared with the whole project count for the caller as a member;
+      // personal provider keys only for the on-behalf-of human (spec
+      // 2026-09-22 §2.3). Same split as the sandbox's own list.
+      principalUserId: loaded.userId,
+      personalUserId: await requestPersonalOwner(c, loaded),
     });
     return c.json(catalog);
   },

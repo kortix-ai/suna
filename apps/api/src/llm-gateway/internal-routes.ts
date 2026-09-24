@@ -130,7 +130,8 @@ export function createInternalGatewayRoutes() {
       const catalog = await servableProjectCatalog({
         projectId: p.projectId,
         accountId: p.accountId,
-        principalUserId: p.personalUserId === undefined ? p.userId : p.personalUserId,
+        principalUserId: p.userId,
+        personalUserId: p.personalUserId === undefined ? p.userId : p.personalUserId,
       });
       return c.json({ models: catalog.models });
     }
