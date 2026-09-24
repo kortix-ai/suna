@@ -598,3 +598,52 @@ describe('dispatchSlackEvent — a mention addressed to another workspace bot', 
     expect(deliverCalls, 'the correctly-addressed bot went silent — this fix must not cost that').toBe(1);
   });
 });
+
+/**
+ * `chat_threads` is unique per (workspace, thread) across every project, so a
+ * thread names exactly one owning project. A reply is delivered into THAT
+ * project's session, so the sender must be authorized against that project —
+ * not against the project the channel resolves to now (after `/kortix use`
+ * re-binds a channel, its older threads still belong to the original project).
+ */
+describe('spawnAgentTurn — a thread owned by another project', () => {
+  const project2 = { ...project, projectId: 'proj-2', accountId: 'acc-2' };
+  const foreignThread = { sessionId: 'sess-p1', projectId: 'proj-1', createdBy: 'user-1', metadata: {} };
+
+  test('the sender is re-authorized against the thread project; without access there, nothing is delivered', async () => {
+    config.SLACK_REQUIRE_USER_IDENTITY = true;
+    dbResults = [
+      [project2], // dispatch project lookup
+      [{ userId: 'user-1' }], // Slack identity exists
+      [{ userId: 'user-1' }], // member of the dispatch project's account
+      [foreignThread], // the thread belongs to proj-1
+      [project], // re-dispatch: the thread project's account lookup
+      [{ userId: 'user-1' }], // Slack identity exists
+      [], // NOT a member of proj-1's account
+    ];
+
+    await spawnAgentTurn('proj-2', envelope, event);
+
+    expect(deliverCalls).toBe(0);
+    expect(createSessionCalls).toBe(0);
+    expect(ephemerals).toHaveLength(1);
+    expect(ephemerals[0].text).toBe("You're connected, but don't have access to this project yet.");
+  });
+
+  test('a per-project app refuses a thread its project does not own, with a notice and no delivery', async () => {
+    config.SLACK_REQUIRE_USER_IDENTITY = true;
+    dbResults = [
+      [project2],
+      [{ userId: 'user-1' }],
+      [{ userId: 'user-1' }],
+      [foreignThread],
+    ];
+
+    await spawnAgentTurn('proj-2', envelope, event, { ownThreadsOnly: true });
+
+    expect(deliverCalls).toBe(0);
+    expect(createSessionCalls).toBe(0);
+    expect(messages).toHaveLength(1);
+    expect(messages[0].text).toContain('belongs to a different Kortix project');
+  });
+});

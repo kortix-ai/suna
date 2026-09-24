@@ -21,7 +21,12 @@ interface StatePayload {
 }
 
 function stateSigningKey(): string {
-  return config.SLACK_SIGNING_SECRET ?? 'kortix-dev-state-key';
+  // `SLACK_SIGNING_SECRET` defaults to '' (config.ts optStr), so a `??`
+  // fallback never fired and the key could be empty. Refuse instead.
+  if (!config.SLACK_SIGNING_SECRET) {
+    throw new Error('SLACK_SIGNING_SECRET must be configured for Slack OAuth state signing');
+  }
+  return config.SLACK_SIGNING_SECRET;
 }
 
 function signState(payload: Omit<StatePayload, 'nonce'>): string {
