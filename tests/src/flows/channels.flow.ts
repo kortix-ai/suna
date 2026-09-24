@@ -1124,3 +1124,45 @@ flow(
     });
   },
 );
+
+// CHN-29 — The chat identity consent screen reads which Slack or Teams account
+// a login link would link BEFORE the user presses Connect. The preview is
+// authenticated and read-only, and it applies the same token check as /bind:
+// a token that does not verify never names an account. A correctly signed
+// token needs the deployment's signing secret, so the local profile covers the
+// authentication and refusal paths only.
+flow(
+  "CHN-29",
+  {
+    domain: "channels",
+    routes: [
+      "POST /v1/channels/slack/identity/preview",
+      "POST /v1/channels/teams/identity/preview",
+    ],
+  },
+  async (ctx) => {
+    for (const service of ["slack", "teams"] as const) {
+      const path = `/v1/channels/${service}/identity/preview` as const;
+
+      await ctx.step(`Anonymous callers cannot preview a ${service} login link`, async () => {
+        const r = await ctx.client.as(ctx.P.ANON).post(path, { token: "x.y" });
+        r.status(401);
+      });
+
+      await ctx.step(`A signed-in user with a forged ${service} token is refused and sees no account`, async () => {
+        const r = await ctx.client.as(ctx.P.OWNER).post(path, { token: "e30.forged-signature" });
+        // 410: the token does not verify. 404/503: the feature is off or
+        // unconfigured on this deployment. Never 200.
+        r.status([404, 410, 503]);
+        if (r.text().includes("chatUserId")) {
+          throw new Error(`CHN-29: ${service} preview named an account for a forged token`);
+        }
+      });
+
+      await ctx.step(`A ${service} preview without a token is a validation error`, async () => {
+        const r = await ctx.client.as(ctx.P.OWNER).post(path, {});
+        r.status([400, 404, 503]);
+      });
+    }
+  },
+);
