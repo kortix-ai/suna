@@ -38,11 +38,41 @@ const HEX40 = /^[0-9a-f]{40}$/;
  */
 export type ConfigMode = 'follow-base';
 
-/** `project` compiles every agent. `agent:<name>` compiles one selected agent. */
-export type ConfigReleaseVariant = 'project' | `agent:${string}`;
+/**
+ * `project` compiles every agent. `agent:<name>` compiles one selected agent.
+ * `none` compiles an EMPTY OpenCode config: the answer for a session with no
+ * usable agent (config-releases/session-agent.ts). Its etag is non-null, so a
+ * session whose agent the manifest dropped still gets a release ID and still
+ * boots, instead of `release_id: null` and no config at all.
+ */
+export type ConfigReleaseVariant = 'project' | 'none' | `agent:${string}`;
 
 /** One tracked file: `[path relative to the config dir, git mode, blob ID]`. */
 export type ConfigReleaseFile = [path: string, mode: string, blob: string];
+
+/**
+ * The manifest no longer declares the agent this session was created with.
+ *
+ * Per-SESSION, not per-release: two sessions can share one release ID and only
+ * one of them be re-pointed, so this is attached by `toDescriptor` and is
+ * deliberately NOT part of `ConfigRelease` (which is cached per project,
+ * commit and variant) nor of `release_id`.
+ *
+ * LANE D / daemon: render `reason` verbatim into the session notice
+ * (`config-release/notice.ts`, composed into OpenCode `instructions` at
+ * `lifecycle.ts:399-407`). It is written as a finished sentence for the agent
+ * and the user; the daemon adds no wording of its own.
+ */
+export interface ConfigReleaseAgentRepoint {
+  /** The agent name `project_sessions.agent_name` held. */
+  from: string;
+  /** The project's declared default agent, or null when there was none. */
+  to: string | null;
+  /** True when the release is built for `to`. False ⇒ the session runs no agent. */
+  applied: boolean;
+  /** One finished sentence, for the session notice, `GET /config`, the web header and the CLI. */
+  reason: string;
+}
 
 export interface ConfigReleaseDescriptor {
   format: typeof CONFIG_RELEASE_FORMAT;
@@ -58,10 +88,16 @@ export interface ConfigReleaseDescriptor {
   compiled_governance_etag: string | null;
   /** Why there is no release, or null. */
   reason: string | null;
+  /** Set only when the manifest dropped the session's agent. */
+  agent_repoint: ConfigReleaseAgentRepoint | null;
 }
 
-/** The mode-independent part of a descriptor. Cached per `(project, commit, variant)`. */
-export type ConfigRelease = Omit<ConfigReleaseDescriptor, 'mode'>;
+/**
+ * The session-independent part of a descriptor. Cached per
+ * `(project, commit, variant)`, which is why the per-session `agent_repoint`
+ * is not part of it.
+ */
+export type ConfigRelease = Omit<ConfigReleaseDescriptor, 'mode' | 'agent_repoint'>;
 
 export class ConfigArchiveTooLargeError extends Error {
   constructor(readonly limit: number) {
@@ -292,12 +328,16 @@ export async function storeConfigArchive(
   return outcome;
 }
 
+/** The `none` variant's compiled governance: a valid, empty OpenCode config. */
+export const EMPTY_GOVERNANCE = '{}';
+
 async function compileGovernance(
   project: GitBackedProject,
   commit: string,
   variant: ConfigReleaseVariant,
 ): Promise<string | null> {
   if (variant === 'project') return resolveCompiledAgentConfigForSession(project, commit);
+  if (variant === 'none') return EMPTY_GOVERNANCE;
   return resolveSelectedAgentConfigForSession(project, variant.slice('agent:'.length), commit);
 }
 
@@ -432,13 +472,17 @@ export const COMPILED_GOVERNANCE_FAILED = 'compiled governance failed';
  */
 export function toDescriptor(
   release: ConfigRelease,
-  options: { repositoryAccess: boolean } = { repositoryAccess: true },
+  options: { repositoryAccess: boolean; agentRepoint?: ConfigReleaseAgentRepoint | null } = {
+    repositoryAccess: true,
+  },
 ): ConfigReleaseDescriptor {
   const mode: ConfigMode = 'follow-base';
+  const agent_repoint = options.agentRepoint ?? null;
   if (!options.repositoryAccess) {
     return {
       ...release,
       mode,
+      agent_repoint,
       // Governance-only release ID: a governance change still converges.
       release_id: configReleaseId(null, release.compiled_governance_etag),
       config_dir: null,
@@ -450,7 +494,7 @@ export function toDescriptor(
       reason: release.reason?.startsWith(COMPILED_GOVERNANCE_FAILED) ? release.reason : REPOSITORY_ACCESS_WITHHELD,
     };
   }
-  return { ...release, mode };
+  return { ...release, mode, agent_repoint };
 }
 
 export function __clearConfigReleaseCachesForTests(): void {

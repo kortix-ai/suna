@@ -385,16 +385,21 @@ OpenCode query and synchronization controllers to the sandbox runtime. Two
 sandboxes cannot share browser cache state when a snapshot exposes the same
 OpenCode id during adoption.
 
-After a project replaces its repository, `/start` rejects sessions from the
-previous repository by default. A recovery screen can resume an existing
-preserved workspace explicitly:
+After a project replaces its repository, a session created before the
+replacement still starts. It runs the project's CURRENT config release and
+converges like any other session. What stays true of it is physical: its
+`/workspace` clone came from the old repository while `origin` now resolves to
+the new one. The two histories are unrelated, so a push from that clone needs a
+rebase first.
+
+`repositoryMode: 'previous'` is accepted and changes nothing:
 
 ```tsx
 useSession(projectId, sessionId, { repositoryMode: 'previous' });
 ```
 
-This option cannot create a replacement workspace. Project Git access remains
-disabled because the session keeps its previous repository generation.
+The server reads it as telemetry. Keep it only for callers built against the
+older behaviour.
 
 Message retries keep the originating sandbox URL after navigation. A `404` or
 `410` message read stops automatic retries and preserves the cached transcript.

@@ -59,7 +59,9 @@ The platform never writes `/workspace` to do this. `/workspace` stays the full c
 
 The unit a session runs is a **config release**: one archive of the OpenCode config directory (`.kortix/opencode` unless the manifest sets `opencode.config_dir`) at a base commit, plus the agent config the API compiles from `kortix.yaml` and the agent files. The release ID covers both halves. A commit that changes neither produces the same release ID, so nothing restarts.
 
-Convergence runs after the box boots, after each resume and restart, at the end of a turn, when the base branch moves, and when you select **Reload config** or run `kortix sessions reload`. It never ends a turn. A running turn defers convergence to the turn end.
+Convergence runs at the **start of every turn**: a prompt on a box that is behind converges first, then runs. It also runs after the box boots, after each resume and restart, when the base branch moves, and when you select **Reload config** or run `kortix sessions reload`. Those are a warm-up — they move the box onto the current config while nobody waits, so the turn usually starts with nothing to do and pays nothing.
+
+Convergence never ends a turn. A turn that is already running blocks it, and the next turn start picks it up.
 
 1. The box asks the API which release it should run. The request carries no inputs: the answer is always the base branch's current release for that session.
 2. The daemon downloads the archive through the API and extracts it to `/opt/kortix/config/<release_id>`. It verifies every file against its Git blob ID, then seals the directory read-only. OpenCode reads its agents, skills, tools, and plugins from there.
@@ -72,6 +74,12 @@ A session ALWAYS runs the base branch's current config. There is no per-session 
 `/workspace` is your editable checkout. Read the config there, change it there — and the change reaches the running session once it is **pushed to the base branch**, after which the normal convergence picks it up. An edit that is only in `/workspace` changes nothing about how the session behaves, and the running agent is told so: its instructions name the commit its config comes from and say that `/workspace` may be behind it.
 
 The release copy is read-only, so an edit to the wrong copy fails with a permission error instead of silently doing nothing.
+
+#### When the configuration no longer declares a session's agent
+
+A session is created with an agent. If a later commit removes or renames that agent, the session moves to the project's default agent — once, and only when the session's owner may use that agent. Kortix records the move in the audit log and states it in the running agent's instructions, so the session says what happened.
+
+If the owner may not use the default agent, or the project declares no default, the session keeps no agent and no agent access. It still boots, and it reports the reason. Declare the agent again, set a default agent for the project, or ask a project manager for access to the default agent.
 
 #### Fallback
 
@@ -118,6 +126,21 @@ A reload that ends on a fallback reports an error, not a success.
 - For an older sandbox, `stale` compares the compiled agent config etag. The API omits `release` for it.
 - `stale` is `null` when Kortix cannot tell. It is never `false` in that case.
 - `mode` is always `follow-base`. `source` is `release` or `image-default`: where the running config comes from.
+
+The response carries a top-level `agent_repoint` only when the configuration dropped the session's agent. Kortix omits the key otherwise.
+
+```json
+{
+  "agent_repoint": {
+    "from": "<the agent the session was created with>",
+    "to": "<the project's default agent, or null>",
+    "applied": true,
+    "reason": "<one sentence, safe to show as-is>"
+  }
+}
+```
+
+`applied` is `true` when the session now runs `to`. It is `false` when the session holds no agent, and `reason` then says why.
 
 The `@kortix/sdk` type for `release` is `SessionConfigRelease`.
 
@@ -193,7 +216,7 @@ The daemon sends `KORTIX_TOKEN` only to the Kortix Git proxy. The proxy resolves
 
 ## The agent runtime
 
-The daemon launches OpenCode as `opencode serve --port 4096 --hostname 127.0.0.1`, with `OPENCODE_CONFIG_DIR` set to the project's config directory (default `.kortix/opencode`) inside the cloned repo. See [Agents](/docs/project/agents) for how a session picks an agent and its config.
+The daemon launches OpenCode as `opencode serve --port 4096 --hostname 127.0.0.1`, with `OPENCODE_CONFIG_DIR` set to the config the box currently runs. With config releases on, that is the read-only release directory under `/opt/kortix/config`. With the feature off, it is the project's config directory (default `.kortix/opencode`) inside the cloned repo. See [Agents](/docs/project/agents) for how a session picks an agent and its config.
 
 ## Transcript attachments and memory
 
@@ -212,7 +235,6 @@ The `kortix-agent` binary runs as PID 1's child and fronts OpenCode on `KORTIX_S
 | `GET /kortix/health` | Liveness check (no auth required). Reports daemon and OpenCode state, repo, branch, commit. |
 | `POST /kortix/refresh` | Re-pull the session branch and restart OpenCode in place. |
 | `POST /kortix/config/converge` | Fetch the desired config release from the API and apply it. The request carries no config content. A second request while one runs returns `409`. |
-| `GET /kortix/config/workspace` | Read-only report of the session's edits under the config directory. |
 | `POST /kortix/abort` | Abort the current run. |
 | `POST /kortix/env` | Update the runtime environment. |
 | `/kortix/pty` | Backs the in-dashboard terminal. |

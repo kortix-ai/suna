@@ -1617,11 +1617,6 @@
     "previousRepository": {
       "title": "Cette session n’est pas à jour",
       "message": "Le projet a changé depuis le début de cette session. Mettez-la à jour pour continuer sur la dernière version.",
-      "unavailable": "L’espace de travail précédent n’est plus disponible. Démarrez une nouvelle session dans le dépôt actuel.",
-      "resume": "Reprendre l’espace précédent",
-      "resuming": "Reprise…",
-      "newSession": "Démarrer une nouvelle session",
-      "delete": "Supprimer la session",
       "update": "Mettre à jour",
       "updating": "Mise à jour…",
       "dismiss": "Ignorer",

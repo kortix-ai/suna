@@ -181,6 +181,7 @@ export {
   secretGrantErrorResponse,
   shouldSyncProjectEnvBeforeProxy,
 } from '../pre-prompt-env-sync';
+import { convergeBeforeTurnStart } from '../../projects/lib/turn-start-convergence';
 export type { PrePromptEnvSyncDeps } from '../pre-prompt-env-sync';
 
 // One deadline write per minute per box for HUMAN preview traffic. Mirrors
@@ -1008,6 +1009,33 @@ export async function forwardToSandbox(
     }
   }
   const serviceKey = record.serviceKey;
+
+  // ── C9 — a prompt on a box that is behind converges FIRST, then runs ─────
+  // THE one funnel: the HTTP proxy and the server-side prompt queue both
+  // arrive here, and `isTurnStartRequest` covers the OpenCode ports (4096/
+  // 4097) as well as 8000 — `shouldSyncProjectEnvBeforeProxy` below is
+  // port-8000-only and would leave a hole.
+  //
+  // The position is load-bearing. This runs BEFORE `claimPromptDelivery` and
+  // before the first upstream fetch, so an OpenCode swap here cannot lose a
+  // claimed or delivered prompt, and it cannot burn an Idempotency-Key. It
+  // never ends a running turn: the convergence refuses mid-turn.
+  //
+  // A box already on the project's current config costs nothing — see
+  // `convergeBeforeTurnStart`, which answers from two memos with no network
+  // call at all in that case.
+  if (!sandboxAuthored && isTurnStartRequest(upstreamPort, method, remainingPath)) {
+    const converged = await convergeBeforeTurnStart(record.sessionId);
+    ptl.mark('config-converge');
+    if (converged.decision !== 'current' && converged.decision !== 'skipped') {
+      console.log('[PREVIEW] turn-start config convergence', {
+        session_id: record.sessionId,
+        decision: converged.decision,
+        outcome: converged.outcome,
+        ms: converged.ms,
+      });
+    }
+  }
 
   // Dedupe OpenCode prompt delivery up-front. Claim a stable key before the retry
   // loop so a duplicate inbound prompt cannot enqueue the user message twice.

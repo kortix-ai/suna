@@ -20,17 +20,14 @@ import { repositoryAccessFromSessionMetadata } from '../projects/lib/session-san
 import {
   buildConfigRelease,
   toDescriptor,
+  type ConfigReleaseAgentRepoint,
   type ConfigReleaseDescriptor,
   type ConfigReleaseVariant,
 } from './builder';
+import { loadAgentRosterAtCommit } from './agent-roster';
+import { releaseVariantFor, resolveSessionReleaseAgent, type DeclaredAgentRoster } from './session-agent';
 import { dbConfigReleaseLedger, PROJECT_QUARANTINE_SESSIONS, type ConfigReleaseLedger } from './quarantine';
 
-/** Variant selection. Identical to `pushSessionAgentConfigToSandbox`. */
-export function configReleaseVariant(session: { metadata: unknown; agentName: string | null }): ConfigReleaseVariant {
-  return !repositoryAccessFromSessionMetadata(session.metadata) && session.agentName
-    ? `agent:${session.agentName}`
-    : 'project';
-}
 
 export class BaseRefUnresolvedError extends Error {
   constructor(readonly baseRef: string, cause: Error) {
@@ -42,11 +39,23 @@ export class BaseRefUnresolvedError extends Error {
 export interface DesiredReleaseInput {
   project: GitBackedProject;
   baseRef: string;
-  variant: ConfigReleaseVariant;
+  /** `project_sessions.agent_name` — the agent the session IS. */
+  sessionAgent: string | null;
   /** The descriptor carries an archive only with repository access. */
   repositoryAccess: boolean;
   /** Record the assignment. Only the daemon's own request records it. */
   recordAssignment?: boolean;
+  /**
+   * May the session's OWNER run `agent`? Asked only when the manifest dropped
+   * the session's agent and a declared default exists to move it to. Omitted ⇒
+   * the answer is no, so a caller that cannot ask never widens anything.
+   */
+  ownerMayUseAgent?: (agent: string) => Promise<boolean>;
+  /**
+   * Persist the re-point. Supplied ONLY by the daemon's own descriptor
+   * request, so a human read decides and reports without writing.
+   */
+  persistRepoint?: (from: string, to: string) => Promise<boolean>;
 }
 
 export interface DesiredRelease {
@@ -54,18 +63,23 @@ export interface DesiredRelease {
   descriptor: ConfigReleaseDescriptor;
   /** The base release ID the project quarantined, when a fallback replaced it. */
   quarantinedReleaseId: string | null;
+  /** The variant the release was built for, after the agent resolution. */
+  variant: ConfigReleaseVariant;
 }
 
 export interface DesiredReleaseDeps {
   ledger: ConfigReleaseLedger;
   build: typeof buildConfigRelease;
   resolveBase: (project: GitBackedProject, ref: string) => Promise<string>;
+  /** What the manifest declares at the release's own commit. */
+  loadRoster: (project: GitBackedProject, commit: string) => Promise<DeclaredAgentRoster>;
 }
 
 const defaultDeps: DesiredReleaseDeps = {
   ledger: dbConfigReleaseLedger,
   build: (project, commit, variant, options) => buildConfigRelease(project, commit, variant, options),
   resolveBase: resolveCommitSha,
+  loadRoster: loadAgentRosterAtCommit,
 };
 
 /**
@@ -96,10 +110,51 @@ export async function resolveDesiredRelease(
     throw new BaseRefUnresolvedError(input.baseRef, error as Error);
   }
 
-  const base = await deps.build(input.project, baseSha, input.variant);
-  let descriptor = toDescriptor(base, { repositoryAccess: input.repositoryAccess });
+  // ── Which agent is this session, at THIS commit ────────────────────────
+  // The one place the answer is decided (config-releases/session-agent.ts).
+  // A session whose agent the manifest dropped is re-pointed to the project's
+  // declared default — audited and persisted by the daemon's own request —
+  // instead of compiling an undeclared name, which fails and leaves the box
+  // with `release_id: null` and no config at all.
+  const roster = await deps.loadRoster(input.project, baseSha);
+  const decision = resolveSessionReleaseAgent(input.sessionAgent, roster);
+  let agent: string | null;
+  let agentRepoint: ConfigReleaseAgentRepoint | null = null;
+  if (decision.kind === 'declared') {
+    agent = decision.agent;
+  } else if (decision.kind === 'orphaned') {
+    agent = null;
+    agentRepoint = {
+      from: decision.dropped,
+      to: null,
+      applied: false,
+      reason:
+        `This project's configuration no longer declares the agent "${decision.dropped}" this session was created with, ` +
+        'and the project declares no default agent to move it to. The session runs without an agent and holds no agent ' +
+        'access. Declare the agent again, or set a default agent for the project.',
+    };
+  } else {
+    const allowed = input.ownerMayUseAgent ? await input.ownerMayUseAgent(decision.agent) : false;
+    if (allowed) await input.persistRepoint?.(decision.dropped, decision.agent);
+    agent = allowed ? decision.agent : null;
+    agentRepoint = {
+      from: decision.dropped,
+      to: decision.agent,
+      applied: allowed,
+      reason: allowed
+        ? `This project's configuration no longer declares the agent "${decision.dropped}" this session was created with. ` +
+          `The session now runs the project's default agent, "${decision.agent}".`
+        : `This project's configuration no longer declares the agent "${decision.dropped}" this session was created with, ` +
+          `and this session's owner may not run the project's default agent, "${decision.agent}". The session runs without ` +
+          'an agent and holds no agent access. Ask a project manager for access to that agent.',
+    };
+  }
+  const variant = releaseVariantFor(agent, input.repositoryAccess);
+
+  const base = await deps.build(input.project, baseSha, variant);
+  let descriptor = toDescriptor(base, { repositoryAccess: input.repositoryAccess, agentRepoint });
   let quarantinedReleaseId: string | null = null;
-  const variantKey = ledgerVariant(input.variant, input.repositoryAccess);
+  const variantKey = ledgerVariant(variant, input.repositoryAccess);
   const projectId = input.project.projectId;
 
   if (descriptor.release_id) {
@@ -108,8 +163,8 @@ export async function resolveDesiredRelease(
       if (quarantined.has(descriptor.release_id)) {
         const fallback = await deps.ledger.lastProven(projectId, variantKey, PROJECT_QUARANTINE_SESSIONS);
         if (fallback && fallback.releaseId !== descriptor.release_id) {
-          const rebuilt = await deps.build(input.project, fallback.sourceCommit, input.variant);
-          const candidate = toDescriptor(rebuilt, { repositoryAccess: input.repositoryAccess });
+          const rebuilt = await deps.build(input.project, fallback.sourceCommit, variant);
+          const candidate = toDescriptor(rebuilt, { repositoryAccess: input.repositoryAccess, agentRepoint });
           // Assign the fallback only when the rebuild reproduces the proven ID.
           if (candidate.release_id === fallback.releaseId) {
             quarantinedReleaseId = descriptor.release_id;
@@ -135,5 +190,5 @@ export async function resolveDesiredRelease(
         console.warn(`[config-releases] recording assignment failed for ${projectId}: ${error.message}`),
       );
   }
-  return { baseSha, descriptor, quarantinedReleaseId };
+  return { baseSha, descriptor, quarantinedReleaseId, variant };
 }
