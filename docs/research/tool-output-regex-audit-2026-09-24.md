@@ -85,9 +85,17 @@ the old code on the input named; each new reader takes under 100 ms on it.
 `afd4450684` deletes three unused local copies of SDK helpers in web
 `agent-stop-tool.tsx` and `task-delete-tool.tsx`. Nothing called them.
 
+`b40611559a` and `c34058f74e` also replace six linear regexes: the
+`label\s*(.+)$` lines of the project and connector get parsers (0.4 ms at
+240k characters on both engines). CodeQL treats the parameter of a
+`packages/shared` export as library input. After the move from
+`apps/mobile`, it reported these six as `js/polynomial-redos`, which failed
+its check on this PR. `labelValue` reads them without a regex. The CSV
+keeps them as linear.
+
 Each reader reproduces its regex's backtracking exactly, including the
 one-character results a regex gives back when only whitespace is left. The
-fuzz caught every deliberate bug: 101 of 101 behavior-changing mutations
+fuzz caught every deliberate bug: 129 of 129 behavior-changing mutations
 failed the tests. Eight more mutations changed nothing observable; three of
 them exposed dead code, which was removed.
 
@@ -142,7 +150,7 @@ These are super-linear but do not run on tool output:
 
 | Check | Result |
 |---|---|
-| `cd packages/shared && bun test` | 553 pass, 0 fail |
+| `cd packages/shared && bun test` | 560 pass, 0 fail |
 | `packages/shared` `tsc --noEmit` | exit 0 |
 | `cd apps/web && bun test --isolate --parallel=4` | 9,933 pass, 1 fail; the base `e0c731be57` fails the same test (content timestamp manifest, fixed on main by #7576) |
 | `apps/web` `tsc --noEmit` | 15 errors, the known baseline in 3 test files |
