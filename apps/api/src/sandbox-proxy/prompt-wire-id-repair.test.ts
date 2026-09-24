@@ -96,4 +96,16 @@ describe('repairPromptWireId', () => {
     expect(result.outcome).toBe('none');
     expect(result.body).toBe(body);
   });
+
+  test('a far-future client id (the pre-fix CLI shape) is RE-MINTED, even with no transcript read', () => {
+    // `msg_1a0d…` sits ~40 days ahead of the clock. Kept, it renders every
+    // later turn ABOVE this prompt. It is positive evidence on its own.
+    const nowMs = Date.parse('2026-09-24T16:11:24.000Z');
+    const body = enc({ messageID: 'msg_1a0d42f86f80SyntheticCli03', parts: [] });
+    const result = repairPromptWireId({ body, newestKnownTime: null, nowMs });
+    expect(result.outcome).toBe('reminted');
+    const forwarded = dec(result.body).messageID as string;
+    expect(forwarded).toMatch(WIRE_MESSAGE_ID);
+    expect(forwarded.startsWith('msg_0d42')).toBe(true);
+  });
 });

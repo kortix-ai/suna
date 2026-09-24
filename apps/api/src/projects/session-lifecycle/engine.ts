@@ -105,6 +105,7 @@ import {
   MAX_WIRE_ID_CLOCK_CORRECTION,
   WIRE_ID_TIME_MASK,
   WIRE_ID_TIME_SCALE,
+  isWireIdAheadOf,
   mintWireMessageId,
   newestWireIdTime,
   wireIdTime,
@@ -1231,7 +1232,10 @@ async function readInboxTranscriptState(
     const tip = parsePlacementTip(await res.json().catch(() => null));
     if (!tip) return empty;
 
-    const newest = newestWireIdTime(tip.map((message) => message.id));
+    const newest = newestWireIdTime(
+      tip.map((message) => message.id),
+      Date.now(),
+    );
     // Same rule the daemon's `observeOpencodeDelivery` uses: an assistant
     // message parented on the prompt is the turn having run.
     const answered = tip.some(
@@ -1274,15 +1278,31 @@ const DELIVERED_WIRE_ID_FLOOR_WINDOW_MS = Number(
  * Fails OPEN (`null`), like every other read on this path: a floor that cannot
  * be read must not block a prompt, and the transcript floor still applies.
  */
+/** The 48-bit wire-id clock of this instant. */
+function wireIdClockNow(): bigint {
+  return (BigInt(Date.now()) * WIRE_ID_TIME_SCALE) & WIRE_ID_TIME_MASK;
+}
+
 async function readDeliveredWireIdFloor(
   row: SessionLifecycleCommandRow,
 ): Promise<bigint | null> {
   if (!row.sessionId) return null;
   // `substr(id, 5, 12)` skips the `msg_` prefix. `lpad` to 16 hex chars makes
   // the value a legal `bit(64)`, which is the only width with a bigint cast.
+  //
+  // An id more than MAX_WIRE_ID_CLOCK_CORRECTION ahead of the clock on the
+  // 48-bit ring is excluded IN SQL: one such row (the pre-fix CLI minted the
+  // HIGH bits, ~40 days out) would otherwise BE the max and hide every real
+  // floor under it.
+  const nowClock = wireIdClockNow();
+  const decoded = (source: SQL) =>
+    sql`('x' || lpad(substr(${source}, 5, 12), 16, '0'))::bit(64)::bigint`;
   const clock = (source: SQL) => sql`CASE
     WHEN ${source} ~ '^msg_[0-9a-f]{12}'
-    THEN ('x' || lpad(substr(${source}, 5, 12), 16, '0'))::bit(64)::bigint
+     AND ((${decoded(source)} - ${nowClock.toString()}::bigint) & ${WIRE_ID_TIME_MASK.toString()}::bigint)
+         NOT BETWEEN ${(MAX_WIRE_ID_CLOCK_CORRECTION + BigInt(1)).toString()}::bigint
+             AND ${(WIRE_ID_TIME_MASK / BigInt(2)).toString()}::bigint
+    THEN ${decoded(source)}
   END`;
   try {
     const [found] = await db
@@ -1306,7 +1326,11 @@ async function readDeliveredWireIdFloor(
       )
       .limit(1);
     if (found?.newest === null || found?.newest === undefined) return null;
-    return BigInt(found.newest);
+    const newest = BigInt(found.newest);
+    // Same rule as the SQL filter, for a reader that returned one anyway.
+    const ahead = ((newest - wireIdClockNow()) & WIRE_ID_TIME_MASK);
+    if (ahead > MAX_WIRE_ID_CLOCK_CORRECTION && ahead < WIRE_ID_TIME_MASK / BigInt(2)) return null;
+    return newest;
   } catch (err) {
     console.warn('[session-lifecycle] delivered wire-id floor read failed — using the transcript', {
       sessionId: row.sessionId,
@@ -1356,7 +1380,13 @@ async function remintWireMessageId(
   payload: QueuedContinueSessionPayload,
   transcript: InboxTranscriptState,
 ): Promise<string> {
-  const submitted = wireIdTime(payload.wireMessageId ?? '');
+  // A submitted id far AHEAD of the clock (the pre-fix CLI's high-bits mint,
+  // ~40 days out) was placed by nothing, so it is no floor: taken as one, the
+  // 1h lift cap refuses it and the prompt goes out below the live reply.
+  const submitted =
+    payload.wireMessageId && !isWireIdAheadOf(payload.wireMessageId, Date.now())
+      ? wireIdTime(payload.wireMessageId)
+      : null;
   const floor = transcript.read
     ? transcript.newest
     : // OpenCode's own minting rule, so an id it wrote a second ago is still
