@@ -141,6 +141,11 @@ default branch shapes agents. Two guards apply:
    `code: "CR_AGENT_GOVERNANCE_CHANGE"`. A person with `project.gitops.merge`
    merges it.
 
+The check reads `kortix.yaml` at the merge base and at the change request's
+head. When it cannot read either one, it does not merge. It answers `503`
+with `code: "CR_GOVERNANCE_UNVERIFIED"` and a `Retry-After` header. Retry the
+merge.
+
 ## Read a denial
 
 Every `403` from an authorization check carries `code` and `action`:

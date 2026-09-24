@@ -526,15 +526,33 @@ export async function promoteNextInboxRow(sessionId: string): Promise<string | n
   return next.idempotencyKey ?? null;
 }
 
-export async function claimCreateSessionCommand(
+/** The lock a claim holds before an abandoned `running` row can be reclaimed. */
+export const LIFECYCLE_CLAIM_LOCK_MS = 5 * 60_000;
+
+/**
+ * The row a create claim inserts. An inline create is claimed `running` by
+ * THIS process, so it carries the same lock a drained row does: without one,
+ * `locked_until` stays NULL, the reclaim arm (`locked_until <= now - grace`)
+ * never matches it, and a pod that dies mid-create leaves the idempotency key
+ * answering `pending` for ever.
+ */
+export function buildCreateSessionCommandValues(
   command: CreateSessionCommand,
   opts: { initialStatus: 'queued' | 'running'; reason?: string | null },
-): Promise<{ row: SessionLifecycleCommandRow; existing: boolean }> {
-  const now = new Date();
-  const values = {
+  now: Date,
+) {
+  const inlineLock =
+    opts.initialStatus === 'running'
+      ? {
+          lockedBy: `session-lifecycle-inline:${process.pid}`,
+          lockedUntil: new Date(now.getTime() + LIFECYCLE_CLAIM_LOCK_MS),
+        }
+      : {};
+  return {
     commandType: 'create_session',
     source: command.source,
     status: opts.initialStatus,
+    ...inlineLock,
     projectId: command.project.projectId,
     accountId: command.project.accountId,
     actorUserId: command.userId,
@@ -544,6 +562,13 @@ export async function claimCreateSessionCommand(
     availableAt: now,
     updatedAt: now,
   };
+}
+
+export async function claimCreateSessionCommand(
+  command: CreateSessionCommand,
+  opts: { initialStatus: 'queued' | 'running'; reason?: string | null },
+): Promise<{ row: SessionLifecycleCommandRow; existing: boolean }> {
+  const values = buildCreateSessionCommandValues(command, opts, new Date());
 
   if (!command.idempotencyKey) {
     const pending = command.body.pending_prompt as { parts?: PromptPartWire[] } | undefined;
@@ -1100,7 +1125,7 @@ export async function claimDueLifecycleCommands(input: {
         attempts: row.attempts + 1,
         result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) - 'delivery_started_at'`,
         lockedBy: input.workerId,
-        lockedUntil: new Date(now.getTime() + 5 * 60_000),
+        lockedUntil: new Date(now.getTime() + LIFECYCLE_CLAIM_LOCK_MS),
         updatedAt: now,
       })
       // CAS on the exact state this row was read in — its status AND its lock

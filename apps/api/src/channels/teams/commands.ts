@@ -64,8 +64,11 @@ export async function handleTeamsCommand(input: {
   activity: TeamsActivity;
   tenantId: string;
   projectId: string;
+  /** Per-project (BYO) bot: session lookups stay inside `projectId`. */
+  projectScoped?: boolean;
 }): Promise<boolean> {
   const ref = conversationRef(input.activity, input.projectId);
+  const sessionProjectId = input.projectScoped ? input.projectId : undefined;
   if (!ref) return false;
   const { verb, arg } = input.command;
   const conversationId = ref.conversationId;
@@ -100,7 +103,7 @@ export async function handleTeamsCommand(input: {
       case 'cancel': {
         // The live card's Stop button is the primary lever; this is the one
         // that still works after the card has scrolled out of reach.
-        const session = await conversationSession(input.tenantId, conversationId);
+        const session = await conversationSession(input.tenantId, conversationId, sessionProjectId);
         if (!session) {
           await post(buildNoticeCard('Nothing is running in this conversation.'));
           return true;
@@ -133,6 +136,7 @@ export async function handleTeamsCommand(input: {
           scope: conversationScope(input.activity),
           teamsUserId: userId ?? '',
           channelPolicy: selection?.conversationPolicy ?? null,
+          projectId: sessionProjectId,
         });
         if (!outcome.reset) {
           await post(buildNoticeCard(outcome.notice));
@@ -161,7 +165,7 @@ export async function handleTeamsCommand(input: {
       case 'status':
       case 'config':
       case 'settings':
-        await post(await buildStatusCard(ctx, input.tenantId, conversationId, input.projectId));
+        await post(await buildStatusCard(ctx, input.tenantId, conversationId, input.projectId, sessionProjectId));
         return true;
       case 'models':
         await ensureBinding(input.tenantId, conversationId, input.projectId, input.activity);
@@ -235,11 +239,12 @@ async function buildStatusCard(
   tenantId: string,
   conversationId: string,
   projectId: string,
+  sessionProjectId?: string,
 ) {
   const [selection, projects, session] = await Promise.all([
     currentChannelSelection(ctx),
     listTenantProjects(tenantId).catch(() => []),
-    conversationSession(tenantId, conversationId).catch(() => null),
+    conversationSession(tenantId, conversationId, sessionProjectId).catch(() => null),
   ]);
   const projectName = projects.find((p) => p.projectId === projectId)?.name ?? projectId;
   return buildPanelCard({

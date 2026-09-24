@@ -7,6 +7,11 @@ let listedPaymentMethods: Array<{ id: string; type: string }> = [];
 let listedPaymentMethodParams: Record<string, unknown> | null = null;
 const updates: Array<Record<string, unknown>> = [];
 const paymentIntents: Array<Record<string, unknown>> = [];
+const grants: unknown[][] = [];
+let nextIntentStatus = 'succeeded';
+let existingIntents: Array<Record<string, unknown>> = [];
+let listIntentsFails = false;
+const intentUpdates: Array<{ id: string; params: Record<string, unknown> }> = [];
 
 mock.module('../../config', () => ({
   config: new Proxy(
@@ -32,7 +37,9 @@ mock.module('../repositories/customers', () => ({
 }));
 
 mock.module('./credits', () => ({
-  grantCredits: async () => undefined,
+  grantCredits: async (...args: unknown[]) => {
+    grants.push(args);
+  },
 }));
 
 mock.module('../../shared/stripe', () => ({
@@ -53,7 +60,15 @@ mock.module('../../shared/stripe', () => ({
     paymentIntents: {
       create: async (params: Record<string, unknown>) => {
         paymentIntents.push(params);
-        return { id: 'pi_test', status: 'succeeded' };
+        return { id: 'pi_test', status: nextIntentStatus };
+      },
+      list: async () => {
+        if (listIntentsFails) throw new Error('stripe list unavailable');
+        return { data: existingIntents };
+      },
+      update: async (id: string, params: Record<string, unknown>) => {
+        intentUpdates.push({ id, params });
+        return { id };
       },
     },
   }),
@@ -87,6 +102,11 @@ beforeEach(() => {
   listedPaymentMethodParams = null;
   updates.length = 0;
   paymentIntents.length = 0;
+  grants.length = 0;
+  nextIntentStatus = 'succeeded';
+  existingIntents = [];
+  listIntentsFails = false;
+  intentUpdates.length = 0;
 });
 
 describe('auto-topup payment-method discovery — non-card checkouts', () => {
@@ -161,5 +181,66 @@ describe('auto-topup with no payment method — the skip must be observable', ()
 
     expect(updates[0]?.autoTopupEnabled).toBe(false);
     expect(updates[0]?.autoTopupDisabledReason).toBe(NO_PAYMENT_METHOD_REASON);
+  });
+});
+
+describe('auto-topup on an asynchronous payment method', () => {
+  beforeEach(() => {
+    stripeCustomer = {
+      invoice_settings: { default_payment_method: 'pm_bank' },
+      subscriptions: { data: [] },
+    };
+    listedPaymentMethods = [{ id: 'pm_bank', type: 'us_bank_account' }];
+  });
+
+  test('a succeeded charge grants the amount keyed on the PaymentIntent id', async () => {
+    await checkAndTriggerAutoTopup('acct-1');
+
+    expect(grants).toHaveLength(1);
+    expect(grants[0]?.[1]).toBe(20);
+    expect(grants[0]?.[5]).toBe('pi_test');
+  });
+
+  test('a processing charge is pending, not a failure: no grant, no failure count, auto-topup stays on', async () => {
+    nextIntentStatus = 'processing';
+
+    await checkAndTriggerAutoTopup('acct-1');
+
+    expect(paymentIntents).toHaveLength(1);
+    expect(grants).toHaveLength(0);
+    expect(updates).toHaveLength(1);
+    expect(updates[0]?.autoTopupLastCharged).toBeString();
+    expect(updates[0]).not.toHaveProperty('autoTopupConsecutiveFailures');
+    expect(updates[0]).not.toHaveProperty('autoTopupEnabled');
+    expect(updates[0]).not.toHaveProperty('autoTopupDisabledReason');
+    // Tagged so a later payment_intent.payment_failed counts as this attempt's failure.
+    expect(intentUpdates).toEqual([{ id: 'pi_test', params: { metadata: { async_settlement: 'true' } } }]);
+  });
+
+  test('an auto-topup that is still processing blocks a second charge', async () => {
+    existingIntents = [
+      { id: 'pi_earlier', status: 'processing', metadata: { type: 'auto_topup', account_id: 'acct-1' } },
+    ];
+
+    await checkAndTriggerAutoTopup('acct-1');
+
+    expect(paymentIntents).toHaveLength(0);
+    expect(grants).toHaveLength(0);
+  });
+
+  test('a processing payment of another kind does not block the auto-topup', async () => {
+    existingIntents = [{ id: 'pi_invoice', status: 'processing', metadata: {} }];
+
+    await checkAndTriggerAutoTopup('acct-1');
+
+    expect(paymentIntents).toHaveLength(1);
+  });
+
+  test('when pending payments cannot be listed, the trigger charges nothing', async () => {
+    listIntentsFails = true;
+
+    await checkAndTriggerAutoTopup('acct-1');
+
+    expect(paymentIntents).toHaveLength(0);
   });
 });
