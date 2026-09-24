@@ -1,4 +1,4 @@
-import { isDigit, isLineTerminator, isWhitespace } from './scan';
+import { isDigit, lineTables, positionIndex } from './scan';
 
 // `session_search` prints one row per hit: `ses_… | "<title>" | <updated> |
 // score=N`. The row regex had three backtracking points: the id's `\S+` could
@@ -11,41 +11,6 @@ import { isDigit, isLineTerminator, isWhitespace } from './scan';
 const PIPE = 124; // |
 const QUOTE = 34; // "
 
-/** Per-position lookups over one row, filled right to left in one pass. */
-function rowTables(line: string) {
-  const n = line.length;
-  // The end of the whitespace run at i; the first whitespace at or after i;
-  // the first line terminator at or after i. Index n + 1 keeps i + 1 in range.
-  const spaceEnd = new Int32Array(n + 2);
-  const wordEnd = new Int32Array(n + 2);
-  const breakAt = new Int32Array(n + 2);
-  spaceEnd[n + 1] = n + 1;
-  spaceEnd[n] = n;
-  wordEnd[n] = n;
-  breakAt[n] = n;
-  for (let i = n - 1; i >= 0; i--) {
-    const code = line.charCodeAt(i);
-    const space = isWhitespace(code);
-    spaceEnd[i] = space ? (spaceEnd[i + 1] as number) : i;
-    wordEnd[i] = space ? i : (wordEnd[i + 1] as number);
-    breakAt[i] = isLineTerminator(code) ? i : (breakAt[i + 1] as number);
-  }
-  // Where `\s*\|\s*score=(\d+)` matches: before[e] is the last such e' <= e,
-  // after[e] the first such e' >= e; -1 when none.
-  const scoreAt = (e: number): boolean => {
-    const pipe = spaceEnd[e] as number;
-    if (line.charCodeAt(pipe) !== PIPE) return false;
-    const label = spaceEnd[pipe + 1] as number;
-    return line.startsWith('score=', label) && isDigit(line.charCodeAt(label + 6));
-  };
-  const after = new Int32Array(n + 2);
-  after[n + 1] = -1;
-  for (let e = n; e >= 0; e--) after[e] = scoreAt(e) ? e : (after[e + 1] as number);
-  const before = new Int32Array(n + 1);
-  for (let e = 0; e <= n; e++) before[e] = scoreAt(e) ? e : e > 0 ? (before[e - 1] as number) : -1;
-  return { spaceEnd, wordEnd, breakAt, after, before };
-}
-
 /**
  * The fields of one result row, as
  * `/^(ses_\S+)\s*\|\s*"([^"]*)"\s*\|\s*(\S+.*?)\s*\|\s*score=(\d+)/` captured
@@ -54,8 +19,15 @@ function rowTables(line: string) {
 export function searchHitRow(line: string): [string, string, string, string] | null {
   if (!line.startsWith('ses_') || !line.includes('score=')) return null;
   const n = line.length;
-  const t = rowTables(line);
-  const idRunEnd = t.wordEnd[4] as number;
+  const t = lineTables(line);
+  // Where `\s*\|\s*score=(\d+)` can start.
+  const tail = positionIndex(n, (e) => {
+    const pipe = t.spaceEnd[e] as number;
+    if (line.charCodeAt(pipe) !== PIPE) return false;
+    const label = t.spaceEnd[pipe + 1] as number;
+    return line.startsWith('score=', label) && isDigit(line.charCodeAt(label + 6));
+  });
+  const idRunEnd = t.solidEnd[4] as number;
   if (idRunEnd === 4) return null;
 
   // The rest of the row after the id and its `|` at `pipe`.
@@ -70,10 +42,10 @@ export function searchHitRow(line: string): [string, string, string, string] | n
     if (start >= n) return null;
     // `(\S+.*?)`: the longest `\S+` first, so the first tail at or after the
     // end of its run, on its line; else the last tail inside the run.
-    const runEnd = t.wordEnd[start] as number;
-    let end = t.after[runEnd] as number;
+    const runEnd = t.solidEnd[start] as number;
+    let end = tail.after[runEnd] as number;
     if (end === -1 || end > (t.breakAt[runEnd] as number)) {
-      end = t.before[runEnd - 1] as number;
+      end = tail.before[runEnd - 1] as number;
       if (end < start + 1) return null;
     }
     const label = t.spaceEnd[(t.spaceEnd[end] as number) + 1] as number;
