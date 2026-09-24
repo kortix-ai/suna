@@ -25,7 +25,11 @@ import {
   releaseDir,
   type ReleaseManifest,
 } from '../boot-config'
+import type { Config } from '../config'
 import type { ConfigReleaseApi } from '../config-release/api-client'
+import type { HarnessConfigReleaseReport } from '../harness/control'
+import { createOpenCodeDiagnosticsService } from '../harness/open-code/diagnostics'
+import type { Opencode } from '../harness/open-code/lifecycle'
 import { bootOpenCodeConfig, type BootConfigPathResult } from '../harness/open-code/boot-config-path'
 import { configReleaseReport, resetConfigReleaseStateForTests } from '../harness/open-code/config-release'
 import { CONFIG_RELEASE_NOTICE_PATH, clearConfigReleaseNotice } from '../config-release/notice'
@@ -176,6 +180,31 @@ async function installProvenRelease(built: BuiltRelease = release, proven = true
   return dir
 }
 
+/**
+ * The REAL `/kortix/health` body for the state the boot path just left behind.
+ * Nothing is faked but the OpenCode process itself, which reports `ok` — the
+ * point of C3 is that a live OpenCode is not enough to be reportable as ready.
+ */
+async function health(): Promise<{ runtimeReady: boolean; status: string; config: HarnessConfigReleaseReport }> {
+  const diagnostics = createOpenCodeDiagnosticsService({
+    getState: () => 'ok',
+    getPid: () => 4242,
+    getActivePort: () => 4096,
+    getInternalUrl: () => `http://127.0.0.1:${opencodeServer.port}`,
+  } as unknown as Opencode)
+  const report = await diagnostics.health(
+    {
+      cfg: { ...cfg(), autoClone: false, workspace: work } as unknown as Config,
+      bootTime: Date.now(),
+      bootState: { timeline: [], repoMaterializationError: null },
+      staticWebPort: 3211,
+      resources: () => null,
+    },
+    {},
+  )
+  return report as unknown as { runtimeReady: boolean; status: string; config: HarnessConfigReleaseReport }
+}
+
 function tamper(dir: string) {
   spawnSync('chmod', ['-R', 'u+w', dir])
   writeFileSync(join(dir, 'agents/kortix.md'), 'TAMPERED\n')
@@ -305,7 +334,30 @@ describe('valve A: present, but it does not load', () => {
     const run = await boot({ prove: async () => ({ ok: false, fatal: true, reason: 'nothing loads on this box' }) })
     expect(run.result).toMatchObject({ dir: defaultDir, source: 'image-default', proven: false })
     expect(run.result.fallbackReason).toMatch(/image default config failed: nothing loads on this box/)
+    // The box stays REACHABLE — a box nobody can talk to cannot be diagnosed —
+    // and it is not reportable as ready. C3 is the next assertion.
     expect(run.gateOpened).toBe(true)
+  })
+
+  test('C3: a box that runs an unproven config is never reportable as ready', async () => {
+    // The floor ran, so OpenCode is live and the proxy gate is open. `health`
+    // still says not ready, because nothing proved the config it runs — the
+    // defect this replaces reported `runtimeReady: true, proven: true` on a
+    // config it had never checked.
+    // A proved release: ready.
+    const good = await boot()
+    expect(good.result.proven).toBe(true)
+    const proven = await health()
+    expect(proven.config).toMatchObject({ proven: true, source: 'release' })
+    expect(proven.runtimeReady).toBe(true)
+
+    // The same box, one reboot later, with nothing that loads: OpenCode is
+    // live and the gate is open, and health still refuses to say ready.
+    await boot({ prove: async () => ({ ok: false, fatal: true, reason: 'nothing loads on this box' }) })
+    const unproven = await health()
+    expect(unproven.config).toMatchObject({ proven: false, source: 'image-default' })
+    expect(unproven.config.fallback_reason).toMatch(/nothing loads on this box/)
+    expect(unproven.runtimeReady).toBe(false)
   })
 })
 

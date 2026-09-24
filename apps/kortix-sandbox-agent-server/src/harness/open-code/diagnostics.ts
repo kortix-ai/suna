@@ -164,12 +164,23 @@ async function readOpenCodeHealth(
     !bootState.initialOpenCodeSessionRequired || !!bootState.initialOpenCodeSessionId
   const initialSessionError = bootState.initialOpenCodeSessionError ?? null
   const auditRelayError = bootState.auditRelayError ?? null
+  // PLAN-one-boot-path C3: a box is never reportable as ready unless it runs a
+  // PROVEN config. `opencodeState === 'ok'` is not that proof — its liveness
+  // probe only asks whether the session API answers, so a config whose tools or
+  // plugins never registered still reads as 'ok'. The proof
+  // (`proven-check.ts`) is what checked them, and the boot path writes its
+  // verdict here before it opens the gate. Off the release path (config
+  // releases disabled) the boot path states `proven: true` for the checkout it
+  // pointed OpenCode at, so this term is inert there.
+  const configReport = configReleaseReport()
+  const configProven = configReport.proven
   const runtimeReady =
     repoReady &&
     !bootState.repoMaterializationError &&
     !initialSessionError &&
     !auditRelayError &&
     opencodeState === 'ok' &&
+    configProven &&
     initialSessionReady
   const status = runtimeReady
     ? 'ok'
@@ -234,7 +245,9 @@ async function readOpenCodeHealth(
     agent_config_etag: process.env.KORTIX_COMPILED_AGENT_CONFIG_ETAG || null,
     // Which config release OpenCode runs, which one the API wants, and why they
     // differ (docs/specs/config-releases.md, "Health").
-    config: configReleaseReport(),
+    // The SAME read `runtimeReady` was computed from, so no health sample can
+    // ever show `runtimeReady: true` beside a `config` block that disagrees.
+    config: configReport,
     // The running release's source commit, for API readers that predate
     // `config`; null off the release path. Remove one release after every API
     // reads `config`.
