@@ -19,6 +19,12 @@ export {
   parseMemoryEntryOutput,
 } from './memory-entry';
 export {
+  type MemorySearchHitSource,
+  type ParsedMemorySearchHit,
+  type ParsedMemorySearchOutput,
+  parseMemorySearchOutput,
+} from './memory-search';
+export {
   type GrepFileGroup,
   type GrepMatch,
   type ParsedSessionMessage,
