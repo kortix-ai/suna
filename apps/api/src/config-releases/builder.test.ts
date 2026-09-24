@@ -20,6 +20,7 @@ import {
   configReleaseId,
   isTreeObject,
   listConfigFiles,
+  storeConfigArchive,
   toDescriptor,
 } from './builder';
 import { MemoryConfigArchiveStore, configArchiveKey } from './store';
@@ -387,5 +388,60 @@ describe('mirror helpers', () => {
     expect(await isTreeObject(mirror, 'f'.repeat(40))).toBe(false);
     expect(await isTreeObject(mirror, 'HEAD')).toBe(false);
     expect((await listConfigFiles(mirror, tree)).length).toBe(5);
+  });
+});
+
+describe('storeConfigArchive — publish then bound retention', () => {
+  const project = '0b7c9f1e-2d3a-4b5c-8d9e-0f1a2b3c4d5e';
+  const key = (n: string) => configArchiveKey(project, n.repeat(40));
+
+  test('a new archive prunes the project down to the retention bound', async () => {
+    const store = new MemoryConfigArchiveStore();
+    for (const n of ['1', '2', '3']) {
+      expect(await storeConfigArchive(store, project, key(n), Buffer.from(n), { keep: 2 })).toBe('created');
+    }
+    expect([...store.objects.keys()]).toEqual([key('2'), key('3')]);
+  });
+
+  test('an archive that was already published prunes nothing', async () => {
+    const store = new MemoryConfigArchiveStore();
+    await storeConfigArchive(store, project, key('1'), Buffer.from('1'), { keep: 1 });
+    await storeConfigArchive(store, project, key('2'), Buffer.from('2'), { keep: 1 });
+    const pruned: string[] = [];
+    store.pruneProject = async (...args) => {
+      pruned.push(String(args[1]));
+      return [];
+    };
+    expect(await storeConfigArchive(store, project, key('2'), Buffer.from('2'), { keep: 1 })).toBe('exists');
+    expect(pruned).toEqual([]);
+  });
+
+  test('keep 0 hands retention to the bucket lifecycle rule: nothing is listed or deleted', async () => {
+    const store = new MemoryConfigArchiveStore();
+    let pruned = 0;
+    store.pruneProject = async () => {
+      pruned += 1;
+      return [];
+    };
+    for (const n of ['1', '2', '3']) {
+      await storeConfigArchive(store, project, key(n), Buffer.from(n), { keep: 0 });
+    }
+    expect(pruned).toBe(0);
+    expect(store.objects.size).toBe(3);
+  });
+
+  test('a prune failure never fails the publish', async () => {
+    const store = new MemoryConfigArchiveStore();
+    store.pruneProject = async () => {
+      throw new Error('list refused');
+    };
+    expect(await storeConfigArchive(store, project, key('1'), Buffer.from('1'), { keep: 2 })).toBe('created');
+    expect(store.objects.size).toBe(1);
+  });
+
+  test('a store failure is reported, never thrown', async () => {
+    const store = new MemoryConfigArchiveStore();
+    store.failWith = new Error('store down');
+    expect(await storeConfigArchive(store, project, key('1'), Buffer.from('1'), { keep: 2 })).toBe('failed');
   });
 });

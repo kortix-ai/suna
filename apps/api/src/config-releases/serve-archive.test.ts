@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildConfigArchive } from './builder';
-import { publicStorageBase, serveConfigArchive, storageOriginIsPublic } from './serve-archive';
+import { publicDownloadTarget, serveConfigArchive, storageOriginIsPublic } from './serve-archive';
 import { MemoryConfigArchiveStore, configArchiveKey } from './store';
 
 let root = '';
@@ -65,8 +65,9 @@ function mirrors() {
   };
 }
 
-const PRIVATE = { supabaseUrl: 'http://127.0.0.1:54321', publicOverride: null };
-const PUBLIC = { supabaseUrl: 'https://abc.supabase.co', publicOverride: null };
+/** No public-endpoint override: the signed URL's own host decides. */
+const PRIVATE = { publicOverride: null };
+const PUBLIC = { publicOverride: null };
 
 describe('storageOriginIsPublic', () => {
   test.each([
@@ -86,12 +87,17 @@ describe('storageOriginIsPublic', () => {
     expect(storageOriginIsPublic(origin)).toBe(expected);
   });
 
-  test('the override names the public base even for a private SUPABASE_URL', () => {
-    expect(publicStorageBase({ supabaseUrl: 'http://supabase-kong:8000', publicOverride: 'https://box.example.com' })).toEqual({
-      internal: 'http://supabase-kong:8000',
-      public: 'https://box.example.com',
-    });
-    expect(publicStorageBase({ supabaseUrl: 'http://supabase-kong:8000', publicOverride: '' })).toBeNull();
+  test('publicDownloadTarget redirects only to a host a cloud sandbox can reach', () => {
+    const signed = 'https://kortix-dev.s3.us-west-2.amazonaws.com/config-releases/k?X-Amz-Signature=a';
+    expect(publicDownloadTarget(signed, null)).toBe(signed);
+    expect(publicDownloadTarget('http://127.0.0.1:54321/storage/v1/s3/b/k?X-Amz-Signature=a', null)).toBeNull();
+    expect(publicDownloadTarget('http://supabase-kong:8000/storage/v1/s3/b/k?t=1', '')).toBeNull();
+    // The override replaces the origin the store signed for.
+    expect(publicDownloadTarget('http://supabase-kong:8000/storage/v1/s3/b/k?t=1', 'https://box.example.com')).toBe(
+      'https://box.example.com/storage/v1/s3/b/k?t=1',
+    );
+    // An unparseable URL is never redirected to.
+    expect(publicDownloadTarget('not a url', 'https://box.example.com')).toBeNull();
   });
 });
 
@@ -145,7 +151,7 @@ describe('serveConfigArchive', () => {
   test('public storage: 302 to the signed store URL', async () => {
     const store = new MemoryConfigArchiveStore();
     await store.putIfAbsent(configArchiveKey(project.projectId, tree), Buffer.from('x'));
-    const signed = `https://abc.supabase.co/storage/v1/object/sign/b/k?token=t`;
+    const signed = `https://abc.supabase.co/storage/v1/s3/b/k?X-Amz-Signature=t`;
     store.downloadUrl = async () => signed;
     const m = mirrors();
     const response = await serveConfigArchive(project, tree, m.mirror, m.forced, { store, ...PUBLIC });
@@ -155,15 +161,14 @@ describe('serveConfigArchive', () => {
 
   test('the public override rewrites the signed URL origin', async () => {
     const store = new MemoryConfigArchiveStore();
-    store.downloadUrl = async () => 'http://supabase-kong:8000/storage/v1/object/sign/b/k?token=t';
+    store.downloadUrl = async () => 'http://supabase-kong:8000/storage/v1/s3/b/k?X-Amz-Signature=t';
     const m = mirrors();
     const response = await serveConfigArchive(project, tree, m.mirror, m.forced, {
       store,
-      supabaseUrl: 'http://supabase-kong:8000',
       publicOverride: 'https://box.example.com',
     });
     expect(response.status).toBe(302);
-    expect(response.headers.get('location')).toBe('https://box.example.com/storage/v1/object/sign/b/k?token=t');
+    expect(response.headers.get('location')).toBe('https://box.example.com/storage/v1/s3/b/k?X-Amz-Signature=t');
   });
 
   test('public storage, store down: streams a mirror build', async () => {

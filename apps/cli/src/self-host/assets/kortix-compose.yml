@@ -86,6 +86,20 @@ services:
       # regardless of what `kortix self-host configure`/`env set` writes —
       # exactly the bug this fixes (billing used to be hard-pinned "false"
       # here no matter what .env said).
+      # Config archives (docs/specs/config-releases.md) go through the API's
+      # one object store, pointed at Supabase Storage's S3 PROTOCOL endpoint
+      # with the key pair the `storage` service already holds — no new secret,
+      # and no drift when `kortix self-host env rotate` regenerates the pair.
+      # The bucket is created by database migration, never at runtime.
+      # The endpoint is the INTERNAL kong host, so the archive route streams
+      # the bytes through this API instead of redirecting a sandbox at a
+      # hostname it cannot resolve.
+      KORTIX_CONFIG_ARCHIVE_S3_BUCKET: kortix-config-releases
+      KORTIX_CONFIG_ARCHIVE_S3_REGION: local
+      KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT: http://supabase-kong:8000/storage/v1/s3
+      KORTIX_CONFIG_ARCHIVE_S3_FORCE_PATH_STYLE: "true"
+      KORTIX_CONFIG_ARCHIVE_S3_ACCESS_KEY_ID: ${S3_PROTOCOL_ACCESS_KEY_ID}
+      KORTIX_CONFIG_ARCHIVE_S3_SECRET_ACCESS_KEY: ${S3_PROTOCOL_ACCESS_KEY_SECRET}
       LLM_GATEWAY_ENABLED: "true"
       LLM_GATEWAY_PROXY_TARGET: http://llm-gateway:8090
       # KORTIX_LLM_BASE_URL must use the public Caddy route. The proxy target

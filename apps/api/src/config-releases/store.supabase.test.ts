@@ -1,16 +1,32 @@
 /**
- * The Supabase store against a real local Supabase at 127.0.0.1:54321.
+ * The config archive store against a REAL local Supabase Storage, through its
+ * S3 protocol endpoint — the same `ObjectStore` the cloud uses, only pointed
+ * at a different endpoint.
  *
- * Runs only when that Storage API answers and a service-role key is available
- * (`KORTIX_CONFIG_STORE_TEST_SERVICE_ROLE_KEY`, else `supabase status -o env`).
- * Otherwise every test skips. Each run uses its own bucket and deletes it.
+ * This test is where the publish-once claim is MEASURED rather than asserted
+ * from a comment: it drives the raw endpoint first (a second PutObject with
+ * `If-None-Match: *` OVERWRITES there) and then proves the store's
+ * head-then-put path keeps the first write anyway.
+ *
+ * Runs only when local Supabase answers and its S3 protocol keys are
+ * available (`supabase status -o env`, else the well-known CLI defaults).
+ * Otherwise every test skips. Every object it writes is deleted.
  */
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
-import { SupabaseConfigArchiveStore, configArchiveKey } from './store';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { ObjectStore } from '../object-store/s3';
+import {
+  CONFIG_ARCHIVE_CONTENT_TYPE,
+  CONFIG_RELEASES_BUCKET,
+  S3ConfigArchiveStore,
+  configArchiveKey,
+} from './store';
 
 const SUPABASE_URL = 'http://127.0.0.1:54321';
+const ENDPOINT = `${SUPABASE_URL}/storage/v1/s3`;
+const PREFIX = 'config-releases-test';
 
 async function storageReachable(): Promise<boolean> {
   try {
@@ -22,63 +38,96 @@ async function storageReachable(): Promise<boolean> {
   }
 }
 
-function serviceRoleKey(): string | null {
-  const fromEnv = process.env.KORTIX_CONFIG_STORE_TEST_SERVICE_ROLE_KEY;
-  if (fromEnv) return fromEnv;
+function s3Keys(): { id: string; secret: string } | null {
+  const fromEnv = process.env.KORTIX_CONFIG_ARCHIVE_S3_ACCESS_KEY_ID;
+  const secretFromEnv = process.env.KORTIX_CONFIG_ARCHIVE_S3_SECRET_ACCESS_KEY;
+  if (fromEnv && secretFromEnv && !fromEnv.startsWith('test-')) return { id: fromEnv, secret: secretFromEnv };
   const status = spawnSync('npx', ['--no-install', 'supabase', 'status', '-o', 'env'], {
     cwd: resolve(import.meta.dir, '../../../..'),
     encoding: 'utf8',
     timeout: 20_000,
   });
   if (status.status !== 0) return null;
-  const line = status.stdout.split('\n').find((l) => l.startsWith('SERVICE_ROLE_KEY='));
-  return line ? line.slice('SERVICE_ROLE_KEY='.length).replace(/^"|"$/g, '') : null;
+  const read = (name: string): string | null => {
+    const line = status.stdout.split('\n').find((l) => l.startsWith(`${name}=`));
+    return line ? line.slice(name.length + 1).replace(/^"|"$/g, '') : null;
+  };
+  const id = read('S3_PROTOCOL_ACCESS_KEY_ID');
+  const secret = read('S3_PROTOCOL_ACCESS_KEY_SECRET');
+  return id && secret ? { id, secret } : null;
 }
 
 const reachable = await storageReachable();
-const key = reachable ? serviceRoleKey() : null;
-const live = Boolean(reachable && key);
+const keys = reachable ? s3Keys() : null;
+const live = Boolean(reachable && keys);
 
 const PROJECT = crypto.randomUUID();
 const TREE = 'b'.repeat(40);
-const bucket = `kortix-config-releases-test-${crypto.randomUUID().slice(0, 8)}`;
-const store = live ? new SupabaseConfigArchiveStore({ supabaseUrl: SUPABASE_URL, serviceRoleKey: key!, bucket }) : null;
+
+const objects = live
+  ? new ObjectStore(() => ({
+      name: 'config archive',
+      bucket: CONFIG_RELEASES_BUCKET,
+      region: 'local',
+      endpoint: ENDPOINT,
+      forcePathStyle: true,
+      accessKeyId: keys!.id,
+      secretAccessKey: keys!.secret,
+    }))
+  : null;
+const store = objects ? new S3ConfigArchiveStore(objects, PREFIX) : null;
 const written: string[] = [];
 
-describe.skipIf(!live)('SupabaseConfigArchiveStore against local Supabase', () => {
-  beforeAll(async () => {
-    await store!.ensureBucket();
+describe.skipIf(!live)('config archive store on Supabase Storage (S3 protocol)', () => {
+  afterAll(async () => {
+    if (!objects) return;
+    await objects.remove(written.map((key) => `${PREFIX}/${key}`));
+    const left = await objects.list(`${PREFIX}/projects/${PROJECT}/`);
+    // This test leaves nothing behind in the shared local bucket.
+    expect(left).toHaveLength(0);
   });
 
-  afterAll(async () => {
-    await store?.deleteBucketForTests(written);
-    const probe = await fetch(`${SUPABASE_URL}/storage/v1/bucket/${bucket}`, {
-      headers: { apikey: key!, Authorization: `Bearer ${key}` },
-    });
-    await probe.body?.cancel().catch(() => {});
-    // The bucket must be gone: this test leaves nothing in the shared Supabase.
-    expect(probe.ok).toBe(false);
+  test('the raw endpoint IGNORES If-None-Match — this is why the store heads first', async () => {
+    const key = `${PREFIX}/projects/${PROJECT}/trees/raw.tar.gz`;
+    written.push(`projects/${PROJECT}/trees/raw.tar.gz`);
+    const put = (body: string) =>
+      objects!.client().send(
+        new PutObjectCommand({
+          Bucket: CONFIG_RELEASES_BUCKET,
+          Key: key,
+          Body: Buffer.from(body),
+          ContentType: CONFIG_ARCHIVE_CONTENT_TYPE,
+          IfNoneMatch: '*',
+        }),
+      );
+    await put('first');
+    // No 412: the header is accepted and ignored.
+    await put('second');
+    expect(await objects!.getText(key)).toBe('second');
+    expect(objects!.publishOnce()).toBe('head-then-put');
   });
 
   test('putIfAbsent creates once and keeps the original on a second write', async () => {
-    const objectKey = configArchiveKey(PROJECT, TREE);
-    written.push(objectKey);
-    expect(await store!.exists(objectKey)).toBe(false);
-    expect(await store!.putIfAbsent(objectKey, Buffer.from('original bytes'))).toBe('created');
-    expect(await store!.putIfAbsent(objectKey, Buffer.from('replacement bytes'))).toBe('exists');
-    expect(await store!.exists(objectKey)).toBe(true);
+    const key = configArchiveKey(PROJECT, TREE);
+    written.push(key);
+    expect(await store!.exists(key)).toBe(false);
+    expect(await store!.putIfAbsent(key, Buffer.from('original bytes'))).toBe('created');
+    expect(await store!.putIfAbsent(key, Buffer.from('replacement bytes'))).toBe('exists');
+    expect(await store!.exists(key)).toBe(true);
 
-    const url = await store!.downloadUrl(objectKey, 900);
-    expect(url).toStartWith(`${SUPABASE_URL}/storage/v1/object/sign/${bucket}/`);
-    // A signed URL downloads with no credentials, and returns the first write.
+    const url = await store!.downloadUrl(key, 900);
+    expect(url).toStartWith(`${ENDPOINT}/${CONFIG_RELEASES_BUCKET}/${PREFIX}/`);
+    // A presigned URL downloads with no other credentials, and returns the
+    // first write.
     const download = await fetch(url!);
     expect(download.status).toBe(200);
     expect(Buffer.from(await download.arrayBuffer()).toString()).toBe('original bytes');
   });
 
   test('the bucket is private: an unsigned read is refused', async () => {
-    const objectKey = configArchiveKey(PROJECT, TREE);
-    const response = await fetch(`${SUPABASE_URL}/storage/v1/object/public/${bucket}/${objectKey}`);
+    const response = await fetch(
+      `${SUPABASE_URL}/storage/v1/object/public/${CONFIG_RELEASES_BUCKET}/${PREFIX}/${configArchiveKey(PROJECT, TREE)}`,
+    );
     await response.body?.cancel().catch(() => {});
     expect(response.ok).toBe(false);
   });
@@ -89,9 +138,19 @@ describe.skipIf(!live)('SupabaseConfigArchiveStore against local Supabase', () =
     expect(await store!.downloadUrl(missing, 900)).toBeNull();
   });
 
-  test('a second store instance treats the existing bucket as ready', async () => {
-    const again = new SupabaseConfigArchiveStore({ supabaseUrl: SUPABASE_URL, serviceRoleKey: key!, bucket });
-    await again.ensureBucket();
-    expect(await again.exists(configArchiveKey(PROJECT, TREE))).toBe(true);
-  });
+  test('pruneProject keeps the newest archives and deletes the rest', async () => {
+    const project = crypto.randomUUID();
+    const keys = ['1', '2', '3'].map((n) => configArchiveKey(project, n.repeat(40)));
+    for (const key of keys) {
+      written.push(key);
+      await store!.putIfAbsent(key, Buffer.from(key));
+      // Distinct LastModified values: Storage stamps at second resolution.
+      await Bun.sleep(1100);
+    }
+    const deleted = await store!.pruneProject(project, 2);
+    expect(deleted).toEqual([keys[0]!]);
+    expect(await store!.exists(keys[0]!)).toBe(false);
+    expect(await store!.exists(keys[1]!)).toBe(true);
+    expect(await store!.exists(keys[2]!)).toBe(true);
+  }, 30_000);
 });

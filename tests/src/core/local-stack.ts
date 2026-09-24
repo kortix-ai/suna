@@ -133,6 +133,8 @@ export function parseSupabaseEnvironment(
         "ANON_KEY",
         "SERVICE_ROLE_KEY",
         "JWT_SECRET",
+        "S3_PROTOCOL_ACCESS_KEY_ID",
+        "S3_PROTOCOL_ACCESS_KEY_SECRET",
       ].includes(key)
     )
       continue;
@@ -532,7 +534,14 @@ export async function ensureLocalStack(
     );
   }
 
-  const { DB_URL, API_URL, SERVICE_ROLE_KEY, JWT_SECRET } = options.supabase;
+  const {
+    DB_URL,
+    API_URL,
+    SERVICE_ROLE_KEY,
+    JWT_SECRET,
+    S3_PROTOCOL_ACCESS_KEY_ID,
+    S3_PROTOCOL_ACCESS_KEY_SECRET,
+  } = options.supabase;
   if (!DB_URL || !API_URL || !SERVICE_ROLE_KEY) {
     throw new Error("local Supabase environment is incomplete");
   }
@@ -569,6 +578,21 @@ export async function ensureLocalStack(
           INTERNAL_SERVICE_KEY: LOCAL_FLOW_INTERNAL_SERVICE_KEY,
           ...(JWT_SECRET ? { SUPABASE_JWT_SECRET: JWT_SECRET } : {}),
           KORTIX_SKIP_ENSURE_SCHEMA: "1",
+          // Config archives go through the API's one object store, pointed at
+          // this profile's Supabase Storage S3 endpoint. `--no-env-file` above
+          // means apps/api/.env is NOT read here, so the whole block has to be
+          // explicit — and it is required: billing is on in this profile, so a
+          // missing bucket is a startup error, not a warning.
+          KORTIX_CONFIG_ARCHIVE_S3_BUCKET: "kortix-config-releases",
+          KORTIX_CONFIG_ARCHIVE_S3_REGION: "local",
+          KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT: `${API_URL.replace(/\/+$/, "")}/storage/v1/s3`,
+          KORTIX_CONFIG_ARCHIVE_S3_FORCE_PATH_STYLE: "true",
+          ...(S3_PROTOCOL_ACCESS_KEY_ID
+            ? { KORTIX_CONFIG_ARCHIVE_S3_ACCESS_KEY_ID: S3_PROTOCOL_ACCESS_KEY_ID }
+            : {}),
+          ...(S3_PROTOCOL_ACCESS_KEY_SECRET
+            ? { KORTIX_CONFIG_ARCHIVE_S3_SECRET_ACCESS_KEY: S3_PROTOCOL_ACCESS_KEY_SECRET }
+            : {}),
           SCHEDULER_ENABLED: "false",
           KORTIX_TRIGGER_SCHEDULER_ENABLED: "false",
           KORTIX_WORKERS_ENABLED: "false",

@@ -1,184 +1,155 @@
 import { describe, expect, test } from 'bun:test';
+import { S3Client } from '@aws-sdk/client-s3';
+import { ObjectStore } from '../object-store/s3';
 import {
-  CONFIG_RELEASES_BUCKET,
-  ConfigArchiveStoreError,
+  CONFIG_ARCHIVE_CONTENT_TYPE,
   MemoryConfigArchiveStore,
-  SupabaseConfigArchiveStore,
+  S3ConfigArchiveStore,
   configArchiveKey,
+  configArchiveProjectPrefix,
 } from './store';
 
 const PROJECT = '5f0c2f36-6a1b-4c1e-9d3a-8a1f3b2c4d5e';
 const TREE = 'a'.repeat(40);
 
-interface Call {
-  url: string;
-  method: string;
-  headers: Record<string, string>;
-  body: unknown;
+function fakeClient(answers: Array<unknown | Error>) {
+  const sent: Array<{ name: string; input: Record<string, unknown> }> = [];
+  const client = {
+    send: async (command: { constructor: { name: string }; input: Record<string, unknown> }) => {
+      sent.push({ name: command.constructor.name, input: command.input });
+      const answer = answers.shift();
+      if (answer instanceof Error) throw answer;
+      return answer ?? {};
+    },
+  } as unknown as S3Client;
+  return { client, sent };
 }
 
-/** A scripted fetch. Each handler answers one path pattern. */
-function scriptedFetch(handlers: Array<[RegExp, (call: Call) => Response]>) {
-  const calls: Call[] = [];
-  const fetchImpl = async (url: string, init?: RequestInit) => {
-    const call: Call = {
-      url,
-      method: init?.method ?? 'GET',
-      headers: (init?.headers ?? {}) as Record<string, string>,
-      body: init?.body,
-    };
-    calls.push(call);
-    const handler = handlers.find(([pattern]) => pattern.test(url));
-    if (!handler) throw new Error(`unscripted request ${call.method} ${url}`);
-    return handler[1](call);
-  };
-  return { calls, fetchImpl };
+function missing(): Error {
+  const error = new Error('NotFound');
+  error.name = 'NotFound';
+  (error as { $metadata?: unknown }).$metadata = { httpStatusCode: 404 };
+  return error;
 }
 
-const json = (status: number, body: unknown) =>
-  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
-
-const DUPLICATE = { statusCode: '409', error: 'Duplicate', message: 'The resource already exists' };
-const NOT_FOUND = { statusCode: '404', error: 'not_found', message: 'Object not found' };
-
-function store(handlers: Array<[RegExp, (call: Call) => Response]>) {
-  const scripted = scriptedFetch(handlers);
-  return {
-    ...scripted,
-    store: new SupabaseConfigArchiveStore({
-      supabaseUrl: 'http://127.0.0.1:54321/',
-      serviceRoleKey: 'service-role-test',
-      fetch: scripted.fetchImpl,
-    }),
-  };
+/** An S3-backed config archive store over a scripted client, with a prefix. */
+function s3Store(answers: Array<unknown | Error>, prefix = 'config-releases/') {
+  const { client, sent } = fakeClient(answers);
+  const objectStore = new ObjectStore(
+    () => ({ name: 'config archive', bucket: 'kortix-dev-project-snapshots', region: 'us-west-2' }),
+    {
+      client,
+      // Presigning is pure SigV4 over a real client — no request is sent.
+      presignClient: new S3Client({
+        region: 'us-west-2',
+        credentials: { accessKeyId: 'AKIAEXAMPLE', secretAccessKey: 'secret' },
+      }),
+    },
+  );
+  return { sent, store: new S3ConfigArchiveStore(objectStore, prefix) };
 }
 
 describe('configArchiveKey', () => {
   test('lays keys out per project and per config tree ID', () => {
     expect(configArchiveKey(PROJECT, TREE)).toBe(`projects/${PROJECT}/trees/${TREE}.tar.gz`);
+    expect(configArchiveProjectPrefix(PROJECT)).toBe(`projects/${PROJECT}/trees/`);
   });
 
   test('rejects a project ID or tree ID that could escape the prefix', () => {
     expect(() => configArchiveKey('../other', TREE)).toThrow('invalid project id');
     expect(() => configArchiveKey(PROJECT, 'HEAD')).toThrow('invalid config tree id');
     expect(() => configArchiveKey(PROJECT, 'A'.repeat(40))).toThrow('invalid config tree id');
+    expect(() => configArchiveProjectPrefix('../other')).toThrow('invalid project id');
   });
 });
 
-describe('SupabaseConfigArchiveStore', () => {
-  test('creates the private bucket once, then uploads without upsert', async () => {
-    const { calls, store: s } = store([
-      [/\/storage\/v1\/bucket$/, () => json(200, { name: CONFIG_RELEASES_BUCKET })],
-      [/\/object\/kortix-config-releases\//, () => json(200, { Key: 'x' })],
-    ]);
-    const key = configArchiveKey(PROJECT, TREE);
-    expect(await s.putIfAbsent(key, Buffer.from('one'))).toBe('created');
-    expect(await s.putIfAbsent(key, Buffer.from('two'))).toBe('created');
-
-    const bucketCalls = calls.filter((c) => c.url.endsWith('/storage/v1/bucket'));
-    expect(bucketCalls).toHaveLength(1);
-    expect(JSON.parse(String(bucketCalls[0]!.body))).toEqual({
-      id: CONFIG_RELEASES_BUCKET,
-      name: CONFIG_RELEASES_BUCKET,
-      public: false,
-    });
-    const upload = calls.find((c) => c.url.includes('/object/kortix-config-releases/'))!;
-    expect(upload.url).toBe(`http://127.0.0.1:54321/storage/v1/object/${CONFIG_RELEASES_BUCKET}/${key}`);
-    expect(upload.method).toBe('POST');
-    expect(upload.headers['x-upsert']).toBeUndefined();
-    expect(upload.headers.Authorization).toBe('Bearer service-role-test');
-    expect(upload.headers.apikey).toBe('service-role-test');
+describe('S3ConfigArchiveStore — the one object store, bucket prefix applied', () => {
+  test('putIfAbsent writes the layout key under the configured prefix', async () => {
+    const { store, sent } = s3Store([{ ETag: '"1"' }]);
+    expect(await store.putIfAbsent(configArchiveKey(PROJECT, TREE), Buffer.from('gz'))).toBe('created');
+    expect(sent.map((c) => c.name)).toEqual(['PutObjectCommand']);
+    expect(sent[0]!.input.Key).toBe(`config-releases/projects/${PROJECT}/trees/${TREE}.tar.gz`);
+    expect(sent[0]!.input.Bucket).toBe('kortix-dev-project-snapshots');
+    expect(sent[0]!.input.ContentType).toBe(CONFIG_ARCHIVE_CONTENT_TYPE);
+    // AWS honours it, so the first write is kept atomically.
+    expect(sent[0]!.input.IfNoneMatch).toBe('*');
   });
 
-  test('treats an existing bucket as ready', async () => {
-    const { store: s } = store([
-      [/\/storage\/v1\/bucket$/, () => json(400, DUPLICATE)],
-      [/\/object\/info\//, () => json(200, { id: 'x' })],
-    ]);
-    expect(await s.exists(configArchiveKey(PROJECT, TREE))).toBe(true);
+  test('a published archive is never overwritten', async () => {
+    const conflict = new Error('PreconditionFailed');
+    conflict.name = 'PreconditionFailed';
+    const { store } = s3Store([conflict]);
+    expect(await store.putIfAbsent(configArchiveKey(PROJECT, TREE), Buffer.from('gz'))).toBe('exists');
   });
 
-  test('retries bucket creation after a failure', async () => {
-    let attempts = 0;
-    const { store: s } = store([
-      [
-        /\/storage\/v1\/bucket$/,
-        () => (++attempts === 1 ? json(500, { error: 'boom' }) : json(200, { name: CONFIG_RELEASES_BUCKET })),
-      ],
-      [/\/object\/info\//, () => json(400, NOT_FOUND)],
-    ]);
-    await expect(s.exists(configArchiveKey(PROJECT, TREE))).rejects.toThrow('create bucket');
-    expect(await s.exists(configArchiveKey(PROJECT, TREE))).toBe(false);
-    expect(attempts).toBe(2);
+  test('exists maps a missing object to false', async () => {
+    const { store: present } = s3Store([{ ContentLength: 9 }]);
+    expect(await present.exists(configArchiveKey(PROJECT, TREE))).toBe(true);
+    const { store: absent } = s3Store([missing()]);
+    expect(await absent.exists(configArchiveKey(PROJECT, TREE))).toBe(false);
   });
 
-  test('maps the native duplicate answer (HTTP 400, statusCode 409) to exists', async () => {
-    const { store: s } = store([
-      [/\/storage\/v1\/bucket$/, () => json(200, {})],
-      [/\/object\/kortix-config-releases\//, () => json(400, DUPLICATE)],
-    ]);
-    expect(await s.putIfAbsent(configArchiveKey(PROJECT, TREE), Buffer.from('x'))).toBe('exists');
+  test('downloadUrl is null for a missing object and presigned otherwise', async () => {
+    const { store: absent, sent } = s3Store([missing()]);
+    expect(await absent.downloadUrl(configArchiveKey(PROJECT, TREE), 900)).toBeNull();
+    expect(sent.map((c) => c.name)).toEqual(['HeadObjectCommand']);
+
+    const { store } = s3Store([{ ContentLength: 9 }]);
+    const url = await store.downloadUrl(configArchiveKey(PROJECT, TREE), 900);
+    expect(url).toContain(`config-releases/projects/${PROJECT}/trees/${TREE}.tar.gz`);
+    expect(url).toContain('X-Amz-Signature=');
+    expect(url).toContain('X-Amz-Expires=900');
   });
 
-  test('throws on any other upload failure', async () => {
-    const { store: s } = store([
-      [/\/storage\/v1\/bucket$/, () => json(200, {})],
-      [/\/object\/kortix-config-releases\//, () => json(413, { statusCode: '413', error: 'Payload too large' })],
-    ]);
-    const error = await s.putIfAbsent(configArchiveKey(PROJECT, TREE), Buffer.from('x')).catch((e) => e);
-    expect(error).toBeInstanceOf(ConfigArchiveStoreError);
-    expect((error as ConfigArchiveStoreError).status).toBe(413);
+  test('an unconfigured bucket fails where it is used, naming the setting', async () => {
+    const { client } = fakeClient([]);
+    const store = new S3ConfigArchiveStore(
+      new ObjectStore(() => ({ name: 'config archive', bucket: '' }), { client }),
+      '',
+    );
+    await expect(store.exists(configArchiveKey(PROJECT, TREE))).rejects.toThrow(
+      'config archive object store bucket is not configured',
+    );
+  });
+});
+
+describe('S3ConfigArchiveStore.pruneProject — bounded retention', () => {
+  const key = (n: string) => `projects/${PROJECT}/trees/${n.repeat(40)}.tar.gz`;
+  const listing = (names: string[]) => ({
+    Contents: names.map((n, i) => ({
+      Key: `config-releases/${key(n)}`,
+      Size: 10,
+      LastModified: new Date(Date.UTC(2026, 0, i + 1)),
+    })),
+    IsTruncated: false,
   });
 
-  test('exists: a not-found body on HTTP 400 is false, a server error throws', async () => {
-    let answer = json(400, NOT_FOUND);
-    const { store: s } = store([
-      [/\/storage\/v1\/bucket$/, () => json(200, {})],
-      [/\/object\/info\//, () => answer],
+  test('keeps the newest N and deletes the rest, under this project only', async () => {
+    const { store, sent } = s3Store([listing(['a', 'b', 'c', 'd']), { Deleted: [{ Key: 'x' }, { Key: 'y' }] }]);
+    expect(await store.pruneProject(PROJECT, 2)).toEqual([key('b'), key('a')]);
+    expect(sent[0]!.name).toBe('ListObjectsV2Command');
+    expect(sent[0]!.input.Prefix).toBe(`config-releases/projects/${PROJECT}/trees/`);
+    expect(sent[1]!.name).toBe('DeleteObjectsCommand');
+    expect((sent[1]!.input.Delete as { Objects: Array<{ Key: string }> }).Objects.map((o) => o.Key)).toEqual([
+      `config-releases/${key('b')}`,
+      `config-releases/${key('a')}`,
     ]);
-    const key = configArchiveKey(PROJECT, TREE);
-    expect(await s.exists(key)).toBe(false);
-    answer = json(503, { error: 'unavailable' });
-    await expect(s.exists(key)).rejects.toThrow('HTTP 503');
   });
 
-  test('downloadUrl resolves the signed path against /storage/v1 with the requested TTL', async () => {
-    const { calls, store: s } = store([
-      [/\/storage\/v1\/bucket$/, () => json(200, {})],
-      [/\/object\/sign\//, () => json(200, { signedURL: `/object/sign/${CONFIG_RELEASES_BUCKET}/k?token=t` })],
-    ]);
-    const url = await s.downloadUrl(configArchiveKey(PROJECT, TREE), 900);
-    expect(url).toBe(`http://127.0.0.1:54321/storage/v1/object/sign/${CONFIG_RELEASES_BUCKET}/k?token=t`);
-    const sign = calls.find((c) => c.url.includes('/object/sign/'))!;
-    expect(JSON.parse(String(sign.body))).toEqual({ expiresIn: 900 });
+  test('nothing to delete sends no delete', async () => {
+    const { store, sent } = s3Store([listing(['a', 'b'])]);
+    expect(await store.pruneProject(PROJECT, 5)).toEqual([]);
+    expect(sent).toHaveLength(1);
   });
 
-  test('NoSuchBucket after a successful create is an error, never "not found"', async () => {
-    const noBucket = { statusCode: '404', error: 'Bucket not found', message: 'Bucket not found', code: 'NoSuchBucket' };
-    let creates = 0;
-    const { store: s } = store([
-      [/\/storage\/v1\/bucket$/, () => (creates++, json(200, {}))],
-      [/\/object\//, () => json(400, noBucket)],
-    ]);
-    const key = configArchiveKey(PROJECT, TREE);
-    await expect(s.exists(key)).rejects.toThrow('service-role key is probably rejected');
-    await expect(s.downloadUrl(key, 900)).rejects.toThrow('service-role key is probably rejected');
-    await expect(s.putIfAbsent(key, Buffer.from('x'))).rejects.toThrow('service-role key is probably rejected');
-    // Each failure resets the bucket, so the next call re-creates it.
-    expect(creates).toBe(3);
-  });
-
-  test('downloadUrl returns null for a missing object', async () => {
-    const { store: s } = store([
-      [/\/storage\/v1\/bucket$/, () => json(200, {})],
-      [/\/object\/sign\//, () => json(400, NOT_FOUND)],
-    ]);
-    expect(await s.downloadUrl(configArchiveKey(PROJECT, TREE), 900)).toBeNull();
+  test('a keep floor of zero is refused: the store must never empty a project', async () => {
+    const { store } = s3Store([]);
+    await expect(store.pruneProject(PROJECT, 0)).rejects.toThrow('keep must be at least 1');
   });
 });
 
 describe('MemoryConfigArchiveStore', () => {
-  test('keeps the first write, like the native API', async () => {
+  test('keeps the first write', async () => {
     const s = new MemoryConfigArchiveStore();
     const key = configArchiveKey(PROJECT, TREE);
     expect(await s.exists(key)).toBe(false);
@@ -188,6 +159,14 @@ describe('MemoryConfigArchiveStore', () => {
     expect(s.objects.get(key)!.toString()).toBe('first');
     expect(await s.exists(key)).toBe(true);
     expect(await s.downloadUrl(key, 900)).toContain(key);
+  });
+
+  test('prunes per project the same way the S3 store does', async () => {
+    const s = new MemoryConfigArchiveStore();
+    const keys = ['a', 'b', 'c'].map((n) => configArchiveKey(PROJECT, n.repeat(40)));
+    for (const k of keys) await s.putIfAbsent(k, Buffer.from(k));
+    expect(await s.pruneProject(PROJECT, 2)).toEqual([keys[0]!]);
+    expect([...s.objects.keys()]).toEqual([keys[1]!, keys[2]!]);
   });
 
   test('failWith makes every call throw', async () => {

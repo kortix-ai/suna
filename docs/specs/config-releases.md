@@ -68,6 +68,7 @@ identifiers (commit and compiled etag) applied in two steps.
 | 2026-09-20 | One PR (#7403) ships the final shape. |
 | 2026-09-21 | The API decides the desired release. The daemon only executes and reports. |
 | 2026-09-21 | Storage default is the Supabase Storage native API. |
+| 2026-09-24 | Reversed: ONE object store for the whole API (`object-store/s3.ts`, the AWS SDK). Config archives are a configured target of it — AWS S3 on dev/staging/prod, Supabase Storage's S3 PROTOCOL endpoint everywhere else. The bespoke Supabase HTTP client and its runtime bucket creation are deleted. |
 | 2026-09-21 | A session without repository access never receives a config archive. |
 | 2026-09-22 | A session from a previous repository generation keeps its running config. It never receives a release built from the current repository. |
 | 2026-09-23 | The whole feature is behind the per-project `config_releases` flag, ON by default, with the operator kill switch `CONFIG_RELEASES_ENABLED`. |
@@ -168,54 +169,154 @@ Use these terms exactly. Do not use synonyms.
 
 ## Store
 
-### Interface
+### One implementation
+
+Every object the API writes goes through ONE module: `apps/api/src/object-store/s3.ts`
+(`ObjectStore`), a thin layer over `@aws-sdk/client-s3`. Project snapshots
+(`git-proxy/project-snapshot-store.ts`) and config archives
+(`config-releases/store.ts`) are two configured TARGETS of that one module, not
+two implementations. There is no second HTTP client, no second credential path,
+and no second way to put an object. Nothing in the API creates a bucket at
+runtime: a store that can mint its own bucket cannot tell a missing bucket from
+a rejected credential.
+
+`ObjectStore` public surface: `putIfAbsent`, `head`, `getText`,
+`presignDownload`, `list`, `remove`, `client`, `presignClient`, `publishOnce`,
+plus the pure `resolvePresignTarget` and `publishOnceMode`.
+
+The config-archive view of it:
 
 ```ts
 interface ConfigArchiveStore {
   putIfAbsent(key: string, body: Buffer): Promise<'created' | 'exists'>
   downloadUrl(key: string, ttlSeconds: number): Promise<string | null>
   exists(key: string): Promise<boolean>
+  pruneProject(projectId: string, keep: number): Promise<string[]>
 }
 ```
 
-### Default implementation: Supabase Storage native API
+`S3ConfigArchiveStore` is the only implementation. `MemoryConfigArchiveStore`
+is a unit-test double.
 
-Measured against local Supabase on 2026-09-21:
+### Settings, per environment
 
-| Operation | Native Storage API | Supabase S3 endpoint |
+| Environment | Endpoint | Bucket | Credentials |
+|---|---|---|---|
+| dev / staging / prod | AWS S3 (regional) | that environment's `*-project-snapshots` bucket, prefix `config-releases/` | ECS task role, via the AWS SDK default chain |
+| local dev | `http://127.0.0.1:54321/storage/v1/s3` | `kortix-config-releases` | Supabase S3 protocol key pair |
+| preview / self-host | `http://supabase-kong:8000/storage/v1/s3` | `kortix-config-releases` | the stack's generated `S3_PROTOCOL_ACCESS_KEY_*` pair |
+
+Keys: `KORTIX_CONFIG_ARCHIVE_S3_BUCKET`, `_REGION`, `_ENDPOINT`,
+`_FORCE_PATH_STYLE`, `_ACCESS_KEY_ID`, `_SECRET_ACCESS_KEY`, `_PREFIX`
+(default `config-releases`), `KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT`, and
+`KORTIX_CONFIG_ARCHIVE_PUBLIC_URL`.
+
+Config archives get their OWN settings instead of sharing the snapshot keys,
+and share the BUCKET on AWS. Three reasons:
+
+- `KORTIX_PROJECT_SNAPSHOT_S3_BUCKET` is what gates the snapshot PRODUCER
+  (`projectSnapshotStorageConfigured()`, the leader worker). Sharing it would
+  start that worker in every environment that only wants config archives.
+- A shared bucket is one Terraform resource, one task-role grant, and one
+  lifecycle rule per environment. The prefix keeps the two key spaces apart.
+- Outside AWS there is no snapshot bucket at all: config archives point at
+  Supabase Storage, snapshots stay unconfigured.
+
+Wired in: `apps/api/.env` (local, dotenvx), `apps/api/scripts/test.env` (unit
+suite), `scripts/worktree/lib/launch-env.ts` (worktree stacks, from that
+slot's `supabase status`), `apps/cli/src/self-host/assets/kortix-compose.yml`
+(self-host and preview), and `KORTIX_ECS_ENV_OVERRIDES` in
+`.github/workflows/deploy-{dev,staging,prod}.yml`.
+
+### Failing loud
+
+`validateEnv()` checks the pair `CONFIG_RELEASES_ENABLED` (default on) and
+`KORTIX_CONFIG_ARCHIVE_S3_BUCKET`:
+
+- Managed cloud (billing on, which includes preview): a missing bucket is a
+  startup ERROR and the API refuses to start. A deploy that forgot the bucket
+  must not reach users.
+- Self-host: a WARNING, and the API boots. The store is a cache, and an
+  operator whose container still carries a stale env block must not be locked
+  out of their own dashboard.
+- An endpoint without a key pair is always an ERROR: an S3-compatible endpoint
+  has no task role to fall back to.
+
+There is no second store to fall back to. An unconfigured or failing store
+means one thing: the archive route rebuilds from the Git mirror and streams
+that.
+
+### Publish-once, measured per provider
+
+| Endpoint | Second PutObject of one key with `If-None-Match: *` | What the store does |
 |---|---|---|
-| Upload new key | 200 | 200 |
-| Second upload, same key | refused, `409 Duplicate`, original kept | accepted, overwrote |
-| Signed download, no credentials | 200, original bytes | 200 |
-| Private object, no credentials | refused | refused |
-| New credentials needed | none | access key pair per environment |
+| AWS S3 | `412 PreconditionFailed`, original kept | one conditional PutObject (atomic) |
+| Supabase Storage S3 protocol | **200, OVERWRITES** (measured 2026-09-24, local storage-api) | HeadObject first, then an unconditional PutObject |
 
-Rules:
+`publishOnceMode(endpoint)` picks the mechanism and the store logs the choice
+once, naming the endpoint:
 
-- Use the native API with `SUPABASE_URL` and the service-role key. Every
-  environment already has both. Do not use the S3 endpoint.
-- Bucket `kortix-config-releases`, private. The API creates it on first use.
-  `409` means it exists.
-- Object key: `projects/<project_id>/trees/<config_tree_id>.tar.gz`. Keys never
-  share a prefix across projects.
-- `putIfAbsent` uploads without upsert. `409 Duplicate` returns `exists`.
+```
+[object-store] config archive bucket=kortix-config-releases endpoint=http://127.0.0.1:54321/storage/v1/s3 publish-once=head-then-put (the endpoint ignores If-None-Match, so an existing key is read first and never rewritten)
+```
+
+head-then-put is NOT atomic: two concurrent producers can both write. That is
+harmless here and only here, because the key is the config dir's git tree ID —
+the loser writes byte-identical content. `store.supabase.test.ts` proves both
+halves against real local Supabase: the raw endpoint overwrites, and
+`putIfAbsent` still keeps the first write.
+
+### Key layout
+
+- `<prefix>/projects/<project_id>/trees/<config_tree_id>.tar.gz`, private.
+- Keys never share a prefix across projects, so one project's prefix can be
+  listed and pruned without touching another's.
 - Signed URL lifetime: 900 s.
 - The store is a cache. The API can rebuild any config archive from its Git
   mirror. A store failure makes the API stream the archive it built.
-- Do not use the project-snapshot settings (`KORTIX_PROJECT_SNAPSHOT_S3_*`).
-  `config.ts` states that setting that bucket starts the snapshot producer on
-  the API leader. Config releases must not start anything else.
+
+### Retention
+
+Nothing about a config archive is a source of truth, so deleting one is always
+safe: the next request rebuilds it from the mirror and republishes it.
+
+- **AWS (dev, staging, prod):** the bucket's own lifecycle rule owns it —
+  `expiration_days = 30` in `infra/terraform/modules/project-snapshots-bucket`,
+  which already covers the whole bucket, prefix included. The API task role has
+  `s3:PutObject`, `s3:GetObject` and `s3:ListBucket` and deliberately NO
+  `s3:DeleteObject`, so the API must not try to delete there. The deploy
+  workflows set `KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT=0`, which turns the
+  API-side prune off.
+- **Supabase Storage (local, preview, self-host):** there is no lifecycle
+  engine, so the API prunes. After a publish that CREATED an object,
+  `pruneProject` lists that one project's prefix, keeps the
+  `KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT` newest (default 20) and deletes
+  the rest. It rides the publish because that is the only moment a project
+  gains an archive: no cron, no worker, no leader election. A prune failure is
+  logged and never fails the publish.
+
+Known gap: retention is by count and recency, not by what live sessions
+reference. A project that cycles through more than 20 distinct config trees
+while old sessions are still running can have an archive deleted out from under
+one of them. The cost is one rebuild-from-mirror on the next request, which is
+the same path a cold store takes, so this is bounded and visible rather than
+fixed.
 
 ### Download path
 
 - The daemon always downloads through the API:
   `GET /v1/projects/{projectId}/config-archives/{configTreeId}`.
-- The API answers `302` to a signed store URL when the storage host is public.
-- The API streams the bytes when the storage host is loopback or private.
-  Classify with `classifyIpHost` (`snapshots/providers/upload-url-guard.ts`).
-  Local Supabase at `127.0.0.1` is not reachable from a cloud sandbox.
-- Optional override `KORTIX_CONFIG_ARCHIVE_PUBLIC_URL` names a public storage
-  base URL.
+- The store presigns a download URL for the object. The route classifies THAT
+  URL's host with `classifyIpHost`
+  (`snapshots/providers/upload-url-guard.ts`), so the rule holds for every
+  endpoint the object store can point at.
+- Public host: `302` to the signed URL.
+- Loopback or private host: the API streams the bytes. Local Supabase at
+  `127.0.0.1` and self-host `supabase-kong` are not reachable from a cloud
+  sandbox.
+- Optional override `KORTIX_CONFIG_ARCHIVE_PUBLIC_URL` names the endpoint the
+  SANDBOX reaches. Download URLs are presigned for that host and the route
+  redirects to it.
 
 ## API
 
@@ -869,8 +970,11 @@ applies.
 | A failed OpenCode start takes up to 90 s to detect | `VERIFY_READY_TIMEOUT_MS`, `lifecycle.ts` |
 | Staged daemon swapped 10 s after a refresh past 5 min idle | preview, 2026-09-18 |
 | Supabase native API refuses a second write; S3 endpoint overwrites | local Supabase probe, 2026-09-21 |
+| The S3 endpoint accepts `If-None-Match: *` and still overwrites; head-then-put keeps the first write | local Supabase probe + `config-releases/store.supabase.test.ts`, 2026-09-24 |
+| Supabase Storage's S3 endpoint serves `ListObjectsV2` (with paging) and `DeleteObjects` | local Supabase probe, 2026-09-24 |
+| The API task role holds PutObject/GetObject/ListBucket and no DeleteObject | `infra/terraform/modules/ecs-api/main.tf` |
 | Supabase keeps object metadata in Postgres (`storage.objects`) | local Supabase |
-| Setting the snapshot bucket starts the snapshot producer | `apps/api/src/config.ts` comment |
+| Setting the snapshot bucket starts the snapshot producer, so config archives read their own settings | `git-proxy/project-snapshot-worker.ts`, `config-releases/enabled.test.ts` |
 | Warm-seed and hot-swap boot paths are unreachable | nothing in the repo sets `KORTIX_WARM_SEED` or `KORTIX_LLM_HOTSWAP` |
 | The `memory` tool writes `/workspace/.kortix/memory`, not the config dir | Daytona box, 2026-09-24, session `1a685caf` |
 | A write into an unsealed release root or `skills/` succeeded, then vanished with an unannounced OpenCode respawn | same box, reproduced 4× |

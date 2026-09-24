@@ -1024,7 +1024,21 @@ jobs:
       # makes clients stop using the path proxy, so it goes in only once the
       # certificate pack for that wildcard is active. Unset = path proxy, which
       # is also the complete rollback.
-      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com"}'
+      #
+      # KORTIX_CONFIG_ARCHIVE_S3_* points the API's ONE object store
+      # (apps/api/src/object-store/s3.ts) at the SAME bucket for config release
+      # archives, under the `config-releases/` prefix
+      # (KORTIX_CONFIG_ARCHIVE_S3_PREFIX, default). Own keys, not the snapshot
+      # ones, so naming a config bucket never starts the snapshot producer.
+      # Credentials: the task role, which already holds PutObject/GetObject on
+      # the objects and ListBucket on the bucket.
+      # KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT=0 hands retention to the
+      # bucket's lifecycle rule (expiration_days = 30 in
+      # infra/terraform/modules/project-snapshots-bucket): that role has NO
+      # s3:DeleteObject, and expiry is safe because the archive is a cache the
+      # API rebuilds from its Git mirror.
+      # docs/specs/config-releases.md#store
+      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-prod-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"eu-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0"}'
     steps:
       - uses: actions/checkout@v7
       - name: Configure AWS credentials (OIDC)
