@@ -136,10 +136,14 @@ function fakeDeps(opts: {
   const mounted = opts.mounted ?? new Set<string>()
   const calls: Array<{ kind: 'run' | 'spawn'; cmd: string; args: string[]; env?: Record<string, string> }> = []
   const notes: string[] = []
+  const madeDirs: string[] = []
   let clock = 0
   const deps: VolumeDeps = {
     run: async (cmd, args) => {
       calls.push({ kind: 'run', cmd, args })
+    },
+    makeDir: (path) => {
+      madeDirs.push(path)
     },
     spawnDetached: (cmd, args, env) => {
       calls.push({ kind: 'spawn', cmd, args, env })
@@ -169,7 +173,7 @@ function fakeDeps(opts: {
       ),
     now: () => clock,
   }
-  return { deps, calls, notes, mounted }
+  return { deps, calls, notes, mounted, madeDirs }
 }
 
 function store(env: Record<string, string>) {
@@ -196,11 +200,26 @@ describe('startVolumes', () => {
     // The note exists before any await: OpenCode's config composes right after.
     expect(notes[0]).toContain('still mounting')
     await handle.ready
-    expect(calls[0]).toMatchObject({ kind: 'run', cmd: 'sudo', args: ['-n', 'mkdir', '-p', '/volumes/data', expect.stringContaining('/volumes/data'), '/var/log/kortix-volumes'] })
+    expect(calls[0]).toEqual({ kind: 'run', cmd: 'sudo', args: ['-n', 'mkdir', '-p', '/volumes/data', '/var/log/kortix-volumes'] })
     expect(calls[1]!.cmd).toBe('sudo')
     expect(calls[1]!.args.slice(0, 4)).toEqual(['-n', '-E', 'rclone', 'mount'])
     expect(calls[1]!.env).toMatchObject({ RCLONE_S3_ACCESS_KEY_ID: 'AKIAEXAMPLE', RCLONE_S3_SECRET_ACCESS_KEY: 's3cr3t' })
     expect(notes.at(-1)).toContain('- `/volumes/data`: s3://acme-data/training/ (read-write).')
+  })
+
+  test('the cache under the daemon state dir is created as the daemon user, never through sudo', async () => {
+    // Regression: `sudo mkdir -p <state>/volumes/<name>` created the daemon's
+    // state dir root-owned on a fresh box; the audit spool then failed EACCES
+    // and the runtime went unhealthy (real Daytona session, 2026-09-24).
+    const { deps, calls, madeDirs } = fakeDeps({ mountOnSpawn: true })
+    await startVolumes({ env: { KORTIX_VOLUMES: envelope([{ name: 'pub', mode: 'read-only', type: 's3', bucket: 'b' }]) }, projectEnv: store({}), deps }).ready
+    expect(madeDirs).toEqual([expect.stringMatching(/\/volumes\/pub$/)])
+    expect(madeDirs[0]).not.toStartWith('/volumes/')
+    const sudoArgs = calls.filter((c) => c.cmd === 'sudo' && c.args.includes('mkdir')).flatMap((c) => c.args)
+    expect(sudoArgs.some((a) => a.includes('.local/state'))).toBe(false)
+    // rclone still gets the cache dir the daemon created.
+    const rclone = calls.find((c) => c.kind === 'spawn')!
+    expect(rclone.args[rclone.args.indexOf('--cache-dir') + 1]).toBe(madeDirs[0])
   })
 
   test('as root, rclone runs without sudo', async () => {

@@ -206,6 +206,8 @@ export function renderVolumesInstruction(specs: VolumeSpec[], status: Map<string
 export type VolumeDeps = {
   /** Run a short command to completion; rejects on a non-zero exit. */
   run(cmd: string, args: string[]): Promise<void>
+  /** mkdir -p as THIS process's user (never through sudo). */
+  makeDir(path: string): void
   /** Start a long-lived process detached from this daemon. Resolves with its exit, if it exits. */
   spawnDetached(cmd: string, args: string[], env: Record<string, string>): { exited: Promise<number | null> }
   isMounted(mountPoint: string): boolean
@@ -232,6 +234,9 @@ export const systemVolumeDeps = (): VolumeDeps => ({
         err ? reject(new Error(stderr.trim() || err.message)) : resolve(),
       )
     }),
+  makeDir: (path) => {
+    mkdirSync(path, { recursive: true })
+  },
   spawnDetached: (cmd, args, env) => {
     const child = spawn(cmd, args, { env, detached: true, stdio: 'ignore' })
     const exited = new Promise<number | null>((resolve) => {
@@ -305,9 +310,19 @@ async function mountOne(
   if ('error' in credentials) return { state: 'failed', reason: credentials.error }
   const root = deps.uid === 0
   const cacheDir = join(resolveKortixRuntimeStateDirectory(), 'volumes', spec.name)
+  // The cache sits under the daemon's own state dir, which may not exist yet
+  // this early in boot. Create it as the daemon user: a `sudo mkdir -p` would
+  // create the state dir itself root-owned, and every later daemon write there
+  // (audit spool, pins) fails with EACCES — found on a real Daytona session.
   try {
-    const dirs = [mountPoint, cacheDir, VOLUME_LOG_DIR]
-    await (root ? deps.run('mkdir', ['-p', ...dirs]) : deps.run('sudo', ['-n', 'mkdir', '-p', ...dirs]))
+    deps.makeDir(cacheDir)
+  } catch (err) {
+    return { state: 'failed', reason: `could not create the volume cache ${cacheDir}: ${(err as Error).message}` }
+  }
+  // Only these two are root-owned by design (/ and /var/log are root's).
+  try {
+    const rootDirs = [mountPoint, VOLUME_LOG_DIR]
+    await (root ? deps.run('mkdir', ['-p', ...rootDirs]) : deps.run('sudo', ['-n', 'mkdir', '-p', ...rootDirs]))
   } catch (err) {
     return { state: 'failed', reason: `could not create ${mountPoint}: ${(err as Error).message}` }
   }
