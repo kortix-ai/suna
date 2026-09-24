@@ -560,9 +560,13 @@ flow(
   },
 );
 
-async function git(args: string[], cwd?: string): Promise<string> {
+async function git(args: string[], cwd?: string, env: Record<string, string> = {}): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn('git', args, {
+      cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...env },
+    });
     let out = '';
     let err = '';
     child.stdout.on('data', (chunk) => (out += chunk));
@@ -580,6 +584,7 @@ flow(
     domain: 'triggers',
     requires: ['database'],
     routes: [
+      'POST /v1/accounts/tokens',
       'POST /v1/projects/:projectId/triggers',
       'GET /v1/projects/:projectId/triggers',
       'POST /v1/projects/:projectId/triggers/:slug/fire',
@@ -609,6 +614,7 @@ flow(
       session_id: sessionId,
     });
     const workDir = await mkdtemp(join(tmpdir(), 'ke2e-scope-'));
+    const tokenIds: string[] = [];
     try {
       await ctx.step("a project manager cannot pin a trigger to another member's private session → 400", async () => {
         (
@@ -634,8 +640,29 @@ flow(
             project.id,
           ])
         ).rows;
-        if (!row?.repo_url) throw new Error('project has no local repository');
-        await git(['clone', '--quiet', row.repo_url, workDir]);
+        if (!row?.repo_url) throw new Error('project has no repository');
+        // Local target: the fixture repository is a bare repository on disk.
+        // Deployed target: the managed repository is private, so clone and
+        // push through the Kortix Git proxy with an owner PAT (the same path
+        // as AgentPrincipalsWorld.commitToMain).
+        let remote = row.repo_url;
+        let auth: Record<string, string> = {};
+        if (!row.repo_url.startsWith('/')) {
+          const minted = await owner.post('/v1/accounts/tokens', {
+            name: ctx.fixtures.name('scope6-manifest-writer'),
+            account_id: team.id,
+          });
+          minted.status(201);
+          const { token_id: tokenId, secret_key: secret } = minted.json<{ token_id: string; secret_key: string }>();
+          tokenIds.push(tokenId);
+          remote = `${ctx.env.apiUrl.replace(/\/v1$/, '')}/v1/git/${project.id}`;
+          auth = {
+            GIT_CONFIG_COUNT: '1',
+            GIT_CONFIG_KEY_0: 'http.extraHeader',
+            GIT_CONFIG_VALUE_0: `Authorization: Bearer ${secret}`,
+          };
+        }
+        await git(['clone', '--quiet', '--branch', 'main', remote, workDir], undefined, auth);
         await git(['config', 'user.name', 'Kortix Local E2E'], workDir);
         await git(['config', 'user.email', 'local-e2e@kortix.test'], workDir);
         const manifestPath = join(workDir, 'kortix.yaml');
@@ -643,7 +670,7 @@ flow(
         if (!manifest.includes(ownerSession.id)) throw new Error('the trigger commit did not pin the owner session');
         await writeFile(manifestPath, manifest.split(ownerSession.id).join(foreignSessionId));
         await git(['commit', '--quiet', '-am', 'repin trigger'], workDir);
-        await git(['push', '--quiet', 'origin', 'HEAD:main'], workDir);
+        await git(['push', '--quiet', 'origin', 'HEAD:refs/heads/main'], workDir, auth);
       });
 
       await ctx.step('reading the triggers records no pinned session for the foreign id', async () => {
@@ -700,6 +727,9 @@ flow(
           [foreignSessionId, ownerSession.id],
         ])
         .catch(() => {});
+      for (const tokenId of tokenIds) {
+        await db.query('DELETE FROM kortix.account_tokens WHERE token_id = $1', [tokenId]).catch(() => {});
+      }
       await rm(workDir, { recursive: true, force: true }).catch(() => {});
       await db.end();
     }
