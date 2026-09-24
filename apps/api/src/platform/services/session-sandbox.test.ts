@@ -69,7 +69,7 @@ let scenario: {
 let removedIds: string[] = [];
 let stoppedIds: string[] = [];
 let onRemoved: (() => void) | null = null;
-let computeSessionsOpened: Array<{ sandboxId: string; accountId: string }> = [];
+let computeSessionsOpened: Array<{ sandboxId: string; accountId: string; spec?: unknown }> = [];
 let onComputeOpened: (() => void) | null = null;
 let recordedEvents: Array<{ outcome: string; marks?: Array<{ label: string }> }> = [];
 let identityConflict = false;
@@ -295,12 +295,19 @@ mock.module('../../snapshots/builder', () => ({
       contentHash: 'meta-hash-1',
       isDefault: false,
       built: false,
+      runtimeProfile: 'meta',
+      spec: { cpu: 1, memoryGb: 2, diskGb: 8 },
     };
   },
   deleteSandboxImage: async (_project: unknown, opts: { slug?: string; provider?: string }) => {
     standardImageDeleteCalls.push(opts);
   },
-  resolveTemplate: async (_project: unknown, _slug: unknown) => ({}),
+  // The real resolver throws TemplateNotFoundError for `meta` / `pi-worker`:
+  // neither is a project template.
+  resolveTemplate: async (_project: unknown, slug: unknown) => {
+    if (slug === 'meta' || slug === 'pi-worker') throw new Error(`template ${String(slug)} not found`);
+    return {};
+  },
 }));
 
 let onProviderEvent: (() => void) | null = null;
@@ -460,6 +467,24 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
       serviceAccountId: null,
     });
     expect(serviceAccountCreateCalls).toHaveLength(0);
+  });
+
+  test('meta sessions are metered at the size of the image they boot from', async () => {
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+    await provisionSessionSandbox({
+      ...baseOpts(),
+      agentName: 'meta',
+      sandboxSlug: 'meta',
+    });
+    await opened;
+
+    expect(computeSessionsOpened).toHaveLength(1);
+    expect(computeSessionsOpened[0]).toMatchObject({
+      sandboxId: SANDBOX_ID,
+      spec: { cpuCores: 1, memoryGb: 2, diskGb: 8, gpuCount: 0 },
+    });
   });
 
   test('session starts request the OpenCode runtime image', async () => {

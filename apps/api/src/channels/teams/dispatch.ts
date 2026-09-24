@@ -5,12 +5,13 @@ import { config } from '../../config';
 import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import { sendCard } from '../teams-api';
 import { EVENT_DEDUPE_TTL_MS } from './app';
-import { resolveConversationProject, resolveConversationProjectDetailed } from './binding';
+import { resolveConversationProjectDetailed } from './binding';
 import { buildProjectPickerCard, buildWelcomeCard } from './cards';
 import { createPendingTeamsPickerMessage } from './auth-resume';
 import { sendCard as sendTeamsCard } from '../teams-api';
 import { handleTeamsCommand, parseTeamsCommand } from './commands';
 import { createOrJoinTeamsConversationSession, hasConversationSession } from './session';
+import { MANAGED_TEAMS_INBOUND, conversationProjectFor, type TeamsInbound } from './inbound';
 import type { TeamsActivity } from './types';
 import { conversationScope, isBotMentioned } from './util';
 
@@ -48,14 +49,17 @@ function botWasAdded(activity: TeamsActivity): boolean {
   return false;
 }
 
-export async function handleTeamsConversationUpdate(activity: TeamsActivity): Promise<void> {
+export async function handleTeamsConversationUpdate(
+  activity: TeamsActivity,
+  inbound: TeamsInbound = MANAGED_TEAMS_INBOUND,
+): Promise<void> {
   if (!botWasAdded(activity)) return;
   const tenantId = tenantOf(activity);
   const conversationId = activity.conversation?.id;
   if (!tenantId || !conversationId || !activity.serviceUrl) return;
   if (await alreadyHandled(`welcome:${conversationId}`)) return;
 
-  const projectId = await resolveConversationProject(tenantId, conversationId);
+  const projectId = await conversationProjectFor(inbound, tenantId, conversationId);
   if (!projectId) return;
   if (!(await projectFeatureFlagEnabled(projectId, 'teams'))) return;
 
@@ -73,9 +77,12 @@ export async function handleTeamsConversationUpdate(activity: TeamsActivity): Pr
   );
 }
 
-export async function handleTeamsActivity(activity: TeamsActivity): Promise<void> {
+export async function handleTeamsActivity(
+  activity: TeamsActivity,
+  inbound: TeamsInbound = MANAGED_TEAMS_INBOUND,
+): Promise<void> {
   if (activity.type === 'conversationUpdate' || activity.type === 'installationUpdate') {
-    await handleTeamsConversationUpdate(activity);
+    await handleTeamsConversationUpdate(activity, inbound);
     return;
   }
   if (!isActionableMessage(activity)) return;
@@ -89,7 +96,19 @@ export async function handleTeamsActivity(activity: TeamsActivity): Promise<void
   if (await alreadyHandled(activity.id!)) return;
 
   const conversationId = activity.conversation!.id!;
-  const resolution = await resolveConversationProjectDetailed(tenantId, conversationId);
+  // A per-project (BYO) bot never resolves through the tenant's other installs:
+  // it runs its own project, or nothing.
+  const scopedProjectId =
+    inbound.kind === 'project' ? await conversationProjectFor(inbound, tenantId, conversationId) : null;
+  if (inbound.kind === 'project' && !scopedProjectId) {
+    console.warn('[teams-webhook] conversation is bound to another project — ignoring', {
+      projectId: inbound.projectId,
+    });
+    return;
+  }
+  const resolution = scopedProjectId
+    ? ({ kind: 'project', projectId: scopedProjectId } as const)
+    : await resolveConversationProjectDetailed(tenantId, conversationId);
   if (resolution.kind === 'none') {
     console.warn('[teams-webhook] no project installed for tenant', { tenantId });
     return;
@@ -133,21 +152,22 @@ export async function handleTeamsActivity(activity: TeamsActivity): Promise<void
   // thread the bot already owns — or nothing to us. It never starts a session
   // and never runs a command: that would make the bot answer to every line
   // typed in a channel it was added to.
+  const ownThreadsOnly = inbound.kind === 'project';
   if (conversationScope(activity) !== 'personal' && !isBotMentioned(activity)) {
-    if (!(await hasConversationSession(tenantId, conversationId))) return;
-    await createOrJoinTeamsConversationSession({ projectId, tenantId, conversationId, activity });
+    if (!(await hasConversationSession(tenantId, conversationId, ownThreadsOnly ? projectId : undefined))) return;
+    await createOrJoinTeamsConversationSession({ projectId, tenantId, conversationId, activity, ownThreadsOnly });
     await db.delete(chatEventDedup).where(lt(chatEventDedup.expiresAt, new Date())).catch(() => {});
     return;
   }
 
   const command = parseTeamsCommand(activity.text);
   if (command) {
-    await handleTeamsCommand({ command, activity, tenantId, projectId });
+    await handleTeamsCommand({ command, activity, tenantId, projectId, projectScoped: ownThreadsOnly });
     await db.delete(chatEventDedup).where(lt(chatEventDedup.expiresAt, new Date())).catch(() => {});
     return;
   }
 
-  await createOrJoinTeamsConversationSession({ projectId, tenantId, conversationId, activity });
+  await createOrJoinTeamsConversationSession({ projectId, tenantId, conversationId, activity, ownThreadsOnly });
 
   await db.delete(chatEventDedup).where(lt(chatEventDedup.expiresAt, new Date())).catch(() => {});
 }

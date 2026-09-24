@@ -47,6 +47,7 @@ import {
   resolveTemplate,
   DEFAULT_SANDBOX_SLUG,
   type EnsureSandboxImageResult,
+  type SandboxImageSpec,
 } from '../../snapshots/builder';
 import { config } from '../../config';
 import { claimParkedPiWorkerBox, maintainPiWorkerPool } from './pi-worker-pool';
@@ -90,6 +91,26 @@ const BEFORE_ACTIVE_HOOK_TIMEOUT_MS = configuredTimeoutMs(
 // Mirrors the platform default sandbox size (2 vCPU / 4 GB / 20 GB).
 const DEFAULT_METERING_SPEC = { cpuCores: 2, memoryGb: 4, diskGb: 20, gpuCount: 0 };
 
+/**
+ * The spec compute metering bills a session at.
+ *
+ * The image that booted is the authority: the provider allocates the box from
+ * the size that image was built with. Meta and pi-worker images are built at
+ * 1 vCPU / 2 GB / 8 GB and have no project template, so a template lookup for
+ * them always failed and billed the 2 / 4 / 20 fallback instead.
+ */
+export function computeMeteringSpec(
+  imageSpec: SandboxImageSpec | null | undefined,
+  templateSpec: Partial<SandboxImageSpec> | null,
+): typeof DEFAULT_METERING_SPEC {
+  const source = imageSpec ?? templateSpec;
+  const spec = { ...DEFAULT_METERING_SPEC };
+  if (source?.cpu !== undefined) spec.cpuCores = source.cpu;
+  if (source?.memoryGb !== undefined) spec.memoryGb = source.memoryGb;
+  if (source?.diskGb !== undefined) spec.diskGb = source.diskGb;
+  return spec;
+}
+
 async function openComputeSessionForSandbox(
   sandboxId: string,
   accountId: string,
@@ -97,17 +118,19 @@ async function openComputeSessionForSandbox(
   userId: string | null | undefined,
   sandboxSlug: string | undefined,
   provider: ProviderName,
+  imageSpec: SandboxImageSpec | null | undefined,
 ): Promise<void> {
-  let spec = { ...DEFAULT_METERING_SPEC };
-  try {
-    const tpl = await resolveTemplate(project, sandboxSlug);
-    if (tpl.cpu !== undefined) spec.cpuCores = tpl.cpu;
-    if (tpl.memoryGb !== undefined) spec.memoryGb = tpl.memoryGb;
-    if (tpl.diskGb !== undefined) spec.diskGb = tpl.diskGb;
-  } catch {
-    // Template resolution failed (repo unreachable, parse error, etc.). Fall
-    // back to defaults so metering still records the session.
+  let templateSpec: Partial<SandboxImageSpec> | null = null;
+  if (!imageSpec) {
+    try {
+      const tpl = await resolveTemplate(project, sandboxSlug);
+      templateSpec = { cpu: tpl.cpu, memoryGb: tpl.memoryGb, diskGb: tpl.diskGb };
+    } catch {
+      // Template resolution failed (repo unreachable, parse error, etc.). Fall
+      // back to defaults so metering still records the session.
+    }
   }
+  const spec = computeMeteringSpec(imageSpec, templateSpec);
   await startComputeSession({
     sandboxId,
     accountId,
@@ -588,6 +611,7 @@ export async function provisionSessionSandbox(opts: {
       contentHash: string;
       isDefault: boolean;
       runtimeProfile?: 'standard' | 'meta' | 'pi-worker';
+      spec?: SandboxImageSpec;
     } | null = null;
     // FIX-A: the project's ACTIVATED routing pin (provider + exact template id
     // and image name), read once, best-effort — a DB hiccup yields null → name-boot. Set
@@ -647,6 +671,7 @@ export async function provisionSessionSandbox(opts: {
         contentHash: image.contentHash,
         isDefault: image.isDefault,
         runtimeProfile: image.runtimeProfile,
+        spec: image.spec,
       };
       tl.mark(image.built ? 'image-built' : 'image-cached');
       providerCreateInput.snapshot = image.snapshotName;
@@ -1018,8 +1043,16 @@ export async function provisionSessionSandbox(opts: {
       });
 
       // Billing v2 — open a compute metering row. No-op for legacy accounts.
-      // Spec is resolved from the project manifest with provider-default fallbacks.
-      void openComputeSessionForSandbox(sandbox.sandboxId, accountId, opts.gitProject, userId, imageInfo?.slug, providerName).catch(
+      // Billed at the size of the image that booted (computeMeteringSpec).
+      void openComputeSessionForSandbox(
+        sandbox.sandboxId,
+        accountId,
+        opts.gitProject,
+        userId,
+        imageInfo?.slug,
+        providerName,
+        imageInfo?.spec,
+      ).catch(
         (err) =>
           console.warn(
             `[session-sandbox] failed to open compute metering for ${sandbox.sandboxId}:`,

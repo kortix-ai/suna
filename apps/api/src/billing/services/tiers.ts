@@ -678,6 +678,38 @@ export function getTierByPriceId(priceId: string): TierConfig | null {
   return name ? (TIERS[name] ?? null) : null;
 }
 
+/**
+ * The plan a SUBSCRIPTION PRICE pays for — the only trustworthy answer to "which
+ * tier did this customer buy". Request bodies and client-supplied tier keys are
+ * never an input.
+ *
+ * One price can be registered under more than one tier (a legacy price reused
+ * as a newer plan's price). `planKeyHint` — the plan key our own server wrote
+ * into the subscription metadata — breaks that tie, and ONLY that tie: a hint
+ * whose configured prices do not include `priceId` is ignored.
+ */
+export function resolveTierForPrice(
+  priceId: string | null | undefined,
+  planKeyHint?: string | null,
+): string | null {
+  if (!priceId) return null;
+  if (planKeyHint && tierHasPrice(planKeyHint, priceId)) return planKeyHint;
+  return priceIdToTier.get(priceId) ?? null;
+}
+
+function tierHasPrice(tierName: string, priceId: string): boolean {
+  for (const priceConfig of [STRIPE_PRICES_PROD, STRIPE_PRICES_STAGING, STRIPE_PRICES_DEV]) {
+    const tierPrices = priceConfig.subscriptions[tierName];
+    if (!tierPrices) continue;
+    if (
+      tierPrices.monthly === priceId ||
+      tierPrices.yearly === priceId ||
+      tierPrices.yearlyCommitment === priceId
+    ) return true;
+  }
+  return false;
+}
+
 export function getBillingPeriodByPriceId(
   priceId: string,
 ): 'monthly' | 'yearly' | 'yearly_commitment' | null {

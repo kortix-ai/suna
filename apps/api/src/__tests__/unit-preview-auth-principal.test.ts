@@ -16,6 +16,7 @@ const SANDBOX_ID = 'sandbox-xyz';
 let allowedAccounts = new Set<string>(['acct-owner']);
 let allowedUsers = new Set<string>(['user-owner', 'sa-owner', 'pat-user-owner', 'user-fallback-owner']);
 let mockSupabaseUser: { id: string } | null = null;
+let sandboxProjects = new Map<string, string>();
 
 const actualCrypto = await import('../shared/crypto');
 mock.module('../shared/crypto', () => ({
@@ -48,6 +49,9 @@ mock.module('../repositories/api-keys', () => ({
 mock.module('../repositories/account-tokens', () => ({
   validateAccountToken: async (t: string) => {
     if (t === 'kortix_pat_owner') return { isValid: true, userId: 'pat-user-owner' };
+    if (t === 'kortix_pat_project_a') {
+      return { isValid: true, userId: 'pat-user-owner', projectId: 'project-a', sessionId: 'session-a' };
+    }
     if (t === 'kortix_pat_other') return { isValid: true, userId: 'pat-user-other' };
     return { isValid: false, error: 'invalid' };
   },
@@ -115,9 +119,7 @@ mock.module('../shared/preview-ownership', () => ({
       ? { userId, sandboxId: SANDBOX_ID, sandboxRole: 'member', scopes: ['*'] }
       : null,
   canAccessSandboxSession: async () => true,
-  // Not exercised by this suite (no project-scoped PATs here) — stub so the
-  // real module's shape stays satisfied for anything that imports it.
-  resolveSandboxProjectId: async () => null,
+  resolveSandboxProjectId: async (sandboxId: string) => sandboxProjects.get(sandboxId) ?? null,
   clearPreviewOwnershipCache: () => {},
   invalidatePreviewCacheForUser: () => {},
 }));
@@ -128,6 +130,10 @@ beforeEach(() => {
   allowedAccounts = new Set(['acct-owner']);
   allowedUsers = new Set(['user-owner', 'sa-owner', 'pat-user-owner', 'user-fallback-owner']);
   mockSupabaseUser = null;
+  sandboxProjects = new Map([
+    [SANDBOX_ID, 'project-a'],
+    ['sandbox-of-project-b', 'project-b'],
+  ]);
 });
 
 describe('authenticatePreviewPrincipal', () => {
@@ -143,6 +149,12 @@ describe('authenticatePreviewPrincipal', () => {
   test('rejects a valid PAT that lacks sandbox access', async () => {
     expect(await authenticatePreviewPrincipal('kortix_pat_other', SANDBOX_ID)).toBeNull();
   });
+  test('accepts a project-scoped PAT only for a sandbox of its own project', async () => {
+    expect(await authenticatePreviewPrincipal('kortix_pat_project_a', SANDBOX_ID)).toBe('pat-user-owner');
+    expect(await authenticatePreviewPrincipal('kortix_pat_project_a', 'sandbox-of-project-b')).toBeNull();
+    expect(await authenticatePreviewPrincipal('kortix_pat_project_a', 'sandbox-unknown')).toBeNull();
+  });
+
   test('rejects an invalid PAT', async () => {
     expect(await authenticatePreviewPrincipal('kortix_pat_bad', SANDBOX_ID)).toBeNull();
   });
