@@ -116,6 +116,8 @@ import {
 } from './session-runtime-context';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { buildPiWorkerSessionEnvVars, buildSessionRuntimeEnv } from './session-runtime-env';
+import { buildSessionVolumes, serializeSessionVolumes, SESSION_VOLUMES_ENV_NAME } from './session-volumes';
+import { resolveAgentVolumes, type ResolvedAgentVolume } from '@kortix/manifest-schema';
 import {
   buildPlatformMetaOpenCodeConfig,
   resolvePlatformMetaSandbox,
@@ -499,6 +501,8 @@ export async function buildSessionSandboxEnvVars(input: {
   // BEFORE this builder runs (createSession), and never reaches it.
   let manifestHarness: 'opencode' | 'pi' | null = null;
   let harness: 'opencode' | 'pi' = 'opencode';
+  // kortix.yaml `volumes` this agent attaches, read off the same manifest fetch.
+  let volumeAttachments: ResolvedAgentVolume[] = [];
   if (input.defaultBranch && !input.platformMetaAgent) {
     const gitProject = {
       projectId: input.projectId,
@@ -509,6 +513,7 @@ export async function buildSessionSandboxEnvVars(input: {
     };
     const onManifest = (raw: Record<string, unknown>) => {
       manifestHarness = manifestRuntime(raw);
+      volumeAttachments = resolveAgentVolumes(raw, input.agentName);
     };
     compiledAgentConfig =
       !(input.repositoryAccess ?? true)
@@ -601,12 +606,7 @@ export async function buildSessionSandboxEnvVars(input: {
     legacyUserId: sessionPolicyRow?.createdBy ?? input.userId,
   });
 
-  let runtimeSecrets: {
-    env: Record<string, string>;
-    names: string[];
-    revision: string;
-    capabilitiesJson: string;
-  };
+  let runtimeSecrets: Awaited<ReturnType<typeof listProjectSecretsSnapshotForUser>>;
   try {
     runtimeSecrets = await listProjectSecretsSnapshotForUser(
       input.projectId,
@@ -659,6 +659,12 @@ export async function buildSessionSandboxEnvVars(input: {
   // extraEnvVars, every later rebuild gets them here.
   const channelEnv = await buildSessionChannelEnv(input.sessionId);
   const sessionContextEnv = await buildSessionRuntimeContextEnv(input.sessionId);
+  // Names the env vars that hold each volume's credentials — never a value.
+  // Built from the catalog of what THIS session actually receives, so a
+  // credential outside the agent's grant fails its volume, not the session.
+  const volumesEnv = serializeSessionVolumes(
+    buildSessionVolumes(volumeAttachments, runtimeSecrets.capabilities, input.agentName),
+  );
   return {
     ...runtimeSecrets.env,
     // Fleet default for the `kortix-connectors` OpenCode MCP server. Set here
@@ -674,6 +680,7 @@ export async function buildSessionSandboxEnvVars(input: {
     ...(config.CONNECTORS_MCP_ENABLED ? { KORTIX_CONNECTORS_MCP_ENABLED: '1' } : {}),
     ...channelEnv,
     ...sessionContextEnv,
+    ...(volumesEnv ? { [SESSION_VOLUMES_ENV_NAME]: volumesEnv } : {}),
     KORTIX_PROJECT_SECRET_NAMES: runtimeSecrets.names.join(','),
     KORTIX_PROJECT_SECRETS_REVISION: runtimeSecrets.revision,
     [SECRET_CAPABILITIES_ENV_NAME]: runtimeSecrets.capabilitiesJson,

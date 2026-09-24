@@ -27,6 +27,7 @@ import {
 import { db } from '../shared/db';
 import { resolveSandboxEnvSnapshot } from '../projects/lib/sandbox-env-sync';
 import { buildSessionSandboxEnvVars } from '../projects/lib/sessions';
+import { buildSessionVolumes, serializeSessionVolumes } from '../projects/lib/session-volumes';
 import {
   AmbiguousSecretGrantError,
   confineSharedProjectSecretToConnector,
@@ -562,6 +563,57 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
     const capabilities = snapshot.capabilities.capabilities;
     expect(capabilities.some((capability) => capability.identifier === UNSCOPED)).toBe(true);
     expect(capabilities.some((capability) => capability.identifier === BROKER_IDENT)).toBe(false);
+  });
+
+  test('volume credentials resolve to the env var the session receives, never the value', async () => {
+    if (!ctx) return;
+    // The agent's grant: one runtime secret and one broker secret. UNSCOPED
+    // exists in the project but is not granted.
+    const snapshot = await listProjectSecretsSnapshotForUser(
+      ctx.projectId,
+      USER,
+      [PRIMARY, BROKER_IDENT],
+      BROKER_SESSION,
+    );
+    const volume = (identifier: string) => ({
+      type: 's3' as const,
+      bucket: 'acme-data',
+      access_key_id: identifier,
+      secret_access_key: identifier,
+    });
+    const specs = buildSessionVolumes(
+      [
+        { name: 'data', mode: 'read-only', volume: volume(PRIMARY) },
+        { name: 'brokered', mode: 'read-write', volume: volume(BROKER_IDENT) },
+        { name: 'ungranted', mode: 'read-only', volume: volume(UNSCOPED) },
+      ],
+      snapshot.capabilities,
+      'analyst',
+    );
+    expect(specs).toEqual([
+      {
+        name: 'data',
+        mode: 'read-only',
+        type: 's3',
+        bucket: 'acme-data',
+        access_key_id_env: KEY,
+        secret_access_key_env: KEY,
+      },
+      {
+        name: 'brokered',
+        mode: 'read-write',
+        error: `credential secret "${BROKER_IDENT}" uses https_broker delivery; a volume mount needs the value in the sandbox, so store it with runtime delivery`,
+      },
+      {
+        name: 'ungranted',
+        mode: 'read-only',
+        error: `credential secret "${UNSCOPED}" is not delivered to this session: it must exist in the project and be granted in agents.analyst.secrets`,
+      },
+    ]);
+    const serialized = serializeSessionVolumes(specs)!;
+    expect(serialized).not.toContain('primary-val');
+    expect(serialized).not.toContain(BROKER_VALUE);
+    expect(serialized).not.toContain(snapshot.env[BROKER_KEY]!);
   });
 });
 
