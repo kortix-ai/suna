@@ -3121,7 +3121,11 @@ flow(
     ],
   },
   async (ctx) => {
+    // The manifest step needs a Git-backed project. The seeded connectors live
+    // in a database-only project: it has no kortix.yaml, so no sync (this
+    // flow's or a parallel account-wide reconcile) removes them as undeclared.
     const p = await ctx.fixtures.project({ managedGit: true });
+    const seeded = await ctx.fixtures.project();
     const { createServer } = await import('node:http');
     const { Client: PgClient } = await import('pg');
     const databaseUrl = ctx.env.databaseUrl as string;
@@ -3152,30 +3156,30 @@ flow(
         .post(
           '/v1/connectors/projects/:projectId/call',
           { connector: slug, action: 'ping', args: {} },
-          { params: { projectId: p.id }, timeoutMs: 60_000 },
+          { params: { projectId: seeded.id }, timeoutMs: 60_000 },
         );
     let accountId = '';
     const seed = async (baseUrl: string) => {
       if (!accountId) {
         const owner = await db.query<{ account_id: string }>(
           `SELECT account_id FROM kortix.projects WHERE project_id = $1`,
-          [p.id],
+          [seeded.id],
         );
         accountId = owner.rows[0]?.account_id ?? '';
         if (!accountId) throw new Error('project has no account');
       }
-      await db.query(`DELETE FROM kortix.connectors WHERE project_id = $1 AND slug = $2`, [p.id, seededSlug]);
+      await db.query(`DELETE FROM kortix.connectors WHERE project_id = $1 AND slug = $2`, [seeded.id, seededSlug]);
       const connector = await db.query<{ connector_id: string }>(
         `INSERT INTO kortix.connectors (account_id, project_id, slug, name, provider_type, config, status)
          VALUES ($1, $2, $3, 'KE2E egress', 'http', $4::jsonb, 'active') RETURNING connector_id`,
-        [accountId, p.id, seededSlug, JSON.stringify({ baseUrl, auth: { type: 'none' } })],
+        [accountId, seeded.id, seededSlug, JSON.stringify({ baseUrl, auth: { type: 'none' } })],
       );
       const connectorId = connector.rows[0]?.connector_id;
       if (!connectorId) throw new Error('connector insert returned no id');
       await db.query(
         `INSERT INTO kortix.connector_connections (account_id, project_id, connector_id, owner_type, label, status, is_default, metadata)
          VALUES ($1, $2, $3, 'project', 'KE2E egress', 'active', true, $4::jsonb)`,
-        [accountId, p.id, connectorId, JSON.stringify({ provider: 'http', connector_slug: seededSlug })],
+        [accountId, seeded.id, connectorId, JSON.stringify({ provider: 'http', connector_slug: seededSlug })],
       );
       await db.query(
         `INSERT INTO kortix.connector_actions (connector_id, path, name, description, input_schema, risk, binding)
@@ -3264,9 +3268,8 @@ flow(
       });
     } finally {
       upstream.close();
-      await db
-        .query(`DELETE FROM kortix.connectors WHERE project_id = $1 AND slug = ANY($2)`, [p.id, [seededSlug, yamlSlug]])
-        .catch(() => {});
+      await db.query(`DELETE FROM kortix.connectors WHERE project_id = $1 AND slug = $2`, [seeded.id, seededSlug]).catch(() => {});
+      await db.query(`DELETE FROM kortix.connectors WHERE project_id = $1 AND slug = $2`, [p.id, yamlSlug]).catch(() => {});
       await db.end().catch(() => {});
     }
   },
