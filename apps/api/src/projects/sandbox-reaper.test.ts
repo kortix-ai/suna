@@ -69,6 +69,7 @@ let unconfirmedTurnDrips: string[] = [];
 // on its own, without every existing exact-equality assertion having to carry
 // it.
 let clearedTurnReasons: Array<string | undefined> = [];
+let tmpMaintenanceScheduled: Array<{ sandboxId: string; provider: string; externalId: string }> = [];
 let clearedTurnCauses: Array<string | null> = [];
 let ledgerSettleStatements: string[] = [];
 let huskFinalizeCalls: Array<{
@@ -385,6 +386,10 @@ const reapAndReconcileSandboxes = (
   scope?: { sandboxIds?: readonly string[]; activeTurnsOnly?: boolean },
 ) =>
   sandboxReaper.reapAndReconcileSandboxes(now, {
+    scheduleTmpMaintenance: (row: { sandboxId: string; provider: string; externalId: string }) => {
+      tmpMaintenanceScheduled.push({ sandboxId: row.sandboxId, provider: row.provider, externalId: row.externalId });
+      return true;
+    },
     renewActiveSandboxTurn: async (sandboxId: string, token: string) => {
       activeTurnRenewalCalls.push({ sandboxId, token });
       return activeTurnRenewalBySandbox[sandboxId] ?? 'inactive';
@@ -507,6 +512,7 @@ beforeEach(() => {
   clearedTurnCalls = [];
   promptRedeliveries = [];
   clearedTurnReasons = [];
+  tmpMaintenanceScheduled = [];
   clearedTurnCauses = [];
   unconfirmedTurnDrips = [];
   __resetProbeBackoffForTests();
@@ -739,6 +745,25 @@ function candidate(over: Partial<any> = {}) {
     ...over,
   };
 }
+
+describe('reapAndReconcileSandboxes — /tmp maintenance', () => {
+  // A resumed box never re-runs pt-init, so its RAM-backed /tmp has no sweeper.
+  // The reaper is what visits every running box; it hands each one to the
+  // maintenance runner, whose own gates decide whether a run is due.
+  test('every running box is handed to the /tmp maintenance runner', async () => {
+    candidates = [candidate({ provider: 'platinum', externalId: 'ext-1' })];
+    statusByExternal['ext-1'] = 'running';
+    await reapAndReconcileSandboxes(NOW);
+    expect(tmpMaintenanceScheduled).toEqual([{ sandboxId: 'sb-1', provider: 'platinum', externalId: 'ext-1' }]);
+  });
+
+  test('a box the provider reports stopped is not', async () => {
+    candidates = [candidate({ provider: 'platinum', externalId: 'ext-1' })];
+    statusByExternal['ext-1'] = 'stopped';
+    await reapAndReconcileSandboxes(NOW);
+    expect(tmpMaintenanceScheduled).toEqual([]);
+  });
+});
 
 describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () => {
   // ═══ THE REGRESSION THIS EXISTS TO KILL ═══

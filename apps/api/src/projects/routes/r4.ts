@@ -2961,6 +2961,21 @@ projectsApp.openapi(
       // `turn_message_id` and `error_retryable: true`, which settles nothing
       // above. Attach the cause to the turn it stopped, or the UI says "No
       // reason was reported" under a turn the sandbox killed on purpose.
+      // The guard fired because the box ran out of room. On Platinum the usual
+      // culprit is a RAM-backed /tmp: clean it now rather than at the next
+      // hourly pass, so the next turn has memory to run in.
+      if (body.error_name === 'SandboxMemoryGuard') {
+        void import('../sandbox-maintenance/tmp-maintenance-wiring')
+          .then(({ scheduleTmpMaintenanceForSession }) =>
+            scheduleTmpMaintenanceForSession(sessionId, 'memory-guard'),
+          )
+          .catch((err) =>
+            console.warn('[turn-stream] tmp maintenance after memory guard failed', {
+              sessionId,
+              err: err instanceof Error ? err.message : String(err),
+            }),
+          );
+      }
       if (
         status === 'error' &&
         body.error_name === 'SandboxMemoryGuard' &&

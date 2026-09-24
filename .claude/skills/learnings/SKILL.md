@@ -21,6 +21,22 @@ linked, not inlined.
 
 ## Register
 
+### A fix the boot path applies must also converge running sandboxes (2026-09-24)
+
+**Rule:** A guest change that lives in the boot path (Platinum `pt-init`, the
+image entrypoint) never reaches a sandbox that resumes from a memory snapshot,
+so ship a converge step for running boxes beside it. Never stage bulk data in a
+sandbox's `/tmp`: on Platinum it was RAM that a snapshot keeps forever. A step
+that moves files under running processes must refuse on sockets and locks held
+there, and must re-seat flock-guarded singletons (`flock -n /tmp/pt-ka.lock`).
+**Incident:** 2 of 17 active 4 GiB prod sandboxes had `/tmp` full (1.96 GiB,
+abandoned legacy-transfer uploads 8 days old, agent virtualenvs); the memory
+guard stopped their turns on every command. The first live migration started a
+second Platinum keepalive through the copied, unlocked `pt-ka.lock`.
+**Enforcers:** `sandbox-maintenance/tmp-maintenance.test.ts`,
+`tmp-maintenance-script.test.ts` (lock detection), `sandbox-reaper.test.ts`;
+runbook `docs/runbooks/sandbox-tmp-maintenance.md`; Platinum #1255 for boot.
+
 ### A background job runs its tick as a named worker, or its changes read as API traffic (2026-09-24)
 
 **Rule:** Wrap every background job's tick in `runWorkerTick('<name>', tick)` (`shared/audit-scope.ts`), at the tick function when handlers also kick it. A tenant-state change the job makes writes its own semantic row, which inherits the worker.

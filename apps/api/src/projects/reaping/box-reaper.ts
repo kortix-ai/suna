@@ -35,6 +35,7 @@
 
 import { observeSandboxTurn, type SandboxTurnReading } from '../sandbox-turn-observation';
 import { scheduleLegacyRuntimeBootstrap } from '../lib/legacy-runtime-bootstrap-wiring';
+import { scheduleTmpMaintenance } from '../sandbox-maintenance/tmp-maintenance-wiring';
 import { markComputeSessionAlive } from '../../billing/services/compute-metering';
 import { type SandboxProvider, type SandboxStatus, getProvider } from '../../platform/providers';
 import { invalidateProviderCache } from '../../sandbox-proxy';
@@ -106,6 +107,7 @@ export const EMPTY_REAP_RESULT: ReapResult = {
 
 export interface SandboxReaperDependencies {
   scheduleLegacyRuntimeBootstrap: typeof scheduleLegacyRuntimeBootstrap;
+  scheduleTmpMaintenance: typeof scheduleTmpMaintenance;
   renewActiveSandboxTurn: typeof renewActiveSandboxTurn;
   observeSandboxTurn: typeof observeSandboxTurn;
   reconcileSandboxTurnDelivery: typeof reconcileSandboxTurnDelivery;
@@ -119,6 +121,7 @@ export interface SandboxReaperDependencies {
 
 const DEFAULT_REAPER_DEPENDENCIES: SandboxReaperDependencies = {
   scheduleLegacyRuntimeBootstrap,
+  scheduleTmpMaintenance,
   renewActiveSandboxTurn,
   observeSandboxTurn,
   reconcileSandboxTurnDelivery,
@@ -314,14 +317,19 @@ export async function reapAndReconcileSandboxes(
           // Fire-and-forget behind its own gates (legacy-runtime-bootstrap.ts):
           // one health probe per box per 6 h on a converged fleet, never under
           // a busy OpenCode, bounded attempts per API build.
-          dependencies.scheduleLegacyRuntimeBootstrap({
+          const convergeRow = {
             sandboxId: row.sandboxId,
             sessionId: row.sessionId ?? null,
             accountId: row.accountId ?? null,
             provider: row.provider,
             externalId: row.externalId,
             metadata: (row.metadata ?? null) as Record<string, unknown> | null,
-          });
+          };
+          dependencies.scheduleLegacyRuntimeBootstrap(convergeRow);
+          // A resumed box never re-runs pt-init, so it keeps a RAM-backed /tmp
+          // with no sweeper; this cleans it hourly and moves it onto disk when
+          // idle (sandbox-maintenance/tmp-maintenance.ts). Same fire-and-forget shape.
+          dependencies.scheduleTmpMaintenance(convergeRow);
           // A running box has answered the pending-stop question. Dropping the
           // marker here is what keeps the confirmation about THIS provider
           // transition: an aged marker left on a healthy box would let the next

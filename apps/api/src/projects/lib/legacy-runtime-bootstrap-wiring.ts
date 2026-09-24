@@ -66,7 +66,7 @@ async function fetchJson(url: string, headers: Record<string, string>): Promise<
  * probes as the user who provisioned the box (or the session's creator).
  */
 async function opencodeProbeHeaders(
-  row: LegacyBootstrapRow,
+  row: Pick<LegacyBootstrapRow, 'sandboxId' | 'sessionId'>,
   providerHeaders: Record<string, string>,
 ): Promise<Record<string, string> | null> {
   const [sb] = await db
@@ -183,6 +183,30 @@ async function probeDaemonWithServiceKey(row: LegacyBootstrapRow, serviceKey: st
   }
 }
 
+/**
+ * OpenCode's `/session/status` for a sandbox: `{}` when idle, `null` when the
+ * box cannot be asked. OpenCode routes are proxied by the daemon behind the
+ * sandbox service key plus the signed user context every proxied user request
+ * carries; health is the only unauthenticated daemon route. Shared with the
+ * /tmp maintenance runner (projects/sandbox-maintenance/tmp-maintenance-wiring.ts).
+ */
+export async function fetchSandboxOpencodeStatus(
+  row: Pick<LegacyBootstrapRow, 'sandboxId' | 'sessionId' | 'externalId'>,
+): Promise<Record<string, unknown> | null> {
+  try {
+    const { url, headers } = await resolveSandboxIngress(row.externalId, {
+      port: OPENCODE_PRIMARY_PORT,
+      transport: 'http',
+    });
+    const probeHeaders = await opencodeProbeHeaders(row, headers);
+    if (!probeHeaders) return null;
+    const body = await fetchJson(`${url.replace(/\/$/, '')}/session/status`, probeHeaders);
+    return body && typeof body === 'object' ? (body as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function buildLegacyBootstrapDeps(row: LegacyBootstrapRow): LegacyBootstrapDeps {
   const provider = getProvider(row.provider as ProviderName);
   return {
@@ -207,23 +231,7 @@ export function buildLegacyBootstrapDeps(row: LegacyBootstrapRow): LegacyBootstr
         return null;
       }
     },
-    fetchOpencodeStatus: async () => {
-      // OpenCode routes are proxied by the daemon behind the sandbox service
-      // key plus the signed user context every proxied user request carries;
-      // health is the only unauthenticated daemon route.
-      try {
-        const { url, headers } = await resolveSandboxIngress(row.externalId, {
-          port: OPENCODE_PRIMARY_PORT,
-          transport: 'http',
-        });
-        const probeHeaders = await opencodeProbeHeaders(row, headers);
-        if (!probeHeaders) return null;
-        const body = await fetchJson(`${url.replace(/\/$/, '')}/session/status`, probeHeaders);
-        return body && typeof body === 'object' ? (body as Record<string, unknown>) : null;
-      } catch {
-        return null;
-      }
-    },
+    fetchOpencodeStatus: () => fetchSandboxOpencodeStatus(row),
     entrypointSource: () => {
       try {
         return readFileSync(runtimeEntrypointPath(), 'utf8');

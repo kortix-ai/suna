@@ -53,6 +53,7 @@ export const AUDIT_EVENT_LABELS: Readonly<Record<string, string>> = {
   'session.lifecycle.continue_session': 'Queued session continuation',
   'session.event_rate_limited': 'Rate-limited session audit events',
   'sandbox.runtime.legacy_bootstrap': 'Bootstrapped legacy sandbox runtime',
+  'sandbox.tmp.maintenance': 'Cleaned sandbox /tmp',
   'opencode.*': 'Recorded agent runtime event',
   'opencode.tool.updated': 'Updated agent tool call',
   'opencode.message.part.*': 'Updated agent message',
