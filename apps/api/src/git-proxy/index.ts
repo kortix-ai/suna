@@ -21,6 +21,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import {
   authorizeGitProxy,
   resolveProjectUpstream,
+  RETRYABLE_GIT_AUTH_REASONS,
   type GitProxyAuth,
 } from '../projects';
 import type { GitScope, UpstreamGit } from '../projects/git-backends';
@@ -176,7 +177,13 @@ async function resolveProjectUpstreamMemo(
   const hit = upstreamMemo.get(key);
   if (hit && hit.expiresAt > now) return hit.value;
   const value = await resolveProjectUpstream(project, scope);
-  if (value?.url) upstreamMemo.set(key, { value, expiresAt: now + UPSTREAM_MEMO_TTL_MS });
+  // Never memoize an upstream with no credential. The comment above assumes the
+  // credential inside is a managed PAT or a ≥1 h installation token; a failed
+  // mint breaks that assumption, and caching it turned ONE transient failure
+  // into 30 s of failures for every caller of the project.
+  if (value?.url && !value.credentialUnavailable) {
+    upstreamMemo.set(key, { value, expiresAt: now + UPSTREAM_MEMO_TTL_MS });
+  }
   if (upstreamMemo.size > 5_000) {
     for (const [k, v] of upstreamMemo) if (v.expiresAt <= now) upstreamMemo.delete(k);
   }
@@ -214,6 +221,22 @@ async function forwardAuthorized(
   const upstream = await resolveProjectUpstreamMemo(auth.project, scope);
   if (!upstream || !upstream.url) {
     return c.text('No git upstream is configured for this project', 502);
+  }
+  // Fail CLOSED. Forwarding a private repository's request without a credential
+  // makes the provider answer `404 Repository not found.`, which git surfaces
+  // as `fatal: repository '<proxy url>' not found` — a transient mint failure
+  // wearing the face of a deleted repository.
+  if (upstream.credentialUnavailable) {
+    const retry = RETRYABLE_GIT_AUTH_REASONS.has(upstream.credentialUnavailable);
+    if (retry) c.header('Retry-After', '2');
+    return c.json(
+      {
+        error: 'git_credential_unavailable',
+        reason: upstream.credentialUnavailable,
+        retry,
+      },
+      503,
+    );
   }
 
   const search = new URL(c.req.url).search; // includes leading '?' or ''

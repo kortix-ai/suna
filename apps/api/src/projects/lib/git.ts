@@ -613,7 +613,17 @@ export type GitAuthUnavailableReason =
   | 'installation_mismatch'
   | 'repo_url_unparseable'
   | 'managed_git_unavailable'
+  | 'managed_git_token_mint_failed'
   | 'no_credential';
+
+/**
+ * Reasons that are worth trying again on the very next request. Everything else
+ * needs a person to act (reconnect the App, fix the stored URL), so telling a
+ * client to retry would only loop it.
+ */
+export const RETRYABLE_GIT_AUTH_REASONS: ReadonlySet<string> = new Set<GitAuthUnavailableReason>([
+  'managed_git_token_mint_failed',
+]);
 
 export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
   auth?: GitHubAuthContext;
@@ -639,24 +649,40 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
     const installId = remote.installationId ?? managedGithubInstallId();
     if (installId && isGithubAppConfigured()) {
       const repoName = remote.repoName ?? parseGitHubRepoUrl(remote.upstreamUrl ?? project.repoUrl)?.repo;
-      try {
-        const token = await createInstallationToken(installId, repoName ? [repoName] : undefined);
-        return {
-          auth: {
-            token: token.token,
-            source: 'app_installation',
-            owner: remote.repoOwner ?? undefined,
-            ownerType: 'Organization',
-            installationId: installId,
-          },
-          authSource: 'app_installation',
-        };
-      } catch (err) {
-        console.warn(
-          `[projects] failed to mint managed GitHub installation token for ${project.projectId}:`,
-          err,
-        );
+      // Scoping the token to the single repository is what makes this mint
+      // fragile: GitHub answers `422 … at least one repository that does not
+      // exist or is not accessible` the moment the repo is not yet visible to
+      // the installation — a fresh managed repo, a replication lag, an
+      // in-flight rename. That window is short, so try once more before giving
+      // up; a second failure is reported as its own reason, never as "no
+      // managed backend".
+      let lastErr: unknown;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const token = await createInstallationToken(installId, repoName ? [repoName] : undefined);
+          return {
+            auth: {
+              token: token.token,
+              source: 'app_installation',
+              owner: remote.repoOwner ?? undefined,
+              ownerType: 'Organization',
+              installationId: installId,
+            },
+            authSource: 'app_installation',
+          };
+        } catch (err) {
+          lastErr = err;
+          if (attempt === 0) await new Promise((r) => setTimeout(r, 250));
+        }
       }
+      console.warn(
+        `[projects] failed to mint managed GitHub installation token for ${project.projectId}:`,
+        lastErr,
+      );
+      // A mint failure is TRANSIENT and retryable. `managed_git_unavailable`
+      // means the deployment has no managed backend at all — a different,
+      // permanent condition that must not be confused with this one.
+      return { authSource: 'none', reason: 'managed_git_token_mint_failed' };
     }
     return { authSource: 'none', reason: 'managed_git_unavailable' };
   }
@@ -842,7 +868,18 @@ export async function resolveProjectUpstream(
   const ref = buildConnectionRef(project, remote);
   if (!ref.upstreamUrl) return null;
   const backend = getBackend(ref.provider);
-  return backend.buildUpstream(ref, gitAuth.auth?.token ?? null, scope);
+  const upstream = backend.buildUpstream(ref, gitAuth.auth?.token ?? null, scope);
+  // A repository we host or connected through the App is private. If no
+  // credential could be produced for one, say so on the upstream rather than
+  // handing back a credential-less request for the caller to send anyway: the
+  // provider answers that with `404 Repository not found.`, which reads as a
+  // deleted repository. `no_credential` is excluded — it is the ordinary shape
+  // of a project pointing at a public upstream that needs no token.
+  const needsCredential = ref.managed || remote.authMethod === 'github_app';
+  if (needsCredential && gitAuth.authSource === 'none') {
+    return { ...upstream, credentialUnavailable: gitAuth.reason ?? 'no_credential' };
+  }
+  return upstream;
 }
 
 
