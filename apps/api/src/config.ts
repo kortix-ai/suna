@@ -199,6 +199,14 @@ const envSchema = z.object({
    * off-sandbox token use`.
    */
   KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: optBoolTrue,
+  /**
+   * Hosts a connector may call even though they resolve to a private address.
+   * Comma-separated hostnames or IP literals, matched exactly. Empty (the
+   * default) means every connector endpoint must be a public address. Set it
+   * on a self-hosted deployment whose connectors call internal APIs; the local
+   * test stack sets `127.0.0.1` for its loopback upstream.
+   */
+  KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: optStr,
 
   // ── Streaming secret relay (POST /v1/projects/:id/secrets/:id/relay) ──────
   //
@@ -1078,6 +1086,10 @@ export const config = {
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
   KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: env.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED,
+  KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: env.KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS
+    .split(',')
+    .map((host) => host.trim())
+    .filter(Boolean),
   KORTIX_SECRET_RELAY_STREAM_ENABLED: env.KORTIX_SECRET_RELAY_STREAM_ENABLED,
   KORTIX_RELAY_WS_ENABLED: env.KORTIX_RELAY_WS_ENABLED,
   KORTIX_RELAY_MAX_REQUEST_BYTES: env.KORTIX_RELAY_MAX_REQUEST_BYTES,

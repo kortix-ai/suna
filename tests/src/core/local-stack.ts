@@ -553,6 +553,10 @@ export async function ensureLocalStack(
           INTERNAL_KORTIX_ENV: "dev",
           KORTIX_LOCAL_DEV: "1",
           KORTIX_LOCAL_TEST_PROFILE: "1",
+          // Connector flows stand up a loopback upstream (CONN-ATT-1, CONN-EGRESS-1).
+          // Only this exact host is exempt from the connector egress check;
+          // every other private address stays refused.
+          KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: "127.0.0.1",
           PORT: String(apiPort),
           KORTIX_APPS_LOCAL: "true",
           KORTIX_APPS_LOCAL_PORT: String(apiPort),

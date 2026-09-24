@@ -3101,3 +3101,165 @@ flow(
     }
   },
 );
+
+// ── CONN-EGRESS-1 — a connector reaches public endpoints only ────────────────
+// Connector endpoints come from project configuration (`base_url`, an OpenAPI
+// `servers[0].url`, an MCP URL). Sync refuses a literal private host, and the
+// gateway resolves and checks the target of every call and every redirect hop.
+// The local stack allows its own loopback upstream (127.0.0.1) and nothing else,
+// so the redirect steps run on the local target only.
+flow(
+  'CONN-EGRESS-1',
+  {
+    domain: 'connectors',
+    requires: ['database'],
+    timeoutMs: 120_000,
+    routes: [
+      'POST /v1/connectors/projects/:projectId/connectors',
+      'DELETE /v1/connectors/projects/:projectId/connectors/:slug',
+      'POST /v1/connectors/projects/:projectId/call',
+    ],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project({ managedGit: true });
+    const { createServer } = await import('node:http');
+    const { Client: PgClient } = await import('pg');
+    const databaseUrl = ctx.env.databaseUrl as string;
+    const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
+    const db = new PgClient({ connectionString: databaseUrl, ssl: local ? false : { rejectUnauthorized: false } });
+    const stamp = Date.now().toString(36);
+    const yamlSlug = `ke2e-egress-yaml-${stamp}`;
+    const seededSlug = `ke2e-egress-db-${stamp}`;
+
+    const hits: string[] = [];
+    let redirectTo = '';
+    const upstream = createServer((req, res) => {
+      hits.push(req.url ?? '');
+      if (redirectTo) {
+        res.writeHead(302, { location: redirectTo });
+        res.end();
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ reached: true }));
+    });
+    const port = await new Promise<number>((resolve) =>
+      upstream.listen(0, '127.0.0.1', () => resolve((upstream.address() as { port: number }).port)),
+    );
+    const call = (slug: string) =>
+      ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/connectors/projects/:projectId/call',
+          { connector: slug, action: 'ping', args: {} },
+          { params: { projectId: p.id }, timeoutMs: 60_000 },
+        );
+    let accountId = '';
+    const seed = async (baseUrl: string) => {
+      if (!accountId) {
+        const owner = await db.query<{ account_id: string }>(
+          `SELECT account_id FROM kortix.projects WHERE project_id = $1`,
+          [p.id],
+        );
+        accountId = owner.rows[0]?.account_id ?? '';
+        if (!accountId) throw new Error('project has no account');
+      }
+      await db.query(`DELETE FROM kortix.connectors WHERE project_id = $1 AND slug = $2`, [p.id, seededSlug]);
+      const connector = await db.query<{ connector_id: string }>(
+        `INSERT INTO kortix.connectors (account_id, project_id, slug, name, provider_type, config, status)
+         VALUES ($1, $2, $3, 'KE2E egress', 'http', $4::jsonb, 'active') RETURNING connector_id`,
+        [accountId, p.id, seededSlug, JSON.stringify({ baseUrl, auth: { type: 'none' } })],
+      );
+      const connectorId = connector.rows[0]?.connector_id;
+      if (!connectorId) throw new Error('connector insert returned no id');
+      await db.query(
+        `INSERT INTO kortix.connector_connections (account_id, project_id, connector_id, owner_type, label, status, is_default, metadata)
+         VALUES ($1, $2, $3, 'project', 'KE2E egress', 'active', true, $4::jsonb)`,
+        [accountId, p.id, connectorId, JSON.stringify({ provider: 'http', connector_slug: seededSlug })],
+      );
+      await db.query(
+        `INSERT INTO kortix.connector_actions (connector_id, path, name, description, input_schema, risk, binding)
+         VALUES ($1, 'ping', 'ping', 'Ping', '{"type":"object"}'::jsonb, 'read', $2::jsonb)`,
+        [connectorId, JSON.stringify({ kind: 'http', method: 'GET', path: '/ping' })],
+      );
+    };
+    const expectBlocked = (r: Awaited<ReturnType<typeof call>>) => {
+      r.status(500).body().has('$.status', 'error');
+      const reason = r.json<{ reason: string }>().reason;
+      if (!reason.startsWith('connector_egress_blocked')) {
+        throw new Error(`expected connector_egress_blocked, got: ${reason}`);
+      }
+    };
+
+    try {
+      await db.connect();
+      await ctx.step('adding an http connector whose base_url is a private address reports the endpoint as refused', async () => {
+        const r = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/connectors/projects/:projectId/connectors',
+          { slug: yamlSlug, provider: 'http', baseUrl: 'http://10.255.255.1:8080', auth: { type: 'none' } },
+          { params: { projectId: p.id }, timeoutMs: 60_000 },
+        );
+        r.status(200).body().has('$.ok', true);
+        const errors = r.json<{ sync?: { errors?: Array<{ slug: string; error: string }> } }>().sync?.errors ?? [];
+        const mine = errors.find((e) => e.slug === yamlSlug);
+        if (!mine || !mine.error.includes('base_url must be a public host')) {
+          throw new Error(`sync did not refuse the private base_url: ${JSON.stringify(errors)}`);
+        }
+        const row = await db.query<{ status: string; actions: string }>(
+          `SELECT c.status, (SELECT count(*) FROM kortix.connector_actions a WHERE a.connector_id = c.connector_id)::text AS actions
+             FROM kortix.connectors c WHERE c.project_id = $1 AND c.slug = $2`,
+          [p.id, yamlSlug],
+        );
+        if (row.rows[0]?.status !== 'error' || row.rows[0]?.actions !== '0') {
+          throw new Error(`connector row is callable: ${JSON.stringify(row.rows)}`);
+        }
+      });
+
+      await ctx.step('a stored private base_url is refused at call time before any request', async () => {
+        await seed('http://10.255.255.1:8080');
+        expectBlocked(await call(seededSlug));
+      });
+
+      await ctx.step('a stored link-local metadata address is refused at call time', async () => {
+        await seed('http://169.254.169.254/latest');
+        expectBlocked(await call(seededSlug));
+      });
+
+      if (ctx.env.target === 'local') {
+        await ctx.step('an allowed upstream answers the call and its response comes back', async () => {
+          redirectTo = '';
+          await seed(`http://127.0.0.1:${port}`);
+          const before = hits.length;
+          const r = await call(seededSlug);
+          r.status(200).body().has('$.ok', true).has('$.data.reached', true);
+          if (hits.length !== before + 1) throw new Error(`upstream saw ${hits.length - before} requests`);
+        });
+
+        await ctx.step('a redirect from the allowed upstream to a metadata address is refused, not followed', async () => {
+          redirectTo = 'http://169.254.169.254/latest/meta-data/';
+          const before = hits.length;
+          expectBlocked(await call(seededSlug));
+          if (hits.length !== before + 1) throw new Error(`upstream saw ${hits.length - before} requests`);
+        });
+
+        await ctx.step('a redirect to another loopback port is refused too: only the listed host is exempt', async () => {
+          redirectTo = `http://localhost:${port}/ping`;
+          expectBlocked(await call(seededSlug));
+        });
+      }
+
+      await ctx.step('delete the manifest connector → 200', async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .del('/v1/connectors/projects/:projectId/connectors/:slug', { params: { projectId: p.id, slug: yamlSlug } });
+        r.status(200);
+      });
+    } finally {
+      upstream.close();
+      await db
+        .query(`DELETE FROM kortix.connectors WHERE project_id = $1 AND slug = ANY($2)`, [p.id, [seededSlug, yamlSlug]])
+        .catch(() => {});
+      await db.end().catch(() => {});
+    }
+  },
+);

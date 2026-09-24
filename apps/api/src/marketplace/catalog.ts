@@ -829,44 +829,55 @@ async function externalRefs(): Promise<ExternalRef[]> {
   return out;
 }
 
-// Authenticate GitHub API/raw calls when a token is configured — lifts the
-// unauthenticated 60 req/hr scan ceiling to 5,000/hr so many marketplaces can be
-// browsed + installed without rate-limiting. Kept out of @kortix/registry (which
-// stays pure) — injected here as a fetch wrapper via the loader's fetchImpl.
+// Every marketplace registry fetch goes through here. GitHub's own API and raw
+// hosts are fetched directly, with the token when one is configured — it lifts
+// the unauthenticated 60 req/hr scan ceiling to 5,000/hr. Every other host (a
+// url-kind registry source, or anything a registry file points at) goes through
+// the DNS-resolving SSRF guard, which also re-checks each redirect hop. That
+// holds with or without a token: a deployment without one used to fetch other
+// hosts with plain `fetch`, which follows redirects anywhere. Kept out of
+// @kortix/registry (which stays pure) — injected via the loader's fetchImpl.
 const GITHUB_TOKEN =
   process.env.GITHUB_TOKEN || process.env.MANAGED_GIT_GITHUB_TOKEN || "";
 const GITHUB_HOSTS = new Set(["api.github.com", "raw.githubusercontent.com"]);
-const githubFetch: typeof fetch = !GITHUB_TOKEN
-  ? fetch
-  : (((
-      input: Parameters<typeof fetch>[0],
-      init?: Parameters<typeof fetch>[1],
-    ) => {
-      const url =
-        typeof input === "string"
-          ? input
-          : input instanceof URL
-            ? input.href
-            : (input as Request).url;
-      // Exact hostname match — NOT substring — so the token is never sent to a
-      // look-alike host like `api.github.com.evil.com` or `evil.com?x=api.github.com`.
-      let host = "";
-      try {
-        host = new URL(url).hostname;
-      } catch {
-        // unparseable URL → no auth
-      }
-      if (GITHUB_HOSTS.has(host)) {
-        const headers = new Headers(init?.headers);
-        if (!headers.has("authorization"))
-          headers.set("authorization", `Bearer ${GITHUB_TOKEN}`);
-        return fetch(input, { ...init, headers });
-      }
-      // Non-GitHub host (url-kind registry source) — route through the
-      // DNS-resolving SSRF guard so a public domain that resolves to a
-      // private/metadata IP is blocked at fetch time. See F-1.
-      return safeEgressFetch(url, init);
-    }) as typeof fetch);
+
+export function createMarketplaceFetch(
+  githubToken: string,
+  deps: { fetch: typeof fetch; safeFetch: typeof safeEgressFetch } = {
+    fetch: ((input, init) => fetch(input, init)) as typeof fetch,
+    safeFetch: safeEgressFetch,
+  },
+): typeof fetch {
+  return ((
+    input: Parameters<typeof fetch>[0],
+    init?: Parameters<typeof fetch>[1],
+  ) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : (input as Request).url;
+    // Exact hostname match — NOT substring — so the token is never sent to a
+    // look-alike host like `api.github.com.evil.com` or `evil.com?x=api.github.com`.
+    let parsed: URL | null = null;
+    try {
+      parsed = new URL(url);
+    } catch {
+      // unparseable URL → the guard below refuses it
+    }
+    if (parsed && parsed.protocol === "https:" && GITHUB_HOSTS.has(parsed.hostname)) {
+      if (!githubToken) return deps.fetch(input, init);
+      const headers = new Headers(init?.headers);
+      if (!headers.has("authorization"))
+        headers.set("authorization", `Bearer ${githubToken}`);
+      return deps.fetch(input, { ...init, headers });
+    }
+    return deps.safeFetch(url, init);
+  }) as typeof fetch;
+}
+
+const githubFetch: typeof fetch = createMarketplaceFetch(GITHUB_TOKEN);
 
 /** Loader options that authenticate GitHub calls (shared by catalog + install). */
 export const githubLoaderOptions: { fetchImpl: typeof fetch } = {

@@ -5,6 +5,7 @@ import {
   connectors,
   connectorProjectPolicies,
   connectorProjectSettings,
+  connectorSyncFences,
   projectSessionConnectorBindings,
   projects,
 } from '@kortix/db';
@@ -48,6 +49,7 @@ import { synthesizeComputerConnectors } from './computer-materialize';
 import { COMPUTER_SLUG, computerCatalog } from './computers';
 import { ensureDefaultConnection, resolveCredentialValue } from './credentials';
 import { listMcpTools, type FetchImpl } from './call';
+import { assertConnectorEndpointUrl, connectorEgressFetch } from './egress';
 import type { ProjectPolicySpec } from '../projects/policies';
 import { connectorConfig, toPolicyRows, toProjectPolicyRows } from './materialize';
 import {
@@ -415,7 +417,27 @@ export async function syncProjectConnectors(
       errors: [{ slug: '(project)', error: 'project not found' }],
     };
   const accountId = row.accountId;
+  // Taken BEFORE the manifest read, so every commit made before this point is
+  // in what this sync reads. See `withConnectorSyncWrite`.
+  const fence = await openConnectorSyncFence(projectId);
+  try {
+    return await syncProjectConnectorsFenced(row, accountId, fence, opts);
+  } catch (error) {
+    if (!(error instanceof SupersededConnectorSyncError)) throw error;
+    // A later sync of this project read a manifest at least as recent and has
+    // started writing its result. Nothing here is a failure of the project.
+    console.info(`[connector] ${error.message}`);
+    return { synced: 0, errors: [] };
+  }
+}
 
+async function syncProjectConnectorsFenced(
+  row: typeof projects.$inferSelect,
+  accountId: string,
+  fence: ConnectorSyncFence,
+  opts: SyncOptions,
+): Promise<SyncResult> {
+  const projectId = row.projectId;
   const errors: SyncResult['errors'] = [];
   let gitProject: GitBackedProject = row;
   try {
@@ -464,7 +486,7 @@ export async function syncProjectConnectors(
     for (const e of projectPoliciesParsed.errors) {
       errors.push({ slug: '(policies)', error: e.error });
     }
-    await reconcileProjectPolicies(projectId, projectPoliciesParsed);
+    await reconcileProjectPolicies(projectId, projectPoliciesParsed, fence);
   }
 
   // Channel connectors (e.g. Slack) are INSTALL-driven, not manifest-driven:
@@ -601,10 +623,11 @@ export async function syncProjectConnectors(
           : await resolveCatalog(gitProject, spec, {
               credential: catalogCredential,
             });
-      await upsertConnector(projectId, accountId, spec, catalog, ex?.connectorId ?? null);
+      await upsertConnector(projectId, accountId, spec, catalog, ex?.connectorId ?? null, fence);
       if (catalog?.error) errors.push({ slug: spec.slug, error: catalog.error });
       synced++;
     } catch (e) {
+      if (e instanceof SupersededConnectorSyncError) throw e;
       errors.push({ slug: sourceSpec.slug, error: (e as Error).message });
     }
   }
@@ -616,33 +639,39 @@ export async function syncProjectConnectors(
   // desiredSlugs, so they're kept). When the manifest is UNREADABLE we must not
   // touch manifest-declared connectors (could be a transient git error) — only
   // reconcile CHANNEL rows whose install is gone, so a disconnect still cleans up.
-  for (const e of existing) {
-    if (desiredSlugs.has(e.slug)) continue;
-    if (manifest || e.providerType === 'channel' || e.providerType === 'computer') {
-      const [bound] = await db
-        .select({ sessionId: projectSessionConnectorBindings.sessionId })
-        .from(projectSessionConnectorBindings)
-        .where(eq(projectSessionConnectorBindings.connectorId, e.connectorId))
-        .limit(1);
-      if (bound) {
-        if (e.providerType === 'computer' && e.slug === COMPUTER_SLUG) {
-          // Existing sessions can remain durably bound to the retired aggregate
-          // connector. DB-backed catalog and call resolution expose this row only
-          // to a session with an exact durable binding.
-          await db
-            .update(connectors)
-            .set({ enabled: true, status: 'active', updatedAt: new Date() })
-            .where(eq(connectors.connectorId, e.connectorId));
+  const removed = existing.filter(
+    (e) =>
+      !desiredSlugs.has(e.slug) &&
+      (manifest || e.providerType === 'channel' || e.providerType === 'computer'),
+  );
+  if (removed.length > 0) {
+    await withConnectorSyncWrite(fence, async (tx) => {
+      for (const e of removed) {
+        const [bound] = await tx
+          .select({ sessionId: projectSessionConnectorBindings.sessionId })
+          .from(projectSessionConnectorBindings)
+          .where(eq(projectSessionConnectorBindings.connectorId, e.connectorId))
+          .limit(1);
+        if (bound) {
+          if (e.providerType === 'computer' && e.slug === COMPUTER_SLUG) {
+            // Existing sessions can remain durably bound to the retired aggregate
+            // connector. DB-backed catalog and call resolution expose this row only
+            // to a session with an exact durable binding.
+            await tx
+              .update(connectors)
+              .set({ enabled: true, status: 'active', updatedAt: new Date() })
+              .where(eq(connectors.connectorId, e.connectorId));
+          } else {
+            await tx
+              .update(connectors)
+              .set({ enabled: false, status: 'disabled', updatedAt: new Date() })
+              .where(eq(connectors.connectorId, e.connectorId));
+          }
         } else {
-          await db
-            .update(connectors)
-            .set({ enabled: false, status: 'disabled', updatedAt: new Date() })
-            .where(eq(connectors.connectorId, e.connectorId));
+          await tx.delete(connectors).where(eq(connectors.connectorId, e.connectorId));
         }
-      } else {
-        await db.delete(connectors).where(eq(connectors.connectorId, e.connectorId));
       }
-    }
+    });
   }
 
   return { synced, errors };
@@ -729,6 +758,66 @@ export async function reconcileEmailConnections(
   }
 }
 
+type SyncTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * The write fence of one manifest sync: the project and the database time the
+ * sync started, taken before it read kortix.yaml. See `connectorSyncFences`.
+ */
+export interface ConnectorSyncFence {
+  projectId: string;
+  /** `clock_timestamp()` as text, so the microseconds survive the round trip. */
+  startedAt: string;
+}
+
+/** A newer sync of the same project already wrote; this one stops writing. */
+export class SupersededConnectorSyncError extends Error {
+  constructor(projectId: string) {
+    super(`connector sync of project ${projectId} was superseded by a newer sync`);
+    this.name = 'SupersededConnectorSyncError';
+  }
+}
+
+/** Open a sync's write fence: the database time the sync starts. */
+export async function openConnectorSyncFence(projectId: string): Promise<ConnectorSyncFence> {
+  const rows = (await db.execute(sql`select clock_timestamp()::text as started_at`)) as unknown as Array<{
+    started_at: string;
+  }>;
+  const startedAt = rows[0]?.started_at;
+  if (!startedAt) throw new Error('connector sync fence: database returned no time');
+  return { projectId, startedAt };
+}
+
+/**
+ * Run one sync write as a single transaction under the project's fence.
+ *
+ * The fence row is advanced to this sync's start time, which also locks it
+ * until commit, so the write transactions of one project run one at a time.
+ * When a sync that started later has already advanced the row, the update
+ * matches nothing and this sync stops with {@link SupersededConnectorSyncError}:
+ * the newer sync read a manifest at least as recent and owns the result.
+ */
+export async function withConnectorSyncWrite<T>(
+  fence: ConnectorSyncFence | null,
+  work: (tx: SyncTransaction) => Promise<T>,
+): Promise<T> {
+  return db.transaction(async (tx) => {
+    if (fence) {
+      const claimed = await tx
+        .insert(connectorSyncFences)
+        .values({ projectId: fence.projectId, startedAt: sql`${fence.startedAt}::timestamptz` as unknown as Date })
+        .onConflictDoUpdate({
+          target: connectorSyncFences.projectId,
+          set: { startedAt: sql`excluded.started_at` },
+          setWhere: sql`${connectorSyncFences.startedAt} <= excluded.started_at`,
+        })
+        .returning({ projectId: connectorSyncFences.projectId });
+      if (claimed.length === 0) throw new SupersededConnectorSyncError(fence.projectId);
+    }
+    return work(tx);
+  });
+}
+
 /**
  * Upsert one connector + reconcile its actions + policies.
  *
@@ -736,6 +825,11 @@ export async function reconcileEmailConnections(
  * leave the stored config + actions untouched and only reconcile the cheap
  * fields (name / enabled / status / policies) so a manifest edit that just
  * toggled `enabled` or tweaked policies still lands without a network round-trip.
+ *
+ * The connector row, its actions, and its policies change in ONE transaction.
+ * The gateway reads actions and policies directly, so a replace split across
+ * statements briefly showed a connector with no `block` rule, and an insert
+ * that failed after the delete left it without rules until the next sync.
  */
 async function upsertConnector(
   projectId: string,
@@ -743,6 +837,7 @@ async function upsertConnector(
   spec: ConnectorSpec,
   catalog: ResolvedCatalog | null,
   existingId: string | null,
+  fence: ConnectorSyncFence | null = null,
 ): Promise<void> {
   const isNew = !existingId;
   const manifestHash = manifestHashForConnector(spec);
@@ -767,100 +862,106 @@ async function upsertConnector(
     updatedAt: new Date(),
   } as const;
 
-  let resolvedConfig = catalog ? connectorConfig(spec, catalog.server, catalog.iconUrl) : null;
-  // Computer profiles are synthetic. Their sensitive flag is edited in the
-  // database, so preserve it when a lifecycle reconcile refreshes the native
-  // catalog and bound tunnel config.
-  if (resolvedConfig && spec.provider === 'computer' && existingId) {
-    const [stored] = await db
-      .select({ config: connectors.config })
-      .from(connectors)
-      .where(eq(connectors.connectorId, existingId))
-      .limit(1);
-    if ((stored?.config as { sensitive?: unknown } | null)?.sensitive === true) {
-      resolvedConfig = { ...resolvedConfig, sensitive: true };
-    }
-  }
-
-  let connectorId = existingId;
-  if (connectorId) {
-    // `sensitive` lives inside `config` but is a CHEAP field: it isn't part of
-    // manifestHashForConnector (deliberately — flipping it must not force a
-    // catalog re-fetch), so on a hash-match reconcile we still patch that one
-    // key in place. Without this, the Sensitive toggle commits to kortix.yaml
-    // but the DB config (what the gateway + admin UI read) never updates.
-    const sensitivePatch = spec.sensitive
-      ? sql`coalesce(${connectors.config}, '{}'::jsonb) || '{"sensitive": true}'::jsonb`
-      : sql`coalesce(${connectors.config}, '{}'::jsonb) - 'sensitive'`;
-    await db
-      .update(connectors)
-      .set(
-        catalog
-          ? {
-              ...common,
-              config: resolvedConfig!,
-            }
-          : { ...common, config: sensitivePatch },
-      )
-      .where(eq(connectors.connectorId, connectorId));
-  } else {
-    // A brand-new connector is never "unchanged", so catalog is always present
-    // here; fall back to a server-less config defensively.
-    const [created] = await db
-      .insert(connectors)
-      .values({
-        accountId,
-        projectId,
-        slug: spec.slug,
-        ...common,
-        authSecret,
-        config: resolvedConfig ?? connectorConfig(spec, null, catalog?.iconUrl),
-      })
-      .returning({ connectorId: connectors.connectorId });
-    connectorId = created!.connectorId;
-  }
-
-  if (spec.authorizationStrategy === 'project') {
-    await ensureDefaultConnection({ projectId, connectorId });
-  }
-
-  // Actions only change when the catalog was re-resolved — leave them in place
-  // on a cheap reconcile.
-  if (catalog) {
-    await db.delete(connectorActions).where(eq(connectorActions.connectorId, connectorId));
-    if (catalog.actions.length > 0) {
-      const rows = catalog.actions.map((a) => ({
-        connectorId: connectorId!,
-        path: a.path,
-        name: a.name,
-        description: a.description,
-        inputSchema: a.inputSchema,
-        outputSchema: a.outputSchema,
-        risk: a.risk,
-        binding: a.binding as unknown as Record<string, unknown>,
-      }));
-      for (let offset = 0; offset < rows.length; offset += 500) {
-        await db.insert(connectorActions).values(rows.slice(offset, offset + 500));
+  const connectorId = await withConnectorSyncWrite(fence, async (tx) => {
+    let resolvedConfig = catalog ? connectorConfig(spec, catalog.server, catalog.iconUrl) : null;
+    // Computer profiles are synthetic. Their sensitive flag is edited in the
+    // database, so preserve it when a lifecycle reconcile refreshes the native
+    // catalog and bound tunnel config.
+    if (resolvedConfig && spec.provider === 'computer' && existingId) {
+      const [stored] = await tx
+        .select({ config: connectors.config })
+        .from(connectors)
+        .where(eq(connectors.connectorId, existingId))
+        .limit(1);
+      if ((stored?.config as { sensitive?: unknown } | null)?.sensitive === true) {
+        resolvedConfig = { ...resolvedConfig, sensitive: true };
       }
     }
-  }
 
-  // Computer profiles have no manifest entry. Their policies are edited on the
-  // materialized connector and must survive rename/heartbeat reconciliation.
-  if (spec.provider !== 'computer' || isNew) {
-    await db.delete(connectorPolicies).where(eq(connectorPolicies.connectorId, connectorId));
-    const policyRows = toPolicyRows(spec);
-    if (policyRows.length > 0) {
-      await db.insert(connectorPolicies).values(
-        policyRows.map((p) => ({
-          connectorId: connectorId!,
-          match: p.match,
-          action: p.action,
-          position: p.position,
-          conditions: p.conditions ?? null,
-        })),
-      );
+    let id = existingId;
+    if (id) {
+      // `sensitive` lives inside `config` but is a CHEAP field: it isn't part of
+      // manifestHashForConnector (deliberately — flipping it must not force a
+      // catalog re-fetch), so on a hash-match reconcile we still patch that one
+      // key in place. Without this, the Sensitive toggle commits to kortix.yaml
+      // but the DB config (what the gateway + admin UI read) never updates.
+      const sensitivePatch = spec.sensitive
+        ? sql`coalesce(${connectors.config}, '{}'::jsonb) || '{"sensitive": true}'::jsonb`
+        : sql`coalesce(${connectors.config}, '{}'::jsonb) - 'sensitive'`;
+      await tx
+        .update(connectors)
+        .set(
+          catalog
+            ? {
+                ...common,
+                config: resolvedConfig!,
+              }
+            : { ...common, config: sensitivePatch },
+        )
+        .where(eq(connectors.connectorId, id));
+    } else {
+      // A brand-new connector is never "unchanged", so catalog is always present
+      // here; fall back to a server-less config defensively.
+      const [created] = await tx
+        .insert(connectors)
+        .values({
+          accountId,
+          projectId,
+          slug: spec.slug,
+          ...common,
+          authSecret,
+          config: resolvedConfig ?? connectorConfig(spec, null, catalog?.iconUrl),
+        })
+        .returning({ connectorId: connectors.connectorId });
+      id = created!.connectorId;
     }
+    const rowId = id;
+
+    // Actions only change when the catalog was re-resolved — leave them in place
+    // on a cheap reconcile.
+    if (catalog) {
+      await tx.delete(connectorActions).where(eq(connectorActions.connectorId, rowId));
+      if (catalog.actions.length > 0) {
+        const rows = catalog.actions.map((a) => ({
+          connectorId: rowId,
+          path: a.path,
+          name: a.name,
+          description: a.description,
+          inputSchema: a.inputSchema,
+          outputSchema: a.outputSchema,
+          risk: a.risk,
+          binding: a.binding as unknown as Record<string, unknown>,
+        }));
+        for (let offset = 0; offset < rows.length; offset += 500) {
+          await tx.insert(connectorActions).values(rows.slice(offset, offset + 500));
+        }
+      }
+    }
+
+    // Computer profiles have no manifest entry. Their policies are edited on the
+    // materialized connector and must survive rename/heartbeat reconciliation.
+    if (spec.provider !== 'computer' || isNew) {
+      await tx.delete(connectorPolicies).where(eq(connectorPolicies.connectorId, rowId));
+      const policyRows = toPolicyRows(spec);
+      if (policyRows.length > 0) {
+        await tx.insert(connectorPolicies).values(
+          policyRows.map((p) => ({
+            connectorId: rowId,
+            match: p.match,
+            action: p.action,
+            position: p.position,
+            conditions: p.conditions ?? null,
+          })),
+        );
+      }
+    }
+    return rowId;
+  });
+
+  // After commit: the connection row references the connector, and
+  // `ensureDefaultConnection` writes through its own connection.
+  if (spec.authorizationStrategy === 'project') {
+    await ensureDefaultConnection({ projectId, connectorId });
   }
 }
 
@@ -908,6 +1009,12 @@ export async function resolveCatalog(
             /* keep */
           }
         }
+        // The spec document chooses where every call goes. Check that target
+        // like any other connector endpoint; the gateway checks it again, with
+        // DNS resolution, on every call.
+        if (server && /^[a-z][a-z0-9+.-]*:/i.test(server)) {
+          assertConnectorEndpointUrl(server, { what: 'OpenAPI server URL' });
+        }
         return { actions: normalizeOpenApi(doc), server };
       }
       case 'postman': {
@@ -925,9 +1032,11 @@ export async function resolveCatalog(
         if (actions.length > 10_000) {
           throw new Error(`Postman source produced ${actions.length} actions; limit is 10000`);
         }
+        assertPostmanRequestUrls(actions);
         return { actions, server: null };
       }
       case 'http': {
+        if (spec.baseUrl) assertConnectorEndpointUrl(spec.baseUrl, { what: 'base_url' });
         const routes = await loadHttpRoutes(project, spec.spec);
         return { actions: normalizeHttp(routes), server: spec.baseUrl };
       }
@@ -945,14 +1054,7 @@ export async function resolveCatalog(
           auth: spec.auth,
           headers: spec.headers,
           secret: options.credential ?? null,
-          fetchImpl:
-            options.mcpFetchImpl ??
-            (async (url, init) =>
-              safeEgressFetch(url, {
-                method: init.method,
-                headers: init.headers,
-                body: init.body,
-              })),
+          fetchImpl: options.mcpFetchImpl ?? connectorEgressFetch,
         });
         return { actions: normalizeMcp(tools), server: spec.url };
       }
@@ -997,6 +1099,21 @@ export async function resolveCatalog(
     }
   } catch (e) {
     return { actions: [], server: null, error: (e as Error).message };
+  }
+}
+
+/**
+ * A Postman request whose URL names a concrete host must target a public
+ * endpoint. A host written as a `{{variable}}` is filled from call arguments,
+ * so only the gateway's per-call check can judge it.
+ */
+function assertPostmanRequestUrls(actions: ReturnType<typeof normalizePostmanDocuments>): void {
+  for (const action of actions) {
+    const binding = action.binding as { kind?: string; url?: unknown };
+    if (binding.kind !== 'postman' || typeof binding.url !== 'string') continue;
+    const origin = binding.url.match(/^[a-z][a-z0-9+.-]*:\/\/[^/?#]*/i)?.[0];
+    if (!origin || origin.includes('{{')) continue;
+    assertConnectorEndpointUrl(origin, { what: `Postman request "${action.name}" URL` });
   }
 }
 
@@ -1185,45 +1302,53 @@ async function introspectGraphql(endpoint: string): Promise<any> {
  * source of truth, so we don't preserve DB-only edits). Cheap — runs every
  * sync, no network call.
  */
-async function reconcileProjectPolicies(
+export async function reconcileProjectPolicies(
   projectId: string,
   parsed: {
     policies: ProjectPolicySpec[];
     settings: { defaultMode: 'risk' | 'allow_all' };
   },
+  fence: ConnectorSyncFence | null = null,
 ): Promise<void> {
-  await db
-    .delete(connectorProjectPolicies)
-    .where(eq(connectorProjectPolicies.projectId, projectId));
-  const rows = toProjectPolicyRows(parsed.policies);
-  if (rows.length > 0) {
-    await db.insert(connectorProjectPolicies).values(
-      rows.map((p) => ({
-        projectId,
-        match: p.match,
-        action: p.action,
-        position: p.position,
-        // Carried through, NOT dropped: reconcile is delete-then-insert from the
-        // manifest, so a field missing here is silently erased on every sync.
-        conditions: p.conditions ?? null,
-      })),
-    );
-  }
-  // Update before insert so the same code can write through the compatibility
-  // view used during the physical connector-schema rename.
-  const updateExisting = () =>
-    db
-      .update(connectorProjectSettings)
-      .set({ defaultMode: parsed.settings.defaultMode, updatedAt: new Date() })
-      .where(eq(connectorProjectSettings.projectId, projectId))
-      .returning({ projectId: connectorProjectSettings.projectId });
-  if ((await updateExisting()).length > 0) return;
-  try {
-    await db
-      .insert(connectorProjectSettings)
-      .values({ projectId, defaultMode: parsed.settings.defaultMode });
-  } catch (error) {
-    if (!isUniqueViolation(error)) throw error;
-    if ((await updateExisting()).length === 0) throw error;
-  }
+  // One transaction: the gateway reads these rows on every call, so a delete
+  // committed ahead of its insert served calls with no project `block` rule.
+  await withConnectorSyncWrite(fence, async (tx) => {
+    await tx
+      .delete(connectorProjectPolicies)
+      .where(eq(connectorProjectPolicies.projectId, projectId));
+    const rows = toProjectPolicyRows(parsed.policies);
+    if (rows.length > 0) {
+      await tx.insert(connectorProjectPolicies).values(
+        rows.map((p) => ({
+          projectId,
+          match: p.match,
+          action: p.action,
+          position: p.position,
+          // Carried through, NOT dropped: reconcile is delete-then-insert from the
+          // manifest, so a field missing here is silently erased on every sync.
+          conditions: p.conditions ?? null,
+        })),
+      );
+    }
+    // Update before insert so the same code can write through the compatibility
+    // view used during the physical connector-schema rename.
+    const updateExisting = () =>
+      tx
+        .update(connectorProjectSettings)
+        .set({ defaultMode: parsed.settings.defaultMode, updatedAt: new Date() })
+        .where(eq(connectorProjectSettings.projectId, projectId))
+        .returning({ projectId: connectorProjectSettings.projectId });
+    if ((await updateExisting()).length > 0) return;
+    try {
+      // A savepoint: a unique violation here must not abort the transaction.
+      await tx.transaction(async (savepoint) => {
+        await savepoint
+          .insert(connectorProjectSettings)
+          .values({ projectId, defaultMode: parsed.settings.defaultMode });
+      });
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+      if ((await updateExisting()).length === 0) throw error;
+    }
+  });
 }
