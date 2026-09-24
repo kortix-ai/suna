@@ -7,6 +7,7 @@ import { db } from '../../shared/db';
 import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { markTriggerRuntimeDeliveryFailed } from '../trigger-execution-store';
 import { inboxLaneSql, inboxOrderBy, inboxSentAtSql, inboxWireIdSql } from './inbox-order';
+import { transitionSession } from './status-transitions';
 import type {
   CreateSessionCommand,
   QueuedCreateSessionPayload,
@@ -845,20 +846,13 @@ export async function markCommandFailed(
     // Park the target session 'failed': findReusableTriggerSession skips failed
     // sessions, so a `session_mode = "reuse"` trigger's next fire creates a
     // FRESH session instead of re-aiming prompts at a wedged one — the proven
-    // lossless self-heal. Status re-check in the UPDATE predicate (same pattern
-    // as reconcileStuckActiveSessions) so a concurrent transition isn't
-    // clobbered by a stale dead-letter.
+    // lossless self-heal. The `fail` transition re-checks the status and the
+    // tombstone in its own UPDATE, so a stale dead-letter cannot clobber a
+    // concurrent transition or touch a deleted session.
     try {
-      await db
-        .update(projectSessions)
-        .set({
-          status: 'failed',
-          error: `prompt delivery dead-lettered: ${error}`.slice(0, 1000),
-          updatedAt: new Date(),
-        })
-        .where(
-          and(eq(projectSessions.sessionId, row.sessionId), ne(projectSessions.status, 'failed')),
-        );
+      await transitionSession('fail', row.sessionId, {
+        error: `prompt delivery dead-lettered: ${error}`.slice(0, 1000),
+      });
     } catch (err) {
       console.warn('[session-lifecycle] failed to park session after dead-letter', {
         sessionId: row.sessionId,

@@ -48,9 +48,12 @@ mock.module('../../../shared/db', () => ({
     }),
     update: (table: unknown) => ({
       set: (updates: Record<string, unknown>) => ({
-        where: async () => {
-          updateCalls.push({ table, updates });
-        },
+        where: () => ({
+          returning: async () => {
+            updateCalls.push({ table, updates });
+            return [{ sessionId: SESSION_ID }];
+          },
+        }),
       }),
     }),
   },

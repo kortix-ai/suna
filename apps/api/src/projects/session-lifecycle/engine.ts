@@ -113,6 +113,7 @@ import {
   wireIdTime,
 } from '../wire-message-id';
 import { crossAccountIdempotencyResult } from './idempotency-guard';
+import { sessionTransitionLeaves, transitionSession } from './status-transitions';
 import {
   repairLegacyInlineAttachments,
   type LegacyRuntimeMessage,
@@ -617,11 +618,11 @@ export async function continueSession(
       await db.select().from(projects).where(eq(projects.projectId, session.projectId)).limit(1)
     )[0]);
 
-  if (session.status === 'stopped' || session.status === 'completed') {
-    await db
-      .update(projectSessions)
-      .set({ status: 'running', error: null, updatedAt: new Date() })
-      .where(eq(projectSessions.sessionId, sessionId));
+  // The pre-check skips a write on the hot path (a running session). The
+  // transition re-checks the status and the tombstone in its own WHERE, so a
+  // delete that lands after the read above is not undone.
+  if (sessionTransitionLeaves('wake', session.status)) {
+    await transitionSession('wake', sessionId, { error: null });
   }
 
   const openOnce = async () => {

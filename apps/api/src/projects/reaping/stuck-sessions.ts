@@ -37,6 +37,7 @@ import { db } from '../../shared/db';
 import { pauseComputeSession } from '../../billing/services/compute-metering';
 import { ACTIVE_SESSION_STATUSES } from '../lib/session-status';
 import { config } from '../../config';
+import { transitionSession } from '../session-lifecycle/status-transitions';
 
 const STUCK_SESSION_BATCH = 200;
 
@@ -91,15 +92,9 @@ export async function reconcileStuckActiveSessions(
       }
       // Re-check the status in the UPDATE predicate so we never clobber a session
       // a real open transitioned out from under us between SELECT and UPDATE.
-      const updated = await db
-        .update(projectSessions)
-        .set({ status: 'stopped', updatedAt: now })
-        .where(and(
-          eq(projectSessions.sessionId, c.sessionId),
-          inArray(projectSessions.status, [...ACTIVE_SESSION_STATUSES]),
-        ))
-        .returning({ sessionId: projectSessions.sessionId });
-      if (updated.length) result.reconciled += 1;
+      if (await transitionSession('reconcileStuck', c.sessionId, { at: now })) {
+        result.reconciled += 1;
+      }
     } catch (err) {
       result.errors += 1;
       console.warn('[reaper] stuck-session reconcile failed:', { sessionId: c.sessionId, error: err instanceof Error ? err.message : err });
