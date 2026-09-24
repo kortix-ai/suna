@@ -81,7 +81,7 @@
  *
  * **Gate.** Template CRUD asks for `project.customize.write` — the leaf the
  * routes actually assert (`POST|PATCH|DELETE /projects/:id/sandbox-templates`,
- * `r2.ts`). It gates the header "New template" button, the empty-state action,
+ * `sandbox-templates.ts`). It gates the header "New template" button, the empty-state action,
  * and every `TemplateCard` edit/delete/rebuild control. It used to read
  * `effective_project_role === 'manager'`, which showed the controls to a custom
  * role that had been denied `project.customize.write` and hid them from one that
@@ -1053,7 +1053,7 @@ export function SandboxTab({ projectId }: { projectId: string }) {
    * `SandboxProviderRow` writes `project.default_sandbox_provider`;
    * `listProjectSnapshots` derives its own `provider_mode`/`selected_provider`
    * from the SAME `projects.metadata.default_sandbox_provider` server-side
-   * (`apps/api/src/projects/routes/r2.ts` -> `templateProviderObservation` ->
+   * (`apps/api/src/projects/routes/sandbox-templates.ts` -> `templateProviderObservation` ->
    * `resolveConfiguredProjectProviderPin`). They agree at the source, but they
    * are two independent query caches and the switch only invalidates the
    * project one — so reading the pin off the snapshots payload would leave

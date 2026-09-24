@@ -12,13 +12,13 @@
  * whole sub-object would let two concurrent writers into DIFFERENT sub-keys lose
  * each other's update one level down — see `../lib/metadata-merge.ts`.
  *
- * This file drives the REAL `r6.ts` Hono handler (`projectsApp.request(...)`)
+ * This file drives the REAL `project-settings.ts` Hono handler (`projectsApp.request(...)`)
  * and asserts on the SQL the update actually SETs, serialized through Drizzle's
  * own `PgDialect`. Asserting on the fragment object would prove only that some
  * object was built; serializing it proves the statement Postgres would run.
  *
  * `mock.module` is process-global in bun:test — same caveat as
- * `./r5-icon-patch.test.ts` — so this MUST run in its own file (`--isolate`
+ * `./project-detail-icon-patch.test.ts` — so this MUST run in its own file (`--isolate`
  * gives each test file its own process). Runs ungated (no TEST_DATABASE_URL):
  * the db module is mocked, so there is no database.
  */
@@ -48,12 +48,13 @@ function projectRow(over: Record<string, unknown> = {}) {
   };
 }
 
-// ── Auth. Unlike `./r5-icon-patch.test.ts`, this suite CANNOT simply decline to
-// import `./r1` (the file that runs `projectsApp.use('/*', supabaseAuth)`):
-// `r6.ts` imports `../../executor/sync`, which reaches `../index` and pulls r1
-// in transitively. So the middleware is always attached here, and every request
-// would 401. Replace it with a pass-through instead. This must be registered
-// BEFORE `./r6` is imported, or r1 will already hold the real reference.
+// ── Auth. Unlike `./project-detail-icon-patch.test.ts`, this suite does not
+// rely on leaving `./projects` (the file that runs `projectsApp.use('/*',
+// supabaseAuth)`) unimported: if anything in the import graph reaches
+// `../index`, `./projects` loads transitively, the middleware is attached, and
+// every request would 401. So it replaces the middleware with a pass-through.
+// This must be registered BEFORE `./project-settings` is imported, or
+// `./projects` would already hold the real reference.
 const realAuth = await import('../../middleware/auth');
 mock.module('../../middleware/auth', () => ({
   ...realAuth,
@@ -96,7 +97,7 @@ mock.module('../lib/access', () => ({
 }));
 
 const { projectsApp } = await import('../lib/app');
-await import('./r6');
+await import('./project-settings');
 
 const dialect = new PgDialect();
 

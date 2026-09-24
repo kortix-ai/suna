@@ -13,12 +13,12 @@
  * `../sandbox-deadline-call-sites.test.ts`.
  *
  * REPOINTED by Task 16 (workspace-switcher, 2026-08-06): this guard used to
- * read `r1.ts`'s POST /provision handler directly. That handler's body now
+ * read `projects.ts`'s POST /provision handler directly. That handler's body now
  * lives in `runProvision` (`../provision-core.ts`), extracted so a streaming
  * variant of the route can share it instead of forking a second copy of the
  * create logic. Every assertion below is UNCHANGED IN SUBSTANCE — only the
  * file it reads, and the markers used to slice out the handler body, moved
- * with the code. `r1.ts`'s own POST /provision handler is now a thin wrapper
+ * with the code. `projects.ts`'s own POST /provision handler is now a thin wrapper
  * (`buildProvisionContext` + `runProvision` + `c.json(result.body, ...)`)
  * with nothing left in it for a source guard to check.
  */
@@ -35,7 +35,7 @@ async function runProvisionSource(): Promise<string> {
   // assertions below see only the two CALL sites inside `runProvision`, not
   // a third phantom match on the declaration — same property the original
   // `path: '/provision'` .. `path: '/{projectId}/git-token'` slice enforced
-  // in `r1.ts`.
+  // in `projects.ts`.
   const start = source.indexOf('export async function runProvision(');
   expect(start).toBeGreaterThan(-1);
   return source.slice(start);
@@ -238,7 +238,7 @@ describe('POST /provision resolves the idempotency key before it creates anythin
     // runProvision(` to end-of-file and every assertion above operates on
     // that slice. Until now, "runProvision is the last export" was stated
     // only in the comment on `runProvisionSource()` — asserted nowhere. Task
-    // 17 (workspace-switcher) added a route in `r1.ts` that is exactly the
+    // 17 (workspace-switcher) added a route in `projects.ts` that is exactly the
     // kind of change most likely to tempt appending a new export below
     // `runProvision` in a NEIGHBORING file; this guard makes that mistake
     // fail here too, in `provision-core.ts` itself, instead of passing

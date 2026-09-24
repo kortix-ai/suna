@@ -2,12 +2,12 @@
  * Round-1 fix (Task 3 review): the DB-level integration test
  * (`../lib/project-registration.icon.integration.test.ts`) proves Task 2's
  * `projectMetadata` contract on `registerLinkedProject`, but it hand-copies
- * `r2.ts`'s `const icon = normalizeProjectIcon(body.icon)` / `...(icon ? {
+ * `project-from-repository.ts`'s `const icon = normalizeProjectIcon(body.icon)` / `...(icon ? {
  * projectMetadata: { icon } } : {})` instead of calling the real route — so it
  * would not catch a wrong body key (e.g. `body.Icon`) or the spread being
  * deleted from a call site in a later edit.
  *
- * THIS file drives the real `r2.ts` Hono handlers (`projectsApp.request(...)`)
+ * THIS file drives the real `project-from-repository.ts` Hono handlers (`projectsApp.request(...)`)
  * for all three call sites — `/link-repository` PAT path,
  * `/link-repository` GitHub-App path, `/create-repo` — and asserts on what
  * they actually pass to `registerGitHubLinkedProject` /
@@ -95,7 +95,7 @@ mock.module('../../iam', () => ({
 }));
 
 // ── GitHub import/auth resolution — no network. Only the three functions
-// r2.ts's target routes call are overridden; everything else stays real.
+// project-from-repository.ts's target routes call are overridden; everything else stays real.
 const realGit = await import('../lib/git');
 mock.module('../lib/git', () => ({
   ...realGit,
@@ -135,7 +135,7 @@ mock.module('../../snapshots/builder', () => ({
   kickProjectTemplatePrebuilds: () => {},
 }));
 
-// ── The subject of this test: r2.ts's three call sites into these two
+// ── The subject of this test: project-from-repository.ts's three call sites into these two
 // functions. Mocked (not spread) so every call is captured.
 const mockRegisterGitHub = mock(async (input: Record<string, unknown>) =>
   fakeProjectRow({ metadata: (input.projectMetadata as Record<string, unknown>) ?? {} }),
@@ -148,12 +148,12 @@ mock.module('../lib/project-registration', () => ({
   registerPatLinkedProject: mockRegisterPat,
 }));
 
-// Registers r2.ts's routes onto the shared `projectsApp` singleton. r1.ts
+// Registers project-from-repository.ts's routes onto the shared `projectsApp` singleton. projects.ts
 // (which attaches the `supabaseAuth` middleware) is deliberately NOT
 // imported, so these requests need no Authorization header — auth itself is
 // mocked out above via `assertAuthorized`.
 const { projectsApp } = await import('../lib/app');
-await import('./r2');
+await import('./project-from-repository');
 
 function post(path: string, body: Record<string, unknown>) {
   return projectsApp.request(path, {
@@ -168,7 +168,7 @@ beforeEach(() => {
   mockRegisterPat.mockClear();
 });
 
-describe('r2.ts icon wiring — POST /link-repository (PAT path)', () => {
+describe('project-from-repository.ts icon wiring — POST /link-repository (PAT path)', () => {
   test('a valid icon is threaded into registerPatLinkedProject as projectMetadata.icon', async () => {
     const res = await post('/link-repository', {
       repo_url: 'https://github.com/acme/icon-pat-ok.git',
@@ -200,7 +200,7 @@ describe('r2.ts icon wiring — POST /link-repository (PAT path)', () => {
   });
 });
 
-describe('r2.ts icon wiring — POST /link-repository (GitHub App path)', () => {
+describe('project-from-repository.ts icon wiring — POST /link-repository (GitHub App path)', () => {
   test('a valid icon is threaded into registerGitHubLinkedProject as projectMetadata.icon', async () => {
     const res = await post('/link-repository', {
       repo_url: 'https://github.com/acme/icon-gh-ok.git',
@@ -229,7 +229,7 @@ describe('r2.ts icon wiring — POST /link-repository (GitHub App path)', () => 
   });
 });
 
-describe('r2.ts icon wiring — POST /create-repo', () => {
+describe('project-from-repository.ts icon wiring — POST /create-repo', () => {
   test('a valid icon is threaded into registerGitHubLinkedProject as projectMetadata.icon', async () => {
     const res = await post('/create-repo', {
       name: 'icon-create-repo-ok',

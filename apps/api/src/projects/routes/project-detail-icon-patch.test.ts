@@ -1,6 +1,6 @@
 /**
  * `PATCH /v1/projects/:projectId` — the emoji icon's tri-state semantics, AND
- * the mutual exclusion with `icon_glyph` (see `./r5-glyph-patch.test.ts` for
+ * the mutual exclusion with `icon_glyph` (see `./project-detail-glyph-patch.test.ts` for
  * the glyph side of the same invariant).
  *
  * The handler's other writers are truthiness-gated (`if (name) updates.name =
@@ -26,16 +26,16 @@
  * `icon_glyph` deletes `icon` the same way. That is why every "icon set"
  * assertion below carries `icon_glyph` as the delete key (`$1`) ahead of the
  * `icon` patch (`$2`): a project could otherwise end up holding both, and a
- * reader would have to invent a tiebreak. See `r5.ts`'s PATCH handler comment
+ * reader would have to invent a tiebreak. See `project-detail.ts`'s PATCH handler comment
  * for the full seven-case table across both fields.
  *
- * This file drives the REAL `r5.ts` Hono handler (`projectsApp.request(...)`)
+ * This file drives the REAL `project-detail.ts` Hono handler (`projectsApp.request(...)`)
  * and asserts on the SQL the update actually SETs, serialized through Drizzle's
  * own `PgDialect`. Asserting on the fragment object would prove only that some
  * object was built; serializing it proves the statement Postgres would run.
  *
  * `mock.module` is process-global in bun:test — same caveat as
- * `./r2-icon-wiring.test.ts` — so this MUST run in its own file (`--isolate`
+ * `./project-from-repository-icon-wiring.test.ts` — so this MUST run in its own file (`--isolate`
  * gives each test file its own process; see `scripts/test.sh`). Runs ungated
  * (no TEST_DATABASE_URL): the db module is mocked, so there is no database.
  */
@@ -103,11 +103,11 @@ mock.module('../lib/access', () => ({
   projectCapabilityAllowed: async () => true,
 }));
 
-// Registers r5.ts's routes onto the shared `projectsApp` singleton. r1.ts
+// Registers project-detail.ts's routes onto the shared `projectsApp` singleton. projects.ts
 // (which attaches the `supabaseAuth` middleware) is deliberately NOT imported,
 // so these requests need no Authorization header.
 const { projectsApp } = await import('../lib/app');
-await import('./r5');
+await import('./project-detail');
 
 const dialect = new PgDialect();
 

@@ -1,3 +1,4 @@
+/** Change request resolution: merge, close, and reopen. */
 import { createRoute, z } from '@hono/zod-openapi';
 import { changeRequests } from '@kortix/db';
 import { eq } from 'drizzle-orm';
@@ -24,6 +25,9 @@ import { AnyObject, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { enqueueProjectSnapshot } from '../../git-proxy/project-snapshot';
 import { normalizeString, readBody } from '../lib/serializers';
+
+// POST /v1/projects/:projectId/change-requests/:crId/merge
+// Body: { message?: string }
 
 projectsApp.openapi(
   createRoute({

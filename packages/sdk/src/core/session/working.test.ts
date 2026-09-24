@@ -67,7 +67,7 @@ describe('projectWorking', () => {
     // producers send none: `postPrompt` omits `messageID` for triggers, Slack /
     // Teams / Telegram, approval-resume and email, and `buildSessionCommandInput`
     // omits it for EVERY `/` command including `/compact`. `GET .../turn` then
-    // answers `message_id: null` (`r8.ts` — the field is `z.string().nullable()`)
+    // answers `message_id: null` (`session-runtime.ts` — the field is `z.string().nullable()`)
     // for a turn that is very much running. Reporting the open turn off that
     // field answered "the control plane holds nothing" for that whole class.
     // `turn_token` is minted for every turn and is never null.

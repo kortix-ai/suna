@@ -1,7 +1,7 @@
 /**
- * Real-DB proof for Task 3's r2.ts icon glue.
+ * Real-DB proof for Task 3's project-from-repository.ts icon glue.
  *
- * r2.ts adds, at each of its three project-creation call sites (PAT-linked
+ * project-from-repository.ts adds, at each of its three project-creation call sites (PAT-linked
  * import, GitHub-App-linked import, create-repo):
  *
  *   const icon = normalizeProjectIcon(body.icon);
@@ -21,8 +21,8 @@
  *
  * `repo` / `installation` are plain data objects here, not fetched from
  * GitHub, so this needs no GitHub network access or credentials — the actual
- * r1.ts /provision path (managed git via code.storage) was verified over real
- * HTTP instead (see task-3-report.md); r2.ts's three routes need a real
+ * projects.ts /provision path (managed git via code.storage) was verified over real
+ * HTTP instead (see task-3-report.md); project-from-repository.ts's three routes need a real
  * GitHub App installation / PAT to drive end to end, which this environment
  * intentionally avoids exercising against a live GitHub org for an
  * automated task. This test is the safe substitute: it calls the same
@@ -94,7 +94,7 @@ const fakeInstallation = {
 };
 
 describeWithDb(
-  'r2.ts icon glue — registerGitHubLinkedProject / registerPatLinkedProject (real DB)',
+  'project-from-repository.ts icon glue — registerGitHubLinkedProject / registerPatLinkedProject (real DB)',
   () => {
     beforeEach(async () => {
       await cleanup();
@@ -104,7 +104,7 @@ describeWithDb(
 
     test('registerGitHubLinkedProject: a valid emoji in body.icon persists to metadata.icon', async () => {
       const body = { icon: '🚀' };
-      const icon = normalizeProjectIcon(body.icon); // exact r2.ts call site
+      const icon = normalizeProjectIcon(body.icon); // exact project-from-repository.ts call site
       expect(icon).toBe('🚀');
 
       const row = await registerGitHubLinkedProject({
@@ -115,7 +115,7 @@ describeWithDb(
         name: 'icon-ok',
         defaultBranch: 'main',
         manifestPath: 'kortix.yaml',
-        ...(icon ? { projectMetadata: { icon } } : {}), // exact r2.ts spread
+        ...(icon ? { projectMetadata: { icon } } : {}), // exact project-from-repository.ts spread
       });
 
       expect((row.metadata as Record<string, unknown>).icon).toBe('🚀');

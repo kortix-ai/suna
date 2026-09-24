@@ -11,7 +11,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const source = readFileSync(join(import.meta.dir, 'r8.ts'), 'utf8');
+const source = readFileSync(join(import.meta.dir, 'session-runtime.ts'), 'utf8');
 // Slice from the POST /start route registration to the /restart route right
 // below it, so assertions never spuriously match a different route's body.
 const routeStart = source.indexOf("path: '/{projectId}/sessions/{sessionId}/start',");

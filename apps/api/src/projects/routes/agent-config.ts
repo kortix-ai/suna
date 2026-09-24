@@ -454,7 +454,7 @@ projectsApp.openapi(
     // governance write already landed, stranding kortix.yaml and the agent's
     // `.md` out of sync — commitMultipleFilesToBranch (git/branches.ts) commits
     // every file in one tree/commit, same helper the marketplace install/
-    // uninstall paths use for their own atomic multi-file writes (r10.ts).
+    // uninstall paths use for their own atomic multi-file writes (marketplace-install-session.ts).
     const writes = manifestWrites(manifest, manifestPath);
     const files = [...writes.files, ...(behaviorWrite ? [behaviorWrite] : [])];
     const message = behaviorWrite

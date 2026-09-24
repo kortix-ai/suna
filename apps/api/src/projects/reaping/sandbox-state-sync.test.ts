@@ -778,7 +778,7 @@ describe('the ended_at single-writer invariant', () => {
   // appears in code that has nothing to do with compute sessions — a drizzle
   // SELECT projection on another table with an `ended_at` column reads
   // `endedAt: someTable.endedAt` (kortix.session_turns has one, and
-  // projects/routes/r8.ts projects it). Scope the scan to modules that could
+  // projects/routes/session-runtime.ts projects it). Scope the scan to modules that could
   // actually write THIS column: composing that statement means naming the
   // table, through the drizzle symbol or in raw SQL. A module that never names
   // it cannot assign it, so excluding those loses no writer — and the

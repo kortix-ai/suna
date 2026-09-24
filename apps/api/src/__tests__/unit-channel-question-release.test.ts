@@ -142,10 +142,10 @@ describe('releaseRuntimeQuestion — the runtime contract', () => {
 });
 
 // Asserted on source, as question-relay-scope.test.ts does for the daemon: the
-// release is one branch inside a very large route file with no seam to import,
-// and what matters is which inputs gate it and where it sits.
+// release is one branch inside a route handler with no seam to import, and
+// what matters is which inputs gate it and where it sits.
 describe('POST /turn-question releases channel questions, and only those', () => {
-  const src = Bun.file(new URL('../projects/routes/r4.ts', import.meta.url).pathname);
+  const src = Bun.file(new URL('../projects/routes/turn-questions.ts', import.meta.url).pathname);
 
   const handler = async () => {
     const all = await src.text();

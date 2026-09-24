@@ -201,7 +201,7 @@ const COMPACTION_NO_MODEL_EXPECTED_MESSAGES = [
 
 // Expected "model not available for this account" UI validation state. The API
 // returns a TYPED 409 with `code: 'model_not_servable'`
-// (`apps/api/src/projects/routes/r4.ts:3045` and `channel-bindings.ts:288`, both
+// (`apps/api/src/projects/routes/models.ts` and `channel-bindings.ts:288`, both
 // via `isModelServableForAccount`) when a user picks a model their account
 // can't use — a free-tier managed model, or a BYOK model whose provider isn't
 // connected. The SAME wording is also returned as a 400 with
@@ -1998,7 +1998,7 @@ export function isExpectedCompactionNoModelMessage(message: unknown): boolean {
 /**
  * Whether a message is the EXPECTED "model not available for this account"
  * UI validation state — the typed 409 `code: 'model_not_servable'` the API
- * returns (`apps/api/src/projects/routes/r4.ts` + `channel-bindings.ts` via
+ * returns (`apps/api/src/projects/routes/models.ts` + `channel-bindings.ts` via
  * `isModelServableForAccount`, plus the 400 `INVALID_SESSION_MODEL` sibling in
  * `r7.ts` + `sessions.ts`) when a user picks a model their account can't use.
  * The SDK's `useModelDefaults` `setMutation` `onError` already surfaces a

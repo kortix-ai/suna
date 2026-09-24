@@ -92,7 +92,7 @@ export async function findWarmProjectSession(scope: {
  * Drop `metadata.warm` and stamp `last_activity_at` for one session — one
  * UPDATE, one moment.
  *
- * Called from POST /start (routes/r8.ts), the earliest server signal a user
+ * Called from POST /start (routes/session-runtime.ts), the earliest server signal a user
  * actually entered this session. Verified for JAY-599/T21: the ONLY caller of
  * the session-lifecycle engine's `startSession` (which this route drives) is
  * this route itself — nothing pool-side, no server warmer, no automation ever

@@ -318,7 +318,7 @@ mock.module('../lib/agent-access', () => ({
 }));
 
 const { projectsApp } = await import('../lib/app');
-await import('./r8');
+await import('./session-prompts');
 
 function app() {
   const application = new Hono<{ Variables: { userId: string; authType: string } }>();

@@ -81,7 +81,7 @@ describe('session-title invariant', () => {
         // in-guest (KORTIX_INITIAL_PROMPT) never crosses another titling hook.
         // The generator stays the single writer (needsTitle + CAS), so this is
         // a retry of Hook 1, not a new title author.
-        'projects/routes/r4.ts',
+        'projects/routes/turn-stream.ts',
       ]),
     ).toEqual([]);
   });
@@ -116,8 +116,8 @@ describe('session-title invariant', () => {
         'channels/slack/session.ts',
         'channels/teams/session.ts',
         'channels/telegram-webhook.ts',
-        'projects/routes/r2.ts',
-        'projects/routes/r10.ts',
+        'projects/routes/sandboxes.ts',
+        'projects/routes/marketplace-install-session.ts',
         'projects/lib/sessions.ts',
       ]),
     ).toEqual([]);

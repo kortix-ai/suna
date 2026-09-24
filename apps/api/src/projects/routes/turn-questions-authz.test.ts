@@ -16,26 +16,26 @@
  *        could POST here it would answer itself and resume.
  *
  * These assert on the SOURCE of the two handlers rather than by driving the
- * route: r4.ts is a single 3k-line OpenAPI registration file with no per-route
+ * route: turn-questions.ts is an OpenAPI registration file with no per-route
  * export to import, and standing up the app pulls in the whole API. The
  * assertions are therefore scoped to each handler's own body and check
  * ORDERING — a gate that runs after the thing it protects is not a gate.
  */
 import { describe, expect, test } from 'bun:test';
 
-const SRC = await Bun.file(new URL('./r4.ts', import.meta.url).pathname).text();
+const SRC = await Bun.file(new URL('./turn-questions.ts', import.meta.url).pathname).text();
 
 /**
  * The body of one `projectsApp.openapi(...)` registration, selected by HTTP
- * method + path. Scoping matters: r4.ts asserts capabilities in many other
- * handlers, so a whole-file substring match would pass on a neighbour's gate.
+ * method + path. Scoping matters: turn-questions.ts asserts capabilities in
+ * other handlers, so a whole-file substring match would pass on a neighbour's gate.
  */
 function handlerSource(method: string, path: string): string {
   const blocks = SRC.split('projectsApp.openapi(');
   const match = blocks.find(
     (b) => b.includes(`method: '${method}'`) && b.includes(`path: '${path}'`),
   );
-  if (!match) throw new Error(`no ${method.toUpperCase()} ${path} handler found in r4.ts`);
+  if (!match) throw new Error(`no ${method.toUpperCase()} ${path} handler found in turn-questions.ts`);
   return match;
 }
 

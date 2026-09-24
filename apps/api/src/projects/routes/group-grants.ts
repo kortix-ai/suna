@@ -28,6 +28,13 @@ import { AnyObject, GroupGrantSchema, projectsApp } from '../lib/app';
 import { normalizeString, readBody } from '../lib/serializers';
 import { requireEntitlement } from '../../accounts/iam/helpers';
 
+// ─── Project group grants (IAM V2 bulk-access channel) ────────────────────
+//
+// A row in project_group_grants attaches an account_group to a project
+// with a chosen project_role. Every member of the group inherits that
+// role on that project. These routes work for both V1 and V2 accounts —
+// V1 just ignores the rows because V1's engine reads from iam_policies.
+
 projectsApp.openapi(
   createRoute({
     method: 'get',

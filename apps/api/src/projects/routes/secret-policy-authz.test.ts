@@ -15,32 +15,36 @@
  *        sandboxes: the re-mint half of the policy-widening chain.
  *
  * These assert on the SOURCE of each handler rather than by driving the route:
- * r3.ts is a single 1.9k-line OpenAPI registration file with no per-route
- * export to import, and standing up the app pulls in the whole API and a live
+ * secrets.ts and secret-delivery.ts are OpenAPI registration files with no
+ * per-route export to import, and standing up the app pulls in the whole API and a live
  * DB. The assertions are scoped to each handler's own body and check ORDERING —
  * a gate that runs after the thing it protects is not a gate. This mirrors the
- * r4-question-authz.test.ts pattern. End-to-end HTTP proof (agent PAT → 403,
+ * turn-questions-authz.test.ts pattern. End-to-end HTTP proof (agent PAT → 403,
  * full-IAM user → 200) is exercised by tests/src/flows/secrets.flow.ts.
  */
 import { describe, expect, test } from 'bun:test';
 
-const SRC = await Bun.file(new URL('./r3.ts', import.meta.url).pathname).text();
+const SOURCES = await Promise.all(
+  ['./secrets.ts', './secret-delivery.ts'].map((file) =>
+    Bun.file(new URL(file, import.meta.url).pathname).text(),
+  ),
+);
 
 const GUARD_MESSAGE = 'Agent sessions cannot change secret delivery policy';
 
 /**
  * The body of one `projectsApp.openapi(...)` registration, selected by HTTP
- * method + path. Scoping matters: r3.ts registers many secret handlers, so a
+ * method + path. Scoping matters: these files register many secret handlers, so a
  * whole-file substring match would pass on a neighbour's gate. The path check
  * carries its closing quote so `/{projectId}/secrets` does not match
  * `/{projectId}/secrets/sync`.
  */
 function handlerSource(method: string, path: string): string {
-  const blocks = SRC.split('projectsApp.openapi(');
+  const blocks = SOURCES.flatMap((src) => src.split('projectsApp.openapi('));
   const match = blocks.find(
     (b) => b.includes(`method: '${method}'`) && b.includes(`path: '${path}'`),
   );
-  if (!match) throw new Error(`no ${method.toUpperCase()} ${path} handler found in r3.ts`);
+  if (!match) throw new Error(`no ${method.toUpperCase()} ${path} handler found in secrets.ts or secret-delivery.ts`);
   return match;
 }
 

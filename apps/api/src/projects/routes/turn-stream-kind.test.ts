@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { turnStreamKindField, turnStreamKindNeedsConnectorWrite } from './r4-turn-stream-kind';
+import { turnStreamKindField, turnStreamKindNeedsConnectorWrite } from './turn-stream-kind';
 
 describe('turnStreamKindField', () => {
   test('passes through every kind the route multiplexes', () => {

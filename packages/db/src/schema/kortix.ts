@@ -2099,7 +2099,7 @@ export const sessionTurns = kortixSchema.table(
  * existed. The browser-side IndexedDB mirror that used to cover this was
  * deleted because its freshness test could not see a turn ENDING, so it painted
  * a stale thread as live. This mirror inverts that: the SERVER writes it
- * BECAUSE a turn ended (`turn-stream` kind `end`/`turn_end`, routes/r4.ts), so
+ * BECAUSE a turn ended (`turn-stream` kind `end`/`turn_end`, routes/turn-stream.ts), so
  * freshness is a property of the write, not a client-side guess.
  *
  * Identity is the whole point. Rows are keyed by the OpenCode message id — the

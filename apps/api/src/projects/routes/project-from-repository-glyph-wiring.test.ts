@@ -1,13 +1,13 @@
 /**
- * Task 4 wiring test for `metadata.icon_glyph` on `r2.ts`'s three create call
+ * Task 4 wiring test for `metadata.icon_glyph` on `project-from-repository.ts`'s three create call
  * sites — `/link-repository` PAT path, `/link-repository` GitHub-App path,
- * and `/create-repo`. Mirrors `./r2-icon-wiring.test.ts`'s mocking shape
+ * and `/create-repo`. Mirrors `./project-from-repository-icon-wiring.test.ts`'s mocking shape
  * exactly: same fakes, same mocked `../lib/access`, `../../iam`, `../lib/git`,
  * `../github`, `../../snapshots/builder`, and `../lib/project-registration`
  * modules, so this file needs no database and no GitHub network access.
  *
  * `mock.module` is process-global in bun:test, so this file MUST stay
- * independent from `r2-icon-wiring.test.ts` — `--isolate` gives each test
+ * independent from `project-from-repository-icon-wiring.test.ts` — `--isolate` gives each test
  * file its own process (see scripts/test.sh). Both files are run together in
  * CI and in Task 4's own verification to prove the two mock modules do not
  * collide.
@@ -86,7 +86,7 @@ mock.module('../../iam', () => ({
 }));
 
 // ── GitHub import/auth resolution — no network. Only the three functions
-// r2.ts's target routes call are overridden; everything else stays real.
+// project-from-repository.ts's target routes call are overridden; everything else stays real.
 const realGit = await import('../lib/git');
 mock.module('../lib/git', () => ({
   ...realGit,
@@ -126,7 +126,7 @@ mock.module('../../snapshots/builder', () => ({
   kickProjectTemplatePrebuilds: () => {},
 }));
 
-// ── The subject of this test: r2.ts's three call sites into these two
+// ── The subject of this test: project-from-repository.ts's three call sites into these two
 // functions. Mocked (not spread) so every call is captured.
 const mockRegisterGitHub = mock(async (input: Record<string, unknown>) =>
   fakeProjectRow({ metadata: (input.projectMetadata as Record<string, unknown>) ?? {} }),
@@ -139,12 +139,12 @@ mock.module('../lib/project-registration', () => ({
   registerPatLinkedProject: mockRegisterPat,
 }));
 
-// Registers r2.ts's routes onto the shared `projectsApp` singleton. r1.ts
+// Registers project-from-repository.ts's routes onto the shared `projectsApp` singleton. projects.ts
 // (which attaches the `supabaseAuth` middleware) is deliberately NOT
 // imported, so these requests need no Authorization header — auth itself is
 // mocked out above via `assertAuthorized`.
 const { projectsApp } = await import('../lib/app');
-await import('./r2');
+await import('./project-from-repository');
 
 function post(path: string, body: Record<string, unknown>) {
   return projectsApp.request(path, {
@@ -159,7 +159,7 @@ beforeEach(() => {
   mockRegisterPat.mockClear();
 });
 
-describe('r2.ts glyph wiring — POST /link-repository (PAT path)', () => {
+describe('project-from-repository.ts glyph wiring — POST /link-repository (PAT path)', () => {
   function postPat(body: Record<string, unknown>) {
     return post('/link-repository', {
       repo_url: 'https://github.com/acme/glyph-pat-ok.git',
@@ -199,7 +199,7 @@ describe('r2.ts glyph wiring — POST /link-repository (PAT path)', () => {
   });
 });
 
-describe('r2.ts glyph wiring — POST /link-repository (GitHub App path)', () => {
+describe('project-from-repository.ts glyph wiring — POST /link-repository (GitHub App path)', () => {
   function postGithubApp(body: Record<string, unknown>) {
     return post('/link-repository', {
       repo_url: 'https://github.com/acme/glyph-gh-ok.git',
@@ -238,7 +238,7 @@ describe('r2.ts glyph wiring — POST /link-repository (GitHub App path)', () =>
   });
 });
 
-describe('r2.ts glyph wiring — POST /create-repo', () => {
+describe('project-from-repository.ts glyph wiring — POST /create-repo', () => {
   function postCreateRepo(body: Record<string, unknown>) {
     return post('/create-repo', {
       name: 'glyph-create-repo',
