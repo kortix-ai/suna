@@ -231,8 +231,10 @@ agents:
 - At session start the volumes are mounted before the agent's first
   turn (waited at most 10 s) and listed in the agent's context with
   their state. A volume that fails to mount (bad key, missing bucket,
-  unreachable endpoint) is reported with the reason and never blocks the
-  session. Mount logs: `/var/log/kortix-volumes/<name>.log`.
+  unreachable endpoint) is reported with the reason, leaves no
+  `/volumes/<name>` directory, and never blocks the session. Do not create
+  that directory yourself: files written there stay on the sandbox disk and
+  never reach the bucket. Mount logs: `/var/log/kortix-volumes/<name>.log`.
 - It is object storage, not a disk: a write reaches the bucket about 5 s
   after the file is closed; appending re-uploads the whole object;
   symlinks and empty directories are not kept; outside changes appear
