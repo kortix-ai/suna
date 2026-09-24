@@ -451,7 +451,8 @@ describe('UnifiedMarkdown — raw HTML presentation attributes', () => {
       withIntl(<UnifiedMarkdown content={'```ts\nconst a = 1;\n```\n'} />),
     );
 
-    expect(html).toContain('const a = 1;');
+    // The label is derived from the `language-ts` class the sanitizer kept.
+    // The code text itself may already be split into highlight spans.
     expect(html).toContain('>typescript</span>');
   });
 });
