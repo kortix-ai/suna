@@ -26,7 +26,7 @@ import {
 import { channelModelContext } from '../slack/model-gate';
 import { currentChannelSelection, setChannelModel } from '../slack/selection';
 import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
-import { conversationSession, teamsChannelCtx } from './binding';
+import { type TeamsConversationSession, conversationSession, teamsChannelCtx } from './binding';
 import { buildModelPickerCard, buildNoticeCard } from './cards';
 import { resolveTeamsActor, teamsUserId } from './identity';
 import type { TeamsActivity } from './types';
@@ -155,4 +155,23 @@ export async function applyTeamsModelChoice(
   if (live?.sessionId) await applyChannelSessionKeys({ sessionId: live.sessionId, keys: verdict.keys, replace: true });
   const keysNote = describeKeys(verdict.keys);
   return buildNoticeCard(`Model set to ${label}.${keysNote ? ` ${keysNote}` : ''} Your next message uses it.`, '✅');
+}
+
+/**
+ * The model the next message runs on: this conversation's `/model` choice —
+ * it reaches the live session too — else the model the live session started
+ * with, else the project default. "project default" beside a session pinned
+ * to another model was how a chat stuck on a model it could not run looked
+ * fine here. Off the gateway a choice waits for `/new`, so both are named.
+ */
+export function statusModel(
+  choice: string | null,
+  session: Pick<TeamsConversationSession, 'opencodeModel'> | null,
+  gatewayOn: boolean,
+): string {
+  const pinned = session?.opencodeModel ?? null;
+  if (choice && (gatewayOn || !pinned || pinned === choice)) return labelForModelRef(choice);
+  if (choice && pinned) return `${labelForModelRef(pinned)} (this session; ${labelForModelRef(choice)} from /new)`;
+  if (pinned) return `${labelForModelRef(pinned)} (this session)`;
+  return 'project default';
 }

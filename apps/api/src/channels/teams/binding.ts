@@ -1,5 +1,5 @@
 import { chatChannelBindings, chatInstalls, chatThreads, projectSessions, projects } from '@kortix/db';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import type { ChannelCtx } from '../slack/selection';
 
@@ -199,6 +199,8 @@ export interface TeamsConversationSession {
   createdAt: Date | null;
   /** The session's creator: the user its turns run as. */
   createdBy: string | null;
+  /** The model the session was pinned to at start (`metadata.opencode_model`). */
+  opencodeModel: string | null;
 }
 
 /**
@@ -232,6 +234,7 @@ export async function conversationSession(
       agentName: projectSessions.agentName,
       createdAt: projectSessions.createdAt,
       createdBy: projectSessions.createdBy,
+      opencodeModel: sql<string | null>`${projectSessions.metadata}->>'opencode_model'`,
     })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, thread.sessionId))
@@ -242,5 +245,6 @@ export async function conversationSession(
     agentName: row?.agentName ?? null,
     createdAt: row?.createdAt ?? null,
     createdBy: row?.createdBy ?? null,
+    opencodeModel: row?.opencodeModel?.trim() || null,
   };
 }

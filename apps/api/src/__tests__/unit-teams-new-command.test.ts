@@ -19,6 +19,7 @@ mock.module('../llm-gateway/models/picker', () => ({ listPickerModels: async () 
 mock.module('../channels/teams/model-choice', () => ({
   applyTeamsModelChoice: async () => ({}),
   buildTeamsModelsCard: async () => ({}),
+  statusModel: () => 'project default',
 }));
 mock.module('../projects/lib/access', () => ({ lookupEmailsByUserIds: async () => new Map() }));
 mock.module('../channels/teams/agent-picker', () => ({ buildAgentsPicker: async () => ({}) }));

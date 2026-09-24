@@ -2,6 +2,7 @@ import { config } from '../../config';
 import { formatRelativeTime, sessionWebUrl } from '../slack/util';
 import { lookupEmailsByUserIds } from '../../projects/lib/access';
 import { labelForModelRef } from '../../llm-gateway/models/picker';
+import { projectLlmGatewayEnabledById } from '../../llm-gateway/enablement';
 import {
   currentChannelSelection,
   loadProjectAgentGovernance,
@@ -10,7 +11,7 @@ import {
 } from '../slack/selection';
 import { buildAgentsPicker } from './agent-picker';
 import { stopTeamsTurn } from './stop';
-import { applyTeamsModelChoice, buildTeamsModelsCard } from './model-choice';
+import { applyTeamsModelChoice, buildTeamsModelsCard, statusModel } from './model-choice';
 import { messageAfterFreshStart, startFreshTeamsConversation } from './fresh-start';
 import { createOrJoinTeamsConversationSession } from './session';
 import { conversationPolicyLabel, normalizeConversationPolicy } from './participants';
@@ -236,10 +237,11 @@ async function buildStatusCard(
   conversationId: string,
   projectId: string,
 ) {
-  const [selection, projects, session] = await Promise.all([
+  const [selection, projects, session, gatewayOn] = await Promise.all([
     currentChannelSelection(ctx),
     listTenantProjects(tenantId).catch(() => []),
     conversationSession(tenantId, conversationId).catch(() => null),
+    projectLlmGatewayEnabledById(projectId).catch(() => true),
   ]);
   const projectName = projects.find((p) => p.projectId === projectId)?.name ?? projectId;
   return buildPanelCard({
@@ -248,7 +250,7 @@ async function buildStatusCard(
     rows: [
       { label: 'Project', value: projectName },
       { label: 'Agent', value: selection?.agentName || 'default' },
-      { label: 'Model', value: selection?.opencodeModel ? labelForModelRef(selection.opencodeModel) : 'project default' },
+      { label: 'Model', value: statusModel(selection?.opencodeModel ?? null, session, gatewayOn) },
       // The run itself. `/status` was the one place a user looks to answer
       // "what is this conversation doing", and it answered everything except
       // that — so a run that had quietly stopped looked identical to one still

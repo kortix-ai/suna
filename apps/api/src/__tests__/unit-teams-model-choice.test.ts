@@ -101,7 +101,7 @@ mock.module('../channels/model-access', () => ({
   listChannelModels: async () => ({ models: catalog, defaultModel: 'glm-5.3-flash' }),
 }));
 
-const { applyTeamsModelChoice, buildTeamsModelsCard, teamsModelScope } = await import('../channels/teams/model-choice');
+const { applyTeamsModelChoice, buildTeamsModelsCard, statusModel, teamsModelScope } = await import('../channels/teams/model-choice');
 
 const personal = { conversation: { id: 'a:synthetic-chat', conversationType: 'personal' }, from: { id: '29:x', aadObjectId: 'aad-ivan' } };
 const groupChat = { ...personal, conversation: { id: 'a:synthetic-chat', conversationType: 'groupChat' } };
@@ -267,5 +267,27 @@ describe('/models — the card lists what this person may run here', () => {
   test('off the gateway: explains native refs instead of a list', async () => {
     gate = { ...gate, llmGatewayEnabled: false };
     expect(cardText(await buildTeamsModelsCard(personal as never, 'tenant-1', 'a:synthetic-chat'))).toContain('native OpenCode models');
+  });
+});
+
+describe('/status — the model the next message runs on', () => {
+  test('the conversation`s choice, which reaches the live session too', () => {
+    expect(statusModel('kortix/glm-5.3-flash', { opencodeModel: 'kortix/codex/gpt-6-astra' }, true)).toBe('glm-5.3-flash');
+  });
+
+  test('no choice: the model the live session started with — not "project default"', () => {
+    // A chat stuck on a ChatGPT pin it could not run read "project default" here.
+    expect(statusModel(null, { opencodeModel: 'kortix/codex/gpt-6-astra' }, true)).toBe('codex/gpt-6-astra (this session)');
+  });
+
+  test('no choice and no session: the project default', () => {
+    expect(statusModel(null, null, true)).toBe('project default');
+  });
+
+  test('off the gateway a choice waits for /new, so both are named', () => {
+    expect(statusModel('anthropic/claude-sonnet-4-6', { opencodeModel: 'openai/gpt-5.5' }, false)).toBe(
+      'openai/gpt-5.5 (this session; anthropic/claude-sonnet-4-6 from /new)',
+    );
+    expect(statusModel('anthropic/claude-sonnet-4-6', null, false)).toBe('anthropic/claude-sonnet-4-6');
   });
 });
