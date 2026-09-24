@@ -9,7 +9,8 @@ import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useDownloadRestriction } from '@/hooks/billing';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useTranslations } from '@/i18n/use-translations';
-import { PRESENTATION_WITH_MODALS_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
+import { getAgentContentIframeSandbox } from '@/lib/security/iframe-sandbox';
+import { privilegedFrameOrigins } from '@/lib/security/privileged-frame-origins';
 import { cn } from '@/lib/utils';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import {
@@ -431,6 +432,9 @@ export function FullScreenPresentationViewer({
         const slideUrl = constructHtmlPreviewUrl(slide.file_path, subdomainOpts);
         // Add cache-busting to iframe src to ensure fresh content
         const slideUrlWithCacheBust = `${slideUrl}?t=${refreshTimestamp}`;
+        const frameSrc = showEditor
+          ? `${sandboxUrl}/api/html/${slide.file_path}/editor`
+          : slideUrlWithCacheBust;
 
         return (
           <div className="flex h-full w-full items-center justify-center bg-transparent">
@@ -448,17 +452,18 @@ export function FullScreenPresentationViewer({
             >
               <iframe
                 key={`slide-${slide.number}-${refreshTimestamp}-${showEditor}`} // Key with stable timestamp ensures iframe refreshes when metadata changes
-                src={
-                  showEditor
-                    ? `${sandboxUrl}/api/html/${slide.file_path}/editor`
-                    : slideUrlWithCacheBust
-                }
+                src={frameSrc}
                 title={tI18nComplete('text871475cb411c', {
                   value0: slide.number,
                   value1: slide.title,
                 })}
                 className="rounded-xl border-0"
-                sandbox={PRESENTATION_WITH_MODALS_IFRAME_SANDBOX}
+                // Agent-written slides keep same-origin only on a preview origin
+                // of their own, never on this app's or the API's origin.
+                sandbox={getAgentContentIframeSandbox(frameSrc, {
+                  privilegedOrigins: privilegedFrameOrigins(),
+                  presentation: true,
+                })}
                 style={{
                   width: '1920px',
                   height: '1080px',
