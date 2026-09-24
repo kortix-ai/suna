@@ -15,3 +15,5 @@ export {
 export type { SseErrorFrame } from './completion-guard';
 
 export { IncrementalSseScanner } from './sse-scanner';
+
+export { chunkOutputChars, estimateOutputTokens, estimatePromptTokens } from './estimate';

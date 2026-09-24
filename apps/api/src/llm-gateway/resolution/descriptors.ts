@@ -8,6 +8,9 @@ import {
   type CodexCredential,
 } from '../credentials/codex';
 import type { ManagedModel } from '../models/managed-models';
+import { isAwsRegion } from './aws-region';
+
+export { isAwsRegion };
 
 // Default region for a project's BYOK Bedrock connection when it hasn't set
 // its own AWS_REGION secret. us-east-1 is Bedrock's broadest-availability
@@ -22,8 +25,14 @@ const DEFAULT_BEDROCK_BYOK_REGION = 'us-east-1';
  */
 export function bedrockByokBaseUrl(region: string | null | undefined): string {
   const trimmed = region?.trim();
+  if (trimmed && !isAwsRegion(trimmed)) {
+    // The region becomes part of the endpoint host. Only an AWS region name
+    // may reach it, so the credential is only ever sent to amazonaws.com.
+    throw new Error('AWS_REGION is not a valid AWS region name');
+  }
   return `https://bedrock-runtime.${trimmed || DEFAULT_BEDROCK_BYOK_REGION}.amazonaws.com`;
 }
+
 
 // Bedrock cross-region ("global") inference profiles prepend a geography code
 // to the base model id so a single logical model can route across multiple

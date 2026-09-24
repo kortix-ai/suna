@@ -18,7 +18,13 @@ import {
 import { type FetchImpl, callUpstream } from '../http';
 import { noteBedrockOpenAiRejectsReasoningEffort } from '../transports/ai-sdk/request';
 import { resolveTransportKind } from '../transports/route-kind';
-import { type ExtractedUsage, type SseErrorFrame, extractUsageFromJson } from '../usage';
+import {
+  type ExtractedUsage,
+  type SseErrorFrame,
+  estimateOutputTokens,
+  estimatePromptTokens,
+  extractUsageFromJson,
+} from '../usage';
 import { calculateCost } from '../usage/pricing';
 import { clampRetryAfterSeconds, gatewayErrorResponse } from './error-response';
 import { applyGenerationDefaults } from './generation-defaults';
@@ -31,7 +37,7 @@ import {
   shownModel,
   shownProvider,
 } from './public-identity';
-import { relayStream } from './streaming';
+import { relayStream, type StreamObservation } from './streaming';
 import { createTraceEmitter } from './trace';
 
 export interface ChatCompletionRequest {
@@ -473,6 +479,10 @@ export async function handleChatCompletions(
 
   const streaming = body.stream === true;
   if (streaming) body.stream_options = { include_usage: true };
+  // Measured now, while the parsed body still exists: a billable stream that
+  // ends before its usage frame is settled from this (see usage/estimate.ts).
+  const promptTokenEstimate =
+    streaming && descriptor.billingMode !== 'none' ? estimatePromptTokens(body) : 0;
   const dispatchFetch = withUpstreamHeadersTimeout(
     // upstreamFetch, never bare globalThis.fetch: Bun's default 300 s idle
     // timeout would end a silent `max`-effort reasoning stretch with
@@ -750,9 +760,32 @@ export async function handleChatCompletions(
   // public error the client received.
   let publicFailure: { status: number; code: string; message: string } | null = null;
   const settle = async (
-    usage: ExtractedUsage | null,
+    reported: ExtractedUsage | null,
     streamError: SseErrorFrame | null = null,
+    observed?: StreamObservation,
   ): Promise<void> => {
+    // A stream that ended without the provider's usage frame still consumed
+    // the prompt and every streamed token. Settle an estimate when the client
+    // stopped it, or when output was already served; a provider failure
+    // before any output served nothing and settles as zero.
+    const estimated =
+      !reported &&
+      !!observed &&
+      served.billingMode !== 'none' &&
+      (observed.clientStopped || observed.outputChars > 0);
+    const usage: ExtractedUsage | null = estimated
+      ? {
+          promptTokens: promptTokenEstimate,
+          completionTokens: estimateOutputTokens(observed!.outputChars),
+          cachedTokens: 0,
+          cacheWriteTokens: 0,
+        }
+      : reported;
+    if (estimated) {
+      logger.warn(
+        `[gateway] ${id}: stream ended without a usage frame (${streamError?.code ?? 'no error'}); settling an estimate of ${usage!.promptTokens} prompt + ${usage!.completionTokens} output tokens`,
+      );
+    }
     const counts: TokenCounts = usage
       ? {
           promptTokens: usage.promptTokens,
@@ -786,6 +819,7 @@ export async function handleChatCompletions(
         streaming,
         requestId: id,
         ...(principal.billingHold ? { billingHoldUsd: principal.billingHold.amountUsd } : {}),
+        ...(estimated ? { usageEstimated: true } : {}),
       });
     }
     const shownStreamError =
