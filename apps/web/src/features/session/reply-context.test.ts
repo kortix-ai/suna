@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 
-import { parseReplyContexts, quoteMarker, serializeReplyContext, stripReplyContexts } from './reply-context';
+import {
+  QUOTE_MARKER_RE,
+  parseReplyContexts,
+  quoteMarker,
+  serializeReplyContext,
+  splitAtQuoteMarkers,
+  stripReplyContexts,
+} from './reply-context';
 
 // The regex versions of the two parsers, kept ONLY as parity oracles. Their
 // lazy body re-scanned the rest of the message for every opener that never
@@ -121,4 +128,53 @@ describe('no message can freeze the tab that parses its quotes', () => {
     parseReplyContexts(`<reply_context${' '.repeat(240_000)}x`));
   within('16k <reply_contextx> openers that fail the name boundary', () =>
     parseReplyContexts(`${'<reply_contextx>'.repeat(15_000)}</reply_context>`));
+});
+
+// The newline trim in `splitAtQuoteMarkers`, kept ONLY as a parity oracle:
+// `/\n+$/` retried every newline of a run that did not reach the end of the
+// piece, so a blank run between two words was quadratic.
+function legacySplit(text: string, quotes: readonly string[]) {
+  const pieces: Array<{ kind: 'text'; text: string } | { kind: 'quote'; text: string; index: number }> = [];
+  const re = new RegExp(QUOTE_MARKER_RE);
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text))) {
+    const before = text.slice(cursor, match.index).replace(/^\n+/, '').replace(/\n+$/, '');
+    if (before) pieces.push({ kind: 'text', text: before });
+    const index = Number(match[1]);
+    pieces.push({ kind: 'quote', text: quotes[index] ?? '', index });
+    cursor = re.lastIndex;
+  }
+  const rest = text.slice(cursor).replace(/^\n+/, '').replace(/\n+$/, '');
+  if (rest) pieces.push({ kind: 'text', text: rest });
+  return pieces;
+}
+
+describe('splitAtQuoteMarkers', () => {
+  test('returns exactly what the regex-trim version returned on 3000 random bodies', () => {
+    const tokens = [quoteMarker(0), quoteMarker(1), '\n', '\n\n', ' ', 'x', 'y', '\r', '\t'];
+    let seed = 107;
+    const next = () => {
+      seed = (seed + 0x6d2b79f5) >>> 0;
+      let t = seed;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    for (let i = 0; i < 3000; i++) {
+      let text = '';
+      const length = Math.floor(next() * 14);
+      for (let j = 0; j < length; j++) text += tokens[Math.floor(next() * tokens.length)];
+      expect(splitAtQuoteMarkers(text, ['a', 'b'])).toEqual(legacySplit(text, ['a', 'b']));
+    }
+  });
+
+  test('a 240k blank run inside a piece does not freeze the tab', () => {
+    // 1.3 s at 60k newlines with the regex trim; each doubling quadrupled it.
+    const text = `${quoteMarker(0)}y${'\n'.repeat(240_000)}x`;
+    const started = performance.now();
+    const pieces = splitAtQuoteMarkers(text, ['q']);
+    expect(performance.now() - started).toBeLessThan(100);
+    expect(pieces).toHaveLength(2);
+  });
 });

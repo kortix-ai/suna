@@ -53,10 +53,19 @@ import {
   listProjectSecrets,
   type ProjectConfigSummary,
 } from '@kortix/sdk';
-import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
-import { KeyIcon, PlusIcon, SparkleIcon } from '@phosphor-icons/react';
+import {
+  contract,
+  qk,
+  useFeatureFlag,
+  useProjectAccountId,
+  useProjectApps,
+} from '@kortix/sdk/react';
+import { ArrowRightIcon, GlobeIcon, KeyIcon, PlusIcon, SparkleIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import Link from 'next/link';
 import { type ReactNode, useEffect, useState } from 'react';
+import { appGrantRows } from './agent-apps-grant';
+import { projectSettingsSectionHref } from '@/features/workspace/capabilities/project-settings/project-settings-sections';
 
 // ─── The shared catalog ──────────────────────────────────────────────────
 
@@ -474,5 +483,99 @@ export function SecretsGrantPage({ projectId, editor }: { projectId: string; edi
         onOpenChange={(open) => setDialog((d) => ({ ...d, open }))}
       />
     </>
+  );
+}
+
+// ─── Apps ────────────────────────────────────────────────────────────────
+
+/**
+ * Which Kortix Apps this agent may open — `agents.<name>.apps` in
+ * kortix.yaml, the same All · Pick · None machine as Connectors and the same
+ * cards.
+ *
+ * The grant decides admission for a `restricted` or `private` App only. A
+ * `project` App admits any agent that holds `project.app.read`, a `public` App
+ * admits everyone, and a `password` App admits no agent at all — so a row for
+ * one of those is still grantable (its mode can change) but is flagged as not
+ * currently load-bearing.
+ *
+ * Enforcement is the App gate (`agentAppAccessDecision`, apps/api/src/apps/
+ * access.ts) and it runs only while the project's `agent_principal` flag is
+ * on. With the flag off the grant is still written and still read back — it
+ * just does not gate anything yet — so the page says that rather than letting
+ * someone believe they closed a door.
+ */
+export function AppsGrantPage({ projectId, editor }: { projectId: string; editor: AgentDraft }) {
+  const t = useI18nTranslations('agentApps');
+  const principal = useFeatureFlag(projectId, 'agent_principal');
+  const appsQuery = useProjectApps(projectId);
+  const rows = appGrantRows(appsQuery.data);
+  return (
+    <EditorSection
+      title={t('title')}
+      description={t('description')}
+      trailing={
+        <GrantHeaderTrailing
+          value={editor.draft.apps}
+          href={(id) => `/projects/${id}/apps`}
+          label={t('manageApps')}
+        />
+      }
+    >
+      <div className="space-y-3 py-4" data-testid="agent-apps-grant">
+        <GrantCatalog
+          value={editor.draft.apps}
+          onChange={(v) => editor.set('apps', v)}
+          allLabel={t('allLabel')}
+          isLoading={appsQuery.isLoading}
+          isError={appsQuery.isError}
+          onRetry={() => void appsQuery.refetch()}
+          items={rows.map((row) => ({
+            id: row.id,
+            card: {
+              leading: (
+                <span className="bg-muted text-muted-foreground flex size-9 items-center justify-center rounded-md">
+                  <GlobeIcon className="size-4" />
+                </span>
+              ),
+              title: <span className="font-mono">{row.id}</span>,
+              description: row.name === row.id ? null : row.name,
+              badges: row.needsGrant ? (
+                <Badge variant="outline" size="xs">
+                  {t('needsGrant')}
+                </Badge>
+              ) : (
+                <Badge variant="muted" size="xs">
+                  {t('openWithoutGrant')}
+                </Badge>
+              ),
+            },
+          }))}
+          empty={
+            <EmptyState
+              icon={GlobeIcon}
+              size="sm"
+              title={t('emptyTitle')}
+              description={t('emptyDescription')}
+            />
+          }
+        />
+        <p className="text-muted-foreground text-xs text-pretty">{t('grantNote')}</p>
+        {principal.isLoading || principal.enabled ? null : (
+          <div
+            className="flex flex-wrap items-center justify-between gap-2"
+            data-testid="agent-apps-principal-off"
+          >
+            <p className="text-muted-foreground text-xs text-pretty">{t('flagOffHint')}</p>
+            <Button asChild variant="ghost" size="sm" className="gap-1 px-2">
+              <Link href={projectSettingsSectionHref(projectId, 'feature-flags')} prefetch>
+                {t('featureFlags')}
+                <ArrowRightIcon className="size-3.5 shrink-0" />
+              </Link>
+            </Button>
+          </div>
+        )}
+      </div>
+    </EditorSection>
   );
 }

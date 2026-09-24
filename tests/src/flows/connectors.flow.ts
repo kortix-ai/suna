@@ -2840,3 +2840,264 @@ flow(
     }
   },
 );
+
+// ── CONN-ATT-1 — a staged file reaches a Microsoft Graph-shaped OpenAPI call ──
+// A customer's agent could not attach a PDF to Graph `sendMail` through an
+// OpenAPI connector. This flow stages a synthetic PDF through the real upload
+// route, references it as `{"$kortix_attachment": id}` in the nested
+// `body.message.attachments`, and calls the real gateway. On the local target
+// a Graph-strict echo upstream (one `application/json` header, a JSON object
+// body, else Graph's 400) proves the bytes arrive byte for byte. Deployed
+// targets cannot reach a runner-local upstream, so they prove the staging
+// contract and the refusals, which need no upstream.
+flow(
+  'CONN-ATT-1',
+  {
+    domain: 'connectors',
+    requires: ['database'],
+    timeoutMs: 120_000,
+    routes: [
+      'POST /v1/connectors/projects/:projectId/attachments',
+      'POST /v1/connectors/projects/:projectId/call',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const p = await team.project();
+    const { createHash } = await import('node:crypto');
+    const { createServer } = await import('node:http');
+    const { Client: PgClient } = await import('pg');
+    const databaseUrl = ctx.env.databaseUrl as string;
+    const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
+    const db = new PgClient({ connectionString: databaseUrl, ssl: local ? false : { rejectUnauthorized: false } });
+
+    // Synthetic ~300 KB PDF with every byte value.
+    const pdf = new Uint8Array(300_000);
+    pdf.set(new TextEncoder().encode('%PDF-1.7\n'));
+    for (let i = 9; i < pdf.length; i++) pdf[i] = (i * 31) % 256;
+    const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+
+    const received: Array<{ contentTypes: string[]; body: string }> = [];
+    const upstream = createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on('data', (chunk: Buffer) => chunks.push(chunk));
+      req.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf8');
+        const raw = req.headers['content-type'];
+        const contentTypes = raw === undefined ? [] : String(raw).split(/,\s*/);
+        received.push({ contentTypes, body });
+        let parsed: unknown = null;
+        try {
+          parsed = JSON.parse(body);
+        } catch {
+          parsed = null;
+        }
+        const ok =
+          contentTypes.length === 1 &&
+          contentTypes[0] === 'application/json' &&
+          parsed !== null &&
+          typeof parsed === 'object' &&
+          !Array.isArray(parsed);
+        res.writeHead(ok ? 202 : 400, { 'content-type': 'application/json' });
+        res.end(
+          ok
+            ? ''
+            : JSON.stringify({
+                error: {
+                  code: 'BadRequest',
+                  message:
+                    'Unable to read JSON request payload. Please ensure Content-Type header is set and payload is of valid JSON format.',
+                },
+              }),
+        );
+      });
+    });
+    const port = await new Promise<number>((resolve) =>
+      upstream.listen(0, '127.0.0.1', () => resolve((upstream.address() as { port: number }).port)),
+    );
+
+    const slug = `ke2e-graph-${Date.now().toString(36)}`;
+    const itemSchema = {
+      type: 'object',
+      properties: {
+        '@odata.type': { type: 'string' },
+        name: { type: 'string' },
+        contentType: { type: 'string' },
+        contentBytes: { type: 'string', format: 'base64url' },
+      },
+    };
+    const inputSchema = {
+      type: 'object',
+      properties: {
+        user: { type: 'string', 'x-in': 'path' },
+        body: {
+          type: 'object',
+          properties: {
+            message: {
+              type: 'object',
+              properties: {
+                subject: { type: 'string' },
+                toRecipients: { type: 'array' },
+                attachments: { type: 'array', items: itemSchema },
+              },
+            },
+            saveToSentItems: { type: 'boolean' },
+          },
+        },
+        files: { type: 'array', items: { type: 'object', properties: { url: { type: 'string' } } } },
+      },
+    };
+    const upload = (bytes: Uint8Array, filename: string, connector: string | null) =>
+      ctx.client.as(ctx.P.OWNER).post('/v1/connectors/projects/:projectId/attachments', bytes, {
+        params: { projectId: p.id },
+        raw: true,
+        headers: {
+          'Content-Type': 'application/pdf',
+          'X-Kortix-Attachment-Filename': encodeURIComponent(filename),
+          ...(connector ? { 'X-Kortix-Attachment-Connector': connector } : {}),
+        },
+        timeoutMs: 60_000,
+      });
+    const call = (args: Record<string, unknown>) =>
+      ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/connectors/projects/:projectId/call',
+          { connector: slug, action: 'sendmail', args },
+          { params: { projectId: p.id }, timeoutMs: 60_000 },
+        );
+    const mail = (attachments: unknown[]) => ({
+      user: 'sender@example.com',
+      body: {
+        message: {
+          subject: 'CONN-ATT-1 report',
+          toRecipients: [{ emailAddress: { address: 'recipient@example.com' } }],
+          attachments,
+        },
+        saveToSentItems: true,
+      },
+    });
+
+    try {
+      await db.connect();
+      await ctx.step('seed an OpenAPI connector shaped like Graph sendMail, with its default connection', async () => {
+        const connector = await db.query<{ connector_id: string }>(
+          `INSERT INTO kortix.connectors (account_id, project_id, slug, name, provider_type, config, status)
+           VALUES ($1, $2, $3, 'KE2E Graph', 'openapi', $4::jsonb, 'active') RETURNING connector_id`,
+          [team.id, p.id, slug, JSON.stringify({ auth: { type: 'none' } })],
+        );
+        const connectorId = connector.rows[0]?.connector_id;
+        if (!connectorId) throw new Error('connector insert returned no id');
+        await db.query(
+          `INSERT INTO kortix.connector_connections (account_id, project_id, connector_id, owner_type, label, status, is_default, metadata)
+           VALUES ($1, $2, $3, 'project', 'KE2E Graph', 'active', true, $4::jsonb)`,
+          [team.id, p.id, connectorId, JSON.stringify({ provider: 'openapi', connector_slug: slug })],
+        );
+        await db.query(
+          `INSERT INTO kortix.connector_actions (connector_id, path, name, description, input_schema, risk, binding)
+           VALUES ($1, 'sendmail', 'sendMail', 'Send mail', $2::jsonb, 'write', $3::jsonb)`,
+          [
+            connectorId,
+            JSON.stringify(inputSchema),
+            JSON.stringify({
+              kind: 'openapi',
+              method: 'POST',
+              path: '/users/{user}/sendMail',
+              server: `http://127.0.0.1:${port}/v1.0`,
+            }),
+          ],
+        );
+      });
+
+      let ref: { $kortix_attachment: string } | null = null;
+      await ctx.step('upload for the connector → 201 with a $kortix_attachment ref', async () => {
+        const r = await upload(pdf, 'weekly report.pdf', slug);
+        r.status(201)
+          .body()
+          .has('$.filename', 'weekly report.pdf')
+          .has('$.content_type', 'application/pdf')
+          .has('$.size', pdf.byteLength);
+        const body = r.json<{ attachment_id: string; ref: { $kortix_attachment: string } }>();
+        if (body.ref?.$kortix_attachment !== body.attachment_id) {
+          throw new Error(`ref does not name the staged file: ${r.text()}`);
+        }
+        ref = body.ref;
+      });
+
+      await ctx.step('an item shape the gateway does not know is refused and names the fix', async () => {
+        const r = await call({ ...mail([]), files: [ref] });
+        r.status(500).body().has('$.status', 'error');
+        const reason = r.json<{ reason: string }>().reason;
+        if (!reason.startsWith('attachment_item_shape_unknown: files items declare {url}')) {
+          throw new Error(`unexpected refusal: ${reason}`);
+        }
+      });
+
+      await ctx.step('a malformed reference is refused before any upstream request', async () => {
+        const before = received.length;
+        const r = await call(mail([{ $kortix_attachment: 42 }]));
+        r.status(500);
+        if (!r.json<{ reason: string }>().reason.startsWith('attachment_ref_invalid')) {
+          throw new Error(`unexpected refusal: ${r.text()}`);
+        }
+        if (received.length !== before) throw new Error('a malformed reference reached the upstream');
+      });
+
+      if (ctx.env.target === 'local') {
+        await ctx.step('the refused call released the file; the call delivers a Graph fileAttachment byte for byte', async () => {
+          const r = await call(mail([ref]));
+          r.status(200).body().has('$.ok', true);
+          const hit = received.at(-1);
+          if (!hit) throw new Error('the upstream received no request');
+          if (hit.contentTypes.join(',') !== 'application/json') {
+            throw new Error(`upstream Content-Type: ${JSON.stringify(hit.contentTypes)}`);
+          }
+          const sent = JSON.parse(hit.body) as {
+            message: { attachments: Array<Record<string, string>> };
+          };
+          const attachment = sent.message.attachments[0]!;
+          if (
+            attachment['@odata.type'] !== '#microsoft.graph.fileAttachment' ||
+            attachment.name !== 'weekly report.pdf' ||
+            attachment.contentType !== 'application/pdf'
+          ) {
+            throw new Error(`wrong attachment item: ${JSON.stringify({ ...attachment, contentBytes: '…' })}`);
+          }
+          const decoded = new Uint8Array(Buffer.from(attachment.contentBytes!, 'base64'));
+          if (sha256(decoded) !== sha256(pdf)) throw new Error('attachment bytes differ from the staged file');
+        });
+
+        await ctx.step('a delivered file is single-use: a second call is refused', async () => {
+          const r = await call(mail([ref]));
+          r.status(500);
+          if (!r.json<{ reason: string }>().reason.includes('attachment_already_consumed')) {
+            throw new Error(`expected attachment_already_consumed: ${r.text()}`);
+          }
+        });
+
+        await ctx.step('a JSON-string body reaches the upstream as one JSON object, not a string literal', async () => {
+          const r = await call({ user: 'sender@example.com', body: JSON.stringify(mail([]).body) });
+          r.status(200).body().has('$.ok', true);
+          const hit = received.at(-1)!;
+          if (typeof JSON.parse(hit.body) !== 'object') throw new Error(`double-encoded body: ${hit.body.slice(0, 80)}`);
+        });
+
+        await ctx.step('the audit row records the attachment count, never the bytes', async () => {
+          const rows = await db.query<{ result_summary: Record<string, unknown> | null; request_digest: string | null }>(
+            `SELECT result_summary, request_digest FROM kortix.connector_calls
+              WHERE project_id = $1 AND action_path = $2 AND status = 'ok'`,
+            [p.id, `${slug}.sendmail`],
+          );
+          const withFile = rows.rows.find((row) => row.result_summary?.attachment_count === 1);
+          if (!withFile) throw new Error(`no ok audit row with attachment_count 1: ${JSON.stringify(rows.rows)}`);
+          const fingerprint = Buffer.from(pdf.subarray(1_000, 1_096)).toString('base64');
+          if (JSON.stringify(rows.rows).includes(fingerprint)) throw new Error('file bytes reached the audit table');
+        });
+      }
+    } finally {
+      upstream.close();
+      await db.query(`DELETE FROM kortix.connectors WHERE project_id = $1 AND slug = $2`, [p.id, slug]).catch(() => {});
+      await db.end().catch(() => {});
+    }
+  },
+);

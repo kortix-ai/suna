@@ -74,7 +74,7 @@ import {
   type Icon as PhosphorIcon,
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import Link from 'next/link';
+import Link from '@/components/site-link';
 import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useLayoutEffect, useState, useSyncExternalStore } from 'react';
 

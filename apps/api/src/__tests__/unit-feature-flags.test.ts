@@ -21,16 +21,20 @@ function findCatalogFlag(key: string) {
   return flag;
 }
 
+/** Registered but deliberately not offered as a toggle — see "Hidden flags" in
+ *  the registry header. */
+const HIDDEN_KEYS = REGISTERED_FEATURE_FLAGS.filter((f) => f.catalogHidden).map((f) => f.key);
+
 describe('registry ↔ contract', () => {
   // Compared as sets: the registry's order is the Settings display order and is
   // deliberately independent of the contract schema's field order. Membership
   // is the invariant — a flag added to one side and not the other fails here.
-  test('the catalog covers exactly the contract key list', () => {
+  test('the catalog covers exactly the contract key list, minus hidden flags', () => {
     expect(
       buildFeatureFlagCatalog({})
         .map((f) => f.key)
         .sort(),
-    ).toEqual([...FEATURE_FLAG_KEYS].sort());
+    ).toEqual([...FEATURE_FLAG_KEYS].filter((key) => !HIDDEN_KEYS.includes(key)).sort());
   });
 
   test('every registered flag declares a complete, valid definition', () => {
@@ -71,8 +75,11 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(resolveFeatureFlag({ experimental: { meta_agent: false } }, 'meta_agent')).toBe(false);
   });
 
-  test('agent_principal is off by default and follows an explicit choice (spec 2026-09-22 §5)', () => {
-    expect(resolveFeatureFlag({}, 'agent_principal')).toBe(false);
+  test('agent_principal is ON by default and a project may still switch it off (spec 2026-09-22 §5)', () => {
+    // An agent's authority belongs to the AGENT, so it is the default. The
+    // explicit `false` is the one-release escape hatch back to the old
+    // launcher-∩-grant model.
+    expect(resolveFeatureFlag({}, 'agent_principal')).toBe(true);
     expect(resolveFeatureFlag({ experimental: { agent_principal: true } }, 'agent_principal')).toBe(true);
     expect(resolveFeatureFlag({ experimental: { agent_principal: false } }, 'agent_principal')).toBe(false);
   });
@@ -276,6 +283,52 @@ describe('buildFeatureFlagCatalog', () => {
       if (!f.available) expect(f.enabled).toBe(false);
     }
   });
+});
+
+/**
+ * A hidden flag is RESOLVABLE but UNADVERTISED (registry header, "Hidden
+ * flags"). The four properties below are the whole contract, and each one is a
+ * different way to get it wrong: `available: () => false` would break (a);
+ * dropping the entry from FLAGS would break (b); listing it would break (c);
+ * filtering `isFeatureFlagKey` through the catalog would break (d) and take
+ * the support escape hatch with it.
+ */
+describe('catalogHidden', () => {
+  test('agent_principal is the hidden flag this release', () => {
+    expect(HIDDEN_KEYS).toEqual(['agent_principal']);
+  });
+
+  for (const key of HIDDEN_KEYS) {
+    const def = REGISTERED_FEATURE_FLAGS.find((f) => f.key === key);
+    if (!def) throw new Error(`Missing registered flag: ${key}`);
+
+    test(`${key}: (a) still resolves to its platform default`, () => {
+      // Hidden means "not offered", never "forced off".
+      expect(resolveFeatureFlag({}, key)).toBe(def.available() && def.platformDefault());
+      expect(resolveFeatureFlags({})[key]).toBe(resolveFeatureFlag({}, key));
+    });
+
+    test(`${key}: (b) still honours an explicit project override`, () => {
+      expect(resolveFeatureFlag({ experimental: { [key]: false } }, key)).toBe(false);
+      expect(resolveFeatureFlag({ experimental: { [key]: true } }, key)).toBe(def.available());
+    });
+
+    test(`${key}: (c) is absent from the catalog the UI renders`, () => {
+      const metadata = { experimental: { [key]: false } };
+      expect(buildFeatureFlagCatalog({}).map((f) => f.key)).not.toContain(key);
+      // Also when the project set an explicit override — an overridden hidden
+      // flag must not reappear as a row someone can flip back.
+      expect(buildFeatureFlagCatalog(metadata).map((f) => f.key)).not.toContain(key);
+    });
+
+    test(`${key}: (d) is still accepted by PATCH /projects/:id/features`, () => {
+      // The route validates the body with `isFeatureFlagKey` (r6.ts
+      // patchFeatureFlagHandler), not with the catalog. The full HTTP round
+      // trip is covered by flow AGP-3, which switches this flag off through
+      // the real route.
+      expect(isFeatureFlagKey(key)).toBe(true);
+    });
+  }
 });
 
 describe('featureDisabledBody', () => {

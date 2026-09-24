@@ -34,6 +34,8 @@ import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
 import type { Turn, TextPart } from '@/lib/opencode/types';
 import type { Command } from '@/lib/opencode/hooks/use-opencode-data';
 import { isTextPart, messageCreatedAt, splitUserParts, type MessageWithParts } from '@kortix/sdk';
+import { parseTriggerEvent } from '@kortix/shared';
+import { parseLegacyChannelMessage } from '@/lib/session/channel-message';
 import { detectCommandFromText } from '@/lib/session/detect-command';
 import { formatMegabytes } from '@/lib/session/image-load';
 import { buildMentionSegments } from '@/lib/session/mention-segments';
@@ -220,30 +222,10 @@ export function UserMessage({
   const edited = useMemo(() => isUserMessageEdited(message.parts as never), [message.parts]);
   const timestamp = messageCreatedAt(message as unknown as MessageWithParts);
 
-  const channelMessageInfo = useMemo(() => {
-    if (!rawText) return undefined;
-    const headerMatch = rawText.match(/^\[(\w+)\s*·\s*([^·]+?)\s*·\s*message from\s+([^\]]+)\]\s*/);
-    if (!headerMatch) return undefined;
-    const platform = headerMatch[1] as 'Telegram' | 'Slack';
-    const userName = headerMatch[3]!.trim();
-    const afterHeader = rawText.slice(headerMatch[0].length);
-    const instrStart = afterHeader.search(/\n\s*(Chat ID:|── Telegram instructions|── Slack instructions)/);
-    const messageText = instrStart >= 0 ? afterHeader.slice(0, instrStart).trim() : afterHeader.trim();
-    return { platform, userName, messageText };
-  }, [rawText]);
-
-  const triggerEventInfo = useMemo(() => {
-    if (!rawText) return undefined;
-    const match = rawText.match(/<trigger_event>\s*([\s\S]*?)\s*<\/trigger_event>/);
-    if (!match) return undefined;
-    try {
-      const data = JSON.parse(match[1]!);
-      const prompt = rawText.replace(/<trigger_event>[\s\S]*?<\/trigger_event>/, '').trim();
-      return { data, prompt };
-    } catch {
-      return undefined;
-    }
-  }, [rawText]);
+  // Both parsers are linear in the prompt: a channel or a webhook chooses this
+  // text, and a regex version of each froze the JS thread on a crafted prompt.
+  const channelMessageInfo = useMemo(() => parseLegacyChannelMessage(rawText), [rawText]);
+  const triggerEventInfo = useMemo(() => parseTriggerEvent(rawText), [rawText]);
 
   // Queued dim: `duration-slow transition-opacity` + `opacity-50`.
   const dim = useSharedValue(queueState ? 0.5 : 1);

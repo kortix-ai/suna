@@ -3,6 +3,7 @@ import { link, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { attachmentSlot, insertAttachmentHandles } from '../connector-gateway/attachments';
 import type { ConnectorClient } from '../connector-gateway/gateway';
 import { uploadAttachmentFiles } from '../connector-gateway/mcp';
 
@@ -127,5 +128,70 @@ describe('Connector MCP attachment_files', () => {
         },
       ),
     ).rejects.toThrow('aggregate limit');
+  });
+});
+
+describe('attachment slot', () => {
+  const graphSendMail = {
+    type: 'object',
+    properties: {
+      user: { type: 'string', 'x-in': 'path' },
+      body: {
+        type: 'object',
+        properties: {
+          message: {
+            allOf: [
+              { type: 'object', properties: { subject: { type: 'string' } } },
+              {
+                type: 'object',
+                properties: { attachments: { type: 'array', items: { type: 'object' } } },
+              },
+            ],
+          },
+          saveToSentItems: { type: 'boolean' },
+        },
+      },
+    },
+  };
+
+  test('finds the nested Microsoft Graph sendMail attachments array', () => {
+    expect(attachmentSlot(graphSendMail)).toEqual(['body', 'message', 'attachments']);
+  });
+
+  test('prefers the shallowest array and matches any casing', () => {
+    expect(
+      attachmentSlot({
+        type: 'object',
+        properties: {
+          Attachments: { type: 'array' },
+          body: { type: 'object', properties: { attachments: { type: 'array' } } },
+        },
+      }),
+    ).toEqual(['Attachments']);
+  });
+
+  test('returns null when no attachments array exists; an explicit path wins', () => {
+    expect(attachmentSlot({ type: 'object', properties: { text: { type: 'string' } } })).toBeNull();
+    expect(attachmentSlot({}, 'body.files')).toEqual(['body', 'files']);
+    expect(() => attachmentSlot({}, 'body..files')).toThrow('dotted field path');
+  });
+
+  test('inserts handles, creating parents and keeping existing items', () => {
+    const args = { user: 'me', body: { message: { subject: 'Hi', attachments: [{ x: 1 }] } } };
+    const next = insertAttachmentHandles(args, ['body', 'message', 'attachments'], [{ attachment_id: 'a' }]);
+    expect(next).toEqual({
+      user: 'me',
+      body: { message: { subject: 'Hi', attachments: [{ x: 1 }, { attachment_id: 'a' }] } },
+    });
+    expect(args.body.message.attachments).toHaveLength(1);
+    expect(insertAttachmentHandles({}, ['body', 'message', 'attachments'], [1])).toEqual({
+      body: { message: { attachments: [1] } },
+    });
+  });
+
+  test('refuses a body passed as a string, naming the field', () => {
+    expect(() =>
+      insertAttachmentHandles({ body: '{"message":{}}' }, ['body', 'message', 'attachments'], [1]),
+    ).toThrow('args.body must be a JSON object');
   });
 });

@@ -85,7 +85,7 @@ describe('models step', () => {
   });
 
   // THE `/new` dead-click fix: the gate must be told the project, because
-  // `/new` has no `[id]` route segment to infer it from.
+  // `/new` (`app/[locale]/(app)/new`) has no `[id]` route segment to infer it from.
   test('tells the gate which project it is acting on', () => {
     expect(plan).toContain('{ projectId },');
     expect(plan).toContain('projectId: string;');

@@ -22,7 +22,7 @@ Use this product when a developer is building an agent, application, or backend 
 
 When modifying code, first inspect and identify the language, package manager, agent or LLM framework, stable user or tenant ID, secret-loading mechanism, and smallest existing execution path where Composio tools belong. Extend that path; do not create a parallel demo agent when one already exists. Never infer filenames, framework choices, environment behavior, or identity fields that were not provided or observed.
 
-Use progressive disclosure. The basic path is project access, the core SDK, one user-scoped session, and the existing agent's tool interface. Do not add toolkit filters, tag policies, sandbox changes, custom auth, provider adapters, or production hardening unless the request or inspected code requires them. If samplecol repository context is missing, give the minimum stable outline and ask only for the missing detail instead of filling a large example with placeholders.
+Use progressive disclosure. The basic path is project access, the core SDK, one user-scoped session, and the existing agent's tool interface. Do not add toolkit filters, tag policies, sandbox changes, custom auth, provider adapters, or production hardening unless the request or inspected code requires them. If essential repository context is missing, give the minimum stable outline and ask only for the missing detail instead of filling a large example with placeholders.
 
 ## Establish project access
 

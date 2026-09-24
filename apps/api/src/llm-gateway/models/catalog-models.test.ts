@@ -87,6 +87,39 @@ describe('gatewayModelCatalog — served catalog', () => {
     expect(full['codex/gpt-5.6-luna']).toBeDefined();
   });
 
+  // Released 2026-09-22 for ChatGPT and Codex. The capabilities come from the
+  // OpenAI catalog record: both reject a client temperature and take `none`.
+  test.each([
+    ['codex/gpt-6-sol', 'GPT-6 Sol (ChatGPT)'],
+    ['codex/gpt-6-luna', 'GPT-6 Luna (ChatGPT)'],
+  ])('project catalog advertises %s through the ChatGPT subscription', (id, name) => {
+    expect(full[id]).toMatchObject({
+      name,
+      provider: 'codex',
+      reasoning: true,
+      tool_call: true,
+      attachment: true,
+      temperature: false,
+      limit: { context: 1_050_000, input: 922_000, output: 128_000 },
+    });
+    expect(full[id]?.reasoning_options).toContainEqual({
+      type: 'effort',
+      values: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+    });
+  });
+
+  test('BYOK Anthropic serves Claude Opus 5.5 from the bundled record', () => {
+    expect(full['anthropic/claude-opus-5-5']).toMatchObject({
+      name: 'Claude Opus 5.5',
+      provider: 'anthropic',
+      released: '2026-09-22',
+      family: 'claude-opus',
+      temperature: false,
+      limit: { context: 1_000_000, output: 128_000 },
+      cost: { input: 4, output: 20, cache_read: 0.2, cache_write: 5 },
+    });
+  });
+
   test('native OpenCode Zen free models are not served by the gateway catalog', () => {
     for (const id of ['deepseek-v4-flash-free', 'mimo-v2.5-free']) {
       expect(full[`opencode/${id}`], `opencode/${id}`).toBeUndefined();

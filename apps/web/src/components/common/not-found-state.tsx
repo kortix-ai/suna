@@ -4,7 +4,7 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { ArrowLeftIcon as ArrowLeft, BookOpenIcon as BookOpen } from '@phosphor-icons/react';
 import { m } from 'motion/react';
-import Link from 'next/link';
+import Link from '@/components/site-link';
 
 import { Button } from '@/components/ui/button';
 

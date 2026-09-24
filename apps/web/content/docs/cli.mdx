@@ -529,7 +529,7 @@ Per-agent model settings on the linked project.
 | `kortix agents model <agent> --clear` | Clear the pin — the agent follows the default again. |
 | `kortix agents default <agent>` | Make this the project's default agent. |
 | `kortix agents default --show [--json]` | Print the current default agent. |
-| `kortix agents scope <agent> [--secrets all\|none\|A,B] [--connectors all\|none\|a,b] [--require-connector <slug>]` | Replace which secrets and connectors the agent may use. `--require-connector` is repeatable and must resolve before a session starts. |
+| `kortix agents scope <agent> [--secrets all\|none\|A,B] [--connectors all\|none\|a,b] [--apps all\|none\|a,b] [--require-connector <slug>]` | Replace which secrets, connectors and Kortix Apps the agent may use. `--apps` takes App slugs and needs a v2 `kortix.yaml`; the agent also needs `project.app.read`. `--require-connector` is repeatable and must resolve before a session starts. |
 | `kortix agents scope <agent> --show [--json]` | Print the agent's current scope. |
 | `kortix agents config <agent> [--json]` | Print the full agent config block. |
 | `kortix agents config <agent> --file <path>` | Replace the block with a JSON file's contents. `-` reads stdin. |
@@ -706,7 +706,9 @@ The in-sandbox agent's interface to every connector. Every call is checked, reso
 | --- | --- |
 | `kortix connectors discover "<intent>"` | Search tools by natural-language intent. |
 | `kortix connectors show <connector>.<action>` | Show an action's input schema. |
-| `kortix connectors call <connector>.<action> '<json-args>'` | Run a tool. A governed call returns its authenticated `approval_url` immediately. The server resumes the session after one approve or deny decision. |
+| `kortix connectors call <connector>.<action> '<json-args>'` | Run a tool. A governed call returns its authenticated `approval_url` immediately. The server resumes the session after one approve or deny decision. Pass large args as `@file.json` or `-` (stdin). |
+| `kortix connectors call <connector>.<action> @args.json --attach <file>` | Stage a file and append its reference to the action's attachments array. The gateway writes the bytes into the provider's attachment item. `--attach` repeats; `--attach-path <a.b.c>` names the array. See [Attach files](/docs/connect/connectors#attach-files). |
+| `kortix connectors upload <file> --connector <slug>` | Stage one file. Prints `ref`, `{"$kortix_attachment":"<id>"}`, to place in call args. |
 | `kortix connectors add <slug> --provider pipedream --app <app>` | Add a connector immediately, then connect it. |
 | `kortix connectors rm <slug>` | Remove a connector from the project. |
 | `kortix connectors connect <slug>` | Mint a connect link for a human. |
@@ -814,7 +816,10 @@ allow. See [One vocabulary, two bindings](/docs/accounts#one-vocabulary-two-bind
 
 The audit commands read the centralized reconstruction log. Account and project
 lists are newest first. A session timeline is ordered by its monotonic
-`session_sequence`. `--all` follows every continuation cursor.
+`session_sequence`. `--all` follows every continuation cursor. The table shows
+each row's title (`EVENT`, for example "Revoked LLM gateway key") next to its
+`ACTION` (`gateway.key.revoke`); `--action` filters by action prefix. Every
+action and title: [Audit log actions](/docs/audit-actions).
 
 | Command | Effect |
 | --- | --- |

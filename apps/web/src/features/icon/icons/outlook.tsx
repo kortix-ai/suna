@@ -1,10 +1,8 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { useTranslations } from '@/i18n/use-translations';
 
 export const Outlook = ({ className }: { className?: string }) => {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -32,9 +30,7 @@ export const Outlook = ({ className }: { className?: string }) => {
         x2="1128.458"
         y1="811.083"
         y2="1.998"
-        gradientTransform={tI18nHardcoded.raw(
-          'autoFeaturesIconIconJsxAttrGradientTransformMatrix100276a42f8',
-        )}
+        gradientTransform="matrix(1 0 0 -1 0 1705.333)"
         gradientUnits="userSpaceOnUse"
       >
         <stop offset="0" stopColor="#35b8f1" />
@@ -87,9 +83,7 @@ export const Outlook = ({ className }: { className?: string }) => {
         x2="774.086"
         y1="1383.074"
         y2="324.259"
-        gradientTransform={tI18nHardcoded.raw(
-          'autoFeaturesIconIconJsxAttrGradientTransformMatrix100276a42f8',
-        )}
+        gradientTransform="matrix(1 0 0 -1 0 1705.333)"
         gradientUnits="userSpaceOnUse"
       >
         <stop offset="0" stopColor="#1784d9" />

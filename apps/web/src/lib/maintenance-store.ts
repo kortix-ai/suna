@@ -44,17 +44,80 @@ const DEFAULT_CONFIG: MaintenanceConfig = {
   updatedAt: new Date(0).toISOString(),
 };
 
-const EDGE_CONFIG_KEY = 'maintenance_config';
+/**
+ * The environment this deployment's maintenance state belongs to.
+ *
+ * dev, staging and prod share ONE Vercel Edge Config store (the same
+ * `EDGE_CONFIG` / `EDGE_CONFIG_ID` sit in `apps/web/.env.dev`, `.env.staging`
+ * and `.env.prod`). A single constant key therefore made the three
+ * environments overwrite each other's state, and the prod api-router Worker
+ * read whatever environment wrote last — a `blocking` set on staging could
+ * lock production writes. Each environment now owns `maintenance_config_<env>`.
+ */
+export type MaintenanceEnvironment = 'prod' | 'staging' | 'dev';
+
+/**
+ * The environment is derived from the API host the deployment talks to. It
+ * is set on every surface that has an Edge Config (Vercel prod + staging,
+ * ECS dev/staging/prod — `infra/scripts/render-web-env.mjs` pins it per
+ * environment) and it is the right owner by construction: the maintenance
+ * state lives in that API's database. `VERCEL_ENV` cannot tell staging apart
+ * from a preview (staging deploys with `--target preview`).
+ */
+const BACKEND_HOST_ENVIRONMENT: Readonly<Record<string, MaintenanceEnvironment>> = {
+  'api.kortix.com': 'prod',
+  'staging-api.kortix.com': 'staging',
+  'dev-api.kortix.com': 'dev',
+};
+
+const EDGE_CONFIG_KEY_PREFIX = 'maintenance_config_';
+
+function runtimeEnv(key: string): string | undefined {
+  // Dynamic read: the standalone container must see ECS runtime values, not a
+  // build-time replacement (same reason as WEB_PROTECTION_* in middleware.ts).
+  const value = Reflect.get(process.env, key);
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+/**
+ * Returns null when the API host is unknown or missing. Callers treat null as
+ * "this deployment owns no maintenance key": never read or write another
+ * environment's key, and report normal operation (fail open).
+ */
+export function resolveMaintenanceEnvironment(): MaintenanceEnvironment | null {
+  const candidates = [
+    runtimeEnv('BACKEND_URL'),
+    runtimeEnv('KORTIX_PUBLIC_BACKEND_URL'),
+    process.env.NEXT_PUBLIC_BACKEND_URL,
+  ];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    let host: string;
+    try {
+      host = new URL(candidate).hostname.toLowerCase();
+    } catch {
+      continue;
+    }
+    return BACKEND_HOST_ENVIRONMENT[host] ?? null;
+  }
+  return null;
+}
+
+export function maintenanceEdgeConfigKey(
+  environment: MaintenanceEnvironment | null = resolveMaintenanceEnvironment(),
+): string | null {
+  return environment ? `${EDGE_CONFIG_KEY_PREFIX}${environment}` : null;
+}
 
 let edgeClient: EdgeConfigClient | null = null;
 let memoryStore: MaintenanceConfig = { ...DEFAULT_CONFIG };
 /**
- * The last value `getEdgeMaintenanceConfig` actually read out of Edge Config.
- * It exists so a transient read failure can serve the state an admin really
- * set instead of inventing one. Per runtime instance; a cold instance has none
- * and falls back to normal operation.
+ * The last value `getEdgeMaintenanceConfig` actually read out of Edge Config,
+ * per key. It exists so a transient read failure can serve the state an admin
+ * really set instead of inventing one. Per runtime instance; a cold instance
+ * has none and falls back to normal operation.
  */
-let lastKnownEdgeConfig: MaintenanceConfig | null = null;
+const lastKnownEdgeConfig = new Map<string, MaintenanceConfig>();
 
 function getEdgeClient(): EdgeConfigClient | null {
   if (edgeClient) return edgeClient;
@@ -72,13 +135,13 @@ function backendUrl(): string {
   ).replace(/\/$/, '');
 }
 
-async function readEdgeConfig(): Promise<MaintenanceConfig | null> {
+async function readEdgeConfig(key: string): Promise<MaintenanceConfig | null> {
   const client = getEdgeClient();
   if (!client) return null;
-  return (await client.get<MaintenanceConfig>(EDGE_CONFIG_KEY)) ?? null;
+  return (await client.get<MaintenanceConfig>(key)) ?? null;
 }
 
-async function writeEdgeConfig(config: MaintenanceConfig): Promise<MaintenanceConfig> {
+async function writeEdgeConfig(key: string, config: MaintenanceConfig): Promise<MaintenanceConfig> {
   const edgeConfigId = process.env.EDGE_CONFIG_ID;
   const vercelToken = process.env.VERCEL_API_TOKEN;
   if (!edgeConfigId || !vercelToken) {
@@ -95,7 +158,7 @@ async function writeEdgeConfig(config: MaintenanceConfig): Promise<MaintenanceCo
       items: [
         {
           operation: 'upsert',
-          key: EDGE_CONFIG_KEY,
+          key,
           value: config,
         },
       ],
@@ -107,7 +170,7 @@ async function writeEdgeConfig(config: MaintenanceConfig): Promise<MaintenanceCo
     throw new Error(`Edge Config write failed (${response.status}): ${body}`);
   }
 
-  const persisted = await getEdgeClient()?.get<MaintenanceConfig>(EDGE_CONFIG_KEY, {
+  const persisted = await getEdgeClient()?.get<MaintenanceConfig>(key, {
     consistentRead: true,
   });
   if (!persisted || persisted.updatedAt !== config.updatedAt) {
@@ -117,123 +180,104 @@ async function writeEdgeConfig(config: MaintenanceConfig): Promise<MaintenanceCo
   return persisted;
 }
 
+/** Two configs describe the same admin state when level and updatedAt agree. */
+export function sameMaintenanceState(
+  a: Pick<MaintenanceConfig, 'level' | 'updatedAt'> | null | undefined,
+  b: Pick<MaintenanceConfig, 'level' | 'updatedAt'> | null | undefined,
+): boolean {
+  if (!a || !b) return false;
+  return a.level === b.level && a.updatedAt === b.updatedAt;
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 const CONFIG_TTL_MS = 5_000;
-let cachedConfig: { value: MaintenanceConfig; expiresAt: number } | null = null;
-let inFlight: Promise<MaintenanceConfig> | null = null;
+let cachedConfig: { key: string; value: MaintenanceConfig; expiresAt: number } | null = null;
+let inFlight: { key: string; promise: Promise<MaintenanceConfig> } | null = null;
 
 function invalidateMaintenanceCache(): void {
   cachedConfig = null;
   inFlight = null;
 }
 
-/** Test-only. Clears the last-known Edge Config value. */
-export function __resetEdgeMaintenanceMemoryForTests(): void {
-  lastKnownEdgeConfig = null;
+function normalOperation(): MaintenanceConfig {
+  return { ...DEFAULT_CONFIG, updatedAt: new Date().toISOString() };
 }
 
-/** Test-only. Clears the TTL cache so each test starts from a cold cache. */
+/** Test-only. Clears the last-known Edge Config values. */
+export function __resetEdgeMaintenanceMemoryForTests(): void {
+  lastKnownEdgeConfig.clear();
+}
+
+/** Test-only. Clears the TTL cache and the reconcile throttle. */
 export function __resetMaintenanceCacheForTests(): void {
   invalidateMaintenanceCache();
+  lastReconcileAt = 0;
+  reconcileInFlight = null;
 }
 
 /**
- * Middleware calls getMaintenanceConfig() on every non-public request, and in
- * the App Router every client-side navigation is an RSC request that runs
- * middleware. Uncached, that put a `no-store` fetch (2s timeout ceiling) plus an
- * Edge Config read on the critical path of EVERY page-to-page transition.
+ * The maintenance state for the request path (middleware, `GET
+ * /api/maintenance`). Reads THIS environment's Edge Config key and nothing
+ * else: no API/database read and no Vercel API write ever happen here.
  *
- * A 5s TTL takes that off the critical path without making the flag unusable:
- * staleness is bounded to <=5s per runtime instance, everywhere — including
- * immediately after an admin toggle. setMaintenanceConfig() does call
- * invalidateMaintenanceCache(), but that only clears the cache in the process
- * that handled the write: the Node runtime, via
- * app/(system)/api/maintenance/route.ts. It cannot reach the cache that
- * matters for navigation, which lives in middleware.ts — a separate bundle
- * Next.js compiles for the Edge runtime, replicated per POP. The 5s TTL, not
- * the invalidation, is the real bound on admin-toggle latency.
+ * It used to read the database first (2 s timeout) and PATCH Edge Config
+ * through the Vercel API whenever the two differed. With one key shared by
+ * three environments they always differed, so every refresh in every
+ * environment wrote — `Edge Config write failed (429) rate_limited` and
+ * `database read failed: TimeoutError` inside middleware, on user navigations.
+ * The database → Edge Config sync now runs only on the admin write path
+ * (`setMaintenanceConfig`) and in `reconcileMaintenanceEdgeConfig`, which the
+ * `/api/maintenance` route schedules after its response.
  *
- * `inFlight` coalesces: a burst of concurrent navigations on a cold cache shares
- * one upstream read instead of issuing one each.
+ * The 5 s TTL still bounds reads per runtime instance (middleware runs on
+ * every RSC navigation). `inFlight` coalesces a cold-cache burst into one read.
  */
 export async function getMaintenanceConfig(): Promise<MaintenanceConfig> {
   // The memory-store path does no I/O, so caching it would only add staleness.
   if (!process.env.EDGE_CONFIG) return { ...memoryStore };
 
-  if (cachedConfig && cachedConfig.expiresAt > Date.now()) return cachedConfig.value;
-  if (inFlight) return inFlight;
+  const key = maintenanceEdgeConfigKey();
+  if (!key) return normalOperation();
 
-  inFlight = readMaintenanceConfig()
+  if (cachedConfig && cachedConfig.key === key && cachedConfig.expiresAt > Date.now()) {
+    return cachedConfig.value;
+  }
+  if (inFlight && inFlight.key === key) return inFlight.promise;
+
+  const promise = getEdgeMaintenanceConfig()
     .then((config) => {
-      cachedConfig = { value: config, expiresAt: Date.now() + CONFIG_TTL_MS };
+      cachedConfig = { key, value: config, expiresAt: Date.now() + CONFIG_TTL_MS };
       return config;
     })
     .finally(() => {
-      inFlight = null;
+      if (inFlight?.promise === promise) inFlight = null;
     });
-
-  return inFlight;
-}
-
-/**
- * Read the database first. Reconcile Edge Config after every successful
- * database read. Use blocking Edge Config only when the API is unavailable.
- */
-async function readMaintenanceConfig(): Promise<MaintenanceConfig> {
-  try {
-    const databaseConfig = await sdkGetMaintenanceConfig<MaintenanceConfig>({
-      backendUrl: backendUrl(),
-      cache: 'no-store',
-      signal: AbortSignal.timeout(2_000),
-    });
-    const edgeConfig = await readEdgeConfig().catch(() => null);
-    if (JSON.stringify(edgeConfig) !== JSON.stringify(databaseConfig)) {
-      await writeEdgeConfig(databaseConfig).catch((error) => {
-        console.error('[maintenance-store] Edge Config reconciliation failed:', error);
-      });
-    }
-    return databaseConfig;
-  } catch (databaseError) {
-    console.warn('[maintenance-store] database read failed:', databaseError);
-    const edgeConfig = await readEdgeConfig().catch((edgeError) => {
-      console.error('[maintenance-store] Edge Config fallback failed:', edgeError);
-      return null;
-    });
-    if (edgeConfig?.level === 'blocking') return edgeConfig;
-    // Fail open: when the API is temporarily unavailable (deploy, blip, GC
-    // pause) and Edge Config doesn't have a blocking level, return normal
-    // operation instead of activating automatic maintenance. A blocking
-    // lockdown should only be triggerable by an explicit admin action,
-    // not by a transient API/network failure.
-    return { ...DEFAULT_CONFIG, updatedAt: new Date().toISOString() };
-  }
+  inFlight = { key, promise };
+  return promise;
 }
 
 /**
  * Return only the independent Edge Config state for the Cloudflare write gate
  * (`infra/cloudflare/workers/api-router`, `MAINTENANCE_STATE_URL`).
  *
- * FAILS OPEN, for the same reason `readMaintenanceConfig` above does. This
- * function used to return a synthetic `blocking` config whenever the Edge
- * Config read returned nothing or threw. The api-router worker reads this
- * route, sees `level: 'blocking'`, and answers EVERY non-read-only request to
- * `api.kortix.com` with a 503 whose body carries that config's `message`. So a
- * missing `maintenance_config` key — or one failed network call from a Vercel
- * instance to Edge Config — locked production writes and surfaced to every user
- * as `ApiError: Kortix is temporarily unavailable. Service will resume
- * automatically.` (Better Stack, Kortix Frontend prod: 1,000+ occurrences).
- * Nothing an admin did produced it.
+ * FAILS OPEN. This function used to return a synthetic `blocking` config
+ * whenever the Edge Config read returned nothing or threw. The api-router
+ * worker reads this route, sees `level: 'blocking'`, and answers EVERY
+ * non-read-only request to `api.kortix.com` with a 503 carrying that config's
+ * `message`. So a missing key — or one failed network call from a Vercel
+ * instance to Edge Config — locked production writes (Better Stack, Kortix
+ * Frontend prod: 1,000+ occurrences). Nothing an admin did produced it.
  *
- * The two outcomes are now separated:
- *
- * - Key ABSENT (`readEdgeConfig()` resolves null): the store holds no admin
- *   state at all. That is normal operation, never a lockdown -> `none`.
+ * - No environment (unknown API host): this deployment owns no key -> `none`.
+ *   It never falls back to another environment's key or the legacy shared one.
+ * - Key ABSENT (`readEdgeConfig()` resolves null): no admin state -> `none`.
+ *   A fresh deploy starts here until the first admin write or reconcile.
  * - Read THREW: the state is unknown. Serve the last value this instance
- *   actually read, so a genuine admin `blocking` survives a blip; with no such
- *   value (cold instance), fall back to normal operation.
+ *   actually read for this key, so a genuine admin `blocking` survives a blip;
+ *   with no such value (cold instance), fall back to normal operation.
  *
  * A lockdown that must hold even while Vercel is unreachable does not depend on
  * this path: the cutover workflow sets `MAINTENANCE_LEVEL_OVERRIDE=blocking`
@@ -243,22 +287,75 @@ async function readMaintenanceConfig(): Promise<MaintenanceConfig> {
 export async function getEdgeMaintenanceConfig(): Promise<MaintenanceConfig> {
   if (!process.env.EDGE_CONFIG) return { ...memoryStore };
 
+  const key = maintenanceEdgeConfigKey();
+  if (!key) return normalOperation();
+
   try {
-    const config = await readEdgeConfig();
+    const config = await readEdgeConfig(key);
     if (config) {
-      lastKnownEdgeConfig = config;
+      lastKnownEdgeConfig.set(key, config);
       return config;
     }
-    return { ...DEFAULT_CONFIG, updatedAt: new Date().toISOString() };
+    return normalOperation();
   } catch (error) {
     console.error('[maintenance-store] independent Edge Config read failed:', error);
-    if (lastKnownEdgeConfig) return lastKnownEdgeConfig;
-    return { ...DEFAULT_CONFIG, updatedAt: new Date().toISOString() };
+    return lastKnownEdgeConfig.get(key) ?? normalOperation();
   }
 }
 
 /**
- * Write the database first. Then write the exact saved value to Edge Config.
+ * The database state (the source of truth). Admin path only: the PUT route
+ * merges partial updates onto it. Never called from middleware.
+ */
+export async function readDatabaseMaintenanceConfig(): Promise<MaintenanceConfig> {
+  return sdkGetMaintenanceConfig<MaintenanceConfig>({
+    backendUrl: backendUrl(),
+    cache: 'no-store',
+    signal: AbortSignal.timeout(2_000),
+  });
+}
+
+const RECONCILE_INTERVAL_MS = 60_000;
+let lastReconcileAt = 0;
+let reconcileInFlight: Promise<void> | null = null;
+
+/**
+ * Converge this environment's Edge Config key on the database, off the
+ * request path. Covers writes that bypass the web admin route (a direct
+ * `PUT /v1/system/maintenance` against the API) and seeds an empty key after a
+ * deploy. At most one pass per runtime instance per minute; writes only when
+ * `level` or `updatedAt` differ, and only to this environment's key.
+ * Never throws.
+ */
+export function reconcileMaintenanceEdgeConfig(): Promise<void> {
+  if (!process.env.EDGE_CONFIG) return Promise.resolve();
+  if (!process.env.EDGE_CONFIG_ID || !process.env.VERCEL_API_TOKEN) return Promise.resolve();
+  const key = maintenanceEdgeConfigKey();
+  if (!key) return Promise.resolve();
+  if (reconcileInFlight) return reconcileInFlight;
+  if (Date.now() - lastReconcileAt < RECONCILE_INTERVAL_MS) return Promise.resolve();
+  lastReconcileAt = Date.now();
+
+  reconcileInFlight = (async () => {
+    try {
+      const database = await readDatabaseMaintenanceConfig();
+      const edge = await readEdgeConfig(key);
+      if (sameMaintenanceState(edge, database)) return;
+      await writeEdgeConfig(key, database);
+      lastKnownEdgeConfig.set(key, database);
+      invalidateMaintenanceCache();
+    } catch (error) {
+      console.warn('[maintenance-store] Edge Config reconcile skipped:', error);
+    } finally {
+      reconcileInFlight = null;
+    }
+  })();
+  return reconcileInFlight;
+}
+
+/**
+ * Write the database first. Then write the exact saved value to this
+ * environment's Edge Config key.
  */
 export async function setMaintenanceConfig(
   config: MaintenanceConfig,
@@ -274,7 +371,15 @@ export async function setMaintenanceConfig(
     backendUrl: backendUrl(),
     accessToken,
   });
-  await writeEdgeConfig(saved);
+  const key = maintenanceEdgeConfigKey();
+  if (key) {
+    const persisted = await writeEdgeConfig(key, saved);
+    lastKnownEdgeConfig.set(key, persisted);
+  } else {
+    console.warn(
+      '[maintenance-store] no maintenance environment for this API host; Edge Config not written',
+    );
+  }
   invalidateMaintenanceCache();
   return saved;
 }

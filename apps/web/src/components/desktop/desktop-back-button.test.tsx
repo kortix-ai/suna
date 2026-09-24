@@ -212,7 +212,7 @@ describe('hasBackDestination', () => {
 });
 
 describe('every screen has Back by default', () => {
-  const layout = codeOnly(readFileSync(join(webSrc, 'app/layout.tsx'), 'utf8'));
+  const layout = codeOnly(readFileSync(join(webSrc, 'app/[locale]/layout.tsx'), 'utf8'));
   const shell = codeOnly(readFileSync(join(webSrc, 'features/auth/auth-card-shell.tsx'), 'utf8'));
   const back = codeOnly(readFileSync(join(import.meta.dir, 'desktop-back-button.tsx'), 'utf8'));
   const css = codeOnly(readFileSync(join(webSrc, 'app/globals.css'), 'utf8'));
@@ -240,8 +240,8 @@ describe('every screen has Back by default', () => {
     expect(optOut?.[1]).toMatch(/display:\s*none/);
     for (const file of [
       'features/workspace/project-layout/project-shell.tsx',
-      'app/admin/_components/admin-shell.tsx',
-      'app/(public)/(marketing)/layout.tsx',
+      'app/[locale]/admin/_components/admin-shell.tsx',
+      'app/[locale]/(public)/(marketing)/marketing-shell.tsx',
     ]) {
       expect(readFileSync(join(webSrc, file), 'utf8')).toContain('data-kx-titlebar-owner');
     }
@@ -256,11 +256,11 @@ describe('every screen has Back by default', () => {
   test('rows pinned to the top of a shell-less screen drop below the band', () => {
     for (const file of [
       'features/workspace/new/new-workspace-page.tsx',
-      'app/(app)/projects/start/page.tsx',
+      'app/[locale]/(app)/projects/start/page.tsx',
     ]) {
       expect(readFileSync(join(webSrc, file), 'utf8')).toContain('kx-desktop-band-row');
     }
-    expect(readFileSync(join(webSrc, 'app/(auth)/auth/phone-verification/page.tsx'), 'utf8')).toContain('kx-below-titlebar');
+    expect(readFileSync(join(webSrc, 'app/[locale]/(auth)/auth/phone-verification/page.tsx'), 'utf8')).toContain('kx-below-titlebar');
     expect(css).toMatch(
       /html\[data-desktop='true'\]\s+\.kx-below-titlebar\s*\{[^}]*margin-top:\s*var\(--kx-titlebar-inset\)/,
     );

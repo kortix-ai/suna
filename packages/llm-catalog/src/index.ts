@@ -1,4 +1,4 @@
-import catalogJson from './catalog.generated.json' with { type: 'json' };
+import providerEnvJson from './provider-env.generated.json' with { type: 'json' };
 
 export {
   DEFAULT_ENABLEMENT_WINDOW_MONTHS,
@@ -428,7 +428,20 @@ export interface Catalog {
   providers: CatalogProvider[];
 }
 
-export const CATALOG = catalogJson as Catalog;
+// The bundled models.dev snapshot (~7.6 MB of JSON) and its one reader live in
+// `catalog-data.ts`, never in this module: browser bundles import this entry
+// for small helpers, and a bundler can drop `catalog-data.ts` only when this
+// file does not import the JSON itself (catalog-isolation.test.ts).
+export { CATALOG, catalogModelForWireModel } from './catalog-data';
+
+/**
+ * `{ id, env }` for every provider in `CATALOG`, in the same order — the only
+ * catalog fields `providerAuthRequirement` reads. ~8 KB instead of the ~7.6 MB
+ * snapshot, for browser code that needs provider credentials but no models.
+ * Regenerated together with the snapshot; catalog-isolation.test.ts checks
+ * that the two agree.
+ */
+export const CATALOG_PROVIDER_ENV = providerEnvJson as ReadonlyArray<{ id: string; env: string[] }>;
 
 export interface ManagedModel {
   id: string;
@@ -530,69 +543,6 @@ export const MANAGED_FLAGSHIP_MODEL_ID = (
 
 /** Concrete Kortix-managed default used when no account or project default exists. */
 export const PLATFORM_DEFAULT_MODEL_ID = 'deepseek-v4.1-flash';
-
-function modelsByWireId(catalog: Catalog): Map<string, CatalogModel> {
-  const byId = new Map<string, CatalogModel>();
-  for (const provider of catalog.providers) {
-    for (const model of provider.models) byId.set(`${provider.id}/${model.id}`, model);
-  }
-  return byId;
-}
-
-/**
- * Resolve a gateway WIRE model id to its full `CatalogModel` — the capability
- * record `generationControlCapabilities`/`clampGenerationConfig` gate against.
- * The CANONICAL wire-id → model resolver: it stitches together the three id
- * shapes a gateway request can carry, so a caller never has to string-split
- * `<provider>/<model>` or special-case managed slugs itself.
- *
- *   - `codex/<id>`      → the genuine OpenAI catalog entry (`openai/<id>`).
- *   - `<provider>/<id>` → that provider's catalog entry (BYOK models).
- *   - bare `<id>`       → a managed slug, resolved via its `pricingRef` (the
- *                         model's real models.dev id) so e.g. `claude-opus-4.8`
- *                         gets Claude's real `reasoning_options`/`limit` instead
- *                         of a permissive fallback; a synthesized minimal record
- *                         (reasoning/tool_call/temperature all true) when the
- *                         managed slug has no models.dev entry to borrow from.
- *
- * `catalog` defaults to the bundled static `CATALOG`. apps/api passes the LIVE
- * models.dev snapshot instead (its own thin wrapper of the same name) so the
- * host-side generation-controls clamp sees fresh capabilities; the standalone
- * gateway transport, which has no runtime snapshot, uses the bundled catalog.
- */
-export function catalogModelForWireModel(
-  wireModel: string,
-  catalog: Catalog = CATALOG,
-): CatalogModel | undefined {
-  if (wireModel.startsWith('codex/')) {
-    return modelsByWireId(catalog).get(`openai/${wireModel.slice('codex/'.length)}`);
-  }
-  const slash = wireModel.indexOf('/');
-  if (slash > 0) {
-    const providerId = wireModel.slice(0, slash);
-    const modelId = wireModel.slice(slash + 1);
-    return catalog.providers
-      .find((provider) => provider.id === providerId)
-      ?.models.find((model) => model.id === modelId);
-  }
-  const managed = getManagedModel(wireModel);
-  if (managed) {
-    const catalogById = modelsByWireId(catalog);
-    const byPricingRef = pricingRefLookupCandidates(managed.pricingRef)
-      .map((ref) => catalogById.get(ref))
-      .find((entry): entry is CatalogModel => entry !== undefined);
-    if (byPricingRef) return byPricingRef;
-    return {
-      id: managed.id,
-      name: managed.name,
-      reasoning: true,
-      tool_call: true,
-      temperature: true,
-      limit: managed.limit,
-    };
-  }
-  return undefined;
-}
 
 export const MODEL_SELECTOR_PROVIDER_IDS = [
   'kortix',

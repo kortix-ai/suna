@@ -510,7 +510,7 @@ describe('buildSettingsPanelSettingsNav', () => {
  * The scope gate.
  *
  * `SettingsPanel` has two mounts: `ProjectShell` (with a `projectId`) and
- * `app/(app)/settings*` (without one). `isSettingsTabAllowed` decides which
+ * `app/[locale]/(app)/settings*` (without one). `isSettingsTabAllowed` decides which
  * rows the rail may show on each, and — for the two Workspace rows that
  * mount config-page panes — whether the caller's project capabilities admit
  * the row, over the identical `CUSTOMIZE_SECTION_GATE_ACTIONS` leaves

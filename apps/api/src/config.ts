@@ -136,6 +136,17 @@ const envSchema = z.object({
     .refine((v) => v === '' || /^https?:\/\//.test(v), { message: 'SUPABASE_PUBLIC_URL must be a valid HTTP(S) URL' })
     .optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1, 'SUPABASE_SERVICE_ROLE_KEY is required'),
+  // Legacy symmetric (HS256) JWT secret of the Supabase project. When set, the
+  // API checks an HS256 access token's signature and expiry locally instead of
+  // asking GoTrue on every request (shared/jwt-verify.ts). Optional: without it
+  // HS256 tokens keep the per-request GoTrue round trip.
+  SUPABASE_JWT_SECRET: optStr,
+  // How long a GoTrue confirmation that an HS256 token's session is still live
+  // is reused, per token, per replica. This is the upper bound on how long a
+  // signed-out or deleted user's still-unexpired HS256 token keeps working on a
+  // replica that already confirmed it. 0 = confirm with GoTrue on every request
+  // (the pre-2026-09-23 behavior).
+  SUPABASE_JWT_LIVENESS_TTL_MS: optInt(30_000),
 
   // ── Prompt attachment uploads (optional, non-secret) ────────────────────
   // `direct` (default): the client PUTs each file once to a signed Storage URL.
@@ -1086,6 +1097,8 @@ export const config = {
   SUPABASE_URL: env.SUPABASE_URL,
   SUPABASE_PUBLIC_URL: env.SUPABASE_PUBLIC_URL,
   SUPABASE_SERVICE_ROLE_KEY: env.SUPABASE_SERVICE_ROLE_KEY,
+  SUPABASE_JWT_SECRET: env.SUPABASE_JWT_SECRET,
+  SUPABASE_JWT_LIVENESS_TTL_MS: env.SUPABASE_JWT_LIVENESS_TTL_MS,
   PROMPT_ATTACHMENT_UPLOAD_MODE: env.PROMPT_ATTACHMENT_UPLOAD_MODE,
   PROMPT_ATTACHMENT_CHUNK_BYTES: env.PROMPT_ATTACHMENT_CHUNK_BYTES,
 

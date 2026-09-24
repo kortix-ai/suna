@@ -21,6 +21,7 @@ import { propagateProjectSecretsToActiveSandboxes } from '../projects/lib/sandbo
 import { isValidSecretName, writeSharedProjectSecret } from '../projects/secrets';
 import { db } from '../shared/db';
 import { TokenBucketRateLimiter, enforceRateLimit } from '../shared/rate-limit';
+import { RATE_LIMIT_EXCEEDED_ACTION } from '../shared/rate-limit-audit';
 import { resolveSetupLink } from './token';
 import { watchConnectorCompletion } from './connector-completion-watch';
 import { composioConfigured } from '../connectors/composio';
@@ -63,7 +64,7 @@ function createSetupLinkRateLimitMiddleware() {
       key,
       { limit: 30, windowMs: 60_000 },
       {
-        action: `RATE_LIMIT ${c.req.method} ${c.req.path}`,
+        action: RATE_LIMIT_EXCEEDED_ACTION,
         resourceType: 'setup_link',
         resourceId,
         metadata: { limiter: 'setup_link' },
