@@ -1,0 +1,3 @@
+Fix: retry transient git-mirror failures on session create (KX-HOURLY 500)
+
+Session create no longer hard-fails with HTTP 500 when a project's git mirror fetch hits a transient upstream failure. The warm mirror fetch now retries a bounded number of times (3, 500ms apart) on the transient class — network/DNS/socket, GitHub 5xx, or GitHub's ambiguous 'repository not found' for a private mirror whose credential is momentarily unusable — and the global error handler answers a retryable 503 instead of an unhandled 500. Symmetric with the cold-clone retry. Fixes the KX-HOURLY hourly heartbeat session-create 500 (incident incident-20260924T030541Z-hbcreate).
