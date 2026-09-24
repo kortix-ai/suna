@@ -1152,7 +1152,7 @@ export function metaSnapshotName(contentHash: string): string {
  * Delete this environment's superseded meta images.
  *
  * The meta fingerprint hashes the source trees of the agent, CLI, SDK, shared,
- * starter and friends, so it changes on samplecolly every commit that touches
+ * starter and friends, so it changes on essentially every commit that touches
  * them — roughly every deploy. Nothing reaped the old ones: `ensureMetaSandboxImage`
  * deleted a snapshot only when its own build had FAILED, never when a newer one
  * superseded it. Measured 2026-08-12: 118 `kortix-meta-*` snapshots, all under

@@ -4282,7 +4282,7 @@ deploy — probe credentials, and never let a janitor gate the payload.** The
 `needs:`-depended on it, so every staging WEB deploy was skipped for a week —
 the release gate drove an Aug-12 frontend against the current API, and the
 resulting browser failures read as product bugs. Fix (#6626, #6639): the
-non-samplecol job is `continue-on-error`, and the deploy step probes each
+non-essential job is `continue-on-error`, and the deploy step probes each
 credential with a cheap authenticated read and uses the first one that works.
 Rule: when a job fails REPEATEDLY and everything still "works", find out what
 its `needs:` dependents silently stopped doing.

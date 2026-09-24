@@ -71,7 +71,7 @@ Rough yield from one podcast/webinar/video: 3–5 short clips, 1–2 LinkedIn po
 
 ## Video
 
-Short-form video is the highest-reach format on every platform. Frameworks and the full hook library are in [`references/short-form-video.md`](references/short-form-video.md). The samplecols:
+Short-form video is the highest-reach format on every platform. Frameworks and the full hook library are in [`references/short-form-video.md`](references/short-form-video.md). The essentials:
 
 - **3-second rule** — visual hook **+** verbal hook **+** text overlay, all landing in the first second. Show the payoff or the problem immediately; never build up to it.
 - **Pick a structure** — Problem→Agitate→Solution→CTA, List (one item every 5–8s), or Tutorial (show the result first). Keep it 9:16, 15–60s.
