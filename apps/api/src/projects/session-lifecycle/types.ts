@@ -102,6 +102,12 @@ export interface QueuedCreateSessionPayload {
 export interface ContinueSessionCommand {
   source: SessionInvocationSource;
   sessionId: string;
+  /**
+   * The project the producer addressed. When present, delivery refuses a
+   * session of any other project (`no-session`): a queued command names its
+   * project and session in separate columns, and nothing else ties the two.
+   */
+  projectId?: string | null;
   /** Legacy plain-text form. Ignored when `parts` is present. */
   text: string;
   userId?: string | null;

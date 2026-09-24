@@ -120,7 +120,7 @@ import {
   resolvePendingQuestion,
 } from '../lib/pending-questions';
 import { loadProjectAgents } from '../agents';
-import { getAgentGrant } from '../../iam/agent-scope';
+import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import {
   assertProjectCapability,
   loadProjectForUser,
@@ -129,6 +129,7 @@ import {
 } from '../lib/access';
 import { AnyObject, TriggerSchema, projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
+import { guardSession } from '../lib/session-access';
 import {
   type ConnectionOwnerType,
   connectionIsReachable,
@@ -1399,20 +1400,12 @@ projectsApp.openapi(
     );
     if (accessValidationError) return c.json({ error: accessValidationError }, 400);
 
-    // A `pinned` trigger may only target a session that belongs to THIS project —
-    // never a nonexistent or another project's session.
+    // A `pinned` trigger may only target a session of THIS project that the
+    // author may see — never a nonexistent, another project's, or another
+    // member's private session. Every fire prompts that session.
     if (draft.sessionMode === 'pinned' && draft.pinnedSessionId) {
-      const [pinned] = await db
-        .select({ sessionId: projectSessions.sessionId })
-        .from(projectSessions)
-        .where(
-          and(
-            eq(projectSessions.sessionId, draft.pinnedSessionId),
-            eq(projectSessions.projectId, projectId),
-          ),
-        )
-        .limit(1);
-      if (!pinned) {
+      const pinned = await guardSession(c, loaded, draft.pinnedSessionId, 'read');
+      if (!pinned.ok) {
         return c.json(
           { error: `Pinned session "${draft.pinnedSessionId}" was not found in this project.` },
           400,
@@ -1599,19 +1592,11 @@ projectsApp.openapi(
         }
         effectivePinnedSessionId = draft.pinnedSessionId;
 
-        // A `pinned` trigger may only target a session that belongs to THIS project.
+        // A `pinned` trigger may only target a session of THIS project that the
+        // author may see.
         if (draft.sessionMode === 'pinned' && draft.pinnedSessionId) {
-          const [pinned] = await db
-            .select({ sessionId: projectSessions.sessionId })
-            .from(projectSessions)
-            .where(
-              and(
-                eq(projectSessions.sessionId, draft.pinnedSessionId),
-                eq(projectSessions.projectId, projectId),
-              ),
-            )
-            .limit(1);
-          if (!pinned) {
+          const pinned = await guardSession(c, loaded, draft.pinnedSessionId, 'read');
+          if (!pinned.ok) {
             return {
               ok: false,
               error: `Pinned session "${draft.pinnedSessionId}" was not found in this project.`,
@@ -4156,7 +4141,7 @@ projectsApp.openapi(
     // leaf ships in the default agent preset (accounts/iam/role-presets.ts), so
     // it would admit the self-answer on a stock grant. Answering is a human
     // operation. Same shape as the token-minting guard in r3.ts.
-    if (getAgentGrant(c)) {
+    if (isProjectSessionPrincipal(c)) {
       return c.json({ error: 'Agent-session tokens cannot answer their own question' }, 403);
     }
     // Answering resumes a parked box and starts a turn, so this is a mutation
