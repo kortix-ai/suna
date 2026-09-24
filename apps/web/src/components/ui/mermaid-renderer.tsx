@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
 import Hint from '@/components/ui/hint';
 import { KortixLoader } from '@/components/ui/kortix-loader';
+import { MERMAID_CONFIG, removeMermaidRenderArtifacts } from '@/components/ui/mermaid-render';
 import { Modal, ModalBody, ModalClose, ModalContent, ModalTitle } from '@/components/ui/modal';
 import { cn } from '@/lib/utils';
 import {
@@ -20,28 +21,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 // Global cache for rendered Mermaid diagrams
 const mermaidCache = new Map<string, string>();
 let mermaidInstance: any = null;
-
-// Global cleanup function to remove any Mermaid error messages from the DOM
-const cleanupMermaidErrors = () => {
-  const allElements = document.querySelectorAll('div, span, p, text, tspan');
-  let cleaned = 0;
-  allElements.forEach((el) => {
-    const textContent = el.textContent || '';
-    if (
-      textContent.includes('Syntax error in text') ||
-      textContent.includes('mermaid version 11.12.0') ||
-      textContent.trim() === 'Syntax error in text'
-    ) {
-      console.log('🧹 Global cleanup of Mermaid error element:', textContent);
-      el.remove();
-      cleaned++;
-    }
-  });
-
-  if (cleaned > 0) {
-    console.log(`🧹 Cleaned up ${cleaned} Mermaid error elements`);
-  }
-};
 
 interface MermaidRendererProps {
   chart: string;
@@ -92,20 +71,6 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
     }, [chart]);
 
     const handleRotate = useCallback(() => setRotation((prev) => prev + 90), []);
-
-    // Set up periodic cleanup of Mermaid error messages
-    useEffect(() => {
-      const cleanupInterval = setInterval(cleanupMermaidErrors, 5000); // Clean up every 5 seconds
-
-      // Initial cleanup on mount
-      cleanupMermaidErrors();
-
-      return () => {
-        clearInterval(cleanupInterval);
-        // Final cleanup on unmount
-        cleanupMermaidErrors();
-      };
-    }, []);
 
     // Canvas event handlers
     const handleMouseDown = useCallback(
@@ -287,7 +252,6 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
 
     useEffect(() => {
       let mounted = true;
-      let cleanupTimer: ReturnType<typeof setTimeout> | null = null;
 
       const renderChart = async () => {
         if (!chart.trim()) {
@@ -362,17 +326,8 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
           if (!mermaidInstance) {
             const mermaid = (await import('mermaid')).default;
             await mermaid.initialize({
-              startOnLoad: false,
-              securityLevel: 'strict',
-              theme: 'base',
-              fontFamily: 'ui-sans-serif, system-ui, sans-serif',
-              // Enable experimental features including gitgraph
-              gitGraph: {
-                showBranches: true,
-                showCommitLabel: true,
-                mainBranchName: 'main',
-                rotateCommitLabel: true,
-              },
+              ...MERMAID_CONFIG,
+              gitGraph: { ...MERMAID_CONFIG.gitGraph },
             });
             mermaidInstance = mermaid;
             console.log('✅ Mermaid initialized and cached');
@@ -393,11 +348,8 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
               renderError instanceof Error ? renderError.message : String(renderError);
             console.error('🚨 Mermaid parsing error:', errorMessage);
 
-            // Remove any error elements that Mermaid might have added to the DOM
-            const errorElement = document.getElementById(chartId);
-            if (errorElement) {
-              errorElement.remove();
-            }
+            // Remove the temporary nodes this render created, and only those.
+            removeMermaidRenderArtifacts(document, chartId);
 
             // Throw a more user-friendly error
             if (errorMessage.includes('Parse error') || errorMessage.includes('Syntax error')) {
@@ -418,14 +370,8 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
 
           // Set the rendered content
           setRenderedContent(result.svg);
-
-          // Clean up any potential error text or elements that might have been added to the DOM
-          cleanupTimer = setTimeout(cleanupMermaidErrors, 100);
         } catch (err) {
           console.error('❌ Mermaid rendering error:', err);
-
-          // Clean up any error elements that might have been added to the DOM
-          cleanupTimer = setTimeout(cleanupMermaidErrors, 50);
 
           if (mounted) {
             const errorMessage = err instanceof Error ? err.message : 'Failed to render diagram';
@@ -454,7 +400,6 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
 
       return () => {
         mounted = false;
-        if (cleanupTimer) clearTimeout(cleanupTimer);
       };
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [chartHash]);
