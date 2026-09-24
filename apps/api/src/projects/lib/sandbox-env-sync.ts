@@ -1119,13 +1119,22 @@ function nonActiveSandboxSkip(
 }
 
 /**
- * Does the daemon list `config.release.v1` in `/kortix/health` `capabilities`?
- * `true`, `false`, or `null` when health did not answer.
+ * Is a config release ACTUALLY governing this box? `true`, `false`, or `null`
+ * when health did not answer.
  *
- * Such a daemon receives compiled governance inside its config release
+ * Such a box receives compiled governance inside its config release
  * (docs/specs/config-releases.md, "Capability gate"). A separate
  * `KORTIX_COMPILED_AGENT_CONFIG` push through `/kortix/env` would restart
- * OpenCode on governance that does not match the release it runs.
+ * OpenCode on governance that does not match the release it runs — and the box
+ * drops it anyway (`releaseGovernanceActive`, daemon `harness/open-code/control.ts`).
+ *
+ * This reads the box's STATE (`config.release_id`), not the binary's
+ * `config.release.v1` capability. The capability is compiled in and is present
+ * whatever the project chose, so gating on it withheld the push from every box
+ * that runs NO release — `config_releases` off for the project, or a release
+ * chain that stepped down to the image default. Those boxes are exactly the
+ * pre-release case the push exists for. `releaseGovernanceActive` is the same
+ * `running.release_id !== null` the daemon applies on its own side.
  */
 export async function daemonHasConfigReleases(
   baseUrl: string,
@@ -1138,8 +1147,11 @@ export async function daemonHasConfigReleases(
       signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) return null;
-    const body = (await res.json()) as { capabilities?: unknown };
-    return hasConfigReleaseCapability(body.capabilities);
+    const body = (await res.json()) as { capabilities?: unknown; config?: unknown };
+    // An old daemon has neither the capability nor a `config` block.
+    if (!hasConfigReleaseCapability(body.capabilities)) return false;
+    const config = (body.config ?? null) as { release_id?: unknown } | null;
+    return typeof config?.release_id === 'string' && config.release_id.length > 0;
   } catch {
     return null;
   }
