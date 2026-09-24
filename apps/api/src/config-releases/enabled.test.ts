@@ -11,10 +11,13 @@ import { CONFIG_RELEASES_FLAG, configReleasesEnabled } from './enabled';
 import { configArchiveStorageConfigured } from './store';
 
 describe('config_releases flag', () => {
-  test('is ON for a project that made no choice', () => {
-    expect(configReleasesEnabled({})).toBe(true);
-    expect(configReleasesEnabled(null)).toBe(true);
-    expect(configReleasesEnabled({ experimental: {} })).toBe(true);
+  // OFF until the rollout is done (2026-09-24). A project that made no choice
+  // keeps the pre-release behaviour, so merging this branch changes nothing
+  // until someone enables the flag for a project.
+  test('is OFF for a project that made no choice', () => {
+    expect(configReleasesEnabled({})).toBe(false);
+    expect(configReleasesEnabled(null)).toBe(false);
+    expect(configReleasesEnabled({ experimental: {} })).toBe(false);
   });
 
   test('an explicit project override wins in both directions', () => {
@@ -40,9 +43,9 @@ describe('config_releases flag', () => {
     }
   });
 
-  test('the registry entry declares the flag ON by default and names its kill switch', () => {
+  test('the registry entry declares the flag OFF by default and names its kill switch', () => {
     const def = featureFlagDef(CONFIG_RELEASES_FLAG);
-    expect(def.platformDefault()).toBe(true);
+    expect(def.platformDefault()).toBe(false);
     expect(def.stability).toBe('experimental');
     expect(def.enforcement).toBe('routes');
     expect(def.enforcementNote).toContain('feature_disabled');

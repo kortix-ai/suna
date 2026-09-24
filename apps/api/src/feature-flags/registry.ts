@@ -348,9 +348,12 @@ const FLAGS: readonly FeatureFlagDef[] = [
     // Operator kill switch (config.ts CONFIG_RELEASES_ENABLED). Off ⇒ the
     // Settings row disappears and the surface is dark for every project.
     available: () => config.CONFIG_RELEASES_ENABLED,
-    // ON by default: this IS the intended behaviour. The flag exists so a
-    // project (or an operator) can turn it OFF without reverting the code.
-    platformDefault: () => true,
+    // OFF by default until this is proven on real projects (Marko, 2026-09-24:
+    // "its off for now, as its untested"). The behaviour it gates is the
+    // intended one; the default is a rollout decision, not a design opinion.
+    // Turn it on per project in Settings, watch it, then widen. Flip this to
+    // `true` when the rollout is done.
+    platformDefault: () => false,
     enforcement: 'routes',
     enforcementNote:
       'Mixed, and both halves are enforced. ROUTES: the descriptor route ' +

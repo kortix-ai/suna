@@ -108,7 +108,7 @@ Ten statements. Everything below implements them. Decided 2026-09-24.
 | 2026-09-21 | A session without repository access never receives a config archive. |
 | 2026-09-22 | A session from a previous repository generation keeps its running config. It never receives a release built from the current repository. |
 | 2026-09-24 | Reversed: a session created before a repository replacement receives the project's CURRENT config release and converges like any other session. A release replaces the read-only config store only, never the session's `/workspace` clone. The six API refusals are deleted. No API route refuses such a session; the only remaining consequence is that its old clone and the project's new origin hold unrelated Git histories. |
-| 2026-09-23 | The whole feature is behind the per-project `config_releases` flag, ON by default, with the operator kill switch `CONFIG_RELEASES_ENABLED`. |
+| 2026-09-23 | The whole feature is behind the per-project `config_releases` flag, OFF by default until the rollout is done, with the operator kill switch `CONFIG_RELEASES_ENABLED`. |
 | 2026-09-23 | `session-files` mode is removed. A session that edits its config dir under `/workspace` still runs the base branch's release; the edit reaches the box by being pushed. |
 | 2026-09-23 | `/workspace` is not a step in the boot fallback chain while the flag is on. The chain is: desired release, last proven release, image default. |
 | 2026-09-23 | The flag's authority is the boot/start of the box. It is evaluated wherever the daemon asks the API what to run. |
@@ -1213,7 +1213,7 @@ applies.
 8. **Fresh boot from a release.** Descriptor at boot, parallel extraction,
    early spawn on the release. Measure.
 9. **Web states.** Fallback error. Playwright journey.
-10. **Feature flag.** `config_releases`, ON by default, with the
+10. **Feature flag.** `config_releases`, OFF by default (rollout decision, 2026-09-24: enable per project, watch, then widen), with the
     `CONFIG_RELEASES_ENABLED` kill switch and the six chokepoints above. Remove
     `session-files` mode and the workspace report end to end. Drop `/workspace`
     from the boot fallback chain. Tell the session which commit it runs.
