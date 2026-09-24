@@ -621,6 +621,7 @@
     "markSessionFresh",
     "mergeChangeRequest",
     "migrateAdminSandboxProvider",
+    "mintWireMessageId",
     "mkdir",
     "narrowChatEvent",
     "normalizeAppPathname",

@@ -189,3 +189,83 @@ describe('durable queue display order', () => {
     }
   });
 });
+
+/**
+ * A wire id is a POSITION only while it agrees with the clock it encodes.
+ *
+ * `kortix sessions send` minted `msg_` + the HIGH 12 hex digits of
+ * `Date.now() * 0x1000` from 2026-08-22 until this fix. OpenCode keeps the LOW
+ * 48 bits, so every CLI prompt landed ~40 days ahead of every id OpenCode
+ * minted itself (`msg_1a0d…` against `msg_0d4…`). Ordered by raw id, a later
+ * prompt sent from the web (`msg_0d43…`) rendered its whole turn ABOVE those
+ * CLI prompts, and the last turn on screen was an older, finished one with a
+ * "Thinking" row under it while the real work streamed out of view.
+ *
+ * The same raw-id order also breaks on the id clock's 48-bit wrap
+ * (2026-08-14 11:19:55 UTC): `msg_ffcb…` from the day before sorted below
+ * `msg_0002…` from the day after.
+ *
+ * Fixtures are synthetic, in the shape a prod transcript had: CLI ids ~40
+ * days ahead, web and OpenCode ids within two minutes of their timestamps.
+ */
+describe('placed ids that disagree with their own timestamp', () => {
+  const at = (iso: string) => Date.parse(iso);
+  const user = (id: string, iso: string): MessageWithPartsLike =>
+    ({ info: { id, role: 'user', time: { created: at(iso) } }, parts: [] }) as unknown as MessageWithPartsLike;
+  const reply = (id: string, parentID: string, iso: string): MessageWithPartsLike =>
+    ({
+      info: { id, role: 'assistant', parentID, time: { created: at(iso) } },
+      parts: [],
+    }) as unknown as MessageWithPartsLike;
+
+  const u1 = user('msg_0b606027c000SyntheticUser1', '2026-09-18T19:40:00.061Z');
+  const a1 = reply('msg_0b6086abd001aaaaaaaaaaaaaa', u1.info.id, '2026-09-18T19:40:01.000Z');
+  // CLI-minted: high bits, ~40 days ahead of the clock they claim.
+  const u2 = user('msg_1a0d3bfa6280SyntheticCli02', '2026-09-24T14:09:50.760Z');
+  const a2 = reply('msg_0d3c0541d001SyntheticRep02', u2.info.id, '2026-09-24T14:09:52.000Z');
+  const u3 = user('msg_1a0d42f86f80SyntheticCli03', '2026-09-24T16:11:24.000Z');
+  const a3 = reply('msg_0d42f9e82001SyntheticRep03', u3.info.id, '2026-09-24T16:11:25.000Z');
+  // Web-minted ("Update to latest"): a correct id, backdated 2 minutes.
+  const u4 = user('msg_0d43d94e4000SyntheticWeb04', '2026-09-24T16:29:16.202Z');
+  const a4 = reply('msg_0d43ff670001SyntheticRep04', u4.info.id, '2026-09-24T16:29:16.300Z');
+
+  test('a CLI-minted far-future id no longer pushes later turns above it', () => {
+    for (const input of permutations([u1, u2, u3, u4])) {
+      const sorted = [...input].sort(compareMessagesForDisplay).map((m) => m.info.id);
+      expect(sorted).toEqual([u1.info.id, u2.info.id, u3.info.id, u4.info.id]);
+    }
+  });
+
+  test('the newest turn is the last turn, with its own replies', () => {
+    const turns = groupMessagesIntoTurns([a4, u3, a1, u4, u2, a3, u1, a2]);
+    expect(turns.map((t) => t.userMessage.info.id)).toEqual([
+      u1.info.id,
+      u2.info.id,
+      u3.info.id,
+      u4.info.id,
+    ]);
+    expect(turns[3].assistantMessages.map((m) => m.info.id)).toEqual([a4.info.id]);
+    expect(turns[2].assistantMessages.map((m) => m.info.id)).toEqual([a3.info.id]);
+  });
+
+  test('a session that spans the 2026-08-14 id-clock wrap stays in time order', () => {
+    const before = user('msg_ffcb5ca00001aaaaaaaaaaaaaa', '2026-08-13T20:00:00.000Z');
+    const after = user('msg_00024b200001bbbbbbbbbbbbbb', '2026-08-14T12:00:00.000Z');
+    expect([after, before].sort(compareMessagesForDisplay).map((m) => m.info.id)).toEqual([
+      before.info.id,
+      after.info.id,
+    ]);
+  });
+
+  test('ids that agree with their clock still win over arrival order', () => {
+    // The reason ids order the transcript at all: concurrent queued POSTs
+    // persist in network order. Ids placed 1 ms apart, persisted 2 s apart in
+    // the OTHER order, must keep id order.
+    const first = user('msg_0d43d94e4001aaaaaaaaaaaaaa', '2026-09-24T16:29:18.000Z');
+    const second = user('msg_0d43d94e4002bbbbbbbbbbbbbb', '2026-09-24T16:29:16.000Z');
+    expect([second, first].sort(compareMessagesForDisplay).map((m) => m.info.id)).toEqual([
+      first.info.id,
+      second.info.id,
+    ]);
+  });
+});
