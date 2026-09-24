@@ -17,7 +17,10 @@ import { chooser, within } from './testing';
 
 // The project and connector renderers' parsers (mobile
 // projects-tool-output.ts; web kortix-tool-output.ts holds the same code),
-// verbatim, kept ONLY as parity oracles.
+// verbatim, kept ONLY as parity oracles. Six lines differ in form only:
+// `parseInt` is `Number.parseInt` (the same function), and three lines that
+// CodeQL reports are simplified: `[✓✓]` is `✓`, and the two `!!nameMatch &&`
+// conditions, always true after `if (!nameMatch) return null`, are dropped.
 /**
  * Parsers for Kortix orchestrator tool outputs (projects, connectors).
  *
@@ -83,7 +86,7 @@ function legacyParseProjectGetOutput(output: string): LegacyProjectGetData | nul
   const pathMatch = output.match(/\*\*Path:\*\*\s+`([^`]+)`/);
   const descMatch = output.match(/\*\*Description:\*\*\s+(.+)$/m);
   const idMatch = output.match(/\*\*ID:\*\*\s+`([^`]+)`/);
-  const contextMatch = output.match(/\*\*Context:\*\*\s+`([^`]+)`\s*([✓✓])?/);
+  const contextMatch = output.match(/\*\*Context:\*\*\s+`([^`]+)`\s*(✓)?/);
   const contextExists = !!contextMatch?.[2];
   const contextPath = contextMatch?.[1] || '';
 
@@ -123,7 +126,7 @@ function legacyParseProjectSelectOutput(output: string): LegacyProjectSelectData
   return {
     name: nameMatch[1],
     path: pathMatch?.[1] || '',
-    success: !!nameMatch && output.includes('selected'),
+    success: output.includes('selected'),
   };
 }
 
@@ -144,7 +147,7 @@ function legacyParseProjectCreateOutput(output: string): LegacyProjectCreateData
     name: nameMatch[1],
     path: pathMatch?.[1] || '',
     id: idMatch?.[1] || '',
-    success: !!nameMatch && !output.toLowerCase().includes('failed'),
+    success: !output.toLowerCase().includes('failed'),
   };
 }
 
@@ -422,7 +425,9 @@ describe('the project and connector parsers return what the regex parsers return
           '**Context:** `/workspace/app/CONTEXT.md` ' + String.fromCharCode(0x2713),
           '- running: 2',
           '- completed: 5',
+          '- failed: 1',
           'Project **app** selected',
+          'Project **app** Selected',
           'Path: `/workspace/app`',
           'Project **app** at `/workspace/app` (proj-9)',
           'name: gmail',
@@ -449,6 +454,47 @@ describe('the project and connector parsers return what the regex parsers return
           legacyParseProjectListOutput(text).length > 0 ||
           legacyParseConnectorListOutput(text).length > 0 ||
           (setup?.connectors.length ?? 0) > 0
+        );
+      },
+    ));
+});
+
+describe('the get parsers read each label as its regex did', () => {
+  // Each label at a line start, with no space after it, and inside a line.
+  const GET_LINES = [
+    '## My App',
+    '##Title',
+    'a ## b',
+    '**Description:** The main app',
+    '**Description:**Text',
+    'x **Description:** y',
+    'name: gmail',
+    'name:gmail',
+    'x name: y',
+    'description: Read mail',
+    'description:d',
+    'x description: y',
+    'source: pipedream',
+    'source:s',
+    'x source: y',
+    'env: GMAIL_TOKEN',
+    'env:X',
+    'x env: y',
+  ];
+  test('on 3000 random outputs', () =>
+    fuzz(
+      117,
+      (c) => {
+        const noise = [' ', '\n', '\t', LS, '#', ':', 'x'];
+        return rows(c, GET_LINES, noise) + rows(c, GET_LINES, noise);
+      },
+      (text) => {
+        const project = legacyParseProjectGetOutput(text);
+        expect(parseProjectGetOutput(text)).toEqual(project);
+        const connector = legacyParseConnectorGetOutput(text);
+        expect(parseConnectorGetOutput(text)).toEqual(connector);
+        return (
+          connector !== null || project?.name !== 'Unknown Project' || project?.description !== null
         );
       },
     ));
