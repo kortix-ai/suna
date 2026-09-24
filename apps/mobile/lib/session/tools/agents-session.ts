@@ -24,23 +24,7 @@ export function sessionGetHeaderArgs(parsed: ParsedSessionGetOutput | null): str
 
 // ─── session_list ────────────────────────────────────────────────────────────
 
-export interface BackgroundWorker {
-  id: string;
-  status: string;
-  project: string;
-  prompt: string;
-}
-
-export function parseBackgroundWorkers(output: string): BackgroundWorker[] {
-  if (!output) return [];
-  const entries: BackgroundWorker[] = [];
-  const re = /\*\*(ses_\S+)\*\*.*?status:\s*(\w+).*?project:\s*(\S+)/gi;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(output)) !== null) {
-    entries.push({ id: m[1], status: m[2], project: m[3], prompt: '' });
-  }
-  return entries;
-}
+export { type BackgroundWorker, parseBackgroundWorkers } from '@kortix/shared/tool-output';
 
 export function sessionListArgs(workerCount: number, noWorkers: boolean): string[] {
   return workerCount > 0 ? [`${workerCount} workers`] : noWorkers ? ['none'] : [];

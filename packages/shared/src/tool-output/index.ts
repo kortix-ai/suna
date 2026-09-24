@@ -11,6 +11,7 @@
  * module pin that against the old code on thousands of random inputs.
  */
 
+export { type BackgroundWorker, parseBackgroundWorkers } from './background-workers';
 export {
   type GrepFileGroup,
   type GrepMatch,
