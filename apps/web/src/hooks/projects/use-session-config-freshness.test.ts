@@ -252,8 +252,39 @@ describe('reloadResultTone', () => {
     ).toBe('error');
   });
 
-  test('a not-applied reload is a warning', () => {
+  test('a not-applied reload with no known outcome is a warning', () => {
     expect(reloadResultTone(result({ applied: false }))).toBe('warning');
+    expect(reloadResultTone(result({ applied: false, agent_files: 'not-requested' }))).toBe(
+      'warning',
+    );
+  });
+
+  // Verified in the browser on a real box 2026-09-24 (session 423fe876): the
+  // header's "Reload config" answered
+  //   "Reload didn't apply. Try again in a moment."
+  // for release_outcome 'unchanged' / agent_files 'already-current'. Nothing
+  // needed doing, so nothing is wrong, and telling a user to retry a
+  // successful no-op is the warning the server side already refuses to raise
+  // (`reloadNeedsAttention`, apps/api/.../session-reload.ts).
+  test('nothing needed doing is a success, not a warning', () => {
+    expect(reloadResultTone(result({ applied: false, agent_files: 'already-current' }))).toBe(
+      'success',
+    );
+    expect(reloadResultTone(result({ applied: false, agent_files: 'not-applicable' }))).toBe(
+      'success',
+    );
+  });
+
+  test('a fallback still wins over a no-op', () => {
+    expect(
+      reloadResultTone(
+        result({
+          applied: false,
+          agent_files: 'already-current',
+          release: release({ fallback_reason: 'proven check failed' }),
+        }),
+      ),
+    ).toBe('error');
   });
 });
 
@@ -287,6 +318,13 @@ describe('reloadNotAppliedCopy', () => {
       "Reload didn't apply. Try again in a moment.",
     );
     expect(reloadNotAppliedCopy(undefined)).toBe("Reload didn't apply. Try again in a moment.");
+  });
+
+  // The server renamed this reason to 'already current' (session-reload.ts
+  // `reloadFromRelease`), so the 'agent config unchanged' case stopped
+  // matching and the no-op fell through to the retry copy.
+  test("the server's 'already current' reason is a sentence, not the retry copy", () => {
+    expect(reloadNotAppliedCopy('already current')).toBe('Already running the latest config.');
   });
 
   test('"unchanged" reads as success, because it is', () => {

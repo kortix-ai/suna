@@ -145,12 +145,21 @@ export function fallbackCopyKeys(source: SessionConfigRelease['source'] | undefi
  * A reload that ends on a fallback kept an earlier config: that is an error,
  * never a success. `kept-yours` and `unknown` agent files are warnings, as
  * before.
+ *
+ * Nothing needed doing is a SUCCESS. `applied: false` alone used to be a
+ * warning, so the ordinary outcome — the session already runs the base
+ * branch's current release — was announced as "Reload didn't apply. Try again
+ * in a moment." The server draws the same line (`reloadNeedsAttention`,
+ * apps/api/src/projects/lib/session-reload.ts) and the CLI prints a tick for
+ * it; only this surface disagreed.
  */
 export function reloadResultTone(result: SessionReloadResult): 'success' | 'warning' | 'error' {
   if (result.release?.fallback_reason) return 'error';
-  if (!result.applied) return 'warning';
   if (result.agent_files === 'kept-yours' || result.agent_files === 'unknown') return 'warning';
-  return 'success';
+  if (result.applied) return 'success';
+  return result.agent_files === 'already-current' || result.agent_files === 'not-applicable'
+    ? 'success'
+    : 'warning';
 }
 
 /**
@@ -167,7 +176,10 @@ export function reloadNotAppliedCopy(reason?: string): string {
     case 'sandbox has no service key':
     case 'no env snapshot':
       return "Couldn't reach this session's runtime. Try again in a moment.";
+    // Two spellings of one outcome: the pre-release push path says
+    // 'agent config unchanged', the release path says 'already current'.
     case 'agent config unchanged':
+    case 'already current':
       return 'Already running the latest config.';
     default:
       return "Reload didn't apply. Try again in a moment.";
@@ -275,7 +287,7 @@ export function useReloadSessionConfig(projectId: string, sessionId: string) {
         errorToast(tI18nComplete.raw(fallbackCopyKeys(result.release?.source).toast), {
           description: result.release?.fallback_reason ?? undefined,
         });
-      } else if (!result.applied) {
+      } else if (!result.applied && tone !== 'success') {
         // `detail` is the server's sentence and carries the checkout half, so
         // a half-sync is never silent behind a localized headline.
         warningToast(reloadNotAppliedCopy(result.reason), { description: result.detail });
