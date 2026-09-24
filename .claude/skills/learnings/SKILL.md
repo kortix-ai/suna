@@ -7815,3 +7815,22 @@ covered by the hooks.
   `unit-slack-classify-event.test.ts` asserts the bound SQL parameters include
   the project. The shared OAuth route stays workspace-wide on purpose: it is
   one app, and `/kortix use` can re-bind a channel under older threads.
+
+## A Vercel build that bakes runtime config must receive every deploy-scoped value through `-b` (2026-09-24)
+
+- **Near-miss (caught before merge, web-perf PR #7566):** marketing pages
+  became static on Vercel, so the root layout now bakes
+  `window.__KORTIX_RUNTIME_CONFIG` at build time
+  (`apps/web/src/lib/runtime-config-mode.ts`). `deploy-staging.yml` passed
+  all staging values (backend URL, Supabase URL/key, app URL, auth, billing)
+  with `vercel deploy -e`, which reaches only the runtime. The build would
+  have baked the project's generic Preview values into staging's static
+  pages; only the version and commit went through `-b`.
+- **Rule:** any value the Vercel build reads — including values that used
+  to be read per request — is passed with `-b`/`--build-env` as well as
+  `-e`/`--env`. Prod reads project Production variables at build time and
+  passes the release version through `--build-env`; staging passes one
+  shared list through both flags.
+- **Enforcement:** `tests/unit/staging-vercel-build-env.test.ts` asserts the
+  shared list feeds `-e` and `-b` and that no bare `-e KEY=` line bypasses it
+  (fails 2/2 on the old workflow).
