@@ -415,7 +415,8 @@ jobs:
   #                           @kortix/llm-catalog@<version>, pinned in lockstep
   #   @kortix/agent-tunnel  — the local-machine tunnel CLI and library
   #
-  # @kortix/executor-sdk had one final deprecated publication at 0.12.5.
+  # @kortix/executor-sdk had one final deprecated publication at 0.12.5; its
+  # one-shot publish-and-deprecate job was removed with the NPM_TOKEN secret.
   #
   # Each package declares its published layout in its own
   # publishConfig. scripts/publish-npm-package.sh builds it, stages that manifest
@@ -423,14 +424,11 @@ jobs:
   # the release version, verify every entrypoint and binary exists) and publishes
   # idempotently.
   #
-  # Auth is Trusted Publishing (OIDC) when the job grants id-token, else the
-  # NPM_TOKEN secret (an npm automation token with publish rights on the @kortix
-  # org). Production sets REQUIRE_NPM_AUTH=1: missing auth fails the release
-  # instead of silently omitting a package. Once Trusted Publishing is verified
-  # per package on npmjs.com (package
-  # → Settings → Trusted Publisher → this repo + this workflow), the NPM_TOKEN
-  # secret and the NODE_AUTH_TOKEN env line below can be removed — OIDC needs no
-  # stored secret.
+  # Auth is Trusted Publishing (OIDC) only: each job grants id-token and each
+  # package trusts this repo + this workflow on npmjs.com (package → Settings →
+  # Trusted Publisher). No npm token is stored anywhere. Production sets
+  # REQUIRE_NPM_AUTH=1: missing auth fails the release instead of silently
+  # omitting a package.
 
   # @kortix/llm-catalog publishes first, on its own, so @kortix/sdk's pinned
   # @kortix/llm-catalog@<version> dependency is already on the registry before the
@@ -464,14 +462,11 @@ jobs:
         env:
           npm_config_engine_strict: "false"
 
-      - name: Build + publish (Trusted Publishing via OIDC; token fallback)
+      - name: Build + publish (Trusted Publishing via OIDC)
         working-directory: packages/llm-catalog
         env:
           VERSION: ${{ needs.version.outputs.version }}
           REQUIRE_NPM_AUTH: '1'
-          # Fallback only. Once Trusted Publishing is verified, delete the
-          # NPM_TOKEN secret AND this line — OIDC needs no stored secret.
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: bash ../../scripts/publish-npm-package.sh
 
   publish-sdk:
@@ -503,14 +498,11 @@ jobs:
         env:
           npm_config_engine_strict: "false"
 
-      - name: Build + publish (Trusted Publishing via OIDC; token fallback)
+      - name: Build + publish (Trusted Publishing via OIDC)
         working-directory: packages/sdk
         env:
           VERSION: ${{ needs.version.outputs.version }}
           REQUIRE_NPM_AUTH: '1'
-          # Fallback only. Once Trusted Publishing is verified, delete the
-          # NPM_TOKEN secret AND this line — OIDC needs no stored secret.
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: bash ../../scripts/publish-npm-package.sh
 
   publish-agent-tunnel:
@@ -542,54 +534,12 @@ jobs:
         env:
           npm_config_engine_strict: "false"
 
-      - name: Build + publish (Trusted Publishing via OIDC; token fallback)
+      - name: Build + publish (Trusted Publishing via OIDC)
         working-directory: packages/agent-tunnel
         env:
           VERSION: ${{ needs.version.outputs.version }}
           REQUIRE_NPM_AUTH: '1'
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: bash ../../scripts/publish-npm-package.sh
-
-  publish-executor-sdk:
-    name: Publish and deprecate final @kortix/executor-sdk
-    needs: [version, publish-sdk]
-    if: ${{ needs.version.outputs.version == '0.12.5' }}
-    # npm rejects sigstore provenance built on a non-GitHub-hosted runner
-    # (E422 'Unsupported GitHub Actions runner environment', v0.13.25,
-    # run 35589361726). Trusted Publishing needs a GitHub-hosted runner.
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          registry-url: 'https://registry.npmjs.org'
-
-      - name: Install workspace deps (pnpm)
-        run: |
-          corepack enable && corepack prepare pnpm@latest --activate || true
-          pnpm install --frozen-lockfile
-        env:
-          npm_config_engine_strict: "false"
-
-      - name: Build, publish, and deprecate the compatibility adapter
-        working-directory: packages/executor-sdk
-        env:
-          VERSION: ${{ needs.version.outputs.version }}
-          REQUIRE_NPM_AUTH: '1'
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          bash ../../scripts/publish-npm-package.sh
-          npm deprecate "@kortix/executor-sdk@${VERSION}" \
-            "Deprecated: use @kortix/sdk and kortix.project(projectId).connectors"
 
   # ── Build prod desktop installers (Electron, signed) ────────────────────────
   build-desktop:
@@ -725,7 +675,7 @@ jobs:
   #
   # DELIBERATELY NOT gated on the npm publish jobs. The Release's contents come
   # from build-cli (and attach-desktop) — not from the registry — so an npm
-  # outage or an expired NPM_TOKEN must not cost this release its tag, its
+  # outage or a Trusted Publishing failure must not cost this release its tag, its
   # Release, its binaries, its changelog, or the two VERSION syncs that follow
   # it. v0.13.25 (run 35589361726, prod b902d67fc4) is the incident: prod served
   # 0.13.25 correctly while publish-llm-catalog and publish-agent-tunnel failed
