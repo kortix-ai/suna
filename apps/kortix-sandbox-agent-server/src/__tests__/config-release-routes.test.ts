@@ -12,6 +12,7 @@ import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pointBootLink, readBootLinkTarget } from '../boot-config'
 import type { Config } from '../config'
 import type { HarnessConfigConvergeResult, HarnessControlOperations } from '../harness/control'
 import { createOpenCodeQuickQueueInterrupt } from '../harness/open-code/background'
@@ -184,14 +185,10 @@ describe('POST /kortix/config/converge end to end through the OpenCode control s
     process.env.KORTIX_MANAGED_SKILLS_DIR = overlay
     process.env.KORTIX_SESSION_ID = 'ses-1'
 
-    const state = { dir: join(work, '.kortix/opencode') }
+    // A booted box always has its boot link pointed; what OpenCode reads is
+    // read back from the link, never from a second copy of the answer.
+    await pointBootLink(join(work, '.kortix/opencode'), store)
     const opencode = {
-      useConfigDir(next: string) {
-        const previous = state.dir
-        state.dir = next
-        return previous
-      },
-      getConfigDir: () => state.dir,
       getPid: () => 7,
       getState: () => 'ok',
       async reloadVerified(): Promise<VerifiedReloadResult> {
@@ -228,8 +225,9 @@ describe('POST /kortix/config/converge end to end through the OpenCode control s
     expect(body.config.release_id).toBe(release.descriptor.release_id)
     expect(api.descriptorRequests).toHaveLength(1)
     expect(api.archiveRequests.map((request) => request.path)).toEqual([release.descriptor.archive!.url])
-    expect(readFileSync(join(state.dir, 'agents/kortix.md'), 'utf8')).toBe('FROM THE API\n')
-    expect(state.dir).toBe(join(store, release.descriptor.release_id!))
+    const serving = (await readBootLinkTarget(store))!
+    expect(readFileSync(join(serving, 'agents/kortix.md'), 'utf8')).toBe('FROM THE API\n')
+    expect(serving).toBe(join(store, release.descriptor.release_id!))
     expect(git(work, 'status', '--porcelain')).toBe('')
   })
 })

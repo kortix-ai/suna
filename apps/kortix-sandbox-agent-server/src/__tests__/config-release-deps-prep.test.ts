@@ -10,7 +10,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { prepareConfigDir, prepareReleaseDir } from '../harness/open-code/config-release'
+import { prepareConfigDir, preparePlatformConfigDir } from '../harness/open-code/config-release'
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'release-prep-'))
@@ -39,7 +39,7 @@ describe('release preparation', () => {
   test('a release gets the binary plugin pin and the install sentinel', async () => {
     const { root, dir, deps } = await fixture()
     try {
-      await prepareReleaseDir(dir, join(root, 'no-managed-skills'), deps)
+      await preparePlatformConfigDir(dir, join(root, 'no-managed-skills'), deps)
       expect(JSON.parse(await readFile(join(dir, 'package.json'), 'utf8')).dependencies['@opencode-ai/plugin']).toBe('1.18.23')
       expect(JSON.parse(await readFile(join(dir, 'package-lock.json'), 'utf8')).kortixOpenCodeInstallSentinel).toBe(1)
     } finally {
@@ -58,11 +58,25 @@ describe('release preparation', () => {
     }
   })
 
-  test('every release staging site prepares with prepareReleaseDir', () => {
-    const source = readFileSync(join(import.meta.dir, '../harness/open-code/config-release.ts'), 'utf8')
+  test('every release staging site prepares with preparePlatformConfigDir', () => {
+    // Both the convergence and the one boot path materialize releases.
+    const source = [
+      readFileSync(join(import.meta.dir, '../harness/open-code/config-release.ts'), 'utf8'),
+      readFileSync(join(import.meta.dir, '../harness/open-code/boot-config-path.ts'), 'utf8'),
+    ].join('\n')
     // `prepare` of each materializeRelease call builds a release staging dir.
     const stagingPrepares = source.match(/prepare: [^\n]*\(staged\)[^\n]*/g) ?? []
-    expect(stagingPrepares.length).toBe(3)
-    for (const line of stagingPrepares) expect(line).toContain('prepareReleaseDir(staged')
+    expect(stagingPrepares.length).toBe(2)
+    // Either by name, or through the boot path's injectable seam with
+    // `platformOwned: true` — never the working-tree preparation.
+    for (const line of stagingPrepares) {
+      expect(line.includes('preparePlatformConfigDir(staged') || line.includes('(staged, true)')).toBe(true)
+      expect(line).not.toContain('prepareConfigDir(staged')
+    }
+    // …and that seam really maps `true` to the platform-owned preparation.
+    const bootPath = readFileSync(join(import.meta.dir, '../harness/open-code/boot-config-path.ts'), 'utf8')
+    const seam = bootPath.slice(bootPath.indexOf('function defaultPrepare('))
+    expect(seam.slice(0, seam.indexOf('\n}')))
+      .toContain('platformOwned\n      ? preparePlatformConfigDir(dir, input.managedSkillsDir)')
   })
 })

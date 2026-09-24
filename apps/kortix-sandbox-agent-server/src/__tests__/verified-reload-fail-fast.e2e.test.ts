@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { serveTestConfigDir } from './helpers/boot-link'
 import type { OpenCodeConfig as Config } from '../harness/open-code/config'
 import { waitForOpencodeReady } from '../harness/open-code/lifecycle'
 import { createOpenCodeHarnessService } from '../harness/open-code/service'
@@ -66,7 +67,8 @@ async function harnessOn(configDir: string) {
     gitUserName: 'Kortix Agent',
     gitUserEmail: 'agent@kortix.ai',
   } as Config
-  const harness = createOpenCodeHarnessService(cfg, configDir, undefined, {
+  await serveTestConfigDir(workspace, join(root, 'boot-store'))
+  const harness = createOpenCodeHarnessService(cfg, undefined, {
     binaryPathOverride: binary,
     configPathOverride: join(root, 'runtime-config.json'),
   })
@@ -87,7 +89,7 @@ describe('verified reload fails fast with the cause', () => {
   test('a config error is reported at once, with the file and position', async () => {
     const harness = await harnessOn(configDir('good', '{}'))
     const pid = harness.native.getPid()
-    harness.native.useConfigDir(configDir('broken', '{\n "a": 1,,, BROKEN {{\n}'))
+    await serveTestConfigDir(configDir('broken', '{\n "a": 1,,, BROKEN {{\n}'), join(root, 'boot-store'))
     const started = Date.now()
     const result = await harness.configuration.reloadVerified()
     expect(Date.now() - started).toBeLessThan(10_000)
@@ -101,7 +103,7 @@ describe('verified reload fails fast with the cause', () => {
 
   test('a candidate that exits is reported at once, with its exit code', async () => {
     const harness = await harnessOn(configDir('good', '{}'))
-    harness.native.useConfigDir(configDir('exits', '{ "EXIT": true }'))
+    await serveTestConfigDir(configDir('exits', '{ "EXIT": true }'), join(root, 'boot-store'))
     const started = Date.now()
     const result = await harness.configuration.reloadVerified()
     expect(Date.now() - started).toBeLessThan(10_000)

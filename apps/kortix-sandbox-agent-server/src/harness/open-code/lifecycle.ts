@@ -86,6 +86,7 @@ import {
   writeSecretCapabilitiesInstruction,
 } from '../../secret-capabilities'
 import { configReleaseNoticePath } from '../../config-release/notice'
+import { bootLinkPath } from '../../boot-config'
 
 const READY_POLL_MS = 100
 // OpenCode announces readiness on stdout. `serve.ts` prints this line only
@@ -1627,15 +1628,12 @@ export type Opencode = HarnessLifecycleService & {
    * config that fails to start.
    */
   reloadVerified(opts?: VerifiedReloadOptions): Promise<VerifiedReloadResult>
-  reconfigure(nextCfg: Config, nextOpencodeConfigDir: string, nextProjectEnv?: ProjectEnvStore): void
   /**
-   * Point the NEXT spawn at another config directory and return the previous
-   * one. Unlike `reconfigure` it leaves `state` alone: the running process is
-   * still serving, and a caller that then declines the swap puts the old
-   * directory back without the box ever having reported `starting`.
+   * Re-bind the session's configuration and project env. It does NOT name a
+   * config directory: `OPENCODE_CONFIG_DIR` is the boot link, and what OpenCode
+   * reads is changed by repointing that link (`pointBootLink`).
    */
-  useConfigDir(nextOpencodeConfigDir: string): string
-  getConfigDir(): string
+  reconfigure(nextCfg: Config, nextProjectEnv?: ProjectEnvStore): void
   getPid(): number | null
   getInternalUrl(): string
   /**
@@ -1713,12 +1711,10 @@ export interface OpencodeLifecycleOptions {
 
 export function createOpencodeLifecycle(
   cfg: Config,
-  opencodeConfigDir: string,
   projectEnv?: ProjectEnvStore,
   options: OpencodeLifecycleOptions = {},
 ): Opencode {
   let currentCfg = cfg
-  let currentOpencodeConfigDir = opencodeConfigDir
   let currentProjectEnv = projectEnv
   let child: ChildProcess | null = null
   let activePort = cfg.opencodeInternalPort
@@ -1830,7 +1826,7 @@ export function createOpencodeLifecycle(
     }
     return writeKortixOpencodeConfig(baseEnv, {
       configPath: options.configPathOverride,
-      injectedSkillsDir: join(currentOpencodeConfigDir, 'skills'),
+      injectedSkillsDir: join(bootLinkPath(), 'skills'),
       secretCapabilitiesInstructionPath,
       configReleaseNoticePath: configReleaseNoticePath(),
     })
@@ -1855,7 +1851,11 @@ export function createOpencodeLifecycle(
     let env: NodeJS.ProcessEnv = applyManagedOpencodeEnv({
       ...baseEnv,
       ...buildGitIdentityEnv(currentCfg),
-      OPENCODE_CONFIG_DIR: currentOpencodeConfigDir,
+      // THE one assignment of OpenCode's config dir, in the whole daemon
+      // (PLAN-one-boot-path T1). It is always the boot link, so changing what
+      // OpenCode reads is one atomic `pointBootLink` and never a second env
+      // writer, a hint, or a spawn-time decision.
+      OPENCODE_CONFIG_DIR: bootLinkPath(),
       // Every non-interactive shell opencode spawns (`bash -c`) sources this,
       // so live project secrets reach the agent's commands without any
       // opencode plugin/config. Interactive shells + terminals get it from the
@@ -2263,7 +2263,7 @@ export function createOpencodeLifecycle(
       if (status < 400 || status >= 500) return
       try {
         if (isConfigErrorName((JSON.parse(text) as { name?: unknown }).name)) {
-          failure.reason = describeOpencodeError(status, text, currentOpencodeConfigDir)
+          failure.reason = describeOpencodeError(status, text, bootLinkPath())
         }
       } catch {}
     }
@@ -2715,17 +2715,7 @@ export function createOpencodeLifecycle(
       }
     },
 
-    useConfigDir(nextOpencodeConfigDir: string): string {
-      const previous = currentOpencodeConfigDir
-      currentOpencodeConfigDir = nextOpencodeConfigDir
-      return previous
-    },
-
-    getConfigDir() {
-      return currentOpencodeConfigDir
-    },
-
-    reconfigure(nextCfg: Config, nextOpencodeConfigDir: string, nextProjectEnv?: ProjectEnvStore) {
+    reconfigure(nextCfg: Config, nextProjectEnv?: ProjectEnvStore) {
       currentCfg = nextCfg
       if (
         activePort !== nextCfg.opencodeInternalPort &&
@@ -2733,13 +2723,9 @@ export function createOpencodeLifecycle(
       ) {
         activePort = nextCfg.opencodeInternalPort
       }
-      currentOpencodeConfigDir = nextOpencodeConfigDir
       if (nextProjectEnv) currentProjectEnv = nextProjectEnv
       state = 'starting'
-      logger.info('[opencode] reconfigured', {
-        projectId: nextCfg.projectId,
-        opencodeConfigDir: nextOpencodeConfigDir,
-      })
+      logger.info('[opencode] reconfigured', { projectId: nextCfg.projectId, opencodeConfigDir: bootLinkPath() })
     },
 
     getPid() {

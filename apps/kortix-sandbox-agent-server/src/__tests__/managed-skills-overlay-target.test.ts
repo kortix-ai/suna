@@ -16,7 +16,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Config } from '../config'
 import { createOpenCodeAssetsService } from '../harness/open-code/assets'
-import { recordBootConfig, resetConfigReleaseStateForTests } from '../harness/open-code/config-release'
+import { resetConfigReleaseStateForTests } from '../harness/open-code/config-release'
+import { serveTestConfigDir } from './helpers/boot-link'
 
 const roots: string[] = []
 
@@ -45,17 +46,27 @@ afterEach(async () => {
 })
 
 describe('managed-skill overlay target', () => {
+  // The overlay goes where OpenCode READS, and that is the boot link's target.
+  // Re-deriving it from the running report and the working tree is how an
+  // overlay once rewrote tracked managed skills in `/workspace` (DEF-6).
   test('a box that fell back to the image default overlays the image default dir, not /workspace', async () => {
     const { cfg, imageDefaultDir } = await fixture()
-    recordBootConfig({ source: 'image-default', release_id: null })
+    roots.push(await serveTestConfigDir(imageDefaultDir))
     const assets = createOpenCodeAssetsService()
     expect(await assets.resolveConfigDir(cfg)).toBe(imageDefaultDir)
   })
 
-  test('a box that runs its workspace config still overlays the workspace config dir', async () => {
+  test('the overlay follows the boot link, whatever the running report says', async () => {
     const { cfg, workspaceConfigDir } = await fixture()
-    recordBootConfig({ source: 'workspace', release_id: null })
+    roots.push(await serveTestConfigDir(workspaceConfigDir))
     const assets = createOpenCodeAssetsService()
     expect(await assets.resolveConfigDir(cfg)).toBe(workspaceConfigDir)
+  })
+
+  test('no boot link at all: the image default, never the working tree', async () => {
+    const { cfg, imageDefaultDir } = await fixture()
+    roots.push(await serveTestConfigDir(join(imageDefaultDir, 'does-not-exist')))
+    const assets = createOpenCodeAssetsService()
+    expect(await assets.resolveConfigDir(cfg)).toBe(imageDefaultDir)
   })
 })

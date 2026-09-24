@@ -84,7 +84,7 @@ export interface HarnessConfigReleaseReport {
 /** Response of `POST /kortix/config/converge`. */
 export interface HarnessConfigConvergeResult {
   ok: boolean
-  outcome: 'applied' | 'unchanged' | 'declined' | 'quarantined' | 'session-files' | 'failed'
+  outcome: 'applied' | 'unchanged' | 'declined' | 'quarantined' | 'failed'
   config: HarnessConfigReleaseReport
   reload: { how: 'restarted'; turn_ended: boolean | null } | null
   reason: string | null
@@ -99,7 +99,6 @@ export interface HarnessControlOperations {
    * `ConvergeBusyError` while another convergence runs.
    */
   convergeConfig?(): Promise<HarnessConfigConvergeResult>
-  /** Read-only report of session work under the config dir; null without a repository. */
   abort(): Promise<HarnessAbortResult>
   armAbortAfterTool(input: HarnessAbortAfterToolInput): Promise<void>
   /** Without a prompt id, disarm every pending interrupt. */

@@ -515,6 +515,21 @@ export function bootLinkPath(root: string = bootConfigRoot()): string {
   return join(root, 'boot')
 }
 
+/**
+ * The directory the boot link names right now, or null when there is no link.
+ *
+ * `OPENCODE_CONFIG_DIR` is the link and only the link, so this is how anything
+ * asks "which config dir does OpenCode read?" without keeping a second copy of
+ * the answer in memory.
+ */
+export async function readBootLinkTarget(root: string = bootConfigRoot()): Promise<string | null> {
+  try {
+    return resolve(await readlink(bootLinkPath(root)))
+  } catch {
+    return null
+  }
+}
+
 /** Point the boot link at `target` with one atomic rename. Returns the link path. */
 export async function pointBootLink(target: string, root: string = bootConfigRoot()): Promise<string> {
   await mkdir(root, { recursive: true })

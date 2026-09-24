@@ -12,7 +12,7 @@ import { createHash } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
-import { quarantineRelease, readBootConfigPointer, readQuarantine, releaseDir } from '../boot-config'
+import { pointBootLink, quarantineRelease, readBootConfigPointer, readBootLinkTarget, readQuarantine, releaseDir } from '../boot-config'
 import type { ConfigReleaseApi } from '../config-release/api-client'
 import type { OpenCodeConfig } from '../harness/open-code/config'
 import { CONFIG_RELEASE_NOTICE_PATH, clearConfigReleaseNotice, writeConfigReleaseNotice } from '../config-release/notice'
@@ -20,14 +20,9 @@ import {
   ConvergeBusyError,
   configReleaseReport,
   convergeConfigRelease,
-  fetchBootRelease,
-  proveBootConfig,
-  proveBootFallback,
-  recordBootConfig,
-  resolveBootConfig,
   resetConfigReleaseStateForTests,
   runningSourceCommit,
-  type BootRelease,
+  setRunningConfig,
 } from '../harness/open-code/config-release'
 import type { Opencode, VerifiedReloadOptions, VerifiedReloadResult } from '../harness/open-code/lifecycle'
 import { provenCheck, toolNamesFromFiles } from '../harness/open-code/proven-check'
@@ -128,7 +123,7 @@ afterAll(() => {
 })
 
 interface FakeOpencode {
-  opencode: Pick<Opencode, 'useConfigDir' | 'getConfigDir' | 'reloadVerified' | 'getPid' | 'getInternalUrl'>
+  opencode: Pick<Opencode, 'reloadVerified' | 'getPid' | 'getInternalUrl'>
   state: {
     dir: string
     pid: number | null
@@ -148,12 +143,6 @@ function fakeOpencode(opts: { startFails?: boolean; notStarted?: boolean; pid?: 
   }
   served.dir = state.dir
   const opencode = {
-    useConfigDir(next: string) {
-      const previous = state.dir
-      state.dir = next
-      return previous
-    },
-    getConfigDir: () => state.dir,
     getPid: () => state.pid,
     // The live process is the fake OpenCode, serving whatever `served.dir` holds.
     getInternalUrl: () => `http://127.0.0.1:${opencodeServer.port}`,
@@ -163,6 +152,9 @@ function fakeOpencode(opts: { startFails?: boolean; notStarted?: boolean; pid?: 
       if (opts.notStarted) return { outcome: 'kept-old', reason: 'opencode binary not resolved yet', candidateFailed: false }
       if (opts.startFails) return { outcome: 'kept-old', reason: 'the new opencode did not start', candidateFailed: true }
       const previousServed = served.dir
+      // The candidate reads whatever the boot link names right now: that is the
+      // ONLY thing that says which config dir OpenCode serves.
+      state.dir = (await readBootLinkTarget(store)) ?? state.dir
       served.dir = state.dir
       state.pointerAtProof.push((await readBootConfigPointer(store))?.release_id ?? null)
       const proof = options.prove
@@ -240,6 +232,19 @@ beforeEach(() => {
   api = startFakeApi('sandbox-token')
 })
 
+/**
+ * What OpenCode reads right now. A booted box always has its boot link pointed
+ * (`bootOpenCodeConfig` step 0), so the fake starts from the same state and the
+ * assertions read the link rather than a second copy of the answer.
+ */
+async function servingDir(): Promise<string | null> {
+  return readBootLinkTarget(store)
+}
+
+beforeEach(async () => {
+  await pointBootLink(join(work, DIR), store)
+})
+
 afterEach(() => {
   api.stop()
   spawnSync('chmod', ['-R', 'u+w', root])
@@ -270,8 +275,8 @@ describe('convergeConfigRelease — follow-base', () => {
       reload: { how: 'restarted', turn_ended: false },
       reason: null,
     })
-    expect(oc.state.dir).toBe(releaseDir(store, id))
-    expect(readFileSync(join(oc.state.dir, 'agents/kortix.md'), 'utf8')).toBe('PROMPT v1\n')
+    expect(await servingDir()).toBe(releaseDir(store, id))
+    expect(readFileSync(join((await servingDir())!, 'agents/kortix.md'), 'utf8')).toBe('PROMPT v1\n')
     expect(oc.state.governanceAtSpawn).toEqual([GOV_V1])
     expect(process.env.KORTIX_COMPILED_AGENT_CONFIG_ETAG).toBe(release.descriptor.compiled_governance_etag!)
     expect(await readBootConfigPointer(store)).toEqual({
@@ -336,7 +341,7 @@ describe('convergeConfigRelease — follow-base', () => {
     serveRelease(api, release)
     const oc = fakeOpencode()
     await converge(oc)
-    const dir = oc.state.dir
+    const dir = (await servingDir())!
     spawnSync('chmod', ['-R', 'u+w', dir])
     writeFileSync(join(dir, 'agents/kortix.md'), 'TAMPERED\n')
     writeFileSync(join(dir, 'agents/rogue.md'), 'ADDED\n')
@@ -360,7 +365,7 @@ describe('convergeConfigRelease — follow-base', () => {
     const next = baseRelease()
     serveRelease(api, next)
     expect((await converge(oc)).outcome).toBe('applied')
-    expect(readFileSync(join(oc.state.dir, 'agents/kortix.md'), 'utf8')).toBe('PROMPT v2\n')
+    expect(readFileSync(join((await servingDir())!, 'agents/kortix.md'), 'utf8')).toBe('PROMPT v2\n')
     expect(git(work, 'status', '--porcelain')).toBe('')
   })
 })
@@ -371,7 +376,7 @@ describe('convergeConfigRelease — failures keep the running config', () => {
     serveRelease(api, good)
     const oc = fakeOpencode()
     await converge(oc)
-    const goodDir = oc.state.dir
+    const goodDir = (await servingDir())!
 
     write(origin, `${DIR}/tools/firecrawl.ts`, 'import x from "@mendable/firecrawl-js"\nexport default x\n')
     commitAll(origin, 'add a tool with a missing dependency')
@@ -391,7 +396,7 @@ describe('convergeConfigRelease — failures keep the running config', () => {
       failed_release_id: bad.descriptor.release_id,
       fallback_reason: 'tools not loaded: firecrawl',
     })
-    expect(oc.state.dir).toBe(goodDir)
+    expect(await servingDir()).toBe(goodDir)
     expect((await readBootConfigPointer(store))!.release_id).toBe(good.descriptor.release_id!)
     expect(Object.keys(await readQuarantine(store))).toEqual([bad.descriptor.release_id!])
     expect(process.env.KORTIX_COMPILED_AGENT_CONFIG).toBe(GOV_V1)
@@ -405,7 +410,7 @@ describe('convergeConfigRelease — failures keep the running config', () => {
     const response = await converge(oc)
     expect(response.outcome).toBe('declined')
     expect(response.reason).toBe('the default agent "ghost" is not loaded')
-    expect(oc.state.dir).toBe(join(work, DIR))
+    expect(await servingDir()).toBe(join(work, DIR))
     expect(await readBootConfigPointer(store)).toBeNull()
   })
 
@@ -469,7 +474,7 @@ describe('convergeConfigRelease — failures keep the running config', () => {
     const response = await converge(oc, { api: { ...client(), apiUrl: 'http://127.0.0.1:1/v1' } })
     expect(response.outcome).toBe('failed')
     expect(oc.state.reloads).toBe(0)
-    expect(oc.state.dir).toBe(join(work, DIR))
+    expect(await servingDir()).toBe(join(work, DIR))
   })
 
   test('an API that predates the spec (404) keeps the running config', async () => {
@@ -497,14 +502,14 @@ describe('convergeConfigRelease — other sources', () => {
     const oc = fakeOpencode()
     await converge(oc)
     const dir = releaseDir(store, good.descriptor.release_id!)
-    expect(oc.state.dir).toBe(dir)
+    expect(await servingDir()).toBe(dir)
 
     write(work, `${DIR}/agents/kortix.md`, 'SESSION EDIT\n')
     const response = await converge(oc)
 
     expect(response.outcome).toBe('unchanged')
     expect(response.config).toMatchObject({ source: 'release', mode: 'follow-base', proven: true })
-    expect(oc.state.dir).toBe(dir)
+    expect(await servingDir()).toBe(dir)
     // The descriptor request carries no inputs at all.
     expect(api.descriptorRequests.at(-1)!.body).toEqual({})
 
@@ -515,7 +520,7 @@ describe('convergeConfigRelease — other sources', () => {
     const after = await converge(oc)
     expect(after.outcome).toBe('applied')
     expect(after.config.release_id).toBe(pushed.descriptor.release_id!)
-    expect(oc.state.dir).toBe(releaseDir(store, pushed.descriptor.release_id!))
+    expect(await servingDir()).toBe(releaseDir(store, pushed.descriptor.release_id!))
   })
 
   test('repository access withheld: the image default dir runs with the governance', async () => {
@@ -539,7 +544,7 @@ describe('convergeConfigRelease — other sources', () => {
     expect(response.outcome).toBe('applied')
     expect(response.ok).toBe(true)
     expect(response.config).toMatchObject({ source: 'image-default', fallback_reason: null, proven: true })
-    expect(oc.state.dir).toBe(defaultDir)
+    expect(await servingDir()).toBe(defaultDir)
     expect(oc.state.governanceAtSpawn).toEqual([GOV_V2])
     expect(api.archiveRequests.length).toBe(0)
     expect((await converge(oc)).outcome).toBe('unchanged')
@@ -616,13 +621,15 @@ describe('convergeConfigRelease — other sources', () => {
     serveRelease(api, release)
     const oc = fakeOpencode()
     await converge(oc)
+    const bootDir = (await readBootLinkTarget(store))!
     resetConfigReleaseStateForTests()
-    recordBootConfig({
+    setRunningConfig({
       source: 'release',
       release_id: release.descriptor.release_id,
       source_commit: release.descriptor.source_commit,
       proven: true,
     })
+    await pointBootLink(bootDir, store)
     expect(configReleaseReport().release_id).toBe(release.descriptor.release_id)
     expect(configReleaseReport().mode).toBeNull()
     const unchanged = await converge(oc)
@@ -678,116 +685,13 @@ describe('provenCheck', () => {
   })
 })
 
-describe('fresh boot from a release', () => {
-  test('fetchBootRelease extracts the desired release and marks both steps', async () => {
-    const release = baseRelease()
-    serveRelease(api, release)
-    const marks: string[] = []
-    const boot = await fetchBootRelease({
-      cfg: cfg(),
-      api: client(),
-      root: store,
-      managedSkillsDir: overlay,
-      prepare: async () => undefined,
-      mark: (label) => marks.push(label),
-    })
-    expect(boot).toMatchObject({ releaseId: release.descriptor.release_id, dir: releaseDir(store, release.descriptor.release_id!) })
-    expect(marks).toEqual(['config-release-fetched', 'config-release-extracted'])
-    expect(api.descriptorRequests.at(-1)!.body).toEqual({})
-    expect(readFileSync(join(boot!.dir, 'agents/kortix.md'), 'utf8')).toBe('PROMPT v1\n')
-    // Nothing is proven yet: the pointer waits for the proof.
-    expect(await readBootConfigPointer(store)).toBeNull()
-
-    const downloads = api.archiveRequests.length
-    await fetchBootRelease({ cfg: cfg(), api: client(), root: store, managedSkillsDir: overlay, prepare: async () => undefined })
-    expect(api.archiveRequests.length).toBe(downloads)
-  })
-
-  test('fetchBootRelease answers null for an older API, a session-files descriptor and a quarantined release', async () => {
-    const opts = { cfg: cfg(), api: client(), root: store, prepare: async () => undefined }
-    api.respond({ status: 404, json: { error: 'not found' } })
-    expect(await fetchBootRelease(opts)).toBeNull()
-    const release = baseRelease()
-    api.respond({ status: 200, json: { ...release.descriptor, mode: 'session-files', archive: null, files: null } })
-    expect(await fetchBootRelease(opts)).toBeNull()
-    serveRelease(api, release)
-    await quarantineRelease(store, release.descriptor.release_id!, 'failed before')
-    expect(await fetchBootRelease(opts)).toBeNull()
-  })
-
-  test('the convergence after ready proves a boot release on the live process and writes the pointer', async () => {
-    const release = baseRelease()
-    serveRelease(api, release)
-    const boot = await fetchBootRelease({ cfg: cfg(), api: client(), root: store, prepare: async () => undefined })
-    const oc = fakeOpencode()
-    oc.opencode.useConfigDir(boot!.dir)
-    served.dir = boot!.dir
-    recordBootConfig({ source: 'release', release_id: boot!.releaseId, source_commit: boot!.sourceCommit, proven: false })
-
-    const response = await converge(oc)
-
-    expect(response.outcome).toBe('applied')
-    expect(response.reload).toBeNull()
-    // DEF-1: the mode the API chose is reported once the boot release is proven.
-    expect(response.config).toMatchObject({ release_id: boot!.releaseId, proven: true, source: 'release', mode: 'follow-base' })
-    expect(oc.state.reloads).toBe(0)
-    expect((await readBootConfigPointer(store))!.release_id).toBe(boot!.releaseId)
-    expect((await converge(oc)).outcome).toBe('unchanged')
-  })
-
-  test('a boot release that fails the proof is quarantined and OpenCode steps down the chain', async () => {
-    write(origin, `${DIR}/tools/firecrawl.ts`, 'export default {}\n')
-    commitAll(origin, 'tool with a missing dependency')
-    served.droppedTools = new Set(['firecrawl'])
-    const release = baseRelease()
-    serveRelease(api, release)
-    const boot = await fetchBootRelease({ cfg: cfg(), api: client(), root: store, prepare: async () => undefined })
-    const oc = fakeOpencode()
-    oc.opencode.useConfigDir(boot!.dir)
-    served.dir = boot!.dir
-    recordBootConfig({ source: 'release', release_id: boot!.releaseId, source_commit: boot!.sourceCommit, proven: false })
-
-    const response = await converge(oc)
-
-    expect(response.outcome).toBe('declined')
-    expect(response.reason).toBe('tools not loaded: firecrawl')
-    expect(response.config).toMatchObject({
-      source: 'workspace',
-      release_id: null,
-      desired_release_id: boot!.releaseId,
-      failed_release_id: boot!.releaseId,
-      fallback_reason: 'tools not loaded: firecrawl',
-    })
-    expect(oc.state.dir).toBe(join(work, DIR))
-    expect(Object.keys(await readQuarantine(store))).toEqual([boot!.releaseId])
-    expect(await readBootConfigPointer(store)).toBeNull()
-  })
-
-  test('a running turn defers the swap; nothing is replaced', async () => {
-    serveRelease(api, baseRelease())
-    const oc = fakeOpencode()
-    const response = await convergeConfigRelease({
-      cfg: cfg(),
-      opencode: oc.opencode,
-      root: store,
-      api: client(),
-      prepare: async () => undefined,
-      turnInFlight: async () => true,
-    })
-    expect(response.outcome).toBe('failed')
-    expect(response.reason).toMatch(/a turn is running/)
-    expect(oc.state.reloads).toBe(0)
-    expect(api.archiveRequests).toHaveLength(0)
-  })
-})
-
 describe('repository replacement: a previous-repository session is frozen', () => {
   test('a 409 session_repository_changed descriptor answer is unchanged: no fallback, no quarantine, config kept', async () => {
     const release = baseRelease()
     serveRelease(api, release)
     const oc = fakeOpencode()
     await converge(oc)
-    const dir = oc.state.dir
+    const dir = (await servingDir())!
     const pointer = await readBootConfigPointer(store)
 
     api.respond(REPOSITORY_CHANGED)
@@ -808,7 +712,7 @@ describe('repository replacement: a previous-repository session is frozen', () =
       reload: null,
       reason: 'Session belongs to a previous repository',
     })
-    expect(oc.state.dir).toBe(dir)
+    expect(await servingDir()).toBe(dir)
     expect(oc.state.reloads).toBe(1)
     expect(await readBootConfigPointer(store)).toEqual(pointer)
     expect(await readQuarantine(store)).toEqual({})
@@ -834,247 +738,6 @@ describe('repository replacement: a previous-repository session is frozen', () =
   })
 })
 
-/**
- * DEF-4 (verification 2026-09-21): a fresh session created while the base
- * branch held a broken opencode.jsonc never became ready. OpenCode started on
- * the unproven release, every session create failed with ConfigJsonError, the
- * proof waited for a readiness that never came, and nothing was reported.
- * Goal 4: a bad base config never makes a session unbootable.
- */
-describe('boot proof: a broken release at boot steps down the fallback chain', () => {
-  function bootOn(boot: BootRelease) {
-    const oc = fakeOpencode()
-    oc.opencode.useConfigDir(boot.dir)
-    served.dir = boot.dir
-    recordBootConfig({ source: 'release', release_id: boot.releaseId, source_commit: boot.sourceCommit, proven: false })
-    const spawned: string[] = []
-    return {
-      oc,
-      spawned,
-      run: (extra: Partial<Parameters<typeof proveBootConfig>[0]> = {}) =>
-        proveBootConfig({
-          cfg: cfg(),
-          boot,
-          opencode: oc.opencode,
-          root: store,
-          managedSkillsDir: overlay,
-          api: client(),
-          prepare: async () => undefined,
-          proofBudgetMs: 5_000,
-          proofOptions: { requestTimeoutMs: 300, hangLimit: 2, pollMs: 50 },
-          spawnOn: async (dir) => {
-            spawned.push(dir)
-            oc.opencode.useConfigDir(dir)
-            served.dir = dir
-          },
-          ...extra,
-        }),
-    }
-  }
-
-  async function brokenMain(): Promise<BootRelease> {
-    write(origin, `${DIR}/opencode.jsonc`, '{ "default_agent": "kortix",,, NOT JSON {{\n}\n')
-    commitAll(origin, 'broken config on main')
-    git(work, 'pull', '-q', 'origin', 'main') // a fresh session checks out the broken main too
-    serveRelease(api, baseRelease())
-    return (await fetchBootRelease({ cfg: cfg(), api: client(), root: store, prepare: async () => undefined }))!
-  }
-
-  test('a broken release with no proven predecessor → image default, cause reported, release quarantined; a fixed main then converges', async () => {
-    const boot = await brokenMain()
-    const { oc, spawned, run } = bootOn(boot)
-    const restored: string[] = []
-
-    const started = Date.now()
-    const result = await run({ restoreGovernance: () => restored.push('restored') })
-
-    expect(Date.now() - started).toBeLessThan(4_000)
-    // One step down, straight to the image default: /workspace is not a step.
-    expect(spawned).toEqual([defaultDir])
-    expect(result).toMatchObject({ proven: true, source: 'image-default', dir: defaultDir })
-    const health = configReleaseReport()
-    expect(health).toEqual({
-      release_id: null,
-      desired_release_id: boot.releaseId,
-      source: 'image-default',
-      mode: 'follow-base',
-      proven: true,
-      // The chain is release -> last proven release -> image default. There
-      // is no proven predecessor here, so the image default runs and the
-      // reason names the release that failed, not a workspace step.
-      fallback_reason: `release ${boot.releaseId.slice(0, 12)} failed: ConfigJsonError in opencode.jsonc: InvalidSymbol at line 1, column 20`,
-      failed_release_id: boot.releaseId,
-    })
-    expect(Object.keys(await readQuarantine(store))).toEqual([boot.releaseId])
-    expect(await readBootConfigPointer(store)).toBeNull()
-    expect(restored.length).toBeGreaterThan(0)
-
-    // The box is up on the fallback. Main is fixed: the next trigger heals it.
-    write(origin, `${DIR}/opencode.jsonc`, '{"default_agent":"kortix"}\n')
-    write(origin, `${DIR}/agents/kortix.md`, 'PROMPT fixed\n')
-    commitAll(origin, 'fix config')
-    const fixed = baseRelease()
-    serveRelease(api, fixed)
-    const healed = await converge(oc)
-    expect(healed.outcome).toBe('applied')
-    expect(healed.config).toMatchObject({
-      release_id: fixed.descriptor.release_id,
-      source: 'release',
-      proven: true,
-      fallback_reason: null,
-      failed_release_id: null,
-    })
-    expect(readFileSync(join(oc.state.dir, 'agents/kortix.md'), 'utf8')).toBe('PROMPT fixed\n')
-  })
-
-  test('a later convergence on the same failed release keeps the step-down reason (the whole chain)', async () => {
-    // Rule: the step that chose the running config saw every step of the
-    // fallback chain, so its reason is the most complete one. A convergence
-    // that keeps the running config for the SAME failed release re-derives
-    // only its own step and keeps that reason. A different failed release
-    // replaces it; a proven release clears it.
-    const boot = await brokenMain()
-    const { oc, run } = bootOn(boot)
-    await run()
-    const chain = `release ${boot.releaseId.slice(0, 12)} failed: ConfigJsonError in opencode.jsonc: InvalidSymbol at line 1, column 20`
-    expect(configReleaseReport().fallback_reason).toBe(chain)
-
-    const again = await converge(oc)
-    expect(again.outcome).toBe('quarantined')
-    expect(again.config).toMatchObject({ failed_release_id: boot.releaseId, fallback_reason: chain })
-
-    // Another broken release is a new failure with its own reason.
-    write(origin, `${DIR}/opencode.jsonc`, '{ "default_agent": "kortix",,, STILL NOT JSON {{\n}\n')
-    commitAll(origin, 'still broken')
-    const second = baseRelease()
-    serveRelease(api, second)
-    const next = await converge(oc)
-    expect(next.config.failed_release_id).toBe(second.descriptor.release_id)
-    expect(next.config.fallback_reason).not.toBe(chain)
-    expect(next.config.fallback_reason).toContain('ConfigJsonError in opencode.jsonc')
-  })
-
-  test('DEF-4b: a restart after the quarantine boots the image default and is proven there', async () => {
-    const boot = await brokenMain()
-    await bootOn(boot).run()
-    resetConfigReleaseStateForTests()
-
-    // The daemon restarts: the desired release is quarantined on this box.
-    const quarantined: Array<[string, string]> = []
-    const again = await fetchBootRelease({
-      cfg: cfg(),
-      api: client(),
-      root: store,
-      prepare: async () => undefined,
-      onQuarantined: (id, reason) => quarantined.push([id, reason]),
-    })
-    expect(again).toBeNull()
-    expect(quarantined.map(([id]) => id)).toEqual([boot.releaseId])
-    // The chain skips /workspace: with no proven predecessor the restart
-    // resolves straight to the image default. `releasesEnabled: true` is what
-    // boot passes after the API answered with a descriptor (boot.ts).
-    const choice = await resolveBootConfig({ cfg: cfg(), root: store, api: client(), releasesEnabled: true })
-    expect(choice.source).toBe('image-default')
-    expect(choice.dir).toBe(defaultDir)
-    recordBootConfig({ source: choice.source })
-    const oc = fakeOpencode()
-    served.dir = choice.dir
-    const spawned: string[] = []
-
-    const result = await proveBootFallback({
-      cfg: cfg(),
-      opencode: oc.opencode,
-      current: { dir: choice.dir, source: 'image-default' },
-      prior: {
-        reason: `release ${boot.releaseId.slice(0, 12)} is quarantined on this box: ${quarantined[0]![1]}`,
-        failedReleaseId: boot.releaseId,
-      },
-      root: store,
-      prepare: async () => undefined,
-      proofBudgetMs: 5_000,
-      proofOptions: { requestTimeoutMs: 300, hangLimit: 2, pollMs: 50 },
-      spawnOn: async (dir) => {
-        spawned.push(dir)
-        served.dir = dir
-      },
-    })
-
-    expect(result).toMatchObject({ source: 'image-default', proven: true, dir: defaultDir })
-    // Already on the floor: nothing further is spawned.
-    expect(spawned).toEqual([])
-    const cause = 'ConfigJsonError in opencode.jsonc: InvalidSymbol at line 1, column 20'
-    expect(configReleaseReport()).toMatchObject({
-      source: 'image-default',
-      proven: true,
-      failed_release_id: boot.releaseId,
-      fallback_reason: `release ${boot.releaseId.slice(0, 12)} is quarantined on this box: ${cause}`,
-    })
-  })
-
-  test('a healthy workspace boot is proven in place with no fallback reason', async () => {
-    const oc = fakeOpencode()
-    served.dir = join(work, DIR)
-    recordBootConfig({ source: 'workspace' })
-    const result = await proveBootFallback({
-      cfg: cfg(),
-      opencode: oc.opencode,
-      current: { dir: join(work, DIR), source: 'workspace' },
-      root: store,
-      prepare: async () => undefined,
-      proofBudgetMs: 5_000,
-      spawnOn: async () => {
-        throw new Error('no restart expected')
-      },
-    })
-    expect(result).toMatchObject({ source: 'workspace', proven: true })
-    expect(configReleaseReport()).toMatchObject({ source: 'workspace', fallback_reason: null, failed_release_id: null })
-  })
-
-  test('broken release with an intact last proven release → back on the proven release', async () => {
-    serveRelease(api, baseRelease())
-    await converge(fakeOpencode()) // a proven release and its pointer exist
-    const proven = (await readBootConfigPointer(store))!
-    const boot = await brokenMain()
-    const { spawned, run } = bootOn(boot)
-    const result = await run()
-    expect(spawned).toEqual([proven.dir])
-    expect(result).toMatchObject({ source: 'release', proven: true })
-    expect(configReleaseReport()).toMatchObject({
-      release_id: proven.release_id,
-      failed_release_id: boot.releaseId,
-      fallback_reason: `release ${boot.releaseId.slice(0, 12)} failed: ConfigJsonError in opencode.jsonc: InvalidSymbol at line 1, column 20`,
-    })
-    expect((await readBootConfigPointer(store))!.release_id).toBe(proven.release_id)
-  })
-
-  test('a plugin that throws at import fails the proof by its hang and names the plugin', async () => {
-    write(origin, `${DIR}/plugins/boom.ts`, 'throw new Error("plugin boom at import")\nexport const P = async () => ({})\n')
-    commitAll(origin, 'throwing plugin')
-    git(work, 'pull', '-q', 'origin', 'main')
-    serveRelease(api, baseRelease())
-    const boot = (await fetchBootRelease({ cfg: cfg(), api: client(), root: store, prepare: async () => undefined }))!
-    const { spawned, run } = bootOn(boot)
-    await run()
-    // Straight to the image default: /workspace is not a step in the chain.
-    expect(spawned).toEqual([defaultDir])
-    expect(configReleaseReport().fallback_reason).toBe(
-      `release ${boot.releaseId.slice(0, 12)} failed: GET /config did not answer in 2 attempts; a plugin that fails at import stops the config load (plugins: plugins/boom.ts)`,
-    )
-  })
-
-  test('a healthy boot release is proven in place: pointer written, mode follow-base, no respawn', async () => {
-    serveRelease(api, baseRelease())
-    const boot = (await fetchBootRelease({ cfg: cfg(), api: client(), root: store, prepare: async () => undefined }))!
-    const marks: string[] = []
-    const { spawned, run } = bootOn(boot)
-    const result = await run({ mark: (label) => marks.push(label) })
-    expect(result).toMatchObject({ proven: true, source: 'release', dir: boot.dir })
-    expect(spawned).toEqual([])
-    expect(marks).toEqual(['config-release-proven'])
-    expect(configReleaseReport()).toMatchObject({ release_id: boot.releaseId, proven: true, mode: 'follow-base', fallback_reason: null })
-    expect((await readBootConfigPointer(store))!.release_id).toBe(boot.releaseId)
-  })
-})
 
 /**
  * The `config_releases` feature flag, off (spec, "Feature flag").
@@ -1091,7 +754,7 @@ describe('config_releases off: the box reverts to its workspace config dir', () 
     serveRelease(api, release)
     const oc = fakeOpencode()
     await converge(oc)
-    expect(oc.state.dir).toBe(releaseDir(store, release.descriptor.release_id!))
+    expect(await servingDir()).toBe(releaseDir(store, release.descriptor.release_id!))
     expect(await readBootConfigPointer(store)).not.toBeNull()
 
     api.respond(FEATURE_DISABLED)
@@ -1108,7 +771,7 @@ describe('config_releases off: the box reverts to its workspace config dir', () 
       fallback_reason: null,
       failed_release_id: null,
     })
-    expect(oc.state.dir).toBe(join(work, DIR))
+    expect(await servingDir()).toBe(join(work, DIR))
     expect(await readBootConfigPointer(store)).toBeNull()
     expect(await readQuarantine(store)).toEqual({})
   })
@@ -1121,7 +784,7 @@ describe('config_releases off: the box reverts to its workspace config dir', () 
     expect(response.outcome).toBe('unchanged')
     expect(response.reason).toMatch(/config releases are disabled/i)
     expect(oc.state.reloads).toBe(0)
-    expect(oc.state.dir).toBe(join(work, DIR))
+    expect(await servingDir()).toBe(join(work, DIR))
     expect(await readBootConfigPointer(store)).toBeNull()
   })
 
@@ -1150,7 +813,7 @@ describe('config_releases off: the box reverts to its workspace config dir', () 
     expect(response.outcome).toBe('unchanged')
     expect(response.reason).toMatch(/config releases are disabled/i)
     expect(response.config.fallback_reason).toBeNull()
-    expect(oc.state.dir).toBe(join(work, DIR))
+    expect(await servingDir()).toBe(join(work, DIR))
     expect(await readQuarantine(store)).toEqual({})
   })
 
@@ -1162,7 +825,7 @@ describe('config_releases off: the box reverts to its workspace config dir', () 
 
     api.respond(FEATURE_DISABLED)
     expect((await converge(oc)).outcome).toBe('applied')
-    expect(oc.state.dir).toBe(join(work, DIR))
+    expect(await servingDir()).toBe(join(work, DIR))
 
     serveRelease(api, release)
     const back = await converge(oc)
@@ -1173,7 +836,7 @@ describe('config_releases off: the box reverts to its workspace config dir', () 
       mode: 'follow-base',
       proven: true,
     })
-    expect(oc.state.dir).toBe(releaseDir(store, release.descriptor.release_id!))
+    expect(await servingDir()).toBe(releaseDir(store, release.descriptor.release_id!))
     expect((await readBootConfigPointer(store))!.release_id).toBe(release.descriptor.release_id!)
   })
 })

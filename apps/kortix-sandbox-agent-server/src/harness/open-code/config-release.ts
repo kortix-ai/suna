@@ -11,7 +11,6 @@ import {
   quarantineRelease,
   readBootConfigPointer,
   readQuarantine,
-  readReleaseManifest,
   releaseDir,
   verifyRelease,
   verifyReleaseDetail,
@@ -30,10 +29,11 @@ import type { ConfigReleaseDescriptor } from '../../config-release/descriptor'
 import { clearConfigReleaseNotice, writeConfigReleaseNotice } from '../../config-release/notice'
 import { logger } from '../../logger'
 import { ensureInjectedManagedSkills } from '../../managed-skills'
-import { resolveOpencodeConfigDir, resolveOpencodeConfigDirLiteral, type OpenCodeConfig } from './config'
-import { VERIFY_READY_TIMEOUT_MS, type Opencode, type VerifiedReloadResult } from './lifecycle'
+import { serveConfigDir, servingConfigDir } from './boot-link'
+import { resolveOpencodeConfigDir, type OpenCodeConfig } from './config'
+import { type Opencode, type VerifiedReloadResult } from './lifecycle'
 import { ensureOpencodeConfigDeps } from './opencode-config-deps'
-import { pluginFilesFrom, provenCheck, toolNamesFromFiles, type ProvenCheckInput } from './proven-check'
+import { pluginFilesFrom, provenCheck, toolNamesFromFiles } from './proven-check'
 
 /**
  * Convergence: the daemon applies the release the API assigns.
@@ -60,19 +60,17 @@ import { pluginFilesFrom, provenCheck, toolNamesFromFiles, type ProvenCheckInput
  * release block for such a session, so `workspace` never reaches a client.
  */
 export type ConfigSource = 'release' | 'workspace' | 'image-default'
-/**
- * Always `follow-base`: a box runs the base branch's CURRENT config release.
- * `/workspace` stays the editable clone; an edit there reaches the box only
- * once it is pushed to the base branch.
- */
-export type ConfigMode = 'follow-base'
-
 /** The health `config` block. The converge response carries the same object. */
 export interface ConfigReleaseReport {
   release_id: string | null
   desired_release_id: string | null
   source: ConfigSource
-  mode: ConfigMode | null
+  /**
+   * Always `follow-base`: a box runs the base branch's CURRENT config release.
+   * `/workspace` stays the editable clone; an edit there reaches the box only
+   * once it is pushed to the base branch. Null before the boot path ran.
+   */
+  mode: 'follow-base' | null
   proven: boolean
   fallback_reason: string | null
   failed_release_id: string | null
@@ -145,39 +143,41 @@ export function releaseGovernanceActive(): boolean {
   return running.release_id !== null
 }
 
-/** Boot records what it spawned on. */
+/**
+ * THE writer of the running config (PLAN-one-boot-path T4).
+ *
+ * `running` is what `/kortix/health`, `GET /config`, the CLI and the web all
+ * read, so it is assigned in exactly one place. Everything that changes what
+ * the box runs — the boot path, a convergence, the flag-off revert — states its
+ * whole new answer here instead of patching a field from three call sites.
+ */
+export function setRunningConfig(next: Partial<RunningConfig>): void {
+  running = { ...running, ...next }
+}
+
 /**
  * Record why the box keeps its running config instead of release `releaseId`.
  *
- * Rule: the step that chose the running config (the boot proof or the
- * fallback chain) saw every step down, so its reason is the most complete
- * one. A later convergence that keeps the same running config for the SAME
- * failed release re-derives only its own step ("is quarantined on this box",
- * one candidate failure), so the existing reason stays. A different failed
- * release, or no reason yet, takes the new reason. A proven release clears it.
+ * Rule: the step that chose the running config (the boot path) saw every step
+ * down, so its reason is the most complete one. A later convergence that keeps
+ * the same running config for the SAME failed release re-derives only its own
+ * step ("is quarantined on this box", one candidate failure), so the existing
+ * reason stays. A different failed release, or no reason yet, takes the new
+ * reason. A proven release clears it.
  */
 function recordKeptConfigFailure(releaseId: string, reason: string): void {
   if (running.failed_release_id === releaseId && running.fallback_reason) return
-  running.failed_release_id = releaseId
-  running.fallback_reason = reason
-}
-
-export function recordBootConfig(next: Partial<RunningConfig> & Pick<RunningConfig, 'source'>): void {
-  running = { ...INITIAL, ...next }
+  setRunningConfig({ failed_release_id: releaseId, fallback_reason: reason })
 }
 
 export function resetConfigReleaseStateForTests(): void {
-  running = { ...INITIAL }
+  setRunningConfig({ ...INITIAL })
   inFlight = null
-}
-
-export function convergeInFlight(): boolean {
-  return inFlight !== null
 }
 
 export interface ConvergeDeps {
   cfg: OpenCodeConfig
-  opencode: Pick<Opencode, 'useConfigDir' | 'getConfigDir' | 'reloadVerified' | 'getPid' | 'getInternalUrl'>
+  opencode: Pick<Opencode, 'reloadVerified' | 'getPid' | 'getInternalUrl'>
   root?: string
   /** Overlay source; defaults to the image-baked overlay. */
   managedSkillsDir?: string
@@ -211,13 +211,17 @@ export async function prepareConfigDir(
 }
 
 /**
- * The preparation of a release staging dir. The release is the platform's own
- * copy, so its dependencies are prepared until OpenCode's installer has nothing
- * to do: OpenCode runs on the boot link, a symlink, and npm's Arborist
- * re-extracts the whole node_modules tree through a symlinked root (+5–7 s to
- * opencode-ready on the old-starter shape, measured 2026-09-22).
+ * The preparation of a config dir the PLATFORM owns: a release staging dir, or
+ * the image default. Its dependencies are prepared until OpenCode's installer
+ * has nothing to do: OpenCode runs on the boot link, a symlink, and npm's
+ * Arborist re-extracts the whole node_modules tree through a symlinked root
+ * (+5–7 s to opencode-ready on the old-starter shape, measured 2026-09-22;
+ * ~10 s on a fresh scaffold, measured 2026-09-24).
+ *
+ * Never used on a working tree: its `package.json` is a tracked user file and
+ * the plugin pin would dirty it.
  */
-export async function prepareReleaseDir(
+export async function preparePlatformConfigDir(
   dir: string,
   managedSkillsDir?: string,
   depsOptions: ConfigDepsOptions = {},
@@ -263,7 +267,8 @@ export function effectiveReleaseId(descriptor: ConfigReleaseDescriptor): string 
   return createHash('sha256').update(`:${descriptor.compiled_governance_etag}`).digest('hex')
 }
 
-function manifestFrom(descriptor: ConfigReleaseDescriptor, releaseId: string): ReleaseManifest {
+/** The descriptor's release, as the store keeps it beside the extracted copy. */
+export function manifestFromDescriptor(descriptor: ConfigReleaseDescriptor, releaseId: string): ReleaseManifest {
   return {
     release_id: releaseId,
     source_commit: descriptor.source_commit!,
@@ -374,7 +379,7 @@ async function revertToPreReleaseConfig(
   const dir = await resolveOpencodeConfigDir(cfg)
   const source: ConfigSource = dir === cfg.defaultOpencodeConfigDir ? 'image-default' : 'workspace'
   const reason = `config releases are disabled for this project; opencode reads ${dir} (${apiMessage})`
-  const settled = (): RunningConfig => ({
+  const settled = () => ({
     release_id: null,
     desired_release_id: null,
     source,
@@ -385,10 +390,10 @@ async function revertToPreReleaseConfig(
     source_commit: null,
   })
 
-  if (running.source !== 'release' && opencode.getConfigDir() === dir) {
+  if (running.source !== 'release' && (await servingConfigDir(root)) === dir) {
     clearConfigReleaseNotice()
     await deactivateBootConfig(root)
-    running = settled()
+    setRunningConfig(settled())
     // One clear line, then the daemon carries on.
     logger.info('[config-release] disabled for this project; opencode already reads the workspace config dir', { dir })
     return respond('unchanged', null, reason)
@@ -404,7 +409,8 @@ async function revertToPreReleaseConfig(
   await (deps.prepare ?? ((target: string) => prepareConfigDir(target, deps.managedSkillsDir)))(dir)
   const toolNames = await toolNamesInDir(dir)
   const pluginFiles = await pluginFilesInDir(dir)
-  const previousDir = opencode.useConfigDir(dir)
+  const previousDir = await servingConfigDir(root)
+  await serveConfigDir(dir, 'config releases are disabled for this project', root)
   const result = await opencode.reloadVerified({
     prove: (baseUrl, deadline) =>
       (deps.prove ?? provenCheck)(baseUrl, deadline, {
@@ -416,7 +422,7 @@ async function revertToPreReleaseConfig(
       }),
   })
   if (result.outcome === 'kept-old') {
-    opencode.useConfigDir(previousDir)
+    if (previousDir) await serveConfigDir(previousDir, 'the workspace config dir did not start', root)
     logger.warn('[config-release] disabled, but the workspace config dir did not start; keeping the release', {
       dir,
       reason: result.reason,
@@ -425,7 +431,7 @@ async function revertToPreReleaseConfig(
   }
 
   await deactivateBootConfig(root)
-  running = settled()
+  setRunningConfig(settled())
   logger.info('[config-release] disabled for this project; opencode reverted to the workspace config dir', { dir })
   return respond('applied', result, reason)
 }
@@ -455,7 +461,7 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
     return respond('failed', null, (err as Error).message)
   }
   const releaseId = effectiveReleaseId(descriptor)
-  running.desired_release_id = releaseId
+  setRunningConfig({ desired_release_id: releaseId })
   // No release: a config dir over the 4 MiB limit (a tree without an
   // archive), a governance compile failure, or nothing to run at all. The
   // running config stays.
@@ -477,7 +483,12 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
   }
 
   const swap = async (dir: string, toolNames: readonly string[], pluginFiles: readonly string[] = []) => {
-    const previousDir = opencode.useConfigDir(dir)
+    // The boot link is the ONE thing that names OpenCode's config dir, so a
+    // swap repoints it. The running process already holds its config in
+    // memory, so the candidate on the standby port is the only reader of the
+    // new target; a declined candidate puts the old target back.
+    const previousDir = await servingConfigDir(root)
+    await serveConfigDir(dir, 'a convergence is replacing opencode', root)
     // Tell the session which commit's config it is about to run, BEFORE the
     // replacement spawns: `writeComposedConfig` declares this file in
     // OpenCode's `instructions`, so the new process reads it (spec, "Telling
@@ -496,7 +507,7 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
         }),
     })
     if (result.outcome === 'kept-old') {
-      opencode.useConfigDir(previousDir)
+      if (previousDir) await serveConfigDir(previousDir, 'the candidate was declined', root)
       restoreGovernance()
     }
     return result
@@ -506,20 +517,20 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
   // The image default config dir runs with the compiled governance.
   if (descriptor.archive === null) {
     const dir = cfg.defaultOpencodeConfigDir
-    if (running.release_id === releaseId && running.source === 'image-default' && opencode.getConfigDir() === dir) {
-      running.mode = 'follow-base'
+    if (running.release_id === releaseId && running.source === 'image-default' && (await servingConfigDir(root)) === dir) {
+      setRunningConfig({ mode: 'follow-base' })
       return respond('unchanged', null)
     }
     const notRunning = await requireRunning()
     if (notRunning) return notRunning
     const result = await swap(dir, [])
     if (result.outcome === 'kept-old') {
-      running.fallback_reason = result.reason
+      setRunningConfig({ fallback_reason: result.reason })
       return respond('declined', null, result.reason)
     }
     // A release this session may no longer read must not come back at boot.
     await deactivateBootConfig(root)
-    running = {
+    setRunningConfig({
       release_id: releaseId,
       desired_release_id: releaseId,
       source: 'image-default',
@@ -528,24 +539,24 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
       fallback_reason: null,
       failed_release_id: null,
       source_commit: null,
-    }
+    })
       logger.info('[config-release] opencode runs the image default config', { releaseId, reason: descriptor.reason })
     return respond('applied', result)
   }
 
-  const manifest = manifestFrom(descriptor, releaseId)
+  const manifest = manifestFromDescriptor(descriptor, releaseId)
   const dir = releaseDir(root, releaseId)
   const verifies = () =>
     verifyRelease({ dir, files: manifest.files, managedSkillsDir: deps.managedSkillsDir })
 
-  // 3. Same release, intact copy: nothing to do. A release spawned at boot
-  //    before any proof is proven now, on the live process.
-  if (running.source === 'release' && running.release_id === releaseId && opencode.getConfigDir() === dir) {
+  // 3. Same release, intact copy: nothing to do. The boot path proves every
+  //    release before the box is reportable as ready, so a running release is
+  //    never unproven here.
+  if (running.source === 'release' && running.release_id === releaseId && (await servingConfigDir(root)) === dir) {
     const check = await verifyReleaseDetail({ dir, files: manifest.files, managedSkillsDir: deps.managedSkillsDir })
     if (check.ok) {
-      running.mode = 'follow-base'
-      if (running.proven) return respond('unchanged', null)
-      return proveBootRelease(deps, { root, api, releaseId, manifest, dir })
+      setRunningConfig({ mode: 'follow-base' })
+      return respond('unchanged', null)
     }
     logger.warn('[config-release] the running release no longer verifies; rebuilding', {
       releaseId,
@@ -575,7 +586,7 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
         manifest,
         archive,
         managedSkillsDir: deps.managedSkillsDir,
-        prepare: deps.prepare ?? ((staged) => prepareReleaseDir(staged, deps.managedSkillsDir)),
+        prepare: deps.prepare ?? ((staged) => preparePlatformConfigDir(staged, deps.managedSkillsDir)),
       })
     }
   } catch (err) {
@@ -609,7 +620,7 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
     proven: true,
   })
   await pruneBootConfigs(root, previous ? [releaseId, previous.release_id] : [releaseId])
-  running = {
+  setRunningConfig({
     release_id: releaseId,
     desired_release_id: releaseId,
     source: 'release',
@@ -618,570 +629,8 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
     fallback_reason: null,
     failed_release_id: null,
     source_commit: manifest.source_commit,
-  }
+  })
   logger.info('[config-release] release applied', { releaseId, sourceCommit: manifest.source_commit, dir })
   return respond('applied', result)
 }
 
-/**
- * Prove a release OpenCode was spawned on at boot, before any proof ran.
- *
- * No replacement is started: the proven check runs against the live process.
- * On success the pointer is written. On failure the release is quarantined
- * and OpenCode moves down the fallback chain (last proven release, workspace,
- * image default) through a verified swap.
- */
-async function proveBootRelease(
-  deps: ConvergeDeps,
-  input: { root: string; api: ConfigReleaseApi; releaseId: string; manifest: ReleaseManifest; dir: string },
-): Promise<ConvergeResponse> {
-  const { cfg, opencode } = deps
-  const { root, releaseId, manifest, dir } = input
-  const budget = deps.proofBudgetMs ?? VERIFY_READY_TIMEOUT_MS
-  const proof = await (deps.prove ?? provenCheck)(opencode.getInternalUrl(), Date.now() + budget, {
-    directory: cfg.projectTarget,
-    toolNames: toolNamesFromFiles(manifest.files),
-    pluginFiles: pluginFilesFrom(manifest.files),
-    configDir: dir,
-    fetchImpl: deps.proveFetch,
-  })
-  if (proof.ok) {
-    const previous = await readBootConfigPointer(root)
-    await activateBootConfig(root, {
-      release_id: releaseId,
-      source_commit: manifest.source_commit,
-      config_dir: manifest.config_dir,
-      dir,
-      proven: true,
-    })
-    await pruneBootConfigs(root, previous ? [releaseId, previous.release_id] : [releaseId])
-    running = { ...running, mode: 'follow-base', proven: true, fallback_reason: null, failed_release_id: null }
-    logger.info('[config-release] the boot release is proven', { releaseId })
-    return respond('applied', null)
-  }
-
-  await quarantineRelease(root, releaseId, proof.reason)
-  running.failed_release_id = releaseId
-  running.fallback_reason = proof.reason
-  logger.warn('[config-release] the boot release failed the proven check; falling back', {
-    releaseId,
-    reason: proof.reason,
-  })
-  if (deps.turnInFlight && (await deps.turnInFlight().catch(() => null)) !== false) {
-    return respond('declined', null, `${proof.reason}; the fallback waits for the turn to end`)
-  }
-  const fallback = await resolveBootConfig({
-    cfg,
-    root,
-    managedSkillsDir: deps.managedSkillsDir,
-    api: input.api,
-    prepare: deps.prepare,
-  })
-  const previousDir = opencode.useConfigDir(fallback.dir)
-  const result = await opencode.reloadVerified()
-  if (result.outcome === 'kept-old') {
-    opencode.useConfigDir(previousDir)
-    return respond('declined', null, `${proof.reason}; the fallback did not start: ${result.reason}`)
-  }
-  running = {
-    release_id: fallback.release_id,
-    desired_release_id: releaseId,
-    source: fallback.source,
-    mode: 'follow-base',
-    proven: fallback.source === 'release',
-    fallback_reason: [proof.reason, fallback.fallback_reason].filter(Boolean).join('; '),
-    failed_release_id: releaseId,
-    source_commit: fallback.source_commit,
-  }
-  return respond('declined', result, proof.reason)
-}
-
-const MAX_FALLBACK_REASON = 1_000
-
-/**
- * Prove the release OpenCode was spawned on at boot, BEFORE the session
- * runtime starts (spec "Boot", "Fallback chain"; verification DEF-4).
- *
- * A release that is not the proven pointer is unproven. The initial session
- * cannot be created on a config OpenCode refuses to load, so readiness never
- * comes and a proof that waits for readiness never runs. This proof waits for
- * the session API itself, fails fast on a config error, and on failure:
- *   1. quarantines the release on this box;
- *   2. walks the fallback chain — last proven release, workspace config dir
- *      with opencode.json(c), image default — restarting OpenCode on each and
- *      proving it;
- *   3. reports `fallback_reason` and `failed_release_id` in health, which is
- *      how the API learns of the failure.
- * The image default is the floor: OpenCode runs there even if it fails too.
- */
-interface BootProofInput {
-  cfg: OpenCodeConfig
-  opencode: Pick<Opencode, 'getInternalUrl'>
-  /** Reconfigure and restart OpenCode on `dir`; resolves once it listens. */
-  spawnOn: (dir: string) => Promise<void>
-  /** Put back the governance the box booted with (before the release's). */
-  restoreGovernance?: () => void
-  root?: string
-  managedSkillsDir?: string
-  api?: ConfigReleaseApi | null
-  prepare?: (dir: string) => Promise<void>
-  prove?: typeof provenCheck
-  proofBudgetMs?: number
-  proofOptions?: Partial<Pick<ProvenCheckInput, 'requestTimeoutMs' | 'hangLimit' | 'pollMs' | 'fetchImpl'>>
-  mark?: (label: string) => void
-}
-
-type BootProofResult = { proven: boolean; dir: string; source: ConfigSource }
-
-function boundedReason(reasons: readonly string[]): string | null {
-  const reason = reasons.filter(Boolean).join('; ')
-  if (!reason) return null
-  return reason.length > MAX_FALLBACK_REASON ? `${reason.slice(0, MAX_FALLBACK_REASON - 1)}…` : reason
-}
-
-function bootProver(input: BootProofInput) {
-  const budget = input.proofBudgetMs ?? VERIFY_READY_TIMEOUT_MS
-  return (dir: string, toolNames: readonly string[], pluginFiles: readonly string[]) =>
-    (input.prove ?? provenCheck)(input.opencode.getInternalUrl(), Date.now() + budget, {
-      directory: input.cfg.projectTarget,
-      toolNames,
-      pluginFiles,
-      configDir: dir,
-      waitForSessionApi: true,
-      ...input.proofOptions,
-    })
-}
-
-/**
- * Restart OpenCode on each candidate below a failed config and prove it. The
- * first that passes wins; the image default is the floor and runs even if it
- * fails too. Records the result, with every step down, as the running state.
- *
- * The chain below a failed RELEASE is: the last release this box proved, then
- * the image default. `/workspace` is deliberately not in it — a box must never
- * silently fall back to a stale session checkout while config releases are on
- * (docs/specs/config-releases.md, "Fallback chain").
- */
-async function walkFallbackChain(
-  input: BootProofInput,
-  from: 'release' | 'workspace',
-  reasons: string[],
-  failed: { releaseId: string | null; desiredReleaseId: string | null },
-): Promise<BootProofResult> {
-  const { cfg } = input
-  const root = input.root ?? bootConfigRoot()
-  const proveDir = bootProver(input)
-  type Candidate = {
-    dir: string
-    source: ConfigSource
-    label: string
-    manifest?: ReleaseManifest
-    releaseId?: string
-    sourceCommit?: string
-  }
-  const candidates: Candidate[] = []
-  if (from === 'release') {
-    const pointer = await readBootConfigPointer(root)
-    if (pointer?.proven && pointer.release_id !== failed.releaseId) {
-      const manifest = await readReleaseManifest(root, pointer.release_id)
-      if (
-        manifest &&
-        (await verifyRelease({ dir: pointer.dir, files: manifest.files, managedSkillsDir: input.managedSkillsDir }))
-      ) {
-        candidates.push({
-          dir: pointer.dir,
-          source: 'release',
-          label: `last proven release ${pointer.release_id.slice(0, 12)}`,
-          manifest,
-          releaseId: pointer.release_id,
-          sourceCommit: pointer.source_commit,
-        })
-      } else {
-        reasons.push(`last proven release ${pointer.release_id.slice(0, 12)} no longer verifies`)
-      }
-    }
-  }
-  candidates.push({ dir: cfg.defaultOpencodeConfigDir, source: 'image-default', label: 'image default config' })
-
-  for (const [index, candidate] of candidates.entries()) {
-    const last = index === candidates.length - 1
-    if (candidate.manifest) {
-      deliverGovernance(candidate.manifest.compiled_governance, candidate.manifest.compiled_governance_etag)
-    } else {
-      input.restoreGovernance?.()
-      await (input.prepare ?? ((dir) => prepareConfigDir(dir, input.managedSkillsDir)))(candidate.dir)
-    }
-    await input.spawnOn(candidate.dir)
-    const files = candidate.manifest?.files
-    const result = await proveDir(
-      candidate.dir,
-      files ? toolNamesFromFiles(files) : await toolNamesInDir(candidate.dir),
-      files ? pluginFilesFrom(files) : await pluginFilesInDir(candidate.dir),
-    )
-    if (!result.ok) reasons.push(`${candidate.label} failed: ${result.reason}`)
-    if (result.ok || last) {
-      running = {
-        release_id: candidate.releaseId ?? null,
-        desired_release_id: failed.desiredReleaseId,
-        source: candidate.source,
-        mode: 'follow-base',
-        proven: result.ok,
-        fallback_reason: boundedReason(reasons),
-        failed_release_id: failed.releaseId,
-        source_commit: candidate.sourceCommit ?? null,
-      }
-      logger.warn('[config-release] boot fell back', {
-        dir: candidate.dir,
-        source: candidate.source,
-        reason: running.fallback_reason,
-      })
-      return { proven: result.ok, dir: candidate.dir, source: candidate.source }
-    }
-  }
-  throw new Error('unreachable: the image default is always the last candidate')
-}
-
-/**
- * Prove the release OpenCode was spawned on at boot, BEFORE the session
- * runtime starts (spec "Boot", "Fallback chain"; verification DEF-4).
- *
- * A release that is not the proven pointer is unproven. The initial session
- * cannot be created on a config OpenCode refuses to load, so readiness never
- * comes and a proof that waits for readiness never runs. This proof waits for
- * the session API itself, fails fast on a config error, and on failure:
- *   1. quarantines the release on this box;
- *   2. walks the fallback chain — last proven release, workspace config dir
- *      with opencode.json(c), image default — restarting OpenCode on each and
- *      proving it;
- *   3. reports `fallback_reason` and `failed_release_id` in health, which is
- *      how the API learns of the failure.
- */
-export async function proveBootConfig(input: BootProofInput & { boot: BootRelease }): Promise<BootProofResult> {
-  const { boot } = input
-  const root = input.root ?? bootConfigRoot()
-  const proof = await bootProver(input)(
-    boot.dir,
-    toolNamesFromFiles(boot.manifest.files),
-    pluginFilesFrom(boot.manifest.files),
-  )
-  if (proof.ok) {
-    const previous = await readBootConfigPointer(root)
-    await activateBootConfig(root, {
-      release_id: boot.releaseId,
-      source_commit: boot.sourceCommit,
-      config_dir: boot.manifest.config_dir,
-      dir: boot.dir,
-      proven: true,
-    })
-    await pruneBootConfigs(root, previous ? [boot.releaseId, previous.release_id] : [boot.releaseId])
-    running = {
-      release_id: boot.releaseId,
-      desired_release_id: boot.releaseId,
-      source: 'release',
-      mode: 'follow-base',
-      proven: true,
-      fallback_reason: null,
-      failed_release_id: null,
-      source_commit: boot.sourceCommit,
-    }
-    input.mark?.('config-release-proven')
-    logger.info('[config-release] the boot release is proven', { releaseId: boot.releaseId })
-    return { proven: true, dir: boot.dir, source: 'release' }
-  }
-
-  await quarantineRelease(root, boot.releaseId, proof.reason)
-  logger.warn('[config-release] the boot release failed its proof; walking the fallback chain', {
-    releaseId: boot.releaseId,
-    reason: proof.reason,
-  })
-  return walkFallbackChain(input, 'release', [`release ${boot.releaseId.slice(0, 12)} failed: ${proof.reason}`], {
-    releaseId: boot.releaseId,
-    desiredReleaseId: boot.releaseId,
-  })
-}
-
-/**
- * Prove a workspace or image-default config a box booted on without a
- * release: a restart after its release was quarantined, an API that is
- * unreachable, or an API that predates releases. A workspace config that
- * OpenCode cannot load steps down to the image default, so the box still
- * becomes ready and a later convergence can heal it (verification DEF-4b).
- * `prior` carries the reasons the boot already stepped down for.
- */
-export async function proveBootFallback(
-  input: BootProofInput & {
-    current: { dir: string; source: 'workspace' | 'image-default' }
-    prior?: { reason: string | null; failedReleaseId: string | null }
-  },
-): Promise<BootProofResult> {
-  const { current } = input
-  const reasons = input.prior?.reason ? [input.prior.reason] : []
-  const failed = { releaseId: input.prior?.failedReleaseId ?? null, desiredReleaseId: input.prior?.failedReleaseId ?? null }
-  const proof = await bootProver(input)(current.dir, await toolNamesInDir(current.dir), await pluginFilesInDir(current.dir))
-  if (proof.ok || current.source === 'image-default') {
-    if (!proof.ok) reasons.push(`image default config failed: ${proof.reason}`)
-    running = {
-      ...running,
-      mode: running.mode ?? (failed.releaseId ? 'follow-base' : null),
-      proven: proof.ok,
-      fallback_reason: boundedReason(reasons),
-      failed_release_id: failed.releaseId,
-      desired_release_id: failed.desiredReleaseId ?? running.desired_release_id,
-    }
-    return { proven: proof.ok, dir: current.dir, source: current.source }
-  }
-  reasons.push(`workspace config failed: ${proof.reason}`)
-  return walkFallbackChain(input, 'workspace', reasons, failed)
-}
-
-export interface BootRelease {
-  dir: string
-  releaseId: string
-  sourceCommit: string
-  manifest: ReleaseManifest
-}
-
-/**
- * Fetch and extract the desired release at boot, in parallel with the repo
- * clone. This is where the daemon ASKS THE API what to run, so it is also
- * where the `config_releases` feature flag is evaluated for this boot
- * (docs/specs/config-releases.md, "Feature flag"): a `403 feature_disabled`
- * calls `onFeatureDisabled` and returns null, and boot then reads the
- * workspace config dir, as it did before config releases.
- *
- * Null when there is no archive to run (the feature is off, an older API, the
- * API is unreachable, a governance-only descriptor, a quarantined release).
- * Never throws.
- */
-export async function fetchBootRelease(input: {
-  cfg: OpenCodeConfig
-  api?: ConfigReleaseApi | null
-  root?: string
-  managedSkillsDir?: string
-  prepare?: (dir: string) => Promise<void>
-  mark?: (label: string) => void
-  descriptorTimeoutMs?: number
-  /** The desired release is quarantined on this box; boot reports it. */
-  onQuarantined?: (releaseId: string, reason: string) => void
-  /** The API answered `403 feature_disabled`: config releases are off. */
-  onFeatureDisabled?: () => void
-}): Promise<BootRelease | null> {
-  const { cfg } = input
-  const root = input.root ?? bootConfigRoot()
-  const api =
-    input.api === undefined
-      ? configReleaseApiFrom({ apiUrl: cfg.apiUrl, projectId: cfg.projectId, sandboxToken: cfg.sandboxToken })
-      : input.api
-  if (!api) return null
-  try {
-    const descriptor = await fetchConfigReleaseDescriptor(api, { timeoutMs: input.descriptorTimeoutMs })
-    input.mark?.('config-release-fetched')
-    const releaseId = effectiveReleaseId(descriptor)
-    if (descriptor.mode !== 'follow-base' || descriptor.archive === null || releaseId === null) return null
-    const quarantined = (await readQuarantine(root))[releaseId]
-    if (quarantined) {
-      input.onQuarantined?.(releaseId, quarantined.reason)
-      return null
-    }
-    const manifest = manifestFrom(descriptor, releaseId)
-    const dir = releaseDir(root, releaseId)
-    const intact =
-      existsSync(dir) && (await verifyRelease({ dir, files: manifest.files, managedSkillsDir: input.managedSkillsDir }))
-    if (intact) {
-      await writeReleaseManifest(root, manifest)
-    } else {
-      const archive = await downloadConfigArchive(api, manifest.archive_url, { expectedBytes: manifest.archive_bytes })
-      await materializeRelease({
-        root,
-        manifest,
-        archive,
-        managedSkillsDir: input.managedSkillsDir,
-        prepare: input.prepare ?? ((staged) => prepareReleaseDir(staged, input.managedSkillsDir)),
-      })
-    }
-    input.mark?.('config-release-extracted')
-    // A fresh boot runs this commit's config while `/workspace` is cloned
-    // separately and may be behind it. Tell the session (spec, "Telling the
-    // session"); the spawn declares the file in OpenCode's `instructions`.
-    noteRunningConfig({ source_commit: manifest.source_commit, config_dir: manifest.config_dir }, dir)
-    return { dir, releaseId, sourceCommit: manifest.source_commit, manifest }
-  } catch (err) {
-    if (isRepositoryChangedError(err)) {
-      logger.info('[config-release] session belongs to a previous repository; no release at boot')
-      return null
-    }
-    // Spec, "Feature flag": one clear line, then boot carries on down the
-    // fallback chain to the workspace config dir. The convergence after ready
-    // clears the boot pointer (`revertToPreReleaseConfig`).
-    if (isFeatureDisabledError(err)) {
-      logger.info('[config-release] config releases are disabled for this project; no release at boot')
-      input.onFeatureDisabled?.()
-      return null
-    }
-    logger.warn('[config-release] no release at boot; the fallback chain applies', {
-      err: err instanceof Error ? err.message : String(err),
-    })
-    return null
-  }
-}
-
-/**
- * The last proven release, for a spawn before the repository exists, when it
- * still verifies against its manifest. Delivers the release's governance.
- */
-export async function provenReleaseForEarlySpawn(
-  root: string = bootConfigRoot(),
-  managedSkillsDir?: string,
-): Promise<{ dir: string; releaseId: string; sourceCommit: string } | null> {
-  const pointer = await readBootConfigPointer(root)
-  if (!pointer?.proven || !existsSync(pointer.dir)) return null
-  const manifest = await readReleaseManifest(root, pointer.release_id)
-  if (!manifest) return null
-  if (!(await verifyRelease({ dir: pointer.dir, files: manifest.files, managedSkillsDir }))) return null
-  deliverGovernance(manifest.compiled_governance, manifest.compiled_governance_etag)
-  return { dir: pointer.dir, releaseId: pointer.release_id, sourceCommit: pointer.source_commit }
-}
-
-export interface BootConfigChoice {
-  dir: string
-  source: ConfigSource
-  release_id: string | null
-  source_commit: string | null
-  fallback_reason: string | null
-}
-
-/**
- * The directory a starting daemon spawns OpenCode on when the desired release
- * is not available: the rest of the fallback chain.
- *
- * With config releases ON:
- *   1. The last proven release named by the pointer, when it still verifies.
- *      A tampered copy is rebuilt from the API archive first.
- *   2. The image default config dir.
- *
- * With config releases OFF — the pre-release behaviour:
- *   1. The workspace config dir, when it holds `opencode.json` or `opencode.jsonc`.
- *   2. The image default config dir.
- *
- * `/workspace` is a boot source only in the OFF chain. While the feature is on
- * it stays the editable clone and a config edit reaches the box by being
- * pushed to the base branch (docs/specs/config-releases.md, "Fallback chain").
- *
- * `releasesEnabled` is what the API said on THIS boot: `false` after a `403
- * feature_disabled`, `true` after a descriptor, `null` when the API could not
- * be asked. When it could not be asked, the boot pointer is the record of the
- * last answer: a box that holds one ran a release, so it takes the ON chain,
- * and a box that holds none takes the OFF chain.
- *
- * Each step down records `fallback_reason`. The release's compiled governance
- * is delivered to the spawn. Never throws.
- */
-export async function resolveBootConfig(input: {
-  cfg: OpenCodeConfig
-  root?: string
-  managedSkillsDir?: string
-  api?: ConfigReleaseApi | null
-  prepare?: (dir: string) => Promise<void>
-  /** The `config_releases` flag as the API answered on this boot. */
-  releasesEnabled?: boolean | null
-}): Promise<BootConfigChoice> {
-  const { cfg } = input
-  const root = input.root ?? bootConfigRoot()
-  const reasons: string[] = []
-  // Config releases are OFF for this project: `/opt/kortix/config` is not a
-  // boot source, not even through a pointer this box wrote while the flag was
-  // on. OpenCode reads the workspace config dir, as it did before releases
-  // (spec, "Feature flag"). The convergence after ready clears the pointer.
-  if (input.releasesEnabled === false) {
-    const dir = await resolveOpencodeConfigDir(cfg)
-    logger.info('[config-release] disabled for this project; booting on the workspace config dir', { dir })
-    return {
-      dir,
-      source: dir === cfg.defaultOpencodeConfigDir ? 'image-default' : 'workspace',
-      release_id: null,
-      source_commit: null,
-      fallback_reason: null,
-    }
-  }
-  try {
-    const pointer = await readBootConfigPointer(root)
-    if (pointer && !pointer.proven) reasons.push(`release ${pointer.release_id.slice(0, 12)} was never proven`)
-    if (pointer?.proven) {
-      const manifest = await readReleaseManifest(root, pointer.release_id)
-      const intact =
-        manifest !== null &&
-        (await verifyRelease({ dir: pointer.dir, files: manifest.files, managedSkillsDir: input.managedSkillsDir }))
-      let dir: string | null = intact ? pointer.dir : null
-      if (!intact && manifest) {
-        const api =
-          input.api === undefined
-            ? configReleaseApiFrom({ apiUrl: cfg.apiUrl, projectId: cfg.projectId, sandboxToken: cfg.sandboxToken })
-            : input.api
-        if (api) {
-          logger.warn('[config-release] the proven release no longer verifies; rebuilding', {
-            releaseId: pointer.release_id,
-          })
-          try {
-            const archive = await downloadConfigArchive(api, manifest.archive_url, { expectedBytes: manifest.archive_bytes })
-            dir = (
-              await materializeRelease({
-                root,
-                manifest,
-                archive,
-                managedSkillsDir: input.managedSkillsDir,
-                prepare: input.prepare ?? ((staged) => prepareReleaseDir(staged, input.managedSkillsDir)),
-              })
-            ).dir
-          } catch (err) {
-            reasons.push(`release ${pointer.release_id.slice(0, 12)} could not be rebuilt: ${(err as Error).message}`)
-          }
-        } else {
-          reasons.push(`release ${pointer.release_id.slice(0, 12)} no longer verifies and the API is not configured`)
-        }
-      } else if (!intact) {
-        reasons.push(`release ${pointer.release_id.slice(0, 12)} has no manifest`)
-      }
-      if (dir && manifest) {
-        deliverGovernance(manifest.compiled_governance, manifest.compiled_governance_etag)
-        noteRunningConfig({ source_commit: pointer.source_commit, config_dir: manifest.config_dir }, dir)
-        return {
-          dir,
-          source: 'release',
-          release_id: pointer.release_id,
-          source_commit: pointer.source_commit,
-          fallback_reason: null,
-        }
-      }
-    }
-  } catch (err) {
-    reasons.push(`the release store could not be read: ${(err as Error).message}`)
-  }
-  // Was the feature on for this boot? The API's own answer wins; without one,
-  // a boot pointer means this box ran a release and the feature was on.
-  const releasesEnabled =
-    input.releasesEnabled ?? ((await readBootConfigPointer(root).catch(() => null)) !== null);
-  if (releasesEnabled) {
-    // The ON chain stops at the image default. Falling to /workspace here
-    // would silently run a stale session checkout as the project's config.
-    reasons.push('no release is available on this box');
-    const reason = reasons.join('; ');
-    logger.warn('[config-release] no release available; the image default config runs this session', { reason });
-    return {
-      dir: cfg.defaultOpencodeConfigDir,
-      source: 'image-default',
-      release_id: null,
-      source_commit: null,
-      fallback_reason: reason,
-    };
-  }
-  const fallbackReason = reasons.length > 0 ? reasons.join('; ') : null
-  if (fallbackReason) logger.warn('[config-release] falling back below the proven release', { reason: fallbackReason })
-  const dir = await resolveOpencodeConfigDir(cfg)
-  return {
-    dir,
-    source: dir === cfg.defaultOpencodeConfigDir ? 'image-default' : 'workspace',
-    release_id: null,
-    source_commit: null,
-    fallback_reason: fallbackReason,
-  }
-}

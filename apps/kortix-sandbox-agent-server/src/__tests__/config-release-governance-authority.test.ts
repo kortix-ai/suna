@@ -11,7 +11,7 @@ import { join } from 'node:path'
 import { Hono } from 'hono'
 import type { OpenCodeConfig as Config } from '../harness/open-code/config'
 import { createOpenCodeQuickQueueInterrupt } from '../harness/open-code/background'
-import { recordBootConfig, resetConfigReleaseStateForTests } from '../harness/open-code/config-release'
+import { setRunningConfig, resetConfigReleaseStateForTests } from '../harness/open-code/config-release'
 import { createOpenCodeControlService } from '../harness/open-code/control'
 import type { Opencode } from '../harness/open-code/lifecycle'
 import { createProjectEnvStore } from '../project-env'
@@ -83,7 +83,7 @@ afterEach(() => {
 
 describe('compiled governance while a config release is active', () => {
   it('an env push does not replace the release governance and does not respawn for it', async () => {
-    recordBootConfig({ source: 'release', release_id: 'a'.repeat(64), source_commit: 'b'.repeat(40), proven: true })
+    setRunningConfig({ source: 'release', release_id: 'a'.repeat(64), source_commit: 'b'.repeat(40), proven: true })
     const { app: target, calls } = app()
     const { status, json } = await pushGovernance(target)
     expect(status).toBe(200)
@@ -95,14 +95,14 @@ describe('compiled governance while a config release is active', () => {
   })
 
   it('a governance-only release (image default) is authoritative too', async () => {
-    recordBootConfig({ source: 'image-default', release_id: 'c'.repeat(64), proven: true })
+    setRunningConfig({ source: 'image-default', release_id: 'c'.repeat(64), proven: true })
     const { app: target } = app()
     await pushGovernance(target)
     expect(process.env.KORTIX_COMPILED_AGENT_CONFIG).toBe(RELEASE_GOV)
   })
 
   it('without an active release the push applies and restarts, as before', async () => {
-    recordBootConfig({ source: 'workspace' })
+    setRunningConfig({ source: 'workspace' })
     const { app: target, calls } = app()
     const { status, json } = await pushGovernance(target)
     expect(status).toBe(200)

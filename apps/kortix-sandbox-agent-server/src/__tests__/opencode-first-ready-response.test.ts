@@ -70,7 +70,7 @@ describe('OpenCode lifecycle first ready response', () => {
     } as Config
     let spawnAttempts = 0
     let readySettled = false
-    lifecycle = createOpencodeLifecycle(cfg, configDir, undefined, {
+    lifecycle = createOpencodeLifecycle(cfg, undefined, {
       binaryPathOverride: binary,
       configPathOverride: join(root, 'runtime-config.json'),
       onStartupMark: (label) => {
@@ -141,7 +141,7 @@ console.log('opencode server listening on http://127.0.0.1:' + port)
       gitUserEmail: 'agent@kortix.ai',
     } as Config
     let reports = 0
-    lifecycle = createOpencodeLifecycle(cfg, configDir, undefined, {
+    lifecycle = createOpencodeLifecycle(cfg, undefined, {
       binaryPathOverride: binary,
       configPathOverride: join(root, 'runtime-config.json'),
       onFirstReadyResponse: () => {

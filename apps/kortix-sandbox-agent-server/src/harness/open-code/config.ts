@@ -6,39 +6,6 @@ import { loadConfig, readProjectManifest, extractNestedString, type Config as Ho
 type Config = OpenCodeConfig
 
 /**
- * The manifest's config dir, repo-relative, when it is a literal path; null
- * otherwise. It does not require the directory to exist: the workspace report
- * must also describe a session that deleted its `opencode.json`.
- */
-export async function resolveOpencodeConfigDirLiteral(cfg: Config): Promise<string | null> {
-  const fs = await import('node:fs/promises')
-  const rel = await readOpencodeConfigDirFromManifest(fs, cfg.projectTarget)
-  return isPlainRelativePath(rel) ? rel : null
-}
-
-/**
- * Is this a literal directory path, and nothing cleverer?
- *
- * `opencode.config_dir` comes from a repo-controlled manifest and this value
- * becomes a git PATHSPEC. The manifest reader only rejects absolute paths and
- * `..`, so `:(top)*` survives it — and git honours pathspec magic even after
- * `--`, which would let a manifest widen the workspace report to the whole
- * working tree. The git calls also run with `GIT_LITERAL_PATHSPECS=1`, so
- * this is the second of two independent guards rather than the only one; it
- * exists so a magic-looking value is SKIPPED loudly instead of silently
- * resolving to some other directory.
- *
- * Deliberately narrow: only the boot path may keep interpreting whatever the
- * manifest says. This governs the workspace report alone.
- */
-function isPlainRelativePath(value: string): boolean {
-  if (!value || value.startsWith('/') || value.startsWith('-')) return false
-  return value
-    .split('/')
-    .every((segment) => segment.length > 0 && segment !== '.' && segment !== '..' && /^[\w .-]+$/.test(segment))
-}
-
-/**
  * Pick the opencode config dir for this sandbox. Honors `opencode.config_dir` in
  * the project's manifest (kortix.yaml, or legacy kortix.toml) when present,
  * defaulting to `.kortix/opencode` relative to the cloned repo, and falls back
@@ -88,23 +55,6 @@ async function readOpencodeConfigDirFromManifest(
   return raw
 }
 
-/**
- * Absolute OpenCode config dir to spawn on BEFORE the checkout exists, from
- * the API's tip-resolved hint: '' → the baked default dir, a relative path →
- * that dir under the project target, undefined/unsafe → null (serial boot).
- */
-export function resolveHintedOpencodeConfigDir(cfg: Config): string | null {
-  const hint = cfg.opencodeConfigDirHint
-  if (hint === undefined) return null
-  if (hint === '') return cfg.defaultOpencodeConfigDir
-  const trimmed = hint.trim().replace(/\/+$/, '')
-  if (!trimmed || trimmed.startsWith('/') || trimmed.startsWith('-')) return null
-  if (trimmed.split('/').some((seg) => !seg || seg === '.' || seg === '..' || !/^[\w .-]+$/.test(seg))) {
-    return null
-  }
-  return `${cfg.projectTarget}/${trimmed}`
-}
-
 /** Native environment contract; names and defaults are unchanged. */
 const EnvironmentSchema = z.object({
   KORTIX_OPENCODE_INTERNAL_PORT: z.coerce.number().int().positive().default(4096),
@@ -121,7 +71,6 @@ const EnvironmentSchema = z.object({
   KORTIX_DEFAULT_OPENCODE_CONFIG_DIR: z
     .string()
     .default('/ephemeral/kortix-master/opencode'),
-  KORTIX_OPENCODE_CONFIG_DIR_HINT: z.string().optional(),
 })
 
 export interface OpenCodeEnvironment {
@@ -129,12 +78,6 @@ export interface OpenCodeEnvironment {
   /** Idle half of the opencode port pair; see KORTIX_OPENCODE_STANDBY_PORT. */
   opencodeStandbyPort: number
   defaultOpencodeConfigDir: string
-  /**
-   * OpenCode config dir at the base tip, repo-relative; '' = the tip ships no
-   * project config; undefined = unknown (serial boot). Lets OpenCode spawn
-   * before the checkout exists.
-   */
-  opencodeConfigDirHint?: string
 }
 
 export function loadOpenCodeEnvironment(env: NodeJS.ProcessEnv): OpenCodeEnvironment {
@@ -143,7 +86,6 @@ export function loadOpenCodeEnvironment(env: NodeJS.ProcessEnv): OpenCodeEnviron
     opencodeInternalPort: parsed.KORTIX_OPENCODE_INTERNAL_PORT,
     opencodeStandbyPort: parsed.KORTIX_OPENCODE_STANDBY_PORT,
     defaultOpencodeConfigDir: parsed.KORTIX_DEFAULT_OPENCODE_CONFIG_DIR,
-    opencodeConfigDirHint: parsed.KORTIX_OPENCODE_CONFIG_DIR_HINT,
   }
 }
 
@@ -167,8 +109,7 @@ export function requireOpenCodeConfig(cfg: HostConfig): OpenCodeConfig {
   if (
     !('opencodeInternalPort' in cfg) || typeof cfg.opencodeInternalPort !== 'number' ||
     !('opencodeStandbyPort' in cfg) || typeof cfg.opencodeStandbyPort !== 'number' ||
-    !('defaultOpencodeConfigDir' in cfg) || typeof cfg.defaultOpencodeConfigDir !== 'string' ||
-    ('opencodeConfigDirHint' in cfg && cfg.opencodeConfigDirHint !== undefined && typeof cfg.opencodeConfigDirHint !== 'string')
+    !('defaultOpencodeConfigDir' in cfg) || typeof cfg.defaultOpencodeConfigDir !== 'string'
   ) {
     throw new Error('Selected OpenCode harness requires its resolved configuration')
   }
