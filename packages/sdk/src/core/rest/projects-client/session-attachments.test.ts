@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { configureKortix } from "../../http/config";
 import {
   fetchSessionAttachment,
+  findSessionAttachments,
   uploadSessionAttachment,
 } from "./session-attachments";
 
@@ -136,4 +137,170 @@ test('accepts a 30 MiB saved file under the shared 50 MiB composer limit', async
   }) as typeof fetch;
   const result = await uploadSessionAttachment(projectId, sessionId, new File([new Uint8Array(30 * 1024 * 1024)], 'large.zip', { type: 'application/zip' }), { attachmentId });
   expect(result.size).toBe(30 * 1024 * 1024);
+});
+
+// ── findSessionAttachments ─────────────────────────────────────────────────
+
+const refB = `kortix-attachment://${projectId}/${sessionId}/44444444-4444-4444-8444-444444444444`;
+const refC = `kortix-attachment://${projectId}/${sessionId}/55555555-5555-4555-8555-555555555555`;
+
+test("finds every stored attachment a transcript references, in order", () => {
+  const found = findSessionAttachments([
+    {
+      info: { id: "msg_user", role: "user" },
+      parts: [
+        { id: "p1", type: "file", filename: "photo.png", mime: "image/png", url: ref },
+        {
+          id: "p2",
+          type: "text",
+          text: `Read this. <file path="/workspace/uploads/R&amp;D.txt" mime="text/plain" filename="R&amp;D.txt" attachment="${refB}">Uploaded</file>`,
+        },
+      ],
+    },
+    {
+      info: { id: "msg_agent", role: "assistant" },
+      parts: [
+        { id: "p3", type: "text", text: "Here is the chart." },
+        {
+          id: "p4",
+          type: "tool",
+          tool: "show",
+          state: {
+            status: "completed",
+            input: { type: "image", path: "/workspace/out/revenue.png", attachment: refC },
+          },
+        },
+      ],
+    },
+  ]);
+  expect(found).toEqual([
+    { url: ref, attachment_id: attachmentId, filename: "photo.png", mime: "image/png", message_id: "msg_user", role: "user" },
+    {
+      url: refB,
+      attachment_id: "44444444-4444-4444-8444-444444444444",
+      filename: "R&D.txt",
+      mime: "text/plain",
+      message_id: "msg_user",
+      role: "user",
+    },
+    {
+      url: refC,
+      attachment_id: "55555555-5555-4555-8555-555555555555",
+      filename: "revenue.png",
+      mime: null,
+      message_id: "msg_agent",
+      role: "assistant",
+    },
+  ]);
+});
+
+test("finds every item of a shown carousel, from an array or a JSON string", () => {
+  const found = findSessionAttachments([
+    {
+      info: { id: "m", role: "assistant" },
+      parts: [
+        {
+          id: "p",
+          type: "tool",
+          tool: "oc-show",
+          state: {
+            status: "completed",
+            input: {
+              items: JSON.stringify([
+                { type: "image", path: "/workspace/a.png", attachment: refB },
+                { type: "url", url: "https://example.test" },
+                { type: "pdf", path: "/workspace/r.pdf", attachment: refC },
+              ]),
+            },
+          },
+        },
+      ],
+    },
+  ]);
+  expect(found.map((a) => [a.filename, a.url])).toEqual([
+    ["a.png", refB],
+    ["r.pdf", refC],
+  ]);
+});
+
+test("anything that is not a stored reference is ignored", () => {
+  // Inline bytes, a sandbox path, and a look-alike are not attachments this
+  // session holds: a download of them would fail or fetch something else.
+  const found = findSessionAttachments([
+    {
+      info: { id: "m", role: "user" },
+      parts: [
+        { id: "a", type: "file", filename: "x.png", url: "data:image/png;base64,AAAA" },
+        { id: "b", type: "file", filename: "y.png", url: "/workspace/y.png" },
+        { id: "c", type: "file", filename: "z.png", url: "kortix-attachment://not/a/ref" },
+        { id: "d", type: "text", text: '<file path="/workspace/q.txt" filename="q.txt">x</file>' },
+        {
+          id: "e",
+          type: "tool",
+          tool: "read",
+          state: { status: "completed", input: { attachment: ref } },
+        },
+      ],
+    },
+  ]);
+  expect(found).toEqual([]);
+});
+
+test("the same stored file referenced twice is listed once", () => {
+  const found = findSessionAttachments([
+    {
+      info: { id: "m1", role: "user" },
+      parts: [{ id: "a", type: "file", filename: "photo.png", mime: "image/png", url: ref }],
+    },
+    {
+      info: { id: "m2", role: "user" },
+      parts: [{ id: "b", type: "file", filename: "photo.png", mime: "image/png", url: ref }],
+    },
+  ]);
+  expect(found).toHaveLength(1);
+  expect(found[0]!.message_id).toBe("m1");
+});
+
+test("a malformed transcript yields nothing rather than throwing", () => {
+  expect(findSessionAttachments(null as never)).toEqual([]);
+  expect(
+    findSessionAttachments([
+      null,
+      "x",
+      { info: null, parts: [] },
+      { info: { id: "m", role: "user" }, parts: "nope" },
+      { info: { id: "m", role: "user" }, parts: [null, 7, { type: "file" }] },
+    ] as never),
+  ).toEqual([]);
+});
+
+test("a pathological message cannot stall the scan", () => {
+  // `findSessionAttachments` reads user text, which a user wrote. A regex of
+  // the shape `<file\s+([^>]*?)>` is quadratic on `<file` + whitespace with no
+  // `>` (CodeQL js/polynomial-redos) — ~10 s on this input.
+  const evil = `${"<file\t".repeat(40_000)}<file${"\t".repeat(200_000)}`;
+  const started = performance.now();
+  const found = findSessionAttachments([
+    { info: { id: "m", role: "user" }, parts: [{ id: "p", type: "text", text: evil }] },
+  ]);
+  expect(performance.now() - started).toBeLessThan(100);
+  expect(found).toEqual([]);
+});
+
+test("a <file> tag inside another file's body is not a second reference", () => {
+  // The body of a tag is file CONTENT. A document that mentions a tag in its
+  // text must not have that mention read as an attachment of the session.
+  const found = findSessionAttachments([
+    {
+      info: { id: "m", role: "user" },
+      parts: [
+        {
+          id: "p",
+          type: "text",
+          text: `<file path="/w/outer.txt" filename="outer.txt" attachment="${ref}">see <file path="/w/x" attachment="${refB}"> here</file> after`,
+        },
+      ],
+    },
+  ]);
+  expect(found.map((a) => a.url)).toEqual([ref]);
 });

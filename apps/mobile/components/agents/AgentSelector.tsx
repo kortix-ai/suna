@@ -57,7 +57,9 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
           { flexDirection: 'row', alignItems: 'center', gap: 3 },
           pressed && { opacity: 0.7 },
         ]}
-        hitSlop={ANDROID_HIT_SLOP}>
+        hitSlop={ANDROID_HIT_SLOP}
+        accessibilityRole="button"
+        accessibilityLabel="Choose agent mode">
         <ModeLogo mode={mode} height={10} />
         <Icon as={ChevronDown} size={9} className="text-foreground/60" />
       </PressableSurface>
@@ -78,7 +80,9 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
         },
         pressed && { opacity: 0.7 },
       ]}
-      hitSlop={ANDROID_HIT_SLOP}>
+      hitSlop={ANDROID_HIT_SLOP}
+      accessibilityRole="button"
+      accessibilityLabel="Choose agent mode">
       <ModeLogo mode={mode} height={11} />
       <Icon as={ChevronDown} size={9} className="text-foreground/50" />
     </PressableSurface>

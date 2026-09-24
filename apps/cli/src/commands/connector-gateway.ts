@@ -17,6 +17,14 @@
  * host/update notices for machine-oriented connector subcommands.
  */
 import { ApiError } from '@kortix/sdk';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import {
+  attachmentRef,
+  attachmentSlot,
+  insertAttachmentHandles,
+  uploadAttachmentFiles,
+} from '../connector-gateway/attachments.ts';
 import {
   addConnector,
   callWithApprovalHandoff,
@@ -54,8 +62,42 @@ interface ConnectorCallInput {
 }
 
 const CONNECTOR_CALL_USAGE =
-  'usage: kortix connectors call <connector>.<action> [json-args] ' +
+  'usage: kortix connectors call <connector>.<action> [json-args | @args.json | -] ' +
+  '[--attach <file>]... [--attach-path <dotted.path>] ' +
   '(split form also supported: <connector> <action> [json-args])';
+
+/**
+ * JSON args come inline, from a file (`@path`), or from stdin (`-`). The file
+ * and stdin forms carry payloads larger than one argv string may be (Linux
+ * caps a single argument at 128 KiB).
+ */
+async function readCallArgs(rawArgs: string | undefined): Promise<Record<string, unknown>> {
+  if (!rawArgs) return {};
+  let text = rawArgs;
+  if (rawArgs === '-') {
+    text = await new Response(Bun.stdin.stream()).text();
+  } else if (rawArgs.startsWith('@')) {
+    const path = rawArgs.slice(1);
+    try {
+      text = await readFile(path, 'utf8');
+    } catch (error) {
+      throw new CliError(
+        `cannot read args file ${path}: ${(error as Error).message}`,
+        'BAD_ARGS',
+      );
+    }
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new CliError('args must be valid JSON', 'BAD_ARGS');
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new CliError('args must be a JSON object', 'BAD_ARGS');
+  }
+  return parsed as Record<string, unknown>;
+}
 
 /**
  * Accept the dotted tool reference returned by connectors/discover/describe.
@@ -129,6 +171,7 @@ async function dispatch(
   command: string,
   args: string[],
   flags: Record<string, string>,
+  repeated: Record<string, string[]> = {},
 ): Promise<void> {
   switch (command) {
     case 'connectors':
@@ -187,12 +230,44 @@ async function dispatch(
     case 'call': {
       const { slug, action, rawArgs } = parseConnectorCallInput(args, flags);
       const connector = connectorClient(flags.project);
-      let parsed: Record<string, unknown> = {};
-      if (rawArgs) {
+      let parsed = await readCallArgs(rawArgs);
+      const attach = (repeated.attach ?? []).filter((path) => path !== 'true');
+      if (flags.attach !== undefined && attach.length === 0) {
+        throw new CliError('--attach needs a file path', 'USAGE');
+      }
+      if (attach.length > 0) {
+        // Raw bytes go to attachment staging; only opaque handles enter args.
+        const tool = await connector.describe(`${slug}.${action}`);
+        if (!tool) throw new CliError(`unknown tool "${slug}.${action}"`, 'NOT_FOUND');
+        let slot: string[] | null;
         try {
-          parsed = JSON.parse(rawArgs);
-        } catch {
-          throw new CliError('args must be valid JSON', 'BAD_ARGS');
+          slot = attachmentSlot(
+            tool.inputSchema,
+            flags['attach-path'] && flags['attach-path'] !== 'true' ? flags['attach-path'] : undefined,
+          );
+        } catch (error) {
+          throw new CliError((error as Error).message, 'USAGE');
+        }
+        if (!slot) {
+          throw new CliError(
+            `${slug}.${action} does not accept attachments: its input schema has no \`attachments\` array. Pass --attach-path to name the array field.`,
+            'ATTACHMENTS_UNSUPPORTED',
+          );
+        }
+        try {
+          const handles = await uploadAttachmentFiles(
+            attach.map((path) => ({ path: resolve(path) })),
+            connector,
+            { connector: slug },
+          );
+          parsed = insertAttachmentHandles(
+            parsed,
+            slot,
+            handles.map((handle) => attachmentRef(handle.attachment_id)),
+          );
+        } catch (error) {
+          if (error instanceof ApiError) throw error;
+          throw new CliError((error as Error).message, 'BAD_ATTACHMENT');
         }
       }
       // A gated call returns its authenticated approval URL immediately. The
@@ -207,6 +282,44 @@ async function dispatch(
         account: flags.account,
       });
       out(result);
+      break;
+    }
+
+    case 'upload': {
+      // Stage one file; print the handle plus `ref`, the call-args value.
+      const path = args[0];
+      const slug = flags.connector && flags.connector !== 'true' ? flags.connector : '';
+      if (!path || !slug) {
+        throw new CliError(
+          'usage: kortix connectors upload <file> --connector <slug> [--filename <name>] [--content-type <mime>] [--inline --content-id <cid>]',
+          'USAGE',
+        );
+      }
+      const connector = connectorClient(flags.project);
+      let uploaded;
+      try {
+        [uploaded] = await uploadAttachmentFiles(
+          [
+            {
+              path: resolve(path),
+              ...(flags.filename && flags.filename !== 'true' ? { filename: flags.filename } : {}),
+              ...(flags['content-type'] && flags['content-type'] !== 'true'
+                ? { content_type: flags['content-type'] }
+                : {}),
+              ...(flags.inline === 'true' ? { content_disposition: 'inline' } : {}),
+              ...(flags['content-id'] && flags['content-id'] !== 'true'
+                ? { content_id: flags['content-id'] }
+                : {}),
+            },
+          ],
+          connector,
+          { connector: slug },
+        );
+      } catch (error) {
+        if (error instanceof ApiError) throw error;
+        throw new CliError((error as Error).message, 'BAD_ATTACHMENT');
+      }
+      out({ ok: true, ...uploaded, ref: attachmentRef(uploaded!.attachment_id) });
       break;
     }
 
@@ -309,7 +422,9 @@ async function dispatch(
           ls: 'kortix connectors ls — list connectors + tools this session can use',
           discover: 'kortix connectors discover "<intent>" — search tools by natural language',
           show: "kortix connectors show <connector>.<action> — show a tool's input schema",
-          call: "kortix connectors call <connector> <action> '<json-args>' [--account <label|id|me|project>] — run a tool or return its approval link; the result echoes the account it ran as. With several accounts and none named/pinned, denied with reason account_required — name --account or pin a default",
+          call: "kortix connectors call <connector> <action> '<json-args>'|@args.json|- [--account <label|id|me|project>] [--attach <file>]... [--attach-path <dotted.path>] — run a tool or return its approval link; the result echoes the account it ran as. With several accounts and none named/pinned, denied with reason account_required — name --account or pin a default. --attach stages a file from /workspace/{output,artifacts,reports,deliverables} and appends its reference to the action's attachments array (e.g. Microsoft Graph body.message.attachments); the gateway builds the provider's attachment item. Never put base64 in args",
+          upload:
+            'kortix connectors upload <file> --connector <slug> — stage one file; prints `ref`, the value {"$kortix_attachment":"<id>"}. Put it in call args: as an attachments[] element it becomes the provider attachment item, in a string field (contentBytes, content) it becomes the base64. Single-use, expires in 24 h',
           add: 'kortix connectors add <slug> --provider composio --app <toolkit> — add a managed app connector NOW (no CR), then connect',
           rm: 'kortix connectors rm <slug> — remove a connector from the project',
           accounts:
@@ -324,7 +439,7 @@ async function dispatch(
 
 /** `argv` is everything after the `connectors` token. */
 export async function runConnector(argv: string[]): Promise<number> {
-  const { command, args, flags } = parseExecArgs(argv);
+  const { command, args, flags, repeated } = parseExecArgs(argv);
 
   // The MCP server owns stdin/stdout for JSON-RPC; run it directly.
   if (command === 'mcp') {
@@ -332,7 +447,7 @@ export async function runConnector(argv: string[]): Promise<number> {
   }
 
   try {
-    await dispatch(command, args, flags);
+    await dispatch(command, args, flags, repeated);
     return 0;
   } catch (err) {
     if (err instanceof ApiError) {

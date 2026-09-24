@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
@@ -371,6 +371,22 @@ async function resolveOwnerRawEnv(
   scope: SandboxEnvSnapshot['scope'];
 } | null> {
   if (!sessionId) return null;
+  // The project read below is keyed on `projectId`, not on anything this row
+  // returns, so both go out together: one round trip instead of two.
+  // Promise.resolve, not the query builder itself: a Drizzle builder is a
+  // thenable, so it starts here but has no `.catch` of its own.
+  const projectRead = Promise.resolve(
+    db
+      .select({
+        repoUrl: projects.repoUrl,
+        defaultBranch: projects.defaultBranch,
+        manifestPath: projects.manifestPath,
+      })
+      .from(projects)
+      .where(eq(projects.projectId, projectId))
+      .limit(1),
+  );
+  projectRead.catch(() => undefined);
   const [row] = await db
     .select({
       createdBy: projectSessions.createdBy,
@@ -394,15 +410,7 @@ async function resolveOwnerRawEnv(
   // the env with the RUNNING agent's grant before the prompt is forwarded. A
   // switch is never refused — see secret-grant.ts for why refusing protected
   // nothing that was still protectable.
-  const [project] = await db
-    .select({
-      repoUrl: projects.repoUrl,
-      defaultBranch: projects.defaultBranch,
-      manifestPath: projects.manifestPath,
-    })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
-    .limit(1);
+  const [project] = await projectRead;
 
   const grantEnv = await resolveSessionSecretGrant({
     projectId,
@@ -623,6 +631,19 @@ export async function syncSandboxEnvForPrompt(args: {
   const lap = (label: string) => {
     timing[label] = Math.round(performance.now() - t0 - Object.values(timing).reduce((a, b) => a + b, 0));
   };
+  // The snapshot, the network boundary and the gateway flag read DIFFERENT
+  // rows for the same session and project, and none of them consumes another's
+  // result. They start together and are awaited in the original order, so a
+  // failure still surfaces at the same place and with the same meaning — the
+  // boundary's fail-closed grant error included.
+  const boundaryRead = resolveSessionNetworkBoundary(
+    args.projectId,
+    args.sessionId,
+    args.requestedAgent,
+  );
+  const gatewayRead = projectLlmGatewayEnabledById(args.projectId);
+  boundaryRead.catch(() => undefined);
+  gatewayRead.catch(() => undefined);
   const snapshot = await resolveSandboxEnvSnapshot(
     args.projectId,
     args.sessionId,
@@ -641,11 +662,7 @@ export async function syncSandboxEnvForPrompt(args: {
   // this leg omitted it and landed on the resolver's `?? true` default, so THIS
   // was the line that threw. The parameter is gone, so the two legs can no
   // longer disagree about policy — they share one resolver with one behavior.
-  const networkBoundary = await resolveSessionNetworkBoundary(
-    args.projectId,
-    args.sessionId,
-    args.requestedAgent,
-  );
+  const networkBoundary = await boundaryRead;
   lap('boundary');
   // Sampled BEFORE the attempt, because a failed arm forgets its record. `true`
   // means this process already armed a DIFFERENT set on this sandbox (an
@@ -709,7 +726,7 @@ export async function syncSandboxEnvForPrompt(args: {
     );
   }
   lap('arm');
-  const llmGatewayEnabled = await projectLlmGatewayEnabledById(args.projectId);
+  const llmGatewayEnabled = await gatewayRead;
   lap('gateway-flag');
   const llmGatewayBaseUrl = llmGatewayEnabled
     ? llmGatewayBaseUrlForProvider(args.providerName)
@@ -1020,26 +1037,31 @@ export async function propagateLlmGatewayModeToActiveSandboxes(
   }
 }
 
+/**
+ * Record which model route this box is on. ONE conditional statement: the flag
+ * is merged into `config` in the database, and the row is only touched when the
+ * stored value actually differs. This ran as a read plus an unconditional
+ * rewrite of the identical value on EVERY prompt — two round trips to change
+ * nothing in the steady state. `updated_at` still moves per prompt through the
+ * turn-ledger writes, so nothing that watches the row for activity loses a
+ * signal.
+ */
 async function markSandboxLlmGatewayMode(
   sessionId: string,
   enabled: boolean,
 ): Promise<void> {
-  const [row] = await db
-    .select({ config: sessionSandboxes.config })
-    .from(sessionSandboxes)
-    .where(eq(sessionSandboxes.sessionId, sessionId))
-    .limit(1);
-  if (!row) return;
   await db
     .update(sessionSandboxes)
     .set({
-      config: {
-        ...((row.config as Record<string, unknown> | null) ?? {}),
-        llmGatewayEnabled: enabled,
-      },
+      config: sql`COALESCE(${sessionSandboxes.config}, '{}'::jsonb) || jsonb_build_object('llmGatewayEnabled', ${enabled}::boolean)`,
       updatedAt: new Date(),
     })
-    .where(eq(sessionSandboxes.sessionId, sessionId));
+    .where(
+      and(
+        eq(sessionSandboxes.sessionId, sessionId),
+        sql`(${sessionSandboxes.config}->>'llmGatewayEnabled') IS DISTINCT FROM ${String(enabled)}`,
+      ),
+    );
 }
 
 function emptySandboxEnvSnapshot(reason: string): SandboxEnvSnapshot {

@@ -152,6 +152,11 @@ export function registerAccountRoutes(): void {
       // invite must not roll back the others, or the account just bootstrapped).
       await autoClaimPendingInvites(userId, userEmail);
 
+      // Re-read unconditionally. Skipping it when this request claimed nothing
+      // races a concurrent list: the first call of a fresh sign-in claims the
+      // invite between this call's first read and its claim, so this call sees
+      // no pending invite, claims 0, and would return the list without the
+      // workspace the user was just added to.
       memberships = await loadMemberships();
       if (memberships.length === 0) {
         console.warn(`[accounts] No memberships for ${userId} after bootstrap+claim`);

@@ -3,16 +3,23 @@
  *
  * A reusable component to block features for free tier users
  * Matches the frontend design from agent-configuration-dialog.tsx
+ *
+ * iOS (App Store guideline 3.1.1): `onUpgradePress` chains to `router.push('/plans')`
+ * at every call site (Composio connections, triggers, the agent drawer), and
+ * Plans opens web checkout. So on iOS this card is not pressable — it stays
+ * informational (icon, title, description) with no button, instead of a
+ * button that would lead to purchasing outside IAP.
  */
 
 import * as React from 'react';
-import { View, Pressable } from 'react-native';
+import { Platform, View, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { HardDrivesIcon as Server, SparkleIcon as Sparkles, LightningIcon as Zap, LockIcon as Lock } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import { canShowExternalPurchase } from '@/lib/billing/store-policy';
 import { THEME } from '@/lib/utils/theme';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -71,6 +78,9 @@ export function FreeTierBlock({
   const scale = useSharedValue(1);
   const config = VARIANT_CONFIG[variant];
   const IconComponent = config.icon;
+  // iOS: no path to Plans (App Store guideline 3.1.1) — the card is
+  // informational only, no button, no press.
+  const canUpgrade = canShowExternalPurchase(Platform.OS);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -110,14 +120,16 @@ export function FreeTierBlock({
       </Text>
 
       {/* Upgrade button - primary surface, inverts light/dark to match screenshot */}
-      <Pressable
-        onPress={handlePress}
-        className="mt-2 flex-row items-center gap-2 rounded-full px-7 py-3.5 active:opacity-80 bg-primary">
-        <Sparkles size={16} color={c.primaryForeground} />
-        <Text className="font-roobert-semibold text-sm text-primary-foreground">
-          {buttonText || config.buttonText}
-        </Text>
-      </Pressable>
+      {canUpgrade ? (
+        <Pressable
+          onPress={handlePress}
+          className="mt-2 flex-row items-center gap-2 rounded-full px-7 py-3.5 active:opacity-80 bg-primary">
+          <Sparkles size={16} color={c.primaryForeground} />
+          <Text className="font-roobert-semibold text-sm text-primary-foreground">
+            {buttonText || config.buttonText}
+          </Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 
@@ -127,9 +139,9 @@ export function FreeTierBlock({
         <View className="absolute inset-0 bg-background/80" />
         <View className="relative flex-1 items-center justify-center px-6">
           <AnimatedPressable
-            onPress={handlePress}
-            onPressIn={handlePressIn}
-            onPressOut={handlePressOut}
+            onPress={canUpgrade ? handlePress : undefined}
+            onPressIn={canUpgrade ? handlePressIn : undefined}
+            onPressOut={canUpgrade ? handlePressOut : undefined}
             style={[
               animatedStyle,
               {
@@ -151,9 +163,9 @@ export function FreeTierBlock({
   if (style === 'banner') {
     return (
       <AnimatedPressable
-        onPress={handlePress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
+        onPress={canUpgrade ? handlePress : undefined}
+        onPressIn={canUpgrade ? handlePressIn : undefined}
+        onPressOut={canUpgrade ? handlePressOut : undefined}
         style={animatedStyle}
         className="rounded-2xl p-4 border border-border bg-card">
         <View className="flex-row items-center gap-3">
@@ -171,15 +183,17 @@ export function FreeTierBlock({
               {description || config.description}
             </Text>
           </View>
-          <Pressable
-            onPress={handlePress}
-            className="flex-shrink-0 rounded-full px-4 py-2 active:opacity-80 bg-primary">
-            <Text
-              className="font-roobert-semibold text-primary-foreground"
-              style={{ fontSize: 12 }}>
-              Upgrade
-            </Text>
-          </Pressable>
+          {canUpgrade ? (
+            <Pressable
+              onPress={handlePress}
+              className="flex-shrink-0 rounded-full px-4 py-2 active:opacity-80 bg-primary">
+              <Text
+                className="font-roobert-semibold text-primary-foreground"
+                style={{ fontSize: 12 }}>
+                Upgrade
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
       </AnimatedPressable>
     );
@@ -188,9 +202,9 @@ export function FreeTierBlock({
   // Default 'card' style - matches the screenshot design
   return (
     <AnimatedPressable
-      onPress={handlePress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
+      onPress={canUpgrade ? handlePress : undefined}
+      onPressIn={canUpgrade ? handlePressIn : undefined}
+      onPressOut={canUpgrade ? handlePressOut : undefined}
       style={[
         animatedStyle,
         {

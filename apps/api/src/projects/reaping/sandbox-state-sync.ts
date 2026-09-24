@@ -235,7 +235,7 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
   // is unfinished through no choice of the user's, so those prompts come back
   // as well — held, like every other requeue from a stop. A stop Kortix chose
   // (idle deadline, user Stop) keeps the old rule: only never-accepted
-  // deliveries are given back. Essentia 2026-08-25: four provider-paused
+  // deliveries are given back. SampleCo 2026-08-25: four provider-paused
   // turns, every one needed the user to type "go on".
   const providerOriginated = write.stopReason === 'provider_reconcile';
   const abandonedDeliveries = storedSandboxTurns(before?.metadata).filter(

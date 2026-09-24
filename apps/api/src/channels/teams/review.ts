@@ -1,7 +1,7 @@
 import { config } from '../../config';
 import { sendCard, sendText } from '../teams-api';
 import { buildReviewCard } from './cards';
-import { deleteTurn, finalizeTurn, loadTurn } from './turn';
+import { conversationRefForSession, finalizeTurn, loadTurn, markTurnReplied } from './turn';
 import type { ReviewCardItem } from '../slack/review-cards';
 import type { TeamsConversationRef } from './types';
 
@@ -10,24 +10,31 @@ export async function postTeamsReviewCard(
   item: ReviewCardItem,
 ): Promise<{ ok: boolean; error?: string }> {
   const handle = await loadTurn(sessionId);
-  if (!handle) return { ok: false, error: 'No active Teams turn for this session.' };
-
-  // NOT "Task complete". The agent did not finish — it is waiting for a
-  // decision. Same mistake the question path carried: the default title sat
-  // one line above a card asking the user to approve or deny something.
-  await finalizeTurn(handle, { title: 'Waiting for your decision', unfinished: true });
-  await deleteTurn(sessionId);
-
-  const ref: TeamsConversationRef = {
-    serviceUrl: handle.serviceUrl,
-    conversationId: handle.conversationId,
-    botId: handle.botId,
-    fromId: handle.fromId,
-    tenantId: handle.tenantId,
-    projectId: handle.projectId,
-  };
-  const viewUrl = handle.projectId
-    ? `${(config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '')}/projects/${handle.projectId}/review`
+  let ref: TeamsConversationRef | null;
+  if (handle) {
+    // NOT "Task complete". The agent did not finish — it is waiting for a
+    // decision. Same mistake the question path carried: the default title sat
+    // one line above a card asking the user to approve or deny something.
+    await finalizeTurn(handle, { title: 'Waiting for your decision', unfinished: true });
+    // Kept as a replied-turn marker, so a `teams send` from this same run
+    // after the card does not open a second one.
+    await markTurnReplied(sessionId);
+    ref = {
+      serviceUrl: handle.serviceUrl,
+      conversationId: handle.conversationId,
+      botId: handle.botId,
+      fromId: handle.fromId,
+      tenantId: handle.tenantId,
+      projectId: handle.projectId,
+    };
+  } else {
+    // A review filed by a prompt with no card of its own (a follow-up, a
+    // queued start) still reaches the conversation the session owns.
+    ref = await conversationRefForSession(sessionId);
+    if (!ref) return { ok: false, error: 'No active Teams turn for this session.' };
+  }
+  const viewUrl = ref.projectId
+    ? `${(config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '')}/projects/${ref.projectId}/review`
     : undefined;
 
   const posted = await sendCard(

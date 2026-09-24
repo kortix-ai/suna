@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import {
   clearOptimistic,
   isOptimistic,
+  isOptimisticPart,
   selectSessionsToEvict,
   useSyncStore,
 } from './sync-store';
@@ -308,5 +309,114 @@ describe('session eviction', () => {
     useSyncStore.getState().evictSessions([]);
     useSyncStore.getState().evictSessions(['missing']);
     expect(useSyncStore.getState().messages).toBe(before.messages);
+  });
+});
+
+describe('addPermission', () => {
+  beforeEach(() => useSyncStore.getState().reset());
+
+  function permission(id: string) {
+    return { id, sessionID: 'session-1', permission: 'bash', input: {} } as const;
+  }
+
+  test('appends a new permission to the session list', () => {
+    useSyncStore.getState().addPermission('session-1', permission('perm-1'));
+    expect(useSyncStore.getState().permissions['session-1']).toEqual([permission('perm-1')]);
+  });
+
+  test('skips a permission whose id is already in that session\'s list', () => {
+    useSyncStore.getState().addPermission('session-1', permission('perm-1'));
+    useSyncStore.getState().addPermission('session-1', permission('perm-1'));
+    expect(useSyncStore.getState().permissions['session-1']).toEqual([permission('perm-1')]);
+  });
+
+  test('a duplicate id in one session does not block the same id in another', () => {
+    useSyncStore.getState().addPermission('session-1', permission('perm-1'));
+    useSyncStore.getState().addPermission('session-2', permission('perm-1'));
+    expect(useSyncStore.getState().permissions['session-1']).toEqual([permission('perm-1')]);
+    expect(useSyncStore.getState().permissions['session-2']).toEqual([permission('perm-1')]);
+  });
+});
+
+describe('optimistic part replacement (COR-185)', () => {
+  beforeEach(() => useSyncStore.getState().reset());
+
+  // Real OpenCode part ids also start with `prt_` (`ascendingId('prt')`), so
+  // only the part ids the optimistic message carried may be dropped.
+  test('a same-id echo with 2 real file parts and a real text part keeps all three', () => {
+    const id = 'msg_0123456789abABCDEFGHIJKLMN';
+    useSyncStore.getState().addOptimisticMessage('session-1', {
+      info: { id, role: 'user', sessionID: 'session-1', time: { created: 5 } },
+      parts: [
+        { id: 'prt_1_opttxt', type: 'text', text: 'look' } as Part,
+        { id: 'prt_1_optf1', type: 'file', mime: 'image/png', filename: 'a.png', localUri: 'file:///a.png' } as Part,
+        { id: 'prt_1_optf2', type: 'file', mime: 'image/png', filename: 'b.png', localUri: 'file:///b.png' } as Part,
+      ],
+    });
+    // The echo shares the optimistic id: message.updated keeps the parts, then the real parts stream in.
+    const store = useSyncStore.getState();
+    const realText = { id: 'prt_0123456789abAAAAAAAAAAAAAA', type: 'text', text: 'look' } as Part;
+    const realF1 = { id: 'prt_0123456789abBBBBBBBBBBBBBB', type: 'file', mime: 'image/png', filename: 'a.png', url: 'u1' } as Part;
+    const realF2 = { id: 'prt_0123456789abCCCCCCCCCCCCCC', type: 'file', mime: 'image/png', filename: 'b.png', url: 'u2' } as Part;
+    store.upsertPart(id, realText, 'session-1');
+    store.upsertPart(id, realF1, 'session-1');
+    store.upsertPart(id, realF2, 'session-1');
+
+    const ids = useSyncStore.getState().messages['session-1'][0].parts.map((p) => p.id);
+    expect(ids).toEqual([realText.id, realF1.id, realF2.id]);
+  });
+});
+
+describe('first-prompt seed echo (COR-185 Task 4)', () => {
+  beforeEach(() => useSyncStore.getState().reset());
+  const ROOT = 'ses_root';
+  const seed: MessageWithParts = {
+    info: { id: 'msg_8bbf25e40000SEEDSEEDSEED00', role: 'user', sessionID: ROOT, time: { created: 5 } },
+    parts: [{ id: 'prt_seed_text', type: 'text', text: 'hello' } as Part],
+  };
+
+  test('hydrate with the real user message replaces the seed', () => {
+    useSyncStore.getState().addOptimisticMessage(ROOT, seed);
+    const realUser = userMessage('msg_8bbf25e40000REALREALREAL00', 6, ROOT);
+    useSyncStore.getState().hydrate(ROOT, [realUser]);
+
+    const users = useSyncStore.getState().messages[ROOT].filter((m) => m.info.role === 'user');
+    expect(users).toHaveLength(1);
+    expect(users[0].info.id).toBe(realUser.info.id);
+    expect(isOptimistic(seed.info.id)).toBe(false);
+    expect(isOptimisticPart('prt_seed_text')).toBe(false);
+  });
+
+  test('hydrate with no messages keeps the seed', () => {
+    useSyncStore.getState().addOptimisticMessage(ROOT, seed);
+    useSyncStore.getState().hydrate(ROOT, []);
+
+    const ids = useSyncStore.getState().messages[ROOT].map((m) => m.info.id);
+    expect(ids).toEqual([seed.info.id]);
+    expect(isOptimistic(seed.info.id)).toBe(true);
+    expect(isOptimisticPart('prt_seed_text')).toBe(true);
+  });
+});
+
+describe('optimistic part id pruning', () => {
+  beforeEach(() => useSyncStore.getState().reset());
+
+  test('clearOptimistic forgets the message part ids too', () => {
+    useSyncStore.getState().addOptimisticMessage('session-1', userMessage('opt-5', 5));
+    expect(isOptimisticPart('opt-5-text')).toBe(true);
+    clearOptimistic(['opt-5']);
+    expect(isOptimisticPart('opt-5-text')).toBe(false);
+  });
+
+  test('removeMessage forgets the message part ids too', () => {
+    useSyncStore.getState().addOptimisticMessage('session-1', userMessage('opt-6', 5));
+    useSyncStore.getState().removeMessage('session-1', 'opt-6');
+    expect(isOptimisticPart('opt-6-text')).toBe(false);
+  });
+
+  test('evictSessions forgets the message part ids too', () => {
+    useSyncStore.getState().addOptimisticMessage('session-1', userMessage('opt-7', 5));
+    useSyncStore.getState().evictSessions(['session-1']);
+    expect(isOptimisticPart('opt-7-text')).toBe(false);
   });
 });

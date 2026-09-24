@@ -74,7 +74,7 @@ import {
   type Icon as PhosphorIcon,
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import Link from 'next/link';
+import Link from '@/components/site-link';
 import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useLayoutEffect, useState, useSyncExternalStore } from 'react';
 
@@ -810,11 +810,11 @@ function AppsHeader({
 
   return (
     <div
-      className="kx-titlebar-row relative flex shrink-0 items-center gap-1 border-b px-2"
+      className="kx-titlebar-row kx-titlebar-band-height relative flex shrink-0 items-center gap-1 border-b px-2"
       data-sidebar-collapsed={sidebar?.state === 'collapsed' || undefined}
     >
       <SidebarToggle />
-      <div className="flex min-w-0 flex-1 items-center gap-2 px-3 py-3">
+      <div className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2">
         <h1 className="text-foreground shrink-0 text-sm font-medium">
           {tI18nComplete.raw('text89dd748442c1')}
         </h1>
@@ -829,7 +829,7 @@ function AppsHeader({
         target="_blank"
         rel="noopener noreferrer"
         prefetch={false}
-        className="text-muted-foreground hover:text-foreground flex w-fit flex-none items-center gap-1 px-3 py-3 text-sm font-medium whitespace-nowrap transition-colors"
+        className="text-muted-foreground hover:text-foreground flex w-fit flex-none items-center gap-1 px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors"
       >
         {tI18nComplete.raw('text7af023c43013')}
         <ArrowUpRightIcon className="size-3 opacity-60" aria-hidden />

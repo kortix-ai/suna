@@ -424,7 +424,7 @@ export async function reapAndReconcileSandboxes(
               // Back-off on "could not tell": a box that answered `unknown`
               // is not asked again until its back-off elapses. The extension
               // below still happens (the record's own bound governs it), the
-              // PROBE does not. Essentia 2026-08-25: two replicas probed one
+              // PROBE does not. SampleCo 2026-08-25: two replicas probed one
               // box 345 times in an hour, each probe made OpenCode serialise
               // its 140 MB transcript, and the kernel OOM-killed it.
               const backoff = probeBackoff.get(row.sandboxId);
@@ -539,7 +539,7 @@ export async function reapAndReconcileSandboxes(
                 // orphan redelivery below — so a terminal observation landing
                 // inside ORPHANED_PROMPT_MIN_AGE_MS was a one-shot race that
                 // silently swallowed the prompt: observed live 2026-08-20
-                // (Essentia session d1b74954, prompt cleared `unknown` at age
+                // (SampleCo session d1b74954, prompt cleared `unknown` at age
                 // 27s, 3s under the floor, never answered). The next pass runs
                 // ~20s later; by then the age check passes and the redelivery
                 // fires, or the prompt got answered and the observation says

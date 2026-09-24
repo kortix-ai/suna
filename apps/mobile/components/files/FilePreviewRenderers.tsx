@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { View, Image, ScrollView, Dimensions, Platform, Linking } from 'react-native';
+import { View, Image, ScrollView, Platform, useWindowDimensions } from 'react-native';
 import { WebView } from 'react-native-webview';
 import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTypes';
 import { Text } from '@/components/ui/text';
@@ -17,6 +17,7 @@ import { SelectableMarkdownText } from '@/components/kortix/selectable-markdown'
 import { autoLinkUrls } from '@kortix/shared';
 import * as FileSystem from 'expo-file-system/legacy';
 import { log } from '@/lib/logger';
+import { MONO_FONT_FAMILY } from '@/lib/utils/mono-font';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import {
   HTML_SANITIZER_SCRIPT,
@@ -31,8 +32,7 @@ import {
   previewDecision,
   truncateForPreview,
 } from '@/lib/files/preview-limits';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+import { openLink } from '@/lib/utils/open-link';
 
 /**
  * Constructs a preview URL for HTML files in the sandbox environment.
@@ -80,7 +80,7 @@ export enum FilePreviewType {
 export function getFilePreviewType(filename: string): FilePreviewType {
   const ext = filename.split('.').pop()?.toLowerCase() || '';
 
-  const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'heic', 'heif', 'tiff'];
+  const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'ico', 'heic', 'heif', 'tiff'];
   const documentExtensions = ['pdf'];
   const markdownExtensions = ['md', 'markdown', 'mdx'];
   const csvExtensions = ['csv', 'tsv'];
@@ -108,6 +108,10 @@ export function getFilePreviewType(filename: string): FilePreviewType {
   const textExtensions = ['txt', 'log', 'rtf', 'tex', 'rst', 'org', 'nfo', 'info'];
   const binaryExtensions = ['zip', 'tar', 'gz', 'rar', '7z', 'exe', 'dmg', 'pkg', 'deb', 'rpm'];
 
+  // SVG is never drawn on mobile (Jay, 2026-09-22, `lib/files/svg-policy`):
+  // it reads as its markup, so Copy works, and Download hands the real file to
+  // the device. The `SvgXml` renderer that briefly lived here is gone.
+  if (ext === 'svg') return FilePreviewType.TEXT;
   if (imageExtensions.includes(ext)) return FilePreviewType.IMAGE;
   if (documentExtensions.includes(ext)) return FilePreviewType.PDF;
   if (markdownExtensions.includes(ext)) return FilePreviewType.MARKDOWN;
@@ -210,7 +214,7 @@ function usePreviewNavigationGuard({
         navigationType: request.navigationType,
       });
       if (action === 'open-external') {
-        Linking.openURL(request.url).catch((error) => {
+        openLink(request.url).catch((error) => {
           log.warn('[FilePreview] Failed to open link:', error);
         });
       }
@@ -228,7 +232,10 @@ function ImagePreview({ blobUrl, fileName }: { blobUrl?: string; fileName: strin
   const isDark = colorScheme === 'dark';
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
-  const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
+  // Width/height ratio of the loaded image; the box follows the live window width.
+  const [aspectRatio, setAspectRatio] = useState(0);
+  const { width: screenWidth } = useWindowDimensions();
+  const maxWidth = screenWidth - 32;
 
   if (!blobUrl) {
     return (
@@ -269,20 +276,13 @@ function ImagePreview({ blobUrl, fileName }: { blobUrl?: string; fileName: strin
           <Image
             source={{ uri: blobUrl }}
             style={{
-              width: imageSize.width || SCREEN_WIDTH - 32,
-              height: imageSize.height || 300,
+              width: maxWidth,
+              height: aspectRatio ? maxWidth / aspectRatio : 300,
             }}
             resizeMode="contain"
             onLoad={(event) => {
               const { width, height } = event.nativeEvent.source;
-              const aspectRatio = width / height;
-              const maxWidth = SCREEN_WIDTH - 32;
-              const calculatedHeight = maxWidth / aspectRatio;
-
-              setImageSize({
-                width: maxWidth,
-                height: calculatedHeight,
-              });
+              setAspectRatio(width / height);
               setIsLoading(false);
             }}
             onError={() => {
@@ -630,6 +630,8 @@ function HtmlPreview({
 /**
  * Text Preview Component
  */
+
+
 function TextPreview({ content }: { content: string }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -645,7 +647,7 @@ function TextPreview({ content }: { content: string }) {
       <Text
         style={{
           color: isDark ? THEME.dark.foreground : THEME.light.foreground,
-          fontFamily: 'monospace',
+          fontFamily: MONO_FONT_FAMILY,
           fontSize: 13,
           lineHeight: 20,
         }}
@@ -1459,6 +1461,7 @@ function TextContentPreview({
 
     case FilePreviewType.TEXT:
       return <TextPreview content={content} />;
+
 
     case FilePreviewType.CSV:
       return <CsvPreview content={content} />;

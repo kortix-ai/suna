@@ -16,6 +16,7 @@ const SANDBOX_ID = 'sandbox-xyz';
 let allowedAccounts = new Set<string>(['acct-owner']);
 let allowedUsers = new Set<string>(['user-owner', 'sa-owner', 'pat-user-owner', 'user-fallback-owner']);
 let mockSupabaseUser: { id: string } | null = null;
+let sandboxProjects = new Map<string, string>();
 
 const actualCrypto = await import('../shared/crypto');
 mock.module('../shared/crypto', () => ({
@@ -48,6 +49,9 @@ mock.module('../repositories/api-keys', () => ({
 mock.module('../repositories/account-tokens', () => ({
   validateAccountToken: async (t: string) => {
     if (t === 'kortix_pat_owner') return { isValid: true, userId: 'pat-user-owner' };
+    if (t === 'kortix_pat_project_a') {
+      return { isValid: true, userId: 'pat-user-owner', projectId: 'project-a', sessionId: 'session-a' };
+    }
     if (t === 'kortix_pat_other') return { isValid: true, userId: 'pat-user-other' };
     return { isValid: false, error: 'invalid' };
   },
@@ -115,9 +119,7 @@ mock.module('../shared/preview-ownership', () => ({
       ? { userId, sandboxId: SANDBOX_ID, sandboxRole: 'member', scopes: ['*'] }
       : null,
   canAccessSandboxSession: async () => true,
-  // Not exercised by this suite (no project-scoped PATs here) — stub so the
-  // real module's shape stays satisfied for anything that imports it.
-  resolveSandboxProjectId: async () => null,
+  resolveSandboxProjectId: async (sandboxId: string) => sandboxProjects.get(sandboxId) ?? null,
   clearPreviewOwnershipCache: () => {},
   invalidatePreviewCacheForUser: () => {},
 }));
@@ -128,6 +130,10 @@ beforeEach(() => {
   allowedAccounts = new Set(['acct-owner']);
   allowedUsers = new Set(['user-owner', 'sa-owner', 'pat-user-owner', 'user-fallback-owner']);
   mockSupabaseUser = null;
+  sandboxProjects = new Map([
+    [SANDBOX_ID, 'project-a'],
+    ['sandbox-of-project-b', 'project-b'],
+  ]);
 });
 
 describe('authenticatePreviewPrincipal', () => {
@@ -143,6 +149,12 @@ describe('authenticatePreviewPrincipal', () => {
   test('rejects a valid PAT that lacks sandbox access', async () => {
     expect(await authenticatePreviewPrincipal('kortix_pat_other', SANDBOX_ID)).toBeNull();
   });
+  test('accepts a project-scoped PAT only for a sandbox of its own project', async () => {
+    expect(await authenticatePreviewPrincipal('kortix_pat_project_a', SANDBOX_ID)).toBe('pat-user-owner');
+    expect(await authenticatePreviewPrincipal('kortix_pat_project_a', 'sandbox-of-project-b')).toBeNull();
+    expect(await authenticatePreviewPrincipal('kortix_pat_project_a', 'sandbox-unknown')).toBeNull();
+  });
+
   test('rejects an invalid PAT', async () => {
     expect(await authenticatePreviewPrincipal('kortix_pat_bad', SANDBOX_ID)).toBeNull();
   });
@@ -248,5 +260,56 @@ describe('authenticatePreviewPrincipalDetailed — session binding', () => {
   test('the string wrapper still behaves exactly as before', async () => {
     expect(await authenticatePreviewPrincipal('kortix_pat_owner', SANDBOX_ID)).toBe('pat-user-owner');
     expect(await authenticatePreviewPrincipal('kortix_pat_bad', SANDBOX_ID)).toBeNull();
+  });
+});
+
+describe('a proven preview credential names its caller in the request audit', () => {
+  // Preview subdomains and the PTY / preview WebSockets are dispatched before
+  // Hono: no auth middleware names their caller. This validator does, the
+  // moment a token is proven — BEFORE the sandbox-ownership check, so a caller
+  // refused on someone else's sandbox is still attributed.
+  const { runWithContext } = require('../lib/request-context');
+  const { attachInboundAuditScope } = require('../shared/audit-scope');
+
+  async function principalAfter(token: string) {
+    return runWithContext('GET', '/', async () => {
+      const scope = attachInboundAuditScope({ owner: 'edge', method: 'GET' });
+      const result = await authenticatePreviewPrincipalDetailed(token, SANDBOX_ID);
+      return { result, principal: scope.principal };
+    });
+  }
+
+  test('a Supabase session is the human user', async () => {
+    const { result, principal } = await principalAfter('jwt-owner');
+    expect(result).toMatchObject({ userId: 'user-owner', principalKind: 'user' });
+    expect(principal).toMatchObject({ actorType: 'human', actorUserId: 'user-owner', authMethod: { kind: 'jwt' } });
+  });
+
+  test('a user refused on another sandbox is still named', async () => {
+    const { result, principal } = await principalAfter('jwt-other');
+    expect(result).toBeNull();
+    expect(principal).toMatchObject({ actorType: 'human', actorUserId: 'user-other' });
+  });
+
+  test('a service account is not written as a user', async () => {
+    const { result, principal } = await principalAfter('kortix_sa_owner');
+    expect(result).toMatchObject({ userId: 'sa-owner', principalKind: 'service_account' });
+    expect(principal).toMatchObject({
+      actorType: 'service_account',
+      actorUserId: null,
+      authMethod: { kind: 'service_account', service_account_id: 'sa-owner' },
+    });
+  });
+
+  test('an account API key is system; its account id is never a user id', async () => {
+    const { result, principal } = await principalAfter('kortix_owner');
+    expect(result).toMatchObject({ userId: 'acct-owner', principalKind: 'account' });
+    expect(principal).toMatchObject({ actorType: 'system', actorUserId: null });
+  });
+
+  test('an invalid token binds nothing', async () => {
+    const { result, principal } = await principalAfter('kortix_pat_forged');
+    expect(result).toBeNull();
+    expect(principal).toEqual({});
   });
 });

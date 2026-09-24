@@ -1,6 +1,6 @@
 // forwardToSandbox PLACES the client's wire `messageID` against the target
 // session's actual transcript tip before delivering — for any target session,
-// child sessions included. The 2026-08-18 Essentia incident: a steering prompt
+// child sessions included. The 2026-08-18 SampleCo incident: a steering prompt
 // into a mid-turn child, minted by a tab whose store held none of that child's
 // messages, sorted below the child's tip; OpenCode read it as answered and the
 // turn looped on. See ../prompt-wire-id-repair.ts.
@@ -196,5 +196,33 @@ describe('forwardToSandbox — wire id placement on the direct prompt path', () 
     installFetch([]);
     await forwardToSandbox('sb-1', 8000, principal, 'POST', '/session/ses_1/command', '', headers(), bodyOf({ command: 'compact', arguments: '' }), 'http://app.local');
     expect(fetchLog.map((f) => f.method)).toEqual(['POST']);
+  });
+
+  test('the "already placed" header cannot carry a far-future id past the repair', async () => {
+    // Any client can send `X-Kortix-Wire-Id-Placed: 1`; the inbox drain is the
+    // only intended sender. A far-future id (the pre-fix CLI's high-bits
+    // mint) is re-minted on the id alone, without the transcript read.
+    const farFuture = `msg_${((BigInt(NOW) * BigInt(0x1000)) >> BigInt(8)).toString(16).slice(0, 12)}SyntheticCli07`;
+    installFetch([]);
+    const placedHeaders = headers();
+    placedHeaders.set('X-Kortix-Wire-Id-Placed', '1');
+    const res = await forwardToSandbox('sb-1', 8000, principal, 'POST', '/session/ses_1/prompt_async', '', placedHeaders, bodyOf({ messageID: farFuture, parts: [{ type: 'text', text: 'hi' }] }), 'http://app.local');
+    expect(res.status).toBe(200);
+    expect(fetchLog.map((f) => f.method)).toEqual(['POST']);
+    const delivered = JSON.parse(fetchLog[0].body!) as { messageID: string };
+    expect(delivered.messageID).not.toBe(farFuture);
+    expect(delivered.messageID).toMatch(WIRE_MESSAGE_ID);
+    expect(res.headers.get('X-Kortix-Effective-Message-Id')).toBe(delivered.messageID);
+  });
+
+  test('the "already placed" header still skips the read for an id near the clock', async () => {
+    const client = mintWireMessageId({ nowMs: NOW });
+    installFetch([]);
+    const placedHeaders = headers();
+    placedHeaders.set('X-Kortix-Wire-Id-Placed', '1');
+    const body = { messageID: client.id, parts: [{ type: 'text', text: 'hi' }] };
+    await forwardToSandbox('sb-1', 8000, principal, 'POST', '/session/ses_1/prompt_async', '', placedHeaders, bodyOf(body), 'http://app.local');
+    expect(fetchLog.map((f) => f.method)).toEqual(['POST']);
+    expect(fetchLog[0].body).toBe(JSON.stringify(body));
   });
 });

@@ -154,6 +154,28 @@ describe('header carriage', () => {
     expect(headers.get('authorization')).toBe('Bearer app-own-write-key');
   });
 
+  test('upstream never receives a Kortix credential in Authorization', () => {
+    for (const token of ['kortix_pat_abc', 'kortix_sa_abc', 'kortix_sb_abc', 'kortix_abc']) {
+      const request = new Request(`https://${host}/api/things`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(appUpstreamHeaders(request, {}, host).get('authorization')).toBeNull();
+    }
+    const basic = new Request(`https://${host}/`, { headers: { authorization: 'Basic abc' } });
+    expect(appUpstreamHeaders(basic, {}, host).get('authorization')).toBe('Basic abc');
+  });
+
+  test('upstream never receives Kortix cookies; the App keeps its own cookies', () => {
+    const request = new Request(`https://${host}/`, {
+      headers: {
+        cookie: '__Host-kortix_app_access=signed; app_session=keep; kortix_app_access=signed; __preview_session=jwt',
+      },
+    });
+    expect(appUpstreamHeaders(request, {}, host).get('cookie')).toBe('app_session=keep');
+    const onlyKortix = new Request(`https://${host}/`, { headers: { cookie: '__Host-kortix_app_access=signed' } });
+    expect(appUpstreamHeaders(onlyKortix, {}, host).get('cookie')).toBeNull();
+  });
+
   test('the Kortix credential is read from X-Kortix-App-Authorization first, then Authorization', () => {
     const both = new Request(`https://${host}/`, {
       headers: { authorization: 'Bearer app-own-write-key', 'x-kortix-app-authorization': 'Bearer kortix_pat_a' },
@@ -183,10 +205,10 @@ describe('header carriage', () => {
     expect(appUpstreamHeaders(request, {}, host).get('x-kortix-app-authorization')).toBeNull();
   });
 
-  test('the registered agent_principal flag reads the project override; absent means OFF', async () => {
+  test('the registered agent_principal flag is ON unless the project switched it off', async () => {
     const { agentPrincipalEnabled } = await import('./access');
     expect(agentPrincipalEnabled({ experimental: { agent_principal: true } })).toBe(true);
     expect(agentPrincipalEnabled({ experimental: { agent_principal: false } })).toBe(false);
-    expect(agentPrincipalEnabled(null)).toBe(false);
+    expect(agentPrincipalEnabled(null)).toBe(true);
   });
 });

@@ -132,7 +132,7 @@ describe('nav contract — the router bridge', () => {
   test('the bridge is mounted in the root layout', () => {
     // An unmounted bridge silently falls back to window.location — the exact
     // behavior it exists to remove — so the mount is part of the contract.
-    const layout = readFileSync(resolve(WEB_ROOT, 'src/app/layout.tsx'), 'utf8');
+    const layout = readFileSync(resolve(WEB_ROOT, 'src/app/[locale]/layout.tsx'), 'utf8');
     expect(layout).toContain('<RouterBridge />');
     expect(layout).toContain("from '@/lib/navigation/router-bridge-mount'");
   });

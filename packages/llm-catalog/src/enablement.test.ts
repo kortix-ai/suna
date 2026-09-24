@@ -120,7 +120,7 @@ describe('Bedrock inference profiles win a family tie', () => {
 
 // ── Auto-seeding a default: the twin tie-break is NOT enough ────────────────
 //
-// Proven live on the Essentia self-host 2026-08-26: a brand-new workspace with
+// Proven live on the SampleCo self-host 2026-08-26: a brand-new workspace with
 // Bedrock BYOK creds (native path, llm_gateway off) auto-selected
 // `xai.grok-4.6` — the NEWEST Bedrock model in the 2026-08-25 catalog and the
 // one Bedrock family that ships with NO `global.`/`us.` twin at all. Bedrock

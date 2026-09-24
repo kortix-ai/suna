@@ -50,6 +50,8 @@ export function ThemeSwitcher() {
       onPress={handlePress}
       className="w-8 h-8 items-center justify-center rounded-full bg-primary/10 active:bg-primary/20"
       style={animatedStyle}
+      accessibilityRole="button"
+      accessibilityLabel={isDark ? 'Switch to light theme' : 'Switch to dark theme'}
     >
       <Icon 
         as={isDark ? Sun : Moon}

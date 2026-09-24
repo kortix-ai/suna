@@ -3,7 +3,7 @@
  *
  * Supports two tab types:
  * - Session tabs (chat sessions identified by session ID)
- * - Page tabs (utility pages like Files, Terminal, Memory, etc.)
+ * - Page tabs (Review, Browser, a project's page, …: `PAGE_TABS`)
  */
 
 import { create } from 'zustand';
@@ -19,36 +19,21 @@ export interface PageTab {
   label: string;    // e.g. "Files"
 }
 
-/** All known page tabs */
+/**
+ * All known page tabs. A page with no entry point is deleted, not kept here
+ * (COR-156). Entry points: Review (drawer), Browser (a preview card or tool
+ * link), Files (the drawer's `files` route), and project Settings / Schedules
+ * / Secrets / Members (sub-pages). Memory has none: re-add an entry or delete it.
+ */
 export const PAGE_TABS: Record<string, PageTab> = {
-  'page:files':             { id: 'page:files',             label: 'Files' },
-  'page:terminal':          { id: 'page:terminal',          label: 'Terminal' },
   'page:memory':            { id: 'page:memory',            label: 'Memory' },
-  'page:workspace':         { id: 'page:workspace',         label: 'Workspace' },
-  'page:secrets':           { id: 'page:secrets',           label: 'Secrets Manager' },
-  'page:ssh':               { id: 'page:ssh',               label: 'SSH' },
-  'page:api':               { id: 'page:api',               label: 'API' },
-  'page:triggers':          { id: 'page:triggers',          label: 'Triggers' },
-  'page:tunnel':            { id: 'page:tunnel',            label: 'Tunnel' },
-  'page:connections':      { id: 'page:connections',      label: 'Connections' },
-  'page:running-services':  { id: 'page:running-services',  label: 'Service Manager' },
   'page:browser':           { id: 'page:browser',           label: 'Browser' },
-  'page:agent-browser':     { id: 'page:agent-browser',     label: 'Agent Browser' },
-  'page:updates':           { id: 'page:updates',           label: 'Updates' },
-  'page:projects':          { id: 'page:projects',          label: 'Projects' },
-  // ── Right-drawer navigation (web sidebar parity) — placeholder pages for now ──
-  'page:agents':            { id: 'page:agents',            label: 'Agents' },
-  'page:skills':            { id: 'page:skills',            label: 'Skills' },
-  'page:connectors':        { id: 'page:connectors',        label: 'Connectors' },
   'page:secrets-nav':       { id: 'page:secrets-nav',       label: 'Secrets' },
   'page:schedules':         { id: 'page:schedules',         label: 'Schedules' },
-  'page:webhooks':          { id: 'page:webhooks',          label: 'Webhooks' },
-  'page:changes':           { id: 'page:changes',           label: 'Changes' },
   'page:review':            { id: 'page:review',            label: 'Review' },
   'page:files-nav':         { id: 'page:files-nav',         label: 'Files' },
-  'page:dev':               { id: 'page:dev',               label: 'Dev' },
-  'page:members':           { id: 'page:members',           label: 'Members' },
   'page:settings':          { id: 'page:settings',          label: 'Settings' },
+  'page:members':           { id: 'page:members',           label: 'Members' },
 };
 
 // ---------------------------------------------------------------------------
@@ -93,8 +78,6 @@ interface TabState {
   sessionHistory: string[];
   /** Current position in history */
   historyIndex: number;
-  /** Whether the tabs overview grid is shown (not persisted) */
-  showTabsOverview: boolean;
   /** Per-tab ephemeral UI state (scroll positions, view state, etc.) */
   tabStateById: Record<string, Record<string, unknown>>;
   /** Which scope (project id, or 'home') the flat fields above belong to. */
@@ -108,7 +91,6 @@ interface TabState {
   closeAllTabs: () => void;
   goBack: () => void;
   goForward: () => void;
-  setShowTabsOverview: (show: boolean) => void;
   setTabState: (tabId: string, patch: Record<string, unknown>) => void;
   clearTabState: (tabId: string) => void;
   /**
@@ -133,14 +115,13 @@ export const useTabStore = create<TabState>()(
       openTabOrder: [],
       sessionHistory: [],
       historyIndex: -1,
-      showTabsOverview: false,
       tabStateById: {},
       scopeKey: null,
       scopes: {},
 
       setScope: (key) => {
         const s = get();
-        const home = { activeSessionId: null, activePageId: null, showTabsOverview: false };
+        const home = { activeSessionId: null, activePageId: null };
 
         // Reopening the same project: only drop the active page or thread.
         if (s.scopeKey === key) {
@@ -200,7 +181,6 @@ export const useTabStore = create<TabState>()(
             return {
               activeSessionId: null,
               activePageId: null,
-              showTabsOverview: false,
               sessionHistory: nextHistory,
               historyIndex: nextIndex,
             };
@@ -216,7 +196,6 @@ export const useTabStore = create<TabState>()(
           return {
             activeSessionId: sessionId,
             activePageId: null,
-            showTabsOverview: false,
             openTabIds: newOpenTabIds,
             openTabOrder: newOpenTabOrder,
             sessionHistory: nextHistory,
@@ -246,7 +225,6 @@ export const useTabStore = create<TabState>()(
           return {
             activeSessionId: null,
             activePageId: pageId,
-            showTabsOverview: false,
             openPageIds: newOpenPageIds,
             openTabOrder: newOpenTabOrder,
             sessionHistory: nextHistory,
@@ -392,10 +370,6 @@ export const useTabStore = create<TabState>()(
           openTabIds: nextOpenTabIds,
           openTabOrder: nextOpenTabOrder,
         });
-      },
-
-      setShowTabsOverview: (show) => {
-        set({ showTabsOverview: show });
       },
 
       setTabState: (tabId, patch) => {

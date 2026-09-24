@@ -4,20 +4,16 @@ description: What an agent may do, who decides it, and what the person who runs 
 ---
 
 An agent acts on your project through the CLI, the API, git, connectors, and
-Apps. This page explains how Kortix decides what an agent may do. The project
-feature flag `agent_principal` selects one of two models.
+Apps. This page explains how Kortix decides what an agent may do.
 
-| `agent_principal` | Who the agent acts as | What the agent may do |
-|---|---|---|
-| Off (default) | The person who started the session | That person's project role ∩ the agent's Kortix permissions |
-| On | The agent itself | The agent's Kortix permissions ∩ the agent's ceiling role − human-only permissions |
-
-With the flag off, the same agent can do different things for different
-people. With the flag on, the agent does the same thing whoever runs it.
+**An agent acts as itself, not as the person who started it.** Its authority is
+its Kortix permissions ∩ its ceiling role − the human-only permissions. Nobody
+lends an agent their own role, so the agent does the same thing whoever runs
+it.
 
 ## The agent is the acting principal
 
-With `agent_principal` on, every agent session has two identities:
+Every agent session has two identities:
 
 | Identity | What it decides |
 |---|---|
@@ -82,7 +78,7 @@ manifest or ceiling says:
 
 ## Running an agent lends its authority
 
-With the flag on, the person who runs an agent does not cap it. So the right to
+The person who runs an agent does not cap it. So the right to
 run an agent is the delegation. Kortix checks "may this person run this agent"
 at every entry point:
 
@@ -128,7 +124,11 @@ permissions include `project.app.read`.
 | Password | Never |
 
 The App's **Access** dialog lists the agents with access, read from
-`agents.<name>.apps`. Change the list with a change request to `kortix.yaml`.
+`agents.<name>.apps`. Change the list on the agent's **Apps** page
+(Customize → Agents → the agent → Apps), with
+`kortix agents scope <agent> --apps <slug,slug>`, or with a change request to
+`kortix.yaml`. The Apps page appears only when the project has the
+[Apps](/docs/feature-flags/apps) feature flag on.
 
 ## Widening an agent needs a person
 
@@ -140,6 +140,11 @@ default branch shapes agents. Two guards apply:
    `kortix.yaml` `agents.*` or `triggers`. The merge answers `403` with
    `code: "CR_AGENT_GOVERNANCE_CHANGE"`. A person with `project.gitops.merge`
    merges it.
+
+The check reads `kortix.yaml` at the merge base and at the change request's
+head. When it cannot read either one, it does not merge. It answers `503`
+with `code: "CR_GOVERNANCE_UNVERIFIED"` and a `Retry-After` header. Retry the
+merge.
 
 ## Read a denial
 
@@ -169,17 +174,11 @@ agent can do** panel shows:
 - the effective permissions: "People who may run this agent act with these
   permissions."
 
-With the flag off, the panel says that the launcher's role applies.
+## Scope
 
-## Turn it on
-
-`agent_principal` is off by default. Turn it on for one project in
-**Settings → Feature flags**, or from the CLI:
-
-```bash
-kortix projects features enable agent_principal
-```
-
-Off keeps today's model exactly. On applies this page to every agent the
-project declares under `agents:`. A project with no `agents:` map keeps the
-launcher model until it declares agents.
+This page applies to every agent a project declares under `agents:` in
+`kortix.yaml`. A project with no `agents:` map declares no governed agent, so
+there is nothing to switch on — and nothing on **Settings → Feature flags** to
+find. One project can be put back on the old launcher-role model for a single
+release; ask support, who set it with `PATCH /v1/projects/:id/features`. That
+switch is removed in the release after this one.

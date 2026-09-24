@@ -1,6 +1,6 @@
 import { TURN_INSTRUCTIONS } from './session';
 import { and, eq } from 'drizzle-orm';
-import { chatChannelBindings, chatInstalls, chatThreads, projects } from '@kortix/db';
+import { chatChannelBindings, chatInstalls, projectSessions, projects } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
 import { loadSlackTokenForProject } from '../install-store';
@@ -23,12 +23,27 @@ import { verifyLoginState } from './login';
 import { escapeMrkdwn, respondViaUrl, sessionWebUrl } from './util';
 import { setChannelAgent, setChannelModel } from './selection';
 import { channelModelContext } from './model-gate';
-import { type SlashCtx, handleSlashCommand } from './commands';
+import { type SlashCtx, currentChannelProjectId, handleSlashCommand } from './commands';
+import {
+  CANONICAL_SLACK_INBOUND,
+  findSlackThread,
+  inboundAllowsProject,
+  inboundAllowsTeam,
+  inboundProjectId,
+  type SlackInbound,
+} from './inbound';
 import { labelForModelRef } from '../../llm-gateway/models/picker';
 import { isModelServableForAccount } from '../../llm-gateway/resolution/default-model';
 import { validateNativeOpencodeModelRef } from '../../projects/lib/session-model-change';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import type { SlackEnvelope, SlackEvent, SlackInteractionPayload } from './types';
+
+const OTHER_PROJECT_NOTICE = 'This Slack app is tied to a different Kortix project.';
+
+/** spawnAgentTurn options for a request from `inbound`. */
+function turnScope(inbound: SlackInbound): { ownThreadsOnly: boolean } {
+  return { ownThreadsOnly: inbound.kind === 'project' };
+}
 
 // Agent-emitted button click (carousel cards, actions blocks). Routes the
 // click back into the thread as a synthesized follow-up so the agent's next
@@ -36,6 +51,7 @@ import type { SlackEnvelope, SlackEvent, SlackInteractionPayload } from './types
 async function handleAgentClick(
   payload: SlackInteractionPayload,
   action: NonNullable<SlackInteractionPayload['actions']>[number],
+  inbound: SlackInbound,
 ): Promise<void> {
   const teamId = payload.team?.id ?? '';
   const channelId = payload.channel?.id ?? '';
@@ -52,15 +68,7 @@ async function handleAgentClick(
     text: `On it — picked *${label || action.action_id}*.`,
   });
 
-  const [thread] = await db
-    .select({ projectId: chatThreads.projectId })
-    .from(chatThreads)
-    .where(and(
-      eq(chatThreads.platform, 'slack'),
-      eq(chatThreads.workspaceId, teamId),
-      eq(chatThreads.threadId, threadTs),
-    ))
-    .limit(1);
+  const thread = await findSlackThread(inbound, teamId, threadTs);
   if (!thread) {
     // The button lives on a message with no session thread behind it —
     // typically an actions block the agent posted top-level with
@@ -110,7 +118,7 @@ async function handleAgentClick(
     team_id: teamId,
     event,
   };
-  await spawnAgentTurn(thread.projectId, envelope, event);
+  await spawnAgentTurn(thread.projectId, envelope, event, turnScope(inbound));
 }
 
 // A click on one of the agent's `question` options (rendered as buttons by
@@ -121,6 +129,7 @@ async function handleAgentClick(
 async function handleQuestionAnswer(
   payload: SlackInteractionPayload,
   action: NonNullable<SlackInteractionPayload['actions']>[number],
+  inbound: SlackInbound,
 ): Promise<void> {
   const teamId = payload.team?.id ?? '';
   const channelId = payload.channel?.id ?? '';
@@ -146,15 +155,7 @@ async function handleQuestionAnswer(
     text: `On it — *${escapeMrkdwn(label)}*.`,
   });
 
-  const [thread] = await db
-    .select({ projectId: chatThreads.projectId })
-    .from(chatThreads)
-    .where(and(
-      eq(chatThreads.platform, 'slack'),
-      eq(chatThreads.workspaceId, teamId),
-      eq(chatThreads.threadId, threadTs),
-    ))
-    .limit(1);
+  const thread = await findSlackThread(inbound, teamId, threadTs);
   if (!thread) return;
 
   const lines: string[] = [];
@@ -172,7 +173,7 @@ async function handleQuestionAnswer(
     team: teamId,
   };
   const envelope: SlackEnvelope = { type: 'event_callback', team_id: teamId, event };
-  await spawnAgentTurn(thread.projectId, envelope, event);
+  await spawnAgentTurn(thread.projectId, envelope, event, turnScope(inbound));
 }
 
 // A click on a Review Center card button (rendered by buildReviewCardBlocks,
@@ -183,6 +184,7 @@ async function handleQuestionAnswer(
 async function handleReviewAction(
   payload: SlackInteractionPayload,
   parsed: { verb: ReviewVerb; id: string },
+  inbound: SlackInbound,
 ): Promise<void> {
   const teamId = payload.team?.id ?? '';
   const channelId = payload.channel?.id ?? '';
@@ -207,15 +209,7 @@ async function handleReviewAction(
   }
 
   // Resolve the thread → its project so we can scope the item + the actor.
-  const [thread] = await db
-    .select({ projectId: chatThreads.projectId })
-    .from(chatThreads)
-    .where(and(
-      eq(chatThreads.platform, 'slack'),
-      eq(chatThreads.workspaceId, teamId),
-      eq(chatThreads.threadId, threadTs),
-    ))
-    .limit(1);
+  const thread = await findSlackThread(inbound, teamId, threadTs);
   if (!thread) return;
 
   // "Request changes" is useless without saying what to change, and Slack has
@@ -316,10 +310,14 @@ async function handleReviewAction(
     team: teamId,
   };
   const envelope: SlackEnvelope = { type: 'event_callback', team_id: teamId, event };
-  await spawnAgentTurn(thread.projectId, envelope, event);
+  await spawnAgentTurn(thread.projectId, envelope, event, turnScope(inbound));
 }
 
-async function handleSwitchProject(payload: SlackInteractionPayload, rawValue: string): Promise<void> {
+async function handleSwitchProject(
+  payload: SlackInteractionPayload,
+  rawValue: string,
+  inbound: SlackInbound,
+): Promise<void> {
   let value: { p?: string; c?: string };
   try {
     value = JSON.parse(rawValue || '{}') as { p?: string; c?: string };
@@ -330,6 +328,10 @@ async function handleSwitchProject(payload: SlackInteractionPayload, rawValue: s
   const channelId = value.c ?? payload.channel?.id;
   const teamId = payload.team?.id ?? '';
   if (!projectId || !channelId || !teamId) return;
+  if (!inboundAllowsProject(inbound, projectId)) {
+    await respondViaUrl(payload.response_url, { response_type: 'ephemeral', text: OTHER_PROJECT_NOTICE });
+    return;
+  }
 
   const [install] = await db
     .select({ id: chatInstalls.installId })
@@ -377,6 +379,7 @@ async function handleSetSelection(
   payload: SlackInteractionPayload,
   rawValue: string,
   kind: 'agent' | 'model',
+  inbound: SlackInbound,
 ): Promise<void> {
   let value: { c?: string; a?: string; m?: string };
   try {
@@ -388,6 +391,15 @@ async function handleSetSelection(
   const channelId = value.c ?? payload.channel?.id ?? '';
   if (!teamId || !channelId) return;
   const ctx = { teamId, channelId };
+  // A per-project app configures only channels bound to its own project.
+  if (inbound.kind === 'project' && (await currentChannelProjectId(ctx)) !== inbound.projectId) {
+    await respondViaUrl(payload.response_url, {
+      response_type: 'ephemeral',
+      replace_original: true,
+      text: OTHER_PROJECT_NOTICE,
+    });
+    return;
+  }
 
   if (kind === 'agent') {
     const agentName = value.a && value.a.length > 0 ? value.a : null;
@@ -478,6 +490,7 @@ async function handleSetSelection(
 async function handleConfigOpen(
   payload: SlackInteractionPayload,
   actionId: 'cfg_open_models' | 'cfg_open_agents' | 'cfg_open_projects',
+  inbound: SlackInbound,
 ): Promise<void> {
   const teamId = payload.team?.id ?? '';
   const channelId = payload.channel?.id ?? '';
@@ -489,6 +502,7 @@ async function handleConfigOpen(
     slackUserId: payload.user?.id ?? '',
     command: '/kortix',
     responseUrl: payload.response_url,
+    projectScopedProjectId: inboundProjectId(inbound),
   };
   // `agents` defers internally (git) and posts the real picker via responseUrl;
   // its sync return is a "Loading…" ack. `models`/`switch` return full blocks.
@@ -500,7 +514,10 @@ async function handleConfigOpen(
 // thread the message lives in to its Kortix session and replies (ephemerally)
 // with a link. Unlike a slash command, a message shortcut DOES carry the
 // message's thread_ts, so this can answer "which session is THIS thread".
-export async function handleMessageShortcut(payload: SlackInteractionPayload): Promise<void> {
+export async function handleMessageShortcut(
+  payload: SlackInteractionPayload,
+  inbound: SlackInbound = CANONICAL_SLACK_INBOUND,
+): Promise<void> {
   if (payload.callback_id !== 'open_session') return;
   const teamId = payload.team?.id ?? '';
   const messageTs = payload.message?.ts ?? '';
@@ -513,15 +530,7 @@ export async function handleMessageShortcut(payload: SlackInteractionPayload): P
     return;
   }
 
-  const [thread] = await db
-    .select({ sessionId: chatThreads.sessionId, projectId: chatThreads.projectId })
-    .from(chatThreads)
-    .where(and(
-      eq(chatThreads.platform, 'slack'),
-      eq(chatThreads.workspaceId, teamId),
-      eq(chatThreads.threadId, threadTs),
-    ))
-    .limit(1);
+  const thread = await findSlackThread(inbound, teamId, threadTs);
   if (!thread) {
     await respondViaUrl(payload.response_url, {
       response_type: 'ephemeral',
@@ -555,7 +564,11 @@ export async function handleMessageShortcut(payload: SlackInteractionPayload): P
 // file a project access request and ping the account's admins. Replaces the
 // ephemeral in place via the interaction's response_url so the user gets an
 // immediate, only-visible-to-them confirmation.
-async function handleRequestAccess(payload: SlackInteractionPayload, value: string): Promise<void> {
+async function handleRequestAccess(
+  payload: SlackInteractionPayload,
+  value: string,
+  inbound: SlackInbound,
+): Promise<void> {
   const teamId = payload.team?.id ?? '';
   const slackUserId = payload.user?.id ?? '';
   let projectId = '';
@@ -565,6 +578,10 @@ async function handleRequestAccess(payload: SlackInteractionPayload, value: stri
     projectId = '';
   }
   if (!teamId || !slackUserId || !projectId) return;
+  if (!inboundAllowsProject(inbound, projectId)) {
+    await respondViaUrl(payload.response_url, { replace_original: true, text: OTHER_PROJECT_NOTICE });
+    return;
+  }
 
   const result = await createSlackAccessRequest({ teamId, slackUserId, projectId });
   const message =
@@ -592,6 +609,7 @@ async function handleThreadJoinDecision(
   payload: SlackInteractionPayload,
   value: string,
   decision: 'approved' | 'denied',
+  inbound: SlackInbound,
 ): Promise<void> {
   const teamId = payload.team?.id ?? '';
   const channelId = payload.channel?.id ?? '';
@@ -622,6 +640,11 @@ async function handleThreadJoinDecision(
       response_type: 'ephemeral',
       text: 'I could not read that approval request. Ask the person to request access again.',
     });
+    return;
+  }
+
+  if (!inboundAllowsProject(inbound, parsed.projectId)) {
+    await respondViaUrl(payload.response_url, { response_type: 'ephemeral', text: OTHER_PROJECT_NOTICE });
     return;
   }
 
@@ -708,6 +731,17 @@ async function handleSlackLoginConnect(
   });
 }
 
+/** Does `sessionId` belong to a project `inbound` may act on? */
+async function sessionInScope(inbound: SlackInbound, sessionId: string): Promise<boolean> {
+  if (inbound.kind === 'canonical') return true;
+  const [row] = await db
+    .select({ projectId: projectSessions.projectId })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, sessionId))
+    .limit(1);
+  return inboundAllowsProject(inbound, row?.projectId);
+}
+
 /**
  * Stop the run behind the live plan message.
  *
@@ -719,11 +753,12 @@ async function handleSlackLoginConnect(
 async function handleStop(
   payload: SlackInteractionPayload,
   action: { value?: string },
+  inbound: SlackInbound,
 ): Promise<void> {
   const sessionId = (action.value ?? '').trim();
   const responseUrl = payload.response_url;
   if (!responseUrl) return;
-  if (!sessionId) {
+  if (!sessionId || !(await sessionInScope(inbound, sessionId))) {
     await respondViaUrl(responseUrl, { response_type: 'ephemeral', text: 'That run is no longer available.' });
     return;
   }
@@ -755,11 +790,17 @@ async function handleStop(
  * the same bar the button path applies. `private_metadata` is Slack echoing
  * back what we wrote — it names the item, it does not vouch for anyone.
  */
-export async function handleViewSubmission(payload: SlackInteractionPayload): Promise<void> {
+export async function handleViewSubmission(
+  payload: SlackInteractionPayload,
+  inbound: SlackInbound = CANONICAL_SLACK_INBOUND,
+): Promise<void> {
   if (payload.view?.callback_id !== REVIEW_FEEDBACK_CALLBACK) return;
   const meta = decodeReviewMetadata(payload.view?.private_metadata);
   const slackUserId = payload.user?.id ?? '';
   if (!meta || !slackUserId) return;
+  // `private_metadata` is the request body too: a per-project app may name only
+  // its own project and workspace in it.
+  if (!inboundAllowsProject(inbound, meta.projectId) || !inboundAllowsTeam(inbound, meta.teamId)) return;
 
   const notify = async (text: string) => {
     if (meta.responseUrl) await respondViaUrl(meta.responseUrl, { response_type: 'ephemeral', text });
@@ -811,37 +852,40 @@ export async function handleViewSubmission(payload: SlackInteractionPayload): Pr
     team: meta.teamId,
   };
   const envelope: SlackEnvelope = { type: 'event_callback', team_id: meta.teamId, event };
-  await spawnAgentTurn(meta.projectId, envelope, event);
+  await spawnAgentTurn(meta.projectId, envelope, event, turnScope(inbound));
 }
 
-export async function handleBlockAction(payload: SlackInteractionPayload): Promise<void> {
+export async function handleBlockAction(
+  payload: SlackInteractionPayload,
+  inbound: SlackInbound = CANONICAL_SLACK_INBOUND,
+): Promise<void> {
   const action = payload.actions?.[0];
   if (!action?.action_id) return;
 
   if (action.action_id === SLACK_STOP_ACTION) {
-    await handleStop(payload, action);
+    await handleStop(payload, action, inbound);
     return;
   }
 
   if (action.action_id.startsWith('qa_')) {
-    await handleQuestionAnswer(payload, action);
+    await handleQuestionAnswer(payload, action, inbound);
     return;
   }
 
   // A Review Center card button (`review_<verb>_<id>`). Apply the verdict + resume.
   if (action.action_id.startsWith('review_')) {
     const parsed = parseReviewActionId(action.action_id);
-    if (parsed) await handleReviewAction(payload, parsed);
+    if (parsed) await handleReviewAction(payload, parsed, inbound);
     return;
   }
 
   if (action.action_id.startsWith('set_agent')) {
-    await handleSetSelection(payload, action.value ?? '', 'agent');
+    await handleSetSelection(payload, action.value ?? '', 'agent', inbound);
     return;
   }
 
   if (action.action_id.startsWith('set_model')) {
-    await handleSetSelection(payload, action.value ?? '', 'model');
+    await handleSetSelection(payload, action.value ?? '', 'model', inbound);
     return;
   }
 
@@ -851,7 +895,7 @@ export async function handleBlockAction(payload: SlackInteractionPayload): Promi
     action.action_id === 'cfg_open_agents' ||
     action.action_id === 'cfg_open_projects'
   ) {
-    await handleConfigOpen(payload, action.action_id);
+    await handleConfigOpen(payload, action.action_id, inbound);
     return;
   }
 
@@ -879,21 +923,21 @@ export async function handleBlockAction(payload: SlackInteractionPayload): Promi
     return;
   }
   if (action.action_id === 'slack_request_access') {
-    await handleRequestAccess(payload, action.value ?? '');
+    await handleRequestAccess(payload, action.value ?? '', inbound);
     return;
   }
 
   if (action.action_id === 'slack_thread_join_approve') {
-    await handleThreadJoinDecision(payload, action.value ?? '', 'approved');
+    await handleThreadJoinDecision(payload, action.value ?? '', 'approved', inbound);
     return;
   }
   if (action.action_id === 'slack_thread_join_deny') {
-    await handleThreadJoinDecision(payload, action.value ?? '', 'denied');
+    await handleThreadJoinDecision(payload, action.value ?? '', 'denied', inbound);
     return;
   }
 
   if (action.action_id.startsWith('switch_project_')) {
-    await handleSwitchProject(payload, action.value ?? '');
+    await handleSwitchProject(payload, action.value ?? '', inbound);
     return;
   }
 
@@ -901,7 +945,7 @@ export async function handleBlockAction(payload: SlackInteractionPayload): Promi
   // or actions block from `slack send --blocks-file ...`). Route the click back
   // into the thread as a synthesized follow-up so the agent can continue.
   if (!action.action_id.startsWith('pick_project') && !action.action_id.startsWith('switch_project_')) {
-    await handleAgentClick(payload, action);
+    await handleAgentClick(payload, action, inbound);
     return;
   }
 
@@ -918,6 +962,7 @@ export async function handleBlockAction(payload: SlackInteractionPayload): Promi
   const channelId = payload.channel?.id ?? '';
   const pickerTs = payload.message?.ts ?? '';
   if (!pickerId || !projectId || !teamId || !channelId) return;
+  if (!inboundAllowsProject(inbound, projectId)) return;
 
   const token = await loadSlackTokenForProject(projectId);
 
@@ -975,6 +1020,6 @@ export async function handleBlockAction(payload: SlackInteractionPayload): Promi
   const pending = pendingPickers.get(pickerId);
   if (pending) {
     pendingPickers.delete(pickerId);
-    await dispatchSlackEvent(projectId, pending.envelope);
+    await dispatchSlackEvent(projectId, pending.envelope, turnScope(inbound));
   }
 }

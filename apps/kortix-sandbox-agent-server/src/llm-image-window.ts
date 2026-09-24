@@ -5,7 +5,7 @@
  * The gateway already keeps only the most recent images of a request
  * (@kortix/llm-gateway image-window.ts) — but it can only do so after the whole
  * body has crossed the wire. A vision-heavy agent turn accumulates every
- * screenshot it ever read as base64 in the OpenCode transcript; on Essentia
+ * screenshot it ever read as base64 in the OpenCode transcript; on SampleCo
  * 2026-08-25 that reached 118 inline images and >128 MiB per request, which
  * the gateway's runtime refused with 413 before the pipeline (and its window)
  * ran. The daemon's localhost LLM proxy applies the same window here so the

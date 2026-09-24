@@ -105,6 +105,28 @@ need a running session. Each mirrors a method on the
 | `useProjectTriggers(projectId)` | Triggers: list, create, update, remove, fire. |
 | `useChangeRequests(projectId, status?)` | Change requests: list, open, merge, close, request changes. |
 
+## Start the open read early
+
+`prefetchSessionOpen(queryClient, projectId, sessionId)` starts the session-open
+read before the session view mounts. It issues one `GET .../snapshot` request
+(session row, turn, queue, and the first 40 transcript messages) and seeds the
+session row cache from it. `useSession` then uses that request instead of
+starting its own.
+
+Call it when a route names a session, or on hover, focus, or touch of a session
+link. It is read-only: it never calls `/start` and never wakes a computer. It
+never rejects. A repeat call for the same session within 30 seconds sends no
+request.
+
+```tsx
+import { prefetchSessionOpen } from '@kortix/sdk/react';
+
+<a
+  href={`/projects/${projectId}/sessions/${sessionId}`}
+  onFocus={() => void prefetchSessionOpen(queryClient, projectId, sessionId)}
+/>;
+```
+
 ## Next
 
 - [Sessions](/docs/sdk/sessions) — the session handle `useSession` wraps, and the `KortixSendError` kinds.

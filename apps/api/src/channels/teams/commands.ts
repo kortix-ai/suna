@@ -15,6 +15,8 @@ import {
 } from '../slack/selection';
 import { buildAgentsPicker } from './agent-picker';
 import { stopTeamsTurn } from './stop';
+import { messageAfterFreshStart, startFreshTeamsConversation } from './fresh-start';
+import { createOrJoinTeamsConversationSession } from './session';
 import { conversationPolicyLabel, normalizeConversationPolicy } from './participants';
 import { sendCard } from '../teams-api';
 import {
@@ -36,7 +38,7 @@ import {
 } from './binding';
 import { lookupTeamsIdentity, revokeTeamsIdentity, teamsUserId } from './identity';
 import { buildTeamsLoginUrl } from './login';
-import { describeTeamsConversation, type TeamsCommand } from './util';
+import { conversationScope, describeTeamsConversation, type TeamsCommand } from './util';
 import type { TeamsActivity, TeamsConversationRef } from './types';
 
 export { parseTeamsCommand } from './util';
@@ -62,8 +64,11 @@ export async function handleTeamsCommand(input: {
   activity: TeamsActivity;
   tenantId: string;
   projectId: string;
+  /** Per-project (BYO) bot: session lookups stay inside `projectId`. */
+  projectScoped?: boolean;
 }): Promise<boolean> {
   const ref = conversationRef(input.activity, input.projectId);
+  const sessionProjectId = input.projectScoped ? input.projectId : undefined;
   if (!ref) return false;
   const { verb, arg } = input.command;
   const conversationId = ref.conversationId;
@@ -98,7 +103,7 @@ export async function handleTeamsCommand(input: {
       case 'cancel': {
         // The live card's Stop button is the primary lever; this is the one
         // that still works after the card has scrolled out of reach.
-        const session = await conversationSession(input.tenantId, conversationId);
+        const session = await conversationSession(input.tenantId, conversationId, sessionProjectId);
         if (!session) {
           await post(buildNoticeCard('Nothing is running in this conversation.'));
           return true;
@@ -120,10 +125,47 @@ export async function handleTeamsCommand(input: {
         );
         return true;
       }
+      case 'new':
+      case 'reset': {
+        // A chat is one conversation id for life, so without this every task
+        // anyone ever asked shared one session. The old one stays in Kortix.
+        const selection = await currentChannelSelection(ctx);
+        const outcome = await startFreshTeamsConversation({
+          tenantId: input.tenantId,
+          conversationId,
+          scope: conversationScope(input.activity),
+          teamsUserId: userId ?? '',
+          channelPolicy: selection?.conversationPolicy ?? null,
+          projectId: sessionProjectId,
+        });
+        if (!outcome.reset) {
+          await post(buildNoticeCard(outcome.notice));
+          return true;
+        }
+        const message = messageAfterFreshStart(input.activity);
+        const previous = outcome.previousSessionId
+          ? ` The previous session stays in Kortix — [open it](${sessionWebUrl(config.FRONTEND_URL, input.projectId, outcome.previousSessionId)}).`
+          : '';
+        await post(
+          buildNoticeCard(
+            message ? `Starting a new session.${previous}` : `Your next message starts a new session.${previous}`,
+            '✅',
+          ),
+        );
+        if (message) {
+          await createOrJoinTeamsConversationSession({
+            projectId: input.projectId,
+            tenantId: input.tenantId,
+            conversationId,
+            activity: { ...input.activity, text: message, id: `${input.activity.id ?? 'new'}:new` },
+          });
+        }
+        return true;
+      }
       case 'status':
       case 'config':
       case 'settings':
-        await post(await buildStatusCard(ctx, input.tenantId, conversationId, input.projectId));
+        await post(await buildStatusCard(ctx, input.tenantId, conversationId, input.projectId, sessionProjectId));
         return true;
       case 'models':
         await ensureBinding(input.tenantId, conversationId, input.projectId, input.activity);
@@ -187,6 +229,7 @@ function helpCard() {
     { cmd: '/projects', desc: 'list connected projects' },
     { cmd: '/use <name>', desc: 'point this conversation at another project' },
     { cmd: '/stop', desc: 'stop the run in progress here' },
+    { cmd: '/new [message]', desc: 'start a new session in this chat' },
     { cmd: '/policy', desc: 'who may join sessions started here: open, owner, approval' },
   ]);
 }
@@ -196,11 +239,12 @@ async function buildStatusCard(
   tenantId: string,
   conversationId: string,
   projectId: string,
+  sessionProjectId?: string,
 ) {
   const [selection, projects, session] = await Promise.all([
     currentChannelSelection(ctx),
     listTenantProjects(tenantId).catch(() => []),
-    conversationSession(tenantId, conversationId).catch(() => null),
+    conversationSession(tenantId, conversationId, sessionProjectId).catch(() => null),
   ]);
   const projectName = projects.find((p) => p.projectId === projectId)?.name ?? projectId;
   return buildPanelCard({

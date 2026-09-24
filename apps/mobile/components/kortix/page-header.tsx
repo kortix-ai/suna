@@ -1,6 +1,6 @@
 /**
  * PageHeader — the header of every project tool page (Agents, Skills,
- * Schedules, Review, Secrets, Webhooks, Channels, Terminal, …).
+ * Schedules, Review, Secrets, Channels, Terminal, …).
  *
  * One row, three equal-width columns (Jay, 2026-09-22):
  *
@@ -26,11 +26,13 @@
  * last button), like the floating header.
  *
  * Project pages show the hamburger: the project drawer opens from every
- * project page (see ProjectRoutes), and **nothing ever takes its place** (Jay,
- * 2026-09-22). `onBack` is for a detail shown inside a page (an agent, a
- * skill): the app's Go back button (`PlatformButton`, the one `SettingsHeader`
- * uses) sits beside the hamburger, back to the page's list. A folder view
- * passes no `onBack`: its breadcrumb goes up.
+ * project page (see ProjectRoutes) (Jay, 2026-09-22). One exception: a
+ * pushed sub-page (project Settings from Settings, Schedules or Secrets from
+ * project Settings; Jay, 2026-09-23) passes `onBack` and no `onOpenDrawer`,
+ * so the app's Go back button (`PlatformButton`, the one `SettingsHeader`
+ * uses) takes the hamburger's place and returns to the page it was opened
+ * from. A page that passes both shows Go back beside the hamburger, back to
+ * a detail's list. A folder view passes no `onBack`: its breadcrumb goes up.
  */
 
 import * as React from 'react';
@@ -59,7 +61,10 @@ export interface PageHeaderProps {
 
   /** Left hamburger handler. Omit to hide the left icon entirely. */
   onOpenDrawer?: () => void;
-  /** A detail inside the page: Go back takes the hamburger's place. */
+  /**
+   * Go back (`PlatformButton` chevron). Alone for a pushed sub-page (no
+   * `onOpenDrawer`), in the hamburger's place; beside the hamburger otherwise.
+   */
   onBack?: () => void;
   /** Right "···" more-button handler. Omit or combine with `hideRightDrawerToggle`. */
   onOpenRightDrawer?: () => void;
@@ -80,6 +85,13 @@ export interface PageHeaderProps {
   /** Bottom padding below the row. `PageContent` adds 4pt more. */
   paddingBottom?: number;
 
+  /**
+   * The title takes all the width the buttons leave (the Browser's address
+   * field), instead of the centred third. The outer columns shrink to their
+   * buttons.
+   */
+  fillTitle?: boolean;
+
   /** Optional className passed to the outer View (e.g. to override bg). */
   className?: string;
 }
@@ -97,6 +109,7 @@ export function PageHeader({
   rightActions,
   hideRightDrawerToggle,
   paddingBottom = 0,
+  fillTitle = false,
   className,
 }: PageHeaderProps) {
   const insets = useSafeAreaInsets();
@@ -128,7 +141,7 @@ export function PageHeader({
       <View
         className="flex-row items-center px-4 pb-3"
         style={{ paddingTop: Math.max(insets.top, 10) + 6, minHeight: 56 }}>
-        <View className="flex-1 flex-row items-center gap-2">
+        <View className={`${fillTitle ? '' : 'flex-1 '}flex-row items-center gap-2`}>
           {onOpenDrawer ? <MenuButton onPress={onOpenDrawer} /> : null}
           {onBack ? (
             <PlatformButton
@@ -141,11 +154,11 @@ export function PageHeader({
           ) : null}
         </View>
 
-        <View className="flex-1 items-center px-1">{titleNode}</View>
+        <View className={fillTitle ? 'flex-1 flex-row items-center px-2' : 'flex-1 items-center px-1'}>{titleNode}</View>
 
         {/* The last button holds the padding edge: -mr-2.5 mirrors the
             hamburger's -ml-2.5. */}
-        <View className="flex-1 flex-row items-center justify-end">
+        <View className={`${fillTitle ? '' : 'flex-1 '}flex-row items-center justify-end`}>
           <View className="-mr-2.5 flex-row items-center">
             {rightActions}
             {onAdd ? (

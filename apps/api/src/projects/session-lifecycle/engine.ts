@@ -21,6 +21,7 @@ import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { WIRE_ID_PLACED_HEADER } from '../../sandbox-proxy/prompt-wire-id-repair';
 import { bindChatThread } from '../../channels/slack/binding';
 import { config } from '../../config';
+import { channelPrompterForOnBehalfOf, clearSessionOnBehalfOfForPrompt } from '../lib/on-behalf-of';
 import { logger } from '../../lib/logger';
 import { mayRequeueFailedCreate } from './requeue-policy';
 import { materializePromptAttachments } from './prompt-attachment-materializer';
@@ -46,6 +47,7 @@ import {
 } from '../instance-scope';
 import { loadSandboxMetadataForSessions, releaseCommandToOwningInstance } from './instance-release';
 import { db } from '../../shared/db';
+import { runWorkerTick } from '../../shared/audit-scope';
 import { markTriggerRuntimeDelivered } from '../trigger-execution-store';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
 import { secretsAllowlistPayloadConflicts } from '../secrets';
@@ -105,6 +107,7 @@ import {
   MAX_WIRE_ID_CLOCK_CORRECTION,
   WIRE_ID_TIME_MASK,
   WIRE_ID_TIME_SCALE,
+  isWireIdAheadOf,
   mintWireMessageId,
   newestWireIdTime,
   wireIdTime,
@@ -288,7 +291,11 @@ export async function createSession(
     };
   }
 
-  const result = await executeCreateSession({ ...command, attachmentSourceCommandId: claimed.row.commandId });
+  const result = await executeCreateSession({
+    ...command,
+    attachmentSourceCommandId: claimed.row.commandId,
+    createCommandId: claimed.row.commandId,
+  });
   if (result.status === 'created' && result.sessionId) {
     const postCreate = await applyPostCreateActions({
       projectId: command.project.projectId,
@@ -410,6 +417,12 @@ export async function continueSession(
 ): Promise<SessionDeliveryOutcome> {
   const { sessionId, text } = command;
   const idempotencyKey = commandId ?? randomUUID();
+  // The fast-path target is one JOINED read of the session and its sandbox, and
+  // it does not depend on the session read below — so it goes out with it
+  // instead of two round trips after it. A box that turns out not to be awake
+  // yields null and the slow path runs exactly as before.
+  const awakeEarly = awakeDeliveryTarget(command.sessionId);
+  awakeEarly.catch(() => undefined);
   const [session] = await db
     .select({
       accountId: projectSessions.accountId,
@@ -434,10 +447,33 @@ export async function continueSession(
   // the user explicitly deleted.
   const sessionMeta = (session.metadata ?? {}) as LegacyInlineAttachmentRepairMetadata;
   if (typeof sessionMeta.deletedAt === 'string') return 'no-session';
+  if (command.projectId && command.projectId !== session.projectId) {
+    console.warn('[session-lifecycle] command project does not own the session; refusing delivery', {
+      sessionId,
+      commandProjectId: command.projectId,
+    });
+    return 'no-session';
+  }
   const userId = command.userId ?? (await resolveProjectAutomationActor(session.accountId));
   if (!userId) {
     console.warn('[session-lifecycle] no actor for follow-up delivery', { sessionId });
     return 'pending';
+  }
+  // Spec 2026-09-22 §2.3: a prompt from anyone other than the session's
+  // `on_behalf_of` human clears it. The HTTP prompt route clears for human
+  // prompters itself; trigger and channel deliveries arrive here.
+  const channelPrompter = channelPrompterForOnBehalfOf({
+    source: command.source,
+    userId: command.userId ?? null,
+    slackRequiresUserIdentity: config.SLACK_REQUIRE_USER_IDENTITY !== false,
+    teamsRequiresUserIdentity: config.TEAMS_REQUIRE_USER_IDENTITY !== false,
+  });
+  if (channelPrompter !== undefined) {
+    await clearSessionOnBehalfOfForPrompt({
+      accountId: session.accountId,
+      sessionId,
+      prompterUserId: channelPrompter,
+    });
   }
   const pendingAttachmentNames = sessionMeta.pending_prompt?.attachment_names;
   const shouldRepairLegacyInlineAttachments =
@@ -572,12 +608,14 @@ export async function continueSession(
     firstPromptText: text,
   });
 
-  const [project] = await db
-    .select()
-    .from(projects)
-    .where(eq(projects.projectId, session.projectId))
-    .limit(1);
-  if (!project) return 'no-session';
+  // Loaded LAZILY: only `openSession` (the slow path that wakes a box) reads
+  // the project row, and the session's foreign key already proves it exists.
+  // On the fast path this saved a full round trip per delivery.
+  let projectRow: typeof projects.$inferSelect | undefined;
+  const loadProject = async () =>
+    (projectRow ??= (
+      await db.select().from(projects).where(eq(projects.projectId, session.projectId)).limit(1)
+    )[0]);
 
   if (session.status === 'stopped' || session.status === 'completed') {
     await db
@@ -586,8 +624,10 @@ export async function continueSession(
       .where(eq(projectSessions.sessionId, sessionId));
   }
 
-  const loaded = { row: project, userId };
   const openOnce = async () => {
+    const project = await loadProject();
+    if (!project) return null;
+    const loaded = { row: project, userId };
     await beforeSend?.();
     const [fresh] = await db
       .select({
@@ -621,7 +661,7 @@ export async function continueSession(
   // proxy, whose own wake-and-retry loop and `deliverWithRetry.reopen` (the
   // full open) cover a box that turns out to be asleep after all. A cold or
   // stopping session takes the slow path below exactly as before.
-  const awake = await awakeDeliveryTarget(sessionId);
+  const awake = await awakeEarly;
   if (awake && !command.opencodeEnv) {
     tl?.mark('open-ready-fast');
     return deliverWithRetry({
@@ -760,7 +800,18 @@ const NOT_LANDED_RETRY_DELAY_MS = 2_000;
 /** How far out a released foreign command is re-queued; the owner's drain ticks every 1s. */
 const INSTANCE_RELEASE_DELAY_MS = 2_000;
 
-export async function drainSessionLifecycleQueue(
+/**
+ * Drain queued lifecycle commands as the `session-lifecycle` worker. Request
+ * handlers kick this for their own command, but a drain also runs commands
+ * other principals queued; each command row names its own actor.
+ */
+export function drainSessionLifecycleQueue(
+  input: Parameters<typeof drainSessionLifecycleQueueTick>[0] = {},
+): ReturnType<typeof drainSessionLifecycleQueueTick> {
+  return runWorkerTick('session-lifecycle', () => drainSessionLifecycleQueueTick(input));
+}
+
+async function drainSessionLifecycleQueueTick(
   input: {
     workerId?: string;
     limit?: number;
@@ -1231,7 +1282,10 @@ async function readInboxTranscriptState(
     const tip = parsePlacementTip(await res.json().catch(() => null));
     if (!tip) return empty;
 
-    const newest = newestWireIdTime(tip.map((message) => message.id));
+    const newest = newestWireIdTime(
+      tip.map((message) => message.id),
+      Date.now(),
+    );
     // Same rule the daemon's `observeOpencodeDelivery` uses: an assistant
     // message parented on the prompt is the turn having run.
     const answered = tip.some(
@@ -1274,15 +1328,31 @@ const DELIVERED_WIRE_ID_FLOOR_WINDOW_MS = Number(
  * Fails OPEN (`null`), like every other read on this path: a floor that cannot
  * be read must not block a prompt, and the transcript floor still applies.
  */
+/** The 48-bit wire-id clock of this instant. */
+function wireIdClockNow(): bigint {
+  return (BigInt(Date.now()) * WIRE_ID_TIME_SCALE) & WIRE_ID_TIME_MASK;
+}
+
 async function readDeliveredWireIdFloor(
   row: SessionLifecycleCommandRow,
 ): Promise<bigint | null> {
   if (!row.sessionId) return null;
   // `substr(id, 5, 12)` skips the `msg_` prefix. `lpad` to 16 hex chars makes
   // the value a legal `bit(64)`, which is the only width with a bigint cast.
+  //
+  // An id more than MAX_WIRE_ID_CLOCK_CORRECTION ahead of the clock on the
+  // 48-bit ring is excluded IN SQL: one such row (the pre-fix CLI minted the
+  // HIGH bits, ~40 days out) would otherwise BE the max and hide every real
+  // floor under it.
+  const nowClock = wireIdClockNow();
+  const decoded = (source: SQL) =>
+    sql`('x' || lpad(substr(${source}, 5, 12), 16, '0'))::bit(64)::bigint`;
   const clock = (source: SQL) => sql`CASE
     WHEN ${source} ~ '^msg_[0-9a-f]{12}'
-    THEN ('x' || lpad(substr(${source}, 5, 12), 16, '0'))::bit(64)::bigint
+     AND ((${decoded(source)} - ${nowClock.toString()}::bigint) & ${WIRE_ID_TIME_MASK.toString()}::bigint)
+         NOT BETWEEN ${(MAX_WIRE_ID_CLOCK_CORRECTION + BigInt(1)).toString()}::bigint
+             AND ${(WIRE_ID_TIME_MASK / BigInt(2)).toString()}::bigint
+    THEN ${decoded(source)}
   END`;
   try {
     const [found] = await db
@@ -1306,7 +1376,11 @@ async function readDeliveredWireIdFloor(
       )
       .limit(1);
     if (found?.newest === null || found?.newest === undefined) return null;
-    return BigInt(found.newest);
+    const newest = BigInt(found.newest);
+    // Same rule as the SQL filter, for a reader that returned one anyway.
+    const ahead = ((newest - wireIdClockNow()) & WIRE_ID_TIME_MASK);
+    if (ahead > MAX_WIRE_ID_CLOCK_CORRECTION && ahead < WIRE_ID_TIME_MASK / BigInt(2)) return null;
+    return newest;
   } catch (err) {
     console.warn('[session-lifecycle] delivered wire-id floor read failed — using the transcript', {
       sessionId: row.sessionId,
@@ -1356,7 +1430,13 @@ async function remintWireMessageId(
   payload: QueuedContinueSessionPayload,
   transcript: InboxTranscriptState,
 ): Promise<string> {
-  const submitted = wireIdTime(payload.wireMessageId ?? '');
+  // A submitted id far AHEAD of the clock (the pre-fix CLI's high-bits mint,
+  // ~40 days out) was placed by nothing, so it is no floor: taken as one, the
+  // 1h lift cap refuses it and the prompt goes out below the live reply.
+  const submitted =
+    payload.wireMessageId && !isWireIdAheadOf(payload.wireMessageId, Date.now())
+      ? wireIdTime(payload.wireMessageId)
+      : null;
   const floor = transcript.read
     ? transcript.newest
     : // OpenCode's own minting rule, so an id it wrote a second ago is still
@@ -1937,6 +2017,7 @@ export async function executeQueuedContinue(
         {
           source: row.source as SessionInvocationSource,
           sessionId: row.sessionId,
+          projectId: row.projectId,
           text,
           userId: row.actorUserId,
           ...(payload.parts?.length ? { parts: payload.parts } : {}),
@@ -2214,6 +2295,7 @@ async function executeQueuedCreate(
   }
   return executeCreateSession({
     attachmentSourceCommandId: row.commandId,
+    createCommandId: row.commandId,
     source: row.source as CreateSessionCommand['source'],
     project,
     userId,
@@ -2244,6 +2326,7 @@ async function executeCreateSession(
   };
   const result = await createProjectSession({
     attachmentSourceCommandId: command.attachmentSourceCommandId,
+    createCommandId: command.createCommandId,
     project: command.project,
     userId: command.userId,
     requestingPrincipalType: command.requestingPrincipalType,
@@ -2350,22 +2433,29 @@ function isRetryableCreateError(status?: number): boolean {
  * The delivery target for a session whose box is ALREADY awake, from the DB
  * alone — or null, which means "take the full open path". Cheap: two indexed
  * reads, no provider or daemon round-trip.
+ *
+ * The two reads are keyed on the same session id and neither consumes the
+ * other's result, so they go out TOGETHER: one round trip instead of two on
+ * every delivery, which is ~100 ms wherever the API and its database sit in
+ * different regions.
  */
 async function awakeDeliveryTarget(sessionId: string): Promise<DeliveryTarget | null> {
-  const [session] = await db
-    .select({
-      status: projectSessions.status,
-      opencodeSessionId: projectSessions.opencodeSessionId,
-    })
-    .from(projectSessions)
-    .where(eq(projectSessions.sessionId, sessionId))
-    .limit(1);
+  const [[session], [box]] = await Promise.all([
+    db
+      .select({
+        status: projectSessions.status,
+        opencodeSessionId: projectSessions.opencodeSessionId,
+      })
+      .from(projectSessions)
+      .where(eq(projectSessions.sessionId, sessionId))
+      .limit(1),
+    db
+      .select({ status: sessionSandboxes.status, externalId: sessionSandboxes.externalId })
+      .from(sessionSandboxes)
+      .where(eq(sessionSandboxes.sessionId, sessionId))
+      .limit(1),
+  ]);
   if (!session || session.status !== 'running' || !session.opencodeSessionId) return null;
-  const [box] = await db
-    .select({ status: sessionSandboxes.status, externalId: sessionSandboxes.externalId })
-    .from(sessionSandboxes)
-    .where(eq(sessionSandboxes.sessionId, sessionId))
-    .limit(1);
   if (!box || box.status !== 'active' || !box.externalId) return null;
   return {
     stage: 'ready',

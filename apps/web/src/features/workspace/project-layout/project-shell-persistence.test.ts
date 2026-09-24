@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const webRoot = join(import.meta.dir, '../../..');
-const projectRouteRoot = join(webRoot, 'app/(app)/projects/[id]');
+const projectRouteRoot = join(webRoot, 'app/[locale]/(app)/projects/[id]');
 const shellSource = readFileSync(join(import.meta.dir, 'project-shell.tsx'), 'utf8');
 const layoutSource = readFileSync(join(projectRouteRoot, 'layout.tsx'), 'utf8');
 const pageSources = [

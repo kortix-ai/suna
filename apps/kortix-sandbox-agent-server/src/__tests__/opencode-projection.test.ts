@@ -33,8 +33,8 @@ describe('projectAgents', () => {
   test('keeps the composer fields and drops the system prompt', () => {
     const raw = [
       {
-        name: 'essentia-agi',
-        description: 'The single Essentia working agent',
+        name: 'sampleco-agi',
+        description: 'The single SampleCo working agent',
         mode: 'primary',
         native: false,
         hidden: null,
@@ -49,8 +49,8 @@ describe('projectAgents', () => {
     const projected = projectAgents(raw)
     expect(projected).toHaveLength(2)
     expect(projected[0]).toMatchObject({
-      name: 'essentia-agi',
-      description: 'The single Essentia working agent',
+      name: 'sampleco-agi',
+      description: 'The single SampleCo working agent',
       mode: 'primary',
       native: false,
       source: 'config',
@@ -101,7 +101,7 @@ describe('projectConfig', () => {
     const raw = {
       model: 'kortix/codex/gpt-5.6-sol',
       small_model: 'kortix/codex/gpt-5.6-sol',
-      agent: 'essentia-agi',
+      agent: 'sampleco-agi',
       permission: { edit: 'allow' },
       instructions: ['AGENTS.md'],
       provider,
@@ -111,7 +111,7 @@ describe('projectConfig', () => {
     expect(projected).toEqual({
       model: 'kortix/codex/gpt-5.6-sol',
       small_model: 'kortix/codex/gpt-5.6-sol',
-      default_agent: 'essentia-agi',
+      default_agent: 'sampleco-agi',
       permission: { edit: 'allow' },
       instructions: ['AGENTS.md'],
       enabled_providers: Object.keys(provider),

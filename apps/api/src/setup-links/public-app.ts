@@ -9,6 +9,7 @@
  * is for. Same trust model as a magic link / a Pipedream connect URL.
  */
 import { createHash } from 'node:crypto';
+import { requestClientIp } from '../shared/client-ip';
 import { connectors, projectSessions, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { type Context, Hono, type Next } from 'hono';
@@ -21,6 +22,7 @@ import { propagateProjectSecretsToActiveSandboxes } from '../projects/lib/sandbo
 import { isValidSecretName, writeSharedProjectSecret } from '../projects/secrets';
 import { db } from '../shared/db';
 import { TokenBucketRateLimiter, enforceRateLimit } from '../shared/rate-limit';
+import { RATE_LIMIT_EXCEEDED_ACTION } from '../shared/rate-limit-audit';
 import { resolveSetupLink } from './token';
 import { watchConnectorCompletion } from './connector-completion-watch';
 import { composioConfigured } from '../connectors/composio';
@@ -42,10 +44,9 @@ const setupLinksPublicApp = new Hono();
 const TOKEN_LIKE_REGEX = /^ksl_[A-Za-z0-9_-]{8,512}$/;
 const setupLinkLimiter = new TokenBucketRateLimiter('setup_link');
 
+// Trusted-proxy rule: the leftmost X-Forwarded-For entry is caller-written.
 function clientIp(c: Context) {
-  return c.req.header('x-forwarded-for')?.split(',')[0]?.trim()
-    || c.req.header('x-real-ip')
-    || 'unknown';
+  return requestClientIp(c);
 }
 
 function createSetupLinkRateLimitMiddleware() {
@@ -63,7 +64,7 @@ function createSetupLinkRateLimitMiddleware() {
       key,
       { limit: 30, windowMs: 60_000 },
       {
-        action: `RATE_LIMIT ${c.req.method} ${c.req.path}`,
+        action: RATE_LIMIT_EXCEEDED_ACTION,
         resourceType: 'setup_link',
         resourceId,
         metadata: { limiter: 'setup_link' },
@@ -290,11 +291,15 @@ setupLinksPublicApp.post('/connectors/:token/start', async (c) => {
       link.owner,
     );
     if (!started) return c.json({ error: 'This connector has no hosted authorization' }, 404);
-    // A no-auth toolkit is authorized the moment it is asked for. Say so instead
-    // of handing back an empty url the intake page would spin on forever.
+    // No url, but connected: either a no-auth toolkit (authorized the moment it
+    // is asked for) or a slot whose Composio entity already holds an active
+    // account, which start reuses rather than re-authorizing. Both are
+    // success. `already_connected` tells the intake page which one, so it can
+    // say "Already connected" instead of the old "Could not start the connect
+    // flow." false error.
     if (!started.connectUrl) {
       return started.connected
-        ? c.json({ connect_url: null, connected: true })
+        ? c.json({ connect_url: null, connected: true, already_connected: started.isNoAuth !== true })
         : c.json({ error: 'The provider did not return a connect URL' }, 502);
     }
     // Start the server-side half now the human has a page to complete. Closing
@@ -331,9 +336,15 @@ setupLinksPublicApp.post('/connectors/:token/finalize', async (c) => {
   // shared-row check here would make a private link report "connected" off a
   // completely different account's credential.
   const credentialOwnerId = link.owner === 'project' ? null : link.uid;
-  if (await credentialExists(link.connectorId, credentialOwnerId)) return c.json({ connected: true });
+  // `connected_as` names who the account was authorized as, so the human
+  // sees it on the success screen. This short-circuit makes no provider call,
+  // so the identity is unknown here.
+  if (await credentialExists(link.connectorId, credentialOwnerId)) {
+    return c.json({ connected: true, connected_as: null });
+  }
 
   let connected = false;
+  let connectedAs: string | null = null;
   try {
     const { dbConnectorRouterDeps } = await import('../connectors/db-deps');
     const result = await dbConnectorRouterDeps.connectorFinalize?.(
@@ -345,6 +356,7 @@ setupLinksPublicApp.post('/connectors/:token/finalize', async (c) => {
     );
     if (!result) return c.json({ error: 'This connector has no hosted authorization' }, 404);
     connected = result.connected;
+    connectedAs = result.connectedAs ?? null;
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : 'Failed to finalize connect' }, 502);
   }
@@ -358,7 +370,7 @@ setupLinksPublicApp.post('/connectors/:token/finalize', async (c) => {
   if (link.sid) {
     void notifyConnectorSession(link.sid, link.projectId, link.uid, link.slug, link.app);
   }
-  return c.json({ connected: true });
+  return c.json({ connected: true, connected_as: connectedAs });
 });
 
 /** Exported for tests. The text delivered to the requesting session's agent. */

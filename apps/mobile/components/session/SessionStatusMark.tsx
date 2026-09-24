@@ -9,9 +9,9 @@
  *   failed    red diamond
  *   needs-you blue dot inside a soft blue halo
  *
- * Mobile has no Review Center, and `ProjectSession` carries no per-session
- * review count, so no row resolves to `needs-you` yet. The mark exists for
- * when that count reaches the lists.
+ * A session is `needs-you` while the review inbox holds a pending item from
+ * it (`lib/session/needs-you`): the drawer's Needs you group and the Sessions
+ * page pass that count to `sessionDisplayStatus`.
  *
  * The mark is hidden from screen readers: the row's label speaks the status
  * (`sessionStatusLabel`).

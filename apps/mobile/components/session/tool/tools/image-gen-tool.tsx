@@ -11,7 +11,7 @@
  * Differences from web: a sandbox image loads through `useSandboxImage` (the
  * native loader with an auth header; above the size limit it waits for a
  * tap), not a base64 read. Tapping the image opens it full screen: a sandbox
- * file in `FileViewer`, a direct URL in the browser.
+ * file in the app's file sheet, a direct URL in the browser.
  */
 
 import { useMemo } from 'react';

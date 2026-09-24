@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { and, eq, lt } from 'drizzle-orm';
 import { chatEventDedup, chatTurnStreams, projectSessions } from '@kortix/db';
 import { db } from '../../shared/db';
+import { runWorkerTick } from '../../shared/audit-scope';
 import { registerSessionFailureNotifier } from '../../shared/session-failure-notifier';
 import { config } from '../../config';
 import { sessionWebUrl } from './util';
@@ -132,7 +133,7 @@ const LIVE_PLAN_TITLE = 'Working on it…';
 const STALE_AFTER_MS = 30 * 60 * 1000;
 
 setInterval(() => {
-  void (async () => {
+  void runWorkerTick('slack-turn-gc', async () => {
     try {
       const now = new Date();
       const cutoff = new Date(now.getTime() - STALE_AFTER_MS);
@@ -171,7 +172,7 @@ setInterval(() => {
     } catch (err) {
       console.warn('[slack-webhook] gc tick failed', err);
     }
-  })();
+  });
 }, 5 * 60 * 1000).unref();
 
 export async function startTurn(

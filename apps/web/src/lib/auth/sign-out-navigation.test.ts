@@ -83,7 +83,7 @@ const CONTROLS: { name: string; file: string; from: string; to: string }[] = [
   },
   {
     name: "/projects/start's stuck-state escape hatch",
-    file: 'app/(app)/projects/start/page.tsx',
+    file: 'app/[locale]/(app)/projects/start/page.tsx',
     from: 'function StartSignOutButton()',
     to: 'function ProjectStartError(',
   },
@@ -99,7 +99,7 @@ const CONTROLS: { name: string; file: string; from: string; to: string }[] = [
   },
   {
     name: "phone verification's Sign out",
-    file: 'app/(auth)/auth/phone-verification/page.tsx',
+    file: 'app/[locale]/(auth)/auth/phone-verification/page.tsx',
     from: 'const signOutMutation = useMutation(',
     to: 'const handleSignOut',
   },
@@ -297,7 +297,7 @@ describe('the signed-out route guards do not race the exit', () => {
       // and inherit this guard from `account-hub-content.tsx`.
       'features/accounts/hub/account-list-content.tsx',
       'features/accounts/hub/account-hub-content.tsx',
-      'app/(app)/projects/start/page.tsx',
+      'app/[locale]/(app)/projects/start/page.tsx',
       'features/workspace/new/new-workspace-page.tsx',
     ]) {
       expect({ file, calls: code(file).includes('useSignedOutRedirect();') }).toEqual({

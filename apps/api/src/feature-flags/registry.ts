@@ -46,6 +46,26 @@
  * lights up in Settings automatically. `unit-feature-flags.test.ts` pins the
  * catalog to the contract key list and requires every entry to declare its
  * enforcement.
+ *
+ * ## Hidden flags (`catalogHidden`)
+ *
+ * A flag that has become THE behavior is no longer a choice we present, but it
+ * is not yet safe to delete: support still needs one lever to put a single
+ * project back on the old behavior while that project migrates.
+ * `catalogHidden: true` is exactly that state — RESOLVABLE but UNADVERTISED:
+ *
+ *   • `resolveFeatureFlag` / `resolveFeatureFlags` — UNCHANGED. The platform
+ *     default still applies and an explicit project override still wins.
+ *   • `buildFeatureFlagCatalog` — OMITS the entry, so Settings → Feature flags
+ *     does not list it and no UI presents it as a toggle.
+ *   • `isFeatureFlagKey` — UNCHANGED, so `PATCH /projects/:id/features` keeps
+ *     accepting the key. That is the support escape hatch, and it is the whole
+ *     reason this is not `available: () => false` (which would force the flag
+ *     OFF for every project — the opposite of what a hidden default means).
+ *
+ * A hidden flag is a DATED state, not a parking spot: hide it in the release
+ * that makes it the default, delete it in the next one. The comment on the
+ * entry names the release and the spec section that ends it.
  */
 import { config } from '../config';
 import type { FeatureFlagKey, FeatureFlagStability } from '@kortix/api-contract';
@@ -82,6 +102,14 @@ export interface FeatureFlagDef {
   enforcement: FeatureFlagEnforcement;
   /** Mandatory for 'ui-only': why the server does not enforce. */
   enforcementNote?: string;
+  /**
+   * Omit this flag from the serialized catalog ({@link buildFeatureFlagCatalog})
+   * so no UI lists it as a toggle. Resolution and `PATCH /projects/:id/features`
+   * are untouched — see "Hidden flags" in this file's header. Set it only on a
+   * flag whose value is now the product behavior, and delete the flag in the
+   * next release.
+   */
+  catalogHidden?: true;
 }
 
 /**
@@ -182,7 +210,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     available: () => config.LLM_GATEWAY_ENABLED,
     // Fleet rollout switch, default ON (config.ts LLM_GATEWAY_DEFAULT_ENABLED).
     // Turning the flag OFF per project is the first-class native path — the
-    // deliberate lever for deployments (e.g. Essentia) that bring their own
+    // deliberate lever for deployments (e.g. SampleCo) that bring their own
     // keys end to end. Explicit project overrides always win, and the master
     // availability gate above remains the emergency kill switch.
     platformDefault: () => config.LLM_GATEWAY_DEFAULT_ENABLED,
@@ -318,9 +346,21 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'A governed agent session acts as the agent itself, not as the person who started it. Its authority is its kortix_permissions list, capped by the IAM role bound to the agent and never including member management, project deletion, or credential issue. Running an agent, firing its trigger, or starting it from another agent requires permission to run that agent.',
     stability: 'experimental',
     available: () => true,
-    // Default OFF (spec docs/specs/2026-09-22-agents-as-principals.md §5). OFF
-    // keeps the launcher ∩ grant model byte for byte.
-    platformDefault: () => false,
+    // Default ON. An agent's authority is a property of the AGENT, not of
+    // whoever pressed start: the launcher-∩-grant model gave the same agent
+    // different power per person, let an owner-launched agent ignore its own
+    // grant entirely (super-admin short-circuit), and ran every unattended
+    // trigger as the account owner. Switching a project OFF restores that old
+    // model as an escape hatch for one release; the switch is then deleted
+    // (spec docs/specs/2026-09-22-agents-as-principals.md §5).
+    platformDefault: () => true,
+    // Not listed in Settings → Feature flags. An agent acting as itself is how
+    // Kortix works, not a choice we offer, so presenting a switch would invite
+    // a project to turn the governance model off. Support can still put ONE
+    // project back with `PATCH /projects/:id/features {agent_principal:false}`
+    // while it migrates. Delete the flag — and this line — in the release after
+    // the one that shipped the default (spec §5).
+    catalogHidden: true,
     enforcement: 'behavioral',
     enforcementNote:
       'Read by the authorization engine for every agent-session credential ' +
@@ -394,11 +434,15 @@ export interface FeatureFlagView {
 }
 
 /**
- * Build the full per-project catalog the clients render. Self-contained so the
- * UI never hard-codes the flag list — add to FLAGS and it appears.
+ * Build the per-project catalog the clients render. Self-contained so the UI
+ * never hard-codes the flag list — add to FLAGS and it appears.
+ *
+ * `catalogHidden` entries are omitted: they still resolve and are still
+ * writable through `PATCH /projects/:id/features`, they are simply not offered
+ * as a toggle (see "Hidden flags" in this file's header).
  */
 export function buildFeatureFlagCatalog(metadata: unknown): FeatureFlagView[] {
-  return FLAGS.map((f) => ({
+  return FLAGS.filter((f) => !f.catalogHidden).map((f) => ({
     key: f.key,
     name: f.name,
     description: f.description,

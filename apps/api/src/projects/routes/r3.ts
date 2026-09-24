@@ -1,9 +1,14 @@
 import { parseSharingIntent } from '../../connectors/share';
 import { randomUUID } from 'node:crypto';
 import { PROJECT_ACTIONS } from '../../iam';
-import { agentMayUseEnv, getAgentGrant } from '../../iam/agent-scope';
+import { agentMayUseEnv, getAgentGrant, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
-import { createAccountToken, listAccountTokens, revokeAccountToken } from '../../repositories/account-tokens';
+import {
+  PatPolicyError,
+  createAccountToken,
+  listAccountTokens,
+  revokeAccountToken,
+} from '../../repositories/account-tokens';
 import { inferAuditSource, recordAuditEvent, runAuditedTransaction } from '../../shared/audit';
 import { createProjectSecretWriteRateLimitMiddleware } from '../../shared/rate-limit';
 import { db } from '../../shared/db';
@@ -44,7 +49,7 @@ import {
   projects,
   type SecretEgressPolicy,
 } from '@kortix/db';
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
   loadProjectForUser,
   assertProjectCapability,
@@ -274,7 +279,7 @@ projectsApp.openapi(
       },
     responses: {
         201: json(z.any(), 'OK'),
-        ...errors(404),
+        ...errors(400, 403, 404),
     },
   }),
   async (c: any) => {
@@ -290,13 +295,17 @@ projectsApp.openapi(
   // account token carrying a (possibly narrow) AgentGrant. If it could mint a
   // fresh project token, the new token would carry NO grant — letting a scoped
   // agent issue an unscoped sibling and escape its own ceiling. Token minting
-  // is a human/manage operation; agents are denied outright.
-  if (getAgentGrant(c)) {
+  // is a human/manage operation; agents are denied outright. Keyed on the
+  // session binding, not on the grant: a session of a project without
+  // `[[agents]]` carries a NULL grant and is still a session credential.
+  if (isProjectSessionPrincipal(c)) {
     return c.json({ error: 'Agent-session tokens cannot mint project tokens' }, 403);
   }
 
-  // One body field: `name`. Defaults to "cli · <project name>".
-  let body: { name?: unknown } = {};
+  // Body fields: `name` (defaults to "cli · <project name>") and an optional
+  // ISO-8601 `expires_at`. The account's PAT policy (require expiry, maximum
+  // lifetime) applies to this token like any other durable PAT.
+  let body: { name?: unknown; expires_at?: unknown } = {};
   try {
     body = (await c.req.json()) ?? {};
   } catch {
@@ -306,14 +315,28 @@ projectsApp.openapi(
     typeof body.name === 'string' && body.name.trim()
       ? body.name.trim().slice(0, 255)
       : `cli · ${loaded.row.name}`;
+  const expiresAtRaw = typeof body.expires_at === 'string' ? body.expires_at.trim() : '';
+  const expiresAt = expiresAtRaw ? new Date(expiresAtRaw) : undefined;
+  if (expiresAt && Number.isNaN(expiresAt.getTime())) {
+    return c.json({ error: 'expires_at must be ISO-8601' }, 400);
+  }
 
   const userId = c.get('userId') as string;
-  const created = await createAccountToken({
-    accountId: loaded.row.accountId,
-    userId,
-    projectId,
-    name,
-  });
+  let created;
+  try {
+    created = await createAccountToken({
+      accountId: loaded.row.accountId,
+      userId,
+      projectId,
+      name,
+      expiresAt,
+    });
+  } catch (err) {
+    if (err instanceof PatPolicyError) {
+      return c.json({ error: err.message, code: err.code }, 400);
+    }
+    throw err;
+  }
 
   return c.json(
     {
@@ -356,7 +379,7 @@ projectsApp.openapi(
   // Token management is a human/manage operation: an agent-session token must
   // not revoke project tokens (it could knock out its own siblings / the human
   // CLI token as a DoS). Symmetric with the mint guard above.
-  if (getAgentGrant(c)) {
+  if (isProjectSessionPrincipal(c)) {
     return c.json({ error: 'Agent-session tokens cannot manage project tokens' }, 403);
   }
   const ok = await revokeAccountToken(tokenId, loaded.row.accountId, projectId);
@@ -651,7 +674,7 @@ projectsApp.openapi(
   // runtime/default secret (no policy field, or an explicit sandbox default)
   // stays allowed, matching existing product behavior.
   if (
-    getAgentGrant(c) &&
+    isProjectSessionPrincipal(c) &&
     ((requestedStrategy !== undefined && requestedStrategy !== 'runtime') ||
       (requestedConsumerData !== undefined && requestedConsumerData !== 'sandbox') ||
       body.egress_policy !== undefined)
@@ -769,7 +792,7 @@ projectsApp.openapi(
   const actorType =
     c.get('authType') === 'service_account'
       ? 'service_account'
-      : getAgentGrant(c)
+      : isProjectSessionPrincipal(c)
         ? 'agent'
         : 'human';
   await runAuditedTransaction(
@@ -917,7 +940,7 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_SECRET_WRITE,
     );
-    if (getAgentGrant(c)) {
+    if (isProjectSessionPrincipal(c)) {
       return c.json({ error: 'Agent sessions cannot change secret delivery policy' }, 403);
     }
     if (isSystemProjectSecretName(identifier)) {
@@ -1181,8 +1204,11 @@ projectsApp.openapi(
 
 // Kortix provider id → the secret we persist the resulting auth.json under.
 // Only OpenAI (ChatGPT) is wired today; the shape generalizes to others.
-const OAUTH_PROVIDERS: Record<string, { secretName: string }> = {
-  openai: { secretName: CODEX_AUTH_JSON_SECRET_NAME },
+// `legacySecretNames` are older names for the same login. Nothing writes them
+// any more, but clients and the gateway still count them as connected, so a
+// disconnect must delete them too.
+const OAUTH_PROVIDERS: Record<string, { secretName: string; legacySecretNames?: string[] }> = {
+  openai: { secretName: CODEX_AUTH_JSON_SECRET_NAME, legacySecretNames: ['OPENCODE_AUTH_JSON'] },
 };
 
 // How long the encrypted flow handle stays valid (OpenAI expires the device
@@ -1600,6 +1626,11 @@ projectsApp.openapi(
 
 // ─── DELETE /v1/projects/:projectId/oauth/:provider ────────────────────────
 // Remove an OAuth credential (deletes the backing secret).
+// The login can be a per-user PRIVATE row (`owner_user_id` set) or the shared
+// project row. The delete covers exactly the rows `loadSecretViewsForUser`
+// shows the caller: the caller's own private rows, plus the shared row when
+// the caller may manage shared secrets. Another member's private login is
+// never touched.
 projectsApp.openapi(
   createRoute({
     method: 'delete',
@@ -1623,12 +1654,20 @@ projectsApp.openapi(
   const cfg = OAUTH_PROVIDERS[provider];
   if (!cfg) return c.json({ error: 'Not found' }, 404);
 
+  // Same test the GET secrets route uses for `can_manage_shared`.
+  const canManageShared = roleAllows(loaded.effectiveRole, 'manage');
+  const ownPrivate = eq(projectSecrets.ownerUserId, loaded.userId);
+
   await runAuditedTransaction(
     async (tx) => {
       await tx
         .delete(projectSecrets)
         .where(
-          and(eq(projectSecrets.projectId, projectId), eq(projectSecrets.name, cfg.secretName)),
+          and(
+            eq(projectSecrets.projectId, projectId),
+            inArray(projectSecrets.name, [cfg.secretName, ...(cfg.legacySecretNames ?? [])]),
+            canManageShared ? or(ownPrivate, isNull(projectSecrets.ownerUserId)) : ownPrivate,
+          ),
         );
     },
     () => ({
@@ -1642,6 +1681,7 @@ projectsApp.openapi(
       metadata: {
         identifier: cfg.secretName,
         consumer: 'llm_gateway',
+        scope: canManageShared ? 'own_private_and_shared' : 'own_private',
       },
     }),
   );
@@ -1712,7 +1752,7 @@ projectsApp.openapi(
     // POST guards: an agent session cannot touch the delivery control, only a
     // plain runtime secret. Otherwise an agent could delete a tightly-scoped
     // egress row and re-create it (defeated separately by the POST guard).
-    if (getAgentGrant(c) && existing.strategy && existing.strategy !== 'runtime') {
+    if (isProjectSessionPrincipal(c) && existing.strategy && existing.strategy !== 'runtime') {
       return c.json({ error: 'Agent sessions cannot change secret delivery policy' }, 403);
     }
     const connectors = await connectorSecretBindings(projectId, identifier);
@@ -1729,7 +1769,7 @@ projectsApp.openapi(
     const actorType =
       c.get('authType') === 'service_account'
         ? 'service_account'
-        : getAgentGrant(c)
+        : isProjectSessionPrincipal(c)
         ? 'agent'
         : 'human';
     await runAuditedTransaction(
@@ -1988,7 +2028,7 @@ projectsApp.openapi(
     // Sync force-re-pushes (re-mints) every secret handle into active sandboxes.
     // That is the re-mint half of the policy-widening exfil chain, so an agent
     // session must not trigger it. Mirror the PUT /strategy guard.
-    if (getAgentGrant(c)) {
+    if (isProjectSessionPrincipal(c)) {
       return c.json({ error: 'Agent sessions cannot change secret delivery policy' }, 403);
     }
     const result = await propagateProjectSecretsToActiveSandboxes(projectId);

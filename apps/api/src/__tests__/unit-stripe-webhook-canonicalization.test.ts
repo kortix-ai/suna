@@ -83,6 +83,14 @@ mock.module('../shared/resolve-account', () => ({
 mock.module('../shared/db', () => ({
   hasDatabase: true,
   db: {
+    // isWebhookEventProcessed: the event has not been processed yet.
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => [],
+        }),
+      }),
+    }),
     insert: () => ({
       values: () => ({
         onConflictDoNothing: () => ({

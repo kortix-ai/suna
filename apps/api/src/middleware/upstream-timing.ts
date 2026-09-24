@@ -27,6 +27,7 @@
 
 import type { Context, Next } from 'hono';
 import { getRequestContext, setContextField } from '../lib/request-context';
+import { formatStageEntries, stageSnapshot } from '../lib/server-timing';
 
 /** Context field the accumulated upstream time is carried on. */
 export const UPSTREAM_MS_FIELD = 'upstream_ms';
@@ -92,10 +93,15 @@ export async function upstreamTiming(c: Context, next: Next): Promise<void> {
   // `api` is the remainder, floored at zero: the two clocks are started at
   // different depths of the chain, so rounding can otherwise produce a
   // nonsensical negative on a request that is almost entirely one upstream call.
-  c.header(
-    'Server-Timing',
-    durations.upstream > 0
-      ? `up;dur=${durations.upstream}, api;dur=${durations.api}`
-      : `api;dur=${durations.api}`,
-  );
+  //
+  // `total` plus the per-stage entries (auth, gotrue, iam, db, git, http — see
+  // lib/server-timing.ts) break the same wall time down by layer. Stages
+  // overlap each other and `api`; each is its own wall time, not a share.
+  const entries = [
+    `total;dur=${Math.round(total)}`,
+    ...formatStageEntries(stageSnapshot()),
+    ...(durations.upstream > 0 ? [`up;dur=${durations.upstream}`] : []),
+    `api;dur=${durations.api}`,
+  ];
+  c.header('Server-Timing', entries.join(', '));
 }
