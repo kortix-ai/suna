@@ -1713,6 +1713,35 @@ for (const runtime of runtimes) {
           "Log out must sit below the title-bar band",
         ).toBeGreaterThanOrEqual(backBox.y + backBox.height);
 
+        // `/new` has no titlebar owner, so the root strip is its only drag
+        // area and covers the whole band (#7568). The strip paints above Back,
+        // so it must not take Back's click: Back is the topmost box at its
+        // own center.
+        const strip = await page
+          .locator(".kx-desktop-chrome")
+          .evaluate((element) => ({
+            bottom: element.getBoundingClientRect().bottom,
+            region: getComputedStyle(element).webkitAppRegion,
+          }));
+        expect(
+          strip.bottom,
+          "the drag strip must cover the title-bar band",
+        ).toBeGreaterThanOrEqual(backBox.y + backBox.height);
+        expect(strip.region, "the band must stay a window drag region").toBe(
+          "drag",
+        );
+        expect(
+          await back.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const hit = document.elementFromPoint(
+              rect.left + rect.width / 2,
+              rect.top + rect.height / 2,
+            );
+            return hit !== null && element.contains(hit);
+          }),
+          "the drag strip must not cover Back",
+        ).toBe(true);
+
         await back.click();
         await expect(page).toHaveURL(new RegExp(`/projects/${project.id}`), {
           timeout: 60_000,

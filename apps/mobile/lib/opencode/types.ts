@@ -137,7 +137,10 @@ export interface FilePart {
   id: string;
   mime: string;
   filename: string;
-  url: string;
+  /** Absent on an optimistic send's part until the server echo replaces it (COR-185). */
+  url?: string;
+  /** The picked file on the device: an optimistic send's thumbnail (COR-185). Never on a server part. */
+  localUri?: string;
 }
 
 export interface AgentPart {

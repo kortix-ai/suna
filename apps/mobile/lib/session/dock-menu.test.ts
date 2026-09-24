@@ -5,8 +5,8 @@ import { PAGE_TABS } from '@/stores/tab-store';
 import { PROJECT_CUSTOMIZE_ITEMS } from './dock-menu';
 
 describe('PROJECT_CUSTOMIZE_ITEMS', () => {
-  test('Schedules and Secrets, in that order', () => {
-    expect(PROJECT_CUSTOMIZE_ITEMS.map((item) => item.label)).toEqual(['Schedules', 'Secrets']);
+  test('Schedules, Secrets and Members, in that order', () => {
+    expect(PROJECT_CUSTOMIZE_ITEMS.map((item) => item.label)).toEqual(['Schedules', 'Secrets', 'Members']);
   });
 
   test('every row opens a registered page, and no page is listed twice', () => {
@@ -23,13 +23,17 @@ describe('PROJECT_CUSTOMIZE_ITEMS', () => {
     expect(PAGE_TABS['page:webhooks']).toBeUndefined();
   });
 
-  test('members, terminal, agents and skills have no mobile page (COR-160): no row opens any of them', () => {
+  test('members is an in-app page again (Jay, 2026-09-24): its row opens page:members', () => {
+    const members = PROJECT_CUSTOMIZE_ITEMS.find((item) => item.label === 'Members');
+    expect(members?.pageId).toBe('page:members');
+    expect(PAGE_TABS['page:members']).toEqual({ id: 'page:members', label: 'Members' });
+  });
+
+  test('terminal, agents and skills have no mobile page (COR-160): no row opens any of them', () => {
     const pageIds = PROJECT_CUSTOMIZE_ITEMS.map((item) => item.pageId);
-    expect(pageIds).not.toContain('page:members');
     expect(pageIds).not.toContain('page:terminal');
     expect(pageIds).not.toContain('page:agents');
     expect(pageIds).not.toContain('page:skills');
-    expect(PAGE_TABS['page:members']).toBeUndefined();
     expect(PAGE_TABS['page:terminal']).toBeUndefined();
     expect(PAGE_TABS['page:agents']).toBeUndefined();
     expect(PAGE_TABS['page:skills']).toBeUndefined();

@@ -679,6 +679,7 @@
     "messageCreatedAt",
     "messageTime",
     "migrateAdminSandboxProvider",
+    "mintWireMessageId",
     "mkdir",
     "narrateFailedStep",
     "narrateStep",

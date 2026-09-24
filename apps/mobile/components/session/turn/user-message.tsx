@@ -41,8 +41,8 @@ import { formatMegabytes } from '@/lib/session/image-load';
 import { buildMentionSegments } from '@/lib/session/mention-segments';
 import {
   isPreviewableImage,
+  localOrResolvedSource,
   planAttachmentGrid,
-  resolveAttachmentSource,
 } from '@/lib/session/attachment-tile';
 import {
   commandMessageText,
@@ -136,6 +136,8 @@ interface MessageAttachment {
   filename: string;
   mime?: string;
   src?: string;
+  /** The picked file on the device (an optimistic send, COR-185): shown until the server echo replaces the message. */
+  localUri?: string;
 }
 
 // ─── UserMessage ─────────────────────────────────────────────────────────────
@@ -201,8 +203,8 @@ export function UserMessage({
         src: f.path || undefined,
       })),
       ...fileParts.map((p) => {
-        const fp = p as unknown as { id: string; filename?: string; mime: string; url?: string };
-        return { key: fp.id, filename: fp.filename || 'File', mime: fp.mime, src: fp.url };
+        const fp = p as unknown as { id: string; filename?: string; mime: string; url?: string; localUri?: string };
+        return { key: fp.id, filename: fp.filename || 'File', mime: fp.mime, src: fp.url, localUri: fp.localUri };
       }),
     ];
     return { rawText, content, attachments };
@@ -786,7 +788,7 @@ function MessageAttachmentTile({
   file: MessageAttachment;
   onOpenPath?: (path: string) => void;
 }) {
-  const source = resolveAttachmentSource(file.src);
+  const source = localOrResolvedSource(file.localUri, file.src);
   const path = source && 'path' in source ? source.path : '';
   const directUri = source && 'uri' in source ? source.uri : null;
   const isImage = isPreviewableImage(file.filename, file.mime);

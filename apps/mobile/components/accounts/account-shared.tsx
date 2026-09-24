@@ -6,7 +6,7 @@
  * remain for `NewAccountSheet`. The role pickers, member/group detail
  * helpers, and legacy card / pill / uppercase label / skeleton primitives
  * were deleted once no screen imported them (see apps/mobile/design.md —
- * mobile hands Members, Groups, Git and Audit off to web, COR-120).
+ * mobile hands Members, Git and Audit off to web, COR-120).
  */
 
 import React, { useMemo } from 'react';

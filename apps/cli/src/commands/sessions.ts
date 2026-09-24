@@ -682,6 +682,8 @@ async function sendPromptToSession(
   await handle.prompts.create({
     clientMessageId: randomUUID(),
     messageId: wireMessageId(),
+    // The CLI cannot read the transcript; the server places the id.
+    remintOnDelivery: true,
     parts: [{ type: 'text', text }],
     ...(defaults.agent || defaults.model
       ? {

@@ -5,29 +5,8 @@ import {
   CONNECTORS_RETURN_URL,
   projectConnectorsWebUrl,
   projectCustomizeWebUrl,
-  projectMembersWebUrl,
 } from './web-project-links';
 import { isBrowserReturnPath } from '@/lib/session/connect-model';
-
-describe('projectMembersWebUrl', () => {
-  test('builds the members url', () => {
-    expect(projectMembersWebUrl('https://kortix.com', 'proj-1')).toBe(
-      'https://kortix.com/projects/proj-1/members'
-    );
-  });
-
-  test('strips a trailing slash from the frontend url', () => {
-    expect(projectMembersWebUrl('https://kortix.com/', 'proj-1')).toBe(
-      'https://kortix.com/projects/proj-1/members'
-    );
-  });
-
-  test('encodes the project id', () => {
-    expect(projectMembersWebUrl('https://kortix.com', 'proj 1/2')).toBe(
-      'https://kortix.com/projects/proj%201%2F2/members'
-    );
-  });
-});
 
 describe('projectCustomizeWebUrl', () => {
   test('builds the customize url', () => {
