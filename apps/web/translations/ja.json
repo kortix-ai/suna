@@ -20133,11 +20133,7 @@
   },
   "agentPrincipals": {
     "title": "このエージェントができること",
-    "flagOnDescription": "このエージェントを実行できる人は、これらの権限で行動します。",
-    "flagOffDescription": "このプロジェクトではエージェントプリンシパルがオフです。セッションは、起動した人のプロジェクトロールとこれらの Kortix 権限の共通部分で行動します。",
-    "flagOffBadge": "起動した人のロールを適用",
-    "flagOffHint": "エージェントプリンシパルをオンにすると、エージェント自身が行動します。誰が実行しても、上限ロール内の Kortix 権限を使います。",
-    "featureFlags": "機能フラグ",
+    "description": "このエージェントを実行できる人は、これらの権限で行動します。",
     "kortixPermissions": "Kortix 権限",
     "kortixPermissionsHelp": "kortix.yaml で宣言（agents.{agent}.kortix_permissions）。",
     "declaredAll": "すべて",

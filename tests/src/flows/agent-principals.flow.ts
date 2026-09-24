@@ -83,6 +83,18 @@ async function enableFlag(ctx: FlowContext, world: AgentPrincipalsWorld): Promis
   });
 }
 
+/** The escape hatch: a project may switch the model off for one release. */
+async function disableFlag(ctx: FlowContext, world: AgentPrincipalsWorld): Promise<void> {
+  await ctx.step(`switch project feature flag ${FLAG} OFF; read-back reports it off`, async () => {
+    const r = await world.owner.patch(
+      '/v1/projects/:projectId/features',
+      { feature: FLAG, enabled: false },
+      { params: { projectId: world.projectId } },
+    );
+    r.status(200).body().has(`$.experimental.${FLAG}`, false);
+  });
+}
+
 const filesOf = (s: AgentSession, projectId: string) =>
   s.client.get('/v1/projects/:projectId/files', { params: { projectId } });
 const secretsOf = (s: AgentSession, projectId: string) =>
@@ -335,10 +347,13 @@ flow(
     try {
       let memberRun!: AgentSession;
       let managerRun!: AgentSession;
-      await ctx.step('flag left at its default (off); commit `reader` [project.file.read]; mint member and manager runs', async () => {
+      await ctx.step(`${FLAG} is ON by default — the read-back proves it`, async () => {
         const read = await world.owner.get('/v1/projects/:projectId', { params: { projectId: project.id } });
         read.status(200);
-        if (read.json<any>().experimental?.[FLAG] === true) throw new Error(`${FLAG} is on by default`);
+        if (read.json<any>().experimental?.[FLAG] === false) throw new Error(`${FLAG} is off by default`);
+      });
+      await disableFlag(ctx, world);
+      await ctx.step('with the model switched off: commit `reader` [project.file.read]; mint member and manager runs', async () => {
         await world.writeManifest(manifest({ reader: { kortix_permissions: ['project.file.read'] } }));
         await world.grantRun('reader', member);
         await world.grantRun('reader', manager);

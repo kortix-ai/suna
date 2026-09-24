@@ -73,11 +73,8 @@ describe('POST /internal/gateway/models — managedOnly', () => {
 
     expect(Object.keys(managed).sort()).toEqual(Object.keys(gatewayModelCatalog(undefined)).sort());
     expect(Object.keys(managed).sort()).toEqual([
-      'claude-opus-5.5',
       'deepseek-v4.1-flash',
       'glm-5.3-flash',
-      'gpt-6-luna',
-      'gpt-6-sol',
       'kimi-k3',
     ]);
     expect(managed['anthropic/claude-opus-4-8']).toBeUndefined();

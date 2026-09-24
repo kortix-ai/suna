@@ -20133,11 +20133,7 @@
   },
   "agentPrincipals": {
     "title": "此智能体可以做什么",
-    "flagOnDescription": "可以运行此智能体的人，都以这些权限行事。",
-    "flagOffDescription": "此项目未开启智能体主体。会话以启动者的项目角色与这些 Kortix 权限的交集行事。",
-    "flagOffBadge": "适用启动者的角色",
-    "flagOffHint": "开启智能体主体后，由智能体本身行事：无论谁运行，都使用其上限角色内的 Kortix 权限。",
-    "featureFlags": "功能开关",
+    "description": "可以运行此智能体的人，都以这些权限行事。",
     "kortixPermissions": "Kortix 权限",
     "kortixPermissionsHelp": "在 kortix.yaml 中声明（agents.{agent}.kortix_permissions）。",
     "declaredAll": "全部",

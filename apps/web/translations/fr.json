@@ -20133,11 +20133,7 @@
   },
   "agentPrincipals": {
     "title": "Ce que cet agent peut faire",
-    "flagOnDescription": "Les personnes autorisées à exécuter cet agent agissent avec ces permissions.",
-    "flagOffDescription": "Agent principal est désactivé pour ce projet. Une session agit avec le rôle de projet de la personne qui la lance, intersecté avec ces permissions Kortix.",
-    "flagOffBadge": "Le rôle du lanceur s'applique",
-    "flagOffHint": "Activez Agent principal pour que l'agent agisse lui-même : ses permissions Kortix dans son rôle plafond, quelle que soit la personne qui l'exécute.",
-    "featureFlags": "Feature flags",
+    "description": "Les personnes autorisées à exécuter cet agent agissent avec ces permissions.",
     "kortixPermissions": "Permissions Kortix",
     "kortixPermissionsHelp": "Déclarées dans kortix.yaml (agents.{agent}.kortix_permissions).",
     "declaredAll": "Toutes",

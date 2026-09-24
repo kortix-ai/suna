@@ -162,7 +162,7 @@ agents:
 **Grantable `kortix_permissions`** (project-scoped only — account-level admin
 actions can never be granted to an agent; `project.members.manage`,
 `project.delete` and `project.credentials.issue` are HUMAN_ONLY and never
-effective for an agent under `agent_principal`; run `kortix validate --scopes`):
+effective for an agent; run `kortix validate --scopes`):
 `project.read|write|delete`, `project.cr.open|merge`,
 `project.session.read|start|stop|bindings.write`, `project.members.read|manage`,
 `project.trigger.read|create|update|delete|fire`,
@@ -175,11 +175,10 @@ platform. `default_agent` must resolve to a declared, enabled agent —
 give it `connectors: all`, `secrets: all`, `kortix_permissions: all`,
 `skills: all` explicitly if it should keep full access. The grant
 takes effect only once a CR is merged (read from the default branch).
-With the project flag `agent_principal` off, it is intersected with the
-launching user's role (agent ≤ user). With it on, the agent is the acting
-principal: `kortix_permissions` ∩ its ceiling role (IAM, bound to the
-agent's service account; default = every grantable permission) − the
-HUMAN_ONLY set. The launcher only needs "may run this agent".
+The agent is the acting principal: `kortix_permissions` ∩ its ceiling role
+(IAM, bound to the agent's service account; default = every grantable
+permission) − the HUMAN_ONLY set. The launcher's role is not an input; the
+launcher only needs "may run this agent".
 
 **Discovery direction:** declaring `agents:` is server-side, declarative
 agent discovery — it is not a rule that every native OpenCode agent file
