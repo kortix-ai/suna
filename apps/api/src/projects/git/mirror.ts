@@ -250,6 +250,117 @@ export function isGitOperationError(err: unknown): err is GitOperationError {
 }
 
 /**
+ * A bare clone/fetch can fail for a TRANSIENT, UPSTREAM reason — the network,
+ * GitHub's edge, or the mirror credential momentarily not being usable. That is
+ * the same class as a mid-clone timeout (`kind: 'timeout'`): retryable, and not
+ * worth paging Sentry. This is the classifier the clone retry loop and the
+ * global `app.onError` both use, so the two cannot drift.
+ *
+ * GitHub answers the smart-HTTP endpoint of a PRIVATE repository with
+ * `fatal: repository '<url>' not found` in two cases that `git` renders
+ * identically on stderr: the repository is genuinely absent, OR the App
+ * installation token is not (yet) usable — a token-propagation blip, a stale
+ * cached credential, a momentary edge 404. The two cannot be told apart from
+ * the message. Because this class is retryable in practice, it is classified
+ * transient: the mirror retries the clone, and a persistent failure surfaces as
+ * a retryable 503 + Retry-After instead of an unhandled 500.
+ *
+ * Incident 2026-09-23 (`incident-20260923T100537Z-hbcr`): the KX-HOURLY
+ * heartbeat probe's `sessions new` cold-cloned the private mirror of an
+ * internal project, got `fatal: repository '…/private-mirror-….git/'
+ * not found`, and hard-failed with HTTP 500 — while the git proxy served the
+ * same repository `200` seconds before and after, and a retry at 05:42 the same
+ * day succeeded. The message was a transient credential/visibility blip, not a
+ * missing repository.
+ *
+ * PERMANENT failures stay loud — a bad ref (`couldn't find remote ref`), a real
+ * auth denial (`Authentication failed`, `Permission denied`), and a corrupt
+ * local repo (`not a git repository`) do NOT match.
+ */
+const TRANSIENT_MIRROR_ERROR_PATTERN =
+  /repository '[^']*' not found|could not resolve host|temporary failure in name resolution|network is unreachable|couldn't connect to server|connection (?:reset|refused|timed out|closed)|remote end hung up unexpectedly|early eof|rpc failed|the requested url returned error: 5\d\d|operation timed out|timed out|ssl_error|gnutls_handshake|tls handshake/i;
+
+export function isTransientGitMirrorError(err: unknown): err is GitOperationError {
+  if (!isGitOperationError(err)) return false;
+  if (err.kind === 'timeout') return true;
+  const text = `${err.message}\n${err.stderr}\n${err.stdout}`;
+  return TRANSIENT_MIRROR_ERROR_PATTERN.test(text);
+}
+
+/**
+ * Cold bare clone with bounded retry for TRANSIENT failures. Exported with
+ * injected side effects so the retry policy is unit-testable without a real git
+ * process or network — see `mirror-transient.test.ts`.
+ *
+ * EVERY failed attempt removes the partial bare repo a killed/failed clone
+ * leaves behind; otherwise the next access sees `existsSync(repoPath)` true,
+ * skips the clone, and wedges every reader on a broken half-repo.
+ *
+ * A PERMANENT failure (bad ref, auth denial, corrupt local repo) is rethrown on
+ * the first attempt — retrying it can never help.
+ */
+export async function retryTransientGitMirror(deps: {
+  run: () => Promise<unknown>;
+  /** Runs after EVERY failed attempt. Omit when a failed attempt leaves no
+   *  partial state to remove (the warm fetch). */
+  cleanup?: () => Promise<void>;
+  maxAttempts?: number;
+  delayMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+}): Promise<void> {
+  const maxAttempts = deps.maxAttempts ?? MIRROR_RETRY_MAX_ATTEMPTS;
+  const delayMs = deps.delayMs ?? MIRROR_RETRY_DELAY_MS;
+  const sleep =
+    deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  let lastErr: unknown = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await deps.run();
+      return;
+    } catch (err) {
+      lastErr = err;
+      if (deps.cleanup) await deps.cleanup().catch(() => {});
+      if (attempt >= maxAttempts || !isTransientGitMirrorError(err)) break;
+      await sleep(delayMs);
+    }
+  }
+  throw lastErr;
+}
+
+/** Cold bare clone with bounded retry for TRANSIENT failures. Thin wrapper over
+ *  {@link retryTransientGitMirror} that removes the partial bare dir on every
+ *  failed attempt. Kept as a named export for its callers + tests. */
+export function cloneBareWithRetry(deps: {
+  run: () => Promise<unknown>;
+  cleanup: () => Promise<void>;
+  maxAttempts?: number;
+  delayMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+}): Promise<void> {
+  return retryTransientGitMirror(deps);
+}
+
+/**
+ * Bounded retry for the WARM mirror fetch (`git fetch --prune origin`), the
+ * sibling of {@link cloneBareWithRetry}. The same transient upstream class hits
+ * a fetch as a clone — a network/DNS/socket blip or GitHub's ambiguous
+ * `fatal: repository '<url>' not found` for a private mirror whose credential
+ * is momentarily unusable. Without this, one blip hard-failed every caller that
+ * FORCED a refresh — most importantly the session-create manifest read
+ * (`loadProjectAgents` → `readManifestFromRepo` → `refreshMirror(project,true)`,
+ * which rethrows read errors so it can fail closed). A failed fetch leaves the
+ * warm bare mirror usable, so there is nothing to clean up.
+ */
+export function fetchMirrorWithRetry(deps: {
+  run: () => Promise<unknown>;
+  maxAttempts?: number;
+  delayMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+}): Promise<void> {
+  return retryTransientGitMirror(deps);
+}
+
+/**
  * A "path does not exist" failure from `git show <ref>:<path>` is an EXPECTED
  * client condition (the user supplied a path that isn't in the repo), NOT a
  * server bug — it must not page Sentry as an unhandled 500 the way a real git
@@ -341,10 +452,12 @@ function bareCloneTimeoutMs(): number {
 }
 
 const BARE_CLONE_TIMEOUT_MS = bareCloneTimeoutMs();
-/** Cold clones can transiently exceed the timeout (large repo / network blip);
- * retry once before surfacing — most timeouts clear on a 2nd attempt. */
-const BARE_CLONE_MAX_ATTEMPTS = 2;
-const BARE_CLONE_RETRY_DELAY_MS = 500;
+/** A cold clone OR a warm fetch can transiently fail (timeout, network blip, or
+ * GitHub's ambiguous `repository … not found` for a private mirror whose token
+ * is momentarily unusable); retry a bounded number of times before surfacing —
+ * most clear on a later attempt. See `isTransientGitMirrorError`. */
+const MIRROR_RETRY_MAX_ATTEMPTS = 3;
+const MIRROR_RETRY_DELAY_MS = 500;
 
 function looksLikeBareMirror(repoPath: string): boolean {
   return (
@@ -406,25 +519,16 @@ async function doRefreshMirror(project: GitBackedProject, force = false) {
     // with no `shallow` marker, so the next access sees `existsSync(repoPath)`
     // true, skips the clone, and tries to `fetch` from a broken half-repo,
     // wedging every reader for the process lifetime. So: give the cold clone a
-    // longer budget, retry once on a transient timeout, and ALWAYS remove the
-    // partial dir on failure so the next caller re-clones cleanly.
+    // longer budget, retry a bounded number of times on a transient failure
+    // (timeout / network / GitHub's ambiguous private-repo 404 — see
+    // `isTransientGitMirrorError`), and ALWAYS remove the partial dir on
+    // failure so the next caller re-clones cleanly.
     const cloneArgs = ['clone', '--bare', access.repoUrl, repoPath] as const;
-    let lastErr: unknown = null;
-    for (let attempt = 1; attempt <= BARE_CLONE_MAX_ATTEMPTS; attempt++) {
-      try {
-        await runGit([...cloneArgs], undefined, true, access.token, undefined, authHost, BARE_CLONE_TIMEOUT_MS, access.headers);
-        lastErr = null;
-        break;
-      } catch (err) {
-        lastErr = err;
-        // Remove the partial bare repo a killed/failed clone leaves behind.
-        await rm(repoPath, { recursive: true, force: true }).catch(() => {});
-        const transient = err instanceof GitOperationError && err.kind === 'timeout';
-        if (attempt >= BARE_CLONE_MAX_ATTEMPTS || !transient) break;
-        await new Promise((resolve) => setTimeout(resolve, BARE_CLONE_RETRY_DELAY_MS));
-      }
-    }
-    if (lastErr) throw lastErr;
+    await cloneBareWithRetry({
+      run: () =>
+        runGit([...cloneArgs], undefined, true, access.token, undefined, authHost, BARE_CLONE_TIMEOUT_MS, access.headers),
+      cleanup: () => rm(repoPath, { recursive: true, force: true }),
+    });
     lastRefreshAt.set(project.projectId, Date.now());
     return repoPath;
   }
@@ -432,7 +536,13 @@ async function doRefreshMirror(project: GitBackedProject, force = false) {
   await runGit(['remote', 'set-url', 'origin', access.repoUrl], repoPath);
   // Heal any legacy single-branch clones by widening the refspec.
   await runGit(['config', 'remote.origin.fetch', '+refs/heads/*:refs/heads/*'], repoPath, false);
-  await runGit(['fetch', '--prune', 'origin'], repoPath, true, access.token, undefined, authHost, GIT_DEFAULT_TIMEOUT_MS, access.headers);
+  // A warm fetch hits the SAME transient upstream class as a cold clone (see
+  // `fetchMirrorWithRetry`). Retry it in place — a failed fetch leaves the warm
+  // mirror usable, so no cleanup is needed.
+  await fetchMirrorWithRetry({
+    run: () =>
+      runGit(['fetch', '--prune', 'origin'], repoPath, true, access.token, undefined, authHost, GIT_DEFAULT_TIMEOUT_MS, access.headers),
+  });
   lastRefreshAt.set(project.projectId, Date.now());
   return repoPath;
 }
