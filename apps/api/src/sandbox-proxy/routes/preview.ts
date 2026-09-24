@@ -19,6 +19,7 @@ import { dropUndeclaredPromptAgent } from '../undeclared-prompt-agent';
 import { scheduleOpencodeSnapshotSync } from '../../projects/opencode-session-snapshot';
 import { resumeStoppedSandboxByExternalId } from '../../projects/routes/shared';
 import { classifyPtyWebSocketPath } from '../../platform/providers/pty-ingress';
+import { ingressTargetUrl } from '../../platform/providers/ingress-url';
 import { recordSessionActivity } from '../../projects/session-activity';
 import {
   createExtendThrottle,
@@ -1193,7 +1194,7 @@ export async function forwardToSandbox(
       ptl.mark('ingress');
       lastAttemptHop = portFailureHop(upstreamPort);
       const previewUrl = ingress.url;
-      const targetUrl = previewUrl.replace(/\/$/, '') + remainingPath + queryString;
+      const targetUrl = ingressTargetUrl(ingress, remainingPath + queryString);
 
       if (shouldSyncProjectEnvBeforeProxy(port, method, remainingPath)) {
         const requestedAgent = requestedPromptAgent(requestBody, incomingHeaders);
@@ -1939,7 +1940,9 @@ export async function resolvePreviewWsUpstream(opts: {
     providerHeaders: ingress.headers,
   });
 
-  const upstreamUrl = new URL(wsBase + remainingPath + queryString);
+  const upstreamUrl = new URL(
+    ingressTargetUrl({ url: wsBase, queryToken: ingress.queryToken }, remainingPath + queryString),
+  );
   if (ingress.websocket?.userContextQueryParam) {
     const signedContext = headers[KORTIX_USER_CONTEXT_HEADER];
     if (signedContext) {

@@ -8,7 +8,7 @@ import {
   sessionLifecycleCommands,
   sessionProviderSecretPools,
 } from '@kortix/db';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG, PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
@@ -867,6 +867,8 @@ async function loadParentSessionSharing(
 
 export async function createProjectSession(input: {
   attachmentSourceCommandId?: string;
+  /** The `create_session` command to link the new session to, atomically. */
+  createCommandId?: string;
   project: ProjectRow;
   userId: string;
   requestingPrincipalType: 'human' | 'service_account';
@@ -1600,6 +1602,22 @@ export async function createProjectSession(input: {
       })
       .returning();
     if (!row) throw new Error('Session insert returned no row');
+    if (input.createCommandId) {
+      // Same transaction as the session row: a create command whose worker
+      // dies after this commit is reclaimed WITH its session id, and
+      // executeQueuedCreate returns this session instead of provisioning a
+      // second one.
+      await tx
+        .update(sessionLifecycleCommands)
+        .set({ sessionId, updatedAt: new Date() })
+        .where(
+          and(
+            eq(sessionLifecycleCommands.commandId, input.createCommandId),
+            eq(sessionLifecycleCommands.commandType, 'create_session'),
+            isNull(sessionLifecycleCommands.sessionId),
+          ),
+        );
+    }
     const requestedPools = body.provider_secret_pools as Record<string, string[]> | undefined;
     if (requestedPools && Object.keys(requestedPools).length > 0) {
       await tx.insert(sessionProviderSecretPools).values(

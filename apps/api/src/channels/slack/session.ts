@@ -127,7 +127,7 @@ export async function createOrJoinThreadSession(input: {
   // Claim the thread-create. Loser → wait for the winner's mapping and follow up.
   const claimKey = teamId && threadId ? `slack:threadcreate:${teamId}:${threadId}` : null;
   if (claimKey && !(await claimThreadCreate(claimKey))) {
-    const sessionId = await waitForThreadSession(teamId, threadId);
+    const sessionId = await waitForThreadSession(teamId, threadId, projectId);
     if (sessionId) {
       await deliverSlackFollowUpToSession({
         sessionId,
@@ -156,6 +156,9 @@ export async function createOrJoinThreadSession(input: {
           eq(chatThreads.platform, 'slack'),
           eq(chatThreads.workspaceId, teamId),
           eq(chatThreads.threadId, threadId),
+          // Only this project's mapping: a message is never delivered into
+          // another project's session from here.
+          eq(chatThreads.projectId, projectId),
         ),
       )
       .limit(1);
@@ -366,7 +369,7 @@ async function releaseThreadCreate(key: string): Promise<void> {
 // Wait briefly for the claim winner to publish its chat_threads mapping so a
 // losing concurrent message can be delivered into the same session as a
 // follow-up instead of spawning a competitor.
-async function waitForThreadSession(teamId: string, threadId: string): Promise<string | null> {
+async function waitForThreadSession(teamId: string, threadId: string, projectId: string): Promise<string | null> {
   const deadline = Date.now() + 8_000;
   for (;;) {
     const [row] = await db
@@ -377,6 +380,7 @@ async function waitForThreadSession(teamId: string, threadId: string): Promise<s
           eq(chatThreads.platform, 'slack'),
           eq(chatThreads.workspaceId, teamId),
           eq(chatThreads.threadId, threadId),
+          eq(chatThreads.projectId, projectId),
         ),
       )
       .limit(1);

@@ -2,7 +2,7 @@
  * Agent sessions cannot set a secret's DELIVERY POLICY (FINDING 6).
  *
  * PUT /:projectId/secrets/:identifier/strategy already refuses an agent-session
- * token outright: `if (getAgentGrant(c)) return 403`. But three sibling routes
+ * token outright: `if (isProjectSessionPrincipal(c)) return 403`. But three sibling routes
  * could change the same delivery control while gating on the IAM
  * PROJECT_SECRET_WRITE leaf alone:
  *
@@ -48,7 +48,7 @@ describe('PUT strategy is the reference guard', () => {
   const src = handlerSource('put', '/{projectId}/secrets/{identifier}/strategy');
 
   test('refuses agent-session tokens with the shared message', () => {
-    expect(src).toContain('getAgentGrant(c)');
+    expect(src).toContain('isProjectSessionPrincipal(c)');
     expect(src).toContain(GUARD_MESSAGE);
     expect(src).toContain('403');
   });
@@ -58,7 +58,7 @@ describe('POST /:projectId/secrets', () => {
   const src = handlerSource('post', '/{projectId}/secrets');
 
   test('refuses an agent session that supplies a non-default delivery policy', () => {
-    expect(src).toContain('getAgentGrant(c)');
+    expect(src).toContain('isProjectSessionPrincipal(c)');
     expect(src).toContain(GUARD_MESSAGE);
     // The guard fires on any of strategy!=runtime, consumer!=sandbox, or an
     // egress_policy — the three delivery-policy inputs.
@@ -76,10 +76,10 @@ describe('POST /:projectId/secrets', () => {
   });
 
   test('is conditional — a plain runtime/default secret is still allowed', () => {
-    // The guard is NOT an unconditional `if (getAgentGrant(c)) return 403`: it
+    // The guard is NOT an unconditional `if (isProjectSessionPrincipal(c)) return 403`: it
     // ANDs the agent check with the delivery-policy inputs, so an agent may
     // still create a plain runtime/default secret (matching product behavior).
-    expect(src).toContain('getAgentGrant(c) &&');
+    expect(src).toContain('isProjectSessionPrincipal(c) &&');
   });
 });
 
@@ -87,7 +87,7 @@ describe('DELETE /:projectId/secrets/:name', () => {
   const src = handlerSource('delete', '/{projectId}/secrets/{name}');
 
   test('refuses an agent session deleting a policy-bearing secret', () => {
-    expect(src).toContain('getAgentGrant(c)');
+    expect(src).toContain('isProjectSessionPrincipal(c)');
     expect(src).toContain(GUARD_MESSAGE);
     // Conditional on the target carrying a non-runtime delivery policy.
     expect(src).toContain("existing.strategy !== 'runtime'");
@@ -137,7 +137,7 @@ describe('POST /:projectId/secrets/sync', () => {
   const src = handlerSource('post', '/{projectId}/secrets/sync');
 
   test('refuses an agent session outright', () => {
-    expect(src).toContain('getAgentGrant(c)');
+    expect(src).toContain('isProjectSessionPrincipal(c)');
     expect(src).toContain(GUARD_MESSAGE);
     expect(src).toContain('403');
   });

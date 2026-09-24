@@ -1838,11 +1838,8 @@ async function dispatchInbound(
     // Include the source address so an unauthenticated attacker who learns a
     // tunnelId cannot consume the real machine's reconnect budget.
     const { tunnelRateLimiter } = await import('./tunnel/core/rate-limiter');
-    const clientIp =
-      req.headers.get('cf-connecting-ip')?.trim() ||
-      req.headers.get('x-real-ip')?.trim() ||
-      req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-      'unknown';
+    const { clientIpFromHeaders } = await import('./shared/client-ip');
+    const clientIp = clientIpFromHeaders((name) => req.headers.get(name)) ?? 'unknown';
     const wsIpRateCheck = tunnelRateLimiter.check('wsConnectIp', clientIp);
     if (!wsIpRateCheck.allowed) {
       return new Response(

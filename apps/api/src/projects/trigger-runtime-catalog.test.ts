@@ -63,6 +63,34 @@ describe('reconcileProjectTriggerRuntime', () => {
     expect(result).toEqual({ upserted: 1, removed: 1 });
   });
 
+  test('records a pinned session of another project as no pin', async () => {
+    const upserted: Array<{ slug: string; sessionId: string | null }> = [];
+    const asked: string[][] = [];
+    const store: TriggerRuntimeCatalogStore = {
+      list: async () => [],
+      upsert: async (_projectId, spec) => {
+        upserted.push({ slug: spec.slug, sessionId: spec.pinnedSessionId });
+      },
+      remove: async () => {},
+      sessionsOfProject: async (projectId, sessionIds) => {
+        asked.push([projectId, ...sessionIds]);
+        return new Set(['own-session']);
+      },
+    };
+
+    await reconcileProjectTriggerRuntimeWithStore(
+      'project-1',
+      [trigger('own', 'own-session'), trigger('foreign', 'foreign-session')],
+      store,
+    );
+
+    expect(asked).toEqual([['project-1', 'own-session', 'foreign-session']]);
+    expect(upserted).toEqual([
+      { slug: 'own', sessionId: 'own-session' },
+      { slug: 'foreign', sessionId: null },
+    ]);
+  });
+
   test('removes all rows when a readable manifest declares no triggers', async () => {
     const removed: string[] = [];
     const store: TriggerRuntimeCatalogStore = {

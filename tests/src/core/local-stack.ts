@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import {
   LOCAL_AUTH_EMAIL_HOOK_SECRET,
+  LOCAL_STRIPE_WEBHOOK_SECRET,
   LOCAL_FLOW_INTERNAL_SERVICE_KEY,
   localWebUrl,
   type LocalSupabaseEnvironment,
@@ -584,7 +585,7 @@ export async function ensureLocalStack(
           DAYTONA_SERVER_URL: "http://127.0.0.1:1",
           DAYTONA_TARGET: "local-test-provider-disabled",
           STRIPE_SECRET_KEY: "sk_test_local_flow_runner_disabled",
-          STRIPE_WEBHOOK_SECRET: "whsec_local_flow_runner_disabled",
+          STRIPE_WEBHOOK_SECRET: LOCAL_STRIPE_WEBHOOK_SECRET,
           PIPEDREAM_WEBHOOK_SECRET: "local-flow-runner-disabled",
           SLACK_CLIENT_ID: "local-flow-runner-disabled",
           SLACK_CLIENT_SECRET: "local-flow-runner-disabled",

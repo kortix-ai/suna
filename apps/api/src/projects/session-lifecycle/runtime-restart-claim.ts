@@ -1,5 +1,5 @@
 import { sessionSandboxes } from '@kortix/db';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, ne, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { IN_PLACE_RESTART_CLEARED_KEYS, inPlaceRestartWakePatch } from './readiness-clocks';
 import { runtimeRestartClaimMetadata, type RuntimeRestartClaim } from './runtime-restart-fence';
@@ -38,6 +38,8 @@ export async function claimInPlaceRestart(input: {
       and(
         eq(sessionSandboxes.sandboxId, sandboxId),
         eq(sessionSandboxes.externalId, externalId),
+        // A deleted session's archived row is never restarted.
+        ne(sessionSandboxes.status, 'archived'),
         sql`(
           ${sessionSandboxes.metadata}->>'runtimeRestartId' IS NULL
           OR ${sessionSandboxes.metadata}->>'runtimeRestartLeaseExpiresAt' IS NULL
