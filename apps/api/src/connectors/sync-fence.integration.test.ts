@@ -3,9 +3,10 @@ import { accounts, connectorProjectPolicies, connectorSyncFences, projects } fro
 import { eq, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import {
+  connectorScope,
   openConnectorSyncFence,
+  PROJECT_POLICY_SCOPE,
   reconcileProjectPolicies,
-  SupersededConnectorSyncError,
   withConnectorSyncWrite,
 } from './sync';
 
@@ -66,7 +67,7 @@ withDb('connector sync writes', () => {
     expect(await projectRules()).toEqual([{ match: 'mail.send*', action: 'block' }]);
   });
 
-  test('a sync that started before the last writer stops without writing', async () => {
+  test('a sync that started before the last writer of a scope skips that scope', async () => {
     const older = await openConnectorSyncFence(projectId);
     const newer = await openConnectorSyncFence(projectId);
     await reconcileProjectPolicies(
@@ -74,14 +75,9 @@ withDb('connector sync writes', () => {
       { policies: [{ match: 'mail.*', action: 'block' }], settings: { defaultMode: 'risk' } },
       newer,
     );
-    await expect(
-      reconcileProjectPolicies(
-        projectId,
-        { policies: [], settings: { defaultMode: 'allow_all' } },
-        older,
-      ),
-    ).rejects.toBeInstanceOf(SupersededConnectorSyncError);
+    await reconcileProjectPolicies(projectId, { policies: [], settings: { defaultMode: 'allow_all' } }, older);
     expect(await projectRules()).toEqual([{ match: 'mail.*', action: 'block' }]);
+    await expect(withConnectorSyncWrite(older, PROJECT_POLICY_SCOPE, async () => 'written')).resolves.toBeNull();
     const [fence] = await db
       .select({ startedAt: sql<string>`${connectorSyncFences.startedAt}::text` })
       .from(connectorSyncFences)
@@ -89,13 +85,23 @@ withDb('connector sync writes', () => {
     expect(fence?.startedAt).toBe(newer.startedAt);
   });
 
-  test('one sync may write many times; its later writes are not refused', async () => {
-    const fence = await openConnectorSyncFence(projectId);
-    await withConnectorSyncWrite(fence, async () => undefined);
-    await expect(withConnectorSyncWrite(fence, async () => 'second')).resolves.toBe('second');
+  test('an older sync still writes a scope the newer sync has not written, so its caller reads its write', async () => {
+    const older = await openConnectorSyncFence(projectId);
+    const newer = await openConnectorSyncFence(projectId);
+    await withConnectorSyncWrite(newer, connectorScope('a'), async () => undefined);
+    await expect(withConnectorSyncWrite(older, connectorScope('b'), async () => 'b written')).resolves.toBe(
+      'b written',
+    );
+    await expect(withConnectorSyncWrite(older, connectorScope('a'), async () => 'a written')).resolves.toBeNull();
   });
 
-  test('write transactions of one project run one at a time', async () => {
+  test('one sync may write a scope many times', async () => {
+    const fence = await openConnectorSyncFence(projectId);
+    await withConnectorSyncWrite(fence, connectorScope('x'), async () => undefined);
+    await expect(withConnectorSyncWrite(fence, connectorScope('x'), async () => 'second')).resolves.toBe('second');
+  });
+
+  test('writes to one scope run one at a time', async () => {
     const first = await openConnectorSyncFence(projectId);
     const second = await openConnectorSyncFence(projectId);
     const order: string[] = [];
@@ -107,14 +113,14 @@ withDb('connector sync writes', () => {
     const firstEntered = new Promise<void>((resolve) => {
       entered = resolve;
     });
-    const a = withConnectorSyncWrite(first, async () => {
+    const a = withConnectorSyncWrite(first, connectorScope('same'), async () => {
       order.push('first:start');
       entered();
       await held;
       order.push('first:end');
     });
     await firstEntered;
-    const b = withConnectorSyncWrite(second, async () => {
+    const b = withConnectorSyncWrite(second, connectorScope('same'), async () => {
       order.push('second');
     });
     await new Promise((resolve) => setTimeout(resolve, 200));

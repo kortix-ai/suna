@@ -3205,13 +3205,21 @@ flow(
         if (!mine || !mine.error.includes('base_url must be a public host')) {
           throw new Error(`sync did not refuse the private base_url: ${JSON.stringify(errors)}`);
         }
-        const row = await db.query<{ status: string; actions: string }>(
-          `SELECT c.status, (SELECT count(*) FROM kortix.connector_actions a WHERE a.connector_id = c.connector_id)::text AS actions
-             FROM kortix.connectors c WHERE c.project_id = $1 AND c.slug = $2`,
-          [p.id, yamlSlug],
-        );
-        if (row.rows[0]?.status !== 'error' || row.rows[0]?.actions !== '0') {
-          throw new Error(`connector row is callable: ${JSON.stringify(row.rows)}`);
+        // Another sync of the same account (a machine or channel reconcile from
+        // a parallel flow) can own the write; it lands within a few seconds.
+        let rows: Array<{ status: string; actions: string }> = [];
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+          const row = await db.query<{ status: string; actions: string }>(
+            `SELECT c.status, (SELECT count(*) FROM kortix.connector_actions a WHERE a.connector_id = c.connector_id)::text AS actions
+               FROM kortix.connectors c WHERE c.project_id = $1 AND c.slug = $2`,
+            [p.id, yamlSlug],
+          );
+          rows = row.rows;
+          if (rows.length > 0) break;
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+        if (rows[0]?.status !== 'error' || rows[0]?.actions !== '0') {
+          throw new Error(`connector row is callable: ${JSON.stringify(rows)}`);
         }
       });
 

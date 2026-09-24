@@ -22,8 +22,10 @@ set statement_timeout = '30s';
 -- enum-value-checked: <how you verified every env, including any faked baseline, has this value>
 
 CREATE TABLE IF NOT EXISTS "kortix"."connector_sync_fences" (
-	"project_id" uuid PRIMARY KEY NOT NULL,
-	"started_at" timestamp with time zone NOT NULL
+	"project_id" uuid NOT NULL,
+	"scope" text NOT NULL,
+	"started_at" timestamp with time zone NOT NULL,
+	CONSTRAINT "connector_sync_fences_project_id_scope_pk" PRIMARY KEY("project_id","scope")
 );
 --> statement-breakpoint
 -- Nullable, no default: a catalog-only change, no table rewrite. Old code never

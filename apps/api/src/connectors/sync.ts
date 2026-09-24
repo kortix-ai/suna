@@ -420,15 +420,9 @@ export async function syncProjectConnectors(
   // Taken BEFORE the manifest read, so every commit made before this point is
   // in what this sync reads. See `withConnectorSyncWrite`.
   const fence = await openConnectorSyncFence(projectId);
-  try {
-    return await syncProjectConnectorsFenced(row, accountId, fence, opts);
-  } catch (error) {
-    if (!(error instanceof SupersededConnectorSyncError)) throw error;
-    // A later sync of this project read a manifest at least as recent and has
-    // started writing its result. Nothing here is a failure of the project.
-    console.info(`[connector] ${error.message}`);
-    return { synced: 0, errors: [] };
-  }
+  // Each connector and the project policies are written under their own fence
+  // scope: a write that a newer sync already made is skipped, never undone.
+  return syncProjectConnectorsFenced(row, accountId, fence, opts);
 }
 
 async function syncProjectConnectorsFenced(
@@ -627,7 +621,6 @@ async function syncProjectConnectorsFenced(
       if (catalog?.error) errors.push({ slug: spec.slug, error: catalog.error });
       synced++;
     } catch (e) {
-      if (e instanceof SupersededConnectorSyncError) throw e;
       errors.push({ slug: sourceSpec.slug, error: (e as Error).message });
     }
   }
@@ -644,32 +637,30 @@ async function syncProjectConnectorsFenced(
       !desiredSlugs.has(e.slug) &&
       (manifest || e.providerType === 'channel' || e.providerType === 'computer'),
   );
-  if (removed.length > 0) {
-    await withConnectorSyncWrite(fence, async (tx) => {
-      for (const e of removed) {
-        const [bound] = await tx
-          .select({ sessionId: projectSessionConnectorBindings.sessionId })
-          .from(projectSessionConnectorBindings)
-          .where(eq(projectSessionConnectorBindings.connectorId, e.connectorId))
-          .limit(1);
-        if (bound) {
-          if (e.providerType === 'computer' && e.slug === COMPUTER_SLUG) {
-            // Existing sessions can remain durably bound to the retired aggregate
-            // connector. DB-backed catalog and call resolution expose this row only
-            // to a session with an exact durable binding.
-            await tx
-              .update(connectors)
-              .set({ enabled: true, status: 'active', updatedAt: new Date() })
-              .where(eq(connectors.connectorId, e.connectorId));
-          } else {
-            await tx
-              .update(connectors)
-              .set({ enabled: false, status: 'disabled', updatedAt: new Date() })
-              .where(eq(connectors.connectorId, e.connectorId));
-          }
+  for (const e of removed) {
+    await withConnectorSyncWrite(fence, connectorScope(e.slug), async (tx) => {
+      const [bound] = await tx
+        .select({ sessionId: projectSessionConnectorBindings.sessionId })
+        .from(projectSessionConnectorBindings)
+        .where(eq(projectSessionConnectorBindings.connectorId, e.connectorId))
+        .limit(1);
+      if (bound) {
+        if (e.providerType === 'computer' && e.slug === COMPUTER_SLUG) {
+          // Existing sessions can remain durably bound to the retired aggregate
+          // connector. DB-backed catalog and call resolution expose this row only
+          // to a session with an exact durable binding.
+          await tx
+            .update(connectors)
+            .set({ enabled: true, status: 'active', updatedAt: new Date() })
+            .where(eq(connectors.connectorId, e.connectorId));
         } else {
-          await tx.delete(connectors).where(eq(connectors.connectorId, e.connectorId));
+          await tx
+            .update(connectors)
+            .set({ enabled: false, status: 'disabled', updatedAt: new Date() })
+            .where(eq(connectors.connectorId, e.connectorId));
         }
+      } else {
+        await tx.delete(connectors).where(eq(connectors.connectorId, e.connectorId));
       }
     });
   }
@@ -770,10 +761,15 @@ export interface ConnectorSyncFence {
   startedAt: string;
 }
 
-/** A newer sync of the same project already wrote; this one stops writing. */
-export class SupersededConnectorSyncError extends Error {
-  constructor(projectId: string) {
-    super(`connector sync of project ${projectId} was superseded by a newer sync`);
+/** Fence scope of the project-level policies and settings. */
+export const PROJECT_POLICY_SCOPE = 'project';
+/** Fence scope of one connector (its row, actions, policies, or removal). */
+export const connectorScope = (slug: string) => `connector:${slug}`;
+
+/** Thrown inside a write transaction to roll it back when a newer sync owns the scope. */
+class SupersededConnectorSyncError extends Error {
+  constructor(projectId: string, scope: string) {
+    super(`connector sync of project ${projectId} skipped ${scope}: a newer sync already wrote it`);
     this.name = 'SupersededConnectorSyncError';
   }
 }
@@ -789,33 +785,45 @@ export async function openConnectorSyncFence(projectId: string): Promise<Connect
 }
 
 /**
- * Run one sync write as a single transaction under the project's fence.
+ * Run one sync write for one scope as a single transaction under the fence.
  *
- * The fence row is advanced to this sync's start time, which also locks it
- * until commit, so the write transactions of one project run one at a time.
- * When a sync that started later has already advanced the row, the update
- * matches nothing and this sync stops with {@link SupersededConnectorSyncError}:
- * the newer sync read a manifest at least as recent and owns the result.
+ * The scope's fence row is advanced to this sync's start time, which also
+ * locks it until commit, so concurrent writes to one scope run one at a time.
+ * When a sync that started later has already written the scope, the update
+ * matches nothing: the transaction rolls back and this returns null. The newer
+ * sync read a manifest at least as recent, so its write stands. Either way the
+ * scope is materialized when this returns, so a caller reads its own write.
  */
 export async function withConnectorSyncWrite<T>(
   fence: ConnectorSyncFence | null,
+  scope: string,
   work: (tx: SyncTransaction) => Promise<T>,
-): Promise<T> {
-  return db.transaction(async (tx) => {
-    if (fence) {
-      const claimed = await tx
-        .insert(connectorSyncFences)
-        .values({ projectId: fence.projectId, startedAt: sql`${fence.startedAt}::timestamptz` as unknown as Date })
-        .onConflictDoUpdate({
-          target: connectorSyncFences.projectId,
-          set: { startedAt: sql`excluded.started_at` },
-          setWhere: sql`${connectorSyncFences.startedAt} <= excluded.started_at`,
-        })
-        .returning({ projectId: connectorSyncFences.projectId });
-      if (claimed.length === 0) throw new SupersededConnectorSyncError(fence.projectId);
-    }
-    return work(tx);
-  });
+): Promise<T | null> {
+  try {
+    return await db.transaction(async (tx) => {
+      if (fence) {
+        const claimed = await tx
+          .insert(connectorSyncFences)
+          .values({
+            projectId: fence.projectId,
+            scope,
+            startedAt: sql`${fence.startedAt}::timestamptz` as unknown as Date,
+          })
+          .onConflictDoUpdate({
+            target: [connectorSyncFences.projectId, connectorSyncFences.scope],
+            set: { startedAt: sql`excluded.started_at` },
+            setWhere: sql`${connectorSyncFences.startedAt} <= excluded.started_at`,
+          })
+          .returning({ projectId: connectorSyncFences.projectId });
+        if (claimed.length === 0) throw new SupersededConnectorSyncError(fence.projectId, scope);
+      }
+      return work(tx);
+    });
+  } catch (error) {
+    if (!(error instanceof SupersededConnectorSyncError)) throw error;
+    console.info(`[connector] ${error.message}`);
+    return null;
+  }
 }
 
 /**
@@ -839,7 +847,6 @@ async function upsertConnector(
   existingId: string | null,
   fence: ConnectorSyncFence | null = null,
 ): Promise<void> {
-  const isNew = !existingId;
   const manifestHash = manifestHashForConnector(spec);
   const { status, lastError } = catalogPersistenceState(spec.enabled, catalog);
   // New connector definitions never carry a secret reference. An existing
@@ -862,23 +869,38 @@ async function upsertConnector(
     updatedAt: new Date(),
   } as const;
 
-  const connectorId = await withConnectorSyncWrite(fence, async (tx) => {
+  const written = await withConnectorSyncWrite(fence, connectorScope(spec.slug), async (tx) => {
+    // Re-read under the scope lock: another sync may have created or removed
+    // the row since this sync listed the project's connectors.
+    const [current] = existingId
+      ? await tx
+          .select({ connectorId: connectors.connectorId })
+          .from(connectors)
+          .where(eq(connectors.connectorId, existingId))
+          .limit(1)
+      : await tx
+          .select({ connectorId: connectors.connectorId })
+          .from(connectors)
+          .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, spec.slug)))
+          .limit(1);
+    const currentId = current?.connectorId ?? null;
+    const isNew = !currentId;
     let resolvedConfig = catalog ? connectorConfig(spec, catalog.server, catalog.iconUrl) : null;
     // Computer profiles are synthetic. Their sensitive flag is edited in the
     // database, so preserve it when a lifecycle reconcile refreshes the native
     // catalog and bound tunnel config.
-    if (resolvedConfig && spec.provider === 'computer' && existingId) {
+    if (resolvedConfig && spec.provider === 'computer' && currentId) {
       const [stored] = await tx
         .select({ config: connectors.config })
         .from(connectors)
-        .where(eq(connectors.connectorId, existingId))
+        .where(eq(connectors.connectorId, currentId))
         .limit(1);
       if ((stored?.config as { sensitive?: unknown } | null)?.sensitive === true) {
         resolvedConfig = { ...resolvedConfig, sensitive: true };
       }
     }
 
-    let id = existingId;
+    let id = currentId;
     if (id) {
       // `sensitive` lives inside `config` but is a CHEAP field: it isn't part of
       // manifestHashForConnector (deliberately — flipping it must not force a
@@ -958,9 +980,21 @@ async function upsertConnector(
     return rowId;
   });
 
+  // A newer sync already wrote this connector: use the row it wrote.
+  const connectorId =
+    written ??
+    (
+      await db
+        .select({ connectorId: connectors.connectorId })
+        .from(connectors)
+        .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, spec.slug)))
+        .limit(1)
+    )[0]?.connectorId ??
+    null;
+
   // After commit: the connection row references the connector, and
   // `ensureDefaultConnection` writes through its own connection.
-  if (spec.authorizationStrategy === 'project') {
+  if (connectorId && spec.authorizationStrategy === 'project') {
     await ensureDefaultConnection({ projectId, connectorId });
   }
 }
@@ -1312,7 +1346,7 @@ export async function reconcileProjectPolicies(
 ): Promise<void> {
   // One transaction: the gateway reads these rows on every call, so a delete
   // committed ahead of its insert served calls with no project `block` rule.
-  await withConnectorSyncWrite(fence, async (tx) => {
+  await withConnectorSyncWrite(fence, PROJECT_POLICY_SCOPE, async (tx) => {
     await tx
       .delete(connectorProjectPolicies)
       .where(eq(connectorProjectPolicies.projectId, projectId));

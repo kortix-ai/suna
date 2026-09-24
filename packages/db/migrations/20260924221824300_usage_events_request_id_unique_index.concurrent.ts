@@ -59,7 +59,7 @@ export const up = (pgm) => {
   // `on conflict do nothing`, so a settlement the gateway retries finds the
   // first row, and the debit keyed on that row's id runs at most once.
   //
-  // `request_id` is new (previous migration) and NULL on every existing row,
+  // `request_id` is new (20260924221824222) and NULL on every existing row,
   // so the build has nothing to compare and no duplicate can fail it. The
   // predicate keeps those NULL rows out of the index entirely.
   pgm.sql(`

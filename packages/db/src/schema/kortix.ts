@@ -5951,20 +5951,27 @@ export const connectorProjectSettings = kortixSchema.table('connector_project_se
 });
 
 /**
- * Write fence for connector sync, one row per project.
+ * Write fence for connector sync: one row per project and materialized item.
  *
- * A sync records when it started before it reads kortix.yaml, and every write
- * transaction it makes advances this row to that time. A sync that started
- * earlier than the stored time finds no row to update and stops writing: a
- * newer sync has already read a manifest at least as recent. The row lock
- * taken by that update also serializes the write transactions of one project.
+ * `scope` is `project` (project policies and settings) or `connector:<slug>`
+ * (one connector's row, actions, and policies, or its removal). A sync records
+ * when it started before it reads kortix.yaml, and each write advances its
+ * scope's row to that time inside the write transaction. When a sync that
+ * started later has already written a scope, the older sync skips that scope:
+ * it read a manifest no newer than the one already applied. The row lock also
+ * serializes concurrent writes to one scope.
  */
-export const connectorSyncFences = kortixSchema.table('connector_sync_fences', {
-  projectId: uuid('project_id')
-    .primaryKey()
-    .references(() => projects.projectId, { onDelete: 'cascade' }),
-  startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
-});
+export const connectorSyncFences = kortixSchema.table(
+  'connector_sync_fences',
+  {
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    scope: text('scope').notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.projectId, table.scope] })],
+);
 
 /** Audit + approval ledger for every connector call. */
 export const connectorCalls = kortixSchema.table(

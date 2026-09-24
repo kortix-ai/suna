@@ -1,5 +1,5 @@
 {
-  "id": "5115e006-9b2c-47eb-b5d0-bca7fa04a1d3",
+  "id": "c8dfb836-d820-4a08-b760-40772a916fde",
   "prevId": "d467bd98-6c32-4354-961d-79fcb206b5c4",
   "version": "7",
   "dialect": "postgresql",
@@ -7639,7 +7639,13 @@
         "project_id": {
           "name": "project_id",
           "type": "uuid",
-          "primaryKey": true,
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scope": {
+          "name": "scope",
+          "type": "text",
+          "primaryKey": false,
           "notNull": true
         },
         "started_at": {
@@ -7666,7 +7672,15 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "compositePrimaryKeys": {
+        "connector_sync_fences_project_id_scope_pk": {
+          "name": "connector_sync_fences_project_id_scope_pk",
+          "columns": [
+            "project_id",
+            "scope"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
