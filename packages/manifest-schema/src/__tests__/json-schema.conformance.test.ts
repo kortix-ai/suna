@@ -799,6 +799,25 @@ connectors:
       'kortix_version: 2\ndefault_agent: w\nruntime: pi\nagents:\n  w: {}\nharnesses:\n  pi:\n    packages:\n      - npm:pi-web-access@0.30.0\n      - source: npm:@juicesharp/rpiv-todo@1.2.0\n        extensions: ["extensions/*.ts"]\n        skills: []\n      - ./.kortix/pi/audit.ts\n',
   },
   {
+    name: 'v2: agent-level harnesses.pi packages and exclude accepted',
+    format: 'yaml',
+    valid: true,
+    input:
+      'kortix_version: 2\ndefault_agent: w\nharnesses:\n  pi:\n    packages: [npm:pi-web-access@0.30.0, ./.kortix/pi/audit.ts]\nagents:\n  w:\n    harnesses:\n      pi:\n        packages: [npm:@juicesharp/rpiv-todo@2.11.0]\n        exclude: [pi-web-access, ./.kortix/pi/audit.ts]\n',
+  },
+  {
+    name: 'v2: agent-level exclude with a version rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    harnesses:\n      pi:\n        exclude: [npm:pi-web-access@0.30.0]\n',
+  },
+  {
+    name: 'v2: exclude at the top level rejected (it removes global packages for one agent)',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nharnesses:\n  pi:\n    exclude: [pi-web-access]\n',
+  },
+  {
     name: 'v2: harnesses.pi.packages npm source without an exact version rejected',
     format: 'yaml',
     valid: false,

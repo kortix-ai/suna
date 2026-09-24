@@ -35,6 +35,7 @@ import {
   AGENT_MODES_V2,
   AGENT_THEME_COLORS_V2,
   HEX_COLOR_RE_V2,
+  PI_PACKAGE_NAME_RE,
   PI_PACKAGE_NPM_RE,
   PI_PACKAGE_PATH_RE,
   PERMISSION_ACTION_ONLY_KEYS_V2,
@@ -174,6 +175,8 @@ export interface AgentBlockV2 {
   repository_access?: boolean;
   /** @deprecated branch = true, runtime = false; read requires an explicit choice. */
   workspace?: WorkspaceModeV2;
+  /** This agent's pi packages on top of the top-level `harnesses`, and `exclude` to drop top-level ones. */
+  harnesses?: HarnessesV2;
 }
 
 /** The v2 manifest shape (YAML-only). Other sections keep their v1 shape. */
@@ -338,7 +341,8 @@ const PI_PACKAGES_MAX = 20;
 export type PiPackageEntryV2 = string | { source: string; extensions?: string[]; skills?: string[]; prompts?: string[]; themes?: string[] };
 
 export interface HarnessesV2 {
-  pi?: { packages?: PiPackageEntryV2[] };
+  /** `exclude` exists only on an agent: global packages that agent does not load. */
+  pi?: { packages?: PiPackageEntryV2[]; exclude?: string[] };
 }
 
 function validatePiPackageSource(source: unknown, where: string, issues: ManifestIssue[]): void {
@@ -351,11 +355,13 @@ function validatePiPackageSource(source: unknown, where: string, issues: Manifes
 }
 
 /**
- * `harnesses:` — per-harness native settings. Only `pi.packages` exists: pi
- * packages (https://pi.dev/packages) the project's pi sessions load, in pi's
- * own settings format. Installed before the session starts; never at boot.
+ * `harnesses:` — per-harness native settings. Only `pi` exists: `packages`, pi
+ * packages (https://pi.dev/packages) its sessions load, in pi's own settings
+ * format, installed before the session starts, never at boot. At the top level
+ * they apply to every agent; on an agent (`agents.<name>.harnesses`) they add to
+ * that agent only, and its `exclude` drops global packages for that agent.
  */
-export function validateHarnessesV2(node: unknown, path: string, issues: ManifestIssue[]): void {
+export function validateHarnessesV2(node: unknown, path: string, issues: ManifestIssue[], scope: 'project' | 'agent' = 'project'): void {
   if (node === undefined || node === null) return;
   if (!isTable(node)) {
     issues.push({ path, message: 'harnesses must be a map of harness name to settings.', severity: 'error' });
@@ -372,9 +378,13 @@ export function validateHarnessesV2(node: unknown, path: string, issues: Manifes
       issues.push({ path: where, message: 'must be a map.', severity: 'error' });
       continue;
     }
+    const keys = scope === 'agent' ? ['packages', 'exclude'] : ['packages'];
     for (const key of Object.keys(settings)) {
-      if (key !== 'packages') issues.push({ path: `${where}.${key}`, message: 'unknown key; harnesses.pi takes only `packages`.', severity: 'error' });
+      if (!keys.includes(key)) {
+        issues.push({ path: `${where}.${key}`, message: `unknown key; ${scope === 'agent' ? 'an agent\'s harnesses.pi takes `packages` and `exclude`' : 'harnesses.pi takes only `packages` (`exclude` belongs on an agent)'}.`, severity: 'error' });
+      }
     }
+    validatePiExclude(settings.exclude, `${where}.exclude`, issues);
     const packages = settings.packages;
     if (packages === undefined || packages === null) continue;
     if (!Array.isArray(packages)) {
@@ -401,6 +411,22 @@ export function validateHarnessesV2(node: unknown, path: string, issues: Manifes
       }
     });
   }
+}
+
+function validatePiExclude(exclude: unknown, where: string, issues: ManifestIssue[]): void {
+  if (exclude === undefined || exclude === null) return;
+  if (!Array.isArray(exclude)) {
+    issues.push({ path: where, message: 'must be a list of package names.', severity: 'error' });
+    return;
+  }
+  exclude.forEach((name, index) => {
+    if (typeof name === 'string' && (PI_PACKAGE_NAME_RE.test(name) || PI_PACKAGE_PATH_RE.test(name))) return;
+    issues.push({
+      path: `${where}[${index}]`,
+      message: `must be a package name (pi-web-access, @scope/name) or a ./ repo path as the top-level list writes it; exclude never takes a version (got ${JSON.stringify(name)}).`,
+      severity: 'error',
+    });
+  });
 }
 
 /** v2 dispatch: called from `index.ts`'s `validateManifestBodyV2`. */
@@ -652,6 +678,7 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
   // like connectors) — same shape/validation, no `checkAction`.
   validateGrantList(entry.skills, `${where}.skills`, 'skills', issues, false, 2);
   validateAppGrantList(entry.apps, `${where}.apps`, issues);
+  validateHarnessesV2(entry.harnesses, `${where}.harnesses`, issues, 'agent');
   // v2 clean break: a LEGACY_TOLERATED action is a hard error here, not a
   // warning (see `validateGrantList`'s doc comment).
   validateKortixPermissionFields(entry, where, issues, 2);

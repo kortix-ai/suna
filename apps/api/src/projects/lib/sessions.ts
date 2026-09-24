@@ -512,7 +512,7 @@ export async function buildSessionSandboxEnvVars(input: {
     };
     const onManifest = (raw: Record<string, unknown>) => {
       manifestHarness = manifestRuntime(raw);
-      manifestPackages = manifestPiPackages(raw);
+      manifestPackages = manifestPiPackages(raw, input.agentName);
     };
     compiledAgentConfig =
       !(input.repositoryAccess ?? true)

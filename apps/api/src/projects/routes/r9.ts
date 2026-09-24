@@ -9,7 +9,7 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { kickPiPackageBundle } from '../../pi-packages/bundle';
-import { resolveManifestPiPackages } from '../lib/compile-agent-config';
+import { resolveManifestPiPackageLists } from '../lib/compile-agent-config';
 import { getCrById, serializeChangeRequest } from '../change-requests';
 // Imported from its own module, not the `../git` barrel: several route suites
 // replace the barrel wholesale with `mock.module`, and the guard below runs
@@ -237,12 +237,13 @@ projectsApp.openapi(
       source: 'cr-merge',
     });
 
-    // A merged CR may have changed kortix.yaml `harnesses.pi.packages`: build
-    // that list's bundle now, so the next pi session downloads it instead of
-    // booting without the project's packages. Best-effort, never blocks.
-    void resolveManifestPiPackages(projectForGit, cr.baseRef).then((packages) =>
-      kickPiPackageBundle(packages, { projectId, source: 'cr-merge' }),
-    );
+    // A merged CR may have changed kortix.yaml `harnesses.pi` (top level or an
+    // agent's): build every distinct agent package list now, so the next pi
+    // session downloads its bundle instead of booting without its packages.
+    // Agents with the same list share one build. Best-effort, never blocks.
+    void resolveManifestPiPackageLists(projectForGit, cr.baseRef).then((lists) => {
+      for (const packages of lists) kickPiPackageBundle(packages, { projectId, source: 'cr-merge' });
+    });
 
     // A merged CR may have edited kortix.yaml's `connectors:` list. The connector DB
     // cache (what the gateway + dashboard read) is derived from the manifest, so

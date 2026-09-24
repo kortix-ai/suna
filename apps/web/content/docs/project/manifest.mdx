@@ -291,6 +291,31 @@ harnesses:
 
 At most 20 entries. Git sources are rejected.
 
+### Per agent
+
+An agent can add its own packages and drop top-level ones, under `agents.<name>.harnesses`:
+
+```yaml
+harnesses:
+  pi:
+    packages: [npm:pi-web-access@0.30.0]            # every agent
+agents:
+  researcher:
+    harnesses:
+      pi:
+        packages: [npm:@juicesharp/rpiv-todo@2.11.0] # researcher only
+  reviewer:
+    harnesses:
+      pi:
+        exclude: [pi-web-access]                     # reviewer loads no web tools
+```
+
+- An agent's packages are the top-level list, minus its `exclude`, plus its own `packages`.
+- An agent entry for a package the top level also lists replaces the top-level entry for that agent (another version, or other filters).
+- `exclude` lists package names (`pi-web-access`, `@scope/name`) or `./` paths as the top-level list writes them. It never takes a version.
+- Each distinct package list is built once. Agents with the same list share the build.
+- Packages belong to the agent a session starts with. A subagent that another agent starts with the `task` tool uses the standard workspace tools only (`bash`, `read`, `write`, `edit`, `glob`, `grep`), not its own packages and not the parent's; the parent's extension hooks still apply to its calls. Start a session with that agent to use its packages.
+
 How packages reach a session:
 
 1. Merging the change request that edits this list builds the packages once, for the sandbox platform, with install scripts off. Each extension is pre-built into one file. Projects with the same list share the build.

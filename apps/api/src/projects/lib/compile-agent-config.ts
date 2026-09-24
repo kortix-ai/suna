@@ -473,15 +473,59 @@ export function manifestRuntime(raw: unknown): RuntimeV2 {
   return (raw as Record<string, unknown>).runtime === 'pi' ? 'pi' : 'opencode';
 }
 
+type PiHarness = { pi?: { packages?: unknown; exclude?: unknown } } | undefined;
+
+function piList(harnesses: PiHarness, key: 'packages' | 'exclude'): unknown[] {
+  const value = harnesses?.pi?.[key];
+  return Array.isArray(value) ? value : [];
+}
+
+/** A package's identity across the two levels: its npm name, or its `./` path as written. */
+function piPackageKey(entry: unknown): string | null {
+  const source = typeof entry === 'string' ? entry : (entry as { source?: unknown } | null)?.source;
+  if (typeof source !== 'string') return null;
+  const npm = /^npm:((?:@[^/@]+\/)?[^/@]+)(?:@.*)?$/.exec(source);
+  return npm ? npm[1]! : source;
+}
+
 /**
- * The project's pi packages: v2 `harnesses.pi.packages`, entries as written
- * (pi's own settings shape). The manifest validator already gated each entry at
- * merge; anything that is not a list reads as none.
+ * An agent's pi packages, entries as written (pi's own settings shape): the
+ * top-level `harnesses.pi.packages` minus the agent's `exclude`, then the
+ * agent's own `harnesses.pi.packages`; an agent entry for a package the top
+ * level also lists replaces it in place. No agent name (or `default`) means `default_agent`.
+ * The manifest validator gated every entry at merge; anything else reads as none.
  */
-export function manifestPiPackages(raw: unknown): unknown[] {
+export function manifestPiPackages(raw: unknown, agentName?: string | null): unknown[] {
   if (!raw || typeof raw !== 'object' || manifestSchemaVersion(raw as Record<string, unknown>) !== 2) return [];
-  const pi = ((raw as Record<string, unknown>).harnesses as { pi?: { packages?: unknown } } | undefined)?.pi;
-  return Array.isArray(pi?.packages) ? pi.packages : [];
+  const manifest = raw as Record<string, unknown>;
+  const requested = agentName?.trim();
+  // `default` is the session layer's "no agent chosen" (sessions.ts), like the runtime's.
+  const name = requested && requested !== 'default' ? requested : typeof manifest.default_agent === 'string' ? manifest.default_agent : '';
+  const agent = (manifest.agents as Record<string, { harnesses?: PiHarness } | undefined> | undefined)?.[name];
+  const excluded = new Set(piList(agent?.harnesses, 'exclude'));
+  const own = new Map(piList(agent?.harnesses, 'packages').map((entry) => [piPackageKey(entry), entry]));
+  const merged = piList(manifest.harnesses as PiHarness, 'packages')
+    .filter((entry) => !excluded.has(piPackageKey(entry)))
+    .map((entry) => {
+      const key = piPackageKey(entry);
+      if (!own.has(key)) return entry;
+      const replacement = own.get(key);
+      own.delete(key);
+      return replacement;
+    });
+  return [...merged, ...own.values()];
+}
+
+/** Every distinct non-empty package list the manifest's agents resolve to: what a merge builds. */
+export function manifestPiPackageLists(raw: unknown): unknown[][] {
+  if (!raw || typeof raw !== 'object') return [];
+  const agents = Object.keys(((raw as Record<string, unknown>).agents as Record<string, unknown> | undefined) ?? {});
+  const lists = new Map<string, unknown[]>();
+  for (const name of agents.length ? agents : [null]) {
+    const list = manifestPiPackages(raw, name);
+    if (list.length) lists.set(JSON.stringify(list), list);
+  }
+  return [...lists.values()];
 }
 
 /** The parsed v2 manifest at `baseRef` (default branch when absent); null for v1, none, or a read failure. */
@@ -506,8 +550,8 @@ export async function resolveManifestRuntime(
   return raw ? manifestRuntime(raw) : null;
 }
 
-export async function resolveManifestPiPackages(project: GitBackedProject, baseRef?: string | null): Promise<unknown[]> {
-  return manifestPiPackages(await readManifestV2(project, baseRef));
+export async function resolveManifestPiPackageLists(project: GitBackedProject, baseRef?: string | null): Promise<unknown[][]> {
+  return manifestPiPackageLists(await readManifestV2(project, baseRef));
 }
 
 /**
