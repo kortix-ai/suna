@@ -738,7 +738,11 @@ describe('pi packages', () => {
       const r = await boot({
         script: [{ tool: 'bundled_echo', args: { text: 'b' } }, { text: 'done' }],
         env: { KORTIX_PI_PACKAGES: JSON.stringify(['npm:bundled-ext@3.0.0']), KORTIX_PI_PACKAGES_BUNDLE_URL: url, KORTIX_PI_PACKAGES_BUNDLE_DIGEST: DIGEST },
+        start: false,
       })
+      // The download starts with the service, beside the repo clone, not at runtime start.
+      await waitFor(() => downloads === 1)
+      await r.service.lifecycle.start()
       expect(downloads).toBe(1)
       expect(r.service.runtime()!.extensionStatus().loaded).toContain('npm:bundled-ext@3.0.0')
       await promptAndSettle(r, 'go')

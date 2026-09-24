@@ -250,6 +250,8 @@ export class PiRuntime {
   private turnSystem: string | null = null
   /** Message conversion + extension provider/context hooks a child agent shares with the root. */
   private childAgentOptions: Partial<AgentOptions> = {}
+  /** The project package bundle; fetched from construction so the download overlaps the repo clone. */
+  private projectBundle: Promise<string | null> | null = null
   private readonly children = new Map<string, ChildSession>()
   private skills: Skill[] = []
   private compiled: CompiledAgentConfig | null = null
@@ -278,6 +280,20 @@ export class PiRuntime {
     this.questions = new QuestionBroker(this.rootId, (frame) => this.publish(frame), (request) => {
       this.hooks.onQuestionAsked?.(request, (answers) => void this.questions.reply(request.id, answers))
     })
+    void this.prefetchProjectBundle()
+  }
+
+  /** Start the project bundle download, or join the one in flight. A missing result is retried by the next start. */
+  private prefetchProjectBundle(): Promise<string | null> {
+    this.projectBundle ??= import('./extensions/bundle')
+      .then(({ ensureProjectPackageBundle }) =>
+        ensureProjectPackageBundle({ url: this.cfg.piPackagesBundleUrl, digest: this.cfg.piPackagesBundleDigest, dir: this.cfg.piPackagesDir }),
+      )
+      .then((root) => {
+        if (!root) this.projectBundle = null
+        return root
+      })
+    return this.projectBundle
   }
 
   // ── lifecycle ────────────────────────────────────────────────────────────
@@ -316,10 +332,8 @@ export class PiRuntime {
         import('./extensions/host'),
         import('./extensions/subagents'),
         import('@earendil-works/pi-coding-agent'),
-        // The project's package bundle downloads while pi itself loads.
-        import('./extensions/bundle').then(({ ensureProjectPackageBundle }) =>
-          ensureProjectPackageBundle({ url: this.cfg.piPackagesBundleUrl, digest: this.cfg.piPackagesBundleDigest, dir: this.cfg.piPackagesDir }),
-        ),
+        // Started in the constructor: by now it has run beside the repo clone.
+        this.prefetchProjectBundle(),
       ])
       this.core = core
       this.compiled = parseCompiledAgentConfig(this.env.KORTIX_COMPILED_AGENT_CONFIG)
