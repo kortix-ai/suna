@@ -20,5 +20,6 @@ export {
   parseSessionMessagesOutput,
   parseSessionMetadataOutput,
 } from './session-dump';
+export { type ParsedSessionGetOutput, parseSessionGetOutput } from './session-get';
 export { skillDocumentBody } from './skill';
 export { ptyOutputBlock, ptySpawnedBody, stripBashMetadata } from './tags';
