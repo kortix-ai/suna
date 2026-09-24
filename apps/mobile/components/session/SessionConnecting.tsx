@@ -4,9 +4,9 @@
  * Loading looks like the thread it becomes (Jay, 2026-09-24): `ProjectScreen`
  * renders the thread header (floating menu button + the session title) beside
  * it, and this view draws the rest of the page — the user's first message
- * where the thread shows it, one `KortixLoader` in the centre, and the
- * composer at the bottom, disabled until the thread replaces this view. No
- * step checklist, no timer, no Cancel bar.
+ * and its files where the thread shows them, one `KortixLoader` in the
+ * centre, and the composer at the bottom, disabled until the thread replaces
+ * this view. No step checklist, no timer, no Cancel bar.
  *
  * When the runtime fails to boot (a repo-materialization / git-clone failure
  * surfaced via /kortix/health `boot_error`, or the connect loop's own timeout),
@@ -16,7 +16,7 @@
  */
 
 import React from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, ScrollView, View } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowCounterClockwiseIcon as RotateCcw } from '@/lib/icons';
@@ -25,8 +25,12 @@ import { Button } from '@/components/ui/button';
 import { Composer } from '@/components/kortix/composer';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { FLOATING_MENU_CLEARANCE } from '@/components/session/FloatingMenuButton';
+import { AttachmentTile } from '@/components/session/attachment-tile';
 import { UserMessageBubble } from '@/components/session/turn/user-message';
 import { THEME } from '@/lib/utils/theme';
+import type { AttachedFile } from '@/lib/session/attachments';
+import { isPreviewableImage } from '@/lib/session/attachment-tile';
+import { webSpace } from '@/lib/session/user-message';
 
 export interface SessionConnectError {
   title: string;
@@ -41,6 +45,7 @@ const noop = () => {};
 
 export function SessionConnecting({
   firstMessage,
+  firstFiles,
   error,
   onCancel,
   onRestart,
@@ -48,6 +53,8 @@ export function SessionConnecting({
 }: {
   /** The user's just-sent first message (a fresh send from project home), shown as the thread shows it. */
   firstMessage?: string;
+  /** The files sent with that first message, drawn as the thread draws them: tiles above the bubble. */
+  firstFiles?: AttachedFile[];
   /** When set, the centre shows the failure instead of the loader. */
   error?: SessionConnectError | null;
   /** Leaves the failed start and returns to project home. */
@@ -58,17 +65,41 @@ export function SessionConnecting({
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
+  const files = firstFiles ?? [];
+  const hasFiles = files.length > 0;
 
   return (
     <View style={{ flex: 1 }} className="bg-background">
       {/* The thread's list area: the first message under the header, the
           loader (or the failure) centred in what is left. */}
       <View style={{ flex: 1, paddingTop: insets.top + FLOATING_MENU_CLEARANCE }} className="px-4">
-        {firstMessage ? (
-          <View className="items-end self-end" style={{ maxWidth: '80%' }}>
-            <UserMessageBubble isDark={isDark}>
-              <Text style={BUBBLE_TEXT_STYLE}>{firstMessage}</Text>
-            </UserMessageBubble>
+        {/* The thread's user message (`turn/user-message.tsx`): one
+            right-aligned column capped at 80%, files above the bubble. */}
+        {hasFiles || firstMessage ? (
+          <View className="items-end self-end" style={{ maxWidth: '80%', gap: webSpace(2) }}>
+            {hasFiles ? (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                className="flex-grow-0"
+                contentContainerStyle={{ gap: webSpace(2) }}>
+                {files.map((file, index) => (
+                  <AttachmentTile
+                    key={`${file.uri}-${index}`}
+                    filename={file.name}
+                    mime={file.mimeType}
+                    imageSource={
+                      file.isImage && isPreviewableImage(file.name, file.mimeType) ? { uri: file.uri } : undefined
+                    }
+                  />
+                ))}
+              </ScrollView>
+            ) : null}
+            {firstMessage ? (
+              <UserMessageBubble isDark={isDark}>
+                <Text style={BUBBLE_TEXT_STYLE}>{firstMessage}</Text>
+              </UserMessageBubble>
+            ) : null}
           </View>
         ) : null}
         <View style={{ flex: 1 }} className="items-center justify-center">
