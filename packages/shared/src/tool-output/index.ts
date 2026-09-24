@@ -11,5 +11,14 @@
  * module pin that against the old code on thousands of random inputs.
  */
 
+export {
+  type GrepFileGroup,
+  type GrepMatch,
+  type ParsedSessionMessage,
+  type ParsedSessionMeta,
+  parseGrepOutput,
+  parseSessionMessagesOutput,
+  parseSessionMetadataOutput,
+} from './session-dump';
 export { skillDocumentBody } from './skill';
 export { ptyOutputBlock, ptySpawnedBody, stripBashMetadata } from './tags';

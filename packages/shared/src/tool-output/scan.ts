@@ -31,3 +31,15 @@ export function lineEnd(text: string, from: number): number {
   }
   return text.length;
 }
+
+/** The end of the run of regex `\s` characters that starts at `from`. */
+export function whitespaceEnd(text: string, from: number): number {
+  let i = from;
+  while (i < text.length && isWhitespace(text.charCodeAt(i))) i++;
+  return i;
+}
+
+/** A regex `\d` without the `u` flag: `0`–`9`. */
+export function isDigit(code: number): boolean {
+  return code >= 48 && code <= 57;
+}

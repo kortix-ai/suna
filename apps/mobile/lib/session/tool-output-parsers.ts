@@ -170,49 +170,7 @@ export function parseFilePaths(output: string): string[] | null {
   return null;
 }
 
-export interface GrepMatch {
-  line: number;
-  content: string;
-}
-
-export interface GrepFileGroup {
-  filePath: string;
-  matches: GrepMatch[];
-}
-
-export function parseGrepOutput(output: string): { matchCount: number; groups: GrepFileGroup[] } | null {
-  if (!output) return null;
-  const text = String(output).trim();
-  const headerMatch = text.match(/^Found\s+(\d+)\s+match/i);
-  const matchCount = headerMatch ? parseInt(headerMatch[1], 10) : 0;
-  const body = headerMatch ? text.slice(headerMatch[0].length).trim() : text;
-  if (!body) return null;
-
-  const groups: GrepFileGroup[] = [];
-  const blocks = body.split(/\n\n+/);
-
-  for (const block of blocks) {
-    const trimmed = block.trim();
-    if (!trimmed) continue;
-    const fileMatch = trimmed.match(/^(\/[^:]+?):\s*/);
-    if (!fileMatch) continue;
-    const filePath = fileMatch[1];
-    const rest = trimmed.slice(fileMatch[0].length);
-    const matches: GrepMatch[] = [];
-    const lineRegex = /Line\s+(\d+):\s*([\s\S]*?)(?=\s*(?:Line\s+\d+:|$))/g;
-    let m: RegExpExecArray | null;
-    while ((m = lineRegex.exec(rest)) !== null) {
-      matches.push({ line: parseInt(m[1], 10), content: m[2].trim().replace(/;$/, '') });
-    }
-    if (matches.length > 0) groups.push({ filePath, matches });
-  }
-
-  if (groups.length === 0) return null;
-  return {
-    matchCount: matchCount || groups.reduce((sum, g) => sum + g.matches.length, 0),
-    groups,
-  };
-}
+export { type GrepFileGroup, type GrepMatch, parseGrepOutput } from '@kortix/shared/tool-output';
 
 // ─── Todos ───────────────────────────────────────────────────────────────────
 
@@ -270,46 +228,7 @@ export function formatBashOutput(rawOutput: string): { content: string; lang: st
   return { content: trimmed, lang: 'bash' };
 }
 
-export interface ParsedSessionMeta {
-  id: string;
-  slug?: string;
-  title: string;
-  directory?: string;
-  time: { created: number; updated: number };
-  summary?: { additions: number; deletions: number; files: number };
-  filePath?: string;
-}
-
-export function parseSessionMetadataOutput(output: string): ParsedSessionMeta[] | null {
-  const trimmed = output.trim();
-  if (!trimmed.includes('===') || !trimmed.includes('"id"')) return null;
-
-  const parts = trimmed.split(/^={2,}\s*(.*?)\s*={0,}\s*$/m);
-  const sessions: ParsedSessionMeta[] = [];
-
-  for (let i = 0; i < parts.length; i++) {
-    const part = parts[i].trim();
-    if (!part) continue;
-    try {
-      const parsed = JSON.parse(part);
-      if (parsed && typeof parsed === 'object' && parsed.id && parsed.time) {
-        const header = i > 0 ? parts[i - 1]?.trim() : undefined;
-        sessions.push({
-          id: parsed.id,
-          slug: parsed.slug,
-          title: parsed.title || parsed.slug || 'Untitled',
-          directory: parsed.directory,
-          time: parsed.time,
-          summary: parsed.summary,
-          filePath: header || undefined,
-        });
-      }
-    } catch {}
-  }
-
-  if (sessions.length === 0) return null;
-  return sessions;
-}
+export { type ParsedSessionMeta, parseSessionMetadataOutput } from '@kortix/shared/tool-output';
 
 export function formatSessionTime(timestamp: number): string {
   const d = new Date(timestamp);
@@ -334,41 +253,7 @@ export function formatSessionTimeFallback(timestamp: number): string {
   return sessionTimeFallbackFormat.format(new Date(timestamp));
 }
 
-export interface ParsedSessionMessage {
-  index: number;
-  role: string;
-  cost: number;
-  content: string;
-  tools?: string;
-}
-
-export function parseSessionMessagesOutput(output: string): ParsedSessionMessage[] | null {
-  const trimmed = output.trim();
-  if (!trimmed.includes('--- Msg ')) return null;
-
-  const msgRegex = /---\s*Msg\s+(\d+)\s+\[(\w+)\]\s+cost=\$?([\d.]+)\s*---/g;
-  const matches = [...trimmed.matchAll(msgRegex)];
-  if (matches.length < 1) return null;
-
-  const messages: ParsedSessionMessage[] = [];
-  for (let i = 0; i < matches.length; i++) {
-    const m = matches[i];
-    const start = m.index! + m[0].length;
-    const end = i + 1 < matches.length ? matches[i + 1].index! : trimmed.length;
-    const rawContent = trimmed.slice(start, end).trim();
-    const toolsMatch = rawContent.match(/^\s*Tools used:\s*(.+)$/m);
-    const content = rawContent.replace(/^\s*Tools used:\s*.+$/m, '').trim();
-    messages.push({
-      index: parseInt(m[1], 10),
-      role: m[2].toLowerCase(),
-      cost: parseFloat(m[3]),
-      content,
-      tools: toolsMatch?.[1],
-    });
-  }
-
-  return messages.length > 0 ? messages : null;
-}
+export { type ParsedSessionMessage, parseSessionMessagesOutput } from '@kortix/shared/tool-output';
 
 // ─── Connectors ──────────────────────────────────────────────────────────────
 
