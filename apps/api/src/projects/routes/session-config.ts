@@ -15,12 +15,12 @@ import { UUID_V4_REGEX, readBody } from '../lib/serializers';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { mayChangeSessionModel } from '../lib/session-model-change';
-import { configReleaseVariant, resolveDesiredRelease } from '../../config-releases/desired';
+import { resolveDesiredRelease } from '../../config-releases/desired';
+import { ownerMayUseAgent } from '../../config-releases/repoint';
 import { configReleasesEnabled } from '../../config-releases/enabled';
 import { recordDaemonConfigReport } from '../../config-releases/quarantine';
 import { isReleaseStale, toSessionConfigRelease } from '../lib/session-config-release';
 import { repositoryAccessFromSessionMetadata } from '../lib/session-sandbox-metadata';
-import { sessionUsesCurrentRepository } from '../lib/repository-generation';
 import {
   combineConfigStaleness,
   isConfigStale,
@@ -69,10 +69,6 @@ projectsApp.openapi(
       manifestPath: loaded.row.manifestPath ?? 'kortix.yaml',
       gitAuthToken: null,
     };
-    const usesCurrentRepository = sessionUsesCurrentRepository(
-      loaded.row.metadata as Record<string, unknown> | null,
-      visible.row.metadata as Record<string, unknown> | null,
-    );
     // CHOKEPOINT — the `config_releases` flag for this read
     // (docs/specs/config-releases.md, "Feature flag"). Off ⇒ no `release`
     // block, no desired release is built (so no archive is stored and no
@@ -82,44 +78,33 @@ projectsApp.openapi(
     const releasesEnabled = configReleasesEnabled(loaded.row.metadata);
     const [running, latest] = await Promise.all([
       readSandboxConfigState({ sessionId }),
-      // Nothing from the current repository is compiled for a frozen session.
-      usesCurrentRepository
-        ? latestAgentConfigEtag({
-            projectId,
-            accountId: loaded.row.accountId,
-            sessionId,
-            baseRef,
-          })
-        : Promise.resolve(null),
+      latestAgentConfigEtag({
+        projectId,
+        accountId: loaded.row.accountId,
+        sessionId,
+        baseRef,
+      }),
     ]);
-
-    // ── A previous-repository session (spec, "Repository replacement") ──
-    // It keeps the config it runs; no update from the current repository
-    // applies, so it is never stale. The release block reports the box as-is.
-    if (!usesCurrentRepository) {
-      return c.json({
-        base_ref: baseRef,
-        running_etag: running.etag,
-        latest_etag: null,
-        commit_sha: running.commitSha,
-        stale: false,
-        sandbox_reachable: running.reachable,
-        ...(releasesEnabled && running.configReleases && running.release
-          ? { release: toSessionConfigRelease(running.release) }
-          : {}),
-      });
-    }
 
     // ── A daemon with config releases (spec, "`GET /config`, extended") ──
     if (releasesEnabled && running.configReleases && running.release) {
       // Health carries `failed_release_id` and `proven`: the project
       // quarantine learns from every read, not only from reloads.
       await recordDaemonConfigReport({ projectId, sessionId, report: running.release });
+      // The SAME resolution the daemon's descriptor request makes, minus the
+      // write: a read must never disagree with the assignment about `stale`.
+      const repointSubject = {
+        projectId,
+        accountId: loaded.row.accountId,
+        sessionId,
+        ownerUserId: visible.row.createdBy ?? null,
+      };
       const desired = await resolveDesiredRelease({
         project,
         baseRef,
-        variant: configReleaseVariant(visible.row),
+        sessionAgent: visible.row.agentName ?? null,
         repositoryAccess: repositoryAccessFromSessionMetadata(visible.row.metadata),
+        ownerMayUseAgent: (agent) => ownerMayUseAgent(repointSubject, agent),
       }).catch(() => null);
       const release = toSessionConfigRelease(
         running.release,
@@ -135,6 +120,10 @@ projectsApp.openapi(
         stale: isReleaseStale(release, desired !== null),
         sandbox_reachable: running.reachable,
         release,
+        // Surfaced so the web header and `kortix sessions reload --status` can
+        // say why a session lost its agent, instead of showing a healthy box
+        // that answers nothing.
+        ...(desired?.descriptor.agent_repoint ? { agent_repoint: desired.descriptor.agent_repoint } : {}),
       });
     }
 

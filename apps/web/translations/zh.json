@@ -1617,11 +1617,6 @@
     "previousRepository": {
       "title": "此会话已过时",
       "message": "此会话开始后项目已更改。请更新以继续在最新版本上工作。",
-      "unavailable": "先前的工作区已不可用。请在当前仓库中启动新会话。",
-      "resume": "恢复先前的工作区",
-      "resuming": "正在恢复…",
-      "newSession": "启动新会话",
-      "delete": "删除会话",
       "update": "更新到最新",
       "updating": "正在更新…",
       "dismiss": "关闭",

@@ -14,8 +14,8 @@ import {
 import { dismissOnboarding, dismissWelcomeCard, selectAccountForUi } from '../helpers/ui';
 
 /**
- * docs/specs/config-releases.md, section "Web": the session header shows one of
- * four config states, derived from `GET /sessions/{id}/config`.
+ * docs/specs/config-releases.md, section "Web": the session header shows one
+ * config state, derived from `GET /sessions/{id}/config`.
  *
  * The journey route-mocks that response, because a real fallback needs a live
  * sandbox with a broken config release, and the local profile has no sandbox.
@@ -107,6 +107,45 @@ const STATES: Array<{
       }),
     }),
     visible: FALLBACK_LABEL,
+  },
+  {
+    // A session whose `/workspace` clone came from the project's PREVIOUS
+    // repository. This state was unreachable before: the API answered
+    // `stale: false` with `latest_etag: null` for such a session and sent it no
+    // release. The session is no longer frozen, so `GET /config` answers the
+    // ordinary release compare — the box runs a commit from the old
+    // repository, the desired release comes from the current one — and the
+    // header offers the same update as for any other session.
+    //
+    // No fixture: the header derives its state from this body alone
+    // (`sessionConfigNotice`, use-session-config-freshness.ts). What the
+    // session's own metadata drives is the notice under the header, which
+    // journey `31-previous-repository-session` covers.
+    name: 'previous-repository session, stale with a desired release: the existing badge',
+    body: configBody({
+      stale: true,
+      commit_sha: 'd'.repeat(40),
+      latest_etag: 'bbbbbbbbbbbbbbbb',
+      release: release({ desired_release_id: DESIRED }),
+    }),
+    visible: UPDATE_LABEL,
+  },
+  {
+    // `agent_repoint` is top-level and present only when the project manifest
+    // no longer declares the session's agent. The web does not render it yet,
+    // so it must change nothing: a current session stays silent.
+    name: 'a repointed agent: the extra field renders nothing today',
+    body: configBody({
+      stale: false,
+      release: release({}),
+      agent_repoint: {
+        from: 'reviewer',
+        to: 'build',
+        applied: true,
+        reason: 'The project manifest no longer declares the agent reviewer.',
+      },
+    }),
+    visible: null,
   },
 ];
 

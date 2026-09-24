@@ -22,6 +22,7 @@ import { and, desc, eq, inArray, isNotNull, isNull, notInArray, sql } from 'driz
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import type { DaemonConfigReport } from '../projects/lib/session-config-release';
+import { noteRunningRelease } from './running-release';
 
 /** Distinct failing sessions that quarantine a release in a project. Spec open decision 2. */
 export const PROJECT_QUARANTINE_SESSIONS = 2;
@@ -200,6 +201,10 @@ export async function recordDaemonConfigReport(
 ): Promise<void> {
   const { projectId, sessionId, report } = input;
   if (!report || !UUID.test(projectId) || !UUID.test(sessionId)) return;
+  // The ONE place a daemon's own report reaches the API — a health read, a
+  // reload, or a convergence answer. The turn-start gate reads this to decide
+  // whether a prompt must wait for a convergence (turn-start-convergence.ts).
+  noteRunningRelease(sessionId, report.release_id);
   try {
     const failed = report.failed_release_id;
     if (failed && HEX64.test(failed) && firstTimeRecently(`f\0${projectId}\0${failed}\0${sessionId}`)) {

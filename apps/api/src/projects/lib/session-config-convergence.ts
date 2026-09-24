@@ -3,8 +3,7 @@ import { eq } from 'drizzle-orm';
 import { configReleasesEnabled } from '../../config-releases/enabled';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
-import { pushSessionAgentConfigToSandbox } from './sandbox-env-sync';
-import { PREVIOUS_REPOSITORY_REASON, reloadSessionConfig, type SessionReloadResult } from './session-reload';
+import { reloadSessionConfig, type SessionReloadResult } from './session-reload';
 
 /**
  * Bring a session that just came back up onto its base branch's CURRENT config.
@@ -114,7 +113,16 @@ const defaultDeps: SessionConfigConvergenceDeps = {
   reload: (input) => reloadSessionConfig(input),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   configReleasesEnabled,
-  pushGovernance: (input) => pushSessionAgentConfigToSandbox(input),
+  // DYNAMIC import on purpose. `sandbox-proxy/routes/preview.ts` reaches this
+  // module through the turn-start convergence gate, and a static edge to
+  // `sandbox-env-sync` drags that whole graph into every proxy unit test that
+  // partially mocks it — five of them failed with "Export named
+  // 'pushSessionAgentConfigToSandbox' not found". Same reasoning as the
+  // `./engine` import in session-lifecycle/runtime-restart-recovery.ts.
+  // Nothing needs it before this call, and only the flag-OFF restart path
+  // reaches it at all.
+  pushGovernance: async (input) =>
+    (await import('./sandbox-env-sync')).pushSessionAgentConfigToSandbox(input),
 };
 
 export type SessionConfigConvergenceOutcome =
@@ -136,8 +144,6 @@ export type SessionConfigConvergenceOutcome =
   | 'declined'
   /** The daemon predates config releases. It converges after its self-update. */
   | 'awaiting-daemon-update'
-  /** The session belongs to a previous repository generation. It keeps its config. */
-  | 'previous-repository'
   /**
    * `config_releases` is off for this project (or platform-wide). No
    * convergence runs; OpenCode keeps reading the session's workspace config
@@ -160,7 +166,6 @@ type Attempt =
   | { retry: 'transient' | 'slow'; as: SessionConfigConvergenceOutcome };
 
 function classify(result: SessionReloadResult): Attempt {
-  if (result.reason === PREVIOUS_REPOSITORY_REASON) return { done: 'previous-repository' };
   if (result.reason === 'no reachable sandbox') return { retry: 'transient', as: 'unreachable' };
   // Right after a wake opencode is not answering yet, so the reload cannot tell
   // whether a turn is running. Measured on the #7403 preview: unanswerable at
@@ -212,10 +217,13 @@ export interface ConvergeSessionConfigOptions {
    * `wake` (default): the resume and restart schedule, both clocks.
    * `trigger`: one attempt plus the quick ladder for a box that is not
    * answering yet. A busy session or an old daemon ends the attempt: the next
-   * turn end or base move triggers again. Used by the turn-end and base-move
-   * triggers, which fire often.
+   * turn end or base move triggers again. Used by the base-move trigger, which
+   * fires often.
+   * `turn-start`: exactly ONE attempt and zero sleeps. A prompt is waiting on
+   * this; it must never sit behind a retry ladder. A box that could not
+   * converge now converges at the next prompt, base move or wake.
    */
-  schedule?: 'wake' | 'trigger';
+  schedule?: 'wake' | 'trigger' | 'turn-start';
   /** Pull the session branch. Default true (the wake path). Triggers pass false. */
   refreshRepo?: boolean;
   /**
@@ -268,6 +276,8 @@ export async function convergeSessionConfig(
         }),
       );
       if ('done' in attempt) return attempt.done;
+      // One attempt, no sleeps: a prompt is waiting.
+      if (options.schedule === 'turn-start') return attempt.as;
       if (options.schedule === 'trigger' && attempt.retry === 'slow') return attempt.as;
       const delay =
         attempt.retry === 'transient' && soon < RETRY_SOON_MS.length

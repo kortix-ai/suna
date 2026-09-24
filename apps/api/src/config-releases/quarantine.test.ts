@@ -62,11 +62,12 @@ const deps = (): DesiredReleaseDeps => ({
     return releaseAt(commit);
   },
   resolveBase: async () => tip,
+  loadRoster: async () => ({ enabled: [], defaultAgent: null, readable: true, governed: false }),
 });
 
 const desired = (recordAssignment = true) =>
   resolveDesiredRelease(
-    { project, baseRef: 'main', variant: 'project', repositoryAccess: true, recordAssignment },
+    { project, baseRef: 'main', sessionAgent: null, repositoryAccess: true, recordAssignment },
     deps(),
   );
 

@@ -78,7 +78,7 @@ the run stays blocked. Use `answerQuestion`, `rejectQuestion`, or
 | `replayStartStash` | `true` | Replay a prompt saved before the session existed, once the session is ready. |
 | `enabled` | `true` | Set `false` to delay the hook, for example until a billing check passes. |
 | `chatEngine` | `true` | Set `false` if your app mounts its own chat surface for this session, to avoid syncing messages twice. |
-| `repositoryMode` | — | Set `'previous'` only after the user confirms they want to resume a preserved pre-replacement workspace. Git access remains disabled. |
+| `repositoryMode` | — | Telemetry only. A session created before a repository replacement starts and runs the project's current config without it. Only its `/workspace` clone still comes from the old repository, so a push from it needs a rebase first. |
 
 Sending is optimistic. `send` shows your message right away, then stream
 events fill in the agent's reply.

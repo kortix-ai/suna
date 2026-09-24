@@ -10,7 +10,6 @@ import {
   MAX_CONCURRENT_TRIGGERED_CONVERGENCES,
   MAX_SESSIONS_PER_BASE_MOVE,
   pushedBaseCandidates,
-  TURN_END_DEBOUNCE_MS,
   type ConvergenceTriggerDeps,
 } from '../config-convergence-triggers';
 import type { SessionConfigConvergenceOutcome } from '../session-config-convergence';
@@ -65,43 +64,6 @@ beforeEach(() => {
   listed = [];
   running = {};
   gate = null;
-});
-
-describe('turn-end trigger', () => {
-  test('converges once, debounced per session', async () => {
-    const t = createConvergenceTriggers(deps());
-    t.turnEnded('s1');
-    await advance(1_000);
-    t.turnEnded('s1');
-    t.turnEnded('s2');
-    await advance(TURN_END_DEBOUNCE_MS - 1);
-    expect(converged).toEqual([]);
-    await advance(1);
-    await t.settled();
-    expect(converged).toEqual([
-      { sessionId: 's1', context: 'turn-end' },
-      { sessionId: 's2', context: 'turn-end' },
-    ]);
-  });
-
-  test('a turn end during a running convergence re-runs it once afterwards', async () => {
-    let release!: () => void;
-    gate = new Promise((resolve) => (release = resolve));
-    const t = createConvergenceTriggers(deps());
-    t.turnEnded('s1');
-    await advance(TURN_END_DEBOUNCE_MS);
-    expect(converged.length).toBe(1);
-    t.turnEnded('s1');
-    await advance(TURN_END_DEBOUNCE_MS);
-    t.turnEnded('s1');
-    await advance(TURN_END_DEBOUNCE_MS);
-    expect(converged.length).toBe(1);
-    gate = null;
-    release();
-    await flush();
-    await t.settled();
-    expect(converged.length).toBe(2);
-  });
 });
 
 describe('base-move trigger', () => {

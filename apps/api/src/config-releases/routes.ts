@@ -31,13 +31,13 @@ import {
 import { projectsApp } from '../projects/lib/app';
 import { callerKortixSessionId } from '../projects/lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../projects/lib/sandbox-token-session';
-import { sessionUsesCurrentRepository } from '../projects/lib/repository-generation';
 import { repositoryAccessFromSessionMetadata } from '../projects/lib/session-sandbox-metadata';
 import { UUID_V4_REGEX } from '../projects/lib/serializers';
 import { db } from '../shared/db';
 import { requireFeatureFlag } from '../feature-flags/gate';
 import { CONFIG_RELEASES_FLAG } from './enabled';
-import { BaseRefUnresolvedError, configReleaseVariant, resolveDesiredRelease } from './desired';
+import { BaseRefUnresolvedError, resolveDesiredRelease } from './desired';
+import { ownerMayUseAgent, repointSessionAgentToDeclaredDefault } from './repoint';
 import { serveConfigArchive } from './serve-archive';
 
 const HEX40 = /^[0-9a-f]{40}$/;
@@ -52,18 +52,6 @@ interface ProjectRow {
 }
 
 /**
- * Spec, "Repository replacement": a session from a previous repository
- * generation receives neither a descriptor nor an archive. Both are built
- * from the project's current repository; the Git proxy already refuses such
- * a session (`checkGitProxySessionGeneration`). The daemon reads this exact
- * body as outcome `unchanged`.
- */
-export const PREVIOUS_REPOSITORY_BODY = {
-  error: 'Session belongs to a previous repository',
-  code: 'session_repository_changed',
-} as const;
-
-/**
  * CHOKEPOINT — the `config_releases` flag for both routes of this file
  * (docs/specs/config-releases.md, "Feature flag"). Off ⇒ `403`
  * `feature_disabled`, so no release is built, no archive is stored, and no
@@ -76,17 +64,12 @@ function configReleasesGate(c: Context, project: ProjectRow): Response | null {
   return requireFeatureFlag(c, project.metadata, CONFIG_RELEASES_FLAG);
 }
 
-function previousRepository(project: ProjectRow, session: SessionRow): boolean {
-  return !sessionUsesCurrentRepository(
-    project.metadata as Record<string, unknown> | null,
-    session.metadata as Record<string, unknown> | null,
-  );
-}
-
 interface SessionRow {
   baseRef: string | null;
   agentName: string | null;
   metadata: unknown;
+  /** `project_sessions.created_by` — whose access an agent re-point clears. */
+  createdBy: string | null;
 }
 
 type Resolved<T> = { ok: true; value: T } | { ok: false; status: 400 | 403 | 404; error: string };
@@ -126,6 +109,7 @@ async function sandboxSession(
       baseRef: projectSessions.baseRef,
       agentName: projectSessions.agentName,
       metadata: projectSessions.metadata,
+      createdBy: projectSessions.createdBy,
       projectId: projects.projectId,
       accountId: projects.accountId,
       repoUrl: projects.repoUrl,
@@ -162,7 +146,12 @@ async function sandboxSession(
     value: {
       sessionId: row.sessionId ?? sandboxId,
       project: { ...row, metadata: row.projectMetadata },
-      session: { baseRef: row.baseRef, agentName: row.agentName, metadata: row.metadata },
+      session: {
+        baseRef: row.baseRef,
+        agentName: row.agentName,
+        metadata: row.metadata,
+        createdBy: row.createdBy,
+      },
     },
   };
 }
@@ -231,17 +220,40 @@ projectsApp.openapi(
     // current tip for this session's variant, full stop: nothing the caller
     // sends can change which config it is assigned. Any body is ignored, so a
     // daemon built against an older shape of this route still converges.
-    if (previousRepository(project, session)) return c.json(PREVIOUS_REPOSITORY_BODY, 409);
-
+    //
+    // EVERY session of this project is served, including one created before
+    // the project replaced its repository. A release is the project's CURRENT
+    // config; the session's own `/workspace` clone is untouched by it and
+    // stays on the repository it was cloned from. Nothing else refuses such a
+    // session either — `sameRepository` (projects/lib/git.ts) compares the
+    // project row against ITSELF across an authorization, to bust the 30 s
+    // memo when a replacement lands mid-request. What is left is physical:
+    // that clone and the new origin hold unrelated histories, so Git itself
+    // refuses a push without a rebase.
     const baseRef = session.baseRef ?? project.defaultBranch;
     try {
+      // THE ONE WRITER of `project_sessions.agent_name` after create
+      // (config-releases/repoint.ts). Only the daemon's own request persists:
+      // a human read decides and reports the same answer without writing, so
+      // `GET /config` and the descriptor never disagree about `stale`.
+      const subject = {
+        projectId,
+        accountId: project.accountId,
+        sessionId,
+        ownerUserId: session.createdBy,
+      };
+      const isDaemon = isSessionSandboxCredential(c);
       const desired = await resolveDesiredRelease({
         project: gitProject(project),
         baseRef,
-        variant: configReleaseVariant(session),
+        sessionAgent: session.agentName,
         repositoryAccess: repositoryAccessFromSessionMetadata(session.metadata) && humanMayReadFiles,
         // Only the daemon's own request is an assignment. A human read is not.
-        recordAssignment: isSessionSandboxCredential(c),
+        recordAssignment: isDaemon,
+        ownerMayUseAgent: (agent) => ownerMayUseAgent(subject, agent),
+        ...(isDaemon
+          ? { persistRepoint: (from: string, to: string) => repointSessionAgentToDeclaredDefault(subject, from, to) }
+          : {}),
       });
       return c.json(desired.descriptor);
     } catch (error) {
@@ -277,9 +289,8 @@ projectsApp.openapi(
       const resolved = await sandboxSession(c, projectId, null);
       if (!resolved.ok) return c.json({ error: resolved.error }, resolved.status);
       // A session without repository access never receives a config archive.
-      if (previousRepository(resolved.value.project, resolved.value.session)) {
-        return c.json(PREVIOUS_REPOSITORY_BODY, 409);
-      }
+      // A previous-repository session DOES: the archive is the project's
+      // config dir, which is what every session of the project runs.
       if (!repositoryAccessFromSessionMetadata(resolved.value.session.metadata)) {
         return c.json({ error: 'repository access withheld' }, 403);
       }

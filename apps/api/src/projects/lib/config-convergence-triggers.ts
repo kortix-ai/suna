@@ -1,13 +1,21 @@
 /**
  * Convergence triggers (docs/specs/config-releases.md, "Convergence
- * triggers"): turn end, a base branch moved by an API write, and a push to
- * the base branch through the git proxy. Each one only schedules
- * `convergeSessionConfig`; none of them ends or delays a turn.
+ * triggers"): a base branch moved by an API write, and a push to the base
+ * branch through the git proxy. Each one only schedules
+ * `convergeSessionConfig`; neither ends or delays a turn.
+ *
+ * They are a WARM-UP, not the guarantee. The guarantee is
+ * `convergeBeforeTurnStart` (projects/lib/turn-start-convergence.ts): a prompt
+ * on a box that is behind converges before it runs. These triggers move a box
+ * onto the new config while nobody is waiting, so that gate finds it current.
+ *
+ * THE TURN-END TRIGGER IS GONE (2026-09-24). It was skipped whenever the turn
+ * end promoted a queued prompt (`r4.ts`, `promotedPromptId !== null`), so a
+ * session with a busy queue never converged at a turn end — the exact session
+ * that runs the most turns. Turn start converges every turn, including those,
+ * so the trigger bought nothing and hid a hole.
  *
  * Limits, per API process:
- * - Turn end: debounced per session, `TURN_END_DEBOUNCE_MS` after the last
- *   turn end. A session whose next turn already started is busy; the
- *   convergence returns at once and the next turn end tries again.
  * - Base move: at most one fan-out per `(project, branch)` per
  *   `BASE_MOVE_WINDOW_MS`. A move inside the window schedules one trailing
  *   fan-out at the window's end, so the last move is never lost. One fan-out
@@ -24,8 +32,8 @@ import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { convergeSessionConfig, type SessionConfigConvergenceOutcome } from './session-config-convergence';
+import { invalidateDesiredRelease } from './turn-start-convergence';
 
-export const TURN_END_DEBOUNCE_MS = 5_000;
 export const BASE_MOVE_WINDOW_MS = 30_000;
 export const MAX_SESSIONS_PER_BASE_MOVE = 200;
 export const MAX_CONCURRENT_TRIGGERED_CONVERGENCES = 8;
@@ -42,7 +50,6 @@ export interface ConvergenceTriggerDeps {
 }
 
 export interface ConvergenceTriggers {
-  turnEnded(sessionId: string): void;
   baseMoved(projectId: string, branch: string, context: string): void;
   /** Tests only: resolves when no convergence is queued or running. */
   settled(): Promise<void>;
@@ -114,19 +121,6 @@ export function createConvergenceTriggers(deps: ConvergenceTriggerDeps): Converg
     pump();
   };
 
-  const turnTimers = new Map<string, unknown>();
-  const turnEnded = (sessionId: string) => {
-    const previous = turnTimers.get(sessionId);
-    if (previous !== undefined) deps.clearTimer(previous);
-    turnTimers.set(
-      sessionId,
-      deps.setTimer(() => {
-        turnTimers.delete(sessionId);
-        enqueue(sessionId, 'turn-end');
-      }, TURN_END_DEBOUNCE_MS),
-    );
-  };
-
   const lastFanOut = new Map<string, number>();
   const trailing = new Map<string, unknown>();
   const fanOut = async (projectId: string, branch: string, context: string) => {
@@ -165,7 +159,6 @@ export function createConvergenceTriggers(deps: ConvergenceTriggerDeps): Converg
   };
 
   return {
-    turnEnded,
     baseMoved,
     settled: () =>
       active === 0 && queue.length === 0 ? Promise.resolve() : new Promise<void>((resolve) => waiters.push(resolve)),
@@ -185,11 +178,6 @@ export async function listRunningSessionsOnBase(projectId: string, branch: strin
       and(
         eq(projectSessions.projectId, projectId),
         eq(projectSessions.status, 'running'),
-        // Current repository generation only (spec, "Repository replacement").
-        // A replacement moves the base branch, and every session running at
-        // that moment belongs to the previous generation.
-        sql`(coalesce(${projects.metadata}->>'repository_generation', '') = ''
-          OR ${projectSessions.metadata}->>'repository_generation' = ${projects.metadata}->>'repository_generation')`,
         or(
           inArray(projectSessions.baseRef, [branch, `refs/heads/${branch}`]),
           and(sql`${projectSessions.baseRef} IS NULL`, eq(projects.defaultBranch, branch)),
@@ -216,15 +204,6 @@ function productionTriggers(): ConvergenceTriggers {
   return triggers;
 }
 
-/** A session's turn ended. Never throws, never waits. */
-export function notifySessionTurnEnded(sessionId: string): void {
-  try {
-    productionTriggers().turnEnded(sessionId);
-  } catch {
-    // A trigger must never fail the turn-end relay.
-  }
-}
-
 /**
  * An API write or a proxied push moved `ref` in the project. Sessions whose
  * base ref is that branch converge; every other session is untouched.
@@ -232,6 +211,10 @@ export function notifySessionTurnEnded(sessionId: string): void {
  */
 export function notifyBaseBranchMoved(projectId: string, ref: string, context: string): void {
   try {
+    // FIRST, and unconditionally: the turn-start gate must not answer a turn
+    // from a desired release resolved before this move. The fan-out below is
+    // capped and debounced; this is neither, and it is a Map delete.
+    invalidateDesiredRelease(projectId);
     productionTriggers().baseMoved(projectId, ref, context);
   } catch {
     // A trigger must never fail the write that moved the branch.

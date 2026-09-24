@@ -46,6 +46,42 @@ identifiers (commit and compiled etag) applied in two steps.
 7. The whole feature is behind one per-project flag with an operator kill
    switch, so it can be rolled out and switched off without a revert.
 
+## The contract
+
+Ten statements. Everything below implements them. Decided 2026-09-24.
+
+1. **C1.** Under the `config_releases` flag, ONE function decides what OpenCode
+   runs: resolve the project's current release, ensure it is present and
+   verified on disk, point the boot link at it, start OpenCode, prove it serves,
+   record it.
+2. **C2.** "Proven" means OpenCode answers its own session API on the candidate
+   directory. It does NOT mean the box is ready.
+3. **C3.** A box is never reportable as ready unless it runs a proven config.
+4. **C4.** `/workspace` is never read to decide config. Missing, empty, foreign
+   or broken changes nothing.
+5. **C5.** Every session is treated identically: no repository generation, no
+   session-files, no modes. Only physically-true refusals remain, in plain
+   words.
+6. **C6.** No timer decides the config. The release is the first candidate and
+   the code waits for it.
+7. **C7.** Two valves, the last lines of the same straight path. Each one
+   shouts: a reason and the failed release, visible in health, `GET /config`,
+   the CLI and the web.
+   - A. The config is present but does not load: take the next candidate, the
+     last proven release, then the image default.
+   - B. The store or the API is unreachable: run the config already on disk; with
+     none, the image default.
+8. **C8.** Flag off is a single marked early return at the top. The behaviour is
+   the pre-PR behaviour.
+9. **C9.** A prompt on a box that is behind converges first, then runs. See
+   "Turn-start convergence".
+10. **C10.** A session whose agent the manifest no longer declares is
+    RE-POINTED once to the project's declared default agent: audited, stated in
+    the session, and only when the session's owner may use that agent.
+    Otherwise it keeps no access and says why. The INC-2026-09-15 rule is
+    untouched: an undeclared name is never granted anything. See "Dropped
+    agents".
+
 ## Non-goals
 
 - A per-session config policy. There is no "run my own files" mode; see
@@ -71,10 +107,13 @@ identifiers (commit and compiled etag) applied in two steps.
 | 2026-09-24 | Reversed: ONE object store for the whole API (`object-store/s3.ts`, the AWS SDK). Config archives are a configured target of it — AWS S3 on dev/staging/prod, Supabase Storage's S3 PROTOCOL endpoint everywhere else. The bespoke Supabase HTTP client and its runtime bucket creation are deleted. |
 | 2026-09-21 | A session without repository access never receives a config archive. |
 | 2026-09-22 | A session from a previous repository generation keeps its running config. It never receives a release built from the current repository. |
+| 2026-09-24 | Reversed: a session created before a repository replacement receives the project's CURRENT config release and converges like any other session. A release replaces the read-only config store only, never the session's `/workspace` clone. The six API refusals are deleted. No API route refuses such a session; the only remaining consequence is that its old clone and the project's new origin hold unrelated Git histories. |
 | 2026-09-23 | The whole feature is behind the per-project `config_releases` flag, ON by default, with the operator kill switch `CONFIG_RELEASES_ENABLED`. |
 | 2026-09-23 | `session-files` mode is removed. A session that edits its config dir under `/workspace` still runs the base branch's release; the edit reaches the box by being pushed. |
 | 2026-09-23 | `/workspace` is not a step in the boot fallback chain while the flag is on. The chain is: desired release, last proven release, image default. |
 | 2026-09-23 | The flag's authority is the boot/start of the box. It is evaluated wherever the daemon asks the API what to run. |
+| 2026-09-24 | A session whose agent the manifest no longer declares is re-pointed once to the project's declared default agent, when the session's owner may use that agent. Otherwise the session runs the `none` variant and holds no agent access. `project_sessions.agent_name` gets its one writer after create. |
+| 2026-09-24 | Convergence runs at the START of a turn, not at its end. The turn-end trigger is deleted. |
 
 ## Terms
 
@@ -97,6 +136,7 @@ Use these terms exactly. Do not use synonyms.
 | fallback | The daemon runs a config other than the desired release because it failed. |
 | quarantine | A release recorded as failed. It is not assigned again until the base branch moves. |
 | session notice | The line the daemon puts in the agent's system context naming the commit its config comes from. |
+| agent re-point | Moving `project_sessions.agent_name` onto the project's declared default agent, because the manifest no longer declares the name it held. |
 | store | The storage interface for config archives. |
 
 ## Layers and owners
@@ -114,10 +154,19 @@ Use these terms exactly. Do not use synonyms.
 - The config archive: every file in the config dir at the commit. Symlinks keep
   their target. Submodules and Git LFS content are not supported. A tree entry
   of type `commit` is skipped.
-- The compiled governance for the session's variant:
-  - `project`: `resolveCompiledAgentConfigForSession`, all agents.
-  - `agent:<name>`: `resolveSelectedAgentConfigForSession`, one agent. Used when
-    the session has a selected agent and no repository-access metadata.
+- The compiled governance for the session's variant
+  (`releaseVariantFor(agent, repositoryAccess)`, `config-releases/session-agent.ts`):
+  - `project`: `resolveCompiledAgentConfigForSession`, all agents. Every session
+    with repository access gets this variant; it already holds the files.
+  - `agent:<name>`: `resolveSelectedAgentConfigForSession`, one agent. A session
+    without repository access and with a usable agent. Exactly one agent
+    compiles, so nothing else is disclosed.
+  - `none`: an empty OpenCode config, `EMPTY_GOVERNANCE = '{}'`. A session
+    without repository access and without a usable agent; see "Dropped agents".
+    Its etag is non-null, so `release_id` stays non-null and the box still
+    boots. It is NOT "the default agent minus the grant": compiling the default
+    agent for an owner who may not run it would hand that owner the agent's
+    prompt and model through the box.
 - The archive is shared across variants and across commits with the same config
   tree ID. The compiled governance is small and travels in the descriptor.
 
@@ -362,9 +411,17 @@ today.
   "files": [["agents/kortix.md", "100644", "<blob id>"]],
   "compiled_governance": "<json string or null>",
   "compiled_governance_etag": "<16 hex or null>",
-  "reason": null
+  "reason": null,
+  "agent_repoint": null
 }
 ```
+
+`agent_repoint` is `{ from, to, applied, reason }` or `null`, and it is set only
+when the manifest dropped the session's agent (see "Dropped agents"). It is
+per-SESSION, not per-release: two sessions can share one release ID and only one
+of them be re-pointed. So `toDescriptor` attaches it, it is not part of
+`ConfigRelease` — which is cached per project, commit and variant — and it is
+not part of `release_id`.
 
 `mode` is always `follow-base`. It is one member on purpose: there is no
 per-session config policy, so a session that edited its config dir under
@@ -378,6 +435,11 @@ The commit a release is built from is decided in ONE place:
 `resolveDesiredRelease` (`apps/api/src/config-releases/desired.ts`), which
 resolves `input.baseRef` — the session's base ref, else the project's default
 branch — to its tip on every call.
+
+The same function resolves the session's AGENT at that commit, and derives the
+variant from it with `releaseVariantFor`. It takes `sessionAgent` and
+`repositoryAccess`, never a pre-computed variant, so no caller can assign a
+variant of its own. See "Dropped agents".
 
 **The policy is: the base branch tip at this boot/start.** A box asks on every
 boot, so it always receives the tip of that moment, never a stale release. The
@@ -440,9 +502,26 @@ Add a `release` object. Keep every existing field.
     "proven": true,
     "fallback_reason": null,
     "failed_release_id": null
+  },
+  "agent_repoint": {
+    "from": "reviewer",
+    "to": "build",
+    "applied": true,
+    "reason": "<one finished sentence>"
   }
 }
 ```
+
+`agent_repoint` is top-level and present only when the manifest dropped the
+session's agent. It is the same object the descriptor carries. The route omits
+the key otherwise. The web header and `kortix sessions reload --status` read it
+to say why a session lost its agent, instead of showing a healthy box that
+answers nothing.
+
+This read resolves the desired release through the same `resolveDesiredRelease`
+as the descriptor request, but it passes no `persistRepoint`. A human read
+therefore decides and reports the same answer without writing, so a read and an
+assignment can never disagree about `stale`.
 
 For a capable daemon, `stale` is `running_release_id !== desired_release_id`.
 For an old daemon, `stale` keeps the current etag and config-dir logic. `stale`
@@ -699,38 +778,176 @@ A project can replace its repository (`repository-replacement.ts`). The
 replacement writes a new `repoUrl`, a new default branch, and a new
 `metadata.repository_generation`, then calls `invalidateProjectMirror`. Every
 existing session keeps the previous generation in its own metadata
-(`sessions.ts`). Such a session is a previous-repository session:
+(`sessions.ts`).
 
-- `/start` rejects it unless the caller passes `repositoryMode: 'previous'` and
-  a preserved runtime exists (`sessionRepositoryStartDecision`).
-- The Git proxy rejects its token with `409 Session belongs to a previous
-  repository` (`checkGitProxySessionGeneration`).
+**A replacement freezes nothing.** This is C5. A session created before the
+replacement receives the project's CURRENT config release, downloads the
+archive, and converges, exactly like any other session. `GET /config` reports
+`stale` by the ordinary release-ID compare.
+
+The reason is what a release is. A release replaces the read-only config store
+at `/opt/kortix/config/<release_id>`. It never touches `/workspace`, and
+`/workspace` is never read to decide config (C4). So a session's clone stays on
+the repository it was cloned from, whatever release the box runs.
+
+**No API route refuses a previous-generation session any more.**
+`sessionUsesCurrentRepository` (`projects/lib/repository-generation.ts:9`)
+survives at exactly one production call site, `projects/routes/r8.ts:131`, and
+only to fill the `repositoryMode` telemetry field on `/start`
+(`r8.ts:186-190`). `/start` runs the ordinary lifecycle.
+
+What `metadata.repository_generation` still decides is the Git proxy's view of
+the PROJECT, not of the session. `sameRepository`
+(`projects/lib/git.ts:948-951`) compares the project row an authorization was
+computed against with the project row now. A change to `repoUrl` or to the
+generation drops the 30 s authorization memo (`git.ts:922`) and the 30 s
+upstream memo (`git-proxy/index.ts:166`), and a replacement that lands
+mid-authorization answers `409 Repository changed during authorization; retry
+the request`. The proxy therefore serves the project's CURRENT repository to
+every session token, an old session's included.
+
+The divergence that remains is physical, and it belongs to Git, not to the API.
+An old session's `/workspace` clone holds the previous repository's history; the
+origin now serves an unrelated one, so a fetch or a push from that clone fails
+in Git. The web shows such a session a notice about its own clone. That is the
+only true consequence of a replacement, and the API states nothing else.
+
+Six API refusals are deleted (2026-09-24):
+
+1. The `409 session_repository_changed` on `POST .../config-release`, with the
+   `PREVIOUS_REPOSITORY_BODY` constant and the `previousRepository()` helper
+   (`config-releases/routes.ts`).
+2. The same `409` on `GET .../config-archives/:configTreeId`.
+3. The early return with `reason: PREVIOUS_REPOSITORY_REASON` in
+   `session-reload.ts`, with that constant, the `usesCurrentRepository` dep, and
+   `sessionUsesCurrentRepositoryById`.
+4. The terminal outcome `'previous-repository'` in
+   `session-config-convergence.ts`.
+5. The SQL predicate in `listRunningSessionsOnBase` that excluded
+   previous-generation sessions from a base-move fan-out
+   (`config-convergence-triggers.ts`).
+6. The early return that reported `stale: false` and `latest_etag: null` in
+   `projects/routes/session-config.ts`.
+
+The base-move fan-out after a replacement needs no pacing, because it lists
+nothing. `persistProjectRepositoryReplacement` refuses to run while any session
+of the project is `queued`, `branching`, `provisioning` or `running`, and
+`listRunningSessionsOnBase` selects only `status = 'running'` sessions with an
+ACTIVE sandbox. At the moment of a replacement the fan-out therefore lists zero
+sessions.
 
 The sandbox side needs no change: the platform never wrote `/workspace`, and a
-box boots from its release store with its local manifest, without the API.
+box boots from its release store with its local manifest.
 
-The API side must gate. Releases are built from the project's current
-repository, so an ungated descriptor would give a previous-repository session
-the new repository's config and files. That is wrong behaviour, and it is a
-disclosure the Git proxy already forbids. Rules:
+## Dropped agents
 
-1. `POST .../config-release` answers `409` with body
-   `{ "error": "Session belongs to a previous repository", "code": "session_repository_changed" }`
-   when the session's generation differs from the project's. Use
-   `sessionUsesCurrentRepository`.
-2. `GET .../config-archives/{tree}` answers the same `409` to a session token
-   from a previous generation.
-3. No trigger converges a previous-repository session. This includes the
-   fan-out after the replacement's own `invalidateProjectMirror`, and a resume
-   with `repositoryMode: 'previous'`.
-4. `GET /config` for such a session returns `stale: false` and a `release`
-   block that reports the running state. No update applies to a frozen session.
-5. The daemon treats a `409` with code `session_repository_changed` as outcome
-   `unchanged` with that reason. It sets no `fallback_reason` and quarantines
-   nothing. The running config stays.
+C10. `project_sessions.agent_name` is written at create. A change request that
+removes or renames an agent leaves every session that named it pointing at a
+name the manifest no longer declares.
 
-A session created after the replacement has the new generation and converges
-normally against the new repository.
+Before this change that session was dead twice over:
+
+- The `agent:<name>` release variant could not compile.
+  `compileSelectedAgentConfig` threw "Agent … is not declared", the builder
+  returned `reason: 'compiled governance failed'` and `release_id: null`, and
+  the box had no release to converge onto at all.
+- `grantFromLoadedAgents` default-denied the name, so the session's token
+  carried no CLI actions, no connectors, and no secrets.
+
+**The decision: re-point, do not fake a grant.** The session becomes the
+project's declared default agent.
+
+### The parts
+
+| File | What it owns |
+|---|---|
+| `config-releases/session-agent.ts` | The ONE pure resolver `resolveSessionReleaseAgent(storedAgent, roster)`. It answers `declared`, `repoint` or `orphaned`. `releaseVariantFor(agent, repositoryAccess)` returns `project`, `agent:<name>` or `none`. |
+| `config-releases/agent-roster.ts` | `loadAgentRosterAtCommit`. It reads the declared roster at the release's own COMMIT, through the same `readManifestFromRepo` the compile path uses. Memoized 60 s per (project, commit). |
+| `config-releases/repoint.ts` | `ownerMayUseAgent()` and `repointSessionAgentToDeclaredDefault()`, THE ONE WRITER of `project_sessions.agent_name` after create. |
+| `config-releases/desired.ts` | `resolveDesiredRelease` takes `sessionAgent` and `repositoryAccess`, plus `ownerMayUseAgent` and `persistRepoint`. `configReleaseVariant()` is deleted. |
+
+The roster is read at the release's own commit, not at the project's default
+branch. `loadProjectAgents` reads the default branch; a release is built at the
+session's base ref. Deciding on the wrong bytes would re-point a session on a
+feature branch by `main`'s manifest.
+
+The resolver never re-points in four cases. Each one is a case where a drop was
+not proven:
+
+1. The manifest could not be read or parsed (`readable: false`).
+2. The project declares no agents at all (`governed: false`).
+3. The stored name is empty or the `default` sentinel. The column already says
+   "whatever the default is", so resolving it is not a drop.
+4. The name is the platform meta coordinator (`isMetaAgentName`) or an OpenCode
+   built-in (`OPENCODE_BUILTIN_AGENT_NAMES`). Neither is ever declared by a
+   manifest, so neither was ever dropped.
+
+### Who writes, and when
+
+`repointSessionAgentToDeclaredDefault` is called from exactly one production
+site: `config-releases/routes.ts`, on the daemon's own descriptor request. Only
+that request supplies `persistRepoint`. A human `GET /config` read decides and
+reports the same answer without writing, so the two can never disagree about
+`stale`.
+
+The write carries `WHERE agent_name = <from>`, so a second writer is a no-op
+instead of a second audit row. It emits one audit event
+`SESSION_AGENT_REPOINTED` on `resource_type project_session`, with `before` and
+`after`. It is idempotent: after the write the manifest declares the column's
+name, the decision resolves to `declared`, and no later request writes again.
+
+The IAM question is asked about the SESSION'S OWNER
+(`project_sessions.created_by`), not the caller. The caller on that path is the
+sandbox credential, which carries no IAM identity by construction.
+`ownerMayUseAgent` is the same `filterAccessibleObjects` fold the composer's
+agent list and `resolveAndAuthorizeAgent` use, so what the picker offers, what a
+launch accepts, and what a re-point may move a session onto cannot drift.
+
+### Outcomes
+
+| Condition | Column | Variant, with / without repository access | `agent_repoint` | Audit |
+|---|---|---|---|---|
+| The manifest declares the stored agent | unchanged | `project` / `agent:<name>` | `null` | none |
+| Dropped, a declared default exists, the owner may use it | re-pointed to the default, once | `project` / `agent:<default>` | `{ from, to, applied: true, reason }` | one `SESSION_AGENT_REPOINTED` row |
+| Dropped, a declared default exists, the owner may NOT use it | unchanged | `project` / `none` | `{ from, to, applied: false, reason }` | none |
+| Dropped, the project declares no default | unchanged | `project` / `none` | `{ from, to: null, applied: false, reason }` | none |
+
+In every row `release_id` is non-null and the box boots. `reason` is one
+finished sentence that names the dropped agent and what the user does next.
+
+The variant is `project` for every session WITH repository access, whatever the
+agent resolves to. That session already holds the files, so compiling every
+declared agent discloses nothing new. `none` is what a session WITHOUT
+repository access gets when it has no usable agent.
+
+The variant is not the access. Which actions, connectors and secrets the
+session's token carries is decided by `grantFromLoadedAgents` from
+`project_sessions.agent_name`, unchanged by this spec. A session that was not
+re-pointed still holds the name the manifest does not declare, and that name is
+still granted nothing.
+
+**The daemon renders `reason` verbatim.** It goes into the session notice
+(`config-release/notice.ts`), composed into OpenCode `instructions`
+(`lifecycle.ts:399-407`). The daemon adds no wording of its own. Lane D owns
+that half.
+
+### Why this does not weaken INC-2026-09-15
+
+That incident's rule is: an agent name a project's own manifest does not declare
+NEVER receives anything. It is untouched. `grantFromLoadedAgents`
+(`projects/agents.ts`) and `isLaunchableAgentName` keep their shape and still
+deny-all such a name. Nothing here grants an undeclared name anything.
+
+What changes is which agent the session IS. It only ever moves to a name the
+CURRENT manifest declares and enables, only after an IAM check on the session's
+owner, and only by writing the column every other path already reads. After the
+write the grant is resolved from a declared name by the same unchanged
+resolver, exactly as if the session had been created with it.
+
+The branch lives in the one pure resolver that every release path shares. It is
+deliberately NOT at a mint site. `remintGrantForAgentSwitch` re-resolves the
+running agent's grant on every prompt and would erase a mint-local special case.
+That is the 2026-08-13 platform-principal lesson.
 
 ## Feature flag
 
@@ -761,7 +978,7 @@ start — fresh boot, restart, resume — never once at session creation. Flippi
 it takes effect on the NEXT boot or start of that session's box, with no
 redeploy and no session deletion. A running box keeps working until then.
 
-The mid-session convergence triggers (turn end, base-branch moves, git-proxy
+The mid-session convergence triggers (turn start, base-branch moves, git-proxy
 push, the reload) follow the same project flag, because they are the same
 behaviour. But the boot/start decision is the authority, and the one chokepoint
 the boot path reads is the **descriptor request** (`fetchBootRelease`,
@@ -780,10 +997,12 @@ One per server path. There is no check sprinkled anywhere else.
 | 4 | Every convergence trigger | `apps/api/src/projects/lib/session-config-convergence.ts` `convergeSessionConfig` | Outcome `disabled`; nothing reaches the box. A RESTART still pushes the compiled governance, as it did before config releases (`legacyGovernancePush`) |
 | 5 | `GET /config` | `apps/api/src/projects/routes/session-config.ts` | No `release` block; no desired release is built; `stale` is the pre-release etag compare alone |
 | 6 | Boot and convergence in the box | `harness/open-code/config-release.ts` `revertToPreReleaseConfig`, `fetchBootRelease`, `resolveBootConfig` | OpenCode reads the workspace config dir; the boot pointer is ignored and cleared |
+| 7 | Turn start | `apps/api/src/projects/lib/turn-start-convergence.ts` `convergeBeforeTurnStart` | Decision `skipped`. The gate resolves no release and makes no call, so a turn on a flag-off project pays nothing |
 
-Resume, restart, turn end, base-branch writes (`branches.ts`, `r9.ts`,
+Resume, restart, turn start, base-branch writes (`branches.ts`, `r9.ts`,
 `triggers.ts`, change-request merge) and git-proxy pushes all reach
-`convergeSessionConfig`, so chokepoint 4 covers every one of them.
+`convergeSessionConfig`, so chokepoint 4 covers every one of them. Chokepoint 7
+exists on top of it so a flag-off turn pays no resolve at all.
 
 ### Behaviour when the flag is OFF
 
@@ -845,15 +1064,84 @@ the contract schema and its two test copies, the SDK union and
 
 | Trigger | Owner | Notes |
 |---|---|---|
+| Turn start | API | The gate. One attempt, no sleeps. See "Turn-start convergence". |
 | Box boot | Daemon | After ready |
 | Resume, restart | API | Exists: `scheduleSessionConfigConvergence` |
 | Reload button, `kortix sessions reload` | API | Exists: `reloadSessionConfig` |
-| Turn end | API | New. Debounced per session. |
-| Base branch moved by an API write | API | New. `branches.ts`, `r9.ts`, `triggers.ts`, change-request merge. Fan out to idle running sessions, rate-limited. |
-| Push to the base branch through the git proxy | API | New hook |
+| Base branch moved by an API write | API | `branches.ts`, `r9.ts`, `triggers.ts`, change-request merge. Fan out to idle running sessions, rate-limited. |
+| Push to the base branch through the git proxy | API | Hook on the proxy's push path. |
 | Monitor box started | — | Not a trigger. A monitor box runs no OpenCode (`monitor-mode.ts`) and has no session row. It restarts on manifest-revision drift (`monitor-box-core.ts`). |
 
-Never end a turn. A running turn defers convergence to the turn-end trigger.
+Turn start is the guarantee. Every other trigger is a WARM-UP: it moves the box
+onto the current release while nobody waits, so the turn-start gate finds the
+box already current and costs the turn nothing.
+
+Never end a turn. A running turn blocks the convergence; the convergence never
+ends the turn. The next trigger, or the next turn start, retries.
+
+**The turn-end trigger is deleted** (2026-09-24): `notifySessionTurnEnded`,
+`TURN_END_DEBOUNCE_MS`, `turnEnded`, and the call site in
+`projects/routes/r4.ts`. It was skipped whenever the turn end promoted a queued
+prompt, so a session with a busy queue never converged at a turn end — the exact
+session that runs the most turns. Turn start converges every turn, including
+those.
+
+## Turn-start convergence
+
+C9. A prompt on a box that is behind converges first, then runs.
+`convergeBeforeTurnStart` (`projects/lib/turn-start-convergence.ts`) is that
+gate.
+
+### Where it sits
+
+It is called from `forwardToSandbox` (`sandbox-proxy/routes/preview.ts`), the
+one funnel every turn passes through: the HTTP proxy calls it, and so does the
+server-side prompt queue (`session-lifecycle/engine.ts`).
+
+The gate is `isTurnStartRequest(port, method, path)`
+(`projects/sandbox-deadline-policy.ts`), so the OpenCode ports 4096 and 4097 are
+covered as well as 8000. `shouldSyncProjectEnvBeforeProxy` is port-8000-only and
+would have left a hole exactly where a verified reload had swapped which half is
+live.
+
+It runs BEFORE `claimPromptDelivery` and before the first upstream fetch. At the
+moment OpenCode is swapped, no prompt of this request is claimed and none is
+delivered, so a swap can lose neither a prompt nor an `Idempotency-Key`. A turn
+that IS running blocks the convergence instead of being ended by it.
+
+No lost-turn recovery is wired here.
+`settleTurnsLostToRuntimeRestart` repairs turns lost to a PROVIDER restart. It
+is reachable from `sandbox-proxy/backend.ts` and `projects/routes/shared.ts`
+only, and by construction no turn of this request is open yet.
+
+### What it costs a current box
+
+Zero network calls. Two memos carry it:
+
+1. The desired release per `(project, base ref, session agent, repository
+   access)`, for `DESIRED_TTL_MS` = 10 s. Without it every prompt would pay
+   `resolveDesiredRelease`, which calls `invalidateProjectMirror`
+   unconditionally and then a `git rev-parse` plus a manifest read. The key
+   carries no session id, so every session of a project on the same base ref,
+   agent and access shares one resolve.
+2. The release the API last SAW the box running, learned in
+   `recordDaemonConfigReport` (`config-releases/quarantine.ts`) — the one place
+   a daemon report reaches the API — and held for `RUNNING_TTL_MS` = 10 min.
+
+The two agree: the turn proceeds, decision `current`. They disagree, or the
+running release is unknown after an API restart: the prompt waits for one
+convergence attempt, decision `converged`. The flag is off or the session is
+gone: decision `skipped`, and the gate reads nothing further.
+
+`convergeBeforeTurnStart` never throws. A turn is never refused because this
+could not run.
+
+### One attempt, not a ladder
+
+`convergeSessionConfig` gains the schedule `'turn-start'`: exactly one attempt,
+zero sleeps. A prompt must never wait behind a retry ladder. A box that cannot
+converge now converges at the next prompt, the next base move, or the next
+wake.
 
 ## Web
 
@@ -864,6 +1152,7 @@ Header states:
 | Current | not stale, no fallback | nothing |
 | Update available | `stale: true` | existing badge |
 | Fallback | `fallback_reason` set | error: the reason and the release now serving |
+| Agent re-pointed | `agent_repoint` present | `agent_repoint.reason`, verbatim. `applied: false` is an error state: the session holds no agent access. |
 
 There is no "runs its own config" state. A session that edited its config dir
 under `/workspace` still runs the base branch's release, so the header shows
@@ -885,11 +1174,13 @@ Load `kortix-brand-guidelines` and `kortix-design-system` before any
 |---|---|
 | Base branch has no config dir | No release. Source `image-default`. |
 | Session without repository access | No archive. Governance only. Source `image-default`. |
-| Project repository replaced | Previous-generation sessions keep their running config. Descriptor and archive routes answer `409`. No trigger reaches them. New sessions converge on the new repository. |
+| Project repository replaced | Every session, old generation or new, receives the project's current release and converges. No API route refuses one. Its old `/workspace` clone and the new origin hold unrelated Git histories, so Git itself refuses a fetch or a push from it. |
+| Manifest no longer declares the session's agent | Re-pointed once to the declared default when the owner may use it. Otherwise variant `none`, no agent access, and `agent_repoint.reason` says why. |
+| Prompt on a box that is behind | One convergence attempt first, then the turn. See "Turn-start convergence". |
 | `.gitattributes` with `export-ignore` or `export-subst` in the config dir | Neutralised at build. Archive holds every committed file, unmodified. |
 | Manifest changes `opencode.config_dir` | The new path resolves a new tree. New release ID. |
 | Config dir over 4 MiB | No release. `reason` set. Running config kept. |
-| Session mid-turn | Deferred to turn end. |
+| Session mid-turn | The convergence is refused, never the turn. Retried at the next turn start or trigger. |
 | Store unavailable | API streams the archive it built from the mirror. |
 | API unreachable from the box | Running config kept. Next trigger retries. |
 | Old daemon | Runtime refresh only. Converges after self-update. |
@@ -917,7 +1208,8 @@ applies.
    `proven`, fallback chain, box quarantine, health block. Remove the
    git-based code paths.
 6. **Quarantine across the project.** Migration and assignment rule.
-7. **Triggers.** Turn end, API-observed base moves, git-proxy push, monitor box.
+7. **Triggers.** Turn start, API-observed base moves, git-proxy push, monitor
+   box.
 8. **Fresh boot from a release.** Descriptor at boot, parallel extraction,
    early spawn on the release. Measure.
 9. **Web states.** Fallback error. Playwright journey.
@@ -935,9 +1227,11 @@ applies.
 - Unit: store, builder, capability gate, apply sequence, proven check, fallback
   chain, quarantine, the feature flag and its transitions, the session notice.
   Real Git repositories and real archives, no mocked Git.
-- REST flows `CFG-1` … `CFG-8` (`tests/spec/end-to-end.md`), on the local
-  profile AND a deployed target. `CFG-8` is the flag: off, back on, and the
-  ledger untouched while off.
+- REST flows `CFG-1` … `CFG-10` (`tests/spec/end-to-end.md`), on the local
+  profile AND a deployed target. `CFG-4` is the dropped agent, `CFG-7` the
+  repository replacement, `CFG-8` the flag (off, back on, and the ledger
+  untouched while off), `CFG-9` turn-start convergence, `CFG-10` the degenerate
+  clones.
 - The end-to-end script (`converge-e2e.sh`) keeps its checks and adds:
   1. The descriptor's release ID equals `health.config.release_id` after
      convergence.
