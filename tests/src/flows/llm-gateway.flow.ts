@@ -599,22 +599,14 @@ flow('GW-MANAGED-1', {
   });
 
   let managed: string[] = [];
-  await ctx.step('the picker offers Claude Opus 5.5, GPT-6 Sol and GPT-6 Luna as image-capable managed models', async () => {
+  await ctx.step('the picker offers managed models and no OpenAI or Anthropic model under Kortix', async () => {
     const picker = await owner.get('/v1/projects/:projectId/model-picker', { params });
     picker.status(200);
-    const models = picker.json<{ models: Record<string, { name?: string; attachment?: boolean; enabled?: boolean }> }>()
-      .models;
+    const models = picker.json<{ models: Record<string, { name?: string }> }>().models;
     managed = Object.keys(models).filter((id) => !id.includes('/'));
-    for (const [id, name] of [
-      ['claude-opus-5.5', 'Claude Opus 5.5'],
-      ['gpt-6-sol', 'GPT-6 Sol'],
-      ['gpt-6-luna', 'GPT-6 Luna'],
-    ] as const) {
-      const model = models[id];
-      if (!model || model.name !== name || model.attachment !== true || model.enabled === false) {
-        throw new Error(`picker does not offer ${id} as an enabled image-capable managed model: ${JSON.stringify(model)}`);
-      }
-    }
+    if (managed.length === 0) throw new Error('picker offers no managed model');
+    const vendor = managed.filter((id) => /^(claude|gpt)-/.test(id) || /^(Claude|GPT)\b/.test(models[id]?.name ?? ''));
+    if (vendor.length > 0) throw new Error(`picker offers OpenAI or Anthropic models as managed: ${vendor.join(', ')}`);
   });
 
   // An upstream 429 is capacity, not configuration: the route exists and the

@@ -100,6 +100,7 @@ const RETIRED_MANAGED_MODEL_IDS = new Set([
   'morph-glm53-744b', 'morph-dsv4flash', 'morph-kimik3',
   'morph-kimik3-fast', 'morph-dsv41flash',
   'deepseek-v4-flash-0731', 'kimi-k3-fast',
+  'claude-opus-5.5', 'gpt-6-sol', 'gpt-6-luna',
 ]);
 
 const LEGACY_MANAGED_IDS: Record<string, string> = {

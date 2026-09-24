@@ -486,6 +486,8 @@ export function pricingRefLookupCandidates(pricingRef: string): string[] {
 // Managed IDs are bare gateway model IDs. OpenCode uses `kortix/<id>` so the
 // picker shows Kortix while the gateway routes through ZDR OpenRouter endpoints.
 // Vision is explicit per model so the picker and runtime reject image input for text-only models.
+// OpenAI and Anthropic models are not managed. Members reach them through their
+// ChatGPT plan (`codex/<id>`) or a BYOK key; managed.test.ts enforces this.
 export const MANAGED_MODELS: ManagedModel[] = [
   {
     id: 'deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', upstreamModelId: 'deepseek/deepseek-v4.1-flash',
@@ -509,46 +511,6 @@ export const MANAGED_MODELS: ManagedModel[] = [
     pricing: { inputPerMillion: 2.5, cachedInputPerMillion: 0.25, outputPerMillion: 10.95 },
     tier: 'flagship', vision: true, limit: { context: 1_048_576, output: 16_384 },
     openrouterProvider: { only: ['wafer'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
-  },
-  // Released 2026-09-22. Each pin is the model's US endpoint in OpenRouter's ZDR
-  // feed, and each rate is that endpoint's price, not the vendor list price
-  // (Azure US and Bedrock US add 10%). On 2026-09-23 every pin answered a text,
-  // an image and a tool-call request with the deployment key. After the first
-  // 272,000 prompt tokens, GPT-6 bills its higher tier.
-  {
-    id: 'claude-opus-5.5', name: 'Claude Opus 5.5', upstreamModelId: 'anthropic/claude-opus-5.5',
-    transport: 'openrouter', pricingRef: 'openrouter/anthropic/claude-opus-5.5',
-    pricing: { inputPerMillion: 4.4, cachedInputPerMillion: 0.22, cacheWritePerMillion: 5.5, outputPerMillion: 22 },
-    tier: 'flagship', vision: true, limit: { context: 1_000_000, output: 128_000 },
-    openrouterProvider: {
-      only: ['amazon-bedrock/us-east-1'], allow_fallbacks: false, zdr: true, data_collection: 'deny',
-    },
-  },
-  {
-    id: 'gpt-6-sol', name: 'GPT-6 Sol', upstreamModelId: 'openai/gpt-6-sol',
-    transport: 'openrouter', pricingRef: 'openrouter/openai/gpt-6-sol',
-    pricing: {
-      inputPerMillion: 2.2, cachedInputPerMillion: 0.22, cacheWritePerMillion: 2.75, outputPerMillion: 11,
-      contextOver200k: {
-        contextThreshold: 272_000, inputPerMillion: 4.4, cachedInputPerMillion: 0.44,
-        cacheWritePerMillion: 5.5, outputPerMillion: 16.5,
-      },
-    },
-    tier: 'balanced', vision: true, limit: { context: 1_050_000, output: 128_000 },
-    openrouterProvider: { only: ['azure/us'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
-  },
-  {
-    id: 'gpt-6-luna', name: 'GPT-6 Luna', upstreamModelId: 'openai/gpt-6-luna',
-    transport: 'openrouter', pricingRef: 'openrouter/openai/gpt-6-luna',
-    pricing: {
-      inputPerMillion: 0.11, cachedInputPerMillion: 0.011, cacheWritePerMillion: 0.1375, outputPerMillion: 0.55,
-      contextOver200k: {
-        contextThreshold: 272_000, inputPerMillion: 0.22, cachedInputPerMillion: 0.022,
-        cacheWritePerMillion: 0.275, outputPerMillion: 0.825,
-      },
-    },
-    tier: 'fast', vision: true, limit: { context: 1_050_000, output: 128_000 },
-    openrouterProvider: { only: ['azure/us'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
   },
 ];
 

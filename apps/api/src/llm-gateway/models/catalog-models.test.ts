@@ -47,6 +47,16 @@ describe('gatewayModelCatalog — served catalog', () => {
     expect(full['deepseek-v4-pro-0813']).toBeUndefined();
   });
 
+  test('does not serve OpenAI or Anthropic models under Kortix', () => {
+    for (const id of ['claude-opus-5.5', 'gpt-6-sol', 'gpt-6-luna']) {
+      expect(full[id], id).toBeUndefined();
+    }
+    for (const [id, model] of Object.entries(full)) {
+      if (model.provider !== 'kortix') continue;
+      expect(model.name, id).not.toMatch(/^(Claude|GPT)\b/);
+    }
+  });
+
   test('does not serve other retired text-only managed models', () => {
     for (const id of ['deepseek-v4-flash', 'glm-5.3-flash-text']) {
       expect(full[id], id).toBeUndefined();
