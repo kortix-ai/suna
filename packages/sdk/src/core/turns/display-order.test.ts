@@ -146,10 +146,13 @@ describe('grouping follows the fixed order', () => {
     // The sequential fallback walks the SORTED list, so a bad sort re-parents
     // every assistant message that carries no `parentID` — the second
     // screenshot, where "as" was answered by "yo".
+    // Untimed on purpose: an id is ordered by the clock it encodes, checked
+    // against `time.created`, and `created: 5_000` next to an id encoding ~6.5
+    // days is a pairing no runtime writes. This test is about the id sequence.
     const messages = [
-      wire('msg_0219ed624000', 5_000),
+      wire('msg_0219ed624000'),
       { info: { id: 'msg_0219ed624001', role: 'assistant' }, parts: [] },
-      wire('msg_0219ed624002', 5_002),
+      wire('msg_0219ed624002'),
       { info: { id: 'msg_0219ed624003', role: 'assistant' }, parts: [] },
       local('queued-next', 1),
     ] as unknown as MessageWithPartsLike[];
