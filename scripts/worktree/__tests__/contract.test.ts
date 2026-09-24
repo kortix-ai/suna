@@ -66,6 +66,7 @@ describe('runtime artifact contract', () => {
   test('worktree startup builds every binary consumed by runtime snapshot staging', () => {
     const services = readFileSync(join(LIB_DIR, 'services.ts'), 'utf8');
     expect(services).toContain("['CLI', '@kortix/cli']");
+    expect(services).toContain("['Kortix Agent harness', '@kortix/meta-harness']");
     expect(services).toContain("['Apps runtime', 'apps/kortix-app-runtime/build.sh']");
   });
 

@@ -28,6 +28,7 @@ const IMAGES: Array<{ label: string; dockerfile: string }> = [
       entrypointScriptPath: 'a',
       catalogPath: 'a',
       managedSkillsPath: 'a',
+      metaHarnessPath: 'a',
     }),
   },
   {

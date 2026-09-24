@@ -5,6 +5,7 @@ export async function ensureRuntimeArtifacts(worktreePath: string): Promise<numb
   const packageBuilds: Array<[string, string]> = [
     ['sandbox agent', 'kortixd'],
     ['CLI', '@kortix/cli'],
+    ['Kortix Agent harness', '@kortix/meta-harness'],
   ];
   for (const [label, filter] of packageBuilds) {
     console.log(`  building ${label} runtime artifact`);

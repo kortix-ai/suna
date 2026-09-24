@@ -74,6 +74,8 @@ const opencodeWarmupSrcPath = () => process.env.KORTIX_SNAPSHOT_OPENCODE_WARMUP_
   || resolve(REPO_ROOT, 'apps/sandbox/opencode-warmup.sh');
 const machineDocSrcPath = () => process.env.KORTIX_SNAPSHOT_MACHINE_DOC_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/MACHINE.md');
+const metaHarnessPath = () => process.env.KORTIX_SNAPSHOT_META_HARNESS_PATH
+  || resolve(REPO_ROOT, 'packages/meta-harness/dist/opencode');
 
 function readPositiveIntEnv(name: string, fallback: number): number {
   const raw = Number.parseInt(process.env[name] || '', 10);
@@ -189,6 +191,27 @@ async function stageManagedSkills(outDir: string): Promise<void> {
   }
 }
 
+/**
+ * Stage the built Kortix Agent harness. It is a build artifact like the agent
+ * and CLI binaries: refuse a missing one, and refuse one older than its source
+ * so a fresh fingerprint never bakes a stale harness.
+ */
+async function stageMetaHarness(outDir: string): Promise<void> {
+  const built = metaHarnessPath();
+  await assertExistsDir(built, 'KORTIX_SNAPSHOT_META_HARNESS_PATH');
+  if (!process.env.KORTIX_SNAPSHOT_META_HARNESS_PATH) {
+    const srcDir = resolve(REPO_ROOT, 'packages/meta-harness/opencode');
+    const builtAt = (await stat(join(built, 'plugin', 'kortix-goals.js'))).mtimeMs;
+    if ((await newestMtimeMs(srcDir)) > builtAt) {
+      throw new Error(
+        `meta harness build (${built}) is older than its source (${srcDir}) — ` +
+          'run `pnpm --filter @kortix/meta-harness build`',
+      );
+    }
+  }
+  await cp(built, outDir, { recursive: true });
+}
+
 async function assertRuntimeArtifactsCurrent(
   agentPath: string,
   cliPath: string,
@@ -224,6 +247,7 @@ export async function stageMetaBuildContext(): Promise<StagedContext> {
   await gzipFile(cliPath, join(contextDir, 'kortix.gz'));
   await copyFile(entrypointPath, join(contextDir, 'kortix-entrypoint'));
   await stageManagedSkills(join(contextDir, 'managed-skills'));
+  await stageMetaHarness(join(contextDir, 'meta-harness'));
   await writeFileFs(
     join(contextDir, 'kortix-llm-catalog.json'),
     JSON.stringify({ models: gatewayModelCatalog('shared-seed') }),
@@ -239,6 +263,7 @@ export async function stageMetaBuildContext(): Promise<StagedContext> {
       entrypointScriptPath: 'kortix-entrypoint',
       catalogPath: 'kortix-llm-catalog.json',
       managedSkillsPath: 'managed-skills',
+      metaHarnessPath: 'meta-harness',
     }),
   );
   return { contextDir, composedPath, dockerfileName };

@@ -10,7 +10,13 @@ describe('buildMetaSandboxDockerfile', () => {
       entrypointScriptPath: 'artifacts/kortix-entrypoint.sh',
       catalogPath: 'artifacts/llm-catalog.json',
       managedSkillsPath: 'artifacts/managed-skills',
+      metaHarnessPath: 'artifacts/meta-harness',
     });
+
+    // The Kortix Agent harness IS the coordinator's OpenCode config dir.
+    expect(dockerfile).toContain(
+      'COPY --chown=kortix:kortix artifacts/meta-harness/ /ephemeral/kortix-master/opencode/',
+    );
 
     expect(dockerfile).toContain('FROM debian:bookworm-slim');
     expect(dockerfile).toContain('https://get.pnpm.io/install.sh');

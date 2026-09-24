@@ -1074,6 +1074,9 @@ function currentMetaRuntimeFingerprint(): Promise<string> {
       { label: 'entrypoint', path: resolve(root, 'apps/sandbox/entrypoint.sh') },
       { label: 'opencode-warmup', path: resolve(root, 'apps/sandbox/opencode-warmup.sh') },
       { label: 'meta-renderer', path: resolve(root, 'packages/shared/src/sandbox/meta-dockerfile.ts') },
+      // The Kortix Agent harness (goals, goal loop, commands) baked into the
+      // meta config dir. Its SOURCE is hashed; the bundle is built from it.
+      { label: 'meta-harness', path: resolve(root, 'packages/meta-harness/opencode') },
       { label: 'sdk', path: resolve(root, 'packages/sdk/src') },
       { label: 'llm-catalog', path: resolve(root, 'packages/llm-catalog/src') },
       { label: 'manifest-schema', path: resolve(root, 'packages/manifest-schema/src') },

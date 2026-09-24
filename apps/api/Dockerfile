@@ -95,6 +95,20 @@ RUN printf '{"name":"kortix-cli-build","private":true,"workspaces":["apps/cli","
        KORTIX_CLI_VERSION="${KORTIX_VERSION}+$(printf '%s' "${KORTIX_COMMIT}" | cut -c1-8)" \
        bash apps/cli/scripts/build.sh
 
+# ---- Kortix Agent Harness Stage ----
+# The OpenCode config folder the platform Kortix Agent runs with
+# (packages/meta-harness): its plugins are bundled into self-contained .js so
+# the meta sandbox needs no node_modules at boot. The snapshot builder reads the
+# result from packages/meta-harness/dist/opencode (KORTIX_SNAPSHOT_META_HARNESS_PATH).
+FROM --platform=$BUILDPLATFORM oven/bun:${BUN_VERSION}-slim AS meta-harness
+
+WORKDIR /harness
+COPY packages/meta-harness/package.json ./package.json
+RUN bun install
+COPY packages/meta-harness/opencode ./opencode
+COPY packages/meta-harness/scripts ./scripts
+RUN bun run scripts/build.ts
+
 # ---- Pi Worker Runtime Stage ----
 # The generic pi worker runtime bundle for the harness/worker split experiment.
 # The API's compiled-boot pipeline (src/git-proxy/compiled-pi-runtime.ts)
@@ -280,6 +294,7 @@ COPY --from=sandbox-agent /repo/apps/kortix-sandbox-agent-server/dist/server.mjs
 COPY --from=sandbox-cli /cli/apps/cli/dist/kortix ./apps/cli/dist/kortix
 COPY --from=sandbox-cli /cli/apps/cli/dist/kortix.version ./apps/cli/dist/kortix.version
 COPY --from=sandbox-cli /cli/apps/cli/dist/kortix-connectors-runtime.attestation.json ./apps/cli/dist/kortix-connectors-runtime.attestation.json
+COPY --from=meta-harness /harness/dist/opencode ./packages/meta-harness/dist/opencode
 COPY --from=pi-worker /repo/apps/kortix-worker/dist/worker-runtime.mjs ./apps/kortix-worker/dist/worker-runtime.mjs
 COPY --from=app-runtime /out/kortix-appd ./apps/kortix-app-runtime/dist/kortix-appd-linux-amd64
 COPY --from=app-runtime /out/caddy ./apps/kortix-app-runtime/dist/caddy-linux-amd64
@@ -298,6 +313,7 @@ COPY apps/kortix-sandbox-agent-server/package.json ./apps/kortix-sandbox-agent-s
 COPY apps/kortix-sandbox-agent-server/src ./apps/kortix-sandbox-agent-server/src
 COPY apps/cli/package.json ./apps/cli/package.json
 COPY apps/cli/src ./apps/cli/src
+COPY packages/meta-harness/opencode ./packages/meta-harness/opencode
 
 # Copy the app (source + its node_modules if any)
 COPY --from=deps /app/${SERVICE} ./${SERVICE}

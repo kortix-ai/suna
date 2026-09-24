@@ -1,0 +1,17 @@
+{
+  "name": "@kortix/meta-harness",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The Kortix Agent harness: the OpenCode config folder the platform-owned Kortix Agent runs with (goals, the goal loop, commands).",
+  "type": "module",
+  "scripts": {
+    "build": "bun run scripts/build.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "1.18.23",
+    "@types/bun": "^1.3.9",
+    "typescript": "^5.0.0"
+  }
+}

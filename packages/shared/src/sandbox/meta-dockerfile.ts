@@ -12,6 +12,10 @@ export interface MetaSandboxDockerfileOptions {
   /** Staged managed `kortix-*` skills dir — overlaid into the harness skills
    *  dir at boot so the coordinator learns the `kortix` CLI properly. */
   managedSkillsPath: string;
+  /** Built Kortix Agent harness (packages/meta-harness/dist/opencode): the
+   *  OpenCode config dir the coordinator runs with — goals, the goal loop,
+   *  commands. */
+  metaHarnessPath: string;
 }
 
 export const META_AGENT_GUIDE = [
@@ -106,6 +110,7 @@ ${META_AGENT_GUIDE}
 KORTIX_META_AGENT_GUIDE
 COPY --chown=kortix:kortix ${options.catalogPath} /opt/kortix/llm-catalog.json
 COPY --chown=kortix:kortix ${options.managedSkillsPath} /opt/kortix/managed-skills
+COPY --chown=kortix:kortix ${options.metaHarnessPath}/ /ephemeral/kortix-master/opencode/
 
 ENV KORTIX_WORKSPACE=/workspace \\
     KORTIX_PROJECT_AUTO_CLONE=0 \\
