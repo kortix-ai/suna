@@ -26,10 +26,38 @@ mock.module('../llm-gateway/models/provider-registry', () => ({
 
 const probes: Array<Record<string, unknown>> = [];
 let servable = true;
+const defaultCalls: Array<Record<string, unknown>> = [];
+let effectiveDefault: { model: string | null; source: string } = { model: null, source: 'platform' };
 mock.module('../llm-gateway/resolution/default-model', () => ({
   isModelServableForAccount: async (input: Record<string, unknown>) => {
     probes.push(input);
     return servable;
+  },
+  resolveEffectiveModel: async (input: Record<string, unknown>) => {
+    defaultCalls.push(input);
+    return effectiveDefault;
+  },
+}));
+
+mock.module('../llm-gateway/models/served-managed-models', () => ({ platformDefaultModelId: () => 'glm-5.3-flash' }));
+
+// The gateway's own personal-key rule for a live session.
+const ownerQueries: Array<Record<string, unknown>> = [];
+let gatewayPersonal: string | null = 'ivan';
+mock.module('../projects/lib/personal-resources', () => ({
+  resolveSessionPersonalOwner: async (input: Record<string, unknown>) => {
+    ownerQueries.push(input);
+    return gatewayPersonal;
+  },
+}));
+
+// The image / unservable-pin replacement, pinned in unit-channel-vision-model.
+const turnCalls: Array<Record<string, unknown>> = [];
+let turnResult: string | null = null;
+mock.module('../channels/vision-model', () => ({
+  channelTurnModel: async (input: Record<string, unknown>) => {
+    turnCalls.push(input);
+    return turnResult;
   },
 }));
 
@@ -45,6 +73,9 @@ mock.module('../secrets/account-resource', () => ({
 mock.module('../channels/slack/model-gate', () => ({
   channelModelContext: async () => ({
     projectId: 'proj', accountId: 'acct', ownerUserId: 'owner', freeManagedOnly: false, llmGatewayEnabled: true,
+  }),
+  projectModelContext: async (project: { projectId: string; accountId: string }) => ({
+    projectId: project.projectId, accountId: project.accountId, ownerUserId: 'owner', freeManagedOnly: false, llmGatewayEnabled: true,
   }),
 }));
 
@@ -72,7 +103,7 @@ mock.module('../shared/db', () => ({
 const access = await import('../channels/model-access');
 
 const scope = (over: Partial<ReturnType<typeof access.channelModelScope>> = {}) => ({
-  projectId: 'proj', accountId: 'acct', memberUserId: 'ivan', personalUserId: 'ivan',
+  projectId: 'proj', accountId: 'acct', memberUserId: 'ivan', linkedUserId: 'ivan', personalUserId: 'ivan',
   freeManagedOnly: false, llmGatewayEnabled: true, pooledEnabled: true, ...over,
 });
 
@@ -80,6 +111,12 @@ beforeEach(() => {
   pooledFlag = true;
   catalogCalls.length = 0;
   probes.length = 0;
+  defaultCalls.length = 0;
+  effectiveDefault = { model: null, source: 'platform' };
+  ownerQueries.length = 0;
+  gatewayPersonal = 'ivan';
+  turnCalls.length = 0;
+  turnResult = null;
   keyQueries.length = 0;
   writes.length = 0;
   servable = true;
@@ -107,7 +144,7 @@ describe('channelModelScope — whose resources a conversation may use', () => {
 
   test('an unlinked person: the owner is the member, and the owner`s personal keys never stand in', () => {
     expect(access.channelModelScope({ ...base, linkedUserId: null, oneToOne: true })).toMatchObject({
-      memberUserId: 'owner', personalUserId: null,
+      memberUserId: 'owner', linkedUserId: null, personalUserId: null,
     });
   });
 });
@@ -251,5 +288,152 @@ describe('describeKeys', () => {
     );
     expect(access.describeKeys({ providerId: 'anthropic', envVar: 'X', secretIds: ['a'], labels: ['Claude'] })).toBe('Uses one key: Claude.');
     expect(access.describeKeys(null)).toBeNull();
+  });
+});
+
+describe('projectChannelModelScope', () => {
+  test('reads the pooled-keys flag off the project row it is given', async () => {
+    const on = await access.projectChannelModelScope(
+      { projectId: 'p', accountId: 'a', metadata: { experimental: { pooled_provider_secrets: true } } },
+      { linkedUserId: 'ivan', oneToOne: true },
+    );
+    expect(on).toMatchObject({ projectId: 'p', memberUserId: 'ivan', personalUserId: 'ivan', pooledEnabled: true });
+    const off = await access.projectChannelModelScope({ projectId: 'p', accountId: 'a', metadata: {} }, { linkedUserId: null, oneToOne: true });
+    expect(off).toMatchObject({ memberUserId: 'owner', personalUserId: null, pooledEnabled: false });
+  });
+});
+
+describe('sessionModelScope — a live session, as the gateway runs it', () => {
+  test('runs as the session`s owner; personal keys only when the gateway also uses them', async () => {
+    const live = await access.sessionModelScope(scope(), { sessionId: 's1', ownerUserId: 'ivan' });
+    expect(live).toMatchObject({ memberUserId: 'ivan', personalUserId: 'ivan' });
+    expect(ownerQueries[0]).toEqual({ projectId: 'proj', accountId: 'acct', sessionId: 's1', legacyUserId: 'ivan' });
+  });
+
+  test('a personal chat`s session that is shared (created before these became private) reaches no personal key', async () => {
+    gatewayPersonal = null;
+    expect((await access.sessionModelScope(scope(), { sessionId: 's1', ownerUserId: 'ivan' })).personalUserId).toBeNull();
+  });
+
+  test('a session acting for someone else never lends their keys to this person', async () => {
+    gatewayPersonal = 'someone-else';
+    expect((await access.sessionModelScope(scope(), { sessionId: 's1', ownerUserId: 'someone-else' })).personalUserId).toBeNull();
+  });
+
+  test('a shared conversation does not look the session up at all', async () => {
+    const live = await access.sessionModelScope(scope({ personalUserId: null }), { sessionId: 's1', ownerUserId: 'teammate' });
+    expect(live).toMatchObject({ memberUserId: 'teammate', personalUserId: null });
+    expect(ownerQueries).toHaveLength(0);
+  });
+});
+
+describe('planChannelSessionStart — the model and keys a new chat session starts with', () => {
+  const start = (over: Partial<Parameters<typeof access.planChannelSessionStart>[0]> = {}) =>
+    access.planChannelSessionStart({
+      projectId: 'proj', accountId: 'acct', userId: 'ivan', scope: scope(), chosenModel: null, agentName: null, hasImage: false, ...over,
+    });
+
+  test('a chosen model that runs on keys starts with every key this conversation may use', async () => {
+    usableKeys = [
+      { secretId: 'k1', providerId: 'codex', name: 'CODEX_AUTH_JSON', label: 'Team', accessMode: 'project' },
+      { secretId: 'k2', providerId: 'codex', name: 'CODEX_AUTH_JSON', label: 'Ivan', accessMode: 'members' },
+    ];
+
+    const plan = await start({ chosenModel: 'kortix/codex/gpt-6-astra' });
+
+    expect(plan).toEqual({ model: 'kortix/codex/gpt-6-astra', pools: { codex: ['k1', 'k2'] } });
+    // Checked WITH those keys: without them a key-only model looked
+    // unservable and was replaced by a Kortix model.
+    expect(turnCalls[0]).toMatchObject({ userId: 'ivan', personalUserId: 'ivan', providerSecretPools: { codex: ['k1', 'k2'] } });
+  });
+
+  test('an agent that may not use the keys gets none, and the model is checked without them', async () => {
+    usableKeys = [{ secretId: 'k1', providerId: 'codex', name: 'CODEX_AUTH_JSON', label: 'Team', accessMode: 'project' }];
+    const plan = await start({ chosenModel: 'codex/gpt-6-astra', agentGrantEnv: async () => ['GITHUB_TOKEN'] });
+    expect(plan).toEqual({ model: 'codex/gpt-6-astra' });
+    expect(turnCalls[0]).not.toHaveProperty('providerSecretPools');
+  });
+
+  test('a replacement on another provider does not carry the chosen model`s keys', async () => {
+    usableKeys = [{ secretId: 'k1', providerId: 'codex', name: 'CODEX_AUTH_JSON', label: 'Team', accessMode: 'project' }];
+    turnResult = 'glm-5.3-flash';
+    expect(await start({ chosenModel: 'codex/gpt-6-astra', hasImage: true })).toEqual({ model: 'glm-5.3-flash' });
+  });
+
+  test('a shared conversation with no choice checks the default without anyone`s personal keys', async () => {
+    // The server would resolve the default as if the creator's own ChatGPT
+    // counted; in a shared session it does not, and the first turn failed
+    // "Connect Codex to use this model".
+    effectiveDefault = { model: 'anthropic/claude-opus-4-8', source: 'project' };
+    const plan = await start({ scope: scope({ personalUserId: null }), agentName: 'reviewer' });
+    expect(defaultCalls[0]).toMatchObject({ userId: 'ivan', agentName: 'reviewer', personalUserId: null, explicit: null });
+    expect(plan.model).toBe('anthropic/claude-opus-4-8');
+  });
+
+  test('when only the platform default is left, it is pinned — never the creator`s own default', async () => {
+    effectiveDefault = { model: null, source: 'platform' };
+    expect((await start({ scope: scope({ personalUserId: null }) })).model).toBe('glm-5.3-flash');
+    expect((await start({ scope: scope({ personalUserId: null, freeManagedOnly: true }) })).model).toBeNull();
+  });
+
+  test('a personal chat with no choice leaves the default to the server: its rule is the same', async () => {
+    expect(await start()).toEqual({ model: null });
+    expect(defaultCalls).toHaveLength(0);
+  });
+
+  test('no scope: the legacy check, with the choice kept', async () => {
+    expect(await start({ scope: null, chosenModel: 'anthropic/x' })).toEqual({ model: 'anthropic/x' });
+    expect(turnCalls[0]).not.toHaveProperty('personalUserId');
+  });
+});
+
+describe('planChannelFollowUp — the model a follow-up carries', () => {
+  const session = { sessionId: 's1', ownerUserId: 'ivan', pinnedModel: 'kortix/codex/gpt-6-astra' };
+  const followUp = (over: Partial<Parameters<typeof access.planChannelFollowUp>[0]> = {}) =>
+    access.planChannelFollowUp({
+      projectId: 'proj', accountId: 'acct', userId: 'ivan', scope: scope(), session, chosenModel: null, hasImage: false, ...over,
+    });
+
+  test('a /model choice made after the session started travels with the prompt', async () => {
+    await followUp({ chosenModel: 'kortix/deepseek-v4.1-flash' });
+    expect(turnCalls[0]).toMatchObject({
+      currentModel: 'kortix/deepseek-v4.1-flash', explicit: true, sessionId: 's1', userId: 'ivan', personalUserId: 'ivan',
+    });
+  });
+
+  test('the session`s own pin is not re-sent: no choice, or the same one', async () => {
+    await followUp();
+    await followUp({ chosenModel: 'codex/gpt-6-astra' });
+    expect(turnCalls.map((c) => [c.currentModel, c.explicit])).toEqual([
+      ['kortix/codex/gpt-6-astra', false],
+      ['codex/gpt-6-astra', false],
+    ]);
+  });
+
+  test('a ChatGPT pin in a shared session is checked without anyone`s own connection, so it is replaced', async () => {
+    // The dev regression: a Teams channel session pinned to codex failed
+    // every turn with "Connect Codex to use this model" once agents became
+    // their own principal, because the check still counted the typist's
+    // own ChatGPT connection.
+    await followUp({ scope: scope({ personalUserId: null }) });
+    expect(turnCalls[0]).toMatchObject({ personalUserId: null, sessionId: 's1' });
+  });
+
+  test('keys for the model are filled into a session that has none, before the check', async () => {
+    usableKeys = [{ secretId: 'k1', providerId: 'anthropic', name: 'ANTHROPIC_API_KEY', label: 'Claude', accessMode: 'project' }];
+    await followUp({ chosenModel: 'anthropic/claude-opus-4-8' });
+    expect(writes).toEqual([{ op: 'insert-if-absent', values: expect.objectContaining({ sessionId: 's1', providerId: 'anthropic', secretIds: ['k1'] }) }]);
+  });
+
+  test('off the gateway a choice waits for the next session: it cannot travel per prompt', async () => {
+    await followUp({ scope: scope({ llmGatewayEnabled: false }), chosenModel: 'anthropic/claude-sonnet-4-6', session: { ...session, pinnedModel: null } });
+    expect(turnCalls[0]).toMatchObject({ currentModel: null, explicit: false });
+  });
+
+  test('no scope: the pin, checked the legacy way', async () => {
+    await followUp({ scope: null, chosenModel: 'kortix/deepseek-v4.1-flash' });
+    expect(turnCalls[0]).toEqual({
+      projectId: 'proj', accountId: 'acct', userId: 'ivan', currentModel: 'kortix/codex/gpt-6-astra', hasImage: false, agentGrantEnv: undefined,
+    });
   });
 });

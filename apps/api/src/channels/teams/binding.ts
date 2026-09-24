@@ -197,6 +197,8 @@ export interface TeamsConversationSession {
   status: string | null;
   agentName: string | null;
   createdAt: Date | null;
+  /** The session's creator: the user its turns run as. */
+  createdBy: string | null;
 }
 
 /**
@@ -229,6 +231,7 @@ export async function conversationSession(
       status: projectSessions.status,
       agentName: projectSessions.agentName,
       createdAt: projectSessions.createdAt,
+      createdBy: projectSessions.createdBy,
     })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, thread.sessionId))
@@ -238,5 +241,6 @@ export async function conversationSession(
     status: row?.status ?? null,
     agentName: row?.agentName ?? null,
     createdAt: row?.createdAt ?? null,
+    createdBy: row?.createdBy ?? null,
   };
 }

@@ -270,6 +270,8 @@ export async function resolveEffectiveModel(params: {
   // UI's "resolved" model reflects what the gateway will actually serve rather
   // than a dead ref: first try any OTHER BYOK provider the project has
   // connected (connectedByokFallback), then finally the bare platform default.
+  // The same personal scope as the explicit check above: a default reached
+  // only through one person's keys is not a default for a shared session.
   const kept = await degradeUnservableDefault(
     chain.model,
     { hasProject: true },
@@ -282,8 +284,13 @@ export async function resolveEffectiveModel(params: {
         model: chain.model as string,
         sessionId: params.sessionId,
         providerSecretPools: params.providerSecretPools,
+        ...(params.personalUserId !== undefined ? { personalUserId: params.personalUserId } : {}),
       }),
-    () => connectedByokFallback(params.projectId, params.userId),
+    () =>
+      connectedByokFallback(
+        params.projectId,
+        (params.personalUserId === undefined ? params.userId : params.personalUserId) ?? undefined,
+      ),
   );
   if (!kept) return { model: null, source: 'platform' };
   // kept === chain.model means the originally-configured default WAS servable

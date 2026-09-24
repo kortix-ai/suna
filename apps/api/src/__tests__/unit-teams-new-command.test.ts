@@ -16,10 +16,10 @@ mock.module('../config', () => ({
 // commands.ts reaches the model picker and the gateway through other verbs.
 // `/new` touches none of them; these keep the import graph off the network.
 mock.module('../llm-gateway/models/picker', () => ({ listPickerModels: async () => [], labelForModelRef: (r: string) => r }));
-mock.module('../llm-gateway/resolution/default-model', () => ({ isModelServableForAccount: async () => true }));
-mock.module('../projects/lib/session-model-change', () => ({ validateNativeOpencodeModelRef: () => null }));
-mock.module('../llm-gateway/resolution/effective', () => ({ toOpencodeModelRef: (r: string) => r, toWireModel: (r: string) => r }));
-mock.module('../channels/slack/model-gate', () => ({ channelModelContext: async () => ({}) }));
+mock.module('../channels/teams/model-choice', () => ({
+  applyTeamsModelChoice: async () => ({}),
+  buildTeamsModelsCard: async () => ({}),
+}));
 mock.module('../projects/lib/access', () => ({ lookupEmailsByUserIds: async () => new Map() }));
 mock.module('../channels/teams/agent-picker', () => ({ buildAgentsPicker: async () => ({}) }));
 mock.module('../channels/teams/stop', () => ({ stopTeamsTurn: async () => ({ stopped: false, notice: '' }) }));
