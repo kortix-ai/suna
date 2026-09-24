@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { config } from '../config';
 import { execFileAsync, refreshMirror, runGitCapture } from '../projects/git/mirror';
 import { resolveOpencodeConfigDirAtSha } from '../projects/git/opencode-config-dir';
 import type { GitBackedProject } from '../projects/git/types';
@@ -251,20 +252,44 @@ export interface BuildConfigReleaseOptions {
 }
 
 /**
- * Put the archive into the store. The store is a cache: a failure is logged
- * and the archive route streams a fresh build instead.
+ * Put the archive into the store, then bound what the project keeps.
+ *
+ * The store is a cache: a failure is logged and the archive route streams a
+ * fresh build instead. Retention rides the publish because that is the only
+ * moment a project gains an archive — no cron, no worker, no leader election.
+ * A prune failure is never allowed to fail a publish; the next publish retries
+ * it (docs/specs/config-releases.md, "Retention").
  */
 export async function storeConfigArchive(
   store: ConfigArchiveStore,
+  projectId: string,
   key: string,
   archive: Buffer,
+  options: { keep?: number } = {},
 ): Promise<'created' | 'exists' | 'failed'> {
+  let outcome: 'created' | 'exists';
   try {
-    return await store.putIfAbsent(key, archive);
+    outcome = await store.putIfAbsent(key, archive);
   } catch (error) {
     console.warn(`[config-releases] store put ${key} failed; the archive route streams from the mirror: ${(error as Error).message}`);
     return 'failed';
   }
+  // 0 = the bucket's own lifecycle rule owns retention (AWS: the API task role
+  // has s3:PutObject/GetObject/ListBucket and NO s3:DeleteObject by design —
+  // infra/terraform/modules/ecs-api). Supabase Storage has no lifecycle engine,
+  // so there the API prunes.
+  const keep = options.keep ?? config.KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT;
+  if (outcome === 'created' && keep > 0) {
+    try {
+      const deleted = await store.pruneProject(projectId, keep);
+      if (deleted.length > 0) {
+        console.log(`[config-releases] pruned ${deleted.length} archive(s) of project ${projectId}, keeping ${keep}`);
+      }
+    } catch (error) {
+      console.warn(`[config-releases] prune of project ${projectId} failed: ${(error as Error).message}`);
+    }
+  }
+  return outcome;
 }
 
 async function compileGovernance(
@@ -348,7 +373,7 @@ async function build(
       }
       throw error;
     }
-    await storeConfigArchive(store, key, archive);
+    await storeConfigArchive(store, project.projectId, key, archive);
     bytes = archive.length;
     remember(archiveBytes, key, bytes, MAX_CACHED_ARCHIVE_SIZES);
   }

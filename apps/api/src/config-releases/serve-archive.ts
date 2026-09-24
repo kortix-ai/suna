@@ -2,11 +2,15 @@
  * Serve one config archive (docs/specs/config-releases.md, "Download path").
  *
  * 1. The tree ID must name a tree object in the project's mirror, else 404.
- * 2. Public storage host: `302` to a signed store URL.
- * 3. Loopback or private storage host: stream the stored bytes. A cloud
- *    sandbox cannot reach local Supabase at 127.0.0.1.
+ * 2. The store presigns a download URL. Public host: `302` to it.
+ * 3. Loopback or private host: stream the stored bytes. A cloud sandbox
+ *    reaches neither local Supabase at 127.0.0.1 nor a self-host `supabase-kong`.
  * 4. Store failure or missing object: build from the mirror, stream it, and
  *    `putIfAbsent` it.
+ *
+ * The decision is made on the SIGNED URL the store returns, so it holds for
+ * every endpoint the one object store can point at (AWS S3, Supabase Storage's
+ * S3 protocol, MinIO) without this module knowing which.
  */
 
 import { config } from '../config';
@@ -50,21 +54,24 @@ export function storageOriginIsPublic(origin: string): boolean {
 }
 
 /**
- * Where a signed URL may point for a redirect, or null to stream.
- * `KORTIX_CONFIG_ARCHIVE_PUBLIC_URL` wins; otherwise SUPABASE_URL when public.
+ * Where a sandbox is sent for one signed URL, or null to stream the bytes
+ * through the API. `KORTIX_CONFIG_ARCHIVE_PUBLIC_URL` replaces the signed
+ * URL's origin — the store already signed FOR that host (it is the object
+ * store's public endpoint), so the swap only rewrites the text.
  */
-export function publicStorageBase(env: {
-  supabaseUrl: string;
-  publicOverride?: string | null;
-}): { internal: string; public: string } | null {
-  const override = env.publicOverride?.trim();
-  if (override) return { internal: env.supabaseUrl, public: override };
-  return storageOriginIsPublic(env.supabaseUrl) ? { internal: env.supabaseUrl, public: env.supabaseUrl } : null;
+export function publicDownloadTarget(signedUrl: string, publicOverride?: string | null): string | null {
+  let origin: string;
+  try {
+    origin = new URL(signedUrl).origin;
+  } catch {
+    return null;
+  }
+  const target = rewriteStorageOrigin(signedUrl, origin, publicOverride?.trim() || undefined);
+  return storageOriginIsPublic(target) ? target : null;
 }
 
 export interface ServeConfigArchiveDeps {
   store?: ConfigArchiveStore;
-  supabaseUrl?: string;
   publicOverride?: string | null;
   fetch?: (input: string) => Promise<Response>;
 }
@@ -85,13 +92,12 @@ function gzipResponse(bytes: Uint8Array, treeId: string, source: 'store' | 'mirr
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
-async function readStored(
-  store: ConfigArchiveStore,
+/** Stream the stored object through the API, for a host no sandbox can reach. */
+async function readSigned(
+  url: string,
   key: string,
   fetchImpl: (input: string) => Promise<Response>,
-): Promise<Uint8Array | null> {
-  const url = await store.downloadUrl(key, CONFIG_ARCHIVE_URL_TTL_SECONDS);
-  if (!url) return null;
+): Promise<Uint8Array> {
   const response = await fetchImpl(url);
   if (!response.ok) {
     await response.body?.cancel().catch(() => {});
@@ -124,27 +130,22 @@ export async function serveConfigArchive(
 
   const store = deps.store ?? getConfigArchiveStore();
   const key = configArchiveKey(project.projectId, treeId);
-  const publicBase = publicStorageBase({
-    supabaseUrl: deps.supabaseUrl ?? config.SUPABASE_URL,
-    publicOverride: deps.publicOverride === undefined ? config.KORTIX_CONFIG_ARCHIVE_PUBLIC_URL : deps.publicOverride,
-  });
+  const publicOverride =
+    deps.publicOverride === undefined ? config.KORTIX_CONFIG_ARCHIVE_PUBLIC_URL : deps.publicOverride;
   const fetchImpl = deps.fetch ?? ((input: string) => fetch(input));
 
   try {
-    if (publicBase) {
-      const signed = await store.downloadUrl(key, CONFIG_ARCHIVE_URL_TTL_SECONDS);
-      if (signed) {
+    const signed = await store.downloadUrl(key, CONFIG_ARCHIVE_URL_TTL_SECONDS);
+    if (signed) {
+      const redirect = publicDownloadTarget(signed, publicOverride);
+      if (redirect) {
         return new Response(null, {
           status: 302,
-          headers: {
-            Location: rewriteStorageOrigin(signed, publicBase.internal, publicBase.public),
-            'Cache-Control': 'no-store',
-          },
+          headers: { Location: redirect, 'Cache-Control': 'no-store' },
         });
       }
-    } else {
-      const stored = await readStored(store, key, fetchImpl);
-      if (stored) return gzipResponse(stored, treeId, 'store');
+      const stored = await readSigned(signed, key, fetchImpl);
+      return gzipResponse(stored, treeId, 'store');
     }
   } catch (error) {
     console.warn(`[config-releases] store read ${key} failed; streaming from the mirror: ${(error as Error).message}`);
@@ -160,6 +161,6 @@ export async function serveConfigArchive(
     throw error;
   }
   // Fill the cache for the next request. The response does not wait for it.
-  void storeConfigArchive(store, key, archive);
+  void storeConfigArchive(store, project.projectId, key, archive);
   return gzipResponse(new Uint8Array(archive), treeId, 'mirror');
 }
