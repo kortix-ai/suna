@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 let existingEmails = new Set<string>();
 let signupsOpen = true;
 let allowlisted = new Set<string>();
-let ssoProvidersByDomain = new Map<string, { enforceSso: boolean }>();
+let ssoProvidersByDomain = new Map<string, { enforceSso: boolean; domainVerifiedAt: Date | null }>();
 
 mock.module('../config', () => ({
   config: {
@@ -37,9 +37,13 @@ mock.module('../shared/access-control-cache', () => ({
   stopAccessControlCache: () => {},
 }));
 
+// The same rule as the real `ssoEnforcedForEmail`: enforcement needs a
+// verified domain. The DB-backed rule is exercised end to end by flow SSO-1.
 mock.module('../repositories/sso', () => ({
-  getSsoProviderByDomain: async (domain: string) =>
-    ssoProvidersByDomain.get(domain.toLowerCase()) ?? null,
+  ssoEnforcedForEmail: async (email: string) => {
+    const provider = ssoProvidersByDomain.get(email.trim().toLowerCase().split('@')[1] ?? '');
+    return provider?.enforceSso && provider.domainVerifiedAt ? provider : null;
+  },
 }));
 
 const { accessControlApp } = await import('../access-control/index');
@@ -89,15 +93,22 @@ describe('POST /access/check-email unified auth-flow modes', () => {
     expect(body).toEqual({ allowed: true, mode: 'signup' });
   });
 
-  test('enforced SSO domain wins over everything, including existing accounts', async () => {
-    ssoProvidersByDomain.set('acme.com', { enforceSso: true });
+  test('enforced SSO on a verified domain wins over everything, including existing accounts', async () => {
+    ssoProvidersByDomain.set('acme.com', { enforceSso: true, domainVerifiedAt: new Date() });
     existingEmails.add('known@acme.com');
     const { body } = await checkEmail('known@acme.com');
     expect(body).toEqual({ allowed: true, mode: 'sso' });
   });
 
+  test('enforced SSO on an unverified domain falls through to the normal modes', async () => {
+    ssoProvidersByDomain.set('acme.com', { enforceSso: true, domainVerifiedAt: null });
+    existingEmails.add('known@acme.com');
+    const { body } = await checkEmail('known@acme.com');
+    expect(body).toEqual({ allowed: true, mode: 'signin' });
+  });
+
   test('non-enforced SSO domain falls through to the normal modes', async () => {
-    ssoProvidersByDomain.set('acme.com', { enforceSso: false });
+    ssoProvidersByDomain.set('acme.com', { enforceSso: false, domainVerifiedAt: new Date() });
     existingEmails.add('known@acme.com');
     const { body } = await checkEmail('known@acme.com');
     expect(body).toEqual({ allowed: true, mode: 'signin' });

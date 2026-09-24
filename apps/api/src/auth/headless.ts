@@ -18,6 +18,7 @@ import type { AppEnv } from '../types';
 import { TokenBucketRateLimiter } from '../shared/rate-limit';
 import { auditLoginFail } from '../shared/auth-audit';
 import { gotrue, gotrueAuthorizeUrl, sessionFrom, type GoTrueSession, type GoTrueUser } from './gotrue';
+import { ssoEnforcedForEmail } from '../repositories/sso';
 
 export const headlessAuthRouter = makeOpenApiApp<AppEnv>();
 
@@ -68,6 +69,26 @@ function safeRedirect(value: unknown): string | undefined {
 function upstreamError(c: Context, result: { status: number; body: { error?: string; error_description?: string } }) {
   const status = result.status >= 400 && result.status < 600 ? result.status : 502;
   return c.json({ error: result.body.error ?? 'auth_error', error_description: result.body.error_description ?? '' }, status as never);
+}
+
+/**
+ * 403 when the email's domain belongs to an account that enforces SSO-only
+ * sign-in on a verified domain. Same rule as `/access/check-email` and the web
+ * sign-in form; enforced here so a direct API call cannot use the password or
+ * email-code door either. A lookup failure fails open, like the web form: the
+ * database being unreachable must not lock every user out.
+ */
+async function ssoRequired(c: Context, email: string): Promise<Response | null> {
+  const provider = await ssoEnforcedForEmail(email).catch(() => null);
+  if (!provider) return null;
+  auditLoginFail({ c, reason: 'sso_required', authType: 'supabase' });
+  return c.json(
+    {
+      error: 'sso_required',
+      error_description: 'Your organization requires single sign-on. Sign in with SSO.',
+    },
+    403,
+  );
 }
 
 function sessionResponse(c: Context, body: Record<string, unknown>, status: 200 | 201 = 200) {
@@ -137,12 +158,14 @@ headlessAuthRouter.openapi(
     tags: ['auth'],
     summary: 'Sign in with email + password (headless)',
     request: { body: { content: { 'application/json': { schema: z.object({ email: Email, password: z.string().min(1).max(256) }) } } } },
-    responses: { 200: json(SessionResponse, 'The session'), ...errors(400, 429) },
+    responses: { 200: json(SessionResponse, 'The session'), ...errors(400, 403, 429) },
   }),
   async (c: any): Promise<any> => {
     const limited = throttled(c);
     if (limited) return limited;
     const body = c.req.valid('json');
+    const denied = await ssoRequired(c, body.email);
+    if (denied) return denied;
     const result = await gotrue<Record<string, unknown>>('/token', {
       body: { email: body.email.trim().toLowerCase(), password: body.password },
       clientIp: clientIp(c),
@@ -178,12 +201,14 @@ headlessAuthRouter.openapi(
         },
       },
     },
-    responses: { 200: json(z.object({ sent: z.literal(true) }), 'Email sent'), ...errors(400, 422, 429) },
+    responses: { 200: json(z.object({ sent: z.literal(true) }), 'Email sent'), ...errors(400, 403, 422, 429) },
   }),
   async (c: any): Promise<any> => {
     const limited = throttled(c);
     if (limited) return limited;
     const body = c.req.valid('json');
+    const denied = await ssoRequired(c, body.email);
+    if (denied) return denied;
     const result = await gotrue('/otp', {
       body: { email: body.email.trim().toLowerCase(), create_user: body.create_user ?? true, data: body.data ?? {} },
       clientIp: clientIp(c),
@@ -211,12 +236,15 @@ headlessAuthRouter.openapi(
         },
       },
     },
-    responses: { 200: json(SessionResponse, 'The session'), ...errors(400, 429) },
+    responses: { 200: json(SessionResponse, 'The session'), ...errors(400, 403, 429) },
   }),
   async (c: any): Promise<any> => {
     const limited = throttled(c);
     if (limited) return limited;
     const body = c.req.valid('json');
+    // Every OTP type answers with a session, recovery included.
+    const denied = await ssoRequired(c, body.email);
+    if (denied) return denied;
     const result = await gotrue<Record<string, unknown>>('/verify', {
       body: { email: body.email.trim().toLowerCase(), token: body.token.trim(), type: body.type },
       clientIp: clientIp(c),
