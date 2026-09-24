@@ -25,10 +25,15 @@ mock.module('../channels/teams/identity', () => ({
   teamsUserId: () => 'aad-ivan',
 }));
 
-let live: { sessionId: string; agentName: string | null; createdBy: string | null } | null = null;
+let live: { sessionId: string; agentName: string | null; createdBy: string | null; conversationPolicy?: string | null } | null = null;
 mock.module('../channels/teams/binding', () => ({
   conversationSession: async () => live,
   teamsChannelCtx: () => CTX,
+}));
+
+mock.module('../channels/teams/participants', () => ({
+  normalizeConversationPolicy: (v: unknown) =>
+    v === 'owner_only' || v === 'owner_approval' || v === 'project_open' ? v : 'project_open',
 }));
 
 let selection: Record<string, unknown> | null = null;
@@ -164,6 +169,32 @@ describe('/model — a choice reaches the live session', () => {
     // The live session's agent decides which keys it may use.
     expect(grantAgents).toEqual(['reviewer']);
     expect(cardText(card)).toContain('Model set to Claude Opus 4.8. Rotates across Team, Ivan. Your next message uses it.');
+  });
+
+  test('an unlinked person cannot change the model of a live session', async () => {
+    live = { sessionId: 'sess-1', agentName: null, createdBy: 'ivan' };
+    actor = { reason: 'unlinked' };
+    const card = await applyTeamsModelChoice(groupChat as never, 'tenant-1', 'a:synthetic-chat', 'glm-5.3-flash');
+    expect(cardText(card)).toContain('Link your Kortix account first');
+    expect(stored).toHaveLength(0);
+  });
+
+  test('under an owner-only or approval policy only the session`s owner can change it', async () => {
+    for (const policy of ['owner_only', 'owner_approval']) {
+      live = { sessionId: 'sess-1', agentName: null, createdBy: 'someone-else', conversationPolicy: policy };
+      const card = await applyTeamsModelChoice(groupChat as never, 'tenant-1', 'a:synthetic-chat', 'glm-5.3-flash');
+      expect(cardText(card)).toContain("Only the person who started this chat's session can change its model.");
+    }
+    expect(stored).toHaveLength(0);
+    live = { sessionId: 'sess-1', agentName: null, createdBy: 'ivan', conversationPolicy: 'owner_only' };
+    await applyTeamsModelChoice(groupChat as never, 'tenant-1', 'a:synthetic-chat', 'glm-5.3-flash');
+    expect(stored).toEqual(['kortix/glm-5.3-flash']);
+  });
+
+  test('an open conversation: any linked member may change it', async () => {
+    live = { sessionId: 'sess-1', agentName: null, createdBy: 'someone-else', conversationPolicy: 'project_open' };
+    await applyTeamsModelChoice(groupChat as never, 'tenant-1', 'a:synthetic-chat', 'glm-5.3-flash');
+    expect(stored).toEqual(['kortix/glm-5.3-flash']);
   });
 
   test('no live session: stored for the next one, nothing written to a session', async () => {

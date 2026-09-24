@@ -201,6 +201,8 @@ export interface TeamsConversationSession {
   createdBy: string | null;
   /** The model the session was pinned to at start (`metadata.opencode_model`). */
   opencodeModel: string | null;
+  /** The join policy frozen on the session at start (`metadata.teams.conversation_policy`). */
+  conversationPolicy: string | null;
 }
 
 /**
@@ -235,6 +237,7 @@ export async function conversationSession(
       createdAt: projectSessions.createdAt,
       createdBy: projectSessions.createdBy,
       opencodeModel: sql<string | null>`${projectSessions.metadata}->>'opencode_model'`,
+      conversationPolicy: sql<string | null>`${projectSessions.metadata}->'teams'->>'conversation_policy'`,
     })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, thread.sessionId))
@@ -246,5 +249,6 @@ export async function conversationSession(
     createdAt: row?.createdAt ?? null,
     createdBy: row?.createdBy ?? null,
     opencodeModel: row?.opencodeModel?.trim() || null,
+    conversationPolicy: row?.conversationPolicy ?? null,
   };
 }

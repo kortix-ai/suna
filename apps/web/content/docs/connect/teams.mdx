@@ -110,8 +110,10 @@ Which keys count depends on the chat:
   person's subscription. Pick such a model in a personal chat instead.
 
 A model that runs on keys uses every key you may use for its provider, and
-they rotate on rate limits. The choice applies to your next message; the chat
-keeps its session. A personal chat whose session started before sessions there
+they rotate on rate limits. The choice applies to the next message; the chat
+keeps its session. Changing the model of a running session needs a linked
+account, and under the `owner` or `approval` policy only the session's owner
+can change it. A personal chat whose session started before sessions there
 became private still shares that session with the project: `/model` says so,
 and `/new` starts a private one. See
 [Provider keys and member access](/docs/project/models#provider-keys-and-member-access).

@@ -143,6 +143,12 @@ function agentGrantEnvFor(
   };
 }
 
+/** The project's default agent, as its manifest mirror records it. */
+function projectDefaultAgentOf(metadata: unknown): string | null {
+  const value = (metadata as Record<string, unknown> | null | undefined)?.default_agent;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
 /** The model this session is pinned to, as `createProjectSession` recorded it. */
 function sessionModelOf(metadata: Record<string, unknown> | null | undefined): string | null {
   const value = metadata?.opencode_model;
@@ -542,7 +548,7 @@ export async function createOrJoinTeamsConversationSession(input: {
     userId,
     scope: await teamsTurnScope(project, activity, userId),
     chosenModel: selection?.opencodeModel,
-    agentName: selection?.agentName,
+    agentName: selection?.agentName || projectDefaultAgentOf(project.metadata),
     hasImage: teamsMessageHasImage(activity),
     agentGrantEnv: agentGrantEnvFor(project, selection?.agentName ?? null),
   });

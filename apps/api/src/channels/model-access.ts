@@ -368,6 +368,7 @@ export async function planChannelSessionStart(input: {
   scope: ChannelModelScope | null;
   /** The conversation's `/model` choice (a native ref when the gateway is off). */
   chosenModel: string | null | undefined;
+  /** The agent the session will run, for its default model. */
   agentName: string | null | undefined;
   hasImage: boolean;
   agentGrantEnv?: AgentGrantEnv;
@@ -379,16 +380,23 @@ export async function planChannelSessionStart(input: {
   }
   let base = chosen;
   if (!base && scope.llmGatewayEnabled && scope.personalUserId !== userId) {
-    const resolved = await resolveEffectiveModel({
+    // Pinned only when the creator's own keys change the answer; otherwise
+    // the server resolves the same default itself, with its real source.
+    const common = {
       userId,
       accountId,
       projectId,
       agentName: input.agentName || 'default',
       explicit: null,
       freeModelsOnly: scope.freeManagedOnly,
-      personalUserId: scope.personalUserId,
-    }).catch(() => null);
-    base = resolved ? (resolved.model ?? (scope.freeManagedOnly ? null : platformDefaultModelId())) : null;
+    };
+    const [asCreator, shared] = await Promise.all([
+      resolveEffectiveModel(common),
+      resolveEffectiveModel({ ...common, personalUserId: scope.personalUserId }),
+    ]).catch(() => [null, null] as const);
+    if (asCreator && shared && asCreator.model !== shared.model) {
+      base = shared.model ?? (scope.freeManagedOnly ? null : platformDefaultModelId());
+    }
   }
   const keys = base ? await grantedKeySelection(scope, base, agentGrantEnv) : null;
   const pools = selectionPools(keys);

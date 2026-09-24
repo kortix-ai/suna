@@ -28,6 +28,7 @@ import { currentChannelSelection, setChannelModel } from '../slack/selection';
 import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import { type TeamsConversationSession, conversationSession, teamsChannelCtx } from './binding';
 import { buildModelPickerCard, buildNoticeCard } from './cards';
+import { normalizeConversationPolicy } from './participants';
 import { resolveTeamsActor, teamsUserId } from './identity';
 import type { TeamsActivity } from './types';
 import { isPersonalChat } from './util';
@@ -115,6 +116,18 @@ export async function applyTeamsModelChoice(
   // chat's session created before these became private is shared, so it
   // cannot, whatever the chat is.
   const live = await conversationSession(tenantId, conversationId).catch(() => null);
+  if (live?.sessionId) {
+    // The choice reaches the live session: every message in it runs on the
+    // new model and keys. Choosing needs the same standing as sending one.
+    if (config.TEAMS_REQUIRE_USER_IDENTITY && !scope.linkedUserId) {
+      return buildNoticeCard('Link your Kortix account first — send /login — then pick a model.');
+    }
+    // A session started under an owner-only or approval policy is its owner's.
+    const policy = normalizeConversationPolicy(live.conversationPolicy ?? selection?.conversationPolicy);
+    if (policy !== 'project_open' && live.createdBy && scope.linkedUserId && live.createdBy !== scope.linkedUserId) {
+      return buildNoticeCard("Only the person who started this chat's session can change its model.");
+    }
+  }
   const agentName = live?.agentName ?? selection?.agentName ?? null;
   const agentGrantEnv = agentGrantEnvFor(scope.projectId, agentName);
   const liveScope = live?.sessionId

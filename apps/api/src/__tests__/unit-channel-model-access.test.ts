@@ -27,7 +27,9 @@ mock.module('../llm-gateway/models/provider-registry', () => ({
 const probes: Array<Record<string, unknown>> = [];
 let servable = true;
 const defaultCalls: Array<Record<string, unknown>> = [];
-let effectiveDefault: { model: string | null; source: string } = { model: null, source: 'platform' };
+/** The default as the creator resolves it (their own keys count), and as a shared session does. */
+let creatorDefault: { model: string | null; source: string } = { model: null, source: 'platform' };
+let sharedDefault: { model: string | null; source: string } = { model: null, source: 'platform' };
 mock.module('../llm-gateway/resolution/default-model', () => ({
   isModelServableForAccount: async (input: Record<string, unknown>) => {
     probes.push(input);
@@ -35,7 +37,7 @@ mock.module('../llm-gateway/resolution/default-model', () => ({
   },
   resolveEffectiveModel: async (input: Record<string, unknown>) => {
     defaultCalls.push(input);
-    return effectiveDefault;
+    return 'personalUserId' in input ? sharedDefault : creatorDefault;
   },
 }));
 
@@ -112,7 +114,8 @@ beforeEach(() => {
   catalogCalls.length = 0;
   probes.length = 0;
   defaultCalls.length = 0;
-  effectiveDefault = { model: null, source: 'platform' };
+  creatorDefault = { model: null, source: 'platform' };
+  sharedDefault = { model: null, source: 'platform' };
   ownerQueries.length = 0;
   gatewayPersonal = 'ivan';
   turnCalls.length = 0;
@@ -360,20 +363,31 @@ describe('planChannelSessionStart — the model and keys a new chat session star
     expect(await start({ chosenModel: 'codex/gpt-6-astra', hasImage: true })).toEqual({ model: 'glm-5.3-flash' });
   });
 
-  test('a shared conversation with no choice checks the default without anyone`s personal keys', async () => {
-    // The server would resolve the default as if the creator's own ChatGPT
+  test('a shared conversation whose default runs on the creator`s own ChatGPT starts on the shared default', async () => {
+    // The server resolves the default as if the creator's own ChatGPT
     // counted; in a shared session it does not, and the first turn failed
     // "Connect Codex to use this model".
-    effectiveDefault = { model: 'anthropic/claude-opus-4-8', source: 'project' };
+    creatorDefault = { model: 'codex/gpt-6-astra', source: 'account' };
+    sharedDefault = { model: 'anthropic/claude-opus-4-8', source: 'project' };
     const plan = await start({ scope: scope({ personalUserId: null }), agentName: 'reviewer' });
-    expect(defaultCalls[0]).toMatchObject({ userId: 'ivan', agentName: 'reviewer', personalUserId: null, explicit: null });
+    expect(defaultCalls).toHaveLength(2);
+    expect(defaultCalls[0]).not.toHaveProperty('personalUserId');
+    expect(defaultCalls[1]).toMatchObject({ userId: 'ivan', agentName: 'reviewer', personalUserId: null, explicit: null });
     expect(plan.model).toBe('anthropic/claude-opus-4-8');
   });
 
   test('when only the platform default is left, it is pinned — never the creator`s own default', async () => {
-    effectiveDefault = { model: null, source: 'platform' };
+    creatorDefault = { model: 'codex/gpt-6-astra', source: 'account' };
     expect((await start({ scope: scope({ personalUserId: null }) })).model).toBe('glm-5.3-flash');
     expect((await start({ scope: scope({ personalUserId: null, freeManagedOnly: true }) })).model).toBeNull();
+  });
+
+  test('when the creator`s own keys change nothing, the server resolves the default itself', async () => {
+    // An agent's own default model stays the server's to apply, with its
+    // real source.
+    creatorDefault = { model: 'anthropic/claude-opus-4-8', source: 'agent' };
+    sharedDefault = { model: 'anthropic/claude-opus-4-8', source: 'agent' };
+    expect(await start({ scope: scope({ personalUserId: null }) })).toEqual({ model: null });
   });
 
   test('a personal chat with no choice leaves the default to the server: its rule is the same', async () => {
