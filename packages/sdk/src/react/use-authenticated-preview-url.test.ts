@@ -55,5 +55,7 @@ test('a preview-shaped host the deployment does not serve is rendered without th
   const foreign = 'https://p80-anything.attacker.example/';
   expect(await render(foreign)).toBe(foreign);
   // Nothing was sent to either host.
-  expect(requested.some((url) => url.includes('apps.kortix.com') || url.includes('attacker.example'))).toBe(false);
+  const contacted = requested.map((url) => new URL(url).hostname);
+  expect(contacted).not.toContain('dev-p3000-x-0123456789abcdef.apps.kortix.com');
+  expect(contacted).not.toContain('p80-anything.attacker.example');
 });

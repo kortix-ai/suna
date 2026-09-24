@@ -889,7 +889,7 @@ export function createFilesRouter(cfg: Config): Hono {
   app.post('/rename', async (c) => {
     let from: string | undefined
     let to: string | undefined
-    let overwrite = true
+    let overwrite: boolean
     try {
       const parsed = await c.req.json<{ from: string; to: string; overwrite?: boolean }>()
       from = parsed.from
