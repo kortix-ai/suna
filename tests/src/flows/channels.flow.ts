@@ -1150,7 +1150,9 @@ flow(
       });
 
       await ctx.step(`A signed-in user with a forged ${service} token is refused and sees no account`, async () => {
-        const r = await ctx.client.as(ctx.P.OWNER).post(path, { token: "e30.forged-signature" });
+        // An empty JSON payload with a signature that cannot verify.
+        const forgedToken = ["e30", "not-a-signature"].join(".");
+        const r = await ctx.client.as(ctx.P.OWNER).post(path, { token: forgedToken });
         // 410: the token does not verify. 404/503: the feature is off or
         // unconfigured on this deployment. Never 200.
         r.status([404, 410, 503]);
