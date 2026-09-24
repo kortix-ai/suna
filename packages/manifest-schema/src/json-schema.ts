@@ -70,6 +70,12 @@ import {
   WORKSPACE_MODES_V2,
 } from './constants';
 import {
+  VOLUME_BUCKET_RE,
+  VOLUME_MODES,
+  VOLUME_SECRET_IDENTIFIER_RE,
+  VOLUME_TYPES,
+} from './volumes';
+import {
   CONNECTOR_HEADER_NAME_MAX_LENGTH,
   CONNECTOR_HEADER_NAME_RE,
   CONNECTOR_HEADER_VALUE_MAX_LENGTH,
@@ -621,6 +627,7 @@ function agentBlockV2Schema(): JsonSchemaFragment {
       kortix_permissions: kortixPermissionsGrantSetSchema(2),
       kortix_cli: deprecatedKortixCliGrantSetSchema(2),
       repository_access: { type: 'boolean', description: 'Allow new sessions to access the project repository. Defaults to true.' },
+      volumes: agentVolumesV2Schema(),
       workspace: { type: 'string', enum: [...WORKSPACE_MODES_V2], deprecated: true },
     },
     additionalProperties: false,
@@ -628,6 +635,66 @@ function agentBlockV2Schema(): JsonSchemaFragment {
       { if: { required: ['workspace'], properties: { workspace: { const: 'branch' } } }, then: { properties: { repository_access: { const: true } } } },
       { if: { required: ['workspace'], properties: { workspace: { enum: ['runtime', 'read'] } } }, then: { properties: { repository_access: { const: false } } } },
     ],
+  };
+}
+
+/** `agents.<name>.volumes` — mirrors `validateAgentVolumesV2` (./volumes.ts). */
+function agentVolumesV2Schema(): JsonSchemaFragment {
+  return {
+    description:
+      'Volumes mounted at /volumes/<name> in this agent\'s sessions: a list (read-only) or a map of volume name → read-only | read-write. Each volume\'s credential secrets must also be granted in `secrets`.',
+    oneOf: [
+      { type: 'array', items: { type: 'string', pattern: SLUG_RE.source }, uniqueItems: true },
+      {
+        type: 'object',
+        propertyNames: { pattern: SLUG_RE.source },
+        additionalProperties: { type: 'string', enum: [...VOLUME_MODES] },
+      },
+    ],
+  };
+}
+
+/** Top-level `volumes.<name>` — mirrors `validateVolumesV2` (./volumes.ts). */
+function volumeBlockV2Schema(): JsonSchemaFragment {
+  const secretRef: JsonSchemaFragment = {
+    type: 'string',
+    pattern: VOLUME_SECRET_IDENTIFIER_RE.source,
+    description: 'A project secret identifier — never the credential value.',
+  };
+  return {
+    type: 'object',
+    required: ['type', 'bucket'],
+    properties: {
+      type: { type: 'string', enum: [...VOLUME_TYPES] },
+      bucket: { type: 'string', pattern: VOLUME_BUCKET_RE.source },
+      prefix: {
+        type: 'string',
+        pattern: '^(?!/)(?!(?:.*/)?\\.{1,2}(?:/|$))(?=.*\\S).+$',
+        description: 'Path inside the bucket; the mount shows only this subtree.',
+      },
+      region: { type: 'string', pattern: '\\S' },
+      endpoint: {
+        type: 'string',
+        pattern: '^\\s*https?://[^/@\\s]+(?:[/?#]\\S*)?\\s*$',
+        description: 'S3-compatible endpoint URL. Omit for AWS S3.',
+      },
+      access_key_id: secretRef,
+      secret_access_key: secretRef,
+    },
+    additionalProperties: false,
+    dependentRequired: {
+      access_key_id: ['secret_access_key'],
+      secret_access_key: ['access_key_id'],
+    },
+  };
+}
+
+function volumesV2Schema(): JsonSchemaFragment {
+  return {
+    type: 'object',
+    description: 'Storage the user owns, mounted into agent sessions at /volumes/<name>.',
+    propertyNames: { pattern: SLUG_RE.source },
+    additionalProperties: volumeBlockV2Schema(),
   };
 }
 
@@ -754,7 +821,7 @@ export function buildManifestV2Schema(): JsonSchemaFragment {
     properties: {
       kortix_version: { const: 2 },
       // Other YAML files (or directories of them) whose `triggers`,
-      // `connectors`, `agents`, and `apps` merge into this manifest.
+      // `connectors`, `agents`, `apps`, and `volumes` merge into this manifest.
       imports: {
         type: 'array',
         items: { type: 'string', pattern: IMPORT_PATH_PATTERN },
@@ -770,6 +837,7 @@ export function buildManifestV2Schema(): JsonSchemaFragment {
         additionalProperties: agentBlockV2Schema(),
       },
       ...sharedSectionProperties(2),
+      volumes: volumesV2Schema(),
       // `[[channels]]` is removed outright in v2 (spec §2.5).
       channels: false,
     },

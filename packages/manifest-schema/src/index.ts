@@ -20,6 +20,7 @@ import { TomlError } from 'smol-toml';
 import { type ManifestFormat, parseManifestText } from './format';
 import { parseConnectorHeaders } from './connector-headers';
 import { normalizeImportPath } from './imports';
+import { validateAgentVolumeRefsV2, validateVolumesV2 } from './volumes';
 import {
   CHANNEL_PLATFORMS,
   CONNECTOR_AUTH_TYPES,
@@ -57,6 +58,29 @@ import {
   validateRuntimeV2,
   validateTriggerAgentRefsV2,
 } from './index.v2';
+
+export {
+  type AgentVolumeAttachment,
+  type AgentVolumesV2,
+  type ResolvedAgentVolume,
+  type VolumeBlockV2,
+  type VolumeModeV2,
+  type VolumeTypeV2,
+  VOLUME_BUCKET_RE,
+  VOLUME_CREDENTIAL_KEYS,
+  VOLUME_KEYS,
+  VOLUME_MODES,
+  VOLUME_MOUNT_ROOT,
+  VOLUME_SECRET_IDENTIFIER_RE,
+  VOLUME_TYPES,
+  parseAgentVolumes,
+  parseVolumeBlock,
+  resolveAgentVolumes,
+  validateAgentVolumeRefsV2,
+  validateAgentVolumesV2,
+  validateVolumesV2,
+  volumeCredentialIdentifiers,
+} from './volumes';
 
 export {
   type ManifestFormat,
@@ -330,6 +354,8 @@ function validateManifestBodyV2(
   const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues);
   validateDefaultAgentV2(parsed.default_agent, 'default_agent', agentNames, disabledNames, issues);
   validateTriggerAgentRefsV2(parsed.triggers, 'triggers', agentNames, issues);
+  validateVolumesV2(parsed.volumes, 'volumes', issues);
+  validateAgentVolumeRefsV2(parsed.agents, parsed.volumes, 'agents', issues);
 }
 
 /**

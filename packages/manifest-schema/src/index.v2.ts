@@ -42,6 +42,7 @@ import {
   WORKSPACE_MODES_V2,
 } from './constants';
 import { expectStringOrAbsent, isTable, type ManifestIssue, validateGrantList, validateKortixPermissionFields } from './index';
+import { type AgentVolumesV2, type VolumeBlockV2, validateAgentVolumesV2 } from './volumes';
 
 // ─── kortix_version 2 types ───────────────────────────────────────────────
 //
@@ -170,6 +171,10 @@ export interface AgentBlockV2 {
   kortix_cli?: GrantSetV2;
   /** Whether new sessions receive repository access. Defaults to true. */
   repository_access?: boolean;
+  /** Top-level `volumes` this agent's sessions mount at `/volumes/<name>`: a
+   *  list (read-only) or a name → `read-only` | `read-write` map. Each
+   *  volume's credential secrets must also be in `secrets` — see volumes.ts. */
+  volumes?: AgentVolumesV2;
   /** @deprecated branch = true, runtime = false; read requires an explicit choice. */
   workspace?: WorkspaceModeV2;
 }
@@ -187,6 +192,7 @@ export interface ManifestV2 {
   triggers?: Array<Record<string, unknown>>;
   connectors?: Array<Record<string, unknown>>;
   apps?: Record<string, AppBlockV2>;
+  volumes?: Record<string, VolumeBlockV2>;
 }
 
 export interface AppResourcesV2 {
@@ -584,6 +590,7 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
   if (entry.repository_access !== undefined && typeof entry.repository_access !== 'boolean') {
     issues.push({ path: `${where}.repository_access`, message: 'must be a boolean.', severity: 'error' });
   }
+  validateAgentVolumesV2(entry.volumes, `${where}.volumes`, issues);
   if (typeof entry.repository_access === 'boolean' && entry.workspace !== undefined &&
       entry.repository_access !== (entry.workspace === 'branch')) {
     issues.push({ path: `${where}.repository_access`, message: 'repository_access conflicts with workspace.', severity: 'error' });

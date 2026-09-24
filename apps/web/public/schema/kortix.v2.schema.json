@@ -292,6 +292,32 @@
             "type": "boolean",
             "description": "Allow new sessions to access the project repository. Defaults to true."
           },
+          "volumes": {
+            "description": "Volumes mounted at /volumes/<name> in this agent's sessions: a list (read-only) or a map of volume name → read-only | read-write. Each volume's credential secrets must also be granted in `secrets`.",
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+                },
+                "uniqueItems": true
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "enum": [
+                    "read-only",
+                    "read-write"
+                  ]
+                }
+              }
+            ]
+          },
           "workspace": {
             "type": "string",
             "enum": [
@@ -1251,6 +1277,65 @@
             }
           }
         ]
+      }
+    },
+    "volumes": {
+      "type": "object",
+      "description": "Storage the user owns, mounted into agent sessions at /volumes/<name>.",
+      "propertyNames": {
+        "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "type",
+          "bucket"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "s3"
+            ]
+          },
+          "bucket": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$"
+          },
+          "prefix": {
+            "type": "string",
+            "pattern": "^(?!/)(?!(?:.*/)?\\.{1,2}(?:/|$))(?=.*\\S).+$",
+            "description": "Path inside the bucket; the mount shows only this subtree."
+          },
+          "region": {
+            "type": "string",
+            "pattern": "\\S"
+          },
+          "endpoint": {
+            "type": "string",
+            "pattern": "^\\s*https?://[^/@\\s]+(?:[/?#]\\S*)?\\s*$",
+            "description": "S3-compatible endpoint URL. Omit for AWS S3."
+          },
+          "access_key_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+            "description": "A project secret identifier — never the credential value."
+          },
+          "secret_access_key": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+            "description": "A project secret identifier — never the credential value."
+          }
+        },
+        "additionalProperties": false,
+        "dependentRequired": {
+          "access_key_id": [
+            "secret_access_key"
+          ],
+          "secret_access_key": [
+            "access_key_id"
+          ]
+        }
       }
     },
     "channels": false

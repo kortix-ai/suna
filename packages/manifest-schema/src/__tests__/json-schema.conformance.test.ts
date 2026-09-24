@@ -491,6 +491,92 @@ connectors:
 `,
   },
   {
+    name: 'v2: volumes — private S3, S3-compatible endpoint, and a public bucket',
+    format: 'yaml',
+    valid: true,
+    input: `
+kortix_version: 2
+default_agent: w
+volumes:
+  data:
+    type: s3
+    bucket: acme-data
+    prefix: training/2026
+    region: us-east-1
+    access_key_id: DATA_KEY_ID
+    secret_access_key: DATA_SECRET
+  r2:
+    type: s3
+    bucket: acme-r2
+    endpoint: https://abc.r2.cloudflarestorage.com
+  noaa:
+    type: s3
+    bucket: noaa-ghcn-pds
+agents:
+  w:
+    secrets: [DATA_KEY_ID, DATA_SECRET]
+    volumes:
+      data: read-only
+      r2: read-write
+  r:
+    volumes: [noaa]
+`,
+  },
+  {
+    name: 'v2: volumes — type other than s3 rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nvolumes:\n  data:\n    type: sftp\n    bucket: acme-data\nagents:\n  w: {}\n',
+  },
+  {
+    name: 'v2: volumes — bucket with a path rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nvolumes:\n  data:\n    type: s3\n    bucket: acme/data\nagents:\n  w: {}\n',
+  },
+  {
+    name: 'v2: volumes — missing bucket rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nvolumes:\n  data:\n    type: s3\nagents:\n  w: {}\n',
+  },
+  {
+    name: 'v2: volumes — unknown volume field rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nvolumes:\n  data:\n    type: s3\n    bucket: acme-data\n    password: hunter2\nagents:\n  w: {}\n',
+  },
+  {
+    name: 'v2: volumes — prefix escaping the bucket rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nvolumes:\n  data:\n    type: s3\n    bucket: acme-data\n    prefix: ../other\nagents:\n  w: {}\n',
+  },
+  {
+    name: 'v2: volumes — endpoint with embedded credentials rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nvolumes:\n  data:\n    type: s3\n    bucket: acme-data\n    endpoint: https://user:pass@minio.example.com\nagents:\n  w: {}\n',
+  },
+  {
+    name: 'v2: volumes — access_key_id without secret_access_key rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nvolumes:\n  data:\n    type: s3\n    bucket: acme-data\n    access_key_id: K\nagents:\n  w:\n    secrets: [K]\n',
+  },
+  {
+    name: 'v2: volumes — agent volume mode other than read-only/read-write rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nvolumes:\n  data:\n    type: s3\n    bucket: acme-data\nagents:\n  w:\n    volumes:\n      data: rw\n',
+  },
+  {
+    name: 'v2: volumes — agent volumes as a bare string rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nvolumes:\n  data:\n    type: s3\n    bucket: acme-data\nagents:\n  w:\n    volumes: data\n',
+  },
+  {
     name: 'v2: flat `mode` on agent block rejected (moved to .md)',
     format: 'yaml',
     valid: false,
@@ -902,6 +988,19 @@ describe('Known divergence: cross-field rules only the imperative validator enfo
   test('sandbox.default naming an undeclared template: imperative rejects, schema accepts', () => {
     const yaml =
       'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nsandbox:\n  default: ghost\n  templates:\n    - slug: py\n      image: python:3.12-slim\n';
+    expect(validateManifest(yaml, 'yaml').valid).toBe(false);
+    expect(validateCombined(parseYaml(yaml))).toBe(true);
+  });
+
+  test('an agent attaching an undeclared volume: imperative rejects, schema accepts', () => {
+    const yaml = 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    volumes: [ghost]\n';
+    expect(validateManifest(yaml, 'yaml').valid).toBe(false);
+    expect(validateCombined(parseYaml(yaml))).toBe(true);
+  });
+
+  test("a volume credential missing from the agent's secrets grant: imperative rejects, schema accepts", () => {
+    const yaml =
+      'kortix_version: 2\ndefault_agent: w\nvolumes:\n  data:\n    type: s3\n    bucket: acme-data\n    access_key_id: K\n    secret_access_key: S\nagents:\n  w:\n    secrets: [K]\n    volumes: [data]\n';
     expect(validateManifest(yaml, 'yaml').valid).toBe(false);
     expect(validateCombined(parseYaml(yaml))).toBe(true);
   });
