@@ -134,6 +134,11 @@ function fetchWithAuth(
   return fetchImpl(input, { ...init, headers, ...(signal ? { signal } : {}) });
 }
 
+/** A `ReadableStream` request body can be read once, so it cannot be resent. */
+function hasOneShotBody(init: RequestInit | undefined): boolean {
+  return typeof ReadableStream !== 'undefined' && init?.body instanceof ReadableStream;
+}
+
 // Timeout composition, streaming exemption, and header building live in
 // `auth-core.ts` (pure + directly unit-tested there); this file wires them to
 // the live token seam.
@@ -187,6 +192,12 @@ export async function authenticatedFetch(
       ? withDefaultTimeout(input, init)
       : withDefaultTimeout(input, init, timeoutMs);
 
+  // The first send consumes a body. A retry is possible only from a copy taken
+  // BEFORE that send: a `Request` is cloned, and a one-shot stream body cannot
+  // be replayed at all, so its 401 is returned as-is.
+  const canRetry = retryOnAuthError && !hasOneShotBody(init);
+  const retryInput = canRetry && input instanceof Request ? input.clone() : input;
+
   // When the OpenCode SDK passes a Request object (single arg, no init),
   // we must construct a new Request with the auth headers baked in.
   // Relying on fetch(Request, { headers }) to override headers is unreliable
@@ -197,12 +208,12 @@ export async function authenticatedFetch(
 
   if (response.status === 401) {
     // The cached token is stale. Retry once with fresh token.
-    if (retryOnAuthError && token) {
+    if (canRetry && token) {
       invalidateTokenCache();
       const newToken = await getAuthTokenWithRetry({ attempts: 2, baseDelayMs: 200 });
       if (newToken && newToken !== token) {
-        const retryHeaders = buildAuthHeaders(input, init, newToken, clientSource);
-        return fetchWithAuth(input, init, retryHeaders, signal);
+        const retryHeaders = buildAuthHeaders(retryInput, init, newToken, clientSource);
+        return fetchWithAuth(retryInput, init, retryHeaders, signal);
       }
     }
   }
