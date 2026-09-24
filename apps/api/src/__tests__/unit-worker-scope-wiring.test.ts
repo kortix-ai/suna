@@ -37,7 +37,7 @@ const WORKERS: Record<string, string> = {
   'audit-reconciliation': 'shared/audit-reconciliation-worker.ts',
   'project-snapshots': 'git-proxy/project-snapshot-worker.ts',
   'iam-grant-expiry': 'iam/expiry-sweeper.ts',
-  'session-lifecycle': 'projects/session-lifecycle/engine.ts',
+  'session-lifecycle': 'projects/session-lifecycle/drain.ts',
   'tunnel-cleanup': 'tunnel/index.ts',
   'tunnel-rpc-forwarder': 'tunnel/core/cluster-forwarder.ts',
   'billing-trial-expiry': 'billing/index.ts',

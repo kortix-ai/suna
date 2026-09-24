@@ -378,7 +378,7 @@ export type InboxAdmissionReason = 'older_prompt_pending' | 'turn_active';
  * Put back a REDELIVERY whose already-answered check could not read the
  * transcript. A prompt that was posted before may already have its answer on
  * record; re-sending it blind shows the user the same prompt twice. The row
- * waits and counts the failure; after `MAX_ANSWER_CHECK_FAILURES` (engine.ts)
+ * waits and counts the failure; after `MAX_ANSWER_CHECK_FAILURES` (queued-continue.ts)
  * the drain sends it anyway, so an unreadable box cannot strand the prompt.
  */
 export async function requeueUnverifiedRedelivery(

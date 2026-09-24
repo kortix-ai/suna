@@ -15,7 +15,7 @@
 //     transcript shows an assistant reply under that message, the turn ran and
 //     re-sending it would run the user's message a second time.
 //
-// Same mocking caveat as the sibling engine.ts test files: `mock.module` is
+// Same mocking caveat as the sibling session-lifecycle test files: `mock.module` is
 // process-global in bun:test, so this file must run on its own (the repo's
 // `--isolate` test runner already guarantees that).
 import { beforeEach, describe, expect, mock, test } from "bun:test";
@@ -199,7 +199,7 @@ mock.module("../store", () => ({
   parkPromptForUnreachableRuntime: async () => ({ parked: true, retries: 1 }),
   reArmRuntimeBlockedPrompts: async () => 0,
   // The landing proof requeues a prompt the runtime never showed (fresh
-  // attempt, fresh idempotency key). `engine.ts` imports it by name, so every
+  // attempt, fresh idempotency key). `queued-continue.ts` imports it by name, so every
   // store mock has to carry it or the engine import fails outright. Nothing in
   // this file fails a landing.
   requeueUnlandedPrompt: async () => {
@@ -262,8 +262,8 @@ mock.module("../../../sandbox-proxy/backend", () => ({
   }),
 }));
 
-const { drainSessionLifecycleQueue, executeQueuedContinue } =
-  await import("../engine");
+const { drainSessionLifecycleQueue } = await import('../drain');
+const { executeQueuedContinue } = await import('../queued-continue');
 
 /** Every `redeliveredMessageId` the drain persisted, read out of the jsonb
  *  merge parameter the UPDATE bound. */
