@@ -290,7 +290,11 @@ export async function createSession(
     };
   }
 
-  const result = await executeCreateSession({ ...command, attachmentSourceCommandId: claimed.row.commandId });
+  const result = await executeCreateSession({
+    ...command,
+    attachmentSourceCommandId: claimed.row.commandId,
+    createCommandId: claimed.row.commandId,
+  });
   if (result.status === 'created' && result.sessionId) {
     const postCreate = await applyPostCreateActions({
       projectId: command.project.projectId,
@@ -2266,6 +2270,7 @@ async function executeQueuedCreate(
   }
   return executeCreateSession({
     attachmentSourceCommandId: row.commandId,
+    createCommandId: row.commandId,
     source: row.source as CreateSessionCommand['source'],
     project,
     userId,
@@ -2296,6 +2301,7 @@ async function executeCreateSession(
   };
   const result = await createProjectSession({
     attachmentSourceCommandId: command.attachmentSourceCommandId,
+    createCommandId: command.createCommandId,
     project: command.project,
     userId: command.userId,
     requestingPrincipalType: command.requestingPrincipalType,

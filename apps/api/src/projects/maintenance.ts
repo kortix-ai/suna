@@ -13,6 +13,8 @@ import { emptyMonitorReconcileResult } from './lib/monitor-box-core';
 import { reconcileForwardedPrompts } from './session-lifecycle/consumption';
 import { reconcileUndeliveredPrompts } from './session-lifecycle/undelivered-prompts';
 import { verifyParkedRuntimes } from './reaping/parked-runtime-verification';
+import { removeArchivedProviderBoxes } from './reaping/archived-box-removal';
+import { convergeStuckProvisioningRuntimes } from './reaping/stuck-provisioning';
 import { reconcileRuntimeWakeFences } from './session-lifecycle/runtime-wake-maintenance';
 import {
   EMPTY_REAP_RESULT,
@@ -282,6 +284,8 @@ export async function runProjectMaintenance(): Promise<void> {
       parkedRuntimes,
       monitorBoxes,
       monitorEventsPurged,
+      archivedRemovals,
+      stuckProvisioning,
     ] = await Promise.all([
       // Provider-authoritative idle reaper + state/billing reconcile (the fix for
       // boxes that never auto-stopped and kept billing). Backstops the webhooks.
@@ -438,6 +442,24 @@ export async function runProjectMaintenance(): Promise<void> {
         );
         return 0;
       }),
+      // A deleted session's box is removed until the provider confirms it is
+      // gone; one failed remove no longer leaves its disk behind for good.
+      removeArchivedProviderBoxes().catch((err) => {
+        console.warn(
+          '[project-maintenance] archived-box removal failed:',
+          err instanceof Error ? err.message : err,
+        );
+        return { examined: 0, removed: 0, failed: 1 };
+      }),
+      // A `provisioning` row whose restart/recovery owner is gone is converged
+      // to the provider's state; nothing else ever acts on such a row.
+      convergeStuckProvisioningRuntimes().catch((err) => {
+        console.warn(
+          '[project-maintenance] stuck-provisioning converge failed:',
+          err instanceof Error ? err.message : err,
+        );
+        return { examined: 0, activated: 0, parked: 0, lost: 0, archived: 0, errors: 1 };
+      }),
     ]);
     const hadAction = Boolean(
       idle.stopped ||
@@ -475,7 +497,11 @@ export async function runProjectMaintenance(): Promise<void> {
         monitorBoxes.disabledOverCap ||
         monitorBoxes.deferred ||
         monitorBoxes.errors ||
-        monitorEventsPurged,
+        monitorEventsPurged ||
+        archivedRemovals.removed ||
+        archivedRemovals.failed ||
+        stuckProvisioning.examined ||
+        stuckProvisioning.errors,
     );
     if (hadAction) {
       console.log('[project-maintenance] completed', {
@@ -494,6 +520,8 @@ export async function runProjectMaintenance(): Promise<void> {
         runtimeWakes,
         monitorBoxes,
         monitorEventsPurged,
+        archivedRemovals,
+        stuckProvisioning,
       });
     }
     // Unconditional heartbeat — proof-of-life independent of whether any
@@ -524,6 +552,9 @@ export async function runProjectMaintenance(): Promise<void> {
       `parked_verified=${parkedRuntimes.examined}`,
       `parked_lost=${parkedRuntimes.lost}`,
       `parked_healed=${parkedRuntimes.healed}`,
+      `archived_boxes_removed=${archivedRemovals.removed}`,
+      `archived_box_remove_failures=${archivedRemovals.failed}`,
+      `stuck_provisioning_converged=${stuckProvisioning.examined}`,
       // A monitor box only stays billable while this sweep observes it, so
       // `monitor_observed` going flat while boxes exist is the signal that
       // monitor billing has silently stopped earning.
