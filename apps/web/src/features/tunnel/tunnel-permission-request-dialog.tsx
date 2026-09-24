@@ -22,11 +22,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { successToast } from '@/components/ui/toast';
-import {
-  useApprovePermissionRequest,
-  useDenyPermissionRequest,
-  type TunnelPermissionRequest,
-} from '@/hooks/tunnel/use-tunnel';
+import { useApprovePermissionRequest, useDenyPermissionRequest } from '@/hooks/tunnel/use-tunnel';
 import { cn } from '@/lib/utils';
 import { useTunnelStore } from '@/stores/tunnel-store';
 import {
@@ -37,13 +33,13 @@ import {
   XIcon as X,
 } from '@phosphor-icons/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { approvalScope, scopeFromRequest } from './permission-scope';
 import { getScopeEditorCapability } from './scope-editors';
 import { FilesystemScopeEditor } from './scope-editors/filesystem-scope-editor';
 import { ShellScopeEditor } from './scope-editors/shell-scope-editor';
 import type { FilesystemScope, PermissionScope, ShellScope } from './types';
 import {
   EXPIRY_OPTIONS,
-  getDefaultScope,
   getExpiresAt,
   localizedCapabilityRegistry,
   localizedExpiryOptions,
@@ -71,7 +67,7 @@ export function TunnelPermissionRequestDialog() {
   // Pre-fill scope from the request
   const initialScope = useMemo(() => {
     if (!currentRequest) return {};
-    return extractScopeFromRequest(currentRequest);
+    return scopeFromRequest(currentRequest);
   }, [currentRequest]);
 
   const [customScope, setCustomScope] = useState<PermissionScope>(initialScope);
@@ -82,7 +78,7 @@ export function TunnelPermissionRequestDialog() {
       setMode('scoped');
       setExpiryValue('7d');
       setScopeExpanded(false);
-      setCustomScope(extractScopeFromRequest(currentRequest));
+      setCustomScope(scopeFromRequest(currentRequest));
       setError(null);
       failedAction.current = null;
     }
@@ -107,7 +103,7 @@ export function TunnelPermissionRequestDialog() {
         scope = currentRequest.requestedScope;
         expiresAt = getExpiresAt(EXPIRY_OPTIONS[0]!);
       } else if (mode === 'scoped') {
-        scope = customScope as Record<string, unknown>;
+        scope = approvalScope(currentRequest.capability, customScope);
         const expiry = EXPIRY_OPTIONS.find((o) => o.value === expiryValue);
         expiresAt = expiry ? getExpiresAt(expiry) : undefined;
       } else {
@@ -373,34 +369,4 @@ function ModeOption({
       <p className="text-muted-foreground mt-0.5 ml-[22px] text-xs">{description}</p>
     </button>
   );
-}
-
-function extractScopeFromRequest(request: TunnelPermissionRequest): PermissionScope {
-  const base = getDefaultScope(request.capability);
-  const rs = request.requestedScope || {};
-
-  switch (request.capability) {
-    case 'filesystem': {
-      const fsBase = base as FilesystemScope;
-      const path = (rs as Record<string, unknown>).path as string | undefined;
-      const operation = (rs as Record<string, unknown>).operation as string | undefined;
-      return {
-        ...fsBase,
-        paths: path ? [path] : fsBase.paths,
-        operations: operation
-          ? [operation as FilesystemScope['operations'][number]]
-          : fsBase.operations,
-      } satisfies FilesystemScope;
-    }
-    case 'shell': {
-      const shBase = base as ShellScope;
-      const command = (rs as Record<string, unknown>).command as string | undefined;
-      return {
-        ...shBase,
-        commands: command ? [command.split(' ')[0]!] : shBase.commands,
-      } satisfies ShellScope;
-    }
-    default:
-      return base;
-  }
 }
