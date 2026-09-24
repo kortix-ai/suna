@@ -4141,7 +4141,7 @@ export function SessionChat({
       optimisticText = buildOptimisticPromptTextWithUploads(optimisticText, attachedFiles);
       optimisticText = appendSessionRefs(
         optimisticText,
-        allOptimisticSessionMentions.map((m) => ({ id: m.value, title: m.label })),
+        allOptimisticSessionMentions.map((m) => ({ id: m.value ?? '', title: m.label })),
       );
       if (fileMentionRefs.length > 0) {
         const block = buildFileRefsBlock(fileMentionRefs);
@@ -4333,7 +4333,7 @@ export function SessionChat({
         const allSessionMentions = [...trackedSessionMentions, ...rawSessionIdMentions];
         textPrompt.text = appendSessionRefs(
           textPrompt.text,
-          allSessionMentions.map((m) => ({ id: m.value, title: m.label })),
+          allSessionMentions.map((m) => ({ id: m.value ?? '', title: m.label })),
         );
         if (fileMentionRefs.length > 0) {
           const block = buildFileRefsBlock(fileMentionRefs);
