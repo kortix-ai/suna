@@ -3,9 +3,9 @@
  * budget counts every second it waits.
  *
  * Preview runs 36067774228 and 36068206735 (2026-09-24) hit GitHub's secondary
- * rate limit. Dozens of flows failed `exceeded 180000ms` while their provision
- * was still queued or sleeping, but the provision kept its semaphore slot and
- * kept retrying after the flow was already reported. The API lane then ran
+ * rate limit, and 61 and 67 flows failed with a flow timeout. A provision that
+ * was still queued or sleeping when its flow timed out kept its semaphore slot
+ * and kept retrying after the flow was already reported. The API lane then ran
  * ~61 minutes instead of the usual ~20.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

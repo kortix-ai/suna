@@ -463,10 +463,10 @@ The runner gives every flow attempt an `AbortSignal`. It aborts when the
 attempt passes, fails, or exceeds its timeout. A project provision that is
 still queued behind the provision semaphore, or sleeping out a GitHub rate
 limit, then stops and frees its slot. Before this, a flow that timed out kept
-its provision alive for up to the full 15-minute rate-limit budget. On the two
-preview runs above, dozens of flows failed `exceeded 180000ms` while their
-provisions kept the 4 semaphore slots busy, and the API lane took ~61 minutes
-instead of the usual ~20.
+its provision alive for up to the full 15-minute rate-limit budget, holding one
+of the 4 semaphore slots. On the two preview runs above, 61 and 67 flows failed
+with a flow timeout while provisions were failing on the GitHub rate limit, and
+the API lane took ~61 minutes instead of the usual ~20.
 
 The rate-limit budget also counts the time a provision waits in the shared
 cooldown that other provisions set. A cooldown that does not fit the remaining
