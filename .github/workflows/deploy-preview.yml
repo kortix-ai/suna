@@ -325,6 +325,10 @@ jobs:
       contents: read
       pull-requests: write
       deployments: write
+      # OIDC -> AWS Secrets Manager. Safe here: this job runs default-branch
+      # code only. The build-* jobs check out the pull request and must never
+      # get id-token or an aws-env read.
+      id-token: write
     env:
       GH_TOKEN: ${{ github.token }}
       GITHUB_REPOSITORY: ${{ github.repository }}
@@ -349,29 +353,44 @@ jobs:
       PREVIEW_LOCKFILE_SHA256: ${{ needs.authorize.outputs.lockfile_sha256 }}
       PREVIEW_SANDBOX_PROVIDER: ${{ needs.authorize.outputs.provider }}
       PLATINUM_API_URL: ${{ vars.PLATINUM_API_URL }}
-      PLATINUM_API_KEY: ${{ secrets.PLATINUM_API_KEY }}
-      DAYTONA_API_URL: ${{ secrets.DAYTONA_API_URL }}
-      DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
       DAYTONA_CI_TARGET: ${{ vars.DAYTONA_CI_TARGET }}
-      KE2E_STRIPE_SECRET_KEY: ${{ secrets.STAGING_STRIPE_SECRET_KEY }}
-      KE2E_STRIPE_WEBHOOK_SECRET: ${{ secrets.STAGING_STRIPE_WEBHOOK_SECRET }}
-      KORTIX_GITHUB_APP_ID: ${{ secrets.PREVIEW_KORTIX_GITHUB_APP_ID }}
-      KORTIX_GITHUB_APP_PRIVATE_KEY: ${{ secrets.PREVIEW_KORTIX_GITHUB_APP_PRIVATE_KEY }}
-      KORTIX_GITHUB_APP_SLUG: ${{ secrets.PREVIEW_KORTIX_GITHUB_APP_SLUG }}
-      MANAGED_GIT_GITHUB_INSTALL_ID: ${{ secrets.PREVIEW_MANAGED_GIT_GITHUB_INSTALL_ID }}
-      MANAGED_GIT_GITHUB_OWNER: ${{ secrets.PREVIEW_MANAGED_GIT_GITHUB_OWNER }}
-      # Optional, and takes PRECEDENCE over the App when set. The App can only
-      # create repos if it is installed on the owner AND has administration:
-      # write; a PAT needs neither. Set this to unblock project creation
-      # without touching the App's permissions.
-      MANAGED_GIT_GITHUB_TOKEN: ${{ secrets.PREVIEW_MANAGED_GIT_GITHUB_TOKEN }}
-      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-      MORPH_API_KEY: ${{ secrets.MORPH_API_KEY }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
+      # Preview runtime credentials. The dedicated preview GitHub App and
+      # managed-Git values are CI-only (kortix-ci-env); the rest are read from
+      # the runtime blob that already holds them. DAYTONA_API_URL was never
+      # stored and stays unset (sandbox-preview.ts falls back to
+      # DAYTONA_SERVER_URL, then the public API). MANAGED_GIT_GITHUB_TOKEN is
+      # optional and takes PRECEDENCE over the App when set: the App can only
+      # create repos if it is installed on the owner AND has administration:
+      # write; a PAT needs neither.
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            PLATINUM_API_KEY=kortix-dev-env:PLATINUM_API_KEY
+            DAYTONA_API_URL?
+            DAYTONA_API_KEY=kortix-preview-env:DAYTONA_API_KEY
+            KE2E_STRIPE_SECRET_KEY=kortix-staging-env:STRIPE_SECRET_KEY
+            KE2E_STRIPE_WEBHOOK_SECRET=kortix-staging-env:STRIPE_WEBHOOK_SECRET
+            KORTIX_GITHUB_APP_ID=kortix-ci-env:PREVIEW_KORTIX_GITHUB_APP_ID
+            KORTIX_GITHUB_APP_PRIVATE_KEY=kortix-ci-env:PREVIEW_KORTIX_GITHUB_APP_PRIVATE_KEY
+            KORTIX_GITHUB_APP_SLUG=kortix-ci-env:PREVIEW_KORTIX_GITHUB_APP_SLUG
+            MANAGED_GIT_GITHUB_INSTALL_ID=kortix-ci-env:PREVIEW_MANAGED_GIT_GITHUB_INSTALL_ID
+            MANAGED_GIT_GITHUB_OWNER=kortix-ci-env:PREVIEW_MANAGED_GIT_GITHUB_OWNER
+            MANAGED_GIT_GITHUB_TOKEN=kortix-ci-env:PREVIEW_MANAGED_GIT_GITHUB_TOKEN?
+            OPENROUTER_API_KEY
+            MORPH_API_KEY=kortix-preview-env:MORPH_API_KEY
       - uses: oven-sh/setup-bun@v2
       - name: Revalidate exact preview approval
         run: |
@@ -403,10 +422,23 @@ jobs:
         with:
           name: preview-web-${{ needs.authorize.outputs.sha }}
           path: /tmp/preview-web
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            DOCKERHUB_USERNAME
+            DOCKERHUB_TOKEN
       - uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
       - name: Publish exact linux/amd64 images
         run: |
           set -euo pipefail
@@ -443,6 +475,20 @@ jobs:
         id: preview
         continue-on-error: true
         run: bun tests/bin/sandbox-preview.ts deploy
+      - name: Check out the aws-env action
+        if: always() && needs.authorize.outputs.public_worker != ''
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read the Cloudflare token from AWS Secrets Manager
+        if: always() && needs.authorize.outputs.public_worker != ''
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            CLOUDFLARE_API_TOKEN=kortix-ci-env:CLOUDFLARE_APPS_EDGE_API_TOKEN
       - name: Point the stable hostname at this sandbox
         # A stable hostname is served by a Worker that proxies to the sandbox's
         # OWN origin, and that origin is derived from the sandbox id — so it
@@ -460,7 +506,6 @@ jobs:
         # and re-pointing at one is how the public name goes dark. See below.
         if: always() && needs.authorize.outputs.public_worker != ''
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_APPS_EDGE_API_TOKEN }}
           WORKER: ${{ needs.authorize.outputs.public_worker }}
         run: |
           set -euo pipefail
@@ -608,6 +653,7 @@ jobs:
       contents: read
       pull-requests: write
       deployments: write
+      id-token: write # OIDC -> AWS Secrets Manager; default-branch code only
     env:
       GH_TOKEN: ${{ github.token }}
       GITHUB_REPOSITORY: ${{ github.repository }}
@@ -617,15 +663,26 @@ jobs:
       # branch environment has no expiry to fall back on.
       PREVIEW_BRANCH_ENV: ${{ github.event.pull_request.head.ref }}
       PLATINUM_API_URL: ${{ vars.PLATINUM_API_URL }}
-      PLATINUM_API_KEY: ${{ secrets.PLATINUM_API_KEY }}
-      DAYTONA_API_URL: ${{ secrets.DAYTONA_API_URL }}
-      DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
       DAYTONA_CI_TARGET: ${{ vars.DAYTONA_CI_TARGET }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            PLATINUM_API_KEY=kortix-dev-env:PLATINUM_API_KEY
+            DAYTONA_API_URL?
+            DAYTONA_API_KEY=kortix-preview-env:DAYTONA_API_KEY
       - uses: oven-sh/setup-bun@v2
       - name: Delete the Platinum or Daytona preview sandbox
         run: bun tests/bin/sandbox-preview.ts teardown
@@ -664,6 +721,7 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+      id-token: write # OIDC -> AWS Secrets Manager; default-branch code only
     env:
       GITHUB_REPOSITORY: ${{ github.repository }}
       # No PREVIEW_PR_NUMBER: a delete event carries no pull request, and it
@@ -677,12 +735,23 @@ jobs:
       # it as a string, and branchEnvSandboxName slugs it to [a-z0-9-] first.
       PREVIEW_BRANCH_ENV: ${{ github.event.ref }}
       PLATINUM_API_URL: ${{ vars.PLATINUM_API_URL }}
-      PLATINUM_API_KEY: ${{ secrets.PLATINUM_API_KEY }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            PLATINUM_API_KEY=kortix-dev-env:PLATINUM_API_KEY
       - uses: oven-sh/setup-bun@v2
       - name: Delete the branch environment's sandbox
         run: bun tests/bin/sandbox-preview.ts teardown
@@ -698,18 +767,30 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      id-token: write # OIDC -> AWS Secrets Manager; default-branch code only
     env:
       GITHUB_TOKEN: ${{ github.token }}
       GITHUB_REPOSITORY: ${{ github.repository }}
       PLATINUM_API_URL: ${{ vars.PLATINUM_API_URL }}
-      PLATINUM_API_KEY: ${{ secrets.PLATINUM_API_KEY }}
-      DAYTONA_API_URL: ${{ secrets.DAYTONA_API_URL }}
-      DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
       DAYTONA_CI_TARGET: ${{ vars.DAYTONA_CI_TARGET }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: main
           persist-credentials: false
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            PLATINUM_API_KEY=kortix-dev-env:PLATINUM_API_KEY
+            DAYTONA_API_URL?
+            DAYTONA_API_KEY=kortix-preview-env:DAYTONA_API_KEY
       - uses: oven-sh/setup-bun@v2
       - run: bun tests/bin/sandbox-preview.ts reconcile

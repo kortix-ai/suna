@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 const root = resolve(import.meta.dirname, '../..');
 const actionDir = resolve(root, '.github/actions/aws-env');
 const script = resolve(actionDir, 'fetch.sh');
+const workflowsDir = resolve(root, '.github/workflows');
 
 /**
  * Drives the REAL `.github/actions/aws-env/fetch.sh` with a stubbed `aws`
@@ -260,5 +261,113 @@ describe('aws-env composite action — fetch.sh', () => {
     expect(action).toContain("if: inputs.role-to-assume != ''");
     expect(action).toMatch(/uses: aws-actions\/configure-aws-credentials@[0-9a-f]{40} # v6/);
     expect(action).toContain('shell: bash');
+  });
+});
+
+describe('workflows read credentials from AWS, not GitHub', () => {
+  const files = readdirSync(workflowsDir).filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'));
+
+  it('references no GitHub secret except GITHUB_TOKEN and temporary `|| secrets.X` fallbacks', () => {
+    const offenders: string[] = [];
+    for (const file of files) {
+      const lines = readFileSync(join(workflowsDir, file), 'utf8').split('\n');
+      lines.forEach((line, i) => {
+        const stripped = line
+          .replace(/secrets\.GITHUB_TOKEN/g, '')
+          .replace(/\|\|\s*secrets\.[A-Z0-9_]+/g, '');
+        if (/(?<![\w.-])secrets\.[A-Za-z_]/.test(stripped)) offenders.push(`${file}:${i + 1}: ${line.trim()}`);
+      });
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  const USES = 'uses: ./.aws-env/.github/actions/aws-env';
+
+  /** Top-level `jobs:` entries as { name, text }, split on two-space keys. */
+  function jobsOf(text: string): { name: string; text: string }[] {
+    const body = text.slice(text.search(/^jobs:\n/m));
+    const heads = [...body.matchAll(/^ {2}([A-Za-z0-9_-]+):\n/gm)];
+    return heads.map((m, i) => ({
+      name: m[1],
+      text: body.slice(m.index, i + 1 < heads.length ? heads[i + 1].index : undefined),
+    }));
+  }
+
+  /** The `permissions:` mapping at `indent` spaces, or null when absent. */
+  function permissionsAt(text: string, indent: number): string[] | null {
+    const pad = ' '.repeat(indent);
+    const lines = text.split('\n');
+    const at = lines.findIndex((l) => l === `${pad}permissions:`);
+    if (at === -1) return null;
+    const out: string[] = [];
+    for (const line of lines.slice(at + 1)) {
+      if (!line.startsWith(`${pad}  `) || line.trim() === '') break;
+      if (!line.trim().startsWith('#')) out.push(line.trim());
+    }
+    return out;
+  }
+
+  const users = files
+    .map((file) => ({ file, text: readFileSync(join(workflowsDir, file), 'utf8') }))
+    .filter(({ text }) => text.includes(USES));
+
+  it('finds the workflows that use aws-env (guards the checks below from passing vacuously)', () => {
+    expect(users.length).toBeGreaterThanOrEqual(20);
+  });
+
+  it('every job that calls aws-env can mint an OIDC token', () => {
+    const missing: string[] = [];
+    for (const { file, text } of users) {
+      const workflowPerms = permissionsAt(text.slice(0, text.search(/^jobs:\n/m)), 0);
+      for (const job of jobsOf(text)) {
+        if (!job.text.includes(USES)) continue;
+        const perms = permissionsAt(job.text, 4) ?? workflowPerms;
+        if (!perms?.some((p) => p.startsWith('id-token: write'))) missing.push(`${file}:${job.name}`);
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+
+  it('every aws-env step runs from a checkout of the workflow commit in .aws-env', () => {
+    const bad: string[] = [];
+    let count = 0;
+    for (const { file, text } of users) {
+      let from = 0;
+      for (;;) {
+        const at = text.indexOf(USES, from);
+        if (at === -1) break;
+        count++;
+        from = at + USES.length;
+        const checkout = text.lastIndexOf('- name: Check out the aws-env action', at);
+        const between = text.slice(checkout, at);
+        // Exactly one step (the aws-env read) may start between the two.
+        const steps = between.match(/\n +- /g) ?? [];
+        if (
+          checkout === -1 ||
+          steps.length !== 1 ||
+          !between.includes('ref: ${{ github.workflow_sha }}') ||
+          !between.includes('path: .aws-env') ||
+          !between.includes('sparse-checkout: .github/actions') ||
+          !between.includes('persist-credentials: false')
+        ) {
+          bad.push(`${file}@${at}`);
+        }
+      }
+    }
+    expect(count).toBeGreaterThanOrEqual(40);
+    expect(bad).toEqual([]);
+  });
+
+  it('never gives a deploy-preview job that checks out pull request code an OIDC token', () => {
+    const text = readFileSync(join(workflowsDir, 'deploy-preview.yml'), 'utf8');
+    const prJobs = jobsOf(text).filter((job) => job.text.includes('ref: ${{ needs.authorize.outputs.sha }}'));
+    expect(prJobs.map((job) => job.name).sort()).toEqual(['build-api', 'build-gateway', 'build-web']);
+    for (const job of prJobs) {
+      expect(job.text, job.name).not.toContain('id-token');
+      expect(job.text, job.name).not.toContain('aws-env');
+    }
+    for (const job of jobsOf(text).filter((j) => j.text.includes(USES))) {
+      expect(job.text, job.name).toMatch(/ref: (\$\{\{ github\.event\.repository\.default_branch \}\}|main)\n/);
+    }
   });
 });

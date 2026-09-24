@@ -7,8 +7,10 @@ name: drata-compliance-as-code
 #
 # The pipeline FAILS on critical findings. Lower-severity findings remain
 # visible in Drata and are reviewed against docs/compliance/IAC-SCANNER-EXCEPTIONS.md.
-# Auth: the pipeline key lives in repo secret DRATA_IAC_PIPELINE_KEY
-# (never committed — referenced only via ${{ secrets.* }}).
+# Auth: the pipeline key is DRATA_IAC_PIPELINE_KEY in the AWS Secrets Manager
+# blob kortix-ci-env, read through .github/actions/aws-env (GitHub OIDC). Fork
+# and Dependabot pull requests get no OIDC token, so the read is skipped there
+# and the scan runs without a key, as it did before the move to AWS.
 
 on:
   push:
@@ -36,11 +38,26 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.results_run_id != '' }}
     name: sanitized-finding-details
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    permissions:
+      contents: read
+      id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     steps:
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            DRATA_API_TOKEN=kortix-ci-env:DRATA_IAC_PIPELINE_KEY
+
       - name: Print finding details
         if: ${{ inputs.results_run_id != '' }}
         env:
-          DRATA_API_TOKEN: ${{ secrets.DRATA_IAC_PIPELINE_KEY }}
           RUN_ID: ${{ inputs.results_run_id }}
         run: |
           set -euo pipefail
@@ -74,9 +91,29 @@ jobs:
   drata-iac-scan:
     name: compliance-as-code-action
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    permissions:
+      contents: read
+      id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     steps:
       - name: Checkout repo
         uses: actions/checkout@v7
+
+      # Fork and Dependabot pull requests cannot mint an OIDC token: skip the
+      # read there, like GitHub withheld the secret before.
+      - name: Check out the aws-env action
+        if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            DRATA_API_TOKEN=kortix-ci-env:DRATA_IAC_PIPELINE_KEY
 
       - name: Drata Github Action
         id: drata
@@ -86,7 +123,7 @@ jobs:
         continue-on-error: true
         uses: drata/compliance-as-code-action@v1.0.0
         env:
-          DRATA_API_TOKEN: ${{ secrets.DRATA_IAC_PIPELINE_KEY }}
+          DRATA_API_TOKEN: ${{ env.DRATA_API_TOKEN || secrets.DRATA_IAC_PIPELINE_KEY }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
