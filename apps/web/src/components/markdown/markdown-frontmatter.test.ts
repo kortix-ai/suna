@@ -95,3 +95,23 @@ describe('markdown FILE renderers all strip frontmatter', () => {
     });
   }
 });
+
+// A front-matter line used to lose its trailing whitespace through `/\s+$/`,
+// which retried a whitespace run inside the line from every position in it:
+// 60k spaces took 1.4 s on V8 (Bun's JSC runs it in linear time, so only the
+// parity half of these tests can fail under Bun). `trimEnd` replaces it.
+describe('parseFrontmatter trims each line in linear time', () => {
+  test('trimEnd drops exactly what /\\s+$/ dropped, for every UTF-16 code unit', () => {
+    for (let code = 0; code < 0x10000; code++) {
+      const c = String.fromCharCode(code);
+      const line = `a${c}${c}b${c}${c}`;
+      expect(line.trimEnd()).toBe(line.replace(/\s+$/, ''));
+    }
+  });
+
+  test('a front-matter line holding 240k spaces', () => {
+    const started = performance.now();
+    parseFrontmatter(`---\ntitle: a${' '.repeat(240_000)}b\n---\nbody`);
+    expect(performance.now() - started).toBeLessThan(100);
+  });
+});

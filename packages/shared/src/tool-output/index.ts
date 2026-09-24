@@ -12,6 +12,7 @@
  */
 
 export { type BackgroundWorker, parseBackgroundWorkers } from './background-workers';
+export { looksLikeMarkdown } from './markdown-detect';
 export {
   type ParsedLtmMemory,
   type ParsedMemoryEntry,
