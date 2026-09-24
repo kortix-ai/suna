@@ -84,6 +84,7 @@ describe('rclone invocation', () => {
         RCLONE_S3_ENV_AUTH: 'false',
         RCLONE_S3_NO_CHECK_BUCKET: 'true',
         RCLONE_S3_ENDPOINT: 'https://x.r2.dev',
+        RCLONE_S3_SIGN_ACCEPT_ENCODING: 'false',
         RCLONE_S3_REGION: 'auto',
       },
     })

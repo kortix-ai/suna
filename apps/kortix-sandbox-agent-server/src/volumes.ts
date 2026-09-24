@@ -132,7 +132,13 @@ export function rcloneEnv(
     RCLONE_S3_ENV_AUTH: 'false',
     RCLONE_S3_NO_CHECK_BUCKET: 'true',
   }
-  if (spec.endpoint) env.RCLONE_S3_ENDPOINT = spec.endpoint
+  if (spec.endpoint) {
+    env.RCLONE_S3_ENDPOINT = spec.endpoint
+    // A proxy in front of an S3-compatible service (Cloudflare, verified with a
+    // MinIO behind a tunnel) rewrites Accept-Encoding, and a signature that
+    // covers it fails with SignatureDoesNotMatch. Host and x-amz-* stay signed.
+    env.RCLONE_S3_SIGN_ACCEPT_ENCODING = 'false'
+  }
   if (spec.region) env.RCLONE_S3_REGION = spec.region
   const pairs = [
     [spec.access_key_id_env, 'RCLONE_S3_ACCESS_KEY_ID'],
