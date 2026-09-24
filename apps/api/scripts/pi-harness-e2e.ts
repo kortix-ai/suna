@@ -2,7 +2,7 @@
  * pi harness end-to-end against a running local stack.
  *
  *   bun pi-e2e.ts setup  --api http://localhost:14208/v1 --runtime pi|opencode --name <n>
- *   bun pi-e2e.ts run    --api ... --project <id> --provider daytona [--prompt "..."] [--keep]
+ *   bun pi-e2e.ts run    --api ... --project <id> --provider daytona [--agent <name>] [--prompt "..."] [--keep]
  *
  * setup: provisions a managed project (starter template), clones it through
  * the Git proxy with a PAT, sets `runtime:` in kortix.yaml, pushes.
@@ -166,7 +166,8 @@ async function run(): Promise<void> {
   const t0 = performance.now();
   const at = () => Math.round(performance.now() - t0);
   const out: Record<string, unknown> = { project_id: projectId, provider };
-  const created = await api(base, token, `/projects/${projectId}/sessions`, { method: 'POST', body: JSON.stringify({ provider }) });
+  const agent = arg('agent');
+  const created = await api(base, token, `/projects/${projectId}/sessions`, { method: 'POST', body: JSON.stringify({ provider, ...(agent ? { agent_name: agent } : {}) }) });
   if (created.status !== 201) throw new Error(`create ${created.status}: ${JSON.stringify(created.body).slice(0, 300)}`);
   const sessionId: string = created.body.session_id ?? created.body.id;
   out.session_id = sessionId;
