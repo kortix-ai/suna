@@ -266,9 +266,21 @@ for (const runtime of runtimes) {
         );
         await selectAccountForUi(page, accounts[0].account_id);
         await dismissOnboarding(page);
-        await page.keyboard.press("Meta+,");
+        // Mod+, is bound by `SettingsPanel`, which `ProjectShell` mounts only
+        // after auth hydrates (until then the shell renders an empty div). A
+        // keystroke sent before that has no listener. The local stack hydrates
+        // before `dismissOnboarding` returns; a deployed origin does not, so
+        // this step failed 4 of 4 attempts on staging and on the #7579 preview
+        // while passing locally. Wait for the shell's own sidebar, then press
+        // until the effect has bound — the dialog must still come from Mod+,.
+        await expect(
+          page.getByRole("button", { name: "Switch project", exact: true }),
+        ).toBeVisible({ timeout: 60_000 });
         const settings = page.getByRole("dialog");
-        await expect(settings).toBeVisible();
+        await expect(async () => {
+          await page.keyboard.press("Meta+,");
+          await expect(settings).toBeVisible({ timeout: 2_000 });
+        }).toPass({ timeout: 45_000 });
         const settingsRow = settings.locator(".kx-overlay-sidebar-titlebar");
         const settingsBack = settingsRow.getByRole("button", { name: /Back to app/i });
         await expect(settingsBack).toBeVisible();
@@ -1700,6 +1712,35 @@ for (const runtime of runtimes) {
           (await logOut.boundingBox())!.y,
           "Log out must sit below the title-bar band",
         ).toBeGreaterThanOrEqual(backBox.y + backBox.height);
+
+        // `/new` has no titlebar owner, so the root strip is its only drag
+        // area and covers the whole band (#7568). The strip paints above Back,
+        // so it must not take Back's click: Back is the topmost box at its
+        // own center.
+        const strip = await page
+          .locator(".kx-desktop-chrome")
+          .evaluate((element) => ({
+            bottom: element.getBoundingClientRect().bottom,
+            region: getComputedStyle(element).webkitAppRegion,
+          }));
+        expect(
+          strip.bottom,
+          "the drag strip must cover the title-bar band",
+        ).toBeGreaterThanOrEqual(backBox.y + backBox.height);
+        expect(strip.region, "the band must stay a window drag region").toBe(
+          "drag",
+        );
+        expect(
+          await back.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const hit = document.elementFromPoint(
+              rect.left + rect.width / 2,
+              rect.top + rect.height / 2,
+            );
+            return hit !== null && element.contains(hit);
+          }),
+          "the drag strip must not cover Back",
+        ).toBe(true);
 
         await back.click();
         await expect(page).toHaveURL(new RegExp(`/projects/${project.id}`), {

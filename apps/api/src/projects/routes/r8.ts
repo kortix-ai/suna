@@ -76,6 +76,7 @@ import {
   serializePrompt,
 } from '../lib/session-prompt-view';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
+import { isWireIdAheadOf } from '../wire-message-id';
 
 // POST /v1/projects/:projectId/sessions/:sessionId/start
 // THE unified session-open endpoint. One idempotent call that provisions a
@@ -693,7 +694,15 @@ projectsApp.openapi(
       // not read yet — for a message the user typed before their last reload.
       // The drain re-mints against the live root before delivering, which is
       // the only place that can place the id correctly.
-      ...(body.remint_on_delivery === true ? { remintOnDelivery: true } : {}),
+      //
+      // A second trigger, set by the server: an id more than an hour AHEAD of
+      // the clock. No transcript placed it — `kortix sessions send` minted the
+      // HIGH bits of the id clock (`msg_1a0d…`, ~40 days out) until 2026-09 —
+      // and delivered as-is it renders every later turn above this prompt.
+      // Accepted rather than refused, so every installed CLI keeps working.
+      ...(body.remint_on_delivery === true || isWireIdAheadOf(messageId, Date.now())
+        ? { remintOnDelivery: true }
+        : {}),
       // SEND order across surfaces whose POSTs race — see the batch sort in
       // the drain. Bounded to the near past/future so a wrong client clock
       // cannot pin its prompts to the head or tail of every future batch.

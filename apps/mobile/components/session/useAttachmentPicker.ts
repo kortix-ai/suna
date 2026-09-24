@@ -7,6 +7,10 @@
  * `lib/session/attachments.ts`). The photo library needs no permission on
  * either platform (PHPicker / Android photo picker). The camera does:
  * `onCameraDenied` fires when the user has refused it.
+ *
+ * If Android kills the host activity mid-pick, this hook's in-flight call
+ * never resolves; `useRecoverPendingPick` (`useRecoverPendingPick.ts`)
+ * recovers the result on the next mount instead.
  */
 import { useCallback } from 'react';
 import * as DocumentPicker from 'expo-document-picker';

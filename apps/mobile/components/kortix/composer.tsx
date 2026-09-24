@@ -34,7 +34,11 @@ import { BUTTON_LABEL_MAX_FONT_SCALE } from '@/lib/ui/font-scale';
 import { THEME } from '@/lib/utils/theme';
 import { cn } from '@/lib/utils/utils';
 import { StopIcon } from './StopIcon';
-import { ComposerAttachmentTiles } from '@/components/session/composer-attachment-tiles';
+import {
+  ComposerAttachmentTiles,
+  type ComposerAttachmentUpload,
+} from '@/components/session/composer-attachment-tiles';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
 
 /**
  * Added to each side of a 36pt `icon-md` control, so its touch target is 44pt.
@@ -74,10 +78,14 @@ interface ComposerProps {
   /** Send is enabled with no text and no files (the thread's staged slash command). */
   allowEmptySend?: boolean;
   onRemoveAttachment?: (index: number) => void;
+  /** Per-file upload progress ring / failure scrim, keyed by index in `attachments`. */
+  attachmentUploads?: Readonly<Record<number, ComposerAttachmentUpload>>;
   /** Shows the model pill with this text. */
   modelLabel?: string | null;
   onModelPress?: () => void;
   className?: string;
+  /** A send is in flight: the send slot shows `KortixLoader` instead of the arrow, and stays disabled. */
+  sending?: boolean;
 }
 
 export function Composer({
@@ -99,9 +107,11 @@ export function Composer({
   attachLabel = 'Add photos or files',
   allowEmptySend = false,
   onRemoveAttachment,
+  attachmentUploads,
   modelLabel,
   onModelPress,
   className,
+  sending = false,
 }: ComposerProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -117,6 +127,7 @@ export function Composer({
           <ComposerAttachmentTiles
             files={attachments}
             disabled={disabled}
+            uploads={attachmentUploads}
             onRemove={(index) => onRemoveAttachment?.(index)}
           />
         </View>
@@ -199,9 +210,9 @@ export function Composer({
             className="rounded-full"
             hitSlop={COMPOSER_CONTROL_HIT_SLOP}
             onPress={onSubmit}
-            disabled={!canSend}
+            disabled={!canSend || sending}
             accessibilityLabel="Send">
-            <Icon as={ArrowUp} size={18} />
+            {sending ? <KortixLoader size="small" /> : <Icon as={ArrowUp} size={18} />}
           </Button>
         )}
       </View>
