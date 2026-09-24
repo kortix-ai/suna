@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ensurePiPackageBundle, missingPeers, piPackageBundleDigest, piPackageBundleKey, piPackageSpecs, type BundleDeps } from './bundle';
+import { buildEnv, ensurePiPackageBundle, missingPeers, piPackageBundleDigest, piPackageBundleKey, piPackageSpecs, type BundleDeps } from './bundle';
 
 describe('pi package bundle identity', () => {
   test('only exact npm pins count, sorted and unique; paths and junk are skipped', () => {
@@ -48,6 +48,46 @@ describe('missingPeers', () => {
       await pkg('typebox', {});
       expect(await missingPeers(root)).toEqual({ '@acme/i18n': '*' });
       expect(await missingPeers(join(root, 'absent'))).toEqual({});
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('buildEnv — what the install and pre-build processes inherit', () => {
+  test('only PATH, HOME, TMPDIR and registry settings: no NODE_PATH, no API secret', () => {
+    const env = buildEnv({
+      PATH: '/usr/bin',
+      HOME: '/home/api',
+      TMPDIR: '/tmp',
+      NODE_PATH: '/repo/node_modules/.pnpm/node_modules',
+      NPM_CONFIG_REGISTRY: 'https://registry.example',
+      BUN_CONFIG_REGISTRY: 'https://registry.example',
+      DATABASE_URL: 'postgres://secret',
+      SUPABASE_SERVICE_ROLE_KEY: 'secret',
+    });
+    expect(env).toEqual({ PATH: '/usr/bin', HOME: '/home/api', TMPDIR: '/tmp', NPM_CONFIG_REGISTRY: 'https://registry.example', BUN_CONFIG_REGISTRY: 'https://registry.example' });
+  });
+
+  test('an inherited NODE_PATH cannot pull a foreign module into a pre-build', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'prebuild-env-'));
+    try {
+      // A foreign `canvas` (as a monorepo's pnpm store has) whose native addon does not exist.
+      await mkdir(join(root, 'foreign', 'canvas'), { recursive: true });
+      await writeFile(join(root, 'foreign', 'canvas', 'package.json'), JSON.stringify({ name: 'canvas', version: '1.0.0', main: 'index.js' }));
+      await writeFile(join(root, 'foreign', 'canvas', 'index.js'), "module.exports = require('../build/Release/canvas.node')");
+      // An extension whose dependency needs canvas only optionally, like linkedom.
+      const ext = join(root, 'node_modules', 'ext');
+      await mkdir(ext, { recursive: true });
+      await writeFile(join(ext, 'package.json'), JSON.stringify({ name: 'ext', version: '1.0.0', pi: { extensions: ['./index.js'] } }));
+      await writeFile(join(ext, 'index.js'), "let canvas = null\ntry { canvas = require('canvas') } catch {}\nexport default () => canvas");
+      const prebuild = async (env: Record<string, string>) => {
+        const proc = Bun.spawn([process.execPath, join(import.meta.dir, 'prebuild.ts'), join(root, 'node_modules'), join(root, `out-${Object.keys(env).length}`), 'ext'], { cwd: root, env, stdout: 'pipe' });
+        return JSON.parse(await new Response(proc.stdout).text()).packages[0];
+      };
+      const leaky = await prebuild({ ...buildEnv(process.env), NODE_PATH: join(root, 'foreign') });
+      expect(leaky.fallback).toContain('canvas.node');
+      expect(await prebuild(buildEnv({ ...process.env, NODE_PATH: join(root, 'foreign') }))).toMatchObject({ extensions: ['packages/ext/index.js.kortix.js'] });
     } finally {
       await rm(root, { recursive: true, force: true });
     }

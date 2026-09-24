@@ -64,8 +64,23 @@ export function piPackageBundleKey(digest: string, configuredPrefix = config.KOR
   return `${trimmed ? `${trimmed}/` : ''}pi-packages/${PI_PACKAGE_BUNDLE_FORMAT}/${digest}${kind === 'prebuilt' ? '' : '.node_modules'}.tar.gz`;
 }
 
+/**
+ * The environment of the install and pre-build processes: PATH, HOME, TMPDIR and
+ * npm/Bun registry settings only. An inherited NODE_PATH (pnpm's shims set one to
+ * the monorepo's store) made the bundler resolve a package's optional require
+ * outside the bundle; the API's secrets have no business there either.
+ */
+export function buildEnv(env: NodeJS.ProcessEnv): Record<string, string> {
+  const kept: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (value === undefined) continue;
+    if (key === 'PATH' || key === 'HOME' || key === 'TMPDIR' || key.startsWith('NPM_CONFIG_') || key.startsWith('BUN_CONFIG_')) kept[key] = value;
+  }
+  return kept;
+}
+
 async function run(cmd: string[], cwd: string): Promise<void> {
-  const proc = Bun.spawn(cmd, { cwd, stdout: 'pipe', stderr: 'pipe' });
+  const proc = Bun.spawn(cmd, { cwd, env: buildEnv(process.env), stdout: 'pipe', stderr: 'pipe' });
   const timer = setTimeout(() => proc.kill(), INSTALL_TIMEOUT_MS);
   const [code, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()]).finally(() => clearTimeout(timer));
   if (code !== 0) throw new Error(`${cmd[0]} ${cmd[1]} exited ${code}: ${stderr.trim().slice(-600)}`);

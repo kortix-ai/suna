@@ -188,7 +188,9 @@ export async function prebuildPackages(nodeModules: string, names: readonly stri
       }
       packages.push({ name, version, dir, extensions: built });
     } catch (err) {
-      packages.push({ name, version, fallback: `pre-build failed: ${(err as Error).message.split('\n')[0]}` });
+      // Bun.build throws an AggregateError whose `errors` carry the reasons.
+      const reasons = (err as { errors?: unknown[] }).errors?.map(String) ?? [(err as Error).message];
+      packages.push({ name, version, fallback: `pre-build failed: ${reasons.join('; ').slice(0, 500)}` });
     }
   }
   const manifest: PrebuiltManifest = { format: PREBUILT_FORMAT, packages };
