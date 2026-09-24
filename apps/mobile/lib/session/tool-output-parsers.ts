@@ -18,6 +18,7 @@
  */
 
 import { getDiagnostics, type Diagnostic } from '@kortix/sdk';
+import { type LspDiagnostic, parseDiagnosticsFromToolOutput } from '@kortix/shared/tool-output';
 
 // ─── Structured output ───────────────────────────────────────────────────────
 
@@ -269,61 +270,11 @@ export function parseConnectorOutput(output: string): Record<string, unknown> | 
 
 // ─── Diagnostics ─────────────────────────────────────────────────────────────
 
-export type DiagnosticSeverity = 1 | 2 | 3 | 4;
-
-export interface LspDiagnostic {
-  file: string;
-  line: number;
-  column: number;
-  endLine?: number;
-  endColumn?: number;
-  severity: DiagnosticSeverity;
-  message: string;
-  source?: string;
-}
-
-/** `<file_diagnostics>` / `<project_diagnostics>` blocks → diagnostics by file (0-indexed). */
-export function parseDiagnosticsFromToolOutput(output: string): Record<string, LspDiagnostic[]> {
-  const result: Record<string, LspDiagnostic[]> = {};
-  const tagPattern =
-    /<(?:file_diagnostics|project_diagnostics)>([\s\S]*?)<\/(?:file_diagnostics|project_diagnostics)>/g;
-  const allLines: string[] = [];
-  let tagMatch: RegExpExecArray | null;
-
-  while ((tagMatch = tagPattern.exec(output)) !== null) {
-    const content = tagMatch[1].trim();
-    if (!content) continue;
-    for (const line of content.split('\n')) {
-      const trimmed = line.trim();
-      if (trimmed && !trimmed.startsWith('...')) allLines.push(trimmed);
-    }
-  }
-  if (allLines.length === 0) return result;
-
-  const linePattern = /^(Error|Warn|Info|Hint):\s+(.+?):(\d+):(\d+)\s+\[([^\]]*)\](.*)$/;
-  for (const line of allLines) {
-    const match = linePattern.exec(line);
-    if (!match) continue;
-    const [, severityStr, filePath, lineStr, colStr, source, rest] = match;
-    const severity: DiagnosticSeverity =
-      severityStr === 'Error' ? 1 : severityStr === 'Warn' ? 2 : severityStr === 'Hint' ? 4 : 3;
-
-    let message = rest.trim();
-    message = message.replace(/^\[\w+\]\s*/, '');
-    message = message.replace(/^\([^)]*\)\s*/, '');
-
-    const diag: LspDiagnostic = {
-      file: filePath,
-      line: Math.max(0, parseInt(lineStr, 10) - 1),
-      column: Math.max(0, parseInt(colStr, 10) - 1),
-      severity,
-      message: message || `${severityStr} at ${lineStr}:${colStr}`,
-      source: source || undefined,
-    };
-    (result[filePath] ??= []).push(diag);
-  }
-  return result;
-}
+export {
+  type DiagnosticSeverity,
+  type LspDiagnostic,
+  parseDiagnosticsFromToolOutput,
+} from '@kortix/shared/tool-output';
 
 /**
  * Web `getToolDiagnostics(part, filePath)` over already-read output and

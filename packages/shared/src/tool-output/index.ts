@@ -27,6 +27,11 @@ export {
   parseMemorySearchOutput,
 } from './memory-search';
 export {
+  type DiagnosticSeverity,
+  type LspDiagnostic,
+  parseDiagnosticsFromToolOutput,
+} from './diagnostics';
+export {
   type GrepFileGroup,
   type GrepMatch,
   type ParsedSessionMessage,
