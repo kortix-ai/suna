@@ -9,15 +9,18 @@
  * registry the daemon fills from its binary, so the file has no bare import left.
  *
  * Output (`outDir`): `manifest.json` plus `packages/<name>/`, the package's own
- * files (no `node_modules`, no images or video) with each pre-built entry next to
- * its source entry, so relative file reads from the entry resolve the same way.
+ * files with each pre-built entry next to its source entry, so relative file
+ * reads from the entry resolve the same way. The object is on the boot path
+ * (1.9 MB took 1.5 s from us-west-2 to an Amsterdam box), so it leaves out what
+ * runtime never reads: `node_modules`, media, type declarations, source maps,
+ * the root README/CHANGELOG, and the code files an entry inlined.
  * A package this cannot pre-build is listed with a reason; the sandbox loads it
  * from the `node_modules` fallback bundle instead.
  *
  * Runs as its own process (`bun prebuild.ts <node_modules> <outDir> <name>...`):
  * a hostile or huge package can stall or crash it without touching the API.
  */
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, join, relative, resolve } from 'node:path';
 
 /** The modules pi supplies to extensions (pi-coding-agent `VIRTUAL_MODULES`). */
@@ -44,9 +47,13 @@ export const PI_HOST_MODULES = [
   '@mariozechner/pi-coding-agent',
 ] as const;
 
-export const PREBUILT_FORMAT = 'pi-packages-v2';
+export const PREBUILT_FORMAT = 'pi-packages-v3';
 const MEDIA = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.mp4', '.webm', '.mov', '.mp3', '.wav']);
 const CODE = /\.(ts|js|mjs|cts|mts|cjs)$/;
+/** Never read at runtime: type declarations and source maps. */
+const BUILD_ONLY = /\.(d\.[cm]?ts|map)$/;
+const ROOT_DOCS = /^(readme|changelog)(\.|$)/i;
+const INLINED_CODE = /\.(ts|js|mjs|cts|mts|cjs|tsx|jsx)$/;
 
 export type PrebuiltPackage =
   | { name: string; version: string; dir: string; extensions: string[] }
@@ -131,21 +138,29 @@ function copyOwnFiles(from: string, to: string): void {
     recursive: true,
     filter: (source) => {
       const name = basename(source);
-      if (name === 'node_modules' || name === '.git') return false;
+      if (name === 'node_modules' || name === '.git' || BUILD_ONLY.test(name)) return false;
+      if (dirname(source) === from && ROOT_DOCS.test(name)) return false;
       return !MEDIA.has(extname(name).toLowerCase());
     },
   });
 }
 
-/** One entry → one self-contained ESM file beside it (`<entry>.kortix.js`). */
-async function buildEntry(entry: string, outFile: string): Promise<void> {
+/**
+ * One entry → one self-contained ESM file beside it (`<entry>.kortix.js`).
+ * Returns every file the bundler loaded. Minified without renaming: an
+ * extension may read a class or function name, and the API image's Bun 1.2.23
+ * ignores `keepNames` (measured) and has no `metafile`.
+ */
+async function buildEntry(entry: string, outFile: string): Promise<string[]> {
   const exact = new Set<string>(PI_HOST_MODULES);
+  const loaded: string[] = [];
   const result = await Bun.build({
     entrypoints: [entry],
     outdir: dirname(outFile),
     naming: basename(outFile),
     target: 'bun',
     format: 'esm',
+    minify: { whitespace: true, syntax: true },
     plugins: [
       {
         name: 'pi-host-modules',
@@ -157,11 +172,28 @@ async function buildEntry(entry: string, outFile: string): Promise<void> {
             contents: `module.exports = globalThis.__kortixPiHost[${JSON.stringify(args.path)}];`,
             loader: 'js',
           }));
+          // Records the file, then Bun's own loader handles it.
+          build.onLoad({ filter: /.*/, namespace: 'file' }, (args) => {
+            loaded.push(args.path);
+            return undefined as never;
+          });
         },
       },
     ],
   });
   if (!result.success) throw new Error(result.logs.map(String).join('\n').slice(0, 800) || 'bundling failed');
+  return loaded;
+}
+
+/** Remove the package's own code files that an entry inlined; other files may be read at runtime. */
+function removeInlinedCode(source: string, target: string, loaded: Iterable<string>): void {
+  const real = realpathSync(source);
+  for (const path of loaded) {
+    if (!INLINED_CODE.test(path)) continue;
+    const rel = relative(real, realpathSync(path));
+    if (rel.startsWith('..')) continue;
+    rmSync(join(target, rel), { force: true });
+  }
 }
 
 export async function prebuildPackages(nodeModules: string, names: readonly string[], outDir: string): Promise<PrebuiltManifest> {
@@ -179,13 +211,15 @@ export async function prebuildPackages(nodeModules: string, names: readonly stri
     try {
       copyOwnFiles(source, target);
       const built: string[] = [];
+      const loaded = new Set<string>();
       for (const entry of entries) {
         const rel = relative(source, entry);
         const out = join(target, `${rel}.kortix.js`);
         mkdirSync(dirname(out), { recursive: true });
-        await buildEntry(entry, out);
+        for (const path of await buildEntry(entry, out)) loaded.add(path);
         built.push(join(dir, `${rel}.kortix.js`));
       }
+      removeInlinedCode(source, target, loaded);
       packages.push({ name, version, dir, extensions: built });
     } catch (err) {
       // Bun.build throws an AggregateError whose `errors` carry the reasons.

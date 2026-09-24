@@ -64,11 +64,12 @@ describe('prebuildPackages', () => {
     });
     const manifest = await prebuildPackages(nodeModules, ['@acme/tool'], out);
     expect(manifest).toEqual({
-      format: 'pi-packages-v2',
+      format: 'pi-packages-v3',
       packages: [{ name: '@acme/tool', version: '1.2.3', dir: 'packages/@acme/tool', extensions: ['packages/@acme/tool/index.ts.kortix.js'] }],
     });
     const built = readFileSync(join(out, 'packages/@acme/tool/index.ts.kortix.js'), 'utf8');
-    expect(built).toContain('globalThis.__kortixPiHost["typebox"]');
+    // Minified: `["typebox"]` may print as `.typebox`.
+    expect(built).toMatch(/globalThis\.__kortixPiHost(\.typebox|\["typebox"\])/);
     expect(built).toContain('globalThis.__kortixPiHost["@earendil-works/pi-coding-agent"]');
     expect(built).toContain('toUpperCase');
     expect(built).not.toMatch(/from\s+["'](typebox|left-dep|@earendil-works\/)/);
@@ -76,6 +77,44 @@ describe('prebuildPackages', () => {
     expect(existsSync(join(out, 'packages/@acme/tool/locales/en.json'))).toBe(true);
     expect(existsSync(join(out, 'packages/@acme/tool/demo.mp4'))).toBe(false);
     expect(JSON.parse(readFileSync(join(out, 'manifest.json'), 'utf8'))).toEqual(manifest);
+  });
+
+  test('the object carries what runtime reads, not the code the entry inlined; the entry is minified with names kept', async () => {
+    pkg('@acme/slim', { pi: { extensions: ['./dist/index.js'] } }, {
+      'dist/index.js': [
+        "import { helper } from './helper.js'",
+        "import data from '../data/table.json'",
+        'class NamedTool { run() { return helper(data.k) } }',
+        'export default function (pi) { const tool = new NamedTool(); pi.registerTool({ name: tool.constructor.name, value: tool.run() }) }',
+      ].join('\n'),
+      'dist/helper.js': 'export const helper = (k) => k * 2',
+      'dist/index.d.ts': 'export {}',
+      'dist/index.js.map': '{}',
+      'data/table.json': '{"k": 21}',
+      'src/index.ts': 'export {}',
+      'assets/page.html': '<html></html>',
+      'README.md': '# slim',
+      'CHANGELOG.md': '## 1.2.3',
+      'LICENSE': 'MIT',
+      'skills/slim/SKILL.md': '---\nname: slim\n---\n',
+    });
+    const manifest = await prebuildPackages(nodeModules, ['@acme/slim'], out);
+    expect(manifest.packages).toEqual([{ name: '@acme/slim', version: '1.2.3', dir: 'packages/@acme/slim', extensions: ['packages/@acme/slim/dist/index.js.kortix.js'] }]);
+    const dir = join(out, 'packages/@acme/slim');
+    // Inlined code, type declarations, source maps and the package's docs stay out of the object.
+    for (const rel of ['dist/index.js', 'dist/helper.js', 'dist/index.d.ts', 'dist/index.js.map', 'README.md', 'CHANGELOG.md']) {
+      expect({ rel, present: existsSync(join(dir, rel)) }).toEqual({ rel, present: false });
+    }
+    // Kept: files code may read at runtime (even an inlined JSON), code the entry never imported, pi resources, the license.
+    for (const rel of ['package.json', 'data/table.json', 'src/index.ts', 'assets/page.html', 'LICENSE', 'skills/slim/SKILL.md', 'dist/index.js.kortix.js']) {
+      expect({ rel, present: existsSync(join(dir, rel)) }).toEqual({ rel, present: true });
+    }
+    const built = readFileSync(join(dir, 'dist/index.js.kortix.js'), 'utf8');
+    expect(built.trim().split('\n').length).toBeLessThanOrEqual(2);
+    // Identifiers are not renamed: an extension may rely on a class or function name.
+    const tools: Array<{ name: string; value: number }> = [];
+    (await import(join(dir, 'dist/index.js.kortix.js'))).default({ registerTool: (tool: { name: string; value: number }) => tools.push(tool) });
+    expect(tools).toEqual([{ name: 'NamedTool', value: 42 }]);
   });
 
   test('a package cannot run code at build time through a Bun macro', async () => {

@@ -25,10 +25,10 @@ describe('pi package bundle identity', () => {
     expect(piPackageBundleDigest(piPackageSpecs(['npm:b@2.0.0', 'npm:a@1.0.0']))).toBe(a);
     expect(piPackageBundleDigest(piPackageSpecs(['npm:a@1.0.1', 'npm:b@2.0.0']))).not.toBe(a);
     expect(a).toMatch(/^[0-9a-f]{64}$/);
-    expect(piPackageBundleKey(a, '')).toBe(`pi-packages/pi-packages-v2/${a}.tar.gz`);
-    expect(piPackageBundleKey(a, '', 'node_modules')).toBe(`pi-packages/pi-packages-v2/${a}.node_modules.tar.gz`);
+    expect(piPackageBundleKey(a, '')).toBe(`pi-packages/pi-packages-v3/${a}.tar.gz`);
+    expect(piPackageBundleKey(a, '', 'node_modules')).toBe(`pi-packages/pi-packages-v3/${a}.node_modules.tar.gz`);
     // The same prefix project snapshots use, so one bucket policy covers both.
-    expect(piPackageBundleKey(a, '/dev/')).toBe(`dev/pi-packages/pi-packages-v2/${a}.tar.gz`);
+    expect(piPackageBundleKey(a, '/dev/')).toBe(`dev/pi-packages/pi-packages-v3/${a}.tar.gz`);
   });
 });
 

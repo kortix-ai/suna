@@ -4,6 +4,7 @@
  *   bun pi-e2e.ts setup  --api http://localhost:14208/v1 --runtime pi|opencode --name <n>
  *   bun pi-e2e.ts run    --api ... --project <id> --provider daytona [--agent <name>] [--prompt "..."] [--keep]
  *   bun pi-e2e.ts cr     --api ... --project <id> --head <branch> [--title "..."]   (open + merge a change request)
+ *   bun pi-e2e.ts exec   --api ... --external <sandbox> --command "..."               (run a shell command in a kept sandbox)
  *
  * setup: provisions a managed project (starter template), clones it through
  * the Git proxy with a PAT, sets `runtime:` in kortix.yaml, pushes.
@@ -330,6 +331,18 @@ async function probe(): Promise<void> {
   await show(`/p/${eid}/8000/kortix/logs?tail=${arg('tail', '120')}`, 9000);
 }
 
+/** Run one shell command in a kept sandbox (the daemon's env-rpc `exec`) and print its result. */
+async function exec(): Promise<void> {
+  const base = need('api');
+  const eid = need('external');
+  const token = await jwt();
+  const r = await api(base, token, `/p/${eid}/8000/kortix/env-rpc`, {
+    method: 'POST',
+    body: JSON.stringify({ op: 'exec', args: { command: need('command'), timeout: Number(arg('timeout-ms', '600000')) } }),
+  });
+  console.log(JSON.stringify({ status: r.status, ...(typeof r.body === 'object' ? r.body : { body: r.body }) }));
+}
+
 /** Set or clear a per-project feature flag override (PATCH /projects/:id/features). */
 async function flag(): Promise<void> {
   const base = need('api');
@@ -360,6 +373,9 @@ switch (process.argv[2]) {
   case 'flag':
     await flag();
     break;
+  case 'exec':
+    await exec();
+    break;
   case 'probe':
     await probe();
     break;
@@ -379,6 +395,6 @@ switch (process.argv[2]) {
     await changeRequest();
     break;
   default:
-    console.error('usage: pi-e2e.ts setup|setup-db|run|cr|status|probe|flag|delete …');
+    console.error('usage: pi-e2e.ts setup|setup-db|run|cr|exec|status|probe|flag|delete …');
     process.exit(2);
 }
