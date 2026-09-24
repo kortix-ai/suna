@@ -13,6 +13,7 @@
 
 export { type BackgroundWorker, parseBackgroundWorkers } from './background-workers';
 export { looksLikeMarkdown } from './markdown-detect';
+export { sandboxMediaPath, withoutEdgeQuotes, withoutTrailingSlashes } from './media-path';
 export {
   type ParsedLtmMemory,
   type ParsedMemoryEntry,
