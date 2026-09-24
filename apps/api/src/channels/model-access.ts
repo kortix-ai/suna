@@ -28,20 +28,16 @@ import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { servableProjectCatalog } from '../llm-gateway/models/servable-catalog';
 import { platformDefaultModelId } from '../llm-gateway/models/served-managed-models';
-import { resolveCatalogUpstream } from '../llm-gateway/models/provider-registry';
 import { runtimeModelCatalog } from '../llm-gateway/models/runtime-catalog';
 import { isModelServableForAccount, resolveEffectiveModel } from '../llm-gateway/resolution/default-model';
 import { toOpencodeModelRef, toWireModel } from '../llm-gateway/resolution/effective';
 import { resolveSessionPersonalOwner } from '../projects/lib/personal-resources';
-import { listUsableGatewaySecrets } from '../secrets/account-resource';
+import { type ProviderKeySelection, providerKeyOf, usableProviderKeys } from '../secrets/provider-key-selection';
 import { channelModelContext, projectModelContext } from './slack/model-gate';
 import type { ChannelCtx } from './slack/selection';
 import { channelTurnModel } from './vision-model';
 
 type AgentGrantEnv = () => Promise<readonly string[] | 'all' | null>;
-
-/** Most keys one session may select per provider (provider-secret-pools.ts). */
-const MAX_KEYS_PER_PROVIDER = 10;
 
 export interface ChannelModelScope {
   projectId: string;
@@ -171,21 +167,9 @@ export async function listChannelModels(scope: ChannelModelScope): Promise<{
 }
 
 /** The provider whose keys pay for a model, and the key name the gateway reads. Null for a Kortix model. */
-export function keyProviderOf(model: string): { providerId: string; envVar: string } | null {
-  const wire = toWireModel(model);
-  if (!wire.includes('/')) return null;
-  const providerId = wire.split('/')[0]!;
-  if (providerId === 'codex') return { providerId, envVar: 'CODEX_AUTH_JSON' };
-  const upstream = resolveCatalogUpstream(providerId);
-  return upstream ? { providerId, envVar: upstream.envVar } : null;
-}
+export const keyProviderOf = providerKeyOf;
 
-export interface ChannelKeySelection {
-  providerId: string;
-  envVar: string;
-  secretIds: string[];
-  labels: string[];
-}
+export type ChannelKeySelection = ProviderKeySelection;
 
 /**
  * Every key this conversation may use for the model's provider, so all of
@@ -195,18 +179,13 @@ export interface ChannelKeySelection {
  */
 export async function channelKeySelection(scope: ChannelModelScope, model: string): Promise<ChannelKeySelection | null> {
   if (!scope.pooledEnabled || !scope.llmGatewayEnabled) return null;
-  const provider = keyProviderOf(model);
-  if (!provider) return null;
-  const keys = (await listUsableGatewaySecrets({
+  return usableProviderKeys({
     accountId: scope.accountId,
     projectId: scope.projectId,
     userId: scope.memberUserId,
     grantUserId: scope.personalUserId,
-    providerId: provider.providerId,
-  }).catch(() => [])).filter((key) => key.name.toUpperCase() === provider.envVar.toUpperCase())
-    .slice(0, MAX_KEYS_PER_PROVIDER);
-  if (!keys.length) return null;
-  return { ...provider, secretIds: keys.map((key) => key.secretId), labels: keys.map((key) => key.label) };
+    model,
+  }).catch(() => null);
 }
 
 export function selectionPools(selection: ChannelKeySelection | null): Record<string, string[]> | undefined {

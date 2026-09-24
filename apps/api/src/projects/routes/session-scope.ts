@@ -8,7 +8,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { createRoute, z } from '@hono/zod-openapi';
-import { connectors, projectSessions, projectSessionConnectorBindings, serviceAccounts } from '@kortix/db';
+import { connectors, projectSessions, projectSessionConnectorBindings, serviceAccounts, sessionProviderSecretPools } from '@kortix/db';
 import { and, eq, or } from 'drizzle-orm';
 import { config } from '../../config';
 import { loadProjectForUser, loadVisibleSession, assertProjectCapability, projectCapabilityAllowed } from '../lib/access';
@@ -29,6 +29,9 @@ import { canonicalConnectorAlias, publicConnectorAlias } from '../../shared/conn
 import { rescopeSessionBindings, rescopeSessionSecrets } from '../lib/session-rescope';
 import { listResolvedProjectSecrets, secretKeyCollisionInAllowlist } from '../secrets';
 import { resolveSessionPersonalOwner } from '../lib/personal-resources';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { providerKeyOf, usableProviderKeys } from '../../secrets/provider-key-selection';
+import { validateProviderSecretPool } from './provider-secret-pools';
 projectsApp.openapi(
   createRoute({
     method: 'get',
@@ -643,14 +646,48 @@ projectsApp.openapi(
       nextModel = trimmed;
     } else {
       const freeModelsOnly = !(await accountMayUseManagedModels(loaded.row.accountId));
-      const servable = await isModelServableForAccount({
-        userId: visible.row.createdBy ?? loaded.userId,
+      const owner = visible.row.createdBy ?? loaded.userId;
+      let servable = await isModelServableForAccount({
+        userId: owner,
         accountId: loaded.row.accountId,
         projectId,
         sessionId,
         freeModelsOnly,
         model: trimmed,
       });
+      // A model reached only through pooled keys needs the session to select
+      // them. A session with no selection for that provider gets every key
+      // it may use there, so they rotate — the keys the web offers. A
+      // selection made on purpose, an empty one included, is left alone.
+      const selected = !servable && resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets') &&
+        !visible.ownerIsMachine && visible.row.createdBy
+        ? await keysForModelChange({
+            accountId: loaded.row.accountId,
+            project: loaded.row,
+            sessionId,
+            agentName: visible.row.agentName ?? DEFAULT_AGENT_SENTINEL,
+            owner,
+            caller: loaded.userId,
+            model: trimmed,
+          }).catch(() => null)
+        : null;
+      if (selected) {
+        servable = await isModelServableForAccount({
+          userId: owner,
+          accountId: loaded.row.accountId,
+          projectId,
+          sessionId,
+          freeModelsOnly,
+          model: trimmed,
+          providerSecretPools: { [selected.providerId]: selected.secretIds },
+        });
+        if (servable) {
+          await db
+            .insert(sessionProviderSecretPools)
+            .values({ sessionId, providerId: selected.providerId, secretIds: selected.secretIds })
+            .onConflictDoNothing({ target: [sessionProviderSecretPools.sessionId, sessionProviderSecretPools.providerId] });
+        }
+      }
       if (!servable) {
         return c.json(
           {
@@ -695,3 +732,62 @@ projectsApp.openapi(
     return c.json(modelChangeResult({ model: nextModel, needsPush: true, push }));
   },
 );
+
+/**
+ * The keys a model change selects for a session that has none for the new
+ * model's provider: every pooled key the session's owner may use there,
+ * personal ones only when the session acts for its owner in private (spec
+ * 2026-09-22 §2.3) and the owner is the one changing it. The session's agent
+ * must be allowed the key, and so must the caller — the same checks as
+ * `PUT …/provider-secret-pools/{providerId}`. Null when there is nothing to
+ * select, or the session already has a selection for that provider.
+ */
+async function keysForModelChange(input: {
+  accountId: string;
+  project: { projectId: string; repoUrl: string; defaultBranch: string | null; manifestPath: string | null };
+  sessionId: string;
+  agentName: string;
+  owner: string;
+  caller: string;
+  model: string;
+}): Promise<{ providerId: string; secretIds: string[] } | null> {
+  const provider = providerKeyOf(input.model);
+  if (!provider) return null;
+  const [existing] = await db
+    .select({ sessionId: sessionProviderSecretPools.sessionId })
+    .from(sessionProviderSecretPools)
+    .where(and(eq(sessionProviderSecretPools.sessionId, input.sessionId), eq(sessionProviderSecretPools.providerId, provider.providerId)))
+    .limit(1);
+  if (existing) return null;
+  const personal = input.caller === input.owner
+    ? await resolveSessionPersonalOwner({
+        projectId: input.project.projectId,
+        accountId: input.accountId,
+        sessionId: input.sessionId,
+        legacyUserId: input.owner,
+      })
+    : null;
+  const selection = await usableProviderKeys({
+    accountId: input.accountId,
+    projectId: input.project.projectId,
+    userId: input.owner,
+    grantUserId: personal,
+    model: input.model,
+  });
+  if (!selection) return null;
+  for (const userId of new Set([input.caller, input.owner])) {
+    const invalid = await validateProviderSecretPool({
+      accountId: input.accountId,
+      projectId: input.project.projectId,
+      repoUrl: input.project.repoUrl,
+      defaultBranch: input.project.defaultBranch,
+      manifestPath: input.project.manifestPath,
+      agentName: input.agentName,
+      userId,
+      providerId: selection.providerId,
+      ids: selection.secretIds,
+    });
+    if (invalid) return null;
+  }
+  return { providerId: selection.providerId, secretIds: selection.secretIds };
+}
