@@ -146,40 +146,25 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
       - name: Create or update kortix-staging-env
         env:
-          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
-          STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
-          STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
-          STAGING_SUPABASE_JWT_SECRET: ${{ secrets.STAGING_SUPABASE_JWT_SECRET }}
-          STAGING_KORTIX_ADMIN_API_KEY: ${{ secrets.STAGING_KORTIX_ADMIN_API_KEY }}
-          STAGING_COMPOSIO_API_KEY: ${{ secrets.STAGING_COMPOSIO_API_KEY }}
+          # kortix-staging-env is canonical for the staging data plane
+          # (DATABASE_URL, SUPABASE_*, KORTIX_ADMIN_API_KEY): an existing
+          # bundle is read back and re-validated, never overwritten from CI.
+          # These six values are used ONLY on first creation, when no bundle
+          # exists. TRANSITION: they resolve to the old GitHub secrets; remove
+          # them with the GitHub secret deletion. After that, first creation
+          # fails closed below until an operator creates the bundle by hand.
+          BOOTSTRAP_DATABASE_URL: ${{ env.STAGING_DATABASE_URL || secrets.STAGING_DATABASE_URL }}
+          BOOTSTRAP_SUPABASE_URL: ${{ env.STAGING_SUPABASE_URL || secrets.STAGING_SUPABASE_URL }}
+          BOOTSTRAP_SUPABASE_ANON_KEY: ${{ env.STAGING_SUPABASE_ANON_KEY || secrets.STAGING_SUPABASE_ANON_KEY }}
+          BOOTSTRAP_SUPABASE_SERVICE_ROLE_KEY: ${{ env.STAGING_SUPABASE_SERVICE_ROLE_KEY || secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          BOOTSTRAP_SUPABASE_JWT_SECRET: ${{ env.STAGING_SUPABASE_JWT_SECRET || secrets.STAGING_SUPABASE_JWT_SECRET }}
+          BOOTSTRAP_KORTIX_ADMIN_API_KEY: ${{ env.STAGING_KORTIX_ADMIN_API_KEY || secrets.STAGING_KORTIX_ADMIN_API_KEY }}
         run: |
           set -euo pipefail
 
           missing() {
             [ -z "${1:-}" ] || [ "$1" = "-" ]
           }
-
-          database="$STAGING_DATABASE_URL"
-          supabase="$STAGING_SUPABASE_URL"
-          anon="$STAGING_SUPABASE_ANON_KEY"
-          service="$STAGING_SUPABASE_SERVICE_ROLE_KEY"
-          jwt="$STAGING_SUPABASE_JWT_SECRET"
-
-          for required in database supabase anon service jwt; do
-            if missing "${!required:-}"; then
-              echo "::error::$required is required for the real staging data plane; staging must never fall back to dev, KE2E, or prod."
-              exit 1
-            fi
-          done
-          if [[ "$database" != *"$STAGING_SUPABASE_REF"* ]]; then
-            echo "::error::STAGING_DATABASE_URL must target the staging Supabase project ref ${STAGING_SUPABASE_REF}; refusing to sync a dev/prod DB into staging."
-            exit 1
-          fi
-          if [ "$supabase" != "https://${STAGING_SUPABASE_REF}.supabase.co" ]; then
-            echo "::error::STAGING_SUPABASE_URL must be https://${STAGING_SUPABASE_REF}.supabase.co."
-            exit 1
-          fi
 
           # Preserve staging-only integrations (Stripe, managed Git, alerting,
           # and any future operator-managed keys) across rollouts. Rebuilding
@@ -193,6 +178,10 @@ jobs:
               --region "$AWS_REGION" \
               --query SecretString \
               --output text)"
+            # The data plane is read back from the canonical bundle itself.
+            plane="$(jq -c '{DATABASE_URL, SUPABASE_URL, SUPABASE_ANON_KEY,
+              SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET, KORTIX_ADMIN_API_KEY}
+              | with_entries(select(.value != null))' <<<"$base")"
           else
             staging_secret_exists=false
             base="$(aws secretsmanager get-secret-value \
@@ -200,29 +189,53 @@ jobs:
               --region "$AWS_REGION" \
               --query SecretString \
               --output text)"
+            # First creation: the data plane must never come from dev.
+            plane="$(jq -cn \
+              --arg database "${BOOTSTRAP_DATABASE_URL:-}" \
+              --arg supabase "${BOOTSTRAP_SUPABASE_URL:-}" \
+              --arg anon "${BOOTSTRAP_SUPABASE_ANON_KEY:-}" \
+              --arg service "${BOOTSTRAP_SUPABASE_SERVICE_ROLE_KEY:-}" \
+              --arg jwt "${BOOTSTRAP_SUPABASE_JWT_SECRET:-}" \
+              --arg admin "${BOOTSTRAP_KORTIX_ADMIN_API_KEY:-}" \
+              '{DATABASE_URL: $database, SUPABASE_URL: $supabase,
+                SUPABASE_ANON_KEY: $anon, SUPABASE_SERVICE_ROLE_KEY: $service,
+                SUPABASE_JWT_SECRET: $jwt, KORTIX_ADMIN_API_KEY: $admin}')"
+          fi
+
+          database="$(jq -r '.DATABASE_URL // ""' <<<"$plane")"
+          supabase="$(jq -r '.SUPABASE_URL // ""' <<<"$plane")"
+          # anon/service/jwt are checked through ${!required} below.
+          # shellcheck disable=SC2034
+          anon="$(jq -r '.SUPABASE_ANON_KEY // ""' <<<"$plane")"
+          # shellcheck disable=SC2034
+          service="$(jq -r '.SUPABASE_SERVICE_ROLE_KEY // ""' <<<"$plane")"
+          # shellcheck disable=SC2034
+          jwt="$(jq -r '.SUPABASE_JWT_SECRET // ""' <<<"$plane")"
+
+          for required in database supabase anon service jwt; do
+            if missing "${!required:-}"; then
+              echo "::error::$required is required for the real staging data plane; staging must never fall back to dev, KE2E, or prod."
+              exit 1
+            fi
+          done
+          if [[ "$database" != *"$STAGING_SUPABASE_REF"* ]]; then
+            echo "::error::kortix-staging-env DATABASE_URL must target the staging Supabase project ref ${STAGING_SUPABASE_REF}; refusing to sync a dev/prod DB into staging."
+            exit 1
+          fi
+          if [ "$supabase" != "https://${STAGING_SUPABASE_REF}.supabase.co" ]; then
+            echo "::error::kortix-staging-env SUPABASE_URL must be https://${STAGING_SUPABASE_REF}.supabase.co."
+            exit 1
           fi
 
           payload="$(jq -cn \
             --argjson base "$base" \
-            --arg database "$database" \
-            --arg supabase "$supabase" \
-            --arg anon "$anon" \
-            --arg service "$service" \
-            --arg jwt "$jwt" \
-            --arg admin "$STAGING_KORTIX_ADMIN_API_KEY" \
-            --arg composio "$STAGING_COMPOSIO_API_KEY" \
+            --argjson plane "$plane" \
             --argjson stagingSecretExists "$staging_secret_exists" \
             --arg frontend "https://${WEB_HOST}" \
             --arg api "https://${PUBLIC_API_HOST}" \
             --arg gateway "https://${GATEWAY_HOST}/v1/llm" \
-            '$base + {
+            '$base + $plane + {
               INTERNAL_KORTIX_ENV: "staging",
-              DATABASE_URL: $database,
-              SUPABASE_URL: $supabase,
-              SUPABASE_ANON_KEY: $anon,
-              SUPABASE_SERVICE_ROLE_KEY: $service,
-              SUPABASE_JWT_SECRET: $jwt,
-              KORTIX_ADMIN_API_KEY: $admin,
               FRONTEND_URL: $frontend,
               KORTIX_URL: $api,
               CORS_ALLOWED_ORIGINS: $frontend,
@@ -251,11 +264,9 @@ jobs:
               # the 25s default (co-regional DB).
               REQUEST_DEADLINE_MS: "55000"
             }
-            | if ($composio == "" or $composio == "-") then
-                if $stagingSecretExists then . else del(.COMPOSIO_API_KEY) end
-              else
-                .COMPOSIO_API_KEY = $composio
-              end')"
+            # An existing bundle keeps its own COMPOSIO_API_KEY. First
+            # creation must not inherit the dev key.
+            | if $stagingSecretExists then . else del(.COMPOSIO_API_KEY) end')"
 
           if [ "$staging_secret_exists" = true ]; then
             aws secretsmanager put-secret-value \
