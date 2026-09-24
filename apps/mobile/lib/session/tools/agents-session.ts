@@ -112,33 +112,7 @@ export function sessionReadArgs(parsed: SessionReadSummary | null, mode: string,
 
 // ─── session_search ──────────────────────────────────────────────────────────
 
-export interface SessionSearchHit {
-  id: string;
-  title: string;
-  updated: string;
-  score: string;
-  snippet: string;
-}
-
-export function parseSessionSearchHits(output: string): SessionSearchHit[] {
-  if (!output) return [];
-  const results: SessionSearchHit[] = [];
-  const lines = output.split('\n');
-  for (let i = 0; i < lines.length; i++) {
-    const m = lines[i].match(/^(ses_\S+)\s*\|\s*"([^"]*)"\s*\|\s*(\S+.*?)\s*\|\s*score=(\d+)/);
-    if (m) {
-      const snippetLine = lines[i + 1]?.match(/^Snippet:\s*(.+)/);
-      results.push({
-        id: m[1],
-        title: m[2],
-        updated: m[3].trim(),
-        score: m[4],
-        snippet: snippetLine?.[1]?.trim() || '',
-      });
-    }
-  }
-  return results;
-}
+export { type SessionSearchHit, parseSessionSearchHits } from '@kortix/shared/tool-output';
 
 // ─── session_lineage ─────────────────────────────────────────────────────────
 
