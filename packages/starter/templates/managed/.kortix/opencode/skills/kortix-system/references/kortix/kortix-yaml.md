@@ -150,6 +150,7 @@ must name a declared, enabled agent.
 | `kortix_permissions` | Kortix permissions: what it may do to the project (project-scoped iam actions), through the CLI, the API, or git. Same shape (default: `none`). `kortix_cli` is the deprecated spelling — still accepted with a validation warning. |
 | `workspace`  | `"runtime"` \| `"read"` \| `"branch"` — the git workspace mode granted to the agent.              |
 | `apps`       | Restricted or private Apps this agent may open, by slug. `["slug", …]` \| `"all"` \| `"none"` (default: `none`). The App gate also requires `project.app.read` in the agent's effective permissions. Editable from Customize → Agents → the agent → Apps, or `kortix agents scope <agent> --apps <slug,slug>`. |
+| `volumes`    | Top-level `volumes` this agent's sessions mount at `/volumes/<name>`. A list (`[name, …]`, all read-only) or a map `{name: read-only \| read-write}`. Default: none. Each volume's credential secrets must also be in `secrets`. See `volumes:` below. |
 
 ```yaml
 agents:
@@ -188,6 +189,56 @@ fetches the server-side registered agent list rather than querying
 sandbox OpenCode directly. Model pickers similarly come from the
 server/LLM-gateway catalog rather than a sandbox-local provider list.
 
+## `volumes:` in version 2
+
+Storage the user already owns (an S3 or S3-compatible bucket), mounted
+into an agent's sessions as an ordinary directory at `/volumes/<name>`.
+Kortix hosts none of it: a volume is a pointer plus the IDENTIFIERS of
+the project secrets that hold its credentials, never a credential value.
+
+```yaml
+volumes:
+  datasets:                           # name: [a-z0-9][a-z0-9_-]*, mounts at /volumes/datasets
+    type: s3                          # the only type today
+    bucket: acme-data                 # required
+    prefix: training/2026             # optional: mount only this subtree
+    region: us-east-1                 # optional; AWS buckets are found without it
+    access_key_id: DATASETS_KEY_ID    # secret identifier — omit both for a public bucket
+    secret_access_key: DATASETS_SECRET
+  reports:
+    type: s3
+    bucket: acme-reports
+    endpoint: https://<account>.r2.cloudflarestorage.com   # any S3-compatible service
+    access_key_id: R2_KEY_ID
+    secret_access_key: R2_SECRET
+
+agents:
+  analyst:
+    secrets: [DATASETS_KEY_ID, DATASETS_SECRET, R2_KEY_ID, R2_SECRET]
+    volumes:
+      datasets: read-only
+      reports: read-write
+```
+
+- An agent must be granted every credential secret of every volume it
+  attaches (`secrets:`); `kortix validate` rejects the manifest
+  otherwise. The mount runs inside the agent's own sandbox, so attaching
+  a volume gives the agent its credentials. Grant scoped, least-privilege
+  keys.
+- Credential secrets need Environment exposure (the default for a new
+  secret). A broker or egress-enforced secret cannot sign S3 requests;
+  that volume reports NOT MOUNTED.
+- At session start the volumes are mounted before the agent's first
+  turn (waited at most 10 s) and listed in the agent's context with
+  their state. A volume that fails to mount (bad key, missing bucket,
+  unreachable endpoint) is reported with the reason and never blocks the
+  session. Mount logs: `/var/log/kortix-volumes/<name>.log`.
+- It is object storage, not a disk: a write reaches the bucket about 5 s
+  after the file is closed; appending re-uploads the whole object;
+  symlinks and empty directories are not kept; outside changes appear
+  within 1 minute; two sessions writing one file — the last write wins.
+- A manifest change applies to sessions created after the merge.
+
 ## Schema versioning
 
 `kortix_version` is the schema version. Version 2 is YAML-only and requires
@@ -211,6 +262,7 @@ self-describing at a glance.
 | Session bootstrap      | `env:` (advisory — surfaced to dashboard, not enforced)              |
 | Apps CLI               | `apps:` (local deployment defaults; deploy remains explicit)          |
 | Session token mint     | `agents:` (per-agent connectors/secrets/skills/apps/kortix_permissions scope) |
+| Sandbox daemon         | `volumes:` + `agents.<name>.volumes` (mounted at `/volumes/<name>` at session start) |
 | Agent/model UI         | Server-side agent registry + LLM-gateway model catalog                |
 | Dashboard UI           | All of the above + `project:` + the raw manifest                     |
 
@@ -260,7 +312,7 @@ Rules:
   paths, no globs.
 - A directory import takes every `.yaml`/`.yml` below it, sorted by path.
 - An imported file declares only `triggers`, `connectors`, `agents`,
-  `apps`, and `imports` (nesting: max 8 levels, 200 files). Every other
+  `apps`, `volumes`, and `imports` (nesting: max 8 levels, 200 files). Every other
   key stays in `kortix.yaml`; an imported file that sets one is an error.
 - One name, one file. The same trigger/connector slug or agent/app name
   in two files is an error naming both files. Nothing overrides silently.

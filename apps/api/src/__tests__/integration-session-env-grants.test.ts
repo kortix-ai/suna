@@ -602,7 +602,7 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
       {
         name: 'brokered',
         mode: 'read-write',
-        error: `credential secret "${BROKER_IDENT}" uses https_broker delivery; a volume mount needs the value in the sandbox, so store it with runtime delivery`,
+        error: `credential secret "${BROKER_IDENT}" uses https_broker delivery; a volume mount needs the value in the sandbox, so set the secret's exposure to Environment`,
       },
       {
         name: 'ungranted',

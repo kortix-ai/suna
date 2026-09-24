@@ -98,7 +98,7 @@ triggers:
 | --------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------ |
 | `kortix_version`                                    | yes      | must be `2`                                                                                |
 | `default_agent`                                     | yes      | must name a declared, enabled agent                                                        |
-| `imports`                                           | no       | other YAML files or directories whose `triggers`, `connectors`, `agents`, and `apps` merge into this manifest. See [`imports:`](#imports) |
+| `imports`                                           | no       | other YAML files or directories whose `triggers`, `connectors`, `agents`, `apps`, and `volumes` merge into this manifest. See [`imports:`](#imports) |
 | `runtime`                                           | no       | `"opencode"` (the default) or `"pi"` — the agent harness a session boots inside its sandbox; `pi` runs pi-agent-core in-process in the sandbox daemon and reads the same `.kortix/opencode/agents/*.md` and skills. The project's `pi_harness` feature flag selects pi without this line. |
 | `project.name` / `project.description`              | no       | display metadata; the platform does not read `project.name` for the project's display name |
 | `env.required` / `env.optional`                     | no       | env var names; `required` is advisory only, never enforced at session start                |
@@ -107,6 +107,7 @@ triggers:
 | `triggers`                                          | no       | list of cron, webhook, and monitor triggers                                                |
 | `connectors`                                        | no       | list of connector definitions                                                              |
 | `policy.default_mode`                               | no       | `allow_all` (default) or `risk`; project-wide connector approval mode                      |
+| `volumes`                                           | no       | name-to-block map of storage you own, mounted into agent sessions at `/volumes/<name>`. See [`volumes:`](#volumes) |
 | `agents`                                            | yes      | name-to-block governance map; must not be empty. With `imports`, the map may live in an imported file |
 
 ## `imports:`
@@ -154,9 +155,9 @@ The platform reads the root file, resolves every import, and works on the merged
 
 1. A path is relative to the repository root. `..`, absolute paths, and globs are rejected.
 2. A directory import takes every `.yaml` and `.yml` file below it, at any depth, sorted by path. Other files are skipped.
-3. An imported file declares `triggers`, `connectors`, `agents`, `apps`, and `imports`. Every other key (`kortix_version`, `default_agent`, `runtime`, `project`, `env`, `opencode`, `sandbox`, `policy`, `policies`) stays in the root file. An imported file that sets one fails validation.
+3. An imported file declares `triggers`, `connectors`, `agents`, `apps`, `volumes`, and `imports`. Every other key (`kortix_version`, `default_agent`, `runtime`, `project`, `env`, `opencode`, `sandbox`, `policy`, `policies`) stays in the root file. An imported file that sets one fails validation.
 4. An imported file can import more files. The limit is 8 levels and 200 files. A cycle is an error. A file reached twice merges once.
-5. One name, one file. A trigger slug, connector slug, agent name, or app name declared in two files is an error that names both files. Nothing overrides silently.
+5. One name, one file. A trigger slug, connector slug, agent name, app name, or volume name declared in two files is an error that names both files. Nothing overrides silently.
 6. Entries merge in order: the importing file first, then its imports in the order listed.
 
 A broken import fails the whole manifest, the same way a YAML syntax error does. `kortix validate`, `kortix ship`, and the change request merge check all report it before it reaches `main`:
@@ -380,6 +381,7 @@ agents:
 | `skills`              | `none`  | Which skills this agent may load.                                                                                                                                                                         |
 | `apps`                | `none`  | Which Kortix App slugs this agent may open when the App is `restricted` or `private`. `all` means every App in the project. See [Agents and Apps](/docs/feature-flags/apps#agents-and-apps). |
 | `repository_access` | `true` | Whether new sessions receive the project repository. `false` disables repository delivery and repository access through session credentials. Existing sessions keep their saved policy. |
+| `volumes`             | none    | Which top-level [`volumes`](#volumes) this agent's sessions mount. A list mounts each one `read-only`; a map sets `read-only` or `read-write` per volume. Every credential secret of an attached volume must also be in `secrets`. |
 
 v2 is deny-by-default: an omitted `connectors`, `secrets`, `kortix_permissions`, `skills`, or `apps` on a declared agent resolves to `none`. Grant every permission an agent needs explicitly, as the starter's `kortix` agent does above. A project migrating from v1 must re-grant everything by hand — v1 defaults `env` (secrets) to `all` when omitted, the opposite of v2.
 
@@ -390,12 +392,52 @@ is project-owned or member-owned.
 
 `kortix_permissions` grants come from a fixed set of project-scoped permissions (`project.read`, `project.gitops.push`, `project.gitops.merge`, `project.gitops.ref.any`, `project.trigger.*`, `project.secret.*`, `project.connector.*`, and more). Account-scoped permissions — `member.*`, `billing.*`, `project.create` — can never be granted to an agent. Run `kortix validate --scopes` from inside a session to print the live, grantable list.
 
+## `volumes:`
+
+A name-to-block map of storage you already own, mounted into an agent's
+sessions as an ordinary directory at `/volumes/<name>`. Kortix hosts none of
+it. Attach a volume to an agent with `agents.<name>.volumes`. The how-to,
+security model, and limits are in [Volumes](/docs/project/volumes).
+
+```yaml
+volumes:
+  datasets:
+    type: s3
+    bucket: acme-data
+    prefix: training/2026
+    access_key_id: DATASETS_KEY_ID
+    secret_access_key: DATASETS_SECRET
+
+agents:
+  analyst:
+    secrets: [DATASETS_KEY_ID, DATASETS_SECRET]
+    volumes:
+      datasets: read-only
+```
+
+| Field               | Required | Notes |
+| ------------------- | -------- | ----- |
+| _(map key)_         | —        | `[a-z0-9][a-z0-9_-]{0,127}`; the mount path is `/volumes/<key>`. |
+| `type`              | yes      | `s3` — Amazon S3 or any S3-compatible service. |
+| `bucket`            | yes      | Bucket name. Letters, digits, `.`, `-`, `_`; no `/`. |
+| `prefix`            | no       | Path inside the bucket; the mount shows only this subtree. No leading `/`, no `.` or `..` segments. |
+| `region`            | no       | Region name. Amazon S3 buckets resolve without it; some S3-compatible services require it. |
+| `endpoint`          | no       | `http(s)` URL of an S3-compatible service, without credentials. Omit for Amazon S3. |
+| `access_key_id`     | no       | Identifier of the project secret that holds the access key ID. Never the value. |
+| `secret_access_key` | no       | Identifier of the project secret that holds the secret access key. Set both keys, or neither for a public bucket. |
+
+The validator also rejects an agent that attaches an undeclared volume, or a
+volume whose credential secret is not in that agent's `secrets` grant. It
+cannot check that a secret exists or has Environment exposure. A session
+reports that volume as not mounted instead, and boots without it.
+
 ## When config changes take effect
 
 - A manifest or `.kortix/opencode/` edit applies only after a change request merges to `main`. Sessions and the trigger sweep read the default branch, not session branches.
 - A trigger's cron or webhook change is picked up by the scheduler within seconds of the merge.
 - A sandbox image or hardware change rebuilds the snapshot. The new spec applies on the next session, not the current one.
 - A secret value change in the dashboard resolves at sandbox-create time. It applies on the next session, not a running one.
+- A `volumes` change, or a new key for a volume, applies to sessions created after the merge. A running session keeps its mounts.
 
 ## Round-trip rules
 

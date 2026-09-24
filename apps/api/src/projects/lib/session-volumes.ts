@@ -53,7 +53,7 @@ function resolveCredentialEnv(
   }
   if (capability.delivery !== 'sandbox' || !capability.environment_variable) {
     return {
-      error: `credential secret "${identifier}" uses ${capability.delivery} delivery; a volume mount needs the value in the sandbox, so store it with runtime delivery`,
+      error: `credential secret "${identifier}" uses ${capability.delivery} delivery; a volume mount needs the value in the sandbox, so set the secret's exposure to Environment`,
     };
   }
   return { env: capability.environment_variable };

@@ -82,7 +82,7 @@ describe('buildSessionVolumes', () => {
         name: 'svc',
         mode: 'read-only',
         error:
-          'credential secret "GATEWAY_ONLY" uses kortix_service delivery; a volume mount needs the value in the sandbox, so store it with runtime delivery',
+          'credential secret "GATEWAY_ONLY" uses kortix_service delivery; a volume mount needs the value in the sandbox, so set the secret\'s exposure to Environment',
       },
     ]);
   });
