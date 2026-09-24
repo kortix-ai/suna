@@ -275,6 +275,11 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
           markup: llmPriceMarkup(),
           requestId: event.requestId,
           billingMode: event.billingMode,
+          // Staff-only: the upstream behind a Kortix-managed model. Customer
+          // surfaces read `provider`/`model`, which name Kortix.
+          ...(event.upstream
+            ? { upstreamProvider: event.upstream.provider, upstreamModel: event.upstream.model }
+            : {}),
         },
       });
 
@@ -356,6 +361,9 @@ export function emitGatewayGenAiSpan(trace: GatewayTrace): void {
         'kortix.cost_usd': trace.finalCost,
         'kortix.upstream_cost_usd': trace.upstreamCost,
         'kortix.provider': trace.provider,
+        ...(trace.upstream
+          ? { 'kortix.upstream_provider': trace.upstream.provider, 'kortix.upstream_model': trace.upstream.model }
+          : {}),
         'kortix.cached_tokens': trace.usage.cachedTokens,
         'kortix.cache_write_tokens': trace.usage.cacheWriteTokens,
         'kortix.streaming': trace.streaming,
