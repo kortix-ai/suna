@@ -24,7 +24,9 @@ repository, or must write output somewhere durable outside it:
 `type: s3` covers Amazon S3 and every S3-compatible service: Cloudflare R2,
 Google Cloud Storage (XML interoperability API), MinIO, Tigris, Wasabi,
 Backblaze B2, and DigitalOcean Spaces. Set `endpoint` for any service other
-than Amazon S3.
+than Amazon S3. A service behind a proxy such as Cloudflare works too: for a
+custom `endpoint`, Kortix leaves the `Accept-Encoding` header out of the request
+signature, because such proxies rewrite it.
 
 ## Declare and attach
 
@@ -92,7 +94,8 @@ External storage is mounted as ordinary directories under /volumes. Use your nor
 A volume that cannot mount is listed with its reason, for example
 `` `/volumes/reports`: NOT MOUNTED. credential secret "R2_SECRET" is not delivered to this session: … ``.
 It never blocks the session. The agent keeps working with every volume that
-did mount.
+did mount. A volume that did not mount leaves no `/volumes/<name>` directory,
+so a write to it fails instead of landing on the sandbox disk.
 
 ## Credentials and security
 
@@ -145,7 +148,8 @@ sandbox.
 |---|---|
 | `credential secret "X" is not delivered to this session` | Create secret `X` in the project and add it to the agent's `secrets:` grant. |
 | `credential secret "X" uses … delivery` | Set the secret's exposure to **Environment**. |
-| `… AccessDenied …` / `… NoSuchBucket …` | Check the key's permissions, the bucket name, and `endpoint`. |
+| `… AccessDenied …` / `… InvalidAccessKeyId …` / `… NoSuchBucket …` | Check the key's permissions, the bucket name, and `endpoint`. |
+| `S3 rejected the request for prefix "…"` | The same checks. With a `prefix`, rclone reports a rejected request as "is a file not a directory"; the prefix is only really a file if an object has that exact name. |
 | `rclone is not installed in this sandbox image` | The project's sandbox image predates volumes. Rebuild the sandbox template. |
 | `rclone did not mount within 60 s` | Check that the endpoint is reachable from the internet. |
 
