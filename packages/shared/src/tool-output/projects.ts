@@ -5,7 +5,7 @@
  * regex copy of the same code.
  */
 
-import { isDigit, isLineTerminator, isWhitespace, whitespaceEnd } from './scan';
+import { isDigit, isLineTerminator, isWhitespace, lineEnd, whitespaceEnd } from './scan';
 
 // The project and connector renderers read markdown table rows and
 // `name (source)` lines with line-anchored regexes. Their lazy cells retried a
@@ -13,6 +13,10 @@ import { isDigit, isLineTerminator, isWhitespace, whitespaceEnd } from './scan';
 // for over a minute. `(proj-…)` and `name (source)` rescanned the rest of the
 // output for every opener that never closed: 40k `(proj-` took 3.9 s, and 80k
 // lines of `a(` took 9.3 s. The readers below search each delimiter once.
+//
+// The `label\s*(.+)$` lines were linear (0.4 ms at 240k characters), but here
+// an export's parameter is library input to CodeQL, which reports them as
+// `js/polynomial-redos`. `labelValue` reads them without a regex.
 
 const PIPE = 124; // |
 const STAR = 42; // *
@@ -194,6 +198,45 @@ export function setupRows(text: string): string[][] {
   return rows;
 }
 
+/** Each position where `label` starts, in order: all of them, or only line starts (`^` with the `m` flag). */
+function* labelStarts(text: string, label: string, anchored: boolean): Generator<number> {
+  if (anchored) {
+    for (const start of lineStarts(text)) if (text.startsWith(label, start)) yield start;
+    return;
+  }
+  for (let at = text.indexOf(label); at !== -1; at = text.indexOf(label, at + 1)) yield at;
+}
+
+/**
+ * The capture of `/label\s*(.+)$/m` (`space` `*`) or `/label\s+(.+)$/m`
+ * (`space` `+`), with `^` in front when `anchored`: the rest of the line after
+ * the whitespace that follows the first label where the regex matched.
+ */
+export function labelValue(
+  text: string,
+  label: string,
+  space: '*' | '+',
+  anchored: boolean,
+): string | null {
+  const least = space === '+' ? 1 : 0;
+  for (const start of labelStarts(text, label, anchored)) {
+    const from = start + label.length;
+    const end = whitespaceEnd(text, from);
+    if (end < text.length) {
+      // `.+` takes the character after the run and the rest of its line.
+      if (end - from >= least) return text.slice(end, lineEnd(text, end));
+      continue;
+    }
+    // The run reaches the end of the text: the quantifier gives characters
+    // back until `.+` can take one that is not a line terminator. Only line
+    // terminators follow that one, so `.+` takes it alone.
+    for (let at = end - 1; at >= from + least; at--) {
+      if (!isLineTerminator(text.charCodeAt(at))) return text.charAt(at);
+    }
+  }
+  return null;
+}
+
 // ============================================================================
 // Project Tools
 // ============================================================================
@@ -245,11 +288,11 @@ export interface ProjectGetData {
 export function parseProjectGetOutput(output: string): ProjectGetData | null {
   if (!output || typeof output !== 'string') return null;
 
-  const nameMatch = output.match(/^##\s+(.+)$/m);
+  const name = labelValue(output, '##', '+', true);
   const pathMatch = output.match(/\*\*Path:\*\*\s+`([^`]+)`/);
-  const descMatch = output.match(/\*\*Description:\*\*\s+(.+)$/m);
+  const description = labelValue(output, '**Description:**', '+', false);
   const idMatch = output.match(/\*\*ID:\*\*\s+`([^`]+)`/);
-  const contextMatch = output.match(/\*\*Context:\*\*\s+`([^`]+)`\s*([✓✓])?/);
+  const contextMatch = output.match(/\*\*Context:\*\*\s+`([^`]+)`\s*(✓)?/);
   const contextExists = !!contextMatch?.[2];
   const contextPath = contextMatch?.[1] || '';
 
@@ -264,9 +307,9 @@ export function parseProjectGetOutput(output: string): ProjectGetData | null {
   }
 
   return {
-    name: nameMatch?.[1] || 'Unknown Project',
+    name: name || 'Unknown Project',
     path: pathMatch?.[1] || '',
-    description: descMatch?.[1] || null,
+    description: description || null,
     id: idMatch?.[1] || '',
     sessions,
     contextExists,
@@ -288,7 +331,7 @@ export function parseProjectSelectOutput(output: string): ProjectSelectData | nu
   return {
     name: nameMatch[1],
     path: pathMatch?.[1] || '',
-    success: !!nameMatch && output.includes('selected'),
+    success: output.includes('selected'),
   };
 }
 
@@ -309,7 +352,7 @@ export function parseProjectCreateOutput(output: string): ProjectCreateData | nu
     name: nameMatch[1],
     path: pathMatch?.[1] || '',
     id: id || '',
-    success: !!nameMatch && !output.toLowerCase().includes('failed'),
+    success: !output.toLowerCase().includes('failed'),
   };
 }
 
@@ -351,19 +394,19 @@ export interface ConnectorGetData {
 export function parseConnectorGetOutput(output: string): ConnectorGetData | null {
   if (!output || typeof output !== 'string') return null;
 
-  const nameMatch = output.match(/^name:\s*(.+)$/m);
-  const descriptionMatch = output.match(/^description:\s*(.+)$/m);
-  const sourceMatch = output.match(/^source:\s*(.+)$/m);
-  const envMatch = output.match(/^env:\s*(.+)$/m);
+  const name = labelValue(output, 'name:', '*', true);
+  const description = labelValue(output, 'description:', '*', true);
+  const source = labelValue(output, 'source:', '*', true);
+  const env = labelValue(output, 'env:', '*', true);
   const notesMatch = output.match(/^notes:\s*\n([\s\S]*?)$/);
 
-  if (!nameMatch) return null;
+  if (name === null) return null;
 
   return {
-    name: nameMatch[1].trim(),
-    description: descriptionMatch?.[1].trim() || '',
-    source: sourceMatch?.[1].trim() || 'unknown',
-    env: envMatch?.[1].trim(),
+    name: name.trim(),
+    description: description?.trim() || '',
+    source: source?.trim() || 'unknown',
+    env: env?.trim(),
     notes: notesMatch?.[1].trim(),
   };
 }
