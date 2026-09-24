@@ -107,3 +107,16 @@ export function positionIndex(
   for (let e = 0; e <= n; e++) before[e] = holds(e) ? e : e > 0 ? (before[e - 1] as number) : -1;
   return { after, before };
 }
+
+/** `needle` at `at`, ignoring ASCII case the way a regex `i` flag without `u` does. */
+export function startsWithIgnoreCase(text: string, needle: string, at: number): boolean {
+  if (at < 0 || at + needle.length > text.length) return false;
+  for (let i = 0; i < needle.length; i++) {
+    let a = text.charCodeAt(at + i);
+    let b = needle.charCodeAt(i);
+    if (a >= 65 && a <= 90) a += 32;
+    if (b >= 65 && b <= 90) b += 32;
+    if (a !== b) return false;
+  }
+  return true;
+}

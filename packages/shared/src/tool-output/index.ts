@@ -13,6 +13,12 @@
 
 export { type BackgroundWorker, parseBackgroundWorkers } from './background-workers';
 export {
+  type ParsedLtmMemory,
+  type ParsedMemoryEntry,
+  type ParsedObservationMemory,
+  parseMemoryEntryOutput,
+} from './memory-entry';
+export {
   type GrepFileGroup,
   type GrepMatch,
   type ParsedSessionMessage,

@@ -7,7 +7,9 @@ import {
   lineEnd,
   lineTables,
   positionIndex,
+  startsWithIgnoreCase,
 } from './scan';
+import { chooser } from './testing';
 
 describe('character classes', () => {
   test('isWhitespace is a regex \\s on every UTF-16 code unit', () => {
@@ -42,6 +44,35 @@ describe('character classes', () => {
     const { after, before } = positionIndex(5, (e) => e === 1 || e === 3);
     expect([...after.slice(0, 7)]).toEqual([1, 1, 3, 3, -1, -1, -1]);
     expect([...before]).toEqual([-1, 1, 1, 3, 3, 3]);
+  });
+
+  test('startsWithIgnoreCase folds ASCII letters only, as a regex i flag without u', () => {
+    const { next, pick, some } = chooser(91);
+    // ASCII needles, as the readers use. A non-ASCII character never folds to
+    // ASCII without the u flag, so the Kelvin sign must not match a k.
+    const needles = ['Status:', 'ses_', 'Prompt', 'k', 'Files read:'];
+    let matched = 0;
+    for (let i = 0; i < 3000; i++) {
+      const needle = pick(needles);
+      const prefix = some(['x', 'S', ':', ' '], 3);
+      const cased = [...needle]
+        .map((ch) => (next() < 0.5 ? ch.toUpperCase() : ch.toLowerCase()))
+        .join('');
+      const body = pick([
+        cased,
+        cased,
+        needle.slice(0, -1),
+        String.fromCharCode(0x212a) + needle.slice(1),
+        'zzz',
+      ]);
+      const text = prefix + body + some(['x', ' '], 2);
+      const at = prefix.length + pick([0, 0, 0, 1, -1]);
+      const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const expected = at >= 0 && new RegExp(`^[\\s\\S]{${at}}${escaped}`, 'i').test(text);
+      expect(startsWithIgnoreCase(text, needle, at)).toBe(expected);
+      if (expected) matched++;
+    }
+    expect(matched).toBeGreaterThan(300);
   });
 
   test('lineEnd stops at the first terminator', () => {
