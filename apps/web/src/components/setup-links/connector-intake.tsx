@@ -17,6 +17,7 @@ import {
 import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useState } from 'react';
 import { nextConnectorPollDelay } from './connector-poll';
+import { resolveConnectorStart } from './connector-start';
 import { setupLinkApiBase } from './util';
 
 type Phase = 'loading' | 'error' | 'ready' | 'starting' | 'opened' | 'connected';
@@ -66,6 +67,13 @@ export function ConnectorIntake({
   // Bumped every time the popup is opened, so reopening restarts the poll
   // window instead of inheriting an already-expired one.
   const [openedAt, setOpenedAt] = useState(0);
+  // Who the account was authorized as, from finalize. Shown on success so a
+  // login used by mistake (a personal account on a shared slot) is visible
+  // the moment it lands, not months later.
+  const [connectedAs, setConnectedAs] = useState<string | null>(null);
+  // True when /start found the slot already holding an active account. The
+  // provider reuses it instead of re-authorizing, so there was no popup.
+  const [alreadyConnected, setAlreadyConnected] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -114,6 +122,7 @@ export function ConnectorIntake({
         const body = await finalizeConnectorSetupLink(token, { backendUrl: base });
         if (cancelled) return;
         if (body.connected) {
+          setConnectedAs(body.connected_as ?? null);
           setPhase('connected');
           return;
         }
@@ -134,23 +143,25 @@ export function ConnectorIntake({
   async function connect() {
     setPhase('starting');
     setError(null);
-    try {
-      const body = await startConnectorSetupLink(token, { backendUrl: base });
-      if (!body.connect_url) {
-        setError('Could not start the connect flow.');
-        setPhase('ready');
-        return;
-      }
-      window.open(body.connect_url, '_blank', 'noopener,noreferrer,width=520,height=720');
-      setOpenedAt(Date.now());
-      setPhase('opened');
-      onOpened?.();
-    } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : 'Could not start the connect flow. Try again.',
-      );
+    const outcome = await resolveConnectorStart({
+      start: () => startConnectorSetupLink(token, { backendUrl: base }),
+      finalize: () => finalizeConnectorSetupLink(token, { backendUrl: base }),
+    });
+    if (outcome.kind === 'error') {
+      setError(outcome.message);
       setPhase('ready');
+      return;
     }
+    if (outcome.kind === 'connected') {
+      setAlreadyConnected(outcome.alreadyConnected);
+      setConnectedAs(outcome.connectedAs);
+      setPhase('connected');
+      return;
+    }
+    window.open(outcome.url, '_blank', 'noopener,noreferrer,width=520,height=720');
+    setOpenedAt(Date.now());
+    setPhase('opened');
+    onOpened?.();
   }
 
   const appLabel = info?.app || info?.slug || 'the app';
@@ -183,11 +194,23 @@ export function ConnectorIntake({
           <Check weight="fill" className="text-kortix-green size-5" />
         </span>
         <p className="text-foreground text-sm font-medium">
-          {tI18nHardcoded.raw('i18nComplete.text22965568d22a')}
+          {alreadyConnected
+            ? tI18nHardcoded.raw('i18nComplete.textbe03b81f11cb')
+            : tI18nHardcoded.raw('i18nComplete.text22965568d22a')}
         </p>
+        {connectedAs ? (
+          <p className="text-foreground text-sm" data-testid="connector-intake-connected-as">
+            {tI18nHardcoded('i18nComplete.texte9e0b20cf289', { value0: connectedAs })}
+          </p>
+        ) : null}
         <p className="text-muted-foreground max-w-xs text-xs">
           {appLabel} {tI18nHardcoded.raw('i18nComplete.text27fd394a8fbd')}
         </p>
+        {alreadyConnected ? (
+          <p className="text-muted-foreground max-w-xs text-xs">
+            {tI18nHardcoded.raw('i18nComplete.text0223e507afd3')}
+          </p>
+        ) : null}
       </div>
     );
   }

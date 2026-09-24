@@ -60,3 +60,81 @@ describe('gitPrincipalEnvelope', () => {
     expect(gitPrincipalEnvelope({ kind: 'monitor' })).toMatchObject({ actorType: 'system', source: 'monitor' });
   });
 });
+
+describe('git proxy attribution binds into the request scope', () => {
+  const { runWithContext } = require('../lib/request-context');
+  const { attachInboundAuditScope } = require('../shared/audit-scope');
+  const { annotateGitTransfer, bindGitProxyPrincipal } = require('./audit');
+  const project = {
+    projectId: '00000000-0000-4000-a000-000000000201',
+    accountId: '00000000-0000-4000-a000-000000000101',
+  } as never;
+  const USER = '00000000-0000-4000-a000-000000000001';
+
+  function scopeAfter(fn: () => void) {
+    return runWithContext('POST', '/v1/git/p/git-receive-pack', () => {
+      const scope = attachInboundAuditScope({ owner: 'edge', method: 'POST' });
+      fn();
+      return scope;
+    });
+  }
+
+  test('a session principal is the agent in its project, resolved late for on-behalf-of', () => {
+    const scope = scopeAfter(() =>
+      bindGitProxyPrincipal(
+        { kind: 'session', sessionId: 'ses-1', branch: 'kortix/ses-1', userId: USER, tokenId: 'tok-1' },
+        project,
+      ),
+    );
+    expect(scope.principal).toMatchObject({
+      accountId: '00000000-0000-4000-a000-000000000101',
+      projectId: '00000000-0000-4000-a000-000000000201',
+      sessionId: 'ses-1',
+      actorType: 'agent',
+      actorUserId: USER,
+      authoritativeSource: 'agent',
+      authMethod: { kind: 'git', principal: 'session', token_id: 'tok-1' },
+    });
+    expect(typeof scope.principal.lateAttribution).toBe('function');
+  });
+
+  test('a person pushing with a PAT is the human, authenticated by api key', () => {
+    const scope = scopeAfter(() =>
+      bindGitProxyPrincipal({ kind: 'user', userId: USER, tokenId: 'pat-1' }, project),
+    );
+    expect(scope.principal).toMatchObject({
+      actorType: 'human',
+      actorUserId: USER,
+      sessionId: null,
+      authoritativeSource: 'api_key',
+      authMethod: { kind: 'git', principal: 'user', token_id: 'pat-1' },
+    });
+    expect(scope.principal.lateAttribution).toBeUndefined();
+  });
+
+  test('a monitor box is system', () => {
+    const scope = scopeAfter(() => bindGitProxyPrincipal({ kind: 'monitor' }, project));
+    expect(scope.principal).toMatchObject({ actorType: 'system', authoritativeSource: 'monitor' });
+  });
+
+  test('a transfer names itself as git.clone / git.push on the git repository', () => {
+    const scope = scopeAfter(() =>
+      annotateGitTransfer({
+        action: 'git.push',
+        projectId: '00000000-0000-4000-a000-000000000201',
+        outcome: 'denied',
+        refs: [{ ref: 'refs/heads/main', old_sha: A, new_sha: B, kind: 'update' }],
+      }),
+    );
+    expect(scope.annotation).toEqual({
+      action: 'git.push',
+      resourceType: 'git_repository',
+      resourceId: '00000000-0000-4000-a000-000000000201',
+      outcome: 'denied',
+      metadata: {
+        via: 'git_proxy',
+        refs: [{ ref: 'refs/heads/main', old_sha: A, new_sha: B, kind: 'update' }],
+      },
+    });
+  });
+});

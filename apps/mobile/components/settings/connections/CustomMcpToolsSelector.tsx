@@ -85,6 +85,8 @@ export function CustomMcpToolsContent({
           <Pressable
             onPress={onBack}
             className="flex-row items-center active:opacity-70"
+            accessibilityRole="button"
+            accessibilityLabel="Back"
           >
             <Icon as={ArrowLeft} size={20} className="text-foreground" />
           </Pressable>
@@ -230,6 +232,8 @@ export function CustomMcpToolsSelector({
       <Pressable
         onPress={handleClose}
         className="items-center justify-center w-10 h-10 mb-6 active:opacity-70 rounded-full bg-primary/10"
+        accessibilityRole="button"
+        accessibilityLabel="Back"
       >
         <Icon as={ArrowLeft} size={24} className="text-foreground" />
       </Pressable>

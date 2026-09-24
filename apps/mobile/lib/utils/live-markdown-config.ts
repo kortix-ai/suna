@@ -8,6 +8,7 @@
 import { Platform } from 'react-native';
 import type { MarkdownStyle } from '@expensify/react-native-live-markdown';
 import { log } from '@/lib/logger';
+import { MONO_FONT_FAMILY } from '@/lib/utils/mono-font';
 
 /**
  * Custom markdown parser worklet
@@ -145,10 +146,7 @@ const FONT_FAMILY_BASE = 'Roobert-Regular';
 const FONT_FAMILY_BOLD = 'Roobert-SemiBold';
 const FONT_FAMILY_HEADING = 'Roobert-Bold';
 
-const FONT_FAMILY_MONOSPACE = Platform.select({
-  ios: 'Courier',
-  default: 'monospace',
-});
+const FONT_FAMILY_MONOSPACE = MONO_FONT_FAMILY;
 
 const FONT_FAMILY_EMOJI = Platform.select({
   ios: 'System',

@@ -428,6 +428,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "POST|v1|projects|:projectId|connections|:connectionId|connect|finalize",
   "PUT|v1|projects|:projectId|connections|:connectionId|credential",
   "PUT|v1|projects|:projectId|connections|:connectionId|default",
+  "PUT|v1|projects|:projectId|connections|:connectionId|label",
   "GET|v1|projects|:projectId|connections|:connectionId|oauth2|application",
   "PUT|v1|projects|:projectId|connections|:connectionId|oauth2|application",
   "POST|v1|projects|:projectId|connections|:connectionId|oauth2|authorize",

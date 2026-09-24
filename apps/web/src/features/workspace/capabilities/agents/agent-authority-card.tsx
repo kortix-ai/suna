@@ -6,9 +6,12 @@
  *
  *   Kortix permissions (kortix.yaml) ∩ ceiling role (IAM) − human-only
  *
- * With the project flag `agent_principal` off, the old rule applies — the
- * launcher's project role intersected with the Kortix permissions — and the
- * card says so instead of pretending to know who will launch the agent.
+ * This is how Kortix works, not a mode the project chose, so the card states
+ * it flatly and never mentions a feature flag. The one remaining off-switch
+ * (`agent_principal`, spec §5) is a support lever for a single migrating
+ * project and is deleted next release — a project that used it sees a card
+ * that overstates the agent's independence for that one release, which is the
+ * accepted cost of not advertising the switch.
  *
  * Read-only. The Kortix permissions are edited on the same tab (the checklist
  * above this card, which writes kortix.yaml); the ceiling is an IAM role an
@@ -20,7 +23,6 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { hubTarget } from '@/stores/account-panel-store';
 import { HubLink } from '@/features/accounts/hub/account-hub-location';
-import { projectSettingsSectionHref } from '@/features/workspace/capabilities/project-settings/project-settings-sections';
 import {
   EditorSection,
   SettingBlock,
@@ -33,9 +35,8 @@ import {
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
-import { ArrowRightIcon, ArrowUpRightIcon } from '@phosphor-icons/react';
+import { ArrowUpRightIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import Link from 'next/link';
 
 export function AgentAuthorityCard({
   projectId,
@@ -65,44 +66,11 @@ export function AgentAuthorityCard({
         ? t('declaredNone')
         : t('declaredCount', { count: authority.declared.length });
 
-  if (state.flagLoading) {
-    return <Skeleton className="h-40 w-full rounded-md" />;
-  }
-
-  if (!state.flagEnabled) {
-    return (
-      <div data-testid="agent-authority" data-agent-principal="off">
-        <EditorSection
-          title={t('title')}
-          description={t('flagOffDescription')}
-          trailing={
-            <Badge variant="muted" size="sm">
-              {t('flagOffBadge')}
-            </Badge>
-          }
-        >
-          <SettingRow label={t('kortixPermissions')} help={t('kortixPermissionsHelp', { agent: agentName })}>
-            <span className="text-foreground block text-sm sm:text-right">{declaredLabel}</span>
-          </SettingRow>
-          <div className="flex flex-wrap items-center justify-between gap-2 py-3.5">
-            <p className="text-muted-foreground text-xs text-pretty">{t('flagOffHint')}</p>
-            <Button asChild variant="ghost" size="sm" className="gap-1 px-2">
-              <Link href={projectSettingsSectionHref(projectId, 'feature-flags')} prefetch>
-                {t('featureFlags')}
-                <ArrowRightIcon className="size-3.5 shrink-0" />
-              </Link>
-            </Button>
-          </div>
-        </EditorSection>
-      </div>
-    );
-  }
-
   return (
-    <div data-testid="agent-authority" data-agent-principal="on">
+    <div data-testid="agent-authority">
       <EditorSection
         title={t('title')}
-        description={t('flagOnDescription')}
+        description={t('description')}
         trailing={
           <Badge variant="outline" size="sm" className="tabular-nums">
             {t('effectiveCount', { count: authority.effective.length })}

@@ -36,8 +36,14 @@ import { useOpenCodeWriteFile, downloadOpenCodeFileToCache } from '@/lib/files/h
 import type { SandboxFile } from '@/api/types';
 
 import { log } from '@/lib/logger';
+import { MONO_FONT_FAMILY } from '@/lib/utils/mono-font';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import { sheetHandleIndicatorStyle } from '@/components/kortix/sheet';
+import { useConfirmDialog } from '@/components/kortix/confirm-dialog';
+import { PortalHost } from '@rn-primitives/portal';
+
+/** Portal host inside the viewer's native `Modal`: the root host draws under it. */
+const FILE_VIEWER_PORTAL_HOST = 'file-viewer';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -77,6 +83,7 @@ export function FileViewer({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const writeMutation = useOpenCodeWriteFile();
+  const { confirm, dialog: confirmDialog } = useConfirmDialog({ portalHost: FILE_VIEWER_PORTAL_HOST });
 
   const {
     previewType,
@@ -211,14 +218,18 @@ export function FileViewer({
 
   const handleCancelEdit = useCallback(() => {
     if (dirty) {
-      Alert.alert('Discard changes?', 'Your edits will be lost.', [
-        { text: 'Keep editing', style: 'cancel' },
-        { text: 'Discard', style: 'destructive', onPress: () => setEditing(false) },
-      ]);
+      confirm({
+        title: 'Discard changes?',
+        description: 'Your edits will be lost.',
+        cancelLabel: 'Keep editing',
+        confirmLabel: 'Discard',
+        destructive: true,
+        onConfirm: () => setEditing(false),
+      });
       return;
     }
     setEditing(false);
-  }, [dirty]);
+  }, [dirty, confirm]);
 
   const handleSave = useCallback(async () => {
     if (!file || !sandboxUrl) return;
@@ -227,20 +238,29 @@ export function FileViewer({
       await writeMutation.mutateAsync({ sandboxUrl, path: file.path, content: draft });
       setEditing(false); // content query is invalidated → refetches the saved text
     } catch (e: any) {
+      // One-button acknowledgement, not a toast: the root toaster draws under
+      // this native Modal on Android.
       Alert.alert('Save failed', e?.message || 'Could not save the file. Your edits are kept — try again.');
     }
   }, [file, sandboxUrl, draft, writeMutation]);
 
   const handleCloseGuarded = useCallback(() => {
     if (editing && dirty) {
-      Alert.alert('Discard changes?', 'Your edits will be lost.', [
-        { text: 'Keep editing', style: 'cancel' },
-        { text: 'Discard', style: 'destructive', onPress: () => { setEditing(false); handleClose(); } },
-      ]);
+      confirm({
+        title: 'Discard changes?',
+        description: 'Your edits will be lost.',
+        cancelLabel: 'Keep editing',
+        confirmLabel: 'Discard',
+        destructive: true,
+        onConfirm: () => {
+          setEditing(false);
+          handleClose();
+        },
+      });
       return;
     }
     handleClose();
-  }, [editing, dirty, handleClose]);
+  }, [editing, dirty, handleClose, confirm]);
 
   const insets = useSafeAreaInsets();
 
@@ -333,7 +353,9 @@ export function FileViewer({
                       onPress={handlePrevious}
                       disabled={currentIndex <= 0}
                       className="p-2"
-                      style={{ opacity: currentIndex <= 0 ? 0.3 : 1 }}>
+                      style={{ opacity: currentIndex <= 0 ? 0.3 : 1 }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Previous file">
                       <Icon
                         as={ChevronLeft}
                         size={24}
@@ -344,7 +366,9 @@ export function FileViewer({
                       onPress={handleNext}
                       disabled={currentIndex >= (fileList?.length || 0) - 1}
                       className="p-2"
-                      style={{ opacity: currentIndex >= (fileList?.length || 0) - 1 ? 0.3 : 1 }}>
+                      style={{ opacity: currentIndex >= (fileList?.length || 0) - 1 ? 0.3 : 1 }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Next file">
                       <Icon
                         as={ChevronRight}
                         size={24}
@@ -354,7 +378,7 @@ export function FileViewer({
                   </>
                 )}
                 {canEdit && (
-                  <AnimatedPressable onPress={handleStartEdit} className="p-2" hitSlop={6}>
+                  <AnimatedPressable onPress={handleStartEdit} className="p-2" hitSlop={6} accessibilityRole="button" accessibilityLabel="Edit file">
                     <Icon as={Pencil} size={20} color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
                   </AnimatedPressable>
                 )}
@@ -362,7 +386,9 @@ export function FileViewer({
                   onPress={handleDownload}
                   disabled={isDownloading}
                   className="p-2"
-                  style={{ opacity: isDownloading ? 0.6 : 1 }}>
+                  style={{ opacity: isDownloading ? 0.6 : 1 }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Download">
                   {isDownloading ? (
                     <KortixLoader size="small" />
                   ) : (
@@ -382,7 +408,9 @@ export function FileViewer({
                   }}
                   onPress={handleCloseGuarded}
                   style={closeAnimatedStyle}
-                  className="p-2">
+                  className="p-2"
+                  accessibilityRole="button"
+                  accessibilityLabel="Close">
                   <Icon as={X} size={24} color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
                 </AnimatedPressable>
               </View>
@@ -412,7 +440,7 @@ export function FileViewer({
                   paddingHorizontal: 16,
                   paddingTop: 12,
                   paddingBottom: insets.bottom + 12,
-                  fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                  fontFamily: MONO_FONT_FAMILY,
                   fontSize: 13,
                   lineHeight: 19,
                   color: isDark ? THEME.dark.foreground : THEME.light.foreground,
@@ -443,6 +471,8 @@ export function FileViewer({
             />
           )}
         </View>
+        {confirmDialog}
+        <PortalHost name={FILE_VIEWER_PORTAL_HOST} />
       </View>
     </Modal>
   );

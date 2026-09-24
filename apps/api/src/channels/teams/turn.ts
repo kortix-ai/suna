@@ -1,6 +1,7 @@
 import { and, eq, lt, sql } from 'drizzle-orm';
 import { chatThreads, chatTurnStreams } from '@kortix/db';
 import { db } from '../../shared/db';
+import { runWorkerTick } from '../../shared/audit-scope';
 import { config } from '../../config';
 import { classifyTurnError, type TurnErrorInfo } from '../slack/errors';
 import { sessionWebUrl } from '../slack/util';
@@ -654,7 +655,7 @@ export async function sweepStaleTeamsTurns(): Promise<void> {
 }
 
 setInterval(() => {
-  sweepStaleTeamsTurns().catch((err) => console.warn('[teams-webhook] gc tick failed', err));
+  runWorkerTick('teams-turn-gc', sweepStaleTeamsTurns).catch((err) => console.warn('[teams-webhook] gc tick failed', err));
 }, 5 * 60 * 1000).unref();
 
 /**

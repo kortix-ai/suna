@@ -42,6 +42,8 @@ export function SettingsHeader({ title, onClose, disabled = false, variant = 'ba
         className="w-8 h-8 items-center justify-center rounded-full p-2"
         hitSlop={8}
         disabled={disabled}
+        accessibilityRole="button"
+        accessibilityLabel={variant === 'close' ? 'Close' : 'Back'}
       >
         <Icon
           as={variant === 'close' ? X : ArrowLeft}

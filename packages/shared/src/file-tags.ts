@@ -1,3 +1,5 @@
+import { tagBlocks } from './tag-blocks';
+
 /**
  * The runtime writes an attached file into user text as
  * `<file path="…" mime="…" filename="…">…</file>`. This finds those blocks.
@@ -9,14 +11,8 @@
  * 125 ms — each doubling quadruples it — so a 200k-character prompt costs
  * ~12 s. That text is user-controlled, and one reader runs synchronously on the
  * API's event loop at every turn-end capture, where it stalls every request on
- * the process. A tighter regex does not fix it: any pattern that re-scans to
- * the end of the string for each `<file` it tries is still quadratic when no
- * closing `>` or `</file>` exists.
- *
- * This scanner reads each character a bounded number of times: every search
- * starts past the previous one, and it stops as soon as a delimiter it needs
- * is absent from the rest of the text — because if no `>` or `</file>` exists
- * after one opener, none exists after any later opener either.
+ * the process. The scanner behind this, and the reason no tighter regex fixes
+ * the class, is in `tag-blocks.ts`.
  *
  * It returns exactly what that regex matched: `<file`, then whitespace, then
  * attributes up to the first `>`, then everything up to the first `</file>`,
@@ -32,29 +28,6 @@ export interface FileTagBlock {
   attrs: string;
 }
 
-const OPEN = '<file';
-const CLOSE = '</file>';
-const WHITESPACE = /\s/;
-
 export function fileTagBlocks(text: string): FileTagBlock[] {
-  const blocks: FileTagBlock[] = [];
-  if (typeof text !== 'string') return blocks;
-  let from = 0;
-  for (;;) {
-    const index = text.indexOf(OPEN, from);
-    if (index === -1) return blocks;
-    const after = index + OPEN.length;
-    // `<filex` is not a tag: the regex required whitespace right after `file`.
-    if (after >= text.length || !WHITESPACE.test(text[after]!)) {
-      from = after;
-      continue;
-    }
-    const gt = text.indexOf('>', after);
-    if (gt === -1) return blocks;
-    const close = text.indexOf(CLOSE, gt + 1);
-    if (close === -1) return blocks;
-    const end = close + CLOSE.length;
-    blocks.push({ index, end, attrs: text.slice(after, gt).trimStart() });
-    from = end;
-  }
+  return tagBlocks(text, 'file', { attributes: 'spaced' }).map(({ index, end, attrs }) => ({ index, end, attrs }));
 }

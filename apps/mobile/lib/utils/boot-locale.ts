@@ -16,6 +16,18 @@ export function resolveBootLocale(
 }
 
 /**
+ * The language the UI renders in. With the language picker off, English for
+ * everyone, so a user who picked another language earlier is not left in a
+ * half-translated app. With it on, `resolveBootLocale`.
+ */
+export function resolveUiLocale(
+  user: { user_metadata?: { locale?: unknown } } | null | undefined,
+  pickerEnabled: boolean
+): SupportedLocale {
+  return pickerEnabled ? resolveBootLocale(user) : DEFAULT_LOCALE;
+}
+
+/**
  * Loads one locale's translations. Each bundle is 48–60 KB of JSON, so only
  * the locale in use is evaluated. Static `require` strings keep every bundle
  * in the Metro build.

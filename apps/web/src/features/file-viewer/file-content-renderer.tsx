@@ -3,7 +3,7 @@
 import { useTranslations } from '@/i18n/use-translations';
 
 import { ClientErrorBoundary } from '@/components/common/error-boundary';
-import { CodeEditor } from '@/components/file-editors/code-editor';
+import { CodeEditor } from '@/components/file-editors/lazy-code-editor';
 import { MarkdownWithFrontmatter } from '@/components/markdown/markdown-frontmatter';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';

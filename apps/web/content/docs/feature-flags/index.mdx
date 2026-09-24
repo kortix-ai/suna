@@ -126,7 +126,6 @@ Registry order — the same order **Settings → Feature flags** shows.
 | `secrets_egress` | Network-Enforced Secrets | Experimental | On | `behavioral` |
 | `pi_worker` | Pi Worker Runtime (compiled) | Experimental | Off | `routes` |
 | `pi_harness` | Pi Harness (in-sandbox) | Experimental | Off | `behavioral` |
-| `agent_principal` | Agent Principal | Experimental | Off | `behavioral` |
 
 `llm_gateway` reads its per-project default from
 `LLM_GATEWAY_DEFAULT_ENABLED`, which defaults to on. Turning the flag off per
@@ -171,16 +170,21 @@ refs). An explicit project choice always wins.
   harness until it is restarted or resumed. Subagents work on pi: the agent
   delegates with the `task` tool to `general`, `explore` (read-only), or any
   agent in `.kortix/opencode/agents/` with `mode: subagent`, and the transcript
-  shows each subagent's steps in place.
-- **`agent_principal`** — make each declared agent the acting principal of its
-  sessions: its Kortix permissions within its ceiling role, minus the
-  human-only permissions, whoever runs it. Off keeps the launcher's role as the
-  cap. See [Agent permissions](/docs/project/permissions).
+  shows each subagent's steps in place. pi sessions also load pi.dev packages:
+  see [`harnesses:`](/docs/project/manifest#harnesses).
 
 ### Graduated flags
 
 A graduated feature is on for every project and has no switch.
 
+- **Agents as principals** is standard behavior. An agent session acts as the
+  agent itself — its Kortix permissions within its ceiling role, minus the
+  human-only permissions, whoever runs it. It is not listed on
+  **Settings → Feature flags** and there is nothing to turn on. See
+  [Agent permissions](/docs/project/permissions). One project can be put back
+  on the old launcher-role model for a single release; ask support, who set it
+  with `PATCH /v1/projects/:id/features`. That switch is removed in the release
+  after this one.
 - **Review Center** graduated out of the flag system. The Review tab, the
   sidebar Review row, and the command-palette row show for every project; the
   `project.review.read` and `project.review.act` permissions still apply.

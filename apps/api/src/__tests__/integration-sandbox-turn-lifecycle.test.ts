@@ -1156,7 +1156,7 @@ describe('adoptRuntimeSandboxTurn — box-initiated turn authority', () => {
   // OpenCode starts turns of its own (synthetic `<pty_exited>` wake-ups) that
   // no control-plane prompt announced. The daemon relays `turn_begin` for
   // them; this write is what turns that relay into `GET .../turn` truth and a
-  // deadline grant (live incident 2026-08-20, Essentia session d1b74954).
+  // deadline grant (live incident 2026-08-20, SampleCo session d1b74954).
   const SYNTH = 'msg_synthetic_pty_1';
 
   async function readOpenBySession(): Promise<Array<Record<string, unknown>>> {

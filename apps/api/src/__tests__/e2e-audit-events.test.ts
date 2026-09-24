@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { auditLabelForRoute } from '@kortix/shared/audit-labels';
 import { Hono } from 'hono';
 import { runWithContext, setContextField } from '../lib/request-context';
 
@@ -215,6 +216,7 @@ describe('audit event middleware', () => {
     expect(auditRows[0]?.metadata).toEqual({
       method: 'POST',
       path: '/v1/projects/:projectId/secrets',
+      http: 'POST /v1/projects/:projectId/secrets',
     });
     expect(JSON.stringify(auditRows[0])).not.toContain('query-secret');
     expect(JSON.stringify(auditRows[0])).not.toContain('body-secret');
@@ -237,8 +239,12 @@ describe('audit event middleware', () => {
     expect(res.status).toBe(200);
     expect(auditRows).toHaveLength(1);
     expect(auditRows[0]).toMatchObject({
-      action: 'GET /v1/approval-links/:token',
-      metadata: { method: 'GET', path: '/v1/approval-links/:token' },
+      action: auditLabelForRoute('GET', '/v1/approval-links/:token')?.action,
+      metadata: {
+        method: 'GET',
+        path: '/v1/approval-links/:token',
+        http: 'GET /v1/approval-links/:token',
+      },
     });
     expect(JSON.stringify(auditRows[0])).not.toContain('private-bearer-capability');
   });

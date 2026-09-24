@@ -310,7 +310,6 @@ function ConnectionsContent({
   // ── Sticky search bar (rendered outside FlatList) ──
   const SearchBar = (
     <SearchListHeader
-      gutter="page"
       value={searchQuery}
       onChangeText={setSearchQuery}
       placeholder="Search 1000+ apps..."
@@ -330,6 +329,8 @@ function ConnectionsContent({
             borderWidth: 1,
             borderColor: activeBg,
           }}
+          accessibilityRole="button"
+          accessibilityLabel="Credentials"
         >
           <Icon as={Settings} size={16} color={muted} />
           {isCustomCreds && (
@@ -358,7 +359,7 @@ function ConnectionsContent({
       {/* Back button + title when embedded (e.g. AgentDrawer) */}
       {onBack && (
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
-          <Pressable onPress={onBack} style={{ marginRight: 12 }}>
+          <Pressable onPress={onBack} style={{ marginRight: 12 }} accessibilityRole="button" accessibilityLabel="Back">
             <Icon as={ArrowLeft} size={20} color={fg} />
           </Pressable>
           <Text style={{ fontSize: 20, fontFamily: 'Roobert-Semibold', color: fg }}>
@@ -484,7 +485,6 @@ function ConnectionsContent({
         enablePanDownToClose
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
-        android_keyboardInputMode="adjustResize"
         onDismiss={() => { setCredValues({ client_id: '', client_secret: '', project_id: '' }); setShowSecrets(false); }}
       >
         <BottomSheetView style={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: sheetPadding }}>
@@ -583,6 +583,8 @@ function ConnectionsContent({
                 width: 40, height: 40, borderRadius: 9999, alignItems: 'center', justifyContent: 'center',
                 backgroundColor: hoverBg,
               }}
+              accessibilityRole="button"
+              accessibilityLabel={showSecrets ? 'Hide secrets' : 'Show secrets'}
             >
               <Icon as={showSecrets ? EyeOff : Eye} size={16} color={muted} />
             </Pressable>

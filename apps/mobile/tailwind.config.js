@@ -14,6 +14,8 @@ module.exports = {
         'roobert-semibold': ['Roobert-SemiBold'],
         'roobert-bold': ['Roobert-Bold'],
         'roobert-heavy': ['Roobert-Heavy'],
+        // `font-mono` = MONO_FONT_FAMILY (lib/utils/mono-font.ts).
+        mono: ['RoobertMono-Regular'],
       },
       colors: {
         border: 'hsl(var(--border))',

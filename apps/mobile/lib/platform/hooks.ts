@@ -234,50 +234,6 @@ export function useDeleteSession(sandboxUrl: string | undefined) {
   });
 }
 
-// ─── Session Archive/Unarchive Mutation ──────────────────────────────────────
-
-/**
- * Archive a session.
- * PATCH {sandboxUrl}/session/{id} with { time: { archived: Date.now() } }
- */
-export function useArchiveSession(sandboxUrl: string | undefined) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (sessionId: string) => {
-      if (!sandboxUrl) throw new Error('No sandbox URL');
-      await opencodeFetch<void>(sandboxUrl, `/session/${sessionId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ time: { archived: Date.now() } }),
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: platformKeys.sessions() });
-    },
-  });
-}
-
-/**
- * Unarchive a session.
- * PATCH {sandboxUrl}/session/{id} with { time: { archived: 0 } }
- */
-export function useUnarchiveSession(sandboxUrl: string | undefined) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (sessionId: string) => {
-      if (!sandboxUrl) throw new Error('No sandbox URL');
-      await opencodeFetch<void>(sandboxUrl, `/session/${sessionId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ time: { archived: 0 } }),
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: platformKeys.sessions() });
-    },
-  });
-}
-
 // ─── Session Rename Mutation ─────────────────────────────────────────────────
 
 /**

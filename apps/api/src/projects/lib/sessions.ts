@@ -16,6 +16,7 @@ import { checkBillingAdmission } from '../../billing/services/billing-gate';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { type SandboxProviderName, config } from '../../config';
 import { consumeProjectSessionCreateBudget } from '../../shared/rate-limit';
+import { RATE_LIMIT_EXCEEDED_ACTION } from '../../shared/rate-limit-audit';
 import { agentMayUseConnector } from '../../iam/agent-scope';
 import {
   loadSessionGrants,
@@ -242,7 +243,7 @@ export async function enforceConcurrentSessionCap(
   recordAuditEvent({
     accountId,
     actorUserId: userId,
-    action: `RATE_LIMIT ${request?.method ?? 'SYSTEM'} ${request?.path ?? 'project_session'}`,
+    action: RATE_LIMIT_EXCEEDED_ACTION,
     resourceType: 'project_session',
     resourceId: accountId,
     ip: request?.ip ?? null,
@@ -305,7 +306,7 @@ export async function checkConcurrentSessionCap(
       recordAuditEvent({
         accountId,
         actorUserId: userId,
-        action: `RATE_LIMIT ${request?.method ?? 'SYSTEM'} ${request?.path ?? 'project_session'}`,
+        action: RATE_LIMIT_EXCEEDED_ACTION,
         resourceType: 'project_session',
         resourceId: projectId,
         ip: request?.ip ?? null,
@@ -354,7 +355,7 @@ export async function checkConcurrentSessionCap(
       recordAuditEvent({
         accountId,
         actorUserId: userId,
-        action: `RATE_LIMIT ${request?.method ?? 'SYSTEM'} ${request?.path ?? 'project_session'}`,
+        action: RATE_LIMIT_EXCEEDED_ACTION,
         resourceType: 'project_session',
         resourceId: projectId,
         ip: request?.ip ?? null,

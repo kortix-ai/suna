@@ -133,7 +133,7 @@ export function ComposioAppsContent({
             className="ml-3 h-auto flex-1 border-0 bg-transparent py-3 font-roobert text-base text-foreground shadow-none"
           />
           {searchQuery.length > 0 && (
-            <Pressable onPress={() => setSearchQuery('')} className="ml-2">
+            <Pressable onPress={() => setSearchQuery('')} className="ml-2" accessibilityRole="button" accessibilityLabel="Clear search">
               <Icon as={X} size={18} className="text-muted-foreground" />
             </Pressable>
           )}
@@ -179,7 +179,7 @@ export function ComposioAppsContent({
           {/* Header with back button */}
           <View className="mb-6 flex-row items-center">
             {onBack && (
-              <Pressable onPress={onBack} className="flex-row items-center active:opacity-70">
+              <Pressable onPress={onBack} className="flex-row items-center active:opacity-70" accessibilityRole="button" accessibilityLabel="Back">
                 <Icon as={ArrowLeft} size={20} className="text-foreground" />
               </Pressable>
             )}
@@ -281,7 +281,7 @@ export function ComposioAppsContent({
         {/* Header with back button */}
         <View className="mb-6 flex-row items-center">
           {onBack && (
-            <Pressable onPress={onBack} className="flex-row items-center active:opacity-70">
+            <Pressable onPress={onBack} className="flex-row items-center active:opacity-70" accessibilityRole="button" accessibilityLabel="Back">
               <Icon as={ArrowLeft} size={20} className="text-foreground" />
             </Pressable>
           )}

@@ -3,9 +3,10 @@
  *
  * Signed out → /auth. Signed in → the project the user had open last, else the
  * first project (lib/projects/landing.ts), opened with `router.replace` so no
- * screen sits under the project and back can never leave it. The Projects list
- * opens only when the user has no project in any account; otherwise the list
- * is reached from the project menu (All projects) alone.
+ * screen sits under the project and back can never leave it. With no project
+ * in any account (a new user): the upgrade screen once per user
+ * (`/welcome`), then `/new` to create the first project — never an empty
+ * list (`startDestination`, lib/onboarding/onboarding.ts; COR-161).
  *
  * Every automatic "take me into the app" redirect (sign-in, a back button with
  * no history, leaving an account) replaces to `/` so it lands here. A failure
@@ -32,8 +33,10 @@ import {
   type StartFailure,
 } from '@/lib/projects/start-failure';
 import { listAccounts, listProjectsForAccount } from '@/lib/projects/projects-client';
+import { onboardingAccountId, startDestination } from '@/lib/onboarding/onboarding';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useLastProjectStore } from '@/stores/last-project-store';
+import { useOnboardingStore } from '@/stores/onboarding-store';
 
 /** Delays before the second and third resolve attempts. */
 const RETRY_DELAY_MS = [400, 1200];
@@ -81,7 +84,11 @@ export default function StartScreen() {
 
     const run = async (tries: number) => {
       try {
-        await Promise.all([whenHydrated(useLastProjectStore), whenHydrated(useCurrentAccountStore)]);
+        await Promise.all([
+          whenHydrated(useLastProjectStore),
+          whenHydrated(useCurrentAccountStore),
+          whenHydrated(useOnboardingStore),
+        ]);
         const accounts = await queryClient.fetchQuery({
           queryKey: projectKeys.accounts,
           queryFn: () => listAccounts(),
@@ -98,14 +105,30 @@ export default function StartScreen() {
         });
         if (cancelled) return;
 
-        if (resolution.kind === 'project') {
+        const destination = startDestination(
+          resolution,
+          !!useOnboardingStore.getState().upgradeSeenByUser[userId]
+        );
+        if (destination.kind === 'project') {
           // Every account-scoped surface agrees with where the user landed.
-          useCurrentAccountStore.getState().setSelectedAccountId(resolution.accountId);
-          log.log(`🚀 → /projects/${resolution.projectId} (last or first project)`);
-          router.replace(`/projects/${resolution.projectId}`);
+          useCurrentAccountStore.getState().setSelectedAccountId(destination.accountId);
+          log.log(`🚀 → /projects/${destination.projectId} (last or first project)`);
+          router.replace(`/projects/${destination.projectId}`);
+          return;
+        }
+        // No project in any account: the upgrade screen and `/new` open on
+        // the account the first project would be created in.
+        const accountId = onboardingAccountId(
+          accounts,
+          useCurrentAccountStore.getState().selectedAccountId
+        );
+        useCurrentAccountStore.getState().setSelectedAccountId(accountId);
+        if (destination.kind === 'welcome') {
+          log.log('🚀 → /welcome (no project, upgrade screen not seen)');
+          router.replace('/welcome');
         } else {
-          log.log('🚀 → /projects (no project in any account)');
-          router.replace('/projects');
+          log.log('🚀 → /new (no project in any account)');
+          router.replace('/new');
         }
       } catch (err) {
         if (cancelled) return;

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { Part, ToolPart } from '@kortix/sdk';
+import { segmentTurn, type Part, type ToolPart } from '@kortix/sdk';
 
 import {
   WORKSPACE_ROOTS,
@@ -210,6 +210,35 @@ describe('standaloneCallIdsFor', () => {
       's1',
     );
     expect([...ids]).toEqual(['c1']);
+  });
+
+  test('adds connector calls that ask for a connect or an approval, so they never hide in a burst', () => {
+    const connect = tool(
+      'kortix-connectors_call',
+      {
+        output: JSON.stringify({
+          ok: false,
+          status: 'denied',
+          reason: 'connector_not_connected',
+          connect_url: 'https://kortix.com/connect/abc',
+          connector: 'gmail',
+        }),
+      },
+      'c_connect',
+    );
+    const approval = tool(
+      'kortix-connectors_call',
+      { output: JSON.stringify({ status: 'pending_approval', execution_id: 'exec_1' }) },
+      'c_approve',
+    );
+    const ok = tool('kortix-connectors_call', { output: JSON.stringify({ ok: true, data: {} }) }, 'c_ok');
+    const ids = standaloneCallIdsFor([], 's1', wrap([connect, approval, ok]));
+    expect([...ids].sort()).toEqual(['c_approve', 'c_connect']);
+    expect(segmentTurn(wrap([tool('read'), connect, tool('read')]).map((e) => e.part), { standaloneCallIds: ids }).map((s) => s.kind)).toEqual([
+      'burst',
+      'standalone',
+      'burst',
+    ]);
   });
 });
 
