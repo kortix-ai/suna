@@ -247,6 +247,7 @@ export async function restartSession(input: {
     const rehydrate = legacyRehydrateSpec(
       session.metadata,
       loaded.row.metadata,
+      loaded.row.projectId,
     );
     allocateSessionRuntime({
       sessionId,
