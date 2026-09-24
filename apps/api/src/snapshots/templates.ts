@@ -27,6 +27,8 @@ import {
   PNPM_SHA256_ARM64,
   PNPM_VERSION,
   PYTHON_VERSION,
+  RCLONE_SHA256_AMD64,
+  RCLONE_SHA256_ARM64,
   UV_SHA256_AMD64,
   UV_SHA256_ARM64,
   UV_VERSION,
@@ -228,7 +230,8 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // OpenCode config while it indexes /workspace, then restores the exact checkout.
 // v44: install the shared shell tool floor (rg, fd, bat, jq, fzf, …) from
 // @kortix/shared/sandbox shell-tools.ts, with `fd`/`bat` linked to Debian's names.
-const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v44';
+// v45: install fuse3 and the pinned rclone release for kortix.yaml `volumes`.
+const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v45';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);
@@ -938,6 +941,8 @@ const runtimeIntegrityKey = () =>
     UV_SHA256_ARM64,
     BUN_SHA256_AMD64,
     BUN_SHA256_ARM64,
+    RCLONE_SHA256_AMD64,
+    RCLONE_SHA256_ARM64,
   ].join(':');
 const runtimeVersionKey = () =>
   `${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${PNPM_VERSION}:${NODE_VERSION}:${NPM_VERSION}:${UV_VERSION}:${PYTHON_VERSION}:${BUN_VERSION}:${OPENCODE_VERSION}:${AGENT_BROWSER_VERSION}:${ANYDOC_VERSION}:${runtimeIntegrityKey()}`;

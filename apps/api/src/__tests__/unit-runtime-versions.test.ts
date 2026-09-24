@@ -13,6 +13,9 @@ import {
   PLAYWRIGHT_VERSION,
   PNPM_SHA256_AMD64,
   PNPM_SHA256_ARM64,
+  RCLONE_SHA256_AMD64,
+  RCLONE_SHA256_ARM64,
+  RCLONE_VERSION,
   UV_SHA256_AMD64,
   UV_SHA256_ARM64,
 } from '@kortix/shared';
@@ -55,6 +58,10 @@ describe('runtime version drift guards', () => {
     expect(dockerfile).toContain('uvSha256Arm64');
     expect(dockerfile).toContain('bunSha256Amd64');
     expect(dockerfile).toContain('bunSha256Arm64');
+    // kortix.yaml `volumes`: the pinned rclone release plus FUSE userspace.
+    expect(dockerfile).toContain('"rcloneSha256Amd64"');
+    expect(dockerfile).toContain('"rcloneSha256Arm64"');
+    expect(dockerfile).toMatch(/apt-get install[^\n]*\n[^\n]*\bfuse3\b/);
     expect(
       dockerfile.match(
         /FROM oven\/bun:1\.3\.14-debian@sha256:9dba1a1b43ce28c9d7931bfc4eb00feb63b0114720a0277a8f939ae4dfc9db6f/g,
@@ -93,9 +100,13 @@ describe('runtime version drift guards', () => {
       UV_SHA256_ARM64,
       BUN_SHA256_AMD64,
       BUN_SHA256_ARM64,
+      RCLONE_SHA256_AMD64,
+      RCLONE_SHA256_ARM64,
     ]) {
       expect(merged).toContain(digest);
     }
+    expect(merged).toContain(`rclone/releases/download/v${RCLONE_VERSION}/`);
+    expect(merged).toMatch(/apt-get install[^\n]*\n[^\n]*\bfuse3\b/);
   });
 
   test('Codex/OpenAI OAuth traffic presents the same OpenCode user-agent pin', () => {

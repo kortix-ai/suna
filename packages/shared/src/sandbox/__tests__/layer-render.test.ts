@@ -29,6 +29,8 @@ import {
   PNPM_SHA256_ARM64,
   PYTHON_PACKAGE_FLOOR,
   PYTHON_PACKAGE_FLOOR_IMPORTS,
+  RCLONE_SHA256_AMD64,
+  RCLONE_SHA256_ARM64,
   UV_SHA256_AMD64,
   UV_SHA256_ARM64,
 } from '../../runtime-versions';
@@ -98,10 +100,13 @@ describe('runtime artifact integrity', () => {
       UV_SHA256_ARM64,
       BUN_SHA256_AMD64,
       BUN_SHA256_ARM64,
+      RCLONE_SHA256_AMD64,
+      RCLONE_SHA256_ARM64,
     ]) {
       expect(rendered).toContain(digest);
     }
-    expect(rendered.match(/sha256sum -c -/g)).toHaveLength(3);
+    // uv, pnpm, Bun, rclone: every downloaded binary is checksum-verified.
+    expect(rendered.match(/sha256sum -c -/g)).toHaveLength(4);
   });
 
   test('does not execute remote installer scripts', () => {

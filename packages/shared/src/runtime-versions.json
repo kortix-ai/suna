@@ -33,5 +33,8 @@
   "opencodeSdk": "1.18.23",
   "agentBrowser": "0.27.0",
   "playwright": "1.60.0",
-  "anydoc": "0.1.6"
+  "anydoc": "0.1.6",
+  "rclone": "1.75.1",
+  "rcloneSha256Amd64": "982b5aa772841168f8e380f139e9e787b2a105403e32b94da8676a0e1c0a13ab",
+  "rcloneSha256Arm64": "03f2504174034b6d004152ed7369251c9a9ec1f7e0836eda420f5c7a5ec0dff9"
 }

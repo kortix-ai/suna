@@ -36,6 +36,9 @@ import {
   PYTHON_PACKAGE_FLOOR,
   PYTHON_PACKAGE_FLOOR_IMPORTS,
   PYTHON_VERSION,
+  RCLONE_SHA256_AMD64,
+  RCLONE_SHA256_ARM64,
+  RCLONE_VERSION,
   UV_SHA256_AMD64,
   UV_SHA256_ARM64,
   UV_VERSION,
@@ -317,7 +320,8 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     'ENV DEBIAN_FRONTEND=noninteractive',
     'RUN apt-get update \\',
     '    && apt-get install -y --no-install-recommends \\',
-    '        ca-certificates curl git gzip libatomic1 sudo tmux iproute2 iputils-arping util-linux \\',
+    // fuse3: kortix.yaml `volumes` are rclone FUSE mounts (kortixd src/volumes.ts).
+    '        ca-certificates curl fuse3 git gzip libatomic1 sudo tmux iproute2 iputils-arping util-linux \\',
     '        build-essential ffmpeg fonts-dejavu fonts-liberation fonts-noto fonts-noto-cjk \\',
     '        latexmk libreoffice pandoc pkg-config poppler-utils qpdf tesseract-ocr \\',
     '        texlive-bibtex-extra texlive-fonts-recommended texlive-latex-base \\',
@@ -327,6 +331,22 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     `        ${SANDBOX_SHELL_TOOL_APT_LIST} \\`,
     '    && rm -rf /var/lib/apt/lists/* \\',
     `    && ${SANDBOX_SHELL_TOOL_LINK_COMMAND}`,
+    '',
+    // rclone mounts kortix.yaml `volumes`. One pinned, checksum-verified release
+    // artifact: Ubuntu 24.04's apt rclone is v1.60, and the VFS write-back
+    // behavior the daemon relies on was verified at RCLONE_VERSION.
+    'RUN case "$(uname -m)" in \\',
+    `      x86_64) rclone_arch=amd64; rclone_sha=${RCLONE_SHA256_AMD64} ;; \\`,
+    `      aarch64|arm64) rclone_arch=arm64; rclone_sha=${RCLONE_SHA256_ARM64} ;; \\`,
+    `      *) echo "unsupported rclone architecture: $(uname -m)" >&2; exit 1 ;; \\`,
+    '    esac \\',
+    '    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/rclone.zip \\',
+    `         "https://github.com/rclone/rclone/releases/download/v${RCLONE_VERSION}/rclone-v${RCLONE_VERSION}-linux-\${rclone_arch}.zip" \\`,
+    '    && echo "${rclone_sha}  /tmp/rclone.zip" | sha256sum -c - \\',
+    '    && unzip -q /tmp/rclone.zip -d /tmp/rclone \\',
+    `    && install -m 0755 "/tmp/rclone/rclone-v${RCLONE_VERSION}-linux-\${rclone_arch}/rclone" /usr/local/bin/rclone \\`,
+    '    && rm -rf /tmp/rclone /tmp/rclone.zip \\',
+    `    && rclone version | head -n 1 | grep -qx 'rclone v${RCLONE_VERSION}'`,
     '',
     'RUN useradd --create-home --shell /bin/bash --user-group kortix \\',
     // E2B's Dockerfile parser removes the backslash from a quoted `\\n`.

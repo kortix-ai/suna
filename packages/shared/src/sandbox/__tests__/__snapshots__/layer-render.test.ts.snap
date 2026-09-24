@@ -17,7 +17,7 @@ USER root
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \\
     && apt-get install -y --no-install-recommends \\
-        ca-certificates curl git gzip libatomic1 sudo tmux iproute2 iputils-arping util-linux \\
+        ca-certificates curl fuse3 git gzip libatomic1 sudo tmux iproute2 iputils-arping util-linux \\
         build-essential ffmpeg fonts-dejavu fonts-liberation fonts-noto fonts-noto-cjk \\
         latexmk libreoffice pandoc pkg-config poppler-utils qpdf tesseract-ocr \\
         texlive-bibtex-extra texlive-fonts-recommended texlive-latex-base \\
@@ -25,6 +25,19 @@ RUN apt-get update \\
         bat bc fd-find file fzf git-lfs htop iputils-ping jq less lsof moreutils nano netcat-openbsd openssh-client patch procps ripgrep rsync sqlite3 tree unzip wget xz-utils zip zstd \\
     && rm -rf /var/lib/apt/lists/* \\
     && (command -v fd >/dev/null || ln -s "$(command -v fdfind)" /usr/local/bin/fd) && (command -v bat >/dev/null || ln -s "$(command -v batcat)" /usr/local/bin/bat) && rg --version >/dev/null && fd --version >/dev/null && bat --version >/dev/null && jq --version >/dev/null && fzf --version >/dev/null
+
+RUN case "$(uname -m)" in \\
+      x86_64) rclone_arch=amd64; rclone_sha=982b5aa772841168f8e380f139e9e787b2a105403e32b94da8676a0e1c0a13ab ;; \\
+      aarch64|arm64) rclone_arch=arm64; rclone_sha=03f2504174034b6d004152ed7369251c9a9ec1f7e0836eda420f5c7a5ec0dff9 ;; \\
+      *) echo "unsupported rclone architecture: $(uname -m)" >&2; exit 1 ;; \\
+    esac \\
+    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/rclone.zip \\
+         "https://github.com/rclone/rclone/releases/download/v1.75.1/rclone-v1.75.1-linux-\${rclone_arch}.zip" \\
+    && echo "\${rclone_sha}  /tmp/rclone.zip" | sha256sum -c - \\
+    && unzip -q /tmp/rclone.zip -d /tmp/rclone \\
+    && install -m 0755 "/tmp/rclone/rclone-v1.75.1-linux-\${rclone_arch}/rclone" /usr/local/bin/rclone \\
+    && rm -rf /tmp/rclone /tmp/rclone.zip \\
+    && rclone version | head -n 1 | grep -qx 'rclone v1.75.1'
 
 RUN useradd --create-home --shell /bin/bash --user-group kortix \\
     && echo 'kortix ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kortix \\
@@ -203,7 +216,7 @@ USER root
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \\
     && apt-get install -y --no-install-recommends \\
-        ca-certificates curl git gzip libatomic1 sudo tmux iproute2 iputils-arping util-linux \\
+        ca-certificates curl fuse3 git gzip libatomic1 sudo tmux iproute2 iputils-arping util-linux \\
         build-essential ffmpeg fonts-dejavu fonts-liberation fonts-noto fonts-noto-cjk \\
         latexmk libreoffice pandoc pkg-config poppler-utils qpdf tesseract-ocr \\
         texlive-bibtex-extra texlive-fonts-recommended texlive-latex-base \\
@@ -211,6 +224,19 @@ RUN apt-get update \\
         bat bc fd-find file fzf git-lfs htop iputils-ping jq less lsof moreutils nano netcat-openbsd openssh-client patch procps ripgrep rsync sqlite3 tree unzip wget xz-utils zip zstd \\
     && rm -rf /var/lib/apt/lists/* \\
     && (command -v fd >/dev/null || ln -s "$(command -v fdfind)" /usr/local/bin/fd) && (command -v bat >/dev/null || ln -s "$(command -v batcat)" /usr/local/bin/bat) && rg --version >/dev/null && fd --version >/dev/null && bat --version >/dev/null && jq --version >/dev/null && fzf --version >/dev/null
+
+RUN case "$(uname -m)" in \\
+      x86_64) rclone_arch=amd64; rclone_sha=982b5aa772841168f8e380f139e9e787b2a105403e32b94da8676a0e1c0a13ab ;; \\
+      aarch64|arm64) rclone_arch=arm64; rclone_sha=03f2504174034b6d004152ed7369251c9a9ec1f7e0836eda420f5c7a5ec0dff9 ;; \\
+      *) echo "unsupported rclone architecture: $(uname -m)" >&2; exit 1 ;; \\
+    esac \\
+    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/rclone.zip \\
+         "https://github.com/rclone/rclone/releases/download/v1.75.1/rclone-v1.75.1-linux-\${rclone_arch}.zip" \\
+    && echo "\${rclone_sha}  /tmp/rclone.zip" | sha256sum -c - \\
+    && unzip -q /tmp/rclone.zip -d /tmp/rclone \\
+    && install -m 0755 "/tmp/rclone/rclone-v1.75.1-linux-\${rclone_arch}/rclone" /usr/local/bin/rclone \\
+    && rm -rf /tmp/rclone /tmp/rclone.zip \\
+    && rclone version | head -n 1 | grep -qx 'rclone v1.75.1'
 
 RUN useradd --create-home --shell /bin/bash --user-group kortix \\
     && echo 'kortix ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kortix \\

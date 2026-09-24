@@ -29,6 +29,7 @@ describe("runtime versions", () => {
       "opencodeSdk",
       "agentBrowser",
       "playwright",
+      "rclone",
     ] as const;
 
     for (const key of versionKeys) {
@@ -44,6 +45,8 @@ describe("runtime versions", () => {
       "uvSha256Arm64",
       "bunSha256Amd64",
       "bunSha256Arm64",
+      "rcloneSha256Amd64",
+      "rcloneSha256Arm64",
     ] as const;
 
     for (const key of digestKeys) {

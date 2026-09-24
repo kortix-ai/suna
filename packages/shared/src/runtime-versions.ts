@@ -19,6 +19,9 @@ export type RuntimeVersions = {
   agentBrowser: string;
   playwright: string;
   anydoc: string;
+  rclone: string;
+  rcloneSha256Amd64: string;
+  rcloneSha256Arm64: string;
 };
 
 export const RUNTIME_VERSIONS = runtimeVersions as RuntimeVersions;
@@ -60,3 +63,8 @@ export const OPENCODE_USER_AGENT = `opencode/${OPENCODE_VERSION}`;
 export const AGENT_BROWSER_VERSION = RUNTIME_VERSIONS.agentBrowser;
 export const PLAYWRIGHT_VERSION = RUNTIME_VERSIONS.playwright;
 export const ANYDOC_VERSION = RUNTIME_VERSIONS.anydoc;
+/** rclone mounts kortix.yaml `volumes` (kortixd src/volumes.ts). Its VFS
+ *  write-back behavior was verified on real S3 at exactly this version. */
+export const RCLONE_VERSION = RUNTIME_VERSIONS.rclone;
+export const RCLONE_SHA256_AMD64 = RUNTIME_VERSIONS.rcloneSha256Amd64;
+export const RCLONE_SHA256_ARM64 = RUNTIME_VERSIONS.rcloneSha256Arm64;

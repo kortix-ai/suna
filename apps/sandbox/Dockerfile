@@ -94,7 +94,7 @@ FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        ca-certificates curl git gzip libatomic1 sudo tmux iproute2 iputils-arping util-linux \
+        ca-certificates curl fuse3 git gzip libatomic1 sudo tmux iproute2 iputils-arping util-linux \
         build-essential ffmpeg fonts-dejavu fonts-liberation fonts-noto fonts-noto-cjk \
         latexmk libreoffice pandoc pkg-config poppler-utils qpdf tesseract-ocr \
         texlive-bibtex-extra texlive-fonts-recommended texlive-latex-base \
@@ -115,6 +115,24 @@ ENV PNPM_HOME=/home/kortix/.local/share/pnpm \
 USER kortix
 
 COPY packages/shared/src/runtime-versions.json /tmp/kortix-runtime-versions.json
+# rclone mounts kortix.yaml `volumes` (kortixd src/volumes.ts). Pinned release
+# artifact: apt's v1.60 predates the VFS write-back behavior the daemon relies on.
+RUN RCLONE_VERSION="$(sed -n 's/.*"rclone": "\([^"]*\)".*/\1/p' /tmp/kortix-runtime-versions.json)" \
+    && RCLONE_SHA256_AMD64="$(sed -n 's/.*"rcloneSha256Amd64": "\([^"]*\)".*/\1/p' /tmp/kortix-runtime-versions.json)" \
+    && RCLONE_SHA256_ARM64="$(sed -n 's/.*"rcloneSha256Arm64": "\([^"]*\)".*/\1/p' /tmp/kortix-runtime-versions.json)" \
+    && test -n "$RCLONE_VERSION" \
+    && case "$(uname -m)" in \
+         x86_64) rclone_arch=amd64; rclone_sha="$RCLONE_SHA256_AMD64" ;; \
+         aarch64|arm64) rclone_arch=arm64; rclone_sha="$RCLONE_SHA256_ARM64" ;; \
+         *) echo "unsupported rclone architecture: $(uname -m)" >&2; exit 1 ;; \
+       esac \
+    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/rclone.zip \
+         "https://github.com/rclone/rclone/releases/download/v${RCLONE_VERSION}/rclone-v${RCLONE_VERSION}-linux-${rclone_arch}.zip" \
+    && echo "${rclone_sha}  /tmp/rclone.zip" | sha256sum -c - \
+    && unzip -q /tmp/rclone.zip -d /tmp/rclone \
+    && sudo install -m 0755 "/tmp/rclone/rclone-v${RCLONE_VERSION}-linux-${rclone_arch}/rclone" /usr/local/bin/rclone \
+    && rm -rf /tmp/rclone /tmp/rclone.zip \
+    && rclone version | head -n 1 | grep -qx "rclone v${RCLONE_VERSION}"
 RUN UV_VERSION="$(sed -n 's/.*"uv": "\([^"]*\)".*/\1/p' /tmp/kortix-runtime-versions.json)" \
     && PYTHON_VERSION="$(sed -n 's/.*"python": "\([^"]*\)".*/\1/p' /tmp/kortix-runtime-versions.json)" \
     && UV_SHA256_AMD64="$(sed -n 's/.*"uvSha256Amd64": "\([^"]*\)".*/\1/p' /tmp/kortix-runtime-versions.json)" \
