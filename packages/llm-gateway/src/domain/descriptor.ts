@@ -33,6 +33,14 @@ export interface UpstreamDescriptor {
   credentialRef?: string;
   /** Set only for an explicitly selected account-secret pool member. */
   poolSecretId?: string;
+  /**
+   * Provider failover. When the first candidate sets this, a failed dispatch
+   * (thrown error or non-2xx before any output) moves the same request to the
+   * next candidate that also sets it, in order. Kortix-managed models set it on
+   * the primary provider and its fallbacks. BYOK never sets it: a failed BYOK
+   * key must fail as BYOK.
+   */
+  failover?: boolean;
   billingMode: BillingMode;
   markup: number;
   appName?: string;

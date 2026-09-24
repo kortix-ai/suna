@@ -2,13 +2,19 @@ import { upstreamFetch } from '../upstream-fetch';
 import type {
   AuthedPrincipal,
   AuthorizeResult,
+  GatewayAttemptFailure,
   GatewayHooks,
   GatewayLogger,
   TokenCounts,
   UpstreamDescriptor,
   UsageEvent,
 } from '../domain';
-import { GatewayResolutionError, UpstreamHttpError, isUnknownParameterRejection } from '../errors';
+import {
+  ClientAbortError,
+  GatewayResolutionError,
+  UpstreamHttpError,
+  isUnknownParameterRejection,
+} from '../errors';
 import { type FetchImpl, callUpstream } from '../http';
 import { noteBedrockOpenAiRejectsReasoningEffort } from '../transports/ai-sdk/request';
 import { resolveTransportKind } from '../transports/route-kind';
@@ -469,7 +475,9 @@ export async function handleChatCompletions(
   // The descriptor actually served — swapped for its inference-profile twin
   // when Bedrock refuses the bare id (see the retry below).
   let served: UpstreamDescriptor = descriptor;
-  let upstream: Response;
+  // Assigned by the first dispatch, or by a failover candidate when the first
+  // dispatch threw (`dispatchError`); the failover block rethrows otherwise.
+  let upstream!: Response;
   // The one retry this handler performs itself for a PARAMETER: an upstream
   // that refuses `reasoning_effort` (not the request) gets the same request
   // once more without it. Kept only while such a retry is possible — the
@@ -493,6 +501,41 @@ export async function handleChatCompletions(
   const poolCandidates = served.poolSecretId
     ? resolvedCandidates.filter((candidate) => Boolean(candidate.poolSecretId) && candidate.provider === served.provider)
     : [];
+  // Provider failover (descriptor.failover): the same request moves to the
+  // next opted-in candidate when a dispatch throws or answers non-2xx. Only a
+  // failover primary reaches failover candidates, so BYOK keeps one upstream.
+  const failoverCandidates = descriptor.failover
+    ? resolvedCandidates.slice(1).filter((candidate) => candidate.failover)
+    : [];
+  const failoverBody = failoverCandidates.length ? structuredClone(body) : null;
+  const attemptFailures: GatewayAttemptFailure[] = [];
+  let dispatchError: unknown;
+  const clientGone = (error: unknown): boolean =>
+    error instanceof ClientAbortError || Boolean(req.signal?.aborted);
+  const noteFailure = async (candidate: UpstreamDescriptor): Promise<void> => {
+    let status: number | undefined;
+    let message: string;
+    if (dispatchError !== undefined) {
+      status = dispatchError instanceof UpstreamHttpError ? dispatchError.status : undefined;
+      message = dispatchError instanceof Error ? dispatchError.message : String(dispatchError);
+    } else {
+      status = upstream.status;
+      message = (await upstream.text().catch(() => '')).slice(0, 500);
+    }
+    attemptFailures.push({
+      attempt: attemptFailures.length + 1,
+      provider: candidate.provider,
+      routeModel: routedModel,
+      resolvedModel: candidate.resolvedModel ?? routedModel,
+      stage: 'dispatch',
+      status,
+      code: status ?? 'network_error',
+      message,
+    });
+    logger.warn(
+      `[gateway] ${id}: ${candidate.provider} failed for ${candidate.resolvedModel ?? routedModel} (${status ?? 'network error'}); failing over`,
+    );
+  };
   let earliestPoolRetryAt = Infinity;
   const noteRateLimit = async (candidate: UpstreamDescriptor, response: Response): Promise<void> => {
     const seconds = clampRetryAfterSeconds(response.headers.get('retry-after')) ?? 30;
@@ -560,11 +603,13 @@ export async function handleChatCompletions(
         }
         if (!retried) throw lastError;
         upstream = retried;
+      } else if (failoverBody && !clientGone(error)) {
+        dispatchError = error;
       } else {
         throw error;
       }
     }
-    if (poolRetryBody && upstream.status === 429) {
+    if (poolRetryBody && dispatchError === undefined && upstream.status === 429) {
       await noteRateLimit(served, upstream);
       for (const candidate of poolCandidates.slice(1)) {
         attempts += 1;
@@ -589,6 +634,28 @@ export async function handleChatCompletions(
         upstream = new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers });
       }
     }
+    if (failoverBody && (dispatchError !== undefined || !upstream.ok)) {
+      for (const candidate of failoverCandidates) {
+        await noteFailure(served);
+        dispatchError = undefined;
+        attempts += 1;
+        candidatesTried.push(candidate.provider);
+        served = candidate;
+        try {
+          upstream = await callUpstream(structuredClone(failoverBody), candidate, {
+            fetchImpl: dispatchFetch,
+            signal: req.signal,
+            requestId: id,
+          });
+        } catch (error) {
+          if (clientGone(error)) throw error;
+          dispatchError = error;
+          continue;
+        }
+        if (upstream.ok) break;
+      }
+      if (dispatchError !== undefined) throw dispatchError;
+    }
     retryWithoutEffort = null;
   } catch (error) {
     refundHold(hooks, principal, logger);
@@ -605,6 +672,7 @@ export async function handleChatCompletions(
       errorMessage: error instanceof Error ? error.message : String(error),
       attempts,
       candidatesTried,
+      attemptFailures,
     });
     if (error instanceof UpstreamHttpError) return rawProviderError(error);
     // A headers timeout is "try again", not "this request is malformed".
@@ -679,6 +747,7 @@ export async function handleChatCompletions(
       errorMessage: streamError?.message,
       attempts,
       candidatesTried,
+      attemptFailures,
       usage: counts,
       upstreamCost,
       finalCost,

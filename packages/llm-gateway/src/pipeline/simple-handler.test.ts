@@ -520,3 +520,117 @@ describe('retryWithoutReasoningEffortPossible', () => {
     expect(retryWithoutReasoningEffortPossible(null, bedrock)).toBe(false);
   });
 });
+
+describe('provider failover (descriptor.failover)', () => {
+  const morph: UpstreamDescriptor = {
+    ...primary, provider: 'morph', baseUrl: 'https://morph.example/v1', apiKey: 'morph-key',
+    resolvedModel: 'morph-model', failover: true,
+  };
+  const openrouter: UpstreamDescriptor = {
+    ...primary, provider: 'openrouter', baseUrl: 'https://openrouter.example/v1', apiKey: 'or-key',
+    resolvedModel: 'vendor/model', failover: true, bodyExtras: { provider: { only: ['a', 'b'] } },
+  };
+  const ok = () => new Response(JSON.stringify({
+    choices: [{ message: { content: 'ok' } }], usage: { prompt_tokens: 10, completion_tokens: 5 },
+  }), { status: 200, headers: { 'content-type': 'application/json' } });
+
+  async function run(
+    candidates: UpstreamDescriptor[],
+    respond: (url: string, attempt: number) => Response | Promise<Response>,
+    requestBody: Record<string, unknown> = { model: 'requested-model', messages: [{ role: 'user', content: 'hi' }] },
+  ) {
+    const usage: UsageEvent[] = [];
+    const traces: GatewayTrace[] = [];
+    const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
+    const response = await handleChatCompletions({
+      hooks: { ...hooks(usage, traces), resolveUpstream: async () => candidates },
+      logger: { info() {}, warn() {}, error() {} },
+      fetchImpl: async (url, init) => {
+        calls.push({ url, body: JSON.parse(String(init.body)) });
+        return respond(url, calls.length);
+      },
+    }, { authorization: 'Bearer token', rawBody: JSON.stringify(requestBody) });
+    return { response, usage, traces, calls };
+  }
+
+  for (const status of [429, 500, 502, 503, 401, 402]) {
+    test(`a ${status} from the primary moves the request to the next provider`, async () => {
+      const { response, usage, traces, calls } = await run([morph, openrouter], (url) =>
+        url.startsWith('https://morph.example') ? new Response('primary failed', { status }) : ok());
+      expect(response.status).toBe(200);
+      expect(calls.map((c) => c.url)).toEqual([
+        'https://morph.example/v1/chat/completions',
+        'https://openrouter.example/v1/chat/completions',
+      ]);
+      expect(usage.map((u) => [u.provider, u.model])).toEqual([['openrouter', 'vendor/model']]);
+      expect(traces.at(-1)?.candidatesTried).toEqual(['morph', 'openrouter']);
+      expect(traces.at(-1)?.attempts).toBe(2);
+      expect(traces.at(-1)?.attemptFailures?.map((f) => [f.provider, f.code])).toEqual([['morph', status]]);
+    });
+  }
+
+  test('a network error from the primary moves the request to the next provider', async () => {
+    const { response, calls } = await run([morph, openrouter], (url) => {
+      if (url.startsWith('https://morph.example')) throw new TypeError('fetch failed');
+      return ok();
+    });
+    expect(response.status).toBe(200);
+    expect(calls).toHaveLength(2);
+  });
+
+  test('the fallback receives the full request with its own model and body extras', async () => {
+    const { calls } = await run([morph, openrouter], (url) =>
+      url.startsWith('https://morph.example') ? new Response('limited', { status: 429 }) : ok());
+    expect(calls[0].body).toMatchObject({ model: 'morph-model', messages: [{ role: 'user', content: 'hi' }] });
+    expect(calls[0].body.provider).toBeUndefined();
+    expect(calls[1].body).toMatchObject({
+      model: 'vendor/model', messages: [{ role: 'user', content: 'hi' }], provider: { only: ['a', 'b'] },
+    });
+  });
+
+  test('a successful primary never calls the fallback', async () => {
+    const { response, usage, calls } = await run([morph, openrouter], () => ok());
+    expect(response.status).toBe(200);
+    expect(calls).toHaveLength(1);
+    expect(usage.map((u) => u.provider)).toEqual(['morph']);
+  });
+
+  test('when every provider fails, the last provider error reaches the client', async () => {
+    const { response, calls } = await run([morph, openrouter], (url) =>
+      url.startsWith('https://morph.example')
+        ? new Response('primary down', { status: 503 })
+        : new Response('{"error":{"message":"fallback limited"}}', { status: 429 }));
+    expect(response.status).toBe(429);
+    expect(await response.text()).toContain('fallback limited');
+    expect(calls).toHaveLength(2);
+  });
+
+  test('a streamed success is relayed from the fallback provider', async () => {
+    const { response, calls } = await run([morph, openrouter], (url) =>
+      url.startsWith('https://morph.example')
+        ? new Response('limited', { status: 429 })
+        : new Response('data: {"choices":[{"delta":{"content":"hello"}}]}\n\ndata: [DONE]\n\n', {
+            status: 200, headers: { 'content-type': 'text/event-stream' },
+          }),
+      { model: 'requested-model', stream: true, messages: [] });
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain('hello');
+    expect(calls).toHaveLength(2);
+    expect(calls[1].body.stream_options).toEqual({ include_usage: true });
+  });
+
+  test('candidates without the failover flag keep single-upstream behavior', async () => {
+    const byokA: UpstreamDescriptor = { ...primary, provider: 'openai', apiKey: 'a', billingMode: 'none', markup: 0 };
+    const byokB: UpstreamDescriptor = { ...byokA, apiKey: 'b' };
+    const { response, calls } = await run([byokA, byokB], () => new Response('limited', { status: 429 }));
+    expect(response.status).toBe(429);
+    expect(calls).toHaveLength(1);
+  });
+
+  test('a failover candidate is never reached from a non-failover primary', async () => {
+    const byok: UpstreamDescriptor = { ...primary, provider: 'openai', billingMode: 'none', markup: 0 };
+    const { response, calls } = await run([byok, openrouter], () => new Response('down', { status: 503 }));
+    expect(response.status).toBe(503);
+    expect(calls).toHaveLength(1);
+  });
+});
