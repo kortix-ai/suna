@@ -96,13 +96,14 @@ export async function applyTeamsModelChoice(
   const id = choice.trim();
   const scope = await teamsModelScope(activity, tenantId, conversationId);
   if (!scope) return buildNoticeCard('Connect a project to this conversation first.');
-  if (!id || id.toLowerCase() === 'default') {
-    await setChannelModel(ctx, null);
-    return buildNoticeCard('Model reset to the project default.', '✅');
-  }
+  const reset = !id || id.toLowerCase() === 'default';
   // Native mode (gateway off): no gateway catalog — accept a native
-  // `provider/model` ref verbatim.
+  // `provider/model` ref verbatim. A choice waits for the next session.
   if (!scope.llmGatewayEnabled) {
+    if (reset) {
+      await setChannelModel(ctx, null);
+      return buildNoticeCard('Model reset to the project default.', '✅');
+    }
     if (validateNativeOpencodeModelRef(id)) {
       return buildNoticeCard(`\`${id}\` isn't usable here — this project runs native OpenCode models (LLM gateway off). Use \`provider/model\`, e.g. \`anthropic/claude-sonnet-4-6\`.`);
     }
@@ -127,6 +128,17 @@ export async function applyTeamsModelChoice(
     if (policy !== 'project_open' && live.createdBy && scope.linkedUserId && live.createdBy !== scope.linkedUserId) {
       return buildNoticeCard("Only the person who started this chat's session can change its model.");
     }
+  }
+  if (reset) {
+    await setChannelModel(ctx, null);
+    // The live session goes back to the model it started with, which the
+    // project default may no longer be.
+    return buildNoticeCard(
+      live?.opencodeModel
+        ? `Model reset to the project default for new sessions. This chat's session keeps ${labelForModelRef(live.opencodeModel)}; send /new to start on the default.`
+        : 'Model reset to the project default.',
+      '✅',
+    );
   }
   const agentName = live?.agentName ?? selection?.agentName ?? null;
   const agentGrantEnv = agentGrantEnvFor(scope.projectId, agentName);
