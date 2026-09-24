@@ -16,7 +16,7 @@ const publicRoutes = src.slice(
 
 test('/review is not public — the Review Center ships flag-gated inside Customize', () => {
   expect(publicRoutes).not.toContain("'/review'");
-  expect(existsSync(resolve(import.meta.dir, 'app/(app)/review'))).toBe(false);
+  expect(existsSync(resolve(import.meta.dir, 'app/[locale]/(app)/review'))).toBe(false);
 });
 
 test('token-gated entry points stay public', () => {
@@ -63,7 +63,10 @@ test('every supported public surface accepts an explicit locale prefix', async (
   for (const route of routes) {
     const localizedPath = `/de${route === '/' ? '' : route}`;
     const response = await middleware(new NextRequest(`http://localhost:3000${localizedPath}`));
-    expect(response.headers.get('x-middleware-rewrite')).toBe(`http://localhost:3000${route}`);
+    // Pages live under app/[locale]: /de/pricing is already the internal path.
+    expect(response.headers.get('x-middleware-rewrite')).toBe(
+      `http://localhost:3000${localizedPath}`,
+    );
     expect(response.headers.get('x-locale')).toBe('de');
     expect(response.headers.get('x-middleware-request-x-locale')).toBe('de');
   }

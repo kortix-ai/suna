@@ -61,6 +61,7 @@ export const OutcomeCard = memo(function OutcomeCard({
   onOpen,
   icon,
   actionVariant = 'outline',
+  pending = false,
   className,
 }: {
   outcome: Outcome;
@@ -87,6 +88,15 @@ export const OutcomeCard = memo(function OutcomeCard({
    * rather than a record of something already done.
    */
   actionVariant?: React.ComponentProps<typeof Button>['variant'];
+  /**
+   * The row exists but its action does not yet. The button renders disabled
+   * and the row reports `aria-busy`, in the same footprint as the finished
+   * row, so nothing moves when the action arrives.
+   *
+   * `setup-links/setup-link-button.tsx` sets it while the setup link's URL is
+   * still streaming: a click then would open a modal for a partial token.
+   */
+  pending?: boolean;
   className?: string;
 }) {
   const Glyph = icon ?? OUTCOME_ICON[outcome.kind];
@@ -95,7 +105,7 @@ export const OutcomeCard = memo(function OutcomeCard({
   // is typed `Url`, which does not accept `undefined`, and TypeScript cannot
   // carry a `!!x` check on one variable across to another. Holding the value
   // itself is what makes the branch below type-safe.
-  const linkHref = outcome.action.intent === 'link' ? outcome.action.href : undefined;
+  const linkHref = outcome.action.intent === 'link' && !pending ? outcome.action.href : undefined;
 
   return (
     <Item
@@ -103,6 +113,7 @@ export const OutcomeCard = memo(function OutcomeCard({
       size="sm"
       data-testid={`outcome-card-${outcome.kind}`}
       data-outcome-id={outcome.id}
+      aria-busy={pending || undefined}
       style={{ animationDelay: `${Math.min(index, STAGGER_CAP) * STAGGER_MS}ms` }}
       className={cn('border-border gap-3 border py-2.5 transition-colors', className)}
     >
@@ -167,6 +178,7 @@ export const OutcomeCard = memo(function OutcomeCard({
             variant={actionVariant}
             size="sm"
             className="active:scale-[0.96]"
+            disabled={pending}
             onClick={() => onOpen(outcome)}
           >
             {outcome.action.label}

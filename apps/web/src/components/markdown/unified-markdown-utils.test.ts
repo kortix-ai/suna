@@ -1,15 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 
-import { PRELOAD_LANGS } from './code/shiki-highlighter';
+import { isKnownLanguage } from './code/shiki-highlighter';
 import {
   LANGUAGE_ALIASES,
+  hasLinkReferenceDefinition,
   isInternalUrl,
   isLinkSafeHref,
+  isStreamingLinkPlaceholder,
   languageLabel,
   looksLikeFilePath,
   looksLikeUrl,
   normalizeLanguage,
-  shikiWasmAvailable,
   shouldUseNextLink,
 } from './unified-markdown-utils';
 
@@ -30,6 +31,38 @@ describe('isInternalUrl', () => {
     expect(isInternalUrl(undefined)).toBe(false);
     expect(isInternalUrl('')).toBe(false);
     expect(isInternalUrl('relative/path')).toBe(false);
+  });
+});
+
+describe('hasLinkReferenceDefinition', () => {
+  test('finds a reference-style link target anywhere in the text', () => {
+    expect(hasLinkReferenceDefinition('See [the docs][1].\n\n[1]: https://kortix.com/docs')).toBe(
+      true,
+    );
+    expect(hasLinkReferenceDefinition('[docs]: <https://kortix.com> "Docs"')).toBe(true);
+    expect(hasLinkReferenceDefinition('   [x]: /relative/path')).toBe(true);
+  });
+
+  test('inline links, plain brackets, and indented code are not definitions', () => {
+    expect(hasLinkReferenceDefinition('[docs](https://kortix.com/docs)')).toBe(false);
+    expect(hasLinkReferenceDefinition('Array access: arr[0]: first element')).toBe(false);
+    expect(hasLinkReferenceDefinition('    [1]: https://kortix.com')).toBe(false);
+    expect(hasLinkReferenceDefinition('[1]:')).toBe(false);
+  });
+});
+
+describe('isStreamingLinkPlaceholder', () => {
+  test("recognises remend's stand-in for a URL that has not arrived", () => {
+    expect(isStreamingLinkPlaceholder('streamdown:incomplete-link')).toBe(true);
+    expect(isStreamingLinkPlaceholder('STREAMDOWN:incomplete-link')).toBe(true);
+  });
+
+  test('real destinations are not placeholders', () => {
+    expect(isStreamingLinkPlaceholder(undefined)).toBe(false);
+    expect(isStreamingLinkPlaceholder('')).toBe(false);
+    expect(isStreamingLinkPlaceholder('https://kortix.com/streamdown:x')).toBe(false);
+    expect(isStreamingLinkPlaceholder('#streamdown')).toBe(false);
+    expect(isStreamingLinkPlaceholder('/connect/ksl_abc')).toBe(false);
   });
 });
 
@@ -64,10 +97,9 @@ describe('normalizeLanguage', () => {
     expect(normalizeLanguage('go')).toBe('go');
   });
 
-  test('every alias resolves to a preloaded grammar so highlightSync can hit', () => {
-    const preloaded = new Set<string>(PRELOAD_LANGS);
+  test('every alias resolves to a grammar id Shiki can load', () => {
     const stranded = Object.entries(LANGUAGE_ALIASES)
-      .filter(([, target]) => !preloaded.has(target))
+      .filter(([, target]) => !isKnownLanguage(target))
       .map(([alias, target]) => `${alias} -> ${target}`);
     expect(stranded).toEqual([]);
   });
@@ -203,28 +235,3 @@ describe('looksLikeFilePath', () => {
   });
 });
 
-// Regression for Better Stack 1604d50a (`WebAssembly is not defined`,
-// `Can't find variable: WebAssembly`): the Shiki highlighter singleton must not
-// be eagerly started when WebAssembly is unavailable, or its rejection fires
-// `onunhandledrejection` → Sentry on every page load for visitors whose browser
-// blocks/disables WebAssembly (privacy browsers, hardened WebViews, spoofed-UA
-// bots). The renderer gates the eager init on this guard.
-describe('shikiWasmAvailable', () => {
-  test('returns true in the normal test environment (WebAssembly present)', () => {
-    // bun's test runtime exposes WebAssembly, matching every modern browser.
-    expect(shikiWasmAvailable()).toBe(true);
-  });
-
-  test('returns false when WebAssembly is undefined (the BS 1604d50a context)', () => {
-    const original = (globalThis as { WebAssembly?: unknown }).WebAssembly;
-    try {
-      // Simulate a browser/context that blocks or disables WebAssembly.
-      // `delete` mirrors how such runtimes expose no WebAssembly global at all.
-      delete (globalThis as { WebAssembly?: unknown }).WebAssembly;
-      expect(shikiWasmAvailable()).toBe(false);
-    } finally {
-      // Restore — other tests (and the live Shiki init) need WebAssembly.
-      (globalThis as { WebAssembly?: unknown }).WebAssembly = original;
-    }
-  });
-});

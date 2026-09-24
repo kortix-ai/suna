@@ -11,7 +11,7 @@ beforeEach(() => resetStoppedObservationFollowUps());
 
 describe('runStoppedObservationFollowUp', () => {
   test('THE INCIDENT: a silently-failed resume reconciles the row within the bound', async () => {
-    // Essentia 2026-08-26, session 29861dfa / box inqwpv4a1cc1kynlg46k8:
+    // SampleCo 2026-08-26, session 29861dfa / box inqwpv4a1cc1kynlg46k8:
     // `/start` answered 202, the E2B resume never produced a running box, and
     // the rows read `running` for 5+ minutes while the provider reported
     // "sandbox … is not running (status: stopped)".

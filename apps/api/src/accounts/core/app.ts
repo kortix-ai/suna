@@ -141,6 +141,8 @@ export const MeSchema = z
         session_id: z.string().nullable(),
         agent: z.string().nullable(),
         connectors: z.union([z.literal('all'), z.array(z.string())]).nullable(),
+        kortix_permissions: z.union([z.literal('all'), z.array(z.string())]).nullable(),
+        /** @deprecated Same value as kortix_permissions; kept for pre-rename CLIs. */
         kortix_cli: z.union([z.literal('all'), z.array(z.string())]).nullable(),
         env: z.union([z.literal('all'), z.array(z.string())]).nullable(),
       })
@@ -334,10 +336,16 @@ export function serializeAccount(row: typeof accounts.$inferSelect) {
 // untouched: they must go through the explicit accept/decline dialog so the
 // recipient consents AND the project_members grant actually gets applied. See
 // the per-invite skip in the loop below.
-export async function autoClaimPendingInvites(userId: string, email: string): Promise<void> {
-  if (!email) return;
+/**
+ * Claim the caller's pending, grant-free account invites. Best effort: never
+ * throws. Returns how many invites it claimed, so a caller can skip re-reading
+ * memberships when nothing changed.
+ */
+export async function autoClaimPendingInvites(userId: string, email: string): Promise<number> {
+  if (!email) return 0;
   const normalized = email.trim().toLowerCase();
-  if (!normalized) return;
+  if (!normalized) return 0;
+  let claimed = 0;
 
   try {
     const pending = await db
@@ -381,6 +389,7 @@ export async function autoClaimPendingInvites(userId: string, email: string): Pr
           .update(accountInvitations)
           .set({ acceptedAt: new Date() })
           .where(eq(accountInvitations.inviteId, invite.inviteId));
+        claimed += 1;
       } catch {
         // Skip individual invite failures; keep processing the rest.
       }
@@ -388,4 +397,5 @@ export async function autoClaimPendingInvites(userId: string, email: string): Pr
   } catch {
     // Table may not exist yet — fall through.
   }
+  return claimed;
 }

@@ -2,7 +2,7 @@
  * Liveness-probe hysteresis: a BUSY but healthy opencode must not be declared
  * "not ready" by a single slow probe.
  *
- * Root cause (Essentia, running sessions showing "opencode not ready"): the
+ * Root cause (SampleCo, running sessions showing "opencode not ready"): the
  * readiness loop downgraded `ok -> starting` on ONE failed 2 s liveness probe,
  * and proxy.ts then 503s every opencode-bound request (message list included)
  * while state !== 'ok'. A busy opencode mid-heavy-turn can miss one `/session`

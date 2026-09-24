@@ -7,7 +7,7 @@ import {
 
 describe('bunRequestBodyCeilingBytes', () => {
   test("sits strictly above the per-request cap so the pipeline 413 fires, not Bun's", () => {
-    // Essentia 2026-08-25: DEFAULT_MAX_REQUEST_BYTES === Bun's default, so a
+    // SampleCo 2026-08-25: DEFAULT_MAX_REQUEST_BYTES === Bun's default, so a
     // 129 MiB body was refused by Bun with no log line.
     expect(DEFAULT_MAX_REQUEST_BYTES).toBe(BUN_DEFAULT_MAX_REQUEST_BODY_BYTES);
     expect(bunRequestBodyCeilingBytes(DEFAULT_MAX_REQUEST_BYTES)).toBeGreaterThan(

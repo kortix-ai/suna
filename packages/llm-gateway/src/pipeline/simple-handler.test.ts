@@ -42,6 +42,29 @@ function hooks(usage: UsageEvent[], traces: GatewayTrace[]): GatewayHooks {
 }
 
 describe('simple gateway pipeline', () => {
+  test('runs wallet admission only for a Kortix-billed descriptor', async () => {
+    const calls: string[] = [];
+    for (const descriptor of [
+      { ...primary, billingMode: 'none' as const, markup: 0 },
+      { ...primary, billingMode: 'credits' as const },
+    ]) {
+      const response = await handleChatCompletions({
+        hooks: {
+          ...hooks([], []),
+          resolveUpstream: async () => [descriptor],
+          assertBillingActive: async (accountId) => { calls.push(accountId); },
+        },
+        logger: { info() {}, warn() {}, error() {} },
+        fetchImpl: async () => new Response(JSON.stringify({ choices: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) });
+      expect(response.status).toBe(200);
+    }
+    expect(calls).toEqual(['account']);
+  });
+
   test('HTTP pool exhaustion returns the earliest bounded cooldown', async () => {
     const keys: string[] = [];
     const upstream = Bun.serve({ port: 0, fetch: (request) => {
@@ -495,5 +518,245 @@ describe('retryWithoutReasoningEffortPossible', () => {
     expect(retryWithoutReasoningEffortPossible({}, bedrock)).toBe(false);
     expect(retryWithoutReasoningEffortPossible({ reasoning_effort: 'max' }, primary)).toBe(false);
     expect(retryWithoutReasoningEffortPossible(null, bedrock)).toBe(false);
+  });
+});
+
+const isMorph = (url: string): boolean => new URL(url).host === 'morph.example';
+
+describe('provider failover (descriptor.failover)', () => {
+  const morph: UpstreamDescriptor = {
+    ...primary, provider: 'morph', baseUrl: 'https://morph.example/v1', apiKey: 'morph-key',
+    resolvedModel: 'morph-model', failover: true,
+  };
+  const openrouter: UpstreamDescriptor = {
+    ...primary, provider: 'openrouter', baseUrl: 'https://openrouter.example/v1', apiKey: 'or-key',
+    resolvedModel: 'vendor/model', failover: true, bodyExtras: { provider: { only: ['a', 'b'] } },
+  };
+  const ok = () => new Response(JSON.stringify({
+    choices: [{ message: { content: 'ok' } }], usage: { prompt_tokens: 10, completion_tokens: 5 },
+  }), { status: 200, headers: { 'content-type': 'application/json' } });
+
+  async function run(
+    candidates: UpstreamDescriptor[],
+    respond: (url: string, attempt: number) => Response | Promise<Response>,
+    requestBody: Record<string, unknown> = { model: 'requested-model', messages: [{ role: 'user', content: 'hi' }] },
+  ) {
+    const usage: UsageEvent[] = [];
+    const traces: GatewayTrace[] = [];
+    const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
+    const response = await handleChatCompletions({
+      hooks: { ...hooks(usage, traces), resolveUpstream: async () => candidates },
+      logger: { info() {}, warn() {}, error() {} },
+      fetchImpl: async (url, init) => {
+        calls.push({ url, body: JSON.parse(String(init.body)) });
+        return respond(url, calls.length);
+      },
+    }, { authorization: 'Bearer token', rawBody: JSON.stringify(requestBody) });
+    return { response, usage, traces, calls };
+  }
+
+  for (const status of [429, 500, 502, 503, 401, 402]) {
+    test(`a ${status} from the primary moves the request to the next provider`, async () => {
+      const { response, usage, traces, calls } = await run([morph, openrouter], (url) =>
+        isMorph(url) ? new Response('primary failed', { status }) : ok());
+      expect(response.status).toBe(200);
+      expect(calls.map((c) => c.url)).toEqual([
+        'https://morph.example/v1/chat/completions',
+        'https://openrouter.example/v1/chat/completions',
+      ]);
+      expect(usage.map((u) => [u.provider, u.model])).toEqual([['openrouter', 'vendor/model']]);
+      expect(traces.at(-1)?.candidatesTried).toEqual(['morph', 'openrouter']);
+      expect(traces.at(-1)?.attempts).toBe(2);
+      expect(traces.at(-1)?.attemptFailures?.map((f) => [f.provider, f.code])).toEqual([['morph', status]]);
+    });
+  }
+
+  test('a network error from the primary moves the request to the next provider', async () => {
+    const { response, calls } = await run([morph, openrouter], (url) => {
+      if (isMorph(url)) throw new TypeError('fetch failed');
+      return ok();
+    });
+    expect(response.status).toBe(200);
+    expect(calls).toHaveLength(2);
+  });
+
+  test('the fallback receives the full request with its own model and body extras', async () => {
+    const { calls } = await run([morph, openrouter], (url) =>
+      isMorph(url) ? new Response('limited', { status: 429 }) : ok());
+    expect(calls[0].body).toMatchObject({ model: 'morph-model', messages: [{ role: 'user', content: 'hi' }] });
+    expect(calls[0].body.provider).toBeUndefined();
+    expect(calls[1].body).toMatchObject({
+      model: 'vendor/model', messages: [{ role: 'user', content: 'hi' }], provider: { only: ['a', 'b'] },
+    });
+  });
+
+  test('a successful primary never calls the fallback', async () => {
+    const { response, usage, calls } = await run([morph, openrouter], () => ok());
+    expect(response.status).toBe(200);
+    expect(calls).toHaveLength(1);
+    expect(usage.map((u) => u.provider)).toEqual(['morph']);
+  });
+
+  test('when every provider fails, the last provider error reaches the client', async () => {
+    const { response, calls } = await run([morph, openrouter], (url) =>
+      isMorph(url)
+        ? new Response('primary down', { status: 503 })
+        : new Response('{"error":{"message":"fallback limited"}}', { status: 429 }));
+    expect(response.status).toBe(429);
+    expect(await response.text()).toContain('fallback limited');
+    expect(calls).toHaveLength(2);
+  });
+
+  test('a streamed success is relayed from the fallback provider', async () => {
+    const { response, calls } = await run([morph, openrouter], (url) =>
+      isMorph(url)
+        ? new Response('limited', { status: 429 })
+        : new Response('data: {"choices":[{"delta":{"content":"hello"}}]}\n\ndata: [DONE]\n\n', {
+            status: 200, headers: { 'content-type': 'text/event-stream' },
+          }),
+      { model: 'requested-model', stream: true, messages: [] });
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain('hello');
+    expect(calls).toHaveLength(2);
+    expect(calls[1].body.stream_options).toEqual({ include_usage: true });
+  });
+
+  test('candidates without the failover flag keep single-upstream behavior', async () => {
+    const byokA: UpstreamDescriptor = { ...primary, provider: 'openai', apiKey: 'a', billingMode: 'none', markup: 0 };
+    const byokB: UpstreamDescriptor = { ...byokA, apiKey: 'b' };
+    const { response, calls } = await run([byokA, byokB], () => new Response('limited', { status: 429 }));
+    expect(response.status).toBe(429);
+    expect(calls).toHaveLength(1);
+  });
+
+  test('a failover candidate is never reached from a non-failover primary', async () => {
+    const byok: UpstreamDescriptor = { ...primary, provider: 'openai', billingMode: 'none', markup: 0 };
+    const { response, calls } = await run([byok, openrouter], () => new Response('down', { status: 503 }));
+    expect(response.status).toBe(503);
+    expect(calls).toHaveLength(1);
+  });
+});
+
+describe('managed models present as Kortix (descriptor.publicProvider)', () => {
+  const managed = (provider: string, baseUrl: string, resolvedModel: string): UpstreamDescriptor => ({
+    ...primary, provider, baseUrl, apiKey: `${provider}-key`, resolvedModel, failover: true, publicProvider: 'kortix',
+  });
+  const morph = managed('morph', 'https://morph.example/v1', 'morph-model');
+  const openrouter = managed('openrouter', 'https://openrouter.example/v1', 'vendor/model');
+  const LEAK = /openrouter|morph|coreweave|wafer|vendor\/model|morph-model|provider_name/i;
+  const coreweave429 = JSON.stringify({ error: {
+    message: 'Provider returned error', code: 429,
+    metadata: { raw: 'vendor/model is temporarily rate-limited upstream. https://openrouter.ai/settings/integrations', provider_name: 'CoreWeave' },
+  } });
+
+  async function run(
+    respond: (url: string) => Response | Promise<Response>,
+    requestBody: Record<string, unknown> = { model: 'requested-model', messages: [{ role: 'user', content: 'hi' }] },
+    candidates: UpstreamDescriptor[] = [morph, openrouter],
+  ) {
+    const usage: UsageEvent[] = [];
+    const traces: GatewayTrace[] = [];
+    const response = await handleChatCompletions({
+      hooks: { ...hooks(usage, traces), resolveUpstream: async () => candidates },
+      logger: { info() {}, warn() {}, error() {} },
+      fetchImpl: async (url) => respond(url),
+    }, { authorization: 'Bearer token', rawBody: JSON.stringify(requestBody) });
+    const text = await response.text();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    return { response, text, usage, traces };
+  }
+
+  test('an upstream 429 reaches the client as a Kortix 429 without upstream identity', async () => {
+    const { response, text, traces } = await run(() =>
+      new Response(coreweave429, { status: 429, headers: { 'retry-after': '7', 'content-type': 'application/json' } }));
+    expect(response.status).toBe(429);
+    expect(response.headers.get('retry-after')).toBe('7');
+    expect(text).not.toMatch(LEAK);
+    const body = JSON.parse(text);
+    expect(body.code).toBe('model_busy');
+    expect(body.provider).toBe('kortix');
+    expect(body.resolved_model).toBe('primary-model');
+    expect(body.message).toContain('primary-model');
+    const { upstream, ...customerVisible } = traces.at(-1)!;
+    const trace = customerVisible;
+    expect(JSON.stringify(customerVisible)).not.toMatch(LEAK);
+    // Staff-only: server logs and telemetry keep the real upstream.
+    expect(upstream).toEqual({ provider: 'openrouter', model: 'vendor/model' });
+    expect(trace.provider).toBe('kortix');
+    expect(trace.candidatesTried).toEqual(['kortix', 'kortix']);
+  });
+
+  test.each([
+    [400, '{"error":{"message":"This endpoint\'s maximum context length is 131072 tokens (Wafer)"}}', 400, 'context_length_exceeded'],
+    [400, '{"error":{"message":"vendor/model does not support image input on Morph"}}', 400, 'unsupported_input'],
+    [400, '{"error":{"message":"Invalid schema for function noop"}}', 400, 'invalid_tool_definition'],
+    [422, '{"error":{"message":"bad"}}', 400, 'invalid_request'],
+    [401, '{"error":{"message":"Invalid OpenRouter API key"}}', 503, 'model_unavailable'],
+    [402, '{"error":{"message":"Morph credits exhausted"}}', 503, 'model_unavailable'],
+    [500, 'upstream exploded', 503, 'model_unavailable'],
+  ])('an upstream %i is classified for the client', async (status, body, clientStatus, code) => {
+    const { response, text } = await run(() => new Response(body, { status }));
+    expect(response.status).toBe(clientStatus);
+    expect(JSON.parse(text).code).toBe(code);
+    expect(text).not.toMatch(LEAK);
+  });
+
+  test('a network error on every provider becomes a Kortix 503', async () => {
+    const { response, text } = await run(() => { throw new TypeError('connect ECONNREFUSED openrouter.example'); });
+    expect(response.status).toBe(503);
+    expect(JSON.parse(text)).toMatchObject({ code: 'model_unavailable', provider: 'kortix' });
+    expect(text).not.toMatch(LEAK);
+  });
+
+  test('a JSON completion carries the Kortix model and no upstream provider or headers', async () => {
+    const { response, text, usage, traces } = await run(() => new Response(JSON.stringify({
+      id: 'gen-1', provider: 'Wafer', model: 'vendor/model',
+      choices: [{ message: { content: 'ok' } }], usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0.001 },
+    }), { status: 200, headers: { 'content-type': 'application/json', 'x-openrouter-provider': 'Wafer', 'x-generation-id': 'gen-1' } }));
+    expect(response.status).toBe(200);
+    expect(response.headers.get('x-openrouter-provider')).toBeNull();
+    expect(response.headers.get('content-type')).toBe('application/json');
+    const body = JSON.parse(text);
+    expect(body.model).toBe('primary-model');
+    expect(body.provider).toBeUndefined();
+    expect(body.choices[0].message.content).toBe('ok');
+    expect(text).not.toMatch(LEAK);
+    expect(usage.map((u) => [u.provider, u.model, u.upstream])).toEqual([
+      ['kortix', 'primary-model', { provider: 'morph', model: 'morph-model' }],
+    ]);
+    expect(traces.at(-1)).toMatchObject({ provider: 'kortix', resolvedModel: 'primary-model' });
+  });
+
+  test('a stream carries the Kortix model on every chunk and sanitizes an in-band error', async () => {
+    const chunks = [
+      'data: {"id":"gen-1","provider":"Wafer","model":"vendor/model","choices":[{"delta":{"content":"hel"}}]}\n\n',
+      'data: {"id":"gen-1","provider":"Wafer","model":"vendor/mo',
+      'del","choices":[{"delta":{"content":"lo"}}]}\n\n',
+      'data: {"error":{"message":"Provider returned error","code":429,"metadata":{"provider_name":"CoreWeave"}}}\n\n',
+      'data: [DONE]\n\n',
+    ];
+    const { response, text } = await run(() => new Response(new ReadableStream({
+      start(controller) {
+        for (const chunk of chunks) controller.enqueue(new TextEncoder().encode(chunk));
+        controller.close();
+      },
+    }), { status: 200, headers: { 'content-type': 'text/event-stream' } }),
+    { model: 'requested-model', stream: true, messages: [] });
+    expect(response.status).toBe(200);
+    expect(text).not.toMatch(LEAK);
+    const frames = text.split('\n\n').filter((f) => f.startsWith('data: {')).map((f) => JSON.parse(f.slice(6)));
+    expect(frames.slice(0, 2).map((f) => [f.model, f.provider, f.choices[0].delta.content])).toEqual([
+      ['primary-model', undefined, 'hel'],
+      ['primary-model', undefined, 'lo'],
+    ]);
+    expect(frames[2].error).toMatchObject({ code: 'model_busy' });
+    expect(text).toContain('data: [DONE]');
+  });
+
+  test('BYOK responses stay byte-for-byte from the provider', async () => {
+    const byok: UpstreamDescriptor = { ...primary, provider: 'openrouter', billingMode: 'none', markup: 0 };
+    const { response, text } = await run(() => new Response(coreweave429, { status: 429 }), undefined, [byok]);
+    expect(response.status).toBe(429);
+    expect(text).toBe(coreweave429);
   });
 });

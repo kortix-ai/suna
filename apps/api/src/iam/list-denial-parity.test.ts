@@ -61,7 +61,8 @@ describe('mfaGateBlocks', () => {
 
 describe('the MFA gate belongs to the action, not the enumeration', () => {
   const authorizeBody = (() => {
-    const start = source.indexOf('export async function authorize(');
+    // `authorize()` is a thin Server-Timing wrapper; the decision body is here.
+    const start = source.indexOf('async function authorizeDecision(');
     return source.slice(start, source.indexOf('\nasync function ', start));
   })();
   const listBody = (() => {

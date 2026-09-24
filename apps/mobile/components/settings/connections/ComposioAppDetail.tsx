@@ -4,11 +4,12 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { BottomSheetFlatList } from '@gorhom/bottom-sheet';
 import {
-  ArrowLeft,
-  Wrench
-} from 'lucide-react-native';
+  ArrowLeftIcon as ArrowLeft,
+  WrenchIcon as Wrench,
+} from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
+import { THEME } from '@/lib/utils/theme';
 import {
   useComposioConnections,
   useComposioToolkitDetails,
@@ -65,18 +66,17 @@ export function ComposioAppDetailContent({
 
   // Render header (fixed at top)
   const renderHeader = () => (
-    <View style={{ paddingHorizontal: 24, paddingTop: 24, paddingBottom: 16, backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF' }}>
+    <View className="bg-popover" style={{ paddingHorizontal: 24, paddingTop: 24, paddingBottom: 16 }}>
       {/* Header with back button */}
       <View className="flex-row items-center mb-4">
         {onBack && (
           <Pressable
             onPress={onBack}
             className="flex-row items-center active:opacity-70"
+            accessibilityRole="button"
+            accessibilityLabel="Back"
           >
-            <ArrowLeft
-              size={20}
-              color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'}
-            />
+            <Icon as={ArrowLeft} size={20} className="text-foreground" />
           </Pressable>
         )}
       </View>
@@ -113,7 +113,7 @@ export function ComposioAppDetailContent({
               </Pressable>
               {hasConnections && (
                 <View className="flex-row items-center justify-start gap-2">
-                  <View className="w-2 h-2 rounded-full bg-green-500" />
+                  <View className="w-2 h-2 rounded-full bg-kortix-green" />
                   <Text className="text-xs font-roobert-medium text-muted-foreground">
                     {t('connections.appDetails.connections', { count: appConnections.length, plural: appConnections.length !== 1 ? 's' : '' })}
                   </Text>
@@ -187,7 +187,10 @@ export function ComposioAppDetailContent({
         <View style={{ flex: 1 }}>
           {renderHeader()}
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-            <ActivityIndicator size="large" color={colorScheme === 'dark' ? '#FFFFFF' : '#121215'} />
+            <ActivityIndicator
+              size="large"
+              color={colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground}
+            />
             <Text className="text-sm font-roobert text-muted-foreground mt-2">
               {t('connections.loadingConnections')}
             </Text>
@@ -254,11 +257,10 @@ export function ComposioAppDetailContent({
           <Pressable
             onPress={onBack}
             className="flex-row items-center active:opacity-70"
+            accessibilityRole="button"
+            accessibilityLabel="Back"
           >
-            <ArrowLeft
-              size={20}
-              color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'}
-            />
+            <Icon as={ArrowLeft} size={20} className="text-foreground" />
           </Pressable>
         )}
       </View>
@@ -295,7 +297,7 @@ export function ComposioAppDetailContent({
               </Pressable>
               {hasConnections && (
                 <View className="flex-row items-center justify-start gap-2">
-                  <View className="w-2 h-2 rounded-full bg-green-500" />
+                  <View className="w-2 h-2 rounded-full bg-kortix-green" />
                   <Text className="text-xs font-roobert-medium text-muted-foreground">
                     {t('connections.appDetails.connections', { count: appConnections.length, plural: appConnections.length !== 1 ? 's' : '' })}
                   </Text>

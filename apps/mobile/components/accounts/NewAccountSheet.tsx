@@ -7,24 +7,19 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, TouchableOpacity, Alert, Keyboard } from 'react-native';
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetView,
-} from '@gorhom/bottom-sheet';
-import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { View, Keyboard } from 'react-native';
+import { BottomSheetModal, BottomSheetView } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { X } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
-import { SheetTextInput } from '@/components/ui/SheetInput';
-import { useToast } from '@/components/ui/toast-provider';
-import { getSheetBg } from '@/lib/theme-colors';
+import { SheetTextInput } from '@/components/kortix/SheetInput';
+import { useToast } from '@/components/kortix/toast-provider';
 import { useCreateAccount } from '@/lib/projects/hooks';
 import { haptics } from '@/lib/haptics';
 import type { KortixAccount } from '@/lib/projects/projects-client';
-import { InitialsAvatar, PrimaryButton, accountColors } from './account-shared';
+import { InitialsAvatar, PrimaryButton, SheetCloseButton, accountColors } from './account-shared';
+import { KortixBottomSheetModal } from '@/components/kortix/sheet';
+import { sheetOpenMove } from '@/lib/ui/sheet-open';
 
 interface NewAccountSheetProps {
   open: boolean;
@@ -42,21 +37,25 @@ export function NewAccountSheet({ open, onClose, onCreated }: NewAccountSheetPro
   const createAccount = useCreateAccount();
   const [name, setName] = useState('');
 
+  // True while the sheet is on screen. It is mounted closed inside the
+  // project switcher, and a gorhom modal dismissed before its first present
+  // never renders (`sheetOpenMove`, lib/ui/sheet-open.ts).
+  const presentedRef = useRef(false);
   useEffect(() => {
-    if (open) {
+    const move = sheetOpenMove(open, presentedRef.current);
+    if (move === 'present') {
       setName('');
+      presentedRef.current = true;
       sheetRef.current?.present();
-    } else {
+    } else if (move === 'dismiss') {
       sheetRef.current?.dismiss();
     }
   }, [open]);
+  const handleDismiss = useCallback(() => {
+    presentedRef.current = false;
+    onClose();
+  }, [onClose]);
 
-  const renderBackdrop = useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />
-    ),
-    [],
-  );
 
   const submit = useCallback(async () => {
     const trimmed = name.trim();
@@ -70,31 +69,24 @@ export function NewAccountSheet({ open, onClose, onCreated }: NewAccountSheetPro
       sheetRef.current?.dismiss();
       onCreated(account);
     } catch (e: any) {
-      Alert.alert('Failed', e?.message || 'Failed to create account.');
+      haptics.warning();
+      toast.error('Unable to create the account', { description: e?.message || 'Try again.' });
     }
   }, [name, createAccount, onCreated, toast]);
 
   const preview = name.trim();
 
   return (
-    <BottomSheetModal
+    <KortixBottomSheetModal
+      title="New account"
       ref={sheetRef}
       enableDynamicSizing
       enablePanDownToClose
-      onDismiss={onClose}
+      onDismiss={handleDismiss}
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"
-      backdropComponent={renderBackdrop}
-      backgroundStyle={{ backgroundColor: getSheetBg(isDark), borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
-      handleIndicatorStyle={{ backgroundColor: isDark ? '#3F3F46' : '#D4D4D8', width: 36, height: 5, borderRadius: 3 }}
     >
       <BottomSheetView style={{ paddingHorizontal: 20, paddingTop: 6, paddingBottom: insets.bottom + 16 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 18 }}>
-          <Text style={{ flex: 1, fontSize: 20, fontFamily: 'Roobert-Semibold', color: c.fg }}>New account</Text>
-          <TouchableOpacity onPress={() => { haptics.tap(); sheetRef.current?.dismiss(); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center' }}>
-            <X size={17} color={c.muted} />
-          </TouchableOpacity>
-        </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 18 }}>
           <InitialsAvatar label={preview || null} isDark={isDark} size={52} />
@@ -102,13 +94,13 @@ export function NewAccountSheet({ open, onClose, onCreated }: NewAccountSheetPro
             <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: preview ? c.fg : c.muted }} numberOfLines={1}>
               {preview || 'Your account name'}
             </Text>
-            <Text style={{ fontSize: 12.5, lineHeight: 17, color: c.muted, marginTop: 2 }}>
+            <Text style={{ fontSize: 13, lineHeight: 18, color: c.muted, marginTop: 2 }}>
               A shared workspace for your team and projects.
             </Text>
           </View>
         </View>
 
-        <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: c.muted, marginBottom: 6 }}>Account name</Text>
+        <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: c.muted, marginBottom: 6 }}>Account name</Text>
         <SheetTextInput
           value={name}
           onChangeText={setName}
@@ -128,6 +120,6 @@ export function NewAccountSheet({ open, onClose, onCreated }: NewAccountSheetPro
           />
         </View>
       </BottomSheetView>
-    </BottomSheetModal>
+    </KortixBottomSheetModal>
   );
 }

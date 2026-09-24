@@ -26,6 +26,7 @@ import { checkBudget } from './budgets';
 import { validateGatewayKey } from './gateway-keys';
 import { resolveDefaultModelForPrincipal } from './resolution/default-model';
 import { resolveCandidates } from './resolution/resolve-candidates';
+import { resolveSessionPersonalOwner } from '../projects/lib/personal-resources';
 import { resolveGatewayRoute } from './routing';
 
 // ─── Canonical gateway control plane ────────────────────────────────────────
@@ -54,12 +55,25 @@ async function resolvePrincipal(token: string): Promise<AuthedPrincipal | null> 
     // projectId/sessionId attribute usage to the calling session (the sandbox
     // connector token is minted per-session with session_id = sandbox_id) — the
     // reaper's activity signal + precise per-session billing.
+    // Personal provider keys follow the session's on-behalf-of human in a
+    // private session under the agent-principal model (spec 2026-09-22 §2.3).
+    // Flag OFF returns `userId`, and the field stays absent (legacy).
+    const personalUserId =
+      account.projectId && account.sessionId
+        ? await resolveSessionPersonalOwner({
+            projectId: account.projectId,
+            sessionId: account.sessionId,
+            accountId: account.accountId,
+            legacyUserId: account.userId,
+          })
+        : account.userId;
     return {
       userId: account.userId,
       accountId: account.accountId,
       projectId: account.projectId ?? undefined,
       sessionId: account.sessionId ?? undefined,
       agentGrant: account.agentGrant ?? null,
+      ...(personalUserId !== account.userId ? { personalUserId } : {}),
     };
   }
   return null;
@@ -128,39 +142,38 @@ export async function assertGatewayBudget(principal: AuthedPrincipal): Promise<v
 }
 
 /**
- * The combined pre-dispatch gate — authenticate + billing + budget in one call.
- * Backs the /internal/gateway/authorize RPC so the standalone gateway folds three
- * sequential round-trips into one. Returns a principal or a typed 401/402 denial.
+ * Authenticate and check budgets before model resolution. New gateways defer
+ * billing until resolution identifies who owns the provider credential.
  */
-export async function authorizeRequest(token: string): Promise<AuthorizeResult> {
+export async function authorizeRequest(
+  token: string,
+  options: { deferBilling?: boolean } = {},
+): Promise<AuthorizeResult> {
   let principal = await authenticatePrincipal(token);
   if (!principal) {
     return { ok: false, status: 401, errorCode: 'invalid_token', message: 'Invalid token' };
   }
-  try {
-    const billing = await assertLlmBillingActive(principal.accountId);
-    if (billing?.holdUsd) principal = { ...principal, billingHold: { amountUsd: billing.holdUsd } };
-  } catch (err) {
-    return {
-      ok: false,
-      status: 402,
-      // The real reason (subscription_required / insufficient_credits /
-      // no_account) — not a hardcoded constant. See BillingGateError's doc
-      // comment: without this, every billing denial reported the same code
-      // regardless of cause, masking the true failure-mode breakdown in
-      // gateway_request_logs and in any programmatic caller that trusts `code`
-      // over regexing `message`.
-      errorCode: err instanceof BillingGateError ? err.reason : 'subscription_required',
-      message: err instanceof Error ? err.message : 'Billing inactive',
-      principal,
-    };
+  // Old gateway processes omit deferBilling and still expect this RPC to take
+  // the managed admission hold. New gateways defer it until model resolution.
+  if (!options.deferBilling) {
+    try {
+      const billing = await assertLlmBillingActive(principal.accountId);
+      if (billing?.holdUsd) principal = { ...principal, billingHold: { amountUsd: billing.holdUsd } };
+    } catch (err) {
+      return {
+        ok: false,
+        status: 402,
+        errorCode: err instanceof BillingGateError ? err.reason : 'subscription_required',
+        message: err instanceof Error ? err.message : 'Billing inactive',
+        principal,
+      };
+    }
   }
   const { exceeded, message, warnings } = await checkBudget(principal);
   logGatewayBudgetWarnings(principal, warnings);
   if (exceeded) {
-    // A hold was taken above but the budget gate denies dispatch — the caller
-    // (handler.ts's admit()) refunds it via refundBillingHold when it sees
-    // this denial's `principal`.
+    // A legacy gateway can have a hold here. It refunds the hold when it sees
+    // this denial's principal.
     return {
       ok: false,
       status: 402,
@@ -262,6 +275,11 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
           markup: llmPriceMarkup(),
           requestId: event.requestId,
           billingMode: event.billingMode,
+          // Staff-only: the upstream behind a Kortix-managed model. Customer
+          // surfaces read `provider`/`model`, which name Kortix.
+          ...(event.upstream
+            ? { upstreamProvider: event.upstream.provider, upstreamModel: event.upstream.model }
+            : {}),
         },
       });
 
@@ -343,6 +361,9 @@ export function emitGatewayGenAiSpan(trace: GatewayTrace): void {
         'kortix.cost_usd': trace.finalCost,
         'kortix.upstream_cost_usd': trace.upstreamCost,
         'kortix.provider': trace.provider,
+        ...(trace.upstream
+          ? { 'kortix.upstream_provider': trace.upstream.provider, 'kortix.upstream_model': trace.upstream.model }
+          : {}),
         'kortix.cached_tokens': trace.usage.cachedTokens,
         'kortix.cache_write_tokens': trace.usage.cacheWriteTokens,
         'kortix.streaming': trace.streaming,

@@ -83,7 +83,7 @@ describe('session restart URL contract', () => {
   });
 });
 
-describe('progress-aware OpenCode boot budget (Essentia 2026-08-25 17:23 double runtime_boot_failed)', () => {
+describe('progress-aware OpenCode boot budget (SampleCo 2026-08-25 17:23 double runtime_boot_failed)', () => {
   const t0 = new Date('2026-08-25T17:23:04.000Z');
 
   test('a phase change restarts the reason clock; the first-seen clock never moves', () => {
@@ -148,7 +148,7 @@ describe('progress-aware OpenCode boot budget (Essentia 2026-08-25 17:23 double 
 
 // ───────────────────────────────────────────────────────────────────────────
 // The automatic cooldown rung must not inherit the previous attempt's boot
-// budget. Essentia 2026-08-26, session 29861dfa / box inqwpv4a: attempt 1
+// budget. SampleCo 2026-08-26, session 29861dfa / box inqwpv4a: attempt 1
 // failed ~13:27; the rung re-attempted ~13:33; the daemon booted through
 // 13:34:48.8, authenticated to the gateway 13:34:48.5-49.1 and claimed its
 // initial turn at 13:34:49.216 — and `/start` parked the box at 13:34:49.202.

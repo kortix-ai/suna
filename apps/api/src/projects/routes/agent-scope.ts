@@ -1,8 +1,8 @@
 // Agent-scope CRUD — the dashboard surface for the inheritance PYRAMID's first
-// step: bind specific secrets + connectors to a specific agent. Writes the
-// `[[agents]].env` / `.connectors` allowlists straight into the manifest (same
-// git round-trip the connector/policy editors use), so a non-technical admin
-// never hand-edits config. The agent's declared scope is what members assigned
+// step: bind specific secrets, connectors and Kortix Apps to a specific agent.
+// Writes the `[[agents]].env` / `.connectors` / `.apps` allowlists straight into
+// the manifest (same git round-trip the connector/policy editors use), so a
+// non-technical admin never hand-edits config. The agent's declared scope is what members assigned
 // to it (Members → Resource access) inherit.
 //
 // NOTE: `applyAgentScope` (agents.ts) operates on the `[[agents]]` array shape
@@ -13,7 +13,7 @@
 // Manager-gated: an agent's scope decides what flows to everyone who inherits
 // it, so it's a governance control, not an editor convenience.
 //
-// `kortix_cli` is intentionally NOT editable here — granting Kortix-CLI powers
+// `kortix_permissions` is intentionally NOT editable here — granting Kortix permissions
 // is a sharper escalation; it stays a manifest change.
 //
 // Second route in this file: POST /:projectId/secrets/:identifier/grant, the
@@ -48,6 +48,11 @@ const AgentScopeBody = z.object({
   connectors: GrantSetSchema.optional(),
   connectors_required: z.array(z.string().trim().min(1).max(200)).max(500).optional(),
   connectors_personal: z.array(z.string().trim().min(1).max(200)).max(500).optional(),
+  // Kortix App slugs the agent may open when the App is `restricted` or
+  // `private` (spec 2026-09-22 agents-as-principals §2.5). Same grant-set
+  // shape as `connectors`, same deny-by-default, so it belongs on the same
+  // route rather than forcing a whole-block `/config` PUT for one list.
+  apps: GrantSetSchema.optional(),
 });
 
 projectsApp.openapi(
@@ -86,7 +91,7 @@ projectsApp.openapi(
 
     const parsed = AgentScopeBody.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'Invalid body', code: 'invalid_body' }, 400);
-    const { env, connectors, connectors_required, connectors_personal } = parsed.data;
+    const { env, connectors, connectors_required, connectors_personal, apps } = parsed.data;
     const normalizedRequired = normalizeRequiredConnectorAliases({
       connectors_required,
       connectors_personal,
@@ -95,9 +100,17 @@ projectsApp.openapi(
       return c.json({ error: normalizedRequired.error, code: 'invalid_body' }, 400);
     }
     const connectorsRequired = normalizedRequired.block.connectors_required as string[] | undefined;
-    if (env === undefined && connectors === undefined && connectorsRequired === undefined) {
+    if (
+      env === undefined &&
+      connectors === undefined &&
+      connectorsRequired === undefined &&
+      apps === undefined
+    ) {
       return c.json(
-        { error: 'Provide env, connectors and/or connectors_required', code: 'nothing_to_update' },
+        {
+          error: 'Provide env, connectors, connectors_required and/or apps',
+          code: 'nothing_to_update',
+        },
         400,
       );
     }
@@ -122,6 +135,7 @@ projectsApp.openapi(
         env,
         connectors,
         connectorsRequired,
+        apps,
       });
       if (!applied.ok) {
         return applied.notFound
@@ -142,6 +156,14 @@ projectsApp.openapi(
           400,
         );
       }
+      // v1 `[[agents]]` has no `apps` key — `applyAgentScope` would drop it
+      // silently and answer 200 with a grant that was never written.
+      if (apps !== undefined) {
+        return c.json(
+          { error: 'apps requires a v2 (kortix.yaml) manifest', code: 'unsupported_in_v1' },
+          400,
+        );
+      }
       const applied = applyAgentScope(current, agentName, { env, connectors }, manifest.path);
       if (!applied.ok) return c.json({ error: applied.error, code: 'agent_not_found' }, 404);
       manifest.raw.agents = applied.agents;
@@ -156,7 +178,7 @@ projectsApp.openapi(
     const committed = await commitManifest(
       loaded.row,
       manifest,
-      `chore: scope agent ${agentName} (secrets/connectors)`,
+      `chore: scope agent ${agentName} (secrets/connectors/apps)`,
     );
     if ('error' in committed) {
       return c.json({ error: committed.error }, committed.status as 400 | 409 | 502);
@@ -168,6 +190,7 @@ projectsApp.openapi(
       agent: agentName,
       env: spec?.env ?? 'all',
       connectors: spec?.connectors ?? [],
+      apps: spec?.apps ?? [],
       connectors_required: spec?.connectorsRequired ?? [],
     });
   },

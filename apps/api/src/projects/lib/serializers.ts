@@ -556,7 +556,9 @@ export function buildSecretView(input: {
 
 export async function loadSecretViewsForUser(input: {
   projectId: string;
-  userId: string;
+  /** Whose personal overrides merge in; null = shared rows only (an
+   *  agent-principal session with no on-behalf-of human, spec 2026-09-22 §2.3). */
+  userId: string | null;
   canManageShared: boolean;
   /** The project's loaded config. Callers that have already read it pass it so
    *  every row reports the agent-grant axis; omitting it reports null. */
@@ -572,7 +574,9 @@ export async function loadSecretViewsForUser(input: {
     .where(
       and(
         eq(projectSecrets.projectId, projectId),
-        or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, userId)),
+        userId
+          ? or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, userId))
+          : isNull(projectSecrets.ownerUserId),
       ),
     )
     .orderBy(desc(projectSecrets.updatedAt));

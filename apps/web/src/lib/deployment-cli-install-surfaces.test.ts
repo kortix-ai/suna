@@ -26,7 +26,7 @@ test('all deployment-aware CLI installer surfaces use the hook', () => {
 
 test('the kortix.com marketing page keeps the canonical installer command', () => {
   const source = readFileSync(
-    join(WEB_SRC, 'app/(public)/(marketing)/developers/page.tsx'),
+    join(WEB_SRC, 'app/[locale]/(public)/(marketing)/developers/page.tsx'),
     'utf8',
   );
   expect(source).toContain('KORTIX_CLI_INSTALL_COMMAND');

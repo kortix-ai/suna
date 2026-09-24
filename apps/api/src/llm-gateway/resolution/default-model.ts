@@ -153,7 +153,12 @@ export async function resolveDefaultModelForPrincipal(
         model: chosen as string,
         sessionId: principal.sessionId,
       }),
-    () => connectedByokFallback(principal.projectId, principal.userId),
+    () =>
+      connectedByokFallback(
+        principal.projectId,
+        // Spec 2026-09-22 §2.3: personal overrides of the on-behalf-of human only.
+        (principal.personalUserId === undefined ? principal.userId : principal.personalUserId) ?? undefined,
+      ),
   );
   return kept ?? undefined;
 }

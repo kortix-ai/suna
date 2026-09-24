@@ -490,7 +490,7 @@ describe('KaaB: sharing is not exempt from the isolation narrowing', () => {
  * conditions true for ANY human opening ANY `backend`-origin session: the
  * session 404'd from `/start` while sitting in the sidebar.
  *
- * Measured on a live self-host (essentia, 2026-08-24): 43 backend-origin
+ * Measured on a live self-host (sampleco, 2026-08-24): 43 backend-origin
  * sessions in one project, none openable, while `user`- and `schedule`-origin
  * sessions in the same project opened normally.
  */

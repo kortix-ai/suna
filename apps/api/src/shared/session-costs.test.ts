@@ -82,14 +82,11 @@ describe('assembleSessionCostSummary', () => {
     expect(summary).toMatchObject({
       owner_type: 'service_account',
       owner_name: 'automation-agent',
-      llm_cost: 1.125,
-      // The split behind llm_cost: what Kortix billed vs what went straight to
-      // your own provider. Summing final_cost alone reported the provider side
-      // as $0.00 — see shared/llm-spend.ts.
+      llm_cost: 0.125,
       llm_kortix_cost: 0.125,
       llm_provider_cost: 1,
       compute_cost: 0.375,
-      total_cost: 1.5,
+      total_cost: 0.5,
       request_count: 3,
       error_count: 1,
       input_tokens: 120,

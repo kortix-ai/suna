@@ -239,6 +239,126 @@ describe('HTTP execution request shape', () => {
   });
 });
 
+/** Header names are case-insensitive on the wire; count every spelling. */
+function headerValues(headers: Record<string, string>, name: string): string[] {
+  return Object.entries(headers)
+    .filter(([key]) => key.toLowerCase() === name.toLowerCase())
+    .map(([, value]) => value);
+}
+
+describe('OpenAPI request body media type (Microsoft Graph sendMail)', () => {
+  const sendMail = {
+    kind: 'openapi' as const,
+    method: 'POST',
+    path: '/users/{user}/sendMail',
+    server: 'https://graph.microsoft.com/v1.0',
+    bodyMediaType: 'application/json',
+  };
+  const message = {
+    message: {
+      subject: 'Report',
+      body: { contentType: 'Text', content: 'Hi,\rsee attached' },
+      toRecipients: [{ emailAddress: { address: 'to@example.com' } }],
+      attachments: [
+        {
+          '@odata.type': '#microsoft.graph.fileAttachment',
+          name: 'report.pdf',
+          contentType: 'application/pdf',
+          contentBytes: Buffer.from('%PDF-1.7').toString('base64'),
+        },
+      ],
+    },
+    saveToSentItems: true,
+  };
+
+  test('an object body is sent as JSON with exactly one Content-Type header', async () => {
+    const { fetchImpl, calls } = recordingFetch(202, '');
+    await executeCall({
+      binding: sendMail,
+      auth: BEARER,
+      secret: 'graph-token',
+      args: { user: 'sender@example.com', body: message },
+      paramHints: { user: 'path' },
+      fetchImpl,
+    });
+    expect(calls[0]!.url).toBe('https://graph.microsoft.com/v1.0/users/sender%40example.com/sendMail');
+    expect(headerValues(calls[0]!.headers, 'content-type')).toEqual(['application/json']);
+    expect(JSON.parse(calls[0]!.body!)).toEqual(message);
+  });
+
+  test('a body passed as a JSON string is sent verbatim, not double-encoded', async () => {
+    const { fetchImpl, calls } = recordingFetch(202, '');
+    await executeCall({
+      binding: sendMail,
+      auth: BEARER,
+      secret: 'graph-token',
+      args: { user: 'sender@example.com', body: JSON.stringify(message) },
+      paramHints: { user: 'path' },
+      fetchImpl,
+    });
+    expect(headerValues(calls[0]!.headers, 'content-type')).toEqual(['application/json']);
+    expect(JSON.parse(calls[0]!.body!)).toEqual(message);
+  });
+
+  test('a declared Content-Type header parameter cannot duplicate or drop the header', async () => {
+    for (const name of ['Content-Type', 'content-type']) {
+      const { fetchImpl, calls } = recordingFetch(202, '');
+      await executeCall({
+        binding: sendMail,
+        auth: BEARER,
+        secret: 'graph-token',
+        args: { user: 'sender@example.com', [name]: 'application/json', body: message },
+        paramHints: { user: 'path', [name]: 'header' },
+        fetchImpl,
+      });
+      expect(headerValues(calls[0]!.headers, 'content-type')).toEqual(['application/json']);
+      expect(JSON.parse(calls[0]!.body!)).toEqual(message);
+    }
+  });
+
+  test('a caller Content-Type that is not a JSON type cannot relabel a JSON body', async () => {
+    const { fetchImpl, calls } = recordingFetch(202, '');
+    await executeCall({
+      binding: sendMail,
+      args: { 'Content-Type': 'text/plain', body: message },
+      paramHints: { 'Content-Type': 'header' },
+      fetchImpl,
+    });
+    expect(headerValues(calls[0]!.headers, 'content-type')).toEqual(['application/json']);
+  });
+
+  test('a JSON-family media type from the spec labels the body', async () => {
+    const { fetchImpl, calls } = recordingFetch();
+    await executeCall({
+      binding: { ...sendMail, method: 'PATCH', bodyMediaType: 'application/merge-patch+json' },
+      args: { user: 'u', body: { subject: 'x' } },
+      paramHints: { user: 'path' },
+      fetchImpl,
+    });
+    expect(headerValues(calls[0]!.headers, 'content-type')).toEqual(['application/merge-patch+json']);
+    expect(JSON.parse(calls[0]!.body!)).toEqual({ subject: 'x' });
+  });
+
+  test('a form-urlencoded operation is form-encoded', async () => {
+    const { fetchImpl, calls } = recordingFetch();
+    await executeCall({
+      binding: {
+        kind: 'openapi',
+        method: 'POST',
+        path: '/oauth/token',
+        server: 'https://api.example.com',
+        bodyMediaType: 'application/x-www-form-urlencoded',
+      },
+      args: { body: { grant_type: 'client_credentials', scope: 'a b' } },
+      fetchImpl,
+    });
+    expect(headerValues(calls[0]!.headers, 'content-type')).toEqual([
+      'application/x-www-form-urlencoded',
+    ]);
+    expect(calls[0]!.body).toBe('grant_type=client_credentials&scope=a+b');
+  });
+});
+
 describe('Postman execution request shape', () => {
   test('renders URL/header templates, preserves static values, sends body, and attaches connector auth', async () => {
     const { fetchImpl, calls } = recordingFetch();

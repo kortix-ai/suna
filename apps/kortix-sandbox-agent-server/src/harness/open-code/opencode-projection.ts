@@ -30,7 +30,7 @@
  *    mirror had to be deleted.
  *  - **Attachment bytes never travel.** A projected part references
  *    `/kortix/part/:session/:message/:part` and the sidecar serves the bytes on
- *    demand. Twenty messages weighed 7-19 MB on Essentia (2026-08-24) and
+ *    demand. Twenty messages weighed 7-19 MB on SampleCo (2026-08-24) and
  *    several reads died on the browser's 30 s deadline; the same read served
  *    in-VM took 276 ms. The cost was entirely the bytes leaving.
  */

@@ -12,6 +12,7 @@ import {
   projects,
   tunnelConnections,
 } from '@kortix/db';
+import { appAuthorizationForConnectorCall } from '../apps/connector-assertion';
 import { sanitizeConnectorHeaders, SLUG_RE } from '@kortix/manifest-schema';
 import { and, desc, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 /**
@@ -35,6 +36,7 @@ import {
 } from '../channels/install-store';
 import { approvalPageUrl } from '../setup-links/token';
 import { config } from '../config';
+import { bindIntegrationPrincipal } from '../shared/audit-scope';
 import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { authorize, PROJECT_ACTIONS } from '../iam';
 import { actorOf } from '../iam/actor';
@@ -59,6 +61,12 @@ import {
 import { validateAccountToken } from '../repositories/account-tokens';
 import { db } from '../shared/db';
 import { executeComputerCall } from '../tunnel/core/rpc-core';
+import { getRequestOnBehalfOf } from '../projects/lib/on-behalf-of';
+import {
+  filterPersonalTunnelOwners,
+  personalResourceOwner,
+  tokenAgentPrincipalScope,
+} from '../projects/lib/personal-resources';
 import { connectorAttachmentStore } from './attachments';
 import { computerProfileSpec } from './computer-materialize';
 import { COMPUTER_SLUG, computerLabel } from './computers';
@@ -79,6 +87,13 @@ import {
   resolveCredentialValue,
   resolveConnectionCredentialValue,
 } from './credentials';
+import {
+  connectedAsOf,
+  relabelToIdentity,
+  resolveConnectedAs,
+  rowMetadata,
+  CONNECTED_AS_KEY,
+} from './connection-identity';
 import type { ConnectorAuth, FetchImpl } from './call';
 import type { GatewayAction, GatewayConnector, GatewayDeps } from './gateway';
 import {
@@ -355,8 +370,13 @@ export function composioConnectionMetadata(input: {
   /** Kortix session whose agent asked for this connector. Deliberately NOT
    *  `session_id` — that key is Composio's Tool Router session (`trs_…`). */
   requestingSessionId?: string | null;
+  /** The previous metadata. Its row-level keys (`rowMetadata`) are kept. */
+  previous?: unknown;
+  /** The authorized identity (`probeComposioIdentity`). Omitted when unknown. */
+  connectedAs?: string | null;
 }): Record<string, unknown> {
   return {
+    ...rowMetadata(input.previous),
     provider: 'composio',
     toolkit: input.toolkit,
     stable_user_id: input.stableUserId,
@@ -365,6 +385,7 @@ export function composioConnectionMetadata(input: {
     connected_account_id: input.connectedAccountId ?? null,
     is_no_auth: input.isNoAuth,
     requesting_session_id: input.requestingSessionId ?? null,
+    ...(input.connectedAs ? { [CONNECTED_AS_KEY]: input.connectedAs } : {}),
   };
 }
 
@@ -587,6 +608,7 @@ async function resolveActiveConnectorConnection(principal: ConnectorPrincipal, r
     alias: row.slug,
     actingUserId: principal.userId,
     account: principal.requestedConnectorAccount ?? null,
+    agentPrincipal: principal.agentPrincipal ?? null,
   });
   return connection?.status === 'active' ? connection : null;
 }
@@ -604,9 +626,31 @@ const nodeFetch: FetchImpl = async (url, init) => {
   return { status: res.status, ok: res.ok, text: () => res.text(), headers: res.headers };
 };
 
+/** Spec §2.3 "own computer": see `filterPersonalTunnelOwners`. */
+async function personalTunnelOwnersFor(
+  principal: ConnectorPrincipal,
+  accountId: string,
+  owners: string[] | null,
+): Promise<string[] | null> {
+  if (!principal.agentPrincipal) return owners;
+  const visibility = principal.sessionId ? await sessionVisibility(principal.sessionId) : null;
+  const personalOwner = personalResourceOwner({
+    agentPrincipal: true,
+    legacyUserId: principal.userId,
+    onBehalfOfUserId: principal.agentPrincipal.onBehalfOfUserId,
+    visibility,
+  });
+  const filtered = filterPersonalTunnelOwners({ accountId, owners, personalOwner });
+  // `listAccountComputers` reads an EMPTY owner list as "the team account",
+  // which is exactly the team-owned subset this filter keeps.
+  return filtered;
+}
+
 export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
   return {
     attachmentStore: connectorAttachmentStore,
+    // Spec 2026-09-22 §2.5: an agent session calling a same-project Kortix App.
+    appAuthorizationFor: (input) => appAuthorizationForConnectorCall(input),
     loadConnectorBySlug: async (projectId, slug) => {
       const [row] = await db
         .select()
@@ -644,6 +688,7 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
         alias: slug,
         actingUserId: principal.userId,
         account: principal.requestedConnectorAccount ?? null,
+        agentPrincipal: principal.agentPrincipal ?? null,
       });
       return outcome.kind === 'ambiguous' ? 'account_required' : 'connector_not_connected';
     },
@@ -771,17 +816,19 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
       method,
       args,
     }) =>
-      executeComputerCall({
-        accountId,
-        projectId,
-        sessionId,
-        actorUserId,
-        allowedTunnelIds,
-        allowedTunnelAccountIds,
-        selector,
-        method,
-        args,
-      }),
+      personalTunnelOwnersFor(principal, accountId, allowedTunnelAccountIds).then((owners) =>
+        executeComputerCall({
+          accountId,
+          projectId,
+          sessionId,
+          actorUserId,
+          allowedTunnelIds,
+          allowedTunnelAccountIds: owners,
+          selector,
+          method,
+          args,
+        }),
+      ),
     fetchImpl: nodeFetch,
     enforcePolicies: true,
   };
@@ -886,6 +933,11 @@ type ComposioAdapter = {
     authRequestId?: string;
     expectedConnectedAccountId?: string;
   }): Promise<{ connected: boolean; connectedAccountId?: string; sessionId: string; authRequestId?: string; isNoAuth: boolean }>;
+  probeComposioIdentity?(input: {
+    app: string;
+    sessionId: string;
+    connectedAccountId: string;
+  }): Promise<string | null>;
 };
 
 async function loadComposioAdapter(): Promise<ComposioAdapter | null> {
@@ -1058,9 +1110,16 @@ async function resolvePrincipal(c: Context): Promise<ConnectorPrincipal | null> 
     accountId: result.accountId,
     projectId: result.projectId,
     sessionId: sessionIdentity.sessionId,
+    tokenId: result.tokenId ?? null,
     subject: await resolveShareSubject(result.userId),
     agentGrant,
     channelConnectorSlugs,
+    agentPrincipal: await tokenAgentPrincipalScope({
+      projectId: result.projectId,
+      tokenId: result.tokenId ?? null,
+      agentGrant,
+      onBehalfOfUserId: result.onBehalfOfUserId ?? null,
+    }),
   };
 }
 
@@ -1126,14 +1185,27 @@ async function resolveProjectPrincipal(
     sessionChannelConnectorSlugs(projectId, sessionIdentity.sessionId),
   ]);
 
+  const tokenId = (c.get('iamTokenId') as string | undefined) ?? null;
   return {
     userId,
     accountId,
     projectId,
     sessionId: sessionIdentity.sessionId,
+    tokenId,
     subject: await resolveShareSubject(userId),
     agentGrant,
     channelConnectorSlugs,
+    // Only a project-scoped (session) token can be an agent principal; a
+    // human JWT/PAT keeps the legacy rule. The fresh on_behalf_of comes from
+    // the auth middleware, so a clear by a foreign prompt applies at once.
+    agentPrincipal: tokenProjectId
+      ? await tokenAgentPrincipalScope({
+          projectId,
+          tokenId,
+          agentGrant,
+          onBehalfOfUserId: getRequestOnBehalfOf(c),
+        })
+      : null,
   };
 }
 
@@ -1168,6 +1240,7 @@ async function catalogAccountsFor(
     alias: canonicalConnectorAlias(slug),
     actingUserId: p.userId,
     visibility,
+    agentPrincipal: p.agentPrincipal ?? null,
   });
   return entitled.map((connection) => ({
     connection_id: connection.connectionId,
@@ -1192,7 +1265,8 @@ async function listCatalog(p: ConnectorPrincipal): Promise<CatalogConnector[]> {
     loadDefaultModeFor(p.projectId),
     // Same rule `listConnectorAccounts` uses: a private session can also see
     // the caller's own member-owned accounts, anything else stays project-only.
-    sessionVisibility(p.sessionId),
+    // An agent-principal credential with no session is never `private`.
+    p.agentPrincipal && !p.sessionId ? Promise.resolve('project' as const) : sessionVisibility(p.sessionId),
   ]);
 
   const out: CatalogConnector[] = [];
@@ -1228,6 +1302,7 @@ async function listCatalog(p: ConnectorPrincipal): Promise<CatalogConnector[]> {
       alias: row.slug,
       actingUserId: p.userId,
       account: null,
+      agentPrincipal: p.agentPrincipal ?? null,
     });
     if (outcome.kind === 'none') continue;
     const connection =
@@ -2149,6 +2224,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     ? async (extUserId, sig) => {
         const rejected = { ok: false, connected: false } as const;
         if (!verifyWebhookSig(extUserId, sig)) return rejected;
+        bindIntegrationPrincipal('pipedream');
         const [projectId, slug, identityId] = extUserId.split(':');
         if (!projectId || !slug) return rejected;
         const conn = await loadPipedreamConnector(projectId, slug);
@@ -2271,7 +2347,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     }
     return out;
   },
-  listConnectorAccounts: async ({ projectId, slug, userId, sessionId }) => {
+  listConnectorAccounts: async ({ projectId, slug, userId, sessionId, agentPrincipal }) => {
     const [session] = sessionId
       ? await db
           .select({ visibility: projectSessions.visibility })
@@ -2290,13 +2366,16 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
       projectId,
       alias: canonicalConnectorAlias(slug),
       actingUserId: userId,
-      visibility: session?.visibility ?? 'private',
+      // An agent-principal credential with no session is never `private`.
+      visibility: session?.visibility ?? (agentPrincipal ? 'project' : 'private'),
+      agentPrincipal: agentPrincipal ?? null,
     });
     return entitled.map((connection) => ({
       connection_id: connection.connectionId,
       label: connection.label,
       owner_type: connection.ownerType,
       is_default: connection.isDefault,
+      connected_as: connectedAsOf(connection.metadata),
     }));
   },
   mintConnectorConnectLink: async ({ projectId, slug, userId, sessionId }) => {
@@ -2351,6 +2430,12 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
               projectId,
               connectorId: conn.connectorId,
             });
+      const [previousRow] = await db
+        .select({ metadata: connectorConnections.metadata })
+        .from(connectorConnections)
+        .where(eq(connectorConnections.connectionId, connectionId))
+        .limit(1);
+      const previous = (previousRow?.metadata ?? {}) as Record<string, unknown>;
       await db
         .update(connectorConnections)
         .set({
@@ -2364,6 +2449,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
           // Pending rows stay active because the DB enum has no needs_auth
           // value. The gateway still fails closed on missing auth metadata.
           metadata: {
+            ...rowMetadata(previous),
             provider: 'composio',
             toolkit: conn.app,
             requesting_session_id: requestingSessionId ?? null,
@@ -2399,6 +2485,14 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
             connectedAccountId: result.connectedAccountId,
             isNoAuth: result.isNoAuth,
             requestingSessionId,
+            previous,
+            // An already-active account kept its identity. A new authorization
+            // has none until finalize probes it.
+            connectedAs:
+              result.connectedAccountId &&
+              result.connectedAccountId === previous.connected_account_id
+                ? connectedAsOf(previous)
+                : null,
           }),
           updatedAt: sql`now()`,
         })
@@ -2497,6 +2591,22 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
         authRequestId,
         expectedConnectedAccountId,
       });
+      const connectedAccountId = result.connectedAccountId ?? expectedConnectedAccountId;
+      const connectedAs = result.connected
+        ? await resolveConnectedAs({
+            previous: metadata,
+            connectedAccountId,
+            isNoAuth: result.isNoAuth,
+            probe: () =>
+              composio.probeComposioIdentity
+                ? composio.probeComposioIdentity({
+                    app: conn.app,
+                    sessionId: result.sessionId,
+                    connectedAccountId: connectedAccountId!,
+                  })
+                : Promise.resolve(null),
+          })
+        : null;
       await db
         .update(connectorConnections)
         .set({
@@ -2509,9 +2619,11 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
             stableUserId,
             sessionId: result.sessionId,
             authRequestId: result.authRequestId ?? authRequestId,
-            connectedAccountId: result.connectedAccountId ?? expectedConnectedAccountId,
+            connectedAccountId,
             isNoAuth: result.isNoAuth,
             requestingSessionId,
+            previous: metadata,
+            connectedAs,
           }),
           updatedAt: sql`now()`,
         })
@@ -2525,6 +2637,11 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
       // account landed so it resumes instead of posting a second link next run.
       // Fire-and-forget: the credential is already saved, and a notification
       // failure must never turn a successful connect into an error.
+      // A generic default label ("Private connection", the connector name)
+      // becomes the identity, so the account list shows WHO each row is.
+      const label = connectedAs
+        ? await relabelToIdentity({ connectionId: connection.connectionId, identity: connectedAs })
+        : null;
       if (result.connected && requestingSessionId) {
         void notifyConnectorSession(requestingSessionId, projectId, _userId ?? null, slug, conn.app);
       }
@@ -2534,6 +2651,8 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
         accountId: result.connectedAccountId,
         connectionId: connection.connectionId,
         isNoAuth: result.isNoAuth,
+        connectedAs,
+        ...(label ? { label } : {}),
       };
     }
     if (!pipedreamConfigured()) return null;

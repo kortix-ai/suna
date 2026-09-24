@@ -1,5 +1,5 @@
 import { createInterface } from 'node:readline';
-import type { MessageWithParts, Part } from '@kortix/sdk';
+import { findSessionAttachments, type MessageWithParts, type Part } from '@kortix/sdk';
 
 import type { Auth } from '../api/auth.ts';
 import { kortixFromAuth, unwrapRuntime, withKortixScope } from '../api/sdk.ts';
@@ -523,8 +523,12 @@ async function waitForRunning(
 const LOG_HELP = help`Usage: kortix sessions log [<session-id>] [options]
 
 Print a session agent's recent messages — a read-only peek at what an agent is
-doing *right now*, without sending it anything. With no session id, uses your
-most recent running session.
+doing, without sending it anything. With no session id, uses your most recent
+running session.
+
+A running session is read live from its sandbox. A stopped session is read from
+the transcript the server saves at the end of every turn, so it never has to be
+woken up just to be read; the source is noted on stderr.
 
   --limit, -n <N>   How many recent messages to show (default 10).
   --json            Emit structured JSON (role / text / parts) for scripting.
@@ -537,10 +541,16 @@ agents: list them, then \`kortix sessions log <id>\` to read what any one of
 them is currently doing. Aliases: \`messages\`, \`history\`.`;
 
 /**
- * `kortix sessions log` — print a running session's recent OpenCode messages.
+ * `kortix sessions log` — print a session's recent OpenCode messages.
  * Read-only: it never sends a prompt, so it's the safe way for one agent to
- * observe what other agents are doing. Reading requires a live sandbox, so the
- * session must be `running` (a stopped session has no sandbox to query).
+ * observe what other agents are doing.
+ *
+ * TWO SOURCES. A running session is read live. Anything else is read from the
+ * server's saved transcript — written at every turn end — and so is a running
+ * session whose box is not answering. This used to refuse a stopped session
+ * outright ("a stopped session has no sandbox to query") and tell the user to
+ * restart it: a paid, minutes-long wake just to read text the server already
+ * held.
  */
 export async function runSessionsLog(argv: string[]): Promise<number> {
   const rest = [...argv];
@@ -592,23 +602,62 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
     sessionId = chosen.session_id;
   }
 
-  const resolved = await loadSessionForChat(sessionId, opts, 'sessions log');
-  if (!resolved) return 1;
-  const ocSessionId = await ensureOpencodeSession(resolved);
-  if (!ocSessionId) return 1;
-
-  let messages: MessageWithParts[];
-  try {
-    messages = await withKortixScope(resolved.auth, async () =>
-      unwrapRuntime(
-        await resolved.runtime.session.messages({
-          sessionID: ocSessionId,
-          limit,
-        }),
-      ),
+  const found = await locateSessionAnywhere(
+    sessionId,
+    opts,
+    (host) => `kortix sessions log ${sessionId} --host ${host}`,
+  );
+  if (!found) return 1;
+  const { client, projectId, auth, session, projectName, hostName } = found.located;
+  if (found.switched) {
+    process.stderr.write(
+      `${status.ok(`Found in ${C.bold}${projectName ?? projectId}${C.reset}`)} ` +
+        `${C.dim}(host ${hostName}) — using it.${C.reset}\n`,
     );
-  } catch (err) {
-    return surfaceApiError(err);
+  }
+
+  let messages: MessageWithParts[] | null = null;
+  let liveError: unknown = null;
+  if (session.status === 'running') {
+    try {
+      const runtime = await resolveSessionRuntime({ auth, client, projectId, session });
+      messages = await withKortixScope(auth, async () =>
+        unwrapRuntime(
+          await runtime.runtime.session.messages({
+            sessionID: runtime.opencodeSessionId,
+            limit,
+          }),
+        ),
+      );
+    } catch (err) {
+      // A box that is not answering — still waking, just parked, mid-restart —
+      // is not a reason to show nothing: the saved copy below is the same
+      // conversation up to its last turn. The live error is reported only when
+      // there is no saved copy to show instead.
+      liveError = err instanceof SessionRuntimeError ? (err.cause ?? err) : err;
+    }
+  }
+  if (messages === null) {
+    const saved = await readSavedTranscript(auth, projectId, session.session_id, limit);
+    if (saved.kind !== 'ok' && liveError !== null) return surfaceApiError(liveError);
+    if (saved.kind === 'error') return surfaceApiError(saved.error);
+    if (saved.kind === 'none') {
+      process.stderr.write(
+        `${status.err(`No saved transcript for session ${session.session_id} yet.`)}\n` +
+          `  ${C.dim}It is saved at the end of every turn. Start the session with ` +
+          `\`kortix sessions start ${session.session_id}\` to read it live.${C.reset}\n`,
+      );
+      return 1;
+    }
+    messages = saved.messages;
+    const why =
+      liveError !== null
+        ? 'its sandbox is not answering'
+        : `session is ${session.status}`;
+    process.stderr.write(
+      `${C.dim}Saved transcript — ${why}` +
+        `${saved.capturedAt ? `; saved ${saved.capturedAt}` : ''}.${C.reset}\n`,
+    );
   }
 
   if (json) {
@@ -616,7 +665,7 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
     return 0;
   }
 
-  const s = resolved.session;
+  const s = session;
   process.stdout.write(
     `\n${C.bold}${s.name ?? s.session_id.split('-')[0]}${C.reset} ` +
       `${C.faded}(${s.agent_name} · ${s.status})${C.reset}\n`,
@@ -626,8 +675,68 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
     return 0;
   }
   for (const msg of messages) printMessage(msg);
+  // A `[file · name]` line says a file exists; it does not say it can be
+  // fetched. Point at the command that fetches it — sandbox or no sandbox.
+  const stored = findSessionAttachments(messages).length;
+  if (stored > 0) {
+    process.stdout.write(
+      `\n  ${C.dim}${stored} stored file${stored === 1 ? '' : 's'} — download with ` +
+        `\`kortix sessions attachments ${s.session_id}\`.${C.reset}\n`,
+    );
+  }
   process.stdout.write('\n');
   return 0;
+}
+
+/** The mirror's largest window; the route answers 400 above it. */
+const SAVED_WINDOW_MAX = 500;
+
+export type SavedTranscript =
+  | { kind: 'ok'; messages: MessageWithParts[]; capturedAt: string | null }
+  | { kind: 'none' }
+  | { kind: 'error'; error: unknown };
+
+/**
+ * The newest `limit` messages of the server's saved transcript, oldest first —
+ * the same order a live read returns.
+ *
+ * One window holds at most {@link SAVED_WINDOW_MAX}, so a larger `--limit`
+ * walks OLDER windows by `next_cursor` until it is met or the saved history
+ * runs out. Through the SDK's session handle, never a hand-rolled request.
+ */
+export async function readSavedTranscript(
+  auth: Auth,
+  projectId: string,
+  sessionId: string,
+  limit: number,
+): Promise<SavedTranscript> {
+  const handle = kortixFromAuth(auth).session(projectId, sessionId);
+  const windows: MessageWithParts[][] = [];
+  let collected = 0;
+  let capturedAt: string | null = null;
+  let before: string | null = null;
+  const seen = new Set<string>();
+  try {
+    do {
+      const envelope = await withKortixScope(auth, () =>
+        handle.transcriptSync({ limit: Math.min(SAVED_WINDOW_MAX, limit - collected), before }),
+      );
+      if (!envelope.available) break;
+      capturedAt ??= envelope.captured_at;
+      const page = envelope.messages as unknown as MessageWithParts[];
+      windows.unshift(page);
+      collected += page.length;
+      before = envelope.next_cursor ?? null;
+      // A cursor that repeats is a server that is not advancing; stop rather
+      // than print the same window forever.
+      if (before !== null && seen.has(before)) break;
+      if (before !== null) seen.add(before);
+    } while (before !== null && collected < limit);
+  } catch (error) {
+    return { kind: 'error', error };
+  }
+  if (windows.length === 0) return { kind: 'none' };
+  return { kind: 'ok', messages: windows.flat(), capturedAt };
 }
 
 /** Compact, ANSI-free shape of a message for `--json` consumption. */

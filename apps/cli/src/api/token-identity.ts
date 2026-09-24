@@ -8,7 +8,7 @@ import { configFilePath } from './config.ts';
 // Who is this token?
 //
 // A sandbox CLI authenticates with a MINTED AGENT TOKEN — project- and
-// session-scoped, carrying that agent's `kortix_cli` grant from kortix.yaml.
+// session-scoped, carrying that agent's `kortix_permissions` grant from kortix.yaml.
 // Nothing in the sandbox names the agent: `agent-env.sh` ships the token, the
 // API URL, and the project/session ids, never the agent it was minted for
 // (apps/kortix-sandbox-agent-server/src/agent-env-file.ts). So a 403 like
@@ -47,6 +47,8 @@ export interface AccountsMeBody {
     project_id?: string | null;
     session_id?: string | null;
     agent?: string | null;
+    kortix_permissions?: string[] | 'all' | null;
+    /** @deprecated Pre-rename name of `kortix_permissions`; older APIs send only this. */
     kortix_cli?: string[] | 'all' | null;
   };
 }
@@ -59,8 +61,9 @@ export interface TokenIdentity {
   agent: string | null;
   projectId: string | null;
   sessionId: string | null;
-  /** The agent's `kortix_cli` grant: 'all', an explicit list, or null (ungated). */
-  kortixCli: string[] | 'all' | null;
+  /** The agent's Kortix permissions (`kortix_permissions` in kortix.yaml):
+   *  'all', an explicit list, or null (ungated). */
+  permissions: string[] | 'all' | null;
   userId: string;
   userEmail: string;
 }
@@ -160,7 +163,7 @@ export function identityFromMe(me: AccountsMeBody): TokenIdentity {
     agent: ctx?.agent ?? null,
     projectId: ctx?.project_id ?? null,
     sessionId: ctx?.session_id ?? null,
-    kortixCli: ctx?.kortix_cli ?? null,
+    permissions: ctx?.kortix_permissions ?? ctx?.kortix_cli ?? null,
     userId: me.user_id,
     userEmail: me.email ?? '',
   };
@@ -197,7 +200,15 @@ export function cachedTokenIdentity(
   if (!entry || typeof entry.fetchedAt !== 'number' || !entry.identity) return null;
   memo.set(key, entry);
   if (!opts.allowStale && Date.now() - entry.fetchedAt > TTL_MS) return null;
-  return entry.identity;
+  return normalizeCachedIdentity(entry.identity);
+}
+
+/** Cache files written before the 2026-09-22 rename store the grant as
+ *  `kortixCli`. Read either key; return only the current shape. */
+function normalizeCachedIdentity(identity: TokenIdentity): TokenIdentity {
+  const { kortixCli, ...rest } = identity as TokenIdentity & { kortixCli?: string[] | 'all' | null };
+  if (kortixCli === undefined) return identity;
+  return { ...rest, permissions: rest.permissions ?? kortixCli ?? null };
 }
 
 /** Drop every cached entry. Test seam. */

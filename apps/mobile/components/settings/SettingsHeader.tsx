@@ -3,7 +3,7 @@ import { Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { ArrowLeft, X } from 'lucide-react-native';
+import { ArrowLeftIcon as ArrowLeft, XIcon as X } from '@/lib/icons';
 import * as Haptics from 'expo-haptics';
 import { log } from '@/lib/logger';
 
@@ -42,12 +42,13 @@ export function SettingsHeader({ title, onClose, disabled = false, variant = 'ba
         className="w-8 h-8 items-center justify-center rounded-full p-2"
         hitSlop={8}
         disabled={disabled}
+        accessibilityRole="button"
+        accessibilityLabel={variant === 'close' ? 'Close' : 'Back'}
       >
         <Icon
           as={variant === 'close' ? X : ArrowLeft}
           size={24}
           className="text-foreground"
-          strokeWidth={2}
         />
       </Pressable>
 

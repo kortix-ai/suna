@@ -1,45 +1,45 @@
 /**
- * Tool icon resolver for mobile (lucide-react-native)
+ * Tool icon resolver for mobile (`@/lib/icons`)
  * Uses shared icon keys but resolves to actual React Native components
  */
 
 import { getToolIconKey } from '@kortix/shared';
 import type { ToolIconKey } from '@kortix/shared';
 import {
-  Globe,
-  FileEdit,
-  FileSearch,
-  FilePlus,
-  FileText,
-  FileX,
-  List,
-  ListTodo,
-  Terminal,
-  Computer,
-  Search,
-  ExternalLink,
-  Network,
-  Table2,
-  Code,
-  Phone,
-  PhoneOff,
-  MessageCircleQuestion,
-  CheckCircle2,
-  Wrench,
-  BookOpen,
-  Plug,
-  Clock,
-  Presentation,
+  GlobeIcon as Globe,
+  NotePencilIcon as FileEdit,
+  FileMagnifyingGlassIcon as FileSearch,
+  FilePlusIcon as FilePlus,
+  FileTextIcon as FileText,
+  FileXIcon as FileX,
+  ListIcon as List,
+  ListChecksIcon as ListTodo,
+  TerminalIcon as Terminal,
+  DesktopIcon as Computer,
+  MagnifyingGlassIcon as Search,
+  ArrowSquareOutIcon as ExternalLink,
+  NetworkIcon as Network,
+  TableIcon as Table2,
+  CodeIcon as Code,
+  PhoneIcon as Phone,
+  PhoneSlashIcon as PhoneOff,
+  ChatCircleDotsIcon as MessageCircleQuestion,
+  CheckCircleIcon as CheckCircle2,
+  WrenchIcon as Wrench,
+  BookOpenIcon as BookOpen,
+  PlugIcon as Plug,
+  ClockIcon as Clock,
+  PresentationIcon as Presentation,
   ImageIcon,
-  Pencil,
+  PencilIcon as Pencil,
   HammerIcon,
-  type LucideIcon,
-} from 'lucide-react-native';
+  type AppIcon,
+} from '@/lib/icons';
 
 /**
- * Map icon keys to lucide-react-native components
+ * Map icon keys to app icon components
  */
-const ICON_MAP: Record<ToolIconKey, LucideIcon> = {
+const ICON_MAP: Record<ToolIconKey, AppIcon> = {
   'globe': Globe,
   'file-edit': FileEdit,
   'file-search': FileSearch,
@@ -75,7 +75,7 @@ const ICON_MAP: Record<ToolIconKey, LucideIcon> = {
  * @param toolName - The tool name
  * @returns The React Native component for the icon
  */
-export function getToolIcon(toolName: string): LucideIcon {
+export function getToolIcon(toolName: string): AppIcon {
   const key = getToolIconKey(toolName);
   return ICON_MAP[key] ?? Wrench;
 }

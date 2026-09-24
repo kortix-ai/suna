@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 
 const sessionPage = readFileSync(
-  new URL('../../../app/(app)/projects/[id]/sessions/[sessionId]/page.tsx', import.meta.url),
+  new URL('../../../app/[locale]/(app)/projects/[id]/sessions/[sessionId]/page.tsx', import.meta.url),
   'utf8',
 );
 const sidebarList = readFileSync(new URL('./project-session-list.tsx', import.meta.url), 'utf8');

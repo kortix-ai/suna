@@ -23,6 +23,10 @@ export interface GatewayTrace {
   attempts: number;
   candidatesTried: string[];
   attemptFailures?: GatewayAttemptFailure[];
+  // The upstream behind a public identity (UpstreamDescriptor.publicProvider).
+  // Staff-only: server logs and staff telemetry read it; hosts must never
+  // persist it where customers can read it.
+  upstream?: { provider: string; model: string };
   usage: TokenCounts;
   upstreamCost: number;
   finalCost: number;

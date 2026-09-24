@@ -256,6 +256,22 @@ export const zoomOut = () => setDesktopZoom(getDesktopZoom() / ZOOM_STEP);
 /** Back to the shell's own scale, not the browser's 100%. */
 export const zoomReset = () => setDesktopZoom(DESKTOP_BASE_ZOOM);
 
+export async function setDesktopNativeTheme(theme: string | undefined): Promise<void> {
+  if (typeof window === 'undefined' || !theme) return;
+  const selected = theme === 'light' || theme === 'dark' ? theme : 'system';
+  const t = (
+    window as unknown as {
+      __TAURI__?: { core?: { invoke?: (cmd: string, args: unknown) => Promise<unknown> } };
+    }
+  ).__TAURI__;
+  if (!t?.core?.invoke) return;
+  try {
+    await t.core.invoke('set_native_theme', { theme: selected });
+  } catch {
+    /* older desktop shell */
+  }
+}
+
 /* ─── Frontend URL override (self-hosting) ───────────────────────────────
    The switcher lives in the hidden native menu (Kortix → Frontend URL). Its
    "Custom URL…" item can't take text input natively, so it fires a

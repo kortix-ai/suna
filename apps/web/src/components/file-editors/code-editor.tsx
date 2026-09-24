@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 import type { LspDiagnostic } from '@/stores/diagnostics-store';
 import { indentWithTab } from '@codemirror/commands';
 import { lintGutter } from '@codemirror/lint';
+import type { Extension } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
 import {
   WarningCircleIcon as AlertCircle,
@@ -19,169 +20,121 @@ import {
   ArrowCounterClockwiseIcon as RotateCcw,
   FloppyDiskIcon as Save,
 } from '@phosphor-icons/react';
-import { langs } from '@uiw/codemirror-extensions-langs';
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror';
 import { useTheme } from 'next-themes';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { diagnosticsExtension, injectDiagnosticStyles } from './codemirror-diagnostics';
 
-// Map of language aliases to CodeMirror language support
-// Note: langs object from @uiw/codemirror-extensions-langs is keyed by file extensions
-// Using type assertion because TypeScript types are incomplete
-const langsTyped = langs as Record<string, (() => any) | undefined>;
+// Language id (from `getLanguageFromExtension` or the `language` prop) →
+// candidate keys in the @uiw/codemirror-extensions-langs `langs` map, tried in
+// order. The `langs` keys are file extensions ('js', 'py'), not names.
+//
+// The package itself (every CodeMirror language + ~100 legacy modes) is loaded
+// with a dynamic import when the first non-text file opens, never with the
+// editor chunk — see `loadLanguageExtension`.
+const languageMap: Record<string, readonly string[]> = {
+  js: ['js'],
+  javascript: ['js'],
+  jsx: ['jsx'],
+  ts: ['ts'],
+  typescript: ['ts'],
+  tsx: ['tsx'],
+  mjs: ['js'],
+  cjs: ['js'],
+  html: ['html'],
+  htm: ['html'],
+  css: ['css'],
+  scss: ['scss'],
+  sass: ['sass'],
+  less: ['less'],
+  json: ['json'],
+  jsonc: ['json'],
+  json5: ['json'],
+  md: ['md'],
+  markdown: ['md'],
+  mdx: ['md'],
+  python: ['py'],
+  py: ['py'],
+  pyi: ['py'],
+  pyw: ['py'],
+  rust: ['rs'],
+  rs: ['rs'],
+  go: ['go'],
+  golang: ['go'],
+  c: ['c'],
+  h: ['c'],
+  cpp: ['cpp'],
+  cxx: ['cpp'],
+  cc: ['cpp'],
+  hpp: ['cpp'],
+  hxx: ['cpp'],
+  java: ['java'],
+  cs: ['cs'],
+  csharp: ['cs'],
+  kotlin: ['kt'],
+  kt: ['kt'],
+  scala: ['scala'],
+  php: ['php'],
+  ruby: ['rb'],
+  rb: ['rb'],
+  rbx: ['rb'],
+  rjs: ['rb'],
+  perl: ['pl'],
+  pl: ['pl'],
+  pm: ['pl'],
+  lua: ['lua'],
+  r: ['r'],
+  sh: ['sh'],
+  bash: ['bash'],
+  zsh: ['sh'],
+  fish: ['sh'],
+  shell: ['sh'],
+  sql: ['sql'],
+  yaml: ['yaml'],
+  yml: ['yaml'],
+  xml: ['xml'],
+  toml: ['toml'],
+  swift: ['swift'],
+  properties: ['properties'],
+  vue: ['vue'],
+  svelte: ['svelte'],
+  nix: ['nix'],
+  dockerfile: ['dockerfile', 'shell'],
+  graphql: ['graphql'],
+  gql: ['graphql'],
+  proto: ['protobuf', 'proto'],
+  diff: ['diff'],
+  hcl: ['hcl'],
+  dart: ['dart'],
+};
 
-// Debug: uncomment to inspect available CodeMirror languages
-// if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
-//   const availableLangs = Object.keys(langsTyped).filter(
-//     (key) => typeof langsTyped[key] === 'function'
-//   );
-//   console.log('[CodeEditor] Available languages:', availableLangs);
-// }
+type LangsModule = typeof import('@uiw/codemirror-extensions-langs');
+let langsModule: Promise<LangsModule> | null = null;
 
-// Helper function to safely get language extension
-const getLangExtension = (langKey: string): any => {
-  try {
-    const langFn = langsTyped[langKey];
-    if (langFn && typeof langFn === 'function') {
-      const extension = langFn();
-      if (extension) {
-        return extension;
-      }
-      // Extension function exists but returned null/undefined
-      if (process.env.NODE_ENV === 'development') {
-        console.warn(
-          `[CodeEditor] Language extension "${langKey}" function returned null/undefined`,
-        );
-      }
-      return null;
-    }
-
-    // Language not found in langs object
+/** The CodeMirror extension for `language`, or null (text, unknown, failure). */
+export async function loadLanguageExtension(language: string): Promise<Extension | null> {
+  if (language === 'text') return null;
+  const candidates = languageMap[language];
+  if (!candidates) {
     if (process.env.NODE_ENV === 'development') {
-      const availableLangs = Object.keys(langsTyped)
-        .filter((k) => typeof langsTyped[k] === 'function')
-        .sort();
-      console.warn(
-        `[CodeEditor] Language "${langKey}" not found.`,
-        `Looking for similar: ${
-          availableLangs
-            .filter((l) => l.includes(langKey.toLowerCase()) || langKey.toLowerCase().includes(l))
-            .join(', ') || 'none'
-        }`,
-        `Total available: ${availableLangs.length} languages`,
-      );
+      console.warn(`[CodeEditor] No language function found for "${language}"`);
+    }
+    return null;
+  }
+  try {
+    langsModule ??= import('@uiw/codemirror-extensions-langs');
+    const { loadLanguage } = await langsModule;
+    for (const key of candidates) {
+      const extension = loadLanguage(key as Parameters<typeof loadLanguage>[0]);
+      if (extension) return extension;
     }
     return null;
   } catch (error) {
-    console.error(`[CodeEditor] Error loading language extension "${langKey}":`, error);
+    langsModule = null;
+    console.error(`[CodeEditor] Failed to load language extension for "${language}":`, error);
     return null;
   }
-};
-
-// Language mapping: maps language identifiers to CodeMirror language keys
-// IMPORTANT: The keys passed to getLangExtension() must match the keys in the
-// @uiw/codemirror-extensions-langs `langs` object, which are file extensions
-// (e.g., 'js', 'py', 'ts'), NOT language names (e.g., 'javascript', 'python').
-const languageMap: Record<string, () => any> = {
-  // JavaScript/TypeScript family
-  js: () => getLangExtension('js'),
-  javascript: () => getLangExtension('js'),
-  jsx: () => getLangExtension('jsx'),
-  ts: () => getLangExtension('ts'),
-  typescript: () => getLangExtension('ts'),
-  tsx: () => getLangExtension('tsx'),
-  mjs: () => getLangExtension('js'),
-  cjs: () => getLangExtension('js'),
-
-  // Web technologies
-  html: () => getLangExtension('html'),
-  htm: () => getLangExtension('html'),
-  css: () => getLangExtension('css'),
-  scss: () => getLangExtension('scss'),
-  sass: () => getLangExtension('sass'),
-  less: () => getLangExtension('less'),
-
-  // Data formats
-  json: () => getLangExtension('json'),
-  jsonc: () => getLangExtension('json'),
-  json5: () => getLangExtension('json'),
-
-  // Markdown
-  md: () => getLangExtension('md'),
-  markdown: () => getLangExtension('md'),
-  mdx: () => getLangExtension('md'),
-
-  // Python
-  python: () => getLangExtension('py'),
-  py: () => getLangExtension('py'),
-  pyi: () => getLangExtension('py'),
-  pyw: () => getLangExtension('py'),
-
-  // Systems languages
-  rust: () => getLangExtension('rs'),
-  rs: () => getLangExtension('rs'),
-  go: () => getLangExtension('go'),
-  golang: () => getLangExtension('go'),
-  c: () => getLangExtension('c'),
-  h: () => getLangExtension('c'),
-  cpp: () => getLangExtension('cpp'),
-  cxx: () => getLangExtension('cpp'),
-  cc: () => getLangExtension('cpp'),
-  hpp: () => getLangExtension('cpp'),
-  hxx: () => getLangExtension('cpp'),
-
-  // Java family
-  java: () => getLangExtension('java'),
-  cs: () => getLangExtension('cs'),
-  csharp: () => getLangExtension('cs'),
-  kotlin: () => getLangExtension('kt'),
-  kt: () => getLangExtension('kt'),
-  scala: () => getLangExtension('scala'),
-
-  // Scripting languages
-  php: () => getLangExtension('php'),
-  ruby: () => getLangExtension('rb'),
-  rb: () => getLangExtension('rb'),
-  rbx: () => getLangExtension('rb'),
-  rjs: () => getLangExtension('rb'),
-  perl: () => getLangExtension('pl'),
-  pl: () => getLangExtension('pl'),
-  pm: () => getLangExtension('pl'),
-  lua: () => getLangExtension('lua'),
-  r: () => getLangExtension('r'),
-
-  // Shell scripts
-  sh: () => getLangExtension('sh'),
-  bash: () => getLangExtension('bash'),
-  zsh: () => getLangExtension('sh'),
-  fish: () => getLangExtension('sh'),
-  shell: () => getLangExtension('sh'),
-
-  // Data/Config
-  sql: () => getLangExtension('sql'),
-  yaml: () => getLangExtension('yaml'),
-  yml: () => getLangExtension('yaml'),
-  xml: () => getLangExtension('xml'),
-  toml: () => getLangExtension('toml'),
-
-  // Mobile
-  swift: () => getLangExtension('swift'),
-
-  // Properties / config (KEY=value with # comments) — used for .env, .ini, .properties, .conf
-  properties: () => getLangExtension('properties'),
-
-  // Other
-  vue: () => getLangExtension('vue'),
-  svelte: () => getLangExtension('svelte'),
-  nix: () => getLangExtension('nix'),
-  dockerfile: () => getLangExtension('dockerfile') ?? getLangExtension('shell'),
-  graphql: () => getLangExtension('graphql'),
-  gql: () => getLangExtension('graphql'),
-  proto: () => getLangExtension('protobuf') ?? getLangExtension('proto'),
-  diff: () => getLangExtension('diff'),
-  hcl: () => getLangExtension('hcl'),
-  dart: () => getLangExtension('dart'),
-};
+}
 
 // Get language from file extension
 export function getLanguageFromExtension(fileName: string, tI18nComplete: UiTranslator): string {
@@ -478,36 +431,18 @@ export function CodeEditor({
   // Determine language
   const language = propLanguage || getLanguageFromExtension(fileName, tI18nComplete);
 
-  // Get language extension
-  const langExtension = useMemo(() => {
-    try {
-      // Handle 'text' language - no syntax highlighting needed
-      if (language === 'text') {
-        return [];
-      }
-
-      const langFn = languageMap[language];
-      if (!langFn || typeof langFn !== 'function') {
-        if (process.env.NODE_ENV === 'development') {
-          console.warn(`[CodeEditor] No language function found for "${language}"`);
-        }
-        return [];
-      }
-
-      const extension = langFn();
-      // Only return if extension is truthy (not null/undefined)
-      if (extension) {
-        return [extension];
-      }
-
-      if (process.env.NODE_ENV === 'development') {
-        console.warn(`[CodeEditor] Language extension for "${language}" returned null/undefined`);
-      }
-      return [];
-    } catch (error) {
-      console.error(`[CodeEditor] Failed to load language extension for "${language}":`, error);
-      return [];
-    }
+  // Language extension, loaded on demand. Until it resolves the editor shows
+  // the content without highlighting.
+  const [langExtension, setLangExtension] = useState<Extension[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    setLangExtension((prev) => (prev.length ? [] : prev));
+    void loadLanguageExtension(language).then((extension) => {
+      if (!cancelled) setLangExtension(extension ? [extension] : []);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [language]);
 
   // Manual save function

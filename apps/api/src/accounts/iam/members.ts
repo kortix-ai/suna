@@ -47,7 +47,7 @@ import { auditIam, readBody } from './helpers';
  * WHICH principal `/effective` answers about, and with WHICH credential.
  *
  * Probing YOURSELF returns the verdict of the real gate — same Actor, same
- * credential, so an agent session's probe now folds its `kortix_cli` grant and
+ * credential, so an agent session's probe now folds its `kortix_permissions` grant and
  * its token's project scope exactly like the route it is asking about. That
  * divergence (`authorize(targetUserId, accountId, action, target)` with the
  * acting token dropped) is why the UI could offer a control the API then 403'd.

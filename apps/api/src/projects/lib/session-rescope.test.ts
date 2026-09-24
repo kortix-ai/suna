@@ -336,7 +336,11 @@ describe('the scope route surfaces the narrowing', () => {
  */
 describe('the scope route validates for the session OWNER, not the caller', () => {
   test('availability is resolved against createdBy', () => {
-    expect(ROUTE).toContain('const secretsPrincipal = visible.row.createdBy ?? loaded.userId');
+    // The creator stays the legacy principal; under the agent-principal flag
+    // the session's personal owner (spec 2026-09-22 §2.3) replaces it —
+    // still the SESSION, never the caller.
+    expect(ROUTE).toContain('const secretsPrincipal = await resolveSessionPersonalOwner(');
+    expect(ROUTE).toContain('legacyUserId: visible.row.createdBy ?? loaded.userId');
     expect(ROUTE).toContain('listResolvedProjectSecrets(projectId, secretsPrincipal)');
   });
 

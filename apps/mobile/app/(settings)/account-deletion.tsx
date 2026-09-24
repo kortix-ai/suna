@@ -1,483 +1,377 @@
+/**
+ * Delete account — opened from Account → Advanced → Delete account.
+ *
+ * Settings-list layout (apps/mobile/design.md):
+ * - No deletion scheduled: What gets deleted, When (In 30 days / Immediately),
+ *   and one destructive pill.
+ * - Deletion scheduled: the date and a Cancel deletion pill.
+ *
+ * The pill opens ONE AlertDialog with two steps (lib/account-deletion/
+ * confirm-flow.ts), for both timings:
+ * 1. Type the confirm word (DELETE) → Continue.
+ * 2. "Are you sure? Everything will be deleted." → Delete, which arms one
+ *    second after the step appears.
+ * Taps alone never delete. The steps swap inside one dialog, so two overlays
+ * never stack. A failed request stays in step 2, shown in its description.
+ */
+
 import * as React from 'react';
-import { Pressable, View, Alert, ScrollView, TextInput } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
-import { useColorScheme } from 'nativewind';
-import { useLanguage } from '@/contexts';
+import { Keyboard, View, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
+import {
+  CalendarIcon as Calendar,
+  ClockIcon as Clock,
+  CreditCardIcon as CreditCard,
+  FolderIcon as FolderClosed,
+  InfoIcon as Info,
+  KeyIcon as KeyRound,
+  LightningIcon as Zap,
+} from '@/lib/icons';
+
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Text } from '@/components/ui/text';
-import { Icon } from '@/components/ui/icon';
-import { Trash2, Calendar, AlertTriangle, CheckCircle, Zap, Clock, Info } from 'lucide-react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { haptics } from '@/lib/haptics';
-import { KortixLoader } from '@/components/ui';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { SettingsGroup, SettingsPage, SettingsRow } from '@/components/kortix/settings-list';
+import { useToast } from '@/components/kortix/toast-provider';
+import { useLanguage } from '@/contexts';
 import {
   useAccountDeletionStatus,
-  useRequestAccountDeletion,
   useCancelAccountDeletion,
   useDeleteAccountImmediately,
+  useRequestAccountDeletion,
 } from '@/hooks/useAccountDeletion';
+import {
+  FINAL_CONFIRM_ARM_DELAY_MS,
+  canConfirmDeletion,
+  canContinueToFinal,
+  type DeleteConfirmStep,
+} from '@/lib/account-deletion/confirm-flow';
+import { haptics } from '@/lib/haptics';
 
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+type DeletionTiming = 'scheduled' | 'immediate';
 
-type DeletionType = 'grace-period' | 'immediate';
+const formatDate = (value: string | null | undefined) =>
+  value
+    ? new Date(value).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+    : '';
 
 export default function AccountDeletionScreen() {
   const { t } = useLanguage();
-  const { colorScheme } = useColorScheme();
   const router = useRouter();
-  const insets = useSafeAreaInsets();
-  const { data: deletionStatus, isLoading: isCheckingStatus } = useAccountDeletionStatus();
+  const toast = useToast();
+  const { width: windowWidth } = useWindowDimensions();
+  const { data: status, isLoading } = useAccountDeletionStatus();
   const requestDeletion = useRequestAccountDeletion();
   const cancelDeletion = useCancelAccountDeletion();
   const deleteImmediately = useDeleteAccountImmediately();
+
+  const [timing, setTiming] = React.useState<DeletionTiming>('scheduled');
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
+  const [confirmStep, setConfirmStep] = React.useState<DeleteConfirmStep>('type');
   const [confirmText, setConfirmText] = React.useState('');
-  const [deletionType, setDeletionType] = React.useState<DeletionType>('grace-period');
+  const [finalArmed, setFinalArmed] = React.useState(false);
+  const [failure, setFailure] = React.useState<string | null>(null);
+  // Blocks a second request from a double tap that lands before `isPending`
+  // re-renders the button as disabled.
+  const submittingRef = React.useRef(false);
 
-  const accountDeletionSupported = deletionStatus?.supported ?? !isCheckingStatus;
+  const immediate = timing === 'immediate';
+  const confirmWord = t('accountDeletion.deletePlaceholder', 'DELETE');
+  const isDeleting = requestDeletion.isPending || deleteImmediately.isPending;
+  const canContinue = canContinueToFinal({ input: confirmText, word: confirmWord, busy: isDeleting });
+  const canDelete = canConfirmDeletion({
+    step: confirmStep,
+    input: confirmText,
+    word: confirmWord,
+    armed: finalArmed,
+    busy: isDeleting,
+  });
 
-  const formatDate = (dateString: string | null) => {
-    if (!dateString) return '';
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    });
+  // Step 2's Delete button arms a moment after the question appears, so a
+  // double tap on Continue cannot also press Delete.
+  React.useEffect(() => {
+    if (!confirmOpen || confirmStep !== 'final') return;
+    setFinalArmed(false);
+    const timer = setTimeout(() => setFinalArmed(true), FINAL_CONFIRM_ARM_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [confirmOpen, confirmStep]);
+
+  const selectTiming = (value: DeletionTiming) => {
+    haptics.selection();
+    setTiming(value);
   };
 
-  const handleRequestDeletion = async () => {
-    if (confirmText !== t('accountDeletion.deletePlaceholder')) {
-      haptics.warning();
-      return;
-    }
+  const openConfirm = () => {
+    haptics.warning();
+    setConfirmStep('type');
+    setConfirmText('');
+    setFinalArmed(false);
+    setFailure(null);
+    setConfirmOpen(true);
+  };
 
+  const continueToFinal = () => {
+    if (!canContinue) return;
+    Keyboard.dismiss();
+    haptics.warning();
+    setFailure(null);
+    setConfirmStep('final');
+  };
+
+  const confirmDeletion = async () => {
+    if (!canDelete || submittingRef.current) return;
+    submittingRef.current = true;
     haptics.medium();
-
+    setFailure(null);
     try {
-      if (deletionType === 'immediate') {
+      if (immediate) {
+        // The hook signs out and clears every cached query on success.
         await deleteImmediately.mutateAsync();
         haptics.success();
-
-        setConfirmText('');
-
-        // Immediate deletion succeeded → account gone. Navigate to root (auth screen).
-        Alert.alert(
-          t('accountDeletion.accountDeleted') || 'Account deleted',
-          t('accountDeletion.accountDeletedSuccess') || 'Your account has been permanently deleted.',
-          [
-            {
-              text: t('common.ok'),
-              onPress: () => {
-                router.replace('/');
-              },
-            },
-          ],
-        );
+        setConfirmOpen(false);
+        router.replace('/');
       } else {
+        // The status query updates in place: this screen switches to the
+        // scheduled state behind the closing dialog.
         await requestDeletion.mutateAsync('User requested deletion from mobile');
         haptics.success();
-
-        setConfirmText('');
-
-        Alert.alert(
-          t('accountDeletion.deletionScheduled'),
-          t('accountDeletion.deletionScheduledSuccess'),
-          [
-            {
-              text: t('common.ok'),
-              onPress: () => router.back(),
-            },
-          ],
-        );
+        setConfirmOpen(false);
+        toast.success(t('accountDeletion.deletionScheduled', 'Deletion scheduled'));
       }
     } catch (error: any) {
       haptics.warning();
-      Alert.alert(t('common.error'), error?.message || t('accountDeletion.failedToRequest'));
+      setFailure(
+        error?.message || t('accountDeletion.failedToRequest', 'Failed to request account deletion')
+      );
+    } finally {
+      submittingRef.current = false;
     }
   };
 
-  const handleCancelDeletion = () => {
-    haptics.warning();
-
-    Alert.alert(t('accountDeletion.cancelDeletionTitle'), t('accountDeletion.cancelDeletionDescription'), [
-      {
-        text: t('accountDeletion.back'),
-        style: 'cancel',
-      },
-      {
-        text: t('accountDeletion.cancelDeletion'),
-        onPress: async () => {
-          haptics.medium();
-          try {
-            await cancelDeletion.mutateAsync();
-            haptics.success();
-
-            Alert.alert(
-              t('accountDeletion.deletionCancelled'),
-              t('accountDeletion.deletionCancelledSuccess'),
-              [{ text: t('common.ok') }]
-            );
-          } catch (error: any) {
-            haptics.warning();
-            Alert.alert(t('common.error'), error?.message || t('accountDeletion.failedToCancel'));
-          }
-        },
-      },
-    ]);
+  const handleCancelDeletion = async () => {
+    haptics.tap();
+    try {
+      await cancelDeletion.mutateAsync();
+      haptics.success();
+      toast.success(t('accountDeletion.deletionCancelled', 'Deletion cancelled'));
+    } catch (error: any) {
+      haptics.warning();
+      toast.error(
+        error?.message || t('accountDeletion.failedToCancel', 'Failed to cancel account deletion')
+      );
+    }
   };
 
-  const hasPendingDeletion = deletionStatus?.has_pending_deletion;
-  const isLoading =
-    requestDeletion.isPending ||
-    cancelDeletion.isPending ||
-    deleteImmediately.isPending ||
-    isCheckingStatus;
-
-  // ── Unsupported environment state ──
-  if (!isCheckingStatus && !accountDeletionSupported) {
+  if (isLoading) {
     return (
-      <ScrollView
-        className="flex-1 bg-background"
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
-      >
-        <View className="px-6 pt-4 pb-8">
-          <View className="mb-8 items-center pt-4">
-            <View className="mb-3 h-16 w-16 items-center justify-center rounded-full bg-muted">
-              <Icon as={Info} size={28} className="text-muted-foreground" strokeWidth={2} />
-            </View>
-            <Text className="mb-1 text-2xl font-roobert-semibold text-foreground tracking-tight">
-              {t('accountDeletion.notAvailableTitle') || 'Not available'}
-            </Text>
-            <Text className="text-sm font-roobert text-muted-foreground text-center leading-5">
-              {t('accountDeletion.notAvailableDescription') ||
-                'Account deletion is not available in this environment.'}
-            </Text>
-          </View>
+      <SettingsPage>
+        <View className="items-center py-16">
+          <KortixLoader />
         </View>
-      </ScrollView>
+      </SettingsPage>
+    );
+  }
+
+  if (!status?.supported) {
+    return (
+      <SettingsPage>
+        <SettingsGroup>
+          <SettingsRow
+            icon={Info}
+            label={t('accountDeletion.notAvailableTitle', 'Not available on this server')}
+          />
+        </SettingsGroup>
+      </SettingsPage>
+    );
+  }
+
+  if (status.has_pending_deletion) {
+    return (
+      <SettingsPage>
+        <SettingsGroup>
+          <SettingsRow
+            icon={Calendar}
+            label={t('accountDeletion.scheduledFor', 'Scheduled for')}
+            value={formatDate(status.deletion_scheduled_for)}
+          />
+        </SettingsGroup>
+        <Button
+          variant="secondary"
+          size="lg"
+          className="rounded-full"
+          disabled={cancelDeletion.isPending}
+          onPress={handleCancelDeletion}>
+          <Text>
+            {cancelDeletion.isPending
+              ? t('accountDeletion.cancelling', 'Cancelling…')
+              : t('accountDeletion.cancelDeletion', 'Cancel deletion')}
+          </Text>
+        </Button>
+      </SettingsPage>
     );
   }
 
   return (
-    <ScrollView
-      className="flex-1 bg-background"
-      showsVerticalScrollIndicator={false}
-      contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
-      keyboardShouldPersistTaps="handled"
-    >
-      <View className="px-6 pt-4 pb-8">
-        {hasPendingDeletion ? (
-          <>
-            <View className="mb-8 items-center pt-4">
-              <View className="mb-3 h-16 w-16 items-center justify-center rounded-full bg-destructive/10">
-                <Icon as={Calendar} size={28} className="text-destructive" strokeWidth={2} />
-              </View>
-              <Text className="mb-1 text-2xl font-roobert-semibold text-foreground tracking-tight">
-                {t('accountDeletion.deletionScheduled')}
-              </Text>
-              <Text className="text-sm font-roobert text-muted-foreground text-center">
-                {t('accountDeletion.accountWillBeDeleted')}
-              </Text>
-            </View>
+    <>
+      <SettingsPage>
+        <SettingsGroup title={t('accountDeletion.whatWillBeDeleted', 'What gets deleted')}>
+          <SettingsRow
+            icon={FolderClosed}
+            label={t('accountDeletion.projectsAndSessions', 'Projects and sessions')}
+          />
+          <SettingsRow
+            icon={KeyRound}
+            label={t('accountDeletion.credentialsAndConnections', 'Credentials and connections')}
+          />
+          <SettingsRow
+            icon={CreditCard}
+            label={t('accountDeletion.subscriptionAndBilling', 'Subscription and billing')}
+          />
+        </SettingsGroup>
 
-            <View className="mb-6">
-              <View className="bg-destructive/5 border border-destructive/20 rounded-3xl p-5">
-                <View className="flex-row items-center gap-3 mb-4">
-                  <View className="h-11 w-11 rounded-full bg-destructive/10 items-center justify-center">
-                    <Icon as={Calendar} size={20} className="text-destructive" strokeWidth={2.5} />
-                  </View>
-                  <View className="flex-1">
-                    <Text className="text-xs font-roobert-medium text-muted-foreground mb-1">
-                      {t('accountDeletion.scheduledFor')}
-                    </Text>
-                    <Text className="text-sm font-roobert-semibold text-foreground">
-                      {formatDate(deletionStatus?.deletion_scheduled_for ?? null)}
-                    </Text>
-                  </View>
-                </View>
+        <SettingsGroup title={t('accountDeletion.when', 'When')}>
+          <SettingsRow
+            icon={Clock}
+            label={t('accountDeletion.in30Days', 'In 30 days')}
+            checked={!immediate}
+            right={null}
+            onPress={() => selectTiming('scheduled')}
+          />
+          <SettingsRow
+            icon={Zap}
+            label={t('accountDeletion.immediately', 'Immediately')}
+            checked={immediate}
+            right={null}
+            onPress={() => selectTiming('immediate')}
+          />
+        </SettingsGroup>
 
-                <View className="pt-3 border-t border-destructive/20">
-                  <Text className="text-sm font-roobert text-muted-foreground leading-5">
-                    {t('accountDeletion.cancelRequestDescription')}
-                  </Text>
-                </View>
-              </View>
-            </View>
+        <Button variant="destructive" size="lg" className="rounded-full" onPress={openConfirm}>
+          <Text>{t('accountDeletion.deleteAccount', 'Delete account')}</Text>
+        </Button>
+      </SettingsPage>
 
-            <ActionButton
-              onPress={handleCancelDeletion}
-              disabled={isLoading}
-              isLoading={cancelDeletion.isPending}
-              icon={CheckCircle}
-              label={t('accountDeletion.cancelDeletion')}
-              variant="primary"
-            />
-          </>
-        ) : (
-          <>
-            <View className="mb-8 items-center pt-4">
-              <View className="mb-3 h-16 w-16 items-center justify-center rounded-full bg-destructive/10">
-                <Icon as={Trash2} size={28} className="text-destructive" strokeWidth={2} />
-              </View>
-              <Text className="mb-1 text-2xl font-roobert-semibold text-foreground tracking-tight">
-                {t('accountDeletion.deleteYourAccount')}
-              </Text>
-              <Text className="text-sm font-roobert text-muted-foreground text-center">
-                {t('accountDeletion.actionCannotBeUndone')}
-              </Text>
-            </View>
+      <AlertDialog
+        open={confirmOpen}
+        onOpenChange={(open) => {
+          // Keep the dialog up until an in-flight request settles.
+          if (!isDeleting) setConfirmOpen(open);
+        }}>
+        {/* Explicit width: the confirm field is `w-full`, which collapses to
+            its content inside the native overlay wrappers (see AppearanceRow). */}
+        <AlertDialogContent className="rounded-3xl" style={{ width: Math.min(windowWidth - 32, 420) }}>
+          {confirmStep === 'type' ? (
+            <>
+              {/* Step 1: type the confirm word. */}
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  {immediate
+                    ? t('accountDeletion.deleteNowTitle', 'Delete account now?')
+                    : t('accountDeletion.deleteTitle', 'Delete account?')}
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  {immediate
+                    ? t(
+                        'accountDeletion.deleteNowDescription',
+                        'Your account and its data are deleted now. This cannot be undone.'
+                      )
+                    : t(
+                        'accountDeletion.deleteScheduledDescription',
+                        'Your account is deleted in 30 days. You can cancel before then.'
+                      )}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
 
-            <View className="mb-6">
-              <Text className="mb-3 text-xs font-roobert-medium text-muted-foreground uppercase tracking-wider">
-                {t('accountDeletion.whatWillBeDeleted')}
-              </Text>
-
-              <View className="bg-card border border-border/40 rounded-2xl p-5">
-                <View className="gap-3">
-                  <DataItem text={t('accountDeletion.allAgents')} />
-                  <DataItem text={t('accountDeletion.allThreads')} />
-                  <DataItem text={t('accountDeletion.allCredentials')} />
-                  <DataItem text={t('accountDeletion.subscriptionData')} />
-                </View>
-              </View>
-            </View>
-
-            {/* Deletion type selector — grace period vs immediate (matches web) */}
-            <View className="mb-6">
-              <Text className="mb-3 text-xs font-roobert-medium text-muted-foreground uppercase tracking-wider">
-                {t('accountDeletion.deletionType') || 'When to delete'}
-              </Text>
-
-              <View className="gap-2">
-                <DeletionTypeOption
-                  selected={deletionType === 'grace-period'}
-                  onPress={() => {
-                    haptics.selection();
-                    setDeletionType('grace-period');
-                  }}
-                  icon={Clock}
-                  title={t('accountDeletion.gracePeriodOption') || '30-day grace period'}
-                  description={t('accountDeletion.gracePeriodOptionDescription') || 'Your account will be scheduled for deletion in 30 days. You can cancel anytime before then.'}
-                  variant="primary"
-                />
-                <DeletionTypeOption
-                  selected={deletionType === 'immediate'}
-                  onPress={() => {
-                    haptics.selection();
-                    setDeletionType('immediate');
-                  }}
-                  icon={Zap}
-                  title={t('accountDeletion.immediateOption') || 'Delete immediately'}
-                  description={t('accountDeletion.immediateOptionDescription') || 'Permanently delete your account right now. This cannot be undone.'}
-                  variant="destructive"
-                />
-              </View>
-            </View>
-
-            {deletionType === 'grace-period' && (
-              <View className="mb-6 bg-primary/5 rounded-2xl p-5">
-                <View className="flex-row items-start gap-3">
-                  <View className="h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                    <Icon as={AlertTriangle} size={18} className="text-primary" strokeWidth={2.5} />
-                  </View>
-                  <View className="flex-1">
-                    <Text className="text-sm font-roobert-semibold text-foreground mb-1">
-                      {t('accountDeletion.gracePeriod')}
-                    </Text>
-                    <Text className="text-sm font-roobert text-muted-foreground leading-5">
-                      {t('accountDeletion.gracePeriodDescription')}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-            )}
-
-            {deletionType === 'immediate' && (
-              <View className="mb-6 bg-destructive/5 border border-destructive/20 rounded-2xl p-5">
-                <View className="flex-row items-start gap-3">
-                  <View className="h-10 w-10 items-center justify-center rounded-full bg-destructive/10">
-                    <Icon as={AlertTriangle} size={18} className="text-destructive" strokeWidth={2.5} />
-                  </View>
-                  <View className="flex-1">
-                    <Text className="text-sm font-roobert-semibold text-destructive mb-1">
-                      {t('accountDeletion.immediateWarning') || 'This is permanent'}
-                    </Text>
-                    <Text className="text-sm font-roobert text-muted-foreground leading-5">
-                      {t('accountDeletion.immediateWarningDescription') ||
-                        'Your account and all associated data will be deleted instantly. There is no grace period and no way to recover.'}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-            )}
-
-            <View className="mb-6">
-              <Text className="mb-3 text-sm font-roobert-medium text-foreground">
-                {t('accountDeletion.typeDeleteToConfirm', { text: t('accountDeletion.deletePlaceholder') })}
-              </Text>
-              <TextInput
+              <Input
                 value={confirmText}
-                onChangeText={(text) => setConfirmText(text.toUpperCase())}
-                placeholder={t('accountDeletion.deletePlaceholder')}
-                placeholderTextColor={colorScheme === 'dark' ? '#71717A' : '#A1A1AA'}
-                className="bg-card border border-border/40 rounded-2xl p-4 text-foreground font-roobert-semibold text-base tracking-wide"
+                onChangeText={setConfirmText}
+                placeholder={t('accountDeletion.typeDeleteToConfirm', {
+                  text: confirmWord,
+                  defaultValue: 'Type {{text}} to confirm',
+                })}
+                accessibilityLabel={t('accountDeletion.typeDeleteToConfirm', {
+                  text: confirmWord,
+                  defaultValue: 'Type {{text}} to confirm',
+                })}
+                autoFocus
                 autoCapitalize="characters"
                 autoCorrect={false}
-                returnKeyType="done"
+                autoComplete="off"
+                spellCheck={false}
+                returnKeyType="next"
+                onSubmitEditing={continueToFinal}
               />
-            </View>
 
-            <ActionButton
-              onPress={handleRequestDeletion}
-              disabled={isLoading || confirmText !== t('accountDeletion.deletePlaceholder')}
-              isLoading={requestDeletion.isPending || deleteImmediately.isPending}
-              icon={deletionType === 'immediate' ? Zap : Trash2}
-              label={
-                deletionType === 'immediate'
-                  ? t('accountDeletion.deleteAccountNow') || 'Delete account now'
-                  : t('accountDeletion.deleteAccount')
-              }
-              variant="destructive"
-            />
-          </>
-        )}
-      </View>
-    </ScrollView>
-  );
-}
+              <AlertDialogFooter>
+                <AlertDialogCancel asChild>
+                  <Button variant="secondary" size="lg" className="rounded-full">
+                    <Text>{t('common.cancel', 'Cancel')}</Text>
+                  </Button>
+                </AlertDialogCancel>
+                <Button
+                  variant="destructive"
+                  size="lg"
+                  className="rounded-full"
+                  disabled={!canContinue}
+                  onPress={continueToFinal}>
+                  <Text>{t('common.continue', 'Continue')}</Text>
+                </Button>
+              </AlertDialogFooter>
+            </>
+          ) : (
+            <>
+              {/* Step 2: the second, separate question. */}
+              <AlertDialogHeader>
+                <AlertDialogTitle>{t('accountDeletion.finalTitle', 'Are you sure?')}</AlertDialogTitle>
+                <AlertDialogDescription className={failure ? 'text-destructive' : undefined}>
+                  {failure ??
+                    (immediate
+                      ? t(
+                          'accountDeletion.finalDescriptionNow',
+                          'Everything in your account is deleted now: projects, sessions, credentials, and billing. This cannot be undone.'
+                        )
+                      : t(
+                          'accountDeletion.finalDescriptionScheduled',
+                          'Everything in your account is deleted in 30 days: projects, sessions, credentials, and billing. You can cancel before then.'
+                        ))}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
 
-function DataItem({ text }: { text: string }) {
-  return (
-    <View className="flex-row items-start gap-3">
-      <View className="w-1.5 h-1.5 rounded-full bg-muted-foreground mt-2" />
-      <Text className="text-sm font-roobert text-foreground flex-1 leading-5">{text}</Text>
-    </View>
-  );
-}
-
-interface DeletionTypeOptionProps {
-  selected: boolean;
-  onPress: () => void;
-  icon: any;
-  title: string;
-  description: string;
-  variant: 'primary' | 'destructive';
-}
-
-function DeletionTypeOption({ selected, onPress, icon: IconComponent, title, description, variant }: DeletionTypeOptionProps) {
-  const iconBg = variant === 'destructive' ? 'bg-destructive/10' : 'bg-primary/10';
-  const iconColor = variant === 'destructive' ? 'text-destructive' : 'text-primary';
-  const borderClass = selected
-    ? variant === 'destructive'
-      ? 'border-destructive'
-      : 'border-primary'
-    : 'border-border/40';
-  const bgClass = selected
-    ? variant === 'destructive'
-      ? 'bg-destructive/5'
-      : 'bg-primary/5'
-    : 'bg-card';
-
-  return (
-    <Pressable
-      onPress={onPress}
-      className={`rounded-2xl border-2 p-4 ${bgClass} ${borderClass}`}
-    >
-      <View className="flex-row items-start gap-3">
-        <View className={`h-10 w-10 items-center justify-center rounded-full ${iconBg}`}>
-          <Icon as={IconComponent} size={18} className={iconColor} strokeWidth={2.5} />
-        </View>
-        <View className="flex-1">
-          <View className="flex-row items-center justify-between mb-1">
-            <Text className="text-sm font-roobert-semibold text-foreground">{title}</Text>
-            <View
-              className={`h-5 w-5 rounded-full border-2 items-center justify-center ${
-                selected
-                  ? variant === 'destructive'
-                    ? 'border-destructive bg-destructive'
-                    : 'border-primary bg-primary'
-                  : 'border-muted-foreground/30'
-              }`}
-            >
-              {selected && (
-                <View className="h-2 w-2 rounded-full bg-background" />
-              )}
-            </View>
-          </View>
-          <Text className="text-xs font-roobert text-muted-foreground leading-4">
-            {description}
-          </Text>
-        </View>
-      </View>
-    </Pressable>
-  );
-}
-
-interface ActionButtonProps {
-  onPress: () => void;
-  disabled: boolean;
-  isLoading: boolean;
-  icon: any;
-  label: string;
-  variant: 'primary' | 'destructive';
-}
-
-function ActionButton({
-  onPress,
-  disabled,
-  isLoading,
-  icon: IconComponent,
-  label,
-  variant,
-}: ActionButtonProps) {
-  const { t } = useLanguage();
-  const { colorScheme } = useColorScheme();
-  const scale = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const handlePressIn = () => {
-    if (!disabled) {
-      scale.value = withSpring(0.98, { damping: 15, stiffness: 400 });
-    }
-  };
-
-  const handlePressOut = () => {
-    scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-  };
-
-  const bgClass = disabled ? 'bg-muted/50' : variant === 'destructive' ? 'bg-destructive' : 'bg-primary';
-
-  const textColor = disabled
-    ? 'text-muted-foreground'
-    : variant === 'destructive'
-      ? 'text-destructive-foreground'
-      : 'text-primary-foreground';
-
-  return (
-    <AnimatedPressable
-      onPress={onPress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      style={animatedStyle}
-      disabled={disabled}
-      className={`rounded-full items-center justify-center flex-row gap-2 px-6 py-4 ${bgClass}`}
-    >
-      {isLoading ? (
-        <>
-          <KortixLoader size="small" forceTheme={colorScheme === 'dark' ? 'dark' : 'light'} />
-          <Text className={`${textColor} text-sm font-roobert-medium`}>
-            {t('accountDeletion.processing')}
-          </Text>
-        </>
-      ) : (
-        <>
-          <Icon as={IconComponent} size={16} className={textColor} strokeWidth={2.5} />
-          <Text className={`${textColor} text-sm font-roobert-medium`}>{label}</Text>
-        </>
-      )}
-    </AnimatedPressable>
+              <AlertDialogFooter>
+                <AlertDialogCancel asChild disabled={isDeleting}>
+                  <Button variant="secondary" size="lg" className="rounded-full">
+                    <Text>{t('common.cancel', 'Cancel')}</Text>
+                  </Button>
+                </AlertDialogCancel>
+                <Button
+                  variant="destructive"
+                  size="lg"
+                  className="rounded-full"
+                  disabled={!canDelete}
+                  onPress={confirmDeletion}>
+                  <Text>
+                    {isDeleting
+                      ? t('accountDeletion.deleting', 'Deleting…')
+                      : immediate
+                        ? t('accountDeletion.deleteNow', 'Delete now')
+                        : t('accountDeletion.deleteAccount', 'Delete account')}
+                  </Text>
+                </Button>
+              </AlertDialogFooter>
+            </>
+          )}
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

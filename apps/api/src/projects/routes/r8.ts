@@ -33,6 +33,7 @@ import {
   sessionIsTombstoned,
 } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
+import { clearSessionOnBehalfOfForPrompt } from '../lib/on-behalf-of';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { resolveChangeRequestBase, resolveChangeRequestOrigin } from '../change-request-policy';
 import { PROJECT_ACTIONS } from '../../iam';
@@ -75,6 +76,7 @@ import {
   serializePrompt,
 } from '../lib/session-prompt-view';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
+import { isWireIdAheadOf } from '../wire-message-id';
 
 // POST /v1/projects/:projectId/sessions/:sessionId/start
 // THE unified session-open endpoint. One idempotent call that provisions a
@@ -630,6 +632,19 @@ projectsApp.openapi(
     // back to the session's own agent when the prompt names none.
     await resolveAndAuthorizeAgent(c, loaded, projectId, overrides.agent, visible.row.agentName);
 
+    // Spec 2026-09-22 §2.3 (closes V6): the first prompt from a HUMAN other than
+    // the session's `on_behalf_of` clears it permanently. The agent keeps its
+    // own authority; it loses the creator's personal resources, so the person
+    // prompting never acts through another person's accounts. An agent-session
+    // credential is not a human prompter and clears nothing.
+    if (!isProjectSessionPrincipal(c)) {
+      await clearSessionOnBehalfOfForPrompt({
+        accountId: loaded.row.accountId,
+        sessionId,
+        prompterUserId: loaded.userId,
+      });
+    }
+
     // NO connector pre-flight here. A prompt used to be refused 409
     // `CONNECTOR_CONNECTION_REQUIRED` when a connector the session declared had
     // nothing connected. That gate could not be cleared from the product: a
@@ -679,7 +694,15 @@ projectsApp.openapi(
       // not read yet — for a message the user typed before their last reload.
       // The drain re-mints against the live root before delivering, which is
       // the only place that can place the id correctly.
-      ...(body.remint_on_delivery === true ? { remintOnDelivery: true } : {}),
+      //
+      // A second trigger, set by the server: an id more than an hour AHEAD of
+      // the clock. No transcript placed it — `kortix sessions send` minted the
+      // HIGH bits of the id clock (`msg_1a0d…`, ~40 days out) until 2026-09 —
+      // and delivered as-is it renders every later turn above this prompt.
+      // Accepted rather than refused, so every installed CLI keeps working.
+      ...(body.remint_on_delivery === true || isWireIdAheadOf(messageId, Date.now())
+        ? { remintOnDelivery: true }
+        : {}),
       // SEND order across surfaces whose POSTs race — see the batch sort in
       // the drain. Bounded to the near past/future so a wrong client clock
       // cannot pin its prompts to the head or tail of every future batch.

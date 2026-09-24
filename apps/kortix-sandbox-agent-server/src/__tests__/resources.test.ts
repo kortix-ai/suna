@@ -19,6 +19,7 @@ const MEMINFO = `MemTotal:        3985760 kB
 MemFree:          123456 kB
 MemAvailable:     398576 kB
 Buffers:           10000 kB
+Shmem:           1999320 kB
 SwapTotal:             0 kB
 SwapFree:              0 kB
 `
@@ -37,7 +38,7 @@ function snapshot(overrides: Partial<ResourceSnapshot> = {}): ResourceSnapshot {
     load: [0.5, 0.4, 0.3],
     cpus: 2,
     memory: { totalMb: 3892, availableMb: 2000, usedPct: 49, swapTotalMb: 0, swapFreeMb: 0 },
-    cgroup: { currentMb: 1000, maxMb: 3000, usedPct: 33, oomKills: 0 },
+    cgroup: { currentMb: 1000, workingSetMb: 1000, maxMb: 3000, usedPct: 33, oomKills: 0 },
     disks: [{ path: '/workspace', totalMb: 10000, freeMb: 5000, usedPct: 50 }],
     daemon: { pid: 451, rssMb: 180, threads: 10, state: 'S' },
     runtime: { pid: 2423, rssMb: 2800, threads: 41, state: 'S' },
@@ -49,6 +50,7 @@ function snapshot(overrides: Partial<ResourceSnapshot> = {}): ResourceSnapshot {
 describe('parsers', () => {
   test('meminfo → MB and used% from MemAvailable', () => {
     const m = parseMeminfo(MEMINFO)
+    expect(m.shmemMb).toBe(1952)
     expect(m.totalMb).toBe(3892)
     expect(m.availableMb).toBe(389)
     expect(m.usedPct).toBe(90)
@@ -67,11 +69,63 @@ describe('parsers', () => {
   test('cgroup v2: "max" is unlimited, oom_kill counter is read', () => {
     expect(cgroupSnapshot('1073741824\n', 'max\n', 'low 0\nhigh 0\nmax 0\noom 0\noom_kill 2\n')).toEqual({
       currentMb: 1024,
+      workingSetMb: 1024,
       maxMb: null,
       usedPct: null,
       oomKills: 2,
     })
     expect(cgroupSnapshot('2147483648', '3221225472', null).usedPct).toBe(67)
+  })
+
+  // Prod 2026-09-22: `tsc --noEmit` filled the page cache. memory.current read
+  // 11315 of 12288 MB (92 %), the guard aborted the turn twice, and anon memory
+  // was under 1 GB. The kernel reclaims inactive file pages before it OOM-kills,
+  // so used% is the working set: current minus inactive_file.
+  test('cgroup v2: used% is the working set, not the reclaimable page cache', () => {
+    const current = String(11315 * 1024 * 1024)
+    const max = String(12288 * 1024 * 1024)
+    const stat = 'anon 891772928\nfile 6053445632\nactive_file 754925568\ninactive_file 5298511872\n'
+    expect(cgroupSnapshot(current, max, null, stat)).toEqual({
+      currentMb: 11315,
+      workingSetMb: 6262,
+      maxMb: 12288,
+      usedPct: 51,
+      oomKills: null,
+    })
+  })
+
+  test('cgroup v1: total_inactive_file is subtracted', () => {
+    const stat = 'cache 100\ntotal_inactive_file 1073741824\n'
+    expect(cgroupSnapshot('2147483648', '3221225472', null, stat).usedPct).toBe(33)
+  })
+
+  test('no memory.stat: used% falls back to the raw charge', () => {
+    expect(cgroupSnapshot('2147483648', '3221225472', null, null)).toMatchObject({ workingSetMb: 2048, usedPct: 67 })
+  })
+})
+
+describe('formatOpenCodeMemoryGuardReason', () => {
+  // Prod 2026-09-24: a 4 GiB Platinum box stopped turns at 99% with OpenCode at
+  // 916 MB. The other ~2 GB was a RAM-backed /tmp, and the message never said so.
+  test('names RAM-backed files (a tmpfs /tmp) when they hold a large share', () => {
+    const s = snapshot({
+      memory: { totalMb: 3915, availableMb: 47, usedPct: 99, swapTotalMb: 0, swapFreeMb: 0, shmemMb: 1950 },
+      cgroup: { currentMb: null, workingSetMb: null, maxMb: null, usedPct: null, oomKills: null },
+      runtime: { pid: 17567, rssMb: 916, threads: 15, state: 'S' },
+    })
+    expect(formatOpenCodeMemoryGuardReason(s, 99)).toBe(
+      'sandbox memory at 99% (opencode 916 MB RSS, 1950 MB in RAM-backed files such as /tmp, of 3915 MB): turn stopped before the kernel would kill opencode',
+    )
+  })
+  test('leaves a small shared-memory figure out', () => {
+    const s = snapshot({
+      memory: { totalMb: 8000, availableMb: 400, usedPct: 95, swapTotalMb: 0, swapFreeMb: 0, shmemMb: 40 },
+      cgroup: { currentMb: null, workingSetMb: null, maxMb: null, usedPct: null, oomKills: null },
+      runtime: { pid: 1, rssMb: 7440, threads: 8, state: 'R' },
+    })
+    expect(formatOpenCodeMemoryGuardReason(s, 95)).toBe(
+      'sandbox memory at 95% (opencode 7440 MB RSS of 8000 MB): turn stopped before the kernel would kill opencode',
+    )
   })
 })
 
@@ -83,7 +137,7 @@ describe('evaluatePressure', () => {
   test('memory, cgroup, disk, load, duplicate opencode, oom-kill rise are each named', () => {
     const s = snapshot({
       memory: { totalMb: 3892, availableMb: 100, usedPct: 97, swapTotalMb: 0, swapFreeMb: 0 },
-      cgroup: { currentMb: 2900, maxMb: 3000, usedPct: 97, oomKills: 3 },
+      cgroup: { currentMb: 2900, workingSetMb: 2900, maxMb: 3000, usedPct: 97, oomKills: 3 },
       disks: [{ path: '/workspace', totalMb: 10000, freeMb: 200, usedPct: 98 }],
       load: [9, 8, 7],
       runtimePids: [2423, 7259],
@@ -98,7 +152,7 @@ describe('evaluatePressure', () => {
   test('null fields never produce findings', () => {
     const s = snapshot({
       memory: { totalMb: null, availableMb: null, usedPct: null, swapTotalMb: null, swapFreeMb: null },
-      cgroup: { currentMb: null, maxMb: null, usedPct: null, oomKills: null },
+      cgroup: { currentMb: null, workingSetMb: null, maxMb: null, usedPct: null, oomKills: null },
       disks: [{ path: '/x', totalMb: null, freeMb: null, usedPct: null }],
       load: null,
       cpus: null,
@@ -176,7 +230,7 @@ describe('memory guard', () => {
       snapshot: async () =>
         snapshot({
           memory: { totalMb: 8000, availableMb: Math.round(8000 * (100 - usedPct) / 100), usedPct, swapTotalMb: 0, swapFreeMb: 0 },
-          cgroup: { currentMb: null, maxMb: null, usedPct: null, oomKills: null },
+          cgroup: { currentMb: null, workingSetMb: null, maxMb: null, usedPct: null, oomKills: null },
           runtime: { pid: 2423, rssMb: Math.round(8000 * usedPct / 100), threads: 8, state: 'R' },
         }),
       guard: {

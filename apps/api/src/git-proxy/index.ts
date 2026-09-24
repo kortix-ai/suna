@@ -21,6 +21,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import {
   authorizeGitProxy,
   resolveProjectUpstream,
+  RETRYABLE_GIT_AUTH_REASONS,
   type GitProxyAuth,
 } from '../projects';
 import type { GitScope, UpstreamGit } from '../projects/git-backends';
@@ -32,8 +33,10 @@ import {
   encodeReportStatus,
   parseReceivePackCommands,
   wantsSideband,
+  type RefUpdate,
 } from './receive-pack';
 import { evaluateRefUpdates, principalLabel } from './ref-policy';
+import { annotateGitTransfer, bindGitProxyPrincipal, gitAuditOutcome, gitPushRefSummary } from './audit';
 import { denialsAfterScopes } from './ref-scopes';
 import {
   FORWARD_REQUEST_HEADERS,
@@ -138,7 +141,13 @@ async function authorize(c: any, projectId: string, scope: GitScope): Promise<Gi
   // Pass the request context so IP-allowlist / require-MFA policy conditions
   // evaluate on the per-project capability path the same way they do on every
   // other project route.
-  return authorizeGitProxy(token, projectId, scope, deriveRequestContext(c));
+  const auth = await authorizeGitProxy(token, projectId, scope, deriveRequestContext(c));
+  // Attribute this request's audit row. Here, not in a handler: every git
+  // route goes through this authenticator, so ref discovery is attributed as
+  // well as the transfers. A refusal inside authorizeGitProxy binds whatever
+  // it proved before refusing.
+  if (auth.ok) bindGitProxyPrincipal(auth.principal, auth.project);
+  return auth;
 }
 
 /**
@@ -168,7 +177,13 @@ async function resolveProjectUpstreamMemo(
   const hit = upstreamMemo.get(key);
   if (hit && hit.expiresAt > now) return hit.value;
   const value = await resolveProjectUpstream(project, scope);
-  if (value?.url) upstreamMemo.set(key, { value, expiresAt: now + UPSTREAM_MEMO_TTL_MS });
+  // Never memoize an upstream with no credential. The comment above assumes the
+  // credential inside is a managed PAT or a ≥1 h installation token; a failed
+  // mint breaks that assumption, and caching it turned ONE transient failure
+  // into 30 s of failures for every caller of the project.
+  if (value?.url && !value.credentialUnavailable) {
+    upstreamMemo.set(key, { value, expiresAt: now + UPSTREAM_MEMO_TTL_MS });
+  }
   if (upstreamMemo.size > 5_000) {
     for (const [k, v] of upstreamMemo) if (v.expiresAt <= now) upstreamMemo.delete(k);
   }
@@ -207,6 +222,22 @@ async function forwardAuthorized(
   if (!upstream || !upstream.url) {
     return c.text('No git upstream is configured for this project', 502);
   }
+  // Fail CLOSED. Forwarding a private repository's request without a credential
+  // makes the provider answer `404 Repository not found.`, which git surfaces
+  // as `fatal: repository '<proxy url>' not found` — a transient mint failure
+  // wearing the face of a deleted repository.
+  if (upstream.credentialUnavailable) {
+    const retry = RETRYABLE_GIT_AUTH_REASONS.has(upstream.credentialUnavailable);
+    if (retry) c.header('Retry-After', '2');
+    return c.json(
+      {
+        error: 'git_credential_unavailable',
+        reason: upstream.credentialUnavailable,
+        retry,
+      },
+      503,
+    );
+  }
 
   const search = new URL(c.req.url).search; // includes leading '?' or ''
   const base = upstream.url.replace(/\/$/, '');
@@ -241,6 +272,13 @@ async function forwardAuthorized(
         headers,
         body,
         redirect: 'manual',
+        // A push never shares its upstream connection. An upstream may answer a
+        // push before reading the whole body (a rejection, a size limit); Bun
+        // then pools the socket while the body is still in flight, and the next
+        // request to that host, from any project, fails to parse (a bare 400,
+        // seen on the local-git fixture as GH-17 / AGP-10 flakes). A push costs
+        // one new connection; fetch (upload-pack) keeps reusing them.
+        keepalive: suffix !== '/git-receive-pack',
         // @ts-ignore — Bun extensions: stream the request body, don't decompress.
         duplex: 'half',
         decompress: false,
@@ -406,7 +444,7 @@ async function forwardAuthorized(
 async function gateReceivePack(
   c: any,
   auth: Extract<GitProxyAuth, { ok: true }>,
-): Promise<Response | { body: ReadableStream<Uint8Array> }> {
+): Promise<Response | { body: ReadableStream<Uint8Array>; updates: RefUpdate[] }> {
   // git never content-encodes a receive-pack body (it gzips upload-pack
   // requests only, verified against git 2.39.1). If one ever arrives encoded we
   // cannot read the commands, so we refuse instead of forwarding unexamined.
@@ -458,6 +496,13 @@ async function gateReceivePack(
       principal: principalLabel(auth.principal),
       refs: denials.map((d) => d.ref),
     });
+    // git reads the refusal from a 200 report-status body; the row says denied.
+    annotateGitTransfer({
+      action: 'git.push',
+      projectId: auth.project.projectId,
+      outcome: gitAuditOutcome(200, true),
+      refs: gitPushRefSummary(parsed.updates, denied),
+    });
     const report = encodeReportStatus(
       parsed.updates.map((u) => ({ ref: u.ref, reason: denied.get(u.ref) })),
       { sideband: wantsSideband(parsed.capabilities) },
@@ -472,6 +517,7 @@ async function gateReceivePack(
   // through. The pack itself is never buffered.
   const prefix = concatChunks(chunks, buffered);
   return {
+    updates: parsed.updates,
     body: new ReadableStream<Uint8Array>({
       start(controller) {
         if (prefix.length > 0) controller.enqueue(prefix);
@@ -537,7 +583,18 @@ gitProxyApp.openapi(
   async (c) => {
     const projectId = validProjectIdOrResponse(c, c.req.param('project'));
     if (projectId instanceof Response) return projectId;
-    return forward(c, projectId, 'read', '/git-upload-pack');
+    const auth = await authorize(c, projectId, 'read');
+    if (!auth.ok) {
+      if (auth.status === 401) return unauthorized(c, auth.message);
+      return c.text(auth.message, auth.status as 403 | 404);
+    }
+    const res = await forwardAuthorized(c, auth, 'read', '/git-upload-pack', c.req.raw.body);
+    annotateGitTransfer({
+      action: 'git.clone',
+      projectId: auth.project.projectId,
+      outcome: gitAuditOutcome(res.status, false),
+    });
+    return res;
   },
 );
 
@@ -990,12 +1047,22 @@ gitProxyApp.openapi(
     // route authenticates with its own token (git Basic/Bearer), so it must
     // place the grant `authorizeGitProxy` resolved. Without it a session is
     // default-denied beyond its own branch regardless of `project.gitops.ref.any`
-    // / `kortix_cli: all` — see projects/lib/git.ts.
+    // / `kortix_permissions: all` — see projects/lib/git.ts.
     c.set('agentGrant', auth.agentGrant ?? null);
     // Ref policy runs HERE, between authorization and transmission — the only
     // point where both the principal and the refs it wants to move are known.
     const gated = await gateReceivePack(c, auth);
     if (gated instanceof Response) return gated;
-    return forwardAuthorized(c, auth, 'write', '/git-receive-pack', gated.body);
+    const res = await forwardAuthorized(c, auth, 'write', '/git-receive-pack', gated.body);
+    // Every ref's old → new sha on the push's row. An HTTP 2xx means the
+    // upstream accepted the transfer; its per-ref report-status is not parsed.
+    annotateGitTransfer({
+      action: 'git.push',
+      projectId: auth.project.projectId,
+      outcome: gitAuditOutcome(res.status, false),
+      refs: gitPushRefSummary(gated.updates),
+    });
+    return res;
   },
 );
+

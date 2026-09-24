@@ -4,7 +4,7 @@ import { relayTurnEndToApi, __resetRelayedTurnSignatures } from '../harness/open
 import { MAX_CONSECUTIVE_REPEATS, __resetRunawayGuardStates } from '../harness/open-code/runaway-turn-guard'
 import type { OpenCodeConfig as Config } from '../harness/open-code/config'
 
-// The runaway-turn guard must reach CHILD sessions. Essentia incident
+// The runaway-turn guard must reach CHILD sessions. SampleCo incident
 // 2026-08-18 (session 5d9e298a): a spawned sub-session re-answered the same
 // parent user message indefinitely. `relayTurnEndToApi` filtered non-root
 // sessions out BEFORE the guard ran, so the child looped unbounded while the

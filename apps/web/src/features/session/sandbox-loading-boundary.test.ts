@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 const boundarySource = readFileSync(join(import.meta.dir, 'sandbox-loading-boundary.tsx'), 'utf8');
 const projectLayoutSource = readFileSync(
-  join(import.meta.dir, '../../app/(app)/projects/[id]/layout.tsx'),
+  join(import.meta.dir, '../../app/[locale]/(app)/projects/[id]/layout.tsx'),
   'utf8',
 );
 const projectAccessSource = readFileSync(
