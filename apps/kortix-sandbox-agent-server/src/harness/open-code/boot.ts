@@ -28,6 +28,7 @@ import {
 } from './lifecycle'
 import { relayBootTimelineToApi } from '../../boot-timeline-relay'
 import { materializeProject } from '../../config-provider/config-provider'
+import { startVolumes } from '../../volumes'
 import { scheduleRuntimeProjectionPush } from './runtime-projection-relay'
 import { repairOpencodeConfigDir } from './apple-double'
 import { ensureOpencodeConfigDeps } from './opencode-config-deps'
@@ -137,6 +138,10 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
   if (!writeAgentEnvFile(projectEnv)) {
     logger.error('[boot] failed to write agent secret env file; agent shells will lack project secrets')
   }
+  // kortix.yaml `volumes`: writes the agent's volumes note NOW (before any
+  // OpenCode spawn composes its `instructions`) and mounts in parallel with the
+  // checkout. The workspace gate below waits for it, bounded.
+  const volumes = startVolumes({ projectEnv })
   // ── Serve BEFORE doing any slow work ────────────────────────────────────
   // The proxy (and with it /kortix/health) used to bind only after the clone
   // AND the opencode spawn, so a live VM answered nothing for ~9s — the API and
@@ -405,6 +410,12 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
     // Reconfigure now so any later restart uses the checked-out config. The
     // already-running compiled-config process stays untouched.
     harness.configuration.reconfigure(cfg, opencodeConfigDir, projectEnv)
+    // The agent's first tool call may read /volumes: open the gate after the
+    // mounts settle (at most VOLUME_MOUNT_BUDGET_MS; a no-op without volumes).
+    if (volumes.declared) {
+      await volumes.ready
+      bootMark('volumes-ready')
+    }
     // The checkout, its config-dir dependencies and the injected skills are ALL
     // on disk now — this is the first moment a directory-scoped request may
     // reach OpenCode. Opening the gate earlier is the bug this exists to stop
@@ -1185,7 +1196,10 @@ async function runWarmSeedMode(
       // of bug as the 2026-06-10 incident where forks answered health on main
       // with the deriving session's credentials.
       await startEgressShim()
-      writeAgentEnvFile(createProjectEnvStore())
+      const adoptedEnv = createProjectEnvStore()
+      writeAgentEnvFile(adoptedEnv)
+      // The fork's KORTIX_VOLUMES arrived with reloadSessionEnv(); the seed had none.
+      const volumes = startVolumes({ projectEnv: adoptedEnv })
       const cfg2 = loadConfig()
       // Rebuild the proxy/control surface with the fork's cfg; the seed booted
       // tokenless or with seed-only credentials.
@@ -1258,6 +1272,8 @@ async function runWarmSeedMode(
       let hotSwapped = false
       if (
         llmHotswap &&
+        // The seed's OpenCode config has no volumes note; a restart rebuilds it.
+        !volumes.declared &&
         !!process.env.KORTIX_LLM_PROXY_URL &&
         llmProxyBaseUrl() != null &&
         opencode.getState() === 'ok' &&
@@ -1290,6 +1306,10 @@ async function runWarmSeedMode(
           logger.warn('[seed] adoption opencode restart failed', { err: (err as Error).message }),
         )
         bootMark('adopt-opencode-restarted')
+      }
+      if (volumes.declared) {
+        await volumes.ready
+        bootMark('adopt-volumes-ready')
       }
       await startSessionRuntime(harness, cfg2, bootState, bootMark)
       logger.info('[seed] fork adoption complete', { adoptMs: Date.now() - t0, hotSwapped, timeline: bootState.timeline })

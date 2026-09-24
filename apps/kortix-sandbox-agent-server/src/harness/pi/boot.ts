@@ -13,6 +13,7 @@ import { homedir } from 'node:os'
 import { agentEnvDirIsTmpfs, writeAgentEnvFile } from '../../agent-env-file'
 import { relayBootTimelineToApi } from '../../boot-timeline-relay'
 import { materializeProject } from '../../config-provider/config-provider'
+import { startVolumes } from '../../volumes'
 import { startEgressShim } from '../../egress-shim'
 import {
   configureGitCredentialHelper,
@@ -69,6 +70,9 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
   if (!writeAgentEnvFile(projectEnv)) {
     logger.error('[boot] failed to write agent secret env file; agent shells will lack project secrets')
   }
+  // kortix.yaml `volumes`: mounts in parallel with the checkout; the runtime
+  // start below waits for it (bounded) so the system prompt lists them.
+  const volumes = startVolumes({ projectEnv })
 
   // ── Serve BEFORE doing any slow work ────────────────────────────────────
   const hooks: PiRuntimeHooks = {
@@ -149,6 +153,10 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
     await configureRepoCredentialHelper(cfg, cfg.projectTarget).catch((err) => {
       logger.warn('[boot] repo-local git credential helper setup failed', { err: (err as Error).message })
     })
+  }
+  if (volumes.declared) {
+    await volumes.ready
+    bootMark('volumes-ready')
   }
   bootState.workspaceReady = true
 

@@ -21,6 +21,7 @@ import type { ProjectEnvStore } from '../../project-env'
 import { kortixEventBus } from '../../kortix-event-bus'
 import { logger } from '../../logger'
 import { SECRET_CAPABILITIES_INSTRUCTION_PATH } from '../../secret-capabilities'
+import { VOLUMES_INSTRUCTION_PATH } from '../../volumes'
 import type { PiConfig } from './config'
 import { resolvePiSkillDirectories } from './config'
 import { PermissionBroker, QuestionBroker, compilePermissionPolicy, type PermissionPolicy, type QuestionRequestWire } from './interactions'
@@ -648,6 +649,8 @@ export class PiRuntime {
     if (this.skills.length > 0) parts.push(formatSkills(this.skills))
     const capabilities = this.readInstruction(SECRET_CAPABILITIES_INSTRUCTION_PATH)
     if (capabilities) parts.push(capabilities)
+    const volumes = this.readInstruction(VOLUMES_INSTRUCTION_PATH)
+    if (volumes) parts.push(volumes)
     parts.push(
       [
         '## Runtime capabilities',

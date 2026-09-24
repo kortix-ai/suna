@@ -69,6 +69,18 @@ describe('buildOpencodeConfigContent — injected managed skills', () => {
     )
     expect(JSON.parse(content!).instructions).toEqual(['/workspace/AGENTS.md', file])
   })
+
+  test('loads the volumes note after the secret guide, and skips it when the session has no volumes', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kortix-volumes-note-'))
+    const secrets = join(dir, 'capabilities.md')
+    const volumes = join(dir, 'volumes.md')
+    writeFileSync(secrets, '# Secret capabilities\n')
+    const without = await buildOpencodeConfigContent({}, { secretCapabilitiesInstructionPath: secrets, volumesInstructionPath: volumes })
+    expect(JSON.parse(without!).instructions).toEqual([secrets])
+    writeFileSync(volumes, '## Volumes\n')
+    const withVolumes = await buildOpencodeConfigContent({}, { secretCapabilitiesInstructionPath: secrets, volumesInstructionPath: volumes })
+    expect(JSON.parse(withVolumes!).instructions).toEqual([secrets, volumes])
+  })
 })
 
 describe('buildOpencodeConfigContent — optional connector MCP server', () => {

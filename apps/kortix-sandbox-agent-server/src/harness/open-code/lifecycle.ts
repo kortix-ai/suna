@@ -55,6 +55,7 @@ import {
   SECRET_CAPABILITIES_ENV_NAME,
   writeSecretCapabilitiesInstruction,
 } from '../../secret-capabilities'
+import { VOLUMES_INSTRUCTION_PATH } from '../../volumes'
 
 const READY_POLL_MS = 100
 // OpenCode announces readiness on stdout. `serve.ts` prints this line only
@@ -255,6 +256,8 @@ export async function buildOpencodeConfigContent(
   opts: {
     injectedSkillsDir?: string | null
     secretCapabilitiesInstructionPath?: string | null
+    /** kortix.yaml `volumes` note (src/volumes.ts); absent when none are attached. */
+    volumesInstructionPath?: string | null
   } = {},
 ): Promise<string | undefined> {
   const connectorToken = env.KORTIX_TOKEN
@@ -302,10 +305,9 @@ export async function buildOpencodeConfigContent(
   // box with no project config (the platform meta sandbox).
   const injectedSkillsDir =
     opts.injectedSkillsDir && existsSync(opts.injectedSkillsDir) ? opts.injectedSkillsDir : null
-  const secretCapabilitiesInstructionPath =
-    opts.secretCapabilitiesInstructionPath && existsSync(opts.secretCapabilitiesInstructionPath)
-      ? opts.secretCapabilitiesInstructionPath
-      : null
+  const instructionPaths = [opts.secretCapabilitiesInstructionPath, opts.volumesInstructionPath].filter(
+    (path): path is string => !!path && existsSync(path),
+  )
   // Native mode (no gateway): the session's model pin still has to reach
   // opencode's config — without an explicit `model`, opencode's default is
   // catalog-order-dependent (Provider.defaultModel walks the models.dev map in
@@ -363,13 +365,11 @@ export async function buildOpencodeConfigContent(
   }
   const out: Record<string, unknown> = { ...base }
 
-  if (secretCapabilitiesInstructionPath) {
+  if (instructionPaths.length > 0) {
     const instructions = Array.isArray(out.instructions)
       ? out.instructions.filter((item): item is string => typeof item === 'string')
       : []
-    out.instructions = instructions.includes(secretCapabilitiesInstructionPath)
-      ? instructions
-      : [...instructions, secretCapabilitiesInstructionPath]
+    out.instructions = [...instructions, ...instructionPaths.filter((path) => !instructions.includes(path))]
   }
 
   // (5) Injected managed skills — append to whatever `skills.paths` the base
@@ -807,11 +807,13 @@ export async function writeKortixOpencodeConfig(
     configPath?: string
     injectedSkillsDir?: string | null
     secretCapabilitiesInstructionPath?: string | null
+    volumesInstructionPath?: string | null
   } = {},
 ): Promise<string | null> {
   const content = await buildOpencodeConfigContent(env, {
     injectedSkillsDir: opts.injectedSkillsDir,
     secretCapabilitiesInstructionPath: opts.secretCapabilitiesInstructionPath,
+    volumesInstructionPath: opts.volumesInstructionPath,
   })
   if (!content) return null
   const configPath = opts.configPath ?? KORTIX_OPENCODE_CONFIG_PATH
@@ -1785,6 +1787,7 @@ export function createOpencodeLifecycle(
       configPath: options.configPathOverride,
       injectedSkillsDir: join(currentOpencodeConfigDir, 'skills'),
       secretCapabilitiesInstructionPath,
+      volumesInstructionPath: VOLUMES_INSTRUCTION_PATH,
     })
   }
 
