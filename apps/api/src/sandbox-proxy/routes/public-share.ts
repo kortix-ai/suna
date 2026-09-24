@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { getTraceHeaders } from '../../lib/request-context';
 import { previewOriginFor } from '../preview-hosts';
+import { ingressTargetUrl } from '../../platform/providers/ingress-url';
 import {
   PUBLIC_SHARE_BLOCKED_PORTS,
   STATIC_FILE_SHARE_PORT,
@@ -164,8 +165,7 @@ async function forwardPublicShare(c: any, args: {
         path: args.remainingPath,
         transport: 'http',
       });
-      const previewUrl = ingress.url;
-      const targetUrl = previewUrl.replace(/\/$/, '') + args.remainingPath + args.queryString;
+      const targetUrl = ingressTargetUrl(ingress, args.remainingPath + args.queryString);
       const headers = new Headers();
       for (const [key, value] of c.req.raw.headers.entries()) {
         if (STRIP_FORWARD_HEADERS.has(key.toLowerCase())) continue;
@@ -184,7 +184,7 @@ async function forwardPublicShare(c: any, args: {
       for (const [key, value] of Object.entries(authHeaders)) {
         headers.set(key, value);
       }
-      const previewOrigin = new URL(previewUrl);
+      const previewOrigin = new URL(ingress.url);
       if (headers.has('origin')) headers.set('origin', previewOrigin.origin);
       headers.set('x-forwarded-host', previewOrigin.host);
       headers.set('X-Forwarded-Prefix', `${publicOrigin(c)}${args.redirectPrefix}`);

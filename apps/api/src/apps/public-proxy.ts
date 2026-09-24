@@ -33,6 +33,7 @@ import {
   resolveAppViewerIdentity,
 } from './viewer';
 import { annotateAuditEvent, bindAuditPrincipal } from '../shared/audit-scope';
+import { ingressTargetUrl } from '../platform/providers/ingress-url';
 import type { AgentGrant } from '@kortix/db';
 import {
   agentPrincipalEnabled,
@@ -1326,7 +1327,7 @@ export async function handleAppPublicRequest(request: Request): Promise<Response
   const replayableRequest = request.method === 'GET' || request.method === 'HEAD';
   const fetchUpstream = async () => {
     const ingress = await hosting.ingress(runtime.provider as SandboxProviderName, runtime.externalId);
-    const upstreamUrl = `${ingress.url.replace(/\/$/, '')}${url.pathname}${url.search}`;
+    const upstreamUrl = ingressTargetUrl(ingress, `${url.pathname}${url.search}`);
     return fetch(upstreamUrl, {
       method: request.method,
       headers: appUpstreamHeaders(request, ingress.headers, matched.publicHost, viewer),
