@@ -23,7 +23,7 @@ import {
   defaultAutoTopupForSeats,
 } from './tiers';
 import { grantForPaidProrationInvoice } from './proration-grants';
-import { grantCredits, resetExpiringCredits } from './credits';
+import { wallet } from '../wallet';
 import { isPayingSubscriptionStatus } from './billing-state';
 import { grantMachineBonusOnce, getStripeMachineBonusKey } from './machine-bonus';
 import { cancelFreeSubscriptionForUpgrade } from './subscriptions';
@@ -203,14 +203,14 @@ async function handleCreditPurchase(session: Stripe.Checkout.Session, accountId:
     return;
   }
 
-  await grantCredits(
+  await wallet.grant({
     accountId,
-    amountTotal,
-    'purchase',
-    `Credit purchase: $${amountTotal.toFixed(2)}`,
-    false,
-    session.id,
-  );
+    amount: amountTotal,
+    kind: 'purchase',
+    description: `Credit purchase: $${amountTotal.toFixed(2)}`,
+    expiring: false,
+    key: { event: session.id },
+  });
 
   await markCreditPurchase(session, 'completed');
 
@@ -408,14 +408,14 @@ async function activateSubscriptionForAccount(params: {
     : `${tier.displayName} subscription activated: ${creditAmount} credits`;
 
   if (creditAmount > 0) {
-    await grantCredits(
+    await wallet.grant({
       accountId,
-      creditAmount,
-      'tier_grant',
-      creditDesc,
-      true,
-      `subscription_activation:${subscriptionId}`,
-    );
+      amount: creditAmount,
+      kind: 'tier_grant',
+      description: creditDesc,
+      expiring: true,
+      key: { event: `subscription_activation:${subscriptionId}` },
+    });
   }
 
   // Upsert Stripe customer record
@@ -678,12 +678,12 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
 
   if (shouldGrantRecoveryCredits && resolvedTier) {
     if (recoveryCredits > 0) {
-      await resetExpiringCredits(
+      await wallet.reset({
         accountId,
-        recoveryCredits,
-        `Recovered Stripe subscription: ${recoveryCredits} credits`,
-        `subscription_activation:${subscription.id}`,
-      );
+        amount: recoveryCredits,
+        description: `Recovered Stripe subscription: ${recoveryCredits} credits`,
+        key: { event: `subscription_activation:${subscription.id}` },
+      });
     }
   }
 
@@ -892,7 +892,7 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
   });
 
   if (credits > 0) {
-    await resetExpiringCredits(accountId, credits, renewalDesc, invoice.id);
+    await wallet.reset({ accountId, amount: credits, description: renewalDesc, key: { event: invoice.id } });
   }
 
   const planType = account.planType ?? 'monthly';
@@ -1223,27 +1223,27 @@ async function handleRevenueCatPurchase(accountId: string, event: any, dedupeKey
   );
 
   if (tier.monthlyCredits > 0) {
-    await grantCredits(
+    await wallet.grant({
       accountId,
-      tier.monthlyCredits,
-      'tier_grant',
-      `${tier.displayName} subscription (mobile): ${tier.monthlyCredits} credits`,
-      true,
-      dedupeKey,
-    );
+      amount: tier.monthlyCredits,
+      kind: 'tier_grant',
+      description: `${tier.displayName} subscription (mobile): ${tier.monthlyCredits} credits`,
+      expiring: true,
+      key: { event: dedupeKey },
+    });
   }
 
   const { MACHINE_CREDIT_BONUS } = await import('./tiers');
   if (MACHINE_CREDIT_BONUS > 0) {
     try {
-      await grantCredits(
+      await wallet.grant({
         accountId,
-        MACHINE_CREDIT_BONUS,
-        'machine_bonus',
-        `Welcome credit bonus: $${MACHINE_CREDIT_BONUS}`,
-        false,
-        `machine_bonus:revenuecat:${accountId}:${productId}`,
-      );
+        amount: MACHINE_CREDIT_BONUS,
+        kind: 'machine_bonus',
+        description: `Welcome credit bonus: $${MACHINE_CREDIT_BONUS}`,
+        expiring: false,
+        key: { event: `machine_bonus:revenuecat:${accountId}:${productId}` },
+      });
       console.log(`[RevenueCat] Granted $${MACHINE_CREDIT_BONUS} machine bonus for ${accountId}`);
     } catch (err) {
       console.error(`[RevenueCat] Failed to grant machine bonus for ${accountId}:`, err);
@@ -1268,7 +1268,12 @@ async function handleRevenueCatRenewal(accountId: string, event: any, dedupeKey:
   const credits = getMonthlyCredits(tierName);
 
   if (credits > 0) {
-    await resetExpiringCredits(accountId, credits, `Mobile renewal: ${credits} credits`, dedupeKey);
+    await wallet.reset({
+      accountId,
+      amount: credits,
+      description: `Mobile renewal: ${credits} credits`,
+      key: { event: dedupeKey },
+    });
   }
 
   await applyStripeSync(
@@ -1375,14 +1380,14 @@ async function handleRevenueCatTopup(accountId: string, event: any, dedupeKey: s
   const price = event.price ? Number(event.price) : 0;
   if (price <= 0) return;
 
-  await grantCredits(
+  await wallet.grant({
     accountId,
-    price,
-    'purchase',
-    `Mobile credit purchase: $${price.toFixed(2)}`,
-    false,
-    dedupeKey,
-  );
+    amount: price,
+    kind: 'purchase',
+    description: `Mobile credit purchase: $${price.toFixed(2)}`,
+    expiring: false,
+    key: { event: dedupeKey },
+  });
 
   console.log(`[RevenueCat] Top-up: $${price} for ${accountId}`);
 }

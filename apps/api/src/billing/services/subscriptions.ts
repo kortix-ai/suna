@@ -9,7 +9,7 @@ import { getCustomerByAccountId, getCustomerByStripeId, upsertCustomer, deleteCu
 import { BillingError, SubscriptionError } from '../../errors';
 import { getTier, isUpgrade, resolvePriceId, getComputeDisplayPriceCents, getComputeProductId, getComputeDescription, resolvePerSeatPriceId, resolveTierForPrice, isPerSeatAccount, MAX_SEATS_PER_ACCOUNT } from './tiers';
 import { countActiveMembers } from './seat-management';
-import { grantCredits } from './credits';
+import { wallet } from '../wallet';
 import { applyStripeSync } from './account-write-owner';
 import { grantForPaidProrationInvoice } from './proration-grants';
 import { isPlatformAdmin } from '../../shared/platform-roles';
@@ -932,12 +932,12 @@ export async function confirmCheckoutSession(params: {
   const tier = getTier(tierKey);
   if (tier.monthlyCredits > 0) {
     try {
-      await grantCredits(
+      await wallet.grant({
         accountId,
-        tier.monthlyCredits,
-        'tier_grant',
-        `${tier.displayName} subscription activated: ${tier.monthlyCredits} credits`,
-        true,
+        amount: tier.monthlyCredits,
+        kind: 'tier_grant',
+        description: `${tier.displayName} subscription activated: ${tier.monthlyCredits} credits`,
+        expiring: true,
         // ONE activation, ONE idempotency key. The Stripe webhook path grants
         // the same tier credits for the same subscription under
         // `subscription_activation:<subId>` (webhooks.ts). This endpoint used
@@ -945,8 +945,8 @@ export async function confirmCheckoutSession(params: {
         // `checkout.session.completed` was in flight deduped against nothing
         // and the account was granted the tier credits twice. Key on the
         // subscription, exactly as the webhook does.
-        `subscription_activation:${subscriptionId}`,
-      );
+        key: { event: `subscription_activation:${subscriptionId}` },
+      });
     } catch (err) {
       console.error('[Billing] Failed to grant initial plan credits during checkout confirm:', err);
     }

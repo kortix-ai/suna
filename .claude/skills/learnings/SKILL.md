@@ -2214,7 +2214,8 @@ one billing period on every drained per-seat account. Fixed in PR #7080.
 balance-to-number decisions outside the decision layer, no billing prose in
 components, the bypass stays deleted on both sides of the wire);
 `billing-state.test.ts` sweeps every Stripe status x plan class against the
-universal floor; `settle-credits.test.ts` pins the settlement contract.
+universal floor; `tests/migration/wallet-ledger.test.ts` pins the settlement
+contract (`wallet.settle`) against real PostgreSQL.
 
 ### Keep lazy optional dependencies type-lazy across shared-source imports (2026-08-28)
 

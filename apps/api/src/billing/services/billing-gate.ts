@@ -9,9 +9,9 @@ import {
   hasSubscriptionRecord,
   resolveBillingState,
 } from './billing-state';
-import { deductCredits } from './credits';
 import { ensureFreeTierAccountReady } from './free-tier';
 import { type BillingModel, MINIMUM_CREDIT_FOR_RUN, isPerSeatAccount } from './tiers';
+import { wallet } from '../wallet';
 
 type BillingGateReason = 'subscription_required' | 'insufficient_credits' | 'no_account';
 
@@ -185,12 +185,13 @@ export async function checkBillingActive(
   // an overdrawn account). See RELIABILITY-BACKLOG item 2 / PR description
   // for the full reservation system this is a pragmatic slice of.
   try {
-    await deductCredits(
+    await wallet.debit({
       accountId,
-      MINIMUM_CREDIT_FOR_RUN,
-      'LLM gateway admission hold',
-      'llm_debit',
-    );
+      amount: MINIMUM_CREDIT_FOR_RUN,
+      description: 'LLM gateway admission hold',
+      kind: 'llm_debit',
+      key: null,
+    });
     return { ok: true, holdUsd: MINIMUM_CREDIT_FOR_RUN };
   } catch {
     // The hold lost the race (or the wallet moved under us). Re-resolve against

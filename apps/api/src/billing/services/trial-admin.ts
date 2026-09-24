@@ -6,14 +6,13 @@
 // Stripe webhook flips an active trial to 'converted' when a real subscription
 // lands (webhooks.ts) so a purchased plan is never masked by the overlay.
 
-import { creditAccounts, creditLedger } from '@kortix/db';
+import { creditAccounts } from '@kortix/db';
 import { and, eq, gt, lte } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { clearAccountLimitCache } from '../../shared/account-limits';
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { applyAdminOverride } from './account-write-owner';
 import { TRIAL_STATUS } from './effective-tier';
-import { grantCredits } from './credits';
 import {
   type EntitlementOverrides,
   type OverrideKey,
@@ -23,6 +22,7 @@ import {
 import { invalidateCachedAccountTier } from './entitlements';
 import { type PlanRecord, resolvePlanRecord } from './plan-catalog';
 import { grantForSeats, isValidTier, MAX_SEATS_PER_ACCOUNT } from './tiers';
+import { wallet } from '../wallet';
 
 export const MAX_TRIAL_DURATION_DAYS = 365;
 
@@ -38,7 +38,7 @@ export type GrantTrialInput = {
   note?: string | null;
   actorUserId?: string | null;
   /**
-   * Optional wallet grant, same unit as grantCredits (USD credits: the free
+   * Optional wallet grant, same unit as `wallet.grant` (USD credits: the free
    * welcome grant is `2`, one per-seat month is `25`). Sandbox compute always
    * debits the wallet — even a BYOK trial needs compute credits to run
    * sessions — so the grant is part of the trial issue, explicit and audited,
@@ -242,15 +242,15 @@ export async function grantTemporaryAccess(
     // Expiring, stamped with the window's end: granted credits are part of the
     // grant, they die with it. (They previously landed as PERMANENT credits —
     // a trial that ended left real spendable money behind.)
-    await grantCredits(
-      input.accountId,
-      creditGrant,
-      TRIAL_GRANT_LEDGER_TYPE,
-      `Trial grant: ${input.planKey} tier, ${input.seats} seats, ${input.durationDays} days`,
-      true,
-      undefined,
-      { expiresAt: endsAtIso },
-    );
+    await wallet.grant({
+      accountId: input.accountId,
+      amount: creditGrant,
+      kind: TRIAL_GRANT_LEDGER_TYPE,
+      description: `Trial grant: ${input.planKey} tier, ${input.seats} seats, ${input.durationDays} days`,
+      expiring: true,
+      expiresAt: endsAtIso,
+      key: null,
+    });
   }
 
   invalidateEntitlementCaches(input.accountId);
@@ -402,8 +402,7 @@ export function trialMonthlyRegrant(
  * per-seat per-month (`grantForSeats`, $25/seat) — the issue-time `creditGrant`
  * covers month 1, and this sweep grants each subsequent 30-day boundary inside
  * the trial window. Idempotent across runs: one ledger row per
- * (account, trial start, month index), checked against the ledger directly
- * because the RPC's own idempotency window is only 1 hour.
+ * (account, trial start, month index), through the wallet's grant key.
  * Called from the billing cron alongside sweepExpiredTrials.
  */
 export async function sweepTrialMonthlyGrants(now: Date = new Date()): Promise<number> {
@@ -438,24 +437,17 @@ export async function sweepTrialMonthlyGrants(now: Date = new Date()): Promise<n
     );
     if (!plan) continue;
 
-    const existing = await db
-      .select({ id: creditLedger.id })
-      .from(creditLedger)
-      .where(eq(creditLedger.idempotencyKey, plan.idempotencyKey))
-      .limit(1);
-    if (existing.length > 0) continue;
-
     const seats = Math.max(1, row.trialSeats ?? 1);
-    await grantCredits(
-      row.accountId,
-      plan.amount,
-      TRIAL_GRANT_LEDGER_TYPE,
-      `Trial monthly re-grant: month ${plan.monthIndex + 1}, ${seats} seats (${row.trialTier ?? 'trial'})`,
-      true,
-      undefined,
-      { expiresAt: row.trialEndsAt, idempotencyKey: plan.idempotencyKey },
-    );
-    granted++;
+    const result = await wallet.grant({
+      accountId: row.accountId,
+      amount: plan.amount,
+      kind: TRIAL_GRANT_LEDGER_TYPE,
+      description: `Trial monthly re-grant: month ${plan.monthIndex + 1}, ${seats} seats (${row.trialTier ?? 'trial'})`,
+      expiring: true,
+      expiresAt: row.trialEndsAt,
+      key: { request: plan.idempotencyKey },
+    });
+    if (!result.replayed) granted++;
   }
   return granted;
 }

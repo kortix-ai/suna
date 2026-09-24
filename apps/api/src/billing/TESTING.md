@@ -78,7 +78,7 @@ stripe listen --forward-to localhost:8008/v1/billing/webhooks/stripe
 | C5  | Resume from stopped                     | Click wake / open the session again                                                                              | NEW `sandbox_compute_sessions` row created (the old one stays closed); `state='active'`                                        | Should see 2 rows for the same sandbox_id, one finalized, one active                                                                                                                                  |
 | C6  | Restart sandbox                         | UI restart action                                                                                                | Old row → `state='finalized'`, then new row opens                                                                              | Same pattern as C5                                                                                                                                                                                    |
 | C7  | Maintenance tick partial-bills running compute | Wait for `runProjectMaintenance` (every 5 min) with a session running ≥ 5 min                              | `tickRunningComputeCharges` settles a partial window — `cost_usd` increases, `last_billed_at` advances, row stays open         | `SELECT cost_usd, last_billed_at FROM kortix.sandbox_compute_sessions WHERE id='<id>';` before/after the tick                                                                                         |
-| C8  | Insufficient balance during compute     | Drain wallet to $0 with sandbox running                                                                          | `deductCredits` throws, settle catches it, row stays open with accrued cost, no debit lands but cost field grows               | Check logs for `[compute-metering] failed to debit ... InsufficientCreditsError`; balance stays at 0                                                                                                  |
+| C8  | Insufficient balance during compute     | Drain wallet to $0 with sandbox running                                                                          | `wallet.settle` records the window as an overdraft: the balance goes below 0 and the ledger row carries `metadata.overdraft = true`; the next admission refuses | Check logs for `[Wallet] settlement overdraft account=…`; the balance is negative                                                                                                                      |
 | C9  | Multiple concurrent sandboxes           | Spin up 3 sandboxes in different projects under same account                                                     | All 3 have separate `sandbox_compute_sessions` rows; each debits independently on stop                                         | `SELECT sandbox_id, account_id, state FROM kortix.sandbox_compute_sessions WHERE account_id='<id>' AND ended_at IS NULL;`                                                                             |
 | C10 | Legacy account doesn't meter            | Flip an account to `billing_model='legacy'`, start a sandbox                                                     | NO `sandbox_compute_sessions` row created (gated by `isPerSeatAccount` check in `startComputeSession`)                          | `SELECT COUNT(*) FROM kortix.sandbox_compute_sessions WHERE account_id='<legacyId>';` should stay 0                                                                                                   |
 | C11 | Per-member attribution                  | Member B starts a sandbox in account A's project                                                                 | Row's `actor_user_id` = member B's user_id, `account_id` = A's account_id                                                      | `SELECT actor_user_id FROM kortix.sandbox_compute_sessions WHERE sandbox_id='<id>';`                                                                                                                  |
@@ -255,8 +255,16 @@ bun test src/__tests__/billing/per-seat-pricing.test.ts \
          src/__tests__/billing/e2e-compute-metering.test.ts \
          src/__tests__/billing/e2e-per-seat-webhooks.test.ts \
          src/__tests__/billing/credits.test.ts \
+         src/billing/wallet/wallet.test.ts \
          src/__tests__/billing/subscriptions.test.ts \
          src/__tests__/billing/webhooks.test.ts
+```
+
+The ledger rows every wallet operation writes are pinned against a real,
+migrated PostgreSQL (Docker required):
+
+```bash
+bun test tests/migration/wallet-ledger.test.ts   # from the repository root
 ```
 
 **Coverage gap (recommended next):**

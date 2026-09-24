@@ -39,8 +39,8 @@ mock.module('../repositories/credit-accounts', () => ({
   getSubscriptionInfo: async () => null,
 }));
 
-mock.module('./credits', () => ({
-  deductCredits: async () => {},
+mock.module('../wallet', () => ({
+  wallet: { settle: async () => ({ amount: 0, balance: 0, overdraft: false, transactionId: 'tx', replayed: false }) },
 }));
 
 interface FakeComputeRow {
