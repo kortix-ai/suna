@@ -252,6 +252,34 @@ describe('aws-env composite action — fetch.sh', () => {
     expect(readFileSync(join(dir, 'seen'), 'utf8')).toBe('JOBKEY||unset');
   });
 
+  // Run 36026464514 (2026-09-24): the action deleted its own .aws-env checkout
+  // in a final step. At job end the runner executes the POST step of the nested
+  // configure-aws-credentials from that directory and failed the job with
+  // "Can't find 'action.yml'". The checkout must outlive the job.
+  it('never deletes its own directory, because nested post steps run from it at job end', () => {
+    const action = readFileSync(resolve(actionDir, 'action.yml'), 'utf8');
+    expect(action).not.toMatch(/rm -rf/);
+    expect(action).not.toContain('GITHUB_ACTION_PATH/../../..');
+  });
+
+  it('keeps the .aws-env checkout out of git by excluding it in the job repository', () => {
+    const ws = mkdtempSync(join(tmpdir(), 'aws-env-ws-'));
+    spawnSync('git', ['init', '-q', ws]);
+    const r = run('DOCKERHUB_TOKEN', { GITHUB_WORKSPACE: ws });
+    expect(r.status).toBe(0);
+    const exclude = readFileSync(join(ws, '.git/info/exclude'), 'utf8');
+    expect(exclude.split('\n')).toContain('/.aws-env/');
+    // Idempotent: a second fetch in the same job adds no duplicate line.
+    run('DOCKERHUB_TOKEN', { GITHUB_WORKSPACE: ws });
+    const again = readFileSync(join(ws, '.git/info/exclude'), 'utf8');
+    expect(again.split('\n').filter((l) => l === '/.aws-env/')).toHaveLength(1);
+  });
+
+  it('succeeds when the workspace is not a git repository', () => {
+    const ws = mkdtempSync(join(tmpdir(), 'aws-env-nogit-'));
+    expect(run('DOCKERHUB_TOKEN', { GITHUB_WORKSPACE: ws }).status).toBe(0);
+  });
+
   it('action.yml keeps the job credentials intact and defaults to the ecs-deploy role', () => {
     const action = readFileSync(resolve(actionDir, 'action.yml'), 'utf8');
     expect(action).toContain('default: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy');

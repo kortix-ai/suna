@@ -67,14 +67,3 @@ runs:
         AWS_ENV_SECRET_ACCESS_KEY: ${{ steps.creds.outputs.aws-secret-access-key }}
         AWS_ENV_SESSION_TOKEN: ${{ steps.creds.outputs.aws-session-token }}
       run: bash "$GITHUB_ACTION_PATH/fetch.sh"
-
-    # Callers check this action out into .aws-env at the workflow's own commit
-    # (the job may check out another ref at the root). Remove that directory
-    # so it never reaches a Docker build context, a `git status`, or a commit.
-    - name: Remove the aws-env checkout
-      if: always()
-      shell: bash
-      run: |
-        root="$(cd "$GITHUB_ACTION_PATH/../../.." && pwd -P)"
-        workspace="$(cd "$GITHUB_WORKSPACE" && pwd -P)"
-        if [ "$root" = "$workspace/.aws-env" ]; then rm -rf "$root"; fi

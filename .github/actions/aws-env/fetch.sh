@@ -25,6 +25,15 @@ if [ -n "${AWS_ENV_ACCESS_KEY_ID:-}" ]; then
 fi
 unset AWS_ENV_ACCESS_KEY_ID AWS_ENV_SECRET_ACCESS_KEY AWS_ENV_SESSION_TOKEN
 
+# Callers check this action out into .aws-env at the workflow's own commit.
+# The checkout must stay until the job ends: the runner executes the POST step
+# of the nested configure-aws-credentials from it. Exclude it from the job's
+# repository instead, so no `git add -A` or commit can pick it up.
+if [ -n "${GITHUB_WORKSPACE:-}" ] && [ -d "$GITHUB_WORKSPACE/.git/info" ]; then
+  exclude="$GITHUB_WORKSPACE/.git/info/exclude"
+  grep -qxF '/.aws-env/' "$exclude" 2>/dev/null || printf '/.aws-env/\n' >>"$exclude"
+fi
+
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
