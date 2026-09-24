@@ -58,7 +58,7 @@ const IMAGE_EXTENSIONS: Record<string, string> = {
  * token) and Graph hostedContents (a Graph token). Anything else — Teams' own
  * emoji CDN, a customer's image host — is not a file the user attached.
  */
-const INLINE_IMAGE_HOST = /(^|\.)(trafficmanager\.net|botframework\.com|botframework\.us|graph\.microsoft\.com)$/i;
+const INLINE_IMAGE_HOST = /(^smba\.trafficmanager\.net|(^|\.)botframework\.com|(^|\.)botframework\.us|^graph\.microsoft\.com)$/i;
 
 /**
  * The images a Teams message carries INLINE in its HTML body.

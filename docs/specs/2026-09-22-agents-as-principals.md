@@ -100,6 +100,12 @@ open members' private sessions when `accounts.admins_see_all_sessions` is on
 clears `on_behalf_of` on the session token, permanently for that session. The
 agent keeps its own authority; it loses the creator's personal resources. So
 the person prompting never acts through another person's accounts (closes V6).
+A prompt that arrives without the HTTP prompt route follows the same rule at
+delivery (`channelPrompterForOnBehalfOf`, `projects/lib/on-behalf-of.ts`): a
+trigger fire, an email or Telegram message, and a Slack or Teams message from
+an unlinked sender are non-human prompters and clear any value; a linked Slack
+or Teams sender clears it when that sender is a different human. Platform
+notifications (`system:*`) clear nothing.
 
 ### 2.4 Governance: widening needs a human
 

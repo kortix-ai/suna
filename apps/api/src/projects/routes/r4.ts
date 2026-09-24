@@ -50,7 +50,7 @@ import { slackOauthMode } from '../../channels/slack-oauth-mode';
 import type { QuestionInfo } from '../../channels/slack-webhook';
 import { bindChatThread, resolveWorkspaceIdForChannel } from '../../channels/slack/binding';
 import { downloadSlackFile, uploadSlackFile } from '../../channels/slack/file-proxy';
-import { teamsChannelEnabled } from '../../channels/teams-auth';
+import { proveTeamsTenant, teamsChannelEnabled } from '../../channels/teams-auth';
 import { buildTeamsManifest } from '../../channels/teams-manifest';
 import { teamsDeepLink, teamsMode } from '../../channels/teams-mode';
 import { teamsOrgConsentUrl } from '../../channels/teams-oauth';
@@ -120,7 +120,7 @@ import {
   resolvePendingQuestion,
 } from '../lib/pending-questions';
 import { loadProjectAgents } from '../agents';
-import { getAgentGrant } from '../../iam/agent-scope';
+import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import {
   assertProjectCapability,
   loadProjectForUser,
@@ -129,6 +129,7 @@ import {
 } from '../lib/access';
 import { AnyObject, TriggerSchema, projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
+import { guardSession } from '../lib/session-access';
 import {
   type ConnectionOwnerType,
   connectionIsReachable,
@@ -1399,20 +1400,12 @@ projectsApp.openapi(
     );
     if (accessValidationError) return c.json({ error: accessValidationError }, 400);
 
-    // A `pinned` trigger may only target a session that belongs to THIS project —
-    // never a nonexistent or another project's session.
+    // A `pinned` trigger may only target a session of THIS project that the
+    // author may see — never a nonexistent, another project's, or another
+    // member's private session. Every fire prompts that session.
     if (draft.sessionMode === 'pinned' && draft.pinnedSessionId) {
-      const [pinned] = await db
-        .select({ sessionId: projectSessions.sessionId })
-        .from(projectSessions)
-        .where(
-          and(
-            eq(projectSessions.sessionId, draft.pinnedSessionId),
-            eq(projectSessions.projectId, projectId),
-          ),
-        )
-        .limit(1);
-      if (!pinned) {
+      const pinned = await guardSession(c, loaded, draft.pinnedSessionId, 'read');
+      if (!pinned.ok) {
         return c.json(
           { error: `Pinned session "${draft.pinnedSessionId}" was not found in this project.` },
           400,
@@ -1599,19 +1592,11 @@ projectsApp.openapi(
         }
         effectivePinnedSessionId = draft.pinnedSessionId;
 
-        // A `pinned` trigger may only target a session that belongs to THIS project.
+        // A `pinned` trigger may only target a session of THIS project that the
+        // author may see.
         if (draft.sessionMode === 'pinned' && draft.pinnedSessionId) {
-          const [pinned] = await db
-            .select({ sessionId: projectSessions.sessionId })
-            .from(projectSessions)
-            .where(
-              and(
-                eq(projectSessions.sessionId, draft.pinnedSessionId),
-                eq(projectSessions.projectId, projectId),
-              ),
-            )
-            .limit(1);
-          if (!pinned) {
+          const pinned = await guardSession(c, loaded, draft.pinnedSessionId, 'read');
+          if (!pinned.ok) {
             return {
               ok: false,
               error: `Pinned session "${draft.pinnedSessionId}" was not found in this project.`,
@@ -2049,9 +2034,33 @@ projectsApp.openapi(
       return c.json({ error: 'app_id must be an Azure AD application (client) GUID' }, 400);
     }
 
+    // A tenant id or domain is public, so typing one proves nothing. The
+    // install decides which tenant's messages route to this project and which
+    // tenant the file proxy mints Graph tokens for, so it is accepted only
+    // with proof of the tenant:
+    //  - a bring-your-own bot proves it with its own credentials (Microsoft
+    //    issues the app a token for that tenant only when the app is there);
+    //  - the managed bot proves it through "Connect with Microsoft" (the OAuth
+    //    callback reads the tenant from Microsoft's token), not through here.
+    if (!appId || !appPassword) {
+      return c.json(
+        {
+          error:
+            'A tenant id alone cannot be verified. Use "Connect with Microsoft" to connect the Kortix bot, ' +
+            'or connect your own bot with its app id and client secret.',
+          code: 'TEAMS_TENANT_UNVERIFIED',
+        },
+        400,
+      );
+    }
+    const proof = await proveTeamsTenant({ tenantId, creds: { appId, appPassword } });
+    if (!proof.ok) {
+      return c.json({ error: proof.error, code: 'TEAMS_TENANT_UNVERIFIED' }, 400);
+    }
+
     const summary = await saveTeamsInstall({
       projectId,
-      tenantId,
+      tenantId: proof.tenantId,
       teamName: body.team_name?.trim() || null,
       appId,
       appPassword,
@@ -3282,6 +3291,8 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     // Same dual auth as turn-stream: the in-sandbox agent's sandbox token (scoped
     // back to this project) or a project/session-scoped user PAT.
+    // The session this credential is BOUND to, when it is a sandbox token.
+    let callerSandboxSessionId: string | null = null;
     if (isSessionSandboxCredential(c)) {
       const accountId = (c as any).get('accountId') as string | undefined;
       const sandboxId = (c as any).get('sandboxId') as string | undefined;
@@ -3289,7 +3300,7 @@ projectsApp.openapi(
         return c.json({ error: 'bind-thread requires a sandbox token' }, 403);
       }
       const [sandbox] = await db
-        .select({ sandboxId: sessionSandboxes.sandboxId })
+        .select({ sandboxId: sessionSandboxes.sandboxId, sessionId: sessionSandboxes.sessionId })
         .from(sessionSandboxes)
         .where(
           and(
@@ -3303,6 +3314,7 @@ projectsApp.openapi(
       if (!sandbox) {
         return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
       }
+      callerSandboxSessionId = sandbox.sessionId ?? sandbox.sandboxId;
     } else {
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -3336,6 +3348,15 @@ projectsApp.openapi(
     const threadTs = body.thread_ts?.trim();
     if (!sessionId || !channel || !threadTs) {
       return c.json({ error: 'session_id, channel, and thread_ts are required' }, 400);
+    }
+    // A sandbox token acts for exactly ONE session. Binding a thread routes
+    // later Slack replies in it into `session_id`, so it may name only the
+    // token's own session, never a sibling in the same project.
+    if (
+      callerSandboxSessionId !== null &&
+      !sandboxTokenMayActOnSession(callerSandboxSessionId, sessionId)
+    ) {
+      return c.json({ error: 'sandbox token is not scoped to this session' }, 403);
     }
     // the session must belong to this project
     const [sess] = await db
@@ -4156,7 +4177,7 @@ projectsApp.openapi(
     // leaf ships in the default agent preset (accounts/iam/role-presets.ts), so
     // it would admit the self-answer on a stock grant. Answering is a human
     // operation. Same shape as the token-minting guard in r3.ts.
-    if (getAgentGrant(c)) {
+    if (isProjectSessionPrincipal(c)) {
       return c.json({ error: 'Agent-session tokens cannot answer their own question' }, 403);
     }
     // Answering resumes a parked box and starts a turn, so this is a mutation

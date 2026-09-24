@@ -98,6 +98,44 @@ export function graphToken(tenantId: string, creds?: TeamsBotCreds | null): Prom
   return mintTeamsToken({ scope: GRAPH_SCOPE, tenantId, creds });
 }
 
+/**
+ * Prove that a bring-your-own bot's app registration exists in `tenant`.
+ *
+ * A tenant id or domain typed into the connect form proves nothing on its own:
+ * both are public. Microsoft issues an app-only token for a tenant only when
+ * the app has a service principal there (it was registered or consented in
+ * that tenant), and the token's `tid` claim names the tenant as a GUID — so a
+ * domain resolves to the id inbound activities carry.
+ */
+export async function proveTeamsTenant(input: {
+  tenantId: string;
+  creds: TeamsBotCreds;
+}): Promise<{ ok: true; tenantId: string } | { ok: false; error: string }> {
+  let token: string;
+  try {
+    token = await mintTeamsToken({ scope: GRAPH_SCOPE, tenantId: input.tenantId, creds: input.creds });
+  } catch {
+    return {
+      ok: false,
+      error:
+        'Microsoft did not issue a token for this app in that tenant. Check the tenant id, the app id and the ' +
+        'client secret, and that the app is registered in (or consented to by) the tenant.',
+    };
+  }
+  const tid = tenantClaim(token);
+  if (!tid) return { ok: false, error: 'Microsoft returned a token without a tenant id.' };
+  return { ok: true, tenantId: tid };
+}
+
+function tenantClaim(jwt: string): string | null {
+  try {
+    const payload = JSON.parse(Buffer.from(jwt.split('.')[1] ?? '', 'base64url').toString('utf8')) as { tid?: unknown };
+    return typeof payload.tid === 'string' && payload.tid ? payload.tid : null;
+  } catch {
+    return null;
+  }
+}
+
 export function clearTeamsTokenCache(): void {
   tokenCache.clear();
 }

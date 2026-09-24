@@ -44,7 +44,13 @@ mock.module('../../../shared/db', () => ({
         }),
       }),
     }),
-    update: () => ({ set: () => ({ where: async () => {} }) }),
+    update: () => ({
+      set: () => ({
+        // Awaitable, and `.returning()` for the on_behalf_of clear an email
+        // delivery runs (no token to clear here).
+        where: () => Object.assign(Promise.resolve(), { returning: async () => [] }),
+      }),
+    }),
   },
 }));
 

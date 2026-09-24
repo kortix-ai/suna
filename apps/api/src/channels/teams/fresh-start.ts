@@ -47,6 +47,8 @@ export async function startFreshTeamsConversation(input: {
   teamsUserId: string;
   /** The conversation's current policy, for a session that froze none. */
   channelPolicy?: string | null;
+  /** Per-project (BYO) bot: detach only a session of this project. */
+  projectId?: string;
 }): Promise<TeamsFreshStartOutcome> {
   if (input.scope === 'channel') {
     return {
@@ -68,6 +70,7 @@ export async function startFreshTeamsConversation(input: {
         eq(chatThreads.platform, PLATFORM),
         eq(chatThreads.workspaceId, input.tenantId),
         eq(chatThreads.threadId, input.conversationId),
+        input.projectId ? eq(chatThreads.projectId, input.projectId) : undefined,
       ),
     )
     .limit(1);

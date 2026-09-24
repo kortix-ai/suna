@@ -16,7 +16,7 @@ import { enqueueCurrentAppRuntime } from './deployment-worker';
 import { resolveAppHost, type ResolvedAppHost } from './hostnames';
 import { validateAccountToken, validateAccountTokenById } from '../repositories/account-tokens';
 import { validateServiceAccountToken } from '../repositories/service-accounts';
-import { isAccountToken, isServiceAccountToken } from '../shared/crypto';
+import { isAccountToken, isKortixToken, isServiceAccountToken } from '../shared/crypto';
 import {
   APP_EDGE_HEADERS,
   edgeSecret as sharedEdgeSecret,
@@ -1201,6 +1201,26 @@ export async function ensureAppRuntimeRunning(
   }
 }
 
+const KORTIX_COOKIE_NAMES = new Set([
+  appAccessCookieName(false),
+  appAccessCookieName(true),
+  '__preview_session',
+]);
+
+/** The `Cookie` header without Kortix cookies; null when nothing is left. */
+function withoutKortixCookies(cookieHeader: string | null): string | null {
+  if (!cookieHeader) return null;
+  const kept = cookieHeader
+    .split(';')
+    .map((pair) => pair.trim())
+    .filter((pair) => {
+      if (!pair) return false;
+      const name = pair.slice(0, pair.indexOf('=') === -1 ? pair.length : pair.indexOf('=')).trim();
+      return !KORTIX_COOKIE_NAMES.has(name);
+    });
+  return kept.length ? kept.join('; ') : null;
+}
+
 export function appUpstreamHeaders(
   request: Request,
   providerHeaders: Record<string, string>,
@@ -1216,10 +1236,22 @@ export function appUpstreamHeaders(
     // must never be able to hand the App an identity of its own choosing.
     APP_VIEWER_HEADER,
     APP_VIEWER_TOKEN_HEADER,
-    // The gate's own credential header: consumed here, never forwarded. The
-    // App's `Authorization` is left untouched.
+    // The gate's own credential header: consumed here, never forwarded.
     APP_AUTHORIZATION_HEADER,
   ]) headers.delete(name);
+  // App code must never receive a Kortix credential. `Authorization` carries
+  // one when a CLI, CI job, or agent calls a non-public App with a PAT,
+  // session, or service-account token; that header is removed. Any other
+  // `Authorization` value belongs to the App (its own API key) and passes.
+  const authorization = headers.get('authorization') ?? '';
+  if (/^bearer\s/i.test(authorization) && isKortixToken(authorization.slice(7).trim())) {
+    headers.delete('authorization');
+  }
+  // Kortix cookies are the gate's, not the App's: the App access cookie and the
+  // preview session cookie. Every other cookie is the App's own.
+  const cookie = withoutKortixCookies(headers.get('cookie'));
+  if (cookie === null) headers.delete('cookie');
+  else headers.set('cookie', cookie);
   if (viewer) {
     headers.set(APP_VIEWER_HEADER, viewer.context);
     if (viewer.token) headers.set(APP_VIEWER_TOKEN_HEADER, viewer.token);
