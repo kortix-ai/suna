@@ -15,17 +15,18 @@ function logTrace(logger: GatewayLogger, trace: GatewayTrace): void {
   const model = trace.resolvedModel || trace.requestedModel || 'unknown';
   const tokens = trace.usage.promptTokens + trace.usage.completionTokens;
   const tried = trace.candidatesTried.length > 1 ? ` tried=${trace.candidatesTried.join(',')}` : '';
+  const upstream = trace.upstream ? ` upstream=${trace.upstream.provider}:${trace.upstream.model}` : '';
 
   if (trace.ok) {
     logger.info(
-      `[gateway] ✓ ${trace.requestId} ${model} via ${trace.provider} ${trace.status} ${trace.latencyMs}ms ${tokens}tok $${trace.finalCost.toFixed(5)}${tried}`,
+      `[gateway] ✓ ${trace.requestId} ${model} via ${trace.provider} ${trace.status} ${trace.latencyMs}ms ${tokens}tok $${trace.finalCost.toFixed(5)}${tried}${upstream}`,
     );
     return;
   }
 
   const reason = trace.errorMessage ? ` "${String(trace.errorMessage).slice(0, 200)}"` : '';
   logger.warn(
-    `[gateway] ✗ ${trace.requestId} ${model} ${trace.status} ${trace.errorCode ?? 'error'}${reason} ${trace.latencyMs}ms${tried}`,
+    `[gateway] ✗ ${trace.requestId} ${model} ${trace.status} ${trace.errorCode ?? 'error'}${reason} ${trace.latencyMs}ms${tried}${upstream}`,
   );
 }
 
@@ -58,6 +59,7 @@ export function createTraceEmitter(
       attempts: fields.attempts ?? 0,
       candidatesTried: fields.candidatesTried ?? [],
       attemptFailures: fields.attemptFailures ?? [],
+      upstream: fields.upstream,
       usage: fields.usage ?? EMPTY_USAGE,
       upstreamCost: fields.upstreamCost ?? 0,
       finalCost: fields.finalCost ?? 0,

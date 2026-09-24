@@ -26,6 +26,13 @@ export {
   gatewayErrorResponse,
 } from './pipeline/error-response';
 export type { GatewayErrorContext } from './pipeline/error-response';
+export {
+  publicPayload,
+  publicUpstreamError,
+  shownModel,
+  shownProvider,
+} from './pipeline/public-identity';
+export type { PublicUpstreamError } from './pipeline/public-identity';
 
 export { callUpstream } from './http';
 export type { CallUpstreamOptions, FetchImpl } from './http';
