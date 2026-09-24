@@ -16,6 +16,13 @@ const served = [
   'kimi-k3',
 ];
 
+// OpenRouter endpoints whose US datacenter is confirmed on 2026-09-24: the
+// provider lists US headquarters AND US datacenters (/api/v1/providers), or the
+// endpoint tag names the US region (`/us`). US headquarters alone is not enough.
+const US_DATACENTER_CONFIRMED = [
+  'morph', 'coreweave/nvfp4', 'coreweave/fp8', 'decart/fp4', 'sail-research/us', 'fireworks/us',
+];
+
 // Every bundled route pins a ZDR endpoint. Vision is per model.
 describe('managed catalog', () => {
   test('serves the selected managed models', () => {
@@ -49,7 +56,8 @@ describe('managed catalog', () => {
         max_price: { prompt: number; completion: number };
       };
       expect(route).toMatchObject({ allow_fallbacks: true, zdr: true, data_collection: 'deny' });
-      expect(route.only.length, model.id).toBeGreaterThanOrEqual(5);
+      expect(route.only.length, model.id).toBeGreaterThanOrEqual(2);
+      for (const tag of route.only) expect(US_DATACENTER_CONFIRMED, `${model.id} ${tag}`).toContain(tag);
       expect(new Set(route.only).size, model.id).toBe(route.only.length);
       // Morph's own OpenRouter endpoint is listed first so the fallback keeps
       // the primary's weights when Morph direct fails on our key only.
@@ -67,11 +75,13 @@ describe('managed catalog', () => {
         expect(only(id), `${id} ${tag}`).not.toContain(tag);
       }
     }
-    // HTTP 200 with the image ignored.
-    expect(only('deepseek-v4.1-flash')).not.toContain('coreweave/fp8');
-    expect(only('deepseek-v4.1-flash')).not.toContain('novita/fp8');
-    // HTTP 400 on image input.
+    // US headquarters without a confirmed US datacenter.
+    for (const tag of ['wafer', 'together', 'parasail/fp8', 'io-net/fp8', 'novita/fp8', 'phala', 'phala/fp8', 'baseten/fp8', 'fireworks', 'deepinfra/fp8', 'deepinfra/bf16', 'modal']) {
+      for (const id of ['glm-5.3-flash', 'deepseek-v4.1-flash', 'kimi-k3']) expect(only(id), `${id} ${tag}`).not.toContain(tag);
+    }
+    // HTTP 400 on image input (confirmed-US, still excluded).
     expect(only('glm-5.3-flash')).not.toContain('venice');
+    expect(only('deepseek-v4.1-flash')).not.toContain('venice/fp8');
     expect(getManagedModel('morph-dsv4flash')).toBeUndefined();
   });
 

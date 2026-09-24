@@ -506,9 +506,9 @@ export function pricingRefLookupCandidates(pricingRef: string): string[] {
 // Morph direct is the primary upstream. When a Morph dispatch fails (HTTP error
 // or network error before output), the gateway sends the same request to the
 // OpenRouter pool. Each pool lists only endpoints that, on 2026-09-24, were in
-// OpenRouter's ZDR feed, had a US provider location, served fp8 or better (GLM
-// also keeps its original CoreWeave nvfp4 pin), and answered pinned text and image
-// probes. `allow_fallbacks: true` lets OpenRouter move between pool members;
+// OpenRouter's ZDR feed, had a CONFIRMED US datacenter (US headquarters plus US
+// datacenters in /api/v1/providers, or a `/us` endpoint tag), and answered pinned
+// text and image probes. US headquarters alone does not qualify. `allow_fallbacks: true` lets OpenRouter move between pool members;
 // `only` keeps it inside the pool. `max_price` (USD per 1M tokens) excludes premium
 // tiers. packages/llm-catalog/README.md records the probe results.
 // Vision is explicit per model so the picker and runtime reject image input for text-only models.
@@ -522,7 +522,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
     pricing: { inputPerMillion: 0.15, cachedInputPerMillion: 0.0359375, outputPerMillion: 0.6 },
     tier: 'balanced', vision: true, limit: { context: 1_048_576, output: 16_384 },
     openrouterProvider: {
-      only: ['morph', 'wafer', 'together', 'parasail/fp8', 'fireworks', 'deepinfra/fp8', 'baseten/fp8', 'phala', 'modal'],
+      only: ['morph', 'coreweave/fp8'],
       ...OPENROUTER_POOL_PRIVACY,
       max_price: { prompt: 0.3, completion: 1.2 },
     },
@@ -533,10 +533,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
     pricing: { inputPerMillion: 0.1, cachedInputPerMillion: 0.02, outputPerMillion: 0.35 },
     tier: 'fast', vision: true, limit: { context: 1_048_576, output: 16_384 },
     openrouterProvider: {
-      only: [
-        'morph', 'wafer', 'together', 'parasail/fp8', 'io-net/fp8', 'novita/fp8',
-        'phala/fp8', 'baseten/fp8', 'coreweave/nvfp4', 'sail-research/us',
-      ],
+      only: ['morph', 'decart/fp4', 'coreweave/nvfp4', 'sail-research/us'],
       ...OPENROUTER_POOL_PRIVACY,
       max_price: { prompt: 0.15, completion: 0.5 },
     },
@@ -547,9 +544,9 @@ export const MANAGED_MODELS: ManagedModel[] = [
     pricing: { inputPerMillion: 2.5, cachedInputPerMillion: 0.29, outputPerMillion: 14 },
     tier: 'flagship', vision: true, limit: { context: 1_048_576, output: 16_384 },
     openrouterProvider: {
-      only: ['morph', 'wafer', 'together', 'deepinfra/bf16', 'phala', 'baseten/fp8'],
+      only: ['morph', 'fireworks/us'],
       ...OPENROUTER_POOL_PRIVACY,
-      max_price: { prompt: 3, completion: 15 },
+      max_price: { prompt: 3.3, completion: 16.5 },
     },
   },
 ];

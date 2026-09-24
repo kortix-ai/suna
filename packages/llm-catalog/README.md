@@ -30,29 +30,29 @@ A deployment with only one of the two keys serves managed models through that pr
 
 ### OpenRouter fallback pools
 
-On 2026-09-24 every pool member met all of these conditions:
-
-- It was listed in OpenRouter's ZDR endpoint feed (`/api/v1/endpoints/zdr`) for the model.
-- OpenRouter lists the provider's headquarters as US, and its datacenters as US or unlisted.
-- Its quantization was fp8 or better. The exception is GLM's `coreweave/nvfp4`, the route used before this change.
-- Pinned text, image, and tool requests returned HTTP 200 and described the test image correctly.
+Every pool member has a **confirmed US datacenter**. OpenRouter lists the provider's headquarters AND datacenters as US (`/api/v1/providers`), or the endpoint tag names the US region (`/us`). US headquarters alone does not qualify. Every member is also in OpenRouter's ZDR endpoint feed (`/api/v1/endpoints/zdr`), checked on 2026-09-24.
 
 | Model | Pool (`only`) | `max_price` prompt / completion |
 | --- | --- | --- |
-| DeepSeek V4.1 Flash | `morph`, `wafer`, `together`, `parasail/fp8`, `fireworks`, `deepinfra/fp8`, `baseten/fp8`, `phala`, `modal` | $0.30 / $1.20 |
-| GLM-5.3-Flash | `morph`, `wafer`, `together`, `parasail/fp8`, `io-net/fp8`, `novita/fp8`, `phala/fp8`, `baseten/fp8`, `coreweave/nvfp4`, `sail-research/us` | $0.15 / $0.50 |
-| Kimi K3 2.8T | `morph`, `wafer`, `together`, `deepinfra/bf16`, `phala`, `baseten/fp8` | $3.00 / $15.00 |
+| DeepSeek V4.1 Flash | `morph`, `coreweave/fp8` | $0.30 / $1.20 |
+| GLM-5.3-Flash | `morph`, `decart/fp4`, `coreweave/nvfp4`, `sail-research/us` | $0.15 / $0.50 |
+| Kimi K3 2.8T | `morph`, `fireworks/us` | $3.30 / $16.50 |
 
-`sail-research/us` serves GLM text only. OpenRouter skips it for image requests. Pool requests with `allow_fallbacks: true` returned HTTP 200 for 24 of 24 text and image requests across the three models.
+Probe results on 2026-09-24, as pools with `allow_fallbacks: true`:
+- 30 of 30 text and image requests returned HTTP 200.
+- OpenRouter routes by price, so `morph` serves most requests.
+
+Known limits:
+- `sail-research/us` serves GLM text only. OpenRouter skips it for image requests.
+- `coreweave/fp8` twice answered a DeepSeek image request as if no image was sent. It stays because it is the only other US-datacenter DeepSeek endpoint. A request reaches it only after Morph direct and Morph through OpenRouter both fail.
+- `coreweave/nvfp4` returns HTTP 429 from a shared pool most of the time; see below.
+- `decart/fp4` is fp4 quantization.
 
 Excluded on 2026-09-24:
-
-- Non-US or unlisted provider location: `z-ai/fp8` (SG), `siliconflow/fp8` (SG HQ), `inceptron/fp8` (SE), `nextbit/fp8` (ES), `moonshotai/mxfp4` (SG), `dekallm` (ID), `relace`, `near-ai/fp8`, `digitalocean`, `reka/fp8`, `makora`.
-- Image dropped with HTTP 200: DeepSeek on `coreweave/fp8` and `novita/fp8` answered as if no image was sent.
-- Image rejected: GLM on `venice`, `open-inference/fp4`, and `digitalocean` returned HTTP 400.
-- Repeated HTTP 429 `invalid_request_error`: GLM and Kimi on `fireworks`.
-- fp4-class quantization: `inference-net/fp4`, `deepinfra/fp4`, `open-inference/fp4`, `crusoe/fp4`, `sail-research/fp4`, `parasail/fp4`, `relace/fp4`, `modal/mxfp4`.
-- Above `max_price`: GLM `modal/fp8`, DeepSeek `venice/fp8`, Kimi `fireworks/us`, `fireworks/fast`, `morph/fast`.
+- **US headquarters without a confirmed US datacenter:** `wafer`, `together`, `parasail/*`, `io-net/fp8`, `novita/fp8`, `phala*`, `baseten/fp8`, `fireworks`, `deepinfra/*`, `modal*`, `inference-net/fp4`, `open-inference/fp4`, `crusoe/fp4`, `krea/fp8`, `sail-research/fp4`.
+- **Non-US or unknown location:** `z-ai/fp8` (SG), `siliconflow/fp8` (US datacenters, SG headquarters), `inceptron/fp8` (FI), `nextbit/fp8` (ES), `moonshotai/mxfp4` (SG), `dekallm` (ID), `relace`, `near-ai/fp8`, `digitalocean`, `reka`, `makora`.
+- **Image input rejected (HTTP 400):** `venice` (GLM) and `venice/fp8` (DeepSeek).
+- **Above `max_price`:** `morph/fast` for Kimi ($6.00 / $22.50).
 
 ### Why GLM-5.3-Flash failed before 2026-09-24
 
