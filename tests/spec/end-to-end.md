@@ -1029,11 +1029,14 @@ These contracts use product IDs. They replace the old route-coverage bucket IDs.
 `CHN-26` A Slack file download without a file reference returns the documented validation or installation error.
 `CHN-27` An anonymous caller cannot update a project email installation.
 `CHN-28` An anonymous caller cannot bind a Slack identity.
+`CHN-29` A project Slack app's signed events, commands, and interactions stay inside that project and the workspace its install proved. A request naming another workspace is refused, and an interaction naming another project changes nothing there.
+`CHN-30` An agent binds a Slack thread only to its own session. A sibling session in the same project is refused, and nothing is written.
 `CHN-T1` A project member reads the Microsoft Teams installation state.
 `CHN-T2` A project member reads the Microsoft Teams channel mode.
 `CHN-T3` A project manager starts Microsoft Teams connection. Invalid input and unauthorized callers are rejected.
 `CHN-T4` The Microsoft Teams messages webhook verifies its request before it starts work.
 `CHN-T5` An agent posts into a Microsoft Teams conversation its project is already in. A caller without connector write is refused, and a conversation the project does not own is not found.
+`CHN-T6` A Microsoft Teams tenant is connected only with proof of the tenant. A tenant id without bot credentials is refused and nothing is installed. The file download proxy reads only message attachment paths from Microsoft Graph and sends the bot token only to the Teams connector host.
 `CONN-16` A project manager deletes a connector credential. Unknown connectors and unauthorized callers are rejected.
 `CONN-17` A project member reads connector policies. Unknown connectors and non-members are rejected.
 `CONN-18` A project manager creates a connector setup request. Missing or unconnected connector slugs are rejected.
