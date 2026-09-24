@@ -503,6 +503,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         P.activateConnection(projectId, ...a),
       setDefault: (...a: DropFirst<Parameters<typeof P.setDefaultConnection>>) =>
         P.setDefaultConnection(projectId, ...a),
+      rename: (...a: DropFirst<Parameters<typeof P.renameConnection>>) =>
+        P.renameConnection(projectId, ...a),
       pipedreamConnect: (...a: DropFirst<Parameters<typeof P.pipedreamConnectConnection>>) =>
         P.pipedreamConnectConnection(projectId, ...a),
       pipedreamFinalize: (...a: DropFirst<Parameters<typeof P.pipedreamFinalizeConnection>>) =>
@@ -542,6 +544,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
             P.updateAppAccess(projectId, ...a),
           session: (...a: DropFirst<Parameters<typeof P.createAppAccessSession>>) =>
             P.createAppAccessSession(projectId, ...a),
+          /** Agents whose `kortix.yaml` `apps:` grant names this App. Read-only. */
+          agents: (appId: string) => P.listAppAgents(projectId, appId),
         },
         remove: (appId: string) => P.deleteApp(projectId, appId),
         artifacts: {

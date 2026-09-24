@@ -9,6 +9,7 @@ import { handleTeamsActivity } from './dispatch';
 import { handleFileConsentInvoke } from './file-proxy';
 import { handleAdaptiveCardAction } from './interactivity';
 import type { TeamsActivity } from './types';
+import { bindIntegrationPrincipal } from '../../shared/audit-scope';
 
 async function processActivity(c: Context, expectedAppId?: string | null): Promise<Response> {
   let activity: TeamsActivity;
@@ -21,6 +22,7 @@ async function processActivity(c: Context, expectedAppId?: string | null): Promi
   const authHeader = c.req.header('Authorization');
   const valid = await validateInboundActivityJwt(authHeader, activity.serviceUrl, expectedAppId);
   if (!valid) return c.json({ error: 'unauthorized' }, 401);
+  bindIntegrationPrincipal('microsoft_teams');
 
   if (activity.type === 'invoke') {
     if (activity.name === 'adaptiveCard/action') {

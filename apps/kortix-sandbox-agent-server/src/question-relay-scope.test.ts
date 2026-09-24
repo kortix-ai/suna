@@ -102,3 +102,33 @@ describe('relayQuestionToApi', () => {
     expect(replyAt).toBeGreaterThan(gateAt);
   });
 });
+
+// The pi harness releases in-process rather than over HTTP, but had the SAME
+// Slack-only gate: a Teams pi session's question was never released and the
+// turn hung. apps/api now releases channel questions itself, so this is the
+// fallback — but it must still recognise a Teams session, and must not tell
+// the agent to stop using the tool both channel prompts now recommend.
+describe('pi relayQuestion', () => {
+  const PI = Bun.file(new URL('./harness/pi/relay.ts', import.meta.url).pathname);
+
+  test('a TEAMS session is a channel, not "left open"', async () => {
+    const src = await PI.text();
+    const fn = src.slice(src.indexOf('export async function relayQuestion'));
+    const body = fn.slice(0, fn.indexOf('\n}\n'));
+    expect(body).toContain('MS_TEAMS_CONVERSATION_ID');
+    expect(body).toContain('SLACK_THREAD_TS');
+    expect(body).toContain('if (!teams && !slack) return');
+  });
+
+  test('the sentinel names the channel and never says to avoid the tool', async () => {
+    const src = await PI.text();
+    const fn = src.slice(src.indexOf('export async function relayQuestion'));
+    const code = fn
+      .slice(0, fn.indexOf('\n}\n'))
+      .split('\n')
+      .filter((l) => !l.trim().startsWith('//'))
+      .join('\n');
+    expect(code).toContain('the Teams conversation');
+    expect(code).not.toMatch(/rather than the question tool/);
+  });
+});

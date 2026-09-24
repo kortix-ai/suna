@@ -53,7 +53,7 @@ describe('repairPromptWireId', () => {
   });
 
   test('a client id at-or-below the newest known message is RE-MINTED above it', () => {
-    // The Essentia case: a steering prompt into a continuously-streaming child
+    // The SampleCo case: a steering prompt into a continuously-streaming child
     // session, minted by a tab whose store held none of that child's messages,
     // fell back to the 2-minute backdate and sorted below the tip. OpenCode
     // read it as already answered and the turn never ran.

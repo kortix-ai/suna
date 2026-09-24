@@ -37,7 +37,6 @@ import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { Button } from '@/components/ui/button';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import Loading from '@/components/ui/loading';
-import { FileContentRenderer } from '@/features/files/components/file-content-renderer';
 import { useBinaryBlob } from '@/features/files/hooks/use-binary-blob';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
 import { useHeicBlob } from '@/hooks/use-heic-url';
@@ -48,7 +47,7 @@ import { cn } from '@/lib/utils';
 import { isHeicFile } from '@/lib/utils/heic-convert';
 import { safeScrollTo } from '@/lib/utils/safe-scroll-to';
 import { isAppRouteUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-url';
-import { buildStaticFileLocalUrl } from '@kortix/sdk';
+import { buildStaticFileLocalUrl, isSessionAttachmentRef } from '@kortix/sdk';
 import {
   WarningIcon as AlertTriangle,
   CaretLeftIcon as ChevronLeft,
@@ -62,6 +61,7 @@ import {
 } from '@phosphor-icons/react';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ImageRenderer } from './image-renderer';
+import { MermaidDiagram } from './mermaid/mermaid-diagram';
 import { ViewerFrame } from './shared/viewer-frame';
 import { resolveShowType, shouldRenderFromSandboxFile } from './show-type-utils';
 import { VideoRenderer } from './video-renderer';
@@ -82,6 +82,14 @@ const DocxRenderer = lazy(() =>
 );
 const PptxRenderer = lazy(() =>
   import('./pptx-renderer').then((m) => ({ default: m.PptxRenderer })),
+);
+// The whole file viewer (CodeMirror, diffs, HTML preview). Show rows render in
+// every transcript — the marketing home demo included — and most never reach
+// the generic-file branch below.
+const FileContentRenderer = lazy(() =>
+  import('@/features/files/components/file-content-renderer').then((m) => ({
+    default: m.FileContentRenderer,
+  })),
 );
 
 // ── Extension regexes + type resolution (pure, unit-tested sibling module) ──
@@ -134,6 +142,36 @@ function isLocalSandboxFilePath(value: string): boolean {
 /** Types loaded via useBinaryBlob (/file/raw, direct binary fetch) */
 const BLOB_TYPES = new Set(['image', 'video', 'audio', 'docx', 'pptx']);
 
+/**
+ * Where a show's binary viewer reads its bytes from, or null for no blob read.
+ *
+ * A `kortix-attachment://` copy recorded by saved history wins over the
+ * sandbox path: it is exactly what the agent showed, and it needs no box. PDF
+ * joins only when such a copy exists, because its sandbox read is a base64
+ * text read while a stored copy is bytes.
+ *
+ * NEVER HTML. An `html` or `html-file` show renders through the sandbox's
+ * static server on its own isolated preview origin. A blob made from a stored
+ * copy would be same-origin with the app, so agent-authored script would run
+ * with the user's session. Keeping HTML out of this function is what keeps it
+ * out of the app origin.
+ *
+ * For every type it DOES serve, a stored copy adds no exposure: those viewers
+ * already turn the sandbox's bytes into a same-origin blob, and the copy is
+ * byte-identical to what that read would return.
+ */
+export function showBlobSource(input: {
+  effectiveType: string;
+  attachment?: string | null;
+  sandboxPath: string | null;
+}): string | null {
+  const stored = isSessionAttachmentRef(input.attachment) ? (input.attachment as string) : null;
+  const binary =
+    BLOB_TYPES.has(input.effectiveType) || (input.effectiveType === 'pdf' && stored !== null);
+  if (!binary) return null;
+  return stored ?? input.sandboxPath;
+}
+
 function RendererFallback({ className }: { className?: string }) {
   return (
     <div className={cn('flex items-center justify-center', className || 'h-[420px]')}>
@@ -176,6 +214,15 @@ export interface ShowContentProps {
   content?: string;
   language?: string;
   aspectRatio?: string;
+  /**
+   * A `kortix-attachment://` copy of the file at `path`, when saved session
+   * history recorded one. The server copies every file an agent showed while
+   * the box is up, so a card from a stopped session can render its bytes
+   * instead of waiting on the sandbox. Only binary viewers and PDF read it:
+   * HTML stays on the sandbox's isolated preview origin, because a same-origin
+   * blob would run agent-authored script inside the app.
+   */
+  attachment?: string;
   /** Optional: render a proxied localhost iframe. Caller provides this component. */
   LocalhostPreview?: React.ComponentType<{ url: string; label?: string }>;
   /**
@@ -215,6 +262,7 @@ export function ShowContentRenderer({
   content = '',
   language = '',
   aspectRatio = '',
+  attachment,
   LocalhostPreview,
   fill = false,
   onStatusChange,
@@ -254,6 +302,7 @@ export function ShowContentRenderer({
   const isText = effectiveType === 'text';
   const isHtml = effectiveType === 'html';
   const isHtmlFile = effectiveType === 'html-file';
+  const isMermaid = effectiveType === 'mermaid';
   const hasLocalhostUrl = !!parseLocalhostUrl(url) && !isAppRouteUrl(url);
   const safeExternalUrl = safeHttpUrl(url);
 
@@ -315,8 +364,11 @@ export function ShowContentRenderer({
   // Binary blob: ONE hook for image, video, audio, pdf, docx, pptx
   // Uses /file/raw endpoint (direct binary fetch via authenticatedFetch),
   // NOT the SDK text-read endpoint. More reliable for binary content.
-  const needsBlob = BLOB_TYPES.has(effectiveType) && !!sandboxPath;
-  const blobFilePath = needsBlob ? sandboxPath : null;
+  // The stored copy wins when saved history recorded one: it is exactly what
+  // the agent showed, and it needs no box. PDF joins the blob path only then —
+  // its sandbox read is a base64 text read, but a stored copy is bytes.
+  const storedCopy = isSessionAttachmentRef(attachment) ? (attachment as string) : null;
+  const blobFilePath = showBlobSource({ effectiveType, attachment, sandboxPath });
   const {
     blobUrl,
     blob: rawBlob,
@@ -332,7 +384,7 @@ export function ShowContentRenderer({
   );
 
   // PDF: base64 content via SDK, decoded by PdfRenderer into a Blob URL.
-  const pdfLoadPath = isPdf && sandboxPath ? sandboxPath : null;
+  const pdfLoadPath = isPdf && sandboxPath && !storedCopy ? sandboxPath : null;
   const {
     data: pdfData,
     isLoading: pdfLoading,
@@ -406,8 +458,11 @@ export function ShowContentRenderer({
   const ownStatus = useMemo<'loading' | 'ready' | 'error' | null>(() => {
     // Generic file → FileContentRenderer reports via its own onStatusChange.
     if (effectiveType === 'file' && path && sandboxPath) return null;
-    // Binary/media types backed by useBinaryBlob.
-    if ((isImage || isVideo || isAudio || isDocx || isPptx) && path) {
+    // A Mermaid file with no inline source renders through the same branch.
+    if (isMermaid && !content && path && sandboxPath) return null;
+    // Binary/media types backed by useBinaryBlob — and a PDF whose stored copy
+    // is read the same way.
+    if ((isImage || isVideo || isAudio || isDocx || isPptx || (isPdf && storedCopy)) && path) {
       if (blobError) return 'error';
       if (blobLoading || (isImage && heicConverting)) return 'loading';
       return 'ready';
@@ -427,6 +482,8 @@ export function ShowContentRenderer({
     effectiveType,
     path,
     sandboxPath,
+    isMermaid,
+    content,
     isImage,
     isVideo,
     isAudio,
@@ -434,6 +491,7 @@ export function ShowContentRenderer({
     isPptx,
     isPdf,
     isCsv,
+    storedCopy,
     blobError,
     blobLoading,
     heicConverting,
@@ -590,6 +648,21 @@ export function ShowContentRenderer({
   // ═════════════════════════════════════════════════════════════════════════
   // PDF — loaded via useFileContent base64 → atob → Blob URL → native PDF viewer
   // ═════════════════════════════════════════════════════════════════════════
+  if (isPdf && path && storedCopy) {
+    if (blobLoading) return <RendererFallback className={mediaH} />;
+    if (blobError) return <LoadError message={blobError} />;
+    if (blobUrl) {
+      return (
+        <Suspense fallback={<RendererFallback className={mediaH} />}>
+          <div className={mediaH}>
+            {framed(
+              <PdfRenderer url={blobUrl} fileName={fileName} className="h-full" {...viewerChrome} />,
+            )}
+          </div>
+        </Suspense>
+      );
+    }
+  }
   if (isPdf && path) {
     if (pdfLoading) return <RendererFallback className={mediaH} />;
     if (pdfError)
@@ -732,6 +805,18 @@ export function ShowContentRenderer({
   }
 
   // ═════════════════════════════════════════════════════════════════════════
+  // Mermaid — inline source renders here. A path with no inline content falls
+  // through to FileContentRenderer below, which renders `.mmd` the same way.
+  // ═════════════════════════════════════════════════════════════════════════
+  if (isMermaid && content) {
+    return (
+      <div className={mediaH}>
+        {alwaysFramed(<MermaidDiagram source={content} fileName={fileName || 'diagram.mmd'} />)}
+      </div>
+    );
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════
   // Generic file (json, yaml, ts, py, etc.) → FileContentRenderer
   // FileContentRenderer handles text/code detection, syntax highlighting,
   // and binary fallbacks. Works great for text files via SDK text-read.
@@ -744,6 +829,7 @@ export function ShowContentRenderer({
     return (
       <div className={mediaH}>
         {alwaysFramed(
+          <Suspense fallback={<RendererFallback className="h-full" />}>
           <FileContentRenderer
             filePath={sandboxPath!}
             showHeader={false}
@@ -755,7 +841,8 @@ export function ShowContentRenderer({
             className="h-full"
             errorFallback={fileErrorFallback}
             onStatusChange={onStatusChange}
-          />,
+          />
+          </Suspense>,
         )}
       </div>
     );
@@ -901,6 +988,8 @@ export interface ShowCarouselItem {
   content?: string;
   language?: string;
   aspect_ratio?: string;
+  /** Stored copy of `path` from saved history — see `ShowContentProps.attachment`. */
+  attachment?: string;
 }
 
 export interface ShowCarouselProps {
@@ -1086,6 +1175,7 @@ export function ShowCarousel({
           content={currentItem.content}
           language={currentItem.language}
           aspectRatio={currentItem.aspect_ratio}
+          attachment={currentItem.attachment}
           LocalhostPreview={LocalhostPreview}
           toolbarActions={toolbarActions}
           fill={fill}

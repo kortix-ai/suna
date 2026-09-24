@@ -65,7 +65,36 @@ function eventStream(): HarnessForwardResult {
       write(`data: ${JSON.stringify({ type: 'server.connected', properties: {} })}\n\n`)
       const subscription = bus.subscribe((event) => {
         if (event.type.startsWith('kortix.')) return
-        write(`data: ${JSON.stringify({ type: event.type, properties: event.payload })}\n\n`)
+        /*
+          THE ENVELOPE NEEDS ITS OWN ID, AND STREAMED TEXT DEPENDS ON IT.
+
+          OpenCode's wire carries a top-level `id` on every event, and the SDK
+          store uses it as the idempotency key for `message.part.delta`
+          (`applyPartDelta`'s `eventID`). Its rule, verbatim: "a delta with no
+          id gets no protection here". The store cannot dedupe on delta CONTENT
+          — text that legitimately repeats, like "..." streamed one character
+          at a time, would false-positive — so identity is the only key it has.
+
+          This frame shipped as `{type, properties}`, so every pi delta arrived
+          unprotected. A redelivery then APPENDED the same text again: a
+          reconnect that stacks a second live connection, or a second mounted
+          subscriber, replays a tail of the stream, and the assistant's reply
+          rendered twice inside one message — the second copy streaming in
+          after the first had finished.
+
+          `seq` is dense and monotonic within an epoch, and a redelivery of one
+          event carries the same seq, which is exactly what a dedupe key must
+          do. The epoch is prefixed because seq restarts at 0 when the daemon
+          does, and an id that repeats across a restart is a key that silently
+          drops a legitimate delta.
+        */
+        write(
+          `data: ${JSON.stringify({
+            id: `${bus.epoch}:${event.seq}`,
+            type: event.type,
+            properties: event.payload,
+          })}\n\n`,
+        )
       })
       unsubscribe = subscription.unsubscribe
     },

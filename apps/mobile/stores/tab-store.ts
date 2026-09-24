@@ -3,7 +3,7 @@
  *
  * Supports two tab types:
  * - Session tabs (chat sessions identified by session ID)
- * - Page tabs (utility pages like Files, Terminal, Memory, etc.)
+ * - Page tabs (Review, Browser, a project's page, …: `PAGE_TABS`)
  */
 
 import { create } from 'zustand';
@@ -17,43 +17,22 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 export interface PageTab {
   id: string;       // e.g. "page:files"
   label: string;    // e.g. "Files"
-  icon: string;     // Ionicons name
 }
 
-/** All known page tabs */
+/**
+ * All known page tabs. A page with no entry point is deleted, not kept here
+ * (COR-156). Entry points: Review (drawer), Browser (a preview card or tool
+ * link), Files (the drawer's `files` route), and project Settings / Schedules
+ * / Secrets (sub-pages). Memory has none: re-add an entry or delete it.
+ */
 export const PAGE_TABS: Record<string, PageTab> = {
-  'page:files':             { id: 'page:files',             label: 'Files',             icon: 'folder-open-outline' },
-  'page:terminal':          { id: 'page:terminal',          label: 'Terminal',          icon: 'terminal-outline' },
-  'page:memory':            { id: 'page:memory',            label: 'Memory',            icon: 'hardware-chip-outline' },
-  'page:workspace':         { id: 'page:workspace',         label: 'Workspace',         icon: 'grid-outline' },
-  'page:secrets':           { id: 'page:secrets',           label: 'Secrets Manager',   icon: 'key-outline' },
-  'page:llm-providers':     { id: 'page:llm-providers',     label: 'LLM Providers',     icon: 'cube-outline' },
-  'page:ssh':               { id: 'page:ssh',               label: 'SSH',               icon: 'link-outline' },
-  'page:api':               { id: 'page:api',               label: 'API',               icon: 'code-slash-outline' },
-  'page:triggers':          { id: 'page:triggers',          label: 'Triggers',          icon: 'calendar-outline' },
-  'page:channels':          { id: 'page:channels',          label: 'Channels',          icon: 'chatbox-outline' },
-  'page:tunnel':            { id: 'page:tunnel',            label: 'Tunnel',            icon: 'swap-horizontal-outline' },
-  'page:connections':      { id: 'page:connections',      label: 'Connections',      icon: 'git-branch-outline' },
-  'page:running-services':  { id: 'page:running-services',  label: 'Service Manager',  icon: 'pulse-outline' },
-  'page:browser':           { id: 'page:browser',           label: 'Browser',           icon: 'compass-outline' },
-  'page:agent-browser':     { id: 'page:agent-browser',     label: 'Agent Browser',     icon: 'globe-outline' },
-  'page:updates':           { id: 'page:updates',           label: 'Updates',           icon: 'arrow-down-circle-outline' },
-  'page:projects':          { id: 'page:projects',          label: 'Projects',          icon: 'folder-outline' },
-  // ── Right-drawer navigation (web sidebar parity) — placeholder pages for now ──
-  'page:agents':            { id: 'page:agents',            label: 'Agents',            icon: 'hardware-chip-outline' },
-  'page:skills':            { id: 'page:skills',            label: 'Skills',            icon: 'sparkles-outline' },
-  'page:commands':          { id: 'page:commands',          label: 'Commands',          icon: 'code-slash-outline' },
-  'page:connectors':        { id: 'page:connectors',        label: 'Connectors',        icon: 'extension-puzzle-outline' },
-  'page:secrets-nav':       { id: 'page:secrets-nav',       label: 'Secrets',           icon: 'key-outline' },
-  'page:channels-nav':      { id: 'page:channels-nav',      label: 'Channels',          icon: 'chatbox-outline' },
-  'page:schedules':         { id: 'page:schedules',         label: 'Schedules',         icon: 'time-outline' },
-  'page:webhooks':          { id: 'page:webhooks',          label: 'Webhooks',          icon: 'git-network-outline' },
-  'page:changes':           { id: 'page:changes',           label: 'Changes',           icon: 'git-pull-request-outline' },
-  'page:files-nav':         { id: 'page:files-nav',         label: 'Files',             icon: 'folder-outline' },
-  'page:sandbox':           { id: 'page:sandbox',           label: 'Sandbox',           icon: 'cube-outline' },
-  'page:dev':               { id: 'page:dev',               label: 'Dev',               icon: 'terminal-outline' },
-  'page:members':           { id: 'page:members',           label: 'Members',           icon: 'people-outline' },
-  'page:settings':          { id: 'page:settings',          label: 'Settings',          icon: 'settings-outline' },
+  'page:memory':            { id: 'page:memory',            label: 'Memory' },
+  'page:browser':           { id: 'page:browser',           label: 'Browser' },
+  'page:secrets-nav':       { id: 'page:secrets-nav',       label: 'Secrets' },
+  'page:schedules':         { id: 'page:schedules',         label: 'Schedules' },
+  'page:review':            { id: 'page:review',            label: 'Review' },
+  'page:files-nav':         { id: 'page:files-nav',         label: 'Files' },
+  'page:settings':          { id: 'page:settings',          label: 'Settings' },
 };
 
 // ---------------------------------------------------------------------------
@@ -98,8 +77,6 @@ interface TabState {
   sessionHistory: string[];
   /** Current position in history */
   historyIndex: number;
-  /** Whether the tabs overview grid is shown (not persisted) */
-  showTabsOverview: boolean;
   /** Per-tab ephemeral UI state (scroll positions, view state, etc.) */
   tabStateById: Record<string, Record<string, unknown>>;
   /** Which scope (project id, or 'home') the flat fields above belong to. */
@@ -113,21 +90,23 @@ interface TabState {
   closeAllTabs: () => void;
   goBack: () => void;
   goForward: () => void;
-  setShowTabsOverview: (show: boolean) => void;
   setTabState: (tabId: string, patch: Record<string, unknown>) => void;
   clearTabState: (tabId: string) => void;
   /**
-   * Switch the store to a project's tab scope: snapshots the current flat
-   * state under the old scope key and hydrates the flat state from the new
-   * scope (empty for a never-visited project). Tabs are remembered PER
-   * PROJECT, not globally. No-op when already on the scope.
+   * Open a project's tab scope on its home: snapshots the current flat state
+   * under the old scope key and hydrates the flat state from the new scope
+   * (empty for a never-visited project). Open tabs and history are remembered
+   * PER PROJECT; the active page or thread is not. Opening a project, again
+   * or after a restart, always shows project home.
    */
   setScope: (key: string) => void;
+  /** Sign-out: drop every scope, tab, history entry, and tab state. */
+  reset: () => void;
 }
 
 export const useTabStore = create<TabState>()(
   persist(
-    (set, get) => ({
+    (set, get, api) => ({
       activeSessionId: null,
       activePageId: null,
       openTabIds: [],
@@ -135,19 +114,24 @@ export const useTabStore = create<TabState>()(
       openTabOrder: [],
       sessionHistory: [],
       historyIndex: -1,
-      showTabsOverview: false,
       tabStateById: {},
       scopeKey: null,
       scopes: {},
 
       setScope: (key) => {
         const s = get();
-        if (s.scopeKey === key) return;
+        const home = { activeSessionId: null, activePageId: null };
+
+        // Reopening the same project: only drop the active page or thread.
+        if (s.scopeKey === key) {
+          set(home);
+          return;
+        }
 
         // Migration / first run: no scope owned the flat state yet — adopt it
         // as this scope's state so pre-scoping tabs aren't lost.
         if (!s.scopeKey) {
-          set({ scopeKey: key, showTabsOverview: false });
+          set({ scopeKey: key, ...home });
           return;
         }
 
@@ -155,8 +139,8 @@ export const useTabStore = create<TabState>()(
         const scopes: Record<string, TabScopeSnapshot> = {
           ...s.scopes,
           [s.scopeKey]: {
-            activeSessionId: s.activeSessionId,
-            activePageId: s.activePageId,
+            activeSessionId: null,
+            activePageId: null,
             openTabIds: s.openTabIds,
             openPageIds: s.openPageIds,
             openTabOrder: s.openTabOrder,
@@ -169,15 +153,13 @@ export const useTabStore = create<TabState>()(
         set({
           scopeKey: key,
           scopes,
-          activeSessionId: next.activeSessionId,
-          activePageId: next.activePageId,
           openTabIds: next.openTabIds,
           openPageIds: next.openPageIds,
           openTabOrder: next.openTabOrder,
           sessionHistory: next.sessionHistory,
           historyIndex: next.historyIndex,
           tabStateById: next.tabStateById,
-          showTabsOverview: false,
+          ...home,
         });
       },
 
@@ -198,7 +180,6 @@ export const useTabStore = create<TabState>()(
             return {
               activeSessionId: null,
               activePageId: null,
-              showTabsOverview: false,
               sessionHistory: nextHistory,
               historyIndex: nextIndex,
             };
@@ -214,7 +195,6 @@ export const useTabStore = create<TabState>()(
           return {
             activeSessionId: sessionId,
             activePageId: null,
-            showTabsOverview: false,
             openTabIds: newOpenTabIds,
             openTabOrder: newOpenTabOrder,
             sessionHistory: nextHistory,
@@ -244,7 +224,6 @@ export const useTabStore = create<TabState>()(
           return {
             activeSessionId: null,
             activePageId: pageId,
-            showTabsOverview: false,
             openPageIds: newOpenPageIds,
             openTabOrder: newOpenTabOrder,
             sessionHistory: nextHistory,
@@ -392,10 +371,6 @@ export const useTabStore = create<TabState>()(
         });
       },
 
-      setShowTabsOverview: (show) => {
-        set({ showTabsOverview: show });
-      },
-
       setTabState: (tabId, patch) => {
         set((state) => ({
           tabStateById: {
@@ -414,13 +389,17 @@ export const useTabStore = create<TabState>()(
           return { tabStateById: rest };
         });
       },
+
+      reset: () => {
+        set(api.getInitialState());
+      },
     }),
     {
       name: 'kortix-tab-state',
       storage: createJSONStorage(() => AsyncStorage),
+      // The active page or thread is not persisted: a restart opens project
+      // home. ProjectScreen's route stack owns where back goes.
       partialize: (state) => ({
-        activeSessionId: state.activeSessionId,
-        activePageId: state.activePageId,
         openTabIds: state.openTabIds,
         openPageIds: state.openPageIds,
         openTabOrder: state.openTabOrder,
@@ -443,12 +422,10 @@ export const useTabStore = create<TabState>()(
         state.tabStateById = state.tabStateById && typeof state.tabStateById === 'object'
           ? state.tabStateById
           : {};
-        if (state.activeSessionId !== null && typeof state.activeSessionId !== 'string') {
-          state.activeSessionId = null;
-        }
-        if (state.activePageId !== null && typeof state.activePageId !== 'string') {
-          state.activePageId = null;
-        }
+        // Storage written by older builds still holds the last active page or
+        // thread. Drop it so a restart opens project home.
+        state.activeSessionId = null;
+        state.activePageId = null;
         if (state.scopeKey != null && typeof state.scopeKey !== 'string') {
           state.scopeKey = null;
         }

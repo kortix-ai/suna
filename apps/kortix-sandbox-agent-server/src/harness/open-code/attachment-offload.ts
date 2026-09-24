@@ -3,7 +3,7 @@
  *
  * WHY. OpenCode keeps every tool screenshot as a base64 `data:` URL inside the
  * tool part's `state.attachments[]`, in the `part` table of `opencode.db`.
- * Measured on Essentia 2026-08-25: one root = 352 tool parts carrying
+ * Measured on SampleCo 2026-08-25: one root = 352 tool parts carrying
  * 275 MB of attachments out of a 276 MB transcript. Every consumer re-pays
  * those bytes: each LLM step re-serialises the whole history before our
  * llm-proxy windows it to 12 images, every message-list request serialises

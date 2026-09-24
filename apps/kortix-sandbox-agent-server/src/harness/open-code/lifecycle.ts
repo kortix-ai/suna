@@ -335,7 +335,7 @@ export async function buildOpencodeConfigContent(
   // own autoupdate (`autoupdate` unset = on) runs whenever a human launches the
   // CLI/TUI in the Session terminal and installs via plain `pnpm add -g`, which
   // skips the postinstall: the launcher becomes a 479-byte stub, the old global
-  // dir is deleted and `/opt/kortix/opencode.current` dangles. Essentia
+  // dir is deleted and `/opt/kortix/opencode.current` dangles. SampleCo
   // 2026-08-22 (session dead, "Still waking this session up") and again
   // 2026-08-25 on two boxes. This contributor ALWAYS applies, so the composed
   // config is never `undefined` any more.
@@ -1224,17 +1224,17 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
   'deepseek-v4.1-flash': {
     name: 'DeepSeek V4.1 Flash', provider: 'kortix', reasoning: true, tool_call: true,
     attachment: true, temperature: true,
-    limit: { context: 1_048_576, output: 16_384 }, cost: { input: 0.2, output: 0.6, cache_read: 0.006 },
+    limit: { context: 1_048_576, output: 16_384 }, cost: { input: 0.15, output: 0.6, cache_read: 0.0359375 },
   },
   'glm-5.3-flash': {
     name: 'GLM 5.3 Flash', provider: 'kortix', reasoning: true, tool_call: true,
     attachment: true, temperature: true,
-    limit: { context: 1_048_576, output: 16_384 }, cost: { input: 0.15, output: 0.5, cache_read: 0.05 },
+    limit: { context: 1_048_576, output: 16_384 }, cost: { input: 0.1, output: 0.35, cache_read: 0.02 },
   },
   'kimi-k3': {
     name: 'Kimi K3 2.8T', provider: 'kortix', reasoning: true, tool_call: true,
     attachment: true, temperature: true,
-    limit: { context: 1_048_576, output: 16_384 }, cost: { input: 2.5, output: 10.95, cache_read: 0.25 },
+    limit: { context: 1_048_576, output: 16_384 }, cost: { input: 2.5, output: 14, cache_read: 0.29 },
   },
   'openai/gpt-5.5': {
     name: 'GPT-5.5',
@@ -1502,7 +1502,7 @@ export async function detectOpencodeBinary(
   // A pnpm launcher that resolves to the postinstall-less stub OpenCode's own
   // autoupdate leaves behind (479 bytes: "opencode-ai's postinstall script was
   // not run") exits at once; spawning it puts the daemon in a respawn loop
-  // with "binary not found" and the session never wakes (Essentia
+  // with "binary not found" and the session never wakes (reported incident
   // 2026-08-22, re-armed 2026-08-25). Never launch it; fall through to the
   // managed links, which the convergence pass repairs.
   if (pathLauncher && !(await (options.isStubLauncher ?? isStubOpencodeLauncher)(pathLauncher))) {
@@ -1681,7 +1681,7 @@ export function createOpencodeLifecycle(
   // The port each spawned opencode was told to serve on. THIS is the truth
   // about where the live process listens; `activePort` is only the plan for the
   // next spawn. Every reader of the live port goes through livePort(), so the
-  // two can never disagree the way they did on Essentia 2026-08-25 (daemon
+  // two can never disagree the way they did on SampleCo 2026-08-25 (daemon
   // `starting` on 4096 for two hours while its own child served on 4097).
   const childPorts = new WeakMap<ChildProcess, number>()
   function livePort(): number {

@@ -142,8 +142,9 @@ export async function performWhoami(opts: PerformWhoamiOptions): Promise<number>
     if (ctx?.connectors != null) {
       process.stdout.write(`  ${C.dim}connectors ${C.reset}${formatGrant(ctx.connectors)}\n`);
     }
-    if (ctx?.kortix_cli != null) {
-      process.stdout.write(`  ${C.dim}kortix_cli ${C.reset}${formatGrant(ctx.kortix_cli)}\n`);
+    const permissions = ctx?.kortix_permissions ?? ctx?.kortix_cli;
+    if (permissions != null) {
+      process.stdout.write(`  ${C.dim}permissions ${C.reset}${formatGrant(permissions)}\n`);
     }
     if (ctx?.env != null) {
       process.stdout.write(`  ${C.dim}env       ${C.reset}${formatGrant(ctx.env)}\n`);

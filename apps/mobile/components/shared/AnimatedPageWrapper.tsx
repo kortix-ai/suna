@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Dimensions } from 'react-native';
+import { useWindowDimensions } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -7,7 +7,6 @@ import Animated, {
   runOnJS
 } from 'react-native-reanimated';
 
-const SCREEN_WIDTH = Dimensions.get('window').width;
 const AnimatedView = Animated.createAnimatedComponent(Animated.View);
 
 interface AnimatedPageWrapperProps {
@@ -18,18 +17,20 @@ interface AnimatedPageWrapperProps {
 }
 
 export function AnimatedPageWrapper({ visible, onClose, children, disableGesture = false }: AnimatedPageWrapperProps) {
-  const translateX = useSharedValue(SCREEN_WIDTH);
+  // Read per render: the window width changes on rotation and iPad resizing.
+  const { width: screenWidth } = useWindowDimensions();
+  const translateX = useSharedValue(screenWidth);
   const [shouldRender, setShouldRender] = React.useState(false);
 
   React.useEffect(() => {
     if (visible) {
-      translateX.value = SCREEN_WIDTH;
+      translateX.value = screenWidth;
       setShouldRender(true);
       requestAnimationFrame(() => {
         translateX.value = withTiming(0, { duration: 300 });
       });
     } else {
-      translateX.value = withTiming(SCREEN_WIDTH, { duration: 300 }, (finished) => {
+      translateX.value = withTiming(screenWidth, { duration: 300 }, (finished) => {
         if (finished) {
           runOnJS(setShouldRender)(false);
         }

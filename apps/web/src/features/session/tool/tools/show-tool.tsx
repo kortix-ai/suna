@@ -70,6 +70,9 @@ export function ShowTool({ part, sessionId }: ToolProps) {
   const content = (input.content as string) || '';
   const aspectRatio = (input.aspect_ratio as string) || '';
   const language = (input.language as string) || '';
+  // Present only on a card served from saved history: the server's copy of
+  // `path`, so the card renders while the sandbox is off.
+  const attachment = (input.attachment as string) || '';
 
   const items = useMemo<ShowCarouselItem[] | null>(() => {
     const raw = input.items;
@@ -283,6 +286,7 @@ export function ShowTool({ part, sessionId }: ToolProps) {
                   content={content}
                   language={language}
                   aspectRatio={aspectRatio}
+                  attachment={attachment}
                   LocalhostPreview={InlineServicePreview}
                   fill={fill}
                   onStatusChange={setContentStatus}

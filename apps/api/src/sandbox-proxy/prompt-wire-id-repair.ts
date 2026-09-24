@@ -10,7 +10,7 @@
  * session, CHILD sessions included, from any client (web sub-session view,
  * whitelabel, CLI, mobile).
  *
- * The 2026-08-18 Essentia incident is the case: a steering prompt into a
+ * The 2026-08-18 SampleCo incident is the case: a steering prompt into a
  * spawned child session that was mid-turn. The tab's store held none of that
  * child's messages, so the client mint had nothing to lift against and fell
  * back to its 2-minute backdate; the id sorted below the child's streaming

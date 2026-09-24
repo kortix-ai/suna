@@ -39,7 +39,7 @@ const OPENCODE_SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/
  * How many of a root's NEWEST messages a turn probe reads.
  *
  * Every probe here used to list the whole root. A root that has run for hours
- * is not a small list: on 2026-08-25 one Essentia session's list was 276.7 MB
+ * is not a small list: on 2026-08-25 one SampleCo session's list was 276.7 MB
  * (base64 image parts inline in every assistant message), and parsing it did
  * not fit the probe's budget. The daemon then answered `turn_in_flight: null`
  * — "could not tell" — on every reaper visit for 2.5 hours after the turn had
@@ -410,7 +410,7 @@ export async function observeOpencodeDelivery(
     // SAME loop still streams the older turn's steps; and between two steps of
     // one turn the latest assistant message reads completed while tools run
     // and the next step's message does not exist yet. Both shapes read
-    // "terminal" here and were: live incident 2026-08-20 (Essentia session
+    // "terminal" here and were: live incident 2026-08-20 (SampleCo session
     // d1b74954) — the reaper destroyed a streaming turn's authority at
     // 12:48:51Z on the newer-user rule; its step completed at 12:48:54Z. So no
     // terminal verdict leaves this function while the root itself reports

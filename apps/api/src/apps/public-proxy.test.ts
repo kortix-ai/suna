@@ -536,14 +536,14 @@ describe('Apps public edge', () => {
   test('allows a self-host frontend origin to frame its own App previews', () => {
     const original = config.FRONTEND_URL;
     try {
-      config.FRONTEND_URL = 'https://essentia.kortix.cloud';
+      config.FRONTEND_URL = 'https://sampleco.kortix.cloud';
       const result = appPublicResponseHeaders(
         new Headers({ 'content-security-policy': "default-src 'self'; frame-ancestors 'none'" }),
       );
       const csp = result.get('content-security-policy') || '';
       // The operator's own frontend origin — and a wildcard for its domain — must
       // appear, or the dashboard preview iframe is blocked on self-host.
-      expect(csp).toContain('https://essentia.kortix.cloud');
+      expect(csp).toContain('https://sampleco.kortix.cloud');
       expect(csp).toContain('https://*.kortix.cloud');
       // Managed cloud + localhost stay allowed too.
       expect(csp).toContain('https://kortix.com');

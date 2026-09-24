@@ -11,7 +11,7 @@
  * floor was 6 × RTT even though no single statement is slow (the sessions
  * SELECT is index-served by `idx_project_sessions_tenant_identity` and runs in
  * 0.15 ms at 60 rows). On a contended deployment where an RTT is tens of
- * milliseconds — Essentia self-host, where the audit write path was saturating
+ * milliseconds — SampleCo self-host, where the audit write path was saturating
  * the pool — that serialization is the whole cost.
  *
  * Three observations collapse the chain to three serial steps:
@@ -95,6 +95,8 @@ export async function loadProjectSessionInventory(input: {
   scope: ProjectSessionListScope;
   /** `callerKortixSessionId(c)` — null for a Supabase browser JWT. */
   boundCredentialSessionId: string | null;
+  /** The caller is an agent session under the `agent_principal` model (spec §2). */
+  agentPrincipal?: boolean;
   probeManageCapability: () => Promise<boolean>;
   /** Max VISIBLE items to return. Clamped to `SESSION_PAGE_MAX_LIMIT`. */
   limit?: number;
@@ -246,6 +248,7 @@ export async function loadProjectSessionInventory(input: {
       callerSessionId: input.boundCredentialSessionId,
       boundCredentialSessionId: input.boundCredentialSessionId,
       accountSessionOversight,
+      agentPrincipal: input.agentPrincipal === true,
     });
 
     for (const item of selected.items) {

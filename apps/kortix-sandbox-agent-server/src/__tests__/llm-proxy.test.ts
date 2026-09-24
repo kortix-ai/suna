@@ -253,7 +253,7 @@ describe('refreshGatewayCatalogFile — warm snapshot catalog recovery', () => {
   })
 })
 
-describe('in-sandbox inline image window (Essentia 2026-08-25: >128 MiB vision bodies 413d at the edge)', () => {
+describe('in-sandbox inline image window (SampleCo 2026-08-25: >128 MiB vision bodies 413d at the edge)', () => {
   afterEach(() => {
     stopLlmProxy()
     delete process.env.KORTIX_LLM_MAX_INLINE_IMAGES

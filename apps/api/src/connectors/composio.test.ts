@@ -6,6 +6,7 @@ import {
   composioUserId,
   executeComposio,
   finalizeComposioConnection,
+  probeComposioIdentity,
   type ComposioRuntime,
   type ComposioSessionLike,
 } from './composio';
@@ -867,4 +868,141 @@ test('composioCatalogPage searches one and two letters across every provider pag
     { limit: 1000, sort_by: 'usage' },
     { limit: 1000, sort_by: 'usage', cursor: 'page-2' },
   ]);
+});
+
+function identityRuntime(input: {
+  displayName?: unknown;
+  accountError?: Error;
+  execute?: ComposioSessionLike['execute'];
+  calls: Array<Record<string, unknown>>;
+}): ComposioRuntime {
+  const resumed = session({
+    id: 'persisted-session',
+    execute: async (toolSlug, args) => {
+      input.calls.push({ type: 'execute', toolSlug, args });
+      if (!input.execute) throw new Error('no whoami tool expected');
+      return input.execute(toolSlug, args);
+    },
+  });
+  return {
+    ...fakeRuntime({ resumed, calls: input.calls }),
+    connectedAccounts: {
+      async get(id: string) {
+        input.calls.push({ type: 'account', id });
+        if (input.accountError) throw input.accountError;
+        return { id, state: { val: { displayName: input.displayName } } };
+      },
+    },
+  };
+}
+
+test('probeComposioIdentity reads the display name Composio stores on the connected account', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const identity = await probeComposioIdentity({
+    app: 'gmail',
+    sessionId: 'persisted-session',
+    connectedAccountId: 'connected-account-1',
+    runtime: identityRuntime({ displayName: '  Ops@Example.test ', calls }),
+  });
+
+  expect(identity).toBe('ops@example.test');
+  expect(calls).toEqual([{ type: 'account', id: 'connected-account-1' }]);
+});
+
+test('probeComposioIdentity falls back to the toolkit whoami tool when no display name exists', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const identity = await probeComposioIdentity({
+    app: 'googledrive',
+    sessionId: 'persisted-session',
+    connectedAccountId: 'connected-account-1',
+    runtime: identityRuntime({
+      calls,
+      execute: async () => ({
+        data: { user: { displayName: 'Ops Team', emailAddress: 'ops@example.test', me: true } },
+        error: null,
+        logId: 'log-1',
+      }),
+    }),
+  });
+
+  expect(identity).toBe('ops@example.test');
+  expect(calls).toContainEqual({
+    type: 'execute',
+    toolSlug: 'GOOGLEDRIVE_GET_ABOUT',
+    args: { fields: 'user' },
+  });
+});
+
+test('probeComposioIdentity reads the primary calendar id as the Google Calendar identity', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const identity = await probeComposioIdentity({
+    app: 'googlecalendar',
+    sessionId: 'persisted-session',
+    connectedAccountId: 'connected-account-1',
+    runtime: identityRuntime({
+      calls,
+      execute: async () => ({
+        data: { id: 'ops@example.test', summary: 'ops@example.test', timeZone: 'UTC' },
+        error: null,
+        logId: 'log-1',
+      }),
+    }),
+  });
+
+  expect(identity).toBe('ops@example.test');
+  expect(calls).toContainEqual({
+    type: 'execute',
+    toolSlug: 'GOOGLECALENDAR_GET_CALENDAR',
+    args: { calendar_id: 'primary' },
+  });
+});
+
+test('probeComposioIdentity uses a login when the provider exposes no email', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const identity = await probeComposioIdentity({
+    app: 'slack',
+    sessionId: 'persisted-session',
+    connectedAccountId: 'connected-account-1',
+    runtime: identityRuntime({
+      calls,
+      execute: async () => ({
+        data: { ok: true, user: 'ops-bot', team: 'Example', user_id: 'U123' },
+        error: null,
+        logId: 'log-1',
+      }),
+    }),
+  });
+
+  expect(identity).toBe('ops-bot');
+});
+
+test('probeComposioIdentity returns null, never throws, when every source fails', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const identity = await probeComposioIdentity({
+    app: 'linear',
+    sessionId: 'persisted-session',
+    connectedAccountId: 'connected-account-1',
+    runtime: identityRuntime({
+      calls,
+      accountError: new Error('composio 500'),
+      execute: async () => {
+        throw new Error('tool refused');
+      },
+    }),
+  });
+
+  expect(identity).toBeNull();
+});
+
+test('probeComposioIdentity returns null for a toolkit without an identity source', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const identity = await probeComposioIdentity({
+    app: 'googledocs',
+    sessionId: 'persisted-session',
+    connectedAccountId: 'connected-account-1',
+    runtime: identityRuntime({ calls }),
+  });
+
+  expect(identity).toBeNull();
+  expect(calls.some((call) => call.type === 'execute')).toBe(false);
 });

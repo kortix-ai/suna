@@ -12,7 +12,7 @@
  *   - a caller-provided `signal` does NOT disable it;
  *   - `timeout: false` (or `0`) does.
  *
- * Incident: an Essentia turn on `codex/gpt-5.6-sol` at reasoning effort `max`
+ * Incident: an SampleCo turn on `codex/gpt-5.6-sol` at reasoning effort `max`
  * died after 273.8 s with `{"message":"The operation timed out.","code":
  * "upstream_timeout"}` — the provider was still thinking, silently, and the
  * gateway's fetch to it was killed by this timer. Nothing in this repo set a

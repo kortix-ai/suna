@@ -958,7 +958,7 @@ export interface IamAuditEvent extends AuditEvent {
   project_id: string | null;
   session_id: string | null;
   actor_user_id: string | null;
-  actor_type: 'human' | 'agent' | 'service_account' | 'system' | null;
+  actor_type: 'human' | 'agent' | 'service_account' | 'system' | 'anonymous' | null;
   source: string | null;
   outcome: 'success' | 'failure' | 'denied' | 'pending' | null;
   action: string;
@@ -984,7 +984,7 @@ export interface ListAuditFilter {
   actor?: string;
   project_id?: string;
   session_id?: string;
-  actor_type?: 'human' | 'agent' | 'service_account' | 'system';
+  actor_type?: 'human' | 'agent' | 'service_account' | 'system' | 'anonymous';
   source?: string;
   phase?: string;
   outcome?: 'success' | 'failure' | 'denied' | 'pending';

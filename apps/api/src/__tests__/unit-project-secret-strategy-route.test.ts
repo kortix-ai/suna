@@ -1390,6 +1390,8 @@ describe('DELETE /v1/projects/:projectId/oauth/:provider audit', () => {
         metadata: {
           identifier: 'CODEX_AUTH_JSON',
           consumer: 'llm_gateway',
+          // effectiveRole 'owner' is not manager-tier: own private rows only.
+          scope: 'own_private',
         },
       }),
     ]);

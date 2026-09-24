@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 const card = readFileSync(join(import.meta.dir, 'github-app-setup-card.tsx'), 'utf8');
 const adminPage = readFileSync(
-  join(import.meta.dir, '../../app/admin/git/page.tsx'),
+  join(import.meta.dir, '../../app/[locale]/admin/git/page.tsx'),
   'utf8',
 );
 const accountHub = readFileSync(

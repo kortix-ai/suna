@@ -219,6 +219,46 @@ describe('pi harness', () => {
     expect(await again.json()).toEqual({ deduplicated: true })
   })
 
+  test('every raw /event frame carries the id the SDK dedupes deltas on', async () => {
+    const r = await boot({ script: [{ text: 'Streamed answer.' }] })
+    const root = r.service.runtime()!.rootId
+    const stream = await r.user('/event')
+    expect(stream.headers.get('content-type')).toContain('text/event-stream')
+    await r.user(`/session/${root}/prompt_async`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        messageID: 'msg_0198e2a4b0c1ABCDEFGHIJKLMN',
+        parts: [{ type: 'text', text: 'say something' }],
+      }),
+    })
+    const text = await readSse(stream, (t) => t.includes('"type":"session.idle"'))
+
+    const frames = text
+      .split('\n\n')
+      .map((chunk) => chunk.replace(/^data: /, '').trim())
+      .filter((chunk) => chunk.startsWith('{'))
+      .map((chunk) => JSON.parse(chunk) as { id?: string; type: string })
+
+    const deltas = frames.filter((f) => f.type === 'message.part.delta')
+    expect(deltas.length).toBeGreaterThan(0)
+    /*
+      The SDK store keys `message.part.delta` idempotency on the envelope's
+      `id` and says so: "a delta with no id gets no protection here". Without
+      one, a redelivered delta APPENDS its text again and the reply renders
+      twice inside the assistant message.
+    */
+    for (const delta of deltas) {
+      expect(typeof delta.id).toBe('string')
+      expect(delta.id!.length).toBeGreaterThan(0)
+    }
+    // Distinct events must not collide, or the guard drops real deltas.
+    const ids = frames.filter((f) => f.id !== undefined).map((f) => f.id!)
+    expect(new Set(ids).size).toBe(ids.length)
+    // Epoch-prefixed, so a daemon restart cannot reissue an id already applied.
+    expect(ids[0]).toMatch(/^b[a-z0-9]+:\d+$/)
+  })
+
   test('the raw message list pages older windows and only omits the cursor at the head', async () => {
     const r = await boot({
       script: [{ tool: 'bash', args: { command: 'printf paged > note.txt' } }, { text: 'Done.' }],

@@ -43,8 +43,8 @@ describe('provisioningFailurePresentation', () => {
   });
 
   test('uses provider-neutral fallback copy', () => {
-    expect(provisioningFailurePresentation({}, 'Essentia runtime', testUiTranslator)).toEqual({
-      title: "Couldn't start Essentia runtime",
+    expect(provisioningFailurePresentation({}, 'SampleCo runtime', testUiTranslator)).toEqual({
+      title: "Couldn't start SampleCo runtime",
       message: 'The sandbox provider could not start this session. Try again.',
       retryable: true,
     });
@@ -53,7 +53,7 @@ describe('provisioningFailurePresentation', () => {
 
 describe('project session provider-failure recovery', () => {
   const pageSource = readFileSync(
-    resolve(import.meta.dir, '../../app/(app)/projects/[id]/sessions/[sessionId]/page.tsx'),
+    resolve(import.meta.dir, '../../app/[locale]/(app)/projects/[id]/sessions/[sessionId]/page.tsx'),
     'utf8',
   );
   const recoverySource = readFileSync(

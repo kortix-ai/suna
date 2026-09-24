@@ -1,7 +1,8 @@
 import { buildInviteUrl, isInviteEmailConfigured, sendAccountInviteEmail } from '../../accounts/email';
 import { PROJECT_ACTIONS, authorize } from '../../iam';
-import { assertAgentScope } from '../../iam/agent-scope';
-import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
+import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
+import { buildDenialError } from '../../iam/denial-message';
+import { invalidateIamCacheForProjectResources, invalidateIamCacheForUser } from '../../iam/cache-invalidation';
 import { resolveAccountIdentityByEmail } from '../../iam/account-identity';
 import { actorOf } from '../../iam/actor';
 import { assignPendingProjectRole, revokePendingAssignments, revokeProjectRole } from '../../iam/assignments';
@@ -1434,6 +1435,16 @@ const patchFeatureFlagHandler = async (c: any) => {
   if (enabled !== null && typeof enabled !== 'boolean') {
     return c.json({ error: 'enabled must be a boolean or null' }, 400);
   }
+  // The agent-principal switch decides which authority model an agent session
+  // runs under. An agent must not pick its own model: turning it off would put
+  // an owner-launched session back on the owner's super-admin bypass.
+  if (feature === 'agent_principal' && isProjectSessionPrincipal(c)) {
+    throw buildDenialError(
+      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+      'agent_human_only_action',
+      'Only a human can change the agent_principal feature flag.',
+    );
+  }
   // Archived projects are read-only: reject BEFORE the write. The old order
   // (update, then 404 on archived) committed the metadata mutation anyway.
   if (loaded.row.status === 'archived') return c.json({ error: 'Not found' }, 404);
@@ -1454,6 +1465,10 @@ const patchFeatureFlagHandler = async (c: any) => {
     .where(eq(projects.projectId, projectId))
     .returning();
   if (!row) return c.json({ error: 'Not found' }, 404);
+  // The IAM engine memoizes `agent_principal` per project for 15 s
+  // (iam/agent-principal.ts). Bust it on this replica so the switch applies to
+  // the next request; other replicas converge within one TTL.
+  if (feature === 'agent_principal') invalidateIamCacheForProjectResources(projectId);
   // Convergence work (connector materialization, sandbox env fan-out) runs
   // behind the response; runFeatureFlagToggleEffects retries once and logs
   // failures at error level. See feature-flags/toggle-effects.ts.

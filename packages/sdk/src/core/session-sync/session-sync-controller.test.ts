@@ -970,7 +970,7 @@ describe('SessionSyncController', () => {
   /**
    * The blank thread on a HUGE session, and every read returned 200.
    *
-   * Measured on essentia (2026-08-24), a run with hundreds of image reads:
+   * Measured on sampleco (2026-08-24), a run with hundreds of image reads:
    *
    *   message?limit=50            200   8,228 kB   30.39 s
    *   message?limit=50            200  24,460 kB   48.76 s
@@ -1076,7 +1076,7 @@ describe('SessionSyncController', () => {
   /**
    * Time to FIRST PAINT is bytes, not messages.
    *
-   * Measured on a heavy session (essentia, 2026-08-24 — hundreds of image reads,
+   * Measured on a heavy session (sampleco, 2026-08-24 — hundreds of image reads,
    * parts carrying base64): 50 messages weighed 8,228 kB / 24,460 kB / 20,284 kB
    * / 25,125 kB across four reads. That is roughly 165-500 kB PER MESSAGE, so the
    * first screen cost 8-25 MB and 30-49 s.

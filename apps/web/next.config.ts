@@ -7,9 +7,11 @@ import { PHASE_PRODUCTION_BUILD } from 'next/constants';
 import createNextIntlPlugin from 'next-intl/plugin';
 import path from 'path';
 import { buildBlumeDocs, getBlumeDocsOutputPaths } from './scripts/blume-docs.mjs';
+import { SHIPPED_ICON_WEIGHTS } from './src/lib/icons/icon-config';
 import { refreshContentTimestamps } from './scripts/build-content-timestamps.mjs';
 import { copyEmojibaseData, getEmojibaseDataOutputPaths } from './scripts/emojibase-data.mjs';
 import { copyViewerWasm, getViewerWasmOutputPaths } from './scripts/viewer-wasm.mjs';
+import { writePublicCatalogs } from './scripts/i18n-public-catalogs.mjs';
 
 // --- Content timestamps manifest -----------------------------------------
 // Public AEO surfaces (/api/ai, /llms.txt) expose a `last_modified` field per
@@ -171,6 +173,9 @@ function resolveKortixVersion(): string {
   return base;
 }
 const KORTIX_VERSION = resolveKortixVersion();
+// Writes public/i18n/<locale>.<hash>.json (see the script for why) and returns
+// the hashes the browser uses to build each catalog URL.
+const I18N_CATALOG_VERSIONS = writePublicCatalogs();
 const KORTIX_COMMIT =
   process.env.NEXT_PUBLIC_KORTIX_COMMIT || process.env.VERCEL_GIT_COMMIT_SHA || 'unknown';
 
@@ -281,6 +286,8 @@ const nextConfig = (): NextConfig => ({
   env: {
     NEXT_PUBLIC_KORTIX_VERSION: KORTIX_VERSION,
     NEXT_PUBLIC_KORTIX_COMMIT: KORTIX_COMMIT,
+    // Content hash per locale catalog; versions the /i18n/<locale>.json URL.
+    NEXT_PUBLIC_KORTIX_I18N_VERSIONS: JSON.stringify(I18N_CATALOG_VERSIONS),
   },
   // Hide Next.js's persistent dev badge in the corner. It only ever
   // really matters when there's a build error / route compile issue —
@@ -332,11 +339,12 @@ const nextConfig = (): NextConfig => ({
   //     is a compiler swap with its own diagnostics surface, not part of a
   //     framework bump. Deliberately left for its own change.
   //
-  // Not applicable to this app:
-  //   · next/root-params — root params only exist for a dynamic segment ABOVE
-  //     the root layout. src/app's top level is (app)/(auth)/(public)/(system)/
-  //     (utility)/admin/docs/api — all static. Locale comes from next-intl's
-  //     request.ts, not a [lang] segment.
+  // In use:
+  //   · next/root-params — every page lives under app/[locale] (the root
+  //     layout's segment). i18n/request.ts reads the locale with
+  //     `locale()` from next/root-params instead of headers()/cookies(), so
+  //     marketing pages prerender once per locale. The middleware rewrites
+  //     unprefixed URLs onto the segment.
   //
   // Deliberately NOT enabled — each is a migration, not a flag flip:
   //   · cacheComponents + partialPrefetching (Instant Navigations). Requires
@@ -372,6 +380,23 @@ const nextConfig = (): NextConfig => ({
     resolveAlias: {
       canvas: {
         browser: './src/lib/empty-module.ts', // Exclude canvas from browser builds
+      },
+    },
+    rules: {
+      // Phosphor ships all six weights of every icon in one defs module. Keep
+      // only SHIPPED_ICON_WEIGHTS in the browser build (~1/3 of each icon's
+      // bytes). Server/SSR builds keep every weight; the markup is identical
+      // for every shipped weight. See scripts/phosphor-weights-loader.cjs.
+      '*.es.js': {
+        condition: {
+          all: ['browser', { path: /@phosphor-icons\/react\/dist\/defs\/[^/]+\.es\.js$/ }],
+        },
+        loaders: [
+          {
+            loader: path.join(__dirname, 'scripts/phosphor-weights-loader.cjs'),
+            options: { weights: [...SHIPPED_ICON_WEIGHTS] },
+          },
+        ],
       },
     },
   },
@@ -567,7 +592,27 @@ const nextConfig = (): NextConfig => ({
   },
 
   async rewrites() {
-    return [
+    // /docs is served from public/docs without the middleware (see the
+    // middleware matcher). Its Markdown representation is negotiated here
+    // instead: an explicit `Accept: text/markdown` request is rewritten to the
+    // page's Markdown route (/markdown/docs/<slug>.md, the record's
+    // markdownPath) BEFORE the static file lookup. Browsers keep HTML.
+    const acceptsMarkdown = [
+      { type: 'header' as const, key: 'accept', value: '(?:.*,)?\\s*text/markdown.*' },
+    ];
+    const beforeFiles = [
+      {
+        source: '/docs',
+        has: acceptsMarkdown,
+        destination: '/markdown/docs/index.md',
+      },
+      {
+        source: '/docs/:path*',
+        has: acceptsMarkdown,
+        destination: '/markdown/docs/:path*.md',
+      },
+    ];
+    const afterFiles = [
       // Proxy API calls to backend to avoid CORS in local dev. The target is
       // env-driven so an isolated `pnpm worktree` instance proxies the browser
       // to ITS api port; unset (primary `pnpm dev`) keeps the default :8008.
@@ -614,7 +659,7 @@ const nextConfig = (): NextConfig => ({
       },
       // /docs is a Blume static build in public/docs/. Astro writes clean URLs as
       // directories, and Next's static handler does not resolve a directory index,
-      // so map them explicitly. These are afterFiles rules (a flat array is), so an
+      // so map them explicitly. These are afterFiles rules, so an
       // existing file such as /docs/_astro/app.css is served before they ever fire.
       {
         source: '/docs',
@@ -625,6 +670,7 @@ const nextConfig = (): NextConfig => ({
         destination: '/docs/:path*/index.html',
       },
     ];
+    return { beforeFiles, afterFiles, fallback: [] };
   },
 
   // HTTP headers for security, caching and performance
@@ -686,12 +732,57 @@ const nextConfig = (): NextConfig => ({
             : []),
         ],
       },
+      // Locale catalogs: the file name carries a content hash, so a response
+      // never changes under its URL. Production builds only.
+      ...(process.env.NODE_ENV === 'production'
+        ? [
+            {
+              source: '/i18n/:file',
+              headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
+            },
+          ]
+        : []),
       {
         source: '/fonts/:path*',
         headers: [
           {
             key: 'Cache-Control',
             value: 'public, max-age=31536000, immutable',
+          },
+        ],
+      },
+      // Astro content-hashes every file it writes to /docs/_astro/
+      // (`app.DDrhwGTK.css`), so a URL there never changes content. Without
+      // this, public/ files are served `max-age=0` and every docs page view
+      // revalidated each script and stylesheet.
+      {
+        source: '/docs/_astro/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
+        ],
+      },
+      // Marketing media (hero posters and walkthrough encodes, trust-seal
+      // texture) are NOT content-hashed: a re-encode keeps its file name. So no
+      // `immutable` — a day of freshness, then a week of serve-stale while the
+      // CDN or browser revalidates in the background.
+      {
+        source: '/media/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=86400, stale-while-revalidate=604800',
+          },
+        ],
+      },
+      {
+        source: '/marketing/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=86400, stale-while-revalidate=604800',
           },
         ],
       },

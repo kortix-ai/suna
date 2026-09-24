@@ -20,7 +20,7 @@ export const ACCOUNT_HUB_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   Projects: 'text04e2a9728af7',
   Roles: 'textc25337055464',
   'Service account tokens for CI and automations, and the rules they follow.': 'text7af0d5b84ba4',
-  'Session costs and credit ledger for this account.': 'text0a4e750c7982',
+  'Kortix charges and credit ledger for this account.': 'text36569109d4e5',
   Settings: 'text74a883a037bc',
   Support: 'textbe91940b79f4',
   Tokens: 'texta039dfb9628b',

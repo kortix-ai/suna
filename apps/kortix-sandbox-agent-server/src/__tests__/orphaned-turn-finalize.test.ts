@@ -343,7 +343,7 @@ describe('opencodeDeliveryInFlight — lifecycle acceptance recovery', () => {
     expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBeNull();
   });
 
-  // EXPECTATION FLIPPED 2026-08-20 (live incident, Essentia session d1b74954):
+  // EXPECTATION FLIPPED 2026-08-20 (live incident, SampleCo session d1b74954):
   // prompts forwarded INTO a live turn — and OpenCode's own synthetic
   // `<pty_exited>` wake-ups — put a NEWER user message on the root while the
   // SAME loop is still streaming the older turn's steps. The old rule ("a
@@ -808,7 +808,7 @@ describe('observeRequestedTurn — what /kortix/health?turn=1 answers with', () 
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// REPLAY of the incident this gate exists for: Essentia session d1b74954 at
+// REPLAY of the incident this gate exists for: SampleCo session d1b74954 at
 // 2026-08-20T12:48:51Z, reconstructed from the box's own transcript.
 //
 // Turn `msg_01f3518bd002` was STREAMING — its step completed at 12:48:54Z —
@@ -818,7 +818,7 @@ describe('observeRequestedTurn — what /kortix/health?turn=1 answers with', () 
 // authority was destroyed mid-stream (`end_reason='unknown'`). The composer
 // then read "not running" over a visibly working session.
 // ─────────────────────────────────────────────────────────────────────────────
-describe('Essentia d1b74954 replay — a streaming turn under a pty wake-up', () => {
+describe('SampleCo d1b74954 replay — a streaming turn under a pty wake-up', () => {
   const ROOT_2 = 'ses_fea1ccba5ffeW98pYkIvdImthU';
   const LIVE_TURN = 'msg_01f3518bd002UMWkvirVrVsjxE';
   const incidentTranscript = [
@@ -848,7 +848,7 @@ describe('Essentia d1b74954 replay — a streaming turn under a pty wake-up', ()
 });
 
 describe('turn probes read a bounded window, never the whole root', () => {
-  // 2026-08-25, Essentia: one root's full message list was 276.7 MB (inline
+  // 2026-08-25, SampleCo: one root's full message list was 276.7 MB (inline
   // base64 image parts). Parsing it never fit the probe budget, the daemon
   // answered `turn_in_flight: null` on every reaper visit for 2.5 hours after
   // the turn had finished, and the session showed "working" until the ledger

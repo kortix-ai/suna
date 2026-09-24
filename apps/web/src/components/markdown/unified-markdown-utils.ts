@@ -1,29 +1,50 @@
+import { holdPendingSetupLink } from '@/components/setup-links/util';
+import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import { looksLikeFilePath as sharedLooksLikeFilePath } from '@/lib/utils/path-detection';
+import { autoLinkUrls } from '@kortix/shared';
+import { prepareMarkdownForKatex } from '@kortix/shared/markdown-math';
 
 // Pure, deterministic helpers used by the unified markdown renderer. Extracted
 // so they can be unit-tested without pulling in React / Shiki / Streamdown.
 
 /**
- * Is the WebAssembly runtime Shiki needs available in this context?
+ * The text Streamdown parses: KaTeX delimiters normalised, system tags removed,
+ * bare URLs linked.
  *
- * Shiki's oniguruma grammar engine compiles to WebAssembly. Some browsers /
- * contexts block or disable WebAssembly entirely — privacy browsers (Brave with
- * aggressive shields, LibreWolf, Tor Browser in high-security mode), hardened /
- * sandboxed WebViews, enterprise-policy-locked browsers, and scrapers/bots with
- * spoofed Chrome UAs running on runtimes without WebAssembly. In those contexts
- * eagerly kicking off `getSingletonHighlighter()` at module init leaves a
- * promise that rejects with `ReferenceError: WebAssembly is not defined` (V8) /
- * `Can't find variable: WebAssembly` (WebKit). Because the singleton starts
- * before any code block renders, the rejection has no consumer attached yet and
- * fires `onunhandledrejection` → Sentry → Better Stack.
- *
- * Gate the highlighter on this check so such visitors degrade to plain
- * (un-highlighted) code instead of paging on every page load.
- *
- * See Better Stack 1604d50a (`WebAssembly is not defined`).
+ * While the message streams, a setup link whose URL is still arriving is held
+ * as a pending card first (`holdPendingSetupLink`), so the reader never sees
+ * its raw `[label](` or a card built from a partial token. Settled text is
+ * never held.
  */
-export function shikiWasmAvailable(): boolean {
-  return typeof WebAssembly !== 'undefined';
+export function prepareMarkdownSource(content: string, isStreaming: boolean): string {
+  const prepared = stripKortixSystemTags(prepareMarkdownForKatex(content));
+  return autoLinkUrls(isStreaming ? holdPendingSetupLink(prepared) : prepared);
+}
+
+/** A reference-style link target: `[label]: destination`, up to three spaces in. */
+const LINK_REFERENCE_DEFINITION = /^ {0,3}\[[^\]\n]{1,999}\]:[ \t]*\S/m;
+
+/**
+ * Does this markdown define a reference-style link target (`[1]: https://…`)?
+ *
+ * Streamdown parses a streaming message block by block, and a definition in
+ * one block cannot resolve a `[text][1]` in another: the reference renders as
+ * raw brackets. A message with a definition is therefore parsed whole, which is
+ * what Streamdown already does for footnotes.
+ */
+export function hasLinkReferenceDefinition(markdown: string): boolean {
+  return LINK_REFERENCE_DEFINITION.test(markdown);
+}
+
+/**
+ * Is this href Streamdown's stand-in for a URL that has not arrived yet?
+ *
+ * While a message streams, Streamdown's `remend` closes a half-written link as
+ * `[label](streamdown:incomplete-link)` so the label renders before the URL is
+ * complete. That href is not a destination. It must never become an anchor.
+ */
+export function isStreamingLinkPlaceholder(href: string | undefined): boolean {
+  return !!href && /^streamdown:/i.test(href);
 }
 
 /** Same-origin link? Internal links route through next/link; the rest open externally. */

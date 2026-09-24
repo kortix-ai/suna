@@ -7,9 +7,10 @@ import React from 'react';
 import { View, Pressable, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { ChevronRight, Folder } from 'lucide-react-native';
+import { CaretRightIcon as ChevronRight, FolderIcon as Folder } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 interface BreadcrumbSegment {
   name: string;
@@ -51,15 +52,16 @@ export function FileBreadcrumb({ segments, onNavigate }: FileBreadcrumbProps) {
         onPress={() => handlePress('/workspace', segments.length === 0)}
         disabled={segments.length === 0}
         className="flex-row items-center px-2 py-1 rounded-lg active:opacity-70"
+        accessibilityRole="button"
+        accessibilityLabel="Workspace"
       >
         <Icon
           as={Folder}
           size={14}
           color={segments.length === 0
-            ? (isDark ? '#f8f8f8' : '#121215')
-            : (isDark ? 'rgba(248, 248, 248, 0.4)' : 'rgba(18, 18, 21, 0.4)')
+            ? (isDark ? THEME.dark.foreground : THEME.light.foreground)
+            : withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.4)
           }
-          strokeWidth={2}
         />
       </Pressable>
 
@@ -69,8 +71,7 @@ export function FileBreadcrumb({ segments, onNavigate }: FileBreadcrumbProps) {
           <Icon
             as={ChevronRight}
             size={12}
-            color={isDark ? 'rgba(248, 248, 248, 0.25)' : 'rgba(18, 18, 21, 0.25)'}
-            strokeWidth={2}
+            color={withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.25)}
             style={{ marginHorizontal: 2 }}
           />
           <Pressable
@@ -81,8 +82,8 @@ export function FileBreadcrumb({ segments, onNavigate }: FileBreadcrumbProps) {
             <Text
               style={{
                 color: segment.isLast
-                  ? (isDark ? '#f8f8f8' : '#121215')
-                  : (isDark ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)'),
+                  ? (isDark ? THEME.dark.foreground : THEME.light.foreground)
+                  : withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.5),
               }}
               className={`text-sm ${segment.isLast ? 'font-roobert-medium' : 'font-roobert'}`}
               numberOfLines={1}

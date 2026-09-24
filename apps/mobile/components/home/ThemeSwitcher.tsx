@@ -1,6 +1,6 @@
 import { log } from '@/lib/logger';
 import { Icon } from '@/components/ui/icon';
-import { Moon, Sun } from 'lucide-react-native';
+import { MoonIcon as Moon, SunIcon as Sun } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
 import { Pressable } from 'react-native';
@@ -50,6 +50,8 @@ export function ThemeSwitcher() {
       onPress={handlePress}
       className="w-8 h-8 items-center justify-center rounded-full bg-primary/10 active:bg-primary/20"
       style={animatedStyle}
+      accessibilityRole="button"
+      accessibilityLabel={isDark ? 'Switch to light theme' : 'Switch to dark theme'}
     >
       <Icon 
         as={isDark ? Sun : Moon}

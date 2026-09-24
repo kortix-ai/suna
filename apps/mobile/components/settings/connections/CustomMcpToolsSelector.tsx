@@ -2,25 +2,18 @@ import * as React from 'react';
 import { View, ScrollView, Pressable, ActivityIndicator, FlatList } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { Button } from '@/components/ui/button';
 import {
-  ArrowLeft,
-  Globe,
-  CheckCircle2,
-  Circle,
-  Save,
-  Search
-} from 'lucide-react-native';
+  ArrowLeftIcon as ArrowLeft,
+  GlobeIcon as Globe,
+  CheckCircleIcon as CheckCircle2,
+  CircleIcon as Circle,
+  FloppyDiskIcon as Save,
+  MagnifyingGlassIcon as Search,
+} from '@/lib/icons';
 import { log } from '@/lib/logger';
-import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import * as Haptics from 'expo-haptics';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring
-} from 'react-native-reanimated';
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 interface CustomMcpToolsContentProps {
   serverName: string;
@@ -40,7 +33,6 @@ export function CustomMcpToolsContent({
   noPadding = false
 }: CustomMcpToolsContentProps) {
   const { t } = useLanguage();
-  const { colorScheme } = useColorScheme();
   const [selectedTools, setSelectedTools] = React.useState<Set<string>>(new Set(tools.map(tool => tool.name)));
   const [isSaving, setIsSaving] = React.useState(false);
 
@@ -93,24 +85,17 @@ export function CustomMcpToolsContent({
           <Pressable
             onPress={onBack}
             className="flex-row items-center active:opacity-70"
+            accessibilityRole="button"
+            accessibilityLabel="Back"
           >
-            <ArrowLeft
-              size={20}
-              color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'}
-            />
+            <Icon as={ArrowLeft} size={20} className="text-foreground" />
           </Pressable>
         )}
         <View className="flex-1 ml-3">
-          <Text
-            style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-            className="text-xl font-roobert-semibold"
-          >
+          <Text className="text-xl font-roobert-semibold text-foreground">
             {serverName}
           </Text>
-          <Text
-            style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
-            className="text-sm font-roobert"
-          >
+          <Text className="text-sm font-roobert text-muted-foreground">
             {displayUrl}
           </Text>
         </View>
@@ -247,8 +232,10 @@ export function CustomMcpToolsSelector({
       <Pressable
         onPress={handleClose}
         className="items-center justify-center w-10 h-10 mb-6 active:opacity-70 rounded-full bg-primary/10"
+        accessibilityRole="button"
+        accessibilityLabel="Back"
       >
-        <ArrowLeft size={24} className="text-foreground" strokeWidth={2} />
+        <Icon as={ArrowLeft} size={24} className="text-foreground" />
       </Pressable>
 
       <View className="mb-8">
@@ -345,7 +332,6 @@ const ToolCard = React.memo(({ tool, selected, onToggle }: ToolCardProps) => {
             as={CheckCircle2}
             size={16}
             className="text-primary-foreground"
-            strokeWidth={2.5}
           />
         )}
       </View>
@@ -369,7 +355,7 @@ const ToolCard = React.memo(({ tool, selected, onToggle }: ToolCardProps) => {
               {parameterCount} parameter{parameterCount !== 1 ? 's' : ''}
             </Text>
             {requiredCount > 0 && (
-              <Text className="text-xs font-roobert text-orange-600">
+              <Text className="text-xs font-roobert text-kortix-orange">
                 {requiredCount} required
               </Text>
             )}
@@ -393,41 +379,16 @@ const ContinueButton = React.memo(({
   disabled = false,
   label,
   isLoading = false,
-  rounded = 'full'
 }: ContinueButtonProps) => {
-  const scale = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const handlePressIn = React.useCallback(() => {
-    if (!disabled) {
-      scale.value = withSpring(0.97, { damping: 15, stiffness: 400 });
-    }
-  }, [scale, disabled]);
-
-  const handlePressOut = React.useCallback(() => {
-    scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-  }, [scale]);
-
   return (
-    <AnimatedPressable
-      onPress={onPress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      style={animatedStyle}
+    <Button
+      size="lg"
+      className="w-full rounded-full bg-foreground active:bg-foreground/90"
       disabled={disabled}
-      className={`w-full py-4 items-center rounded-full ${disabled ? 'bg-muted/20' : 'bg-foreground'
-        }`}
+      onPress={onPress}
     >
-      <View className="flex-row items-center gap-2">
-        {isLoading && <ActivityIndicator size="small" color="#fff" />}
-        <Text className={`text-base font-roobert-semibold ${disabled ? 'text-muted-foreground' : 'text-background'
-          }`}>
-          {label}
-        </Text>
-      </View>
-    </AnimatedPressable>
+      {isLoading && <ActivityIndicator size="small" color="white" />}
+      <Text className="text-background">{label}</Text>
+    </Button>
   );
 });

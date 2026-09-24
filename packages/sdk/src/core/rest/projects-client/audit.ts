@@ -20,11 +20,17 @@ export interface AuditEvent {
   execution_id?: string | null;
   session_sequence?: number | null;
   actor_user_id: string | null;
-  actor_type: 'human' | 'agent' | 'service_account' | 'system' | null;
+  /** `anonymous`: a request no authenticator identified. The API writes a row
+   *  for it instead of skipping it. */
+  actor_type: 'human' | 'agent' | 'service_account' | 'system' | 'anonymous' | null;
   agent_id?: string | null;
   agent_name?: string | null;
   initiator_actor_type?: string | null;
   initiator_actor_id?: string | null;
+  /** The human an agent session acted on behalf of; null for a human actor,
+   *  an unattended run (trigger, channel, system), or a session whose
+   *  on-behalf-of another human's prompt cleared. */
+  on_behalf_of_user_id?: string | null;
   parent_event_id?: string | null;
   delegation_depth?: number;
   source: string | null;
@@ -69,7 +75,7 @@ export interface ListAccountAuditOptions {
   /** Prefix match on `action` (e.g. `"iam.policy."`). */
   action?: string;
   actor?: string;
-  actorType?: 'human' | 'agent' | 'service_account' | 'system';
+  actorType?: 'human' | 'agent' | 'service_account' | 'system' | 'anonymous';
   projectId?: string;
   sessionId?: string;
   source?: string;
@@ -143,7 +149,7 @@ export interface ExportAccountAuditOptions {
   format?: 'csv' | 'jsonl';
   action?: string;
   actor?: string;
-  actorType?: 'human' | 'agent' | 'service_account' | 'system';
+  actorType?: 'human' | 'agent' | 'service_account' | 'system' | 'anonymous';
   projectId?: string;
   sessionId?: string;
   source?: string;
