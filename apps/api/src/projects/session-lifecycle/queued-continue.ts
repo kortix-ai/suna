@@ -457,7 +457,7 @@ export async function executeQueuedContinue(
   const placedIntoLiveTurn = !!wireMessageId && (turnLive || remintKnown);
   try {
     let attempt = deliveryAttempt;
-    let delivery: SessionDeliveryOutcome = 'pending';
+    let delivery: SessionDeliveryOutcome;
     for (let round = 0; ; round += 1) {
       const postedAt = Date.now();
       delivery = await continueSession(

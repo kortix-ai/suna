@@ -262,7 +262,6 @@ mock.module("../../../sandbox-proxy/backend", () => ({
   }),
 }));
 
-const { drainSessionLifecycleQueue } = await import('../drain');
 const { executeQueuedContinue } = await import('../queued-continue');
 
 /** Every `redeliveredMessageId` the drain persisted, read out of the jsonb
