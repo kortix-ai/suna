@@ -248,7 +248,7 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
           bootState.configProvider = summary
         },
       })
-        .then((result) => {
+        .then(async (result) => {
           // A prepared-S3 start already has the exact working tree; the
           // optional history backfill waits for real readiness (see
           // runDeferredHistoryBackfill) instead of competing with the runtime
@@ -265,6 +265,15 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
             }
           }
           bootMark('repo-materialized')
+          // Pin the credential helper repo-locally now the repo exists, so
+          // `git push` authenticates whatever the invoking shell's HOME is.
+          // Part of materialization, not a step after readiness: the agent can
+          // push the moment the gate opens.
+          await configureRepoCredentialHelper(cfg, cfg.projectTarget).catch((err) => {
+            logger.warn('[boot] repo-local git credential helper setup failed', {
+              err: err instanceof Error ? err.message : String(err),
+            })
+          })
           return null
         })
         .catch((err) => {
@@ -335,16 +344,6 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
   }
   if (bootState.repoMaterializationError) {
     logger.warn('[boot] skipping runtime readiness because repo materialization failed')
-  } else {
-    // Now that the repo exists, pin the credential helper repo-locally too, so
-    // `git push` authenticates regardless of the invoking shell's HOME (the
-    // global config above only applies under HOME=<opencode home>).
-    await configureRepoCredentialHelper(cfg, cfg.projectTarget).catch((err) => {
-      logger.warn('[boot] repo-local git credential helper setup failed', {
-        err: err instanceof Error ? err.message : String(err),
-      })
-    })
-    harness.configuration.reconfigure(cfg, projectEnv)
   }
 
   // If the image shipped without its baked catalog, opencode just booted on the

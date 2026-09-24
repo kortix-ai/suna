@@ -24,6 +24,7 @@ import {
   type ConfigReleaseApi,
 } from '../../config-release/api-client'
 import type { ConfigReleaseDescriptor } from '../../config-release/descriptor'
+import { clearConfigReleaseNotice } from '../../config-release/notice'
 import { logger } from '../../logger'
 import { repairOpencodeConfigDir } from './apple-double'
 import { serveConfigDir } from './boot-link'
@@ -376,6 +377,9 @@ export async function bootOpenCodeConfig(input: BootConfigPathInput): Promise<Bo
     const workspaceError = await input.workspace
     const dir = workspaceError ? cfg.defaultOpencodeConfigDir : await resolveOpencodeConfigDir(cfg)
     const source: ConfigSource = dir === cfg.defaultOpencodeConfigDir ? 'image-default' : 'workspace'
+    // No release runs, so the session notice would be a false statement about
+    // which commit's config this box serves.
+    clearConfigReleaseNotice()
     // A checkout from a macOS-authored archive carries AppleDouble `._` files
     // that OpenCode reads as config. Unchanged pre-release behaviour.
     if (source === 'workspace') await repairOpencodeConfigDir(dir)
@@ -438,6 +442,11 @@ export async function bootOpenCodeConfig(input: BootConfigPathInput): Promise<Bo
     // platform's own directory and is prepared the same way, which is what
     // keeps OpenCode's installer from reifying node_modules through the boot
     // link (~10 s, measured 2026-09-22).
+    // A release delivers its own governance. A step down to the image default
+    // KEEPS the last release's governance on purpose: the agents are the
+    // project's, whether or not its config dir loads, and dropping them would
+    // leave the box with no agents at all. `deliverGovernance(null, …)` is a
+    // no-op for exactly that reason.
     deliverGovernance(candidate.manifest?.compiled_governance ?? null, candidate.manifest?.compiled_governance_etag ?? null)
     if (!candidate.manifest) {
       await prepare(candidate.dir, true)
