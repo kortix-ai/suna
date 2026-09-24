@@ -19136,7 +19136,9 @@
       "text2afef4702cc0": "已查看系统状态横幅",
       "textbda3fcd4343c": "已查看层级配置",
       "text30cef615e8e3": "已查看交易摘要",
-      "textd2c6127fc332": "已查看版本差异"
+      "textd2c6127fc332": "已查看版本差异",
+      "text8cc0d84b66bb": "预览了 Slack 身份链接",
+      "text508b43cc4545": "预览了 Teams 身份链接"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

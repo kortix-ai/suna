@@ -347,6 +347,8 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Paused or resumed all triggers': 'text9b620c50adfb',
   'Polled computer tunnel device authorization': 'text97dc6aeaa967',
   'Previewed MFA enforcement': 'texteb49d0888379',
+  'Previewed Slack identity link': 'text8cc0d84b66bb',
+  'Previewed Teams identity link': 'text508b43cc4545',
   'Previewed change request merge': 'textf3e8ebf108f5',
   'Previewed connector authentication': 'text703a2cfcc370',
   'Previewed gateway routing policy': 'text98873c1215d9',

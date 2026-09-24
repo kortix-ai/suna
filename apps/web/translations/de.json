@@ -19136,7 +19136,9 @@
       "text2afef4702cc0": "Systemstatus-Banner angezeigt",
       "textbda3fcd4343c": "Stufenkonfigurationen angezeigt",
       "text30cef615e8e3": "Transaktionsübersicht angezeigt",
-      "textd2c6127fc332": "Versions-Diff angezeigt"
+      "textd2c6127fc332": "Versions-Diff angezeigt",
+      "text8cc0d84b66bb": "Slack-Identitätslink angesehen",
+      "text508b43cc4545": "Teams-Identitätslink angesehen"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

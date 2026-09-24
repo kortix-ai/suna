@@ -19136,7 +19136,9 @@
       "text2afef4702cc0": "Bannière d’état du système consultée",
       "textbda3fcd4343c": "Configurations des niveaux consultées",
       "text30cef615e8e3": "Récapitulatif des transactions consulté",
-      "textd2c6127fc332": "Diff de version consulté"
+      "textd2c6127fc332": "Diff de version consulté",
+      "text8cc0d84b66bb": "Lien d'identité Slack prévisualisé",
+      "text508b43cc4545": "Lien d'identité Teams prévisualisé"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

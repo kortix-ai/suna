@@ -19136,7 +19136,9 @@
       "text2afef4702cc0": "Banner dello stato del sistema visualizzato",
       "textbda3fcd4343c": "Configurazioni dei piani visualizzate",
       "text30cef615e8e3": "Riepilogo delle transazioni visualizzato",
-      "textd2c6127fc332": "Diff della versione visualizzato"
+      "textd2c6127fc332": "Diff della versione visualizzato",
+      "text8cc0d84b66bb": "Anteprima del link di identità Slack",
+      "text508b43cc4545": "Anteprima del link di identità Teams"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

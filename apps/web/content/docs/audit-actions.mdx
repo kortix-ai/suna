@@ -13,7 +13,7 @@ Every row in the [audit log](/docs/accounts#audit-log) carries an `action`: `dom
 - A route with two actions (`secret.strategy.update` or `secret.strategy.changed`) records the second when its handler records that event, for example only for a real change. That event, with its before and after state, is then the request's row.
 - Rows written before 2026-09-24 carry `METHOD /template` as their action. The web app and the CLI show them with the same titles.
 
-This page lists 671 route actions and 63 other events.
+This page lists 673 route actions and 63 other events.
 
 ## `account.`
 
@@ -216,6 +216,7 @@ This page lists 671 route actions and 63 other events.
 | `channel.slack.file.download` | Downloaded Slack file | `GET /v1/projects/:projectId/channels/slack/file` |
 | `channel.slack.file.upload` | Uploaded file to Slack | `POST /v1/projects/:projectId/channels/slack/file/upload` |
 | `channel.slack.identity.connect` | Linked Slack identity | `POST /v1/channels/slack/identity/bind` |
+| `channel.slack.identity.preview` | Previewed Slack identity link | `POST /v1/channels/slack/identity/preview` |
 | `channel.slack.install.complete` | Completed Slack app installation | `GET /v1/webhooks/slack/oauth/callback` |
 | `channel.slack.installation.read` | Viewed Slack installation | `GET /v1/projects/:projectId/channels/slack/installation` |
 | `channel.slack.login_link.read` | Opened Slack login link | `GET /v1/channels/slack/identity/login/:token` |
@@ -227,6 +228,7 @@ This page lists 671 route actions and 63 other events.
 | `channel.teams.file.download` | Downloaded Microsoft Teams file | `GET /v1/projects/:projectId/channels/teams/file` |
 | `channel.teams.file.upload` | Uploaded file to Microsoft Teams | `POST /v1/projects/:projectId/channels/teams/file/upload` |
 | `channel.teams.identity.connect` | Linked Teams identity | `POST /v1/channels/teams/identity/bind` |
+| `channel.teams.identity.preview` | Previewed Teams identity link | `POST /v1/channels/teams/identity/preview` |
 | `channel.teams.install.complete` | Completed Teams app installation | `GET /v1/webhooks/teams/oauth/callback` |
 | `channel.teams.installation.read` | Viewed Microsoft Teams installation | `GET /v1/projects/:projectId/channels/teams/installation` |
 | `channel.teams.login_link.read` | Opened Teams login link | `GET /v1/channels/teams/identity/login/:token` |

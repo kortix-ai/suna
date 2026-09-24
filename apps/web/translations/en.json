@@ -19149,7 +19149,9 @@
       "text2afef4702cc0": "Viewed system status banner",
       "textbda3fcd4343c": "Viewed tier configurations",
       "text30cef615e8e3": "Viewed transaction summary",
-      "textd2c6127fc332": "Viewed version diff"
+      "textd2c6127fc332": "Viewed version diff",
+      "text8cc0d84b66bb": "Previewed Slack identity link",
+      "text508b43cc4545": "Previewed Teams identity link"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

@@ -19136,7 +19136,9 @@
       "text2afef4702cc0": "Banner de status do sistema visualizado",
       "textbda3fcd4343c": "Configurações de nível visualizadas",
       "text30cef615e8e3": "Resumo de transações visualizado",
-      "textd2c6127fc332": "Diff de versões visualizado"
+      "textd2c6127fc332": "Diff de versões visualizado",
+      "text8cc0d84b66bb": "Link de identidade do Slack pré-visualizado",
+      "text508b43cc4545": "Link de identidade do Teams pré-visualizado"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

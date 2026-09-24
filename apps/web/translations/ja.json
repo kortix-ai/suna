@@ -19136,7 +19136,9 @@
       "text2afef4702cc0": "システムステータスバナーを表示しました",
       "textbda3fcd4343c": "ティア設定を表示しました",
       "text30cef615e8e3": "取引の概要を表示しました",
-      "textd2c6127fc332": "バージョンの差分を表示しました"
+      "textd2c6127fc332": "バージョンの差分を表示しました",
+      "text8cc0d84b66bb": "Slack ID リンクをプレビュー",
+      "text508b43cc4545": "Teams ID リンクをプレビュー"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

@@ -19136,7 +19136,9 @@
       "text2afef4702cc0": "Banner de estado del sistema consultado",
       "textbda3fcd4343c": "Configuraciones de nivel consultadas",
       "text30cef615e8e3": "Resumen de transacciones consultado",
-      "textd2c6127fc332": "Diferencias entre versiones consultadas"
+      "textd2c6127fc332": "Diferencias entre versiones consultadas",
+      "text8cc0d84b66bb": "Enlace de identidad de Slack previsualizado",
+      "text508b43cc4545": "Enlace de identidad de Teams previsualizado"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
