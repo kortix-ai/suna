@@ -680,6 +680,7 @@ Run these against representative endpoints from each domain.
 `SEC-H` audit — every state-changing `/v1/*` writes an audit row (`auditStateChangingRequest`); assert `GET /accounts/:id/audit` reflects a prior mutation.
 `SEC-I` rate limits — session create (429), invite-accept, preview proxy, tunnel WS each return their limiter response under load.
 `SEC-J` transport hardening — public health responses leak no secrets or framework headers; sensitive paths stay hidden; malicious origins receive no permissive CORS; adversarial bodies and content types produce no 5xx, reflection, or secret leakage; HTTP method fuzzing never bypasses auth; the router is not an anonymous upstream relay.
+`SEC-K` client database roles — the Supabase anon key and a signed-in user JWT, sent straight to PostgREST, get `42501` permission denied on every wallet RPC (`atomic_add_credits`, `atomic_use_credits`, `atomic_settle_credits`, `atomic_reset_expiring_credits`, `atomic_daily_credit_refresh`) and cannot read the `kortix` schema (`406 PGRST106` or `42501`). Enforced by migration `20260924194804787_client_role_lockdown`.
 
 ### Role × project-action grid (assert per row)
 
