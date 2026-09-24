@@ -69,7 +69,7 @@ export interface SessionRuntimeEnvInput {
   /** kortix.yaml `harnesses.pi.packages`; sent as `KORTIX_PI_PACKAGES` to a pi session only. */
   piPackages?: unknown[];
   /** The prebuilt bundle of those packages (apps/api/src/pi-packages/bundle.ts); null when not built. */
-  piPackagesBundle?: { digest: string; url: string } | null;
+  piPackagesBundle?: { digest: string; url: string; fallbackUrl: string } | null;
 }
 
 /**
@@ -182,7 +182,11 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     ...(input.harness === 'pi' ? { KORTIX_HARNESS: 'pi' } : {}),
     ...(input.harness === 'pi' && input.piPackages?.length ? { KORTIX_PI_PACKAGES: JSON.stringify(input.piPackages) } : {}),
     ...(input.harness === 'pi' && input.piPackagesBundle
-      ? { KORTIX_PI_PACKAGES_BUNDLE_URL: input.piPackagesBundle.url, KORTIX_PI_PACKAGES_BUNDLE_DIGEST: input.piPackagesBundle.digest }
+      ? {
+          KORTIX_PI_PACKAGES_BUNDLE_URL: input.piPackagesBundle.url,
+          KORTIX_PI_PACKAGES_FALLBACK_URL: input.piPackagesBundle.fallbackUrl,
+          KORTIX_PI_PACKAGES_BUNDLE_DIGEST: input.piPackagesBundle.digest,
+        }
       : {}),
     // Frontend base for user-facing dashboard links — the agent/CLI must never
     // surface KORTIX_API_URL (the API host) to a human. See sandboxFrontendBaseUrl().

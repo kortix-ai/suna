@@ -344,6 +344,9 @@ importers:
       '@earendil-works/pi-coding-agent':
         specifier: 0.85.1
         version: 0.85.1(ws@8.21.3)(zod@3.25.76)
+      '@earendil-works/pi-tui':
+        specifier: 0.85.1
+        version: 0.85.1
       hono:
         specifier: 4.12.34
         version: 4.12.34

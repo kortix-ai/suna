@@ -9,6 +9,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { createHmac } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { loadConfig } from '../config'
@@ -531,11 +532,57 @@ function fakePackage(npmRoot: string, name: string, version: string, source: str
 
 const DIGEST = 'a'.repeat(64)
 
-/** A project bundle as bundle.ts leaves it: `<dir>/<digest>/node_modules` plus the `.complete` marker. */
-function fakeBundle(workspace: string, fill: (root: string) => void): void {
+type FakePrebuilt = { name: string; version: string; code?: string; fallback?: string; files?: Record<string, string>; pi?: object }
+
+/** Write the pre-built layout (apps/api prebuild.ts) into `root`: manifest.json + packages/<name>/. */
+function writePrebuilt(root: string, packages: FakePrebuilt[]): void {
+  const manifest = {
+    format: 'pi-packages-v2',
+    packages: packages.map((p) =>
+      p.fallback ? { name: p.name, version: p.version, fallback: p.fallback } : { name: p.name, version: p.version, dir: `packages/${p.name}`, extensions: [`packages/${p.name}/index.js.kortix.js`] },
+    ),
+  }
+  for (const p of packages.filter((p) => !p.fallback)) {
+    const dir = join(root, 'packages', p.name)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: p.name, version: p.version, ...(p.pi ? { pi: p.pi } : {}) }))
+    writeFileSync(join(dir, 'index.js.kortix.js'), p.code ?? '')
+    for (const [rel, contents] of Object.entries(p.files ?? {})) {
+      mkdirSync(dirname(join(dir, rel)), { recursive: true })
+      writeFileSync(join(dir, rel), contents)
+    }
+  }
+  mkdirSync(root, { recursive: true })
+  writeFileSync(join(root, 'manifest.json'), JSON.stringify(manifest))
+}
+
+/** A pre-built bundle as bundle.ts leaves it: `<dir>/<digest>`, marked complete. */
+function fakePrebuilt(workspace: string, packages: FakePrebuilt[]): void {
   const root = join(workspace, '.pi-packages', DIGEST)
+  writePrebuilt(root, packages)
+  writeFileSync(join(root, '.complete'), DIGEST)
+}
+
+/** The installed fallback: `<dir>/<digest>.node_modules/node_modules`, marked complete. */
+function fakeFallback(workspace: string, fill: (root: string) => void): void {
+  const root = join(workspace, '.pi-packages', `${DIGEST}.node_modules`)
   fill(root)
   writeFileSync(join(root, '.complete'), DIGEST)
+}
+
+/** A pre-built extension as prebuild.ts emits it: plain ESM, pi's modules read from the host registry. */
+function prebuiltTool(tool: string, prefix: string): string {
+  return `const { Type } = globalThis.__kortixPiHost['typebox']
+export default function (pi) {
+  pi.registerTool({
+    name: '${tool}',
+    label: '${tool}',
+    description: 'Echo the text back.',
+    parameters: Type.Object({ text: Type.String() }),
+    async execute(_id, params) { return { content: [{ type: 'text', text: '${prefix}:' + params.text }], details: {} } },
+  })
+}
+`
 }
 
 /** An extension source that registers one tool answering `<prefix>:<text>`. */
@@ -682,7 +729,15 @@ describe('pi packages', () => {
         mkdirSync(agentDir, { recursive: true })
         writeFileSync(join(agentDir, 'settings.json'), JSON.stringify({ packages: ['npm:system-ext@1.0.0', 'npm:system-missing@1.0.0'] }))
         fakePackage(join(agentDir, 'npm'), 'system-ext', '1.0.0', echoTool('system_echo', 'system'))
-        fakeBundle(workspace, (root) => fakePackage(root, 'project-ext', '2.0.0', echoTool('project_echo', 'project')))
+        fakePrebuilt(workspace, [
+          {
+            name: 'project-ext',
+            version: '2.0.0',
+            code: prebuiltTool('project_echo', 'project'),
+            pi: { skills: ['./skills'] },
+            files: { 'skills/package-skill/SKILL.md': '---\nname: package-skill\ndescription: Shipped by a package\n---\nDo it.\n' },
+          },
+        ])
         mkdirSync(join(workspace, '.kortix', 'pi'), { recursive: true })
         writeFileSync(join(workspace, '.kortix', 'pi', 'local.ts'), echoTool('local_echo', 'local'))
         mkdirSync(join(workspace, '.pi', 'extensions'), { recursive: true })
@@ -693,6 +748,8 @@ describe('pi packages', () => {
     expect(tools).toEqual(expect.arrayContaining(['system_echo', 'project_echo', 'local_echo', 'repo_echo', 'task', 'bash']))
     const status = r.service.runtime()!.extensionStatus()
     expect(status.loaded).toEqual(expect.arrayContaining(['subagents', 'npm:system-ext@1.0.0', 'npm:project-ext@2.0.0']))
+    // A pre-built package still brings its skills: pi reads them from its folder.
+    expect(((await r.user('/skill').then((res) => res.json())) as Array<{ name: string }>).map((s) => s.name)).toContain('package-skill')
     expect(status.failed).toEqual([
       { name: 'npm:system-missing@1.0.0', error: 'package is not installed' },
       { name: 'npm:project-missing@1.0.0', error: 'package is not installed' },
@@ -706,7 +763,7 @@ describe('pi packages', () => {
     expect(toolParts(page, 'project_echo')[0]!.state.output).toBe('project:yo')
     expect(toolParts(page, 'local_echo')[0]!.state.output).toBe('local:l')
     expect(existsSync(join(r.workspace, '.pi-agent', 'npm', 'node_modules', 'system-missing'))).toBe(false)
-    expect(existsSync(join(r.workspace, '.pi-packages', DIGEST, 'node_modules', 'project-missing'))).toBe(false)
+    expect(existsSync(join(r.workspace, '.pi-packages', `${DIGEST}.node_modules`))).toBe(false)
   })
 
   test('a project package overrides the system package of the same name', async () => {
@@ -718,7 +775,7 @@ describe('pi packages', () => {
         mkdirSync(agentDir, { recursive: true })
         writeFileSync(join(agentDir, 'settings.json'), JSON.stringify({ packages: ['npm:shared-ext@1.0.0'] }))
         fakePackage(join(agentDir, 'npm'), 'shared-ext', '1.0.0', echoTool('shared_echo', 'system'))
-        fakeBundle(workspace, (root) => fakePackage(root, 'shared-ext', '2.0.0', echoTool('shared_echo', 'project')))
+        fakePrebuilt(workspace, [{ name: 'shared-ext', version: '2.0.0', code: prebuiltTool('shared_echo', 'project') }])
       },
     })
     await promptAndSettle(r, 'go')
@@ -728,16 +785,25 @@ describe('pi packages', () => {
 
   test('the project bundle downloads once, unpacks outside the repo, and its tool runs', async () => {
     const source = mkdtempSync(join(tmpdir(), 'pi-bundle-src-'))
-    fakePackage(source, 'bundled-ext', '3.0.0', echoTool('bundled_echo', 'bundled'))
+    writePrebuilt(join(source, 'tree'), [{ name: 'bundled-ext', version: '3.0.0', code: prebuiltTool('bundled_echo', 'bundled') }])
     const archive = join(source, 'bundle.tar.gz')
-    await require('tar').c({ gzip: true, cwd: source, file: archive }, ['node_modules'])
+    await require('tar').c({ gzip: true, cwd: join(source, 'tree'), file: archive }, ['.'])
     let downloads = 0
-    const server = Bun.serve({ port: 0, fetch: () => (downloads++, new Response(Bun.file(archive))) })
+    let fallbackDownloads = 0
+    const server = Bun.serve({
+      port: 0,
+      fetch: (req) => (new URL(req.url).pathname === '/fallback' ? (fallbackDownloads++, new Response('no', { status: 404 })) : (downloads++, new Response(Bun.file(archive)))),
+    })
     try {
       const url = `http://127.0.0.1:${server.port}/bundle.tar.gz`
       const r = await boot({
         script: [{ tool: 'bundled_echo', args: { text: 'b' } }, { text: 'done' }],
-        env: { KORTIX_PI_PACKAGES: JSON.stringify(['npm:bundled-ext@3.0.0']), KORTIX_PI_PACKAGES_BUNDLE_URL: url, KORTIX_PI_PACKAGES_BUNDLE_DIGEST: DIGEST },
+        env: {
+          KORTIX_PI_PACKAGES: JSON.stringify(['npm:bundled-ext@3.0.0']),
+          KORTIX_PI_PACKAGES_BUNDLE_URL: url,
+          KORTIX_PI_PACKAGES_FALLBACK_URL: `http://127.0.0.1:${server.port}/fallback`,
+          KORTIX_PI_PACKAGES_BUNDLE_DIGEST: DIGEST,
+        },
         start: false,
       })
       // The download starts with the service, beside the repo clone, not at runtime start.
@@ -753,6 +819,46 @@ describe('pi packages', () => {
       await r.service.lifecycle.stop()
       await r.service.lifecycle.start()
       expect(downloads).toBe(1)
+      // Everything pre-built loaded natively: the installed tree was never fetched.
+      expect(fallbackDownloads).toBe(0)
+    } finally {
+      server.stop(true)
+      rmSync(source, { recursive: true, force: true })
+    }
+  })
+
+  test('a package with no pre-built form, one whose file throws, and one with its own filter load from node_modules', async () => {
+    const source = mkdtempSync(join(tmpdir(), 'pi-fallback-src-'))
+    fakePackage(source, 'fb-ext', '1.0.0', echoTool('fb_echo', 'fb'))
+    fakePackage(source, 'throws-ext', '1.0.0', echoTool('thr_echo', 'thr'))
+    fakePackage(source, 'filtered-ext', '1.0.0', echoTool('fil_echo', 'fil'))
+    const archive = join(source, 'node_modules.tar.gz')
+    await require('tar').c({ gzip: true, cwd: source, file: archive }, ['node_modules'])
+    let fallbackDownloads = 0
+    const server = Bun.serve({ port: 0, fetch: () => (fallbackDownloads++, new Response(Bun.file(archive))) })
+    try {
+      const r = await boot({
+        script: [{ tool: 'fb_echo', args: { text: '1' } }, { tool: 'thr_echo', args: { text: '2' } }, { tool: 'fil_echo', args: { text: '3' } }, { text: 'done' }],
+        env: {
+          KORTIX_PI_PACKAGES: JSON.stringify(['npm:fb-ext@1.0.0', 'npm:throws-ext@1.0.0', { source: 'npm:filtered-ext@1.0.0', extensions: ['index.ts'] }]),
+          KORTIX_PI_PACKAGES_FALLBACK_URL: `http://127.0.0.1:${server.port}/node_modules.tar.gz`,
+          KORTIX_PI_PACKAGES_BUNDLE_DIGEST: DIGEST,
+        },
+        prepare(workspace) {
+          fakePrebuilt(workspace, [
+            { name: 'fb-ext', version: '1.0.0', fallback: 'extension paths use globs or overrides' },
+            { name: 'throws-ext', version: '1.0.0', code: "throw new Error('boom at import')\nexport default () => {}\n" },
+            { name: 'filtered-ext', version: '1.0.0', code: prebuiltTool('fil_echo', 'prebuilt') },
+          ])
+        },
+      })
+      expect(fallbackDownloads).toBe(1)
+      const status = r.service.runtime()!.extensionStatus()
+      expect(status.loaded).toEqual(expect.arrayContaining(['npm:fb-ext@1.0.0', 'npm:throws-ext@1.0.0', 'npm:filtered-ext@1.0.0']))
+      expect(status.failed).toEqual([])
+      await promptAndSettle(r, 'go')
+      const page = (await r.bearer(`/kortix/opencode/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
+      expect([toolParts(page, 'fb_echo'), toolParts(page, 'thr_echo'), toolParts(page, 'fil_echo')].map((parts) => parts[0]!.state.output)).toEqual(['fb:1', 'thr:2', 'fil:3'])
     } finally {
       server.stop(true)
       rmSync(source, { recursive: true, force: true })

@@ -293,9 +293,10 @@ At most 20 entries. Git sources are rejected.
 
 How packages reach a session:
 
-1. Merging the change request that edits this list builds the package bundle once, for the sandbox platform, with install scripts off. Projects with the same list share one bundle.
-2. A new or restarted session downloads the bundle before pi starts. A session never runs `npm install`.
-3. A session that starts before the bundle exists boots without the project packages and starts the build; the next session has them.
+1. Merging the change request that edits this list builds the packages once, for the sandbox platform, with install scripts off. Each extension is pre-built into one file. Projects with the same list share the build.
+2. A new or restarted session downloads the build while its repository clones, and loads each extension directly. A session never runs `npm install` or compiles a package.
+3. A package that cannot be pre-built (for example, one whose `pi.extensions` uses globs) still works: the session loads it from the installed packages instead, which takes longer.
+4. A session that starts before the build exists boots without the project packages and starts the build; the next session has them.
 
 Kortix also installs a set of system packages into every pi session. A project entry for the same package replaces the system version. A repository can also hold pi-native extensions in `.pi/extensions/*.ts`; pi loads them without a manifest entry.
 

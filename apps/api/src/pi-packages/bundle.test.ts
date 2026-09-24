@@ -25,9 +25,10 @@ describe('pi package bundle identity', () => {
     expect(piPackageBundleDigest(piPackageSpecs(['npm:b@2.0.0', 'npm:a@1.0.0']))).toBe(a);
     expect(piPackageBundleDigest(piPackageSpecs(['npm:a@1.0.1', 'npm:b@2.0.0']))).not.toBe(a);
     expect(a).toMatch(/^[0-9a-f]{64}$/);
-    expect(piPackageBundleKey(a, '')).toBe(`pi-packages/pi-packages-v1/${a}.tar.gz`);
+    expect(piPackageBundleKey(a, '')).toBe(`pi-packages/pi-packages-v2/${a}.tar.gz`);
+    expect(piPackageBundleKey(a, '', 'node_modules')).toBe(`pi-packages/pi-packages-v2/${a}.node_modules.tar.gz`);
     // The same prefix project snapshots use, so one bucket policy covers both.
-    expect(piPackageBundleKey(a, '/dev/')).toBe(`dev/pi-packages/pi-packages-v1/${a}.tar.gz`);
+    expect(piPackageBundleKey(a, '/dev/')).toBe(`dev/pi-packages/pi-packages-v2/${a}.tar.gz`);
   });
 });
 
@@ -64,7 +65,7 @@ describe('ensurePiPackageBundle', () => {
       build: async () => {
         state.builds++;
         await Bun.sleep(20);
-        return { path: '/tmp/x.tar.gz', bytes: 1, cleanup: async () => void state.cleanups++ };
+        return { prebuilt: { path: '/tmp/p.tar.gz', bytes: 1 }, nodeModules: { path: '/tmp/n.tar.gz', bytes: 2 }, cleanup: async () => void state.cleanups++ };
       },
     };
   }
@@ -80,7 +81,9 @@ describe('ensurePiPackageBundle', () => {
     const d = deps(state);
     await Promise.all([ensurePiPackageBundle(['b@1.0.0'], d), ensurePiPackageBundle(['b@1.0.0'], d)]);
     expect(state.builds).toBe(1);
-    expect(state.puts).toEqual([piPackageBundleKey(piPackageBundleDigest(['b@1.0.0']))]);
+    const digest = piPackageBundleDigest(['b@1.0.0']);
+    // The installed tree lands first: the pre-built key is the "complete" marker sessions check.
+    expect(state.puts).toEqual([piPackageBundleKey(digest, undefined, 'node_modules'), piPackageBundleKey(digest)]);
     expect(state.cleanups).toBe(1);
   });
 

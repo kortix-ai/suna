@@ -283,6 +283,36 @@ export class PiRuntime {
     void this.prefetchProjectBundle()
   }
 
+  /**
+   * The project's packages: npm ones from the pre-built bundle (native import),
+   * any it could not serve from the node_modules fallback (fetched only then),
+   * and `./` repo paths as they are.
+   */
+  private async projectPackages(host: typeof import('./extensions/host'), prebuiltRoot: string | null) {
+    const entries = host.parseProjectPackages(this.cfg.piPackages)
+    if (!prebuiltRoot) return { entries, nodeModulesRoot: null, extensions: [], prebuilt: undefined }
+    const { loadPrebuiltPackages } = await import('./extensions/prebuilt')
+    const loaded = await loadPrebuiltPackages(prebuiltRoot, entries)
+    for (const { entry, reason } of loaded.fallback) {
+      logger.warn('[pi] project package loads from the node_modules fallback', { source: typeof entry === 'string' ? entry : entry.source, reason })
+    }
+    const nodeModulesRoot = loaded.fallback.length
+      ? await import('./extensions/bundle').then(({ ensureProjectPackageBundle }) =>
+          ensureProjectPackageBundle({ url: this.cfg.piPackagesFallbackUrl, digest: this.cfg.piPackagesBundleDigest, dir: this.cfg.piPackagesDir, kind: 'node_modules' }),
+        )
+      : null
+    const npmName = (entry: (typeof entries)[number]) => host.parseNpmSource(typeof entry === 'string' ? entry : entry.source)?.name
+    const fallbackNames = new Set(loaded.fallback.map(({ entry }) => npmName(entry)))
+    const local = entries.filter((entry) => !npmName(entry))
+    const names = entries.map(npmName).filter((name): name is string => !!name && !fallbackNames.has(name))
+    return {
+      entries: [...local, ...loaded.fallback.map(({ entry }) => entry)],
+      nodeModulesRoot,
+      extensions: loaded.extensions,
+      prebuilt: { resources: loaded.resources, names },
+    }
+  }
+
   /** Start the project bundle download, or join the one in flight. A missing result is retried by the next start. */
   private prefetchProjectBundle(): Promise<string | null> {
     this.projectBundle ??= import('./extensions/bundle')
@@ -324,7 +354,7 @@ export class PiRuntime {
     this.startError = null
     const startedAt = this.now()
     try {
-      const [{ createPiModels }, { createWorkspaceTools, createQuestionTool }, core, node, host, { subagents }, { convertToLlm }, projectBundleRoot] = await Promise.all([
+      const [{ createPiModels }, { createWorkspaceTools, createQuestionTool }, core, node, host, { subagents }, { convertToLlm }, prebuiltRoot] = await Promise.all([
         import('./model'),
         import('./tools'),
         import('@earendil-works/pi-agent-core'),
@@ -382,15 +412,17 @@ export class PiRuntime {
       this.agent = agent
       this.childAgentOptions = { convertToLlm, ...host.extensionAgentHooks(this.runner) }
       const extensionsStartedAt = performance.now()
+      const project = await this.projectPackages(host, prebuiltRoot)
       this.pi = await host.createPiSession({
         agent,
         ref: this.runner,
         cwd: this.workspace,
         agentDir: this.cfg.piAgentDir,
-        projectPackages: host.parseProjectPackages(this.cfg.piPackages),
-        projectBundleRoot,
+        projectPackages: project.entries,
+        projectBundleRoot: project.nodeModulesRoot,
+        prebuilt: project.prebuilt,
         baseTools: this.baseTools,
-        extensions: [this.turnExtension(), ...(this.extensionList ?? [subagents(this.kortixHost())])],
+        extensions: [this.turnExtension(), ...(this.extensionList ?? [subagents(this.kortixHost())]), ...project.extensions],
         systemPrompt: () => this.systemPrompt(core.formatSkillsForSystemPrompt),
         provider: this.models.models.getProvider(this.selected.providerID),
       })

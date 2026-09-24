@@ -2,10 +2,12 @@
  * The project's pi packages, delivered as one prebuilt bundle.
  *
  * The API installs kortix.yaml `harnesses.pi.packages` once per package list
- * (apps/api/src/pi-packages/bundle.ts) and hands the session a short-lived
- * download URL plus the bundle's digest. Here the bundle is unpacked to
- * `<dir>/<digest>/node_modules` before the pi runtime starts. A restart of the
- * same sandbox finds the `.complete` marker and downloads nothing.
+ * (apps/api/src/pi-packages/bundle.ts) and stores two objects under one digest:
+ * the pre-built bundle (`manifest.json` + one file per extension, see
+ * prebuilt.ts), which every session downloads, and the installed `node_modules`,
+ * which a session downloads only for a package that has no pre-built form.
+ * They unpack to `<dir>/<digest>` and `<dir>/<digest>.node_modules`. A restart
+ * of the same sandbox finds the `.complete` marker and downloads nothing.
  *
  * Any failure leaves the project packages out, never the session: the runtime
  * reports each missing package in its extension status.
@@ -24,10 +26,12 @@ export interface ProjectBundleInput {
   url?: string
   digest?: string
   dir: string
+  /** Which of the digest's two objects; `prebuilt` unless named. */
+  kind?: 'prebuilt' | 'node_modules'
   fetchImpl?: typeof fetch
 }
 
-/** The unpacked bundle root (holding `node_modules`), or null when there is none. */
+/** The unpacked root (`manifest.json`, or `node_modules` for the fallback), or null when there is none. */
 export async function ensureProjectPackageBundle(input: ProjectBundleInput): Promise<string | null> {
   const digest = input.digest?.trim()
   if (!digest) return null
@@ -35,7 +39,8 @@ export async function ensureProjectPackageBundle(input: ProjectBundleInput): Pro
     logger.warn('[pi] project package bundle digest is not a sha256; ignoring', { digest })
     return null
   }
-  const root = join(input.dir, digest)
+  const kind = input.kind ?? 'prebuilt'
+  const root = join(input.dir, kind === 'prebuilt' ? digest : `${digest}.node_modules`)
   if (existsSync(join(root, '.complete'))) return root
   if (!input.url) {
     logger.warn('[pi] project package bundle is not built yet; project packages load on a later session', { digest })
@@ -49,11 +54,12 @@ export async function ensureProjectPackageBundle(input: ProjectBundleInput): Pro
     const response = await (input.fetchImpl ?? fetch)(input.url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) })
     if (!response.ok || !response.body) throw new Error(`download answered ${response.status}`)
     await pipeline(Readable.fromWeb(response.body as never), tar.x({ cwd: staging, strict: true }))
-    if (!existsSync(join(staging, 'node_modules'))) throw new Error('bundle has no node_modules')
+    const expected = kind === 'prebuilt' ? 'manifest.json' : 'node_modules'
+    if (!existsSync(join(staging, expected))) throw new Error(`bundle has no ${expected}`)
     writeFileSync(join(staging, '.complete'), digest)
     rmSync(root, { recursive: true, force: true })
     renameSync(staging, root)
-    logger.info('[pi] project package bundle ready', { digest, ms: Math.round(performance.now() - startedAt) })
+    logger.info('[pi] project package bundle ready', { digest, kind, ms: Math.round(performance.now() - startedAt) })
     return root
   } catch (err) {
     rmSync(staging, { recursive: true, force: true })

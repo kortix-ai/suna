@@ -157,8 +157,10 @@ export interface PiSessionInput {
   cwd: string
   agentDir: string
   projectPackages: readonly PackageSource[]
-  /** The unpacked project bundle (`<root>/node_modules/<name>`), or null when there is none. */
+  /** The unpacked node_modules fallback (`<root>/node_modules/<name>`) for npm entries in `projectPackages`, or null. */
   projectBundleRoot: string | null
+  /** Pre-built project packages (prebuilt.ts): their folders for skills/prompts, and their npm names. */
+  prebuilt?: { resources: readonly PackageSource[]; names: readonly string[] }
   baseTools: readonly AgentTool<any, any>[]
   extensions: readonly InlineExtension[]
   systemPrompt: () => string
@@ -277,6 +279,8 @@ export function resolveProjectPackages(
 export async function createPiSession(input: PiSessionInput): Promise<PiSession> {
   const globalSettings = readSettings(join(input.agentDir, 'settings.json'))
   const project = resolveProjectPackages(input.projectPackages, { cwd: input.cwd, bundleRoot: input.projectBundleRoot })
+  for (const name of input.prebuilt?.names ?? []) project.npmNames.add(name)
+  project.kept.push(...(input.prebuilt?.resources ?? []))
   // A package the project pins itself replaces the system one (pi would load both: a path and an npm name differ).
   const systemEntries = ((globalSettings.packages as PackageSource[] | undefined) ?? []).filter((entry) => {
     const npm = parseNpmSource(sourceOf(entry))

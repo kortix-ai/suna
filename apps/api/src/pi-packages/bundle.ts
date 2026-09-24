@@ -21,6 +21,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PI_SUPPLIED_PACKAGES } from '@kortix/shared';
 import { config } from '../config';
+import { PREBUILT_FORMAT } from './prebuild';
 import {
   headObject,
   presignProjectSnapshotDownload,
@@ -28,7 +29,7 @@ import {
   putObjectIfAbsent,
 } from '../git-proxy/project-snapshot-store';
 
-export const PI_PACKAGE_BUNDLE_FORMAT = 'pi-packages-v1';
+export const PI_PACKAGE_BUNDLE_FORMAT = PREBUILT_FORMAT;
 // ponytail: every sandbox provider runs linux-x64 today; key the digest on the
 // target and pass it from the session when an arm64 provider lands.
 const TARGET = { os: 'linux', cpu: 'x64' } as const;
@@ -52,10 +53,15 @@ export function piPackageBundleDigest(specs: readonly string[]): string {
   return createHash('sha256').update(JSON.stringify({ format: PI_PACKAGE_BUNDLE_FORMAT, target: TARGET, specs })).digest('hex');
 }
 
-/** `<snapshot prefix>pi-packages/<format>/<digest>.tar.gz`: under the same prefix (and bucket policy) as project snapshots. */
-export function piPackageBundleKey(digest: string, configuredPrefix = config.KORTIX_PROJECT_SNAPSHOT_S3_PREFIX): string {
+/**
+ * `<snapshot prefix>pi-packages/<format>/<digest>.tar.gz` (pre-built, what a
+ * session downloads) and `….node_modules.tar.gz` (the installed tree, fetched
+ * only for a package that could not be pre-built). Under the same prefix (and
+ * bucket policy) as project snapshots.
+ */
+export function piPackageBundleKey(digest: string, configuredPrefix = config.KORTIX_PROJECT_SNAPSHOT_S3_PREFIX, kind: 'prebuilt' | 'node_modules' = 'prebuilt'): string {
   const trimmed = configuredPrefix.trim().replace(/^\/+/, '').replace(/\/+$/, '');
-  return `${trimmed ? `${trimmed}/` : ''}pi-packages/${PI_PACKAGE_BUNDLE_FORMAT}/${digest}.tar.gz`;
+  return `${trimmed ? `${trimmed}/` : ''}pi-packages/${PI_PACKAGE_BUNDLE_FORMAT}/${digest}${kind === 'prebuilt' ? '' : '.node_modules'}.tar.gz`;
 }
 
 async function run(cmd: string[], cwd: string): Promise<void> {
@@ -101,13 +107,29 @@ export async function missingPeers(nodeModules: string): Promise<Record<string, 
   return missing;
 }
 
+type BundleFile = { path: string; bytes: number };
+export interface BuiltBundle {
+  prebuilt: BundleFile;
+  nodeModules: BundleFile;
+  cleanup: () => Promise<void>;
+}
+
+async function pack(dir: string, name: string, what: string[]): Promise<BundleFile> {
+  const path = join(dir, name);
+  await run(['tar', '-czf', path, ...what], dir);
+  const { size } = await stat(path);
+  if (size > MAX_BUNDLE_BYTES) throw new Error(`${name} is ${size} bytes; the limit is ${MAX_BUNDLE_BYTES}`);
+  return { path, bytes: size };
+}
+
 /**
- * Install `specs` for the sandbox target and pack `node_modules`: the
- * packages, their dependencies, and their required peers (as pi's own npm
- * install would), with the pi-supplied packages as empty stubs. Bun never runs
- * dependency lifecycle scripts; `--ignore-scripts` covers the root.
+ * Install `specs` for the sandbox target: the packages, their dependencies, and
+ * their required peers (as pi's own npm install would), with the pi-supplied
+ * packages as empty stubs. Bun never runs dependency lifecycle scripts;
+ * `--ignore-scripts` covers the root. Then pre-build (prebuild.ts, its own
+ * process) and pack both the pre-built tree and the installed tree.
  */
-export async function buildPiPackageBundle(specs: readonly string[]): Promise<{ path: string; bytes: number; cleanup: () => Promise<void> }> {
+export async function buildPiPackageBundle(specs: readonly string[]): Promise<BuiltBundle> {
   const dir = await mkdtemp(join(tmpdir(), 'pi-packages-'));
   const cleanup = () => rm(dir, { recursive: true, force: true });
   try {
@@ -129,11 +151,11 @@ export async function buildPiPackageBundle(specs: readonly string[]): Promise<{ 
       if (pass + 1 >= PEER_PASSES) throw new Error(`peer dependencies still missing after ${PEER_PASSES} installs: ${Object.keys(missing).join(', ')}`);
       Object.assign(dependencies, missing);
     }
-    const path = join(dir, 'bundle.tar.gz');
-    await run(['tar', '-czf', path, 'node_modules'], dir);
-    const { size } = await stat(path);
-    if (size > MAX_BUNDLE_BYTES) throw new Error(`bundle is ${size} bytes; the limit is ${MAX_BUNDLE_BYTES}`);
-    return { path, bytes: size, cleanup };
+    const names = specs.map((spec) => spec.slice(0, spec.lastIndexOf('@')));
+    await run([process.execPath, join(import.meta.dir, 'prebuild.ts'), join(dir, 'node_modules'), join(dir, 'prebuilt'), ...names], dir);
+    const prebuilt = await pack(dir, 'prebuilt.tar.gz', ['-C', 'prebuilt', '.']);
+    const nodeModules = await pack(dir, 'node_modules.tar.gz', ['node_modules']);
+    return { prebuilt, nodeModules, cleanup };
   } catch (err) {
     await cleanup();
     throw err;
@@ -142,7 +164,7 @@ export async function buildPiPackageBundle(specs: readonly string[]): Promise<{ 
 
 export interface BundleDeps {
   head: (key: string) => Promise<unknown | null>;
-  put: (key: string, file: { path: string; bytes: number }) => Promise<unknown>;
+  put: (key: string, file: BundleFile) => Promise<unknown>;
   build: typeof buildPiPackageBundle;
 }
 
@@ -165,8 +187,16 @@ export function ensurePiPackageBundle(specs: readonly string[], deps: BundleDeps
     const startedAt = Date.now();
     const bundle = await deps.build(specs);
     try {
-      await deps.put(key, bundle);
-      console.log('[pi-packages] bundle built', { digest, specs, bytes: bundle.bytes, ms: Date.now() - startedAt });
+      // The installed tree first: the pre-built key existing means both are there.
+      await deps.put(piPackageBundleKey(digest, undefined, 'node_modules'), bundle.nodeModules);
+      await deps.put(key, bundle.prebuilt);
+      console.log('[pi-packages] bundle built', {
+        digest,
+        specs,
+        prebuiltBytes: bundle.prebuilt.bytes,
+        nodeModulesBytes: bundle.nodeModules.bytes,
+        ms: Date.now() - startedAt,
+      });
     } finally {
       await bundle.cleanup();
     }
@@ -192,7 +222,7 @@ export function kickPiPackageBundle(entries: readonly unknown[], context: Record
 export async function piPackageBundleForSession(
   entries: readonly unknown[],
   context: Record<string, unknown>,
-): Promise<{ digest: string; url: string } | null> {
+): Promise<{ digest: string; url: string; fallbackUrl: string } | null> {
   const specs = piPackageSpecs(entries);
   if (specs.length === 0 || !projectSnapshotStorageConfigured()) return null;
   const digest = piPackageBundleDigest(specs);
@@ -201,8 +231,12 @@ export async function piPackageBundleForSession(
       kickPiPackageBundle(entries, context);
       return null;
     }
-    const { url } = await presignProjectSnapshotDownload(piPackageBundleKey(digest));
-    return { digest, url };
+    // Signing is local (no request): the fallback URL costs nothing unless a package needs it.
+    const [{ url }, { url: fallbackUrl }] = await Promise.all([
+      presignProjectSnapshotDownload(piPackageBundleKey(digest)),
+      presignProjectSnapshotDownload(piPackageBundleKey(digest, undefined, 'node_modules')),
+    ]);
+    return { digest, url, fallbackUrl };
   } catch (err) {
     console.warn('[pi-packages] bundle lookup failed; session boots without project packages', {
       ...context,

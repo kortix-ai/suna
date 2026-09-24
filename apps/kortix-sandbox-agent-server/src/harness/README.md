@@ -112,7 +112,7 @@ Three sources, in pi's own scopes:
 | Source | Declared in | Installed in |
 |---|---|---|
 | system (every session) | `<agentDir>/settings.json` `packages`; `agentDir` = `KORTIX_PI_AGENT_DIR`, default `/opt/kortix/pi-agent` | `<agentDir>/npm`, when the image is built |
-| project | kortix.yaml `harnesses.pi.packages` → `KORTIX_PI_PACKAGES` | npm sources: one bundle per package list, built by the API (apps/api/src/pi-packages/bundle.ts, on change-request merge), downloaded while pi loads (`KORTIX_PI_PACKAGES_BUNDLE_URL`/`_DIGEST`) and unpacked to `<KORTIX_PI_PACKAGES_DIR>/<digest>`, outside the repo |
+| project | kortix.yaml `harnesses.pi.packages` → `KORTIX_PI_PACKAGES` | npm sources: built once per package list by the API (apps/api/src/pi-packages, on change-request merge) as a PRE-BUILT bundle — one self-contained ESM file per extension (deps inlined; pi's own modules read `globalThis.__kortixPiHost`) plus the package's own files — and the installed `node_modules` as a fallback. The daemon starts the download with the service (beside the repo clone), unpacks to `<KORTIX_PI_PACKAGES_DIR>/<digest>` (outside the repo) and imports each extension natively: no jiti, no install (`extensions/prebuilt.ts`). A package with no pre-built form, one whose file throws on import, or an entry with its own `extensions` filter loads from the fallback (`KORTIX_PI_PACKAGES_FALLBACK_URL`, fetched only then) through pi's loader |
 | repo-local | `<workspace>/.pi/extensions/*.ts`, or a repo-relative path in `harnesses.pi.packages` | the repo itself |
 
 A project entry for the same package overrides the system one. Nothing installs
