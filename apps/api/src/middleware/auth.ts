@@ -19,6 +19,7 @@ import { isOAuthAccessToken, oauthScopeAllowsPath, validateOAuthAccessToken } fr
 import { applyImpersonation } from './impersonation';
 import { buildActor } from '../iam/actor';
 import { beginStage } from '../lib/server-timing';
+import { presentedKortixToken, withTokenAttemptBudget } from './token-attempt-budget';
 
 const PREVIEW_SESSION_COOKIE = '__preview_session';
 
@@ -103,7 +104,9 @@ async function jitSyncSso(
 export async function apiKeyAuth(c: Context, next: Next) {
   const endAuth = beginStage('auth');
   try {
-    await resolveApiKeyAuth(c, () => withActor(c, () => (endAuth(), next())));
+    await withTokenAttemptBudget(c, presentedKortixToken(c), () =>
+      resolveApiKeyAuth(c, () => withActor(c, () => (endAuth(), next()))),
+    );
   } finally {
     endAuth();
   }
@@ -225,8 +228,10 @@ export async function supabaseAuth(c: Context, next: Next) {
   // the handler starts (or the chain throws a 401/403).
   const endAuth = beginStage('auth');
   try {
-    return await resolveSupabaseAuth(c, () =>
-      applyImpersonation(c, () => withActor(c, () => (endAuth(), next()))),
+    return await withTokenAttemptBudget(c, presentedKortixToken(c), () =>
+      resolveSupabaseAuth(c, () =>
+        applyImpersonation(c, () => withActor(c, () => (endAuth(), next()))),
+      ),
     );
   } finally {
     endAuth();
@@ -510,8 +515,10 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
 export async function combinedAuth(c: Context, next: Next) {
   const endAuth = beginStage('auth');
   try {
-    return await resolveCombinedAuth(c, () =>
-      applyImpersonation(c, () => withActor(c, () => (endAuth(), next()))),
+    return await withTokenAttemptBudget(c, presentedKortixToken(c, PREVIEW_SESSION_COOKIE), () =>
+      resolveCombinedAuth(c, () =>
+        applyImpersonation(c, () => withActor(c, () => (endAuth(), next()))),
+      ),
     );
   } finally {
     endAuth();

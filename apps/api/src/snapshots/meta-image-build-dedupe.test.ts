@@ -82,5 +82,5 @@ test('a meta image reports the size it was built with, so metering bills that si
 
   const result = await ensureMetaSandboxImage({ source: 'session-start', provider: 'platinum' });
   expect(builtSpec).toEqual({ cpu: 1, memoryGb: 2, diskGb: 8 });
-  expect(result.spec).toEqual(builtSpec);
+  expect(result.spec).toEqual(builtSpec as typeof result.spec);
 });

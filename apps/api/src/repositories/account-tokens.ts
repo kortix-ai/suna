@@ -1,9 +1,9 @@
 import { eq, and, desc, inArray, isNull, type SQL } from 'drizzle-orm';
 import { accountTokens, accounts, readStoredAgentGrant, sessionSandboxes } from '@kortix/db';
 import { db } from '../shared/db';
+import { candidateSecretKeyHashesAsync, markTokenValidated } from '../shared/token-hash';
 import {
   hashSecretKey,
-  candidateSecretKeyHashes,
   generateAccountTokenPair,
   isApiKeySecretConfigured,
   isAccountToken,
@@ -401,9 +401,18 @@ export async function validateAccountToken(
     return { isValid: false, error: 'Invalid PAT format — expected kortix_pat_ prefix' };
   }
 
-  return validateAccountTokenMatching(() =>
-    inArray(accountTokens.secretKeyHash, candidateSecretKeyHashes(secretKey)),
+  let hashes: string[];
+  try {
+    hashes = await candidateSecretKeyHashesAsync(secretKey);
+  } catch (err) {
+    console.error('Account token hashing error:', err);
+    return { isValid: false, error: 'Validation error' };
+  }
+  const result = await validateAccountTokenMatching(() =>
+    inArray(accountTokens.secretKeyHash, hashes),
   );
+  if (result.isValid) markTokenValidated(secretKey);
+  return result;
 }
 
 const TOKEN_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
