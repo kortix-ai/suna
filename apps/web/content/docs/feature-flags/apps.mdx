@@ -225,15 +225,12 @@ The App record reports `viewer_can_access` for the second question.
 
 ## Agents and Apps
 
-This section applies when the project's `agent_principal` feature flag is on.
-With the flag off, the gate and the connector gateway behave as described above.
-
 An agent session can call an App with its session credential. The App gate
 checks that credential in `Authorization: Bearer` or in
 `X-Kortix-App-Authorization: Bearer`. Use `X-Kortix-App-Authorization` when the
 App reads `Authorization` for its own API key. The gate deletes
-`X-Kortix-App-Authorization` before it forwards the request (with the flag on
-or off), so the App never receives it. The App's own `Authorization` header is
+`X-Kortix-App-Authorization` before it forwards the request, so the App never
+receives it. The App's own `Authorization` header is
 forwarded unchanged.
 
 The gate judges a governed agent session as the agent, not as the person who
@@ -256,6 +253,18 @@ agents:
 
 An agent session only opens Apps of its own project. A refused request answers
 `401 app_auth_required`.
+
+Three paths write the same `apps` list:
+
+- **Dashboard** — Customize → Agents → the agent → **Apps**. Pick App slugs, or
+  choose `All` to cover Apps added later. The page appears only when this flag
+  is on for the project.
+- **CLI** — `kortix agents scope <agent> --apps reports-dashboard,example-org`
+  (also `--apps all` and `--apps none`). Needs a v2 `kortix.yaml`.
+- **A change request** that edits `kortix.yaml` directly.
+
+The App's **Access** dialog reads the list back and shows every agent admitted
+to that App.
 
 A connector whose base URL is an App of the same project (an `openapi` or `http`
 connector built from the App's OpenAPI document) needs no Kortix credential in

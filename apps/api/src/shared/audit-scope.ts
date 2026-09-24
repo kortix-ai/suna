@@ -40,16 +40,22 @@
  * files replace `shared/audit` wholesale with `mock.module`, so authenticators
  * import their binding API from here, never from `shared/audit`.
  */
-import { getRequestContext } from '../lib/request-context';
+import * as requestContext from '../lib/request-context';
+
+// Namespace import, resolved at call time: several test files replace
+// `lib/request-context` with a partial `mock.module` (no `runWithContext`),
+// and a named import would fail those files at link time.
+const getRequestContext = () => requestContext.getRequestContext();
 
 export type AuditScopeActorType = 'human' | 'agent' | 'service_account' | 'system' | 'anonymous';
 export type AuditScopeOutcome = 'success' | 'failure' | 'denied' | 'pending';
 
 /**
  * Where the request entered the process. `http` is the Hono app; the others
- * are dispatched by `Bun.serve.fetch` before Hono.
+ * are dispatched by `Bun.serve.fetch` before Hono. `worker` is a background
+ * job's tick (`runWorkerTick`), which no request drives.
  */
-export type InboundEntrypoint = 'http' | 'preview_origin' | 'app_origin' | 'ws_upgrade';
+export type InboundEntrypoint = 'http' | 'preview_origin' | 'app_origin' | 'ws_upgrade' | 'worker';
 
 /**
  * Who is calling, as far as an authenticator could tell.
@@ -118,8 +124,11 @@ export interface HonoIdentitySnapshot {
 }
 
 export interface InboundAuditScope {
-  /** Which layer opened the scope. Only the owner writes the row. */
-  readonly owner: 'edge' | 'hono';
+  /**
+   * Which layer opened the scope. Only `edge` and `hono` write a request row;
+   * a `worker` scope lends its principal to the rows its tick writes.
+   */
+  readonly owner: 'edge' | 'hono' | 'worker';
   readonly method: string;
   readonly startedAt: number;
   entrypoint: InboundEntrypoint;
@@ -137,11 +146,17 @@ export interface InboundAuditScope {
   correlationId: string | null;
   /** Account id from `?account_id=` / `?accountId=`; the only query value read. */
   queryAccountId: string | null;
+  /**
+   * Actions of the events `recordAuditEvent` wrote during this request. A
+   * successful request whose own action is among them is already on record:
+   * the handler's event is its row.
+   */
+  recordedActions: Set<string>;
   emitted: boolean;
 }
 
 export interface InboundAuditScopeInit {
-  owner: 'edge' | 'hono';
+  owner: 'edge' | 'hono' | 'worker';
   method: string;
   entrypoint?: InboundEntrypoint;
   route?: string | null;
@@ -189,6 +204,7 @@ export function attachInboundAuditScope(init: InboundAuditScopeInit): InboundAud
     correlationId: headers?.get('x-correlation-id') || headers?.get('idempotency-key') || null,
     queryAccountId:
       init.url?.searchParams.get('account_id') || init.url?.searchParams.get('accountId') || null,
+    recordedActions: new Set(),
     emitted: false,
   };
   const store = getRequestContext() as ContextWithScope | undefined;
@@ -280,5 +296,41 @@ export function bindIntegrationPrincipal(
     actorType: 'system',
     authoritativeSource: 'integration',
     authMethod: { kind: 'webhook_signature', provider },
+  });
+}
+
+/**
+ * Run one tick of a background job as the named worker.
+ *
+ * A timer, not a request, drives a worker, so no authenticator binds a
+ * caller: every row a tick wrote defaulted to `actor_type: system, source:
+ * api` and never named the job. The tick gets a FRESH request context (its
+ * own request id, so its rows correlate) and a scope whose principal is the
+ * worker. `recordAuditEvent` fills unset actor fields from it.
+ *
+ * Always a new context, never the caller's: a request handler that kicks a
+ * drain (`drainSessionLifecycleQueue`, the app deployment worker) must not
+ * lend its caller's identity to queued work that other principals enqueued.
+ * The scope writes no request row.
+ *
+ * Wrap the tick function itself, not the timer, so an ad-hoc kick from a
+ * handler runs as the worker too. `unit-worker-scope-wiring.test.ts` fails
+ * when a background loop in `apps/api/src` is neither wrapped nor classified.
+ */
+export function runWorkerTick<T>(worker: string, tick: () => T | Promise<T>): Promise<T> {
+  return requestContext.runWithContext('WORKER', worker, async () => {
+    attachInboundAuditScope({
+      owner: 'worker',
+      method: 'WORKER',
+      entrypoint: 'worker',
+      route: `worker:${worker}`,
+    });
+    bindAuditPrincipal({
+      actorUserId: null,
+      actorType: 'system',
+      authoritativeSource: 'worker',
+      authMethod: { kind: 'worker', worker },
+    });
+    return tick();
   });
 }

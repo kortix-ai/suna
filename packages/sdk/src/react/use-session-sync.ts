@@ -28,6 +28,7 @@ import { onTabVisible } from '../browser/session-sync/visibility';
 import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
 import { useSyncStore } from '../browser/stores/sync-store';
 import { useCurrentRuntime } from './use-current-runtime';
+import { selectSessionRows } from './session-transcript-subscription';
 import { canQueryOpenCodeSession } from './use-opencode-sessions';
 
 export { loadSessionRuntimeStatus, loadSessionTranscriptMessages };
@@ -105,6 +106,15 @@ interface UseSessionSyncOptions {
    * ended. A boundary that also ends the busy state is read by that switch.
    */
   openTurnTokens?: readonly string[] | null;
+  /**
+   * Re-render the caller whenever the transcript changes. Default `true`.
+   *
+   * `false` keeps every network effect running but stops subscribing to the
+   * message rows, so a streamed delta does not re-render the caller. `messages`
+   * is then the transcript as of the caller's render, not a live value. Read
+   * the live transcript where it is drawn, with `useSessionMessages`.
+   */
+  subscribeMessages?: boolean;
 }
 
 /**
@@ -177,6 +187,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     serverHoldsTurn,
     openTurnTokens,
     mirror,
+    subscribeMessages = true,
   } = options;
   const runtimeHealthy = useSandboxConnectionStore((state) => state.healthy === true);
   const runtimeScope = useCurrentRuntime((state) => state.sandboxId) ?? 'none';
@@ -359,13 +370,12 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     });
   }, [controller, networkEnabled, sessionId]);
 
-  const messages = useSyncStore((state) =>
-    state.buildSessionMessages(
-      readableSessionId,
-      state.messages[readableSessionId],
-      state.parts,
-    ),
+  // `subscribeMessages: false` selects a constant, so the store never
+  // re-renders the caller for a row change; the rows are read once per render.
+  const liveMessages = useSyncStore((state) =>
+    subscribeMessages ? selectSessionRows(state, readableSessionId) : null,
   );
+  const messages = liveMessages ?? selectSessionRows(useSyncStore.getState(), readableSessionId);
 
   // The runtime's own status, unmodified.
   //

@@ -852,7 +852,7 @@ export async function getSessionTurn(
 //
 // ONE round trip for everything a session view needs to PAINT and ARM: the
 // session row, the running turns, the prompt queue, the durable transcript
-// mirror, the composer's control-plane samplecols, and the model defaults.
+// mirror, the composer's control-plane essentials, and the model defaults.
 // It replaces 6 serial reads on the open path and introduces NO new truth —
 // every leg is byte-identical to the endpoint that already served it, so a
 // consumer can hand a leg straight to the code that reads that endpoint.
@@ -886,7 +886,7 @@ export type SessionOpenBundleTranscript =
   | ({ known: true; requested: true } & SessionTranscriptSyncEnvelope)
   | SessionOpenBundleUnknown;
 
-/** Composer samplecols that need no sandbox. Deliberately NOT the `/config`
+/** Composer essentials that need no sandbox. Deliberately NOT the `/config`
  *  route's freshness verdict — that one compiles the manifest and re-reads the
  *  box, which a first paint must never wait on. */
 export interface SessionOpenBundleConfig {

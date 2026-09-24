@@ -150,8 +150,19 @@ describe('the waiting row has a fallback when no turn owns it', () => {
   });
 
   test('with a queue on screen it renders inside the turn before the queue, never under it', () => {
-    const inTurn = between(chat, '{showFallbackBusyRow &&\n                                fallbackBusyRowTurnId === turn.userMessage.info.id', '</TurnViewport>');
-    expect(inTurn).toContain('<SessionBusyIndicator sessionId={sessionId} className="mt-2.5" />');
+    // The map hands the decision to the memoized row as `showBusyRow`…
+    expect(chat).toMatch(
+      /showBusyRow=\{\s*showFallbackBusyRow &&\s*fallbackBusyRowTurnId === turn\.userMessage\.info\.id\s*\}/,
+    );
+    // …and the row draws it INSIDE the turn's viewport, after the turn.
+    const rowSource = between(chat, 'const TranscriptTurnRow = memo(', '</TurnViewport>');
+    expect(rowSource).toContain('<TurnViewport turnId={turnId} className={viewportClassName}>');
+    expect(rowSource).toContain(
+      '{showBusyRow && <SessionBusyIndicator sessionId={turnProps.sessionId} className="mt-2.5" />}',
+    );
+    // WHICH turn is decided by the SDK resolver (`fallbackBusyRowAfterTurnId`
+    // runs inside `resolveBusyRow`); the page only reads its answer.
+    expect(chat).toContain('resolveBusyRow({');
     // A finished answer with a Quick Queue bubble under it: the row sits in the
     // answered turn, above the bubble.
     expect(

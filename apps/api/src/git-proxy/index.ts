@@ -249,6 +249,13 @@ async function forwardAuthorized(
         headers,
         body,
         redirect: 'manual',
+        // A push never shares its upstream connection. An upstream may answer a
+        // push before reading the whole body (a rejection, a size limit); Bun
+        // then pools the socket while the body is still in flight, and the next
+        // request to that host, from any project, fails to parse (a bare 400,
+        // seen on the local-git fixture as GH-17 / AGP-10 flakes). A push costs
+        // one new connection; fetch (upload-pack) keeps reusing them.
+        keepalive: suffix !== '/git-receive-pack',
         // @ts-ignore — Bun extensions: stream the request body, don't decompress.
         duplex: 'half',
         decompress: false,

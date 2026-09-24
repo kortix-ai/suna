@@ -70,7 +70,7 @@ describe('composeSandboxDockerfile', () => {
       '        ca-certificates \\\n' +
       '        curl \\\n' +
       '        git \\\n' +
-      '        build-samplecol \\\n' +
+      '        build-essential \\\n' +
       '    && rm -rf /var/lib/apt/lists/*\n';
     expect(composeSandboxDockerfile(legacy, { layer: false })).toBe('FROM ubuntu:24.04\n');
   });

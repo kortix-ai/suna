@@ -2,8 +2,8 @@
 
 // Agents as principals (spec `docs/specs/2026-09-22-agents-as-principals.md`).
 //
-// With the project flag `agent_principal` on, an agent session authorizes as
-// the AGENT (its service account), not as the person who launched it:
+// An agent session authorizes as the AGENT (its service account), not as the
+// person who launched it:
 //
 //   effective(agent) = kortix_permissions(agent)   -- kortix.yaml, source of truth
 //                    ∩ ceiling(agent)              -- IAM role(s) bound to its service account
@@ -21,11 +21,9 @@ import {
   listAssignments,
   listRoles,
   type AgentIdentity,
-  type FeatureFlagKey,
   type IamRole,
   type RoleAssignment,
 } from '@kortix/sdk';
-import { useFeatureFlag } from '@kortix/sdk/react';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
@@ -43,11 +41,6 @@ export const HUMAN_ONLY_PERMISSIONS: readonly string[] = [
 export const GRANTABLE_PROJECT_PERMISSIONS: readonly string[] = KORTIX_PERMISSIONS_CATALOG.flatMap(
   (group) => group.actions,
 );
-
-/** The project flag that turns the model on. Default off. Cast because the
- *  SDK's `FeatureFlagKey` union gains the key in the API lane; an unknown key
- *  reads as off, which is the honest answer until the server serves it. */
-export const AGENT_PRINCIPAL_FLAG = 'agent_principal' as FeatureFlagKey;
 
 /** Always granted to an agent inside its own project (spec §2.1). */
 const ALWAYS_GRANTED = 'project.read';
@@ -199,14 +192,17 @@ export type AgentCeilingState =
   | { kind: 'roles'; roleKeys: string[]; actions: string[] };
 
 export interface AgentAuthorityState {
-  flagEnabled: boolean;
-  flagLoading: boolean;
   ceiling: AgentCeilingState;
   identity: AgentIdentity | null;
   authority: AgentAuthority;
 }
 
-/** The whole agent-authority read for one agent: flag, ceiling, intersection. */
+/** The whole agent-authority read for one agent: ceiling and intersection.
+ *
+ *  It does NOT read the `agent_principal` project flag. That flag is no longer
+ *  a choice the product presents — it is the default behavior, and its one
+ *  remaining off-switch is a support lever, not a UI state. Enforcement stays
+ *  server-side (`apps/api/src/iam/agent-principal.ts`). */
 export function useAgentAuthority({
   projectId,
   accountId,
@@ -218,7 +214,6 @@ export function useAgentAuthority({
   agentName: string;
   grant: PermissionGrant;
 }): AgentAuthorityState {
-  const flag = useFeatureFlag(projectId, AGENT_PRINCIPAL_FLAG);
   const identities = useAgentIdentities(accountId);
   const identity = agentIdentityFor(identities.data, projectId, agentName);
   const assignmentsQuery = useProjectAgentAssignments(accountId, projectId, !!identity);
@@ -283,8 +278,6 @@ export function useAgentAuthority({
   );
 
   return {
-    flagEnabled: flag.enabled,
-    flagLoading: flag.isLoading,
     ceiling,
     identity,
     authority,

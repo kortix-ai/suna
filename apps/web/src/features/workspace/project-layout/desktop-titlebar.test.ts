@@ -372,7 +372,7 @@ describe('sidebar hover peek owns one toggle and no title-bar gap', () => {
 describe('top-reaching standalone surfaces clear native macOS controls', () => {
   const sources = {
     admin: readFileSync(
-      join(repoRoot, 'apps/web/src/app/admin/_components/admin-shell.tsx'),
+      join(repoRoot, 'apps/web/src/app/[locale]/admin/_components/admin-shell.tsx'),
       'utf8',
     ),
     accountHub: readFileSync(
@@ -468,7 +468,7 @@ describe('page-level sidebar openers are all the one SidebarToggle', () => {
     // why the component exists. See HeaderlessSessionSurface.
     'sessions/[sessionId]/page.tsx': join(
       repoRoot,
-      'apps/web/src/app/(app)/projects/[id]/sessions/[sessionId]/page.tsx',
+      'apps/web/src/app/[locale]/(app)/projects/[id]/sessions/[sessionId]/page.tsx',
     ),
   };
 

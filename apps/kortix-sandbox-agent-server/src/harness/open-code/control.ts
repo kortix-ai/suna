@@ -350,7 +350,7 @@ export function createOpenCodeControlService(
 
           // The daemon OWNS this write, so the projection is told rather than
           // left to infer it. `/kortix/opencode/state` serves the agent roster,
-          // command list and config samplecols this env change can move; a
+          // command list and config essentials this env change can move; a
           // client that read it a second ago must not keep the pre-change answer
           // until an SSE frame happens to hint at it.
           invalidateRuntimeState('all', 'kortix-env-applied')

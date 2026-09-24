@@ -7,7 +7,6 @@ import {
   removeSpans,
   replaceSpans,
   selfClosingTags,
-  tagBlocks,
   xmlBlocks,
 } from '@kortix/shared';
 
@@ -212,27 +211,8 @@ export {
 // Parse <trigger_event> JSON from the prompt of a trigger-started session
 // ============================================================================
 
-export interface TriggerEventInfo {
-  /** The event JSON. Its shape belongs to the trigger that fired. */
-  data: any;
-  /** The prompt text around the tag. */
-  prompt: string;
-}
-
-export function parseTriggerEvent(rawText: string): TriggerEventInfo | undefined {
-  if (!rawText) return undefined;
-  // The regex this replaced, `<trigger_event>\s*([\s\S]*?)\s*<\/trigger_event>`,
-  // was cubic: a trigger payload holding a long run of spaces froze the tab.
-  const [block] = tagBlocks(rawText, 'trigger_event', { limit: 1 });
-  if (!block) return undefined;
-  try {
-    const data = JSON.parse(block.body.trim());
-    const prompt = (rawText.slice(0, block.index) + rawText.slice(block.end)).trim();
-    return { data, prompt };
-  } catch {
-    return undefined;
-  }
-}
+// One copy for web and mobile: `@kortix/shared/trigger-event`.
+export { parseTriggerEvent, type TriggerEventInfo } from '@kortix/shared';
 
 // ── Generic XML notification parsing ──────────────────────────────────
 //

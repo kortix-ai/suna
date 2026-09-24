@@ -20,6 +20,7 @@ import { ApiError } from '../core/http/api-client';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import { countLiveInboxPrompts, inboxObservationSupersedes } from '../core/session/working';
 import { claimOpenBundle, openBundleQueue } from '../core/session/open-bundle';
+import { createTickSingleFlight } from '../core/session/single-flight';
 import { qk } from './query-keys';
 import { usePollOwner } from './use-poll-owner';
 import { mintSessionWireMessageId } from './use-opencode-sessions/messages';
@@ -712,6 +713,8 @@ export async function readSessionPromptsInbox(
   projectId: string | undefined,
   sessionId: string | undefined,
   cached: readonly SessionPrompt[] | undefined,
+  /** The query's cancellation — a cancelled read is never shared (`createTickSingleFlight`). */
+  signal?: AbortSignal,
 ): Promise<SessionPrompt[]> {
   if (!projectId || !sessionId) return [...(cached ?? [])];
   // The SESSION-OPEN BUNDLE first — but ONLY for the open burst, i.e. a read
@@ -751,8 +754,24 @@ export async function readSessionPromptsInbox(
   }
   // Age stamped BEFORE the request, like `/turn`'s: an answer is only as fresh
   // as the moment it was asked.
-  const atMs = Date.now();
-  const { prompts, observed_at, placed } = await listSessionPrompts(projectId, sessionId);
+  //
+  // ONE request per session per tick, for the same reason as `/turn`: the
+  // status-phase invalidation fires from every mount of `useSessionWorking` in
+  // one commit (see `createTickSingleFlight`).
+  const { atMs, prompts, observed_at, placed } = await promptReads(
+    `${projectId}/${sessionId}`,
+    async () => {
+      const issuedAtMs = Date.now();
+      const listed = await listSessionPrompts(projectId, sessionId);
+      return {
+        atMs: issuedAtMs,
+        prompts: listed.prompts,
+        observed_at: listed.observed_at,
+        placed: listed.placed,
+      };
+    },
+    signal,
+  );
   // Before the freshness rule below: a pairing is an identity, not a snapshot,
   // and a read the rule discards still names ids the host may be holding a
   // bubble under.
@@ -772,6 +791,14 @@ export async function readSessionPromptsInbox(
     Number.isFinite(serverAtMs) ? serverAtMs : undefined,
   );
 }
+
+const promptReads = createTickSingleFlight<{
+  atMs: number;
+  prompts: SessionPrompt[];
+  observed_at?: string;
+  /** Re-minted pairings — see `SessionPromptsList.placed`. */
+  placed?: SessionPlacedPrompt[];
+}>();
 
 export interface UseSessionPromptsResult {
   prompts: SessionPrompt[];
@@ -832,11 +859,12 @@ export function useSessionPrompts(
   const query = useQuery({
     queryKey: key,
     enabled,
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       readSessionPromptsInbox(
         projectId,
         sessionId,
         queryClient.getQueryData<SessionPrompt[]>(key),
+        signal,
       ),
     // Two cadences, never `false` for the OWNER — see the note above. The
     // cadence is owned by one observer per session because `refetchInterval` is

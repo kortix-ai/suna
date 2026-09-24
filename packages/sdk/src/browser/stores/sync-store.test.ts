@@ -15,6 +15,7 @@ import {
 	type SessionSyncPage,
 	type SessionSyncScheduler,
 } from "../../core/session-sync/session-sync-controller";
+import { DELTA_EVENT_TAIL_LIMIT } from "./sync-store/delta-event-window";
 
 // ============================================================================
 // Fixtures — minimal-but-valid Message/Part objects matching the real SDK
@@ -1211,6 +1212,37 @@ describe("useSyncStore — applyPartDelta idempotency (part-delta duplicate deli
 	});
 });
 
+// The dedupe window is BOUNDED. It used to keep one entry per applied delta
+// for the whole turn — a long answer streamed a few characters at a time held
+// tens of thousands of event ids until `session.idle`. Duplicate deliveries
+// (a stacked connection, a reconnect replay) re-send RECENT events, so only a
+// recent window has to be remembered.
+describe("useSyncStore — applyPartDelta dedupe window is bounded", () => {
+	test("the newest DELTA_EVENT_TAIL_LIMIT ids still dedupe; older ids fall out of the window", () => {
+		const store = useSyncStore.getState();
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", ""));
+		const total = DELTA_EVENT_TAIL_LIMIT + 10;
+		for (let i = 0; i < total; i++) {
+			store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "a", `evt_${i}`);
+		}
+		const text = () => (useSyncStore.getState().parts.msg_1[0] as TextPart).text;
+		expect(text().length).toBe(total);
+
+		// Recent redelivery: still a no-op.
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "a", `evt_${total - 1}`);
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "a", `evt_${total - DELTA_EVENT_TAIL_LIMIT}`);
+		expect(text().length).toBe(total);
+
+		// The oldest id is no longer remembered — proof the window is bounded.
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "a", "evt_0");
+		expect(text().length).toBe(total + 1);
+	});
+
+	test("the window is large enough for a realistic reconnect replay", () => {
+		expect(DELTA_EVENT_TAIL_LIMIT).toBeGreaterThanOrEqual(1024);
+	});
+});
+
 describe("useSyncStore — reset", () => {
 	test("clears all session state", () => {
 		const store = useSyncStore.getState();
@@ -2063,7 +2095,12 @@ describe("useSyncStore — session retention (memory eviction)", () => {
 	// a tab flip) reclaims the transcript instead of repainting it from disk.
 
 	/** Mirrors `DETACHED_SESSION_LIMIT` in sync-store.ts. */
-	const RETENTION_BOUND = 3;
+	const RETENTION_BOUND = 8;
+
+	/** `RETENTION_BOUND + 1` session ids, `first` being the oldest to detach. */
+	function overBound(first: string): string[] {
+		return [first, ...Array.from({ length: RETENTION_BOUND }, (_, i) => `ses_over_${i}`)];
+	}
 
 	function seedSession(sessionID: string): string {
 		const messageID = `msg_${sessionID}`;
@@ -2098,20 +2135,21 @@ describe("useSyncStore — session retention (memory eviction)", () => {
 	}
 
 	test("the last consumer leaving eventually frees the session's messages and parts", () => {
-		const messageIDs = ["ses_a", "ses_b", "ses_c", "ses_d"].map((id) => {
+		const detached = overBound("ses_a");
+		const messageIDs = detached.map((id) => {
 			const messageID = seedSession(id);
 			useSyncStore.getState().retainSession(id)();
 			return messageID;
 		});
 
-		// Four detached, three fit in the window — the oldest goes on the next
-		// mount.
+		// One more detached than fit in the window — the oldest goes on the
+		// next mount.
 		seedSession("ses_e");
 		useSyncStore.getState().retainSession("ses_e");
 
 		expect(isResident("ses_a")).toBe(false);
 		expect(useSyncStore.getState().parts[messageIDs[0]]).toBeUndefined();
-		for (const id of ["ses_b", "ses_c", "ses_d"]) expect(isResident(id)).toBe(true);
+		for (const id of detached.slice(1)) expect(isResident(id)).toBe(true);
 	});
 
 	test("freeing a session drops its diffs and todos too", () => {
@@ -2148,9 +2186,10 @@ describe("useSyncStore — session retention (memory eviction)", () => {
 	// transcript when nothing was ever written to disk (unauthenticated:
 	// `getCurrentCacheScope()` returns null and `saveSessionToIDB` no-ops).
 	test("returning to the oldest detached session does not evict it — unmount never frees", () => {
-		for (const id of ["ses_a", "ses_x", "ses_y", "ses_b"]) visit(id);
-		// Four detached and ses_a is the oldest. Now go back to it: React
-		// destroys ses_b's effects first, then creates ses_a's.
+		for (const id of overBound("ses_a")) visit(id);
+		// One more detached than the window holds, and ses_a is the oldest. Now
+		// go back to it: React destroys the last one's effects first, then
+		// creates ses_a's.
 		const messageID = `msg_ses_a`;
 
 		useSyncStore.getState().retainSession("ses_a");
@@ -2160,9 +2199,9 @@ describe("useSyncStore — session retention (memory eviction)", () => {
 	});
 
 	test("nothing is freed by a release on its own — only by the next mount", () => {
-		for (const id of ["ses_a", "ses_b", "ses_c", "ses_d"]) visit(id);
+		for (const id of overBound("ses_a")) visit(id);
 		// Over the bound, but no session has mounted since.
-		for (const id of ["ses_a", "ses_b", "ses_c", "ses_d"]) {
+		for (const id of overBound("ses_a")) {
 			expect(isResident(id)).toBe(true);
 		}
 
@@ -2552,6 +2591,58 @@ describe("useSyncStore — buildSessionMessages (the one shared join)", () => {
 		expect((after[0].parts[0] as TextPart).text).toBe("hi there");
 	});
 
+	// Per-message identity. A frame that changes ONE message's parts must hand
+	// back the other rows as the very same objects, so a per-message memo in a
+	// host (a `React.memo` row, a selector) holds for every settled message
+	// while one streams. Rebuilding every `{ info, parts }` wrapper made each
+	// row look new on every frame.
+	test("rows whose info and parts did not change keep their identity across a rebuild", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_1"));
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", "question"), "ses_1");
+		store.upsertMessage("ses_1", assistantMessage("msg_2"));
+		store.upsertPart("msg_2", textPart("prt_2", "msg_2", "ans"), "ses_1");
+		const before = rowsFor("ses_1");
+
+		store.applyPartDelta("ses_1", "msg_2", "prt_2", "text", "wer", "evt_1");
+
+		const after = rowsFor("ses_1");
+		expect(after).not.toBe(before);
+		expect(after[0]).toBe(before[0]);
+		expect(after[1]).not.toBe(before[1]);
+		expect((after[1].parts[0] as TextPart).text).toBe("answer");
+	});
+
+	test("a changed message info gets a new row; its unchanged neighbours do not", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_1"));
+		store.upsertMessage("ses_1", assistantMessage("msg_2"));
+		const before = rowsFor("ses_1");
+
+		store.upsertMessage("ses_1", { ...assistantMessage("msg_2"), time: { created: 1, completed: 2 } });
+
+		const after = rowsFor("ses_1");
+		expect(after[0]).toBe(before[0]);
+		expect(after[1]).not.toBe(before[1]);
+		expect(after[1].info.time).toEqual({ created: 1, completed: 2 });
+	});
+
+	test("a message inserted mid-transcript keeps the identity of every row around it", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_1"));
+		store.upsertMessage("ses_1", userMessage("msg_3"));
+		store.upsertMessage("ses_1", userMessage("msg_4"));
+		const before = rowsFor("ses_1");
+
+		store.upsertMessage("ses_1", userMessage("msg_2"));
+
+		const after = rowsFor("ses_1");
+		expect(after.map((row) => row.info.id)).toEqual(["msg_1", "msg_2", "msg_3", "msg_4"]);
+		expect(after[0]).toBe(before[0]);
+		expect(after[2]).toBe(before[1]);
+		expect(after[3]).toBe(before[2]);
+	});
+
 	test("an empty session is a stable empty array, never a fresh one", () => {
 		expect(rowsFor("ses_missing")).toBe(rowsFor("ses_other_missing"));
 		expect(rowsFor("ses_missing")).toEqual([]);
@@ -2582,7 +2673,8 @@ describe("useSyncStore — buildSessionMessages (the one shared join)", () => {
 		expect(held.rebuild()).toBe(held.rows); // memoized while resident
 
 		store.retainSession("ses_1")();
-		for (let i = 0; i < 4; i++) {
+		// `DETACHED_SESSION_LIMIT` (8) + 1 detaches push ses_1 out of the window.
+		for (let i = 0; i < 9; i++) {
 			const id = `ses_churn_${i}`;
 			useSyncStore.getState().upsertMessage(id, userMessage(`msg_c${i}`, id));
 			useSyncStore.getState().retainSession(id)();

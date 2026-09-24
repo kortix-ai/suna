@@ -8,6 +8,14 @@ import { FEATURE_FLAG_KEYS } from '@kortix/sdk';
  * description}`. A flag registered without them renders MISSING_MESSAGE on the
  * settings page — `agent_principal` shipped that way and only a browser lane
  * caught it. Every registered key needs both strings in every locale.
+ *
+ * This covers REGISTERED keys, not catalogued ones, on purpose. A flag the
+ * registry marks `catalogHidden` (apps/api/src/feature-flags/registry.ts) is
+ * absent from the page today but keeps its strings, so un-hiding it — a
+ * revert, or support putting the surface back — cannot reintroduce the
+ * MISSING_MESSAGE bug. The alternative, scoping this test to catalogued keys,
+ * would mean exporting the hidden set through the api-contract and SDK public
+ * surface for the sake of deleting 18 strings.
  */
 describe('feature flag translations', () => {
   const dir = join(import.meta.dir, '../../translations');

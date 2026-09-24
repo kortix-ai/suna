@@ -234,6 +234,12 @@ for (const runtime of runtimes) {
         process.env.KE2E_DATABASE_URL || process.env.E2E_DATABASE_URL;
       if (!databaseUrl)
         throw new Error("Desktop parity requires the configured test database");
+      // The macOS row rule keys on `data-desktop-platform`, which the app reads
+      // from `navigator.platform`, not from the user agent. Pin it, or a Linux
+      // CI runner renders the Linux desktop layout and the row stays left.
+      await page.addInitScript(() =>
+        Object.defineProperty(navigator, "platform", { get: () => "MacIntel" }),
+      );
       const email = `e2e-desktop-exit-${randomUUID()}@example.test`;
       const user = await createAuthUser(email, authOptions);
       const session = await signIn(email, authOptions);

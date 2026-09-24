@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import { Copy } from '@/features/icon/icons/copy';
 import { CheckIcon } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
-import Link from 'next/link';
+import Link from '@/components/site-link';
 import { useCallback, useState } from 'react';
 
 /* ── tiny highlighter ──────────────────────────────────────────────────────

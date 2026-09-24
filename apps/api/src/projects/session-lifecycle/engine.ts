@@ -51,6 +51,7 @@ import {
   releaseCommandToOwningInstance,
 } from './instance-release';
 import { db } from '../../shared/db';
+import { runWorkerTick } from '../../shared/audit-scope';
 import { markTriggerRuntimeDelivered } from '../trigger-execution-store';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
 import { secretsAllowlistPayloadConflicts } from '../secrets';
@@ -826,7 +827,18 @@ const NOT_LANDED_RETRY_DELAY_MS = 2_000;
 /** How far out a released foreign command is re-queued; the owner's drain ticks every 1s. */
 const INSTANCE_RELEASE_DELAY_MS = 2_000;
 
-export async function drainSessionLifecycleQueue(
+/**
+ * Drain queued lifecycle commands as the `session-lifecycle` worker. Request
+ * handlers kick this for their own command, but a drain also runs commands
+ * other principals queued; each command row names its own actor.
+ */
+export function drainSessionLifecycleQueue(
+  input: Parameters<typeof drainSessionLifecycleQueueTick>[0] = {},
+): ReturnType<typeof drainSessionLifecycleQueueTick> {
+  return runWorkerTick('session-lifecycle', () => drainSessionLifecycleQueueTick(input));
+}
+
+async function drainSessionLifecycleQueueTick(
   input: {
     workerId?: string;
     limit?: number;

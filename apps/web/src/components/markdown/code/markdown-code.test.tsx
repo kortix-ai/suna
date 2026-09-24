@@ -4,6 +4,7 @@ import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { isHexColor } from './inline-chip';
+import { highlightAsync, SHIKI_THEME_LIGHT } from './shiki-highlighter';
 import { MarkdownCode, type MarkdownCodeProps } from './markdown-code';
 
 const render = (props: MarkdownCodeProps) => renderToStaticMarkup(<MarkdownCode {...props} />);
@@ -333,5 +334,28 @@ describe('MarkdownCode with wrapped children', () => {
     const markup = render({ children: <span>docs/readme.md</span> });
 
     expect(markup).toContain('Click to preview docs/readme.md');
+  });
+});
+
+describe('MarkdownCode — highlighting while a message streams', () => {
+  const CODE = 'const answer: number = 42;\nexport default answer;';
+
+  test('a settled block renders Shiki HTML on its first render once the grammar is loaded', async () => {
+    // Warm the lazy highlighter and the grammar, as the first block on a page does.
+    expect(await highlightAsync('const warm = 1;', 'typescript', SHIKI_THEME_LIGHT)).toContain('<pre');
+
+    const markup = render({ className: 'language-typescript', children: CODE });
+
+    expect(markup).toContain('class="shiki');
+  });
+
+  test('a streaming block renders plain text, never a tokenizer pass per delta', async () => {
+    expect(await highlightAsync('const warm = 1;', 'typescript', SHIKI_THEME_LIGHT)).toContain('<pre');
+
+    const markup = render({ className: 'language-typescript', children: CODE, isStreaming: true });
+
+    expect(markup).not.toContain('class="shiki');
+    expect(markup).toContain('const answer: number = 42;');
+    expect(markup).toContain(CARD);
   });
 });
