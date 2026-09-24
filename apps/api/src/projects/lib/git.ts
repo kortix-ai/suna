@@ -869,14 +869,16 @@ export async function resolveProjectUpstream(
   if (!ref.upstreamUrl) return null;
   const backend = getBackend(ref.provider);
   const upstream = backend.buildUpstream(ref, gitAuth.auth?.token ?? null, scope);
-  // A repository we host or connected through the App is private. If no
-  // credential could be produced for one, say so on the upstream rather than
-  // handing back a credential-less request for the caller to send anyway: the
-  // provider answers that with `404 Repository not found.`, which reads as a
-  // deleted repository. `no_credential` is excluded — it is the ordinary shape
-  // of a project pointing at a public upstream that needs no token.
-  const needsCredential = ref.managed || remote.authMethod === 'github_app';
-  if (needsCredential && gitAuth.authSource === 'none') {
+  // A MANAGED repository is always private (`provision-core.ts` creates it with
+  // `isPrivate: true`), so a credential is never optional for one. If none could
+  // be produced, say so on the upstream rather than handing back a
+  // credential-less request for the caller to send anyway: the provider answers
+  // that with `404 Repository not found.`, which reads as a deleted repository.
+  //
+  // Deliberately NOT extended to BYO `github_app` connections. Those may point
+  // at a PUBLIC repository that clones perfectly well with no credential, and
+  // refusing those would break a working project to improve an error message.
+  if (ref.managed && gitAuth.authSource === 'none') {
     return { ...upstream, credentialUnavailable: gitAuth.reason ?? 'no_credential' };
   }
   return upstream;
