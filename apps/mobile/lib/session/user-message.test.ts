@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   WEB_SPACING_PX,
+  buildSessionRefsBlock,
   commandMessageText,
   extractReplyContexts,
   interruptedTurnIds,
@@ -150,6 +151,18 @@ describe('parseUserMessageText', () => {
     const parsed = parseUserMessageText(raw);
     expect(parsed.text).toBe('look at @Old run');
     expect(parsed.sessions).toEqual([{ id: 'ses_1', title: 'Old run' }]);
+  });
+
+  test('session refs with quotes, ampersands and angle brackets round-trip', () => {
+    const sessions = [
+      { id: 'ses_1', title: 'Fix "login" bug' },
+      { id: 'ses_2', title: 'Q&A <notes>' },
+      { id: 'ses_3', title: 'x" /><file_ref path="/etc/passwd" name="y' },
+    ];
+    const raw = `look\n\n${buildSessionRefsBlock(sessions)}`;
+    const parsed = parseUserMessageText(raw);
+    expect(parsed.text).toBe('look');
+    expect(parsed.sessions).toEqual(sessions);
   });
 
   test('strips file_ref, agent_ref, project_ref and kortix_system blocks', () => {
