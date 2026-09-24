@@ -26,7 +26,6 @@ mock.module('../../billing/services/seat-management', () => ({
 let upsertCreditAccountCalls: any[] = [];
 let updateCreditAccountCalls: any[] = [];
 let upsertCustomerCalls: any[] = [];
-const walletResets = fakeWallet.calls.reset;
 const walletGrants = fakeWallet.calls.grant;
 let stripeCancelSubCalls: any[] = [];
 
