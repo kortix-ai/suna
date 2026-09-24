@@ -299,15 +299,17 @@ export function isTransientGitMirrorError(err: unknown): err is GitOperationErro
  * A PERMANENT failure (bad ref, auth denial, corrupt local repo) is rethrown on
  * the first attempt — retrying it can never help.
  */
-export async function cloneBareWithRetry(deps: {
+export async function retryTransientGitMirror(deps: {
   run: () => Promise<unknown>;
-  cleanup: () => Promise<void>;
+  /** Runs after EVERY failed attempt. Omit when a failed attempt leaves no
+   *  partial state to remove (the warm fetch). */
+  cleanup?: () => Promise<void>;
   maxAttempts?: number;
   delayMs?: number;
   sleep?: (ms: number) => Promise<void>;
 }): Promise<void> {
-  const maxAttempts = deps.maxAttempts ?? BARE_CLONE_MAX_ATTEMPTS;
-  const delayMs = deps.delayMs ?? BARE_CLONE_RETRY_DELAY_MS;
+  const maxAttempts = deps.maxAttempts ?? MIRROR_RETRY_MAX_ATTEMPTS;
+  const delayMs = deps.delayMs ?? MIRROR_RETRY_DELAY_MS;
   const sleep =
     deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   let lastErr: unknown = null;
@@ -317,12 +319,45 @@ export async function cloneBareWithRetry(deps: {
       return;
     } catch (err) {
       lastErr = err;
-      await deps.cleanup().catch(() => {});
+      if (deps.cleanup) await deps.cleanup().catch(() => {});
       if (attempt >= maxAttempts || !isTransientGitMirrorError(err)) break;
       await sleep(delayMs);
     }
   }
   throw lastErr;
+}
+
+/** Cold bare clone with bounded retry for TRANSIENT failures. Thin wrapper over
+ *  {@link retryTransientGitMirror} that removes the partial bare dir on every
+ *  failed attempt. Kept as a named export for its callers + tests. */
+export function cloneBareWithRetry(deps: {
+  run: () => Promise<unknown>;
+  cleanup: () => Promise<void>;
+  maxAttempts?: number;
+  delayMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+}): Promise<void> {
+  return retryTransientGitMirror(deps);
+}
+
+/**
+ * Bounded retry for the WARM mirror fetch (`git fetch --prune origin`), the
+ * sibling of {@link cloneBareWithRetry}. The same transient upstream class hits
+ * a fetch as a clone — a network/DNS/socket blip or GitHub's ambiguous
+ * `fatal: repository '<url>' not found` for a private mirror whose credential
+ * is momentarily unusable. Without this, one blip hard-failed every caller that
+ * FORCED a refresh — most importantly the session-create manifest read
+ * (`loadProjectAgents` → `readManifestFromRepo` → `refreshMirror(project,true)`,
+ * which rethrows read errors so it can fail closed). A failed fetch leaves the
+ * warm bare mirror usable, so there is nothing to clean up.
+ */
+export function fetchMirrorWithRetry(deps: {
+  run: () => Promise<unknown>;
+  maxAttempts?: number;
+  delayMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+}): Promise<void> {
+  return retryTransientGitMirror(deps);
 }
 
 /**
@@ -417,12 +452,12 @@ function bareCloneTimeoutMs(): number {
 }
 
 const BARE_CLONE_TIMEOUT_MS = bareCloneTimeoutMs();
-/** Cold clones can transiently fail (timeout, network blip, or GitHub's
- * ambiguous `repository … not found` for a private mirror whose token is
- * momentarily unusable); retry a bounded number of times before surfacing —
+/** A cold clone OR a warm fetch can transiently fail (timeout, network blip, or
+ * GitHub's ambiguous `repository … not found` for a private mirror whose token
+ * is momentarily unusable); retry a bounded number of times before surfacing —
  * most clear on a later attempt. See `isTransientGitMirrorError`. */
-const BARE_CLONE_MAX_ATTEMPTS = 3;
-const BARE_CLONE_RETRY_DELAY_MS = 500;
+const MIRROR_RETRY_MAX_ATTEMPTS = 3;
+const MIRROR_RETRY_DELAY_MS = 500;
 
 function looksLikeBareMirror(repoPath: string): boolean {
   return (
@@ -501,7 +536,13 @@ async function doRefreshMirror(project: GitBackedProject, force = false) {
   await runGit(['remote', 'set-url', 'origin', access.repoUrl], repoPath);
   // Heal any legacy single-branch clones by widening the refspec.
   await runGit(['config', 'remote.origin.fetch', '+refs/heads/*:refs/heads/*'], repoPath, false);
-  await runGit(['fetch', '--prune', 'origin'], repoPath, true, access.token, undefined, authHost, GIT_DEFAULT_TIMEOUT_MS, access.headers);
+  // A warm fetch hits the SAME transient upstream class as a cold clone (see
+  // `fetchMirrorWithRetry`). Retry it in place — a failed fetch leaves the warm
+  // mirror usable, so no cleanup is needed.
+  await fetchMirrorWithRetry({
+    run: () =>
+      runGit(['fetch', '--prune', 'origin'], repoPath, true, access.token, undefined, authHost, GIT_DEFAULT_TIMEOUT_MS, access.headers),
+  });
   lastRefreshAt.set(project.projectId, Date.now());
   return repoPath;
 }
