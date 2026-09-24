@@ -1,4 +1,4 @@
-import { jsonTail } from '../text-scan';
+import { jsonTail, stripMarkdownImages, unwrapMarkdownLinks } from '../text-scan';
 
 /**
  * Shared formatting for raw tool input/output blobs so oversized, truncated, or
@@ -56,8 +56,8 @@ export function formatRawOutput(
 export function cleanResultSnippet(content: string | undefined, maxChars = 200): string {
   let s = content ?? '';
   s = s.replace(/\\n/g, ' '); // literal escaped newlines
-  s = s.replace(/!\[[^\]]*\]\([^)]*\)/g, ' '); // markdown images
-  s = s.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1'); // markdown links → text
+  s = stripMarkdownImages(s); // markdown images
+  s = unwrapMarkdownLinks(s); // markdown links → text
   s = s.replace(/[#*_`>]+/g, ' '); // heading / emphasis / code / quote marks
   s = s.replace(/\s+/g, ' ').trim(); // collapse whitespace
   s = s.replace(/\b(\w{2,})(?:\s+\1\b)+/gi, '$1'); // collapse repeated words
