@@ -166,6 +166,25 @@ describe('dispatch: one attempt plan', () => {
     expect(sent.map((s) => s.model)).toEqual(['m', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']);
   });
 
+  test('a served attempt never resolves a fallback model', async () => {
+    const { run, resolved } = harness(() => ok());
+    const outcome = await run({ model: 'm', candidates: [base], fallbackModels: ['f'] });
+    expect(resolved).toEqual([]);
+    expect(outcome.model).toBe('m');
+  });
+
+  test('a fallback model that cannot be resolved is skipped', async () => {
+    const { run, sent } = harness((s) => (s.provider === 'g-upstream' ? ok() : status(503)), {
+      resolveCandidates: async (model) => {
+        if (model === 'f') throw new Error('provider not connected');
+        return [{ ...base, provider: `${model}-upstream` }];
+      },
+    });
+    const outcome = await run({ model: 'm', candidates: [base], fallbackModels: ['f', 'g'] });
+    expect(sent.map((s) => s.provider)).toEqual(['provider-a', 'g-upstream']);
+    expect(outcome.response?.status).toBe(200);
+  });
+
   test('each model gets its own generation defaults and the client value still wins', async () => {
     const { run, sent } = harness((_s, index) => (index === 0 ? status(502) : ok()));
     await run(
