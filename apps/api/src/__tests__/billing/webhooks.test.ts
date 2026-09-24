@@ -11,6 +11,7 @@ import {
   registerGlobalMocks,
   registerCreditsMock,
   resetMockRegistry,
+  installWebhookMarkerTable,
 } from './mocks';
 
 // Register global mocks + credits service mock (stubs grantCredits/resetExpiringCredits)
@@ -26,7 +27,6 @@ let upsertCreditAccountCalls: any[] = [];
 let updateCreditAccountCalls: any[] = [];
 let upsertCustomerCalls: any[] = [];
 let stripeCancelSubCalls: any[] = [];
-let forgetWebhookEventCalls: string[] = [];
 
 beforeEach(() => {
   grantCreditsCalls = [];
@@ -36,7 +36,6 @@ beforeEach(() => {
   updateCreditAccountCalls = [];
   upsertCustomerCalls = [];
   stripeCancelSubCalls = [];
-  forgetWebhookEventCalls = [];
   mintYoloTokensCalls = [];
   resetMockRegistry();
 
@@ -84,10 +83,6 @@ beforeEach(() => {
   };
   mockRegistry.resetExpiringCredits = async (...args: any[]) => {
     resetExpiringCreditsCalls.push(args);
-  };
-
-  mockRegistry.forgetWebhookEvent = async (eventId: string) => {
-    forgetWebhookEventCalls.push(eventId);
   };
 
   // Track stripe.subscriptions.cancel calls (used by cancelFreeSubscriptionForUpgrade)
@@ -736,13 +731,7 @@ describe('RevenueCat', () => {
   });
 
   test('duplicate RevenueCat event IDs are idempotent and do not grant twice', async () => {
-    const seen = new Set<string>();
-    mockRegistry.recordWebhookEvent = async (...args: any[]) => {
-      const key = String(args[0]);
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    };
+    installWebhookMarkerTable();
 
     const body = createMockRevenueCatEvent('INITIAL_PURCHASE', {
       id: 'rc_evt_duplicate_1',
@@ -941,13 +930,18 @@ describe('RevenueCat', () => {
     expect(grantCreditsCalls.length).toBe(0);
   });
 
-  // The dedupe marker is written BEFORE the handler runs. If the handler then
-  // throws, the marker must be cleared or RevenueCat's retry is swallowed as a
-  // duplicate and the purchase is never applied — money taken, no credits. The
-  // Stripe path already does this (processStripeWebhook's try/catch).
-  test('clears the dedupe marker when a RevenueCat handler throws', async () => {
-    mockRegistry.upsertCreditAccount = async () => {
-      throw new Error('revenuecat apply failed');
+  // The dedupe marker is written only AFTER the handler succeeds. A handler
+  // that throws leaves no marker, so RevenueCat's retry runs the handler again
+  // instead of being answered "duplicate" with the purchase never applied.
+  test('a RevenueCat handler that throws leaves no dedupe marker, and the retry applies the purchase', async () => {
+    const markers = installWebhookMarkerTable();
+    let failNext = true;
+    mockRegistry.upsertCreditAccount = async (id: string, data: any) => {
+      if (failNext) {
+        failNext = false;
+        throw new Error('revenuecat apply failed');
+      }
+      upsertCreditAccountCalls.push({ accountId: id, data });
     };
 
     const body = createMockRevenueCatEvent('INITIAL_PURCHASE', {
@@ -965,11 +959,16 @@ describe('RevenueCat', () => {
 
     expect(thrown).not.toBeNull();
     expect(String(thrown.message)).toContain('revenuecat apply failed');
-    expect(forgetWebhookEventCalls).toEqual(['revenuecat:rc_evt_fail_1']);
+    expect(markers.processed.has('revenuecat:rc_evt_fail_1')).toBe(false);
+
+    const retry = await processRevenueCatWebhook(body);
+    expect((retry as any).deduped).toBeUndefined();
+    expect(upsertCreditAccountCalls.length).toBe(1);
+    expect(markers.processed.has('revenuecat:rc_evt_fail_1')).toBe(true);
   });
 
-  // Clearing the marker above makes the event REPLAYABLE, so every RevenueCat
-  // grant needs a stable idempotency key or the retry double-grants.
+  // A failed event is REPLAYABLE, so every RevenueCat grant needs a stable
+  // idempotency key or the retry double-grants.
   test('grants carry a stable per-event idempotency key', async () => {
     const purchase = createMockRevenueCatEvent('INITIAL_PURCHASE', {
       product_id: 'kortix_plus_monthly',
@@ -1458,27 +1457,19 @@ describe('per-seat entitlement is the allowance, never the price', () => {
     await processStripeWebhook(JSON.stringify(event), 'sig');
   }
 
-  test('adding 4 seats grants 4 x $25 of allowance, not 4 x the $40 price', async () => {
+  // A quantity change is not a payment. Seats added mid-period are funded
+  // from the PAID proration invoice (see the `subscription_update` describe
+  // below), never from the subscription event that reports the new quantity.
+  test('a seat-count increase on customer.subscription.updated grants nothing', async () => {
     mockRegistry.getCreditAccount = async () =>
       createMockCreditAccount({ billingModel: 'per_seat', tier: 'per_seat', seatCount: 1 });
 
     await syncSeats(perSeatSub(5));
 
-    const seatGrant = grantCreditsCalls.find((c: any) => c[2] === 'seat_grant');
-    expect(seatGrant).toBeDefined();
-    expect(seatGrant[1]).toBe(100);
-    expect(seatGrant[1]).not.toBe(160);
-  });
-
-  test('adding 1 seat grants $25, the included allowance for one seat', async () => {
-    mockRegistry.getCreditAccount = async () =>
-      createMockCreditAccount({ billingModel: 'per_seat', tier: 'per_seat', seatCount: 2 });
-
-    await syncSeats(perSeatSub(3));
-
-    const seatGrant = grantCreditsCalls.find((c: any) => c[2] === 'seat_grant');
-    expect(seatGrant[1]).toBe(25);
-    expect(seatGrant[1]).not.toBe(40);
+    expect(grantCreditsCalls.filter((c: any) => c[2] === 'seat_grant').length).toBe(0);
+    expect(resetExpiringCreditsCalls.length).toBe(0);
+    const write = updateCreditAccountCalls.find((c: any) => c.data.seatCount !== undefined);
+    expect(write?.data.seatCount).toBe(5);
   });
 
   test('removing seats grants nothing', async () => {
@@ -1488,50 +1479,6 @@ describe('per-seat entitlement is the allowance, never the price', () => {
     await syncSeats(perSeatSub(2));
 
     expect(grantCreditsCalls.filter((c: any) => c[2] === 'seat_grant').length).toBe(0);
-  });
-
-  test('the seat-grant idempotency key names the seat count reached AND the billing period', async () => {
-    mockRegistry.getCreditAccount = async () =>
-      createMockCreditAccount({ billingModel: 'per_seat', tier: 'per_seat', seatCount: 1 });
-
-    const sub = perSeatSub(3, { current_period_start: 1_700_000_000 });
-    await syncSeats(sub);
-
-    const seatGrant = grantCreditsCalls.find((c: any) => c[2] === 'seat_grant');
-    expect(seatGrant[5]).toBe('sub_seats_1:seats:1700000000:3');
-  });
-
-  test('shrinking and regrowing to the same seat count inside one period reuses the key', async () => {
-    // Seat removals never claw allowance back, so a team that goes 1→3, 3→2 and
-    // then 2→3 within one billing period is already funded for 3 seats. Keying
-    // on the destination count (not the `old->new` transition) makes the second
-    // arrival dedupe instead of funding the same seat twice.
-    mockRegistry.getCreditAccount = async () =>
-      createMockCreditAccount({ billingModel: 'per_seat', tier: 'per_seat', seatCount: 1 });
-    await syncSeats(perSeatSub(3, { current_period_start: 1_700_000_000 }));
-    const grown = grantCreditsCalls.find((c: any) => c[2] === 'seat_grant')[5];
-
-    grantCreditsCalls.length = 0;
-    mockRegistry.getCreditAccount = async () =>
-      createMockCreditAccount({ billingModel: 'per_seat', tier: 'per_seat', seatCount: 2 });
-    await syncSeats(perSeatSub(3, { current_period_start: 1_700_000_000 }));
-    const regrown = grantCreditsCalls.find((c: any) => c[2] === 'seat_grant')[5];
-
-    expect(regrown).toBe(grown);
-  });
-
-  test('the same seat count in a LATER period is a different key, so re-added seats get funded', async () => {
-    mockRegistry.getCreditAccount = async () =>
-      createMockCreditAccount({ billingModel: 'per_seat', tier: 'per_seat', seatCount: 1 });
-
-    await syncSeats(perSeatSub(3, { current_period_start: 1_700_000_000 }));
-    const first = grantCreditsCalls.find((c: any) => c[2] === 'seat_grant')[5];
-
-    grantCreditsCalls.length = 0;
-    await syncSeats(perSeatSub(3, { current_period_start: 1_702_600_000 }));
-    const second = grantCreditsCalls.find((c: any) => c[2] === 'seat_grant')[5];
-
-    expect(second).not.toBe(first);
   });
 
   test('a recovering per-seat team is reset to its FULL seat allowance, not a flat $25', async () => {
@@ -1550,7 +1497,7 @@ describe('per-seat entitlement is the allowance, never the price', () => {
     expect(resetExpiringCreditsCalls[0][1]).not.toBe(25);
   });
 
-  test('a recovery reset that already funded every seat does NOT also take the delta grant', async () => {
+  test('a recovery reset funds every seat and writes no separate seat_grant', async () => {
     mockRegistry.getCreditAccount = async () =>
       createMockCreditAccount({
         tier: 'free',
@@ -1565,11 +1512,10 @@ describe('per-seat entitlement is the allowance, never the price', () => {
     expect(grantCreditsCalls.filter((c: any) => c[2] === 'seat_grant').length).toBe(0);
   });
 
-  test('a brand-new per-seat team still gets seat tokens minted even though the delta grant is skipped', async () => {
-    // Minting is not a money decision. It used to sit inside the credit-grant
-    // block, so suppressing the redundant delta grant above would also have
-    // stopped minting for every newly activated team — the exact case the mint
-    // exists for.
+  test('a brand-new per-seat team gets seat tokens minted even though no seat_grant is written', async () => {
+    // Minting is not a money decision. It once sat inside a credit-grant block,
+    // so a change to the grant rule silently stopped minting for newly
+    // activated teams — the exact case the mint exists for.
     mockRegistry.getCreditAccount = async () =>
       createMockCreditAccount({
         tier: 'free',
@@ -1593,5 +1539,229 @@ describe('per-seat entitlement is the allowance, never the price', () => {
 
     expect(resetExpiringCreditsCalls.length).toBe(1);
     expect(resetExpiringCreditsCalls[0][1]).toBe(50);
+  });
+});
+
+// ─── Money-first settlement ──────────────────────────────────────────────────
+
+async function deliverStripe(type: string, object: any, overrides: Record<string, any> = {}) {
+  const event = createMockStripeEvent(type, object, overrides);
+  mockRegistry.stripeClient.webhooks.constructEvent = () => event;
+  return processStripeWebhook(JSON.stringify(event), 'sig');
+}
+
+describe('credit purchases grant only settled money', () => {
+  function purchaseSession(overrides: Record<string, any> = {}) {
+    return createMockStripeCheckoutSession({
+      id: 'cs_purchase_1',
+      mode: 'payment',
+      subscription: null,
+      amount_total: 2500,
+      payment_intent: null,
+      metadata: { account_id: 'acc_test_123', type: 'credit_purchase', purchase_id: '11111111-2222-4333-8444-555555555555' },
+      ...overrides,
+    });
+  }
+
+  test('checkout.session.completed with payment_status=unpaid grants nothing', async () => {
+    await deliverStripe('checkout.session.completed', purchaseSession({ payment_status: 'unpaid' }));
+    expect(grantCreditsCalls.length).toBe(0);
+  });
+
+  test('async_payment_succeeded grants the purchase once, keyed on the session id', async () => {
+    const statusCalls: any[] = [];
+    mockRegistry.updatePurchaseStatus = async (...args: any[]) => {
+      statusCalls.push(args);
+    };
+
+    await deliverStripe('checkout.session.completed', purchaseSession({ payment_status: 'unpaid' }));
+    await deliverStripe('checkout.session.async_payment_succeeded', purchaseSession({ payment_status: 'paid' }));
+
+    expect(grantCreditsCalls.length).toBe(1);
+    expect(grantCreditsCalls[0][1]).toBe(25);
+    expect(grantCreditsCalls[0][2]).toBe('purchase');
+    expect(grantCreditsCalls[0][4]).toBe(false);
+    expect(grantCreditsCalls[0][5]).toBe('cs_purchase_1');
+    expect(statusCalls[0][0]).toBe('11111111-2222-4333-8444-555555555555');
+    expect(statusCalls[0][1]).toBe('completed');
+  });
+
+  test('async_payment_failed grants nothing and marks the purchase failed', async () => {
+    const statusCalls: any[] = [];
+    mockRegistry.updatePurchaseStatus = async (...args: any[]) => {
+      statusCalls.push(args);
+    };
+
+    await deliverStripe('checkout.session.async_payment_failed', purchaseSession({ payment_status: 'unpaid' }));
+
+    expect(grantCreditsCalls.length).toBe(0);
+    expect(statusCalls).toEqual([['11111111-2222-4333-8444-555555555555', 'failed', undefined]]);
+  });
+});
+
+describe('the Stripe dedupe marker is written only after the handler succeeds', () => {
+  test('a successful event is checked first and recorded last', async () => {
+    const markers = installWebhookMarkerTable();
+    let grantedBeforeRecord = false;
+    mockRegistry.grantCredits = async (...args: any[]) => {
+      grantCreditsCalls.push(args);
+      grantedBeforeRecord = !markers.order.some((entry) => entry.startsWith('record:'));
+    };
+
+    const session = createMockStripeCheckoutSession({ mode: 'payment', subscription: null, amount_total: 1000 });
+    await deliverStripe('checkout.session.completed', session, { id: 'evt_order_1' });
+
+    expect(markers.order).toEqual(['check:evt_order_1', 'record:evt_order_1']);
+    expect(grantedBeforeRecord).toBe(true);
+  });
+
+  test('a handler that throws leaves no marker, and the redelivery runs the handler', async () => {
+    const markers = installWebhookMarkerTable();
+    let failNext = true;
+    mockRegistry.grantCredits = async (...args: any[]) => {
+      if (failNext) {
+        failNext = false;
+        throw new Error('grant transport failure');
+      }
+      grantCreditsCalls.push(args);
+    };
+
+    const session = createMockStripeCheckoutSession({ mode: 'payment', subscription: null, amount_total: 1000 });
+    const event = createMockStripeEvent('checkout.session.completed', session, { id: 'evt_retry_1' });
+    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
+
+    await expect(processStripeWebhook(JSON.stringify(event), 'sig')).rejects.toThrow('grant transport failure');
+    expect(markers.processed.has('evt_retry_1')).toBe(false);
+
+    const retry = await processStripeWebhook(JSON.stringify(event), 'sig');
+    expect((retry as any).deduped).toBeUndefined();
+    expect(grantCreditsCalls.length).toBe(1);
+
+    const replay = await processStripeWebhook(JSON.stringify(event), 'sig');
+    expect((replay as any).deduped).toBe(true);
+    expect(grantCreditsCalls.length).toBe(1);
+  });
+});
+
+describe('auto-topup settles on payment_intent webhooks', () => {
+  function autoTopupIntent(overrides: Record<string, any> = {}) {
+    return {
+      id: 'pi_topup_1',
+      object: 'payment_intent',
+      status: 'succeeded',
+      amount: 2000,
+      amount_received: 2000,
+      metadata: { account_id: 'acc_test_123', type: 'auto_topup', amount: '20' },
+      last_payment_error: null,
+      ...overrides,
+    };
+  }
+
+  test('payment_intent.succeeded grants the auto-topup keyed on the PaymentIntent id', async () => {
+    await deliverStripe('payment_intent.succeeded', autoTopupIntent());
+
+    expect(grantCreditsCalls.length).toBe(1);
+    expect(grantCreditsCalls[0][0]).toBe('acc_test_123');
+    expect(grantCreditsCalls[0][1]).toBe(20);
+    expect(grantCreditsCalls[0][4]).toBe(false);
+    expect(grantCreditsCalls[0][5]).toBe('pi_topup_1');
+    const reset = updateCreditAccountCalls.find((c: any) => c.data.autoTopupConsecutiveFailures === 0);
+    expect(reset).toBeDefined();
+  });
+
+  test('a PaymentIntent that is not an auto-topup is ignored', async () => {
+    await deliverStripe('payment_intent.succeeded', autoTopupIntent({ metadata: { account_id: 'acc_test_123' } }));
+    expect(grantCreditsCalls.length).toBe(0);
+  });
+
+  test('payment_intent.payment_failed after processing counts a failure and grants nothing', async () => {
+    await deliverStripe(
+      'payment_intent.payment_failed',
+      autoTopupIntent({
+        status: 'requires_payment_method',
+        metadata: { account_id: 'acc_test_123', type: 'auto_topup', amount: '20', async_settlement: 'true' },
+        last_payment_error: { code: 'payment_intent_payment_attempt_failed' },
+      }),
+    );
+    expect(grantCreditsCalls.length).toBe(0);
+    const failure = updateCreditAccountCalls.find((c: any) => c.data.autoTopupConsecutiveFailures === 1);
+    expect(failure).toBeDefined();
+  });
+
+  test('a synchronous decline is not counted a second time by its payment_failed webhook', async () => {
+    await deliverStripe(
+      'payment_intent.payment_failed',
+      autoTopupIntent({ status: 'requires_payment_method', last_payment_error: { code: 'processing_error' } }),
+    );
+    expect(grantCreditsCalls.length).toBe(0);
+    expect(updateCreditAccountCalls.length).toBe(0);
+  });
+});
+
+describe('invoice.paid (subscription_update): mid-period changes are funded by the paid proration', () => {
+  const SEAT_PRICE = 'price_1TeyA7G6l1KZGqIrTb2DKGS0';
+  const TIER_6_50_MONTHLY = 'price_1RILb4G6l1KZGqIr5q0sybWn';
+  const TIER_12_100_MONTHLY = 'price_1RILb4G6l1KZGqIr5Y20ZLHm';
+
+  function prorationInvoice(lines: Array<{ amount: number; price: string }>, overrides: Record<string, any> = {}) {
+    return createMockStripeInvoice({
+      id: 'in_proration_1',
+      billing_reason: 'subscription_update',
+      status: 'paid',
+      lines: {
+        data: lines.map((line) => ({ amount: line.amount, proration: true, price: { id: line.price } })),
+        has_more: false,
+      },
+      ...overrides,
+    });
+  }
+
+  test('added seats: the paid prorated charge buys the $25-of-$40 allowance share', async () => {
+    // 2 → 5 seats with 3/4 of the period left: -$60 unused + $150 new = $90.
+    await deliverStripe('invoice.paid', prorationInvoice([
+      { amount: -6000, price: SEAT_PRICE },
+      { amount: 15000, price: SEAT_PRICE },
+    ]));
+
+    expect(grantCreditsCalls.length).toBe(1);
+    expect(grantCreditsCalls[0][1]).toBe(56.25);
+    expect(grantCreditsCalls[0][2]).toBe('seat_grant');
+    expect(grantCreditsCalls[0][4]).toBe(true);
+    expect(grantCreditsCalls[0][5]).toBe('proration_grant:in_proration_1');
+  });
+
+  test('a seat change that collected no money grants nothing', async () => {
+    await deliverStripe('invoice.paid', prorationInvoice([{ amount: -4000, price: SEAT_PRICE }]));
+    expect(grantCreditsCalls.length).toBe(0);
+  });
+
+  test('an invoice that is not paid grants nothing', async () => {
+    await deliverStripe('invoice.paid', prorationInvoice([
+      { amount: -6000, price: SEAT_PRICE },
+      { amount: 15000, price: SEAT_PRICE },
+    ], { status: 'open' }));
+    expect(grantCreditsCalls.length).toBe(0);
+  });
+
+  test('plan upgrade: the paid difference converts at the target plan rate', async () => {
+    await deliverStripe('invoice.paid', prorationInvoice([
+      { amount: -2500, price: TIER_6_50_MONTHLY },
+      { amount: 5000, price: TIER_12_100_MONTHLY },
+    ]));
+
+    expect(grantCreditsCalls.length).toBe(1);
+    expect(grantCreditsCalls[0][1]).toBe(25);
+    expect(grantCreditsCalls[0][2]).toBe('tier_grant');
+    expect(grantCreditsCalls[0][5]).toBe('proration_grant:in_proration_1');
+    // The webhook never RESETS the wallet for an upgrade.
+    expect(resetExpiringCreditsCalls.length).toBe(0);
+  });
+
+  test('a plan downgrade grants nothing', async () => {
+    await deliverStripe('invoice.paid', prorationInvoice([
+      { amount: -5000, price: TIER_12_100_MONTHLY },
+      { amount: 2500, price: TIER_6_50_MONTHLY },
+    ]));
+    expect(grantCreditsCalls.length).toBe(0);
   });
 });

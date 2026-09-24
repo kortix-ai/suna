@@ -19,6 +19,7 @@ import { TokenBucketRateLimiter } from '../shared/rate-limit';
 import { auditLoginFail } from '../shared/auth-audit';
 import { gotrue, gotrueAuthorizeUrl, sessionFrom, type GoTrueSession, type GoTrueUser } from './gotrue';
 import { ssoEnforcedForEmail } from '../repositories/sso';
+import { clientIpFromHeaders } from '../shared/client-ip';
 
 export const headlessAuthRouter = makeOpenApiApp<AppEnv>();
 
@@ -40,8 +41,9 @@ const SessionResponse = z.object({ session: SessionSchema, user: UserSchema });
 const Email = z.string().email().max(320);
 const OTP_TYPES = ['magiclink', 'signup', 'recovery', 'email', 'email_change'] as const;
 
+// Trusted-proxy rule: the leftmost X-Forwarded-For entry is caller-written.
 function clientIp(c: Context): string | null {
-  return c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip') || null;
+  return clientIpFromHeaders((name) => c.req.header(name));
 }
 
 function throttled(c: Context): Response | null {

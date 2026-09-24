@@ -1,5 +1,6 @@
 import { createHash } from 'crypto';
 import { hashSecretKey } from '../shared/crypto';
+import { hashSecretKeyAsync } from '../shared/token-hash';
 
 // OAuth access/refresh tokens (kortix_oat_ / kortix_ort_) are stored under the
 // same peppered-scrypt scheme as the rest of the credential system
@@ -24,4 +25,11 @@ export function legacyHashOauthToken(token: string): string {
  *  an `inArray(tokenHash, …)` lookup so old and new tokens both validate. */
 export function oauthTokenHashCandidates(token: string): string[] {
   return [hashOauthToken(token), legacyHashOauthToken(token)];
+}
+
+/** `oauthTokenHashCandidates` for a PRESENTED token: the scrypt runs off the
+ *  event loop and is remembered (shared/token-hash.ts). Use on every
+ *  validation path; the sync form remains for minting. */
+export async function oauthTokenHashCandidatesAsync(token: string): Promise<string[]> {
+  return [await hashSecretKeyAsync(token), legacyHashOauthToken(token)];
 }

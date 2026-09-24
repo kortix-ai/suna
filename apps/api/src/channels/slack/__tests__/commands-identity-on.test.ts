@@ -8,6 +8,8 @@ mock.module('../../../config', () => ({
   config: {
     FRONTEND_URL: 'https://app.test',
     SLACK_REQUIRE_USER_IDENTITY: true,
+    // The login-link signing key is derived from this; signing refuses without it.
+    API_KEY_SECRET: 'test-api-key-secret',
   },
 }));
 mock.module('../../../shared/db', () => ({ db: {}, hasDatabase: () => true }));

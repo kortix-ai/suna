@@ -441,13 +441,15 @@ export async function loadSessionForSharing(
   loaded: { row: ProjectRow; userId: string; effectiveRole: ProjectRole; actor?: Actor | null },
   sessionId: string,
   /**
-   * The CALLER's own session when the credential is bound to one. REQUIRED —
-   * see loadVisibleSession. Sharing is the worst surface to leave unnarrowed:
+   * The caller's AGENT/SANDBOX token binding — always `callerKortixSessionId(c)`,
+   * never the raw `c.get('sessionId')` (that is the Supabase LOGIN session id
+   * for a signed-in human, which would narrow every human away from a
+   * backend-origin session). Sharing is the worst surface to leave unnarrowed:
    * a public share is UNAUTHENTICATED and its router is mounted before auth,
    * so minting one against another end-user's session exposes their live app
    * port and workspace files to anyone holding the URL.
    */
-  callerSessionId: string | null,
+  boundCredentialSessionId: string | null,
 ): Promise<{
   row: ProjectSessionRow;
   isOwner: boolean;
@@ -466,7 +468,8 @@ export async function loadSessionForSharing(
   if (!isSessionTargetVisibleToCaller({
     origin: row.origin ?? null,
     sessionId,
-    callerSessionId,
+    callerSessionId: boundCredentialSessionId,
+    boundCredentialSessionId,
   })) {
     return null;
   }
@@ -474,11 +477,13 @@ export async function loadSessionForSharing(
   if (loaded.actor && isAgentPrincipalActor(loaded.actor)) {
     // Spec §2: an agent session manages share links only for sessions it
     // owns (its own and its children), never the launcher's others.
-    const standing = agentSessionStanding(callerSessionId, row, true);
+    const standing = agentSessionStanding(boundCredentialSessionId, row, true);
     if (!standing.visible) return null;
     isOwner = standing.isOwner;
   }
-  const canManageProject = roleAllows(loaded.effectiveRole, 'manage');
+  // Same standing rule as loadVisibleSession: a session-bound credential acts
+  // for one session and does not carry the launching user's manage role.
+  const canManageProject = callerHasManagerStanding(loaded.effectiveRole, boundCredentialSessionId);
   const ownerIsMachine = ownerIsMachineCanMatter(isOwner, canManageProject)
     ? await sessionOwnerIsMachine(loaded.row.accountId, row.createdBy)
     : false;

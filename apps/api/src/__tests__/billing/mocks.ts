@@ -31,7 +31,7 @@ export const mockRegistry = {
   listAccountStripeCustomerIds: null as ((id: string) => Promise<string[]>) | null,
   deleteCustomerByStripeId: null as ((id: string) => Promise<void>) | null,
   recordWebhookEvent: null as ((eventId: string, eventType: string) => Promise<boolean>) | null,
-  forgetWebhookEvent: null as ((eventId: string) => Promise<void>) | null,
+  isWebhookEventProcessed: null as ((eventId: string) => Promise<boolean>) | null,
 
   grantCredits: null as ((...args: any[]) => Promise<void>) | null,
   resetExpiringCredits: null as ((...args: any[]) => Promise<void>) | null,
@@ -141,8 +141,8 @@ export function registerGlobalMocks() {
     // tests pass on a constant `undefined` key instead of the real one.
     recordWebhookEvent: async (eventId: string, eventType: string) =>
       mockRegistry.recordWebhookEvent ? mockRegistry.recordWebhookEvent(eventId, eventType) : true,
-    forgetWebhookEvent: async (eventId: string) =>
-      mockRegistry.forgetWebhookEvent ? mockRegistry.forgetWebhookEvent(eventId) : undefined,
+    isWebhookEventProcessed: async (eventId: string) =>
+      mockRegistry.isWebhookEventProcessed ? mockRegistry.isWebhookEventProcessed(eventId) : false,
     withAccountLock: async (_accountId: string, fn: () => Promise<any>) => fn(),
   }));
 
@@ -481,6 +481,28 @@ export function createMockStripeClient(overrides: Record<string, any> = {}) {
     },
     ...overrides.extra,
   };
+}
+
+/**
+ * An in-memory dedupe table wired into the registry with the production
+ * contract: `isWebhookEventProcessed` reads it, `recordWebhookEvent` writes it.
+ * `order` records every marker read/write so tests can assert the marker is
+ * written only after the handler ran.
+ */
+export function installWebhookMarkerTable() {
+  const processed = new Set<string>();
+  const order: string[] = [];
+  mockRegistry.isWebhookEventProcessed = async (eventId: string) => {
+    order.push(`check:${eventId}`);
+    return processed.has(eventId);
+  };
+  mockRegistry.recordWebhookEvent = async (eventId: string) => {
+    order.push(`record:${eventId}`);
+    if (processed.has(eventId)) return false;
+    processed.add(eventId);
+    return true;
+  };
+  return { processed, order };
 }
 
 export function createMockRevenueCatEvent(type: string, overrides: Record<string, any> = {}) {

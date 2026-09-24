@@ -70,12 +70,12 @@ describe('POST question route', () => {
   const src = handlerSource('post', QUESTION_PATH);
 
   test('refuses agent-session tokens outright', () => {
-    expect(src).toContain('getAgentGrant(c)');
+    expect(src).toContain('isProjectSessionPrincipal(c)');
     expect(src).toContain('403');
   });
 
   test('rejects the agent BEFORE the answer can start a turn', () => {
-    expect(src.indexOf('getAgentGrant(c)')).toBeLessThan(src.indexOf('continueSession'));
+    expect(src.indexOf('isProjectSessionPrincipal(c)')).toBeLessThan(src.indexOf('continueSession'));
   });
 
   test('the guard is a denial, not a scope check', () => {

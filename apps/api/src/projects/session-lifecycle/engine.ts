@@ -21,6 +21,7 @@ import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { WIRE_ID_PLACED_HEADER } from '../../sandbox-proxy/prompt-wire-id-repair';
 import { bindChatThread } from '../../channels/slack/binding';
 import { config } from '../../config';
+import { channelPrompterForOnBehalfOf, clearSessionOnBehalfOfForPrompt } from '../lib/on-behalf-of';
 import { logger } from '../../lib/logger';
 import { mayRequeueFailedCreate } from './requeue-policy';
 import { materializePromptAttachments } from './prompt-attachment-materializer';
@@ -290,7 +291,11 @@ export async function createSession(
     };
   }
 
-  const result = await executeCreateSession({ ...command, attachmentSourceCommandId: claimed.row.commandId });
+  const result = await executeCreateSession({
+    ...command,
+    attachmentSourceCommandId: claimed.row.commandId,
+    createCommandId: claimed.row.commandId,
+  });
   if (result.status === 'created' && result.sessionId) {
     const postCreate = await applyPostCreateActions({
       projectId: command.project.projectId,
@@ -442,10 +447,33 @@ export async function continueSession(
   // the user explicitly deleted.
   const sessionMeta = (session.metadata ?? {}) as LegacyInlineAttachmentRepairMetadata;
   if (typeof sessionMeta.deletedAt === 'string') return 'no-session';
+  if (command.projectId && command.projectId !== session.projectId) {
+    console.warn('[session-lifecycle] command project does not own the session; refusing delivery', {
+      sessionId,
+      commandProjectId: command.projectId,
+    });
+    return 'no-session';
+  }
   const userId = command.userId ?? (await resolveProjectAutomationActor(session.accountId));
   if (!userId) {
     console.warn('[session-lifecycle] no actor for follow-up delivery', { sessionId });
     return 'pending';
+  }
+  // Spec 2026-09-22 §2.3: a prompt from anyone other than the session's
+  // `on_behalf_of` human clears it. The HTTP prompt route clears for human
+  // prompters itself; trigger and channel deliveries arrive here.
+  const channelPrompter = channelPrompterForOnBehalfOf({
+    source: command.source,
+    userId: command.userId ?? null,
+    slackRequiresUserIdentity: config.SLACK_REQUIRE_USER_IDENTITY !== false,
+    teamsRequiresUserIdentity: config.TEAMS_REQUIRE_USER_IDENTITY !== false,
+  });
+  if (channelPrompter !== undefined) {
+    await clearSessionOnBehalfOfForPrompt({
+      accountId: session.accountId,
+      sessionId,
+      prompterUserId: channelPrompter,
+    });
   }
   const pendingAttachmentNames = sessionMeta.pending_prompt?.attachment_names;
   const shouldRepairLegacyInlineAttachments =
@@ -1989,6 +2017,7 @@ export async function executeQueuedContinue(
         {
           source: row.source as SessionInvocationSource,
           sessionId: row.sessionId,
+          projectId: row.projectId,
           text,
           userId: row.actorUserId,
           ...(payload.parts?.length ? { parts: payload.parts } : {}),
@@ -2266,6 +2295,7 @@ async function executeQueuedCreate(
   }
   return executeCreateSession({
     attachmentSourceCommandId: row.commandId,
+    createCommandId: row.commandId,
     source: row.source as CreateSessionCommand['source'],
     project,
     userId,
@@ -2296,6 +2326,7 @@ async function executeCreateSession(
   };
   const result = await createProjectSession({
     attachmentSourceCommandId: command.attachmentSourceCommandId,
+    createCommandId: command.createCommandId,
     project: command.project,
     userId: command.userId,
     requestingPrincipalType: command.requestingPrincipalType,

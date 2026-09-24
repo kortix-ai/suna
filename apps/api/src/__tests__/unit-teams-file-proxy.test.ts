@@ -38,6 +38,13 @@ mock.module('../channels/install-store', () => ({
   saveTeamsServiceUrl: async () => {},
 }));
 
+// The tenants the project's install proved (chat_installs), which the proxy
+// mints Graph tokens for — never the admin-writable MS_TEAMS_TENANT_ID secret.
+let provenTenants: string[] = ['tenant-1'];
+mock.module('../channels/teams/inbound', () => ({
+  provenTeamsTenants: async () => provenTenants,
+}));
+
 let dbResults: unknown[][] = [];
 let dbWrites: Array<{ op: string; payload?: unknown }> = [];
 
@@ -90,6 +97,7 @@ beforeEach(() => {
   nextFetchOk = true;
   graphStatus = 200;
   channelOwnershipOk = true;
+  provenTenants = ['tenant-1'];
   globalThis.fetch = (async (url: string, init: { method?: string; headers?: Record<string, string> }) => {
     fetchCalls.push({ url: String(url), method: init?.method ?? 'GET', headers: init?.headers });
     const u = String(url);
@@ -455,3 +463,62 @@ describe('initiateTeamsUpload — an image is shown inline first, in every scope
     expect(inlinePosts()).toHaveLength(0);
   });
 });
+
+/**
+ * The download proxy attaches an app-only Graph token for the tenant, so a
+ * caller-chosen Graph path would read whatever the app's permissions reach.
+ * Only the message hosted-content (inline image) paths an activity carries are
+ * accepted. And the bot connector token goes only to the Teams connector's own
+ * Traffic Manager profile — any Azure customer can name another one.
+ */
+describe('download proxy — Graph paths and attachment hosts', () => {
+  const HOSTED_CHAT =
+    'https://graph.microsoft.com/v1.0/chats/19:abc@thread.v2/messages/1712345678901/hostedContents/aWQ9eF8wLXd1cy1kMTAt/$value';
+  const HOSTED_CHANNEL =
+    'https://graph.microsoft.com/v1.0/teams/group-1/channels/19:chan@thread.tacv2/messages/171/replies/172/hostedContents/aWQ9/$value';
+
+  test('a message hosted-content URL is fetched with the Graph token', async () => {
+    for (const url of [HOSTED_CHAT, HOSTED_CHANNEL]) {
+      fetchCalls = [];
+      await downloadTeamsFile('proj-1', url).catch(() => null);
+      // The fetch mock answers `/channels/` GETs as the ownership probe, so
+      // assert on the outgoing request, not the parsed body.
+      expect(fetchCalls).toHaveLength(1);
+      expect(fetchCalls[0].url).toBe(url);
+      expect(fetchCalls[0].headers?.Authorization).toBe('Bearer graph-tok');
+    }
+  });
+
+  test('any other Graph path is refused 400 and never fetched', async () => {
+    for (const url of [
+      'https://graph.microsoft.com/v1.0/users',
+      'https://graph.microsoft.com/v1.0/sites/root/drive/root/children',
+      'https://graph.microsoft.com/v1.0/drives/d1/items/i1/content',
+      `${HOSTED_CHAT}?$select=id`,
+      'https://graph.microsoft.com/v1.0/chats/19:abc/messages/1/hostedContents/x%2F..%2F..%2Fusers/$value',
+      'https://graph.microsoft.com/v1.0/chats/a/messages/b/hostedContents/c/$value/extra',
+    ]) {
+      fetchCalls = [];
+      const r = await downloadTeamsFile('proj-1', url);
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.status).toBe(400);
+      expect(fetchCalls).toHaveLength(0);
+    }
+  });
+
+  test('a hosted-content URL with no proven tenant is 404, with no token minted', async () => {
+    provenTenants = [];
+    const r = await downloadTeamsFile('proj-1', HOSTED_CHAT);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.status).toBe(404);
+    expect(fetchCalls).toHaveLength(0);
+  });
+
+  test('another Traffic Manager profile is refused outright — never fetched, never tokened', async () => {
+    const r = await downloadTeamsFile('proj-1', 'https://attacker-profile.trafficmanager.net/v3/attachments/1/views/original');
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.status).toBe(400);
+    expect(fetchCalls).toHaveLength(0);
+  });
+});
+
