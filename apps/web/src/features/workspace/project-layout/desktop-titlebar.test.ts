@@ -321,7 +321,7 @@ describe('nothing re-hard-codes the band', () => {
     // not subtract from it. Blink maps `none` to no-drag, so only `initial`
     // resets the shell's injected rule.
     const reset = css.match(
-      /html\[data-desktop-platform='macos'\]\s*:is\(\s*button, a, input[^)]*\)\s*\{([^}]*)\}/s,
+      /:where\(body:has\(\[data-kx-titlebar-owner\]\)\)\s*:is\(\s*button, a, input[^)]*\)\s*\{([^}]*)\}/s,
     );
     expect(reset?.[1]).toContain('-webkit-app-region: initial');
     expect(reset?.[1]).toContain('app-region: initial');
@@ -341,6 +341,19 @@ describe('nothing re-hard-codes the band', () => {
     ]) {
       expect(scoped?.[1]).toContain(owner);
     }
+  });
+
+  test('pages without a titlebar owner get a full-height root drag band', () => {
+    // Auth, `/projects`, and `/new` have no row in the band. The 6px strip was
+    // their only drag area.
+    expect(css).toMatch(
+      /body:not\(:has\(\[data-kx-titlebar-owner\]\)\) \.kx-desktop-chrome \{\s*height: max\(6px, var\(--kx-titlebar-inset\)\);/,
+    );
+    // The scroll reset stays scoped to owner pages, so visible controls under
+    // the transparent root band keep the shell's no-drag rule.
+    expect(css).toMatch(
+      /html\[data-desktop-platform='macos'\]\s*:where\(body:has\(\[data-kx-titlebar-owner\]\)\)\s*:is\(\s*button, a,/,
+    );
   });
 
   test('the session header takes the band offsets from the shared row class', () => {
