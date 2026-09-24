@@ -9,6 +9,7 @@
  * is for. Same trust model as a magic link / a Pipedream connect URL.
  */
 import { createHash } from 'node:crypto';
+import { requestClientIp } from '../shared/client-ip';
 import { connectors, projectSessions, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { type Context, Hono, type Next } from 'hono';
@@ -43,10 +44,9 @@ const setupLinksPublicApp = new Hono();
 const TOKEN_LIKE_REGEX = /^ksl_[A-Za-z0-9_-]{8,512}$/;
 const setupLinkLimiter = new TokenBucketRateLimiter('setup_link');
 
+// Trusted-proxy rule: the leftmost X-Forwarded-For entry is caller-written.
 function clientIp(c: Context) {
-  return c.req.header('x-forwarded-for')?.split(',')[0]?.trim()
-    || c.req.header('x-real-ip')
-    || 'unknown';
+  return requestClientIp(c);
 }
 
 function createSetupLinkRateLimitMiddleware() {

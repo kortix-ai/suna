@@ -55,6 +55,12 @@ export type SessionLifecycleStatus =
 export interface CreateSessionCommand {
   /** Internal retained-upload authority from an already accepted create command. */
   attachmentSourceCommandId?: string;
+  /**
+   * The durable `create_session` command this create executes. The new
+   * session id is written onto it in the session insert transaction, so a
+   * reclaimed command finds the session instead of creating a second one.
+   */
+  createCommandId?: string;
   source: SessionInvocationSource;
   project: ProjectRow;
   userId: string;

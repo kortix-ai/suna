@@ -7,9 +7,12 @@
  *   - create boots from a per-project TEMPLATE (opts.snapshot = a Platinum
  *     template id/name) with `?wait_for_state=running` so create returns a
  *     running sandbox synchronously (provisioning.async = false, like Daytona).
- *   - the agent port (8000) is reached through Platinum's edge via a PUBLIC
- *     expose URL; the sandbox itself is gated by the KORTIX serviceKey bearer
- *     (added as a header in resolveEndpoint, same effective auth as Daytona).
+ *   - every port is reached through Platinum's edge via a PRIVATE expose: the
+ *     edge requires the HMAC preview token, which the proxy carries in the
+ *     `x-pt-preview-token` header (see resolveIngress). The agent port is also
+ *     gated by the KORTIX serviceKey bearer (added in resolveEndpoint). Other
+ *     ports, such as the static-file listener, have no in-box authentication,
+ *     so the edge token is their only gate outside the Kortix proxy.
  *
  * S1 (idempotent create): a retry after an AMBIGUOUS transport failure
  * (timeout / dropped response) on the create POST must never blindly
@@ -93,6 +96,63 @@ interface PlatinumSandboxPage {
   has_more?: boolean;
 }
 type PlatinumExposedPort = { port: number; url: string; token?: string; public: boolean };
+
+/**
+ * The header Platinum's edge reads the HMAC preview token from
+ * (`apps/edge/src/previewToken.ts` in the Platinum repo: `?t=`, then
+ * `x-pt-token`, then `x-pt-preview-token`). A header composes with the proxy
+ * appending a path and query; the `?t=` form in the expose URL does not.
+ */
+export const PLATINUM_PREVIEW_TOKEN_HEADER = 'x-pt-preview-token';
+
+/**
+ * Lifetime of a minted preview token. The proxy caches a resolved ingress for
+ * five minutes (sandbox-proxy/backend.ts), so every cached token has a day of
+ * validity left. Equal to Platinum's own default.
+ */
+const PREVIEW_TOKEN_TTL_SECONDS = 24 * 60 * 60;
+
+/**
+ * Split a private expose response into the bare edge origin and its token.
+ * Platinum appends `?t=<token>` to a private URL; the proxy must not forward a
+ * query of its own on every request, so the token moves to a header.
+ */
+export function privateEdgeIngress(exposed: PlatinumExposedPort): { url: string; token: string } {
+  const raw = (exposed.url ?? '').trim();
+  if (!raw) throw new Error(`[platinum] expose returned no URL for port ${exposed.port}`);
+  const parsed = new URL(raw);
+  const token = exposed.token || parsed.searchParams.get('t') || '';
+  if (!token) {
+    throw new Error(`[platinum] private expose returned no preview token for port ${exposed.port}`);
+  }
+  parsed.searchParams.delete('t');
+  parsed.hash = '';
+  const url = parsed.toString().replace(/\?$/, '').replace(/\/$/, '');
+  return { url, token };
+}
+
+/** Ports a Platinum sandbox row records as exposed without a token. */
+export function publicExposedPorts(sandbox: {
+  metadata?: Record<string, unknown> | null;
+}): number[] {
+  const exposures = (sandbox.metadata?.exposures ?? null) as
+    | Record<string, { public?: unknown } | null>
+    | null;
+  if (!exposures || typeof exposures !== 'object') return [];
+  const ports: number[] = [];
+  for (const [key, value] of Object.entries(exposures)) {
+    const port = Number(key);
+    if (Number.isInteger(port) && port > 0 && value?.public === true) ports.push(port);
+  }
+  return ports.sort((a, b) => a - b);
+}
+
+/**
+ * Sandboxes whose public exposures this process has already converted to
+ * private. Bounded: an entry only saves one GET, so eviction is harmless.
+ */
+const hardenedExposureSandboxes = new Set<string>();
+const HARDENED_EXPOSURE_CACHE_MAX = 20_000;
 type PlatinumExecResponse = {
   result?: {
     stdout?: string;
@@ -408,7 +468,11 @@ export class PlatinumProvider implements SandboxProvider {
         `/v1/sandboxes/${externalId}/expose`,
         {
           method: 'POST',
-          body: JSON.stringify({ port: ingressPort, public: true }),
+          body: JSON.stringify({
+            port: ingressPort,
+            public: false,
+            ttl_seconds: PREVIEW_TOKEN_TTL_SECONDS,
+          }),
         },
       );
       exposedUrl = (exposed.url ?? '').replace(/\/$/, '');
@@ -698,21 +762,59 @@ export class PlatinumProvider implements SandboxProvider {
     const route = this.routeIngress(request);
     const effectivePort = route.effectivePort;
     // Expose the requested port through Platinum's edge → https://<port>-<id>.sbx…
-    // No preview token: the sandbox is gated by the serviceKey bearer the proxy
-    // already adds. Idempotent — re-exposing returns the same URL.
+    // PRIVATE: the edge refuses a request without the HMAC token, so the edge
+    // hostname alone grants nothing. The token rides in a header on every
+    // proxied request. Re-exposing is idempotent and turns a port an older
+    // build exposed publicly back into a private one.
     const exposed = await platinumJson<PlatinumExposedPort>(`/v1/sandboxes/${externalId}/expose`, {
       method: 'POST',
-      body: JSON.stringify({ port: effectivePort, public: true }),
+      body: JSON.stringify({
+        port: effectivePort,
+        public: false,
+        ttl_seconds: PREVIEW_TOKEN_TTL_SECONDS,
+      }),
     });
-    const url = (exposed.url ?? '').replace(/\/$/, '');
-    if (!url)
-      throw new Error(`[platinum] expose returned no URL for ${externalId}:${effectivePort}`);
+    const { url, token } = privateEdgeIngress({ ...exposed, port: exposed.port ?? effectivePort });
+    this.hardenLegacyPublicExposures(externalId);
     return {
       url,
-      headers: {},
+      headers: { [PLATINUM_PREVIEW_TOKEN_HEADER]: token },
+      queryToken: { name: 't', value: token },
       effectivePort,
       websocket: route.websocket,
     };
+  }
+
+  /**
+   * Convert every port an older build exposed PUBLICLY on this sandbox to a
+   * private exposure. Runs once per sandbox per process, detached from the
+   * request: a public exposure outlives the request that created it, so a port
+   * nobody opens again would otherwise stay reachable without Kortix
+   * authorization until the sandbox is deleted.
+   */
+  private hardenLegacyPublicExposures(externalId: string): void {
+    if (hardenedExposureSandboxes.has(externalId)) return;
+    if (hardenedExposureSandboxes.size >= HARDENED_EXPOSURE_CACHE_MAX) {
+      hardenedExposureSandboxes.clear();
+    }
+    hardenedExposureSandboxes.add(externalId);
+    void (async () => {
+      const sandbox = await platinumJson<PlatinumSandbox>(`/v1/sandboxes/${externalId}`);
+      for (const port of publicExposedPorts(sandbox)) {
+        await platinumJson<PlatinumExposedPort>(`/v1/sandboxes/${externalId}/expose`, {
+          method: 'POST',
+          body: JSON.stringify({ port, public: false, ttl_seconds: PREVIEW_TOKEN_TTL_SECONDS }),
+        });
+        console.log(`[platinum] converted public exposure ${externalId}:${port} to private`);
+      }
+    })().catch((err) => {
+      // Retry on a later request: the next resolveIngress re-runs the pass.
+      hardenedExposureSandboxes.delete(externalId);
+      console.warn(
+        `[platinum] public-exposure conversion failed for ${externalId}:`,
+        err instanceof Error ? err.message : err,
+      );
+    });
   }
 
   routeIngress(request: SandboxIngressRequest) {
@@ -734,12 +836,10 @@ export class PlatinumProvider implements SandboxProvider {
   }
 
   async resolveEndpoint(externalId: string): Promise<ResolvedEndpoint> {
-    // Expose the agent port through Platinum's edge. PUBLIC (no HMAC ?t= token)
-    // because Platinum's edge reads the token from the query string only, which
-    // doesn't compose with the Kortix proxy appending a path — and the sandbox
-    // is already gated by the KORTIX serviceKey bearer below (same effective
-    // auth as Daytona's preview link + serviceKey). Idempotent: re-exposing an
-    // already-exposed port returns the same URL.
+    // Expose the agent port through Platinum's edge, privately: the preview
+    // token travels in the header resolveIngress returns, and the daemon also
+    // checks the KORTIX serviceKey bearer below (the same two layers as
+    // Daytona's preview token + serviceKey).
     // POST /:id/expose takes a SINGLE {port,public} and returns a single
     // {url,port,...} — the array {expose:[...]} shape is only valid on the
     // create route's inline expose. Sending the array here 400s.

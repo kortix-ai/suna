@@ -12,6 +12,7 @@
  */
 
 import { createRoute, z } from '@hono/zod-openapi';
+import { clientIpFromHeaders } from '../../shared/client-ip';
 import { createHash } from 'node:crypto';
 import { eq, and, gt } from 'drizzle-orm';
 import { tunnelConnections, tunnelDeviceAuthRequests, tunnelPermissions } from '@kortix/db';
@@ -57,11 +58,11 @@ const DEFAULT_PERMISSION_SCOPES: Record<string, Record<string, unknown>[]> = {
 /** Permissive device-auth request row shape, as persisted + serialized. */
 const DeviceAuthRowSchema = z.record(z.string(), z.any());
 
+// Trusted-proxy rule (shared/client-ip.ts). `cf-connecting-ip`, `x-real-ip`
+// and the leftmost X-Forwarded-For entry are all caller-written on an origin
+// that is not behind the proxy that sets them.
 function clientRateLimitKey(c: any): string {
-  const forwarded = c.req.header('x-forwarded-for')?.split(',')[0]?.trim();
-  const realIp = c.req.header('x-real-ip')?.trim();
-  const cfIp = c.req.header('cf-connecting-ip')?.trim();
-  return cfIp || realIp || forwarded || 'unknown';
+  return clientIpFromHeaders((name) => c.req.header(name)) ?? 'unknown';
 }
 
 function devicePollRateLimitKey(c: any, secret: string): string {

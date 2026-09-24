@@ -168,6 +168,12 @@ export interface ResolvedSandboxIngress {
   url: string;
   headers: Record<string, string>;
   effectivePort: number;
+  /**
+   * A credential the upstream also accepts as a query parameter and reads
+   * BEFORE its header form. Build request URLs with `ingressTargetUrl` so a
+   * client query parameter of the same name cannot shadow it.
+   */
+  queryToken?: { name: string; value: string };
   websocket?: {
     userContextQueryParam?: string;
     queryDefaults?: Record<string, string>;
