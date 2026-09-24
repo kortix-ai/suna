@@ -55,6 +55,7 @@ import {
 import { SOURCE_ICONS } from '@/features/workspace/project-sidebar/session-source-icons';
 import { SessionStatusMark } from '@/features/workspace/project-sidebar/session-status-mark';
 import { SessionTitle } from '@/features/workspace/project-sidebar/session-title';
+import { useSessionOpenIntent } from '@/features/workspace/project-sidebar/session-open-intent';
 import { useMediaQuery } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import {
@@ -830,6 +831,9 @@ function ProjectSessionRow({
   const t = useTranslations('sidebar');
   const [menuOpen, setMenuOpen] = useState(false);
   const descriptionId = useId();
+  // Start the session's open read (snapshot + row) on intent, so the click
+  // lands on a read that is already on the wire. See `session-open-intent.ts`.
+  const openIntent = useSessionOpenIntent(session.project_id, session.session_id);
 
   const deferAfterClose = (fn: () => void) => {
     setMenuOpen(false);
@@ -859,6 +863,7 @@ function ProjectSessionRow({
     <HoverPrefetchLink
       href={href}
       onClick={onNavigate}
+      {...openIntent}
       aria-busy={isSwitching || undefined}
       aria-current={isActive ? 'page' : undefined}
       aria-describedby={descriptionId}

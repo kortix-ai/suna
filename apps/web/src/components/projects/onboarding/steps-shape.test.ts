@@ -136,7 +136,7 @@ describe('plan step', () => {
 
   /**
    * THE `/new` dead-click fix. The gate falls back to the `[id]` route segment
-   * when nobody tells it which project to act on, and `/new` (`app/(app)/new`)
+   * when nobody tells it which project to act on, and `/new` (`app/[locale]/(app)/new`)
    * has no such segment — so an inferred project is `null`, `modal` is `null`,
    * and "Add a key" opens nothing while never calling `onContinue()`. This step
    * is 4 of 5 and passes no `onSkip` to `StepShell`, so its primary button is

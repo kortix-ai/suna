@@ -74,7 +74,7 @@ export function FilePreviewModal({
       HistoryContent={FileHistoryPopoverContent}
       renderFileIcon={(name) =>
         getFileIcon(name, {
-          className: tI18nHardcoded.raw('i18nComplete.text8db7e9afa45d'),
+          className: 'h-4 w-4 shrink-0 text-muted-foreground',
           variant: 'monochrome',
         })
       }

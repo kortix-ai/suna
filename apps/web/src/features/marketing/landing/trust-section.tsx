@@ -6,7 +6,7 @@ import { ArrowRightIcon } from '@/features/icon/arrow-right';
 import { cn } from '@/lib/utils';
 import { CheckIcon } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
-import Link from 'next/link';
+import Link from '@/components/site-link';
 import type { ReactNode } from 'react';
 import GDPR from '../trust/gdpr';
 import Soc2Type1 from '../trust/soc-2-type-1';

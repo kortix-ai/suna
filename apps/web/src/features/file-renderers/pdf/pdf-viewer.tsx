@@ -976,9 +976,7 @@ function PDFViewerThumbnails({
           pageRotationDelta % 2 === 1
             ? {
                 height: meta.width,
-                transform: tI18nComplete('text8c5f37b673ef', {
-                  value0: rotationToDegrees(pageRotationDelta),
-                }),
+                transform: `rotate(${rotationToDegrees(pageRotationDelta)}deg)`,
                 width: meta.height,
               }
             : {
@@ -986,9 +984,7 @@ function PDFViewerThumbnails({
                 transform:
                   pageRotationDelta === 0
                     ? undefined
-                    : tI18nComplete('text8c5f37b673ef', {
-                        value0: rotationToDegrees(pageRotationDelta),
-                      }),
+                    : `rotate(${rotationToDegrees(pageRotationDelta)}deg)`,
                 width: meta.width,
               };
 

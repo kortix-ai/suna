@@ -83,6 +83,18 @@ async function enableFlag(ctx: FlowContext, world: AgentPrincipalsWorld): Promis
   });
 }
 
+/** The escape hatch: a project may switch the model off for one release. */
+async function disableFlag(ctx: FlowContext, world: AgentPrincipalsWorld): Promise<void> {
+  await ctx.step(`switch project feature flag ${FLAG} OFF; read-back reports it off`, async () => {
+    const r = await world.owner.patch(
+      '/v1/projects/:projectId/features',
+      { feature: FLAG, enabled: false },
+      { params: { projectId: world.projectId } },
+    );
+    r.status(200).body().has(`$.experimental.${FLAG}`, false);
+  });
+}
+
 const filesOf = (s: AgentSession, projectId: string) =>
   s.client.get('/v1/projects/:projectId/files', { params: { projectId } });
 const secretsOf = (s: AgentSession, projectId: string) =>
@@ -335,10 +347,13 @@ flow(
     try {
       let memberRun!: AgentSession;
       let managerRun!: AgentSession;
-      await ctx.step('flag left at its default (off); commit `reader` [project.file.read]; mint member and manager runs', async () => {
+      await ctx.step(`${FLAG} is ON by default — the read-back proves it`, async () => {
         const read = await world.owner.get('/v1/projects/:projectId', { params: { projectId: project.id } });
         read.status(200);
-        if (read.json<any>().experimental?.[FLAG] === true) throw new Error(`${FLAG} is on by default`);
+        if (read.json<any>().experimental?.[FLAG] === false) throw new Error(`${FLAG} is off by default`);
+      });
+      await disableFlag(ctx, world);
+      await ctx.step('with the model switched off: commit `reader` [project.file.read]; mint member and manager runs', async () => {
         await world.writeManifest(manifest({ reader: { kortix_permissions: ['project.file.read'] } }));
         await world.grantRun('reader', member);
         await world.grantRun('reader', manager);
@@ -820,6 +835,7 @@ flow(
       'POST /v1/projects/:projectId/apps',
       'PATCH /v1/projects/:projectId/apps/:appId/access',
       'GET /v1/projects/:projectId/apps/:appId/agents',
+      'PUT /v1/projects/:projectId/agents/:agentName/scope',
       'DELETE /v1/projects/:projectId/apps/:appId',
       'POST /v1/projects/:projectId/resource-grants',
       'POST /v1/accounts/tokens',
@@ -865,6 +881,49 @@ flow(
         }
         if (agents[0]!.grant !== 'listed' || !agents[0]!.path.endsWith('#agents.reporter')) {
           throw new Error(`unexpected grant row ${JSON.stringify(agents[0])}`);
+        }
+      });
+      // The editor and `kortix agents scope --apps` both write the grant
+      // through the scope route, so `apps` has to round-trip on it exactly
+      // like `connectors` does — no whole-block /config PUT for one list.
+      await ctx.step('PUT /agents/bystander/scope {apps} writes the grant and answers with it', async () => {
+        const scoped = await world.owner.put('/v1/projects/:projectId/agents/:agentName/scope',
+          { apps: [appSlug] },
+          { params: { projectId: project.id, agentName: 'bystander' } });
+        scoped.status(200).body().has('$.apps[0]', appSlug);
+        const r = await world.owner.get('/v1/projects/:projectId/apps/:appId/agents',
+          { params: { projectId: project.id, appId } });
+        r.status(200);
+        const names = r.json<{ agents: Array<{ agent_name: string }> }>().agents.map((a) => a.agent_name).sort();
+        if (JSON.stringify(names) !== JSON.stringify(['bystander', 'reporter'])) {
+          throw new Error(`expected [bystander, reporter] after the scope write, got ${JSON.stringify(names)}`);
+        }
+      });
+      await ctx.step('PUT the same route with apps `all` replaces the list with the sentinel', async () => {
+        const scoped = await world.owner.put('/v1/projects/:projectId/agents/:agentName/scope',
+          { apps: 'all' },
+          { params: { projectId: project.id, agentName: 'bystander' } });
+        scoped.status(200).body().has('$.apps', 'all');
+        const r = await world.owner.get('/v1/projects/:projectId/apps/:appId/agents',
+          { params: { projectId: project.id, appId } });
+        r.status(200);
+        const row = r.json<{ agents: Array<{ agent_name: string; grant: string }> }>().agents
+          .find((a) => a.agent_name === 'bystander');
+        if (row?.grant !== 'all') {
+          throw new Error(`expected bystander to hold grant "all", got ${JSON.stringify(row)}`);
+        }
+      });
+      await ctx.step('PUT with apps `[]` clears the grant again', async () => {
+        const scoped = await world.owner.put('/v1/projects/:projectId/agents/:agentName/scope',
+          { apps: [] },
+          { params: { projectId: project.id, agentName: 'bystander' } });
+        scoped.status(200);
+        const r = await world.owner.get('/v1/projects/:projectId/apps/:appId/agents',
+          { params: { projectId: project.id, appId } });
+        r.status(200);
+        const names = r.json<{ agents: Array<{ agent_name: string }> }>().agents.map((a) => a.agent_name);
+        if (JSON.stringify(names) !== JSON.stringify(['reporter'])) {
+          throw new Error(`expected exactly [reporter] after clearing, got ${JSON.stringify(names)}`);
         }
       });
       await enableFlag(ctx, world);

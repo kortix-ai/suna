@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { PRELOAD_LANGS } from './code/shiki-highlighter';
+import { isKnownLanguage } from './code/shiki-highlighter';
 import {
   LANGUAGE_ALIASES,
   hasLinkReferenceDefinition,
@@ -11,7 +11,6 @@ import {
   looksLikeFilePath,
   looksLikeUrl,
   normalizeLanguage,
-  shikiWasmAvailable,
   shouldUseNextLink,
 } from './unified-markdown-utils';
 
@@ -98,10 +97,9 @@ describe('normalizeLanguage', () => {
     expect(normalizeLanguage('go')).toBe('go');
   });
 
-  test('every alias resolves to a preloaded grammar so highlightSync can hit', () => {
-    const preloaded = new Set<string>(PRELOAD_LANGS);
+  test('every alias resolves to a grammar id Shiki can load', () => {
     const stranded = Object.entries(LANGUAGE_ALIASES)
-      .filter(([, target]) => !preloaded.has(target))
+      .filter(([, target]) => !isKnownLanguage(target))
       .map(([alias, target]) => `${alias} -> ${target}`);
     expect(stranded).toEqual([]);
   });
@@ -237,28 +235,3 @@ describe('looksLikeFilePath', () => {
   });
 });
 
-// Regression for Better Stack 1604d50a (`WebAssembly is not defined`,
-// `Can't find variable: WebAssembly`): the Shiki highlighter singleton must not
-// be eagerly started when WebAssembly is unavailable, or its rejection fires
-// `onunhandledrejection` → Sentry on every page load for visitors whose browser
-// blocks/disables WebAssembly (privacy browsers, hardened WebViews, spoofed-UA
-// bots). The renderer gates the eager init on this guard.
-describe('shikiWasmAvailable', () => {
-  test('returns true in the normal test environment (WebAssembly present)', () => {
-    // bun's test runtime exposes WebAssembly, matching every modern browser.
-    expect(shikiWasmAvailable()).toBe(true);
-  });
-
-  test('returns false when WebAssembly is undefined (the BS 1604d50a context)', () => {
-    const original = (globalThis as { WebAssembly?: unknown }).WebAssembly;
-    try {
-      // Simulate a browser/context that blocks or disables WebAssembly.
-      // `delete` mirrors how such runtimes expose no WebAssembly global at all.
-      delete (globalThis as { WebAssembly?: unknown }).WebAssembly;
-      expect(shikiWasmAvailable()).toBe(false);
-    } finally {
-      // Restore — other tests (and the live Shiki init) need WebAssembly.
-      (globalThis as { WebAssembly?: unknown }).WebAssembly = original;
-    }
-  });
-});

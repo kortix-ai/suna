@@ -137,7 +137,8 @@ describe('autoClaimPendingInvites', () => {
   test('claims a plain account invite (no bootstrap grants): joins + stamps accepted_at', async () => {
     state.pending = [makeInvite({ bootstrapGrants: null })];
 
-    await autoClaimPendingInvites('user-1', 'invitee@example.com');
+    // The count lets GET /v1/accounts skip its membership re-read when 0.
+    expect(await autoClaimPendingInvites('user-1', 'invitee@example.com')).toBe(1);
 
     expect(memberInserts).toHaveLength(1);
     expect(memberInserts[0]).toMatchObject({
@@ -156,7 +157,7 @@ describe('autoClaimPendingInvites', () => {
   test('does NOT claim a project invite (carries bootstrap grants): stays pending', async () => {
     state.pending = [makeInvite({ bootstrapGrants: [{ project_id: 'p1', role: 'manager' }] })];
 
-    await autoClaimPendingInvites('user-1', 'invitee@example.com');
+    expect(await autoClaimPendingInvites('user-1', 'invitee@example.com')).toBe(0);
 
     // No membership row and no accepted_at stamp → the inviter keeps seeing
     // "pending" and the recipient still gets the accept/decline dialog.
@@ -175,7 +176,7 @@ describe('autoClaimPendingInvites', () => {
       }),
     ];
 
-    await autoClaimPendingInvites('user-1', 'invitee@example.com');
+    expect(await autoClaimPendingInvites('user-1', 'invitee@example.com')).toBe(1);
 
     expect(memberInserts).toHaveLength(1);
     expect(memberInserts[0]).toMatchObject({ accountId: 'acct-plain' });
@@ -186,7 +187,7 @@ describe('autoClaimPendingInvites', () => {
   test('no-ops on empty email without touching the db', async () => {
     state.pending = [makeInvite({})];
 
-    await autoClaimPendingInvites('user-1', '');
+    expect(await autoClaimPendingInvites('user-1', '')).toBe(0);
 
     expect(memberInserts).toHaveLength(0);
     expect(roleGrants).toHaveLength(0);

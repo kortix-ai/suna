@@ -218,6 +218,98 @@ for (const runtime of runtimes) {
         (desktop ? " KortixDesktop/0.1.0" : ""),
     });
 
+    test("settings and account exits use the correct host alignment", async ({
+      page,
+      baseURL,
+      desktopApp,
+    }) => {
+      test.setTimeout(120_000);
+      if (desktopApp) {
+        const window = await desktopApp.browserWindow(page);
+        await window.evaluate((nativeWindow) => nativeWindow.setContentSize(1100, 700));
+      } else {
+        await page.setViewportSize({ width: 1100, height: 700 });
+      }
+      const databaseUrl =
+        process.env.KE2E_DATABASE_URL || process.env.E2E_DATABASE_URL;
+      if (!databaseUrl)
+        throw new Error("Desktop parity requires the configured test database");
+      // The macOS row rule keys on `data-desktop-platform`, which the app reads
+      // from `navigator.platform`, not from the user agent. Pin it, or a Linux
+      // CI runner renders the Linux desktop layout and the row stays left.
+      await page.addInitScript(() =>
+        Object.defineProperty(navigator, "platform", { get: () => "MacIntel" }),
+      );
+      const email = `e2e-desktop-exit-${randomUUID()}@example.test`;
+      const user = await createAuthUser(email, authOptions);
+      const session = await signIn(email, authOptions);
+      let project: ManifestProject | undefined;
+      try {
+        const accounts = await api<{ account_id: string }[]>(
+          session.access_token,
+          "GET",
+          "/accounts",
+        );
+        project = await createManifestProject({
+          api,
+          accessToken: session.access_token,
+          accountId: accounts[0].account_id,
+          userId: user.id,
+          name: "Desktop exit alignment",
+          databaseUrl,
+        });
+        await installBrowserSessionDirect(
+          page,
+          session,
+          `${baseURL}/projects/${project.id}`,
+          authOptions,
+        );
+        await selectAccountForUi(page, accounts[0].account_id);
+        await dismissOnboarding(page);
+        await page.keyboard.press("Meta+,");
+        const settings = page.getByRole("dialog");
+        await expect(settings).toBeVisible();
+        const settingsRow = settings.locator(".kx-overlay-sidebar-titlebar");
+        const settingsBack = settingsRow.getByRole("button", { name: /Back to app/i });
+        await expect(settingsBack).toBeVisible();
+        expect(
+          await settingsRow.evaluate((row) => getComputedStyle(row).justifyContent),
+        ).toBe(desktop ? "flex-end" : "flex-start");
+        if (!desktop) {
+          const rowBox = (await settingsRow.boundingBox())!;
+          const backBox = (await settingsBack.boundingBox())!;
+          expect(backBox.x - rowBox.x).toBeLessThan(24);
+        }
+        await settingsBack.click();
+
+        await page.goto(
+          `${baseURL}/projects/${project.id}?accountId=${accounts[0].account_id}`,
+        );
+        const hub = page.getByRole("dialog");
+        await expect(hub).toBeVisible();
+        const hubRow = hub.locator(".kx-overlay-sidebar-titlebar");
+        const back = hubRow.getByRole("button", { name: /Back to app/i });
+        const search = hubRow.getByRole("button", { name: /Search/i });
+        await expect(back).toBeVisible();
+        await expect(search).toBeVisible();
+        expect(
+          await hubRow.evaluate((row) => getComputedStyle(row).justifyContent),
+        ).toBe(desktop ? "flex-end" : "space-between");
+        const backBox = (await back.boundingBox())!;
+        const searchBox = (await search.boundingBox())!;
+        expect(backBox.x + backBox.width).toBeLessThan(searchBox.x);
+        if (!desktop) {
+          const rowBox = (await hubRow.boundingBox())!;
+          expect(backBox.x - rowBox.x).toBeLessThan(24);
+        }
+        await back.click();
+        await expect(hub).not.toBeVisible();
+      } finally {
+        await project?.dispose();
+        await deleteAuthUser(user.id, authOptions);
+      }
+    });
+
     test("sidebar, settings, agents and connectors remain aligned and clickable", async ({
       page,
       baseURL,

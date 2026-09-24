@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { OPENCODE_VERSION } from '@kortix/shared';
 import { projectSnapshotBuilds } from '@kortix/db';
 import { db } from '../shared/db';
+import { runWorkerTick } from '../shared/audit-scope';
 import { resolveCommitSha, type GitBackedProject } from '../projects/git';
 import { getSandboxProvider, type BuildLogTap, type BuildSnapshotResult, type ProviderState, type SandboxProviderAdapter } from './providers';
 import { config, type SandboxProviderName } from '../config';
@@ -1151,7 +1152,7 @@ export function metaSnapshotName(contentHash: string): string {
  * Delete this environment's superseded meta images.
  *
  * The meta fingerprint hashes the source trees of the agent, CLI, SDK, shared,
- * starter and friends, so it changes on samplecolly every commit that touches
+ * starter and friends, so it changes on essentially every commit that touches
  * them — roughly every deploy. Nothing reaped the old ones: `ensureMetaSandboxImage`
  * deleted a snapshot only when its own build had FAILED, never when a newer one
  * superseded it. Measured 2026-08-12: 118 `kortix-meta-*` snapshots, all under
@@ -1392,6 +1393,10 @@ export function kickStartupPreBuild(): void {
   if (process.env.KORTIX_SKIP_STARTUP_PREBUILD === 'true') return;
   if (startupPreBuildKicked) return;
   startupPreBuildKicked = true;
+  void runWorkerTick('startup-prebuild', startupPreBuild);
+}
+
+function startupPreBuild(): void {
   for (const providerId of templateBuildProviders()) {
     void ensurePlatformDefaultImage({ source: 'startup', provider: providerId })
       .then((r) =>

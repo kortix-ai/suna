@@ -14,6 +14,12 @@ export interface StreamRelayOptions {
   signal?: AbortSignal;
   heartbeatMs?: number;
   inactivityTimeoutMs?: number;
+  /**
+   * Rewrites the relayed text before the client receives it. Called only with
+   * whole lines (a partial trailing line waits for the next chunk). Usage and
+   * error scanning always read the original upstream text.
+   */
+  rewriteLines?: (text: string) => string;
 }
 
 const HEARTBEAT = new TextEncoder().encode(': keep-alive\n\n');
@@ -33,6 +39,24 @@ export function relayStream(options: StreamRelayOptions): ReadableStream<Uint8Ar
   const inactivityMs = options.inactivityTimeoutMs ?? DEFAULT_INACTIVITY_MS;
   let lastByteAt = Date.now();
   let tail = '';
+  // Upstream text after the last newline, held back until its line completes.
+  let carry = '';
+  const encoder = new TextEncoder();
+  const relay = (controller: ReadableStreamDefaultController<Uint8Array>, value: Uint8Array, text: string): void => {
+    if (!options.rewriteLines) {
+      controller.enqueue(value);
+      return;
+    }
+    const buffered = carry + text;
+    const cut = buffered.lastIndexOf('\n') + 1;
+    carry = buffered.slice(cut);
+    if (cut > 0) controller.enqueue(encoder.encode(options.rewriteLines(buffered.slice(0, cut))));
+  };
+  const flushCarry = (controller: ReadableStreamDefaultController<Uint8Array>): void => {
+    if (!options.rewriteLines || !carry) return;
+    controller.enqueue(encoder.encode(options.rewriteLines(carry)));
+    carry = '';
+  };
   let settled = false;
   let pendingRead: ReturnType<typeof reader.read> | null = null;
 
@@ -106,7 +130,11 @@ export function relayStream(options: StreamRelayOptions): ReadableStream<Uint8Ar
           // line has no trailing newline keeps its usage frame in the carry,
           // and without this that turn is billed as zero tokens.
           const trailing = decoder.decode();
-          if (trailing) scanner.push(trailing);
+          if (trailing) {
+            scanner.push(trailing);
+            carry += trailing;
+          }
+          flushCarry(controller);
           scanner.finish();
           await settle();
           controller.close();
@@ -117,7 +145,7 @@ export function relayStream(options: StreamRelayOptions): ReadableStream<Uint8Ar
         const text = decoder.decode(value, { stream: true });
         scanner.push(text);
         tail = (tail + text).slice(-2);
-        controller.enqueue(value);
+        relay(controller, value, text);
       } catch (error) {
         if (timer) clearTimeout(timer);
         const streamError = { message: messageOf(error), code: 'upstream_stream_error' };

@@ -117,7 +117,7 @@ export const FRESHNESS = {
    * pre-migration window was 60s, every change to it arrives through this
    * app's own mutations (`sandbox-template-form.tsx`, `sandbox-view.tsx` —
    * all three invalidate this key), and `refetchOnMount: true` at 5s meant a
-   * refetch on samplecolly every project landing. `config` restores the
+   * refetch on essentially every project landing. `config` restores the
    * original window and matches the twin below, which reads the same
    * response.
    */

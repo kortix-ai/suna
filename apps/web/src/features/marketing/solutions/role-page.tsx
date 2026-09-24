@@ -6,7 +6,7 @@ import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
 import { ROLES_TRANSLATION_KEYS } from '@/i18n/roles-translation-keys.generated';
 import { cn } from '@/lib/utils';
 import { useTranslations } from '@/i18n/use-translations';
-import Link from 'next/link';
+import Link from '@/components/site-link';
 import type { ReactNode } from 'react';
 import { ArtifactPanel } from './artifact';
 import { ROLES } from './registry';

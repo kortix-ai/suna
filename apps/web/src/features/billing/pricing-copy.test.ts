@@ -3,7 +3,7 @@ import { readFileSync } from '@/i18n/test-source';
 import { join } from 'node:path';
 
 const pricingPageSource = readFileSync(
-  join(import.meta.dir, '../../../src/app/(public)/(marketing)/pricing/page.tsx'),
+  join(import.meta.dir, '../../../src/app/[locale]/(public)/(marketing)/pricing/page.tsx'),
   'utf8',
 );
 const calculatorSource = readFileSync(
