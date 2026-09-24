@@ -78,7 +78,7 @@ describe('model fallback chains (route.fallbackModels)', () => {
     });
     return { response, usage, traces, calls, resolved };
   }
-  const isPrimary = (url: string) => url.startsWith('https://primary.example');
+  const isPrimary = (url: string) => new URL(url).host === 'primary.example';
 
   test('a transient primary failure moves the request to the configured fallback model', async () => {
     const { response, usage, traces, calls, resolved } = await run({
