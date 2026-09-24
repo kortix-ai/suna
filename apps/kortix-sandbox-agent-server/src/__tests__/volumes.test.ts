@@ -137,6 +137,7 @@ function fakeDeps(opts: {
   const calls: Array<{ kind: 'run' | 'spawn'; cmd: string; args: string[]; env?: Record<string, string> }> = []
   const notes: string[] = []
   const madeDirs: string[] = []
+  const touched: string[] = []
   let clock = 0
   const deps: VolumeDeps = {
     run: async (cmd, args) => {
@@ -144,6 +145,9 @@ function fakeDeps(opts: {
     },
     makeDir: (path) => {
       madeDirs.push(path)
+    },
+    touchFile: (path) => {
+      touched.push(path)
     },
     spawnDetached: (cmd, args, env) => {
       calls.push({ kind: 'spawn', cmd, args, env })
@@ -173,7 +177,7 @@ function fakeDeps(opts: {
       ),
     now: () => clock,
   }
-  return { deps, calls, notes, mounted, madeDirs }
+  return { deps, calls, notes, mounted, madeDirs, touched }
 }
 
 function store(env: Record<string, string>) {
@@ -191,7 +195,7 @@ describe('startVolumes', () => {
   })
 
   test('mounts through sudo with credentials from the project env store', async () => {
-    const { deps, calls, notes } = fakeDeps({ mountOnSpawn: true })
+    const { deps, calls, notes, touched } = fakeDeps({ mountOnSpawn: true })
     const handle = startVolumes({
       env: { KORTIX_VOLUMES: envelope([DATA]) },
       projectEnv: store({ DATA_KEY_ID: 'AKIAEXAMPLE', DATA_SECRET: 's3cr3t' }),
@@ -200,10 +204,14 @@ describe('startVolumes', () => {
     // The note exists before any await: OpenCode's config composes right after.
     expect(notes[0]).toContain('still mounting')
     await handle.ready
-    expect(calls[0]).toEqual({ kind: 'run', cmd: 'sudo', args: ['-n', 'mkdir', '-p', '/volumes/data', '/var/log/kortix-volumes'] })
-    expect(calls[1]!.cmd).toBe('sudo')
-    expect(calls[1]!.args.slice(0, 4)).toEqual(['-n', '-E', 'rclone', 'mount'])
-    expect(calls[1]!.env).toMatchObject({ RCLONE_S3_ACCESS_KEY_ID: 'AKIAEXAMPLE', RCLONE_S3_SECRET_ACCESS_KEY: 's3cr3t' })
+    expect(calls[0]).toEqual({ kind: 'run', cmd: 'sudo', args: ['-n', 'mkdir', '-p', '/volumes/data'] })
+    // The log dir belongs to the daemon user and the log file is created by it,
+    // so the agent can read why a mount failed (rclone makes missing logs 0640 root).
+    expect(calls[1]).toEqual({ kind: 'run', cmd: 'sudo', args: ['-n', 'install', '-d', '-o', '1000', '-g', '1000', '/var/log/kortix-volumes'] })
+    expect(touched).toEqual(['/var/log/kortix-volumes/data.log'])
+    expect(calls[2]!.cmd).toBe('sudo')
+    expect(calls[2]!.args.slice(0, 4)).toEqual(['-n', '-E', 'rclone', 'mount'])
+    expect(calls[2]!.env).toMatchObject({ RCLONE_S3_ACCESS_KEY_ID: 'AKIAEXAMPLE', RCLONE_S3_SECRET_ACCESS_KEY: 's3cr3t' })
     expect(notes.at(-1)).toContain('- `/volumes/data`: s3://acme-data/training/ (read-write).')
   })
 
@@ -225,7 +233,7 @@ describe('startVolumes', () => {
   test('as root, rclone runs without sudo', async () => {
     const { deps, calls } = fakeDeps({ uid: 0, mountOnSpawn: true })
     await startVolumes({ env: { KORTIX_VOLUMES: envelope([{ ...DATA, access_key_id_env: undefined, secret_access_key_env: undefined }]) }, projectEnv: store({}), deps }).ready
-    expect(calls.map((c) => c.cmd)).toEqual(['mkdir', 'rclone'])
+    expect(calls.map((c) => c.cmd)).toEqual(['mkdir', 'install', 'rclone'])
   })
 
   test('an API-side error and a missing credential fail their volume only', async () => {
@@ -235,15 +243,30 @@ describe('startVolumes', () => {
       projectEnv: store({ DATA_KEY_ID: 'AKIAEXAMPLE' }),
       deps,
     }).ready
-    expect(calls).toEqual([])
+    // Nothing is mounted or spawned; only the no-op cleanup of a mount point.
+    expect(calls).toEqual([{ kind: 'run', cmd: 'sudo', args: ['-n', 'rmdir', '/volumes/data'] }])
     expect(notes.at(-1)).toContain('- `/volumes/ghost`: NOT MOUNTED. volume "ghost" is not declared')
     expect(notes.at(-1)).toContain('- `/volumes/data`: NOT MOUNTED. credential env var DATA_SECRET is empty in this session')
   })
 
-  test('an image without rclone reports how to fix it', async () => {
-    const { deps, notes } = fakeDeps({ spawnExit: 127 })
+  test('an image without rclone reports how to fix it, and leaves no mount point behind', async () => {
+    const { deps, notes, calls } = fakeDeps({ spawnExit: 127 })
     await startVolumes({ env: { KORTIX_VOLUMES: envelope([{ name: 'pub', mode: 'read-only', type: 's3', bucket: 'b' }]) }, projectEnv: store({}), deps }).ready
     expect(notes.at(-1)).toContain('NOT MOUNTED. rclone is not installed in this sandbox image; rebuild the sandbox template')
+    // Regression: an empty /volumes/<name> looked like a volume; an agent wrote
+    // its output there on a real session (local disk, never uploaded).
+    expect(calls.at(-1)).toEqual({ kind: 'run', cmd: 'sudo', args: ['-n', 'rmdir', '/volumes/pub'] })
+  })
+
+  test("rclone's 'is a file not a directory' for a prefix is explained as a rejected request", async () => {
+    const { deps, notes } = fakeDeps({
+      spawnExit: 1,
+      log: '2026/09/24 21:34:48 CRITICAL: Failed to create file system for ":s3:agent-out/e2e": is a file not a directory\n',
+    })
+    await startVolumes({ env: { KORTIX_VOLUMES: envelope([{ name: 'out', mode: 'read-write', type: 's3', bucket: 'agent-out', prefix: 'e2e' }]) }, projectEnv: store({}), deps }).ready
+    expect(notes.at(-1)).toContain(
+      '- `/volumes/out`: NOT MOUNTED. S3 rejected the request for prefix "e2e" in bucket "agent-out" (or that prefix is an object, not a folder). Check the key, the bucket, and the endpoint. rclone: Failed to create file system for ":s3:agent-out/e2e": is a file not a directory',
+    )
   })
 
   test('a rejected listing reports the S3 error rclone logged', async () => {

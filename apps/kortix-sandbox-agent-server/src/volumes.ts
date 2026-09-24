@@ -23,7 +23,7 @@
  * (VOLUMES_INSTRUCTION_PATH) and in its log. It never fails the boot.
  */
 import { execFile, spawn } from 'node:child_process'
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { readdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { logger } from './logger'
@@ -208,6 +208,8 @@ export type VolumeDeps = {
   run(cmd: string, args: string[]): Promise<void>
   /** mkdir -p as THIS process's user (never through sudo). */
   makeDir(path: string): void
+  /** Create an empty file (or keep an existing one) as THIS process's user. */
+  touchFile(path: string): void
   /** Start a long-lived process detached from this daemon. Resolves with its exit, if it exits. */
   spawnDetached(cmd: string, args: string[], env: Record<string, string>): { exited: Promise<number | null> }
   isMounted(mountPoint: string): boolean
@@ -236,6 +238,9 @@ export const systemVolumeDeps = (): VolumeDeps => ({
     }),
   makeDir: (path) => {
     mkdirSync(path, { recursive: true })
+  },
+  touchFile: (path) => {
+    appendFileSync(path, '', { mode: 0o644 })
   },
   spawnDetached: (cmd, args, env) => {
     const child = spawn(cmd, args, { env, detached: true, stdio: 'ignore' })
@@ -279,11 +284,45 @@ function lastLoggedError(log: string): string | null {
   return line ? line.replace(/^.*?\b(ERROR|CRITICAL)\s*:\s*/, '').slice(0, 300) : null
 }
 
+/**
+ * rclone checks whether a `prefix` is an object with a HEAD request. When S3
+ * REJECTS that HEAD (bad key, wrong endpoint, signature mismatch) rclone logs
+ * "is a file not a directory" — true only if the prefix really is an object.
+ * Say what it almost always means, and keep rclone's words.
+ */
+export function explainMountError(raw: string, spec: MountableVolume): string {
+  if (spec.prefix && /is a file not a directory/.test(raw)) {
+    return `S3 rejected the request for prefix "${spec.prefix}" in bucket "${spec.bucket}" (or that prefix is an object, not a folder). Check the key, the bucket, and the endpoint. rclone: ${raw}`
+  }
+  return raw
+}
+
 function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T | 'timeout'> {
   return Promise.race([promise, new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), Math.max(0, ms)))])
 }
 
 async function mountOne(
+  spec: MountableVolume,
+  secrets: Record<string, string>,
+  deps: VolumeDeps,
+  deadline: number,
+): Promise<VolumeStatus> {
+  const result = await attemptMount(spec, secrets, deps, deadline)
+  const mountPoint = volumeMountPoint(spec.name)
+  if (result.state === 'failed' && !deps.isMounted(mountPoint)) {
+    // Leave no directory behind. An empty /volumes/<name> reads as a working
+    // volume; on a real session the agent wrote its output there (local disk,
+    // never uploaded). Gone, a write fails loudly. rmdir refuses non-empty.
+    await asRoot(deps, 'rmdir', [mountPoint]).catch(() => {})
+  }
+  return result
+}
+
+function asRoot(deps: VolumeDeps, cmd: string, args: string[]): Promise<void> {
+  return deps.uid === 0 ? deps.run(cmd, args) : deps.run('sudo', ['-n', cmd, ...args])
+}
+
+async function attemptMount(
   spec: MountableVolume,
   secrets: Record<string, string>,
   deps: VolumeDeps,
@@ -300,7 +339,8 @@ async function mountOne(
       Math.min(PROBE_MS, deadline - deps.now()),
     )
     if (listed === 'ok' || listed === 'timeout') return { state: 'mounted' }
-    return { state: 'failed', reason: lastLoggedError(deps.readLog(logFile)) ?? `listing ${mountPoint} failed: ${listed.message}` }
+    const logged = lastLoggedError(deps.readLog(logFile))
+    return { state: 'failed', reason: logged ? explainMountError(logged, spec) : `listing ${mountPoint} failed: ${listed.message}` }
   }
 
   // A daemon restart inside a live box finds its earlier mount still up: reuse it.
@@ -319,12 +359,20 @@ async function mountOne(
   } catch (err) {
     return { state: 'failed', reason: `could not create the volume cache ${cacheDir}: ${(err as Error).message}` }
   }
-  // Only these two are root-owned by design (/ and /var/log are root's).
+  // /volumes and /var/log are root's. The log dir and file belong to the
+  // daemon user so the agent (and the failure report below) can read them:
+  // rclone, as root, appends to an existing file and keeps its owner and mode,
+  // but creates a missing one root-only (0640) — seen on a real session.
   try {
-    const rootDirs = [mountPoint, VOLUME_LOG_DIR]
-    await (root ? deps.run('mkdir', ['-p', ...rootDirs]) : deps.run('sudo', ['-n', 'mkdir', '-p', ...rootDirs]))
+    await asRoot(deps, 'mkdir', ['-p', mountPoint])
+    await asRoot(deps, 'install', ['-d', '-o', String(deps.uid), '-g', String(deps.gid), VOLUME_LOG_DIR])
   } catch (err) {
     return { state: 'failed', reason: `could not create ${mountPoint}: ${(err as Error).message}` }
+  }
+  try {
+    deps.touchFile(logFile)
+  } catch (err) {
+    logger.warn('[volumes] could not pre-create the mount log; it will be root-only', { logFile, err: (err as Error).message })
   }
   const args = rcloneMountArgs(spec, { mountPoint, cacheDir, logFile, uid: deps.uid, gid: deps.gid })
   const env = { PATH: process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin', ...credentials.env }
@@ -338,7 +386,7 @@ async function mountOne(
     if (exitCode !== undefined) {
       const logged = lastLoggedError(deps.readLog(logFile))
       const missing = exitCode === 127 || exitCode === -1 ? 'rclone is not installed in this sandbox image; rebuild the sandbox template' : null
-      return { state: 'failed', reason: logged ?? missing ?? `rclone exited with code ${exitCode}` }
+      return { state: 'failed', reason: (logged && explainMountError(logged, spec)) ?? missing ?? `rclone exited with code ${exitCode}; see ${logFile}` }
     }
     if (deps.now() >= deadline) {
       return { state: 'failed', reason: `rclone did not mount within ${MOUNT_TIMEOUT_MS / 1000} s; see ${logFile}` }
