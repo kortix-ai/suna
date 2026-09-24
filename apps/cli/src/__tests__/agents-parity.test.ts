@@ -41,6 +41,7 @@ const REVIEWER_BLOCK = {
   connectors: ['slack'],
   connectors_required: [],
   secrets: 'all',
+  apps: ['reports-dashboard'],
   skills: 'all',
   kortix_permissions: 'all',
   workspace: 'runtime',
@@ -106,6 +107,7 @@ function startServer(): string {
           env: b.env ?? 'all',
           connectors: b.connectors ?? [],
           connectors_required: b.connectors_required ?? [],
+          apps: b.apps ?? [],
         });
       }
       if (p === '/agents/ghost/scope' && req.method === 'PUT') {
@@ -191,6 +193,9 @@ describe('kortix agents — default, scope, config', () => {
     expect(r.stdout).toContain('config <agent>');
     expect(r.stdout).toContain('project.agent.write');
     expect(r.stdout).toContain('project.customize.write');
+    // Apps are a per-agent resource, so the flag has to be discoverable from
+    // `--help` the same way `--connectors` is.
+    expect(r.stdout).toContain('--apps all|none|a,b');
   });
 
   test('the existing `model` surface is unchanged', async () => {
@@ -236,6 +241,7 @@ describe('kortix agents — default, scope, config', () => {
     expect(show.code).toBe(0);
     expect(show.stdout).toContain('secrets              all');
     expect(show.stdout).toContain('connectors           slack');
+    expect(show.stdout).toContain('apps                 reports-dashboard');
     expect(calls.at(-1)).toEqual({
       method: 'GET',
       path: `/v1/projects/${PROJECT}/agents/reviewer/config`,
@@ -263,6 +269,46 @@ describe('kortix agents — default, scope, config', () => {
       },
     ]);
     expect(write.stdout).toContain('reviewer scope updated');
+  });
+
+  test('scope --apps parses like --connectors and prints the apps row it wrote', async () => {
+    const config = writeConfig(startServer());
+    const list = await runCli(
+      ['agents', 'scope', 'reviewer', '--apps', 'reports-dashboard,example-org', '--project', PROJECT],
+      config,
+    );
+    expect(list.code).toBe(0);
+    expect(calls).toEqual([
+      {
+        method: 'PUT',
+        path: `/v1/projects/${PROJECT}/agents/reviewer/scope`,
+        body: { apps: ['reports-dashboard', 'example-org'] },
+      },
+    ]);
+    expect(list.stdout).toContain('apps                 reports-dashboard, example-org');
+
+    calls = [];
+    const all = await runCli(['agents', 'scope', 'reviewer', '--apps', 'all', '--project', PROJECT], config);
+    expect(all.code).toBe(0);
+    expect(calls.at(-1)?.body).toEqual({ apps: 'all' });
+    expect(all.stdout).toContain('apps                 all');
+
+    // `none` has no literal on this route, exactly as for secrets/connectors.
+    calls = [];
+    const none = await runCli(['agents', 'scope', 'reviewer', '--apps', 'none', '--project', PROJECT], config);
+    expect(none.code).toBe(0);
+    expect(calls.at(-1)?.body).toEqual({ apps: [] });
+    expect(none.stdout).toContain('apps                 none');
+  });
+
+  test('scope --show reports the apps grant in --json, defaulting to none', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(
+      ['agents', 'scope', 'reviewer', '--show', '--json', '--project', PROJECT],
+      config,
+    );
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.stdout).apps).toEqual(['reports-dashboard']);
   });
 
   test('scope --secrets all sends the `all` literal, and a missing name exits 2', async () => {

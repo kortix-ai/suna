@@ -156,6 +156,21 @@ Each row names the caller that the request proved:
 
 A refused request is a row with `outcome: denied`. `metadata.auth` records how the caller authenticated: the token id, never the secret. A Git clone is the action `git.clone`. A push is `git.push`, and `metadata.refs` lists each ref it created, updated, or deleted.
 
+### Actions
+
+Every row has an `action` named `domain.resource.verb`, and a title the web app and `kortix audit ls` show:
+
+| Action | Title | Written by |
+| --- | --- | --- |
+| `gateway.key.revoke` | Revoked LLM gateway key | A request to `DELETE /v1/projects/:projectId/gateway/keys/:keyId`. |
+| `iam.group.create` | Created group | The request that created the group. The row carries the new group in `after`. |
+| `secret.consumer.used` | Used secret | A sandbox that read a secret. |
+| `api.rate_limit.exceeded` | Hit API rate limit | A limiter that refused a request. `metadata.limiter` names it. |
+
+Each API route has exactly one action. A request's row keeps the route template in `metadata.http`, and never the raw path, which can carry a token. When a handler records its own event for the request, with the before and after state, that event is the request's only row. A request that matched no route is `api.route.unmatched`.
+
+Filter by an action prefix: `?action=iam.` on `GET /v1/accounts/:accountId/audit`, `kortix audit ls --action iam.`, or an audit webhook's `--action-prefix`. [Audit log actions](/docs/audit-actions) lists every action and its title. Rows written before 2026-09-24 carry `METHOD /template` as their action and show the same titles.
+
 Kortix background jobs act without a request: they expire grants and tunnel permissions, delete expired session branches, activate App deployments, and move projects between sandbox providers. Their rows have `source: worker`, and `metadata.auth.worker` names the job, for example `tunnel-cleanup` or `app-deployments`. An App deployment's row also names the member who started the deployment as its initiator.
 
 An anonymous request that names one of your projects is written to your log. Select these rows with `actor_type=anonymous`. Anonymous rows are rate-limited on each API process, so a flood of them cannot displace attributed rows. Health probes, CORS preflights, and anonymous traffic to a deployed App are not recorded.

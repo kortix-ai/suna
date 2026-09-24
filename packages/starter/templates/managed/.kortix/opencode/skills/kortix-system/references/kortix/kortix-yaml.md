@@ -149,7 +149,7 @@ must name a declared, enabled agent.
 | `skills`     | Skill names the agent may load. Same shape (default: `none`).                                   |
 | `kortix_permissions` | Kortix permissions: what it may do to the project (project-scoped iam actions), through the CLI, the API, or git. Same shape (default: `none`). `kortix_cli` is the deprecated spelling — still accepted with a validation warning. |
 | `workspace`  | `"runtime"` \| `"read"` \| `"branch"` — the git workspace mode granted to the agent.              |
-| `apps`       | Restricted or private Apps this agent may open, by slug. `["slug", …]` \| `"all"` \| `"none"` (default: `none`). The App gate also requires `project.app.read` in the agent's effective permissions. |
+| `apps`       | Restricted or private Apps this agent may open, by slug. `["slug", …]` \| `"all"` \| `"none"` (default: `none`). The App gate also requires `project.app.read` in the agent's effective permissions. Editable from Customize → Agents → the agent → Apps, or `kortix agents scope <agent> --apps <slug,slug>`. |
 
 ```yaml
 agents:
@@ -211,7 +211,7 @@ self-describing at a glance.
 | Sandbox runtime        | v2 `opencode:`                                                   |
 | Session bootstrap      | `env:` (advisory — surfaced to dashboard, not enforced)              |
 | Apps CLI               | `apps:` (local deployment defaults; deploy remains explicit)          |
-| Session token mint     | `agents:` (per-agent connectors/secrets/skills/kortix_permissions scope)     |
+| Session token mint     | `agents:` (per-agent connectors/secrets/skills/apps/kortix_permissions scope) |
 | Agent/model UI         | Server-side agent registry + LLM-gateway model catalog                |
 | Dashboard UI           | All of the above + `project:` + the raw manifest                     |
 
