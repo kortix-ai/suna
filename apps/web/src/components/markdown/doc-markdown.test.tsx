@@ -153,3 +153,19 @@ describe('DocMarkdown ordered-list marker gutter', () => {
     expect(tag).toContain('padding-inline-start:calc(var(--spacing) * 6 + 1ch)');
   });
 });
+
+describe('DocMarkdown — Streamdown link placeholder', () => {
+  // DocMarkdown never streams, so this only arrives written literally. It
+  // shares UnifiedMarkdown's sanitize schema, which now lets the placeholder
+  // scheme through, so it must render as text here too — never as an anchor.
+  test('renders the label as text, not an anchor or "[blocked]"', () => {
+    const html = renderToStaticMarkup(
+      withIntl(<DocMarkdown content="[Connect Outlook](streamdown:incomplete-link)" />),
+    );
+
+    expect(html).toContain('Connect Outlook');
+    expect(html).not.toContain('<a');
+    expect(html).not.toContain('[blocked]');
+    expect(html).not.toContain('streamdown:');
+  });
+});

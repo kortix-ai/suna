@@ -9,18 +9,24 @@
  *   /projects/[id]/sessions sessions — every session of the project (drawer)
  *   /projects/[id]/files    files    — the project's files (drawer)
  *   /projects/[id]/account  account  — the Account page (drawer avatar)
+ *   /projects/[id]/page     page     — a sub-page (`?pageId=`), pushed over
+ *                                      the page it was opened from: project
+ *                                      Settings from Settings, Schedules or
+ *                                      Secrets from project Settings
  *
- * The stack is never deeper than one screen over project home: `[index]` or
- * `[index, X]`. Every project page shows the hamburger, and the drawer opens
- * on every project route. The drawer pushes `sessions`, `files`, or `account`
- * over home, and replaces a covering route with them
+ * The stack is `[index]`, `[index, X]`, or `[index, X, page, …]`. The
+ * drawer never deepens it: it pushes `sessions`, `files`, or `account` over
+ * home, replaces a covering route with them, and drops any sub-pages
  * (lib/session/project-stack, ProjectScreen). A covering route replaces
- * itself with the view when a session opens (useCoveringRoute).
+ * itself with the view when a session opens (useCoveringRoute). Every
+ * project page shows the hamburger and the drawer opens from its left edge,
+ * except a sub-page: it shows Go back, and its left edge goes back.
  *
- * Back: Android back from a covering route returns to project home. iOS has
- * no swipe-back in this stack: the left edge opens the drawer. Back from
- * project home never leaves the project (see ProjectScreen); only the
- * project menu's All projects opens the Projects list.
+ * Back: a sub-page pops one level (Go back, Android back, iOS swipe-back),
+ * to the screen it was opened from, whose state is intact (it stayed
+ * mounted under the sub-page). Android back from a covering route returns
+ * to project home. Back from project home never leaves the project (see
+ * ProjectScreen).
  *
  * ProjectScreen is the `[id]` layout. It owns the connect engine, the drawer,
  * the sheets and the tab-store scope, and gives home and view their content
@@ -38,6 +44,7 @@
 
 import * as React from 'react';
 import {
+  CommonActions,
   StackActions,
   useIsFocused,
   useNavigation,
@@ -45,13 +52,24 @@ import {
 } from 'expo-router/react-navigation';
 import type { NativeStackNavigationProp } from 'expo-router/build/react-navigation/native-stack';
 
+import { useLocalSearchParams } from 'expo-router';
 import type { ProjectSession } from '@/lib/projects/projects-client';
-import { PROJECT_VIEW_ROUTE } from '@/lib/session/project-stack';
+import {
+  PROJECT_HOME_ROUTE,
+  PROJECT_VIEW_ROUTE,
+  homeAndRoute,
+  isSubPageId,
+  subPageBackMove,
+  subPageLeaveMove,
+  type SubPageId,
+} from '@/lib/session/project-stack';
+import { haptics } from '@/lib/haptics';
 
 export {
   PROJECT_ACCOUNT_ROUTE,
   PROJECT_FILES_ROUTE,
   PROJECT_HOME_ROUTE,
+  PROJECT_PAGE_ROUTE,
   PROJECT_SESSIONS_ROUTE,
   PROJECT_VIEW_ROUTE,
 } from '@/lib/session/project-stack';
@@ -89,8 +107,23 @@ export interface ProjectRouteValue {
   openDrawer: () => void;
   /** The project drawer is open: a hamburger shows its X. */
   isDrawerOpen: boolean;
-  /** Open the project sheet (`CustomizeSheet`). Stable. Every project page's `···` calls it. */
-  openCustomizeSheet: () => void;
+  /**
+   * Open the session actions sheet (`SessionActionsSheet`, COR-140 Task 5) for
+   * one session: Rename, Share, Restart sandbox, Stop, Delete. Stable. The
+   * thread's `···`, the Sessions page's long press, and the drawer's session
+   * row long press all call it — one sheet instance, mounted once by
+   * ProjectScreen.
+   */
+  openSessionActions: (session: ProjectSession) => void;
+  /**
+   * Push a sub-page (`page` route) over the focused project route. Stable.
+   * Call it only from a screen that shows while the store is on the home
+   * state (a covering route, or another sub-page): a sub-page leaves as soon
+   * as the store is off home (ProjectSubPageRoute).
+   */
+  openSubPage: (pageId: SubPageId) => void;
+  /** The content of a sub-page. `onBack` pops the sub-page. */
+  renderSubPage: (pageId: SubPageId, onBack: () => void) => React.ReactNode;
 }
 
 const ProjectRouteContext = React.createContext<ProjectRouteValue | null>(null);
@@ -223,4 +256,65 @@ export function useCoveringRoute(): (session: ProjectSession) => void {
     },
     [openProjectSession, replaceWithView]
   );
+}
+
+/**
+ * Back from the sub-page whose screen `navigation` belongs to: pop to the
+ * screen under it, or, with nothing under it (a deep link), replace it with
+ * project home (`subPageBackMove`). The Go back button and Android back both
+ * call it.
+ */
+export function backFromSubPage(navigation: {
+  getState: () => { routes: { name: string }[] };
+  goBack: () => void;
+  dispatch: (action: ReturnType<typeof StackActions.replace>) => void;
+}) {
+  const stack = navigation.getState().routes.map((route) => route.name);
+  if (subPageBackMove(stack) === 'pop') navigation.goBack();
+  else navigation.dispatch(StackActions.replace(PROJECT_HOME_ROUTE));
+}
+
+/**
+ * `/projects/[id]/page?pageId=…` — a sub-page, pushed over the page it was
+ * opened from (`openSubPage`). Its `pageId` never changes, so the screen
+ * under it keeps its content and its state, and back returns to exactly that
+ * screen: the page's Go back, Android back (ProjectScreen, `androidBackMove`
+ * → `pop`), and the iOS swipe-back (this screen enables the gesture, and the
+ * drawer's edge swipe is off while it is on top).
+ *
+ * When the store leaves the home state while this route is focused (a
+ * session opened from a notification), the stack ends as [index, view]
+ * (`subPageLeaveMove`): a view under the sub-pages is popped to and swaps
+ * its content; otherwise the stack resets to [index, view], so a new view
+ * mounts with the store already off home. Removing this route never resets
+ * the store.
+ */
+export function ProjectSubPageRoute() {
+  const { renderSubPage, isHome } = useProjectRoute();
+  const { pageId } = useLocalSearchParams<{ pageId?: string }>();
+  const navigation = useNavigation<ProjectStackNavigation>();
+  const isFocused = useIsFocused();
+  // Set once the route starts to leave for the view, so it never dispatches twice.
+  const leavingRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (isHome || !isFocused || leavingRef.current) return;
+    leavingRef.current = true;
+    const state = navigation.getState();
+    if (subPageLeaveMove(state.routes.map((route) => route.name)) === 'pop-to-view') {
+      navigation.dispatch(StackActions.popTo(PROJECT_VIEW_ROUTE));
+      return;
+    }
+    navigation.dispatch(
+      CommonActions.reset(homeAndRoute(state.routes[0], { name: PROJECT_VIEW_ROUTE }))
+    );
+  }, [isHome, isFocused, navigation]);
+
+  const goBack = React.useCallback(() => {
+    haptics.tap();
+    backFromSubPage(navigation);
+  }, [navigation]);
+
+  if (!isSubPageId(pageId)) return null;
+  return <>{renderSubPage(pageId, goBack)}</>;
 }

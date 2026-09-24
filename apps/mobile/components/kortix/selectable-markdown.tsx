@@ -40,8 +40,7 @@ import {
   Pressable,
   LogBox,
   Platform,
-  Dimensions,
-  Linking,
+  useWindowDimensions,
 } from 'react-native';
 import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import Animated, { Easing, Keyframe } from 'react-native-reanimated';
@@ -86,6 +85,7 @@ import {
   type BlockKind,
   type StackContext,
 } from '@/lib/markdown/markdown-layout';
+import { openLink } from '@/lib/utils/open-link';
 
 // Suppress known warning from react-native-markdown-display library
 LogBox.ignoreLogs(['A props object containing a "key" prop is being spread into JSX']);
@@ -113,7 +113,7 @@ export interface SelectableMarkdownTextProps {
  */
 function openExternalLink(href: unknown) {
   if (!isSafeExternalLink(href)) return;
-  Linking.openURL(href.trim()).catch(() => {});
+  openLink(href).catch(() => {});
 }
 
 /**
@@ -684,7 +684,7 @@ function TextSelectionModal({ sheetRef, text, isDark, onDismiss }: TextSelection
   const snapPoints = useMemo(() => ['70%', '95%'], []);
   const [copied, setCopied] = useState(false);
   const [currentSnapIndex, setCurrentSnapIndex] = useState(0);
-  const screenHeight = Dimensions.get('window').height;
+  const { height: screenHeight } = useWindowDimensions();
   
   // Calculate available height based on current snap point
   const snapPercent = currentSnapIndex === 1 ? 0.95 : 0.70;

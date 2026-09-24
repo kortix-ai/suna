@@ -21,7 +21,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { useTheme } from 'next-themes';
 import Image from 'next/image';
 import type { ComponentType, ReactNode } from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 
 type SurfaceId = 'web' | 'slack' | 'teams' | 'email' | 'mobile' | 'cli' | 'sdk';
 
@@ -373,12 +373,14 @@ function MobileSurface() {
 const SHOWCASE_MEDIA = {
   light: {
     poster: '/media/showcase/kortix-showcase-poster.jpg',
+    phonePoster: '/media/showcase/kortix-showcase-poster-1280.jpg',
     phone: '/media/showcase/kortix-showcase-1280.mp4',
     retina: '/media/showcase/kortix-showcase-2880.mp4',
     mp4: '/media/showcase/kortix-showcase-1920.mp4',
   },
   dark: {
     poster: '/media/showcase/kortix-showcase-dark-poster.jpg',
+    phonePoster: '/media/showcase/kortix-showcase-dark-poster-1280.jpg',
     phone: '/media/showcase/kortix-showcase-dark-1280.mp4',
     retina: '/media/showcase/kortix-showcase-dark-2880.mp4',
     mp4: '/media/showcase/kortix-showcase-dark-1920.mp4',
@@ -409,21 +411,186 @@ const CLI_MEDIA = {
  * A `<video>` picks a `<source>` once, at load. A `media` attribute keyed on
  * `prefers-color-scheme` is therefore right on first paint and wrong for the
  * rest of the session the moment the viewer hits the theme toggle — the element
- * never re-runs resource selection. So the theme is NOT expressed as a media
- * query: `resolvedTheme` becomes the `key` of the `<video>`, React unmounts the
- * old element and mounts a new one, and the new element runs selection against
- * the other theme's sources. `media` is left to carry only what genuinely never
- * changes mid-session: device pixel ratio and viewport width.
+ * never re-runs resource selection. So a theme the OS query does not already
+ * express becomes the `key` of the `<video>`: React unmounts the old element
+ * and mounts a new one, which runs selection against that theme's sources.
+ * (The web panel keeps OS-keyed sources for the default case; see
+ * `ShowcaseVideo`.)
  *
- * Before mount `resolvedTheme` is undefined (the server cannot know it), so the
- * first paint is the light poster; next-themes resolves within the same commit
- * and a dark viewer gets one remount.
+ * Before mount the theme is unknown (`null`): the server cannot know it.
  */
-function useHeroTheme(): 'light' | 'dark' {
+function useHeroTheme(): 'light' | 'dark' | null {
   const { resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  return mounted && resolvedTheme === 'dark' ? 'dark' : 'light';
+  if (!mounted) return null;
+  return resolvedTheme === 'dark' ? 'dark' : 'light';
+}
+
+/** Mirrors the phone `<source>` breakpoint of the hero videos. */
+const PHONE_MEDIA = '(max-width: 480px)';
+/** next-themes defaults to the system theme, so before hydration the OS
+ *  preference is the best available guess for the theme the page paints in. */
+const SYSTEM_DARK_MEDIA = '(prefers-color-scheme: dark)';
+
+function subscribeSystemTheme(onChange: () => void): () => void {
+  const query = window.matchMedia(SYSTEM_DARK_MEDIA);
+  query.addEventListener('change', onChange);
+  return () => query.removeEventListener('change', onChange);
+}
+
+/** The OS colour scheme; `null` on the server and during hydration. */
+function useSystemTheme(): 'light' | 'dark' | null {
+  return useSyncExternalStore(
+    subscribeSystemTheme,
+    () => (window.matchMedia(SYSTEM_DARK_MEDIA).matches ? 'dark' : 'light'),
+    () => null,
+  );
+}
+
+/**
+ * The theme the hero media must show when it differs from what the OS media
+ * query already selects: an explicit next-themes choice, or a toggle. `null`
+ * while the OS query is right — including the whole server render and
+ * hydration, where the theme is unknown and the OS preference is the best
+ * guess (next-themes defaults to `system`).
+ */
+function themeOverride(
+  theme: 'light' | 'dark' | null,
+  systemTheme: 'light' | 'dark' | null,
+): 'light' | 'dark' | null {
+  return theme !== null && systemTheme !== null && theme !== systemTheme ? theme : null;
+}
+
+/**
+ * The walkthrough's first frame, as a real `<img>` in the server HTML.
+ *
+ * As a `<video poster>` it was invisible to the preload scanner, and the dark
+ * poster only appeared after hydration. A `<picture>` in the initial HTML lets
+ * the browser fetch the right poster at high priority before any script runs:
+ *
+ * - The dark sources follow the OS preference.
+ * - Only an override (see `themeOverride`) rewrites them to `all` or
+ *   `not all`. Any write to a `<source media>` restarts the `<img>` load, even
+ *   when the winning source stays the same, so the default path never writes.
+ * - Phones get the 1280 poster, matching the 1280 phone video encode.
+ */
+function ShowcasePoster({ override }: { override: 'light' | 'dark' | null }) {
+  const darkMedia =
+    override === null ? SYSTEM_DARK_MEDIA : override === 'dark' ? 'all' : 'not all';
+  const darkPhoneMedia =
+    override === null
+      ? `${SYSTEM_DARK_MEDIA} and ${PHONE_MEDIA}`
+      : override === 'dark'
+        ? PHONE_MEDIA
+        : 'not all';
+  return (
+    <picture>
+      <source media={darkPhoneMedia} srcSet={SHOWCASE_MEDIA.dark.phonePoster} />
+      <source media={darkMedia} srcSet={SHOWCASE_MEDIA.dark.poster} />
+      <source media={PHONE_MEDIA} srcSet={SHOWCASE_MEDIA.light.phonePoster} />
+      <img
+        src={SHOWCASE_MEDIA.light.poster}
+        alt=""
+        width={1920}
+        height={1200}
+        fetchPriority="high"
+        className="absolute inset-0 h-full w-full object-cover object-left-top motion-reduce:hidden"
+      />
+    </picture>
+  );
+}
+
+const RETINA_MEDIA = '(min-resolution: 2dppx) and (min-width: 1024px)';
+
+/** The three device tiers of one theme, narrowest condition first. `scheme`
+ *  prefixes every query with the OS colour-scheme condition. */
+function showcaseSources(theme: 'light' | 'dark', scheme?: string) {
+  const media = SHOWCASE_MEDIA[theme];
+  const withScheme = (query?: string) =>
+    scheme ? (query ? `${scheme} and ${query}` : scheme) : query;
+  return [
+    <source key={`${theme}-phone`} media={withScheme(PHONE_MEDIA)} src={media.phone} type="video/mp4" />,
+    <source key={`${theme}-retina`} media={withScheme(RETINA_MEDIA)} src={media.retina} type="video/mp4" />,
+    <source key={`${theme}-mp4`} media={withScheme()} src={media.mp4} type="video/mp4" />,
+  ];
+}
+
+/**
+ * The walkthrough video, layered over the poster. It carries no `poster`
+ * attribute (that would fetch a second copy of the poster the `<picture>`
+ * already has); until its first frame decodes it paints nothing, so the
+ * poster underneath shows through.
+ *
+ * A `<video>` picks a `<source>` once, at load, so the theme lives in two
+ * places:
+ *
+ * - With no override, the server-rendered element carries BOTH themes'
+ *   sources, dark ones gated on `prefers-color-scheme: dark`. It starts
+ *   loading during HTML parsing — never waiting for hydration — and exactly
+ *   one theme's encode downloads.
+ * - With an override, the element is remounted (its `key` changes) with only
+ *   that theme's sources, which re-runs resource selection.
+ */
+function ShowcaseVideo({
+  override,
+  label,
+}: {
+  override: 'light' | 'dark' | null;
+  label: string;
+}) {
+  return (
+    <video
+      className="absolute inset-0 h-full w-full object-cover object-left-top motion-reduce:hidden"
+      autoPlay
+      muted
+      loop
+      playsInline
+      preload="metadata"
+      aria-label={label}
+    >
+      {/* Ordered by the resource selection algorithm: the browser takes the
+          first source whose type it supports and whose media matches, so the
+          narrowest condition goes first and the unconditional fallback last.
+
+          Phones get the 1280 encode. The frame is 346 CSS px there, so even a
+          3x screen needs 1038 device px — sending the 1920 was 0.9MB of detail
+          no phone can resolve.
+
+          Retina desktops get the 2880. The frame is 1236 CSS px, so a 2x
+          display needs 2472 device px and the 1920 was being upscaled 1.29x —
+          that is the softness. The walkthrough is now shot at
+          deviceScaleFactor 2, so 2880 is native pixels, not an upscale.
+
+          There is no VP9 tier any more, and its absence is the point. A webm
+          source is only worth listing when it is the SMALLER of the two 1920
+          encodes, because selection takes the first supported match and every
+          Chrome and Firefox visitor would load it instead of the mp4. On eight
+          static screens joined by dissolves it is not smaller: VP9 crf36 came
+          out at 2.08MB against H.264 crf20 at 2.12MB. That 2% is not worth a
+          second encode of every frame in both themes. */}
+      {override === null
+        ? [...showcaseSources('dark', SYSTEM_DARK_MEDIA), ...showcaseSources('light')]
+        : showcaseSources(override)}
+    </video>
+  );
+}
+
+const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
+
+function subscribeReducedMotion(onChange: () => void): () => void {
+  const query = window.matchMedia(REDUCED_MOTION_QUERY);
+  query.addEventListener('change', onChange);
+  return () => query.removeEventListener('change', onChange);
+}
+
+/** Server snapshot is `false`: the server renders no video either way. */
+function usePrefersReducedMotion(): boolean {
+  return useSyncExternalStore(
+    subscribeReducedMotion,
+    () => window.matchMedia(REDUCED_MOTION_QUERY).matches,
+    () => false,
+  );
 }
 
 /** Recorded in the real product: a project, its connectors, agents, skills and
@@ -433,7 +600,14 @@ function useHeroTheme(): 'light' | 'dark' {
 function WebSurface() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const theme = useHeroTheme();
-  const media = SHOWCASE_MEDIA[theme];
+  const systemTheme = useSystemTheme();
+  const override = themeOverride(theme, systemTheme);
+  const reducedMotion = usePrefersReducedMotion();
+  // An OS colour-scheme flip mid-session changes which `media` query matches,
+  // but a <video> never re-runs selection on its own: remount it.
+  const [systemEpoch, setSystemEpoch] = useState(0);
+  useEffect(() => subscribeSystemTheme(() => setSystemEpoch((n) => n + 1)), []);
+  const media = SHOWCASE_MEDIA[theme ?? 'light'];
   return (
     <div className="bg-card relative h-full w-full">
       {/* left-top, not top. On desktop the frame is wider than the 16:10
@@ -446,51 +620,16 @@ function WebSurface() {
           a window continuing rather than a screenshot broken. Contain was the
           alternative and is worse: it fits the full 1920px UI into 346px, where
           no label is legible at all. */}
-      <video
-        // The key is the whole theme mechanism: changing it remounts the
-        // element, which is the only way a <video> re-runs source selection.
-        key={theme}
-        className="h-full w-full object-cover object-left-top motion-reduce:hidden"
-        poster={media.poster}
-        autoPlay
-        muted
-        loop
-        playsInline
-        preload="metadata"
-        aria-label={tI18nComplete.raw('text2df16c3ffc5e')}
-      >
-        {/* Ordered by the resource selection algorithm: the browser takes the
-            first source whose type it supports and whose media matches, so the
-            narrowest condition goes first and the unconditional fallback last.
-            Only device traits are expressed as media queries — those cannot
-            change without a reload. The theme is the `key` above.
-
-            Phones get the 1280 encode. The frame is 346 CSS px there, so even a
-            3x screen needs 1038 device px — sending the 1920 was 0.9MB of detail
-            no phone can resolve.
-
-            Retina desktops get the 2880. The frame is 1236 CSS px, so a 2x
-            display needs 2472 device px and the 1920 was being upscaled 1.29x —
-            that is the softness. The walkthrough is now shot at
-            deviceScaleFactor 2, so 2880 is native pixels, not an upscale. The
-            poster JPG paints first and carries LCP, so the video never blocks
-            first paint.
-
-            There is no VP9 tier any more, and its absence is the point. A webm
-            source is only worth listing when it is the SMALLER of the two 1920
-            encodes, because selection takes the first supported match and every
-            Chrome and Firefox visitor would load it instead of the mp4. On eight
-            static screens joined by dissolves it is not smaller: VP9 crf36 came
-            out at 2.08MB against H.264 crf20 at 2.12MB. That 2% is not worth a
-            second encode of every frame in both themes. */}
-        <source media="(max-width: 480px)" src={media.phone} type="video/mp4" />
-        <source
-          media="(min-resolution: 2dppx) and (min-width: 1024px)"
-          src={media.retina}
-          type="video/mp4"
+      <ShowcasePoster override={override} />
+      {reducedMotion ? null : (
+        // The key is the theme mechanism: changing it remounts the element,
+        // which is the only way a <video> re-runs source selection.
+        <ShowcaseVideo
+          key={override ?? `system-${systemEpoch}`}
+          override={override}
+          label={tI18nComplete.raw('text2df16c3ffc5e')}
         />
-        <source src={media.mp4} type="video/mp4" />
-      </video>
+      )}
       <Image
         src={media.poster}
         alt={tI18nComplete.raw('texta04f0df9baba')}
@@ -526,7 +665,9 @@ function CopyInstallCommand() {
  *  reaches the right edge instead of hugging the left third. */
 function CliSurface() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const theme = useHeroTheme();
+  // The CLI tab only renders after a click, so the theme is known by then;
+  // `light` covers the one pre-mount render a `#cli` deep link can cause.
+  const theme = useHeroTheme() ?? 'light';
   const media = CLI_MEDIA[theme];
   return (
     <div className="bg-card relative h-full w-full overflow-hidden">

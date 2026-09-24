@@ -47,6 +47,8 @@ export function MaintenancePage({ onRefresh, isRefreshing = false }: Maintenance
               onPress={onRefresh}
               disabled={isRefreshing}
               className="h-12 w-12 items-center justify-center rounded-xl bg-muted active:opacity-80"
+              accessibilityRole="button"
+              accessibilityLabel="Refresh"
             >
               {isRefreshing ? (
                 <KortixLoader size="small" customSize={20} />

@@ -35,7 +35,7 @@ let saved: Record<string, string | undefined>;
 let dir: string;
 
 /** An `/accounts/me` body for a minted agent session token — the exact shape
- *  the API returns for the Essentia `osp-vision-route-agent` case. */
+ *  the API returns for the SampleCo `osp-vision-route-agent` case. */
 function agentMe(): MeResponse {
   return {
     user_id: 'user_123',

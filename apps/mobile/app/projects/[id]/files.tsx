@@ -10,7 +10,7 @@ import { useCoveringRoute, useProjectRoute } from '@/components/session/ProjectR
 import { PAGE_TABS } from '@/stores/tab-store';
 
 export default function ProjectFilesScreen() {
-  const { projectId, openDrawer, isDrawerOpen, openCustomizeSheet } = useProjectRoute();
+  const { projectId, openDrawer, isDrawerOpen } = useProjectRoute();
   // A session opened from the drawer replaces this page with the view.
   useCoveringRoute();
 
@@ -20,7 +20,6 @@ export default function ProjectFilesScreen() {
       projectId={projectId}
       onOpenDrawer={openDrawer}
       isDrawerOpen={isDrawerOpen}
-      onOpenRightDrawer={openCustomizeSheet}
     />
   );
 }

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Alert, Linking } from 'react-native';
+import { Linking } from 'react-native';
 import {
   WarningIcon as AlertTriangle,
   BellIcon as Bell,
@@ -14,6 +14,7 @@ import {
 
 import { Switch } from '@/components/ui/switch';
 import { SettingsGroup, SettingsPage, SettingsRow } from '@/components/kortix/settings-list';
+import { useToast } from '@/components/kortix/toast-provider';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { haptics } from '@/lib/haptics';
 import { notificationsApi } from '@/lib/notifications/api';
@@ -30,6 +31,7 @@ const NOTIFICATION_TYPES: { key: ToggleKey; label: string; icon: typeof Bell }[]
 
 export default function NotificationsScreen() {
   const { expoPushToken } = usePushNotifications();
+  const toast = useToast();
   const [isUnregistering, setIsUnregistering] = React.useState(false);
 
   const preferences = useNotificationStore((s) => s.preferences);
@@ -56,14 +58,16 @@ export default function NotificationsScreen() {
     try {
       await notificationsApi.unregisterDeviceToken(expoPushToken);
       haptics.success();
-      Alert.alert('Device unregistered', 'This device no longer receives push notifications.');
+      toast.success('Device unregistered', {
+        description: 'This device no longer receives push notifications.',
+      });
     } catch (error: any) {
       haptics.warning();
-      Alert.alert('Unable to unregister', error?.message || 'Try again in a moment.');
+      toast.error('Unable to unregister', { description: error?.message || 'Try again in a moment.' });
     } finally {
       setIsUnregistering(false);
     }
-  }, [expoPushToken, isUnregistering]);
+  }, [expoPushToken, isUnregistering, toast]);
 
   const openDeviceSettings = React.useCallback(() => {
     haptics.tap();

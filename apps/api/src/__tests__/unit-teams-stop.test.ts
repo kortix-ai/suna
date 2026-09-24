@@ -123,6 +123,34 @@ describe('stopTeamsTurn', () => {
     expect(deleted).toEqual([SESSION_ID]);
   });
 
+  test('the sender is recognised by the AAD id every caller passes', async () => {
+    // A real Teams activity carries both ids. Callers pass
+    // `teamsUserId(activity)` — the AAD object id — so matching `from.id`
+    // alone refused the sender whenever no participant row existed.
+    turn = {
+      ...liveTurn('29:sender'),
+      originatingActivity: { from: { id: '29:sender', aadObjectId: 'aad-sender', name: 'Mia' } },
+    };
+    participantRow = undefined;
+    const { stopTeamsTurn } = await load();
+
+    expect(await stopTeamsTurn({ sessionId: SESSION_ID, teamsUserId: 'aad-sender' })).toEqual({
+      stopped: true,
+      stoppedRuntime: true,
+    });
+  });
+
+  test('another user`s AAD id does not pass as the sender', async () => {
+    turn = {
+      ...liveTurn('29:sender'),
+      originatingActivity: { from: { id: '29:sender', aadObjectId: 'aad-sender' } },
+    };
+    participantRow = undefined;
+    const { stopTeamsTurn } = await load();
+
+    expect((await stopTeamsTurn({ sessionId: SESSION_ID, teamsUserId: 'aad-someone-else' })).stopped).toBe(false);
+  });
+
   test('an approved participant may stop a turn they did not start', async () => {
     // Under `project_open` the session owner and the person waiting are
     // routinely different people.

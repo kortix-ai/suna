@@ -93,7 +93,7 @@ export function prepareInPlaceRestartMetadata(
  * A readiness clock older than this was written by a previous attempt on the
  * same row and is not evidence about this one.
  *
- * *Incident (2026-08-26, Essentia, session 29861dfa / box inqwpv4a).* Attempt 1
+ * *Incident (2026-08-26, SampleCo, session 29861dfa / box inqwpv4a).* Attempt 1
  * failed during a post-roll build storm at ~13:27. The automatic cooldown rung
  * re-attempted at ~13:33: the resume launched the entrypoint, the daemon booted
  * through 13:34:48.8, authenticated to the gateway at 13:34:48.5–49.1 and
@@ -177,7 +177,7 @@ export function hasRuntimeReadinessClock(metadata: RuntimeReadinessMetadata): bo
  * progress has not stalled. `opencodeBootWaitFirstSeenAt` is written once per
  * boot wait and never moved; it feeds the hard cap.
  *
- * Essentia 2026-08-25 17:23–17:24: two resumes converged OpenCode 1.18.19 →
+ * SampleCo 2026-08-25 17:23–17:24: two resumes converged OpenCode 1.18.19 →
  * 1.18.23 and sat through that version's 53 s first init — legitimate work the
  * old fixed 90 s budget turned into `runtime_boot_failed` on both boxes.
  */

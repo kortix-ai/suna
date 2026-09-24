@@ -1,5 +1,6 @@
 import { getEnv } from '@/lib/env-config';
 import { HostBoundaryError } from '@kortix/sdk';
+import { openMarkdownLinkAtEnd } from '@kortix/shared';
 
 /** API base (already includes the /v1 suffix), e.g. https://api.kortix.com/v1. */
 export function setupLinkApiBase(): string {
@@ -102,6 +103,73 @@ export function parseSetupLinkHref(href?: string): { kind: SetupLinkKind; token:
 }
 
 /**
+ * The kind of setup link a URL that is still streaming will become, or null.
+ *
+ * `parseSetupLinkHref` needs the whole token. This answers as soon as the path
+ * names a setup route, and applies the same origin rule to the part so far: a
+ * cross-origin URL counts only while its token can still start with `ksl_`.
+ */
+export function partialSetupLinkKind(partial: string): SetupLinkKind | null {
+  const text = partial.trim();
+  let pathname = text;
+  let sameOrigin = true;
+  if (/^https?:\/\//i.test(text)) {
+    try {
+      const u = new URL(text);
+      sameOrigin = typeof window === 'undefined' || u.origin === window.location.origin;
+      pathname = u.pathname;
+    } catch {
+      return null;
+    }
+  }
+  const m = pathname.match(/^\/(secret-intake|connect)\/([^/?#]*)/);
+  if (!m) return null;
+  const token = m[2];
+  if (!sameOrigin && !('ksl_'.startsWith(token) || token.startsWith('ksl_'))) return null;
+  return m[1] === 'secret-intake' ? 'secret' : 'connector';
+}
+
+/**
+ * The href a setup link carries while its URL is still streaming. A fragment,
+ * so sanitize and rehype-harden pass it unchanged and it can never navigate.
+ */
+const PENDING_SETUP_LINK_HREF = '#kortix-setup-link-pending:';
+
+export function pendingSetupLinkHref(kind: SetupLinkKind): string {
+  return `${PENDING_SETUP_LINK_HREF}${kind}`;
+}
+
+export function parsePendingSetupLinkHref(href?: string): SetupLinkKind | null {
+  if (!href?.startsWith(PENDING_SETUP_LINK_HREF)) return null;
+  const kind = href.slice(PENDING_SETUP_LINK_HREF.length);
+  return kind === 'secret' || kind === 'connector' ? kind : null;
+}
+
+/**
+ * Streaming text that ends inside a setup link, with that link held as pending.
+ *
+ * A setup token is several hundred characters, so the link takes a second or
+ * two to stream. Until the closing paren arrives, the open link is rewritten
+ * to `[label](<pending href>)`: the renderer shows the card it will become,
+ * with nothing to click, instead of raw `[label](` text or a card built from a
+ * partial token. Every other text passes through unchanged.
+ */
+export function holdPendingSetupLink(markdown: string): string {
+  const open = openMarkdownLinkAtEnd(markdown);
+  // A label with brackets inside cannot be re-emitted safely. It keeps the
+  // generic streaming-link path.
+  if (!open || open.label.includes('[') || open.label.includes(']')) return markdown;
+  // `[label](https://…/connect/ksl_…` is arriving, or the label itself is the
+  // setup URL: `[https://…/connect/ksl_…`.
+  const kind = partialSetupLinkKind(open.destination ?? open.label);
+  if (!kind) return markdown;
+  // A label that is the URL renders as the card's fallback title, as the
+  // finished link would.
+  const label = open.destination === null ? '' : open.label;
+  return `${markdown.slice(0, open.start)}[${label}](${pendingSetupLinkHref(kind)})`;
+}
+
+/**
  * Agents usually emit the setup link as a bare URL, so the markdown link text
  * IS the URL — a few hundred opaque token characters. That never belongs on
  * the chip. Only keep the author's text when it reads like a human label.
@@ -111,7 +179,8 @@ export function setupLinkChipLabel(raw: string, token: string, fallback: string)
   if (!text) return fallback;
   const looksLikeUrl =
     /^https?:\/\//i.test(text) ||
-    text.includes(token) ||
+    // No token while the URL is still streaming, and '' is in every string.
+    (token !== '' && text.includes(token)) ||
     text.includes('/secret-intake/') ||
     text.includes('/connect/') ||
     (text.length > 48 && !text.includes(' '));

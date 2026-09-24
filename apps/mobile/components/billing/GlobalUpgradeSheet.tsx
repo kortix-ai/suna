@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef } from 'react';
-import { View } from 'react-native';
+import { Platform, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { CheckIcon as Check, CaretRightIcon as ChevronRight, UserPlusIcon as UserPlus, UsersIcon as Users } from '@/lib/icons';
@@ -15,7 +15,9 @@ import { useSandboxContext } from '@/contexts/SandboxContext';
 import { useAccountState } from '@/lib/billing/hooks';
 import { haptics } from '@/lib/haptics';
 import { getUpgradeGate } from '@/lib/billing/upgrade-gate';
+import { canShowExternalPurchase } from '@/lib/billing/store-policy';
 import { getUpgradeSheetTransition } from '@/lib/billing/upgrade-sheet-lifecycle';
+import { getUpgradeSheetIncludedItems } from '@/lib/billing/upgrade-sheet-included';
 import { getTeamUpgradeOffer } from '@/lib/billing/team-upgrade-offer';
 import { useUpgradeSheetStore } from '@/stores/upgrade-sheet-store';
 
@@ -44,6 +46,15 @@ export function SandboxUpgradeGateListener() {
  * Billing hero's type), the gate message, an Includes group, the seat total,
  * then one primary pill to the Plans screen and a Not now pill. A member who
  * cannot manage billing sees an Ask an account owner row instead of the pill.
+ *
+ * iOS (App Store guideline 3.1.1): no price anywhere in the sheet — the
+ * header's per-seat price and "per seat / month", the seat-math total, and
+ * the Includes group's first line (`getUpgradeSheetIncludedItems`,
+ * `lib/billing/upgrade-sheet-included.ts`) all drop the `$` amount — and no
+ * pill to Plans. `canShowExternalPurchase` (`lib/billing/store-policy`)
+ * gates all of it. iOS sees the plan name, the gate message, the Includes
+ * group (price-free), and Not now only (still an Ask-an-owner row for a
+ * member who can't manage billing — that row was never a purchase link).
  */
 export function GlobalUpgradeSheet() {
   const { t } = useLanguage();
@@ -59,13 +70,8 @@ export function GlobalUpgradeSheet() {
     enabled: isOpen,
   });
   const offer = getTeamUpgradeOffer(accountState);
-  const included = [
-    `$${offer.pricePerSeat} of usage credit per teammate, every month`,
-    'Every model, drawn from one shared team wallet',
-    'AI Computers to run code, browsers, and terminals',
-    'Spend on compute, LLM, or both, with auto top-up',
-    'Auto-prorated as teammates join or leave',
-  ];
+  const canPurchase = canShowExternalPurchase(Platform.OS);
+  const included = getUpgradeSheetIncludedItems(offer.pricePerSeat, canPurchase);
 
   useEffect(() => {
     const transition = getUpgradeSheetTransition(isOpen, wasPresentedRef.current);
@@ -108,12 +114,16 @@ export function GlobalUpgradeSheet() {
         }}>
         <View className="items-center">
           <Text variant="large">{t('upgrade.teamPlan', 'Kortix Team')}</Text>
-          <Text variant="h1" className="mt-1 tabular-nums">
-            ${offer.pricePerSeat}
-          </Text>
-          <Text variant="muted" className="mt-1">
-            {t('upgrade.perSeatMonthly', 'per seat / month')}
-          </Text>
+          {canPurchase ? (
+            <>
+              <Text variant="h1" className="mt-1 tabular-nums">
+                ${offer.pricePerSeat}
+              </Text>
+              <Text variant="muted" className="mt-1">
+                {t('upgrade.perSeatMonthly', 'per seat / month')}
+              </Text>
+            </>
+          ) : null}
           {message ? (
             <Text variant="muted" className="mt-4 text-center">
               {message}
@@ -127,7 +137,7 @@ export function GlobalUpgradeSheet() {
           ))}
         </SettingsGroup>
 
-        {offer.hasSeatMath ? (
+        {canPurchase && offer.hasSeatMath ? (
           <SettingsGroup>
             <SettingsRow
               icon={Users}
@@ -142,12 +152,7 @@ export function GlobalUpgradeSheet() {
         ) : null}
 
         <View style={{ gap: 10 }}>
-          {offer.canManageBilling ? (
-            <Button size="lg" className="justify-between rounded-full" onPress={handleViewPlans}>
-              <Text>{t('plans.upgradeTo', { defaultValue: 'Upgrade to {{plan}}', plan: 'Team' })}</Text>
-              <Icon as={ChevronRight} size={18} />
-            </Button>
-          ) : (
+          {!offer.canManageBilling ? (
             <SettingsGroup>
               <SettingsRow
                 icon={UserPlus}
@@ -155,7 +160,12 @@ export function GlobalUpgradeSheet() {
                 multiline
               />
             </SettingsGroup>
-          )}
+          ) : canPurchase ? (
+            <Button size="lg" className="justify-between rounded-full" onPress={handleViewPlans}>
+              <Text>{t('plans.upgradeTo', { defaultValue: 'Upgrade to {{plan}}', plan: 'Team' })}</Text>
+              <Icon as={ChevronRight} size={18} />
+            </Button>
+          ) : null}
           <Button variant="secondary" size="lg" className="rounded-full" onPress={closeUpgradeSheet}>
             <Text>{t('upgrade.notNow', 'Not now')}</Text>
           </Button>

@@ -1,6 +1,7 @@
 import type { Context, Next } from 'hono';
 import { config } from '../config';
 import { recordAuditEvent } from './audit';
+import { RATE_LIMIT_EXCEEDED_ACTION } from './rate-limit-audit';
 
 interface Bucket {
   tokens: number;
@@ -245,7 +246,7 @@ export function createInviteAcceptRateLimitMiddleware() {
         windowMs: 60_000,
       },
       {
-        action: `RATE_LIMIT ${c.req.method} ${c.req.path}`,
+        action: RATE_LIMIT_EXCEEDED_ACTION,
         resourceType: 'account_invite',
         resourceId: inviteId,
         metadata: { limiter: 'invite_accept' },
@@ -269,7 +270,7 @@ export function createSandboxProxyRateLimitMiddleware() {
       },
       {
         actorUserId: ((c as any).get('userId') as string | undefined) ?? null,
-        action: `RATE_LIMIT ${c.req.method} ${c.req.path}`,
+        action: RATE_LIMIT_EXCEEDED_ACTION,
         resourceType: 'sandbox_proxy',
         resourceId: sandboxId,
         metadata: { limiter: 'sandbox_proxy' },
@@ -309,7 +310,7 @@ export function createPublicSessionShareRateLimitMiddleware() {
         windowMs: 60_000,
       },
       {
-        action: `RATE_LIMIT ${c.req.method} ${c.req.path}`,
+        action: RATE_LIMIT_EXCEEDED_ACTION,
         resourceType: 'public_session_share',
         resourceId: shareId,
         metadata: { limiter: 'public_session_share' },
@@ -337,7 +338,7 @@ export function createDemoRequestRateLimitMiddleware() {
         windowMs: 60_000,
       },
       {
-        action: `RATE_LIMIT ${c.req.method} ${c.req.path}`,
+        action: RATE_LIMIT_EXCEEDED_ACTION,
         resourceType: 'demo_request',
         resourceId: null,
         metadata: { limiter: 'demo_request' },
@@ -367,7 +368,7 @@ export function createCheckEmailRateLimitMiddleware() {
         windowMs: 60_000,
       },
       {
-        action: `RATE_LIMIT ${c.req.method} ${c.req.path}`,
+        action: RATE_LIMIT_EXCEEDED_ACTION,
         resourceType: 'access_check_email',
         resourceId: null,
         metadata: { limiter: 'check_email' },

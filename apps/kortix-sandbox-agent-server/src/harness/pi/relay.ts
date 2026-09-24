@@ -192,12 +192,22 @@ export async function relayQuestion(
   } catch (err) {
     logger.warn('[pi] turn-question post failed (non-fatal)', { err: (err as Error).message })
   }
-  if (!(process.env.SLACK_THREAD_TS || process.env.SLACK_CHANNEL_ID)) return
+  // A CHANNEL session — Slack or Teams. This read SLACK_* only, so a Teams pi
+  // session's question was never released here and the turn hung, exactly as
+  // in the OpenCode daemon (harness/open-code/boot.ts `channelRelayContext`).
+  // apps/api now releases channel questions itself inside /turn-question —
+  // before this fetch resolves — so this is the fallback for when that fails;
+  // a release that loses the race is a harmless 404 on the runtime side.
+  const teams = Boolean(process.env.MS_TEAMS_CONVERSATION_ID || process.env.MS_TEAMS_TENANT_ID)
+  const slack = Boolean(process.env.SLACK_THREAD_TS || process.env.SLACK_CHANNEL_ID)
+  if (!teams && !slack) return
+  const where = teams ? 'the Teams conversation' : 'the Slack thread'
+  // No "rather than the question tool" tail: both channel prompts now tell the
+  // agent to USE the tool, and the old line contradicted them.
   const sentinel =
-    '(Posted to the Slack thread. In Slack, questions are async — the user replies ' +
-    'as a normal message, which reaches you as a NEW turn with full context. Do NOT ' +
-    'wait for an answer here; finish this turn now. Next time, just ask with ' +
-    '`slack send` rather than the question tool.)'
+    `(Posted to ${where}. Questions here are async — the user answers with a tap or a ` +
+    'reply, and that reaches you as a NEW turn with full context. Do NOT wait for an ' +
+    'answer; finish this turn now.)'
   answer(request.questions.map(() => [sentinel]))
 }
 

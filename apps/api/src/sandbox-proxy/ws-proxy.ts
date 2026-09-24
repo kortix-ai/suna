@@ -23,6 +23,7 @@
 // ════════════════════════════════════════════════════════════════════════════
 
 import { authenticatePreviewPrincipalDetailed } from './preview-auth';
+import { bindPreviewResource, bindPreviewSession } from './preview-audit';
 import { resolvePreviewWsUpstream } from './routes/preview';
 import { classifyPtyWebSocketPath } from '../platform/providers/pty-ingress';
 import { OPENCODE_PRIMARY_PORT, isOpencodePort } from '../shared/opencode-ports';
@@ -177,6 +178,9 @@ export async function preparePreviewWsUpgrade(
   if (!match) return { ok: false, status: 404, message: 'not a preview route' };
 
   const { sandboxId, port, remainingPath } = match;
+  // The PTY terminal: a shell into the sandbox. The validator names the
+  // caller; this names the sandbox, so the owner sees who opened it.
+  bindPreviewResource(sandboxId, port);
 
   const principal = await authenticatePreviewPrincipalDetailed(
     url.searchParams.get('token'),
@@ -236,6 +240,8 @@ export async function preparePreviewHostWsUpgrade(
     }
     session = established.session;
   }
+  bindPreviewSession(session);
+  bindPreviewResource(session.sandboxId, target.port);
   if (session.kind !== 'principal') {
     // A public share is a read-only view of an artifact, not a socket.
     return { ok: false, status: 403, message: 'websocket not available on a shared preview' };

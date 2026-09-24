@@ -10,7 +10,7 @@
  * That design assumes SOMEBODY reads again. Two observers do — the reaper's
  * status poll and `/start` — and neither is guaranteed: `/start` stops being
  * polled the moment the client gives up, and the reaper visits on its own
- * schedule. Essentia 2026-08-26, session 29861dfa / box inqwpv4a1cc1kynlg46k8:
+ * schedule. SampleCo 2026-08-26, session 29861dfa / box inqwpv4a1cc1kynlg46k8:
  * `/start` answered 202, the E2B resume silently failed, and the rows read
  * `running` for 5+ minutes while the provider said
  * `sandbox … is not running (status: stopped)`. Delivery believed the row and

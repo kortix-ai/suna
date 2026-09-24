@@ -60,6 +60,15 @@ const KATEX_MATHML_TAG_NAMES = [
 
 const katexSanitizeSchema = {
   ...defaultSchema,
+  // Streamdown's `remend` closes a link whose URL is still streaming as
+  // `[label](streamdown:incomplete-link)`. GitHub's href allowlist strips that
+  // scheme, and rehype-harden then prints `label [blocked]` until the URL
+  // arrives. The `a` renderers turn this one scheme into plain label text
+  // (`isStreamingLinkPlaceholder`), so it never becomes an anchor.
+  protocols: {
+    ...defaultSchema.protocols,
+    href: [...(defaultSchema.protocols?.href || []), 'streamdown'],
+  },
   tagNames: [...(defaultSchema.tagNames || []), ...KATEX_MATHML_TAG_NAMES],
   attributes: {
     ...defaultSchema.attributes,

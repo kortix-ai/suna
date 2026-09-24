@@ -18,6 +18,7 @@ import {
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import { countLiveInboxPrompts, inboxObservationSupersedes } from '../core/session/working';
 import { claimOpenBundle, openBundleQueue } from '../core/session/open-bundle';
+import { createTickSingleFlight } from '../core/session/single-flight';
 import { qk } from './query-keys';
 import { usePollOwner } from './use-poll-owner';
 import { mintSessionWireMessageId } from './use-opencode-sessions/messages';
@@ -394,8 +395,18 @@ export async function readSessionPromptsInbox(
   }
   // Age stamped BEFORE the request, like `/turn`'s: an answer is only as fresh
   // as the moment it was asked.
-  const atMs = Date.now();
-  const { prompts, observed_at } = await listSessionPrompts(projectId, sessionId);
+  //
+  // ONE request per session per tick, for the same reason as `/turn`: the
+  // status-phase invalidation fires from every mount of `useSessionWorking` in
+  // one commit (see `createTickSingleFlight`).
+  const { atMs, prompts, observed_at } = await promptReads(
+    `${projectId}/${sessionId}`,
+    async () => {
+      const issuedAtMs = Date.now();
+      const listed = await listSessionPrompts(projectId, sessionId);
+      return { atMs: issuedAtMs, prompts: listed.prompts, observed_at: listed.observed_at };
+    },
+  );
   const serverAtMs = observed_at ? Date.parse(observed_at) : Number.NaN;
   // Keep this tab's not-yet-confirmed rows on screen across a poll that landed
   // before their POST returned.
@@ -409,6 +420,12 @@ export async function readSessionPromptsInbox(
     Number.isFinite(serverAtMs) ? serverAtMs : undefined,
   );
 }
+
+const promptReads = createTickSingleFlight<{
+  atMs: number;
+  prompts: SessionPrompt[];
+  observed_at?: string;
+}>();
 
 export interface UseSessionPromptsResult {
   prompts: SessionPrompt[];

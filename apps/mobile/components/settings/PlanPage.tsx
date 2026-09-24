@@ -138,7 +138,7 @@ export function PlanPage({ visible = true }: PlanPageProps) {
         </SettingsGroup>
       </SettingsPage>
 
-      <View className="bg-background px-5 pt-3" style={{ paddingBottom: Math.max(insets.bottom, 16) }}>
+      <View className="bg-background px-4 pt-3" style={{ paddingBottom: Math.max(insets.bottom, 16) }}>
         <PlanActionButton action={action} planName={plan.name} onPress={runAction} />
       </View>
     </View>

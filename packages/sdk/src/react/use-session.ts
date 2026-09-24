@@ -85,6 +85,7 @@ import { useRuntimePhase } from './use-runtime-phase';
 import { useSessionPicks, type SessionPicks } from './use-session-picks';
 import { derivePhase } from './use-session-phase';
 import { useSessionSync } from './use-session-sync';
+import { selectTranscriptShapeKey } from './session-transcript-subscription';
 import { useSessionStartGiveUp } from './use-session-start-give-up';
 import { useSessionWorking } from './use-session-working';
 import { useVisibleAgents } from './use-visible-agents';
@@ -858,6 +859,24 @@ export interface UseSessionOptions {
    * `opencodeSessionId` — is unaffected.
    */
   chatEngine?: boolean;
+  /**
+   * Re-render the calling component on every transcript change. Default
+   * `true`, which keeps `messages` live.
+   *
+   * A streaming turn changes the transcript once per ~16 ms event batch, so
+   * with the default every component that calls this hook re-renders at that
+   * rate. Set `false` in a host that renders lifecycle UI (boot state, header,
+   * panels) and draws the transcript in a child: the child reads the live rows
+   * with `useSessionMessages(session)`, and only it re-renders per delta.
+   *
+   * When `false`: the chat engine still runs (fetch, stream, pollers);
+   * `messages` is the transcript as of this render, and this hook re-renders
+   * only when the transcript's shape changes — a message added or removed, or
+   * a tool part changing status — so `messages.length` and the question and
+   * permission self-heal pollers stay correct. Streamed text alone does not
+   * re-render it.
+   */
+  subscribeMessages?: boolean;
 }
 
 /** Stable, empty chat state — used when `chatEngine: false` so the hook's
@@ -888,6 +907,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     enabled = true,
     chatEngine = true,
     initialOpenCodeSessionId = null,
+    subscribeMessages = true,
   } = options;
 
   // 1. Drive /start until the runtime is ready (the server long-polls each tick).
@@ -1113,7 +1133,16 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // answer switched off the only read that could disprove it, and the
     // transcript froze mid-turn until a reload.
     serverHoldsTurn: working.serverOpenTurnToken !== null,
+    subscribeMessages,
   });
+  // Detached from the rows (`subscribeMessages: false`): re-render on a SHAPE
+  // change only, which is what every transcript read in this hook depends on
+  // (`messages.length`, the running-tool checks of the self-heal pollers).
+  useSyncStore((state) =>
+    !subscribeMessages && chatEngine && ocSessionId
+      ? selectTranscriptShapeKey(state, ocSessionId)
+      : '',
+  );
   const sync = chatEngine ? rawSync : DISABLED_CHAT_ENGINE_SYNC;
   const runtimePhase = useRuntimePhase();
   // T22 — the revert record lives in the sync store, not component state.

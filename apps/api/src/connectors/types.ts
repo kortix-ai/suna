@@ -28,7 +28,17 @@ export interface NormalizedAction {
 }
 
 export type ActionBinding =
-  | { kind: 'openapi'; method: string; path: string; server: string | null }
+  | {
+      kind: 'openapi';
+      method: string;
+      path: string;
+      server: string | null;
+      /**
+       * The `requestBody.content` media type the gateway encodes the body as.
+       * Absent on bindings synced before it existed: those send JSON.
+       */
+      bodyMediaType?: string;
+    }
   | {
       kind: 'postman';
       method: string;
@@ -40,7 +50,7 @@ export type ActionBinding =
     }
   | { kind: 'graphql'; operation: 'query' | 'mutation'; field: string }
   | { kind: 'mcp'; tool: string }
-  | { kind: 'http'; method: string; path: string }
+  | { kind: 'http'; method: string; path: string; bodyMediaType?: string }
   // Agent Computer Tunnel: relay one machine-bound RPC (`fs.read`,
   // `desktop.cua.click`, …). The gateway routes these through the shared tunnel
   // RPC core instead of executeCall. See

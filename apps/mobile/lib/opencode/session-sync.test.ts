@@ -5,9 +5,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 // api/config.ts: a later test file that imports any of them still resolves.
 mock.module('@/api/config', () => ({
   getServerUrl: () => 'http://localhost:8008/v1',
-  getFrontendUrl: () => 'http://localhost:3000',
   API_URL: 'http://localhost:8008/v1',
-  FRONTEND_SHARE_URL: 'http://localhost:3000',
   getAuthToken: async () => null,
   getAuthHeaders: async () => ({ 'Content-Type': 'application/json' }),
 }));

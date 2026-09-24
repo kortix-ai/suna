@@ -15,7 +15,7 @@
  * Worse, the composer's notice treated the ABSENCE of an answer as an answer.
  * A page reload of a session whose sandbox is up and mid-turn showed "Waking
  * this session up…" for seconds before the runtime replied (screen recording,
- * essentia 2026-08-24) — a negative claim asserted from having asked nobody.
+ * sampleco 2026-08-24) — a negative claim asserted from having asked nobody.
  *
  * ## The rule
  *

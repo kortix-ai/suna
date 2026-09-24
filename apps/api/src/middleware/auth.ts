@@ -18,6 +18,7 @@ import { auditLoginFail, auditLoginSuccess } from '../shared/auth-audit';
 import { isOAuthAccessToken, oauthScopeAllowsPath, validateOAuthAccessToken } from '../oauth/access-token';
 import { applyImpersonation } from './impersonation';
 import { buildActor } from '../iam/actor';
+import { beginStage } from '../lib/server-timing';
 
 const PREVIEW_SESSION_COOKIE = '__preview_session';
 
@@ -100,6 +101,15 @@ async function jitSyncSso(
  * against the api_keys table.
  */
 export async function apiKeyAuth(c: Context, next: Next) {
+  const endAuth = beginStage('auth');
+  try {
+    await resolveApiKeyAuth(c, () => withActor(c, () => (endAuth(), next())));
+  } finally {
+    endAuth();
+  }
+}
+
+async function resolveApiKeyAuth(c: Context, next: Next) {
   const authHeader = c.req.header('Authorization');
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -155,7 +165,7 @@ export async function apiKeyAuth(c: Context, next: Next) {
     authType: 'apiKey',
     metadata: { api_key_type: result.type },
   });
-  await withActor(c, next);
+  await next();
 }
 
 /**
@@ -210,7 +220,17 @@ async function applyOAuthAccessTokenPrincipal(c: Context, token: string): Promis
  * return an upstream provider credential.
  */
 export async function supabaseAuth(c: Context, next: Next) {
-  return resolveSupabaseAuth(c, () => applyImpersonation(c, () => withActor(c, next)));
+  // `Server-Timing: auth` spans credential verification, impersonation and the
+  // IAM actor build — everything before the handler — and closes the moment
+  // the handler starts (or the chain throws a 401/403).
+  const endAuth = beginStage('auth');
+  try {
+    return await resolveSupabaseAuth(c, () =>
+      applyImpersonation(c, () => withActor(c, () => (endAuth(), next()))),
+    );
+  } finally {
+    endAuth();
+  }
 }
 
 async function resolveSupabaseAuth(c: Context, next: Next) {
@@ -488,7 +508,14 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
  * For preview proxy routes, also sets/refreshes the session cookie.
  */
 export async function combinedAuth(c: Context, next: Next) {
-  return resolveCombinedAuth(c, () => applyImpersonation(c, () => withActor(c, next)));
+  const endAuth = beginStage('auth');
+  try {
+    return await resolveCombinedAuth(c, () =>
+      applyImpersonation(c, () => withActor(c, () => (endAuth(), next()))),
+    );
+  } finally {
+    endAuth();
+  }
 }
 
 async function resolveCombinedAuth(c: Context, next: Next) {

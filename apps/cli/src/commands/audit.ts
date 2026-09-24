@@ -5,6 +5,7 @@ import { activeAccount } from '../api/config.ts';
 import { clientFromAuth, type ApiClient } from '../api/client.ts';
 import { emitJson, surfaceApiError, takeFlagValue, takeFlagBool } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
+import { auditLabelForAction, auditLabelForHttpAction } from '@kortix/shared/audit-labels';
 
 // The account audit trail — the CLI face of `kortix.audit_events`, which the
 // dashboard already reads. Reads are gated server-side on `audit.read` plus the
@@ -50,7 +51,7 @@ Filters (ls, export, project):
   --until <when>       Only events at or before this point.
   --action <prefix>    Action prefix, e.g. "iam.policy." or "session.".
   --actor <user-id>    Only this actor.
-  --actor-type <t>     human | agent | service_account | system
+  --actor-type <t>     human | agent | service_account | system | anonymous
   --outcome <o>        success | failure | denied | pending
   --project <id>       Only this project.
   --session <id>       Only this session.
@@ -229,9 +230,20 @@ function shortTime(iso: string): string {
 }
 
 /** Longest ACTION cell before the table starts pushing RESOURCE off-screen.
- *  Audit actions are raw HTTP lines carrying UUIDs, so most rows would otherwise
- *  be ~70 chars of mostly-identical path. Full values are always in `--json`. */
-const ACTION_MAX = 52;
+ *  Rows written before audit labels carry raw HTTP lines, ~70 chars of
+ *  mostly-identical path. Full values are always in `--json`. */
+const ACTION_MAX = 40;
+/** Longest EVENT cell: a catalog title is at most 7 words. */
+const EVENT_MAX = 44;
+
+/**
+ * What a row's action reads as: its title in the shared audit catalog
+ * (`gateway.key.revoke` → `Revoked LLM gateway key`), the title of the route a
+ * pre-label `METHOD /route` row names, or the action itself.
+ */
+export function auditEventTitle(action: string): string {
+  return (auditLabelForAction(action) ?? auditLabelForHttpAction(action))?.title ?? action;
+}
 
 export function truncate(value: string, max: number): string {
   return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
@@ -254,18 +266,22 @@ function printEvents(events: AuditEvent[]): void {
     process.stdout.write(`\n  ${C.dim}No audit events match.${C.reset}\n\n`);
     return;
   }
+  const eventW = Math.min(
+    Math.max(...events.map((e) => auditEventTitle(e.action).length), 5),
+    EVENT_MAX,
+  );
   const actionW = Math.min(Math.max(...events.map((e) => e.action.length), 6), ACTION_MAX);
   const actorW = Math.max(...events.map((e) => actorCell(e).length), 5);
   process.stdout.write('\n');
   process.stdout.write(
-    `  ${C.dim}${pad('WHEN (UTC)', 15)}   ${pad('ACTOR', actorW)}   ${pad('ACTION', actionW)}   ${pad('OUTCOME', 8)}   RESOURCE${C.reset}\n`,
+    `  ${C.dim}${pad('WHEN (UTC)', 15)}   ${pad('ACTOR', actorW)}   ${pad('EVENT', eventW)}   ${pad('ACTION', actionW)}   ${pad('OUTCOME', 8)}   RESOURCE${C.reset}\n`,
   );
   for (const e of events) {
     const resource = e.resource_type
       ? `${e.resource_type}${e.resource_id ? ` ${C.faded}${e.resource_id.slice(0, 8)}${C.reset}` : ''}`
       : `${C.faded}—${C.reset}`;
     process.stdout.write(
-      `  ${pad(shortTime(e.occurred_at), 15)}   ${pad(actorCell(e), actorW)}   ${pad(truncate(e.action, ACTION_MAX), actionW)}   ${outcomeCell(e.outcome)}   ${resource}\n`,
+      `  ${pad(shortTime(e.occurred_at), 15)}   ${pad(actorCell(e), actorW)}   ${pad(truncate(auditEventTitle(e.action), EVENT_MAX), eventW)}   ${C.faded}${pad(truncate(e.action, ACTION_MAX), actionW)}${C.reset}   ${outcomeCell(e.outcome)}   ${resource}\n`,
     );
   }
 }
@@ -479,6 +495,7 @@ export async function runAudit(argv: string[]): Promise<number> {
                 | 'agent'
                 | 'service_account'
                 | 'system'
+                | 'anonymous'
                 | undefined,
               source: search.get('source') ?? undefined,
               phase: search.get('phase') ?? undefined,

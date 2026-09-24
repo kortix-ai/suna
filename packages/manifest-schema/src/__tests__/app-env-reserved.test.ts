@@ -27,7 +27,7 @@ import {
 
 /**
  * A complete, otherwise-valid v2 manifest with one App — `apps:` is a v2
- * section, and the App's fields are copied from `essentia-kortix/kortix.yaml`,
+ * section, and the App's fields are copied from `sampleco-kortix/kortix.yaml`,
  * the manifest whose `KORTIX_*` names validated clean and then failed to
  * deploy.
  */

@@ -37,9 +37,18 @@ export interface ShowCarouselProps {
   fill?: boolean;
   /** Header actions for the ACTIVE item, forwarded to its renderer. */
   toolbarActions?: ReactNode;
+  /** Bumped by the card's Refresh: remounts the active item so it loads again. */
+  refreshKey?: number;
 }
 
-export function ShowCarousel({ items, LocalhostPreview, onIndexChange, fill = false, toolbarActions }: ShowCarouselProps) {
+export function ShowCarousel({
+  items,
+  LocalhostPreview,
+  onIndexChange,
+  fill = false,
+  toolbarActions,
+  refreshKey = 0,
+}: ShowCarouselProps) {
   const palette = useTurnPalette();
   const [currentIndex, setCurrentIndex] = useState(0);
   const count = items.length;
@@ -72,7 +81,7 @@ export function ShowCarousel({ items, LocalhostPreview, onIndexChange, fill = fa
     <View style={fill ? { flex: 1 } : undefined}>
       <View style={fill ? { flex: 1, overflow: 'hidden' } : { minHeight: SHOW_MEDIA_HEIGHT }}>
         <ShowContentRenderer
-          key={currentIndex}
+          key={`${currentIndex}:${refreshKey}`}
           type={currentItem.type}
           title={currentItem.title}
           description={currentItem.description}

@@ -1,12 +1,12 @@
 import { useMemo } from 'react';
-import { Platform } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { webSpace } from '@/lib/session/user-message';
+import { MONO_FONT_FAMILY } from '@/lib/utils/mono-font';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 
 // ─── Shared styles ───────────────────────────────────────────────────────────
 
-export const monoFont = Platform.OS === 'ios' ? 'Menlo' : 'monospace';
+export const monoFont = MONO_FONT_FAMILY;
 
 export function cardBorder(isDark: boolean) {
   return withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.06);

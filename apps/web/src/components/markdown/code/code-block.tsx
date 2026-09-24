@@ -15,11 +15,43 @@ import {
   type CodeThemeName,
 } from './shiki-highlighter';
 
+/**
+ * How long a streaming block's text must hold still before it is highlighted.
+ *
+ * The block that is still arriving changes on every paced render, and
+ * tokenizing it each time was the dominant cost of streaming a code answer
+ * (Shiki re-ran over the whole block per delta batch, and its cache never hit
+ * because the key moved with the text). A block renders as plain text while it
+ * grows and highlights once it stops — when its fence closes and the message
+ * moves on, or at once when the stream ends.
+ */
+export const CODE_SETTLE_MS = 400;
+
+/** `value` once it has held still for `delayMs` while `active`; `value` when not active; else null. */
+function useSettledValue(value: string, active: boolean, delayMs: number): string | null {
+  const [settled, setSettled] = useState<string | null>(null);
+  useEffect(() => {
+    if (!active) return;
+    const timer = setTimeout(() => setSettled(value), delayMs);
+    return () => clearTimeout(timer);
+  }, [value, active, delayMs]);
+  if (!active) return value;
+  return settled === value ? value : null;
+}
+
+interface HighlightResult {
+  code: string;
+  language: string;
+  theme: CodeThemeName;
+  html: string;
+}
+
 export function HighlightedCode({
   code,
   language,
   children = code,
   unbounded,
+  isStreaming = false,
 }: {
   code: string;
   language: string;
@@ -32,27 +64,45 @@ export function HighlightedCode({
    * request/response log) must never render less than what it actually holds.
    */
   unbounded?: boolean;
+  /**
+   * The message this block belongs to is still streaming. The block renders
+   * plain while its text changes and highlights once it holds still for
+   * `CODE_SETTLE_MS` (see there).
+   */
+  isStreaming?: boolean;
 }) {
   const { resolvedTheme } = useTheme();
   // Which half of the one palette to draw. There is no third option.
   const theme: CodeThemeName = resolvedTheme === 'dark' ? SHIKI_THEME_DARK : SHIKI_THEME_LIGHT;
   const opts = useMemo(() => ({ unbounded }), [unbounded]);
-  const [html, setHtml] = useState<string | null>(() => highlightSync(code, language, theme, opts));
+  const target = useSettledValue(code, isStreaming, CODE_SETTLE_MS);
+  const [result, setResult] = useState<HighlightResult | null>(null);
 
   useEffect(() => {
-    const sync = highlightSync(code, language, theme, opts);
-    if (sync) {
-      setHtml(sync);
-      return;
-    }
+    if (target === null) return;
+    if (highlightSync(target, language, theme, opts)) return; // rendered synchronously below
     let alive = true;
-    highlightAsync(code, language, theme, opts).then((result) => {
-      if (alive && result) setHtml(result);
+    highlightAsync(target, language, theme, opts).then((html) => {
+      if (alive && html) setResult({ code: target, language, theme, html });
     });
     return () => {
       alive = false;
     };
-  }, [code, language, theme, opts]);
+  }, [target, language, theme, opts]);
+
+  // A settled block reads its HTML synchronously from the cache (or the loaded
+  // grammar) during render, so a remount never flashes plain → colour. Only a
+  // grammar that is not loaded yet goes through the async result above.
+  const html =
+    target === null
+      ? null
+      : (highlightSync(target, language, theme, opts) ??
+        (result &&
+        result.code === target &&
+        result.language === language &&
+        result.theme === theme
+          ? result.html
+          : null));
 
   if (html) {
     return <code className={SHIKI_RESET} dangerouslySetInnerHTML={{ __html: html }} />;

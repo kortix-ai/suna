@@ -1,11 +1,12 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
+import type { Part } from '@opencode-ai/sdk/v2/client';
 import { getClient } from '../../core/runtime/client';
 import { logger } from '../../core/http/logger';
 import { isAbortError } from '../../core/http/abort-error';
-import { useSyncStore } from '../../browser/stores/sync-store';
+import { useSyncStore, type MessageWithParts } from '../../browser/stores/sync-store';
 import type { PromptPart, SendMessageOptions } from './keys';
 import { canQueryOpenCodeSession, unwrap } from './shared';
 
@@ -127,7 +128,21 @@ export function getSendRetryDelayMs(
  * for backward compatibility with consumers (session-layout, tool-renderers,
  * snapshot-dialog, session-diff-viewer).
  */
-export function useOpenCodeMessages(sessionId: string) {
+export function useOpenCodeMessages(
+  sessionId: string,
+  options: {
+    /**
+     * Re-render only when a message is added, removed, or replaced, or when a
+     * part that is not `text`/`reasoning` changes. Streamed text alone does not
+     * re-render the caller, and the rows it holds carry the text as of the
+     * last structural change. For consumers that read tool parts and message
+     * info only (a tool panel, a deliverable detector): a streaming turn then
+     * costs them one render per tool event instead of one per ~16 ms batch.
+     */
+    ignoreStreamedText?: boolean;
+  } = {},
+) {
+  const { ignoreStreamedText = false } = options;
   // Hold this session's transcript for as long as this hook is mounted.
   //
   // Not optional bookkeeping: the store frees a session once its last consumer
@@ -153,9 +168,17 @@ export function useOpenCodeMessages(sessionId: string) {
   // Object.is check → infinite re-render. This hook used to keep its own copy
   // of that memo, which meant an evicted session stayed reachable through it;
   // the store owns the memo now, beside the eviction that invalidates it.
-  const messages = useSyncStore((s) =>
-    s.buildSessionMessages(sessionId, s.messages[sessionId], s.parts),
-  );
+  const structuralRef = useRef<{ sessionId: string; rows: MessageWithParts[] } | null>(null);
+  const messages = useSyncStore((s) => {
+    const rows = s.buildSessionMessages(sessionId, s.messages[sessionId], s.parts);
+    if (!ignoreStreamedText) return rows;
+    const previous = structuralRef.current;
+    if (previous && previous.sessionId === sessionId && sameStructure(previous.rows, rows)) {
+      return previous.rows;
+    }
+    structuralRef.current = { sessionId, rows };
+    return rows;
+  });
   const isLoading = !useSyncStore((s) => sessionId in s.messages);
 
   return {
@@ -165,6 +188,49 @@ export function useOpenCodeMessages(sessionId: string) {
     error: null,
     refetch: async () => ({ data: messages }),
   };
+}
+
+/** Parts whose streamed growth `ignoreStreamedText` does not report. */
+function isStreamedTextPart(part: Part): boolean {
+  return part.type === 'text' || part.type === 'reasoning';
+}
+
+/**
+ * Same messages, same infos, and the same non-text parts in the same order.
+ * Idempotent and allocation-free, so it is safe inside a store selector.
+ */
+function sameStructure(a: MessageWithParts[], b: MessageWithParts[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const left = a[i];
+    const right = b[i];
+    if (left === right) continue;
+    if (left.info !== right.info) return false;
+    if (left.parts === right.parts) continue;
+    let j = 0;
+    let k = 0;
+    for (;;) {
+      while (j < left.parts.length && isStreamedTextPart(left.parts[j])) j++;
+      while (k < right.parts.length && isStreamedTextPart(right.parts[k])) k++;
+      if (j === left.parts.length || k === right.parts.length) {
+        if (j !== left.parts.length || k !== right.parts.length) return false;
+        break;
+      }
+      if (left.parts[j] !== right.parts[k]) return false;
+      j++;
+      k++;
+    }
+    // A text part appearing or disappearing is structure too.
+    if (countStreamed(left.parts) !== countStreamed(right.parts)) return false;
+  }
+  return true;
+}
+
+function countStreamed(parts: Part[]): number {
+  let count = 0;
+  for (const part of parts) if (isStreamedTextPart(part)) count++;
+  return count;
 }
 
 // ============================================================================

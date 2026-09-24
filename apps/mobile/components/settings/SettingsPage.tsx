@@ -44,6 +44,7 @@ import * as Haptics from 'expo-haptics';
 import { useAccountDeletionStatus } from '@/hooks/useAccountDeletion';
 import { useUpgradePaywall } from '@/hooks/useUpgradePaywall';
 import { log } from '@/lib/logger';
+import { LANGUAGE_PICKER_ENABLED } from '@/lib/utils/locale-config';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -230,7 +231,9 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
               onPress={handleTheme}
             />
 
-            <SettingsItem icon={Globe} label={t('settings.language')} onPress={handleLanguage} />
+            {LANGUAGE_PICKER_ENABLED && (
+              <SettingsItem icon={Globe} label={t('settings.language')} onPress={handleLanguage} />
+            )}
 
             <SettingsItem
               icon={FlaskConical}

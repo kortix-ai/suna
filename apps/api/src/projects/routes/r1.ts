@@ -41,6 +41,7 @@ import {
   consumeProjectWebhookManifestRefreshBudget,
   createProjectWebhookRateLimitMiddleware,
 } from '../../shared/rate-limit';
+import { bindIntegrationPrincipal } from '../../shared/audit-scope';
 
 projectsApp.use('/*', supabaseAuth);
 
@@ -121,6 +122,10 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
   if (!authed) {
     return c.json({ error: 'Invalid webhook signature' }, 401);
   }
+  bindIntegrationPrincipal('project_webhook', {
+    accountId: project.accountId,
+    projectId: project.projectId,
+  });
 
   (c as any).set('accountId', project.accountId);
 

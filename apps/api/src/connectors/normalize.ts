@@ -80,7 +80,15 @@ export function normalizeOpenApi(doc: any): NormalizedAction[] {
       const inputSchema = buildOpenApiInput(doc, params, op.requestBody, derefContext);
       const outputSchema = buildOpenApiOutput(doc, op.responses, derefContext);
 
-      const binding: ActionBinding = { kind: 'openapi', method: method.toUpperCase(), path: pathTemplate, server };
+      const bodyMediaType = requestMediaType(deref(doc, op.requestBody, new Set(), derefContext));
+      const binding: ActionBinding = {
+        kind: 'openapi',
+        method: method.toUpperCase(),
+        path: pathTemplate,
+        server,
+        // JSON is the executor default; record only a type that differs.
+        ...(bodyMediaType && bodyMediaType !== 'application/json' ? { bodyMediaType } : {}),
+      };
       actions.push({
         path: relPath || `${method}`,
         name: op.summary ? String(op.summary) : relPath,
@@ -93,6 +101,24 @@ export function normalizeOpenApi(doc: any): NormalizedAction[] {
     }
   }
   return dedupePaths(actions);
+}
+
+/**
+ * The request media type the executor encodes: `application/json` first, then
+ * another JSON type, then form-urlencoded, then the first declared type.
+ */
+function requestMediaType(requestBody: any): string | null {
+  const content = requestBody?.content;
+  if (!content || typeof content !== 'object') return null;
+  const types = Object.keys(content);
+  if (types.length === 0) return null;
+  const essence = (type: string) => type.split(';', 1)[0]!.trim().toLowerCase();
+  return (
+    types.find((type) => essence(type) === 'application/json') ??
+    types.find((type) => essence(type).endsWith('+json')) ??
+    types.find((type) => essence(type) === 'application/x-www-form-urlencoded') ??
+    types[0]!
+  );
 }
 
 function firstServerUrl(doc: any): string | null {
@@ -124,8 +150,9 @@ function buildOpenApiInput(
   }
 
   const body = deref(doc, requestBody, new Set(), context);
-  if (body?.content) {
-    const json = body.content['application/json'] ?? Object.values(body.content)[0];
+  const mediaType = requestMediaType(body);
+  if (body?.content && mediaType) {
+    const json = body.content[mediaType];
     const bodySchema = deref(doc, (json as any)?.schema, new Set(), context);
     if (bodySchema) {
       properties.body = boundedSchema(bodySchema, context);

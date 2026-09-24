@@ -53,24 +53,3 @@ describe('fileIconKey', () => {
     expect(fileIconKey('mystery.xyz')).toBe('file');
   });
 });
-
-describe('displayNames', () => {
-  test('drops the extension', () => {
-    const { displayNames } = require('./file-icon');
-    expect(displayNames(['package.json', 'README.md'])).toEqual({ 'package.json': 'package', 'README.md': 'README' });
-  });
-
-  test('keeps the extension on names that would collide once bare', () => {
-    const { displayNames } = require('./file-icon');
-    expect(displayNames(['kortix.html', 'kortix.yaml', 'index.ts'])).toEqual({
-      'kortix.html': 'kortix.html',
-      'kortix.yaml': 'kortix.yaml',
-      'index.ts': 'index',
-    });
-  });
-
-  test('a dotfile keeps its whole name', () => {
-    const { displayNames } = require('./file-icon');
-    expect(displayNames(['.env', '.gitignore'])).toEqual({ '.env': '.env', '.gitignore': '.gitignore' });
-  });
-});

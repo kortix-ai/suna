@@ -24,7 +24,7 @@ export const SESSION_SYNC_PAGE_SIZE = 100;
  * The FIRST page — the one the user waits on.
  *
  * Time to first paint is bytes, not messages. Measured on a heavy session
- * (essentia, 2026-08-24, a run with hundreds of image reads whose parts carried
+ * (sampleco, 2026-08-24, a run with hundreds of image reads whose parts carried
  * base64 — BEFORE the attachment bytes were stripped from the list):
  *
  *   message?limit=50   ->   8,228 kB   30.39 s
@@ -480,7 +480,7 @@ export class SessionSyncController {
       //   message?limit=50&before=..  200  25,125 kB   29.23 s
       //   -> 78,097 kB transferred, finish 3.8 min, NOTHING on screen
       //
-      // (essentia, 2026-08-24, a run with hundreds of image reads: fifty
+      // (sampleco, 2026-08-24, a run with hundreds of image reads: fifty
       // messages weigh 8-25 MB because the parts carry the image bytes.)
       //
       // There used to be a backward WALK here that kept fetching pages until

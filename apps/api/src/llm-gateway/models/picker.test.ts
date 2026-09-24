@@ -29,7 +29,7 @@ describe('providerFlagship', () => {
   // Bedrock refuses the bare in-region id for its current families
   // ("Invocation of model ID xai.grok-4.6 with on-demand throughput isn't
   // supported. Retry your request with the ID or ARN of an inference
-  // profile") — verified live on the Essentia self-host 2026-08-26, where a
+  // profile") — verified live on the SampleCo self-host 2026-08-26, where a
   // fresh workspace auto-selected `xai.grok-4.6` and looped "Retrying in Ns"
   // forever. `xai.grok-4.6` is the NEWEST Bedrock model in the catalog AND
   // has no `global.`/`us.` twin, so a release-date tie-break cannot save it:

@@ -14,11 +14,10 @@
 export interface SessionContentState {
   activeSessionId: string | null;
   activePageId: string | null;
-  showTabsOverview: boolean;
 }
 
 /**
- * A thread, a page, or the overview is on screen, so the switched-in sandbox
+ * A thread or a page is on screen, so the switched-in sandbox
  * stays. A page opened from a thread reads it. A connecting session does not
  * count: the connecting view needs no sandbox, and a sandbox kept for it would
  * leave the stream on the previous session while the next one connects.
@@ -26,9 +25,8 @@ export interface SessionContentState {
 export function showsSessionContent({
   activeSessionId,
   activePageId,
-  showTabsOverview,
 }: SessionContentState): boolean {
-  return !!activeSessionId || !!activePageId || showTabsOverview;
+  return !!activeSessionId || !!activePageId;
 }
 
 /**

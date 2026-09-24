@@ -1,8 +1,60 @@
+import { decodeHtmlEntities } from './markdown';
+
+/**
+ * One line, no mention markup: for command parsing and session titles. Never
+ * for what the agent reads — see `teamsMessageText`.
+ */
 export function stripTeamsMentions(text: string): string {
   return text
     .replace(/<at[^>]*>.*?<\/at>/gi, ' ')
     .replace(/&nbsp;/gi, ' ')
     .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * The message as the agent should read it.
+ *
+ * The prompt used `stripTeamsMentions`, which collapses every run of
+ * whitespace — so a pasted stack trace, list or code block reached the agent
+ * as one line — and deletes EVERY mention, so "ask @Alice about it" reached it
+ * as "ask about it". Here the line breaks stay, the bot's own mention (which
+ * only addresses the message) goes, and anyone else mentioned stays by name.
+ *
+ * Which `<at>` is the bot comes from the mention entities. A message without
+ * them (a synthetic one, relayed from a card) drops only a leading mention,
+ * the way people address a bot.
+ */
+export function teamsMessageText(activity: {
+  text?: string;
+  entities?: Array<Record<string, unknown>>;
+  recipient?: { id?: string };
+}): string {
+  const botId = activity.recipient?.id;
+  const botMarkup = new Set<string>();
+  let knowsMentions = false;
+  for (const entity of activity.entities ?? []) {
+    if (entity.type !== 'mention') continue;
+    knowsMentions = true;
+    const mentioned = entity.mentioned as { id?: string } | undefined;
+    if (botId && mentioned?.id === botId && typeof entity.text === 'string') botMarkup.add(entity.text);
+  }
+
+  // A removed mention becomes one space, however much space surrounded it.
+  const GAP = '\u0000';
+  let text = (activity.text ?? '').replace(/\u0000/g, '').replace(/\r\n?/g, '\n').replace(/<br\s*\/?>/gi, '\n');
+  if (!knowsMentions) text = text.replace(/^\s*<at[^>]*>.*?<\/at>/i, GAP);
+  text = text
+    .replace(/<at[^>]*>(.*?)<\/at>/gi, (markup: string, name: string) =>
+      botMarkup.has(markup) ? GAP : `@${name.trim()}`,
+    )
+    .replace(/[ \t]*\u0000[ \t]*/g, ' ');
+
+  return decodeHtmlEntities(text)
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 
@@ -21,6 +73,8 @@ const COMMAND_VERBS = new Set([
   'help',
   'stop',
   'cancel',
+  'new',
+  'reset',
   'status',
   'config',
   'settings',
