@@ -1051,12 +1051,13 @@ async function drainSessionLifecycleQueueTick(
       // transcript, and "both rows reported delivered while the first answer
       // rendered under the second prompt".
       //
-      // A Quick Queue GROUP is now sent together (`quick-queue-group.ts`,
-      // the owner's rule of 2026-09-21): rows 1..N-1 with `noReply: true`
-      // (persisted, no reply started) and row N normally. Exactly one reply
-      // exists, so the failure above has no mechanism. Everything else — Queue
-      // List, an unplaced row, a held row — still goes one per drain, and the
-      // rows this drain does not take are returned to the queue in order.
+      // A GROUP is sent together (`quick-queue-group.ts`): rows 1..N-1 with
+      // `noReply: true` (persisted, no reply started) and row N normally.
+      // Exactly one reply exists, so the failure above has no mechanism. A
+      // group is one placement: the Quick Queue (the owner's rule of
+      // 2026-09-21) or the Queue List (2026-09-24, "sent all at once, not one
+      // by one"). An unplaced row and a held row still go one per drain, and
+      // the rows this drain does not take are returned to the queue in order.
       let i = 0;
       while (i < lane.length) {
         const row = lane[i];
@@ -1835,7 +1836,19 @@ export async function executeQueuedContinue(
     admission = options.admitted
       ? { admit: true }
       : await admitInboxPrompt(row, undefined, { groupCommandIds: options.groupCommandIds });
-    if (admission.admit) await lifecycleStore.markInboxDeliveryStarted(row.commandId);
+    // THE HEAD'S ADMISSION IS THE GROUP'S. Every row of the group is published
+    // `delivering` now, in one step, so GET .../prompts reports the whole
+    // group at once and the tab draws every bubble together. Stamped per row
+    // at its own post, the list reported them one by one and the transcript
+    // grew a bubble, a "Thinking" row, the next bubble… (2026-09-24). The
+    // tail rows are already stamped when their turn comes (`admitted`).
+    if (admission.admit && !options.admitted) {
+      await Promise.all(
+        [row.commandId, ...(options.groupCommandIds ?? [])].map((commandId) =>
+          lifecycleStore.markInboxDeliveryStarted(commandId),
+        ),
+      );
+    }
     tl.mark('admission');
   } catch (err) {
     await markCommandFailed(

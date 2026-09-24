@@ -90,6 +90,24 @@ export function cleanPromptText(text: string): { text: string; fileCount: number
   return { text: withoutAgents.trim(), fileCount: uploads.files.length };
 }
 
+/**
+ * Is this inbox row drawn as a TRANSCRIPT bubble (true) or as a Queue List row
+ * above the composer (false)? One rule for both surfaces, so a row is never in
+ * both and never in neither.
+ *
+ * A Quick Queue row and the session's first prompt are always bubbles. A Queue
+ * List row waits in the card and moves into the transcript the moment the
+ * server publishes it `delivering`. The server publishes a whole Queue List
+ * group `delivering` at once (`engine.ts`, the head's admission), so every row
+ * of it leaves the card together and the transcript draws them as one block —
+ * not a bubble, a "Thinking" row, the next bubble, as each echo landed
+ * (reported 2026-09-24).
+ */
+export function promptInTranscript(prompt: Pick<SessionPrompt, 'placement' | 'state' | 'client_message_id'>): boolean {
+  if (prompt.placement === 'transcript' || isFirstPromptRow(prompt)) return true;
+  return prompt.state === 'delivering';
+}
+
 /** Where a server row stands — see `QueueRowState`. */
 export function queueRowStateOf(prompt: Pick<SessionPrompt, 'prompt_id' | 'state'>): QueueRowState {
   return prompt.state === 'failed'
@@ -215,7 +233,7 @@ export function projectQueueRows(input: {
   for (const prompt of input.prompts) {
     if (prompt.client_message_id) listed.add(prompt.client_message_id);
     if (prompt.reason === 'held' && prompt.state !== 'failed') heldCount += 1;
-    if (isFirstPromptRow(prompt) || prompt.placement === 'transcript') continue;
+    if (promptInTranscript(prompt)) continue;
     if (onScreen(prompt, input.transcriptMessageIds)) continue;
 
     const draft = prompt.client_message_id ? draftsById.get(prompt.client_message_id) : undefined;

@@ -11,6 +11,7 @@ import {
   paintedMessageIdsOf,
   projectQueueRows,
   promptIdForClientMessage,
+  promptInTranscript,
   promptRowRemovable,
   quickQueueRemove,
   rowsToRemoveOnRewind,
@@ -52,6 +53,33 @@ const remoteFile: AttachedFile = {
   isImage: true,
 };
 
+describe('promptInTranscript — where a row is drawn', () => {
+  test('a Quick Queue row is always a transcript bubble', () => {
+    expect(promptInTranscript(prompt({ placement: 'transcript' }))).toBe(true);
+    expect(promptInTranscript(prompt({ placement: 'transcript', state: 'delivering' }))).toBe(true);
+  });
+
+  test('a Queue List row waits in the card, and moves to the transcript the moment it is delivering', () => {
+    // Reported 2026-09-24: a Queue List group went out one bubble at a time,
+    // a "Thinking" row between each. The server publishes the whole group
+    // `delivering` at once; every row of it leaves the card together.
+    expect(promptInTranscript(prompt({ placement: 'composer', state: 'queued' }))).toBe(false);
+    expect(promptInTranscript(prompt({ placement: 'composer', state: 'waiting', reason: 'turn_active' }))).toBe(false);
+    expect(promptInTranscript(prompt({ placement: 'composer', state: 'delivering' }))).toBe(true);
+  });
+
+  test('the card and the transcript agree: a delivering Queue List row leaves the card', () => {
+    const { rows } = projectQueueRows({
+      prompts: [
+        prompt({ prompt_id: 'd1', client_message_id: 'c1', placement: 'composer', state: 'delivering' }),
+        prompt({ prompt_id: 'd2', client_message_id: 'c2', placement: 'composer', state: 'delivering' }),
+        prompt({ prompt_id: 'q3', client_message_id: 'c3', placement: 'composer', state: 'queued' }),
+      ],
+    });
+    expect(rows.map((row) => row.id)).toEqual(['q3']);
+  });
+});
+
 describe('projectQueueRows', () => {
   test('conversation placement stays out of the composer list, including uploads', () => {
     const { rows, heldCount } = projectQueueRows({
@@ -87,6 +115,7 @@ describe('projectQueueRows', () => {
       prompts: [
         prompt({ prompt_id: 'queued' }),
         prompt({ prompt_id: 'waiting', state: 'waiting', reason: 'turn_active' }),
+        // Delivering: it left the card for the transcript (`promptInTranscript`).
         prompt({ prompt_id: 'delivering', state: 'delivering' }),
         prompt({ prompt_id: 'failed', state: 'failed', last_error: 'delivery outcome: failed' }),
         prompt({ prompt_id: 'optimistic:q_9', client_message_id: 'q_9' }),
@@ -98,8 +127,6 @@ describe('projectQueueRows', () => {
       ['queued', 'queued', true, true, null],
       // `waiting` is WHY a row has not gone out, not a lane of its own.
       ['waiting', 'queued', true, true, null],
-      // Its turn is starting: the server refuses a DELETE with 409.
-      ['delivering', 'delivering', false, false, null],
       ['failed', 'failed', true, false, 'delivery outcome: failed'],
       // No server id yet: nothing to remove or take back.
       ['optimistic:q_9', 'sending', false, false, null],
@@ -514,14 +541,14 @@ describe('the Send now field on a projected row', () => {
     expect(row.canSendNow).toBe(true);
   });
 
-  test('delivering and failed rows cannot', () => {
+  test('a failed row cannot, and a delivering one is no longer a card row', () => {
     const rows = projectQueueRows({
       prompts: [
         prompt({ prompt_id: 'd', client_message_id: 'q_d', state: 'delivering' }),
         prompt({ prompt_id: 'f', client_message_id: 'q_f', state: 'failed' }),
       ],
     }).rows;
-    expect(rows.map((r) => r.canSendNow)).toEqual([false, false]);
+    expect(rows.map((r) => [r.id, r.canSendNow])).toEqual([['f', false]]);
   });
 });
 
@@ -546,7 +573,10 @@ describe('promptRowRemovable — one removal rule for both lanes', () => {
   test('the Queue List row reads the same rule', () => {
     for (const [, overrides] of cases) {
       const row = prompt({ placement: 'composer', ...overrides });
-      expect(projectQueueRows({ prompts: [row] }).rows[0].removable).toBe(promptRowRemovable(row));
+      const [listed] = projectQueueRows({ prompts: [row] }).rows;
+      // A delivering row is drawn in the transcript, not in the card.
+      if (row.state === 'delivering') expect(listed).toBeUndefined();
+      else expect(listed.removable).toBe(promptRowRemovable(row));
     }
   });
 });

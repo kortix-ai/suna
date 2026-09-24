@@ -1018,8 +1018,10 @@ export interface SessionPrompt {
    *  about this row changes: it keeps its own `prompt_id`, its own
    *  `message_id`, and its own transcript bubble. The reply is parented on the
    *  LAST message of the group; the earlier ones are ordinary finished user
-   *  messages, not pending ones. A `composer` row, a row with no placement,
-   *  and a held row are never grouped. */
+   *  messages, not pending ones. `composer` rows group the same way once the
+   *  running response finishes — every waiting Queue List row goes out as one
+   *  grouped turn. The two placements never share a group; a row with no
+   *  placement and a held row are never grouped. */
   placement?: 'transcript' | 'composer';
   /** Full accepted text for pending messages after reload. Absent on older servers. */
   full_text?: string;

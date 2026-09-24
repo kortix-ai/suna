@@ -57,7 +57,7 @@ describe('a sent tile keeps one identity from Send to delivery', () => {
     // The session's FIRST prompt and Quick Queue rows are painted as turns
     // before the runtime has them; Queue List rows stay above the composer.
     expect(chat).toContain(
-      "if (!isFirstPromptRow(prompt) && prompt.placement !== 'transcript') continue;",
+      'if (!promptInTranscript(prompt)) continue;',
     );
     expect(chat).toContain('useEffect(() => retainSentAttachmentPreviews(), []);');
     expect(chat).toContain('sentAttachmentsOf(firstPromptSource.files)');
@@ -496,7 +496,7 @@ describe('Up and the pencil edit a queued message in place', () => {
       'const queuedSyntheticMessages = useMemo(',
       'const rawTurns = useMemo(',
     );
-    expect(synthetic).toContain("if (!isFirstPromptRow(prompt) && prompt.placement !== 'transcript') continue;");
+    expect(synthetic).toContain('if (!promptInTranscript(prompt)) continue;');
   });
 });
 

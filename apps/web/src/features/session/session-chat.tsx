@@ -67,6 +67,7 @@ import {
   draftMessageId,
   isFirstPromptRow,
   paintedMessageIdsOf,
+  promptInTranscript,
   projectQueueRows,
   quickQueueRemove,
   rowsToRemoveOnRewind,
@@ -3539,8 +3540,10 @@ export function SessionChat({
     const out: NonNullable<typeof messages> = [];
     for (const prompt of promptInbox.prompts) {
       if (prompt.state === 'failed' && prompt.placement !== 'transcript') continue;
-      // Enter sends appear before delivery. Composer entries stay above the input.
-      if (!isFirstPromptRow(prompt) && prompt.placement !== 'transcript') continue;
+      // Enter sends appear before delivery. Composer entries stay above the
+      // input until the server delivers them — then the whole group at once
+      // (`promptInTranscript`).
+      if (!promptInTranscript(prompt)) continue;
       if (!(prompt.full_text ?? prompt.text).trim() && !prompt.attachments?.length) continue;
       if (prompt.message_id && transcriptClaimedIds.has(prompt.message_id)) continue;
       if (prompt.wire_message_id && transcriptClaimedIds.has(prompt.wire_message_id)) continue;

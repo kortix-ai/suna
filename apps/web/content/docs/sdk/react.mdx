@@ -181,12 +181,15 @@ order, instead of five separate turns. Nothing changes in your client: each
 prompt is still its own row, each keeps its own message id, and each renders as
 its own bubble. The answer is parented on the LAST message of the group, and
 the earlier messages render as ordinary finished user messages — not as pending
-or queued. A `composer` row, a row with no placement, and a held row are never
-grouped.
+or queued. A row with no placement and a held row are never grouped, and the
+two placements never share a group.
 
 Pass `placement: 'composer'` to keep it in the editable list above the input.
-It waits for the active response to finish, never steers, never ends a
-response, and receives its own turn. Each placement keeps submission order.
+It waits for the active response to finish, never steers, and never ends a
+response. When the response finishes, EVERY waiting composer row is delivered
+together as one grouped turn — one reply addresses all of them, in order — the
+same `noReply` grouping the transcript placement uses. Each placement keeps
+submission order.
 The web composer uses Enter for transcript placement and Command+Enter
 (Control+Enter on Windows/Linux) for composer placement. Shift+Enter inserts a newline.
 

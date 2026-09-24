@@ -151,7 +151,9 @@ describe('no queue surface toasts what the server wrote', () => {
 
     const chatTurn = flat(between(chat, 'pendingPrompt={pendingPrompt}', 'interruptedBeforeRun={'));
     expect(chatTurn).toContain('promptInbox.pendingActions[pendingPrompt.prompt_id]');
-    expect(chatTurn).toContain('onRemoveQueued={handleRemoveQueuedMessage}');
+    // The row is memoized, so it gets the stable wrapper of the same handler.
+    expect(chatTurn).toContain('onRemoveQueued={stableRemoveQueued}');
+    expect(chat).toContain('const stableRemoveQueued = useStableCallback(handleRemoveQueuedMessage);');
 
     const shellBubble = flat(
       between(shell, 'transcriptQueue.map((entry) =>', 'Once a first message is sent'),

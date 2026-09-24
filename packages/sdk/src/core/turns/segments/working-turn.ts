@@ -137,7 +137,7 @@ function isQueuedTurn(turn: TurnLike, input: QueuedTurnInput): boolean {
 /**
  * Where the fallback Thinking row goes when no turn draws its own. A prompt
  * the inbox is delivering is the work in progress, so the row sits directly
- * under its bubble. Otherwise it follows the last turn before the first queued
+ * under its bubble — under the LAST one when a whole group is delivering. Otherwise it follows the last turn before the first queued
  * bubble, so it never sits under prompts the agent has not reached. `null` puts
  * it at the transcript's end: nothing is queued, or the queue starts the
  * transcript.
@@ -145,9 +145,13 @@ function isQueuedTurn(turn: TurnLike, input: QueuedTurnInput): boolean {
 export function fallbackBusyRowAfterTurnId(
   input: QueuedTurnInput & DeliveringTurnInput & { turns: ReadonlyArray<TurnLike> },
 ): string | null {
-  const delivering = input.turns.find((turn) =>
-    input.deliveringPromptIds.has(turn.userMessage.info.id),
-  );
+  // The LAST delivering prompt: a group is published delivering at once, and
+  // its one reply is parented on its last message. Under the first, the row
+  // sat between the group's own bubbles (2026-09-24).
+  let delivering: TurnLike | undefined;
+  for (const turn of input.turns) {
+    if (input.deliveringPromptIds.has(turn.userMessage.info.id)) delivering = turn;
+  }
   if (delivering) return delivering.userMessage.info.id;
   const firstQueued = input.turns.findIndex((turn) => isQueuedTurn(turn, input));
   if (firstQueued <= 0) return null;
@@ -425,11 +429,21 @@ export function resolveBusyRow<T extends TurnLike, P extends BusyRowPrompt>(
   // bubble would read as running while the server still holds the prompt.
   if (input.claimedFirstTurnId) unrunTurnIds.add(input.claimedFirstTurnId);
 
-  // The projection names the turn first; only where it names none does this
-  // tab's own unanswered idle send decide (`freshSendHint`).
+  // The projection names the turn first. Where it names none, a prompt the
+  // inbox is DELIVERING is the work in progress — the LAST of them, because a
+  // group's one reply lands under its last row. Without this, each row of a
+  // group that echoed (and so left the inbox) became the newest unanswered
+  // turn in turn, and the row walked ONE → TWO → THREE → FOUR (2026-09-24).
+  // Only then does this tab's own unanswered idle send decide (`freshSendHint`).
+  let lastDeliveringTurnId: string | null = null;
+  for (const turn of turns) {
+    if (deliveringPromptIds.has(turn.userMessage.info.id)) {
+      lastDeliveringTurnId = turn.userMessage.info.id;
+    }
+  }
   const workingTurn = resolveWorkingTurn({
     turns,
-    hintMessageId: projection.turnId ?? input.freshSendTurnId,
+    hintMessageId: projection.turnId ?? lastDeliveringTurnId ?? input.freshSendTurnId,
     unrunTurnIds,
   });
   const pendingTurnIds = new Set(workingTurn.pendingTurnIds);

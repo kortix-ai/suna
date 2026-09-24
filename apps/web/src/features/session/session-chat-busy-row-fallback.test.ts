@@ -72,7 +72,9 @@ describe('the waiting row has a fallback when no turn owns it', () => {
     expect(
       resolveBusyRow({ ...running, turnHasError: () => true, isRetrying: true }),
     ).toMatchObject({ someTurnDrawsBusyRow: true, showFallbackBusyRow: false });
-    // A suppressed working turn: a finished answer with a prompt delivering below.
+    // A finished answer with a prompt delivering below: the delivering prompt
+    // IS the work in progress, so its own turn draws the row — directly under
+    // its bubble, never over the finished answer and never twice.
     expect(
       resolveBusyRow(
         busyInput({
@@ -81,7 +83,7 @@ describe('the waiting row has a fallback when no turn owns it', () => {
           projection: { state: 'working', turnId: null },
         }),
       ),
-    ).toMatchObject({ suppressWorkingTurnBusy: true, someTurnDrawsBusyRow: false, showFallbackBusyRow: true });
+    ).toMatchObject({ workingTurnId: 'b', someTurnDrawsBusyRow: true, showFallbackBusyRow: false });
     // No busy value, no row anywhere.
     expect(resolveBusyRow({ ...running, lastTurnWorking: false })).toMatchObject({
       someTurnDrawsBusyRow: false,

@@ -995,7 +995,11 @@ describe('resolveBusyRow — the busy row draws on the turn that is starting', (
     expect(run([idle, delivering, promoted, busy, echo, read])).toEqual([
       // Not promoted yet: the row stays above the queued bubble.
       { step: 'A idle', state: 'working', at: 'under:A', pending: ['W_B'] },
-      { step: 'W_B delivering', state: 'working', at: 'under:W_B', pending: ['W_B'] },
+      // Delivering: W_B IS the work in progress, so its own turn draws the row
+      // — the same place the fallback slot drew it, and still dimmed. (Hinting
+      // the working turn to the delivering prompt is what keeps a GROUP's row
+      // under its last row while the earlier rows echo.)
+      { step: 'W_B delivering', state: 'working', at: 'turn:W_B', pending: ['W_B'] },
       { step: 'W_B promoted', state: 'working', at: 'turn:W_B', pending: [] },
       { step: 'W_B busy frame', state: 'working', at: 'turn:W_B', pending: [] },
       { step: 'echo R_B', state: 'working', at: 'turn:R_B', pending: [] },
@@ -1042,5 +1046,88 @@ describe('resolveBusyRow — waiting on the user is not the agent working', () =
     expect(row.showFallbackBusyRow).toBe(false);
     // Guard: the same state without the question does draw the fallback.
     expect(resolveBusyRow({ ...base, turns: [] }).showFallbackBusyRow).toBe(true);
+  });
+});
+
+describe('fallbackBusyRowAfterTurnId — a whole group delivering', () => {
+  // A Queue List group is published `delivering` at once. Its one reply is
+  // parented on the LAST message of the group, so the waiting row sits under
+  // that one — never between the group's bubbles (reported 2026-09-24).
+  const bare = (id: string) => ({ userMessage: { info: { id } }, assistantMessages: [] });
+  const done = (id: string) => ({
+    userMessage: { info: { id } },
+    assistantMessages: [{ info: { time: { created: 1, completed: 2 } } }],
+  });
+
+  test('several delivering prompts: the row goes under the LAST of them', () => {
+    const turns = [done('prev'), bare('g1'), bare('g2'), bare('g3')];
+    expect(
+      fallbackBusyRowAfterTurnId({
+        turns,
+        pendingTurnIds: new Set(['g1', 'g2', 'g3']),
+        pendingPromptIds: new Set(['g1', 'g2', 'g3']),
+        deliveringPromptIds: new Set(['g1', 'g2', 'g3']),
+      }),
+    ).toBe('g3');
+  });
+
+  test('guard: one delivering prompt still draws the row under its own bubble', () => {
+    const turns = [done('prev'), bare('d1'), bare('q2')];
+    expect(
+      fallbackBusyRowAfterTurnId({
+        turns,
+        pendingTurnIds: new Set(['d1', 'q2']),
+        pendingPromptIds: new Set(['d1', 'q2']),
+        deliveringPromptIds: new Set(['d1']),
+      }),
+    ).toBe('d1');
+  });
+});
+
+describe('resolveBusyRow — a group whose rows echo one by one', () => {
+  // Measured 2026-09-24 (real Firefox): four Queue List rows appeared together,
+  // then each echo (≈2 s apart) moved "Thinking" under ONE, TWO, THREE, FOUR.
+  // An echoed row leaves the inbox; the transcript-only fallback then picked it
+  // as the newest unanswered turn. The group's reply lands under its LAST row.
+  const bare = (id: string) => ({ userMessage: { info: { id } }, assistantMessages: [] });
+  const done = (id: string) => ({
+    userMessage: { info: { id } },
+    assistantMessages: [{ info: { time: { created: 1, completed: 2 } } }],
+  });
+  const delivering = (id: string) => ({
+    prompt_id: `p_${id}`,
+    state: 'delivering',
+    message_id: id,
+    wire_message_id: id,
+  });
+  const base: Parameters<typeof resolveBusyRow>[0] = {
+    turns: [done('prev'), bare('g1'), bare('g2'), bare('g3'), bare('g4')],
+    // g1 has echoed and left the inbox; g2..g4 are still being delivered.
+    prompts: [delivering('g2'), delivering('g3'), delivering('g4')],
+    projection: { state: 'working', turnId: null, pendingDelivery: true },
+    freshSendTurnId: null,
+    lastTurnWorking: true,
+    isRetrying: false,
+    turnHasError: () => false,
+    firstPromptStandIn: false,
+  };
+
+  test('the row stays under the LAST row of the group while earlier rows echo', () => {
+    const row = resolveBusyRow(base);
+    const at = row.someTurnDrawsBusyRow
+      ? row.workingTurnId
+      : row.showFallbackBusyRow
+        ? row.fallbackBusyRowTurnId
+        : null;
+    expect(at).toBe('g4');
+  });
+
+  test('guard: once the server names the running turn, that turn wins', () => {
+    const row = resolveBusyRow({
+      ...base,
+      prompts: [],
+      projection: { state: 'working', turnId: 'g4' },
+    });
+    expect(row.workingTurnId).toBe('g4');
   });
 });

@@ -1,5 +1,4 @@
 import { isHeldInboxRow } from './inbox-rows';
-import { promptSteers } from './inbox-admission';
 import { compareInboxSendOrder } from './inbox-order';
 import type { SessionLifecycleCommandRow } from './store';
 
@@ -48,9 +47,28 @@ import type { SessionLifecycleCommandRow } from './store';
 /** Below this a group is an ordinary single delivery; see `quickQueueGroupHint`. */
 export const QUICK_QUEUE_GROUP_HINT_MIN = 2;
 
+/**
+ * The lane a row groups in: `'transcript'` (Quick Queue) or `'composer'`
+ * (Queue List). `null` for an unplaced row — a trigger, Slack, an approval
+ * resume — which always answers for itself.
+ *
+ * The Queue List groups too (the owner's rule of 2026-09-24: "whatever prompts
+ * are in the queue list should be sent all at once, not one by one"). Its rows
+ * still wait for the running turn (`inbox-admission.ts`); when that turn ends
+ * they are delivered together and answered in one reply. The two lanes never
+ * mix: a group is one placement, so a Quick Queue group never swallows the
+ * list, and the list never rides in on a steer.
+ */
+export function groupLaneOf(
+  row: Pick<SessionLifecycleCommandRow, 'payload'>,
+): 'transcript' | 'composer' | null {
+  const placement = (row.payload as { placement?: unknown } | null)?.placement;
+  return placement === 'transcript' || placement === 'composer' ? placement : null;
+}
+
 /** May this row be merged into a grouped answer with its neighbours? */
 export function isGroupableQuickQueueRow(row: SessionLifecycleCommandRow): boolean {
-  return promptSteers(row) && !isHeldInboxRow(row.result);
+  return groupLaneOf(row) !== null && !isHeldInboxRow(row.result);
 }
 
 export interface QuickQueueGroupOptions {
@@ -91,8 +109,13 @@ export function quickQueueGroup(
   options: QuickQueueGroupOptions = {},
 ): SessionLifecycleCommandRow[] {
   const gap = options.firstUnclaimed ?? null;
+  const lane = batch.length > 0 ? groupLaneOf(batch[0]) : null;
   let size = 0;
-  while (size < batch.length && isGroupableQuickQueueRow(batch[size])) {
+  while (
+    size < batch.length &&
+    isGroupableQuickQueueRow(batch[size]) &&
+    groupLaneOf(batch[size]) === lane
+  ) {
     if (gap && compareInboxSendOrder(batch[size], gap) > 0) break;
     size += 1;
   }

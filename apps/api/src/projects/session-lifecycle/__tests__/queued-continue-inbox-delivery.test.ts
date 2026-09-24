@@ -52,6 +52,8 @@ const OPENCODE_MINTED_ID = `msg_${(((BigInt(NOW_MS - 40_000) * BigInt(0x1000)) &
 
 let completeDuringRequeue = false;
 let deliveryStarts: string[] = [];
+/** `deliveryStarts.length` at each POST — proves when the group was published. */
+let startsAtPost: number[] = [];
 let requeues: Array<{ commandId: string; reason: string; availableAt: Date }> = [];
 let unverifiedRequeues: Array<{ commandId: string; availableAt: Date }> = [];
 let unlandedRequeues: Array<{ commandId: string; reason: string }> = [];
@@ -290,6 +292,7 @@ mock.module('../../../sandbox-proxy/routes/preview', () => ({
         return Response.json({ status: 'duplicate', deduplicated: true });
       }
       capturedBodies.push(JSON.parse(new TextDecoder().decode(body)));
+      startsAtPost.push(deliveryStarts.length);
       // The claim outlives only a delivery the daemon ACCEPTED: a 5xx is
       // provable non-delivery and the real proxy releases it, so a retry under
       // the same key after a 500 is forwarded again, not deduped.
@@ -528,6 +531,7 @@ beforeEach(() => {
   unverifiedRequeues = [];
   completeDuringRequeue = false;
   deliveryStarts = [];
+  startsAtPost = [];
   unlandedRequeues = [];
   unlandedBudgetLeft = 2;
   sessionRow = {
@@ -2034,7 +2038,37 @@ describe('a Quick Queue GROUP is one grouped turn', () => {
     expect(forwardedCalls.map((call) => call.commandId)).toEqual(['cmd-a']);
   });
 
-  test('a Queue List row is never grouped — it keeps its own turn and its own answer', async () => {
+  test('every waiting Queue List row goes out as ONE group: noReply posts, then one reply', async () => {
+    // The owner's rule of 2026-09-24: the Queue List is sent all at once.
+    claimed = [
+      quickRow('cmd-a', 'LIST-A', wireA, NOW_MS - 3_000, { placement: 'composer' }),
+      quickRow('cmd-b', 'LIST-B', wireB, NOW_MS - 2_000, { placement: 'composer' }),
+      quickRow('cmd-c', 'LIST-C', wireC, NOW_MS - 1_000, { placement: 'composer' }),
+    ];
+    const result = await drainSessionLifecycleQueue({ limit: 10 });
+    expect(result).toMatchObject({ claimed: 3, succeeded: 3, queued: 0 });
+    expect(capturedBodies.map((body) => body.messageID)).toEqual([wireA, wireB, wireC]);
+    expect(capturedBodies.map((body) => body.noReply)).toEqual([true, true, undefined]);
+    expect(hintOf(capturedBodies[2])[0]?.text).toContain('3 messages in a row');
+  });
+
+  test('the WHOLE group is published as delivering before its first post, not row by row', async () => {
+    // Reported 2026-09-24: four Queue List prompts appeared one at a time, a
+    // "Thinking" row between each. The group is claimed together, but each
+    // row was stamped `delivery_started_at` only when its own post began, so
+    // GET .../prompts reported them delivering one by one. The head's
+    // admission is the group's admission: every row is stamped then.
+    claimed = [
+      quickRow('cmd-a', 'LIST-A', wireA, NOW_MS - 3_000, { placement: 'composer' }),
+      quickRow('cmd-b', 'LIST-B', wireB, NOW_MS - 2_000, { placement: 'composer' }),
+      quickRow('cmd-c', 'LIST-C', wireC, NOW_MS - 1_000, { placement: 'composer' }),
+    ];
+    await drainSessionLifecycleQueue({ limit: 10 });
+    expect([...deliveryStarts].sort()).toEqual(['cmd-a', 'cmd-b', 'cmd-c']);
+    expect(startsAtPost[0]).toBe(3);
+  });
+
+  test('the two lanes never share a group: a Quick Queue group ends at the first Queue List row', async () => {
     claimed = [
       quickRow('cmd-a', 'PROMPT-A', wireA, NOW_MS - 3_000),
       quickRow('cmd-list', 'PROMPT-LIST', wireB, NOW_MS - 2_000, { placement: 'composer' }),

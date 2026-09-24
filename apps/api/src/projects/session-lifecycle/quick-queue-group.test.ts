@@ -30,11 +30,12 @@ const list = (commandId: string) => row(commandId, { placement: 'composer' });
 const unplaced = (commandId: string) => row(commandId, {});
 
 describe('isGroupableQuickQueueRow', () => {
-  test('only an unheld Quick Queue row is groupable', () => {
+  test('an unheld Quick Queue or Queue List row is groupable; unplaced and held rows are not', () => {
     expect(isGroupableQuickQueueRow(quick('a'))).toBe(true);
-    expect(isGroupableQuickQueueRow(list('a'))).toBe(false);
+    expect(isGroupableQuickQueueRow(list('a'))).toBe(true);
     expect(isGroupableQuickQueueRow(unplaced('a'))).toBe(false);
     expect(isGroupableQuickQueueRow(quick('a', { held: true }))).toBe(false);
+    expect(isGroupableQuickQueueRow(row('a', { placement: 'composer' }, { held: true }))).toBe(false);
   });
 });
 
@@ -44,14 +45,29 @@ describe('quickQueueGroup', () => {
     expect(quickQueueGroup(batch).map((entry) => entry.commandId)).toEqual(['a', 'b', 'c']);
   });
 
-  test('a Queue List row is never grouped and never reordered', () => {
+  test('every waiting Queue List row goes out as ONE group, in the order given', () => {
+    // The owner's rule of 2026-09-24: the Queue List is sent all at once, not
+    // one prompt per turn. The rows wait for the running turn like before;
+    // when it ends they are delivered together and answered in one reply.
+    expect(quickQueueGroup([list('a'), list('b'), list('c')]).map((e) => e.commandId)).toEqual([
+      'a',
+      'b',
+      'c',
+    ]);
+  });
+
+  test('the two lanes never mix: a group is one placement', () => {
     // Quick Queue sorts ahead of Queue List (`inbox-order.ts` lane 0 vs 1), so
-    // a composer row can only ever END the group, never sit inside it.
+    // the first Queue List row ENDS a Quick Queue group; the list goes out as
+    // its own group on the next delivery.
     expect(quickQueueGroup([quick('a'), quick('b'), list('c')]).map((e) => e.commandId)).toEqual([
       'a',
       'b',
     ]);
-    // A composer HEAD groups alone: it gets its own turn and its own answer.
+    expect(quickQueueGroup([list('c'), list('d'), quick('a')]).map((e) => e.commandId)).toEqual([
+      'c',
+      'd',
+    ]);
     expect(quickQueueGroup([list('c'), quick('a')]).map((e) => e.commandId)).toEqual(['c']);
   });
 
