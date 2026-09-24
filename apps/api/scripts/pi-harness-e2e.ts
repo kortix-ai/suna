@@ -3,6 +3,7 @@
  *
  *   bun pi-e2e.ts setup  --api http://localhost:14208/v1 --runtime pi|opencode --name <n>
  *   bun pi-e2e.ts run    --api ... --project <id> --provider daytona [--agent <name>] [--prompt "..."] [--keep]
+ *   bun pi-e2e.ts cr     --api ... --project <id> --head <branch> [--title "..."]   (open + merge a change request)
  *
  * setup: provisions a managed project (starter template), clones it through
  * the Git proxy with a PAT, sets `runtime:` in kortix.yaml, pushes.
@@ -121,6 +122,28 @@ async function setup(): Promise<void> {
   g('push', '-q', 'origin', 'HEAD:main');
   const sha = g('rev-parse', 'HEAD');
   console.log(JSON.stringify({ project_id: projectId, name, runtime, default_agent: defaultAgent, sha, manifest_head: manifest.split('\n').slice(0, 4) }));
+}
+
+/** Open a change request for `--head` (a branch already in the project repo) and merge it. */
+async function changeRequest(): Promise<void> {
+  const base = need('api');
+  const projectId = need('project');
+  const head = need('head');
+  const token = await jwt();
+  const created = await api(base, token, `/projects/${projectId}/change-requests`, {
+    method: 'POST',
+    body: JSON.stringify({ title: arg('title', `pi-e2e ${head}`), head_ref: head }),
+  });
+  const crId: string | undefined = created.body?.cr_id ?? created.body?.id;
+  const out: Record<string, unknown> = { head, create_status: created.status, cr_id: crId ?? null };
+  if (created.status === 201 && crId) {
+    const merged = await api(base, token, `/projects/${projectId}/change-requests/${crId}/merge`, { method: 'POST', body: '{}' });
+    out.merge_status = merged.status;
+    out.merge_body = typeof merged.body === 'string' ? merged.body.slice(0, 600) : JSON.stringify(merged.body).slice(0, 600);
+  } else {
+    out.create_body = JSON.stringify(created.body).slice(0, 600);
+  }
+  console.log(JSON.stringify(out, null, 2));
 }
 
 /** Register a project straight in the DB (the flows' database-project fixture), pointing at a local repo. */
@@ -351,7 +374,10 @@ switch (process.argv[2]) {
   case 'run':
     await run();
     break;
+  case 'cr':
+    await changeRequest();
+    break;
   default:
-    console.error('usage: pi-e2e.ts setup|run …');
+    console.error('usage: pi-e2e.ts setup|setup-db|run|cr|status|probe|flag|delete …');
     process.exit(2);
 }
