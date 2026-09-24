@@ -28,6 +28,7 @@ import {
 import type { ConfigReleaseApi } from '../config-release/api-client'
 import { bootOpenCodeConfig, type BootConfigPathResult } from '../harness/open-code/boot-config-path'
 import { configReleaseReport, resetConfigReleaseStateForTests } from '../harness/open-code/config-release'
+import { CONFIG_RELEASE_NOTICE_PATH, clearConfigReleaseNotice } from '../config-release/notice'
 import type { OpenCodeConfig } from '../harness/open-code/config'
 import {
   buildRelease,
@@ -35,7 +36,6 @@ import {
   FEATURE_DISABLED,
   git,
   initRepo,
-  REPOSITORY_CHANGED,
   serveRelease,
   startFakeApi,
   write,
@@ -183,6 +183,7 @@ function tamper(dir: string) {
 
 beforeEach(() => {
   resetConfigReleaseStateForTests()
+  clearConfigReleaseNotice()
   delete process.env.KORTIX_COMPILED_AGENT_CONFIG
   delete process.env.KORTIX_COMPILED_AGENT_CONFIG_ETAG
   served.configError = false
@@ -352,11 +353,14 @@ describe('valve B: the store or the API could not be reached', () => {
     expect(api.archiveRequests).toHaveLength(0)
   })
 
-  test('a previous-repository session keeps its config with no fallback reason', async () => {
+  test('an unexpected 409 is valve B like any other unreachable answer', async () => {
+    // A replaced repository no longer refuses a session, so a `409` carries no
+    // special meaning: the box keeps the verified copy it has and says why.
     const dir = await installProvenRelease()
-    api.respond(REPOSITORY_CHANGED)
+    api.respond({ status: 409, json: { error: 'something else', code: 'other_conflict' } })
     const run = await boot()
-    expect(run.result).toMatchObject({ dir, source: 'release', proven: true, fallbackReason: null, releasesEnabled: true })
+    expect(run.result).toMatchObject({ dir, source: 'release', proven: true, releasesEnabled: true })
+    expect(run.result.fallbackReason).toMatch(/the API could not be asked for this session's release/)
   })
 })
 
@@ -417,5 +421,60 @@ describe('degenerate clones change nothing about the config', () => {
     write(work, `${DIR}/agents/other.md`, 'FOREIGN\n')
     expect((await boot()).result).toMatchObject({ dir, source: 'release', proven: true })
     expect(readFileSync(join(dir, 'agents/kortix.md'), 'utf8')).toBe('RELEASE PROMPT\n')
+  })
+})
+
+describe('what the API decides, the session is told and the box runs', () => {
+  test('an APPLIED agent re-point puts the API\'s sentence in front of the session, verbatim', async () => {
+    const SENTENCE =
+      'This session now runs the project\'s default agent "kortix": the manifest no longer declares "legacy-writer", and you may use "kortix".'
+    const repointed = buildRelease(work, git(work, 'rev-parse', 'HEAD'), DIR, {
+      governance: GOV,
+      agentRepoint: { from: 'legacy-writer', to: 'kortix', applied: true, reason: SENTENCE },
+    })
+    serveRelease(api, repointed)
+    const run = await boot()
+    expect(run.result.source).toBe('release')
+
+    const notice = readFileSync(CONFIG_RELEASE_NOTICE_PATH, 'utf8')
+    // VERBATIM. The daemon never rewrites an access decision in its own words.
+    expect(notice).toContain(SENTENCE)
+    // …and it rides the one notice, so the session is told once, not twice.
+    expect(notice.split(SENTENCE).length - 1).toBe(1)
+    expect(notice).toContain("This session's agent")
+  })
+
+  test('a re-point the API did NOT apply is not announced', async () => {
+    const withheld = buildRelease(work, git(work, 'rev-parse', 'HEAD'), DIR, {
+      governance: GOV,
+      agentRepoint: { from: 'legacy-writer', to: 'kortix', applied: false, reason: 'The owner may not use "kortix".' },
+    })
+    serveRelease(api, withheld)
+    await boot()
+    const notice = readFileSync(CONFIG_RELEASE_NOTICE_PATH, 'utf8')
+    expect(notice).not.toContain('The owner may not use')
+    expect(notice).not.toContain("This session's agent\n")
+  })
+
+  test('variant `none`: compiled governance {} is an ordinary release, never a fallback', async () => {
+    // The API returns `none` when no declared agent may be compiled for this
+    // session. The release is still fetched, verified, sealed, proved and run;
+    // the config dir's own `opencode.jsonc` and `agents/*.md` supply the agent.
+    const none = buildRelease(work, git(work, 'rev-parse', 'HEAD'), DIR, { governance: '{}' })
+    serveRelease(api, none)
+    const run = await boot()
+
+    expect(run.result).toMatchObject({
+      source: 'release',
+      releaseId: none.descriptor.release_id,
+      proven: true,
+      fallbackReason: null,
+      failedReleaseId: null,
+    })
+    expect(run.result.dir).toBe(releaseDir(store, none.descriptor.release_id!))
+    // Delivered as the governance it is — not read as "missing" and left unset.
+    expect(process.env.KORTIX_COMPILED_AGENT_CONFIG).toBe('{}')
+    expect(process.env.KORTIX_COMPILED_AGENT_CONFIG_ETAG).toBe(none.descriptor.compiled_governance_etag!)
+    expect(await readQuarantine(store)).toEqual({})
   })
 })

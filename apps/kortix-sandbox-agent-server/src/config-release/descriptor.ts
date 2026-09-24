@@ -60,6 +60,21 @@ const DescriptorSchema = z
     files: z.array(FileEntry).nullable(),
     compiled_governance: z.string().nullable(),
     compiled_governance_etag: z.string().regex(ETAG).nullable(),
+    /**
+     * The session's agent was re-pointed to the project's declared default,
+     * because the manifest no longer declares its own (PLAN-one-boot-path C10).
+     * The API decides it and writes `reason` as a finished sentence; the daemon
+     * only puts that sentence in front of the session, verbatim.
+     */
+    agent_repoint: z
+      .object({
+        from: z.string().nullable(),
+        to: z.string().nullable(),
+        applied: z.boolean(),
+        reason: z.string().nullable(),
+      })
+      .nullish()
+      .transform((value) => value ?? null),
     reason: z.string().nullable(),
   })
   .superRefine((value, ctx) => {

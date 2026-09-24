@@ -12,8 +12,7 @@ import {
   ConfigReleaseApiError,
   downloadConfigArchive,
   fetchConfigReleaseDescriptor,
-  isRepositoryChangedError,
-  type ConfigReleaseApi,
+    type ConfigReleaseApi,
 } from '../config-release/api-client'
 import { parseConfigReleaseDescriptor } from '../config-release/descriptor'
 import {
@@ -222,14 +221,11 @@ describe('downloadConfigArchive', () => {
 })
 
 describe('error codes', () => {
-  test('a 409 session_repository_changed carries its status, code and error text', async () => {
-    api.respond({ status: 409, json: { error: 'Session belongs to a previous repository', code: 'session_repository_changed' } })
-    const err = await fetchConfigReleaseDescriptor(client).catch((e) => e)
-    expect(isRepositoryChangedError(err)).toBe(true)
-    expect(err.message).toBe('Session belongs to a previous repository')
+  test('an unknown conflict carries its status, code and error text; nothing special-cases 409', async () => {
     api.respond({ status: 409, json: { error: 'other', code: 'other_conflict' } })
     const other = await fetchConfigReleaseDescriptor(client).catch((e) => e)
-    expect(isRepositoryChangedError(other)).toBe(false)
+    expect(other.status).toBe(409)
     expect(other.code).toBe('other_conflict')
+    expect(other.message).toMatch(/descriptor request answered 409/)
   })
 })

@@ -60,9 +60,6 @@ export class ConfigReleaseApiError extends Error {
   }
 }
 
-/** The API's code for a session from a previous repository generation. */
-export const SESSION_REPOSITORY_CHANGED = 'session_repository_changed'
-
 /**
  * The API's code for a project whose `config_releases` feature flag is off —
  * per project, or platform-wide through the operator kill switch
@@ -70,15 +67,6 @@ export const SESSION_REPOSITORY_CHANGED = 'session_repository_changed'
  * `requireFeatureFlag` as `403`.
  */
 export const FEATURE_DISABLED = 'feature_disabled'
-
-/**
- * The project replaced its repository after this session was created
- * (spec "Repository replacement"). The session is frozen on its running
- * config: no release applies, and this is not a failure.
- */
-export function isRepositoryChangedError(err: unknown): err is ConfigReleaseApiError {
-  return err instanceof ConfigReleaseApiError && err.status === 409 && err.code === SESSION_REPOSITORY_CHANGED
-}
 
 /**
  * Config releases are switched off for this project. This is not a failure and
@@ -100,7 +88,7 @@ async function errorFromResponse(res: Response, what: string): Promise<ConfigRel
     if (typeof body.code === 'string') code = body.code
     if (typeof body.error === 'string') message = body.error
   } catch {}
-  if ((code === SESSION_REPOSITORY_CHANGED || code === FEATURE_DISABLED) && message) {
+  if (code === FEATURE_DISABLED && message) {
     return new ConfigReleaseApiError(message, res.status, code)
   }
   return new ConfigReleaseApiError(`${what} answered ${res.status}: ${text.slice(0, 300)}`, res.status, code)

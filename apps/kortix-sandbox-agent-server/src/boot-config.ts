@@ -77,6 +77,11 @@ export interface ReleaseManifest {
   files: ConfigReleaseFile[]
   compiled_governance: string | null
   compiled_governance_etag: string | null
+  /**
+   * The API's sentence about an agent re-point, verbatim. Kept in the manifest
+   * so a restarted daemon renders the same statement without asking the API.
+   */
+  agent_repoint_reason?: string | null
 }
 
 /** `/opt/kortix/config/current.json`: the last release proven on this box. */
@@ -299,6 +304,13 @@ export async function readReleaseManifest(root: string, releaseId: string): Prom
     if (typeof parsed.archive_url !== 'string' || !Array.isArray(parsed.files)) return null
     if (parsed.compiled_governance !== null && typeof parsed.compiled_governance !== 'string') return null
     if (parsed.compiled_governance_etag !== null && typeof parsed.compiled_governance_etag !== 'string') return null
+    if (
+      parsed.agent_repoint_reason !== undefined &&
+      parsed.agent_repoint_reason !== null &&
+      typeof parsed.agent_repoint_reason !== 'string'
+    ) {
+      return null
+    }
     assertFileList(parsed.files)
     return parsed
   } catch {

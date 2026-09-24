@@ -20,7 +20,6 @@ import {
   downloadConfigArchive,
   fetchConfigReleaseDescriptor,
   isFeatureDisabledError,
-  isRepositoryChangedError,
   type ConfigReleaseApi,
 } from '../../config-release/api-client'
 import type { ConfigReleaseDescriptor } from '../../config-release/descriptor'
@@ -188,11 +187,6 @@ async function askForTheDesiredRelease(
   } catch (err) {
     if (isFeatureDisabledError(err)) {
       return { releasesEnabled: false, descriptor: null, reason: 'config releases are disabled for this project' }
-    }
-    // A previous-repository session keeps the config it already has. Nothing
-    // failed, so this records no fallback reason.
-    if (isRepositoryChangedError(err)) {
-      return { releasesEnabled: true, descriptor: null, reason: null }
     }
     // Valve B: the API or the store could not be reached. The feature stays on
     // and the box runs the previously available verified copy on disk.
@@ -457,7 +451,11 @@ export async function bootOpenCodeConfig(input: BootConfigPathInput): Promise<Bo
       // checkout that may be behind it. Written BEFORE the spawn: the composed
       // config declares the file in OpenCode's `instructions`.
       noteRunningConfig(
-        { source_commit: candidate.manifest.source_commit, config_dir: candidate.manifest.config_dir },
+        {
+          source_commit: candidate.manifest.source_commit,
+          config_dir: candidate.manifest.config_dir,
+          agent_repoint_reason: candidate.manifest.agent_repoint_reason ?? null,
+        },
         candidate.dir,
       )
     }

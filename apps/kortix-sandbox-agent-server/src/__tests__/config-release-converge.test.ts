@@ -32,7 +32,6 @@ import {
   git,
   initRepo,
   FEATURE_DISABLED,
-  REPOSITORY_CHANGED,
   serveRelease,
   startFakeApi,
   write,
@@ -685,59 +684,19 @@ describe('provenCheck', () => {
   })
 })
 
-describe('repository replacement: a previous-repository session is frozen', () => {
-  test('a 409 session_repository_changed descriptor answer is unchanged: no fallback, no quarantine, config kept', async () => {
-    const release = baseRelease()
-    serveRelease(api, release)
-    const oc = fakeOpencode()
-    await converge(oc)
-    const dir = (await servingDir())!
-    const pointer = await readBootConfigPointer(store)
-
-    api.respond(REPOSITORY_CHANGED)
-    const response = await converge(oc)
-
-    expect(response).toEqual({
-      ok: true,
-      outcome: 'unchanged',
-      config: {
-        release_id: release.descriptor.release_id,
-        desired_release_id: release.descriptor.release_id,
-        source: 'release',
-        mode: 'follow-base',
-        proven: true,
-        fallback_reason: null,
-        failed_release_id: null,
-      },
-      reload: null,
-      reason: 'Session belongs to a previous repository',
-    })
-    expect(await servingDir()).toBe(dir)
-    expect(oc.state.reloads).toBe(1)
-    expect(await readBootConfigPointer(store)).toEqual(pointer)
-    expect(await readQuarantine(store)).toEqual({})
-  })
-
-  test('the same 409 from the archive route is unchanged too', async () => {
-    serveRelease(api, baseRelease())
-    api.archiveOverride = REPOSITORY_CHANGED
-    const oc = fakeOpencode()
-    const response = await converge(oc)
-    expect(response.outcome).toBe('unchanged')
-    expect(response.reason).toBe('Session belongs to a previous repository')
-    expect(response.config.fallback_reason).toBeNull()
-    expect(oc.state.reloads).toBe(0)
-    expect(await readQuarantine(store)).toEqual({})
-  })
-
-  test('any other 409 keeps the failed handling', async () => {
+describe('an unexpected conflict is an ordinary failure', () => {
+  // A replaced repository no longer refuses a session: the API deleted the
+  // `session_repository_changed` path, so a `409` is just a `409` again and the
+  // running config stays while the next trigger retries.
+  test('a 409 keeps the running config and reports the status', async () => {
     api.respond({ status: 409, json: { error: 'something else', code: 'other_conflict' } })
     const response = await converge(fakeOpencode())
     expect(response.outcome).toBe('failed')
     expect(response.reason).toMatch(/descriptor request answered 409/)
+    expect(response.config.fallback_reason).toBeNull()
+    expect(await readQuarantine(store)).toEqual({})
   })
 })
-
 
 /**
  * The `config_releases` feature flag, off (spec, "Feature flag").

@@ -48,7 +48,12 @@ export function buildRelease(
   repo: string,
   commit: string,
   configDir: string,
-  opts: { projectId?: string; governance?: string | null } = {},
+  opts: {
+    projectId?: string
+    governance?: string | null
+    /** The API's agent re-point block, when it decided one for this session. */
+    agentRepoint?: { from: string | null; to: string | null; applied: boolean; reason: string | null }
+  } = {},
 ): BuiltRelease {
   const tree = git(repo, 'rev-parse', `${commit}:${configDir}`)
   const listed = spawnSync('git', ['-C', repo, 'ls-tree', '-r', '-z', tree], { encoding: 'buffer' })
@@ -78,6 +83,7 @@ export function buildRelease(
     files,
     compiled_governance: governance,
     compiled_governance_etag: etag,
+    agent_repoint: opts.agentRepoint ?? null,
     reason: null,
   }
   return { descriptor, archive }
@@ -179,12 +185,6 @@ export function startFakeApi(token = 'sandbox-token'): FakeApi {
       storage.stop(true)
     },
   }
-}
-
-/** The API's answer for a session from a previous repository generation. */
-export const REPOSITORY_CHANGED = {
-  status: 409,
-  json: { error: 'Session belongs to a previous repository', code: 'session_repository_changed' },
 }
 
 /**

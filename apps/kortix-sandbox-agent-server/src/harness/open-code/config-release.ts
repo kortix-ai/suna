@@ -22,7 +22,6 @@ import {
   downloadConfigArchive,
   fetchConfigReleaseDescriptor,
   isFeatureDisabledError,
-  isRepositoryChangedError,
   type ConfigReleaseApi,
 } from '../../config-release/api-client'
 import type { ConfigReleaseDescriptor } from '../../config-release/descriptor'
@@ -279,7 +278,25 @@ export function manifestFromDescriptor(descriptor: ConfigReleaseDescriptor, rele
     files: descriptor.files!,
     compiled_governance: descriptor.compiled_governance,
     compiled_governance_etag: descriptor.compiled_governance_etag,
+    agent_repoint_reason: agentRepointSentence(descriptor),
   }
+}
+
+/**
+ * The sentence to put in front of the session about its agent, or null.
+ *
+ * Only an APPLIED re-point is stated: `applied: false` means nothing moved, and
+ * telling a session about a decision that did not happen is noise. The sentence
+ * is the API's, rendered verbatim — the daemon never writes its own words about
+ * who may use which agent.
+ */
+export function agentRepointSentence(
+  descriptor: Pick<ConfigReleaseDescriptor, 'agent_repoint'>,
+): string | null {
+  const repoint = descriptor.agent_repoint
+  if (!repoint || !repoint.applied) return null
+  const reason = repoint.reason?.trim()
+  return reason ? reason : null
 }
 
 async function pluginFilesInDir(dir: string): Promise<string[]> {
@@ -331,7 +348,7 @@ function respond(
  * still converge.
  */
 export function noteRunningConfig(
-  descriptor: Pick<ConfigReleaseDescriptor, 'source_commit' | 'config_dir'>,
+  descriptor: Pick<ConfigReleaseDescriptor, 'source_commit' | 'config_dir'> & { agent_repoint_reason?: string | null },
   releaseDirPath: string | null = null,
   sessionId: string | null = process.env.KORTIX_SESSION_ID ?? null,
 ): 'written' | 'unchanged' | 'failed' {
@@ -341,6 +358,7 @@ export function noteRunningConfig(
       configDir: descriptor.config_dir,
       releaseDir: releaseDirPath,
       sessionId,
+      agentRepoint: descriptor.agent_repoint_reason ?? null,
     })
   } catch (err) {
     logger.warn('[config-release] could not write the session config notice', { err: String(err) })
@@ -451,9 +469,6 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
   try {
     descriptor = await fetchConfigReleaseDescriptor(api)
   } catch (err) {
-    // A previous-repository session is frozen on its running config: nothing
-    // failed, nothing falls back, nothing is quarantined.
-    if (isRepositoryChangedError(err)) return respond('unchanged', null, err.message)
     // Config releases are switched off for this project (spec, "Feature
     // flag"). Not a failure: revert to the pre-release behaviour.
     if (isFeatureDisabledError(err)) return revertToPreReleaseConfig(deps, root, err.message)
@@ -494,7 +509,7 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
     // OpenCode's `instructions`, so the new process reads it (spec, "Telling
     // the session"). Only a convergence that actually replaces something
     // reaches `swap`, and the writer is a no-op when the text is unchanged.
-    noteRunningConfig(descriptor, dir)
+    noteRunningConfig({ ...descriptor, agent_repoint_reason: agentRepointSentence(descriptor) }, dir)
     const restoreGovernance = deliverGovernance(descriptor.compiled_governance, descriptor.compiled_governance_etag)
     const result = await opencode.reloadVerified({
       prove: (baseUrl, deadline) =>
@@ -590,9 +605,8 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
       })
     }
   } catch (err) {
-    // The archive route gates on the repository generation too.
-    if (isRepositoryChangedError(err)) return respond('unchanged', null, err.message)
-    // …and on the feature flag, which can be turned off between the two calls.
+    // The archive route gates on the feature flag too, and it can be turned
+    // off between the two calls.
     if (isFeatureDisabledError(err)) return revertToPreReleaseConfig(deps, root, err.message)
     // Transport, disk or verification failure: nothing is wrong with the
     // release itself, so it is not quarantined. The next trigger retries.

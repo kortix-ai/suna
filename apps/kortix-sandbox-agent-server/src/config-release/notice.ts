@@ -41,6 +41,18 @@ export interface ConfigReleaseNotice {
   sessionId?: string | null
   /** The read-only directory the release is served from, when it is known. */
   releaseDir?: string | null
+  /**
+   * The API's own sentence about an agent re-point, rendered VERBATIM.
+   *
+   * The API decides whether a session's agent moved to the project's declared
+   * default and writes the sentence that explains it. Paraphrasing it here
+   * would make two surfaces disagree about an access decision, and a second
+   * channel would tell the session twice. It rides the notice, which is
+   * already composed into OpenCode's `instructions` at every spawn and is
+   * already written only when its text changes — so this is stated once per
+   * change, like the commit line beside it.
+   */
+  agentRepoint?: string | null
 }
 
 /** Commits are named by their first 12 characters, as every Kortix surface does. */
@@ -54,6 +66,7 @@ export function renderConfigReleaseNotice(notice: ConfigReleaseNotice): string {
   const reload = notice.sessionId ? `kortix sessions reload ${notice.sessionId}` : 'kortix sessions reload <session id>'
   const at = commit ? ` at commit ${commit}` : ''
   const servedFrom = notice.releaseDir ?? '/opt/kortix/config/<release>'
+  const repoint = notice.agentRepoint?.trim()
   return [
     "# This session's agent config",
     '',
@@ -69,6 +82,7 @@ export function renderConfigReleaseNotice(notice: ConfigReleaseNotice): string {
     '  That copy is the platform\'s; edit the project\'s files in `/workspace`.',
     `- \`${reload}\` refreshes the \`/workspace\` checkout and moves this`,
     "  session onto the base branch's current config, in one command.",
+    ...(repoint ? ['', '## This session\'s agent', '', repoint] : []),
     '',
   ].join('\n')
 }
