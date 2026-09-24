@@ -225,6 +225,7 @@ export {
   connectorPolicies,
   connectorProjectPolicies,
   connectorProjectSettings,
+  connectorSyncFences,
   connectorCalls,
   connectorAttachments,
   promptAttachments,

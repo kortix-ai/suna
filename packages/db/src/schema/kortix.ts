@@ -3284,9 +3284,19 @@ export const usageEvents = kortixSchema.table(
     streaming: boolean('streaming').default(false).notNull(),
     upstreamStatus: integer('upstream_status'),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
+    /**
+     * The LLM gateway request this row settles. Set only by gateway usage
+     * settlement; unique when present, so a retried settlement of one request
+     * finds its first row instead of writing (and debiting) a second one.
+     * NULL on rows written before the column existed and on non-gateway usage.
+     */
+    requestId: text('request_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    uniqueIndex('uniq_usage_events_request_id')
+      .on(table.requestId)
+      .where(sql`${table.requestId} is not null`),
     index('idx_usage_events_account_time').on(table.accountId, table.createdAt),
     index('idx_usage_events_project_time').on(table.projectId, table.createdAt),
     index('idx_usage_events_session').on(table.sessionId),
@@ -5938,6 +5948,22 @@ export const connectorProjectSettings = kortixSchema.table('connector_project_se
     .references(() => projects.projectId, { onDelete: 'cascade' }),
   defaultMode: connectorDefaultModeEnum('default_mode').default('allow_all').notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
+ * Write fence for connector sync, one row per project.
+ *
+ * A sync records when it started before it reads kortix.yaml, and every write
+ * transaction it makes advances this row to that time. A sync that started
+ * earlier than the stored time finds no row to update and stops writing: a
+ * newer sync has already read a manifest at least as recent. The row lock
+ * taken by that update also serializes the write transactions of one project.
+ */
+export const connectorSyncFences = kortixSchema.table('connector_sync_fences', {
+  projectId: uuid('project_id')
+    .primaryKey()
+    .references(() => projects.projectId, { onDelete: 'cascade' }),
+  startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
 });
 
 /** Audit + approval ledger for every connector call. */
