@@ -41,6 +41,14 @@ export interface UpstreamDescriptor {
    * key must fail as BYOK.
    */
   failover?: boolean;
+  /**
+   * The provider name clients see instead of `provider`. When set, every
+   * client-visible surface — response bodies, SSE events, headers, error
+   * bodies, usage events, and request traces — names this provider and the
+   * routed model, never the upstream or its model id. Kortix-managed models
+   * set it to `kortix`.
+   */
+  publicProvider?: string;
   billingMode: BillingMode;
   markup: number;
   appName?: string;

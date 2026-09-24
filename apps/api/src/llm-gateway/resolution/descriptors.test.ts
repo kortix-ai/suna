@@ -247,11 +247,11 @@ describe('managed Morph primary with OpenRouter pool fallback', () => {
         provider: 'morph', kind: 'openai-compat', baseUrl: 'https://api.morphllm.com/v1',
         apiKey: 'morph-test-key', resolvedModel: 'morph-glm53flash', billingMode: 'credits', markup: 2,
         pricing: { inputPerMillion: 0.1, cachedInputPerMillion: 0.02, outputPerMillion: 0.35 },
-        failover: true,
+        failover: true, publicProvider: 'kortix',
       }),
       expect.objectContaining({
         provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', apiKey: 'openrouter-test-key',
-        resolvedModel: 'z-ai/glm-5.3-flash', billingMode: 'credits', failover: true,
+        resolvedModel: 'z-ai/glm-5.3-flash', billingMode: 'credits', failover: true, publicProvider: 'kortix',
         bodyExtras: { provider: {
           only: ['morph', 'wafer', 'together'], allow_fallbacks: true, zdr: true, data_collection: 'deny',
           max_price: { prompt: 0.15, completion: 0.5 },

@@ -160,6 +160,7 @@ function morphManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | nul
     // Morph reports no per-request cost, so its list prices bill the request.
     pricing: managedPricing(managed),
     failover: true,
+    publicProvider: 'kortix',
   };
 }
 
@@ -185,6 +186,7 @@ function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor 
       },
     },
     failover: true,
+    publicProvider: 'kortix',
   };
 }
 

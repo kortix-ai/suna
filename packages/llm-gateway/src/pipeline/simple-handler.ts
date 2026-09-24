@@ -23,6 +23,14 @@ import { calculateCost } from '../usage/pricing';
 import { clampRetryAfterSeconds, gatewayErrorResponse } from './error-response';
 import { applyGenerationDefaults } from './generation-defaults';
 import { DEFAULT_IMAGE_WINDOW, type ImageWindowOptions, applyImageWindow } from './image-window';
+import {
+  publicPayload,
+  publicResponseHeaders,
+  publicSseLines,
+  publicUpstreamError,
+  shownModel,
+  shownProvider,
+} from './public-identity';
 import { relayStream } from './streaming';
 import { createTraceEmitter } from './trace';
 
@@ -454,9 +462,9 @@ export async function handleChatCompletions(
       return gatewayErrorResponse(402, {
         message: error instanceof Error ? error.message : 'Billing inactive',
         code: typeof reason === 'string' ? reason : 'subscription_required',
-        provider: descriptor.provider,
+        provider: shownProvider(descriptor),
         requestedModel,
-        resolvedModel: descriptor.resolvedModel ?? routedModel,
+        resolvedModel: shownModel(descriptor, routedModel),
         requestId: id,
         suggestion: 'Check your subscription or add credits, then retry.',
       });
@@ -522,19 +530,23 @@ export async function handleChatCompletions(
       status = upstream.status;
       message = (await upstream.text().catch(() => '')).slice(0, 500);
     }
+    // Server log: the one place the upstream identity and text are kept.
+    logger.warn(
+      `[gateway] ${id}: ${candidate.provider} failed for ${candidate.resolvedModel ?? routedModel} (${status ?? 'network error'}); failing over: ${message.slice(0, 300)}`,
+    );
+    const shown = candidate.publicProvider
+      ? publicUpstreamError(status ?? 0, message, routedModel)
+      : null;
     attemptFailures.push({
       attempt: attemptFailures.length + 1,
-      provider: candidate.provider,
+      provider: shownProvider(candidate),
       routeModel: routedModel,
-      resolvedModel: candidate.resolvedModel ?? routedModel,
+      resolvedModel: shownModel(candidate, routedModel),
       stage: 'dispatch',
       status,
-      code: status ?? 'network_error',
-      message,
+      code: shown ? shown.code : status ?? 'network_error',
+      message: shown ? shown.message : message,
     });
-    logger.warn(
-      `[gateway] ${id}: ${candidate.provider} failed for ${candidate.resolvedModel ?? routedModel} (${status ?? 'network error'}); failing over`,
-    );
   };
   let earliestPoolRetryAt = Infinity;
   const noteRateLimit = async (candidate: UpstreamDescriptor, response: Response): Promise<void> => {
@@ -551,7 +563,7 @@ export async function handleChatCompletions(
     }
   };
   let attempts = 1;
-  const candidatesTried = [served.provider];
+  const candidatesTried = [shownProvider(served)];
   try {
     const dispatch = callUpstream(body, served, {
       fetchImpl: dispatchFetch,
@@ -639,7 +651,7 @@ export async function handleChatCompletions(
         await noteFailure(served);
         dispatchError = undefined;
         attempts += 1;
-        candidatesTried.push(candidate.provider);
+        candidatesTried.push(shownProvider(candidate));
         served = candidate;
         try {
           upstream = await callUpstream(structuredClone(failoverBody), candidate, {
@@ -659,21 +671,49 @@ export async function handleChatCompletions(
     retryWithoutEffort = null;
   } catch (error) {
     refundHold(hooks, principal, logger);
+    const errorText =
+      error instanceof UpstreamHttpError
+        ? `${error.message} ${error.body}`
+        : error instanceof Error ? error.message : String(error);
+    const publicError = served.publicProvider
+      ? publicUpstreamError(error instanceof UpstreamHttpError ? error.status : 0, errorText, routedModel)
+      : null;
+    if (publicError) {
+      logger.warn(
+        `[gateway] ${id}: ${served.provider} failed for ${served.resolvedModel ?? routedModel}: ${errorText.slice(0, 300)}`,
+      );
+    }
     emit({
       ...identity(principal),
       requestedModel,
-      resolvedModel: served.resolvedModel ?? routedModel,
-      provider: served.provider,
+      resolvedModel: shownModel(served, routedModel),
+      provider: shownProvider(served),
+      ...(served.publicProvider
+        ? { upstream: { provider: served.provider, model: served.resolvedModel ?? routedModel } }
+        : {}),
       billingMode: served.billingMode,
       streaming,
-      status: error instanceof UpstreamHttpError ? error.status : 502,
+      status: publicError?.status ?? (error instanceof UpstreamHttpError ? error.status : 502),
       ok: false,
-      errorCode: 'upstream_error',
-      errorMessage: error instanceof Error ? error.message : String(error),
+      errorCode: publicError?.code ?? 'upstream_error',
+      errorMessage: publicError?.message ?? (error instanceof Error ? error.message : String(error)),
       attempts,
       candidatesTried,
       attemptFailures,
     });
+    if (publicError) {
+      return gatewayErrorResponse(publicError.status, {
+        message: publicError.message,
+        code: publicError.code,
+        provider: shownProvider(served),
+        requestedModel,
+        resolvedModel: routedModel,
+        requestId: id,
+        suggestion: publicError.suggestion,
+        retryAfterSeconds:
+          error instanceof UpstreamHttpError ? clampRetryAfterSeconds(error.headers?.['retry-after']) : undefined,
+      });
+    }
     if (error instanceof UpstreamHttpError) return rawProviderError(error);
     // A headers timeout is "try again", not "this request is malformed".
     const timedOut = (error as { name?: unknown })?.name === 'TimeoutError' && !req.signal?.aborted;
@@ -698,6 +738,17 @@ export async function handleChatCompletions(
     });
   }
 
+  // Gateway-authored stream endings; their text names no upstream.
+  const GATEWAY_STREAM_CODES = new Set(['client_aborted', 'upstream_inactivity_timeout']);
+  const publicStreamError = (streamError: SseErrorFrame): SseErrorFrame => {
+    if (GATEWAY_STREAM_CODES.has(String(streamError.code))) return streamError;
+    const code = Number(streamError.code);
+    const classified = publicUpstreamError(Number.isFinite(code) ? code : 0, streamError.message ?? '', routedModel);
+    return { message: classified.message, code: classified.code };
+  };
+  // Set when a managed-model upstream answered non-2xx: the trace records the
+  // public error the client received.
+  let publicFailure: { status: number; code: string; message: string } | null = null;
   const settle = async (
     usage: ExtractedUsage | null,
     streamError: SseErrorFrame | null = null,
@@ -724,8 +775,11 @@ export async function handleChatCompletions(
         actorUserId: principal.userId,
         projectId: principal.projectId,
         sessionId: principal.sessionId,
-        provider: served.provider,
-        model: served.resolvedModel ?? routedModel,
+        provider: shownProvider(served),
+        model: shownModel(served, routedModel),
+        ...(served.publicProvider
+          ? { upstream: { provider: served.provider, model: served.resolvedModel ?? routedModel } }
+          : {}),
         upstreamCost,
         finalCost,
         billingMode: served.billingMode,
@@ -734,17 +788,24 @@ export async function handleChatCompletions(
         ...(principal.billingHold ? { billingHoldUsd: principal.billingHold.amountUsd } : {}),
       });
     }
+    const shownStreamError =
+      streamError && served.publicProvider ? publicStreamError(streamError) : streamError;
     emit({
       ...identity(principal),
       requestedModel,
-      resolvedModel: served.resolvedModel ?? routedModel,
-      provider: served.provider,
+      resolvedModel: shownModel(served, routedModel),
+      provider: shownProvider(served),
+      ...(served.publicProvider
+        ? { upstream: { provider: served.provider, model: served.resolvedModel ?? routedModel } }
+        : {}),
       billingMode: served.billingMode,
       streaming,
-      status: streamError ? streamErrorTraceStatus(streamError) : upstream.status,
+      status: publicFailure?.status ?? (streamError ? streamErrorTraceStatus(streamError) : upstream.status),
       ok: !streamError && upstream.ok,
-      errorCode: streamError ? String(streamError.code ?? 'upstream_stream_error') : undefined,
-      errorMessage: streamError?.message,
+      errorCode:
+        publicFailure?.code ??
+        (shownStreamError ? String(shownStreamError.code ?? 'upstream_stream_error') : undefined),
+      errorMessage: publicFailure?.message ?? shownStreamError?.message,
       attempts,
       candidatesTried,
       attemptFailures,
@@ -754,6 +815,26 @@ export async function handleChatCompletions(
     });
   };
 
+  if (served.publicProvider && !upstream.ok) {
+    const upstreamText = await upstream.text().catch(() => '');
+    logger.warn(
+      `[gateway] ${id}: ${served.provider} ${upstream.status} for ${served.resolvedModel ?? routedModel}: ${upstreamText.slice(0, 300)}`,
+    );
+    const classified = publicUpstreamError(upstream.status, upstreamText, routedModel);
+    publicFailure = classified;
+    await settle(null);
+    return gatewayErrorResponse(classified.status, {
+      message: classified.message,
+      code: classified.code,
+      provider: shownProvider(served),
+      requestedModel,
+      resolvedModel: routedModel,
+      requestId: id,
+      suggestion: classified.suggestion,
+      retryAfterSeconds: clampRetryAfterSeconds(upstream.headers.get('retry-after')),
+    });
+  }
+
   if (streaming && upstream.body) {
     return new Response(
       relayStream({
@@ -762,8 +843,16 @@ export async function handleChatCompletions(
         logger,
         signal: req.signal,
         settle,
+        ...(served.publicProvider
+          ? { rewriteLines: (text: string) => publicSseLines(text, routedModel) }
+          : {}),
       }),
-      { status: upstream.status, headers: passthroughHeaders(upstream.headers) },
+      {
+        status: upstream.status,
+        headers: served.publicProvider
+          ? publicResponseHeaders(upstream.headers)
+          : passthroughHeaders(upstream.headers),
+      },
     );
   }
 
@@ -776,6 +865,17 @@ export async function handleChatCompletions(
     }
   })();
   await settle(extractUsageFromJson(data));
+  if (served.publicProvider) {
+    const publicText =
+      data && typeof data === 'object' && !Array.isArray(data)
+        ? JSON.stringify(publicPayload(data as Record<string, unknown>, routedModel))
+        : responseText;
+    return new Response(publicText, {
+      status: upstream.status,
+      statusText: upstream.statusText,
+      headers: publicResponseHeaders(upstream.headers),
+    });
+  }
   return new Response(responseText, {
     status: upstream.status,
     statusText: upstream.statusText,
