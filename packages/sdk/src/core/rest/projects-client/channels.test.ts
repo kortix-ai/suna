@@ -5,6 +5,8 @@ import {
   connectSlack,
   bindSlackIdentity,
   bindTeamsIdentity,
+  previewSlackIdentity,
+  previewTeamsIdentity,
   disconnectEmail,
   disconnectSlack,
   getEmailInstallation,
@@ -71,6 +73,30 @@ test('chat identity binding stays behind typed SDK methods', async () => {
 
   await bindTeamsIdentity('teams-token');
   expect(last().url).toContain('/channels/teams/identity/bind');
+  expect(last().body).toEqual({ token: 'teams-token' });
+});
+
+test('previewSlackIdentity posts the token to the read-only preview route', async () => {
+  nextResponse = {
+    status: 200,
+    body: { service: 'slack', workspaceName: 'Team', chatUserId: 'U1', chatUserName: 'sam' },
+  };
+  const result = await previewSlackIdentity('slack-token');
+  expect(last().url).toContain('/channels/slack/identity/preview');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ token: 'slack-token' });
+  expect(result).toEqual({
+    service: 'slack',
+    workspaceName: 'Team',
+    chatUserId: 'U1',
+    chatUserName: 'sam',
+  });
+});
+
+test('previewTeamsIdentity posts the token and surfaces the server refusal', async () => {
+  nextResponse = { status: 410, body: { error: 'This link is invalid or has expired.' } };
+  await expect(previewTeamsIdentity('teams-token')).rejects.toThrow();
+  expect(last().url).toContain('/channels/teams/identity/preview');
   expect(last().body).toEqual({ token: 'teams-token' });
 });
 
