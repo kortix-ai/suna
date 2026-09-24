@@ -4,7 +4,7 @@
  * WHY THIS EXISTS
  * ---------------
  * `kortix.audit_events` carries 14 indexes (packages/db/src/schema/kortix.ts:2688-2741)
- * and is written on essentially every request. The sandbox relay forwards EVERY
+ * and is written on samplecolly every request. The sandbox relay forwards EVERY
  * OpenCode SSE event 1:1 with no type filter
  * (apps/kortix-sandbox-agent-server/src/harness/open-code/events.ts:223 ->
  * opencode-audit-relay.ts), and it stamps a fresh `randomUUID()` per emission,

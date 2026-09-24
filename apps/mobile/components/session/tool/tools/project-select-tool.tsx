@@ -36,10 +36,7 @@ export function useOpenProjectHandler(part: ToolProps['part']): (() => void) | u
   );
   const open = useCallback(() => {
     if (!target) return;
-    const tabs = useTabStore.getState();
-    const pageId = `page:project:${target.projectId}`;
-    tabs.setTabState(pageId, { projectName: target.displayName });
-    tabs.navigateToPage(pageId);
+    useTabStore.getState().navigateToPage(`page:project:${target.projectId}`);
   }, [target]);
   return enabled && target ? open : undefined;
 }

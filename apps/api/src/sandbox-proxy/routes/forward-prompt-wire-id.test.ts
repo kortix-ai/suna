@@ -1,6 +1,6 @@
 // forwardToSandbox PLACES the client's wire `messageID` against the target
 // session's actual transcript tip before delivering — for any target session,
-// child sessions included. The 2026-08-18 Essentia incident: a steering prompt
+// child sessions included. The 2026-08-18 SampleCo incident: a steering prompt
 // into a mid-turn child, minted by a tab whose store held none of that child's
 // messages, sorted below the child's tip; OpenCode read it as answered and the
 // turn looped on. See ../prompt-wire-id-repair.ts.

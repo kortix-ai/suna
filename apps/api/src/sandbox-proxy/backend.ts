@@ -346,7 +346,7 @@ export async function wakeSandbox(externalId: string): Promise<void> {
     // Read the provider state BEFORE starting: a box that was actually stopped
     // comes back with no runtime, and every turn open on it is over. Without
     // this the fresh runtime's first idle read closed such turns `completed`
-    // and the interrupted prompt was never redelivered (Essentia 2026-08-25).
+    // and the interrupted prompt was never redelivered (SampleCo 2026-08-25).
     const before =
       typeof provider.getStatus === 'function'
         ? await provider.getStatus(externalId).catch(() => 'unknown' as const)

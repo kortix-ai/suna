@@ -308,7 +308,7 @@ export function parkMetadataPatch(
     // A park for a FAILED start is a cooldown, not a gravestone. Without this
     // clock `stoppedWakeResult` had nothing to expire, so a `runtime_boot_failed`
     // stamp replayed `stage:"failed"` on every open for as long as the row
-    // lived — 10+ hours on Essentia session 9c8749ac, 2026-08-26, without one
+    // lived — 10+ hours on SampleCo session 9c8749ac, 2026-08-26, without one
     // provider call. The counter is what escalates the cooldown and eventually
     // earns a terminal card that NAMES the attempts.
     ...((STAMPED_RUNTIME_FAILURE_STOP_REASONS as readonly string[]).includes(stopReason)

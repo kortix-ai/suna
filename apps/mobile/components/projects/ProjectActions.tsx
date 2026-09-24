@@ -1,5 +1,5 @@
 /**
- * ProjectActions — the ⋯ menu on a Projects tab row.
+ * ProjectActions — the ⋯ menu on a Projects page row (`/projects`).
  *
  * A bottom sheet lists the actions: Open project, and Archive project for
  * managers. Archive is destructive, so it confirms in an AlertDialog. The
@@ -12,7 +12,6 @@ import * as React from 'react';
 import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArchiveIcon as Archive, FolderOpenIcon as FolderOpen } from '@/lib/icons';
-import { chalkColors } from '@kortix/shared';
 
 import {
   AlertDialog,
@@ -98,25 +97,17 @@ export function ProjectActions({
     }
   }, [archive, confirmProject, toast]);
 
-  const chalk = project ? chalkColors(project.name) : null;
   const canManage = !project?.effective_project_role || project.effective_project_role === 'manager';
 
   return (
     <>
       <Sheet ref={sheetRef} enablePanDownToClose onDismiss={handleSheetDismiss}>
-        {project && chalk ? (
+        {project ? (
           <View
             className="px-5 pt-1"
             style={{ gap: 16, paddingBottom: Math.max(insets.bottom, 16) + 8 }}>
             <View className="flex-row items-center gap-3 px-1">
-              <Avatar
-                variant="custom"
-                fallbackText={project.name}
-                size={40}
-                backgroundColor={chalk.background}
-                iconColor={chalk.foreground}
-                borderColor={chalk.border}
-              />
+              <Avatar chalk fallbackText={project.name} size={40} />
               <Text variant="large" className="flex-1" numberOfLines={1}>
                 {project.name}
               </Text>

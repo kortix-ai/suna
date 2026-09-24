@@ -1,72 +1,24 @@
 /**
- * Shared pieces for the account screens (`/accounts/[id]` and its detail
- * screens).
+ * Shared pieces for the account screens (`/accounts/[id]`).
  *
- * Screens use the settings-list layout (`SettingsPage` / `SettingsGroup` /
- * `SettingsRow`) plus the helpers at the top of this file: `ACCOUNT_ROLE_*`,
- * `roleRows`, and `useEffectiveAccountCaps`. `accountColors`, `InitialsAvatar`,
- * `SheetCloseButton` and `PrimaryButton` remain for the account sheets
- * (`NewAccountSheet`, the tab sheets). The legacy card / pill / uppercase label /
- * skeleton primitives were deleted once no screen imported them
- * (see apps/mobile/design.md).
+ * `useEffectiveAccountCaps` gates the web-handoff rows on `/accounts/[id]`.
+ * `accountColors`, `InitialsAvatar`, `SheetCloseButton` and `PrimaryButton`
+ * remain for `NewAccountSheet`. The role pickers, member/group detail
+ * helpers, and legacy card / pill / uppercase label / skeleton primitives
+ * were deleted once no screen imported them (see apps/mobile/design.md —
+ * mobile hands Members, Groups, Git and Audit off to web, COR-120).
  */
 
 import React, { useMemo } from 'react';
 import { View, ActivityIndicator } from 'react-native';
-import { CrownIcon as Crown, ShieldCheckIcon as ShieldCheck, UserIcon as User, XIcon as X, type AppIcon } from '@/lib/icons';
+import { XIcon as X } from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
-import { SettingsRow } from '@/components/kortix/settings-list';
-import { haptics } from '@/lib/haptics';
 import { useThemeColors } from '@/lib/theme-colors';
 import { THEME, withAlpha } from '@/lib/utils/theme';
-import type { AccountRole } from '@/lib/projects/projects-client';
 import { useAccount, useAccountCapabilities, type AccountCapability } from '@/lib/accounts/hooks';
 
 export type AccountCaps = Record<AccountCapability, boolean>;
-
-export const ACCOUNT_ROLE_LABEL: Record<AccountRole, string> = {
-  owner: 'Owner',
-  admin: 'Admin',
-  member: 'Member',
-};
-
-export const ACCOUNT_ROLES: AccountRole[] = ['owner', 'admin', 'member'];
-
-export const ACCOUNT_ROLE_ICON: Record<AccountRole, AppIcon> = {
-  owner: Crown,
-  admin: ShieldCheck,
-  member: User,
-};
-
-/**
- * Role picker rows for a `SettingsGroup`: icon · role · check on the selected
- * one. Returns an array (not a component) so the group can place separators
- * between the rows.
- */
-export function roleRows({
-  roles,
-  value,
-  onChange,
-}: {
-  roles: AccountRole[];
-  value: AccountRole;
-  onChange: (role: AccountRole) => void;
-}) {
-  return roles.map((r) => (
-    <SettingsRow
-      key={r}
-      icon={ACCOUNT_ROLE_ICON[r]}
-      label={ACCOUNT_ROLE_LABEL[r]}
-      checked={value === r}
-      right={null}
-      onPress={() => {
-        haptics.tap();
-        onChange(r);
-      }}
-    />
-  ));
-}
 
 /**
  * The account plus the current user's capabilities on it. The IAM probe is
@@ -137,6 +89,7 @@ export function SheetCloseButton({ onPress, isDark }: { onPress: () => void; isD
       onPress={onPress}
       hitSlop={8}
       className="rounded-full"
+      accessibilityLabel="Close"
     >
       <X size={17} color={c.muted} />
     </Button>

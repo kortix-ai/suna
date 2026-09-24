@@ -208,8 +208,13 @@ export interface PermissionRequest {
   sessionID: string;
   tool?: { messageID: string; callID: string };
   permission: string;
+  /** Legacy v1 field name; the wire payload (and `always`) is v2 — see `patterns`. */
   input: Record<string, any>;
   metadata?: Record<string, any>;
+  /** The concrete match patterns being gated (e.g. the bash command), v2's replacement for `input`. */
+  patterns?: string[];
+  /** Reply values the runtime already carries an "always" grant for. */
+  always?: string[];
 }
 
 export interface QuestionRequest {

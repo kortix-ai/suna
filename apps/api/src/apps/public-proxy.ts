@@ -32,6 +32,7 @@ import {
   normalizeViewerTokenScope,
   resolveAppViewerIdentity,
 } from './viewer';
+import { annotateAuditEvent, bindAuditPrincipal } from '../shared/audit-scope';
 import type { AgentGrant } from '@kortix/db';
 import {
   agentPrincipalEnabled,
@@ -57,7 +58,7 @@ const ACTIVITY_LEASE_MS = 60_000;
 // The `frame-ancestors` directive for App responses. It decides which origins
 // may embed an App in an iframe — the dashboard's App preview does exactly this.
 // Managed cloud embeds from kortix.com; a SELF-HOST box embeds from the
-// operator's OWN frontend origin (e.g. https://essentia.kortix.cloud), which is
+// operator's OWN frontend origin (e.g. https://sampleco.kortix.cloud), which is
 // NOT kortix.com, so the browser would block the preview. Build the allowlist
 // dynamically to ALWAYS include the configured frontend origin (config.FRONTEND_URL)
 // plus a wildcard for its domain, so the preview frames reliably on any
@@ -80,7 +81,7 @@ function appFrameAncestors(): string {
     if ((u.protocol === 'https:' || u.protocol === 'http:') && !isLocal) {
       parts.add(u.origin);
       // Also allow any sibling subdomain of the operator's registrable-ish
-      // domain (drop the leftmost label): essentia.kortix.cloud -> *.kortix.cloud.
+      // domain (drop the leftmost label): sampleco.kortix.cloud -> *.kortix.cloud.
       const labels = host.split('.');
       if (labels.length >= 3 && !/^\d+$/.test(labels[labels.length - 1])) {
         parts.add(`${u.protocol}//*.${labels.slice(1).join('.')}`);
@@ -474,6 +475,8 @@ interface AppBearerPrincipal {
   projectId?: string | null;
   /** The running agent's grant, for an agent-session token. */
   agentGrant?: AgentGrant | null;
+  /** A direct service-account bearer: `userId` is the service account's id. */
+  serviceAccount?: boolean;
 }
 
 /**
@@ -547,7 +550,11 @@ async function resolveOneCredential(
       // A direct service-account bearer has no `account_tokens` row; its own
       // id is the acting id, and the engine scopes it by its policies.
       return account.isValid && account.serviceAccountId
-        ? { userId: account.serviceAccountId, actingTokenId: account.serviceAccountId }
+        ? {
+            userId: account.serviceAccountId,
+            actingTokenId: account.serviceAccountId,
+            serviceAccount: true,
+          }
         : null;
     }
     if (isAccountToken(token)) {
@@ -768,6 +775,48 @@ export async function appViewerEndpointResponse(
   );
 }
 
+/**
+ * The audit actor for a Kortix credential presented to the App gate. A
+ * service-account bearer's `userId` is the service account, never a user;
+ * an agent-session token is the agent.
+ */
+function bindAppBearerPrincipal(app: AppAccessRow, principal: AppBearerPrincipal): void {
+  if (principal.serviceAccount) {
+    bindAuditPrincipal({
+      actorType: 'service_account',
+      actorUserId: null,
+      authoritativeSource: 'automation',
+      authMethod: { kind: 'service_account', service_account_id: principal.userId },
+    });
+    return;
+  }
+  const tokenAuth = {
+    kind: 'account_token',
+    token_id: principal.actingTokenId,
+    ...(principal.sessionId ? { session_id: principal.sessionId } : {}),
+  };
+  bindAuditPrincipal(
+    judgedAsAgent(app, principal)
+      ? { actorType: 'agent', actorUserId: null, authoritativeSource: 'agent', authMethod: tokenAuth }
+      : { actorType: 'human', actorUserId: principal.userId, authoritativeSource: 'api_key', authMethod: tokenAuth },
+  );
+}
+
+/**
+ * Name the Kortix user the App's signed session proves. Called once the gate
+ * has let the request through, for public Apps too: a public App still
+ * recognises a signed-in viewer, and that viewer is audited. An anonymous
+ * visitor binds nothing and is not audited (shared/audit.ts).
+ */
+export function bindAppViewerSession(userId: string): void {
+  bindAuditPrincipal({
+    actorType: 'human',
+    actorUserId: userId,
+    authoritativeSource: 'human',
+    authMethod: { kind: 'app_session' },
+  });
+}
+
 export async function authorizeAppRequest(
   request: Request,
   url: URL,
@@ -777,6 +826,10 @@ export async function authorizeAppRequest(
 ): Promise<Response | null> {
   const localHttp = url.protocol === 'http:' && url.hostname.endsWith('.apps.localhost');
   const secret = appAccessSecret();
+  // The App is the resource. Its account is resolved from the project when
+  // the audit row is written.
+  annotateAuditEvent({ resourceType: 'app', resourceId: app.appId });
+  bindAuditPrincipal({ projectId: app.projectId });
   const queryToken = url.searchParams.get('__kortix_access');
   // NOTE the public App does not return early here any more. It still redeems
   // an access link — that exchange is the only way its identity cookie can ever
@@ -826,6 +879,8 @@ export async function authorizeAppRequest(
   // an HTML login page it cannot read.
   if (app.accessMode !== 'password') {
     const principal = await kortixCredentialUser(request, app);
+    // Name the caller before the decision, so a refused credential is audited.
+    if (principal) bindAppBearerPrincipal(app, principal);
     if (principal && await credentialMayOpenApp(app, principal, verifyUserAccess, verifyAgentAccess)) {
       return null;
     }
@@ -1216,6 +1271,8 @@ export async function handleAppPublicRequest(request: Request): Promise<Response
   const gateApp = { ...state.app, agentPrincipal: state.agentPrincipal };
   const accessResponse = await authorizeAppRequest(request, url, gateApp);
   if (accessResponse) return accessResponse;
+  const sessionViewer = resolveAppViewerUserId(request, url, gateApp);
+  if (sessionViewer) bindAppViewerSession(sessionViewer);
   // Answered by the gate itself, before any runtime work: reading who you are
   // must never wake a sleeping sandbox.
   if (url.pathname === '/_kortix/viewer') {

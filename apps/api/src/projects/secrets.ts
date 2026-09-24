@@ -871,14 +871,21 @@ export async function listProjectSecretsSnapshotForUser(
   capabilities: SecretCapabilityCatalog;
   capabilitiesJson: string;
 }> {
+  // Three reads of three different tables, none of them keyed on another's
+  // result: sent together, awaited where they are first used. Sequentially this
+  // was three round trips inside the per-prompt env sync.
+  // Promise.resolve, not the query builder itself: a Drizzle builder is a
+  // thenable, so it starts here but has no `.catch` to keep an early return
+  // from surfacing an unhandled rejection.
+  const connectorRead = Promise.resolve(
+    db.select({ identifier: connectors.authSecret }).from(connectors).where(eq(connectors.projectId, projectId)),
+  );
+  const gatewayRead = projectLlmGatewayEnabledById(projectId);
+  connectorRead.catch(() => undefined);
+  gatewayRead.catch(() => undefined);
   const rows = await listResolvedProjectSecrets(projectId, userId);
   const boundConnectorIdentifiers = new Set(
-    (
-      await db
-        .select({ identifier: connectors.authSecret })
-        .from(connectors)
-        .where(eq(connectors.projectId, projectId))
-    )
+    (await connectorRead)
       .map((row) => row.identifier)
       .filter((identifier): identifier is string => Boolean(identifier)),
   );
@@ -887,7 +894,7 @@ export async function listProjectSecretsSnapshotForUser(
   // Resolved HERE, once, so boot, hot push, and the toggle fan-out all deliver
   // model credentials from the same decision — a caller cannot pass a stale
   // mode and desynchronise the box from the project's flag.
-  const llmGatewayEnabled = await projectLlmGatewayEnabledById(projectId);
+  const llmGatewayEnabled = await gatewayRead;
   const delivered = await materializeSecretDelivery(selected, env, {
     sessionId: sessionId ?? null,
     grantEnv,

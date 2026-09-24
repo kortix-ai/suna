@@ -26,13 +26,14 @@ function slice(startAnchor: string, endAnchor: string): string {
 }
 
 describe('the initial-session validation signs out only on a definitive rejection', () => {
-  const validation = slice('await supabase.auth.getUser();', 'await adoptUser(');
+  const validation = slice('supabase.auth.getUser(),', 'await adoptUser(');
 
   test('the provider imports the shared predicate', () => {
     expect(code).toContain("from '@/lib/auth/session-rejection'");
   });
 
   test('signOut is guarded by isDefinitiveSessionRejection, not by the bare error', () => {
+    expect(validation).toContain('AUTH_BOOTSTRAP_TIMEOUT_MS');
     expect(validation).toContain('userError && isDefinitiveSessionRejection(userError)');
     expect(validation).toContain('await supabase.auth.signOut();');
     // The exact shape that signed the whole browser out on an aborted fetch.

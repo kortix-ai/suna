@@ -199,3 +199,82 @@ describe('shouldRestoreDraft — precedence', () => {
     expect(shouldRestoreDraft({ ...ready, active: true })).toBe(true);
   });
 });
+
+describe('reply quotes in the draft envelope', () => {
+  test('an empty document with quotes is still worth storing', () => {
+    const draft = serializeDraft({
+      doc: EMPTY_DOC,
+      documentIsEmpty: true,
+      files: [],
+      quotes: ['first passage'],
+      userId: USER,
+    });
+    expect(draft?.quotes).toEqual(['first passage']);
+  });
+
+  test('quotes survive the round trip, in order', () => {
+    const stored = serializeDraft({
+      doc: TEXT_DOC,
+      documentIsEmpty: false,
+      files: [],
+      quotes: ['first passage', 'second passage'],
+      userId: USER,
+    });
+    const back = deserializeDraft(JSON.parse(JSON.stringify(stored)), USER);
+    expect(back?.quotes).toEqual(['first passage', 'second passage']);
+    expect(back?.doc).toEqual(TEXT_DOC);
+  });
+
+  test('an envelope written before quotes existed loads with an empty list', () => {
+    const old = { v: DRAFT_ENVELOPE_VERSION, u: USER, doc: TEXT_DOC, files: [] };
+    expect(deserializeDraft(old, USER)).toEqual({ ...old, quotes: [] });
+  });
+
+  test('malformed quotes are dropped, not trusted', () => {
+    const bad = { v: DRAFT_ENVELOPE_VERSION, u: USER, doc: TEXT_DOC, files: [], quotes: 'no' };
+    expect(deserializeDraft(bad, USER)?.quotes).toEqual([]);
+    const mixed = { ...bad, quotes: ['kept', 7, '  ', null, 'kept'] };
+    expect(deserializeDraft(mixed, USER)?.quotes).toEqual(['kept']);
+  });
+
+  test('legacy in-editor quote nodes become list quotes and leave the document', () => {
+    // A draft saved by the build that drew quotes inside the editor. That
+    // node type no longer exists in the schema, so it must not reach it.
+    const legacy = {
+      v: DRAFT_ENVELOPE_VERSION,
+      u: USER,
+      doc: {
+        type: 'doc',
+        content: [
+          { type: 'replyQuote', attrs: { text: 'first passage' } },
+          { type: 'paragraph', content: [{ type: 'text', text: 'reply one' }] },
+          { type: 'replyQuote', attrs: { text: 'second passage' } },
+          { type: 'paragraph' },
+        ],
+      },
+      files: [],
+    };
+    const back = deserializeDraft(legacy, USER);
+    expect(back?.quotes).toEqual(['first passage', 'second passage']);
+    expect(back?.doc).toEqual({
+      type: 'doc',
+      content: [
+        { type: 'paragraph', content: [{ type: 'text', text: 'reply one' }] },
+        { type: 'paragraph' },
+      ],
+    });
+  });
+
+  test('a document that held only legacy quotes keeps one empty paragraph', () => {
+    const legacy = {
+      v: DRAFT_ENVELOPE_VERSION,
+      u: USER,
+      doc: { type: 'doc', content: [{ type: 'replyQuote', attrs: { text: 'only passage' } }] },
+      files: [],
+      quotes: ['only passage'],
+    };
+    const back = deserializeDraft(legacy, USER);
+    expect(back?.quotes).toEqual(['only passage']);
+    expect(back?.doc).toEqual({ type: 'doc', content: [{ type: 'paragraph' }] });
+  });
+});

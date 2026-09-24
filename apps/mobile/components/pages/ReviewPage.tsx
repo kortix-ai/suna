@@ -9,16 +9,16 @@
  * Mobile leaves out web's bulk select, keyboard layer and per-session grouping.
  *
  * Review is the one page for changes (Jay, 2026-09-21). The separate Changes
- * page has no entry point: a change request is a review item, the pinned
- * bar's `+` opens one (`OpenCRSheet`), and the header's history button opens
- * the project's versions (branches) in a sheet.
+ * page has no entry point: a change request is a review item, the header's
+ * `+` opens one (`OpenCRSheet`), and the header's history button opens the
+ * project's versions (branches) in a sheet.
  *
- * The segment switcher is a pinned bar over a fade of the page (the project
- * drawer's bottom bar, `PinnedBar`), not a control under the header: a
- * `PlatformSegmentedTabs` (native segmented control on iOS) fills the row,
- * and the `+` sits beside it as a separate control in the same row
- * (Jay, 2026-09-22). List rows don't scale down on press here — the list is
- * scanned and tapped often enough that the shrink read as lag.
+ * The segment switcher is the floating capsule (`FloatingTabCapsule`:
+ * icon over label, a sliding thumb), pinned at the bottom over a fade of the
+ * page — the same bar as the switcher sheet's Account · Projects (Jay, 2026-09-24). No counts on
+ * the tabs. Three tabs fill the capsule's width on a 360pt phone, so the `+`
+ * lives in the header. The list is one `SettingsGroup` of `SettingsRow`s, the
+ * app's list (Jay, 2026-09-23).
  */
 import * as React from 'react';
 import { RefreshControl, ScrollView, View, useWindowDimensions } from 'react-native';
@@ -26,25 +26,24 @@ import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useQueryClient } from '@tanstack/react-query';
 import { useColorScheme } from 'nativewind';
 import {
-  countReviewItemsBySegment,
   reviewSegmentForStatus,
   type ReviewItem,
   type ReviewSegment,
 } from '@kortix/sdk';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ListRow } from '@/components/kortix/list-row';
 import { PageContent } from '@/components/kortix/page-content';
 import { PageHeader } from '@/components/kortix/page-header';
+import { FloatingTabCapsule, type FloatingTabItem } from '@/components/navigation/FloatingTabBar';
+import { FLOATING_BAR_HEIGHT } from '@/components/navigation/tab-bar-layout';
 import { PinnedBar, usePinnedBarInset } from '@/components/kortix/pinned-bar';
-import { PlatformSegmentedTabs } from '@/components/kortix/platform-segmented-tabs';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import {
   type SheetRef,
   KortixBottomSheetModal,
 } from '@/components/kortix/sheet';
 import { useToast } from '@/components/kortix/toast-provider';
-import { OpenCRSheet, shortRef } from '@/components/pages/ChangesPage';
+import { OpenCRSheet, shortRef } from '@/components/review/OpenCRSheet';
 import { ReviewDetailSheet } from '@/components/review/ReviewDetailSheet';
 import { REVIEW_KIND_ICONS } from '@/components/review/review-icons';
 import { Button } from '@/components/ui/button';
@@ -52,7 +51,7 @@ import { Icon } from '@/components/ui/icon';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
 import { haptics } from '@/lib/haptics';
-import { ClockCounterClockwiseIcon, PlusIcon } from '@/lib/icons';
+import { BellIcon, CheckCircleIcon, ClockCounterClockwiseIcon, ClockIcon } from '@/lib/icons';
 import { useProjectBranches, useProjectSessions } from '@/lib/projects/hooks';
 import { relativeTime } from '@/lib/projects/triggers-format';
 import {
@@ -67,8 +66,18 @@ import { THEME } from '@/lib/utils/theme';
 import { sessionDisplayTitle } from '@/lib/session/session-list';
 import type { PageTab } from '@/stores/tab-store';
 
-/** The pinned bar's tallest control: the `+` icon button (`size="icon"`, h-10). */
-const BAR_CONTROL_HEIGHT = 40;
+const SEGMENT_ICONS: Record<ReviewSegment, typeof BellIcon> = {
+  needs_you: BellIcon,
+  waiting: ClockIcon,
+  done: CheckCircleIcon,
+};
+
+/** The pinned tab bar: the root tab bar's capsule, one tab per segment, no counts. */
+const SEGMENT_TABS: FloatingTabItem[] = REVIEW_SEGMENTS.map(({ key, label }) => ({
+  key,
+  label,
+  icon: <Icon as={SEGMENT_ICONS[key]} size={20} className="text-foreground" />,
+}));
 
 interface ReviewPageProps {
   page: PageTab;
@@ -105,7 +114,7 @@ export function ReviewPage({
   const versionsSheetRef = React.useRef<BottomSheetModal>(null);
   const { height } = useWindowDimensions();
   const pageBackground = THEME[isDark ? 'dark' : 'light'].background;
-  const contentInset = usePinnedBarInset(BAR_CONTROL_HEIGHT);
+  const contentInset = usePinnedBarInset(FLOATING_BAR_HEIGHT);
   const [segment, setSegment] = React.useState<ReviewSegment>('needs_you');
   // The project's branches load when the versions sheet first opens.
   const [versionsOpened, setVersionsOpened] = React.useState(false);
@@ -134,7 +143,6 @@ export function ReviewPage({
   }, [refetch]);
   const items = data ?? [];
 
-  const counts = React.useMemo(() => countReviewItemsBySegment(items), [items]);
   const visible = React.useMemo(
     () => items.filter((item) => reviewSegmentForStatus(item.status) === segment),
     [items, segment],
@@ -166,6 +174,11 @@ export function ReviewPage({
         onOpenRightDrawer={onOpenRightDrawer}
         isDrawerOpen={isDrawerOpen}
         isRightDrawerOpen={isRightDrawerOpen}
+        onAdd={() => {
+          haptics.tap();
+          createSheetRef.current?.present();
+        }}
+        addLabel="Open a change request"
         rightActions={
           <Button
             variant="ghost"
@@ -211,55 +224,47 @@ export function ReviewPage({
                 <Text variant="muted">{EMPTY_TITLE[segment]}</Text>
               </View>
             ) : (
-              visible.map((item, index) => {
-                const risk = reviewRiskLabel(item.risk);
-                const meta = [item.agent, formatReviewAge(item.createdAt), risk].filter(Boolean).join(' · ');
-                return (
-                  <ListRow
-                    key={item.id}
-                    title={item.title}
-                    subtitle={item.summary ? `${item.summary} · ${meta}` : meta}
-                    left={
-                      <Icon
-                        as={REVIEW_KIND_ICONS[item.kind]}
-                        size={20}
-                        color={toneColor(reviewItemTone(item.kind, item.status))}
+              // Settings rows in a group (Jay, 2026-09-23): the app's list, as on
+              // Agents, Skills and Schedules — not `ListRow`.
+              <View className="px-4 pt-1">
+                <SettingsGroup>
+                  {visible.map((item) => {
+                    const risk = reviewRiskLabel(item.risk);
+                    const meta = [item.agent, formatReviewAge(item.createdAt), risk].filter(Boolean).join(' · ');
+                    return (
+                      <SettingsRow
+                        key={item.id}
+                        leading={
+                          <Icon
+                            as={REVIEW_KIND_ICONS[item.kind]}
+                            size={20}
+                            color={toneColor(reviewItemTone(item.kind, item.status))}
+                          />
+                        }
+                        label={item.title}
+                        description={item.summary ? `${item.summary} · ${meta}` : meta}
+                        onPress={() => openItem(item.id)}
                       />
-                    }
-                    divider={index < visible.length - 1}
-                    onPress={() => openItem(item.id)}
-                    scaleOnPress={false}
-                  />
-                );
-              })
+                    );
+                  })}
+                </SettingsGroup>
+              </View>
             )}
           </ScrollView>
 
-          {/* Pinned bottom bar: the segment tabs · `+`, over a fade of the
-              page — the project drawer's bottom bar, same values. */}
-          <PinnedBar controlHeight={BAR_CONTROL_HEIGHT} background={pageBackground} className="gap-2 px-4">
-            <PlatformSegmentedTabs
-              segments={REVIEW_SEGMENTS.map(({ key, label }) => ({
-                key,
-                // Only "Needs you" shows a count: it's the actionable queue.
-                // Waiting/Done are informational and stay uncluttered.
-                label: key === 'needs_you' && counts[key] > 0 ? `${label} ${counts[key]}` : label,
-                accessibilityLabel: `${label}, ${counts[key]}`,
-              }))}
-              value={segment}
-              onValueChange={setSegment}
-            />
-            <Button
-              variant="secondary"
-              size="icon"
-              className="rounded-full"
-              onPress={() => {
-                haptics.tap();
-                createSheetRef.current?.present();
+          {/* Pinned bottom bar: the floating capsule, over a fade of
+              the page — the same bar as the switcher sheet's. */}
+          <PinnedBar controlHeight={FLOATING_BAR_HEIGHT} background={pageBackground} className="justify-center px-4">
+            <FloatingTabCapsule
+              items={SEGMENT_TABS}
+              activeIndex={REVIEW_SEGMENTS.findIndex(({ key }) => key === segment)}
+              onSelect={(index) => {
+                const next = REVIEW_SEGMENTS[index].key;
+                if (next === segment) return;
+                haptics.selection();
+                setSegment(next);
               }}
-              accessibilityLabel="Open a change request">
-              <Icon as={PlusIcon} size={18} className="text-foreground" />
-            </Button>
+            />
           </PinnedBar>
         </View>
       </PageContent>

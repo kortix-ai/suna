@@ -3,6 +3,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { config } from '../../config';
 import { processStripeWebhook, processRevenueCatWebhook } from '../services/webhooks';
 import { makeOpenApiApp, json, errors } from '../../openapi';
+import { bindIntegrationPrincipal } from '../../shared/audit-scope';
 
 export const webhooksRouter = makeOpenApiApp();
 
@@ -61,6 +62,7 @@ webhooksRouter.openapi(
     if (!authHeader || !safeEqual(authHeader, `Bearer ${config.REVENUECAT_WEBHOOK_SECRET}`)) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
+    bindIntegrationPrincipal('revenuecat');
 
     const body = await c.req.json();
     const result = await processRevenueCatWebhook(body);

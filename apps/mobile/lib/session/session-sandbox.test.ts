@@ -6,7 +6,7 @@ import {
   threadSandboxReady,
 } from './session-sandbox';
 
-const HOME = { activeSessionId: null, activePageId: null, showTabsOverview: false };
+const HOME = { activeSessionId: null, activePageId: null };
 const URL_A = 'https://api.example.com/v1/p/ext-a/8000';
 const URL_B = 'https://api.example.com/v1/p/ext-b/8000';
 
@@ -15,10 +15,9 @@ describe('showsSessionContent', () => {
     expect(showsSessionContent(HOME)).toBe(false);
   });
 
-  test('a thread, a page, or the overview is session content', () => {
+  test('a thread or a page is session content', () => {
     expect(showsSessionContent({ ...HOME, activeSessionId: 'ses_1' })).toBe(true);
-    expect(showsSessionContent({ ...HOME, activePageId: 'page:files' })).toBe(true);
-    expect(showsSessionContent({ ...HOME, showTabsOverview: true })).toBe(true);
+    expect(showsSessionContent({ ...HOME, activePageId: 'page:browser' })).toBe(true);
   });
 
   test('a connecting session is not an input: it needs no sandbox', () => {
@@ -43,9 +42,6 @@ describe('leaveSandboxOnFocus', () => {
     ).toBe(false);
     expect(
       leaveSandboxOnFocus({ ...HOME, activePageId: 'page:terminal', connectInProgress: false })
-    ).toBe(false);
-    expect(
-      leaveSandboxOnFocus({ ...HOME, showTabsOverview: true, connectInProgress: false })
     ).toBe(false);
   });
 });

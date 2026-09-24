@@ -1,5 +1,20 @@
 import { z } from '@hono/zod-openapi';
 
+/**
+ * Every `actor_type` the writer emits. `anonymous` is a request no
+ * authenticator identified: the request audit writes it instead of skipping
+ * the request. `null` is an older row written before the column existed.
+ */
+export const AUDIT_ACTOR_TYPES = [
+  'human',
+  'agent',
+  'service_account',
+  'system',
+  'anonymous',
+] as const;
+
+export const AuditActorTypeSchema = z.enum(AUDIT_ACTOR_TYPES);
+
 /** Public canonical audit contract shared by account, project, and session routes. */
 export const AuditEventSchema = z
   .object({
@@ -15,7 +30,7 @@ export const AuditEventSchema = z
     execution_id: z.string().nullable(),
     session_sequence: z.number().int().nullable(),
     actor_user_id: z.string().uuid().nullable(),
-    actor_type: z.enum(['human', 'agent', 'service_account', 'system']).nullable(),
+    actor_type: AuditActorTypeSchema.nullable(),
     agent_id: z.string().nullable(),
     agent_name: z.string().nullable(),
     initiator_actor_type: z.string().nullable(),

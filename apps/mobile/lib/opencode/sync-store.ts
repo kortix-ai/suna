@@ -544,12 +544,18 @@ export const useSyncStore = create<SyncState>((set, get) => ({
   },
 
   addPermission: (sessionId, permission) =>
-    set((state) => ({
-      permissions: {
-        ...state.permissions,
-        [sessionId]: [...(state.permissions[sessionId] || []), permission],
-      },
-    })),
+    set((state) => {
+      const existing = state.permissions[sessionId] || [];
+      // Skip a permission whose id is already pending for this session — a
+      // duplicate SSE delivery must not double the prompt card.
+      if (existing.some((p) => p.id === permission.id)) return state;
+      return {
+        permissions: {
+          ...state.permissions,
+          [sessionId]: [...existing, permission],
+        },
+      };
+    }),
 
   removePermission: (sessionId, permissionId) =>
     set((state) => ({

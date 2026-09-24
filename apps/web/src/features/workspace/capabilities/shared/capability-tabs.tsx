@@ -202,7 +202,7 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
 
   return (
     <div
-      className="kx-titlebar-row relative flex shrink-0 items-center gap-1 border-b px-2"
+      className="kx-titlebar-row kx-capability-titlebar relative flex shrink-0 items-center gap-1 border-b px-2"
       data-sidebar-collapsed={sidebar?.state === 'collapsed' || undefined}
     >
       <SidebarToggle />
