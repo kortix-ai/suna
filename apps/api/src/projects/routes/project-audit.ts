@@ -27,7 +27,7 @@ import {
   serializeAuditEvent,
 } from '../../shared/audit-query';
 import { flushAuditEvents } from '../../shared/audit';
-import { AuditEventSchema, AuditListSchema } from '../../shared/audit-schema';
+import { AuditActorTypeSchema, AuditEventSchema, AuditListSchema } from '../../shared/audit-schema';
 import { parseOpenCodeAuditBatch } from '../../shared/opencode-audit-ingestion';
 import { applyOpenCodeAuditRateLimit } from '../../shared/opencode-audit-rate-guard';
 import { flagSessionAuditRateLimited } from '../lib/session-audit-rate-flag';
@@ -106,7 +106,7 @@ projectsApp.openapi(
       query: z.object({
         action: z.string().optional(),
         actor: z.string().uuid().optional(),
-        actor_type: z.enum(['human', 'agent', 'service_account', 'system']).optional(),
+        actor_type: AuditActorTypeSchema.optional(),
         session_id: z.string().optional(),
         source: z.string().optional(),
         phase: z.string().optional(),
@@ -367,7 +367,7 @@ projectsApp.openapi(
     // `audit_session_sequences` row, and PostgreSQL holds that lock until the
     // statement's transaction COMMITs. One 200-row statement therefore pinned
     // the session for its entire duration (measured 137 ms on a warm 5.09M-row
-    // audit_events; the Essentia box runs an order of magnitude slower), and a
+    // audit_events; the SampleCo box runs an order of magnitude slower), and a
     // rollback discarded all 200 rows' work, which the relay then re-sent in
     // full. Chunking bounds both: the lock is held per chunk, and chunks that
     // already committed stay committed.
@@ -440,7 +440,7 @@ projectsApp.openapi(
     if (contended) {
       // 503, never 500. A 500 told the relay "your batch is broken" for what is
       // in fact backpressure, and its flat 1s retry then rebuilt the convoy
-      // that caused it (Essentia 2026-08-26: 445 x 500 [57014] in 3h).
+      // that caused it (SampleCo 2026-08-26: 445 x 500 [57014] in 3h).
       c.header('Retry-After', String(AUDIT_INGEST_RETRY_AFTER_SECONDS));
       return c.json(
         {
@@ -558,7 +558,7 @@ projectsApp.openapi(
     // those polls waited on a bulk INSERT into `audit_events`. On a self-host
     // with 3.9 M rows that insert hit the statement timeout (57014), the
     // request hit the 25 s server deadline, and the badge answered 503 twice
-    // per session open, forever (essentia, 2026-08-24). A count of pending
+    // per session open, forever (sampleco, 2026-08-24). A count of pending
     // connector calls does not depend on the audit queue at all.
     if (audited && includeEvents) await flushAuditEvents();
     const fetchedEvents = audited && includeEvents

@@ -30,6 +30,7 @@
  * It reads NONE of project_members, project_group_grants, iam_policies,
  * iam_resource_grants or account_members.account_role.
  */
+import { timeStage } from '../lib/server-timing';
 import { and, eq, gt, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import {
   accountGroupMembers,
@@ -164,7 +165,12 @@ const AGENT_GRANT_EXEMPT_ACTIONS: ReadonlySet<string> = new Set([
  *   9  object grants
  *  10  the agent-session grant intersection
  */
-export async function authorize(actor: Actor, action: string, obj: Obj = { type: 'account' }): Promise<Verdict> {
+export function authorize(actor: Actor, action: string, obj: Obj = { type: 'account' }): Promise<Verdict> {
+  // `Server-Timing: iam` — every capability decision on the request path.
+  return timeStage('iam', () => authorizeDecision(actor, action, obj));
+}
+
+async function authorizeDecision(actor: Actor, action: string, obj: Obj): Promise<Verdict> {
   // 1. ACT-AS. Above everything, and above the principal memo in particular:
   // `resolvePrincipal` is a TTL memo shared across requests, so widening the
   // actor inside it would cache "owner" and serve it to this operator's own
@@ -345,7 +351,11 @@ export async function listAccessible(
   return listAccessibleProjects(actor, action);
 }
 
-async function listAccessibleProjects(actor: Actor, action: string): Promise<Accessible> {
+function listAccessibleProjects(actor: Actor, action: string): Promise<Accessible> {
+  return timeStage('iam', () => listAccessibleProjectsUntimed(actor, action));
+}
+
+async function listAccessibleProjectsUntimed(actor: Actor, action: string): Promise<Accessible> {
   // Same short-circuit as authorize, for the same cache reason. Without it the
   // operator sees an empty project list inside an account whose every project
   // they can already open by id — a confusing half-state, not a narrower one.

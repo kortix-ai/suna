@@ -26,7 +26,7 @@ import { logger } from '../../logger'
 // it cannot false-abort (see MAX_CONSECUTIVE_REPEATS below), and it is the only
 // thing that bounded the 2026-08-18 incident. Cheap insurance stays.
 // Per opencode SESSION, children included: the 2026-08-18
-// Essentia incident (session `5d9e298a`) was a spawned child looping this way
+// SampleCo incident (session `5d9e298a`) was a spawned child looping this way
 // while `relayTurnEndToApi` filtered non-root sessions out before this guard
 // ever saw a repeat — the abort must target the session that is looping.
 //

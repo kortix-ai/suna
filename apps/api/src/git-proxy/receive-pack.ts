@@ -106,6 +106,27 @@ export function parseReceivePackCommands(buf: Uint8Array): ReceivePackParse {
     }
     payload = payload.replace(/\n$/, '');
 
+    // A SHALLOW client (git send-pack from a `--depth` clone) prefixes the
+    // command section with one `shallow <sha>` line per shallow boundary,
+    // ahead of the ref commands. Captured from a real `git push` out of a
+    // `--depth 2` clone:
+    //
+    //   shallow 7e999ac2…\n
+    //   0000000… 98e0f50… refs/heads/controller\0 report-status-v2 side-band-64k …\n
+    //   0000
+    //
+    // These are not ref updates. They are replayed to the upstream untouched
+    // (the caller forwards the buffered prefix), so they must be skipped here
+    // rather than parsed — otherwise a shallow push is rejected as a malformed
+    // command and the client gets a misleading `HTTP 400` / `Everything
+    // up-to-date` instead of a real push.
+    if (payload.startsWith('shallow ')) {
+      if (!SHA_RE.test(payload.slice('shallow '.length))) {
+        return { status: 'invalid', reason: 'malformed shallow line in receive-pack command' };
+      }
+      continue;
+    }
+
     // `<old> SP <new> SP <ref>` — split on the first two spaces only, since a
     // ref name itself can never contain a space (git forbids it).
     const first = payload.indexOf(' ');

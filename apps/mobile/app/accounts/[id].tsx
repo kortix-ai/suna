@@ -1,92 +1,81 @@
 /**
- * Account screen (web parity: app/accounts/[id]/page.tsx).
+ * Account detail (web parity: app/accounts/[id]/page.tsx). Mobile does not
+ * maintain settings parity with web (COR-120): this screen is a small plan +
+ * web handoff, not a rebuild of the web admin tabs. See apps/mobile/design.md
+ * → Account page and account screens.
  *
- * Native back header titled with the account name, a pill tab switcher
- * (Members, Groups, Git, Audit, Settings), then the active tab. Every tab
- * renders its own `SettingsPage`. Billing is intentionally omitted on mobile.
- * Tabs gate on IAM capabilities probed for the current user.
+ * Native back header titled with the account name, one Billing row (plan ·
+ * balance as its value, opens `/billing` for this account), then "On
+ * kortix.com" — Members,
+ * Groups and permissions, Git, Audit log — each opening the matching web tab
+ * in the in-app browser. Git and Audit log are hidden when the signed-in
+ * user lacks the same capability the old tabs gated on.
  */
 
 import * as React from 'react';
-import { ScrollView, View } from 'react-native';
-import { Stack, useLocalSearchParams } from 'expo-router';
-import { useColorScheme } from 'nativewind';
-import { WarningCircleIcon as AlertCircle, ArrowClockwiseIcon as RotateCw } from '@/lib/icons';
-
-import { Text } from '@/components/ui/text';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { View } from 'react-native';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import {
-  SettingsGroup,
-  SettingsHeader,
-  SettingsPage,
-  SettingsRow,
-} from '@/components/kortix/settings-list';
-import { useAuthContext } from '@/contexts';
-import { haptics } from '@/lib/haptics';
+  ArrowClockwiseIcon as RotateCw,
+  GitBranchIcon as GitBranch,
+  ListIcon as List,
+  ShieldIcon as Shield,
+  UsersIcon as Users,
+  WarningCircleIcon as AlertCircle,
+} from '@/lib/icons';
+import { formatCredits } from '@kortix/shared';
+
+import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { SettingsGroup, SettingsHeader, SettingsPage, SettingsRow } from '@/components/kortix/settings-list';
 import { useEffectiveAccountCaps } from '@/components/accounts/account-shared';
-import { MembersTab } from '@/components/accounts/MembersTab';
-import { GroupsTab } from '@/components/accounts/GroupsTab';
-import { GitTab } from '@/components/accounts/GitTab';
-import { AuditTab } from '@/components/accounts/AuditTab';
-import { AccountSettingsTab } from '@/components/accounts/AccountSettingsTab';
+import { useAuthContext } from '@/contexts';
+import { KORTIX_WEB_URL } from '@/lib/kortix-web';
+import { useAccountState } from '@/lib/billing';
+import { accountHubUrl } from '@/lib/accounts/web-account-links';
+import { haptics } from '@/lib/haptics';
+import { log } from '@/lib/logger';
 
-type TabKey = 'members' | 'groups' | 'git' | 'audit' | 'settings';
-
-export default function AccountSettingsScreen() {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
+export default function AccountDetailScreen() {
   const params = useLocalSearchParams<{ id: string }>();
   const accountId = params.id;
+  const router = useRouter();
   const { user } = useAuthContext();
 
   const { accountQuery, account, can } = useEffectiveAccountCaps(accountId ?? null, user?.id ?? null);
 
-  const [tab, setTab] = React.useState<TabKey>('members');
+  const accountStateQuery = useAccountState({
+    accountId,
+    enabled: !!accountId,
+  });
+  const planName = accountStateQuery.data?.plan?.label ?? '';
+  const creditsTotal = accountStateQuery.data?.credits?.total;
+  // "Team · 1,240 credits": the plan and the balance in one value.
+  const billingSummary =
+    [planName, creditsTotal != null ? `${formatCredits(creditsTotal)} credits` : '']
+      .filter(Boolean)
+      .join(' · ') || undefined;
 
-  const tabs = React.useMemo(() => {
-    const list: { key: TabKey; label: string; show: boolean }[] = [
-      { key: 'members', label: 'Members', show: true },
-      { key: 'groups', label: 'Groups', show: true },
-      { key: 'git', label: 'Git', show: can['account.write'] },
-      { key: 'audit', label: 'Audit', show: can['audit.read'] },
-      { key: 'settings', label: 'Settings', show: can['account.write'] },
-    ];
-    return list.filter((t) => t.show);
-  }, [can]);
+  const openWebTab = React.useCallback(
+    (tab: 'members' | 'groups' | 'git' | 'audit') => {
+      if (!accountId) return;
+      haptics.tap();
+      WebBrowser.openBrowserAsync(accountHubUrl(KORTIX_WEB_URL, accountId, tab)).catch((error) => {
+        log.error('Error opening account web tab:', error);
+      });
+    },
+    [accountId]
+  );
 
-  // If the active tab becomes hidden (caps resolve), fall back to members.
-  React.useEffect(() => {
-    if (!tabs.some((t) => t.key === tab)) setTab('members');
-  }, [tabs, tab]);
+  const openBilling = React.useCallback(() => {
+    haptics.tap();
+    router.push({ pathname: '/billing', params: accountId ? { accountId } : {} });
+  }, [router, accountId]);
 
   return (
     <View className="flex-1 bg-background">
       <Stack.Screen options={{ headerShown: false }} />
       <SettingsHeader title={account?.name ?? 'Account'} />
-
-      {tabs.length > 1 && (
-        <Tabs
-          value={tab}
-          onValueChange={(next) => {
-            haptics.selection();
-            setTab(next as TabKey);
-          }}
-          className="pb-2">
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 20 }}>
-            <TabsList className="rounded-full">
-              {tabs.map((t) => (
-                <TabsTrigger key={t.key} value={t.key} className="rounded-full px-3.5">
-                  <Text>{t.label}</Text>
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </ScrollView>
-        </Tabs>
-      )}
 
       {accountQuery.isError ? (
         <SettingsPage>
@@ -111,19 +100,27 @@ export default function AccountSettingsScreen() {
           <KortixLoader />
         </View>
       ) : (
-        <View className="flex-1">
-          {tab === 'members' ? (
-            <MembersTab account={account} currentUserId={user?.id ?? ''} can={can} isDark={isDark} />
-          ) : tab === 'groups' ? (
-            <GroupsTab account={account} can={can} isDark={isDark} />
-          ) : tab === 'git' ? (
-            <GitTab account={account} can={can} isDark={isDark} />
-          ) : tab === 'audit' ? (
-            <AuditTab account={account} isDark={isDark} />
-          ) : (
-            <AccountSettingsTab account={account} can={can} isDark={isDark} />
-          )}
-        </View>
+        <SettingsPage>
+          <SettingsGroup>
+            <SettingsRow label="Billing" value={billingSummary} onPress={openBilling} />
+          </SettingsGroup>
+
+          <SettingsGroup title="On kortix.com">
+            <SettingsRow icon={Users} label="Members" external onPress={() => openWebTab('members')} />
+            <SettingsRow
+              icon={Shield}
+              label="Groups and permissions"
+              external
+              onPress={() => openWebTab('groups')}
+            />
+            {can['account.write'] && (
+              <SettingsRow icon={GitBranch} label="Git" external onPress={() => openWebTab('git')} />
+            )}
+            {can['audit.read'] && (
+              <SettingsRow icon={List} label="Audit log" external onPress={() => openWebTab('audit')} />
+            )}
+          </SettingsGroup>
+        </SettingsPage>
       )}
     </View>
   );

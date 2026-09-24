@@ -58,6 +58,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
     'text2e5ec4fb360d',
   'API / SDK': 'text76b6a1f12306',
   Applied: 'text0c79a9c22284',
+  Apps: 'text89dd748442c1',
   'Applying config and validating runtime': 'text23bdf85d2503',
   Archived: 'textbdb86505f806',
   ask: 'text2f2fc7f2e9ce',

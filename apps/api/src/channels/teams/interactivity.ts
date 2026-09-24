@@ -181,13 +181,15 @@ async function handleAnswer(
 
   // The question travels on the action (cards.ts), because the tap REPLACES the
   // card that asked it. Sending the agent a bare "Yes" leaves it to infer what
-  // was agreed to; sending the pair leaves nothing to infer. Older cards, posted
-  // before this shipped, carry no question — they still work.
+  // was agreed to. Sending the bare pair was little better: the agent's own
+  // question, unmarked, read as the user asking it. Framed the way Slack frames
+  // a button click (slack/interactivity.ts), nothing is left to infer. Older
+  // cards, posted before the question travelled, still relay the bare answer.
   const question = typeof data.question === 'string' ? data.question.trim() : '';
   const synthetic: TeamsActivity = {
     ...activity,
     type: 'message',
-    text: question ? `${question}\n${answer}` : answer,
+    text: question ? `Answering your question "${question}":\n${answer}` : answer,
     id: `${activity.id ?? 'answer'}:answer`,
   };
   void createOrJoinTeamsConversationSession({
@@ -234,7 +236,10 @@ async function handleForm(
   const projectId = await resolveConversationProject(convo.tenantId, convo.conversationId);
   if (!projectId) return cardResponse(buildNoticeCard("This conversation isn't connected to a project."));
 
-  const text = ['Form submitted:', ...answered.map((a) => `- ${a.id}: ${a.value}`)].join('\n');
+  // Every form here is one the agent posted — the `question` tool's, or its own
+  // `teams ask` — so the answers are framed as replies to it, not as a new
+  // request.
+  const text = ['Answering your questions:', ...answered.map((a) => `- ${a.id}: ${a.value}`)].join('\n');
   const synthetic: TeamsActivity = {
     ...activity,
     type: 'message',

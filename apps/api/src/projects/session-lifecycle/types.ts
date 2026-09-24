@@ -180,7 +180,7 @@ export interface StartSessionCommand {
  * was in fact a down runtime, and the drain treated it as terminal: a queued
  * prompt delivered while the box was unreachable went `dead_lettered` on its
  * FIRST attempt and was never re-tried when the box came back minutes later
- * (Essentia, 2026-08-26: `state:failed, attempts:1,
+ * (SampleCo, 2026-08-26: `state:failed, attempts:1,
  * last_error:"delivery outcome: failed"`).
  */
 /**

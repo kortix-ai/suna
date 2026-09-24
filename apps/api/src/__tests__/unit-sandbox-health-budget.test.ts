@@ -123,7 +123,7 @@ describe('sandbox-health budget', () => {
  * `buildSandboxHealth` is not a database read: `listSandboxTemplates` calls
  * `provider.getSnapshotState()` — a LIVE round trip to Daytona / E2B /
  * Platinum — once per template, plus a git read to hash the template
- * directory. On the Essentia corpus that made this "cheap polling endpoint"
+ * directory. On the SampleCo corpus that made this "cheap polling endpoint"
  * the slowest non-proxy read on the box: 559 ms mean server-side over 169
  * calls, 1 488 ms median as the browser saw it.
  *

@@ -336,7 +336,7 @@ projectsApp.openapi(
   });
 
   // The sidebar re-fetches this list several times per session open (six in the
-  // measured Essentia corpus, 2026-08-26) and the answer is usually byte-identical
+  // measured SampleCo corpus, 2026-08-26) and the answer is usually byte-identical
   // between them. A weak ETag lets those repeats end as a 304 with no body.
   // `no-cache` — not `no-store` — is what makes a client revalidate rather than
   // serve a stale inventory: the response is private and always re-validated,

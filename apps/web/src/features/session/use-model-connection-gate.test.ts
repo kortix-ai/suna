@@ -65,7 +65,7 @@ describe('model management entry-point routing', () => {
  * THE `/new` dead-click fix. The gate used to derive its project purely from
  * `useParams<{ id?: string }>()`. Every original caller lives under
  * `/projects/[id]`, so that was invisible — until the onboarding wizard's plan
- * step started rendering on `/new` (`app/(app)/new`), a route with NO `[id]`
+ * step started rendering on `/new` (`app/[locale]/(app)/new`), a route with NO `[id]`
  * segment. There `params.id` is `undefined`, `projectId` resolved to `null`,
  * `modal` was therefore `null`, and picking "Bring your own API key" rendered
  * nothing AND never called `onContinue()` — the wizard could not advance past

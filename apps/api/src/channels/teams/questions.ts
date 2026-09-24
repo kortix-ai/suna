@@ -1,6 +1,6 @@
 import { sendCard, sendText } from '../teams-api';
 import { buildQuestionCard } from './cards';
-import { deleteTurn, finalizeTurn, loadTurn } from './turn';
+import { conversationRefForSession, finalizeTurn, loadTurn, markTurnReplied } from './turn';
 import type { QuestionInfo } from '../slack/types';
 import type { TeamsConversationRef } from './types';
 
@@ -23,23 +23,30 @@ export async function postTeamsQuestion(
   questions: QuestionInfo[],
 ): Promise<{ ok: boolean; answers?: string[][]; error?: string }> {
   const handle = await loadTurn(sessionId);
-  if (!handle) return { ok: false, error: 'No active Teams turn for this session.' };
-
-  // NOT "Task complete". The agent did not finish — it asked. Closing the live
-  // card with the default title told the user the work was done, one line above
-  // a card asking them a question. The step in flight gets the neutral glyph
-  // for the same reason.
-  await finalizeTurn(handle, { title: 'Waiting for your answer', unfinished: true });
-  await deleteTurn(sessionId);
-
-  const ref: TeamsConversationRef = {
-    serviceUrl: handle.serviceUrl,
-    conversationId: handle.conversationId,
-    botId: handle.botId,
-    fromId: handle.fromId,
-    tenantId: handle.tenantId,
-    projectId: handle.projectId,
-  };
+  let ref: TeamsConversationRef | null;
+  if (handle) {
+    // NOT "Task complete". The agent did not finish — it asked. Closing the
+    // live card with the default title told the user the work was done, one
+    // line above a card asking them a question. The step in flight gets the
+    // neutral glyph for the same reason.
+    await finalizeTurn(handle, { title: 'Waiting for your answer', unfinished: true });
+    // Kept as a replied-turn marker, so a `teams send` from this same run
+    // after the card does not open a second one.
+    await markTurnReplied(sessionId);
+    ref = {
+      serviceUrl: handle.serviceUrl,
+      conversationId: handle.conversationId,
+      botId: handle.botId,
+      fromId: handle.fromId,
+      tenantId: handle.tenantId,
+      projectId: handle.projectId,
+    };
+  } else {
+    // A prompt that runs without a card of its own — a message sent while
+    // another run was going, a queued start — still asks in its conversation.
+    ref = await conversationRefForSession(sessionId);
+    if (!ref) return { ok: false, error: 'No active Teams turn for this session.' };
+  }
 
   const posted = await sendCard(ref, buildQuestionCard(questions));
   if (!posted) {

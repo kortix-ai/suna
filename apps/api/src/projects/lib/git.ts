@@ -12,6 +12,7 @@ import {
   getProjectSecretValueForConsumer,
 } from '../secrets';
 import { recordAuditEvent } from '../../shared/audit';
+import { bindAuditPrincipal } from '../../shared/audit-scope';
 import { accountGithubInstallationStates, accountGithubInstallations, accountTokens, readStoredAgentGrant, projectGitConnections, projectGitCredentials, projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import type { AgentGrant } from '@kortix/db';
 import { and, asc, countDistinct, eq, gt, inArray, isNull, ne } from 'drizzle-orm';
@@ -977,6 +978,11 @@ async function authorizeGitProxyUncached(
   if (!project || project.status === 'archived') {
     return { ok: false, status: 404, message: 'Not found' };
   }
+  // A credential was presented for a real project: its owner should see the
+  // attempt in their audit log whatever the verdict. Each branch below then
+  // binds WHO, the moment its token is proven — so a refusal still names the
+  // caller. The git proxy binds the full principal on success.
+  bindAuditPrincipal({ accountId: project.accountId, projectId: project.projectId });
 
   /** Does this token's USER hold the git capability this operation needs? */
   const grantedByProjectRole = async (
@@ -1005,6 +1011,16 @@ async function authorizeGitProxyUncached(
     if (!result.isValid || !result.accountId) {
       return { ok: false, status: 401, message: result.error || 'Invalid PAT' };
     }
+    bindAuditPrincipal({
+      actorUserId: result.userId ?? null,
+      actorType: result.sessionId ? 'agent' : result.userId ? 'human' : 'system',
+      authoritativeSource: result.sessionId ? 'agent' : 'api_key',
+      authMethod: {
+        kind: 'account_token',
+        ...(result.tokenId ? { token_id: result.tokenId } : {}),
+        ...(result.sessionId ? { session_id: result.sessionId } : {}),
+      },
+    });
     if (result.projectId && result.projectId !== projectId) {
       return { ok: false, status: 403, message: 'token is scoped to a different project' };
     }
@@ -1081,6 +1097,24 @@ async function authorizeGitProxyUncached(
     if (!result.isValid || !result.accountId) {
       return { ok: false, status: 401, message: result.error || 'Invalid token' };
     }
+    bindAuditPrincipal(
+      result.type === 'sandbox'
+        ? {
+            actorUserId: null,
+            actorType: 'agent',
+            authoritativeSource: 'agent',
+            authMethod: {
+              kind: 'sandbox_token',
+              ...(result.sandboxId ? { sandbox_id: result.sandboxId } : {}),
+            },
+          }
+        : {
+            actorUserId: null,
+            actorType: 'system',
+            authoritativeSource: 'api_key',
+            authMethod: { kind: 'api_key' },
+          },
+    );
     if (result.type === 'sandbox') {
       if (!result.sandboxId) {
         return { ok: false, status: 403, message: 'sandbox token missing a sandbox scope' };

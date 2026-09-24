@@ -11,6 +11,7 @@ import type { Context } from 'hono';
 import { config } from '../../config';
 import { auth, errors } from '../../openapi';
 import { db } from '../../shared/db';
+import { runWorkerTick } from '../../shared/audit-scope';
 import { isLeader } from '../../shared/leader-election';
 import { commitFileToBranch, invalidateProjectMirror } from '../git';
 import { commitMultipleFilesToBranch } from '../git/branches';
@@ -1308,7 +1309,7 @@ export function startProjectTriggerScheduler(): void {
   if (globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer) {
     clearInterval(globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer);
   }
-  const tick = () => {
+  const tickBody = () => {
     // Watchdog: if we're the leader but the sweep has stalled (started and never
     // completed within the stale window), make it LOUD. A silent dead scheduler
     // is what turned a single hung fire into an ~18h fleet-wide outage.
@@ -1369,6 +1370,9 @@ export function startProjectTriggerScheduler(): void {
         });
     }
   };
+  // Everything the tick starts (sweep, drains, connector reconcile) inherits
+  // the worker context through AsyncLocalStorage.
+  const tick = () => void runWorkerTick('trigger-scheduler', tickBody);
   tick();
   triggerSchedulerTimer = setInterval(tick, triggerSchedulerIntervalMs());
   globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer = triggerSchedulerTimer;

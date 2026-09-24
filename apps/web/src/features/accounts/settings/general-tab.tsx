@@ -328,9 +328,7 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
           <input
             ref={fileInputRef}
             type="file"
-            accept={tHardcodedUi.raw(
-              'componentsSettingsUserSettingsModal.line596JsxAttrAcceptImage',
-            )}
+            accept="image/*"
             onChange={handleAvatarChange}
             className="hidden"
           />

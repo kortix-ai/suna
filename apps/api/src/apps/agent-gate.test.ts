@@ -183,10 +183,10 @@ describe('header carriage', () => {
     expect(appUpstreamHeaders(request, {}, host).get('x-kortix-app-authorization')).toBeNull();
   });
 
-  test('the registered agent_principal flag reads the project override; absent means OFF', async () => {
+  test('the registered agent_principal flag is ON unless the project switched it off', async () => {
     const { agentPrincipalEnabled } = await import('./access');
     expect(agentPrincipalEnabled({ experimental: { agent_principal: true } })).toBe(true);
     expect(agentPrincipalEnabled({ experimental: { agent_principal: false } })).toBe(false);
-    expect(agentPrincipalEnabled(null)).toBe(false);
+    expect(agentPrincipalEnabled(null)).toBe(true);
   });
 });

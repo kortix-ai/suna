@@ -11,6 +11,7 @@ import { assertAllowedSourceAddress } from '../marketplace/catalog';
 import { serializeAuditEvent } from './audit-query';
 import { auditWebhookFailureSummary } from './audit-webhook-privacy';
 import { db } from './db';
+import { runWorkerTick } from './audit-scope';
 import { safeEgressFetch } from './ssrf-guard';
 
 /** Payload shape sent to the customer's webhook. Stable contract — bump
@@ -220,7 +221,7 @@ function scheduleWorker(delay: number): void {
   if (workerStopped || workerTimer) return;
   workerTimer = setTimeout(() => {
     workerTimer = null;
-    const tick = workerTick();
+    const tick = runWorkerTick('audit-webhooks', workerTick);
     activeWorkerTick = tick;
     void tick.finally(() => {
       if (activeWorkerTick === tick) activeWorkerTick = null;

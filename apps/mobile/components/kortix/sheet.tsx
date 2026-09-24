@@ -1,6 +1,6 @@
 // apps/mobile/components/kortix/sheet.tsx
 import * as React from 'react';
-import { View, Dimensions, type ViewStyle } from 'react-native';
+import { View, useWindowDimensions, type ViewStyle } from 'react-native';
 import {
   BottomSheetModal,
   BottomSheetView,
@@ -22,6 +22,7 @@ import { haptics } from '@/lib/haptics';
 import { CheckIcon, CopyIcon, XIcon } from '@/lib/icons';
 import { cn } from '@/lib/utils/utils';
 import { detentsKey, withFullDetent } from '@/lib/ui/sheet-detents';
+import { SurfaceContext } from '@/components/kortix/surface-context';
 
 /**
  * Shared bottom-sheet backdrop. Every gorhom sheet creator in the app
@@ -141,12 +142,15 @@ export function SheetTitleRow({
   hideClose = false,
   leading,
   trailing,
+  center,
 }: {
   title?: string;
   onClose?: () => void;
   hideClose?: boolean;
   leading?: React.ReactNode;
   trailing?: React.ReactNode;
+  /** Replaces the centred title text (e.g. a tab list). */
+  center?: React.ReactNode;
 }) {
   return (
     <View
@@ -171,13 +175,17 @@ export function SheetTitleRow({
           <Icon as={XIcon} size={20} className="text-foreground" />
         </Button>
       )}
-      <Text
-        variant="large"
-        accessibilityRole="header"
-        className="flex-1 text-center"
-        numberOfLines={1}>
-        {title ?? ''}
-      </Text>
+      {center ? (
+        <View className="flex-1 items-center">{center}</View>
+      ) : (
+        <Text
+          variant="large"
+          accessibilityRole="header"
+          className="flex-1 text-center"
+          numberOfLines={1}>
+          {title ?? ''}
+        </Text>
+      )}
       {trailing ? (
         <View className="-mr-2.5">{trailing}</View>
       ) : (
@@ -193,15 +201,22 @@ export interface KortixBottomSheetModalProps extends BottomSheetModalProps {
   title?: string;
   /** A titled sheet without the close button. */
   hideClose?: boolean;
+  /**
+   * Replaces the close button at the far left of the title row (a Back
+   * chevron while a pushed view shows). Needs `title`.
+   */
+  titleLeading?: React.ReactNode;
   /** One 40pt icon `Button` at the far right of the title row. Needs `title`. */
   titleTrailing?: React.ReactNode;
+  /** Replaces the centred title text with a control (a tab list). Needs `title` (used as the accessible name). */
+  titleCenter?: React.ReactNode;
 }
 
 export const KortixBottomSheetModal = React.forwardRef<
   BottomSheetModal,
   KortixBottomSheetModalProps
 >(({ title, hideClose = false, backgroundStyle, handleComponent, snapPoints, topInset, children, ...rest }, ref) => {
-  const { titleTrailing, ...props } = rest;
+  const { titleLeading, titleTrailing, titleCenter, ...props } = rest;
   // gorhom sizes the content box to the HIGHEST detent, which is now always
   // 100%. A fixed-detent sheet shown at 92% would lay its content out
   // full-screen tall and push a bottom Save row off-screen, so its body is
@@ -229,12 +244,14 @@ export const KortixBottomSheetModal = React.forwardRef<
         <SheetTitleRow
           title={title}
           hideClose={hideClose}
+          leading={titleLeading}
           trailing={titleTrailing}
+          center={titleCenter}
           onClose={() => innerRef.current?.dismiss()}
         />
       </View>
     ),
-    [indicatorStyle, hideClose, title, titleTrailing]
+    [indicatorStyle, hideClose, title, titleLeading, titleTrailing, titleCenter]
   );
 
   return (
@@ -246,6 +263,16 @@ export const KortixBottomSheetModal = React.forwardRef<
       snapPoints={detents as BottomSheetModalProps['snapPoints']}
       topInset={topInset ?? insets.top}
       {...props}
+      // Android keyboard: ONE mode app-wide. The window is `adjustResize`
+      // (app.json `softwareKeyboardLayoutMode: "resize"`), but the root
+      // KeyboardProvider draws edge-to-edge, so the window never actually
+      // resizes or pans. The sheet must lift itself above the keyboard,
+      // which is gorhom's `adjustPan` path (the same path iOS uses). gorhom's
+      // `adjustResize` assumes the OS already resized and does nothing, so a
+      // field near the sheet bottom stays under the keyboard. Inputs inside a
+      // sheet must be `BottomSheetTextInput` (or `SheetTextInput`): gorhom only
+      // lifts for a focused input it registered.
+      android_keyboardInputMode="adjustPan"
       backgroundStyle={[
         {
           backgroundColor: background,
@@ -254,7 +281,14 @@ export const KortixBottomSheetModal = React.forwardRef<
         },
         backgroundStyle,
       ]}>
-      {fixedDetents && typeof children !== 'function' ? <SheetFill>{children}</SheetFill> : children}
+      {typeof children === 'function' ? (
+        children
+      ) : (
+        // Rows inside know they sit on the sheet colour (`SettingsGroup`).
+        <SurfaceContext.Provider value="sheet">
+          {fixedDetents ? <SheetFill>{children}</SheetFill> : children}
+        </SurfaceContext.Provider>
+      )}
     </BottomSheetModal>
   );
 });
@@ -330,6 +364,7 @@ export const Sheet = React.forwardRef<SheetRef, SheetProps>(
   ({ snapPoints, fullScreen, enablePanDownToClose, onDismiss, children }, ref) => {
     const modalRef = React.useRef<BottomSheetModal>(null);
     const insets = useSafeAreaInsets();
+    const { height: windowHeight } = useWindowDimensions();
     React.useImperativeHandle(ref, () => ({
       open: () => modalRef.current?.present(),
       close: () => modalRef.current?.dismiss(),
@@ -343,8 +378,7 @@ export const Sheet = React.forwardRef<SheetRef, SheetProps>(
         enablePanDownToClose={enablePanDownToClose}
         onDismiss={onDismiss}
         keyboardBehavior="interactive"
-        keyboardBlurBehavior="restore"
-        android_keyboardInputMode="adjustResize">
+        keyboardBlurBehavior="restore">
         <BottomSheetView style={fullScreen ? { flex: 1 } : undefined}>
           {fullScreen ? (
             // BottomSheetView content-sizes, so a concrete min-height is what
@@ -352,7 +386,7 @@ export const Sheet = React.forwardRef<SheetRef, SheetProps>(
             <View
               style={{
                 flex: 1,
-                minHeight: Dimensions.get('window').height - insets.top - insets.bottom - 20,
+                minHeight: windowHeight - insets.top - insets.bottom - 20,
               }}>
               {children}
             </View>

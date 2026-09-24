@@ -316,7 +316,7 @@ describe('wake latency', () => {
 
 // ───────────────────────────────────────────────────────────────────────────
 // Progress-aware wake budget + the stamped-failure cooldown ladder.
-// Incident 2026-08-26 (Essentia): sessions e06ad0c4 and 9c8749ac.
+// Incident 2026-08-26 (SampleCo): sessions e06ad0c4 and 9c8749ac.
 // ───────────────────────────────────────────────────────────────────────────
 
 describe('waitForRuntimeWakeRunning — progress-aware budget', () => {

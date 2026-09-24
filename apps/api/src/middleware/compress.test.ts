@@ -246,7 +246,7 @@ describe('compressResponse', () => {
  * The runtime image (`oven/bun:1.2-slim`) has no `CompressionStream`; local Bun
  * 1.3 does. The middleware must compress on BOTH. `useNative: false` forces the
  * `node:zlib` path the image actually takes — the exact path that 500'd every
- * compressible response on Essentia (2026-08-26) before the fallback existed.
+ * compressible response on SampleCo (2026-08-26) before the fallback existed.
  */
 describe('compressedStream zlib fallback (Bun 1.2 image has no CompressionStream)', () => {
   const source = () =>

@@ -9,21 +9,21 @@
  *   extension. Web returns a sized node; mobile returns the `AppIcon` so the
  *   caller sizes and tints it (`<ToolIconSlot icon={…} size color />`);
  * - `useShowOpenInTab` — an HTML file → its static-server preview, a localhost
- *   URL → the sandbox preview, an http(s) URL → external, a path → the file
- *   viewer (see `navigation.tsx` for each mobile target);
- * - `ShowFileActions` — web: refresh · full screen · "Open". Mobile: refresh
- *   (invalidates the file queries) · full screen (the file viewer) · "Open"
- *   (the same viewer — mobile has no side panel).
+ *   URL → the sandbox preview, a safe http(s) URL → external, a path → the file
+ *   viewer (`showOpenTarget`; see `navigation.tsx` for each mobile target);
+ * - `ShowFileActions` — web: Refresh · Full screen · "Preview". Mobile: Refresh
+ *   · "Preview" inline, Refresh · Full screen in the panel (`showFileActions`):
+ *   both open the same full-screen viewer, so only one is shown.
  *
  * Not ported here: `ShowCarousel` / `ShowContentRenderer` (web
  * `features/file-renderers`). They are content renderers, not primitives, and
  * belong to the `show` renderer port.
  */
 
-import { useCallback, useState } from 'react';
-import { View } from 'react-native';
+import { useCallback, useMemo, useState } from 'react';
+import { Image, View } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
-import { buildStaticFileLocalUrl, isAppRouteUrl, parseLocalhostUrl } from '@kortix/sdk';
+import { buildStaticFileLocalUrl } from '@kortix/sdk';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
@@ -31,6 +31,7 @@ import {
   ArrowClockwiseIcon,
   ArrowSquareOutIcon,
   ArrowsOutSimpleIcon,
+  CaretRightIcon,
   CodeSimpleIcon,
   FileCodeIcon,
   FileCsvIcon,
@@ -53,8 +54,13 @@ import {
   type AppIcon,
 } from '@/lib/icons';
 import { fileKeys } from '@/lib/files/hooks';
+import { showFileActions, showOpenTarget, type ShowRowModel } from '@/lib/session/tools/web-show';
+import { useSandboxImage } from '@/components/session/turn/use-sandbox-image';
+import { SettingsRow } from '@/components/kortix/settings-list';
+import { THEME } from '@/lib/utils/theme';
+import { useColorScheme } from 'nativewind';
 import { webSpace } from '@/lib/session/user-message';
-import { TURN_SPACE, useTurnPalette, type TurnPalette } from './styles';
+import { TURN_SPACE, TURN_TYPE, useTurnPalette, type TurnPalette } from './styles';
 import { useProxyUrl, useServicePreview, useToolNavigation, ServicePreviewViewport } from './navigation';
 
 export { ServicePreviewViewport, useServicePreview };
@@ -153,33 +159,99 @@ export function showFileTypeIcon(type: string, path?: string): AppIcon {
 export function useShowOpenInTab(props: { type: string; url: string; path: string; title: string }) {
   const { type, url, path, title } = props;
   const { enabled, openTab, openExternal, openFile } = useToolNavigation();
-  const proxy = useProxyUrl(url);
-  const hasLocalhostUrl = !!parseLocalhostUrl(url) && !isAppRouteUrl(url);
-  const safeExternalUrl = /^https?:\/\//i.test(url.trim()) ? url.trim() : null;
-
-  const isHtmlFilePath = !!path && SHOW_HTML_EXT_RE.test(path) && (type === 'file' || type === 'html');
-  const htmlStaticUrl = isHtmlFilePath ? buildStaticFileLocalUrl(path) : '';
-  const htmlStaticProxy = useProxyUrl(htmlStaticUrl);
+  const target = useMemo(() => showOpenTarget({ type, url, path }), [type, url, path]);
+  const proxy = useProxyUrl(target?.kind === 'localhost' ? url : '');
+  const htmlStaticProxy = useProxyUrl(target?.kind === 'html-file' ? target.staticUrl : '');
 
   return useCallback(() => {
-    if (isHtmlFilePath && htmlStaticProxy) {
+    if (!target) return;
+    if (target.kind === 'html-file' && htmlStaticProxy) {
       const fileName = path.split('/').pop() || path;
       openTab({ id: `preview:${htmlStaticProxy.port}`, title: title || fileName, type: 'preview', metadata: { url: htmlStaticProxy.proxyUrl } });
       return;
     }
-    if (hasLocalhostUrl && proxy) {
+    if (target.kind === 'localhost' && proxy) {
       openTab({ id: `preview:${proxy.port}`, title: title || `localhost:${proxy.port}`, type: 'preview', metadata: { url: proxy.proxyUrl } });
       return;
     }
-    if (safeExternalUrl && !hasLocalhostUrl) {
-      openExternal(safeExternalUrl);
+    if (target.kind === 'external') {
+      openExternal(target.url);
       return;
     }
+    // A file target, or a preview whose proxy is not resolved yet: the file viewer.
     if (path && enabled) openFile(path);
-  }, [enabled, hasLocalhostUrl, htmlStaticProxy, isHtmlFilePath, openExternal, openFile, openTab, path, proxy, safeExternalUrl, title]);
+  }, [enabled, htmlStaticProxy, openExternal, openFile, openTab, path, proxy, target, title]);
 }
 
-export function ShowFileActions({ path, inPanel = false }: { path: string; inPanel?: boolean }) {
+/**
+ * Web `ShowFileActions` (Refresh · Full screen · "Preview"). Mobile has no side
+ * panel, so "Full screen" and "Preview" would both open the full-screen
+ * file sheet (`FilePreviewSheet`): the inline card shows Refresh · "Preview", the panel Refresh ·
+ * Full screen (`showFileActions`). Refresh invalidates the file queries and
+ * calls `onRefresh`, which the card uses to remount its body so a sandbox
+ * image requests its bytes again.
+ */
+/**
+ * One `show` output in the transcript, as a `SettingsRow` inside the card's
+ * `SettingsGroup` (COR-107; Jay, 2026-09-22): the app's own list row, so the
+ * transcript reuses the list language every page already uses instead of a
+ * bespoke card. Leading slot: the image itself for an image, else the type
+ * glyph. Label: the file name. Description: the kind. The chevron comes with
+ * `onPress`, and the payload opens in the file sheet or the Browser tab.
+ */
+export function ShowResultRow({
+  entry,
+  model,
+  icon,
+  directImageUrl,
+}: {
+  /** The output this row names: what `useShowOpenInTab` opens. */
+  entry: { type: string; url: string; path: string; title: string };
+  model: ShowRowModel;
+  icon: AppIcon;
+  /** A direct image URL, when the still is remote rather than in the sandbox. */
+  directImageUrl?: string;
+}) {
+  const { enabled } = useToolNavigation();
+  const open = useShowOpenInTab(entry);
+  const wantsSandboxImage = model.thumb === 'image' && !!entry.path && !directImageUrl;
+  const sandboxImage = useSandboxImage(entry.path, wantsSandboxImage);
+  const imageUri =
+    directImageUrl || (wantsSandboxImage && sandboxImage.phase === 'load' ? sandboxImage.source?.uri : undefined);
+
+  return (
+    <SettingsRow
+      {...(imageUri
+        ? {
+            leading: (
+              <Image
+                source={{ uri: imageUri }}
+                resizeMode="cover"
+                style={{ width: SHOW_ROW_THUMB, height: SHOW_ROW_THUMB, borderRadius: 6 }}
+              />
+            ),
+          }
+        : { icon })}
+      label={model.title}
+      dense
+      onPress={enabled ? open : undefined}
+      accessibilityLabel={`${model.title}, ${model.subtitle}`}
+    />
+  );
+}
+
+/** The leading still in a show row: the settings list's own icon slot, squared. */
+const SHOW_ROW_THUMB = 22;
+
+export function ShowFileActions({
+  path,
+  inPanel = false,
+  onRefresh,
+}: {
+  path: string;
+  inPanel?: boolean;
+  onRefresh?: () => void;
+}) {
   const palette = useTurnPalette();
   const queryClient = useQueryClient();
   const { openFile } = useToolNavigation();
@@ -187,24 +259,39 @@ export function ShowFileActions({ path, inPanel = false }: { path: string; inPan
 
   const handleRefresh = useCallback(() => {
     setRefreshing(true);
-    void queryClient.invalidateQueries({ queryKey: fileKeys.all }).finally(() => setRefreshing(false));
-  }, [queryClient]);
+    void queryClient
+      .invalidateQueries({ queryKey: fileKeys.all })
+      .finally(() => {
+        setRefreshing(false);
+        onRefresh?.();
+      });
+  }, [onRefresh, queryClient]);
 
-  const openFullScreen = useCallback(() => openFile(path), [openFile, path]);
+  const open = useCallback(() => openFile(path), [openFile, path]);
 
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: webSpace(1), flexShrink: 0 }}>
-      <Button variant="ghost" size="icon" onPress={handleRefresh} disabled={refreshing} accessibilityLabel="Refresh">
-        <Icon as={ArrowClockwiseIcon} size={TURN_SPACE.icon} color={palette.mutedForeground} />
-      </Button>
-      <Button variant="ghost" size="icon" onPress={openFullScreen} accessibilityLabel="Full screen">
-        <Icon as={ArrowsOutSimpleIcon} size={TURN_SPACE.icon} color={palette.mutedForeground} />
-      </Button>
-      {!inPanel ? (
-        <Button variant="secondary" size="sm" onPress={openFullScreen}>
-          <Text>Open</Text>
-        </Button>
-      ) : null}
+      {showFileActions({ inPanel }).map((action) => {
+        if (action === 'refresh') {
+          return (
+            <Button key={action} variant="ghost" size="icon" onPress={handleRefresh} disabled={refreshing} accessibilityLabel="Refresh">
+              <Icon as={ArrowClockwiseIcon} size={TURN_SPACE.icon} color={palette.mutedForeground} />
+            </Button>
+          );
+        }
+        if (action === 'full-screen') {
+          return (
+            <Button key={action} variant="ghost" size="icon" onPress={open} accessibilityLabel="Full screen">
+              <Icon as={ArrowsOutSimpleIcon} size={TURN_SPACE.icon} color={palette.mutedForeground} />
+            </Button>
+          );
+        }
+        return (
+          <Button key={action} variant="secondary" size="sm" onPress={open} accessibilityHint="Opens the file full screen">
+            <Text>Preview</Text>
+          </Button>
+        );
+      })}
     </View>
   );
 }

@@ -34,6 +34,8 @@ import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
 import type { Turn, TextPart } from '@/lib/opencode/types';
 import type { Command } from '@/lib/opencode/hooks/use-opencode-data';
 import { isTextPart, messageCreatedAt, splitUserParts, type MessageWithParts } from '@kortix/sdk';
+import { parseTriggerEvent } from '@kortix/shared';
+import { parseLegacyChannelMessage } from '@/lib/session/channel-message';
 import { detectCommandFromText } from '@/lib/session/detect-command';
 import { formatMegabytes } from '@/lib/session/image-load';
 import { buildMentionSegments } from '@/lib/session/mention-segments';
@@ -43,9 +45,11 @@ import {
   resolveAttachmentSource,
 } from '@/lib/session/attachment-tile';
 import {
+  commandMessageText,
   isUserMessageEdited,
   parseUserMessageText,
   queuedPromptStatusLabel,
+  quoteMarginBottom,
   userMessageMetaItems,
   webSpace,
   type QueuedPromptState,
@@ -114,6 +118,9 @@ function paletteFor(isDark: boolean) {
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────
+
+/** A failed send's bubble: the queued dim's `opacity-50`. */
+const FAILED_BUBBLE_STYLE = { opacity: 0.5 };
 
 /** A failed send the host kept on screen. */
 export interface UserMessageUploadStatus {
@@ -204,40 +211,21 @@ export function UserMessage({
   const { rawText, content, attachments } = parsed;
 
   const commandInfo = useMemo(() => detectCommandFromText(rawText, commands), [rawText, commands]);
-  const bodyText = commandInfo ? (commandInfo.args ?? '') : content.text;
+  // Command args arrive raw; `commandMessageText` strips their quote blocks,
+  // which the bubble already draws once from `content.quotes`.
+  const commandText = commandInfo ? commandMessageText(commandInfo.name, commandInfo.args) : null;
+  const bodyText = commandText ? commandText.body : content.text;
 
   /** The text the editor starts from and Copy writes. */
-  const promptText = commandInfo
-    ? `/${commandInfo.name}${commandInfo.args ? ` ${commandInfo.args}` : ''}`
-    : content.text;
+  const promptText = commandText ? commandText.prompt : content.text;
 
   const edited = useMemo(() => isUserMessageEdited(message.parts as never), [message.parts]);
   const timestamp = messageCreatedAt(message as unknown as MessageWithParts);
 
-  const channelMessageInfo = useMemo(() => {
-    if (!rawText) return undefined;
-    const headerMatch = rawText.match(/^\[(\w+)\s*·\s*([^·]+?)\s*·\s*message from\s+([^\]]+)\]\s*/);
-    if (!headerMatch) return undefined;
-    const platform = headerMatch[1] as 'Telegram' | 'Slack';
-    const userName = headerMatch[3]!.trim();
-    const afterHeader = rawText.slice(headerMatch[0].length);
-    const instrStart = afterHeader.search(/\n\s*(Chat ID:|── Telegram instructions|── Slack instructions)/);
-    const messageText = instrStart >= 0 ? afterHeader.slice(0, instrStart).trim() : afterHeader.trim();
-    return { platform, userName, messageText };
-  }, [rawText]);
-
-  const triggerEventInfo = useMemo(() => {
-    if (!rawText) return undefined;
-    const match = rawText.match(/<trigger_event>\s*([\s\S]*?)\s*<\/trigger_event>/);
-    if (!match) return undefined;
-    try {
-      const data = JSON.parse(match[1]!);
-      const prompt = rawText.replace(/<trigger_event>[\s\S]*?<\/trigger_event>/, '').trim();
-      return { data, prompt };
-    } catch {
-      return undefined;
-    }
-  }, [rawText]);
+  // Both parsers are linear in the prompt: a channel or a webhook chooses this
+  // text, and a regex version of each froze the JS thread on a crafted prompt.
+  const channelMessageInfo = useMemo(() => parseLegacyChannelMessage(rawText), [rawText]);
+  const triggerEventInfo = useMemo(() => parseTriggerEvent(rawText), [rawText]);
 
   // Queued dim: `duration-slow transition-opacity` + `opacity-50`.
   const dim = useSharedValue(queueState ? 0.5 : 1);
@@ -350,7 +338,7 @@ export function UserMessage({
   }
 
   const failed = uploadStatus?.state === 'failed' ? uploadStatus : undefined;
-  const hasBubble = Boolean(bodyText || content.replyContext || commandInfo);
+  const hasBubble = Boolean(bodyText || content.quotes.length > 0 || commandInfo);
 
   return (
     <Reanimated.View className="px-4" style={dimStyle}>
@@ -360,18 +348,21 @@ export function UserMessage({
         ) : null}
 
         {hasBubble ? (
-          <UserMessageBubble isDark={isDark} replyContext={content.replyContext}>
-            {bodyText || commandInfo ? (
-              <MessageBody
-                text={bodyText}
-                command={commandInfo?.name}
-                sessions={content.sessions}
-                agentNames={agentNames}
-                onFileMention={onFileMention}
-                onSessionMention={onSessionMention}
-              />
-            ) : null}
-          </UserMessageBubble>
+          // A failed send greys its bubble; "Try again" above stays full strength.
+          <View className="items-end" style={failed ? FAILED_BUBBLE_STYLE : undefined}>
+            <UserMessageBubble isDark={isDark} quotes={content.quotes}>
+              {bodyText || commandInfo ? (
+                <MessageBody
+                  text={bodyText}
+                  command={commandInfo?.name}
+                  sessions={content.sessions}
+                  agentNames={agentNames}
+                  onFileMention={onFileMention}
+                  onSessionMention={onSessionMention}
+                />
+              ) : null}
+            </UserMessageBubble>
+          </View>
         ) : null}
 
         {actions}
@@ -459,11 +450,12 @@ function MessageBody({
  */
 export function UserMessageBubble({
   isDark,
-  replyContext,
+  quotes = [],
   children,
 }: {
   isDark: boolean;
-  replyContext?: string | null;
+  /** Quoted passages above the text. Omitted by the connecting screen's pending-prompt bubble. */
+  quotes?: string[];
   children?: React.ReactNode;
 }) {
   const palette = paletteFor(isDark);
@@ -500,13 +492,22 @@ export function UserMessageBubble({
         overflow: 'hidden',
       }}
     >
-      {replyContext ? (
-        <View className="border-border border-l-2" style={{ paddingLeft: webSpace(2.5), marginBottom: webSpace(2) }}>
-          <Text variant="muted" numberOfLines={2} style={{ lineHeight: webSpace(5) }}>
-            {replyContext}
-          </Text>
-        </View>
-      ) : null}
+      {quotes.length > 0
+        ? quotes.map((quote, i) => (
+            <View
+              key={i}
+              className="border-border border-l-2"
+              style={{
+                paddingLeft: webSpace(2.5),
+                marginBottom: quoteMarginBottom(i, quotes.length, Boolean(children)),
+              }}
+            >
+              <Text variant="muted" numberOfLines={2} style={{ lineHeight: webSpace(5) }}>
+                {quote}
+              </Text>
+            </View>
+          ))
+        : null}
 
       {children ? (
         <View>
@@ -720,7 +721,7 @@ export function UserMessageEditor({
 /**
  * `flex flex-col items-end gap-1.5` over `flex flex-wrap justify-end gap-2`.
  * Past 8 attachments the last slot is a `+N` tile that expands the strip. A
- * failed send says "Couldn't send" (and why) with Retry.
+ * failed send says "Not sent · Try again" (COR-143); the whole line retries.
  */
 export function MessageAttachments({
   attachments,
@@ -749,20 +750,25 @@ export function MessageAttachments({
       ) : null}
       {status ? (
         <View accessibilityRole="alert" className="items-end">
-          <Text variant="muted" className="text-right" style={META_TEXT_STYLE}>
-            Couldn't send
-          </Text>
+          {status.onRetry ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onPress={status.onRetry}
+              accessibilityLabel="Message not sent. Try again">
+              <Text>Not sent · Try again</Text>
+            </Button>
+          ) : (
+            <Text variant="muted" className="text-right" style={META_TEXT_STYLE}>
+              Not sent
+            </Text>
+          )}
           {status.message ? (
             <Text variant="muted" className="text-right" style={META_TEXT_STYLE}>
               {status.message}
             </Text>
           ) : null}
         </View>
-      ) : null}
-      {status?.onRetry ? (
-        <Button variant="ghost" size="sm" onPress={status.onRetry}>
-          <Text>Retry</Text>
-        </Button>
       ) : null}
     </View>
   );
@@ -771,7 +777,7 @@ export function MessageAttachments({
 /**
  * One sent attachment. An image in the sandbox loads through `useSandboxImage`
  * (HEAD probe, tap-to-load above the size limit); until it loads, or when it
- * fails, the tile is the named tile. Tapping opens the file in FileViewer.
+ * fails, the tile is the named tile. Tapping opens the file in the file sheet.
  */
 function MessageAttachmentTile({
   file,

@@ -1,13 +1,8 @@
-import { Platform } from 'react-native';
-
+import { MONO_FONT_FAMILY } from '@/lib/utils/mono-font';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 
-/**
- * Monospace family for code. Web renders code in Roobert Mono; the app does
- * not register a Roobert Mono face (`lib/utils/fonts.ts` loads the six
- * upright Roobert weights only), so code keeps the platform monospace.
- */
-export const MONO_FONT = Platform.select({ ios: 'Menlo', default: 'monospace' });
+/** Monospace family for code: Roobert Mono, as on web (`lib/utils/mono-font.ts`). */
+export const MONO_FONT = MONO_FONT_FAMILY;
 
 /**
  * Every colour the markdown renderer paints, derived from THEME tokens the way

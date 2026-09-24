@@ -230,6 +230,7 @@ describe('kortix connectors — capability-page parity', () => {
         label: 'Sales inbox',
         owner_type: 'project',
         is_default: true,
+        connected_as: 'sales@example.test',
       },
       {
         connection_id: '22222222-2222-4222-8222-222222222222',
@@ -355,14 +356,17 @@ describe('kortix connectors — capability-page parity', () => {
       body: null,
     });
     const lines = r.stdout.split('\n').map((line) => line.trim());
-    expect(lines.some((line) => /^LABEL\s+OWNER\s+DEFAULT\s+CONNECTION ID$/.test(line))).toBe(true);
-    // Order is the API's: the default account first.
+    expect(
+      lines.some((line) => /^LABEL\s+CONNECTED AS\s+OWNER\s+DEFAULT\s+CONNECTION ID$/.test(line)),
+    ).toBe(true);
+    // Order is the API's: the default account first. CONNECTED AS names the
+    // authorized identity, or `—` when the server does not know it.
     const rows = lines.filter((line) => /^(Sales inbox|user@example\.test)\s/.test(line));
     expect(rows[0]).toMatch(
-      /^Sales inbox\s+shared\s+yes\s+11111111-1111-4111-8111-111111111111\s+\(pinned default\)$/,
+      /^Sales inbox\s+sales@example\.test\s+shared\s+yes\s+11111111-1111-4111-8111-111111111111\s+\(pinned default\)$/,
     );
     expect(rows[1]).toMatch(
-      /^user@example\.test\s+private\s+no\s+22222222-2222-4222-8222-222222222222$/,
+      /^user@example\.test\s+—\s+private\s+no\s+22222222-2222-4222-8222-222222222222$/,
     );
     expect(r.stdout).toContain('2 accounts');
     // A ready-to-copy example per account, plus the two selector words.
@@ -440,6 +444,7 @@ describe('kortix connectors — capability-page parity', () => {
           label: 'Sales inbox',
           owner_type: 'project',
           is_default: true,
+          connected_as: 'sales@example.test',
         },
         {
           connection_id: '22222222-2222-4222-8222-222222222222',

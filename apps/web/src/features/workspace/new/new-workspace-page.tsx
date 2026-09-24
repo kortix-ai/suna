@@ -117,9 +117,9 @@ const ICON_WIDTH = '2.5rem';
  * check to run. This component holds no validation rules of its own; both the
  * charset/length check and the submit gate come from the shared form model.
  *
- * `/projects` links here for every create, so a user must never be trapped here — the create-into account
- * picker (or email fallback) sits top-left and a `Log out` control sits
- * top-right, independent of the form below.
+ * A user must never be trapped here. The web row links back to `/projects`;
+ * the desktop shell shows its root `DesktopBackButton`. The create-into account
+ * picker stays in the form, and Log out remains available on both surfaces.
  */
 export function NewWorkspacePage() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -298,20 +298,16 @@ export function NewWorkspacePage() {
           max-w-md column. `inset-x-0` + padding (not `w-full` + `right-*`) so
           the row spans the viewport without overflowing left. Sits ahead of
           the <form> so it stays reachable regardless of form state.
-
           `kx-desktop-band-row` moves the row below the title-bar band on
           desktop, clear of the macOS traffic lights and the Win/Linux window
           controls. */}
       <div className="kx-desktop-band-row absolute inset-x-0 top-3 z-10 flex items-center justify-between gap-3 px-4 sm:top-4 sm:px-6">
-        {/* The way OUT, to the project selector (`/projects`). It sits ahead
-            of the <form>, so it is reachable regardless of form state. Log out
-            alone was the only exit on the web and read as "you can't leave"
-            (reported on dev, 2026-09-17). */}
+        {/* The web needs an in-page exit; Electron supplies Back in its band. */}
         <Button
           asChild
           variant="ghost"
           size="sm"
-          className="text-muted-foreground hover:text-foreground shrink-0 gap-1.5"
+          className="kx-web-only-back text-muted-foreground hover:text-foreground shrink-0 gap-1.5"
         >
           <Link href="/projects">
             <ArrowLeftIcon className="size-4" />

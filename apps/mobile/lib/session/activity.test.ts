@@ -131,20 +131,21 @@ describe('burstIsRunning', () => {
 // ─── Burst view ──────────────────────────────────────────────────────────────
 
 describe('burstView', () => {
-  test('one call is bare: no summary line', () => {
+  test('one call gets the summary line that opens the sheet', () => {
     const view = burstView([tool('bash', 'completed')], false, false);
-    expect(view.bare).toBe(true);
     expect(view.hidden).toBe(false);
     expect(view.steps).toHaveLength(1);
+    expect(view.title).toBe('Completed 1 step');
   });
 
-  test('a lone thought is bare too', () => {
+  test('a lone thought gets the summary line too', () => {
     const view = burstView([reasoning('plan', { start: 1, end: 2 })], false, false);
-    expect(view.bare).toBe(true);
+    expect(view.hidden).toBe(false);
+    expect(view.title).toBe('Completed 1 step');
     expect(view.steps[0]?.kind).toBe('thought');
   });
 
-  test('a same-family group of 3 is ONE row but not bare — it summarises 3 calls', () => {
+  test('a same-family group of 3 is ONE step row and summarises 3 calls', () => {
     const view = burstView(
       [tool('bash', 'completed'), tool('bash', 'completed'), tool('bash', 'completed')],
       false,
@@ -152,7 +153,6 @@ describe('burstView', () => {
     );
     expect(view.steps).toHaveLength(1);
     expect(view.steps[0]?.kind).toBe('group');
-    expect(view.bare).toBe(false);
     expect(view.title).toBe('Completed 3 steps');
   });
 

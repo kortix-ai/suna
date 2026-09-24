@@ -13,6 +13,8 @@
  */
 
 import { buildStaticFileLocalUrl, isAppRouteUrl, parseLocalhostUrl } from '@kortix/sdk';
+
+import { isSvgName } from '@/lib/files/svg-policy';
 import { isLocalSandboxFilePath } from '../tool-part-accessors';
 import { safeHttpUrl } from './web-fetch';
 
@@ -51,6 +53,82 @@ export function resolveShowType(type: string, path: string): string {
     if (RICH_SHOW_CATEGORIES.has(category)) return category;
   }
   return type;
+}
+
+/**
+ * One `show` output as the transcript's row (COR-107, Jay 2026-09-22, option
+ * B): a 56pt thumbnail, the file's name, and one muted line naming the kind.
+ * The row replaces the old inline viewer — the payload opens in the file
+ * sheet, so the transcript never embeds a page or a scroller.
+ *
+ * `thumb` is `image` only where a still already exists (an image file or a
+ * direct image URL); everything else shows its type glyph on a tile, because
+ * rendering a page or a document to a thumbnail is work the phone should not
+ * do inside a transcript.
+ */
+export type ShowRowThumb = 'image' | 'glyph';
+
+export interface ShowRowModel {
+  /** The row's own label: the file name, else the domain, else the title. */
+  title: string;
+  /** The muted second line: the kind, and the domain for a link. */
+  subtitle: string;
+  thumb: ShowRowThumb;
+}
+
+const SHOW_KIND_LABELS: Record<string, string> = {
+  image: 'Image',
+  video: 'Video',
+  audio: 'Audio',
+  pdf: 'PDF',
+  csv: 'Spreadsheet',
+  xlsx: 'Spreadsheet',
+  docx: 'Document',
+  pptx: 'Slides',
+  'html-file': 'Page',
+  html: 'Page',
+  markdown: 'Markdown',
+  code: 'Code',
+  text: 'Text',
+  link: 'Link',
+  file: 'File',
+};
+
+export function showRowModel({
+  type,
+  path,
+  url,
+  title,
+}: {
+  type: string;
+  path: string;
+  url: string;
+  title: string;
+}): ShowRowModel {
+  const fileName = path ? path.split('/').pop() || path : '';
+  const domain = url ? showDomain(url) : '';
+  // A running app is not a link: it reads as "App preview · localhost:3000",
+  // never the token-bearing proxy URL and never a globe (Jay, 2026-09-22).
+  const localhost = !path && url ? parseLocalhostUrl(url) : null;
+  if (localhost) {
+    const where = `localhost:${localhost.port}${localhost.path && localhost.path !== '/' ? localhost.path : ''}`;
+    return { title: title || 'App preview', subtitle: where, thumb: 'glyph' };
+  }
+  const resolved = path ? resolveShowType(type, path) : type;
+  const isLink = !path && !!url;
+  const kind = isLink ? 'link' : resolved;
+
+  return {
+    title: fileName || title || domain || SHOW_KIND_LABELS[kind] || 'Output',
+    subtitle: isLink ? domain || 'Link' : SHOW_KIND_LABELS[kind] || 'File',
+    // SVG never previews, here or in the file sheet (Jay, 2026-09-22): the
+    // app offers Download and Copy for it instead (`lib/files/svg-policy`).
+    thumb:
+      !isSvgName(path || url) &&
+      ((!isLink && kind === 'image') || (isLink && SHOW_IMAGE_EXT_RE.test(url)))
+        ? 'image'
+        : 'glyph',
+  };
 }
 
 /** A sandbox path with no inline content renders from the file on disk. */
@@ -234,7 +312,31 @@ export function resolveShowPreviewUrl({
   return isHtmlFilePath ? buildStaticFileLocalUrl(activePath) : '';
 }
 
-export type ShowInlineToolbarKind = 'preview' | 'file' | 'content-preview' | null;
+export type ShowOpenTarget =
+  | { kind: 'html-file'; staticUrl: string }
+  | { kind: 'localhost' }
+  | { kind: 'external'; url: string }
+  | { kind: 'file'; path: string }
+  | null;
+
+/**
+ * Where `useShowOpenInTab` sends a tap, in web's order: an HTML file → its
+ * static-server preview; a localhost URL → the sandbox preview; a safe http(s)
+ * URL → the browser (`safeHttpUrl`, as web — a relative, malformed or
+ * non-http(s) value never opens); a path → the file viewer; else nothing.
+ */
+export function showOpenTarget({ type, url, path }: { type: string; url: string; path: string }): ShowOpenTarget {
+  if (path && SHOW_HTML_EXT_RE.test(path) && (type === 'file' || type === 'html')) {
+    return { kind: 'html-file', staticUrl: buildStaticFileLocalUrl(path) };
+  }
+  if (parseLocalhostUrl(url) && !isAppRouteUrl(url)) return { kind: 'localhost' };
+  const external = safeHttpUrl(url);
+  if (external) return { kind: 'external', url: external };
+  if (path) return { kind: 'file', path };
+  return null;
+}
+
+export type ShowInlineToolbarKind ='preview' | 'file' | 'content-preview' | null;
 
 /** The one toolbar in the inline card header. */
 export function showInlineToolbarKind({
@@ -256,6 +358,21 @@ export function showInlineToolbarKind({
   if (activePath) return 'file';
   if (!isCarousel && content && canActivate && navigationEnabled) return 'content-preview';
   return null;
+}
+
+export type ShowFileAction = 'refresh' | 'preview' | 'full-screen';
+
+/**
+ * The controls of `ShowFileActions`, in order. Web: Refresh · Full screen ·
+ * "Preview" (open in the side panel); the panel surface drops "Preview".
+ *
+ * Mobile has no side panel: "Full screen" and "Preview" both open the
+ * full-screen `FileViewer`. One control per target, so the inline card keeps
+ * the labelled "Preview" (web's primary action) and the panel keeps the
+ * "Full screen" icon (web's panel toolbar).
+ */
+export function showFileActions({ inPanel }: { inPanel: boolean }): ShowFileAction[] {
+  return inPanel ? ['refresh', 'full-screen'] : ['refresh', 'preview'];
 }
 
 export type ShowBodyKind = 'hidden' | 'loading' | 'unavailable' | 'content';

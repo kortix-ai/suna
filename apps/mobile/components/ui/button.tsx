@@ -1,5 +1,6 @@
 import { TextClassContext } from '@/components/ui/text';
 import { cn } from '@/lib/utils/index';
+import { defaultButtonHitSlop } from '@/lib/ui/hit-target';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { Platform, Pressable } from 'react-native';
 
@@ -96,12 +97,15 @@ const buttonTextVariants = cva(
 
 type ButtonProps = React.ComponentProps<typeof Pressable> & React.RefAttributes<typeof Pressable> & VariantProps<typeof buttonVariants>;
 
-function Button({ className, variant, size, ...props }: ButtonProps) {
+function Button({ className, variant, size, hitSlop, ...props }: ButtonProps) {
   return (
     <TextClassContext.Provider value={buttonTextVariants({ variant, size })}>
       <Pressable
         className={cn(props.disabled && 'opacity-50', buttonVariants({ variant, size }), className)}
         role="button"
+        // Kortix delta: sizes under 44pt grow their touch area to 44pt unless
+        // the caller passes its own `hitSlop` (lib/ui/hit-target.ts).
+        hitSlop={hitSlop ?? defaultButtonHitSlop(size)}
         {...props}
       />
     </TextClassContext.Provider>

@@ -2,7 +2,8 @@
  * FloatingMenuButton — the floating hamburger at the top left of the project
  * screens without a header bar: project home, a thread, and a connecting
  * session. It opens the project drawer (every project page shows it).
- * `children` render at the right end of the same 40pt row: `AgentPill`.
+ * `children` render at the right end of the same 40pt row: the thread's
+ * sub-agent chip and `···` (`ProjectHeaderActions`).
  *
  * `fade` adds a header strip behind the button, for a screen whose content
  * scrolls under it (the thread). The strip is the page background: solid from
@@ -11,6 +12,11 @@
  * Content that rests at that clearance is never dimmed; content that scrolls
  * above it fades out, then is hidden behind the header row and the status
  * bar. The mirror of the 24pt fade above the chat input.
+ *
+ * `title` (COR-140) renders in a flexible column between the hamburger and
+ * `children`: the thread's `SessionThreadTitle` (the session name). It takes
+ * the same 40pt row height, so the header strip never grows for it. Omitted
+ * on project home and the connecting state, which have no title to show.
  */
 
 import * as React from 'react';
@@ -38,11 +44,15 @@ export const FLOATING_MENU_CLEARANCE = BUTTON_TOP + BUTTON_SIZE + FADE_HEIGHT;
 interface FloatingMenuButtonProps {
   onPress?: () => void;
   fade?: boolean;
-  /** Header control at the right end of the hamburger's 40pt row (`AgentPill`). */
+  /** Centred content between the hamburger and `children` (COR-140's thread
+   *  title + status). Takes the remaining row width; omit for a plain
+   *  hamburger-and-trailing-controls row (project home, connecting). */
+  title?: React.ReactNode;
+  /** Header controls at the right end of the hamburger's 40pt row. */
   children?: React.ReactNode;
 }
 
-export function FloatingMenuButton({ onPress, fade = false, children }: FloatingMenuButtonProps) {
+export function FloatingMenuButton({ onPress, fade = false, title, children }: FloatingMenuButtonProps) {
   const insets = useSafeAreaInsets();
   const { colorScheme } = useColorScheme();
   const background = colorScheme === 'dark' ? THEME.dark.background : THEME.light.background;
@@ -60,10 +70,26 @@ export function FloatingMenuButton({ onPress, fade = false, children }: Floating
         </View>
       ) : null}
       <View
-        className="absolute inset-x-4 z-10 flex-row items-center justify-between"
+        className="absolute inset-x-4 z-10 flex-row items-center"
         style={{ top: insets.top + BUTTON_TOP }}
         pointerEvents="box-none">
         <MenuButton onPress={onPress} />
+        {/* The flex-1 spacer fills the same role `justify-between` used to:
+            with no title it pushes `children` to the row's trailing edge;
+            with a title it gives that column the remaining width to centre
+            in and truncate against. */}
+        {title ? (
+          // No `items-center` here: this column must *stretch* full width
+          // (the row's cross axis) so `SessionThreadTitle`'s own centering
+          // and `numberOfLines` truncation have a real width to work against
+          // — centering the column itself instead would shrink it to content
+          // size and truncation would never engage.
+          <View className="flex-1 px-1" pointerEvents="box-none">
+            {title}
+          </View>
+        ) : (
+          <View className="flex-1" pointerEvents="none" />
+        )}
         {children}
       </View>
     </>

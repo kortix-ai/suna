@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+
+import { CATALOG, providerAuthRequirement } from '@kortix/llm-catalog';
 
 import {
   applyEnablementToProviderList,
@@ -13,6 +16,25 @@ import {
 } from './provider-selection';
 import { flattenModels } from './model-flatten';
 
+describe('LLM_PROVIDER_CREDENTIALS — built without the full catalog snapshot', () => {
+  // Every browser route imports this module (useOpenCodeProviders). Reading
+  // `CATALOG` here shipped the ~7.6 MB models.dev snapshot to every page.
+  test('provider-selection.ts does not import CATALOG', () => {
+    const source = readFileSync(new URL('./provider-selection.ts', import.meta.url), 'utf8');
+    const catalogImport = source.match(/import \{([^}]*)\} from '@kortix\/llm-catalog'/)?.[1] ?? '';
+    expect(catalogImport.split(',').map((name) => name.trim())).not.toContain('CATALOG');
+  });
+
+  test('covers every catalog provider with its Kortix auth requirement', () => {
+    expect(LLM_PROVIDER_CREDENTIALS).toEqual(
+      CATALOG.providers.map((provider) => ({
+        id: provider.id,
+        authRequirement: providerAuthRequirement(provider),
+      })),
+    );
+  });
+});
+
 describe('LLM_PROVIDER_CREDENTIALS — Kortix auth requirements, not raw catalog env', () => {
   test('amazon-bedrock requires only the bearer token + region', () => {
     const bedrock = LLM_PROVIDER_CREDENTIALS.find((p) => p.id === 'amazon-bedrock');
@@ -23,7 +45,7 @@ describe('LLM_PROVIDER_CREDENTIALS — Kortix auth requirements, not raw catalog
 });
 
 describe('connectedGatewayProviderIdsFromSecretNames (SDK native-mode path)', () => {
-  test('amazon-bedrock connects via bearer token + region alone — the essentia case', () => {
+  test('amazon-bedrock connects via bearer token + region alone — the sampleco case', () => {
     const ids = connectedGatewayProviderIdsFromSecretNames(
       new Set(['AWS_BEARER_TOKEN_BEDROCK', 'AWS_REGION']),
     );
@@ -381,7 +403,7 @@ describe('nativeProviderListFromCatalog — default pick quality', () => {
   });
 });
 
-// PROVEN LIVE on the Essentia self-host 2026-08-26: a brand-new workspace with
+// PROVEN LIVE on the SampleCo self-host 2026-08-26: a brand-new workspace with
 // Bedrock BYOK creds (AWS_BEARER_TOKEN_BEDROCK + AWS_REGION, native path,
 // llm_gateway OFF) auto-selected `xai.grok-4.6` — the newest Bedrock model in
 // the catalog and the one family with NO `global.`/`us.` twin. Bedrock refused

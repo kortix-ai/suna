@@ -1,7 +1,7 @@
 import { createTranslator } from 'next-intl';
 import { getTranslations as getNextTranslations } from 'next-intl/server';
 
-import messages from '../../translations/en.json';
+import { loadMessages } from './messages';
 
 export * from 'next-intl/server';
 
@@ -14,7 +14,7 @@ export const getTranslations: typeof getNextTranslations = (async (...args: unkn
     const namespace = typeof args[0] === 'string' ? args[0] : undefined;
     return createTranslator({
       locale: 'en',
-      messages,
+      messages: await loadMessages('en'),
       namespace: namespace as never,
     });
   }

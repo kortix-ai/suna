@@ -30,6 +30,7 @@ import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { INPUT_FONT_FAMILY, INPUT_FONT_SIZE } from '@/components/kortix/pill-input';
 import type { AttachedFile } from '@/lib/session/attachments';
+import { BUTTON_LABEL_MAX_FONT_SCALE } from '@/lib/ui/font-scale';
 import { THEME } from '@/lib/utils/theme';
 import { cn } from '@/lib/utils/utils';
 import { StopIcon } from './StopIcon';
@@ -169,7 +170,10 @@ export function Composer({
             onPress={onModelPress}
             disabled={disabled}
             accessibilityLabel={`Model, ${modelLabel}`}>
-            <Text numberOfLines={1} className="shrink">
+            <Text
+              numberOfLines={1}
+              maxFontSizeMultiplier={BUTTON_LABEL_MAX_FONT_SCALE.sm}
+              className="shrink">
               {modelLabel}
             </Text>
             <Icon as={CaretDown} size={14} className="text-muted-foreground" />

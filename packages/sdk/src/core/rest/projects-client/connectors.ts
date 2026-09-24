@@ -74,6 +74,11 @@ export interface ConnectorAttachmentUploadInput {
   contentType: string;
   contentDisposition?: 'attachment' | 'inline';
   contentId?: string;
+  /**
+   * Slug of the connector the file is for, e.g. `microsoft-graph`. The caller
+   * must be able to use that connector. Omit it for the native Email channel.
+   */
+  connector?: string;
 }
 
 export interface ConnectorAttachmentUploadResult {
@@ -84,6 +89,13 @@ export interface ConnectorAttachmentUploadResult {
   content_id?: string;
   size: number;
   expires_at: string;
+  /**
+   * The value to place in call arguments, e.g. as a Microsoft Graph
+   * `body.message.attachments[]` element or as a `contentBytes` string. The
+   * gateway replaces it with the file server-side. Absent from servers that
+   * predate it; build `{ $kortix_attachment: attachment_id }` yourself there.
+   */
+  ref?: { $kortix_attachment: string };
 }
 
 function connectorGatewayPath(projectId: string | undefined, suffix: string): string {
@@ -160,6 +172,8 @@ export interface ConnectorAccount {
   owner_type: string;
   /** True for the account an unselected call resolves to. */
   is_default: boolean;
+  /** Who the account was authorized as. `null` (or absent, on older servers) when unknown. */
+  connected_as?: string | null;
 }
 
 export interface ConnectorCallOptions {
@@ -245,6 +259,9 @@ export async function uploadConnectorAttachment(
   };
   if (input.contentId?.trim()) {
     headers['X-Kortix-Attachment-Content-Id'] = encodeURIComponent(input.contentId.trim());
+  }
+  if (input.connector?.trim()) {
+    headers['X-Kortix-Attachment-Connector'] = encodeURIComponent(input.connector.trim());
   }
 
   const backendUrl = trimTrailingSlashes(platformConfig().backendUrl);
@@ -410,6 +427,13 @@ interface ConnectionFields {
   status: 'active' | 'revoked' | 'error';
   is_default: boolean;
   metadata: Record<string, unknown>;
+  /**
+   * Who the account was authorized as: an email, a login, or a display name,
+   * read from the provider when the authorization finalized. `null` (or
+   * absent, on older servers) when the provider exposes none or no account
+   * is authorized yet.
+   */
+  connected_as?: string | null;
 }
 
 export interface Connection extends ConnectionFields {
@@ -819,6 +843,21 @@ export async function setDefaultConnection(projectId: string, connectionId: stri
       `/projects/${projectId}/connections/${connectionId}/default`,
       {},
     ),
+  );
+}
+
+/**
+ * Rename a connection. Only the label changes: the authorized account, the
+ * owner, the default flag, and the provider state stay as they are, so no
+ * re-authorization is needed. The server refuses `me`, `project`, UUID-shaped
+ * labels (400), and a label another account of the same owner already has,
+ * compared case-insensitively (409).
+ */
+export async function renameConnection(projectId: string, connectionId: string, label: string) {
+  return unwrap(
+    await backendApi.put<Connection>(`/projects/${projectId}/connections/${connectionId}/label`, {
+      label,
+    }),
   );
 }
 

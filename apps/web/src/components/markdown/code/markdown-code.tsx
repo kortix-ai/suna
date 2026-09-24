@@ -50,7 +50,7 @@ export function MarkdownCode({
     }
     return (
       <CodeBlock code={code} language={language} isStreaming={isStreaming}>
-        <HighlightedCode code={code} language={language || 'text'}>
+        <HighlightedCode code={code} language={language || 'text'} isStreaming={isStreaming}>
           {children}
         </HighlightedCode>
       </CodeBlock>

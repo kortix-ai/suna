@@ -1,13 +1,18 @@
 /**
  * ProjectHeaderActions — the right end of the floating header on project home,
- * in a thread, and on a connecting session (Jay, 2026-09-21): the agent pill
- * (`children`), then the `···` button that opens the project sheet
- * (`CustomizeSheet`: agents, skills, schedules, review, models, secrets).
+ * in a thread, and on a connecting session: the agent pill (`children`), and
+ * optionally a `···` button after it.
  *
- * The `···` button is always there; the pill hides itself with fewer than two
- * agents. `-mr-2.5` mirrors `MenuButton`'s `-ml-2.5`: the 20pt glyph's right
- * edge sits on the page's 16pt padding edge. The pill inside passes
- * `edge={false}`, because the `···` button holds the edge.
+ * The `···` button opened the project sheet (`CustomizeSheet`), which is
+ * deleted (COR-123/COR-160 Task 3). Project home and the connecting state
+ * pass no `onOpenMore`, so it never renders there. The thread's is back
+ * (COR-140 Task 5): `ProjectScreen` passes `onOpenMore` for the open thread's
+ * project session, opening `SessionActionsSheet`.
+ *
+ * `-mr-2.5` mirrors `MenuButton`'s `-ml-2.5`: the last control's right edge
+ * sits on the page's 16pt padding edge. When the `···` button is absent, the
+ * pill itself must hold that edge — callers pass `edge={false}` on the pill
+ * only when `onOpenMore` is also passed.
  */
 import * as React from 'react';
 import { Keyboard, View } from 'react-native';
@@ -17,8 +22,9 @@ import { Icon } from '@/components/ui/icon';
 import { DotsThreeIcon } from '@/lib/icons';
 
 interface ProjectHeaderActionsProps {
-  onOpenMore: () => void;
-  /** `AgentPill`. */
+  /** Omit to hide the `···` button. */
+  onOpenMore?: () => void;
+  /** Controls before the `···` (the thread's `SubAgentHeaderChip`). */
   children?: React.ReactNode;
 }
 
@@ -26,19 +32,20 @@ export function ProjectHeaderActions({ onOpenMore, children }: ProjectHeaderActi
   return (
     <View className="shrink flex-row items-center">
       {children}
-      <Button
-        variant="ghost"
-        size="icon"
-        className="-mr-2.5 rounded-full bg-background"
-        onPress={() => {
-          Keyboard.dismiss();
-          onOpenMore();
-        }}
-        accessibilityLabel="Project sections"
-        accessibilityHint="Opens agents, skills, schedules, review, models and secrets"
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-        <Icon as={DotsThreeIcon} size={20} className="text-foreground" />
-      </Button>
+      {onOpenMore ? (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="-mr-2.5 rounded-full bg-background"
+          onPress={() => {
+            Keyboard.dismiss();
+            onOpenMore();
+          }}
+          accessibilityLabel="Session actions"
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Icon as={DotsThreeIcon} size={20} className="text-foreground" />
+        </Button>
+      ) : null}
     </View>
   );
 }
