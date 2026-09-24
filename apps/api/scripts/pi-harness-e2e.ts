@@ -259,7 +259,8 @@ async function run(): Promise<void> {
       const user = messages.find((m) => m.info?.id === messageId);
       const assistants = messages.filter((m) => m.info?.role === 'assistant' && m.info?.parentID === messageId);
       if (assistants.length && firstAssistantMs === null) firstAssistantMs = Math.round(performance.now() - tp);
-      const done = assistants.find((m) => m.info?.time?.completed && m.parts?.some((p: any) => p.type === 'text' && p.text?.trim()));
+      // A step that called a tool is followed by another step, so it is never the answer.
+      const done = assistants.find((m) => m.info?.time?.completed && m.parts?.some((p: any) => p.type === 'text' && p.text?.trim()) && !m.parts?.some((p: any) => p.type === 'tool'));
       const collect = (from: any) => ({ text: from.parts.filter((p: any) => p.type === 'text').map((p: any) => p.text).join(''), tools: assistants.flatMap((m) => m.parts.filter((p: any) => p.type === 'tool').map((p: any) => ({ tool: p.tool, status: p.state?.status, output: String(p.state?.output ?? '').slice(0, 120) }))) });
       if (user && done) {
         reply = collect(done);
