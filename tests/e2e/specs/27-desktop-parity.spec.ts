@@ -266,9 +266,21 @@ for (const runtime of runtimes) {
         );
         await selectAccountForUi(page, accounts[0].account_id);
         await dismissOnboarding(page);
-        await page.keyboard.press("Meta+,");
+        // Mod+, is bound by `SettingsPanel`, which `ProjectShell` mounts only
+        // after auth hydrates (until then the shell renders an empty div). A
+        // keystroke sent before that has no listener. The local stack hydrates
+        // before `dismissOnboarding` returns; a deployed origin does not, so
+        // this step failed 4 of 4 attempts on staging and on the #7579 preview
+        // while passing locally. Wait for the shell's own sidebar, then press
+        // until the effect has bound — the dialog must still come from Mod+,.
+        await expect(
+          page.getByRole("button", { name: "Switch project", exact: true }),
+        ).toBeVisible({ timeout: 60_000 });
         const settings = page.getByRole("dialog");
-        await expect(settings).toBeVisible();
+        await expect(async () => {
+          await page.keyboard.press("Meta+,");
+          await expect(settings).toBeVisible({ timeout: 2_000 });
+        }).toPass({ timeout: 45_000 });
         const settingsRow = settings.locator(".kx-overlay-sidebar-titlebar");
         const settingsBack = settingsRow.getByRole("button", { name: /Back to app/i });
         await expect(settingsBack).toBeVisible();

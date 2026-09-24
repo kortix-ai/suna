@@ -65,6 +65,7 @@ export {
   withProjectGitAuth,
   resolveProjectUpstream,
   authorizeGitProxy,
+  RETRYABLE_GIT_AUTH_REASONS,
   type GitProxyAuth,
 } from './lib/git';
 
