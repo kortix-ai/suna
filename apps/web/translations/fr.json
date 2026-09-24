@@ -19135,7 +19135,9 @@
       "text2afef4702cc0": "Bannière d’état du système consultée",
       "textbda3fcd4343c": "Configurations des niveaux consultées",
       "text30cef615e8e3": "Récapitulatif des transactions consulté",
-      "textd2c6127fc332": "Diff de version consulté"
+      "textd2c6127fc332": "Diff de version consulté",
+      "text467f597e95b0": "Domaine SSO vérifié",
+      "text8295f9d4861b": "Vérification du domaine SSO du compte définie"
     }
   },
   "projectOnboarding": {

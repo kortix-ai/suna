@@ -19135,7 +19135,9 @@
       "text2afef4702cc0": "Systemstatus-Banner angezeigt",
       "textbda3fcd4343c": "Stufenkonfigurationen angezeigt",
       "text30cef615e8e3": "Transaktionsübersicht angezeigt",
-      "textd2c6127fc332": "Versions-Diff angezeigt"
+      "textd2c6127fc332": "Versions-Diff angezeigt",
+      "text467f597e95b0": "SSO-Domain verifiziert",
+      "text8295f9d4861b": "SSO-Domain-Verifizierung des Kontos gesetzt"
     }
   },
   "projectOnboarding": {

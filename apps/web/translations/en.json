@@ -19148,7 +19148,9 @@
       "text2afef4702cc0": "Viewed system status banner",
       "textbda3fcd4343c": "Viewed tier configurations",
       "text30cef615e8e3": "Viewed transaction summary",
-      "textd2c6127fc332": "Viewed version diff"
+      "textd2c6127fc332": "Viewed version diff",
+      "text467f597e95b0": "Verified SSO domain",
+      "text8295f9d4861b": "Set account SSO domain verification"
     }
   },
   "projectOnboarding": {

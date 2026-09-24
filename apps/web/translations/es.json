@@ -19135,7 +19135,9 @@
       "text2afef4702cc0": "Banner de estado del sistema consultado",
       "textbda3fcd4343c": "Configuraciones de nivel consultadas",
       "text30cef615e8e3": "Resumen de transacciones consultado",
-      "textd2c6127fc332": "Diferencias entre versiones consultadas"
+      "textd2c6127fc332": "Diferencias entre versiones consultadas",
+      "text467f597e95b0": "Dominio SSO verificado",
+      "text8295f9d4861b": "Verificación del dominio SSO de la cuenta establecida"
     }
   },
   "projectOnboarding": {
