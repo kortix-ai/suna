@@ -6,7 +6,7 @@
  * Settings (the drawer's own gear button, its other entry point, was removed
  * — COR-124/COR-157 Task 4). As a sub-page its `PageHeader` shows Go back
  * (`onBack`) in place of the hamburger, and back returns to Settings. The
- * Customize rows push Schedules and Secrets the same way (`onOpenPage`), so
+ * Customize rows push Schedules, Secrets and Members the same way (`onOpenPage`), so
  * back from them returns here. `PageHeader title` is the project's name, not
  * the tab label "Settings" (Jay, 2026-09-23), with the tab label as a
  * loading fallback.
@@ -14,14 +14,15 @@
  * Groups (Jay, 2026-09-23 — titled, unlike the rest of this page's earlier
  * shape: `SettingsGroup`/`SettingsRow`, tap a row to edit, never an inline
  * form on the page):
- *   • Customize — Schedules and Secrets (`PROJECT_CUSTOMIZE_ITEMS`,
- *     `lib/session/dock-menu.ts`; each opens its page as a sub-page), then two
- *     web-handoff rows opened in the in-app browser
- *     (`lib/projects/web-project-links.ts`): Members and "More on
- *     kortix.com" (the project's full Customize hub). This group replaces
- *     the project sheet (`CustomizeSheet`), deleted in the same change
- *     (COR-123/COR-160 Task 3): Agents, Skills, Members and Terminal have no
- *     mobile page any more; Review moves into the drawer (Task 4).
+ *   • Customize — Schedules, Secrets and Members (`PROJECT_CUSTOMIZE_ITEMS`,
+ *     `lib/session/dock-menu.ts`; each opens its page as a sub-page), then
+ *     one web-handoff row opened in the in-app browser
+ *     (`lib/projects/web-project-links.ts`): "More on kortix.com" (the
+ *     project's full Customize hub). This group replaces the project sheet
+ *     (`CustomizeSheet`), deleted in COR-123/COR-160 Task 3: Agents, Skills
+ *     and Terminal have no mobile page; Members was a web handoff until it
+ *     came back as an in-app page (Jay, 2026-09-24); Review moves into the
+ *     drawer (Task 4).
  *   • Details — Name (was "Project name"), Repository (open on GitHub, edit
  *     the default branch + manifest path), and (managed repos) invite a
  *     GitHub collaborator.
@@ -53,7 +54,6 @@ import {
   UserPlusIcon as UserPlus,
   GithubLogoIcon as Github,
   CheckIcon as Check,
-  UsersIcon as Users,
   GlobeIcon as Globe,
 } from '@/lib/icons';
 import { PressableSurface } from '@/components/kortix/pressable-surface';
@@ -82,7 +82,7 @@ import { useProject, useUpdateProject, useArchiveProject } from '@/lib/projects/
 import { inviteRepoCollaborator, isManagedGithubProject } from '@/lib/projects/projects-client';
 import type { KortixProject } from '@/lib/projects/projects-client';
 import { KORTIX_WEB_URL } from '@/lib/kortix-web';
-import { projectCustomizeWebUrl, projectMembersWebUrl } from '@/lib/projects/web-project-links';
+import { projectCustomizeWebUrl } from '@/lib/projects/web-project-links';
 import { PROJECT_CUSTOMIZE_ITEMS } from '@/lib/session/dock-menu';
 import type { SubPageId } from '@/lib/session/project-stack';
 import { DOCK_ICONS } from '@/components/session/dock-icons';
@@ -100,7 +100,7 @@ interface SettingsNavPageProps {
   projectId: string;
   /** Pushed as a sub-page: Go back in the header, in place of the hamburger. */
   onBack?: () => void;
-  /** Open a Customize row's page (Schedules, Secrets) as a sub-page over this one. */
+  /** Open a Customize row's page (Schedules, Secrets, Members) as a sub-page over this one. */
   onOpenPage: (pageId: SubPageId) => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
@@ -414,13 +414,6 @@ export function SettingsNavPage({
   const repoLabel = githubUrl?.replace('https://github.com/', '') || project?.repo_url || null;
   const managed = project ? isManagedGithubProject(project) : false;
 
-  const openMembersOnWeb = () => {
-    haptics.tap();
-    WebBrowser.openBrowserAsync(projectMembersWebUrl(KORTIX_WEB_URL, projectId)).catch((error) => {
-      log.error('Error opening project members:', error);
-    });
-  };
-
   const openCustomizeOnWeb = () => {
     haptics.tap();
     WebBrowser.openBrowserAsync(projectCustomizeWebUrl(KORTIX_WEB_URL, projectId)).catch((error) => {
@@ -458,7 +451,6 @@ export function SettingsNavPage({
                     }}
                   />
                 ))}
-                <SettingsRow icon={Users} label="Members" external onPress={openMembersOnWeb} />
                 <SettingsRow icon={Globe} label="More on kortix.com" external onPress={openCustomizeOnWeb} />
               </SettingsGroup>
 

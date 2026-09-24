@@ -3,7 +3,8 @@
  *
  * The card is `Composer`, the same one the project home renders (design.md
  * §5): text on top, then add · model · send. This file adds what only a thread
- * has: @mentions, slash commands, the message queue slot, file upload on send,
+ * has: @mentions, slash commands, the message queue slot, file upload at pick
+ * (`useComposerAttachments`, COR-185),
  * AutoContinue, and the model sheet with the active model's thinking levels.
  * The agent is chosen in the model sheet's Agent tab (`ModelPickerSheet`).
  */
@@ -35,7 +36,13 @@ import { Icon } from '@/components/ui/icon';
 import Svg, { Line } from 'react-native-svg';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { uploadAttachments, withAttachments, type AttachedFile } from '@/lib/session/attachments';
+import type { SessionPromptPart } from '@kortix/sdk';
+import type { AttachedFile } from '@/lib/session/attachments';
+import { planComposerSend } from '@/lib/session/send-plan';
+import { uploadErrorMessage } from '@/lib/session/composer-uploads';
+import { useToast } from '@/components/kortix/toast-provider';
+import { useComposerAttachments } from './useComposerAttachments';
+import { useRecoverPendingPick } from './useRecoverPendingPick';
 import { useComposerDraft } from '@/lib/session/use-composer-draft';
 import { AttachSheet, type AttachSheetRef } from './AttachSheet';
 import { SessionFilesSheet } from './SessionFilesSheet';
@@ -172,8 +179,19 @@ const AUTOCONTINUE_ALGORITHMS: AutoContinueAlgorithm[] = [
 
 const DEFAULT_AUTOCONTINUE_MODE: AutoContinueMode = 'autowork';
 
+/** The uploaded files a send carries (COR-185): the prompt's file parts and the picked files behind them. */
+export interface SendAttachments {
+  fileParts: SessionPromptPart[];
+  files: AttachedFile[];
+}
+
 interface SessionChatInputProps {
-  onSend: (text: string, options: PromptOptions, mentions?: TrackedMention[]) => void;
+  onSend: (
+    text: string,
+    options: PromptOptions,
+    mentions?: TrackedMention[],
+    attachments?: SendAttachments,
+  ) => void;
   onStop?: () => void;
   isBusy?: boolean;
   disabled?: boolean;
@@ -200,6 +218,10 @@ interface SessionChatInputProps {
   sessions?: Session[];
   currentSessionId?: string | null;
   sandboxUrl?: string;
+  /** The project the thread belongs to: files upload to it at pick (COR-185). */
+  projectId?: string;
+  /** The thread can carry files (it has a project session). False refuses a send with files. */
+  canAttach?: boolean;
   /** Called when the user submits while agent is busy — enqueue instead of send */
   onEnqueue?: (text: string) => void;
   /** Slot rendered above the text input inside the card (used for queue UI) */
@@ -249,6 +271,8 @@ function SessionChatInputImpl({
   sessions = EMPTY_SESSIONS,
   currentSessionId,
   sandboxUrl,
+  projectId,
+  canAttach = false,
   onEnqueue,
   inputSlot,
   onDraftChange,
@@ -310,16 +334,12 @@ function SessionChatInputImpl({
 
   // ── File attachments ─────────────────────────────────────────────────────
 
-  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
-  const [isUploading, setIsUploading] = useState(false);
-
-  const removeAttachedFile = useCallback((index: number) => {
-    setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
-  }, []);
-
-  const addFiles = useCallback((files: AttachedFile[]) => {
-    setAttachedFiles((prev) => [...prev, ...files]);
-  }, []);
+  // A file starts uploading the moment it is picked; Send waits for the
+  // uploads still in flight (`preparing`), then posts their handles.
+  const toast = useToast();
+  const attachments = useComposerAttachments(projectId);
+  const [preparing, setPreparing] = useState(false);
+  useRecoverPendingPick(attachments.add);
 
   const availableAutoAlgorithms = useMemo(
     () =>
@@ -416,7 +436,7 @@ function SessionChatInputImpl({
     onDraftChange?.(hasDraftText);
   }, [hasDraftText, onDraftChange]);
 
-  const handleSubmit = useCallback(async () => {
+  const submitNow = useCallback(async () => {
     // Slash command popover open — select highlighted command
     if (slashFilter !== null && filteredCommands.length > 0) {
       handleSelectCommand(filteredCommands[slashIndex]);
@@ -445,7 +465,25 @@ function SessionChatInputImpl({
     }
 
     const trimmedRaw = text.trim();
-    if (!trimmedRaw || disabled) return;
+    const fileCount = attachments.files.length;
+    const plan = planComposerSend({
+      text: trimmedRaw,
+      fileCount,
+      disabled: disabled || preparing,
+      isBusy,
+      canQueue: Boolean(onEnqueue),
+      canAttach,
+    });
+    if (plan === 'noop') return;
+    // Both refusals keep the text and the files in the composer.
+    if (plan === 'refuse-busy-files') {
+      toast.error('Wait for the reply to finish, then send your files.');
+      return;
+    }
+    if (plan === 'refuse-no-session') {
+      toast.error("Files can't be sent in this thread.");
+      return;
+    }
 
     // Dismiss the keyboard on send so the user sees the new message land
     // (matches WhatsApp / iMessage behavior on phones).
@@ -457,19 +495,19 @@ function SessionChatInputImpl({
     // A skill deleted since it was picked — or a draft that carries files or
     // `@` mentions, which a command dispatch cannot carry — degrades to the
     // "/name args" plain-text fallback and falls through to the normal send
-    // path below, which uploads the files and keeps the mentions.
+    // path below, which sends the uploaded files and keeps the mentions.
     let trimmed = trimmedRaw;
     if (skill.mentions.length > 0) {
-      const plan = skill.resolveSubmission(text, attachedFiles.length > 0 || mention.mentions.length > 0);
-      if (plan.kind === 'command') {
-        onCommand?.(plan.command, plan.args);
+      const skillPlan = skill.resolveSubmission(text, fileCount > 0 || mention.mentions.length > 0);
+      if (skillPlan.kind === 'command') {
+        onCommand?.(skillPlan.command, skillPlan.args);
         setText('');
-        setAttachedFiles([]);
+        attachments.clearAfterSend();
         mention.reset();
         skill.reset();
         return;
       }
-      trimmed = plan.text;
+      trimmed = skillPlan.text;
     }
 
     if (autocontinueMode && onCommand) {
@@ -486,8 +524,8 @@ function SessionChatInputImpl({
       }
     }
 
-    // If the agent is busy and we have an enqueue handler, queue instead of sending
-    if (isBusy && onEnqueue) {
+    // The agent is busy and there is an enqueue handler: queue instead of sending.
+    if (plan === 'queue' && onEnqueue) {
       onEnqueue(trimmed);
       setText('');
       mention.reset();
@@ -501,30 +539,50 @@ function SessionChatInputImpl({
     if (variant) options.variant = variant;
 
     const trackedMentions = mention.mentions.length > 0 ? [...mention.mentions] : undefined;
-    const filesToUpload = [...attachedFiles];
 
-    // Clear input immediately for snappy UX
+    if (fileCount === 0) {
+      // Clear input immediately for snappy UX
+      setText('');
+      mention.reset();
+      skill.reset();
+      onSend(trimmed, options, trackedMentions);
+      return;
+    }
+
+    // With files: wait for every upload, then send their handles. A failed or
+    // slow upload keeps the text and the files for another try.
+    setPreparing(true);
+    let sent: SendAttachments;
+    try {
+      sent = await attachments.takeForSend();
+    } catch (err) {
+      toast.error(uploadErrorMessage(err));
+      setPreparing(false);
+      return;
+    }
+    setPreparing(false);
     setText('');
-    setAttachedFiles([]);
     mention.reset();
     skill.reset();
+    attachments.clearAfterSend();
+    onSend(trimmed, options, trackedMentions, { fileParts: sent.fileParts, files: sent.files });
+  }, [text, disabled, preparing, onSend, agent, modelKey, variant, mention, skill, isBusy, onEnqueue, canAttach, toast, slashFilter, filteredCommands, slashIndex, handleSelectCommand, stagedCommand, onCommand, autocontinueMode, commands, attachments]);
 
-    if (filesToUpload.length > 0 && sandboxUrl) {
-      setIsUploading(true);
-      try {
-        const xmlBlock = await uploadAttachments(sandboxUrl, filesToUpload);
-        const finalText = withAttachments(trimmed, xmlBlock);
-        onSend(finalText, options, trackedMentions);
-      } catch {
-        // Upload failed — still send the message without file refs
-        onSend(trimmed, options, trackedMentions);
-      } finally {
-        setIsUploading(false);
-      }
-    } else {
-      onSend(trimmed, options, trackedMentions);
+  // One submission at a time: two taps inside one frame both read the same
+  // draft (the cleared text has not rendered yet), so the second would send
+  // it again. Released a frame after the submission settles.
+  const submittingRef = useRef(false);
+  const handleSubmit = useCallback(async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    try {
+      await submitNow();
+    } finally {
+      requestAnimationFrame(() => {
+        submittingRef.current = false;
+      });
     }
-  }, [text, disabled, onSend, agent, modelKey, variant, mention, skill, isBusy, onEnqueue, slashFilter, filteredCommands, slashIndex, handleSelectCommand, stagedCommand, onCommand, autocontinueMode, commands, attachedFiles, sandboxUrl]);
+  }, [submitNow]);
 
   // Web's groups and order (`lib/session/model-picker.ts`): the real upstream
   // provider, never the raw provider name (always "Kortix" under the gateway).
@@ -638,15 +696,17 @@ function SessionChatInputImpl({
             onSubmit={handleSubmit}
             placeholder={stagedCommand ? 'Add details, then send' : placeholder}
             maxLength={10000}
-            disabled={disabled || isUploading}
+            disabled={disabled || preparing}
+            sending={preparing}
             allowEmptySend={!!stagedCommand}
             busy={isBusy}
             onStop={onStop}
             header={cardHeader}
-            attachments={attachedFiles}
+            attachments={attachments.files}
+            attachmentUploads={attachments.uploads}
             onAttach={handleAddPress}
             attachLabel="Add"
-            onRemoveAttachment={removeAttachedFile}
+            onRemoveAttachment={attachments.remove}
             modelLabel={
               modelsLoading
                 ? null
@@ -673,7 +733,7 @@ function SessionChatInputImpl({
       </View>
 
       {/* Add sheet — Camera · Photos · Files, and AutoContinue when the project has it. */}
-      <AttachSheet ref={attachSheetRef} onPick={addFiles}>
+      <AttachSheet ref={attachSheetRef} onPick={attachments.add}>
         <SettingsGroup>
           <SettingsRow
             icon={StackIcon}

@@ -3,6 +3,8 @@ import {
   MAX_START_REQUEST_FAILURES,
   connectStepFromRequestError,
   connectStepFromStart,
+  shouldAwaitHealthProbe,
+  startPollDelayMs,
 } from './connect-step';
 
 function apiError(status: number, message: string) {
@@ -101,5 +103,26 @@ describe('connectStepFromRequestError', () => {
         detail: 'Network request failed',
       },
     });
+  });
+});
+
+describe('startPollDelayMs', () => {
+  test('startPollDelayMs is 300, 700, then 1500', () => {
+    expect(startPollDelayMs(1)).toBe(300);
+    expect(startPollDelayMs(2)).toBe(700);
+    expect(startPollDelayMs(3)).toBe(1_500);
+    expect(startPollDelayMs(10)).toBe(1_500);
+  });
+});
+
+describe('shouldAwaitHealthProbe', () => {
+  test('ready with a pin skips the awaited health probe', () => {
+    expect(shouldAwaitHealthProbe({ stage: 'ready', opencode_session_id: 'ses_oc' })).toBe(false);
+  });
+
+  test('ready without a pin, or not ready, awaits the probe', () => {
+    expect(shouldAwaitHealthProbe({ stage: 'ready', opencode_session_id: null })).toBe(true);
+    expect(shouldAwaitHealthProbe({ stage: 'ready' })).toBe(true);
+    expect(shouldAwaitHealthProbe({ stage: 'booting', opencode_session_id: 'ses_oc' })).toBe(true);
   });
 });

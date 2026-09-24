@@ -72,3 +72,18 @@ export function resolveAttachmentSource(
   if (/^file:\/\//i.test(src)) return { path: src.replace(/^file:\/\//i, '') };
   return { path: src };
 }
+
+/**
+ * A composer tile's source: `localUri` (the picker's own `file://` URI) loads
+ * directly, bypassing `resolveAttachmentSource` — which maps a `file://` URL
+ * to a **sandbox** path, wrong for a file that never left the device. Once a
+ * message is sent and only `src` (the server attachment reference) remains,
+ * sandbox resolution applies as before.
+ */
+export function localOrResolvedSource(
+  localUri: string | undefined,
+  src: string | undefined,
+): { uri: string } | { path: string } | null {
+  if (localUri) return { uri: localUri };
+  return resolveAttachmentSource(src);
+}
