@@ -521,6 +521,8 @@ describe('retryWithoutReasoningEffortPossible', () => {
   });
 });
 
+const isMorph = (url: string): boolean => new URL(url).host === 'morph.example';
+
 describe('provider failover (descriptor.failover)', () => {
   const morph: UpstreamDescriptor = {
     ...primary, provider: 'morph', baseUrl: 'https://morph.example/v1', apiKey: 'morph-key',
@@ -556,7 +558,7 @@ describe('provider failover (descriptor.failover)', () => {
   for (const status of [429, 500, 502, 503, 401, 402]) {
     test(`a ${status} from the primary moves the request to the next provider`, async () => {
       const { response, usage, traces, calls } = await run([morph, openrouter], (url) =>
-        url.startsWith('https://morph.example') ? new Response('primary failed', { status }) : ok());
+        isMorph(url) ? new Response('primary failed', { status }) : ok());
       expect(response.status).toBe(200);
       expect(calls.map((c) => c.url)).toEqual([
         'https://morph.example/v1/chat/completions',
@@ -571,7 +573,7 @@ describe('provider failover (descriptor.failover)', () => {
 
   test('a network error from the primary moves the request to the next provider', async () => {
     const { response, calls } = await run([morph, openrouter], (url) => {
-      if (url.startsWith('https://morph.example')) throw new TypeError('fetch failed');
+      if (isMorph(url)) throw new TypeError('fetch failed');
       return ok();
     });
     expect(response.status).toBe(200);
@@ -580,7 +582,7 @@ describe('provider failover (descriptor.failover)', () => {
 
   test('the fallback receives the full request with its own model and body extras', async () => {
     const { calls } = await run([morph, openrouter], (url) =>
-      url.startsWith('https://morph.example') ? new Response('limited', { status: 429 }) : ok());
+      isMorph(url) ? new Response('limited', { status: 429 }) : ok());
     expect(calls[0].body).toMatchObject({ model: 'morph-model', messages: [{ role: 'user', content: 'hi' }] });
     expect(calls[0].body.provider).toBeUndefined();
     expect(calls[1].body).toMatchObject({
@@ -597,7 +599,7 @@ describe('provider failover (descriptor.failover)', () => {
 
   test('when every provider fails, the last provider error reaches the client', async () => {
     const { response, calls } = await run([morph, openrouter], (url) =>
-      url.startsWith('https://morph.example')
+      isMorph(url)
         ? new Response('primary down', { status: 503 })
         : new Response('{"error":{"message":"fallback limited"}}', { status: 429 }));
     expect(response.status).toBe(429);
@@ -607,7 +609,7 @@ describe('provider failover (descriptor.failover)', () => {
 
   test('a streamed success is relayed from the fallback provider', async () => {
     const { response, calls } = await run([morph, openrouter], (url) =>
-      url.startsWith('https://morph.example')
+      isMorph(url)
         ? new Response('limited', { status: 429 })
         : new Response('data: {"choices":[{"delta":{"content":"hello"}}]}\n\ndata: [DONE]\n\n', {
             status: 200, headers: { 'content-type': 'text/event-stream' },
