@@ -19150,6 +19150,11 @@
       "textbda3fcd4343c": "Viewed tier configurations",
       "text30cef615e8e3": "Viewed transaction summary",
       "textd2c6127fc332": "Viewed version diff"
+    },
+    "publicShareConfirm": {
+      "title": "Create a public link?",
+      "description": "Anyone with the link can view this without signing in. The link stays active until you revoke it.",
+      "confirm": "Create link"
     }
   },
   "projectOnboarding": {

@@ -19137,6 +19137,11 @@
       "textbda3fcd4343c": "Configurazioni dei piani visualizzate",
       "text30cef615e8e3": "Riepilogo delle transazioni visualizzato",
       "textd2c6127fc332": "Diff della versione visualizzato"
+    },
+    "publicShareConfirm": {
+      "title": "Creare un link pubblico?",
+      "description": "Chiunque abbia il link può vederlo senza accedere. Il link resta attivo finché non lo revochi.",
+      "confirm": "Crea link"
     }
   },
   "projectOnboarding": {

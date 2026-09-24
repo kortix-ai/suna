@@ -19137,6 +19137,11 @@
       "textbda3fcd4343c": "Stufenkonfigurationen angezeigt",
       "text30cef615e8e3": "Transaktionsübersicht angezeigt",
       "textd2c6127fc332": "Versions-Diff angezeigt"
+    },
+    "publicShareConfirm": {
+      "title": "Öffentlichen Link erstellen?",
+      "description": "Jeder mit dem Link kann dies ohne Anmeldung ansehen. Der Link bleibt aktiv, bis du ihn widerrufst.",
+      "confirm": "Link erstellen"
     }
   },
   "projectOnboarding": {

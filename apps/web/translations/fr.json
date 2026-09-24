@@ -19137,6 +19137,11 @@
       "textbda3fcd4343c": "Configurations des niveaux consultées",
       "text30cef615e8e3": "Récapitulatif des transactions consulté",
       "textd2c6127fc332": "Diff de version consulté"
+    },
+    "publicShareConfirm": {
+      "title": "Créer un lien public ?",
+      "description": "Toute personne disposant du lien peut le consulter sans se connecter. Le lien reste actif jusqu'à ce que vous le révoquiez.",
+      "confirm": "Créer le lien"
     }
   },
   "projectOnboarding": {

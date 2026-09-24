@@ -19137,6 +19137,11 @@
       "textbda3fcd4343c": "ティア設定を表示しました",
       "text30cef615e8e3": "取引の概要を表示しました",
       "textd2c6127fc332": "バージョンの差分を表示しました"
+    },
+    "publicShareConfirm": {
+      "title": "公開リンクを作成しますか？",
+      "description": "リンクを知っている人は誰でもサインインせずに閲覧できます。リンクは取り消すまで有効です。",
+      "confirm": "リンクを作成"
     }
   },
   "projectOnboarding": {

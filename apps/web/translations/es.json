@@ -19137,6 +19137,11 @@
       "textbda3fcd4343c": "Configuraciones de nivel consultadas",
       "text30cef615e8e3": "Resumen de transacciones consultado",
       "textd2c6127fc332": "Diferencias entre versiones consultadas"
+    },
+    "publicShareConfirm": {
+      "title": "¿Crear un enlace público?",
+      "description": "Cualquier persona con el enlace puede verlo sin iniciar sesión. El enlace sigue activo hasta que lo revoques.",
+      "confirm": "Crear enlace"
     }
   },
   "projectOnboarding": {

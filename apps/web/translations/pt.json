@@ -19137,6 +19137,11 @@
       "textbda3fcd4343c": "Configurações de nível visualizadas",
       "text30cef615e8e3": "Resumo de transações visualizado",
       "textd2c6127fc332": "Diff de versões visualizado"
+    },
+    "publicShareConfirm": {
+      "title": "Criar um link público?",
+      "description": "Qualquer pessoa com o link pode ver isto sem iniciar sessão. O link fica ativo até você revogá-lo.",
+      "confirm": "Criar link"
     }
   },
   "projectOnboarding": {

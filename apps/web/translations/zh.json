@@ -19137,6 +19137,11 @@
       "textbda3fcd4343c": "已查看层级配置",
       "text30cef615e8e3": "已查看交易摘要",
       "textd2c6127fc332": "已查看版本差异"
+    },
+    "publicShareConfirm": {
+      "title": "创建公开链接？",
+      "description": "任何拥有此链接的人都无需登录即可查看。链接在你撤销之前一直有效。",
+      "confirm": "创建链接"
     }
   },
   "projectOnboarding": {
