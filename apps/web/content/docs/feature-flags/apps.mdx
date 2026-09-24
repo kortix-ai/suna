@@ -230,8 +230,11 @@ checks that credential in `Authorization: Bearer` or in
 `X-Kortix-App-Authorization: Bearer`. Use `X-Kortix-App-Authorization` when the
 App reads `Authorization` for its own API key. The gate deletes
 `X-Kortix-App-Authorization` before it forwards the request, so the App never
-receives it. The App's own `Authorization` header is
-forwarded unchanged.
+receives it. The gate also deletes an `Authorization: Bearer` header whose
+token is a Kortix credential (`kortix_…`), and it removes the Kortix App access
+and preview cookies from `Cookie`. Any other `Authorization` value and every
+other cookie reach the App unchanged. App code never receives a Kortix
+credential.
 
 The gate judges a governed agent session as the agent, not as the person who
 started it. List the
