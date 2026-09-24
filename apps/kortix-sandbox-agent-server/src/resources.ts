@@ -27,6 +27,11 @@ export interface MemorySnapshot {
   usedPct: number | null
   swapTotalMb: number | null
   swapFreeMb: number | null
+  /**
+   * `Shmem`: RAM held by tmpfs files (a RAM-backed /tmp) and shared memory.
+   * It cannot be reclaimed without swap, so it names what fills a box.
+   */
+  shmemMb?: number | null
 }
 
 export interface CgroupMemorySnapshot {
@@ -95,6 +100,7 @@ export function parseMeminfo(text: string): MemorySnapshot {
     usedPct,
     swapTotalMb: toMb(kb('SwapTotal')),
     swapFreeMb: toMb(kb('SwapFree')),
+    shmemMb: toMb(kb('Shmem')),
   }
 }
 

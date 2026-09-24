@@ -6,8 +6,7 @@
  *
  * Native back header titled with the account name, one Billing row (plan ·
  * balance as its value, opens `/billing` for this account), then "On
- * kortix.com" — Members,
- * Groups and permissions, Git, Audit log — each opening the matching web tab
+ * kortix.com" — Members, Git, Audit log — each opening the matching web tab
  * in the in-app browser. Git and Audit log are hidden when the signed-in
  * user lacks the same capability the old tabs gated on.
  */
@@ -20,7 +19,6 @@ import {
   ArrowClockwiseIcon as RotateCw,
   GitBranchIcon as GitBranch,
   ListIcon as List,
-  ShieldIcon as Shield,
   UsersIcon as Users,
   WarningCircleIcon as AlertCircle,
 } from '@/lib/icons';
@@ -57,7 +55,7 @@ export default function AccountDetailScreen() {
       .join(' · ') || undefined;
 
   const openWebTab = React.useCallback(
-    (tab: 'members' | 'groups' | 'git' | 'audit') => {
+    (tab: 'members' | 'git' | 'audit') => {
       if (!accountId) return;
       haptics.tap();
       WebBrowser.openBrowserAsync(accountHubUrl(KORTIX_WEB_URL, accountId, tab)).catch((error) => {
@@ -107,12 +105,6 @@ export default function AccountDetailScreen() {
 
           <SettingsGroup title="On kortix.com">
             <SettingsRow icon={Users} label="Members" external onPress={() => openWebTab('members')} />
-            <SettingsRow
-              icon={Shield}
-              label="Groups and permissions"
-              external
-              onPress={() => openWebTab('groups')}
-            />
             {can['account.write'] && (
               <SettingsRow icon={GitBranch} label="Git" external onPress={() => openWebTab('git')} />
             )}

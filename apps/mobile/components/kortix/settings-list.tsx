@@ -191,7 +191,7 @@ export function SettingsPage({
   /** Defaults to the safe-area inset + 28pt. The Projects page passes its own. */
   paddingBottom?: number;
   contentInsetAdjustmentBehavior?: ScrollViewProps['contentInsetAdjustmentBehavior'];
-  /** Pull-to-refresh for list screens (Members, Groups, …). */
+  /** Pull-to-refresh for list screens (Members, Sessions, …). */
   refreshControl?: ScrollViewProps['refreshControl'];
 }) {
   const insets = useSafeAreaInsets();

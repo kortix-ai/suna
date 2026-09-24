@@ -68,12 +68,48 @@ export function wireIdTime(messageId: string): bigint | null {
   return BigInt(`0x${match[1]}`);
 }
 
-/** The highest id-clock value in a list of transcript message ids, or null. */
-export function newestWireIdTime(messageIds: Iterable<string | null | undefined>): bigint | null {
+const WIRE_ID_TIME_SPAN = WIRE_ID_TIME_MASK + BigInt(1);
+
+/** Signed distance from `reference` to `clock` on the 48-bit ring (positive = ahead). */
+function ringDelta(clock: bigint, reference: bigint): bigint {
+  let delta = (clock - reference) & WIRE_ID_TIME_MASK;
+  if (delta >= WIRE_ID_TIME_SPAN / BigInt(2)) delta -= WIRE_ID_TIME_SPAN;
+  return delta;
+}
+
+/**
+ * Whether `messageId` claims a clock more than {@link MAX_WIRE_ID_CLOCK_CORRECTION}
+ * (1 hour) ahead of `nowMs`.
+ *
+ * No transcript can have placed such an id. `kortix sessions send` minted the
+ * HIGH 12 hex digits of `Date.now() * 0x1000` from 2026-08-22 until the SDK's
+ * `mintWireMessageId` replaced it — `msg_1a0d…` where OpenCode writes
+ * `msg_0d4…`, ~40 days ahead. Delivered as-is, every later turn renders ABOVE
+ * it; used as a floor, it vetoes every lift. Wrap-safe for distances under
+ * ~1.1 years, so ids from before the 2026-08-14 wrap are not "ahead".
+ */
+export function isWireIdAheadOf(messageId: string, nowMs: number): boolean {
+  const clock = wireIdTime(messageId);
+  if (clock === null) return false;
+  const now = (BigInt(Math.trunc(nowMs)) * WIRE_ID_TIME_SCALE) & WIRE_ID_TIME_MASK;
+  return ringDelta(clock, now) > MAX_WIRE_ID_CLOCK_CORRECTION;
+}
+
+/**
+ * The highest id-clock value in a list of transcript message ids, or null.
+ * With `nowMs`, an id {@link isWireIdAheadOf} it is skipped: it is not a
+ * position, and as a floor it would veto every lift. Without `nowMs` the
+ * function stays a pure function of its input.
+ */
+export function newestWireIdTime(
+  messageIds: Iterable<string | null | undefined>,
+  nowMs?: number,
+): bigint | null {
   let newest: bigint | null = null;
   for (const id of messageIds) {
     const encoded = wireIdTime(id ?? '');
     if (encoded === null) continue;
+    if (nowMs !== undefined && isWireIdAheadOf(id ?? '', nowMs)) continue;
     if (newest === null || encoded > newest) newest = encoded;
   }
   return newest;
