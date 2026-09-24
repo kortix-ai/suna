@@ -2,6 +2,7 @@ import { Avatar as AvatarRoot, AvatarFallback } from '@/components/ui/avatar';
 import { Icon } from '@/components/ui/icon';
 import { KortixLogo } from '@/components/kortix/KortixLogo';
 import { getIconFromName } from '@/lib/utils/icon-mapping';
+import { entityChalk } from '@/lib/ui/entity-chalk';
 import { StackIcon as Layers, ChatIcon as MessageSquare, LightningIcon as Zap } from '@/lib/icons';
 import { type AppIcon } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
@@ -37,6 +38,13 @@ interface AvatarProps extends ViewProps {
 
   /** Fallback text (first letter shown if no icon) */
   fallbackText?: string;
+
+  /**
+   * Colour the tile from `fallbackText` with the shared `chalkColors` (via
+   * `entityChalk`): the project and account tile, the same colours web's
+   * `EntityAvatar` gives the same name. Draws a 1px border, like web.
+   */
+  chalk?: boolean;
 }
 
 /**
@@ -85,6 +93,7 @@ export function Avatar({
   showBorder = true,
   useKortixSymbol = false,
   fallbackText,
+  chalk = false,
   style,
   ...props
 }: AvatarProps) {
@@ -119,7 +128,7 @@ export function Avatar({
     };
   };
 
-  const defaults = getDefaultColors();
+  const defaults = chalk ? chalkDefaults(fallbackText) : getDefaultColors();
   const finalBg = backgroundColor || defaults.bg;
   const finalIconColor = iconColor || defaults.icon;
   const finalBorderColor = borderColor || defaults.border;
@@ -159,7 +168,7 @@ export function Avatar({
           height: size,
           backgroundColor: finalBg,
           borderRadius: borderRadius,
-          borderWidth: useKortixSymbol ? 0 : showBorder ? 1.5 : 0,
+          borderWidth: useKortixSymbol ? 0 : showBorder ? (chalk ? 1 : 1.5) : 0,
           borderColor: finalBorderColor,
         },
         style,
@@ -179,10 +188,15 @@ export function Avatar({
               fontWeight: '600',
             }}
           >
-            {fallbackText.charAt(0).toUpperCase()}
+            {(fallbackText.trim().charAt(0) || '?').toUpperCase()}
           </Text>
         ) : null}
       </AvatarFallback>
     </AvatarRoot>
   );
+}
+
+function chalkDefaults(name: string | undefined) {
+  const colors = entityChalk(name);
+  return { bg: colors.background, icon: colors.foreground, border: colors.border };
 }

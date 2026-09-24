@@ -22,7 +22,7 @@ describe('buildOpencodeConfigContent — native mode (no gateway env)', () => {
 
   test('with nothing session-specific to inject, only the Kortix-managed overlay remains', async () => {
     const content = await buildOpencodeConfigContent({})
-    // autoupdate:false is unconditional (Essentia 2026-08-22/25: OpenCode's
+    // autoupdate:false is unconditional (SampleCo 2026-08-22/25: OpenCode's
     // self-upgrade via plain `pnpm add -g` left a postinstall-less stub).
     expect(JSON.parse(content!)).toEqual({ autoupdate: false })
   })

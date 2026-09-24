@@ -53,6 +53,7 @@ interface TunnelStoreState {
 
 let sseStream: SSEStream | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+const handledRequestIds = new Set<string>();
 
 // ─── Store ───────────────────────────────────────────────────────────────────
 
@@ -64,7 +65,10 @@ export const useTunnelStore = create<TunnelStoreState>()((set, get) => ({
   addPendingRequest: (request) => {
     set((state) => {
       // Deduplicate by requestId
-      if (state.pendingRequests.some((r) => r.requestId === request.requestId)) {
+      if (
+        handledRequestIds.has(request.requestId) ||
+        state.pendingRequests.some((r) => r.requestId === request.requestId)
+      ) {
         return state;
       }
       return { pendingRequests: [...state.pendingRequests, request] };
@@ -72,6 +76,7 @@ export const useTunnelStore = create<TunnelStoreState>()((set, get) => ({
   },
 
   removePendingRequest: (requestId) => {
+    handledRequestIds.add(requestId);
     set((state) => ({
       pendingRequests: state.pendingRequests.filter((r) => r.requestId !== requestId),
     }));

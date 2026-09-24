@@ -19497,7 +19497,9 @@
     "disableModel": "Onemogući model",
     "modelError": "Nije moguće ažurirati pristup modelu.",
     "hiddenShort": "Sakriven iz birača. Direktni zahtevi su i dalje dozvoljeni.",
-    "resetError": "Nije moguće resetovati listu modela."
+    "resetError": "Nije moguće resetovati listu modela.",
+    "appReturn": "Nazad u Kortix aplikaciju",
+    "appReturnConnected": "Provajder je povezan. Nazad u Kortix aplikaciju"
   },
   "projectChooser": {
     "invitations": "Pozivi",
@@ -19602,5 +19604,8 @@
     "appAgentsEmpty": "Ниједан агент не наводи ову апликацију. Додај њен slug у agents.<name>.apps у kortix.yaml.",
     "appAgentsDeclared": "Декларисано у {file} (agents.{agent}.apps)",
     "appAgentsGrantAll": "Све апликације"
+  },
+  "connectorsAppReturn": {
+    "done": "Gotovo. Nazad u Kortix aplikaciju"
   }
 }

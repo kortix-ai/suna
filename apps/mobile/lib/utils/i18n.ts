@@ -1,8 +1,13 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { DEFAULT_LOCALE, SUPPORTED_LOCALES, type SupportedLocale } from './locale-config';
-import { loadLocaleBundle, resolveBootLocale } from './boot-locale';
+import {
+  DEFAULT_LOCALE,
+  LANGUAGE_PICKER_ENABLED,
+  SUPPORTED_LOCALES,
+  type SupportedLocale,
+} from './locale-config';
+import { loadLocaleBundle, resolveUiLocale } from './boot-locale';
 import { supabase } from '@/api/supabase';
 import { log } from '@/lib/logger';
 
@@ -16,6 +21,9 @@ const LANGUAGE_KEY = '@kortix_language';
  * Priority (matching web):
  * 1. User profile preference, applied once auth restores (`applyProfileLocale`)
  * 2. Default English
+ *
+ * While `LANGUAGE_PICKER_ENABLED` is false, step 1 is skipped: the UI stays in
+ * English and `changeLanguage` is a no-op.
  *
  * Device locale, timezone, and saved local values never change language on boot.
  * AsyncStorage is only a cross-screen signal after the settings flow writes the
@@ -49,13 +57,15 @@ export const applyProfileLocale = async (
   user: { user_metadata?: { locale?: unknown } } | null | undefined
 ) => {
   if (!user) return;
-  const locale = resolveBootLocale(user);
+  // Picker off: English whatever the profile says (see LANGUAGE_PICKER_ENABLED).
+  const locale = resolveUiLocale(user, LANGUAGE_PICKER_ENABLED);
+  if (locale === i18n.language) return;
   // resolveBootLocale falls back to English; only a valid profile value switches.
-  if (locale !== user.user_metadata?.locale || locale === i18n.language) return;
+  if (LANGUAGE_PICKER_ENABLED && locale !== user.user_metadata?.locale) return;
   try {
     ensureLocaleBundle(locale);
     await i18n.changeLanguage(locale);
-    await AsyncStorage.setItem(LANGUAGE_KEY, locale);
+    if (LANGUAGE_PICKER_ENABLED) await AsyncStorage.setItem(LANGUAGE_KEY, locale);
     log.log(`✅ Using user metadata locale: ${locale}`);
   } catch (error) {
     log.warn('⚠️ Could not apply profile locale:', error);
@@ -70,6 +80,11 @@ export const applyProfileLocale = async (
 export const changeLanguage = async (languageCode: string) => {
   try {
     log.log('🌍 Changing language to:', languageCode);
+
+    if (!LANGUAGE_PICKER_ENABLED) {
+      log.warn('⚠️ Language picker is disabled; the UI stays in English');
+      return;
+    }
 
     // Validate language code
     if (!SUPPORTED_LOCALES.includes(languageCode as SupportedLocale)) {

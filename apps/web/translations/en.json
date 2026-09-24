@@ -19497,7 +19497,9 @@
     "disableModel": "Disable model",
     "modelError": "Could not update model access.",
     "hiddenShort": "Hidden from the picker. Direct requests are still allowed.",
-    "resetError": "Could not reset the model list."
+    "resetError": "Could not reset the model list.",
+    "appReturn": "Back to the Kortix app",
+    "appReturnConnected": "Provider connected. Back to the Kortix app"
   },
   "projectChooser": {
     "invitations": "Invitations",
@@ -19602,5 +19604,8 @@
     "appAgentsEmpty": "No agent lists this App. Add its slug to agents.<name>.apps in kortix.yaml.",
     "appAgentsDeclared": "Declared in {file} (agents.{agent}.apps)",
     "appAgentsGrantAll": "All Apps"
+  },
+  "connectorsAppReturn": {
+    "done": "Done. Back to the Kortix app"
   }
 }

@@ -621,7 +621,6 @@ connector and assert its returned digest and persisted bytes. Same-length corrup
 checksum fail without replacing the destination. Malformed base64 returns 400.
 Cleanup removes the connection and temporary files.
 
-
 ### Ops (platform admin)
 
 `OPS-1` `GET /ops/overview` → `requireAdmin` (platform admin/super_admin) → 200; non-admin → 403.
@@ -1099,7 +1098,7 @@ These contracts use product IDs. They replace the old route-coverage bucket IDs.
 `SESS-17` A project member reads session previews. Unknown sessions and non-members are rejected.
 `SESS-18` Warming a project creates one ordinary session marked unused, and returns that same session until it is used. The unused session is hidden from the `visible` session list and present in the manager's `project` inventory. First use drops the marker and the session lists normally; a second use returns `409 WARM_SESSION_ALREADY_CLAIMED`. The next warm creates a replacement. Adoption via `POST /start` (the path the browser actually takes) drops the marker in the same statement that stamps `last_activity_at` and advances `updated_at` beyond `created_at`, so the adopted session lists immediately and its activity sort is current. The contract requires `last_activity_at > created_at` and `updated_at >= last_activity_at` on the adopted row. Later lifecycle writes can advance `updated_at` before read-back. A warm ensure after adoption never returns the adopted session — handing a used session back is how a project-home send lands its prompt inside an existing conversation. A warm ensure carrying `exclude_session_id` creates a fresh session even while the excluded session's marker is still set.
 `SESS-19` Session configuration freshness, reload, and streamed reload routes reject anonymous callers and hide unknown projects.
-`SESS-20` The session transcript route returns 404 for an unknown session. The session-open bundle answers the session row, the turn, the prompt queue, the transcript mirror, the config essentials and the model defaults in ONE round trip, tags every leg with `known` so a degraded leg reads as unknown rather than as an empty answer, serves the same turn projection `GET .../turn` serves, 404s an unknown session and refuses an anonymous caller.
+`SESS-20` The session transcript route returns 404 for an unknown session. The session-open bundle answers the session row, the turn, the prompt queue, the transcript mirror, the config samplecols and the model defaults in ONE round trip, tags every leg with `known` so a degraded leg reads as unknown rather than as an empty answer, serves the same turn projection `GET .../turn` serves, 404s an unknown session and refuses an anonymous caller.
 `SYS-8` Live and ready health aliases return the same service-state contract.
 `SYS-9` Metrics requires internal authorization and router health returns its configured availability state.
 `TOK-5` Revoking a project CLI token immediately blocks its project, secret, and trigger mutations.
@@ -1132,8 +1131,40 @@ GET, and select the Connected filter. Light and dark settings retain row geometr
 
 At 720 × 480, the sidebar opener must remain reachable and open the workspace
 selector. The Settings capability tab must scroll into view and load its route.
-Native zoom-in and reset shortcuts must change and restore the zoom factor;
-the workspace selector must remain clickable afterward.
+When a collapsed desktop sidebar opens on hover, it must show exactly one Pin
+sidebar control and leave no empty titlebar gap. Native zoom-in, zoom-out, and
+reset menu commands must change and restore the zoom factor. The workspace
+selector must remain clickable afterward. Entering and leaving native fullscreen
+must remove and restore the macOS traffic-light gutter.
+
+The Electron shell must use native macOS traffic lights. Windows and Linux must
+use the native window frame and must not render web-drawn window controls. Light,
+dark, and system theme choices must synchronize with Electron's native theme.
+The File menu must expose New Session, Close Tab, and Close Window with native
+accelerators and enable route-dependent actions only when their target exists.
+The Settings menu command must open Settings.
+
+When a page prevents unload, Reload, Back, Home, Close Window, and Quit must
+show the native Leave/Stay confirmation. Stay must preserve the current page.
+Leave must complete the requested action. Dock activation must restore a
+minimized main window. When only a popup remains, Dock activation must create a
+new main window without closing the popup.
+
+The shell must persist the last normal window bounds and maximized state. A
+process relaunch must restore both values. Saved bounds that no longer fit any
+connected display must be clamped or centered until the full window is visible.
+Full-document reloads while macOS fullscreen is active must keep the
+traffic-light gutter removed.
+
+Connector authorization must be able to create an opener-preserving blank child
+window and then navigate it to an HTTP(S) provider URL. Ordinary links remain
+external. Unsafe child-window navigation schemes remain blocked.
+An authenticating HTTP proxy must receive credentials from a native prompt and
+must not reuse origin credentials. If Supabase auth does not answer within 15
+seconds, the splash must expose Retry and Sign out instead of loading forever.
+A failed tunnel permission decision must retain its error, expose Retry and
+Dismiss, and remain dismissible through Escape or the close button. Dismissed
+permission requests must not reopen when their SSE event repeats.
 Native commands trust only the configured frontend origin in the main window's
 main frame. A second window at that same origin must receive an unauthorized
 sender error. Full document navigation within the configured frontend stays in
@@ -1147,6 +1178,7 @@ Creation ignores caller-supplied policy metadata. PATCH rejects policy changes.
 Changing the agent policy does not widen the existing restricted session.
 
 `GW-ACCESS-1` Project provider and model access. New projects have no explicit restrictions. Anonymous and nonmember reads/writes are denied; members cannot write. Managers disable managed or BYOK providers and individual models. The current default model/provider cannot be disabled. Concurrent edits persist together. Disables survive reads, hide models from the picker, and reject direct gateway requests with `provider_disabled` or `model_disabled` before upstream inference. Provider re-enable retains individual model restrictions. Model re-enable restores access; invalid payloads do not change policy. A disabled target cannot become the routing default. Other project metadata survives. The web app uses one Models list for provider browsing and access controls. Provider model-count links open the Models tab with all provider groups listed together and no provider selector. Enabled providers have no status label; provider menus expose enable/disable and explain default protection.
+`GW-MANAGED-1` Every managed model answers. A subscribed account's project picker offers Claude Opus 5.5, GPT-6 Sol, and GPT-6 Luna as enabled, image-capable managed models. Each managed model the picker offers answers a text-and-image request through `POST /v1/llm/chat/completions` with a project gateway key, naming the image's color. An upstream 429 is retried twice; a model still throttled is logged, not failed. Any other status or a wrong answer fails, and so does a run in which no model answers. Real model calls: runs on previews and the staging gate, excluded locally (`stripe`).
 
 ChatGPT usage regression: `GW-5` asserts published model rates remain visible in ChatGPT picker rows. Browser journey 26 reads persisted historical transcripts and asserts `$0.00` for subscription usage, preserved token counts, and `$2.40` for a mixed session with `$2.00` raw API cost.
 

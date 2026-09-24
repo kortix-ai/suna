@@ -29,6 +29,7 @@
 
 import { sql } from 'drizzle-orm';
 import { db } from '../shared/db';
+import { runWorkerTick } from '../shared/audit-scope';
 import { auditAssignmentExpired, listAssignmentsByIds } from './assignments';
 
 const TICK_MS = 60_000;
@@ -50,7 +51,7 @@ export function startGrantExpirySweeper(): void {
 
 async function tickAndRearm(): Promise<void> {
   try {
-    await runOnce();
+    await runWorkerTick('iam-grant-expiry', runOnce);
   } catch (err) {
     console.error('[iam expiry sweeper] tick failed', err);
   }

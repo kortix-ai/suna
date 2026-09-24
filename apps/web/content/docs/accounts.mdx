@@ -151,10 +151,12 @@ Each row names the caller that the request proved:
 | `human` | A signed-in person, or a person's token (`source: api_key`). |
 | `agent` | A session's agent credential. The row also names the human the agent acts on behalf of. |
 | `service_account` | A service account token. |
-| `system` | An account API key, a SCIM directory token, or an integration webhook with a verified signature. |
+| `system` | An account API key, a SCIM directory token, an integration webhook with a verified signature, or a Kortix background job (`source: worker`). |
 | `anonymous` | A request with no credential, or with an invalid or forged one. |
 
 A refused request is a row with `outcome: denied`. `metadata.auth` records how the caller authenticated: the token id, never the secret. A Git clone is the action `git.clone`. A push is `git.push`, and `metadata.refs` lists each ref it created, updated, or deleted.
+
+Kortix background jobs act without a request: they expire grants and tunnel permissions, delete expired session branches, activate App deployments, and move projects between sandbox providers. Their rows have `source: worker`, and `metadata.auth.worker` names the job, for example `tunnel-cleanup` or `app-deployments`. An App deployment's row also names the member who started the deployment as its initiator.
 
 An anonymous request that names one of your projects is written to your log. Select these rows with `actor_type=anonymous`. Anonymous rows are rate-limited on each API process, so a flood of them cannot displace attributed rows. Health probes, CORS preflights, and anonymous traffic to a deployed App are not recorded.
 

@@ -131,7 +131,7 @@ export async function readAppViewer(
    * their group memberships silently missing — which reads to the App as "this
    * person is in no groups" and quietly removes whatever group grants gave
    * them. No viewer at all is the honest answer, and the one an App is already
-   * written to handle. (Found from the consumer side: essentia-dashboards
+   * written to handle. (Found from the consumer side: sampleco-dashboards
    * asserts that a signed payload which is not a statement about a person is
    * refused.)
    */

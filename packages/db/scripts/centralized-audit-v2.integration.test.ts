@@ -427,7 +427,7 @@ describe.skipIf(!databaseUrl)('centralized audit v2 — migrated PostgreSQL', ()
   });
 
   /**
-   * The Essentia audit convoy (2026-08-26).
+   * The SampleCo audit convoy (2026-08-26).
    *
    * `audit_prepare_event` allocates the per-session sequence and hash-chain
    * head out of `kortix.audit_session_sequences`, and PostgreSQL holds that row

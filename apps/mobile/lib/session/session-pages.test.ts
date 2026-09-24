@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
-import { flattenSessionPages, sessionsNextCursor, shouldLoadMoreSessions } from './session-pages';
+import {
+  flattenSessionPages,
+  sessionListState,
+  sessionsNextCursor,
+  shouldLoadMoreSessions,
+} from './session-pages';
 
 const row = (session_id: string) => ({ session_id });
 
@@ -25,5 +30,29 @@ describe('session list pages', () => {
     expect(shouldLoadMoreSessions({ hasNextPage: true, isFetchingNextPage: true, isRefreshing: false })).toBe(false);
     // A pull to refresh refetches every loaded page; a next page on top would race it.
     expect(shouldLoadMoreSessions({ hasNextPage: true, isFetchingNextPage: false, isRefreshing: true })).toBe(false);
+  });
+});
+
+describe('sessionListState (COR-146: a failure must never look like an empty list)', () => {
+  test('loading wins over everything else — the first fetch, no rows yet', () => {
+    expect(sessionListState({ isLoading: true, isError: false, hasSessions: false })).toBe('loading');
+    expect(sessionListState({ isLoading: true, isError: true, hasSessions: false })).toBe('loading');
+    expect(sessionListState({ isLoading: true, isError: false, hasSessions: true })).toBe('loading');
+  });
+
+  test('error only when the query failed and nothing survived to show', () => {
+    expect(sessionListState({ isLoading: false, isError: true, hasSessions: false })).toBe('error');
+  });
+
+  test('rows loaded through a failing background poll or refresh stay rows, not error', () => {
+    expect(sessionListState({ isLoading: false, isError: true, hasSessions: true })).toBe('rows');
+  });
+
+  test('empty only once the query succeeded with zero sessions', () => {
+    expect(sessionListState({ isLoading: false, isError: false, hasSessions: false })).toBe('empty');
+  });
+
+  test('rows once at least one session loaded and the query is not erroring', () => {
+    expect(sessionListState({ isLoading: false, isError: false, hasSessions: true })).toBe('rows');
   });
 });

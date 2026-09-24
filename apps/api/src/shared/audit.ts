@@ -605,6 +605,7 @@ const ENTRYPOINT_RESOURCE_TYPE: Record<InboundEntrypoint, string> = {
   preview_origin: 'sandbox_preview_origin',
   app_origin: 'app',
   ws_upgrade: 'websocket',
+  worker: 'worker',
 };
 
 /**

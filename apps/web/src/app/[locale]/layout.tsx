@@ -1,5 +1,6 @@
 import { WebMcpTools } from '@/components/agent-discovery/webmcp-tools';
 import { BrowserNoiseGuard } from '@/components/browser-noise-guard';
+import { DesktopBackButton } from '@/components/desktop/desktop-back-button';
 import { DesktopChrome } from '@/components/desktop/desktop-chrome';
 import { ThemeProvider } from '@/components/home/theme-provider';
 import { I18nProvider } from '@/components/i18n-provider';
@@ -318,6 +319,9 @@ export default async function RootLayout({
                     <RouterBridge />
                     <BrowserNoiseGuard />
                     <DesktopChrome />
+                    {/* The window's one Back: every screen gets an exit on the
+                    desktop shell unless its shell navigates already. */}
+                    <DesktopBackButton />
                     <ReactQueryProvider>
                       <Toaster />
                       {/* Global "Request a demo" qualifier modal — mounted once here

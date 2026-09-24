@@ -73,6 +73,8 @@ export function ComposioAppDetailContent({
           <Pressable
             onPress={onBack}
             className="flex-row items-center active:opacity-70"
+            accessibilityRole="button"
+            accessibilityLabel="Back"
           >
             <Icon as={ArrowLeft} size={20} className="text-foreground" />
           </Pressable>
@@ -255,6 +257,8 @@ export function ComposioAppDetailContent({
           <Pressable
             onPress={onBack}
             className="flex-row items-center active:opacity-70"
+            accessibilityRole="button"
+            accessibilityLabel="Back"
           >
             <Icon as={ArrowLeft} size={20} className="text-foreground" />
           </Pressable>

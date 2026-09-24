@@ -60,28 +60,3 @@ export function fileIconKey(fileName: string): FileIconKey {
   const ext = dot > 0 ? name.slice(dot + 1) : '';
   return BY_EXT[ext] ?? 'file';
 }
-
-/** A file's bare name: `package.json` reads as `package`; a dotfile keeps its name. */
-function bareName(name: string): string {
-  const i = name.lastIndexOf('.');
-  return i > 0 ? name.slice(0, i) : name;
-}
-
-/**
- * The names a folder shows: the extension dropped (Jay, 2026-09-22), except
- * where two files would then read the same (`kortix.html`, `kortix.yaml`):
- * those keep their full names.
- */
-export function displayNames(names: readonly string[]): Record<string, string> {
-  const counts = new Map<string, number>();
-  for (const name of names) {
-    const bare = bareName(name);
-    counts.set(bare, (counts.get(bare) ?? 0) + 1);
-  }
-  const out: Record<string, string> = {};
-  for (const name of names) {
-    const bare = bareName(name);
-    out[name] = (counts.get(bare) ?? 0) > 1 ? name : bare;
-  }
-  return out;
-}

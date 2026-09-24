@@ -23,13 +23,14 @@
  * the surrounding paragraph does not include the code.
  */
 import React, { createContext, useContext } from 'react';
-import { Linking, Platform, Text as RNText, useWindowDimensions, View } from 'react-native';
+import { Platform, Text as RNText, useWindowDimensions, View } from 'react-native';
 
 import { classifyInlineCode, splitInlineCode } from '@/lib/markdown/inline-code';
 import { INLINE_CODE, inlineCodeAnchor, RADIUS, TYPE } from '@/lib/markdown/markdown-layout';
 import { isSafeExternalLink } from '@/lib/markdown/safe-link';
 
 import { markdownPalette, MONO_FONT, type MarkdownPalette } from './markdown-theme';
+import { openLink } from '@/lib/utils/open-link';
 
 export interface MarkdownActions {
   /** Open a file path mentioned in a message (e.g. in the session file viewer). */
@@ -125,7 +126,7 @@ export function InlineCode({
   let onPress: (() => void) | undefined;
   if (!insideLink && kind === 'url' && isSafeExternalLink(text)) {
     onPress = () => {
-      Linking.openURL(text).catch(() => {});
+      openLink(text).catch(() => {});
     };
   } else if (!insideLink && kind === 'path' && onOpenFile) {
     onPress = () => onOpenFile(text);

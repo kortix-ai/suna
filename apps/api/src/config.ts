@@ -128,7 +128,7 @@ const envSchema = z.object({
   // Public origin for CLIENT-facing Supabase Storage URLs. On a self-host box
   // SUPABASE_URL is an internal Docker hostname (http://supabase-kong:8000) that
   // no browser/CLI/remote-sandbox can resolve; this is the box's public origin
-  // (e.g. https://essentia.kortix.cloud) used to rewrite signed URLs on the way
+  // (e.g. https://sampleco.kortix.cloud) used to rewrite signed URLs on the way
   // out (see toPublicStorageUrl). Optional: unset on managed cloud, where
   // SUPABASE_URL is already public and no rewrite is needed.
   SUPABASE_PUBLIC_URL: z
@@ -442,7 +442,7 @@ const envSchema = z.object({
   // fully supported first-class path (native OpenCode provider management:
   // provider keys injected into the sandbox env, native `provider/model`
   // refs, no gateway URL in the box) — the deliberate lever for deployments
-  // like Essentia that want their own keys end to end. The master switch
+  // like SampleCo that want their own keys end to end. The master switch
   // still wins — LLM_GATEWAY_ENABLED=false forces native OpenCode for
   // everyone regardless of this value — and an operator can set
   // LLM_GATEWAY_DEFAULT_ENABLED=false to opt a whole environment back to

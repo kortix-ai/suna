@@ -181,6 +181,17 @@ describe('SettingsPanelShell — desktop rail', () => {
     expect(html).not.toContain('Back to workspace');
   });
 
+  test('Back to app starts at the left edge of the web sidebar row', () => {
+    const html = render();
+    expect(html).toMatch(/<aside[^>]*>[\s\S]*?<div class="[^"]*kx-titlebar-row[^"]*kx-titlebar-band-height[^"]*justify-start[^"]*"/);
+    expect(html).toMatch(/kx-titlebar-row[\s\S]*?Back to app/);
+  });
+
+  test('Settings breadcrumb shares the native titlebar row', () => {
+    const html = render();
+    expect(html).toMatch(/<header class="[^"]*kx-titlebar-row[^"]*kx-titlebar-band-height[^"]*"/);
+  });
+
   test('the desktop content column carries a Settings breadcrumb bar', () => {
     expect(render()).toContain('aria-label="breadcrumb"');
     expect(render({ isMobile: true })).not.toContain('aria-label="breadcrumb"');
@@ -211,6 +222,10 @@ describe('SettingsPanelView — the dialog frame', () => {
     expect(SOURCE).toContain('side="fullscreen"');
   });
 
+  test('does not add a blank strip above the titlebar row', () => {
+    expect(SOURCE).not.toContain('className="kx-titlebar-spacer"');
+  });
+
   test('fills the viewport with important-marked overrides, not plain classes the modal chrome outranks', () => {
     for (const cls of ['inset-0!', 'h-dvh!', 'max-w-none!', 'rounded-none!', 'border-0!']) {
       expect(SOURCE).toContain(cls);
@@ -227,6 +242,16 @@ describe('SettingsPanelView — the dialog frame', () => {
     expect(SOURCE).toContain('SETTINGS_SIDEBAR_WIDTH_PX');
     expect(SOURCE).not.toContain('grid-cols-[250px_1fr]');
   });
+});
+
+test('mobile Settings navigation has a zoom-safe first row on macOS', () => {
+  const source = readFileSync(join(import.meta.dir, 'settings-panel.tsx'), 'utf8');
+  const css = readFileSync(join(import.meta.dir, '../../../app/globals.css'), 'utf8');
+  expect(source).toContain('kx-settings-mobile-titlebar');
+  expect(source).toContain('kx-settings-mobile-scroll min-w-0 flex flex-1 items-center py-2');
+  expect(source).toContain('kx-settings-mobile-tabs');
+  expect(css).toMatch(/\.kx-settings-mobile-titlebar \.kx-settings-mobile-tabs\s*\{[^}]*height:\s*var\(--kx-titlebar-control-size\)/);
+  expect(css).toMatch(/\.kx-settings-mobile-titlebar \[data-slot='tabs-trigger'\]\s*\{[^}]*height:\s*var\(--kx-titlebar-control-size\)/);
 });
 
 /**

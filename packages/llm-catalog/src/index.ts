@@ -523,6 +523,46 @@ export const MANAGED_MODELS: ManagedModel[] = [
     tier: 'flagship', vision: true, limit: { context: 1_048_576, output: 16_384 },
     openrouterProvider: { only: ['wafer'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
   },
+  // Released 2026-09-22. Each pin is the model's US endpoint in OpenRouter's ZDR
+  // feed, and each rate is that endpoint's price, not the vendor list price
+  // (Azure US and Bedrock US add 10%). On 2026-09-23 every pin answered a text,
+  // an image and a tool-call request with the deployment key. After the first
+  // 272,000 prompt tokens, GPT-6 bills its higher tier.
+  {
+    id: 'claude-opus-5.5', name: 'Claude Opus 5.5', upstreamModelId: 'anthropic/claude-opus-5.5',
+    transport: 'openrouter', pricingRef: 'openrouter/anthropic/claude-opus-5.5',
+    pricing: { inputPerMillion: 4.4, cachedInputPerMillion: 0.22, cacheWritePerMillion: 5.5, outputPerMillion: 22 },
+    tier: 'flagship', vision: true, limit: { context: 1_000_000, output: 128_000 },
+    openrouterProvider: {
+      only: ['amazon-bedrock/us-east-1'], allow_fallbacks: false, zdr: true, data_collection: 'deny',
+    },
+  },
+  {
+    id: 'gpt-6-sol', name: 'GPT-6 Sol', upstreamModelId: 'openai/gpt-6-sol',
+    transport: 'openrouter', pricingRef: 'openrouter/openai/gpt-6-sol',
+    pricing: {
+      inputPerMillion: 2.2, cachedInputPerMillion: 0.22, cacheWritePerMillion: 2.75, outputPerMillion: 11,
+      contextOver200k: {
+        contextThreshold: 272_000, inputPerMillion: 4.4, cachedInputPerMillion: 0.44,
+        cacheWritePerMillion: 5.5, outputPerMillion: 16.5,
+      },
+    },
+    tier: 'balanced', vision: true, limit: { context: 1_050_000, output: 128_000 },
+    openrouterProvider: { only: ['azure/us'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
+  },
+  {
+    id: 'gpt-6-luna', name: 'GPT-6 Luna', upstreamModelId: 'openai/gpt-6-luna',
+    transport: 'openrouter', pricingRef: 'openrouter/openai/gpt-6-luna',
+    pricing: {
+      inputPerMillion: 0.11, cachedInputPerMillion: 0.011, cacheWritePerMillion: 0.1375, outputPerMillion: 0.55,
+      contextOver200k: {
+        contextThreshold: 272_000, inputPerMillion: 0.22, cachedInputPerMillion: 0.022,
+        cacheWritePerMillion: 0.275, outputPerMillion: 0.825,
+      },
+    },
+    tier: 'fast', vision: true, limit: { context: 1_050_000, output: 128_000 },
+    openrouterProvider: { only: ['azure/us'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
+  },
 ];
 
 const MANAGED_BY_ID = new Map(MANAGED_MODELS.map((m) => [m.id, m] as const));

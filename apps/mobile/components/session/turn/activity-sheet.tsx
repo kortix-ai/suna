@@ -41,6 +41,11 @@ import { useTabStore } from '@/stores/tab-store';
 import { ToolPartRenderer } from '@/components/session/tool/tool-part-renderer';
 import { FONT_MEDIUM, TURN_TYPE, useTurnPalette } from '@/components/session/tool/shared/styles';
 import { ToolDetailContext } from '@/components/session/tool/shared/surface';
+import {
+  ConnectorHandoffContext,
+  type ConnectorHandoffApi,
+  type ConnectorHandoffRequest,
+} from '@/components/session/tool/shared/connector-handoff-context';
 import { ACTIVITY_ICONS } from '@/components/session/tool/shared/tool-icons';
 import type { ActivityContextValue } from './activity-step';
 
@@ -220,13 +225,48 @@ interface ActivitySheetProps {
    */
   context: ActivityContextValue;
   markdownActions?: MarkdownActions;
+  /**
+   * The transcript's connector hand-off (COR-158). A connector call that asks
+   * for a connect renders as its own transcript row (`standaloneCallIdsFor`),
+   * so this is a guard: a Connect tapped in here first dismisses this sheet,
+   * and the auth sheet opens only once this one is gone — never two overlays.
+   */
+  connectorHandoff?: ConnectorHandoffApi | null;
   /** Dismiss now, animated (a permission prompt needs the screen). */
   dismissRequested: boolean;
   onDismiss: () => void;
 }
 
-function ActivitySheetImpl({ entries, context, markdownActions, dismissRequested, onDismiss }: ActivitySheetProps) {
+function ActivitySheetImpl({
+  entries,
+  context,
+  markdownActions,
+  connectorHandoff,
+  dismissRequested,
+  onDismiss,
+}: ActivitySheetProps) {
   const ref = useRef<BottomSheetModal>(null);
+  // A Connect tapped inside this sheet: held until the sheet has dismissed.
+  const pendingConnectRef = useRef<ConnectorHandoffRequest | null>(null);
+  const handoffValue = useMemo<ConnectorHandoffApi | null>(
+    () =>
+      connectorHandoff
+        ? {
+            projectId: connectorHandoff.projectId,
+            requestConnect: (request) => {
+              pendingConnectRef.current = request;
+              ref.current?.dismiss();
+            },
+          }
+        : null,
+    [connectorHandoff],
+  );
+  const handleDismiss = useCallback(() => {
+    onDismiss();
+    const request = pendingConnectRef.current;
+    pendingConnectRef.current = null;
+    if (request) connectorHandoff?.requestConnect(request);
+  }, [onDismiss, connectorHandoff]);
   const insets = useSafeAreaInsets();
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   // The list animates only when it comes back from a detail, never on open.
@@ -271,8 +311,9 @@ function ActivitySheetImpl({ entries, context, markdownActions, dismissRequested
       enableDynamicSizing={false}
       enablePanDownToClose
       topInset={insets.top}
-      onDismiss={onDismiss}
+      onDismiss={handleDismiss}
     >
+      <ConnectorHandoffContext.Provider value={handoffValue}>
       <MarkdownActionsProvider value={markdownActions ?? NO_MARKDOWN_ACTIONS}>
         {selected ? (
           <Animated.View key={selected.key} entering={PUSH_IN} style={{ flex: 1 }}>
@@ -294,6 +335,7 @@ function ActivitySheetImpl({ entries, context, markdownActions, dismissRequested
           </Animated.View>
         )}
       </MarkdownActionsProvider>
+      </ConnectorHandoffContext.Provider>
     </KortixBottomSheetModal>
   );
 }
@@ -314,9 +356,12 @@ const NO_PERMISSIONS: ReadonlyArray<{ tool?: { callID: string } }> = [];
 export function ActivitySheetHost({
   sessionId: hostSessionId,
   markdownActions,
+  connectorHandoff,
 }: {
   sessionId: string;
   markdownActions?: MarkdownActions;
+  /** The transcript's connector hand-off; see `ActivitySheetProps`. */
+  connectorHandoff?: ConnectorHandoffApi | null;
 }) {
   const store = useActivitySheetStore((state) => state.sheet);
   const sheet = store?.context.sessionId === hostSessionId ? store : null;
@@ -351,6 +396,7 @@ export function ActivitySheetHost({
       entries={entries}
       context={sheet.context}
       markdownActions={markdownActions}
+      connectorHandoff={connectorHandoff}
       dismissRequested={burstHasPendingPermission(sheet.callIds, permissions)}
       onDismiss={closeSheet}
     />

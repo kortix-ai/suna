@@ -19497,7 +19497,9 @@
     "disableModel": "禁用模型",
     "modelError": "无法更新模型访问权限。",
     "hiddenShort": "已从选择器中隐藏。仍允许直接请求。",
-    "resetError": "无法重置模型列表。"
+    "resetError": "无法重置模型列表。",
+    "appReturn": "返回 Kortix 应用",
+    "appReturnConnected": "提供商已连接。返回 Kortix 应用"
   },
   "projectChooser": {
     "invitations": "邀请",
@@ -19602,5 +19604,8 @@
     "appAgentsEmpty": "没有智能体列出此应用。请在 kortix.yaml 的 agents.<name>.apps 中添加它的 slug。",
     "appAgentsDeclared": "在 {file} 中声明（agents.{agent}.apps）",
     "appAgentsGrantAll": "全部应用"
+  },
+  "connectorsAppReturn": {
+    "done": "完成。返回 Kortix 应用"
   }
 }

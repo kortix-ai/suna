@@ -19,7 +19,7 @@
  * stays on screen over a long change. The scroll content pads by its height.
  */
 import * as React from 'react';
-import { Linking, View, useWindowDimensions } from 'react-native';
+import { View, useWindowDimensions } from 'react-native';
 import {
   BottomSheetModal,
   BottomSheetFooter,
@@ -64,6 +64,7 @@ import {
 } from '@/lib/review/review-meta';
 import { planReviewVerdict, reviewVerdictsFor } from '@/lib/review/review-verdict';
 import { useReviewVerdict } from '@/lib/review/use-review';
+import { openLink } from '@/lib/utils/open-link';
 
 interface ReviewDetailSheetProps {
   projectId: string;
@@ -208,8 +209,7 @@ export const ReviewDetailSheet = React.forwardRef<SheetRef, ReviewDetailSheetPro
           onDismiss={handleDismiss}
           footerComponent={renderFooter}
           keyboardBehavior="interactive"
-          keyboardBlurBehavior="restore"
-          android_keyboardInputMode="adjustResize">
+          keyboardBlurBehavior="restore">
           <BottomSheetScrollView
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
@@ -434,7 +434,7 @@ function ReviewBody({
               <SettingsRow
                 label="Open preview"
                 external
-                onPress={() => void Linking.openURL(item.detail.previewUrl!).catch(() => {})}
+                onPress={() => void openLink(item.detail.previewUrl!).catch(() => {})}
               />
             </SettingsGroup>
           ) : null}

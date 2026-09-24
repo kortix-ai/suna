@@ -18,7 +18,9 @@ export function MarketingShell({
   return (
     <div className="relative min-h-dvh w-full">
       <ConsentGate />
-      <div className="fixed top-0 right-0 left-0 z-50">
+      {/* The navbar owns the top row and links home, so the desktop Back
+          (root layout) steps aside. */}
+      <div className="fixed top-0 right-0 left-0 z-50" data-kx-titlebar-owner="">
         <Navbar isAbsolute />
       </div>
       {routedChildren}

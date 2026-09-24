@@ -31,7 +31,8 @@ function importedSpecifiers(source: string): string[] {
 
 async function renderBoundary(): Promise<string> {
   const { default: Boundary } = await import(LOADING);
-  return renderToStaticMarkup(createElement(Boundary));
+  const { AuthProvider } = await import('@/features/providers/auth-provider');
+  return renderToStaticMarkup(createElement(AuthProvider, null, createElement(Boundary)));
 }
 
 describe('project home loading boundary', () => {

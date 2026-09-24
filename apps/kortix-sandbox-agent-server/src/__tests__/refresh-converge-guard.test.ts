@@ -3,7 +3,7 @@ import { refreshMayConvergeRuntime } from '../harness/open-code/control';
 
 describe('refreshMayConvergeRuntime', () => {
   test('a booting runtime is never converged from a refresh', () => {
-    // Essentia 2026-08-25 17:23: the session-open refresh installed OpenCode
+    // SampleCo 2026-08-25 17:23: the session-open refresh installed OpenCode
     // 1.18.23 and restarted it while the resume was still booting.
     expect(refreshMayConvergeRuntime('starting')).toBe(false);
     expect(refreshMayConvergeRuntime('down')).toBe(false);

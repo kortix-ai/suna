@@ -19497,7 +19497,9 @@
     "disableModel": "Désactiver le modèle",
     "modelError": "Impossible de modifier l’accès au modèle.",
     "hiddenShort": "Masqué dans le sélecteur. Les requêtes directes restent autorisées.",
-    "resetError": "Impossible de réinitialiser la liste des modèles."
+    "resetError": "Impossible de réinitialiser la liste des modèles.",
+    "appReturn": "Retour à l’app Kortix",
+    "appReturnConnected": "Fournisseur connecté. Retour à l’app Kortix"
   },
   "projectChooser": {
     "invitations": "Invitations",
@@ -19602,5 +19604,8 @@
     "appAgentsEmpty": "Aucun agent ne liste cette App. Ajoutez son slug à agents.<name>.apps dans kortix.yaml.",
     "appAgentsDeclared": "Déclaré dans {file} (agents.{agent}.apps)",
     "appAgentsGrantAll": "Toutes les Apps"
+  },
+  "connectorsAppReturn": {
+    "done": "Terminé. Retour à l’app Kortix"
   }
 }
