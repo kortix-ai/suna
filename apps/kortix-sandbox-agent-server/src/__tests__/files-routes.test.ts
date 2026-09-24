@@ -372,6 +372,70 @@ describe('daemon file write routes', () => {
     await expect(fs.stat(`${WORKSPACE}/src.txt`)).rejects.toThrow()
   })
 
+  it('rename replaces an existing file by default (the overwrite-in-place write path)', async () => {
+    await fs.writeFile(`${WORKSPACE}/replace-src.txt`, 'new bytes')
+    await fs.writeFile(`${WORKSPACE}/replace-dest.txt`, 'old bytes')
+    const res = await fetch(`${base}/file/rename`, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ from: `${WORKSPACE}/replace-src.txt`, to: `${WORKSPACE}/replace-dest.txt` }),
+    })
+    expect(res.status).toBe(200)
+    expect(await fs.readFile(`${WORKSPACE}/replace-dest.txt`, 'utf8')).toBe('new bytes')
+  })
+
+  it('rename with overwrite:false refuses an existing target and changes nothing', async () => {
+    await fs.writeFile(`${WORKSPACE}/excl-src.txt`, '')
+    await fs.writeFile(`${WORKSPACE}/excl-dest.txt`, 'keep me')
+    const res = await fetch(`${base}/file/rename`, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        from: `${WORKSPACE}/excl-src.txt`,
+        to: `${WORKSPACE}/excl-dest.txt`,
+        overwrite: false,
+      }),
+    })
+    expect(res.status).toBe(409)
+    expect(await res.json()).toMatchObject({ code: 'EEXIST' })
+    expect(await fs.readFile(`${WORKSPACE}/excl-dest.txt`, 'utf8')).toBe('keep me')
+    expect(await fs.readFile(`${WORKSPACE}/excl-src.txt`, 'utf8')).toBe('')
+  })
+
+  it('rename with overwrite:false moves the file when the target is free', async () => {
+    await fs.writeFile(`${WORKSPACE}/excl-free-src.txt`, 'x')
+    const res = await fetch(`${base}/file/rename`, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        from: `${WORKSPACE}/excl-free-src.txt`,
+        to: `${WORKSPACE}/excl-free/dest.txt`,
+        overwrite: false,
+      }),
+    })
+    expect(res.status).toBe(200)
+    expect(await fs.readFile(`${WORKSPACE}/excl-free/dest.txt`, 'utf8')).toBe('x')
+    await expect(fs.stat(`${WORKSPACE}/excl-free-src.txt`)).rejects.toThrow()
+  })
+
+  it('rename refuses to replace an existing directory, whatever the overwrite mode', async () => {
+    await fs.mkdir(`${WORKSPACE}/keep-dir/lib`, { recursive: true })
+    await fs.writeFile(`${WORKSPACE}/keep-dir/lib/a.ts`, 'export {}')
+    await fs.mkdir(`${WORKSPACE}/empty-dir`, { recursive: true })
+    await fs.writeFile(`${WORKSPACE}/dir-src.txt`, '')
+    for (const to of [`${WORKSPACE}/keep-dir`, `${WORKSPACE}/empty-dir`]) {
+      const res = await fetch(`${base}/file/rename`, {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ from: `${WORKSPACE}/dir-src.txt`, to }),
+      })
+      expect(res.status).toBe(409)
+      expect(await res.json()).toMatchObject({ code: 'EISDIR' })
+    }
+    expect(await fs.readFile(`${WORKSPACE}/keep-dir/lib/a.ts`, 'utf8')).toBe('export {}')
+    expect((await fs.stat(`${WORKSPACE}/empty-dir`)).isDirectory()).toBe(true)
+  })
+
   it('deletes a file', async () => {
     await fs.writeFile(`${WORKSPACE}/gone.txt`, 'bye')
     const res = await fetch(`${base}/file`, {

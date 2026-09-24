@@ -633,6 +633,22 @@ await files.upload(file, '/workspace/uploads', file.name, {
 Uploads larger than 64 KiB cross the sandbox edge in verified chunks. The
 progress callback runs after each chunk reaches the session filesystem.
 
+`files.write(path, blob)` replaces the file at `path` and fails if `path` is a
+folder. `files.create(path)` creates an empty file and never overwrites: when a
+file or folder already exists at `path`, it throws `FileExistsError`
+(`status` `409`, `code` `'FILE_EXISTS'`).
+
+```ts
+import { FileExistsError, files } from '@kortix/sdk';
+
+try {
+  await files.create('/workspace/notes.md');
+} catch (error) {
+  if (error instanceof FileExistsError) console.log(`${error.path} already exists`);
+  else throw error;
+}
+```
+
 `files` targets the globally active sandbox. If your host runs more than one
 session at a time, call `s.files` on the session handle instead. It always
 targets that session's own sandbox. See [Sessions](/docs/sdk/sessions).
