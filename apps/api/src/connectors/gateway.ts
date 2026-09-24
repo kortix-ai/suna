@@ -1,5 +1,11 @@
 import { logger } from '../lib/logger';
 import { buildArgsPreviewDetails, summarizeArgsPreview } from './args-preview';
+import {
+  emailChannelAttachmentArgs,
+  findAttachmentRefs,
+  redactInlineBytes,
+  resolveAttachmentRefs,
+} from './attachment-inline';
 import type { ConnectorAttachmentStore } from './attachments';
 import { executeComposio } from './composio';
 import {
@@ -501,6 +507,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
   const emailExecution = await resolveEmailExecutionContext(deps, input, connector, resolved.slug);
   let usable: Awaited<ReturnType<typeof connectorUsable>>;
   let attachmentClaim: Awaited<ReturnType<ConnectorAttachmentStore['claimForEmail']>> | null = null;
+  let attachmentRefs: ReturnType<typeof findAttachmentRefs> = [];
   try {
     usable = await connectorUsable(deps, connector, input, emailExecution.secretOverride);
   } catch (error) {
@@ -683,6 +690,23 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
   }
 
   try {
+    // `{ "$kortix_attachment": id }` references. The bytes are resolved only
+    // into the provider-bound copy of the arguments, below.
+    const isEmailChannel = connector.provider === 'channel' && connector.platform === 'email';
+    attachmentRefs = findAttachmentRefs(executionArgs);
+    if (
+      attachmentRefs.length > 0 &&
+      (connector.provider === 'pipedream' ||
+        connector.provider === 'composio' ||
+        connector.provider === 'computer')
+    ) {
+      // These runners take provider-native file inputs. Forwarding the
+      // reference would deliver the message without its file.
+      throw new Error(
+        `connector_attachments_unsupported: ${connector.provider} connectors do not accept Kortix attachments`,
+      );
+    }
+
     // Computers (Agent Computer Tunnel): relay through the shared tunnel RPC
     // core. The connector profile owns the machine allowlist.
     if (connector.provider === 'computer') {
@@ -799,22 +823,45 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       });
     } else {
       let providerArgs = executionArgs;
-      if (connector.provider === 'channel' && connector.platform === 'email') {
-        if (!deps.attachmentStore && hasAttachmentHandles(executionArgs)) {
+      const scope = {
+        accountId: input.accountId,
+        projectId: input.projectId,
+        sessionId: input.sessionId ?? null,
+        userId: input.subject.userId,
+      };
+      if (isEmailChannel) {
+        // The Email channel sends files by signed URL: references become the
+        // channel's own `{ attachment_id }` handles, then the URL claim runs.
+        const emailArgs =
+          attachmentRefs.length > 0
+            ? emailChannelAttachmentArgs(executionArgs, attachmentRefs)
+            : executionArgs;
+        if (!deps.attachmentStore && hasAttachmentHandles(emailArgs)) {
           throw new Error('connector_attachment_transport_unavailable');
         }
         if (deps.attachmentStore) {
-          attachmentClaim = await deps.attachmentStore.claimForEmail(
-            {
-              accountId: input.accountId,
-              projectId: input.projectId,
-              sessionId: input.sessionId ?? null,
-              userId: input.subject.userId,
-            },
-            executionArgs,
-          );
+          attachmentClaim = await deps.attachmentStore.claimForEmail(scope, emailArgs);
           providerArgs = attachmentClaim.args;
         }
+      } else if (attachmentRefs.length > 0) {
+        if (!deps.attachmentStore?.claimInline) {
+          throw new Error('connector_attachment_transport_unavailable');
+        }
+        const claim = await deps.attachmentStore.claimInline(scope, [
+          ...new Set(attachmentRefs.map((ref) => ref.attachmentId)),
+        ]);
+        // Record the claim before resolving, so a shape refusal releases it.
+        attachmentClaim = {
+          args: executionArgs,
+          claimToken: claim.claimToken,
+          attachmentIds: claim.attachmentIds,
+        };
+        providerArgs = resolveAttachmentRefs(
+          executionArgs,
+          action.inputSchema,
+          attachmentRefs,
+          claim.files,
+        );
       }
       result = await executeCall({
         binding: action.binding,
@@ -844,6 +891,9 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       }
       await audit(deps, input, connector, 'ok', action.risk, {
         http_status: result.status,
+        ...(attachmentClaim?.attachmentIds.length
+          ? { attachment_count: attachmentClaim.attachmentIds.length }
+          : {}),
       });
       return { status: 'ok', data: result.data, risk: action.risk, account: gatewayConnectorAccount(connector) };
     }
@@ -852,7 +902,11 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         ?.releaseClaim(attachmentClaim.claimToken, attachmentClaim.attachmentIds)
         .catch(() => {});
     }
-    const reason = upstreamReason(result) + fallbackHint(connector, action.binding);
+    // An upstream that echoes the rejected body would echo the file's base64.
+    const upstream = upstreamReason(result);
+    const reason =
+      (attachmentRefs.length > 0 ? redactInlineBytes(upstream) : upstream) +
+      fallbackHint(connector, action.binding);
     await audit(deps, input, connector, 'error', action.risk, {
       http_status: result.status,
       reason: reason.slice(0, 500),

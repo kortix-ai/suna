@@ -74,6 +74,11 @@ export interface ConnectorAttachmentUploadInput {
   contentType: string;
   contentDisposition?: 'attachment' | 'inline';
   contentId?: string;
+  /**
+   * Slug of the connector the file is for, e.g. `microsoft-graph`. The caller
+   * must be able to use that connector. Omit it for the native Email channel.
+   */
+  connector?: string;
 }
 
 export interface ConnectorAttachmentUploadResult {
@@ -84,6 +89,13 @@ export interface ConnectorAttachmentUploadResult {
   content_id?: string;
   size: number;
   expires_at: string;
+  /**
+   * The value to place in call arguments, e.g. as a Microsoft Graph
+   * `body.message.attachments[]` element or as a `contentBytes` string. The
+   * gateway replaces it with the file server-side. Absent from servers that
+   * predate it; build `{ $kortix_attachment: attachment_id }` yourself there.
+   */
+  ref?: { $kortix_attachment: string };
 }
 
 function connectorGatewayPath(projectId: string | undefined, suffix: string): string {
@@ -245,6 +257,9 @@ export async function uploadConnectorAttachment(
   };
   if (input.contentId?.trim()) {
     headers['X-Kortix-Attachment-Content-Id'] = encodeURIComponent(input.contentId.trim());
+  }
+  if (input.connector?.trim()) {
+    headers['X-Kortix-Attachment-Connector'] = encodeURIComponent(input.connector.trim());
   }
 
   const backendUrl = trimTrailingSlashes(platformConfig().backendUrl);

@@ -413,6 +413,59 @@ each group. `call` runs one action, as the named `--account` or, when omitted,
 the same default resolution used before a connector could hold more than one
 account.
 
+### Attach files
+
+A call never carries file bytes in its arguments. Stage the file, then put its
+reference in the arguments. The gateway reads the bytes server-side and writes
+them into the request.
+
+```text
+kortix connectors call microsoft-graph.sendmail @mail.json \
+  --attach /workspace/artifacts/report.pdf
+```
+
+`--attach` stages the file and appends a reference to the action's attachments
+array. The array is found in the action's input schema: `attachments` for the
+Email channel, `body.message.attachments` for Microsoft Graph `sendMail`. Name
+it with `--attach-path body.message.attachments` when the schema is unusual.
+Large JSON arguments go in a file (`@mail.json`) or on stdin (`-`).
+
+To place a file yourself, stage it first:
+
+```text
+kortix connectors upload /workspace/artifacts/report.pdf --connector microsoft-graph
+# → { "attachment_id": "…", "ref": { "$kortix_attachment": "…" }, … }
+```
+
+Put `ref` anywhere in the arguments. The gateway replaces it by position:
+
+| Position of `ref` | Replaced with |
+| --- | --- |
+| An element of an attachments array whose items are objects | The provider's attachment item. The item schema selects the shape: Microsoft Graph `fileAttachment` (`name` + `contentBytes` or `@odata.type`), Postmark (`Name` + `Content`), Mailjet (`Filename` + `Base64Content`), SendGrid and Resend (`filename` + `content`), Brevo (`name` + `content`). Any other item shape is refused with `attachment_item_shape_unknown`. |
+| A string field, e.g. `contentBytes` or a GitHub file `content` | The file's base64. |
+| The Email channel's `attachments[]` | A signed download URL for the Email provider. |
+
+Rules:
+
+- Files come from `/workspace/output`, `/workspace/artifacts`,
+  `/workspace/reports`, or `/workspace/deliverables`. Symbolic links and hard
+  links are refused. Copy a file there first.
+- One call carries up to 20 files and 25 MiB in total. The upstream API can
+  set a lower limit: Microsoft Graph documents 3 MB as the largest file one
+  `sendMail` request can attach.
+- A staged file is private to the session that staged it, used once, and
+  deleted after 24 hours. A failed call releases it for a retry.
+- The audit record, the approval preview, and the model see only the
+  reference, never the bytes. An upstream error that echoes the file has the
+  base64 removed.
+- Pipedream and Composio connectors do not accept staged files
+  (`connector_attachments_unsupported`).
+
+The MCP server offers the same flow: `call` takes `attachment_files` (and an
+optional `attachment_path`), and `upload_attachment` returns a `ref`. The SDK
+equivalent is `connectors.uploadAttachment(bytes, { filename, contentType,
+connector })`, which returns `ref`.
+
 ### When a call is denied
 
 A denied call answers `{ ok: false, status: "denied", reason, hint }`. `reason` is a stable code; `hint` says what to do.

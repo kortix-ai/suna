@@ -23,6 +23,8 @@ Use the **`kortix connectors` CLI** for normal agent work:
 - `kortix connectors call <connector> <action> '<json>' [--account <label>]`
   invokes one action. Every successful result echoes `account`: say which one
   ran when it matters.
+- `kortix connectors call … --attach <file>` attaches a file (see **Attach
+  files** below). Never put base64 in args.
 - `kortix connectors add`, `rm`, and `connect` manage connectors and connections.
 - `kortix connectors mcp` runs the optional `kortix-connectors` stdio MCP server.
 
@@ -125,6 +127,29 @@ kortix connectors show email_email_inbox_bjgk.reply_message
 kortix connectors call email_email_inbox_bjgk reply_message \
   '{"inbox_id":"email-inbox@agentmail.to","message_id":"<message-id>","text":"Reply text"}'
 ```
+
+**Attach files.** Write the file under `/workspace/artifacts` (or
+`output`, `reports`, `deliverables`), put the JSON args in a file, and pass
+`--attach`. The CLI stages the raw bytes and the gateway builds the
+provider's attachment item (Microsoft Graph, SendGrid, Postmark, Mailjet,
+Resend, Brevo, and the Email channel):
+
+```sh
+cat > /tmp/mail.json <<'JSON'
+{"user":"sender@example.com","body":{"message":{"subject":"Report",
+ "body":{"contentType":"Text","content":"Attached."},
+ "toRecipients":[{"emailAddress":{"address":"to@example.com"}}]},
+ "saveToSentItems":true}}
+JSON
+kortix connectors call microsoft-graph sendmail @/tmp/mail.json \
+  --attach /workspace/artifacts/report.pdf
+```
+
+Leave the attachments array out of the JSON; `--attach` appends to it. For a
+field the CLI cannot find, run `kortix connectors upload <file> --connector
+<slug>` and put the printed `ref` (`{"$kortix_attachment":"<id>"}`) where the
+file belongs: in an `attachments` array, or as the value of a base64 field
+such as `contentBytes`. Pass the body as a JSON object, never as a string.
 
 For GraphQL actions, put selected fields in `args.__select`:
 
