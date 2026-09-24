@@ -304,6 +304,45 @@ describe('nothing re-hard-codes the band', () => {
     expect(control).toContain('[-webkit-app-region:no-drag]');
   });
 
+  test('headerless project views get a shell drag region without covering real titlebars', () => {
+    expect(shell).toContain('className="kx-project-shell-drag-region"');
+    expect(shell).toContain('aria-hidden="true"');
+    expect(css).toContain(
+      "html[data-desktop-platform='macos'] .kx-project-shell-drag-region {",
+    );
+    expect(css).toMatch(
+      /\[data-kx-titlebar-owner\]:has\(\.kx-titlebar-row\)\s*>\s*\.kx-project-shell-drag-region\s*\{[^}]*display:\s*none/s,
+    );
+  });
+
+  test('controls outside a drag owner or overlay never cut holes in the band', () => {
+    // Chromium collects no-drag rects unclipped, in DOM order, ignoring
+    // z-index. A transcript control scrolled under the session header must
+    // not subtract from it. Blink maps `none` to no-drag, so only `initial`
+    // resets the shell's injected rule.
+    const reset = css.match(
+      /html\[data-desktop-platform='macos'\]\s*:is\(\s*button, a, input[^)]*\)\s*\{([^}]*)\}/s,
+    );
+    expect(reset?.[1]).toContain('-webkit-app-region: initial');
+    expect(reset?.[1]).toContain('app-region: initial');
+    expect(reset?.[1]).not.toMatch(/app-region:\s*none/);
+
+    const scoped = css.match(
+      /:is\(\s*\.kx-titlebar-row,([^)]*)\)\s*:is\(\s*button, a, input[^)]*\),\s*html\[data-desktop-platform='macos'\] \[class\*='app-region:no-drag'\]\s*\{\s*-webkit-app-region: no-drag;/s,
+    );
+    expect(scoped).not.toBeNull();
+    for (const owner of [
+      '.kx-titlebar-tabs',
+      '.kx-app-header',
+      '.kx-project-sidebar-header',
+      "[role='dialog']",
+      "[role='menu']",
+      '[data-radix-popper-content-wrapper]',
+    ]) {
+      expect(scoped?.[1]).toContain(owner);
+    }
+  });
+
   test('the session header takes the band offsets from the shared row class', () => {
     expect(sessionHeader).toContain('kx-titlebar-row');
     expect(sessionHeader).toContain('pt-[var(--kx-titlebar-control-top)]');
