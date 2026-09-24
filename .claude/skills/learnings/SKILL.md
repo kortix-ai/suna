@@ -21,6 +21,15 @@ linked, not inlined.
 
 ## Register
 
+### A completed batch must release its supervisor slot (2026-09-24)
+
+**Rule:** Require a completion marker and process exit from each batch child.
+Alert when a child remains alive after completion. **Trigger surface:** looped
+migration and reconciliation supervisors. **Incident:** A 96-worker provider
+transfer batch retained idle provider sockets for 17 hours after completion.
+The supervisor admitted no new work while PID-based health stayed green.
+**Enforcement:** the fleet exits after it closes its database handles.
+
 ### Never enumerate decrypted dotenv files to discover variable names (2026-09-22)
 
 **Rule:** Inspect encrypted dotenv key names from ciphertext or source schema.
