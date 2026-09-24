@@ -11,4 +11,5 @@
  * module pin that against the old code on thousands of random inputs.
  */
 
+export { skillDocumentBody } from './skill';
 export { ptyOutputBlock, ptySpawnedBody, stripBashMetadata } from './tags';
