@@ -312,6 +312,11 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
     start: async () => {
       await opencode.start()
       if (opencode.getPid() !== null) bootMark('opencode-spawned')
+      // Resolve only once the process can be TALKED to. The proof is the first
+      // request this box sends, and a request to a bound-but-handlerless port
+      // is never answered: it burned its whole 2 s timeout plus a 500 ms poll
+      // on every boot (measured 2026-09-24, +2.0 s to opencode-ready).
+      await opencode.waitForCurrentListening()
     },
     respawn: async () => {
       await opencode.restart({ finalizeTurn: false }).catch((err) => {
@@ -1077,6 +1082,7 @@ async function runWarmSeedMode(
         .start()
         .catch((err) => logger.warn('[seed] opencode.start() rejected', { err: err instanceof Error ? err.message : String(err) }))
       bootMark('seed-opencode-spawned')
+      await opencode.waitForCurrentListening()
     },
     respawn: async () => {
       await opencode.restart({ finalizeTurn: false }).catch(() => {})
