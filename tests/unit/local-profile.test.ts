@@ -13,6 +13,7 @@ import {
   hasRequiredLocalSupabaseEnvironment,
   localApiUsesTestProfile,
   localMigrationPlan,
+  waitForLocalPostgrest,
   localTopology,
   parseSupabaseEnvironment,
 } from "../src/core/local-stack";
@@ -195,6 +196,63 @@ describe("ke2e local profile", () => {
     expect(() => localMigrationPlan(localTopology("/repo", null), {})).toThrow(
       "local Supabase environment is missing DB_URL",
     );
+  });
+
+  describe("PostgREST readiness after migrations", () => {
+    const supabase = {
+      API_URL: "http://127.0.0.1:54321",
+      DB_URL: "postgresql://postgres:postgres@127.0.0.1:54322/postgres",
+      ANON_KEY: "anon",
+    };
+    const schemaCacheMiss = () =>
+      new Response(JSON.stringify({ code: "PGRST002" }), { status: 503 });
+
+    it("reloads the schema cache and waits until PostgREST stops answering 503", async () => {
+      const statuses = [schemaCacheMiss, schemaCacheMiss, () => new Response("{}", { status: 200 })];
+      const probes: string[] = [];
+      let reloads = 0;
+      await waitForLocalPostgrest(supabase, {
+        reload: async () => {
+          reloads += 1;
+        },
+        fetch: async (url, init) => {
+          probes.push(`${url} ${(init?.headers as Record<string, string>).apikey}`);
+          return statuses.shift()!();
+        },
+        sleep: async () => {},
+      });
+      expect(probes).toEqual(Array(3).fill("http://127.0.0.1:54321/rest/v1/ anon"));
+      expect(reloads).toBeGreaterThanOrEqual(1);
+    });
+
+    it("fails with the PostgREST body when the schema cache never loads", async () => {
+      let now = 0;
+      await expect(
+        waitForLocalPostgrest(supabase, {
+          reload: async () => {},
+          fetch: async () => schemaCacheMiss(),
+          sleep: async (ms) => {
+            now += ms;
+          },
+          now: () => now,
+          timeoutMs: 5_000,
+        }),
+      ).rejects.toThrow('local PostgREST still answers 503 after 5s: {"code":"PGRST002"}');
+    });
+
+    it("returns at once when the REST gateway is not running", async () => {
+      let reloads = 0;
+      await waitForLocalPostgrest(supabase, {
+        reload: async () => {
+          reloads += 1;
+        },
+        fetch: async () => {
+          throw new Error("connect ECONNREFUSED");
+        },
+        sleep: async () => {},
+      });
+      expect(reloads).toBe(1);
+    });
   });
 
   it("reuses only an API that proves the deterministic local test profile", async () => {
