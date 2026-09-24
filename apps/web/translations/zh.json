@@ -20147,5 +20147,18 @@
   },
   "connectorsAppReturn": {
     "done": "完成。返回 Kortix 应用"
+  },
+  "ssoDomainVerification": {
+    "title": "域名验证",
+    "verified": "已验证",
+    "unverified": "未验证",
+    "verifiedDescription": "您的身份提供商在 {domain} 上受信任。强制 SSO 适用于此域名。",
+    "unverifiedDescription": "添加此 DNS TXT 记录以证明您控制 {domain}。在此之前，SSO 登录仅在此账户内有效，强制 SSO 不生效。",
+    "recordName": "名称",
+    "recordValue": "值",
+    "verify": "验证域名",
+    "verifiedToast": "域名已验证",
+    "failedToast": "域名尚未验证",
+    "enforceNeedsVerification": "请先验证域名。强制 SSO 仅适用于已验证的域名。"
   }
 }

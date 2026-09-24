@@ -20147,5 +20147,18 @@
   },
   "connectorsAppReturn": {
     "done": "Listo. Volver a la app de Kortix"
+  },
+  "ssoDomainVerification": {
+    "title": "Verificación del dominio",
+    "verified": "Verificado",
+    "unverified": "No verificado",
+    "verifiedDescription": "Tu proveedor de identidad es de confianza para {domain}. Exigir SSO se aplica a este dominio.",
+    "unverifiedDescription": "Añade este registro DNS TXT para demostrar que controlas {domain}. Hasta entonces, el inicio de sesión con SSO solo funciona dentro de esta cuenta y exigir SSO no tiene efecto.",
+    "recordName": "Nombre",
+    "recordValue": "Valor",
+    "verify": "Verificar dominio",
+    "verifiedToast": "Dominio verificado",
+    "failedToast": "El dominio aún no está verificado",
+    "enforceNeedsVerification": "Verifica primero el dominio. Exigir SSO solo se aplica a un dominio verificado."
   }
 }

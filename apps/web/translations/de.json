@@ -20147,5 +20147,18 @@
   },
   "connectorsAppReturn": {
     "done": "Fertig. Zurück zur Kortix-App"
+  },
+  "ssoDomainVerification": {
+    "title": "Domain-Verifizierung",
+    "verified": "Verifiziert",
+    "unverified": "Nicht verifiziert",
+    "verifiedDescription": "Ihrem Identitätsanbieter wird für {domain} vertraut. Die SSO-Pflicht gilt für diese Domain.",
+    "unverifiedDescription": "Fügen Sie diesen DNS-TXT-Eintrag hinzu, um nachzuweisen, dass Sie {domain} kontrollieren. Bis dahin funktioniert die SSO-Anmeldung nur innerhalb dieses Kontos, und die SSO-Pflicht hat keine Wirkung.",
+    "recordName": "Name",
+    "recordValue": "Wert",
+    "verify": "Domain verifizieren",
+    "verifiedToast": "Domain verifiziert",
+    "failedToast": "Domain noch nicht verifiziert",
+    "enforceNeedsVerification": "Verifizieren Sie zuerst die Domain. Die SSO-Pflicht gilt nur für eine verifizierte Domain."
   }
 }

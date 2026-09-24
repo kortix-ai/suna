@@ -20147,5 +20147,18 @@
   },
   "connectorsAppReturn": {
     "done": "Gotovo. Nazad u Kortix aplikaciju"
+  },
+  "ssoDomainVerification": {
+    "title": "Верификација домена",
+    "verified": "Верификовано",
+    "unverified": "Није верификовано",
+    "verifiedDescription": "Вашем добављачу идентитета се верује за {domain}. Обавезни SSO важи за овај домен.",
+    "unverifiedDescription": "Додајте овај DNS TXT запис да докажете да контролишете {domain}. До тада SSO пријава ради само унутар овог налога, а обавезни SSO нема ефекта.",
+    "recordName": "Назив",
+    "recordValue": "Вредност",
+    "verify": "Верификуј домен",
+    "verifiedToast": "Домен је верификован",
+    "failedToast": "Домен још није верификован",
+    "enforceNeedsVerification": "Прво верификујте домен. Обавезни SSO важи само за верификовани домен."
   }
 }
