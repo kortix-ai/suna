@@ -103,20 +103,10 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && (command -v fd >/dev/null || ln -s "$(command -v fdfind)" /usr/local/bin/fd) && (command -v bat >/dev/null || ln -s "$(command -v batcat)" /usr/local/bin/bat) && rg --version >/dev/null && fd --version >/dev/null && bat --version >/dev/null && jq --version >/dev/null && fzf --version >/dev/null
 
-RUN useradd --create-home --shell /bin/bash --user-group kortix \
-    && echo 'kortix ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kortix \
-    && chmod 0440 /etc/sudoers.d/kortix \
-    && mkdir -p /workspace /opt/kortix /opt/pw-browsers /ephemeral/kortix-master/opencode \
-        /home/kortix/.local/bin /home/kortix/.local/share/pnpm/bin /home/kortix/.bun/bin \
-    && chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /ephemeral /home/kortix
-
-ENV PNPM_HOME=/home/kortix/.local/share/pnpm \
-    PATH=/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:/home/kortix/.bun/bin:$PATH
-USER kortix
-
 COPY packages/shared/src/runtime-versions.json /tmp/kortix-runtime-versions.json
 # rclone mounts kortix.yaml `volumes` (kortixd src/volumes.ts). Pinned release
 # artifact: apt's v1.60 predates the VFS write-back behavior the daemon relies on.
+# Installed as root, before USER kortix, with no pipes (hadolint DL3004/DL4006).
 RUN RCLONE_VERSION="$(sed -n 's/.*"rclone": "\([^"]*\)".*/\1/p' /tmp/kortix-runtime-versions.json)" \
     && RCLONE_SHA256_AMD64="$(sed -n 's/.*"rcloneSha256Amd64": "\([^"]*\)".*/\1/p' /tmp/kortix-runtime-versions.json)" \
     && RCLONE_SHA256_ARM64="$(sed -n 's/.*"rcloneSha256Arm64": "\([^"]*\)".*/\1/p' /tmp/kortix-runtime-versions.json)" \
@@ -128,11 +118,26 @@ RUN RCLONE_VERSION="$(sed -n 's/.*"rclone": "\([^"]*\)".*/\1/p' /tmp/kortix-runt
        esac \
     && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/rclone.zip \
          "https://github.com/rclone/rclone/releases/download/v${RCLONE_VERSION}/rclone-v${RCLONE_VERSION}-linux-${rclone_arch}.zip" \
-    && echo "${rclone_sha}  /tmp/rclone.zip" | sha256sum -c - \
+    && printf '%s  %s\n' "$rclone_sha" /tmp/rclone.zip > /tmp/rclone.zip.sha256 \
+    && sha256sum -c /tmp/rclone.zip.sha256 \
     && unzip -q /tmp/rclone.zip -d /tmp/rclone \
-    && sudo install -m 0755 "/tmp/rclone/rclone-v${RCLONE_VERSION}-linux-${rclone_arch}/rclone" /usr/local/bin/rclone \
-    && rm -rf /tmp/rclone /tmp/rclone.zip \
-    && rclone version | head -n 1 | grep -qx "rclone v${RCLONE_VERSION}"
+    && install -m 0755 "/tmp/rclone/rclone-v${RCLONE_VERSION}-linux-${rclone_arch}/rclone" /usr/local/bin/rclone \
+    && rm -rf /tmp/rclone /tmp/rclone.zip /tmp/rclone.zip.sha256 \
+    && rclone version > /tmp/rclone-version.txt \
+    && grep -qx "rclone v${RCLONE_VERSION}" /tmp/rclone-version.txt \
+    && rm -f /tmp/rclone-version.txt
+
+RUN useradd --create-home --shell /bin/bash --user-group kortix \
+    && echo 'kortix ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kortix \
+    && chmod 0440 /etc/sudoers.d/kortix \
+    && mkdir -p /workspace /opt/kortix /opt/pw-browsers /ephemeral/kortix-master/opencode \
+        /home/kortix/.local/bin /home/kortix/.local/share/pnpm/bin /home/kortix/.bun/bin \
+    && chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /ephemeral /home/kortix
+
+ENV PNPM_HOME=/home/kortix/.local/share/pnpm \
+    PATH=/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:/home/kortix/.bun/bin:$PATH
+USER kortix
+
 RUN UV_VERSION="$(sed -n 's/.*"uv": "\([^"]*\)".*/\1/p' /tmp/kortix-runtime-versions.json)" \
     && PYTHON_VERSION="$(sed -n 's/.*"python": "\([^"]*\)".*/\1/p' /tmp/kortix-runtime-versions.json)" \
     && UV_SHA256_AMD64="$(sed -n 's/.*"uvSha256Amd64": "\([^"]*\)".*/\1/p' /tmp/kortix-runtime-versions.json)" \
