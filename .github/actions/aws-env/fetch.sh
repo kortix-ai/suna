@@ -5,8 +5,8 @@
 # Input (environment):
 #   AWS_ENV_KEYS    one key per line: NAME | NAME=blob:KEY, optional trailing `?`
 #   AWS_ENV_REGION  Secrets Manager region
-#   AWS_ENV_ACCESS_KEY_ID / _SECRET_ACCESS_KEY / _SESSION_TOKEN
-#                   credentials from the OIDC step; empty = use the job's own
+#   AWS_ENV_ROLE    role to assume via GitHub OIDC; empty = use the job's own
+#                   credentials
 #   GITHUB_ENV      file the runner reads exported variables from
 #
 # Output: one `NAME <- blob:KEY (N chars)` line per exported key. It never
@@ -18,12 +18,39 @@ DEFAULT_BLOB="kortix-ci-env"
 : "${AWS_ENV_REGION:=us-west-2}"
 : "${GITHUB_ENV:?GITHUB_ENV is not set}"
 
-if [ -n "${AWS_ENV_ACCESS_KEY_ID:-}" ]; then
-  export AWS_ACCESS_KEY_ID="$AWS_ENV_ACCESS_KEY_ID"
-  export AWS_SECRET_ACCESS_KEY="$AWS_ENV_SECRET_ACCESS_KEY"
-  export AWS_SESSION_TOKEN="${AWS_ENV_SESSION_TOKEN:-}"
+# Workflow-command data unescapes %25, so a literal % must be sent as %25.
+mask() { printf '::add-mask::%s\n' "$(printf '%s' "$1" | sed 's/%/%25/g')"; }
+
+# AWS_ENV_ROLE set: exchange the GitHub OIDC token for that role's credentials.
+# They exist only in this process; the job's own credentials are untouched.
+# AWS_ENV_ROLE empty: use the credentials already in the job.
+if [ -n "${AWS_ENV_ROLE:-}" ]; then
+  if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]; then
+    echo "::error::aws-env: this job cannot mint a GitHub OIDC token. Add 'permissions: id-token: write' to the job."
+    exit 1
+  fi
+  oidc="$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+    "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" | jq -r '.value // empty')"
+  if [ -z "$oidc" ]; then
+    echo "::error::aws-env: GitHub returned no OIDC token"
+    exit 1
+  fi
+  mask "$oidc"
+  creds="$(env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN -u AWS_PROFILE \
+    aws sts assume-role-with-web-identity --region "$AWS_ENV_REGION" \
+    --role-arn "$AWS_ENV_ROLE" --role-session-name "gha-aws-env-${GITHUB_RUN_ID:-local}" \
+    --web-identity-token "$oidc" --duration-seconds 900 \
+    --query Credentials --output json)"
+  unset oidc
+  AWS_ACCESS_KEY_ID="$(jq -r .AccessKeyId <<<"$creds")"
+  AWS_SECRET_ACCESS_KEY="$(jq -r .SecretAccessKey <<<"$creds")"
+  AWS_SESSION_TOKEN="$(jq -r .SessionToken <<<"$creds")"
+  unset creds
+  mask "$AWS_SECRET_ACCESS_KEY"
+  mask "$AWS_SESSION_TOKEN"
+  export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+  unset AWS_PROFILE
 fi
-unset AWS_ENV_ACCESS_KEY_ID AWS_ENV_SECRET_ACCESS_KEY AWS_ENV_SESSION_TOKEN
 
 # Callers check this action out into .aws-env at the workflow's own commit.
 # The checkout must stay until the job ends: the runner executes the POST step
@@ -88,8 +115,6 @@ done <"$work/blobs"
 random_hex() { od -An -N16 -tx1 /dev/urandom | tr -d ' \n'; }
 # Windows jq writes CRLF; elsewhere a value passes through byte for byte.
 strip_cr() { if [ "${RUNNER_OS:-}" = Windows ]; then tr -d '\r'; else cat; fi; }
-# Workflow-command data unescapes %25, so a literal % must be sent as %25.
-mask() { printf '::add-mask::%s\n' "$(printf '%s' "$1" | sed 's/%/%25/g')"; }
 
 while IFS="$(printf '\t')" read -r name blob key optional; do
   file="$(blob_file "$blob")"

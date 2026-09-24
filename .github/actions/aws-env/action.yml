@@ -47,23 +47,14 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Assume the secrets-read role
-      id: creds
-      if: inputs.role-to-assume != ''
-      uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
-      with:
-        role-to-assume: ${{ inputs.role-to-assume }}
-        aws-region: ${{ inputs.aws-region }}
-        role-session-name: gha-aws-env-${{ github.run_id }}
-        output-credentials: true
-        output-env-credentials: false
-
+    # One bash step and no nested action: a nested action's POST step would run
+    # from the .aws-env checkout at job end, after the job's own checkout has
+    # cleaned it away. fetch.sh exchanges the GitHub OIDC token for the role
+    # credentials itself; they live only inside that process.
     - name: Read and export the keys
       shell: bash
       env:
         AWS_ENV_KEYS: ${{ inputs.keys }}
         AWS_ENV_REGION: ${{ inputs.aws-region }}
-        AWS_ENV_ACCESS_KEY_ID: ${{ steps.creds.outputs.aws-access-key-id }}
-        AWS_ENV_SECRET_ACCESS_KEY: ${{ steps.creds.outputs.aws-secret-access-key }}
-        AWS_ENV_SESSION_TOKEN: ${{ steps.creds.outputs.aws-session-token }}
+        AWS_ENV_ROLE: ${{ inputs.role-to-assume }}
       run: bash "$GITHUB_ACTION_PATH/fetch.sh"

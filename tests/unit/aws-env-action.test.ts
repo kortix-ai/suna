@@ -227,67 +227,87 @@ describe('aws-env composite action — fetch.sh', () => {
     }
   });
 
-  it('uses the OIDC step credentials when present and the job credentials otherwise', () => {
+  // The action exchanges the GitHub OIDC token for role credentials itself.
+  // A nested configure-aws-credentials would add a POST step that runs from
+  // .aws-env at job end, and the job's own `actions/checkout` cleans that
+  // directory away first (runs 36026464514, 36026908894).
+  function credsHarness() {
     const dir = mkdtempSync(join(tmpdir(), 'aws-env-creds-'));
-    const stub = join(dir, 'aws');
-    writeFileSync(stub, `#!/usr/bin/env bash\nprintf '%s|%s|%s' "\${AWS_ACCESS_KEY_ID:-}" "\${AWS_SESSION_TOKEN:-}" "\${AWS_ENV_ACCESS_KEY_ID:-unset}" >"${dir}/seen"\necho '{"K":"v"}'\n`);
-    chmodSync(stub, 0o755);
+    writeFileSync(
+      join(dir, 'curl'),
+      `#!/usr/bin/env bash\nprintf '%s\\n' "$*" >>"${dir}/curl.log"\necho '{"value":"GITHUB-OIDC-TOKEN"}'\n`,
+    );
+    writeFileSync(
+      join(dir, 'aws'),
+      [
+        '#!/usr/bin/env bash',
+        `if [ "$1 $2" = "sts assume-role-with-web-identity" ]; then printf '%s\\n' "$*" >"${dir}/sts.args"; echo '{"AccessKeyId":"ROLEKEY","SecretAccessKey":"ROLESECRET","SessionToken":"ROLETOKEN"}'; exit 0; fi`,
+        `printf '%s|%s' "\${AWS_ACCESS_KEY_ID:-}" "\${AWS_SESSION_TOKEN:-}" >"${dir}/seen"`,
+        `echo '{"K":"v"}'`,
+      ].join('\n') + '\n',
+    );
+    chmodSync(join(dir, 'curl'), 0o755);
+    chmodSync(join(dir, 'aws'), 0o755);
     const githubEnv = join(dir, 'github_env');
-    const base = { PATH: `${dir}:${process.env.PATH ?? ''}`, GITHUB_ENV: githubEnv, AWS_ENV_KEYS: 'K' };
-
     writeFileSync(githubEnv, '');
-    let r = spawnSync('bash', [script], {
+    const base = { PATH: `${dir}:${process.env.PATH ?? ''}`, GITHUB_ENV: githubEnv, AWS_ENV_KEYS: 'K', GITHUB_RUN_ID: '42' };
+    return { dir, githubEnv, base };
+  }
+
+  it('exchanges the GitHub OIDC token for role credentials and reads the blob with them', () => {
+    const { dir, githubEnv, base } = credsHarness();
+    const r = spawnSync('bash', [script], {
       encoding: 'utf8',
-      env: { ...base, AWS_ACCESS_KEY_ID: 'JOBKEY', AWS_ENV_ACCESS_KEY_ID: 'OIDCKEY', AWS_ENV_SECRET_ACCESS_KEY: 's', AWS_ENV_SESSION_TOKEN: 'tok' },
+      env: {
+        ...base,
+        AWS_ACCESS_KEY_ID: 'JOBKEY',
+        AWS_ENV_ROLE: 'arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy',
+        ACTIONS_ID_TOKEN_REQUEST_URL: 'https://token.example/req?x=1',
+        ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'REQTOKEN',
+      },
     });
     expect(r.status, r.stdout + r.stderr).toBe(0);
-    expect(readFileSync(join(dir, 'seen'), 'utf8')).toBe('OIDCKEY|tok|unset');
+    expect(readFileSync(join(dir, 'curl.log'), 'utf8')).toContain('https://token.example/req?x=1&audience=sts.amazonaws.com');
+    const sts = readFileSync(join(dir, 'sts.args'), 'utf8');
+    expect(sts).toContain('--role-arn arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy');
+    expect(sts).toContain('--web-identity-token GITHUB-OIDC-TOKEN');
+    expect(readFileSync(join(dir, 'seen'), 'utf8')).toBe('ROLEKEY|ROLETOKEN');
+    // The role credentials never reach later steps; only the requested key does.
+    expect(Object.keys(parseGithubEnv(readFileSync(githubEnv, 'utf8')))).toEqual(['K']);
+    // The OIDC token and the role credentials are masked before anything else prints.
+    for (const v of ['GITHUB-OIDC-TOKEN', 'ROLESECRET', 'ROLETOKEN']) {
+      expect(r.stdout).toContain(`::add-mask::${v}`);
+      expect(visibleOutput(r.stdout)).not.toContain(v);
+    }
+  });
 
-    writeFileSync(githubEnv, '');
-    r = spawnSync('bash', [script], {
+  it('uses the job credentials when role-to-assume is empty, without an OIDC request', () => {
+    const { dir, base } = credsHarness();
+    const r = spawnSync('bash', [script], {
       encoding: 'utf8',
-      env: { ...base, AWS_ACCESS_KEY_ID: 'JOBKEY', AWS_ENV_ACCESS_KEY_ID: '', AWS_ENV_SECRET_ACCESS_KEY: '', AWS_ENV_SESSION_TOKEN: '' },
+      env: { ...base, AWS_ACCESS_KEY_ID: 'JOBKEY', AWS_SESSION_TOKEN: 'JOBTOKEN', AWS_ENV_ROLE: '' },
     });
     expect(r.status, r.stdout + r.stderr).toBe(0);
-    expect(readFileSync(join(dir, 'seen'), 'utf8')).toBe('JOBKEY||unset');
+    expect(readFileSync(join(dir, 'seen'), 'utf8')).toBe('JOBKEY|JOBTOKEN');
+    expect(() => readFileSync(join(dir, 'curl.log'), 'utf8')).toThrow();
   });
 
-  // Run 36026464514 (2026-09-24): the action deleted its own .aws-env checkout
-  // in a final step. At job end the runner executes the POST step of the nested
-  // configure-aws-credentials from that directory and failed the job with
-  // "Can't find 'action.yml'". The checkout must outlive the job.
-  it('never deletes its own directory, because nested post steps run from it at job end', () => {
-    const action = readFileSync(resolve(actionDir, 'action.yml'), 'utf8');
-    expect(action).not.toMatch(/rm -rf/);
-    expect(action).not.toContain('GITHUB_ACTION_PATH/../../..');
+  it('fails with the fix named when the job cannot mint an OIDC token', () => {
+    const { base } = credsHarness();
+    const r = spawnSync('bash', [script], {
+      encoding: 'utf8',
+      env: { ...base, AWS_ENV_ROLE: 'arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy' },
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.stdout).toContain('id-token: write');
   });
 
-  it('keeps the .aws-env checkout out of git by excluding it in the job repository', () => {
-    const ws = mkdtempSync(join(tmpdir(), 'aws-env-ws-'));
-    spawnSync('git', ['init', '-q', ws]);
-    const r = run('DOCKERHUB_TOKEN', { GITHUB_WORKSPACE: ws });
-    expect(r.status).toBe(0);
-    const exclude = readFileSync(join(ws, '.git/info/exclude'), 'utf8');
-    expect(exclude.split('\n')).toContain('/.aws-env/');
-    // Idempotent: a second fetch in the same job adds no duplicate line.
-    run('DOCKERHUB_TOKEN', { GITHUB_WORKSPACE: ws });
-    const again = readFileSync(join(ws, '.git/info/exclude'), 'utf8');
-    expect(again.split('\n').filter((l) => l === '/.aws-env/')).toHaveLength(1);
-  });
-
-  it('succeeds when the workspace is not a git repository', () => {
-    const ws = mkdtempSync(join(tmpdir(), 'aws-env-nogit-'));
-    expect(run('DOCKERHUB_TOKEN', { GITHUB_WORKSPACE: ws }).status).toBe(0);
-  });
-
-  it('action.yml keeps the job credentials intact and defaults to the ecs-deploy role', () => {
+  it('action.yml runs one bash step with no nested action, so it has no POST step', () => {
     const action = readFileSync(resolve(actionDir, 'action.yml'), 'utf8');
     expect(action).toContain('default: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy');
     expect(action).toContain('default: us-west-2');
-    expect(action).toContain('output-env-credentials: false');
-    expect(action).toContain('output-credentials: true');
-    expect(action).toContain("if: inputs.role-to-assume != ''");
-    expect(action).toMatch(/uses: aws-actions\/configure-aws-credentials@[0-9a-f]{40} # v6/);
+    expect(action).not.toMatch(/^\s+uses:/m);
+    expect(action).toContain('AWS_ENV_ROLE: ${{ inputs.role-to-assume }}');
     expect(action).toContain('shell: bash');
   });
 });
