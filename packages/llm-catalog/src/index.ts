@@ -446,9 +446,13 @@ export const CATALOG_PROVIDER_ENV = providerEnvJson as ReadonlyArray<{ id: strin
 export interface ManagedModel {
   id: string;
   name: string;
-  // OpenAI-compatible upstream model ID.
+  // OpenRouter model ID. OpenRouter is the fallback upstream when
+  // `morphModelId` is set, and the only upstream otherwise.
   upstreamModelId: string;
   transport: 'openrouter';
+  // Morph model ID. When set, Morph's OpenAI-compatible API is the primary
+  // upstream and `pricing` holds Morph's list prices.
+  morphModelId?: string;
   // Omit this to keep the model grouped under Kortix in the picker.
   providerBrand?: string;
   // Catalog lookup hint. Managed pricing below is the routing authority.
@@ -472,7 +476,7 @@ export interface ManagedModel {
   vision: boolean;
   // A conservative OpenCode output ceiling inside the upstream context window.
   limit: { context: number; output: number };
-  // OpenRouter endpoint pin and privacy constraints.
+  // OpenRouter provider routing: the allowed endpoint pool and privacy constraints.
   openrouterProvider?: Record<string, unknown>;
 }
 
@@ -496,32 +500,54 @@ export function pricingRefLookupCandidates(pricingRef: string): string[] {
   return candidates;
 }
 
-// Managed IDs are bare gateway model IDs. OpenCode uses `kortix/<id>` so the
-// picker shows Kortix while the gateway routes through ZDR OpenRouter endpoints.
+// Managed IDs are bare gateway model IDs. OpenCode uses `kortix/<id>`, so the
+// picker shows Kortix whichever upstream serves the request.
+//
+// Morph direct is the primary upstream. When a Morph dispatch fails (HTTP error
+// or network error before output), the gateway sends the same request to the
+// OpenRouter pool. Each pool lists only endpoints that, on 2026-09-24, were in
+// OpenRouter's ZDR feed, had a CONFIRMED US datacenter (US headquarters plus US
+// datacenters in /api/v1/providers, or a `/us` endpoint tag), and answered pinned
+// text and image probes. US headquarters alone does not qualify. `allow_fallbacks: true` lets OpenRouter move between pool members;
+// `only` keeps it inside the pool. `max_price` (USD per 1M tokens) excludes premium
+// tiers. packages/llm-catalog/README.md records the probe results.
 // Vision is explicit per model so the picker and runtime reject image input for text-only models.
+const OPENROUTER_POOL_PRIVACY = { allow_fallbacks: true, zdr: true, data_collection: 'deny' } as const;
+
 export const MANAGED_MODELS: ManagedModel[] = [
   {
     id: 'deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', upstreamModelId: 'deepseek/deepseek-v4.1-flash',
-    transport: 'openrouter', pricingRef: 'openrouter/deepseek/deepseek-v4.1-flash',
-    pricing: { inputPerMillion: 0.2, cachedInputPerMillion: 0.006, outputPerMillion: 0.6 },
+    transport: 'openrouter', morphModelId: 'morph-dsv41flash', pricingRef: 'openrouter/deepseek/deepseek-v4.1-flash',
+    // Morph publishes no DeepSeek V4.1 Flash cached rate; this is its DeepSeek V4 Flash rate.
+    pricing: { inputPerMillion: 0.15, cachedInputPerMillion: 0.0359375, outputPerMillion: 0.6 },
     tier: 'balanced', vision: true, limit: { context: 1_048_576, output: 16_384 },
-    openrouterProvider: { only: ['deepinfra/fp8'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
+    openrouterProvider: {
+      only: ['morph', 'coreweave/fp8'],
+      ...OPENROUTER_POOL_PRIVACY,
+      max_price: { prompt: 0.3, completion: 1.2 },
+    },
   },
   {
     id: 'glm-5.3-flash', name: 'GLM 5.3 Flash', upstreamModelId: 'z-ai/glm-5.3-flash',
-    transport: 'openrouter', pricingRef: 'openrouter/z-ai/glm-5.3-flash',
-    pricing: { inputPerMillion: 0.15, cachedInputPerMillion: 0.05, outputPerMillion: 0.5 },
+    transport: 'openrouter', morphModelId: 'morph-glm53flash', pricingRef: 'openrouter/z-ai/glm-5.3-flash',
+    pricing: { inputPerMillion: 0.1, cachedInputPerMillion: 0.02, outputPerMillion: 0.35 },
     tier: 'fast', vision: true, limit: { context: 1_048_576, output: 16_384 },
     openrouterProvider: {
-      only: ['coreweave/nvfp4'], allow_fallbacks: false, zdr: true, data_collection: 'deny',
+      only: ['morph', 'decart/fp4', 'coreweave/nvfp4', 'sail-research/us'],
+      ...OPENROUTER_POOL_PRIVACY,
+      max_price: { prompt: 0.15, completion: 0.5 },
     },
   },
   {
     id: 'kimi-k3', name: 'Kimi K3 2.8T', upstreamModelId: 'moonshotai/kimi-k3',
-    transport: 'openrouter', pricingRef: 'openrouter/moonshotai/kimi-k3',
-    pricing: { inputPerMillion: 2.5, cachedInputPerMillion: 0.25, outputPerMillion: 10.95 },
+    transport: 'openrouter', morphModelId: 'morph-kimik3', pricingRef: 'openrouter/moonshotai/kimi-k3',
+    pricing: { inputPerMillion: 2.5, cachedInputPerMillion: 0.29, outputPerMillion: 14 },
     tier: 'flagship', vision: true, limit: { context: 1_048_576, output: 16_384 },
-    openrouterProvider: { only: ['wafer'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
+    openrouterProvider: {
+      only: ['morph', 'fireworks/us'],
+      ...OPENROUTER_POOL_PRIVACY,
+      max_price: { prompt: 3.3, completion: 16.5 },
+    },
   },
 ];
 

@@ -64,19 +64,36 @@ describe('runtime managed model registry', () => {
       .toMatchObject([text, { ...text, id: 'other-text' }]);
   });
 
-  test('rejects an unpinned or fallback-enabled operator route', () => {
+  test('accepts a Morph primary with a ZDR OpenRouter pool', () => {
+    const pooled = {
+      id: 'pooled', name: 'Pooled', upstreamModelId: 'z-ai/glm-5.3-flash',
+      transport: 'openrouter', morphModelId: 'morph-glm53flash', pricingRef: 'openrouter/z-ai/glm-5.3-flash',
+      tier: 'fast', vision: true, limit: { context: 1_000, output: 100 },
+      openrouterProvider: {
+        only: ['morph', 'wafer'], allow_fallbacks: true, zdr: true, data_collection: 'deny',
+        max_price: { prompt: 0.15, completion: 0.5 },
+      },
+    };
+    expect(parseManagedModels(JSON.stringify([pooled]))).toMatchObject([pooled]);
+  });
+
+  test('rejects an unrestricted, non-ZDR, or data-collecting operator route', () => {
     const model = {
       id: 'unsafe', name: 'Unsafe', upstreamModelId: 'z-ai/glm-5.3-flash',
       transport: 'openrouter', pricingRef: 'openrouter/z-ai/glm-5.3-flash',
       tier: 'fast', vision: true, limit: { context: 1_000, output: 100 },
     };
+    const route = { only: ['coreweave/nvfp4'], allow_fallbacks: true, zdr: true, data_collection: 'deny' };
     expect(() => parseManagedModels(JSON.stringify([model]))).toThrow();
-    expect(() => parseManagedModels(JSON.stringify([{
-      ...model,
-      openrouterProvider: {
-        only: ['coreweave/nvfp4'], allow_fallbacks: true, zdr: true, data_collection: 'deny',
-      },
-    }]))).toThrow();
+    for (const unsafe of [
+      { ...route, only: [] },
+      { allow_fallbacks: true, zdr: true, data_collection: 'deny' },
+      { ...route, zdr: false },
+      { ...route, data_collection: 'allow' },
+    ]) {
+      expect(() => parseManagedModels(JSON.stringify([{ ...model, openrouterProvider: unsafe }]))).toThrow();
+    }
+    expect(() => parseManagedModels(JSON.stringify([{ ...model, morphModelId: '', openrouterProvider: route }]))).toThrow();
   });
 
   test('rejects an unknown managed transport', () => {

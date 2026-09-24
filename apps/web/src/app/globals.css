@@ -1286,6 +1286,15 @@ html[data-desktop-platform='macos'] .kx-desktop-drag {
   height: 100%;
   width: 100%;
 }
+/* A page without a titlebar owner (auth, `/projects`, `/new`, onboarding)
+   has no row in the band, so the 6px strip was its only drag area. Grow the
+   strip to the full band there. `DesktopChrome` renders first in the root
+   layout, so every later control (Back, Log out, Close) still subtracts its
+   own rect and stays clickable. Pages with an owner keep the 6px strip: the
+   owner's rows carry the band. */
+html[data-desktop-platform='macos'] body:not(:has([data-kx-titlebar-owner])) .kx-desktop-chrome {
+  height: max(6px, var(--kx-titlebar-inset));
+}
 /* Drag region: the chrome strip covers the title-bar zone. On macOS the
    first 80px is the OS traffic-light area; rest is freely draggable. */
 
@@ -1476,6 +1485,87 @@ html[data-desktop='true'] .kx-titlebar-spacer {
    `.kx-titlebar-spacer` as its first child instead, which also covers the
    narrow-window nav variant the old left-only indent never did.) */
 
+/* ─── Which controls may cut holes in a drag region ──────────────────────
+   Chromium 142 collects app regions in DOM order from each box's UNCLIPPED
+   absolute rect (LocalFrameView::CollectDraggableRegions). Electron then
+   unions `drag` rects and subtracts `no-drag` rects in that order. Stacking
+   order, overflow clipping, and scroll position are all ignored.
+
+   The shell injects `no-drag` on every control in the page
+   (apps/desktop-electron/src/window-chrome.js). A transcript link or copy
+   button scrolled up under the session header therefore still subtracts
+   its rect from the header. The drag points move as the content scrolls,
+   and the window "sometimes" drags. Reset that rule here, so the installed
+   shell is fixed as well.
+
+   Only controls a user can actually see in the band keep `no-drag`: those
+   inside a drag owner, and those inside a portalled overlay (dialogs, menus,
+   popovers, toasts), which sits above every drag owner. Controls that carry
+   their own `app-region:no-drag` utility (the shell's sidebar opener, Back)
+   keep it. Unlayered, so it beats the layered utilities and the injected
+   rule alike.
+
+   The reset MUST be `initial`. Blink maps every explicit keyword other than
+   `drag`, including `none`, to no-drag (AppRegion::ApplyValue). Only
+   `initial` keeps the element out of the region list.
+
+   The reset applies only under a titlebar owner, whose opaque rows hide the
+   content scrolled beneath them. Pages without one (auth, `/projects`,
+   `/new`) get the transparent root band below instead. Content under it is
+   visible, so the shell's rule must keep every control there clickable.
+   `:where()` keeps the specificity of the owner rule below unchanged. */
+html[data-desktop-platform='macos']
+  :where(body:has([data-kx-titlebar-owner]))
+  :is(
+    button, a, input, textarea, select, option, label, summary, video, audio, iframe,
+    [role='button'], [role='tab'], [role='link'], [role='menuitem'], [role='textbox'],
+    [contenteditable], [data-no-drag]
+  ) {
+  -webkit-app-region: initial;
+  app-region: initial;
+}
+html[data-desktop-platform='macos']
+  :is(
+    .kx-titlebar-row, .kx-titlebar-tabs, .kx-app-header, .kx-project-sidebar-header,
+    [role='dialog'], [role='alertdialog'], [role='menu'], [role='listbox'],
+    [data-radix-popper-content-wrapper], [data-sonner-toaster]
+  )
+  :is(
+    button, a, input, textarea, select, option, label, summary, video, audio, iframe,
+    [role='button'], [role='tab'], [role='link'], [role='menuitem'], [role='textbox'],
+    [contenteditable], [data-no-drag]
+  ),
+html[data-desktop-platform='macos'] [class*='app-region:no-drag'] {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* Headerless project views (Home, the Sessions inventory, a session before
+   its header mounts) start with content, not a titlebar row. The shell gives
+   them the same drag band. Views that render a `.kx-titlebar-row` own the
+   band and its no-drag controls, so the fallback steps aside for them. */
+.kx-project-shell-drag-region {
+  display: none;
+}
+html[data-desktop-platform='macos'] .kx-project-shell-drag-region {
+  position: absolute;
+  z-index: 10;
+  top: 0;
+  right: 0;
+  left: 0;
+  display: block;
+  height: var(--kx-titlebar-inset);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+html[data-desktop-platform='macos']
+  [data-kx-titlebar-owner]:has(.kx-titlebar-row)
+  > .kx-project-shell-drag-region {
+  display: none;
+}
+
 /* ─── Rows that reach the top of the window ──────────────────────────────
    A row rendered as the first in-flow child of the project shell starts at
    y=0, so it shares the band with the native macOS traffic lights. Win/Linux
@@ -1498,16 +1588,12 @@ html[data-desktop='true'] .kx-titlebar-row {
 html[data-desktop='true'] .kx-titlebar-row[data-sidebar-collapsed] {
   padding-left: var(--kx-titlebar-content-left);
 }
+/* Keep collapsed capability rows draggable. The fixed shell opener paints
+   above page headers and has its own no-drag region; disabling the entire row
+   removes the only usable drag area between its tabs. */
 html[data-desktop-platform='macos'] .kx-titlebar-row {
   -webkit-app-region: drag;
   app-region: drag;
-}
-/* The shell's fixed sidebar opener overlaps this row's left padding when the
-   sidebar is closed. A drag rectangle there consumes its click in Electron.
-   Keep the tab controls and the native-light clearance, but release that row. */
-html[data-desktop-platform='macos'] .kx-capability-titlebar[data-sidebar-collapsed] {
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
 }
 html[data-desktop-platform='macos'] .kx-titlebar-band-height {
   height: var(--kx-titlebar-inset);
@@ -1569,12 +1655,6 @@ html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar .kx-settings-mo
 @media (max-width: 767px) {
   html[data-desktop='true'] .kx-titlebar-row {
     padding-left: var(--kx-titlebar-content-left);
-  }
-  /* A mobile sheet can be closed while the desktop sidebar cookie still says
-     expanded. The shell opener is visible in that state as well. */
-  html[data-desktop-platform='macos'] .kx-capability-titlebar {
-    -webkit-app-region: no-drag;
-    app-region: no-drag;
   }
 }
 

@@ -17,14 +17,14 @@ describe('gatewayModelCatalog — served catalog', () => {
       tool_call: true,
       temperature: true,
       limit: { context: 1_048_576, output: 16_384 },
-      cost: { input: 0.2, output: 0.6, cache_read: 0.006 },
+      cost: { input: 0.15, output: 0.6, cache_read: 0.0359375 },
     });
   });
 
   test('serves Kimi K3 with image input', () => {
     expect(full['kimi-k3']).toMatchObject({
       provider: 'kortix', attachment: true, tool_call: true,
-      cost: { input: 2.5, output: 10.95, cache_read: 0.25 },
+      cost: { input: 2.5, output: 14, cache_read: 0.29 },
     });
     expect(full['deepseek-v4-flash-0731']).toBeUndefined();
     expect(full['kimi-k3-fast']).toBeUndefined();
@@ -34,11 +34,11 @@ describe('gatewayModelCatalog — served catalog', () => {
     expect(full['deepseek-v4.1-flash']?.provider).toBe('kortix');
   });
 
-  test('serves the CoreWeave GLM 5.3 Flash price and vision capability', () => {
+  test('serves the Morph GLM 5.3 Flash price and vision capability', () => {
     expect(full['glm-5.3-flash']?.cost).toEqual({
-      input: 0.15,
-      output: 0.5,
-      cache_read: 0.05,
+      input: 0.1,
+      output: 0.35,
+      cache_read: 0.02,
     });
     expect(full['glm-5.3-flash']).toMatchObject({ provider: 'kortix', attachment: true });
   });
