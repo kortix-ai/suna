@@ -155,6 +155,14 @@ sequenceDiagram
 
 ## Configuration
 
+The S3 client, credentials, signing, presigning and publish-once semantics live
+in ONE module, `apps/api/src/object-store/s3.ts` (`ObjectStore`).
+`git-proxy/project-snapshot-store.ts` owns only the snapshot layout and the
+settings below; `config-releases/store.ts` is the other target of the same
+module and reads its own `KORTIX_CONFIG_ARCHIVE_S3_*` block
+(docs/specs/config-releases.md#store). Naming a config archive bucket does NOT
+start the snapshot producer, and vice versa.
+
 API (`apps/api/.env*` via dotenvx, or the deployment's secret blob):
 
 | Variable | Meaning |
