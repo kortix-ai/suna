@@ -52,21 +52,10 @@ triggers a run at once. A failed run waits 30 minutes. A new mode runs at once.
 | `clean` | Steps 1, 2, and 4. |
 | `migrate` | Steps 1–4. |
 
-A deployed API reads its environment from the AWS Secrets Manager blob
-`kortix-<env>-env` at task start (dev and staging in us-west-2, prod in
-eu-west-2). Change the blob, mirror it in the dotenvx file, then restart or
-redeploy the API:
-
-```sh
-SECRET=kortix-staging-env; REGION=us-west-2; MODE=clean
-aws secretsmanager get-secret-value --secret-id "$SECRET" --region "$REGION" \
-  --query SecretString --output text > /tmp/env.json
-jq --arg m "$MODE" '. + {SANDBOX_TMP_MAINTENANCE: $m}' /tmp/env.json > /tmp/env.new.json
-aws secretsmanager put-secret-value --secret-id "$SECRET" --region "$REGION" \
-  --secret-string file:///tmp/env.new.json
-rm -f /tmp/env.json /tmp/env.new.json
-dotenvx set SANDBOX_TMP_MAINTENANCE "$MODE" -f apps/api/.env.staging
-```
+The mode is not a secret, so a deployed environment sets it in the API task
+definition: `KORTIX_ECS_ENV_OVERRIDES` in `.github/workflows/deploy-<env>.yml`.
+The next deploy of that environment applies it. Mirror it in the dotenvx file:
+`dotenvx set SANDBOX_TMP_MAINTENANCE clean -f apps/api/.env.staging`.
 
 Development runs `migrate`. Staging and production run `report` until someone
 changes them.
