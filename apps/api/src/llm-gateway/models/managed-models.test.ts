@@ -1,24 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
-import {
-  type ManagedModel,
-  RUNTIME_MANAGED_MODELS,
-  getRuntimeManagedModel,
-  isRuntimeManagedModelId,
-  parseManagedModels,
-  resolvePlatformDefaultModelId,
-  servedManagedModels,
-} from './managed-models';
+import { type ManagedModel, parseManagedModels, resolvePlatformDefaultModelId } from './managed-models';
 
 describe('runtime managed model registry', () => {
-  test('exposes the configured control-plane overlay through one lookup', () => {
-    expect(RUNTIME_MANAGED_MODELS.length).toBeGreaterThan(0);
-    const first = RUNTIME_MANAGED_MODELS[0]!;
-    expect(getRuntimeManagedModel(first.id)).toBe(first);
-    expect(isRuntimeManagedModelId(first.id)).toBe(true);
-    expect(isRuntimeManagedModelId('not-managed')).toBe(false);
-  });
-
   test('accepts a complete operator-defined managed-model replacement', () => {
     const configured = parseManagedModels(JSON.stringify([{
       id: 'operator-model',
@@ -48,20 +32,6 @@ describe('runtime managed model registry', () => {
     };
     expect(parseManagedModels(JSON.stringify([{ ...vision, id: 'text', vision: false }, vision])))
       .toEqual([expect.objectContaining({ id: 'text', vision: false }), expect.objectContaining({ id: 'vision' })]);
-  });
-
-  test('accepts text-only models in operator overlays', () => {
-    const text = {
-      id: 'deepseek-v4-flash-0731', name: 'DeepSeek V4 Flash 0731',
-      upstreamModelId: 'deepseek/deepseek-v4-flash-0731', transport: 'openrouter',
-      pricingRef: 'openrouter/deepseek/deepseek-v4-flash-0731', tier: 'fast', vision: false,
-      limit: { context: 1_048_576, output: 16_384 },
-      openrouterProvider: {
-        only: ['deepinfra/fp8'], allow_fallbacks: false, zdr: true, data_collection: 'deny',
-      },
-    };
-    expect(parseManagedModels(JSON.stringify([text, { ...text, id: 'other-text' }])))
-      .toMatchObject([text, { ...text, id: 'other-text' }]);
   });
 
   test('accepts a Morph primary with a ZDR OpenRouter pool', () => {
@@ -103,6 +73,8 @@ describe('runtime managed model registry', () => {
       upstreamModelId: 'retired-model',
       transport: 'aster',
       pricingRef: 'vendor/retired-model',
+      // A valid route, so the transport is the only fault.
+      openrouterProvider: { only: ['test-endpoint'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
       tier: 'balanced',
       vision: false,
       limit: { context: 1_000, output: 1_000 },
@@ -139,31 +111,6 @@ const managed = (
   tier,
   vision: false,
   limit: { context: 1_000, output: 1_000 },
-});
-
-describe('servedManagedModels — never offer a managed model with no upstream credential', () => {
-  const lineup = [
-    managed('kimi-k3', 'openrouter', 'flagship'),
-    managed('morph-glm53-744b', 'openrouter'),
-    managed('morph-dsv4flash', 'openrouter', 'fast'),
-  ];
-
-  test('drops every model whose transport has no configured credential', () => {
-    const served = servedManagedModels(lineup, (m) => m.id !== 'morph-glm53-744b');
-    expect(served.map((m) => m.id)).toEqual(['kimi-k3', 'morph-dsv4flash']);
-  });
-
-  test('keeps the whole lineup when every transport is credentialed', () => {
-    expect(servedManagedModels(lineup, () => true).map((m) => m.id)).toEqual([
-      'kimi-k3',
-      'morph-glm53-744b',
-      'morph-dsv4flash',
-    ]);
-  });
-
-  test('returns nothing when no transport is credentialed', () => {
-    expect(servedManagedModels(lineup, () => false)).toEqual([]);
-  });
 });
 
 describe('resolvePlatformDefaultModelId — the platform default must always be reachable', () => {

@@ -92,11 +92,11 @@ managed fallback with tier gating), real unit tests on the core pipeline.
     change, independently, because each read a different cache with its own
     expiry clock. Unified to the ONE cache in `entitlements.ts`
     (`getCachedAccountTier` now carries the injectable `now` itself;
-    `resolve-candidates.ts`'s `resolveCachedAccountTier` is a thin re-export,
-    not a second implementation), plus `invalidateCachedAccountTier` for the
-    tier-change-during-window test and any future tier-change webhook.
-    *(tests: resolution/resolve-candidates.test.ts's TTL-boundary suite +
-    unit-account-tier-cache-unified.test.ts's tier-change-during-window case)*
+    `resolve-candidates.ts` calls it directly), plus
+    `invalidateCachedAccountTier` for the tier-change-during-window test and
+    any future tier-change webhook.
+    *(tests: unit-account-tier-cache-unified.test.ts — the 30 000 ms TTL
+    boundary and the tier-change-during-window case, on the real cache)*
 
 13. **Genuine-OpenAI streaming $0-billing gap + zero-usage safeguard** —
     `transports/openai-compat/index.ts` + `pipeline/handler.ts`
