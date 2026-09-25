@@ -120,6 +120,7 @@ export interface ParsedProjectRef {
 function unescapeAttr(v: string): string {
   return v
     .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&amp;/g, '&');

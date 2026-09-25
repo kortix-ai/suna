@@ -23,18 +23,23 @@
 
 // ─── Attribute escaping ─────────────────────────────────────────────────────
 
-function escapeAttr(v: string): string {
-  return v.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
-}
+const XML_ATTR_ESCAPES: Readonly<Record<string, string>> = {
+  '&': '&amp;',
+  '"': '&quot;',
+  "'": '&#39;',
+  '<': '&lt;',
+  '>': '&gt;',
+};
 
 /**
- * `escapeAttr` plus angle brackets, for values that come from outside the
- * user's own input (a session title is often written by an agent). The text
- * then cannot contain anything that reads as another tag. The inverse is
- * `unescapeAttr` in features/session/message-parsing.tsx.
+ * Escape a value for a double-quoted XML attribute in ONE pass: `&`, `"`,
+ * `'`, `<` and `>`. Values here often come from outside the user's own input
+ * (an agent writes session titles), so the result can never close the
+ * attribute or read as another tag. The inverse is `unescapeAttr` in
+ * features/session/message-parsing.tsx.
  */
-function escapeXmlAttr(v: string): string {
-  return escapeAttr(v).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+export function escapeXmlAttr(value: string): string {
+  return value.replace(/[&"'<>]/g, (ch) => XML_ATTR_ESCAPES[ch]!);
 }
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -59,11 +64,11 @@ export interface SessionRefLike {
 
 export function buildFileRef(f: FileRefLike): string {
   const name = f.name ?? f.path;
-  return `<file_ref path="${escapeAttr(f.path)}" name="${escapeAttr(name)}" />`;
+  return `<file_ref path="${escapeXmlAttr(f.path)}" name="${escapeXmlAttr(name)}" />`;
 }
 
 export function buildAgentRef(a: AgentRefLike): string {
-  return `<agent_ref name="${escapeAttr(a.name)}" />`;
+  return `<agent_ref name="${escapeXmlAttr(a.name)}" />`;
 }
 
 export function buildSessionRef(s: SessionRefLike): string {

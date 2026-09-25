@@ -55,12 +55,17 @@ export interface ParsedUserMessageText {
   sessions: ParsedSessionRef[];
 }
 
+const XML_ATTR_ESCAPES: Readonly<Record<string, string>> = {
+  '&': '&amp;',
+  '"': '&quot;',
+  "'": '&#39;',
+  '<': '&lt;',
+  '>': '&gt;',
+};
+
+/** One-pass attribute escape; same table as the web composer (project-preamble.ts). */
 function escapeAttr(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+  return value.replace(/[&"'<>]/g, (ch) => XML_ATTR_ESCAPES[ch]!);
 }
 
 /**
@@ -80,6 +85,7 @@ export function buildSessionRefsBlock(sessions: readonly { id: string; title: st
 function unescapeAttr(value: string): string {
   return value
     .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&amp;/g, '&');
