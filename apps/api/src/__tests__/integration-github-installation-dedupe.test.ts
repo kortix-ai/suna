@@ -18,6 +18,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accountGithubInstallations } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 
+import type { GitHubAppInstallation } from '../projects/github';
 import { dropAccountGitHubInstallation, listAccountGitHubInstallations } from '../projects/lib/git';
 import { upsertAccountGitHubInstallation } from '../projects/routes/github-installations';
 import { db } from '../shared/db';
@@ -27,14 +28,15 @@ let accountId = '';
 let otherAccountId = '';
 
 /** The shape `upsertAccountGitHubInstallation` reads off GitHub's API. */
-function installation(login: string, type: 'User' | 'Organization' = 'User') {
+function installation(login: string, type: 'User' | 'Organization' = 'User'): GitHubAppInstallation {
   return {
+    id: 777001,
     account: { login, type },
     target_type: type,
     repository_selection: 'all',
     permissions: { contents: 'write' },
     html_url: `https://github.com/settings/installations/${login}`,
-  } as Parameters<typeof upsertAccountGitHubInstallation>[2];
+  };
 }
 
 async function rowsFor(id: string) {

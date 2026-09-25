@@ -58,8 +58,8 @@ describe('mintInstallationTokenHealing', () => {
       if (installationId === 'dead') throw unreachable('dead');
       return { token: 'ghs_live' };
     });
-    const dropInstallation = mock(async () => {});
-    const siblings = mock(async () => [row('live')]);
+    const dropInstallation = mock(async (_accountId: string, _installationId: string) => {});
+    const siblings = mock(async (_accountId: string, _ownerLogin: string) => [row('live')]);
 
     const result = await mintInstallationTokenHealing(row('dead'), {
       accountId: 'acc-1',

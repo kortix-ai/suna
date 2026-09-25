@@ -11,6 +11,7 @@ import {
   createRepo,
   getFileSha,
 } from '../github';
+import { resolveGitHubUserToken } from '../lib/github-user-token';
 import { buildProjectSeedFilesFromItem } from '../seed-files';
 import { buildStarterFiles, normalizeStarterTemplateId } from '../starter';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -299,6 +300,36 @@ projectsApp.openapi(
       install_url: await createGitHubInstallationInstallUrl(scope.accountId, scope.userId),
     }, 409);
   }
+  // A PERSONAL owner needs `POST /user/repos`, which GitHub refuses for an App
+  // installation token and accepts for a USER access token. Use the caller's
+  // stored one; without it, ask for authorization instead of failing upstream.
+  // An organization keeps the installation token, which is narrower and needs
+  // no human.
+  let createAuth = githubAuth.auth;
+  if (githubAuth.auth.ownerType === 'User') {
+    const ownerLogin = githubAuth.auth.owner ?? githubAuth.installation.ownerLogin;
+    const userToken = await resolveGitHubUserToken({
+      accountId: scope.accountId,
+      userId: scope.userId,
+      ownerLogin,
+    });
+    if (!userToken) {
+      return c.json({
+        error:
+          `Authorize Kortix on GitHub as ${ownerLogin} to create a repository in that personal account. ` +
+          'You can also create the repository on GitHub and import it.',
+        code: 'github_user_authorization_required',
+        owner_login: ownerLogin,
+      }, 409);
+    }
+    createAuth = {
+      token: userToken.token,
+      source: 'user_token',
+      owner: ownerLogin,
+      ownerType: 'User',
+    };
+  }
+
   // create-repo always provisions a fresh GitHub repo, so block before we
   // create anything upstream — a straight count, no idempotent re-link.
   const createRepoQuota = await enforceProjectQuota(c, scope.accountId);
@@ -316,7 +347,7 @@ projectsApp.openapi(
         isPrivate,
         description: description ?? undefined,
         autoInit: true,
-        auth: githubAuth.auth,
+        auth: createAuth,
       });
     } catch (error) {
       lastRepoError = error;

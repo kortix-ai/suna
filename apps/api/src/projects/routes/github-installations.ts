@@ -5,6 +5,7 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import {
   getGitHubAppInstallation,
+  resolveGitHubUserLogin,
   githubVerificationStatus,
   listLinkableGitHubAppInstallations,
   type GitHubAppInstallation,
@@ -15,6 +16,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { accountGithubInstallations } from '@kortix/db';
 import { and, eq, ne } from 'drizzle-orm';
 import { resolveProjectAccount } from '../lib/access';
+import { deleteGitHubUserTokens, saveGitHubUserToken } from '../lib/github-user-token';
 import { AnyObject, projectsApp } from '../lib/app';
 import {
   consumeGitHubInstallationState,
@@ -434,6 +436,12 @@ projectsApp.openapi(
         )
       : eq(accountGithubInstallations.accountId, scope.accountId));
 
+  // Disconnecting takes the user authorization with it: a stored token whose
+  // connection is gone can still create repositories, which is not what
+  // "disconnect" means to the person who clicked it.
+  const remaining = await listAccountGitHubInstallations(scope.accountId);
+  if (remaining.length === 0) await deleteGitHubUserTokens(scope.accountId);
+
   return c.json({ ok: true });
 },
 );
@@ -468,4 +476,70 @@ projectsApp.openapi(
 
   return c.json({ ok: true });
 },
+);
+
+// POST /v1/projects/github/user-token
+//
+// Store the caller's GitHub App USER access token for this account. It is used
+// for exactly one thing: `POST /user/repos`, which GitHub refuses for an App
+// installation token, so a repository under a PERSONAL owner needs it.
+//
+// The browser already holds this token — the "Verify with GitHub" popup
+// exchanges the code and posts the result back (`requestGitHubUserProof`), the
+// same value the linkable/link routes take today. The token is verified against
+// GitHub, encrypted with the account-salted envelope, and never read back out
+// to any caller.
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/github/user-token',
+    tags: ['github'],
+    summary: 'POST /github/user-token',
+    ...auth,
+    request: {
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.any(), 'Stored GitHub user authorization'),
+      ...errors(400, 403, 502),
+    },
+  }),
+  async (c: any) => {
+    const body = await readJsonObject(c);
+    const scope = await resolveProjectAccount(c, body);
+    await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+    const githubUserToken = normalizeString(body.github_user_token ?? body.githubUserToken);
+    if (!githubUserToken) {
+      return c.json({ error: 'github_user_token is required' }, 400);
+    }
+
+    let githubLogin: string;
+    try {
+      githubLogin = await resolveGitHubUserLogin(githubUserToken);
+    } catch (error) {
+      return c.json({ error: (error as Error).message || 'GitHub authorization failed' }, 502);
+    }
+
+    // `expires_in` is seconds and is present only when the App expires user
+    // tokens; the popup forwards what GitHub returned.
+    const expiresInSeconds = Number(body.expires_in ?? body.expiresIn);
+    const expiresAt =
+      Number.isFinite(expiresInSeconds) && expiresInSeconds > 0
+        ? new Date(Date.now() + expiresInSeconds * 1000)
+        : null;
+
+    await saveGitHubUserToken({
+      accountId: scope.accountId,
+      userId: scope.userId,
+      githubLogin,
+      token: githubUserToken,
+      refreshToken: normalizeString(body.refresh_token ?? body.refreshToken),
+      expiresAt,
+    });
+
+    // The login only — never the token, not even the one the caller just sent.
+    return c.json({ ok: true, github_login: githubLogin });
+  },
 );

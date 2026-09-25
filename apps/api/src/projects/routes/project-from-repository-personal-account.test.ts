@@ -9,8 +9,9 @@
  * answered `GitHub /user/repos failed (403): Resource not accessible by
  * integration`, which the route passed through as a 502 with GitHub's raw text.
  *
- * The route must refuse before it calls GitHub, with a typed 409 the client can
- * branch on. Organization owners are unchanged.
+ * GitHub DOES accept a user access token there, so the route creates with the
+ * caller's stored one. Without a usable token it answers a typed 409 that asks
+ * for authorization. Organization owners keep the installation token.
  *
  * Mocking shape mirrors `./project-from-repository-glyph-wiring.test.ts`: no database, no network.
  */
@@ -84,13 +85,24 @@ mock.module('../lib/git', () => ({
   getProjectGitConnection: async () => null,
 }));
 
+let storedUserToken: { token: string; githubLogin: string; expiresAt: number | null } | null = null;
+const realUserToken = await import('../lib/github-user-token');
+mock.module('../lib/github-user-token', () => ({
+  ...realUserToken,
+  resolveGitHubUserToken: async (input: { ownerLogin: string }) =>
+    storedUserToken && storedUserToken.githubLogin.toLowerCase() === input.ownerLogin.toLowerCase()
+      ? storedUserToken
+      : null,
+}));
+
 const realGithub = await import('../github');
 
-// The real `createRepo` refuses this case itself (`../github.test.ts` pins
-// that). Here the mock reproduces its typed refusal, so this file tests what
-// the ROUTE does with it: a 409 carrying the code, and nothing registered.
-const mockCreateRepo = mock(async (input: { name: string }) => {
-  if (currentOwner.type === 'User') {
+// The real `createRepo` refuses an installation token under a personal owner
+// (`../github.test.ts` pins that). Here the mock reproduces the refusal so this
+// file tests what the ROUTE does: which credential it hands over, and what it
+// answers when there is none.
+const mockCreateRepo = mock(async (input: { name: string; auth?: { source?: string } }) => {
+  if (currentOwner.type === 'User' && input.auth?.source !== 'user_token') {
     throw new realGithub.GitHubPersonalAccountCreateUnsupportedError(currentOwner.login);
   }
   return fakeRepo(currentOwner.login, input.name);
@@ -141,25 +153,61 @@ function postCreateRepo() {
 }
 
 beforeEach(() => {
+  storedUserToken = null;
   mockCreateRepo.mockClear();
   mockRegisterGitHub.mockClear();
 });
 
 describe('POST /create-repo — GitHub owner type', () => {
-  test('a personal account is refused with a typed 409 and GitHub is never called', async () => {
+  test('a personal account with a stored user token creates with THAT token', async () => {
     currentOwner = { login: 'octo-person', type: 'User' };
+    storedUserToken = { token: 'ghu_live', githubLogin: 'octo-person', expiresAt: null };
+
     const res = await postCreateRepo();
-    const body = (await res.json()) as { code?: string; error?: string };
+
+    expect(res.status).toBe(201);
+    const handed = mockCreateRepo.mock.calls[0]?.[0] as { auth?: { source?: string; token?: string } };
+    expect(handed.auth?.source).toBe('user_token');
+    expect(handed.auth?.token).toBe('ghu_live');
+    expect(mockRegisterGitHub).toHaveBeenCalledTimes(1);
+  });
+
+  test("a token for another login is not this owner's token", async () => {
+    currentOwner = { login: 'octo-person', type: 'User' };
+    storedUserToken = { token: 'ghu_other', githubLogin: 'someone-else', expiresAt: null };
+
+    const res = await postCreateRepo();
+    const body = (await res.json()) as { code?: string };
 
     expect(res.status).toBe(409);
-    expect(body.code).toBe('github_personal_account_create_unsupported');
-    expect(mockCreateRepo).toHaveBeenCalledTimes(1);
+    expect(body.code).toBe('github_user_authorization_required');
+    expect(mockCreateRepo).not.toHaveBeenCalled();
+  });
+
+  test('a personal account with no user token asks for authorization, and GitHub is never called', async () => {
+    currentOwner = { login: 'octo-person', type: 'User' };
+
+    const res = await postCreateRepo();
+    const body = (await res.json()) as { code?: string; error?: string; owner_login?: string };
+
+    expect(res.status).toBe(409);
+    expect(body.code).toBe('github_user_authorization_required');
+    expect(body.owner_login).toBe('octo-person');
     // A sentence a user can act on, never GitHub's raw API text.
     expect(body.error).toContain('octo-person');
-    expect(body.error).toMatch(/import/i);
     expect(body.error).not.toContain('/user/repos');
     expect(body.error).not.toContain('Resource not accessible');
+    expect(mockCreateRepo).not.toHaveBeenCalled();
     expect(mockRegisterGitHub).not.toHaveBeenCalled();
+  });
+
+  test('the refusal never carries a token', async () => {
+    currentOwner = { login: 'octo-person', type: 'User' };
+    storedUserToken = { token: 'ghu_secret', githubLogin: 'someone-else', expiresAt: null };
+
+    const raw = await (await postCreateRepo()).text();
+
+    expect(raw).not.toContain('ghu_secret');
   });
 
   test('an organization account still creates the repository', async () => {
@@ -168,6 +216,8 @@ describe('POST /create-repo — GitHub owner type', () => {
 
     expect(res.status).toBe(201);
     expect(mockCreateRepo).toHaveBeenCalledTimes(1);
+    const handed = mockCreateRepo.mock.calls[0]?.[0] as { auth?: { source?: string } };
+    expect(handed.auth?.source).toBe('app_installation');
     expect(mockRegisterGitHub).toHaveBeenCalledTimes(1);
   });
 });

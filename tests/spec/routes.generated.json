@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 675,
+  "count": 676,
   "routes": [
     {
       "method": "GET",
@@ -2389,6 +2389,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/github/repository-branches"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/github/user-token"
     },
     {
       "method": "POST",

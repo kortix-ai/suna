@@ -109,7 +109,17 @@ export function isGitHubIpAllowListRefusal(error: unknown): boolean {
 // user-readable runtime secrets.
 // Both ride this auth context because callers only consume `.token` for git
 // transport; GitHub API calls (ghFetch) are only made for actual GitHub repos.
-type GitHubAuthSource = 'app_installation' | 'pat' | 'managed' | 'project_credential';
+/**
+ * `user_token` is a GitHub App USER access token. It exists for one reason:
+ * `POST /user/repos` accepts it and refuses an installation token, so a
+ * repository under a PERSONAL owner can only be created with one.
+ */
+type GitHubAuthSource =
+  | 'app_installation'
+  | 'pat'
+  | 'managed'
+  | 'project_credential'
+  | 'user_token';
 
 export interface GitHubAuthContext {
   token: string;
@@ -659,6 +669,27 @@ export async function getGitHubAppInstallation(installationId: string): Promise<
   );
 }
 
+/**
+ * The GitHub login a user access token authorizes, or a throw. One call, used
+ * to verify a token before it is stored and to record whose it is — a token
+ * must never be kept without knowing which account it can act as.
+ */
+export async function resolveGitHubUserLogin(userToken: string): Promise<string> {
+  const token = userToken.trim();
+  if (!token) throw new Error('GitHub authorization is required');
+
+  let user: { login?: string };
+  try {
+    user = await ghFetch<{ login?: string }>('/user', { method: 'GET' }, { token });
+  } catch {
+    throw new Error('GitHub user authorization is invalid or expired');
+  }
+
+  const login = user.login?.trim();
+  if (!login) throw new Error('GitHub did not return the authorized user login');
+  return login;
+}
+
 export async function listLinkableGitHubAppInstallations(
   userToken: string,
 ): Promise<{ githubLogin: string; installations: GitHubAppInstallation[] }> {
@@ -1064,8 +1095,8 @@ export async function createRepo(input: CreateRepoInput): Promise<GitHubRepo> {
   };
 
   // `/user/repos` is the only endpoint that can create under a personal owner,
-  // and an installation token is not allowed to call it. A PAT is, so the rule
-  // is about the credential, not the owner.
+  // and an installation token is not allowed to call it. A PAT and a user
+  // access token are, so the rule is about the credential, not the owner.
   if (!target.isOrg && input.auth?.source === 'app_installation') {
     throw new GitHubPersonalAccountCreateUnsupportedError(target.owner);
   }

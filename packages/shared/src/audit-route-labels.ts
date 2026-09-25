@@ -629,6 +629,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'DELETE /v1/projects/github/installations/:installationId': { action: 'git.github.installation.disconnect', title: 'Disconnected GitHub installation' },
   'POST /v1/projects/github/installations/link': { action: 'git.github.installation.link', title: 'Linked existing GitHub installation' },
   'POST /v1/projects/github/installations/linkable': { action: 'git.github.installation.linkable.list', title: 'Listed linkable GitHub installations' },
+  'POST /v1/projects/github/user-token': { action: 'git.github.user_token.store', title: 'Authorized GitHub as a user' },
   'GET /v1/projects/github/repositories': { action: 'git.github.repository.list', title: 'Listed GitHub repositories' },
   'GET /v1/projects/github/repository-branches': { action: 'git.github.repository.branch.list', title: 'Listed GitHub repository branches' },
   'POST /v1/projects/link-repository': { action: 'project.repository.link', title: 'Linked repository as project' },

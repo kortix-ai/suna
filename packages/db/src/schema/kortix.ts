@@ -386,6 +386,39 @@ export const accountGithubInstallations = kortixSchema.table(
   ],
 );
 
+/**
+ * One GitHub App USER access token per (account, user).
+ *
+ * GitHub refuses `POST /user/repos` from an App installation token, so a
+ * personal account can only get a new repository through a user access token
+ * (it is on GitHub's "endpoints available for user access tokens" list). The
+ * token is the user's own credential: encrypted at rest with the account-salted
+ * envelope, never returned to a browser, and deleted with the connection.
+ *
+ * `expires_at` and `refresh_value_enc` are null unless the App is configured to
+ * expire user tokens.
+ */
+export const accountGithubUserTokens = kortixSchema.table(
+  'account_github_user_tokens',
+  {
+    tokenRowId: uuid('token_row_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    githubLogin: varchar('github_login', { length: 255 }).notNull(),
+    valueEnc: text('value_enc').notNull(),
+    refreshValueEnc: text('refresh_value_enc'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('uniq_account_github_user_tokens_account_user').on(table.accountId, table.userId),
+    index('idx_account_github_user_tokens_account').on(table.accountId),
+  ],
+);
+
 export const accountGithubInstallationStates = kortixSchema.table(
   'account_github_installation_states',
   {
