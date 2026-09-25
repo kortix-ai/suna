@@ -5,6 +5,7 @@ import {
   MANAGED_FLAGSHIP_MODEL_ID,
   MANAGED_MODELS,
   PLATFORM_DEFAULT_MODEL_ID,
+  VERIFIED_US_MANAGED_ENDPOINTS,
   catalogModelForWireModel,
   getManagedModel,
   isManagedModelId,
@@ -19,10 +20,6 @@ const served = [
 // OpenRouter endpoints whose US datacenter is confirmed on 2026-09-24: the
 // provider lists US headquarters AND US datacenters (/api/v1/providers), or the
 // endpoint tag names the US region (`/us`). US headquarters alone is not enough.
-const US_DATACENTER_CONFIRMED = [
-  'morph', 'coreweave/nvfp4', 'coreweave/fp8', 'decart/fp4', 'sail-research/us', 'fireworks/us',
-];
-
 // Every bundled route pins a ZDR endpoint. Vision is per model.
 describe('managed catalog', () => {
   test('serves the selected managed models', () => {
@@ -39,16 +36,7 @@ describe('managed catalog', () => {
     }
   });
 
-  // Morph direct is the primary upstream. The OpenRouter pool is the fallback.
-  test.each([
-    ['glm-5.3-flash', 'morph-glm53flash', { inputPerMillion: 0.1, cachedInputPerMillion: 0.02, outputPerMillion: 0.35 }],
-    ['deepseek-v4.1-flash', 'morph-dsv41flash', { inputPerMillion: 0.15, cachedInputPerMillion: 0.0359375, outputPerMillion: 0.6 }],
-    ['kimi-k3', 'morph-kimik3', { inputPerMillion: 2.5, cachedInputPerMillion: 0.29, outputPerMillion: 14 }],
-  ])('%s routes to Morph first and bills Morph list prices', (id, morphModelId, pricing) => {
-    expect(getManagedModel(id)).toMatchObject({ morphModelId, pricing });
-  });
-
-  test('every OpenRouter fallback is a ZDR pool with fallbacks inside the pool and a price cap', () => {
+  test('every managed route excludes Morph and pins ZDR endpoints in US datacenters', () => {
     for (const model of MANAGED_MODELS) {
       expect(model.transport).toBe('openrouter');
       const route = model.openrouterProvider as {
@@ -56,12 +44,10 @@ describe('managed catalog', () => {
         max_price: { prompt: number; completion: number };
       };
       expect(route).toMatchObject({ allow_fallbacks: true, zdr: true, data_collection: 'deny' });
-      expect(route.only.length, model.id).toBeGreaterThanOrEqual(2);
-      for (const tag of route.only) expect(US_DATACENTER_CONFIRMED, `${model.id} ${tag}`).toContain(tag);
+      expect(route.only.length, model.id).toBeGreaterThanOrEqual(1);
+      for (const tag of route.only) expect(VERIFIED_US_MANAGED_ENDPOINTS, `${model.id} ${tag}`).toContain(tag);
+      expect(route.only, model.id).not.toContain('morph');
       expect(new Set(route.only).size, model.id).toBe(route.only.length);
-      // Morph's own OpenRouter endpoint is listed first so the fallback keeps
-      // the primary's weights when Morph direct fails on our key only.
-      expect(route.only[0], model.id).toBe('morph');
       expect(route.max_price.prompt).toBeGreaterThanOrEqual(model.pricing!.inputPerMillion);
       expect(route.max_price.completion).toBeGreaterThanOrEqual(model.pricing!.outputPerMillion);
     }
@@ -71,6 +57,7 @@ describe('managed catalog', () => {
     const only = (id: string) => (getManagedModel(id)?.openrouterProvider as { only: string[] }).only;
     // Non-US or unknown provider location.
     for (const id of ['glm-5.3-flash', 'deepseek-v4.1-flash', 'kimi-k3']) {
+      expect(only(id)).not.toContain('morph');
       for (const tag of ['z-ai/fp8', 'siliconflow/fp8', 'inceptron/fp8', 'nextbit/fp8', 'moonshotai/mxfp4', 'dekallm', 'relace', 'near-ai/fp8', 'digitalocean', 'reka/fp8', 'makora']) {
         expect(only(id), `${id} ${tag}`).not.toContain(tag);
       }

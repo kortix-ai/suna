@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { MANAGED_MODELS } from '@kortix/llm-catalog';
 import * as realTiers from '../../billing/services/tiers';
 
 const config: Record<string, unknown> = {
   KORTIX_MANAGED_PROVIDER_ENABLED: true,
+  MORPH_MANAGED_MODELS: [],
   OPENROUTER_API_KEY: 'openrouter-test-key',
   OPENROUTER_API_URL: 'https://openrouter.ai/api/v1',
 };
@@ -180,7 +182,7 @@ describe('managed OpenRouter descriptor', () => {
       tier: 'balanced',
       vision: true,
       limit: { context: 1_048_576, output: 16_384 },
-      openrouterProvider: { only: ['deepinfra/fp8'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
+      openrouterProvider: { only: ['coreweave/fp8'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
     })).toEqual([expect.objectContaining({
       provider: 'openrouter',
       kind: 'openai-compat',
@@ -194,80 +196,124 @@ describe('managed OpenRouter descriptor', () => {
         cachedInputPerMillion: 0.006,
         outputPerMillion: 0.6,
       }),
-      bodyExtras: { provider: { only: ['deepinfra/fp8'], allow_fallbacks: false, zdr: true, data_collection: 'deny' } },
+      bodyExtras: { provider: { only: ['coreweave/fp8'], allow_fallbacks: false, zdr: true, data_collection: 'deny' } },
     })]);
   });
 });
 
-describe('managed Morph primary with OpenRouter pool fallback', () => {
+describe('managed OpenRouter pool', () => {
   const glm = {
     id: 'glm-5.3-flash', name: 'GLM 5.3 Flash',
     upstreamModelId: 'z-ai/glm-5.3-flash', transport: 'openrouter' as const,
     morphModelId: 'morph-glm53flash',
+    morphPricing: { inputPerMillion: 0.1, cachedInputPerMillion: 0.02, outputPerMillion: 0.35 },
     pricingRef: 'openrouter/z-ai/glm-5.3-flash',
     pricing: { inputPerMillion: 0.1, cachedInputPerMillion: 0.02, outputPerMillion: 0.35 },
     tier: 'fast' as const, vision: true, limit: { context: 1_048_576, output: 16_384 },
     openrouterProvider: {
-      only: ['morph', 'wafer', 'together'], allow_fallbacks: true, zdr: true, data_collection: 'deny',
+      only: ['morph', 'decart/fp4', 'coreweave/nvfp4'], allow_fallbacks: true, zdr: true, data_collection: 'deny',
       max_price: { prompt: 0.15, completion: 0.5 },
     },
   };
 
   beforeEach(() => {
+    config.MORPH_MANAGED_MODELS = ['deepseek-v4.1-flash', 'kimi-k3'];
     config.MORPH_API_KEY = 'morph-test-key';
     config.MORPH_API_URL = 'https://api.morphllm.com/v1';
   });
   afterEach(() => {
+    config.MORPH_MANAGED_MODELS = [];
     config.MORPH_API_KEY = undefined;
     config.MORPH_API_URL = undefined;
   });
 
-  test('Morph is the first candidate and the OpenRouter pool is the failover', () => {
+  test('GLM excludes Morph by default, even when a Morph key exists', () => {
     expect(managedCandidates(glm)).toEqual([
       expect.objectContaining({
-        provider: 'morph', kind: 'openai-compat', baseUrl: 'https://api.morphllm.com/v1',
-        apiKey: 'morph-test-key', resolvedModel: 'morph-glm53flash', billingMode: 'credits', markup: 2,
-        pricing: { inputPerMillion: 0.1, cachedInputPerMillion: 0.02, outputPerMillion: 0.35 },
-        failover: true, publicProvider: 'kortix',
-      }),
-      expect.objectContaining({
         provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', apiKey: 'openrouter-test-key',
-        resolvedModel: 'z-ai/glm-5.3-flash', billingMode: 'credits', failover: true, publicProvider: 'kortix',
+        resolvedModel: 'z-ai/glm-5.3-flash', billingMode: 'credits', publicProvider: 'kortix',
         bodyExtras: { provider: {
-          only: ['morph', 'wafer', 'together'], allow_fallbacks: true, zdr: true, data_collection: 'deny',
+          only: ['decart/fp4', 'coreweave/nvfp4'], allow_fallbacks: true, zdr: true, data_collection: 'deny',
           max_price: { prompt: 0.15, completion: 0.5 },
         } },
       }),
     ]);
-    expect(managedCandidates(glm)[0].bodyExtras).toBeUndefined();
   });
 
   test('the OpenRouter route always forces ZDR and no data collection', () => {
-    const [, openrouter] = managedCandidates({
+    const [openrouter] = managedCandidates({
       ...glm,
-      openrouterProvider: { only: ['wafer'], allow_fallbacks: true, zdr: false, data_collection: 'allow' },
+      openrouterProvider: { only: ['decart/fp4'], allow_fallbacks: true, zdr: false, data_collection: 'allow' },
     });
     expect(openrouter.bodyExtras).toEqual({
-      provider: { only: ['wafer'], allow_fallbacks: true, zdr: true, data_collection: 'deny' },
+      provider: { only: ['decart/fp4'], allow_fallbacks: true, zdr: true, data_collection: 'deny' },
     });
   });
 
-  test('without a Morph key the OpenRouter pool serves alone', () => {
+  test('without a Morph key the OpenRouter pool still serves', () => {
     config.MORPH_API_KEY = undefined;
     expect(managedCandidates(glm).map((c) => c.provider)).toEqual(['openrouter']);
   });
 
-  test('without an OpenRouter key Morph serves alone', () => {
+  test('without an OpenRouter key the model is unavailable', () => {
     const saved = config.OPENROUTER_API_KEY;
     config.OPENROUTER_API_KEY = undefined;
     try {
-      expect(managedCandidates(glm).map((c) => c.provider)).toEqual(['morph']);
+      expect(managedCandidates(glm)).toEqual([]);
     } finally { config.OPENROUTER_API_KEY = saved; }
   });
 
-  test('a model without a Morph id routes through OpenRouter only', () => {
-    const { morphModelId: _drop, ...openrouterOnly } = glm;
-    expect(managedCandidates(openrouterOnly).map((c) => c.provider)).toEqual(['openrouter']);
+  test('a Morph-only pool is unavailable', () => {
+    expect(managedCandidates({ ...glm, openrouterProvider: { ...glm.openrouterProvider, only: ['morph'] } })).toEqual([]);
+  });
+
+  test('the default list uses Morph for DeepSeek and Kimi only', () => {
+    for (const id of ['deepseek-v4.1-flash', 'kimi-k3']) {
+      const model = MANAGED_MODELS.find((entry) => entry.id === id)!;
+      const candidates = managedCandidates(model);
+      expect(candidates.map((candidate) => candidate.provider)).toEqual(['morph', 'openrouter']);
+      expect(candidates[0].resolvedModel).toBe(model.morphModelId!);
+      expect(candidates.map((candidate) => candidate.failover)).toEqual([true, true]);
+      expect(candidates[1].bodyExtras).toMatchObject({
+        provider: { only: model.openrouterProvider!.only, zdr: true, data_collection: 'deny' },
+      });
+    }
+  });
+
+  test('adding GLM to the list enables direct Morph for GLM only', () => {
+    config.MORPH_MANAGED_MODELS = ['glm-5.3-flash'];
+    const candidates = managedCandidates(glm);
+    expect(candidates.map((candidate) => candidate.provider)).toEqual(['morph', 'openrouter']);
+    expect(candidates[0]).toMatchObject({
+      resolvedModel: 'morph-glm53flash', pricing: glm.morphPricing, failover: true,
+    });
+    expect(candidates[1].bodyExtras).toMatchObject({
+      provider: { only: ['decart/fp4', 'coreweave/nvfp4'], zdr: true, data_collection: 'deny' },
+    });
+    expect(managedCandidates(MANAGED_MODELS[0]!).map((candidate) => candidate.provider)).toEqual(['openrouter']);
+  });
+
+  test('an empty list disables direct Morph for every managed model', () => {
+    config.MORPH_MANAGED_MODELS = [];
+    for (const model of MANAGED_MODELS) {
+      expect(managedCandidates(model).map((candidate) => candidate.provider)).toEqual(['openrouter']);
+    }
+  });
+
+  test('a selected model remains available through Morph when OpenRouter has no key', () => {
+    const saved = config.OPENROUTER_API_KEY;
+    config.OPENROUTER_API_KEY = undefined;
+    try {
+      expect(managedCandidates(MANAGED_MODELS[0]!).map((candidate) => candidate.provider)).toEqual(['morph']);
+      expect(managedCandidates(glm)).toEqual([]);
+    } finally { config.OPENROUTER_API_KEY = saved; }
+  });
+
+  test('operator endpoints outside the verified US pool fail closed', () => {
+    expect(managedCandidates({
+      ...glm,
+      openrouterProvider: { ...glm.openrouterProvider, only: ['z-ai/fp8'] },
+    })).toEqual([]);
   });
 });
 

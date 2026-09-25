@@ -6,7 +6,7 @@ import type { GatewayHooks, UpstreamDescriptor, UsageEvent } from '@kortix/llm-g
 // `*.live.test.ts` from its default and integration sets, and the root suite
 // does not call its `live` mode. Run it by hand with `bash scripts/test.sh live`
 // (dotenvx supplies OPENROUTER_API_KEY and MORPH_API_KEY). It spends real,
-// small credits against OpenRouter and Morph through the same
+// small credits against both providers through the same
 // @kortix/llm-gateway pipeline that runs in-API and in the standalone pod.
 const LIVE_KEY = process.env.OPENROUTER_API_KEY ?? '';
 const RUN_LIVE = !!LIVE_KEY && process.env.RUN_LIVE_LLM_TESTS === '1';
@@ -78,10 +78,9 @@ describeLive('llm-gateway unified pipeline — LIVE OpenRouter (RUN_LIVE_LLM_TES
   });
 });
 
-// Kortix-managed routing, for every model this deployment serves: Morph direct first, the ZDR OpenRouter
-// pool on failure, and Kortix as the only identity a client sees. Needs
-// MORPH_API_KEY and OPENROUTER_API_KEY (dotenvx) and KORTIX_MANAGED_PROVIDER_ENABLED.
-const RUN_MANAGED_LIVE = RUN_LIVE && !!process.env.MORPH_API_KEY;
+// GLM uses the ZDR OpenRouter pool. Other models use Morph when selected.
+// The client sees only Kortix. Needs OPENROUTER_API_KEY and KORTIX_MANAGED_PROVIDER_ENABLED.
+const RUN_MANAGED_LIVE = RUN_LIVE && !!process.env.OPENROUTER_API_KEY;
 const describeManagedLive = RUN_MANAGED_LIVE ? describe : describe.skip;
 // Imported only for a live run: the module validates API config at load.
 const SERVED_MODELS = RUN_MANAGED_LIVE
@@ -108,14 +107,15 @@ describeManagedLive('Kortix-managed routing — LIVE Morph + OpenRouter', () => 
   }
 
   for (const model of SERVED_MODELS) {
-    const upstream = model.morphModelId ? 'morph' : 'openrouter';
     const content = model.vision
       ? [
           { type: 'text', text: 'What color is this image? One word.' },
           { type: 'image_url', image_url: { url: `data:image/png;base64,${RED_PNG}` } },
         ]
       : 'Reply with the single word: red';
-    test(`${model.id}: ${upstream} serves the turn; the client sees only Kortix`, async () => {
+    test(`${model.id}: configured upstream serves the turn; the client sees only Kortix`, async () => {
+      const { config } = await import('../../config');
+      const morphSelected = config.MORPH_MANAGED_MODELS.includes(model.id) && !!config.MORPH_API_KEY;
       const { gateway, recorded } = await managedGateway();
       const res = await gateway.chatCompletions({
         authorization: 'Bearer live',
@@ -128,10 +128,29 @@ describeManagedLive('Kortix-managed routing — LIVE Morph + OpenRouter', () => 
       expect(json.model).toBe(model.id);
       expect(json.choices[0].message.content.toLowerCase()).toContain('red');
       await settle();
-      expect(recorded[0]).toMatchObject({ provider: 'kortix', model: model.id, upstream: { provider: upstream } });
+      expect(recorded[0]).toMatchObject({ provider: 'kortix', model: model.id });
+      expect(morphSelected ? ['morph', 'openrouter'] : ['openrouter'])
+        .toContain(recorded[0].upstream?.provider);
       expect(recorded[0].finalCost).toBeGreaterThan(0);
     }, 120_000);
   }
+
+  test('a selected model fails over from rejected Morph credentials to OpenRouter', async () => {
+    const { config } = await import('../../config');
+    if (!config.MORPH_MANAGED_MODELS.includes('deepseek-v4.1-flash') || !config.MORPH_API_KEY) return;
+    const { gateway, recorded } = await managedGateway((candidates) =>
+      candidates.map((candidate) => candidate.provider === 'morph'
+        ? { ...candidate, apiKey: 'sk-invalid' } : candidate));
+    const res = await gateway.chatCompletions({
+      authorization: 'Bearer live',
+      rawBody: JSON.stringify({ model: 'deepseek-v4.1-flash', max_tokens: 500,
+        messages: [{ role: 'user', content: 'Reply with the single word: red' }] }),
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json() as { model: string }).model).toBe('deepseek-v4.1-flash');
+    await settle();
+    expect(recorded[0]).toMatchObject({ upstream: { provider: 'openrouter' } });
+  }, 120_000);
 
   test('glm-5.3-flash: a streamed turn carries only Kortix identity', async () => {
     const { gateway, recorded } = await managedGateway();
@@ -145,13 +164,12 @@ describeManagedLive('Kortix-managed routing — LIVE Morph + OpenRouter', () => 
     expect(text).toContain('data: [DONE]');
     expect(text).not.toMatch(UPSTREAM_IDENTITY);
     await settle();
-    expect(recorded[0]).toMatchObject({ provider: 'kortix', model: 'glm-5.3-flash', upstream: { provider: 'morph' } });
+    expect(recorded[0]).toMatchObject({ provider: 'kortix', model: 'glm-5.3-flash', upstream: { provider: 'openrouter' } });
     expect(recorded[0].completionTokens).toBeGreaterThan(0);
   }, 120_000);
 
-  test('glm-5.3-flash: a rejected Morph key fails over to the OpenRouter pool', async () => {
-    const { gateway, recorded } = await managedGateway((candidates) =>
-      candidates.map((c) => (c.provider === 'morph' ? { ...c, apiKey: 'sk-invalid' } : c)));
+  test('glm-5.3-flash: a non-streamed turn uses OpenRouter', async () => {
+    const { gateway, recorded } = await managedGateway();
     const res = await gateway.chatCompletions({
       authorization: 'Bearer live',
       rawBody: JSON.stringify({ model: 'glm-5.3-flash', max_tokens: 2000,

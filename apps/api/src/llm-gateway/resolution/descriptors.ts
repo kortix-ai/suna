@@ -1,4 +1,5 @@
 import type { UpstreamDescriptor } from '@kortix/llm-gateway';
+import { VERIFIED_US_MANAGED_ENDPOINTS } from '@kortix/llm-catalog';
 import { llmPriceMarkup } from '../../billing/services/tiers';
 import { config } from '../../config';
 import { getModelPricing } from '../../router/config/model-pricing';
@@ -157,7 +158,7 @@ function managedPricing(managed: ManagedModel): UpstreamDescriptor['pricing'] | 
 }
 
 function morphManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
-  if (!managed.morphModelId || !config.MORPH_API_KEY) return null;
+  if (!config.MORPH_MANAGED_MODELS.includes(managed.id) || !managed.morphModelId || !managed.morphPricing || !config.MORPH_API_KEY) return null;
   return {
     provider: 'morph',
     kind: 'openai-compat',
@@ -166,8 +167,7 @@ function morphManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | nul
     billingMode: 'credits',
     markup: llmPriceMarkup(),
     resolvedModel: managed.morphModelId,
-    // Morph reports no per-request cost, so its list prices bill the request.
-    pricing: managedPricing(managed),
+    pricing: managed.morphPricing,
     failover: true,
     publicProvider: 'kortix',
   };
@@ -175,6 +175,14 @@ function morphManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | nul
 
 function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
   if (!config.OPENROUTER_API_KEY) return null;
+  const configuredOnly = managed.openrouterProvider?.only;
+  if (!Array.isArray(configuredOnly)) return null;
+  const approved = new Set<string>(VERIFIED_US_MANAGED_ENDPOINTS);
+  const allowed = configuredOnly.filter(
+    (tag: unknown): tag is string => typeof tag === 'string' && approved.has(tag),
+  );
+  const only = allowed;
+  if (only.length === 0) return null;
   return {
     provider: 'openrouter',
     kind: 'openai-compat',
@@ -190,6 +198,7 @@ function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor 
       provider: {
         allow_fallbacks: false,
         ...managed.openrouterProvider,
+        only,
         zdr: true,
         data_collection: 'deny',
       },
@@ -200,10 +209,8 @@ function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor 
 }
 
 /**
- * Upstreams for a managed model, in dispatch order: Morph direct first, then
- * the OpenRouter endpoint pool. Every candidate sets `failover`, so the gateway
- * sends a request that fails on Morph (HTTP error or network error before any
- * output) to OpenRouter. Users see only the Kortix model either way.
+ * MORPH_MANAGED_MODELS selects direct Morph candidates per managed model.
+ * OpenRouter fallback stays inside the verified US endpoint pool.
  */
 export function managedCandidates(managed: ManagedModel): UpstreamDescriptor[] {
   // CLOUD-ONLY gate, defense-in-depth: RUNTIME_MANAGED_MODELS is already empty
@@ -212,9 +219,9 @@ export function managedCandidates(managed: ManagedModel): UpstreamDescriptor[] {
   // guard here too so no managed credential is read if some future caller
   // reaches this directly.
   if (!config.KORTIX_MANAGED_PROVIDER_ENABLED) return [];
-  return [morphManagedDescriptor(managed), openRouterManagedDescriptor(managed)].filter(
-    (descriptor): descriptor is UpstreamDescriptor => descriptor !== null,
-  );
+  const morph = morphManagedDescriptor(managed);
+  const openrouter = openRouterManagedDescriptor(managed);
+  return [morph, openrouter].filter((candidate): candidate is UpstreamDescriptor => candidate !== null);
 }
 
 export function managedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
@@ -223,7 +230,7 @@ export function managedDescriptor(managed: ManagedModel): UpstreamDescriptor | n
 
 /**
  * Whether THIS deployment can actually reach `managed` — i.e. its transport's
- * credential is configured (MORPH_API_KEY or OPENROUTER_API_KEY) and the
+ * credential is configured (OPENROUTER_API_KEY, or Morph when explicitly enabled) and the
  * managed provider is on.
  *
  * The served catalog reads this so a model that would fail resolution is never
