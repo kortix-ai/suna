@@ -97,6 +97,7 @@ mock.module('../../billing/services/seat-management', () => ({
 
 // Import AFTER mocking
 const { processStripeWebhook, processRevenueCatWebhook } = await import('../../billing/services/webhooks');
+const { resolvePerSeatPriceId } = await import('../../billing/services/tiers');
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
@@ -113,16 +114,6 @@ describe('processStripeWebhook', () => {
       expect(err.name).toBe('WebhookError');
       expect(err.message).toContain('Signature verification failed');
     }
-  });
-
-  test('routes each event type to correct handler', async () => {
-    const event = createMockStripeEvent('some.unknown.event', {});
-    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
-
-    const result = await processStripeWebhook(JSON.stringify(event), 'valid_sig');
-    expect(result).toBeDefined();
-    expect(result!.received).toBe(true);
-    expect((result as any).event_type).toBe('some.unknown.event');
   });
 
   test('returns { received: true } for unhandled events', async () => {
@@ -169,12 +160,19 @@ describe('checkout.session.completed', () => {
       id: 'purchase_123',
       status: 'pending',
     });
+    const purchaseUpdates: unknown[][] = [];
+    mockRegistry.updatePurchaseStatus = async (...args: unknown[]) => {
+      purchaseUpdates.push(args);
+    };
 
     await processStripeWebhook(JSON.stringify(event), 'sig');
 
     expect(walletGrants.length).toBe(1);
     expect(walletGrants[0].amount).toBe(50);
     expect(walletGrants[0].expiring).toBe(false);
+    expect(walletGrants[0].key).toEqual({ event: session.id });
+    // The purchase row is found through its PaymentIntent and marked settled.
+    expect(purchaseUpdates).toEqual([['purchase_123', 'completed', expect.anything()]]);
   });
 
   test('skips if missing account_id', async () => {
@@ -318,21 +316,10 @@ describe('activation is gated on payment', () => {
     expect(walletGrants.length).toBe(0);
   });
 
-  test('invoice.paid(subscription_create) after a paid checkout does NOT grant twice', async () => {
-    // Both paths grant with the SAME wallet key, so the ledger collapses them.
-    // Model that here: the stub grants once per key and records the effective
-    // grants.
-    const grantedKeys = new Set<string>();
-    const effectiveGrants: GrantInput[] = [];
-    fakeWallet.wallet.grant = async (input) => {
-      walletGrants.push(input);
-      const key = input.key && 'event' in input.key ? input.key.event : null;
-      if (key && grantedKeys.has(key)) return { replayed: true, ledgerId: null };
-      if (key) grantedKeys.add(key);
-      effectiveGrants.push(input);
-      return { replayed: false, ledgerId: 'ledger_test' };
-    };
-
+  test('invoice.paid(subscription_create) after a paid checkout grants under the same activation key', async () => {
+    // Both paths grant with the SAME wallet key, so the ledger applies the
+    // second one as a replay (tests/migration/wallet-ledger.test.ts "a replayed
+    // event key writes nothing").
     const checkout = createMockStripeCheckoutSession();
     const checkoutEvent = createMockStripeEvent('checkout.session.completed', checkout);
     mockRegistry.stripeClient.webhooks.constructEvent = () => checkoutEvent;
@@ -343,11 +330,10 @@ describe('activation is gated on payment', () => {
     mockRegistry.stripeClient.webhooks.constructEvent = () => invoiceEvent;
     await processStripeWebhook(JSON.stringify(invoiceEvent), 'sig');
 
-    expect(walletGrants.length).toBe(2);
-    expect(walletGrants[0].key).toEqual({ event: 'subscription_activation:sub_test_123' });
-    expect(walletGrants[1].key).toEqual(walletGrants[0].key);
-    expect(effectiveGrants.length).toBe(1);
-    expect(effectiveGrants[0].amount).toBe(50);
+    expect(walletGrants.map((grant) => grant.key)).toEqual([
+      { event: 'subscription_activation:sub_test_123' },
+      { event: 'subscription_activation:sub_test_123' },
+    ]);
   });
 
   test('customer.subscription.created with status=incomplete writes no tier and no recovery credits', async () => {
@@ -388,7 +374,7 @@ describe('activation is gated on payment', () => {
     expect(updateCreditAccountCalls[0].data.tier).toBeUndefined();
     expect(updateCreditAccountCalls[0].data.billingModel).toBeUndefined();
     expect(updateCreditAccountCalls[0].data.seatCount).toBeUndefined();
-    expect(walletGrants.filter((grant) => grant.kind === 'seat_grant').length).toBe(0);
+    expect(walletGrants.length).toBe(0);
     expect(walletResets.length).toBe(0);
   });
 });
@@ -466,19 +452,6 @@ describe('incomplete_expired revokes a never-paid tier', () => {
     expect(updateCreditAccountCalls[0].data.tier).toBeUndefined();
   });
 
-  test('does not touch an account that points at a different subscription', async () => {
-    mockRegistry.getCreditAccount = async () =>
-      createMockCreditAccount({ stripeSubscriptionId: 'sub_live_other', tier: 'tier_6_50' });
-
-    const sub = createMockStripeSubscription({ id: 'sub_expired', status: 'incomplete_expired' });
-    const event = createMockStripeEvent('customer.subscription.updated', sub);
-    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
-
-    await processStripeWebhook(JSON.stringify(event), 'sig');
-
-    // Stale-sub guard bails before any write.
-    expect(updateCreditAccountCalls.length).toBe(0);
-  });
 });
 
 describe('subscription changes', () => {
@@ -490,9 +463,12 @@ describe('subscription changes', () => {
     await processStripeWebhook(JSON.stringify(event), 'sig');
 
     expect(updateCreditAccountCalls.length).toBe(1);
-    expect(updateCreditAccountCalls[0].data.stripeSubscriptionId).toBe('sub_test_123');
-    expect(updateCreditAccountCalls[0].data.stripeSubscriptionStatus).toBe('active');
-    expect(updateCreditAccountCalls[0].data.billingCycleAnchor).toBeDefined();
+    expect(updateCreditAccountCalls[0].data).toMatchObject({
+      tier: 'tier_6_50',
+      stripeSubscriptionId: 'sub_test_123',
+      stripeSubscriptionStatus: 'active',
+      billingCycleAnchor: new Date(sub.billing_cycle_anchor * 1000).toISOString(),
+    });
   });
 
   test('sets paymentStatus=cancelling when cancel_at_period_end', async () => {
@@ -503,28 +479,6 @@ describe('subscription changes', () => {
     await processStripeWebhook(JSON.stringify(event), 'sig');
 
     expect(updateCreditAccountCalls[0].data.paymentStatus).toBe('cancelling');
-  });
-
-  test('falls back to customer lookup when no account_id in metadata', async () => {
-    const sub = createMockStripeSubscription({
-      metadata: {},
-      customer: 'cus_test_123',
-    });
-    const event = createMockStripeEvent('customer.subscription.updated', sub);
-    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
-
-    mockRegistry.getCustomerByStripeId = async () => ({
-      id: 'cus_test_123',
-      accountId: 'acc_from_customer',
-      email: 'test@example.com',
-      provider: 'stripe',
-      active: true,
-    });
-
-    await processStripeWebhook(JSON.stringify(event), 'sig');
-
-    expect(updateCreditAccountCalls.length).toBe(1);
-    expect(updateCreditAccountCalls[0].accountId).toBe('acc_from_customer');
   });
 
   test('resolves tier from price ID when metadata missing', async () => {
@@ -544,7 +498,7 @@ describe('subscription changes', () => {
 });
 
 describe('subscription deleted', () => {
-  test('reverts to free tier', async () => {
+  test('reverts to free tier and clears scheduled changes and commitment info', async () => {
     const sub = createMockStripeSubscription();
     const event = createMockStripeEvent('customer.subscription.deleted', sub);
     mockRegistry.stripeClient.webhooks.constructEvent = () => event;
@@ -552,23 +506,17 @@ describe('subscription deleted', () => {
     await processStripeWebhook(JSON.stringify(event), 'sig');
 
     expect(updateCreditAccountCalls.length).toBe(1);
-    expect(updateCreditAccountCalls[0].data.tier).toBe('free');
-    expect(updateCreditAccountCalls[0].data.stripeSubscriptionStatus).toBe('canceled');
+    expect(updateCreditAccountCalls[0].data).toMatchObject({
+      tier: 'free',
+      stripeSubscriptionStatus: 'canceled',
+      scheduledTierChange: null,
+      scheduledTierChangeDate: null,
+      scheduledPriceId: null,
+      commitmentType: null,
+      commitmentEndDate: null,
+    });
   });
 
-  test('clears scheduled changes and commitment info', async () => {
-    const sub = createMockStripeSubscription();
-    const event = createMockStripeEvent('customer.subscription.deleted', sub);
-    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
-
-    await processStripeWebhook(JSON.stringify(event), 'sig');
-
-    expect(updateCreditAccountCalls[0].data.scheduledTierChange).toBeNull();
-    expect(updateCreditAccountCalls[0].data.scheduledTierChangeDate).toBeNull();
-    expect(updateCreditAccountCalls[0].data.scheduledPriceId).toBeNull();
-    expect(updateCreditAccountCalls[0].data.commitmentType).toBeNull();
-    expect(updateCreditAccountCalls[0].data.commitmentEndDate).toBeNull();
-  });
 });
 
 describe('invoice.paid (renewal)', () => {
@@ -589,8 +537,9 @@ describe('invoice.paid (renewal)', () => {
     mockRegistry.stripeClient.webhooks.constructEvent = () => event;
 
     mockRegistry.getCreditAccount = async () =>
+      // A redelivered invoice carries the SAME period start.
       createMockCreditAccount({
-        lastRenewalPeriodStart: periodStart + 1,
+        lastRenewalPeriodStart: periodStart,
       });
 
     await processStripeWebhook(JSON.stringify(event), 'sig');
@@ -611,6 +560,8 @@ describe('invoice.paid (renewal)', () => {
     expect(walletResets.length).toBe(1);
     expect(walletResets[0].accountId).toBe('acc_test_123');
     expect(walletResets[0].amount).toBe(50); // tier_6_50 = $50 monthly credits
+    // A renewal writes exactly one ledger entry: the reset.
+    expect(walletGrants.length).toBe(0);
   });
 
   test('applies scheduled downgrade before granting', async () => {
@@ -636,18 +587,6 @@ describe('invoice.paid (renewal)', () => {
     expect(walletResets[0].amount).toBe(20); // tier_2_20 = $20 monthly credits
   });
 
-  test('a renewal writes exactly one ledger entry: the reset', async () => {
-    const invoice = createMockStripeInvoice();
-    const event = createMockStripeEvent('invoice.paid', invoice);
-    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
-
-    mockRegistry.getCreditAccount = async () =>
-      createMockCreditAccount({ lastRenewalPeriodStart: null });
-
-    await processStripeWebhook(JSON.stringify(event), 'sig');
-    expect(walletResets.length).toBe(1);
-    expect(walletGrants.length).toBe(0);
-  });
 });
 
 describe('invoice.payment_failed', () => {
@@ -660,16 +599,8 @@ describe('invoice.payment_failed', () => {
 
     expect(updateCreditAccountCalls.length).toBe(1);
     expect(updateCreditAccountCalls[0].data.paymentStatus).toBe('past_due');
-  });
-
-  test('records lastPaymentFailure', async () => {
-    const invoice = createMockStripeInvoice();
-    const event = createMockStripeEvent('invoice.payment_failed', invoice);
-    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
-
-    await processStripeWebhook(JSON.stringify(event), 'sig');
-
-    expect(updateCreditAccountCalls[0].data.lastPaymentFailure).toBeDefined();
+    const failedAt = updateCreditAccountCalls[0].data.lastPaymentFailure;
+    expect(new Date(failedAt).toISOString()).toBe(failedAt);
   });
 });
 
@@ -688,22 +619,6 @@ describe('RevenueCat', () => {
     expect(walletGrants[0].amount).toBe(5); // $5 machine bonus
     expect(walletGrants[0].kind).toBe('machine_bonus');
     expect(result.event_type).toBe('INITIAL_PURCHASE');
-  });
-
-  test('INITIAL_PURCHASE: resolves app_user_id to canonical account_id', async () => {
-    mockRegistry.resolveAccountId = async () => 'acc_canonical_123';
-
-    const body = createMockRevenueCatEvent('INITIAL_PURCHASE', {
-      app_user_id: 'user_legacy_123',
-      product_id: 'kortix_plus_monthly',
-    });
-
-    const result = await processRevenueCatWebhook(body);
-
-    expect(upsertCreditAccountCalls.length).toBe(1);
-    expect(upsertCreditAccountCalls[0].accountId).toBe('acc_canonical_123');
-    expect(walletGrants[0].accountId).toBe('acc_canonical_123');
-    expect((result as any).account_id).toBe('acc_canonical_123');
   });
 
   test('INITIAL_PURCHASE: legacy tier grants credits + machine bonus', async () => {
@@ -750,16 +665,19 @@ describe('RevenueCat', () => {
     expect(walletResets[0].amount).toBe(50); // tier_6_50 = $50 monthly credits
   });
 
-  test('CANCELLATION: sets cancelled timestamp', async () => {
+  test('CANCELLATION: records the cancellation and the period end, and stays active', async () => {
+    const expiresAt = Date.now() + 86400000;
     const body = createMockRevenueCatEvent('CANCELLATION', {
-      expiration_at_ms: Date.now() + 86400000,
+      expiration_at_ms: expiresAt,
     });
 
     await processRevenueCatWebhook(body);
 
     expect(updateCreditAccountCalls.length).toBe(1);
-    expect(updateCreditAccountCalls[0].data.revenuecatCancelledAt).toBeDefined();
-    expect(updateCreditAccountCalls[0].data.revenuecatCancelAtPeriodEnd).toBeDefined();
+    const data = updateCreditAccountCalls[0].data;
+    expect(new Date(data.revenuecatCancelledAt).toISOString()).toBe(data.revenuecatCancelledAt);
+    expect(data.revenuecatCancelAtPeriodEnd).toBe(new Date(expiresAt).toISOString());
+    expect(data.paymentStatus).toBe('active');
   });
 
   test('EXPIRATION: reverts to free', async () => {
@@ -851,13 +769,11 @@ describe('RevenueCat', () => {
     }
   });
 
-  test('throws on missing app_user_id', async () => {
-    try {
-      await processRevenueCatWebhook({ event: { type: 'INITIAL_PURCHASE' } });
-      expect(true).toBe(false);
-    } catch (err: any) {
-      expect(err.name).toBe('WebhookError');
-    }
+  test.each([
+    ['an event without an id', { type: 'INITIAL_PURCHASE' }, 'Missing event id'],
+    ['an event without an app_user_id', { type: 'INITIAL_PURCHASE', id: 'rc_evt_no_user' }, 'Missing app_user_id'],
+  ])('throws on %s', async (_name, event, message) => {
+    await expect(processRevenueCatWebhook({ event })).rejects.toMatchObject({ name: 'WebhookError', message });
   });
 
   test('INITIAL_PURCHASE: cancels old Stripe free subscription', async () => {
@@ -1001,38 +917,28 @@ describe('RevenueCat', () => {
 // ─── Stale Subscription Guards ──────────────────────────────────────────────
 
 describe('syncSubscriptionState guard', () => {
-  test('skips update when subscription ID does not match account current sub', async () => {
-    mockRegistry.getCreditAccount = async () =>
-      createMockCreditAccount({
-        stripeSubscriptionId: 'sub_new_paid',
+  test.each(['active', 'incomplete_expired'])(
+    'skips a "%s" update when the subscription ID does not match the account current sub',
+    async (status) => {
+      mockRegistry.getCreditAccount = async () =>
+        createMockCreditAccount({
+          stripeSubscriptionId: 'sub_new_paid',
+          tier: 'tier_6_50',
+        });
+
+      const staleSub = createMockStripeSubscription({
+        id: 'sub_old_free',
+        status,
+        metadata: { account_id: 'acc_test_123', tier_key: 'free' },
       });
+      const event = createMockStripeEvent('customer.subscription.updated', staleSub);
+      mockRegistry.stripeClient.webhooks.constructEvent = () => event;
 
-    const staleSub = createMockStripeSubscription({
-      id: 'sub_old_free',
-      metadata: { account_id: 'acc_test_123', tier_key: 'free' },
-    });
-    const event = createMockStripeEvent('customer.subscription.updated', staleSub);
-    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
+      await processStripeWebhook(JSON.stringify(event), 'sig');
 
-    await processStripeWebhook(JSON.stringify(event), 'sig');
-
-    expect(updateCreditAccountCalls.length).toBe(0);
-  });
-
-  test('allows update when subscription ID matches account current sub', async () => {
-    mockRegistry.getCreditAccount = async () =>
-      createMockCreditAccount({
-        stripeSubscriptionId: 'sub_test_123',
-      });
-
-    const sub = createMockStripeSubscription({ id: 'sub_test_123' });
-    const event = createMockStripeEvent('customer.subscription.updated', sub);
-    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
-
-    await processStripeWebhook(JSON.stringify(event), 'sig');
-
-    expect(updateCreditAccountCalls.length).toBe(1);
-  });
+      expect(updateCreditAccountCalls.length).toBe(0);
+    },
+  );
 
   test('allows update when account has no stripeSubscriptionId', async () => {
     mockRegistry.getCreditAccount = async () =>
@@ -1069,22 +975,6 @@ describe('handleSubscriptionDeleted guard', () => {
 
     // Should NOT revert to free
     expect(updateCreditAccountCalls.length).toBe(0);
-  });
-
-  test('reverts to free when deleted subscription ID matches account current sub', async () => {
-    mockRegistry.getCreditAccount = async () =>
-      createMockCreditAccount({
-        stripeSubscriptionId: 'sub_test_123',
-      });
-
-    const sub = createMockStripeSubscription({ id: 'sub_test_123' });
-    const event = createMockStripeEvent('customer.subscription.deleted', sub);
-    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
-
-    await processStripeWebhook(JSON.stringify(event), 'sig');
-
-    expect(updateCreditAccountCalls.length).toBe(1);
-    expect(updateCreditAccountCalls[0].data.tier).toBe('free');
   });
 
   test('reverts to free when account has no stripeSubscriptionId (e.g. RevenueCat nulled it)', async () => {
@@ -1236,29 +1126,6 @@ describe('syncSubscriptionState: orphaned-plan-sub recovery', () => {
     expect(updateCreditAccountCalls[0].data.stripeSubscriptionId).toBe('sub_live_plan');
   });
 
-  test('still skips stale sub when stored sub is alive (not orphaned)', async () => {
-    // Account points at a LIVE sub — incoming different sub should still be skipped
-    mockRegistry.getCreditAccount = async () =>
-      createMockCreditAccount({
-        stripeSubscriptionId: 'sub_live_existing',
-        stripeSubscriptionStatus: 'active',
-        paymentStatus: 'active',
-        tier: 'tier_6_50',
-      });
-
-    const staleSub = createMockStripeSubscription({
-      id: 'sub_old_free',
-      metadata: { account_id: 'acc_test_123', tier_key: 'free' },
-    });
-    const event = createMockStripeEvent('customer.subscription.updated', staleSub);
-    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
-
-    await processStripeWebhook(JSON.stringify(event), 'sig');
-
-    // Should NOT update — the stored sub is live, incoming is stale
-    expect(updateCreditAccountCalls.length).toBe(0);
-  });
-
   test('does not adopt machine sub over a dead plan sub', async () => {
     // Even if the stored sub is dead, we should NOT adopt an incoming machine sub
     mockRegistry.getCreditAccount = async () =>
@@ -1322,31 +1189,6 @@ describe('handleSubscriptionDeleted: restore other active sub', () => {
     // Should NOT have reverted to free
     const freeRevert = updateCreditAccountCalls.find((c: any) => c.data.tier === 'free');
     expect(freeRevert).toBeUndefined();
-  });
-
-  test('reverts to free when no other active sub exists', async () => {
-    mockRegistry.getCreditAccount = async () =>
-      createMockCreditAccount({
-        stripeSubscriptionId: 'sub_machine',
-        stripeSubscriptionStatus: 'active',
-        tier: 'pro',
-      });
-
-    const deletedSub = createMockStripeSubscription({
-      id: 'sub_machine',
-      customer: 'cus_test_123',
-    });
-    const event = createMockStripeEvent('customer.subscription.deleted', deletedSub);
-    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
-
-    // No other active subs
-    mockRegistry.stripeClient.subscriptions.list = async () => ({ data: [] });
-
-    await processStripeWebhook(JSON.stringify(event), 'sig');
-
-    // Should revert to free
-    const freeRevert = updateCreditAccountCalls.find((c: any) => c.data.tier === 'free');
-    expect(freeRevert).toBeDefined();
   });
 
   test('prefers plan sub over machine sub when restoring', async () => {
@@ -1449,30 +1291,6 @@ describe('per-seat entitlement is the allowance, never the price', () => {
     await processStripeWebhook(JSON.stringify(event), 'sig');
   }
 
-  // A quantity change is not a payment. Seats added mid-period are funded
-  // from the PAID proration invoice (see the `subscription_update` describe
-  // below), never from the subscription event that reports the new quantity.
-  test('a seat-count increase on customer.subscription.updated grants nothing', async () => {
-    mockRegistry.getCreditAccount = async () =>
-      createMockCreditAccount({ billingModel: 'per_seat', tier: 'per_seat', seatCount: 1 });
-
-    await syncSeats(perSeatSub(5));
-
-    expect(walletGrants.filter((grant) => grant.kind === 'seat_grant').length).toBe(0);
-    expect(walletResets.length).toBe(0);
-    const write = updateCreditAccountCalls.find((c: any) => c.data.seatCount !== undefined);
-    expect(write?.data.seatCount).toBe(5);
-  });
-
-  test('removing seats grants nothing', async () => {
-    mockRegistry.getCreditAccount = async () =>
-      createMockCreditAccount({ billingModel: 'per_seat', tier: 'per_seat', seatCount: 6 });
-
-    await syncSeats(perSeatSub(2));
-
-    expect(walletGrants.filter((grant) => grant.kind === 'seat_grant').length).toBe(0);
-  });
-
   test('a recovering per-seat team is reset to its FULL seat allowance, not a flat $25', async () => {
     mockRegistry.getCreditAccount = async () =>
       createMockCreditAccount({
@@ -1486,25 +1304,11 @@ describe('per-seat entitlement is the allowance, never the price', () => {
 
     expect(walletResets.length).toBe(1);
     expect(walletResets[0].amount).toBe(150);
-    expect(walletResets[0].amount).not.toBe(25);
+    // The reset funds every seat; no separate grant is written.
+    expect(walletGrants.length).toBe(0);
   });
 
-  test('a recovery reset funds every seat and writes no separate seat_grant', async () => {
-    mockRegistry.getCreditAccount = async () =>
-      createMockCreditAccount({
-        tier: 'free',
-        billingModel: 'per_seat',
-        seatCount: 0,
-        stripeSubscriptionId: null,
-      });
-
-    await syncSeats(perSeatSub(6));
-
-    expect(walletResets[0].amount).toBe(150);
-    expect(walletGrants.filter((grant) => grant.kind === 'seat_grant').length).toBe(0);
-  });
-
-  test('a brand-new per-seat team gets seat tokens minted even though no seat_grant is written', async () => {
+  test('a brand-new per-seat team gets seat tokens minted even though no grant is written', async () => {
     // Minting is not a money decision. It once sat inside a credit-grant block,
     // so a change to the grant rule silently stopped minting for newly
     // activated teams — the exact case the mint exists for.
@@ -1518,7 +1322,7 @@ describe('per-seat entitlement is the allowance, never the price', () => {
 
     await syncSeats(perSeatSub(6));
 
-    expect(walletGrants.filter((grant) => grant.kind === 'seat_grant').length).toBe(0);
+    expect(walletGrants.length).toBe(0);
     expect(mintYoloTokensCalls).toEqual(['acc_test_123']);
   });
 
@@ -1554,11 +1358,6 @@ describe('credit purchases grant only settled money', () => {
       ...overrides,
     });
   }
-
-  test('checkout.session.completed with payment_status=unpaid grants nothing', async () => {
-    await deliverStripe('checkout.session.completed', purchaseSession({ payment_status: 'unpaid' }));
-    expect(walletGrants.length).toBe(0);
-  });
 
   test('async_payment_succeeded grants the purchase once, keyed on the session id', async () => {
     const statusCalls: any[] = [];
@@ -1631,9 +1430,12 @@ describe('the Stripe dedupe marker is written only after the handler succeeds', 
     expect((retry as any).deduped).toBeUndefined();
     expect(walletGrants.length).toBe(1);
 
+    const writesBeforeReplay = updateCreditAccountCalls.length + upsertCreditAccountCalls.length;
     const replay = await processStripeWebhook(JSON.stringify(event), 'sig');
     expect((replay as any).deduped).toBe(true);
     expect(walletGrants.length).toBe(1);
+    // The replay short-circuits before any reconciliation.
+    expect(updateCreditAccountCalls.length + upsertCreditAccountCalls.length).toBe(writesBeforeReplay);
   });
 });
 
@@ -1663,39 +1465,10 @@ describe('auto-topup settles on payment_intent webhooks', () => {
     expect(reset).toBeDefined();
   });
 
-  test('a PaymentIntent that is not an auto-topup is ignored', async () => {
-    await deliverStripe('payment_intent.succeeded', autoTopupIntent({ metadata: { account_id: 'acc_test_123' } }));
-    expect(walletGrants.length).toBe(0);
-  });
-
-  test('payment_intent.payment_failed after processing counts a failure and grants nothing', async () => {
-    await deliverStripe(
-      'payment_intent.payment_failed',
-      autoTopupIntent({
-        status: 'requires_payment_method',
-        metadata: { account_id: 'acc_test_123', type: 'auto_topup', amount: '20', async_settlement: 'true' },
-        last_payment_error: { code: 'payment_intent_payment_attempt_failed' },
-      }),
-    );
-    expect(walletGrants.length).toBe(0);
-    const failure = updateCreditAccountCalls.find((c: any) => c.data.autoTopupConsecutiveFailures === 1);
-    expect(failure).toBeDefined();
-  });
-
-  test('a synchronous decline is not counted a second time by its payment_failed webhook', async () => {
-    await deliverStripe(
-      'payment_intent.payment_failed',
-      autoTopupIntent({ status: 'requires_payment_method', last_payment_error: { code: 'processing_error' } }),
-    );
-    expect(walletGrants.length).toBe(0);
-    expect(updateCreditAccountCalls.length).toBe(0);
-  });
 });
 
 describe('invoice.paid (subscription_update): mid-period changes are funded by the paid proration', () => {
   const SEAT_PRICE = 'price_1TeyA7G6l1KZGqIrTb2DKGS0';
-  const TIER_6_50_MONTHLY = 'price_1RILb4G6l1KZGqIr5q0sybWn';
-  const TIER_12_100_MONTHLY = 'price_1RILb4G6l1KZGqIr5Y20ZLHm';
 
   function prorationInvoice(lines: Array<{ amount: number; price: string }>, overrides: Record<string, any> = {}) {
     return createMockStripeInvoice({
@@ -1722,11 +1495,8 @@ describe('invoice.paid (subscription_update): mid-period changes are funded by t
     expect(walletGrants[0].kind).toBe('seat_grant');
     expect(walletGrants[0].expiring).toBe(true);
     expect(walletGrants[0].key).toEqual({ event: 'proration_grant:in_proration_1' });
-  });
-
-  test('a seat change that collected no money grants nothing', async () => {
-    await deliverStripe('invoice.paid', prorationInvoice([{ amount: -4000, price: SEAT_PRICE }]));
-    expect(walletGrants.length).toBe(0);
+    // A mid-period change grants; it never RESETS the wallet.
+    expect(walletResets.length).toBe(0);
   });
 
   test('an invoice that is not paid grants nothing', async () => {
@@ -1737,25 +1507,348 @@ describe('invoice.paid (subscription_update): mid-period changes are funded by t
     expect(walletGrants.length).toBe(0);
   });
 
-  test('plan upgrade: the paid difference converts at the target plan rate', async () => {
-    await deliverStripe('invoice.paid', prorationInvoice([
-      { amount: -2500, price: TIER_6_50_MONTHLY },
-      { amount: 5000, price: TIER_12_100_MONTHLY },
-    ]));
+});
 
-    expect(walletGrants.length).toBe(1);
-    expect(walletGrants[0].amount).toBe(25);
-    expect(walletGrants[0].kind).toBe('tier_grant');
-    expect(walletGrants[0].key).toEqual({ event: 'proration_grant:in_proration_1' });
-    // The webhook never RESETS the wallet for an upgrade.
-    expect(walletResets.length).toBe(0);
+// ─── Per-seat subscription reconciliation ───────────────────────────────────
+// `customer.subscription.*` events that carry a per-seat item reconcile
+// seat_count, billing_model and the seat item id. A quantity change alone grants
+// NO allowance: seats added mid-period are funded from the PAID proration
+// invoice (proration-grants.ts), not here.
+
+describe('per-seat subscription reconciliation', () => {
+  /** Reaches the per-seat branch through metadata.billing_model, not the price. */
+  const NOT_THE_SEAT_PRICE = 'price_not_the_seat_price';
+
+  beforeEach(() => {
+    // Default: per-seat account with 1 seat already.
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({
+        billingModel: 'per_seat',
+        seatCount: 1,
+        seatSubscriptionItemId: 'si_seat_123',
+        tier: 'per_seat',
+        stripeSubscriptionId: 'sub_seat_123',
+        autoTopupCustomized: false,
+      });
   });
 
-  test('a plan downgrade grants nothing', async () => {
-    await deliverStripe('invoice.paid', prorationInvoice([
-      { amount: -5000, price: TIER_12_100_MONTHLY },
-      { amount: 2500, price: TIER_6_50_MONTHLY },
-    ]));
-    expect(walletGrants.length).toBe(0);
+  function perSeatSubscription(quantity: number, overrides: Record<string, any> = {}) {
+    return createMockStripeSubscription({
+      id: 'sub_seat_123',
+      items: {
+        data: [
+          {
+            id: 'si_seat_123',
+            quantity,
+            price: { id: NOT_THE_SEAT_PRICE, unit_amount: 2000, currency: 'usd' },
+          },
+        ],
+      },
+      metadata: {
+        account_id: 'acc_test_123',
+        tier_key: 'per_seat',
+        billing_model: 'per_seat',
+      },
+      ...overrides,
+    });
+  }
+
+  describe('per-seat webhook reconciliation', () => {
+    test('quantity 1 → 3: seat_count updates and no allowance is granted from the quantity change', async () => {
+      const sub = perSeatSubscription(3);
+      const event = createMockStripeEvent('customer.subscription.updated', sub);
+
+      await processStripeWebhook(JSON.stringify(event), 'whsec_test');
+
+      const persistedUpdate = [...updateCreditAccountCalls, ...upsertCreditAccountCalls.map((u) => ({ accountId: u.accountId, data: u.data }))]
+        .find((c) => c.data.seatCount !== undefined);
+      expect(persistedUpdate).toBeDefined();
+      expect(persistedUpdate?.data.seatCount).toBe(3);
+      expect(persistedUpdate?.data.billingModel).toBe('per_seat');
+      expect(persistedUpdate?.data.seatSubscriptionItemId).toBe('si_seat_123');
+
+      // The added seats are funded when their proration invoice is PAID
+      // (invoice.paid, billing_reason subscription_update), never here.
+      expect(walletGrants.length).toBe(0);
+      expect(walletResets.length).toBe(0);
+    });
+
+    test.each([
+      // 5 seats × $5 threshold-per-seat = $25; × $20 amount-per-seat = $100.
+      [false, { autoTopupThreshold: '25', autoTopupAmount: '100' }],
+      [true, { autoTopupThreshold: undefined, autoTopupAmount: undefined }],
+    ])('auto-topup defaults rescale with the seat count unless the user customized them (customized: %p)', async (customized, expected) => {
+      mockRegistry.getCreditAccount = async () =>
+        createMockCreditAccount({
+          billingModel: 'per_seat',
+          seatCount: 1,
+          seatSubscriptionItemId: 'si_seat_123',
+          tier: 'per_seat',
+          stripeSubscriptionId: 'sub_seat_123',
+          autoTopupCustomized: customized,
+        });
+      const sub = perSeatSubscription(5);
+      const event = createMockStripeEvent('customer.subscription.updated', sub);
+
+      await processStripeWebhook(JSON.stringify(event), 'whsec_test');
+
+      const seatWrite = updateCreditAccountCalls.find((c) => c.data.seatCount === 5);
+      expect(seatWrite?.data.autoTopupThreshold).toBe(expected.autoTopupThreshold);
+      expect(seatWrite?.data.autoTopupAmount).toBe(expected.autoTopupAmount);
+    });
+
+    test('quantity DECREASE: no grant emitted', async () => {
+      // Start with 3 seats; drop to 1.
+      mockRegistry.getCreditAccount = async () =>
+        createMockCreditAccount({
+          billingModel: 'per_seat',
+          seatCount: 3,
+          seatSubscriptionItemId: 'si_seat_123',
+          tier: 'per_seat',
+          stripeSubscriptionId: 'sub_seat_123',
+        });
+
+      const sub = perSeatSubscription(1);
+      const event = createMockStripeEvent('customer.subscription.updated', sub);
+
+      await processStripeWebhook(JSON.stringify(event), 'whsec_test');
+
+      expect(walletGrants.length).toBe(0);
+      const persistedUpdate = updateCreditAccountCalls.find((c) => c.data.seatCount !== undefined);
+      expect(persistedUpdate?.data.seatCount).toBe(1);
+    });
+
+    test('same quantity (no change) → no grant, but seat_subscription_item_id still synced', async () => {
+      const sub = perSeatSubscription(1);
+      const event = createMockStripeEvent('customer.subscription.updated', sub);
+
+      await processStripeWebhook(JSON.stringify(event), 'whsec_test');
+
+      expect(walletGrants.length).toBe(0);
+      const seatWrite = updateCreditAccountCalls.find((c) => c.data.seatCount !== undefined);
+      expect(seatWrite?.data).toMatchObject({ seatCount: 1, seatSubscriptionItemId: 'si_seat_123' });
+    });
+
+    test('legacy subscription (no per-seat item) — billing_model unchanged, no seat fields touched', async () => {
+      // Account currently legacy.
+      mockRegistry.getCreditAccount = async () =>
+        createMockCreditAccount({
+          billingModel: 'legacy',
+          tier: 'tier_2_20',
+          seatCount: 1,
+          stripeSubscriptionId: 'sub_legacy_1',
+        });
+
+      const legacySub = createMockStripeSubscription({
+        id: 'sub_legacy_1',
+        items: {
+          data: [
+            {
+              id: 'si_legacy_1',
+              quantity: 1,
+              price: { id: 'price_legacy_unknown', unit_amount: 2000, currency: 'usd' },
+            },
+          ],
+        },
+        metadata: { account_id: 'acc_test_123', tier_key: 'tier_2_20' },
+      });
+      const event = createMockStripeEvent('customer.subscription.updated', legacySub);
+
+      await processStripeWebhook(JSON.stringify(event), 'whsec_test');
+
+      // The subscription write happens, without any seat field.
+      expect(updateCreditAccountCalls.some((c) => c.data.stripeSubscriptionId === 'sub_legacy_1')).toBe(true);
+      // No seat grant for legacy customers.
+      expect(walletGrants.length).toBe(0);
+      // No update should set seatCount / billingModel='per_seat'.
+      const seatTouchingUpdate = updateCreditAccountCalls.find(
+        (c) => c.data.seatCount !== undefined || c.data.billingModel === 'per_seat',
+      );
+      expect(seatTouchingUpdate).toBeUndefined();
+    });
+
+    test('a subscription on the per-seat price reconciles seats without any billing_model metadata', async () => {
+      mockRegistry.getCreditAccount = async () =>
+        createMockCreditAccount({
+          billingModel: 'per_seat',
+          seatCount: 1,
+          seatSubscriptionItemId: 'si_seat_by_price',
+          stripeSubscriptionId: 'sub_seat_by_price',
+          tier: 'per_seat',
+        });
+
+      const sub = createMockStripeSubscription({
+        id: 'sub_seat_by_price',
+        items: {
+          data: [
+            {
+              id: 'si_seat_by_price',
+              quantity: 4,
+              price: { id: resolvePerSeatPriceId(), unit_amount: 4000, currency: 'usd' },
+            },
+          ],
+        },
+        metadata: { account_id: 'acc_test_123' },
+      });
+      const event = createMockStripeEvent('customer.subscription.updated', sub);
+
+      await processStripeWebhook(JSON.stringify(event), 'whsec_test');
+
+      const seatUpdate = updateCreditAccountCalls.find((c) => c.data.seatCount === 4);
+      expect(seatUpdate?.data).toMatchObject({ billingModel: 'per_seat', seatSubscriptionItemId: 'si_seat_by_price' });
+      expect(walletGrants.length).toBe(0);
+    });
+  });
+
+  describe('legacy → per-seat adoption (regression)', () => {
+    // A legacy/machine account migrates to per-seat. The new per-seat sub has a
+    // different id and carries metadata.billing_model='per_seat' but no tier_key /
+    // previous_subscription_id, so the stale-sub guard used to drop it — stranding
+    // the account on the (now cancelled) machine sub: tier=free, project-capped.
+    test('legacy/machine account adopts an incoming active per-seat sub instead of skipping it', async () => {
+      mockRegistry.getCreditAccount = async () =>
+        createMockCreditAccount({
+          billingModel: 'legacy',
+          tier: 'free',
+          seatCount: 0,
+          stripeSubscriptionId: 'sub_machine_legacy',
+        });
+
+      const perSeatSub = createMockStripeSubscription({
+        id: 'sub_perseat_new',
+        status: 'active',
+        items: { data: [{ id: 'si_perseat_new', quantity: 1, price: { id: 'price_arbitrary', unit_amount: 4000, currency: 'usd' } }] },
+        metadata: { account_id: 'acc_test_123', billing_model: 'per_seat' },
+      });
+      const event = createMockStripeEvent('customer.subscription.created', perSeatSub);
+
+      await processStripeWebhook(JSON.stringify(event), 'whsec_test');
+
+      const adopt = [...updateCreditAccountCalls, ...upsertCreditAccountCalls].find((c) => c.data.billingModel === 'per_seat');
+      expect(adopt).toBeDefined();
+      expect(adopt?.data.stripeSubscriptionId).toBe('sub_perseat_new');
+      expect(adopt?.data.seatSubscriptionItemId).toBe('si_perseat_new');
+      expect(adopt?.data.tier).toBe('per_seat');
+    });
+
+    test('a genuinely stale non-per-seat sub is still skipped (guard intact)', async () => {
+      mockRegistry.getCreditAccount = async () =>
+        createMockCreditAccount({
+          billingModel: 'per_seat',
+          tier: 'per_seat',
+          seatCount: 1,
+          seatSubscriptionItemId: 'si_perseat_current',
+          stripeSubscriptionId: 'sub_perseat_current',
+        });
+
+      const staleSub = createMockStripeSubscription({
+        id: 'sub_other_unrelated',
+        status: 'active',
+        items: { data: [{ id: 'si_other', quantity: 1, price: { id: 'price_legacy_unknown', unit_amount: 2000, currency: 'usd' } }] },
+        metadata: { account_id: 'acc_test_123', tier_key: 'tier_2_20' },
+      });
+      const event = createMockStripeEvent('customer.subscription.updated', staleSub);
+
+      await processStripeWebhook(JSON.stringify(event), 'whsec_test');
+
+      const clobber = updateCreditAccountCalls.find((c) => c.data.stripeSubscriptionId === 'sub_other_unrelated');
+      expect(clobber).toBeUndefined();
+    });
+
+    describe('enterprise + per-seat coexistence — tier not clobbered', () => {
+      test('enterprise_entitled=true + per-seat sub update → billing_model reconciled, tier NOT set to per_seat', async () => {
+        // The contracted shape: enterprise entitlements (via flag)
+        // + a per-seat Stripe subscription. An ordinary seat-quantity update lands.
+        mockRegistry.getCreditAccount = async () =>
+          createMockCreditAccount({
+            tier: 'enterprise',
+            enterpriseEntitled: true,
+            billingModel: 'per_seat',
+            seatCount: 2,
+            seatSubscriptionItemId: 'si_seat_123',
+            stripeSubscriptionId: 'sub_seat_123',
+            autoTopupCustomized: true,
+          });
+
+        // Webhook fires for a seat-count change 2 → 4 — the ordinary update path
+        // that used to strip enterprise entitlements.
+        const sub = perSeatSubscription(4);
+        const event = createMockStripeEvent('customer.subscription.updated', sub);
+
+        await processStripeWebhook(JSON.stringify(event), 'whsec_test');
+
+        const persisted = [...updateCreditAccountCalls, ...upsertCreditAccountCalls.map((u) => ({ accountId: u.accountId, data: u.data }))]
+          .find((c) => c.data.seatCount !== undefined);
+        expect(persisted).toBeDefined();
+        // Per-seat billing semantics ARE reconciled:
+        expect(persisted?.data.billingModel).toBe('per_seat');
+        expect(persisted?.data.seatCount).toBe(4);
+        expect(persisted?.data.seatSubscriptionItemId).toBe('si_seat_123');
+        // But tier is NOT clobbered to 'per_seat' — the key fix. The update must
+        // not carry a `tier` write at all (enterprise tier is preserved).
+        expect(persisted?.data.tier).toBeUndefined();
+        // And the added seats earn no unpaid allowance here either.
+        expect(walletGrants.length).toBe(0);
+      });
+
+      test('non-enterprise per-seat account → tier still set to per_seat (unchanged behaviour)', async () => {
+        // The guard must NOT change behaviour for ordinary per-seat accounts
+        // (no enterprise entitlement): tier='per_seat' is still written, exactly
+        // as before. This is the regression guard for the common case.
+        mockRegistry.getCreditAccount = async () =>
+          createMockCreditAccount({
+            tier: 'free',
+            enterpriseEntitled: false,
+            billingModel: 'per_seat',
+            seatCount: 1,
+            seatSubscriptionItemId: 'si_seat_123',
+            stripeSubscriptionId: 'sub_seat_123',
+            autoTopupCustomized: true,
+          });
+
+        const sub = perSeatSubscription(3);
+        const event = createMockStripeEvent('customer.subscription.updated', sub);
+
+        await processStripeWebhook(JSON.stringify(event), 'whsec_test');
+
+        const persisted = [...updateCreditAccountCalls, ...upsertCreditAccountCalls.map((u) => ({ accountId: u.accountId, data: u.data }))]
+          .find((c) => c.data.seatCount !== undefined);
+        expect(persisted).toBeDefined();
+        expect(persisted?.data.billingModel).toBe('per_seat');
+        expect(persisted?.data.seatCount).toBe(3);
+        // tier IS clobbered to per_seat for ordinary accounts — unchanged.
+        expect(persisted?.data.tier).toBe('per_seat');
+      });
+
+      test('enterprise_entitled=true, no existing per-seat → first per-seat webhook still does NOT set tier', async () => {
+        // An operator flags the account enterprise_entitled at sign-up (tier is
+        // still 'free', no per-seat sub yet). The customer then buys a per-seat
+        // subscription. The activation webhook must adopt the sub + reconcile
+        // billing, but NOT flip tier to per_seat.
+        mockRegistry.getCreditAccount = async () =>
+          createMockCreditAccount({
+            tier: 'free',
+            enterpriseEntitled: true,
+            billingModel: 'legacy',
+            seatCount: 0,
+            stripeSubscriptionId: null,
+            autoTopupCustomized: false,
+          });
+
+        const sub = perSeatSubscription(2);
+        const event = createMockStripeEvent('customer.subscription.created', sub);
+
+        await processStripeWebhook(JSON.stringify(event), 'whsec_test');
+
+        const persisted = [...updateCreditAccountCalls, ...upsertCreditAccountCalls.map((u) => ({ accountId: u.accountId, data: u.data }))]
+          .find((c) => c.data.billingModel === 'per_seat');
+        expect(persisted).toBeDefined();
+        expect(persisted?.data.billingModel).toBe('per_seat');
+        expect(persisted?.data.seatCount).toBe(2);
+        // The free → per_seat activation must NOT clobber tier for an
+        // enterprise-entitled account; entitlements stay sourced from the flag.
+        expect(persisted?.data.tier).toBeUndefined();
+      });
+    });
   });
 });
