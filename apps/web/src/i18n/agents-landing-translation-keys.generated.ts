@@ -13,9 +13,6 @@ export const AGENTS_LANDING_TRANSLATION_KEYS: Readonly<Record<string, string>> =
   '84': 'text44c8031cb036',
   '91': 'text1da51b8d8ff9',
   '': 'texte3b0c44298fc',
-  '.kortix/opencode/agents/kortix.md': 'text21417e340893',
-  '.kortix/opencode/agents/memory-reflector.md': 'text73cb3b547170',
-  '.kortix/opencode/skills/agent-browser/SKILL.md': 'texte4d1a488fe92',
   '/enterprise': 'text28346646cd67',
   '/features/ar': 'textf67f927b8360',
   '/features/receipts': 'textd0336b6b1e16',
@@ -89,6 +86,8 @@ export const AGENTS_LANDING_TRANSLATION_KEYS: Readonly<Record<string, string>> =
     'text25e8e1211a52',
   'Agents rewrite themselves — and get reviewed for it': 'text5cb597e2c71c',
   allow: 'text410083735735',
+  'agents/kortix.md': 'textf300b6a90b8c',
+  'agents/memory-reflector.md': 'texta73e5a6e493d',
   'An agent can edit kortix.yaml — it is a file. But the edit only applies to sessions started after a person merges the change request, and even then the ceiling still holds.':
     'texta1d6b2ab7919',
   'An agent can sharpen its own prompt, add a skill, or tighten a permission rule. Every one of those is a commit on a branch in a change request a person merges. Self-improvement, human-merged. An agent never merges its own.':
@@ -291,6 +290,7 @@ export const AGENTS_LANDING_TRANSLATION_KEYS: Readonly<Record<string, string>> =
   Signal: 'text1e9806e4227b',
   'skills committed into a new project repo on day one': 'text5237227aa130',
   Slack: 'textb27fb38ba323',
+  'skills/agent-browser/SKILL.md': 'text1bda825417f9',
   'SOC 2': 'text307197603f08',
   'SOC 2 Type II in progress': 'text10d206f6ba36',
   'Some things can never be granted': 'textffcad26fe24b',

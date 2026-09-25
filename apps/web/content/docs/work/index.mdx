@@ -19,7 +19,7 @@ three ways a session can start.
 1. Kortix creates the session row and cuts a branch from the default branch.
    The branch name is the session id.
 2. Kortix resolves a sandbox image: the default image, or your own
-   `.kortix/Dockerfile` if the manifest declares one.
+   Dockerfile (for example `Dockerfile.ml`) if the manifest declares one.
 3. The sandbox boots. Its daemon, `kortix-agent`, clones the repo to
    `/workspace`. It starts OpenCode REST.
    Session status becomes `running`.

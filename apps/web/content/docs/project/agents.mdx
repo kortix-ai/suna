@@ -10,24 +10,48 @@ how a session picks an agent.
 ## OpenCode runs every session
 
 OpenCode, the open-source coding-agent runtime, runs every session. The
-`kortix-agent` daemon starts it as `opencode serve`, with its config
-directory pointed at the project's `.kortix/opencode/` folder.
+`kortix-agent` daemon starts it as `opencode serve`. OpenCode reads the
+project's agents from `agents/`, its skills from `skills/`, and the files only
+OpenCode reads from `harnesses/opencode/`.
+
+Projects created before 2026-09 keep agents and skills under
+`.kortix/opencode/`. Kortix reads both layouts.
 
 ## An agent is two files
 
 Each agent has two parts:
 
-- **Behavior** — a markdown file at `.kortix/opencode/agents/<name>.md`. Its
+- **Behavior** — a markdown file, `agents/<name>.md` by default. Its
   frontmatter sets the model, mode, and tools. Its body is the system prompt.
-- **Governance** — an entry in `kortix.yaml`'s `agents` map, keyed by the same
+- **Governance** — an entry in `kortix.yaml`'s `agents` map, keyed by the agent
   name. It sets what the agent may access on Kortix: connectors, secrets,
-  skills, Apps, and Kortix permissions.
+  skills, Apps, and Kortix permissions. Its `file` field names the behavior
+  file.
   The map can live in a file the manifest lists under
   [`imports:`](/docs/project/manifest#imports); `default_agent` stays in `kortix.yaml`.
 
 The manifest never sets a prompt, mode, or tool. The `.md` file never sets
 platform access. See [the manifest reference](/docs/project/manifest) for
 every governance field.
+
+### Where the agent file lives
+
+```yaml
+agents:
+  support:
+    file: agents/support.md
+```
+
+- `file` is a repo-relative path. It must end in `.md`.
+- It must not start with `/`. It must not contain a `.` or `..` segment.
+- Without `file`, Kortix reads `agents/<name>.md`, then
+  `.kortix/opencode/agents/<name>.md`.
+- When the dashboard saves an agent that has a `.md`, it writes `file` with that path.
+- The API refuses to change `file`. To move an agent, move its `.md` and
+  update `file` in `kortix.yaml` in the same commit.
+
+The full path rules are in
+[the manifest reference](/docs/project/manifest#the-agent-file).
 
 ## Governance is deny-by-default
 
@@ -54,7 +78,7 @@ grant full access by default. Set specific grants to restrict access. See
 
 ## Skills give an agent know-how
 
-A skill is a markdown file at `.kortix/opencode/skills/<name>/SKILL.md`.
+A skill is a markdown file at `skills/<name>/SKILL.md`.
 OpenCode loads a skill on demand when the agent calls it — Kortix does not
 inject skills into every prompt. An agent's `skills` grant in `kortix.yaml`
 controls which skills it may load.

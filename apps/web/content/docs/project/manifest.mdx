@@ -9,10 +9,20 @@ The manifest is the file the platform treats as authoritative for a project. Thi
 
 A Kortix project has two configuration surfaces with strict, non-overlapping ownership.
 
-- **Kortix config** — `kortix.yaml` at the repo root, plus `.kortix/Dockerfile`. The platform reads this: the trigger sweep, the sandbox builder, session token minting, and the dashboard.
-- **OpenCode config** — everything under `.kortix/opencode/` (`opencode.jsonc`, `agents/`, `skills/`, `commands/`, `tools/`, `plugins/`). The OpenCode runtime reads this, in the sandbox and locally.
+- **Kortix config** — `kortix.yaml` at the repo root, plus any Dockerfile a sandbox template names. The platform reads this: the trigger sweep, the sandbox builder, session token minting, and the dashboard.
+- **Agent config** — the agent files, skills, and harness files. The agent harness reads this, in the sandbox and locally.
 
-The join between the two halves is the agent name. A manifest key `agents.<name>` must match the filename `.kortix/opencode/agents/<name>.md`. Every behavioral field lives only in that `.md` file's frontmatter and body, never in `kortix.yaml`:
+| Path | What it holds |
+| --- | --- |
+| `kortix.yaml` | The manifest: agents and what each may access, triggers, connectors, env, sandbox templates. |
+| `agents/<name>.md` | One agent: frontmatter and system prompt. `agents.<name>.file` names it. |
+| `skills/<name>/SKILL.md` | One skill. Every harness loads it. |
+| `memory/` | The project memory. |
+| `harnesses/opencode/` | Files only OpenCode reads: `opencode.jsonc`, `plugins/`, `tools/`, `commands/`. `opencode.config_dir` points here. |
+
+Projects created before 2026-09 keep agents and skills under `.kortix/opencode/` and memory under `.kortix/memory/`. Kortix reads both layouts.
+
+The join between the two halves is the agent's `.md` file. A manifest key `agents.<name>` governs the file that `agents.<name>.file` names, or `agents/<name>.md` when `file` is omitted. Every behavioral field lives only in that `.md` file's frontmatter and body, never in `kortix.yaml`:
 
 - system prompt
 - `model`, `mode`
@@ -62,21 +72,23 @@ sandbox:
   templates:
     - slug: ml
       name: ML Development
-      dockerfile: .kortix/Dockerfile.ml
+      dockerfile: Dockerfile.ml
       cpu: 4
       memory: 16
 
 opencode:
-  config_dir: .kortix/opencode
+  config_dir: harnesses/opencode
 
 agents:
   kortix:
+    file: agents/kortix.md
     connectors: all
     secrets: all
     kortix_permissions: all
     skills: all
 
   release-bot:
+    file: agents/release-bot.md
     sandbox: ml
     connectors: [github]
     kortix_permissions: [project.gitops.push]
@@ -99,11 +111,11 @@ triggers:
 | `kortix_version`                                    | yes      | must be `2`                                                                                |
 | `default_agent`                                     | yes      | must name a declared, enabled agent                                                        |
 | `imports`                                           | no       | other YAML files or directories whose `triggers`, `connectors`, `agents`, and `apps` merge into this manifest. See [`imports:`](#imports) |
-| `runtime`                                           | no       | `"opencode"` (the default) or `"pi"` — the agent harness a session boots inside its sandbox; `pi` runs pi-agent-core in-process in the sandbox daemon and reads the same `.kortix/opencode/agents/*.md` and skills. The project's `pi_harness` feature flag selects pi without this line. |
+| `runtime`                                           | no       | `"opencode"` (the default) or `"pi"` — the agent harness a session boots inside its sandbox; `pi` runs pi-agent-core in-process in the sandbox daemon and reads the same agent `.md` files and skills. The project's `pi_harness` feature flag selects pi without this line. |
 | `project.name` / `project.description`              | no       | display metadata; the platform does not read `project.name` for the project's display name |
 | `env.required` / `env.optional`                     | no       | env var names; `required` is advisory only, never enforced at session start                |
 | `sandbox` / `sandbox.templates` / `sandbox.default` | no       | sandbox image(s) and hardware                                                              |
-| `opencode.config_dir`                               | no       | default `.kortix/opencode`                                                                 |
+| `opencode.config_dir`                               | no       | default `harnesses/opencode`, then the legacy `.kortix/opencode`                           |
 | `triggers`                                          | no       | list of cron, webhook, and monitor triggers                                                |
 | `connectors`                                        | no       | list of connector definitions                                                              |
 | `policy.default_mode`                               | no       | `allow_all` (default) or `risk`; project-wide connector approval mode                      |
@@ -118,26 +130,26 @@ Split one manifest across several YAML files. Use it when `kortix.yaml` outgrows
 kortix_version: 2
 default_agent: kortix
 imports:
-  - .kortix/triggers/        # a directory: every .yaml and .yml file below it
-  - .kortix/agents.yaml      # a single file
+  - triggers/                # a directory: every .yaml and .yml file below it
+  - agents.yaml              # a single file
 agents:
   kortix:
     connectors: all
 ```
 
 ```text
-.kortix/
-  agents.yaml
-  triggers/
-    reports/
-      weekly.yaml
-      monthly.yaml
-    dockets/
-      freedom-forever.yaml
+kortix.yaml
+agents.yaml
+triggers/
+  reports/
+    weekly.yaml
+    monthly.yaml
+  dockets/
+    freedom-forever.yaml
 ```
 
 ```yaml
-# .kortix/triggers/reports/weekly.yaml
+# triggers/reports/weekly.yaml
 triggers:
   - slug: weekly-report
     name: Cross-Sector Weekly Report
@@ -162,7 +174,7 @@ The platform reads the root file, resolves every import, and works on the merged
 A broken import fails the whole manifest, the same way a YAML syntax error does. `kortix validate`, `kortix ship`, and the change request merge check all report it before it reaches `main`:
 
 ```text
-imports: triggers "weekly-report" is declared in both .kortix/triggers/a.yaml and .kortix/triggers/b.yaml — one name, one file
+imports: triggers "weekly-report" is declared in both triggers/a.yaml and triggers/b.yaml — one name, one file
 ```
 
 **Edits go to the file that declares the entry.** When the dashboard, the API, or `kortix triggers enable|disable|rm` changes a trigger, connector, agent, or app that an imported file declares, only that file is written. The root file is not rewritten. A new entry is written to the root file. Move it into an imported file by hand if you want it there.
@@ -199,7 +211,7 @@ sandbox:
   templates:
     - slug: ml
       name: ML Development
-      dockerfile: .kortix/Dockerfile.ml
+      dockerfile: Dockerfile.ml
       cpu: 4
       memory: 16
       disk: 50
@@ -227,7 +239,7 @@ sandbox:
   default: dev
   templates:
     - slug: dev
-      dockerfile: .kortix/Dockerfile
+      dockerfile: Dockerfile.dev
 ```
 
 `default` must name a template declared in this manifest, or the reserved value `"default"` for the platform image.
@@ -257,14 +269,14 @@ Where the OpenCode config directory lives. Optional, with a default.
 
 ```yaml
 opencode:
-  config_dir: .kortix/opencode
+  config_dir: harnesses/opencode
 ```
 
-| Field        | Type   | Default            | Notes                    |
-| ------------ | ------ | ------------------ | ------------------------ |
-| `config_dir` | string | `.kortix/opencode` | Repo-relative directory. |
+| Field        | Type   | Default                                         | Notes                    |
+| ------------ | ------ | ----------------------------------------------- | ------------------------ |
+| `config_dir` | string | `harnesses/opencode`, then `.kortix/opencode`   | Repo-relative directory. |
 
-That directory holds agents, skills, commands, tools, plugins, and `opencode.jsonc`. `opencode.jsonc` stays the OpenCode-native registry for plugins, MCP servers, providers, and permissions — do not duplicate those settings in the manifest. See [Agents](/docs/project/agents).
+When `config_dir` is not set, Kortix uses the first of `harnesses/opencode` and `.kortix/opencode` that holds an `opencode.json` or `opencode.jsonc`. That directory holds the files only OpenCode reads: `opencode.jsonc`, `plugins/`, `tools/`, and `commands/`. Agents and skills live at the repo root, in `agents/` and `skills/`. `opencode.jsonc` stays the OpenCode-native registry for plugins, MCP servers, providers, and permissions — do not duplicate those settings in the manifest. See [Agents](/docs/project/agents).
 
 ## `triggers:`
 
@@ -357,12 +369,14 @@ default_agent: kortix
 
 agents:
   kortix:
+    file: agents/kortix.md
     connectors: all
     secrets: all
     kortix_permissions: all
     skills: all
 
   release-bot:
+    file: agents/release-bot.md
     connectors: [github]
     connectors_required: [github]
     kortix_permissions: [project.gitops.push]
@@ -371,7 +385,8 @@ agents:
 
 | Field                 | Default | Notes                                                                                                                                                                                                     |
 | --------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| _(map key)_           | —       | `[a-z0-9][a-z0-9_-]{0,127}`, unique per project. Matches the `.md` filename it governs.                                                                                                                   |
+| _(map key)_           | —       | `[a-z0-9][a-z0-9_-]{0,127}`, unique per project. Without `file`, it is also the `.md` filename.                                                                                                           |
+| `file`                | `agents/<name>.md` | Repo-relative path of the agent's `.md`. See [The agent file](#the-agent-file).                                                                                                                |
 | `enabled`             | `true`  | `false` treats the agent as undeclared — the platform will not launch it.                                                                                                                                 |
 | `connectors`          | `none`  | Which connector slugs this agent may call. `all` means every connector.                                                                                                                                   |
 | `connectors_required` | `none`  | Deprecated: parsed and ignored. Nothing gates sandbox startup on a connector any more; a call to a connector with nothing connected returns `connector_not_connected` with a connect link. Must still be a subset of `connectors` when present. |
@@ -390,9 +405,28 @@ is project-owned or member-owned.
 
 `kortix_permissions` grants come from a fixed set of project-scoped permissions (`project.read`, `project.gitops.push`, `project.gitops.merge`, `project.gitops.ref.any`, `project.trigger.*`, `project.secret.*`, `project.connector.*`, and more). Account-scoped permissions — `member.*`, `billing.*`, `project.create` — can never be granted to an agent. Run `kortix validate --scopes` from inside a session to print the live, grantable list.
 
+### The agent file
+
+`agents.<name>.file` names the agent's `.md`, relative to the repo root.
+
+```yaml
+agents:
+  support:
+    file: agents/support.md
+```
+
+- The path must end in `.md`.
+- The path must not start with `/` or `-`. It must not contain a `.` or `..` segment, or an empty segment.
+- Each segment uses only letters, digits, `_`, `-`, `.`, and spaces.
+- When `file` is omitted, Kortix reads `agents/<name>.md`, then `.kortix/opencode/agents/<name>.md`. With `opencode.config_dir` set, the second path is `<config_dir>/agents/<name>.md`.
+- When the dashboard saves an agent that has a `.md`, it writes `file` with that path.
+- The API refuses a request that changes `file` (`400`, code `invalid_config`). To move an agent, move its `.md` and update `file` in `kortix.yaml` in the same commit.
+
+`kortix validate` and the change request merge check reject an invalid `file` with an error on `agents.<name>.file`.
+
 ## When config changes take effect
 
-- A manifest or `.kortix/opencode/` edit applies only after a change request merges to `main`. Sessions and the trigger sweep read the default branch, not session branches.
+- A manifest, `agents/`, `skills/`, or OpenCode config directory edit applies only after a change request merges to `main`. Sessions and the trigger sweep read the default branch, not session branches.
 - A trigger's cron or webhook change is picked up by the scheduler within seconds of the merge.
 - A sandbox image or hardware change rebuilds the snapshot. The new spec applies on the next session, not the current one.
 - A secret value change in the dashboard resolves at sandbox-create time. It applies on the next session, not a running one.

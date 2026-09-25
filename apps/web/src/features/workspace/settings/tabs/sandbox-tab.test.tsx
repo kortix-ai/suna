@@ -498,10 +498,10 @@ describe('template card readability', () => {
           has_image: false,
           image: null,
           has_dockerfile: true,
-          dockerfile_path: '.kortix/Dockerfile',
+          dockerfile_path: 'Dockerfile.sandbox',
         }),
       ),
-    ).toMatchObject({ label: 'Built from', value: '.kortix/Dockerfile', mono: true });
+    ).toMatchObject({ label: 'Built from', value: 'Dockerfile.sandbox', mono: true });
     // Neither declared — still a sentence, never an empty cell.
     expect(
       describeBase(template({ has_image: false, image: null, has_dockerfile: false })),

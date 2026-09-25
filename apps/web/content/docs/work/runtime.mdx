@@ -57,7 +57,7 @@ A sandbox holds the config of the commit it was provisioned from. A resume or a 
 
 The platform never writes `/workspace` to do this. `/workspace` stays the full clone that you and the agent read and edit.
 
-The unit a session runs is a **config release**: one archive of the OpenCode config directory (`.kortix/opencode` unless the manifest sets `opencode.config_dir`) at a base commit, plus the agent config the API compiles from `kortix.yaml` and the agent files. The release ID covers both halves. A commit that changes neither produces the same release ID, so nothing restarts.
+The unit a session runs is a **config release**: one archive of the OpenCode config directory (`harnesses/opencode` unless the manifest sets `opencode.config_dir`) and the root `skills/` at a base commit, plus the agent config the API compiles from `kortix.yaml` and the agent files. A project created before 2026-09 uses `.kortix/opencode`, which also holds its agents and skills. The release ID covers both halves. A commit that changes neither produces the same release ID, so nothing restarts.
 
 Convergence runs at the **start of every turn**: a prompt on a box that is behind converges first, then runs. It also runs after the box boots, after each resume and restart, when the base branch moves, and when you select **Reload config** or run `kortix sessions reload`. Those are a warm-up — they move the box onto the current config while nobody waits, so the turn usually starts with nothing to do and pays nothing.
 
@@ -161,11 +161,14 @@ Config releases are a per-project feature flag, **Config Releases**, on by defau
 
 ```
 /workspace                       ← WORKDIR. The project repo is cloned here.
-/workspace/.kortix/              ← Repo-internal Kortix folder (Dockerfile + opencode config dir).
+/workspace/agents/               ← Agent files (agents.<name>.file names each one).
+/workspace/skills/               ← Skills.
+/workspace/memory/               ← Project memory.
+/workspace/harnesses/opencode/   ← OpenCode config dir (opencode.config_dir).
 /usr/local/bin/kortix-agent      ← The daemon (supervisor + reverse proxy).
 /usr/local/bin/kortix-entrypoint ← The container ENTRYPOINT (PID 1).
 /opt/kortix/home                 ← OpenCode's HOME — its object store lives here, off the repo.
-/opt/kortix/config/<release_id>  ← Read-only config release: the OpenCode config dir at a base commit.
+/opt/kortix/config/<release_id>  ← Read-only config release: the OpenCode config dir and skills/ at a base commit.
 /opt/kortix/config/current.json  ← Pointer to the last proven config release.
 ```
 
@@ -216,7 +219,7 @@ The daemon sends `KORTIX_TOKEN` only to the Kortix Git proxy. The proxy resolves
 
 ## The agent runtime
 
-The daemon launches OpenCode as `opencode serve --port 4096 --hostname 127.0.0.1`, with `OPENCODE_CONFIG_DIR` set to the config the box currently runs. With config releases on, that is the read-only release directory under `/opt/kortix/config`. With the feature off, it is the project's config directory (default `.kortix/opencode`) inside the cloned repo. See [Agents](/docs/project/agents) for how a session picks an agent and its config.
+The daemon launches OpenCode as `opencode serve --port 4096 --hostname 127.0.0.1`, with `OPENCODE_CONFIG_DIR` set to the config the box currently runs. With config releases on, that is the read-only release directory under `/opt/kortix/config`. With the feature off, it is the project's config directory (default `harnesses/opencode`) inside the cloned repo. See [Agents](/docs/project/agents) for how a session picks an agent and its config.
 
 ## Transcript attachments and memory
 
@@ -254,7 +257,7 @@ Every sandbox boots from an image built in two layers. Your Dockerfile defines t
 ┌─────────────────────────────────────────┐
 │  Kortix runtime layer (added on top)    │  ← opencode + kortix-agent + entrypoint
 ├─────────────────────────────────────────┤
-│  Your Dockerfile                        │  ← .kortix/Dockerfile
+│  Your Dockerfile                        │  ← Dockerfile.dev
 └─────────────────────────────────────────┘
 ```
 
@@ -269,7 +272,7 @@ sandbox:
   templates:
     - slug: dev
       name: Dev box
-      dockerfile: .kortix/Dockerfile
+      dockerfile: Dockerfile.dev
   default: dev
 ```
 
