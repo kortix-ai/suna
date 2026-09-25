@@ -57,6 +57,9 @@ import {
   type ConnectorConnectOptions,
   type ConnectorConnectOwner,
   renameConnection,
+  connectionSharedWithEveryone,
+  type Connection,
+  type ConnectionShare,
 } from './connectors';
 
 const canonicalConnectionType: import('./connectors').Connection = {
@@ -1240,4 +1243,54 @@ test('ConnectorConnectOwner is the two words every connect surface accepts', () 
   const options: ConnectorConnectOptions = { owner: 'project' };
   expect(owners).toEqual(['project', 'me']);
   expect(options.owner).toBe('project');
+});
+
+// ── Who may use a shared account ────────────────────────────────────────────
+
+const sharedAccount = (shared_with: ConnectionShare[] | undefined): Connection => ({
+  connection_id: 'c-shared',
+  connector_alias: 'crm',
+  owner_type: 'project',
+  owner_id: null,
+  label: 'Sales CRM',
+  status: 'active',
+  is_default: true,
+  metadata: {},
+  ...(shared_with ? { shared_with } : {}),
+});
+
+const share = (principal_type: ConnectionShare['principal_type'], label: string): ConnectionShare => ({
+  grant_id: `g-${label}`,
+  principal_type,
+  principal_id: `id-${label}`,
+  label,
+  expires_at: null,
+});
+
+test('listConnections carries a shared account audience and whether the caller may use it', async () => {
+  const sales = share('group', 'Sales');
+  nextResponse = {
+    status: 200,
+    body: { connections: [{ ...sharedAccount([sales]), usable: false }] },
+  };
+  const { connections } = await listConnections('P1');
+  expect(connections[0]?.shared_with).toEqual([sales]);
+  expect(connections[0]?.usable).toBe(false);
+});
+
+test('connectionSharedWithEveryone: no grant, or a grant to the project, is everyone', () => {
+  expect(connectionSharedWithEveryone(sharedAccount([]))).toBe(true);
+  // An older server sends no `shared_with`: a shared account was everyone's.
+  expect(connectionSharedWithEveryone(sharedAccount(undefined))).toBe(true);
+  expect(
+    connectionSharedWithEveryone(sharedAccount([share('group', 'Sales'), share('project', 'Acme')])),
+  ).toBe(true);
+  expect(connectionSharedWithEveryone(sharedAccount([share('group', 'Sales')]))).toBe(false);
+  expect(connectionSharedWithEveryone(sharedAccount([share('member', 'ada@example.test')]))).toBe(false);
+});
+
+test('connectionSharedWithEveryone: a private account is nobody else\'s', () => {
+  expect(
+    connectionSharedWithEveryone({ ...sharedAccount(undefined), owner_type: 'member', owner_id: 'u-1' }),
+  ).toBe(false);
 });
