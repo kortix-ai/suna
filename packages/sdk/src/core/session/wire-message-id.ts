@@ -24,9 +24,10 @@
  * WHAT IS NOT HERE. Three other places touch the clock, each on purpose:
  *  - `apps/kortix-sandbox-agent-server/src/harness/pi/wire-id.ts` is the one
  *    remaining COPY: it mints the pi harness's reply ids. kortixd is a
- *    standalone compiled binary with no workspace dependencies;
- *    `pi-wire-id.test.ts` reads this file's regex and asserts every pi id
- *    satisfies it.
+ *    standalone compiled binary with no workspace dependencies. The copy
+ *    orders on the ring through its own `wireIdClockDelta`, and
+ *    `pi-wire-id.test.ts` runs this file's regex and the golden mint and
+ *    `delta` vectors against it. It mints with no backdate, at the box clock.
  *  - `./wire-id-unwrap` (internal, not exported) builds on the constants here:
  *    `core/turns/grouping.ts` orders messages for display on an UNWRAPPED
  *    clock anchored on `time.created`.
