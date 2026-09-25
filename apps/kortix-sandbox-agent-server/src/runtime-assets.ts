@@ -138,14 +138,10 @@ export interface RuntimeAssetsOptions {
   /** Active harness config dir; the overlay is re-applied into it after an update. */
   configDir?: string
   fetchImpl?: typeof fetch
-  /** Injected for tests; production uses the daemon's own overlay routine. */
-  injectSkills?: (configDir: string, bakedDir: string) => Promise<void>
   /** Where `agent.next` is staged. Defaults to `$KORTIX_AGENT_STATE_DIR`. */
   agentStateDir?: string
   /** The immutable baked daemon. Defaults to `$KORTIX_AGENT_BIN`. */
   agentBakedPath?: string
-  /** Override "which binary is this process running from". Tests only. */
-  runningAgentPath?: string
   /** Harness-owned installation and injection; live when registered at boot. */
   assets?: HarnessAssetsService
 }
@@ -221,7 +217,7 @@ export function overlayHash(files: OverlayFile[]): string {
  * has no such check is one compromised response away from writing anywhere the
  * daemon can reach, and the daemon is root.
  */
-export function isSafeOverlayPath(path: string): boolean {
+function isSafeOverlayPath(path: string): boolean {
   if (!path || path.startsWith('/') || path.startsWith('-')) return false
   if (!path.startsWith('kortix-')) return false
   return path
@@ -444,7 +440,6 @@ function isCompiledStandalone(): boolean {
  * single start — for ever.
  */
 async function resolveRunningAgentPath(options: RuntimeAssetsOptions): Promise<string> {
-  if (options.runningAgentPath) return options.runningAgentPath
   if (isCompiledStandalone() && process.execPath) return process.execPath
   const current = join(agentStateDirOf(options), 'agent.current')
   const usable = await stat(current).then(
@@ -582,8 +577,6 @@ export async function reconcileRuntimeAssets(
   const skillsDir = options.managedSkillsDir ?? DEFAULT_MANAGED_SKILLS_DIR
   const statePath = options.statePath ?? DEFAULT_STATE_PATH
   const assets = options.assets ?? resolveHarness().assets
-  const inject = options.injectSkills ?? ((configDir: string, bakedDir: string) =>
-    assets.injectSkills(configDir, bakedDir))
   const token = (
     options.token ??
     process.env.KORTIX_TOKEN ??
@@ -727,7 +720,7 @@ export async function reconcileRuntimeAssets(
           await withReleaseStoreLock(async () => {
             await writeOverlay(skillsDir, payload.files)
             if (options.configDir) {
-              await inject(options.configDir, skillsDir).catch((err) =>
+              await assets.injectSkills(options.configDir, skillsDir).catch((err) =>
                 logger.warn('[runtime-assets] overlay re-injection failed', { err: String(err) }),
               )
             }
@@ -958,8 +951,6 @@ export interface AgentSwapOptions {
   exit?: (code: number) => void
   /** Seconds this process has been up. Injected by tests. */
   uptimeMs?: number
-  /** Override the settle window. Tests only. */
-  minUptimeMs?: number
 }
 
 /**
@@ -991,7 +982,7 @@ export async function requestAgentSwapIfIdle(
     if (await agentUpdatesPinned(stateDir)) return 'pinned'
 
     const uptimeMs = options.uptimeMs ?? process.uptime() * 1000
-    if (uptimeMs < (options.minUptimeMs ?? AGENT_SWAP_MIN_UPTIME_MS)) return 'too-young'
+    if (uptimeMs < AGENT_SWAP_MIN_UPTIME_MS) return 'too-young'
 
     const probe = options.turnInFlight ?? swapConfig?.turnInFlight
     if (!probe) return 'not-configured'

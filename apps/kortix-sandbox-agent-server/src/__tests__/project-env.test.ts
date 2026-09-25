@@ -84,3 +84,30 @@ describe('mergeProjectEnv — revocation', () => {
     expect(merged.HOME).toBe('/root')
   })
 })
+
+describe('project env store — what a push may carry', () => {
+  test('a reserved KORTIX_* name is never stored or exported, and never overwrites the daemon credential', () => {
+    // KORTIX_* is the platform's namespace: a project secret named KORTIX_TOKEN
+    // would otherwise replace the sandbox credential in every child env.
+    const store = createProjectEnvStore({} as NodeJS.ProcessEnv)
+    const update = store.apply({
+      revision: 'r1',
+      env: { OLD_SECRET: 'new', KORTIX_TOKEN: 'blocked' },
+      names: ['OLD_SECRET', 'KORTIX_API_URL'],
+    })
+
+    expect(update.names).toEqual(['OLD_SECRET'])
+    expect(store.snapshot().env).toEqual({ OLD_SECRET: 'new' })
+    expect(mergeProjectEnv({ KORTIX_TOKEN: 'sandbox-token' } as NodeJS.ProcessEnv, store)).toEqual({
+      KORTIX_TOKEN: 'sandbox-token',
+      OLD_SECRET: 'new',
+    })
+  })
+
+  test('names are upper-cased and non-string values are dropped', () => {
+    const store = createProjectEnvStore({} as NodeJS.ProcessEnv)
+    store.apply({ revision: 'r1', env: { api_key: 'v', COUNT: 3, FLAG: true, NOTE: 'ok' } as Record<string, unknown> })
+
+    expect(store.snapshot().env).toEqual({ API_KEY: 'v', NOTE: 'ok' })
+  })
+})

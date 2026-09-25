@@ -50,13 +50,21 @@ export interface OpenCodeHarnessService extends HarnessService {
   readonly instanceGuard: InstanceGuard
 }
 
-/** Compose services over ONE lifecycle without changing startup behavior. */
+/** Create the OpenCode lifecycle and compose every service over it. */
 export function createOpenCodeHarnessService(
   cfg: Config,
   projectEnv?: ProjectEnvStore,
   options: OpencodeLifecycleOptions = {},
 ): OpenCodeHarnessService {
-  const lifecycle = createOpencodeLifecycle(cfg, projectEnv, options)
+  return composeOpenCodeHarnessService(cfg, createOpencodeLifecycle(cfg, projectEnv, options))
+}
+
+/**
+ * Compose services over ONE lifecycle without changing startup behavior. The
+ * daemon HTTP tests call this with a fake lifecycle, so a wiring change here
+ * reaches every one of them.
+ */
+export function composeOpenCodeHarnessService(cfg: Config, lifecycle: Opencode): OpenCodeHarnessService {
   // One interrupt per service: control arms it, background delivers events to it.
   const quickQueue = createOpenCodeQuickQueueInterrupt(lifecycle, cfg)
   const instanceGuard = createInstanceGuard({

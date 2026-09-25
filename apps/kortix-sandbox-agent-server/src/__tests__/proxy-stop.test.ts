@@ -2,7 +2,8 @@ import { expect, test, spyOn } from 'bun:test'
 import type { OpenCodeConfig as Config } from '../harness/open-code/config'
 import type { Opencode } from '../harness/open-code/lifecycle'
 import { startProxy } from '../proxy'
-import { createOpenCodeHarnessFixture } from './helpers/open-code-harness'
+import { requireOpenCodeConfig } from '../harness/open-code/config'
+import { composeOpenCodeHarnessService } from '../harness/open-code/service'
 const TEST_TOKEN = 'test-kortix-token-32-chars-1234567890'
 
 function baseConfig(over: Partial<Config> = {}): Config {
@@ -38,21 +39,16 @@ function baseConfig(over: Partial<Config> = {}): Config {
 }
 
 
-test('stopping the proxy cancels offload timers and makes queued callbacks inert', async () => {
+test('after stop, no timer the proxy scheduled reaches the runtime', async () => {
+  // Capture every timer the daemon schedules while it starts, whatever its
+  // cadence, then fire them all after stop: a queued offload pass (or any
+  // other background job) must be inert once the proxy is stopped.
   const callbacks: Array<() => void> = []
-  const timer = { unref() {} } as unknown as ReturnType<typeof setTimeout>
-  const originalTimeout = globalThis.setTimeout
-  const originalInterval = globalThis.setInterval
-  const timeout = spyOn(globalThis, 'setTimeout').mockImplementation(((callback: () => void, ms: number, ...args: unknown[]) => {
-    if (ms === 90_000) { callbacks.push(callback); return timer }
-    return originalTimeout(callback, ms, ...args)
-  }) as typeof setTimeout)
-  const interval = spyOn(globalThis, 'setInterval').mockImplementation(((callback: () => void, ms: number, ...args: unknown[]) => {
-    if (ms === 300_000) { callbacks.push(callback); return timer }
-    return originalInterval(callback, ms, ...args)
-  }) as typeof setInterval)
-  const clearBoot = spyOn(globalThis, 'clearTimeout')
-  const clearRepeat = spyOn(globalThis, 'clearInterval')
+  const timer = { unref() {}, ref() {} } as unknown as ReturnType<typeof setTimeout>
+  const capture = ((callback: () => void) => {
+    callbacks.push(callback)
+    return timer
+  }) as unknown as typeof setTimeout
   const previous = process.env.KORTIX_ATTACHMENT_OFFLOAD
   process.env.KORTIX_ATTACHMENT_OFFLOAD = '1'
   let reachedRuntime = 0
@@ -61,20 +57,28 @@ test('stopping the proxy cancels offload timers and makes queued callbacks inert
     getInternalUrl: () => { reachedRuntime++; throw new Error('test prevents access to any transcript') },
   } as unknown as Opencode
   let proxy: ReturnType<typeof startProxy> | undefined
+  const timeout = spyOn(globalThis, 'setTimeout').mockImplementation(capture)
+  const interval = spyOn(globalThis, 'setInterval').mockImplementation(capture as unknown as typeof setInterval)
   try {
     const cfg = baseConfig()
-    proxy = startProxy(cfg, createOpenCodeHarnessFixture(cfg, opencode), Date.now())
+    proxy = startProxy(cfg, composeOpenCodeHarnessService(requireOpenCodeConfig(cfg), opencode), Date.now())
+  } finally {
+    timeout.mockRestore()
+    interval.mockRestore()
+  }
+  try {
+    expect(callbacks.length).toBeGreaterThan(0)
     await proxy.stop()
-    expect(callbacks).toHaveLength(2)
-    expect(clearBoot).toHaveBeenCalledWith(timer)
-    expect(clearRepeat).toHaveBeenCalledWith(timer)
     reachedRuntime = 0
-    for (const callback of callbacks) callback()
-    await Promise.resolve()
+    for (const callback of callbacks) {
+      try {
+        callback()
+      } catch {}
+    }
+    await Bun.sleep(10)
     expect(reachedRuntime).toBe(0)
   } finally {
     await proxy?.stop()
-    timeout.mockRestore(); interval.mockRestore(); clearBoot.mockRestore(); clearRepeat.mockRestore()
     if (previous === undefined) delete process.env.KORTIX_ATTACHMENT_OFFLOAD
     else process.env.KORTIX_ATTACHMENT_OFFLOAD = previous
   }

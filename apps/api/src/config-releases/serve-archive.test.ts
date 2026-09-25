@@ -81,6 +81,7 @@ describe('storageOriginIsPublic', () => {
     ['http://[::1]:54321', false],
     ['not a url', false],
     ['https://abc.supabase.co', true],
+    ['https://selfhost.example.test', true],
     ['https://acme.kortix.cloud', true],
     ['http://34.120.1.2', true],
   ])('%s -> %p', (origin, expected) => {

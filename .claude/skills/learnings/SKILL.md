@@ -407,9 +407,10 @@ opencode's blocking `question` call is a separate POST to
 posted the card and then hung until its box parked — strictly worse than the
 prose it replaced, because the user sees the question and answers a turn that
 never finishes. Caught while verifying a claim in the PR description, after
-merge, before anyone hit it. **Enforcers:** `channelRelayContext()` now accepts
-either platform, asserted by `question-relay-scope.test.ts` (a Teams session
-must count as a channel; the sentinel must come from `channelLabel()`), and
+merge, before anyone hit it. **Enforcers:** `sessionChannel()` (daemon
+`relay-context.ts`) accepts either platform, asserted by the daemon's
+`question-relay.test.ts` for both harness adapters (a Teams session must count
+as a channel; the sentinel names the channel it was posted to), and
 `unit-channel-question-guidance.test.ts` asserts the two platforms differ ON
 PURPOSE until sandboxes carry the fixed daemon.
 
@@ -3537,8 +3538,8 @@ then; 0 gateway log rows ever. PR #6576.
 *Enforcer:* `managed-fallback-sync.test.ts` (bundled table vs `MANAGED_MODELS`
 drift — cited here since 2026-08-19 but ABSENT on `main` until 2026-08-27, when
 adding `glm-5.3-flash` found the gap; it now lives in
-`apps/kortix-sandbox-agent-server/src/__tests__/` and fails on a missing,
-misnamed, mis-sized, or mis-priced bundled entry), `managed-model-overlay.test.ts` (stale file + live overlay; failed
+`apps/api/src/llm-gateway/models/` and fails on a missing, extra, misnamed,
+mis-sized, or mis-priced bundled entry), the daemon's `opencode-catalog.test.ts` (stale file + live overlay; failed
 fetch → bundled floor; await cap), `managed-scope.test.ts`; web: sync-store
 per-turn `session.error` tests. Not enforced: a live "picker ⊆ guest provider
 map" assertion after deploy — run the dev sweep by hand until it exists.
@@ -5364,8 +5365,8 @@ inode; the next restart booted the stub ("Still waking this session up").
 2. Version changes reach a box only through the runtime-assets manifest and
    `installOpencodeVersion` (`pnpm add -g --allow-build=opencode-ai`).
 
-*Automation:* `connector-mcp-config.test.ts` — "always disables OpenCode
-autoupdate".
+*Automation:* `opencode-config-composition.test.ts` — "always disables
+OpenCode autoupdate".
 
 ## A boot budget measures lack of progress, not wall-clock
 
@@ -5427,7 +5428,8 @@ restarting it under the boot; and the PATH launcher on two boxes was the
    to) the postinstall stub; resolution falls through to the managed links.
    Conservative: anything unreadable is not a stub.
 
-*Automation:* `refresh-converge-guard.test.ts`, `opencode-binary.test.ts`.
+*Automation:* `refresh-route.test.ts` (runtime-assets convergence only for a
+serving runtime), `opencode-binary.test.ts`.
 
 ## Window inline images inside the sandbox; the edge is too late
 
