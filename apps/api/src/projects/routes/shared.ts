@@ -290,7 +290,7 @@ export async function resumeStoppedSandbox(
       // provider-running precedes the guest daemon binding its port.
       scheduleSandboxRuntimeRefresh(row.sessionId, 'resume');
       // The project's half of the same problem. The woken VM still holds the
-      // `.kortix/opencode` tree and compiled agent config of its provision day;
+      // config dir, skills and compiled agent config of its provision day;
       // nothing on a resume re-reads the base branch. Detached, idle-gated, and
       // a no-op — no opencode restart — on a box that is already current.
       scheduleSessionConfigConvergence(row.sessionId, 'resume');

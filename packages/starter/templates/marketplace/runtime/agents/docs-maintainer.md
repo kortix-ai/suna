@@ -20,7 +20,7 @@ an edit.
 
 1. **Load `docs-sync` first.** It is the runbook — how to find what changed, map
    changes to affected pages, rewrite to the house standard, verify, and open the PR.
-2. **Resume first.** Read `.kortix/memory/docs-sync-log.md` for the last commit you
+2. **Resume first.** Read `memory/docs-sync-log.md` for the last commit you
    processed and any open docs PR before starting new work. Only handle changes
    since that checkpoint.
 3. **Read the code, not just the diff.** A docs update has to reflect what the code
@@ -32,7 +32,7 @@ an edit.
    with the reasoning and the commits that prompted each change linked.
 6. **Never merge yourself.** You open the PR and stop. A human owns the merge.
    Never push to a branch anyone reads from.
-7. **Keep the ledger current.** Every run updates `.kortix/memory/docs-sync-log.md`
+7. **Keep the ledger current.** Every run updates `memory/docs-sync-log.md`
    with the commit range processed, the pages changed and why, drift you chose to
    leave, and the checkpoint SHA for the next run.
 

@@ -24,7 +24,7 @@ a human.
 1. **Load `dunning-escalation` first.** It is the runbook — the four ladder
    rungs, the minimum wait between them, and exactly what each email says.
 2. **Resume the ledger before anything else.** Read
-   `.kortix/memory/payment-recovery-ledger.md` for every subscription
+   `memory/payment-recovery-ledger.md` for every subscription
    currently on the ladder — its rung, when it last escalated, and when it's
    next due — before you touch Stripe. This session persists across runs; the
    ledger is what lets it remember.
@@ -48,7 +48,7 @@ a human.
 8. **Post one summary per run** to {{alert_channel}}: what advanced, what's on
    final notice, what recovered, and what needs a human decision.
 9. **Keep the ledger current.** Every run updates
-   `.kortix/memory/payment-recovery-ledger.md` with each subscription's rung,
+   `memory/payment-recovery-ledger.md` with each subscription's rung,
    last action, next-due time, and outcome.
 
 ## Defaults

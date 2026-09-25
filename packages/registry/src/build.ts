@@ -25,6 +25,7 @@ import {
   projectNameFromManifest,
   resolveOpencodeDir,
 } from './manifest';
+import { AGENTS_DIR, SKILLS_DIR } from '@kortix/manifest-schema/layout';
 import { buildTarget } from './paths';
 import { groupSkillFiles } from './skills';
 
@@ -106,7 +107,7 @@ export function buildRegistry(opts: BuildOptions = {}): BuildResult {
   const source = opts.source ?? nodeFsSource(root);
   const files = source.listFiles();
 
-  const manifestRaw = readOptional(source, 'kortix.toml');
+  const manifestRaw = readOptional(source, 'kortix.yaml') ?? readOptional(source, 'kortix.toml');
   const configDir = resolveOpencodeDir(manifestRaw);
   const name = opts.name ?? projectNameFromManifest(manifestRaw) ?? 'registry';
 
@@ -121,8 +122,10 @@ export function buildRegistry(opts: BuildOptions = {}): BuildResult {
     counts[kind] = (counts[kind] ?? 0) + 1;
   };
 
-  // --- skills: <cd>/skills/**/SKILL.md (the dir holding SKILL.md is the skill)
-  for (const sk of groupSkillFiles(files, `${configDir}/skills`)) {
+  // --- skills: skills/**/SKILL.md, then the legacy <cd>/skills/**/SKILL.md
+  // (the dir holding SKILL.md is the skill; a name found twice keeps the first)
+  const skills = [SKILLS_DIR, `${configDir}/skills`].flatMap((root) => groupSkillFiles(files, root));
+  for (const sk of skills) {
     const meta = parseFrontmatter(readOptional(source, sk.skillMd));
     const defaultProjectInstall =
       meta.defaultProjectInstall === 'true'
@@ -154,9 +157,10 @@ export function buildRegistry(opts: BuildOptions = {}): BuildResult {
     );
   }
 
-  // --- agents + commands: <cd>/agent(s)/<file>.md, <cd>/command(s)/<file>.md
-  collectFlatMd(files, source, configDir, ['agents', 'agent'], 'registry:agent', name, add, 'agent', buildTarget.agent);
-  collectFlatMd(files, source, configDir, ['commands', 'command'], 'registry:command', name, add, 'command', buildTarget.command);
+  // --- agents: agents/<file>.md, then the legacy <cd>/agent(s)/<file>.md
+  // --- commands (OpenCode only): <cd>/command(s)/<file>.md
+  collectFlatMd(files, source, [AGENTS_DIR, `${configDir}/agents`, `${configDir}/agent`], 'registry:agent', name, add, 'agent', buildTarget.agent);
+  collectFlatMd(files, source, [`${configDir}/commands`, `${configDir}/command`], 'registry:command', name, add, 'command', buildTarget.command);
 
   // --- tools: <cd>/tools/<file>.ts
   for (const file of files) {
@@ -199,7 +203,6 @@ export function buildRegistry(opts: BuildOptions = {}): BuildResult {
 function collectFlatMd(
   files: string[],
   source: BuildSource,
-  configDir: string,
   dirs: string[],
   type: RegistryItem['type'],
   registryName: string,
@@ -208,7 +211,7 @@ function collectFlatMd(
   target: (file: string) => string,
 ): void {
   for (const dir of dirs) {
-    const re = new RegExp(`^${escapeRe(configDir)}/${dir}/([^/]+)\\.md$`);
+    const re = new RegExp(`^${escapeRe(dir)}/([^/]+)\\.md$`);
     for (const file of files) {
       const m = file.match(re);
       if (!m) continue;

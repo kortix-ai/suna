@@ -105,8 +105,8 @@ describe('marketplace catalog', () => {
     // in-project paths (same mapping the install wizard uses), plus a README.
     const targets = pack!.files.map((f) => f.target);
     expect(targets).toContain('README.md');
-    expect(targets.some((t) => t.startsWith('.kortix/opencode/skills/'))).toBe(true);
-    expect(targets.some((t) => t.startsWith('.kortix/opencode/agents/'))).toBe(true);
+    expect(targets.some((t) => t.startsWith('skills/'))).toBe(true);
+    expect(targets.some((t) => t.startsWith('agents/'))).toBe(true);
     expect(targets.every((t) => !t.startsWith('runtime/'))).toBe(true);
   });
 

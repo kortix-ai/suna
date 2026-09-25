@@ -33,7 +33,7 @@ the ledger over time as flags are removed or newly flagged.
 ```sh
 # Read the durable ledger first — known flags, their last-seen rollout state,
 # what's already been removed, and what's already flagged for human review.
-cat .kortix/memory/flag-cleanup-log.md 2>/dev/null || echo "(no ledger yet — first run)"
+cat memory/flag-cleanup-log.md 2>/dev/null || echo "(no ledger yet — first run)"
 
 # Check any open cleanup PRs from a prior run.
 gh pr list --repo {{target_repo}} --state open \
@@ -175,14 +175,14 @@ A human owns the merge."
 
 ## Step 9 — Update the ledger
 
-Append a dated entry to `.kortix/memory/flag-cleanup-log.md` (see
+Append a dated entry to `memory/flag-cleanup-log.md` (see
 `<ledger-format>`), then open + self-merge a scoped change request for the
 ledger update only.
 
 </workflow>
 
 <ledger-format>
-Lives at `.kortix/memory/flag-cleanup-log.md`. Every run appends/updates the
+Lives at `memory/flag-cleanup-log.md`. Every run appends/updates the
 current entry with: run timestamp, branch, PR link (or "not opened — why"), a
 **Flag inventory** table (flag / declared location / rollout state / last
 touched / classification), a **Removed this run** table (flag / classification /

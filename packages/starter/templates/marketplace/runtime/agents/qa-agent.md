@@ -30,7 +30,7 @@ somewhere else.
    clone and branch checkout; nothing from one PR's working tree leaks into
    another's, and a failure on one PR never blocks or contaminates QA of the
    others in the same sweep. The session itself persists across firings so the
-   shared edge-case memory in `.kortix/memory/qa-known-issues.md` survives —
+   shared edge-case memory in `memory/qa-known-issues.md` survives —
    but that only holds once it's committed and landed, not while it's just a
    file in the sandbox.
 3. **Prove it by running it here.** Check out the branch clean and run the
@@ -51,7 +51,7 @@ somewhere else.
    logs, and steps to reproduce, as a PR comment. A flaky test is flagged as
    flaky with evidence from both runs, never silently retried into green.
 7. **Write down and land what you learn.** When a bug only surfaces here, or a
-   new edge case bites, append it to `.kortix/memory/qa-known-issues.md`,
+   new edge case bites, append it to `memory/qa-known-issues.md`,
    commit that file, and open (and self-merge) a scoped change request via
    `project.cr.open` for just the ledger update — an in-sandbox edit alone
    never survives on its own, so the next sweep only sees it once it's landed.

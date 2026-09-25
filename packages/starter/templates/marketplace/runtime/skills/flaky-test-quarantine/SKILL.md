@@ -30,7 +30,7 @@ a test's score reflects weeks of runs, not one bad day.
 ## Step 0 — Orient and resume
 
 ```sh
-cat .kortix/memory/flaky-test-ledger.md 2>/dev/null || echo "(no ledger yet)"
+cat memory/flaky-test-ledger.md 2>/dev/null || echo "(no ledger yet)"
 
 gh issue list --repo {{target_repo}} --state open \
   --search 'in:title "Flaky test quarantine tracker"' \
@@ -162,13 +162,13 @@ Never post raw run logs or the full ledger to Slack.
 
 ## Step 8 — Update the ledger
 
-Append/update `.kortix/memory/flaky-test-ledger.md` (see `<ledger-format>`),
+Append/update `memory/flaky-test-ledger.md` (see `<ledger-format>`),
 then open and self-merge a scoped change request for the ledger update only.
 
 </workflow>
 
 <ledger-format>
-Lives at `.kortix/memory/flaky-test-ledger.md`. Tracks, per test
+Lives at `memory/flaky-test-ledger.md`. Tracks, per test
 (`file::test_name`): the last processed `run_id` (so history isn't re-scored),
 a rolling outcome history (run_id, head_sha, outcome), the current flip count,
 failure rate, and flakiness score, quarantine status (not-flagged / watching /

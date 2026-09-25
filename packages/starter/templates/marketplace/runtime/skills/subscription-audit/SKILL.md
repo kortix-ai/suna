@@ -30,7 +30,7 @@ cancels, pauses, downgrades, or otherwise modifies a subscription.
 ## Step 0 — Orient and resume
 
 ```sh
-cat .kortix/memory/saas-spend-audit-log.md 2>/dev/null || echo "(no ledger yet — first run)"
+cat memory/saas-spend-audit-log.md 2>/dev/null || echo "(no ledger yet — first run)"
 ```
 
 Read the last recorded state for every tracked subscription: its last known
@@ -94,14 +94,14 @@ agent never implies it has taken or will take the action itself.
 
 ## Step 7 — Update the ledger
 
-Update `.kortix/memory/saas-spend-audit-log.md` with the current state of
+Update `memory/saas-spend-audit-log.md` with the current state of
 every tracked subscription (see `<ledger-format>`) and a dated log line of what
 was reported this week.
 
 </workflow>
 
 <ledger-format>
-Lives at `.kortix/memory/saas-spend-audit-log.md`. Maintains, per vendor: the
+Lives at `memory/saas-spend-audit-log.md`. Maintains, per vendor: the
 last known price, the last charge date and amount, the register match status
 (matched / shadow IT), the most recent recommendation and its status (open /
 dismissed by a human / register updated). Below that, dated **Run log**
