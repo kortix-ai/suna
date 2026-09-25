@@ -50,7 +50,7 @@ async function debitForRouter(
     return { ok: true, ...result };
   } catch (err) {
     if (err instanceof InsufficientCreditsError) return { ok: false, error: err.reason };
-    console.error('deductCredits error:', err);
+    console.error('[BILLING] router debit failed:', err);
     return { ok: false, error: 'Deduction error' };
   }
 }
