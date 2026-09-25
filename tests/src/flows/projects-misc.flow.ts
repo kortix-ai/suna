@@ -667,10 +667,10 @@ flow(
       (await put(manager, gatewayOff.id)).status(404).body().has('$.code', 'llm_gateway_disabled');
       (await del(manager, gatewayOff.id)).status(404).body().has('$.code', 'llm_gateway_disabled');
     });
-    await ctx.step('NONMEMBER → PUT and DELETE both 403/404 on either project', async () => {
+    await ctx.step('NONMEMBER → PUT and DELETE both 403 on either project', async () => {
       for (const project of [gatewayOff, gatewayOn]) {
-        (await put(ctx.P.NONMEMBER, project.id)).status([403, 404]);
-        (await del(ctx.P.NONMEMBER, project.id)).status([403, 404]);
+        (await put(ctx.P.NONMEMBER, project.id)).status(403);
+        (await del(ctx.P.NONMEMBER, project.id)).status(403);
       }
     });
     await ctx.step('project manager reaches model validation and deletion while the gateway is on', async () => {
