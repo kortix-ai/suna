@@ -274,6 +274,10 @@ describe('Slack authorization matrix — project access and session visibility',
     expect(createSessionCalls).toBe(1);
     expect(createSessionInputs[0]?.visibility).toBe('project');
     expect(createSessionInputs[0]?.metadata?.slack?.conversation_policy).toBe('project_open');
+    // The title comes from the person's words, not the rendered Slack envelope
+    // that carries workspace and channel ids into the prompt.
+    expect(createSessionInputs[0]?.body?.title_source).toBe('<@B1> do the thing');
+    expect(createSessionInputs[0]?.body?.initial_prompt).not.toBe('<@B1> do the thing');
   });
 
   test('a DM with the bot starts a session private to the linked person', async () => {

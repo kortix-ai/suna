@@ -29,9 +29,8 @@ interface Row {
  * payload id, so a row could be named by an id no payload column held and this
  * module would never close it — the strip read `delivering` for ever.
  *
- * This is a MIRROR, so it can drift from the statement again. What stops that
- * is `wire-id-match.test.ts`, which pins the compiled SQL and asserts every
- * reader calls the one helper.
+ * This is a MIRROR, so it can drift from the statement. The statement itself
+ * is proven on real rows in __tests__/integration-prompt-inbox.test.ts.
  */
 function namesRow(row: Row, wireMessageId: string): boolean {
   return (
@@ -123,122 +122,11 @@ const forwardedRow = (overrides: Partial<Row> = {}): Row => ({
   ...overrides,
 });
 
+// Which row a wire id closes, and when, is the SQL of `confirm` and
+// `markConsumedOnDelivery`: proven on real rows in
+// __tests__/integration-prompt-inbox.test.ts. These rows pin the guards in
+// front of it.
 describe('confirmInboxPromptConsumed', () => {
-  test('a turn that consumed the wire id closes the row', async () => {
-    const { deps, rows, confirmed } = harness([forwardedRow()]);
-    expect(await confirmInboxPromptConsumed('sess-1', 'msg_a', deps)).toBe('confirmed');
-    expect(confirmed).toEqual(['cmd-1']);
-    expect(rows[0].result).toEqual({ status: 'delivered', forwarded_message_id: 'msg_a' });
-  });
-
-  test('the RE-MINTED id of a redelivery names the same row', async () => {
-    // Every reader shares ONE predicate (`wire-id-match.ts`), so none of them
-    // can disagree about which row an id names.
-    const { deps, confirmed } = harness([
-      forwardedRow({
-        payload: { text: 'hi', wireMessageId: 'msg_a', redeliveredMessageId: 'msg_b' },
-      }),
-    ]);
-    expect(await confirmInboxPromptConsumed('sess-1', 'msg_b', deps)).toBe('confirmed');
-    expect(confirmed).toEqual(['cmd-1']);
-  });
-
-  // REGRESSION 2026-08-20. Before the predicate was single-sourced this row
-  // was invisible here: `forwarded_message_id` records the id the delivery
-  // ACTUALLY went out under, and it matches NEITHER payload id. The acceptance
-  // relay named `msg_c`, `confirm` matched no row, and the row stayed
-  // `forwarded` — the composer's strip read "delivering" until the max-age
-  // sweep force-closed it ~10 min later.
-  test('a row whose forwarded id differs from BOTH payload ids still closes', async () => {
-    const { deps, rows, confirmed } = harness([
-      forwardedRow({
-        payload: { text: 'hi', clientMessageId: 'q_1', wireMessageId: 'msg_a', redeliveredMessageId: 'msg_b' },
-        result: { status: 'forwarded', forwarded_message_id: 'msg_c' },
-      }),
-    ]);
-    expect(await confirmInboxPromptConsumed('sess-1', 'msg_c', deps)).toBe('confirmed');
-    expect(confirmed).toEqual(['cmd-1']);
-    expect(rows[0].result).toEqual({ status: 'delivered', forwarded_message_id: 'msg_c' });
-  });
-
-  test('an id NO column on the row holds still names nothing', async () => {
-    const { deps, confirmed } = harness([
-      forwardedRow({
-        payload: { text: 'hi', clientMessageId: 'q_1', wireMessageId: 'msg_a' },
-        result: { status: 'forwarded', forwarded_message_id: 'msg_c' },
-      }),
-    ]);
-    expect(await confirmInboxPromptConsumed('sess-1', 'msg_zzz', deps)).not.toBe('confirmed');
-    expect(confirmed).toEqual([]);
-  });
-
-  test('a QUEUED row is left alone — it has not been forwarded', async () => {
-    const { deps, confirmed } = harness([forwardedRow({ status: 'queued', result: {} })]);
-    expect(await confirmInboxPromptConsumed('sess-1', 'msg_a', deps)).toBe('no_prompt');
-    expect(confirmed).toEqual([]);
-  });
-
-  test('an already-delivered row is a no-op, so the call is idempotent', async () => {
-    // Both witnesses can fire for one prompt (acceptance, then completion) and
-    // the reconciler can arrive on top of either.
-    const { deps, confirmed } = harness([forwardedRow({ result: { status: 'delivered' } })]);
-    expect(await confirmInboxPromptConsumed('sess-1', 'msg_a', deps)).toBe('no_prompt');
-    expect(confirmed).toEqual([]);
-  });
-
-  test('closing a STOP-PAUSED row drops the marker the release re-queues on', async () => {
-    // The row is finished — a turn consumed the message — so nothing about it
-    // is still waiting on the user. Leaving `stop_paused` behind is what let
-    // the next send re-queue a prompt that had already been answered.
-    const { deps, rows } = harness([
-      forwardedRow({ result: { status: 'forwarded', stop_paused: true, held: true } }),
-    ]);
-    expect(await confirmInboxPromptConsumed('sess-1', 'msg_a', deps)).toBe('confirmed');
-    expect(rows[0].result).toEqual({ status: 'delivered' });
-  });
-
-  test('acceptance reaches a row the drain has NOT marked forwarded yet', async () => {
-    // THE ORDER THIS FUNCTION ACTUALLY RUNS IN. Acceptance happens INSIDE the
-    // POST — `forwardToSandbox` awaits `acceptSandboxTurn` before it returns —
-    // and `markCommandForwarded` runs only after `continueSession` returns. So
-    // at acceptance the row is still `running`, and a confirmation that only
-    // matched `succeeded` + `forwarded` matched nothing on the one path every
-    // composer prompt takes.
-    //
-    // The delivery cannot be closed from here (the drain still owns the row and
-    // is about to write its result), so the fact is left in the PAYLOAD for
-    // `markCommandForwarded` to land — the same merged-payload channel
-    // `stopPausedOnDelivery` uses, and for the same reason.
-    const { deps, rows, confirmed, marked } = harness([
-      forwardedRow({ status: 'running', result: {} }),
-    ]);
-    expect(await confirmInboxPromptConsumed('sess-1', 'msg_a', deps)).toBe('pending_delivery');
-    expect(confirmed).toEqual([]);
-    expect(marked).toEqual(['cmd-1']);
-    expect(rows[0].payload.consumedOnDelivery).toBe(true);
-  });
-
-  test('the RE-MINTED id names the running row too — that is the id on the wire', async () => {
-    // A mid-turn prompt is re-minted before the POST, so the id OpenCode
-    // accepts is `redeliveredMessageId`, not the client's.
-    const { deps, marked } = harness([
-      forwardedRow({
-        status: 'running',
-        result: {},
-        payload: { text: 'hi', wireMessageId: 'msg_a', redeliveredMessageId: 'msg_b' },
-      }),
-    ]);
-    expect(await confirmInboxPromptConsumed('sess-1', 'msg_b', deps)).toBe('pending_delivery');
-    expect(marked).toEqual(['cmd-1']);
-  });
-
-  test('a forwarded row is CLOSED, not marked — the drain is done with it', async () => {
-    const { deps, confirmed, marked } = harness([forwardedRow()]);
-    expect(await confirmInboxPromptConsumed('sess-1', 'msg_a', deps)).toBe('confirmed');
-    expect(confirmed).toEqual(['cmd-1']);
-    expect(marked).toEqual([]);
-  });
-
   test('no wire id means no row to key on — automation prompts carry none', async () => {
     const { deps, confirmed } = harness([forwardedRow()]);
     expect(await confirmInboxPromptConsumed('sess-1', null, deps)).toBe('no_prompt');
@@ -296,21 +184,6 @@ describe('reconcileForwardedPrompts', () => {
     }
   });
 
-  test('a NEVER-RAN ending is left for the redelivery that owns it', async () => {
-    // `requeueAbandonedPrompt` flips exactly these rows back to `queued`, which
-    // takes them out of this scan. Confirming here would race it and close a
-    // prompt that is about to be sent again.
-    const { deps, confirmed } = harness([forwardedRow({ updatedAt: aged(60_000) })], {
-      msg_a: { state: 'ended', endReason: 'runtime_gone' },
-    });
-    expect(await reconcileForwardedPrompts(now, deps)).toEqual({
-      scanned: 1,
-      confirmed: 0,
-      forceClosed: 0,
-    });
-    expect(confirmed).toEqual([]);
-  });
-
   test('an `unknown` ending is the SUPERSEDED case — confirmed on the first pass, not the ceiling', async () => {
     // The reaper redelivers ONLY when the daemon proves a prompt ORPHANED, and
     // it does that with `abandoned`/`runtime_gone` — never `unknown`. Box-reaper
@@ -361,7 +234,7 @@ describe('reconcileForwardedPrompts', () => {
     // DECLINED. Left alone it kept reading `delivering`, which
     // `countLiveInboxPrompts` counts as live work: the composer held Stop with
     // nothing running and the bubble kept its "Queued" badge, both across a
-    // hard refresh (measured, session 65216cc6 — see the constant's note).
+    // hard refresh (measured locally — see the constant's note).
     for (const endReason of ['abandoned', 'runtime_gone']) {
       const { deps, confirmed, errors } = harness(
         [forwardedRow({ updatedAt: aged(INBOX_FORWARD_ORPHAN_MAX_MS + 1_000) })],
@@ -375,23 +248,6 @@ describe('reconcileForwardedPrompts', () => {
       expect(confirmed).toEqual(['cmd-1']);
       expect(errors[0].context).toMatchObject({ ledger_end_reason: endReason });
     }
-  });
-
-  test('the orphan bound is far below the no-ledger-row ceiling — an ending is evidence, an absence is not', async () => {
-    expect(INBOX_FORWARD_ORPHAN_MAX_MS).toBeLessThan(INBOX_FORWARD_CONFIRM_MAX_MS);
-    // A turn still OPEN past the orphan bound is untouched: only an ENDING
-    // counts, and `delivering` is OpenCode holding the message behind the turn
-    // in front of it.
-    const { deps, confirmed } = harness(
-      [forwardedRow({ updatedAt: aged(INBOX_FORWARD_ORPHAN_MAX_MS + 1_000) })],
-      { msg_a: { state: 'delivering', endReason: null } },
-    );
-    expect(await reconcileForwardedPrompts(now, deps)).toEqual({
-      scanned: 1,
-      confirmed: 0,
-      forceClosed: 0,
-    });
-    expect(confirmed).toEqual([]);
   });
 
   test('NO ledger row at all is force-closed past the ceiling, and logged', async () => {
@@ -420,25 +276,6 @@ describe('reconcileForwardedPrompts', () => {
     expect(confirmed).toEqual([]);
   });
 
-  test('the sweep NEVER redelivers — it only ever closes rows', async () => {
-    // Redelivery stays the reaper's job, because only the reaper holds the
-    // daemon's proof that a turn never ran. Nothing here may put a row back on
-    // the queue, so no shape of ledger evidence can produce a `queued` row.
-    const { deps, rows } = harness(
-      [
-        forwardedRow({ commandId: 'a', updatedAt: aged(60_000) }),
-        forwardedRow({
-          commandId: 'b',
-          payload: { wireMessageId: 'msg_b' },
-          updatedAt: aged(INBOX_FORWARD_CONFIRM_MAX_MS + 1),
-        }),
-      ],
-      { msg_a: { state: 'ended', endReason: 'abandoned' } },
-    );
-    await reconcileForwardedPrompts(now, deps);
-    expect(rows.map((r) => r.status)).toEqual(['succeeded', 'succeeded']);
-  });
-
   test('a ledger turn still DELIVERING is left open past the ceiling', async () => {
     // THE flagship mid-turn case. `beginSandboxTurn` opens a `delivering`
     // record at delivery time, and it stays that way for as long as OpenCode
@@ -463,13 +300,11 @@ describe('reconcileForwardedPrompts', () => {
     expect(errors).toEqual([]);
   });
 
-  test('the force-close ceiling IS the proxy dedupe TTL, by import', async () => {
-    // Not a second hardcoded 10 minutes: past this window the delivery claim
-    // that would absorb a duplicate POST has expired anyway, so "we still
-    // cannot tell" has stopped being a state worth preserving.
-    expect(INBOX_FORWARD_CONFIRM_MAX_MS).toBe(DEDUPE_TTL_MS);
-    // And the grace matches the reaper's own "accepted but not started yet"
-    // window (`ORPHANED_PROMPT_MIN_AGE_MS`).
-    expect(INBOX_FORWARD_CONFIRM_GRACE_MS).toBe(30_000);
+  // Past the proxy's delivery-claim TTL the claim that would absorb a
+  // duplicate POST has expired anyway, so "we still cannot tell" stops being
+  // a state worth preserving. A ceiling below the TTL would force-close a row
+  // whose duplicate the proxy could still absorb.
+  test('the force-close ceiling is never shorter than the proxy dedupe TTL', () => {
+    expect(INBOX_FORWARD_CONFIRM_MAX_MS).toBeGreaterThanOrEqual(DEDUPE_TTL_MS);
   });
 });

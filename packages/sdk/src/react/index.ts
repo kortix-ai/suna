@@ -174,6 +174,9 @@ export {
 } from './use-can';
 
 export * from './query-keys';
+// Workspace file/git cache keys. The event stream invalidates these on
+// `file.edited` and at turn end, so a host's file hooks must key on them.
+export { fileContentKeys, binaryBlobKeys, fileListKeys, gitStatusKeys } from './file-keys';
 export * from './query-contracts';
 export * from './use-project-name';
 export * from './use-project-session';

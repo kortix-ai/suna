@@ -17,7 +17,7 @@ import { createHash } from 'node:crypto';
  * never re-POST, and the ones that must take a dedupe claim.
  *
  * THREE endpoints, not two. `/command` was missing, and that omission is the
- * whole of the duplicate-send bug observed on 2026-08-11 (session 9f6b0d87):
+ * whole of the duplicate-send bug observed on 2026-08-11 (a prod session):
  * one `/webapp` submit produced four identical user messages, 11.0s / 11.8s /
  * 13.7s apart. A `/` slash-command posts to `POST /session/:id/command`, which
  * creates a user message and runs a turn exactly like `/message` does — but it

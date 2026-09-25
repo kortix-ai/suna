@@ -2,7 +2,7 @@
  * Regression: a memory-guard abort must reach the control plane as the end of
  * THE turn it stopped.
  *
- * Observed 2026-09-18 (session `ad02e053`): the guard aborted two turns at 97 %
+ * Observed 2026-09-18: the guard aborted two turns at 97 %
  * and 96 % box memory. The `SandboxMemoryGuard` end frame it relayed carried no
  * `turn_message_id`. The API only matches an id-less end against an active turn
  * that ALSO has no `messageId` (`fallback_match` in `completeSandboxTurn`), and
@@ -19,8 +19,11 @@
  * pinned at 97 %.
  */
 import { afterEach, beforeAll, describe, expect, mock, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
-import * as realTurnState from '../harness/open-code/opencode-turn-state'
+import { writeOpenCodeSessionPin } from '../harness/open-code/runtime-state'
 import * as realResources from '../resources'
 
 const ROOT = 'ses_root'
@@ -56,22 +59,8 @@ mock.module('../resources', () => ({
     ),
 }))
 
-// The pin file path is frozen when runtime-state.ts is first imported, and
-// `bun test` shares one process across files — so the pinned root is injected
-// the same flag-gated way instead of through a file.
-const realTurn = { ...realTurnState }
-mock.module('../harness/open-code/opencode-turn-state', () => ({
-  ...realTurn,
-  readPinnedSessionId: () => (injectPressure ? ROOT : realTurn.readPinnedSessionId()),
-  opencodeTurnInFlight: (baseUrl: string, workspace: string, root?: string | null) =>
-    realTurn.opencodeTurnInFlight(
-      baseUrl,
-      workspace,
-      root === undefined ? (injectPressure ? ROOT : realTurn.readPinnedSessionId()) : root,
-    ),
-}))
-
 const ENV_KEYS = [
+  'KORTIX_RUNTIME_STATE_DIR',
   'KORTIX_MEMORY_GUARD_PCT',
   'KORTIX_ATTACHMENT_OFFLOAD',
   'KORTIX_PROJECT_ID',
@@ -83,12 +72,13 @@ const savedEnv = new Map<string, string | undefined>(ENV_KEYS.map((k) => [k, pro
 
 const OPENCODE_URL = 'http://127.0.0.1:4096'
 const API_ROOT = 'http://api.test/v1'
-const USER_MESSAGE_ID = 'msg_0b4b8ed0d002I5zuKucp0FSRZc'
+const USER_MESSAGE_ID = 'msg_0000000d0001TestUserPrompt'
 
 const ORIGINAL_FETCH = globalThis.fetch
 let aborts: string[] = []
 let turnStreamBodies: Array<Record<string, unknown>> = []
 let stopMonitor: (() => void) | null = null
+let stateDir: string | null = null
 
 function stubOpenCodeAndApi(opts: { turnRunning: boolean }): void {
   aborts = []
@@ -146,6 +136,8 @@ afterEach(() => {
   stopMonitor = null
   injectPressure = false
   ;(globalThis as { fetch: unknown }).fetch = ORIGINAL_FETCH
+  if (stateDir) rmSync(stateDir, { recursive: true, force: true })
+  stateDir = null
   for (const [key, value] of savedEnv) {
     if (value === undefined) delete process.env[key]
     else process.env[key] = value
@@ -160,6 +152,9 @@ async function runGuardAtPressure(opts: { turnRunning: boolean }): Promise<void>
   process.env.KORTIX_SESSION_ID = 'sess-1'
   process.env.KORTIX_TOKEN = 'test-token'
   process.env.KORTIX_API_URL = 'http://api.test'
+  stateDir = mkdtempSync(join(tmpdir(), 'kortix-memory-guard-'))
+  process.env.KORTIX_RUNTIME_STATE_DIR = stateDir
+  writeOpenCodeSessionPin(ROOT)
   stubOpenCodeAndApi(opts)
   injectPressure = true
 
@@ -201,7 +196,7 @@ describe('memory guard turn end', () => {
     // An aborted turn is over. apps/api reads `error_retryable: true` as "a
     // retry, still running" (`isTerminalTurnEnd`) and drops the frame as
     // `non_terminal` before it ever looks at the identity — verified on a real
-    // sandbox 2026-09-21 (session 65617759).
+    // sandbox 2026-09-21.
     expect(end.error_retryable).toBe(false)
   })
 

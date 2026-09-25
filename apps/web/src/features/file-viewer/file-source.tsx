@@ -38,6 +38,10 @@ export interface FileContentResult {
   isLoading: boolean;
   error: unknown;
   refetch: () => Promise<unknown>;
+  /** When the current data arrived. Moves on every successful refetch, even
+   *  one that returned the same bytes — the HTML preview reloads on it,
+   *  because a page's stylesheets can change while its markup does not. */
+  dataUpdatedAt?: number;
 }
 
 export interface BinaryBlobResult {
@@ -71,6 +75,19 @@ export interface FileSource {
    * so the adapter supplies the right one. Omit to render no breadcrumbs.
    */
   Breadcrumbs?: ComponentType<{ filePath: string }>;
+  /**
+   * Re-read a file on demand — the viewer's Refresh. Only a source whose files
+   * can change underneath the viewer supplies it (the live workspace); a
+   * git-ref view is fixed, so it omits this and the control is not shown.
+   * `reloadKey` goes to `<FileContentRenderer reloadKey>`.
+   */
+  useRefresh?: (filePath: string | null) => FileRefreshResult;
+}
+
+export interface FileRefreshResult {
+  refresh: () => void;
+  refreshing: boolean;
+  reloadKey: number;
 }
 
 const FileSourceContext = createContext<FileSource | null>(null);

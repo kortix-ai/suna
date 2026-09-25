@@ -22,7 +22,7 @@ import * as sdk from '@kortix/sdk';
 // ── Generic fetch helper ────────────────────────────────────────────────────
 // Kept mobile-native: this is the shared primitive for endpoints the SDK does
 // NOT cover at all (account-level IAM MFA/session-policy/PAT-policy/
-// service-accounts/audit — see lib/accounts/{accounts-client,iam-client}.ts, all of which import `apiFetch` from this file) as well as
+// service-accounts/audit — see lib/accounts/accounts-client.ts, which imports `apiFetch` from this file) as well as
 // the couple of functions below kept mobile-native for behavioral reasons.
 // Uses the same token source (`api/config.ts#getAuthToken`) that's wired into
 // `configureKortix({ getToken })`, so both paths share one auth story.
@@ -213,7 +213,7 @@ export async function disconnectConnector(projectId: string, slug: string) {
  * Kept MOBILE-NATIVE: the SDK's `pipedreamConnect(projectId, slug)` sends an
  * EMPTY body. Mobile needs `success_redirect_uri`/`error_redirect_uri` so the
  * in-app browser auto-dismisses back to the app once Pipedream's OAuth flow
- * finishes (see components/pages/ConnectorsPage.tsx) — swapping to the SDK's
+ * finishes (see components/session/ConnectorAuthSheet.tsx) — swapping to the SDK's
  * version would silently drop those redirects. Same endpoint, same response
  * shape as the SDK's version; only the request body differs.
  */

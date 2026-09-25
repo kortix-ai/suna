@@ -115,43 +115,41 @@ describe('event-loop boot race — the SSE subscribe must not sleep through open
     expect(requestedWorkspaces).toEqual(['/adopted'])
   })
 
-  test('subscribes promptly after several pre-connect refusals', async () => {
-    const { port } = flakyEventServer(8)
+  // Flat 100 ms retries: 8 refusals ≈ 800 ms. Exponential backoff from 250 ms
+  // would need 250+500+1000+2000+4000+8000+15000 ≈ 30 s for the same count, and
+  // the caller's 10 s race would have already given up. It keeps retrying while
+  // OpenCode refuses, and adds no delay when it does not.
+  test.each([
+    [0, 1_000],
+    [8, 3_000],
+  ])('subscribes promptly after %i pre-connect refusals', async (refusals, budgetMs) => {
+    const { port, attemptCount } = flakyEventServer(refusals)
     const loop = startOpencodeEventLoop(fakeOpencode(port), cfg, {})
     loops.push(loop)
 
     const started = Date.now()
     await loop.connected
-    const elapsed = Date.now() - started
-
-    // Flat 100ms retries: 8 refusals ≈ 800ms. Exponential backoff from 250ms
-    // would need 250+500+1000+2000+4000+8000+15000 ≈ 30s for the same count,
-    // and the caller's 10s race would have already given up.
-    expect(elapsed).toBeLessThan(3_000)
+    expect(Date.now() - started).toBeLessThan(budgetMs)
+    expect(attemptCount()).toBe(refusals + 1)
   }, 20_000)
 
-  test('connects on the first attempt with no artificial delay', async () => {
-    const { port } = flakyEventServer(0)
-    const loop = startOpencodeEventLoop(fakeOpencode(port), cfg, {})
-    loops.push(loop)
-
-    const started = Date.now()
-    await loop.connected
-    expect(Date.now() - started).toBeLessThan(1_000)
-  }, 20_000)
-
-  test('fires onConnected once the subscription is live', async () => {
+  test('fires onConnected exactly once, when the subscription goes live', async () => {
     const { port } = flakyEventServer(3)
     let connectedCalls = 0
+    let callsBeforeLive = -1
     const loop = startOpencodeEventLoop(fakeOpencode(port), cfg, {
       onConnected: () => {
         connectedCalls++
       },
     })
     loops.push(loop)
+    callsBeforeLive = connectedCalls
 
     await loop.connected
-    expect(connectedCalls).toBeGreaterThanOrEqual(1)
+    // A stable connection: no further calls after it went live.
+    await Bun.sleep(200)
+    expect(callsBeforeLive).toBe(0)
+    expect(connectedCalls).toBe(1)
   }, 20_000)
 
   test('reconciles periodically when a terminal SSE frame is lost', async () => {
@@ -216,17 +214,5 @@ describe('event-loop boot race — the SSE subscribe must not sleep through open
     await loop.connected
     await Bun.sleep(50)
     expect(observed).toEqual(['session.idle'])
-  }, 20_000)
-
-  test('keeps retrying rather than giving up while opencode is still unavailable', async () => {
-    const { port, attemptCount } = flakyEventServer(Number.MAX_SAFE_INTEGER)
-    const loop = startOpencodeEventLoop(fakeOpencode(port), cfg, {})
-    loops.push(loop)
-
-    const deadline = Date.now() + 5_000
-    while (attemptCount() <= 2 && Date.now() < deadline) {
-      await Bun.sleep(25)
-    }
-    expect(attemptCount()).toBeGreaterThan(2)
   }, 20_000)
 })

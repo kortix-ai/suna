@@ -545,10 +545,9 @@ describe('secretSubmittedPrompt', () => {
   test('names every saved key and tells the agent not to re-mint', () => {
     const text = secretSubmittedPrompt(['DRATA_API_KEY', 'DRATA_WORKSPACE_ID']);
     expect(text).toContain('DRATA_API_KEY, DRATA_WORKSPACE_ID');
-    // The agent cannot run `kortix secrets sync` (the route refuses session
-    // principals), so the prompt must not send it there.
-    expect(text).toContain('arrives with the next message');
-    expect(text).toContain('cannot run `kortix secrets sync`');
+    // An agent session may sync its own session, so the prompt points there.
+    expect(text).toContain('run `kortix secrets sync`');
+    expect(text).not.toContain('cannot run');
     expect(text).toContain('Do not mint a new intake link');
   });
 });

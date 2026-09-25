@@ -643,8 +643,8 @@ chat UI actually dispatches on.
 ## Errors
 
 One typed hierarchy, produced by **every** HTTP layer — `backendApi`, the
-platform client's `platformFetch`, `authenticatedFetch`, the files client, the
-opencode client, and `ensureReady()` all throw/return the same classes (from
+`authenticatedFetch`, the files client, the opencode client, and
+`ensureReady()` all throw/return the same classes (from
 the root barrel; `@kortix/sdk/react` re-exports them too). They're real classes: `instanceof` works across every host, and
 `name`/shape are preserved for legacy `error.name === 'ApiError'` sniffers.
 
@@ -653,9 +653,10 @@ the root barrel; `@kortix/sdk/react` re-exports them too). They're real classes:
   `.url` / `.endpoint` / `.timeout`.
 - `HeadlessAuthError extends ApiError` — `getToken()` returned null; the request was
   never sent (`code: 'NO_SESSION'`).
-- `BillingError` — HTTP 402, with the backend's payload on `.detail`.
-- `RequestTooLargeError` — HTTP 431 (usually a too-large upload batch), with a
-  `.detail.suggestion`.
+- `BillingError extends ApiError` — HTTP 402, with the backend's payload on
+  `.detail` and its machine code on `.code`.
+- `RequestTooLargeError extends ApiError` — HTTP 431 (usually a too-large
+  upload batch), with a `.detail.suggestion`.
 - `SessionNotReadyError` (root barrel) — a session handle's runtime-scoped
   member (`.runtime`, `.previewUrl()`, `.proxyUrl()`) was touched before
   `ensureReady()` resolved this session's own sandbox.

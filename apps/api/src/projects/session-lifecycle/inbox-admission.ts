@@ -53,7 +53,7 @@ export const INBOX_ORDER_BACKOFF_MS = 300;
  * 75s of dead air behind ~1s deliveries.
  */
 export const INBOX_ORDER_MAX_BACKOFF_MS = 2_000;
-export const INBOX_BACKOFF_FREE_REFUSALS = 4;
+const INBOX_BACKOFF_FREE_REFUSALS = 4;
 
 /** `base * 2^(refusals - free)`, capped. Pure, so the curve is testable. */
 export function admissionBackoffMs(baseMs: number, capMs: number, refusals: number): number {

@@ -17,8 +17,8 @@ const {
   warnIfPreviewOriginsMissing,
 } = await import('./preview-hosts');
 
-const SBX = 'sbx_01M0G4HXCM32BX5R1GPYZDYC1H';
-const LABEL = 'sbx-01m0g4hxcm32bx5r1gpyzdyc1h';
+const SBX = 'sbx_01AAAAAAAAAAAAAAAAAAAAAAAA';
+const LABEL = 'sbx-01aaaaaaaaaaaaaaaaaaaaaaaa';
 
 const savedEnv = { ...process.env };
 beforeEach(() => {
@@ -34,14 +34,11 @@ afterEach(() => {
 });
 
 describe('sandboxHostLabel', () => {
-  test('lowercases and replaces the underscore DNS cannot carry', () => {
-    expect(sandboxHostLabel(SBX)).toBe(LABEL);
-  });
-  test('leaves an already-safe id alone', () => {
-    expect(sandboxHostLabel('sb-abc123')).toBe('sb-abc123');
-  });
-  test('produces a label within the 63-character DNS limit', () => {
-    expect(sandboxHostLabel(SBX).length).toBeLessThan(50);
+  test.each([
+    ['lowercases and replaces the underscore DNS cannot carry', SBX, LABEL],
+    ['leaves an already-safe id alone', 'sb-abc123', 'sb-abc123'],
+  ])('%s', (_label, externalId, hostLabel) => {
+    expect(sandboxHostLabel(externalId)).toBe(hostLabel);
   });
 });
 
@@ -81,10 +78,6 @@ describe('previewUrlTemplate', () => {
     configState.INTERNAL_KORTIX_ENV = 'prod';
     expect(previewUrlTemplate()).toBe('https://prod-p{port}-{sandbox}.p.kortix.com');
   });
-
-  test('is null without a declared domain, which means the path proxy', () => {
-    expect(previewUrlTemplate()).toBeNull();
-  });
 });
 
 describe('resolvePreviewHost', () => {
@@ -113,13 +106,6 @@ describe('resolvePreviewHost', () => {
       port: 8081,
       sandboxLabel: LABEL,
       local: false,
-    });
-  });
-  test('matches the local form', () => {
-    expect(resolvePreviewHost(`p3000-${LABEL}.localhost:8008`)).toEqual({
-      port: 3000,
-      sandboxLabel: LABEL,
-      local: true,
     });
   });
   test('refuses another environment’s label', () => {

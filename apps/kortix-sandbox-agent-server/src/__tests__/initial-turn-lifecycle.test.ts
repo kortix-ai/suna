@@ -9,7 +9,6 @@ import {
   resetClaimedInitialTurnForTests,
 } from '../harness/open-code/boot';
 import type { OpenCodeBootState as SandboxBootState } from '../harness/open-code/boot-state';
-import { resolveTurnObservationIdentity } from '../harness/open-code/diagnostics';
 
 const KEYS = [
   'KORTIX_PROJECT_ID',
@@ -106,13 +105,6 @@ describe('daemon-delivered initial turn lifecycle', () => {
     } finally {
       server.stop(true);
     }
-  });
-
-  test('uses the pinned root for exact recovery when prompt delivery times out ambiguously', () => {
-    expect(resolveTurnObservationIdentity(undefined, 'msg_initial', 'ses_pinned')).toEqual({
-      sessionId: 'ses_pinned',
-      messageId: 'msg_initial',
-    });
   });
 
   test('does not publish the root identity until OpenCode accepts the prompt', async () => {

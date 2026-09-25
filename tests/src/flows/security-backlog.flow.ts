@@ -473,6 +473,10 @@ flow(
         .post('/v1/p/share', { sandbox_id: bogusSandbox, port: 3000 });
       r.status(401);
     });
+    await ctx.step('the preview data path without any token/cookie → 401', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).get(`/v1/p/${bogusSandbox}/8000/`);
+      r.status(401);
+    });
     await ctx.step('garbage bearer on preview proxy → 401', async () => {
       const r = await ctx.client
         .withBearer('kortix_garbage_preview_token', 'GARBAGE')

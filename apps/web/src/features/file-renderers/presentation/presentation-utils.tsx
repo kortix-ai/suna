@@ -1,19 +1,15 @@
-import { Button } from '@/components/ui/button';
 import { errorToast, infoToast, successToast } from '@/components/ui/toast';
 import type { UiTranslator } from '@/i18n/translator';
 import { getEnv } from '@/lib/env-config';
 import {
   buildPresentationTemplateImageUrl,
   buildPresentationTemplatePdfUrl,
-  convertPresentationToGoogleSlides,
   convertRuntimePresentation,
-  getGoogleAuthUrl,
 } from '@kortix/sdk';
 
 export enum DownloadFormat {
   PDF = 'pdf',
   PPTX = 'pptx',
-  GOOGLE_SLIDES = 'google-slides',
 }
 
 /**
@@ -134,9 +130,6 @@ export async function downloadPresentation(
   tI18nComplete: UiTranslator,
 ): Promise<void> {
   try {
-    if (format === DownloadFormat.GOOGLE_SLIDES) {
-      throw new Error('Google Slides uses the OAuth upload flow');
-    }
     const blob = await convertRuntimePresentation(format, sandboxUrl, presentationPath, {
       onGenerating: () => {
         infoToast(tI18nComplete('text72662e145fd4', { value0: format.toUpperCase() }), {
@@ -158,107 +151,3 @@ export async function downloadPresentation(
     throw error; // Re-throw to allow calling code to handle
   }
 }
-
-export interface GoogleSlidesMessages {
-  authFailed: string;
-  redirecting: string;
-  uploaded: string;
-  openInSlides: string;
-  authenticateFirst: string;
-  uploadFailed: string;
-}
-
-export const handleGoogleAuth = async (
-  presentationPath: string,
-  sandboxUrl: string,
-  messages: GoogleSlidesMessages,
-) => {
-  try {
-    // Store intent to upload to Google Slides after OAuth
-    sessionStorage.setItem(
-      'google_slides_upload_intent',
-      JSON.stringify({
-        presentation_path: presentationPath,
-        sandbox_url: sandboxUrl,
-      }),
-    );
-
-    // Pass the current URL to the backend so it can be included in the OAuth state
-    const { auth_url } = await getGoogleAuthUrl(window.location.href);
-
-    if (auth_url) {
-      window.location.href = auth_url;
-      return;
-    }
-  } catch (error) {
-    console.error('Error initiating Google auth:', error);
-    errorToast(messages.authFailed);
-  }
-};
-
-export const handleGoogleSlidesUpload = async (
-  sandboxUrl: string,
-  presentationPath: string,
-  messages: GoogleSlidesMessages,
-  tI18nComplete: UiTranslator,
-) => {
-  if (!sandboxUrl || !presentationPath) {
-    throw new Error('Missing required parameters');
-  }
-
-  try {
-    const result = await convertPresentationToGoogleSlides(presentationPath, sandboxUrl);
-
-    if (!result.success && !result.is_api_enabled) {
-      infoToast(messages.redirecting, {
-        duration: 3000,
-      });
-      handleGoogleAuth(presentationPath, sandboxUrl, messages);
-      return {
-        success: false,
-        redirected_to_auth: true,
-        message: tI18nComplete.raw('text66e4abf0a3a3'),
-      };
-    }
-
-    if (result.google_slides_url) {
-      // Always show rich success toast - this is universal
-      successToast(messages.uploaded, {
-        button: (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => window.open(result.google_slides_url, '_blank', 'noopener,noreferrer')}
-          >
-            {messages.openInSlides}
-          </Button>
-        ),
-        duration: 20000,
-      });
-
-      // Extract presentation name from path for display
-      const presentationName = presentationPath.split('/').pop() || 'presentation';
-
-      return {
-        success: true,
-        google_slides_url: result.google_slides_url,
-        message: tI18nComplete('text7c2e0b8b96cb', { value0: presentationName }),
-      };
-    }
-
-    // Only throw error if no Google Slides URL was returned
-    throw new Error(result.message || 'No Google Slides URL returned');
-  } catch (error) {
-    console.error('Error uploading to Google Slides:', error);
-
-    // Show error toasts - this is also universal
-    if (error instanceof Error && error.message.includes('not authenticated')) {
-      errorToast(messages.authenticateFirst);
-    } else {
-      errorToast(messages.uploadFailed);
-    }
-
-    // Re-throw for any calling code that needs to handle it
-    throw error;
-  }
-};
