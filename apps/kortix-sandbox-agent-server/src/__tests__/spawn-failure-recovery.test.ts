@@ -95,7 +95,7 @@ describe('start(): a failed spawn schedules a respawn', () => {
  */
 describe('restart(): the turn it kills gets finalized', () => {
   function restartBody(): string {
-    const body = SRC.split('    async restart() {')[1]?.split('\n    },')[0]
+    const body = SRC.split('    async restart(')[1]?.split('\n    },')[0]
     expect(body).toBeTruthy()
     // Guard the extraction — this must still cover the stop/start pair.
     expect(body).toContain("await this.stop('SIGTERM')")
@@ -115,6 +115,16 @@ describe('restart(): the turn it kills gets finalized', () => {
     const readyAt = body.indexOf('waitUntilReady(')
     expect(readyAt).toBeGreaterThanOrEqual(0)
     expect(readyAt).toBeLessThan(hookAt)
+  })
+
+  test('DEF-4c: a restart that asks not to finalize returns before any readiness wait', () => {
+    // The boot fallback chain restarts OpenCode on configs that may never
+    // become ready, before any turn exists. Waiting 60 s there only delays the
+    // next fallback step.
+    const body = restartBody()
+    const skip = body.indexOf('if (opts?.finalizeTurn === false) return')
+    expect(skip).toBeGreaterThan(body.indexOf('await this.start()'))
+    expect(skip).toBeLessThan(body.indexOf('waitUntilReady('))
   })
 
   test('a hook that throws cannot break the restart', () => {

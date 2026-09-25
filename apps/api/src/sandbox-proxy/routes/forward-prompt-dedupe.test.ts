@@ -64,6 +64,14 @@ mock.module('../../projects/lib/session-token-grant', () => ({
 mock.module('../../projects/opencode-session-snapshot', () => ({
   scheduleOpencodeSnapshotSync: () => {},
 }));
+// The C9 turn-start convergence gate sits on this same path and reads the
+// session's project row. There is no database in this file, so every call
+// fails — and the driver's connect backoff makes each failure slower than the
+// last, which timed these cases out at 5 s. This suite is about DELIVERY
+// dedupe, so the gate is stubbed to its no-op answer.
+mock.module('../../projects/lib/turn-start-convergence', () => ({
+  convergeBeforeTurnStart: async () => ({ decision: 'skipped', outcome: null, ms: 0 }),
+}));
 const realTurnLifecycle = await import('../../projects/sandbox-turn-lifecycle');
 mock.module('../../projects/sandbox-turn-lifecycle', () => ({
   ...realTurnLifecycle,
@@ -270,5 +278,87 @@ describe('forwardToSandbox — a sandbox-down 400 on the LAST attempt releases t
     expect(fetchCalls).toBe(1);
     expect(retry.status).toBe(200);
     expect(await retry.json()).not.toEqual({ status: 'duplicate', deduplicated: true });
+  });
+});
+
+// ── DEF-FLAGON-1 — a keyless prompt is never swallowed as a "duplicate" ─────
+// Measured on a real Platinum box, 2026-09-25 (config-converge e2e, session
+// `7c18c223`): `kortix sessions chat` sent the SAME sentence a second time and
+// the proxy answered `200 {"status":"duplicate","deduplicated":true}`. No user
+// row, no assistant row, no turn — and the CLI died on `msg.parts.filter`
+// because that body carries neither `info` nor `parts`.
+//
+// The SDK's `session(p,s).send()` posts `{parts:[{type:'text',text}]}` to
+// `/session/:id/message` with NO Idempotency-Key and NO wire `messageID`
+// (packages/sdk/src/core/client/kortix.ts `send`), so `promptDeliveryKey` falls
+// all the way to its content hash — which is byte-identical between two
+// deliberate sends of one sentence. That is the SAME trap `/command` and
+// `/summarize` are already exempt from, reached through the one endpoint the
+// exemption did not cover.
+describe('forwardToSandbox — a prompt with no client identity is never deduped by its text', () => {
+  test('the same sentence sent twice on purpose reaches the sandbox twice', async () => {
+    const args = (body: ArrayBuffer) =>
+      [
+        'sb-1',
+        8000,
+        {
+          kind: 'principal',
+          userId: 'u1',
+          callerSessionId: null,
+          boundCredentialSessionId: null,
+          sandboxAuthored: false,
+        } as const,
+        'POST',
+        '/session/sess-1/message',
+        '',
+        jsonHeaders(),
+        body,
+        'http://app.local',
+      ] as const;
+
+    queueFetch(new Response('{"info":{},"parts":[]}', { status: 200 }));
+    const first = await forwardToSandbox(...args(PROMPT_BODY));
+    expect(first.status).toBe(200);
+    expect(fetchCalls).toBe(1);
+
+    queueFetch(new Response('{"info":{},"parts":[]}', { status: 200 }));
+    const second = await forwardToSandbox(...args(PROMPT_BODY));
+    // THE ASSERTION: the second send is a second turn, not a duplicate.
+    expect(fetchCalls).toBe(1);
+    expect(second.status).toBe(200);
+    expect(await second.json()).not.toEqual({ status: 'duplicate', deduplicated: true });
+  });
+
+  test('a prompt that DOES carry a wire messageID still dedupes on a resend', async () => {
+    const withId = new TextEncoder().encode(
+      JSON.stringify({ messageID: 'msg_abc', parts: [{ type: 'text', text: 'hi' }] }),
+    ).buffer;
+    const args = [
+      'sb-1',
+      8000,
+      {
+        kind: 'principal',
+        userId: 'u1',
+        callerSessionId: null,
+        boundCredentialSessionId: null,
+        sandboxAuthored: false,
+      } as const,
+      'POST',
+      '/session/sess-1/message',
+      '',
+      jsonHeaders(),
+      withId,
+      'http://app.local',
+    ] as const;
+    // Two upstream calls for ONE delivery: the wire-id placement read
+    // (`promptTranscriptReadPath`) and then the prompt itself.
+    queueFetch(new Response('[]', { status: 200 }), new Response('{"info":{},"parts":[]}', { status: 200 }));
+    const first = await forwardToSandbox(...args);
+    expect(first.status).toBe(200);
+    expect(fetchCalls).toBe(2);
+    const second = await forwardToSandbox(...args);
+    // The resend reached NOTHING upstream: the id identifies one submission.
+    expect(fetchCalls).toBe(2);
+    expect(await second.json()).toEqual({ status: 'duplicate', deduplicated: true });
   });
 });

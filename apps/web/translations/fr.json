@@ -1142,6 +1142,10 @@
         "agent_principal": {
           "name": "Agents comme principaux",
           "description": "Les agents agissent en leur propre nom : avec leurs permissions Kortix, plafonnées par leur rôle. La personne qui lance un agent n'apporte que ses propres comptes."
+        },
+        "config_releases": {
+          "name": "Versions de configuration",
+          "description": "Exécute les sessions avec la configuration d'agent actuelle de la branche de base, servie en lecture seule, afin qu'un agent, un skill ou un outil fusionné atteigne chaque session en cours. Désactivé, une session lit son propre dossier de configuration dans le workspace."
         }
       }
     },
@@ -1638,11 +1642,6 @@
     "previousRepository": {
       "title": "Cette session n’est pas à jour",
       "message": "Le projet a changé depuis le début de cette session. Mettez-la à jour pour continuer sur la dernière version.",
-      "unavailable": "L’espace de travail précédent n’est plus disponible. Démarrez une nouvelle session dans le dépôt actuel.",
-      "resume": "Reprendre l’espace précédent",
-      "resuming": "Reprise…",
-      "newSession": "Démarrer une nouvelle session",
-      "delete": "Supprimer la session",
       "update": "Mettre à jour",
       "updating": "Mise à jour…",
       "dismiss": "Ignorer",
@@ -18586,6 +18585,17 @@
       "textea5d0ffa0962": "Un responsable du projet connecte le compte partagé.",
       "text3d6627454174": "Définir l’identifiant",
       "text929505ef815a": "Aucun compte n’est encore connecté. Ajoutez le vôtre ci-dessous, ou demandez à un responsable du projet de connecter un compte partagé.",
+      "text931cb67e2af7": "La nouvelle configuration de l'agent n'a pas pu être chargée. Cette session utilise toujours une configuration antérieure.",
+      "textd9ff3a72833d": "Échec du chargement de la configuration",
+      "textebfb07812fb4": "La nouvelle configuration de l'agent n'a pas pu être chargée",
+      "text4e62b29dd3b6": "Une configuration antérieure est utilisée dans cette session. La configuration en échec n'est pas réessayée avant une modification de la branche de base.",
+      "textf81ab834de5f": "Raison",
+      "text44cdf35701cd": "En cours d'utilisation",
+      "text591f9f0f3259": "Version en échec",
+      "text00ed4c71dc2b": "Dernière version fonctionnelle",
+      "textbd7a1a3b4141": "La configuration par défaut de la plateforme",
+      "text643df05476ab": "La configuration par défaut de la plateforme est utilisée dans cette session. La configuration en échec n'est pas réessayée avant une modification de la branche de base.",
+      "text40652e008fc9": "La nouvelle configuration de l'agent n'a pas pu être chargée. Cette session utilise la configuration par défaut de la plateforme.",
       "text3312ddb06c1d": "Enregistrez un bot dans Azure, connectez-le ici, puis téléversez le package de l'application dans Teams.",
       "text7f1b55a356b0": "Enregistrer le bot dans Azure",
       "text91004edf8b30": "Le connecter à ce projet",
@@ -19163,7 +19173,9 @@
       "text8cc0d84b66bb": "Lien d'identité Slack prévisualisé",
       "text508b43cc4545": "Lien d'identité Teams prévisualisé",
       "text467f597e95b0": "Domaine SSO vérifié",
-      "text8295f9d4861b": "Vérification du domaine SSO du compte définie"
+      "text8295f9d4861b": "Vérification du domaine SSO du compte définie",
+      "text7beaff63a7d3": "Archive de configuration du projet téléchargée",
+      "text5176d59f25fd": "Version de configuration de la session résolue"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

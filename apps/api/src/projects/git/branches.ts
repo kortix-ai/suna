@@ -626,6 +626,12 @@ export async function commitMultipleFilesToBranch(
     }
 
     invalidateProjectMirror(project.projectId);
+    // The branch moved. Sessions whose base ref is this branch converge on the
+    // new config (spec, "Convergence triggers"). Every API write to a branch
+    // goes through here. Dynamic import: `projects/lib` imports this module.
+    void import('../lib/config-convergence-triggers')
+      .then((triggers) => triggers.notifyBaseBranchMoved(project.projectId, branch, 'api-write'))
+      .catch(() => {});
     return { commitSha, branch, fileCount: files.length };
   } finally {
     await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
