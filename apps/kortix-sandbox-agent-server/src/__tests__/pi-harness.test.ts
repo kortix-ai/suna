@@ -482,15 +482,22 @@ describe('pi harness', () => {
     expect(sessions[0]!.title).toBe('remember me')
   })
 
-  test('skills in the project are loaded into the system prompt', async () => {
+  test('skills in the project are loaded into the system prompt: root skills/, then the legacy dir', async () => {
     const r = await boot({ script: [{ text: 'ok' }], start: false })
-    writeFileSync(join(r.workspace, '.kortix'), '', { flag: 'a' })
-    rmSync(join(r.workspace, '.kortix'), { force: true })
-    const skillDir = join(r.workspace, '.kortix', 'skills', 'deploy')
-    require('node:fs').mkdirSync(skillDir, { recursive: true })
-    writeFileSync(join(skillDir, 'SKILL.md'), '---\nname: deploy\ndescription: Ship to prod\n---\nRun the deploy script.\n')
+    const skill = (root: string, name: string, description: string) => {
+      const dir = join(r.workspace, root, name)
+      require('node:fs').mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'SKILL.md'), `---\nname: ${name}\ndescription: ${description}\n---\nBody.\n`)
+    }
+    skill('skills', 'deploy', 'Ship to prod')
+    skill('.kortix/opencode/skills', 'review', 'Review a change')
+    // Same name in both roots: the root layout wins.
+    skill('.kortix/opencode/skills', 'deploy', 'Stale legacy copy')
     await r.service.lifecycle.start()
-    const skills = (await r.user('/skill').then((res) => res.json())) as Array<{ name: string }>
-    expect(skills.map((s) => s.name)).toEqual(['deploy'])
+    const skills = (await r.user('/skill').then((res) => res.json())) as Array<{ name: string; description: string }>
+    expect(skills.map((s) => [s.name, s.description]).sort()).toEqual([
+      ['deploy', 'Ship to prod'],
+      ['review', 'Review a change'],
+    ])
   })
 })

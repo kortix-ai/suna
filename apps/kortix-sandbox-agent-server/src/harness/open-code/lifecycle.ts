@@ -86,7 +86,8 @@ import {
   writeSecretCapabilitiesInstruction,
 } from '../../secret-capabilities'
 import { configReleaseNoticePath } from '../../config-release/notice'
-import { bootLinkPath } from '../../boot-config'
+import { bootLinkPath, readBootLinkTarget } from '../../boot-config'
+import { SKILLS_DIR } from '../../project-layout'
 
 const READY_POLL_MS = 100
 // OpenCode announces readiness on stdout. `serve.ts` prints this line only
@@ -286,6 +287,8 @@ export async function buildOpencodeConfigContent(
   env: NodeJS.ProcessEnv,
   opts: {
     injectedSkillsDir?: string | null
+    /** The project root's `skills/`, only while OpenCode serves the working tree. */
+    projectSkillsDir?: string | null
     secretCapabilitiesInstructionPath?: string | null
     /** The config-release notice, when one exists (config-release/notice.ts). */
     configReleaseNoticePath?: string | null
@@ -336,6 +339,11 @@ export async function buildOpencodeConfigContent(
   // box with no project config (the platform meta sandbox).
   const injectedSkillsDir =
     opts.injectedSkillsDir && existsSync(opts.injectedSkillsDir) ? opts.injectedSkillsDir : null
+  // (5b) The project root's `skills/` (the harness-neutral layout). Declared
+  // only while OpenCode serves the working tree: a config release carries its
+  // skills inside the release, and `/workspace` never decides a release's config.
+  const projectSkillsDir =
+    opts.projectSkillsDir && existsSync(opts.projectSkillsDir) ? opts.projectSkillsDir : null
   const secretCapabilitiesInstructionPath =
     opts.secretCapabilitiesInstructionPath && existsSync(opts.secretCapabilitiesInstructionPath)
       ? opts.secretCapabilitiesInstructionPath
@@ -407,9 +415,10 @@ export async function buildOpencodeConfigContent(
     out.instructions = instructions.includes(instructionPath) ? instructions : [...instructions, instructionPath]
   }
 
-  // (5) Injected managed skills — append to whatever `skills.paths` the base
-  // config already declares; never clobber.
-  if (injectedSkillsDir) {
+  // (5) Injected managed skills and the project root's skills — append to
+  // whatever `skills.paths` the base config already declares; never clobber.
+  const extraSkillDirs = [injectedSkillsDir, projectSkillsDir].filter((dir): dir is string => dir !== null)
+  if (extraSkillDirs.length > 0) {
     const skills =
       out.skills && typeof out.skills === 'object' && !Array.isArray(out.skills)
         ? (out.skills as Record<string, unknown>)
@@ -417,10 +426,7 @@ export async function buildOpencodeConfigContent(
     const paths = Array.isArray(skills.paths)
       ? skills.paths.filter((p): p is string => typeof p === 'string')
       : []
-    out.skills = {
-      ...skills,
-      paths: paths.includes(injectedSkillsDir) ? paths : [...paths, injectedSkillsDir],
-    }
+    out.skills = { ...skills, paths: [...paths, ...extraSkillDirs.filter((dir) => !paths.includes(dir))] }
   }
 
   // (1) Optional Kortix Connector MCP server. CLI remains the primary agent path.
@@ -841,12 +847,14 @@ export async function writeKortixOpencodeConfig(
   opts: {
     configPath?: string
     injectedSkillsDir?: string | null
+    projectSkillsDir?: string | null
     secretCapabilitiesInstructionPath?: string | null
     configReleaseNoticePath?: string | null
   } = {},
 ): Promise<string | null> {
   const content = await buildOpencodeConfigContent(env, {
     injectedSkillsDir: opts.injectedSkillsDir,
+    projectSkillsDir: opts.projectSkillsDir,
     secretCapabilitiesInstructionPath: opts.secretCapabilitiesInstructionPath,
     configReleaseNoticePath: opts.configReleaseNoticePath,
   })
@@ -1676,7 +1684,7 @@ export interface OpencodeLifecycleOptions {
    * Instance created before the checkout landed keeps a tool registry whose
    * imports failed, for the life of the process (dev, 2026-08-27:
    * `ResolveMessage: Cannot find module '@mendable/firecrawl-js' from
-   * /workspace/.kortix/opencode/tools/scrape_webpage.ts`). The early-spawn
+   * /workspace/harnesses/opencode/tools/scrape_webpage.ts`). The early-spawn
    * boot path therefore probes liveness on a non-Instance route until
    * `markWorkspaceReady()`.
    */
@@ -1824,9 +1832,15 @@ export function createOpencodeLifecycle(
         err: err instanceof Error ? err.message : String(err),
       })
     }
+    // The project root's `skills/` joins only while the boot link names a dir
+    // in the working tree (config releases off). A release carries its own.
+    const served = await readBootLinkTarget()
+    const projectRoot = currentCfg.projectTarget
+    const servesWorkingTree = !!served && !!projectRoot && served.startsWith(`${projectRoot}/`)
     return writeKortixOpencodeConfig(baseEnv, {
       configPath: options.configPathOverride,
       injectedSkillsDir: join(bootLinkPath(), 'skills'),
+      projectSkillsDir: servesWorkingTree ? join(projectRoot, SKILLS_DIR) : null,
       secretCapabilitiesInstructionPath,
       configReleaseNoticePath: configReleaseNoticePath(),
     })

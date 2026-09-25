@@ -20,7 +20,7 @@ import { logger } from '../../logger'
 // 15–66 ms. Reproduced with the real 1.18.23 binary and one project custom
 // tool whose import takes 1.5 s; a project without custom tools does not
 // reproduce, because its registry builds in milliseconds. Kortix projects
-// ship custom tools in `.kortix/opencode/tools/`, and the registry waits for
+// ship custom tools in `harnesses/opencode/tools/` (legacy `.kortix/opencode/tools/`), and the registry waits for
 // the config dir's dependencies before it imports them, so the window here is
 // ~1 s on every fresh instance.
 //

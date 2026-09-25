@@ -2,7 +2,7 @@
  * The project repository layout: where a project keeps its agents, skills,
  * memory and harness-specific files. The API, CLI, registry and starter
  * templates read every path from here. The sandbox daemon imports no
- * `@kortix/*` package and keeps its own copy (`harness/layout.ts`).
+ * `@kortix/*` package and keeps its own copy (apps/kortix-sandbox-agent-server/src/project-layout.ts).
  *
  * Harness-neutral content sits at the repository root. A file that exactly
  * one harness reads sits under `harnesses/<harness>/`.

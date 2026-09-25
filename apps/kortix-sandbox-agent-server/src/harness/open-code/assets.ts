@@ -14,6 +14,7 @@ import type {
 import { requireOpenCodeConfig } from './config'
 import { ensureInjectedManagedSkills } from '../../managed-skills'
 import { isInReleaseStore, readBootLinkTarget } from '../../boot-config'
+import { managedOverlayRoot } from '../../project-layout'
 import {
   captureProcessOutput,
   OPENCODE_CURRENT_LINK,
@@ -362,9 +363,11 @@ export function createOpenCodeAssetsService(
     // target — the one place the boot path wrote the answer. Re-deriving it
     // from the running report and the working tree is how an overlay once
     // rewrote tracked managed skills in `/workspace` (verification DEF-6).
+    // Returns the dir whose `skills/` takes the overlay: the config dir itself,
+    // or the project root for a root-layout working tree (`managedOverlayRoot`).
     resolveConfigDir: async (cfg) => {
       const target = await readBootLinkTarget()
-      if (target && existsSync(target)) return target
+      if (target && existsSync(target)) return managedOverlayRoot(target, cfg.projectTarget)
       return requireOpenCodeConfig(cfg).defaultOpencodeConfigDir
     },
     // A release is the platform's own sealed copy; a working tree is not.

@@ -1023,7 +1023,7 @@ async function runWarmSeedMode(
   // (zero-network) so opencode pays its per-directory project init (git scan +
   // file index + LSP + sqlite) ONCE here, FROZEN into the snapshot. Without this
   // every fork paid that ~3.2s init on its own hot path (the runtime-ready
-  // wall). Resolve opencode's config from the scaffold's .kortix/opencode so the
+  // wall). Resolve opencode's config from the scaffold's config dir so the
   // seed (and every fork) runs the real agents/plugins, not the baked default.
   // Project-scoped warm seed: clone the REAL project repo at base so the
   // captured snapshot already has /workspace. A fork then hits materializeRepo's

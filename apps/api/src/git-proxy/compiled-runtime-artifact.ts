@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { resolveCompiledAgentConfigForSession } from "../projects/lib/compile-agent-config";
+import { readComposedRelease, resolveReleaseTreeSource } from "../config-releases/builder";
 import { validateRef, validateSha } from "../projects/git-ref";
 import { refreshMirror, runGit, spawn } from "../projects/git/mirror";
 import { resolveOpencodeConfigDirAtSha } from "../projects/git/opencode-config-dir";
@@ -193,9 +194,17 @@ async function compileArtifact(
     sourceSha,
   );
   const opencodeConfigDir = await resolveOpencodeConfigDirAtSha(mirror, project, sourceSha);
-  const opencodeConfigArchive = opencodeConfigDir
-    ? await archiveOpencodeConfig(mirror, sourceSha, opencodeConfigDir)
-    : null;
+  // The root `skills/` ride along exactly as in a config release: composed
+  // into the config dir's `skills/` (see config-releases/builder.ts).
+  const release = opencodeConfigDir ? await resolveReleaseTreeSource(mirror, project, sourceSha) : null;
+  const opencodeConfigArchive = !opencodeConfigDir
+    ? null
+    : release && 'source' in release && release.source.rootSkills.length > 0
+      ? (await readComposedRelease(mirror, release.source, {
+          archive: true,
+          limit: MAX_OPENCODE_CONFIG_ARCHIVE_BYTES,
+        })).archive
+      : await archiveOpencodeConfig(mirror, sourceSha, opencodeConfigDir);
   const artifact = compileOpenCodeRuntime({
     projectId: project.projectId,
     ref,

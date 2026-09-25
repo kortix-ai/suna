@@ -2,31 +2,29 @@ import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { z } from 'zod'
 import { loadConfig, readProjectManifest, extractNestedString, type Config as HostConfig } from '../../config'
+import { opencodeConfigDirCandidates, projectSkillDirs } from '../../project-layout'
 
 type Config = OpenCodeConfig
 
 /**
  * Pick the opencode config dir for this sandbox. Honors `opencode.config_dir` in
- * the project's manifest (kortix.yaml, or legacy kortix.toml) when present,
- * defaulting to `.kortix/opencode` relative to the cloned repo, and falls back
- * to KORTIX_DEFAULT_OPENCODE_CONFIG_DIR if the project doesn't have an
- * opencode.jsonc — that's what keeps a freshly provisioned sandbox bootable
- * before a project has been cloned.
+ * the project's manifest (kortix.yaml, or legacy kortix.toml) when present;
+ * otherwise tries `harnesses/opencode`, then the legacy `.kortix/opencode`,
+ * relative to the cloned repo. The first that ships an opencode.json[c] wins.
+ * Falls back to KORTIX_DEFAULT_OPENCODE_CONFIG_DIR when none does — that's
+ * what keeps a freshly provisioned sandbox bootable before a project has been
+ * cloned.
  */
 export async function resolveOpencodeConfigDir(cfg: Config): Promise<string> {
   const fs = await import('node:fs/promises')
-  const relConfigDir = await readOpencodeConfigDirFromManifest(fs, cfg.projectTarget)
-  const candidate = `${cfg.projectTarget}/${relConfigDir}`
-  for (const filename of ['opencode.jsonc', 'opencode.json']) {
-    try {
-      const stat = await fs.stat(`${candidate}/${filename}`)
-      if (stat.isFile()) {
-        try {
-          await fs.mkdir(candidate, { recursive: true })
-        } catch {}
-        return candidate
-      }
-    } catch {}
+  const manifestDir = await readOpencodeConfigDirFromManifest(fs, cfg.projectTarget)
+  for (const relConfigDir of opencodeConfigDirCandidates(manifestDir)) {
+    const candidate = `${cfg.projectTarget}/${relConfigDir}`
+    for (const filename of ['opencode.jsonc', 'opencode.json']) {
+      try {
+        if ((await fs.stat(`${candidate}/${filename}`)).isFile()) return candidate
+      } catch {}
+    }
   }
   try {
     await fs.mkdir(cfg.defaultOpencodeConfigDir, { recursive: true })
@@ -37,21 +35,20 @@ export async function resolveOpencodeConfigDir(cfg: Config): Promise<string> {
 /**
  * Pluck `opencode.config_dir` out of the project manifest without dragging in a
  * full parser. Resolves kortix.yaml first, then legacy kortix.toml, and reads
- * the field from whichever format it found. Falls back to the default if the
- * manifest is absent or anything's off.
+ * the field from whichever format it found. Null when the manifest is absent,
+ * names no dir, or names an unsafe one.
  */
 async function readOpencodeConfigDirFromManifest(
   fs: typeof import('node:fs/promises'),
   projectTarget: string,
-): Promise<string> {
-  const fallback = '.kortix/opencode'
+): Promise<string | null> {
   const manifest = await readProjectManifest(fs, projectTarget)
-  if (!manifest) return fallback
+  if (!manifest) return null
   const rawValue = extractNestedString(manifest.body, manifest.format, 'opencode', 'config_dir')
-  if (!rawValue) return fallback
+  if (!rawValue) return null
   const raw = rawValue.trim().replace(/\/+$/, '')
   // Reject absolute paths and parent traversal — matches the API's validator.
-  if (!raw || raw.startsWith('/') || raw.split('/').includes('..')) return fallback
+  if (!raw || raw.startsWith('/') || raw.split('/').includes('..')) return null
   return raw
 }
 
@@ -93,7 +90,7 @@ export function loadOpenCodeEnvironment(env: NodeJS.ProcessEnv): OpenCodeEnviron
 export async function resolveOpenCodeSkillDirectories(cfg: Config): Promise<string[]> {
   const directories: string[] = []
   try { directories.push(join(await resolveOpencodeConfigDir(cfg), "skills")) } catch {}
-  directories.push(join(cfg.workspace || "/workspace", ".kortix/opencode/skills"))
+  directories.push(...projectSkillDirs(cfg.workspace || "/workspace"))
   directories.push(join(homedir(), ".opencode/skills"))
   return directories
 }
