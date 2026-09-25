@@ -6,7 +6,8 @@
 // the same sender identity and the same provider chain as invites, so an
 // operator who configures Resend or SES (no SMTP anywhere) still gets working
 // magic links.
-import { actionButton, escapeHtml, renderEmail, renderText, S } from '../../lib/email/template';
+import { actionButton, renderEmail, renderText, S } from '../../lib/email/template';
+import { escapeHtml } from '../../shared/html';
 
 export type AuthEmailActionType =
   | 'signup'

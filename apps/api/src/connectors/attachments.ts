@@ -3,6 +3,7 @@ import { and, asc, eq, inArray, lt, or } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { getSupabase, toPublicStorageUrl } from '../shared/supabase';
 import type { InlineAttachmentFile } from './attachment-inline';
+import { isUuid } from '../shared/validate';
 
 export const MAX_CONNECTOR_ATTACHMENT_FILES = 20;
 export const MAX_CONNECTOR_ATTACHMENT_BYTES = 25 * 1024 * 1024;
@@ -85,10 +86,6 @@ export interface ConnectorAttachmentStore {
 }
 
 type AttachmentRow = typeof connectorAttachments.$inferSelect;
-
-function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-}
 
 function plainFilename(value: string): boolean {
   return (
@@ -215,7 +212,7 @@ class DbConnectorAttachmentStore implements ConnectorAttachmentStore {
       if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
       const attachmentId = (value as Record<string, unknown>).attachment_id;
       if (attachmentId === undefined) return [];
-      if (typeof attachmentId !== 'string' || !isUuid(attachmentId)) {
+      if (!isUuid(attachmentId)) {
         throw new Error(`attachments[${index}].attachment_id is invalid`);
       }
       return [{ index, attachmentId }];

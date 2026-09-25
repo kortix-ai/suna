@@ -20,7 +20,8 @@ import {
   assertProjectCapability,
 } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { isSystemProjectSecretName, loadSecretViewsForUser, readBody } from '../lib/serializers';
+import { isSystemProjectSecretName, loadSecretViewsForUser } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 import {
   SecretWriteResultSchema,
   type SecretDeliverySync,
@@ -49,7 +50,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const identifier = c.req.param('identifier')?.trim();
-    const parsed = UpdateSecretStrategyInputSchema.safeParse(await readBody(c));
+    const parsed = UpdateSecretStrategyInputSchema.safeParse(await readJsonObject(c));
     if (!identifier || !isValidIdentifier(identifier)) {
       return c.json({ error: 'Invalid secret identifier' }, 400);
     }

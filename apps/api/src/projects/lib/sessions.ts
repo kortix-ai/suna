@@ -86,11 +86,11 @@ import {
   type ProjectRow,
   type ProjectSessionRow,
   type RequestAuditContext,
-  UUID_V4_REGEX,
   deriveKortixApiRoot,
-  normalizeJsonObject,
   normalizeString,
 } from './serializers';
+import { normalizeJsonObject } from '../../shared/json';
+import { isUuid } from '../../shared/validate';
 import {
   canonicalConnectorAlias,
   parseSessionConnectorBindings,
@@ -1521,7 +1521,7 @@ export async function createProjectSession(input: {
   }
 
   const requestedSessionId = normalizeString(body.session_id ?? body.sessionId);
-  if (requestedSessionId && !UUID_V4_REGEX.test(requestedSessionId)) {
+  if (requestedSessionId && !isUuid(requestedSessionId)) {
     return { error: { status: 400, body: { error: 'Invalid session id' } } };
   }
   const sessionId = requestedSessionId ?? randomUUID();
