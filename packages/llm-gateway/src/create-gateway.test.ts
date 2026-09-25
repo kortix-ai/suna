@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { createGateway } from './create-gateway';
-import type { GatewayHooks, UpstreamDescriptor } from './domain';
+import type { GatewayHooks, ModelCatalog, UpstreamDescriptor } from './domain';
 import type { FetchImpl } from './http';
 
 // Piece B: the Anthropic Messages ingress (`gateway.messages`) must run
@@ -135,7 +135,7 @@ describe('gateway.listModels — scope plumbing', () => {
     const seen: Array<{ managedOnly?: boolean } | undefined> = [];
     const gateway = createGateway(
       makeHooks({
-        listModels: async (_principal, opts) => {
+        listModels: async (_principal, opts): Promise<ModelCatalog> => {
           seen.push(opts);
           return opts?.managedOnly ? { 'grok-4.6': { name: 'Grok 4.6' } } : { 'a/b': { name: 'B' } };
         },

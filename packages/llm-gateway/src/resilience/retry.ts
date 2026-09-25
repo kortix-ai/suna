@@ -1,36 +1,19 @@
 import { TimeoutError } from '../errors';
 
 export interface RetryOptions {
-  maxAttempts?: number;
-  baseDelayMs?: number;
-  maxDelayMs?: number;
+  maxAttempts: number;
+  baseDelayMs: number;
+  maxDelayMs: number;
   /** Per-attempt timeout — aborts a single attempt's signal. */
-  timeoutMs?: number;
+  timeoutMs: number;
   /** Which failures are worth another attempt. The caller owns this policy. */
   isRetryable: (err: unknown) => boolean;
 }
 
-const DEFAULTS = {
-  maxAttempts: 3,
-  baseDelayMs: 250,
-  maxDelayMs: 8_000,
-  // Per-attempt budget. On the STREAMING path this only bounds time-to-headers
-  // (the transport returns as soon as the Response exists, so the race below
-  // settles and the timer is cleared long before the body finishes). On the
-  // NON-STREAMING path it bounds the whole completion — and 120s was far too
-  // small for that: a Claude Fable 5 request emitting its 128,000-token ceiling
-  // at 50 tok/s needs 2,560s (42m40s) before the single JSON body comes back.
-  // 90 minutes clears that with room to spare and is never reached by a
-  // healthy request, because a healthy request finishes when it finishes.
-  timeoutMs: 90 * 60_000,
-  // Total wall clock across all attempts. Kept above the per-attempt budget so
-  // one full-length attempt can still be followed by a retry after a FAST
-  // failure (a 500/timeout that returns in milliseconds), which is the only
-  // case where retrying a request this long is useful. It caps the
-  // pathological `maxAttempts × timeoutMs` blow-up where a stuck upstream keeps
-  // the server busy for minutes after the client socket has closed.
-  deadlineMs: 120 * 60_000,
-};
+// Total wall clock across all attempts. It caps the pathological
+// `maxAttempts × timeoutMs` blow-up where a stuck upstream keeps the server
+// busy after the client socket has closed.
+const DEADLINE_MS = 120 * 60_000;
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -44,12 +27,9 @@ export async function withRetry<T>(
   fn: (signal: AbortSignal) => Promise<T>,
   opts: RetryOptions,
 ): Promise<T> {
-  const maxAttempts = Math.max(1, opts.maxAttempts ?? DEFAULTS.maxAttempts);
-  const baseDelayMs = opts.baseDelayMs ?? DEFAULTS.baseDelayMs;
-  const maxDelayMs = opts.maxDelayMs ?? DEFAULTS.maxDelayMs;
-  const timeoutMs = opts.timeoutMs ?? DEFAULTS.timeoutMs;
-  const deadlineMs = DEFAULTS.deadlineMs;
-  const isRetryable = opts.isRetryable;
+  const maxAttempts = Math.max(1, opts.maxAttempts);
+  const { baseDelayMs, maxDelayMs, timeoutMs, isRetryable } = opts;
+  const deadlineMs = DEADLINE_MS;
   const now = Date.now;
   const start = now();
 
