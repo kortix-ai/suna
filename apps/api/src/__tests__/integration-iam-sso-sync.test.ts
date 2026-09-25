@@ -33,6 +33,7 @@ import { resolveAccountIdentityByEmail } from '../iam/account-identity';
 import { authorize } from '../iam/authorize';
 import { actorForUser } from '../iam/actor';
 import { PROJECT_ACTIONS } from '../iam';
+import { insertIntoView } from './helpers/compat-views';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -61,7 +62,7 @@ beforeAll(async () => {
   await db.insert(accountGroups).values({ groupId: MKT_GROUP, accountId: ACCOUNT, name: 'Marketing', source: 'sso' });
   // The group grants MANAGER on the project — this is the admin-configured
   // group→project→role binding the synced membership rides on.
-  await db.insert(projectGroupGrants).values({ projectId: PROJECT, groupId: MKT_GROUP, accountId: ACCOUNT, role: 'manager' });
+  await insertIntoView(db, projectGroupGrants, { projectId: PROJECT, groupId: MKT_GROUP, accountId: ACCOUNT, role: 'manager' });
   await db.insert(accountSsoProviders).values({
     ssoProviderId: crypto.randomUUID(),
     accountId: ACCOUNT,

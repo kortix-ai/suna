@@ -561,6 +561,13 @@
       "when": 1790288304214,
       "tag": "20260924221824_connector_sync_fences_and_usage_request_id",
       "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1790301265348,
+      "tag": "20260925015425_schema_contract_declarations",
+      "breakpoints": true
     }
   ]
 }

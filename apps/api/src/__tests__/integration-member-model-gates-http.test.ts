@@ -31,6 +31,7 @@ import { db } from '../shared/db';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
 import { upsertResourceGrant } from '../iam/resource-grants';
+import { insertIntoView } from './helpers/compat-views';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -62,11 +63,11 @@ beforeAll(async () => {
     // so this suite measures the ROLE gate and not the feature flag.
     metadata: { experimental: { llm_gateway: true } },
   });
-  await db.insert(accountMembers).values([
+  await insertIntoView(db, accountMembers, [
     { userId: MEMBER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
     { userId: MANAGER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
   ]);
-  await db.insert(projectMembers).values([
+  await insertIntoView(db, projectMembers, [
     { accountId: ACCOUNT, projectId: PROJECT, userId: MEMBER, projectRole: 'member' },
     { accountId: ACCOUNT, projectId: PROJECT, userId: MANAGER, projectRole: 'manager' },
   ]);

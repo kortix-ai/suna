@@ -14,6 +14,7 @@ import { db } from '../shared/db';
 import { authorize } from '../iam/authorize';
 import { actorForUser } from '../iam/actor';
 import { PROJECT_ACTIONS, upsertResourceGrant } from '../iam';
+import { insertIntoView } from './helpers/compat-views';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -30,7 +31,7 @@ const canUse = async (userId: string, agent: string) =>
 
 async function seedMember(role: 'owner' | 'admin' | 'member') {
   const userId = uid();
-  await db.insert(accountMembers).values({ userId, accountId: ACCOUNT, accountRole: role });
+  await insertIntoView(db, accountMembers, { userId, accountId: ACCOUNT, accountRole: role });
   return userId;
 }
 
@@ -46,9 +47,9 @@ afterAll(async () => {
 describe('per-resource scoping (iam_resource_grants)', () => {
   test('scoping one agent restricts ONLY that agent; unscoped agents stay open', async () => {
     const alice = await seedMember('member');
-    await db.insert(projectMembers).values({ accountId: ACCOUNT, projectId: PROJECT, userId: alice, projectRole: 'manager' });
+    await insertIntoView(db, projectMembers, { accountId: ACCOUNT, projectId: PROJECT, userId: alice, projectRole: 'manager' });
     const bob = await seedMember('member');
-    await db.insert(projectMembers).values({ accountId: ACCOUNT, projectId: PROJECT, userId: bob, projectRole: 'manager' });
+    await insertIntoView(db, projectMembers, { accountId: ACCOUNT, projectId: PROJECT, userId: bob, projectRole: 'manager' });
 
     // Before any grant: both agents are unscoped → both members can use both.
     expect(await canUse(alice, SCOPED_AGENT)).toBe(true);
@@ -73,7 +74,7 @@ describe('per-resource scoping (iam_resource_grants)', () => {
 
   test('granting the scoped agent to a member lets them in immediately', async () => {
     const carol = await seedMember('member');
-    await db.insert(projectMembers).values({ accountId: ACCOUNT, projectId: PROJECT, userId: carol, projectRole: 'manager' });
+    await insertIntoView(db, projectMembers, { accountId: ACCOUNT, projectId: PROJECT, userId: carol, projectRole: 'manager' });
     // SCOPED_AGENT was scoped (to Alice) in the previous test → Carol is out.
     expect(await canUse(carol, SCOPED_AGENT)).toBe(false);
 
