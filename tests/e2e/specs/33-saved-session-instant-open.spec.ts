@@ -16,6 +16,10 @@
  *   bootScreen — the boot screen's "Starting your session" heading
  *   reply      — the saved assistant reply
  *
+ * It also records every distinct set of skeleton rows it saw. Each session
+ * draws its own rows, and the same ones from the route's loading boundary, the
+ * server render, and the page: a second set means the rows jumped.
+ *
  * Run it alone for numbers:
  *
  *   BENCH_OUT=/tmp/open.txt E2E_GREP='33 — ' pnpm test -- --browser-only
@@ -61,7 +65,11 @@ interface Timeline {
 async function installTimeline(page: Page) {
   await page.addInitScript(
     ({ reply, heading }) => {
-      const state = { from: performance.now(), marks: {} as Record<string, number> };
+      const state = {
+        from: performance.now(),
+        marks: {} as Record<string, number>,
+        shapes: [] as string[],
+      };
       (window as unknown as { __openTimeline: typeof state }).__openTimeline = state;
       const mark = (key: string) => {
         if (!(key in state.marks)) state.marks[key] = performance.now() - state.from;
@@ -78,7 +86,13 @@ async function installTimeline(page: Page) {
       };
       const scan = () => {
         const skeletons = document.querySelectorAll('[data-testid="saved-session-skeleton"]');
-        if (Array.from(skeletons).some(shown)) mark('skeleton');
+        for (const skeleton of Array.from(skeletons)) {
+          if (!shown(skeleton)) continue;
+          mark('skeleton');
+          const bars = skeleton.querySelectorAll('.animate-pulse');
+          const shape = Array.from(bars, (bar) => bar.className).join('|');
+          if (!state.shapes.includes(shape)) state.shapes.push(shape);
+        }
         for (const h2 of Array.from(document.querySelectorAll('h2'))) {
           if (h2.textContent?.trim() === heading && shown(h2)) mark('bootScreen');
         }
@@ -109,16 +123,25 @@ async function installTimeline(page: Page) {
 /** Start a fresh timeline for a client-side navigation in the same document. */
 async function resetTimeline(page: Page) {
   await page.evaluate(() => {
-    const state = (window as unknown as { __openTimeline: { from: number; marks: object } })
-      .__openTimeline;
+    const state = (
+      window as unknown as { __openTimeline: { from: number; marks: object; shapes: string[] } }
+    ).__openTimeline;
     state.from = performance.now();
     state.marks = {};
+    state.shapes = [];
   });
 }
 
 async function readTimeline(page: Page): Promise<Timeline> {
   return page.evaluate(
     () => (window as unknown as { __openTimeline: { marks: Timeline } }).__openTimeline.marks,
+  );
+}
+
+/** Every distinct set of skeleton rows shown since the timeline started. */
+async function readShapes(page: Page): Promise<string[]> {
+  return page.evaluate(
+    () => (window as unknown as { __openTimeline: { shapes: string[] } }).__openTimeline.shapes,
   );
 }
 
@@ -170,7 +193,7 @@ test('33 — a session with a saved conversation opens on skeleton rows and then
       await runDatabaseSql(
         "UPDATE kortix.project_sessions SET agent_name='kortix' WHERE session_id=$1",
         [sessionId],
-        env.databaseUrl,
+        env.databaseUrl ?? undefined,
       );
       await api(auth.access_token, 'PATCH', `/projects/${project.id}/features`, {
         feature: 'session_transcript_history',
@@ -190,6 +213,21 @@ test('33 — a session with a saved conversation opens on skeleton rows and then
       }
       return sessionId;
     };
+
+    // The rows are drawn on the server and again on the client; if the two
+    // differ, React (a dev build here) reports a hydration error whose diff
+    // names the skeleton's components and classes.
+    const hydrationErrors: string[] = [];
+    page.on('console', (message) => {
+      const text = message.text();
+      if (
+        message.type() === 'error' &&
+        /hydrat/i.test(text) &&
+        /SavedSessionSkeleton|SkeletonBar|animate-pulse/.test(text)
+      ) {
+        hydrationErrors.push(text);
+      }
+    });
 
     await installTimeline(page);
     await installBrowserSessionDirect(page, auth, `/projects/${project.id}`, authOptions);
@@ -229,6 +267,9 @@ test('33 — a session with a saved conversation opens on skeleton rows and then
           `${label}: skeleton before the conversation`,
         )
         .toBeLessThan(marks.reply ?? Number.NEGATIVE_INFINITY);
+      expect
+        .soft(await readShapes(page), `${label}: the skeleton rows never change while shown`)
+        .toHaveLength(1);
       return { label, ...marks };
     };
 
@@ -279,7 +320,8 @@ test('33 — a session with a saved conversation opens on skeleton rows and then
       { scheme: 'dark', width: 1280, height: 800 },
       { scheme: 'light', width: 720, height: 480 },
     ] as const;
-    for (const view of views) {
+    const rowSets: string[] = [];
+    for (const [index, view] of views.entries()) {
       let releaseCopy = () => {};
       const copy = new Promise<void>((resolve) => {
         releaseCopy = resolve;
@@ -290,6 +332,31 @@ test('33 — a session with a saved conversation opens on skeleton rows and then
       await openByUrl(sessionId);
       await expect(page.getByTestId('saved-session-skeleton')).toBeVisible({ timeout: 60_000 });
       const name = `${view.scheme}-${view.width}x${view.height}`;
+      const bars = page.getByTestId('saved-session-skeleton').locator('.animate-pulse');
+      rowSets.push(await bars.evaluateAll((els) => els.map((el) => el.className).join('|')));
+      // One pulse travels down the rows, so at any instant they sit at
+      // different points of it. Rows pulsing in step would share one opacity.
+      const opacities = await bars.evaluateAll((els) =>
+        els.map((el) => getComputedStyle(el).opacity),
+      );
+      expect
+        .soft(new Set(opacities).size, `${name}: the rows pulse out of step`)
+        .toBeGreaterThan(2);
+      if (index === 0) {
+        // Frames of the wave, for review.
+        for (let frame = 0; frame < 4; frame++) {
+          await page.screenshot({ path: testInfo.outputPath(`skeleton-wave-${frame}.png`) });
+          await page.waitForTimeout(250);
+        }
+        await page.emulateMedia({ reducedMotion: 'reduce' });
+        const still = await bars.evaluateAll((els) =>
+          els.map((el) => `${getComputedStyle(el).animationName}:${getComputedStyle(el).opacity}`),
+        );
+        expect
+          .soft(new Set(still), 'reduced motion: every row holds still')
+          .toEqual(new Set(['none:1']));
+        await page.emulateMedia({ reducedMotion: 'no-preference' });
+      }
       await page.screenshot({
         path: testInfo.outputPath(`skeleton-${name}.png`),
         animations: 'disabled',
@@ -304,6 +371,8 @@ test('33 — a session with a saved conversation opens on skeleton rows and then
       const marks = await readTimeline(page);
       expect.soft(marks.bootScreen, `${name}: the boot screen must not appear`).toBeUndefined();
     }
+    expect.soft(new Set(rowSets).size, 'each session draws its own rows').toBe(views.length);
+    expect(hydrationErrors, 'the server and the client draw the same rows').toEqual([]);
   } finally {
     release();
     await dispose().catch(() => {});
