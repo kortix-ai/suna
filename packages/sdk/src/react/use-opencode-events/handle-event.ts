@@ -130,6 +130,21 @@ export function createEventHandler(deps: {
     // member (see `OpenCodeEvent`), which isn't a real wire event and doesn't
     // match any `applyEvent` case (falls through to its `default`) — the
     // assertion below just widens past that one extra union member.
+    //
+    // The reducer writes a `session.status` / `session.idle` into
+    // `sessionStatus` synchronously, so the status the turn is settling FROM
+    // has to be read before it runs. Read after, it is always the new 'idle',
+    // and the busy → idle work below (file refresh, Changes refresh,
+    // task-complete notice) never ran in the app — only in tests that stub
+    // the reducer out.
+    const statusSessionID =
+      event.type === 'session.status' || event.type === 'session.idle'
+        ? event.properties.sessionID
+        : undefined;
+    const statusBeforeEvent = statusSessionID
+      ? useSyncStore.getState().sessionStatus[statusSessionID]
+      : undefined;
+
     applySyncEvent(event as OpenCodeSdkEvent);
 
     switch (event.type) {
@@ -347,9 +362,10 @@ export function createEventHandler(deps: {
       case 'session.status': {
         const { sessionID, status } = event.properties;
         if (sessionID && status) {
-          // Detect busy/retry → idle transition BEFORE updating the store
-          // (coalescing can drop intermediate busy events, so we check here)
-          const prevStatus = useSyncStore.getState().sessionStatus[sessionID];
+          // Detect busy/retry → idle against the status from BEFORE the
+          // reducer ran (see `statusBeforeEvent`). Coalescing can drop
+          // intermediate busy events, so the transition is checked here.
+          const prevStatus = statusBeforeEvent;
           if (status.type === 'idle' && prevStatus && prevStatus.type !== 'idle') {
             notifyTaskComplete(sessionID, getSessionTitle(sessionID));
             invalidateWorkspaceFilesAfterTurn();
@@ -361,7 +377,7 @@ export function createEventHandler(deps: {
       case 'session.idle': {
         const sessionID = event.properties.sessionID;
         if (sessionID) {
-          const prevStatus = useSyncStore.getState().sessionStatus[sessionID];
+          const prevStatus = statusBeforeEvent;
           if (prevStatus && prevStatus.type !== 'idle') {
             notifyTaskComplete(sessionID, getSessionTitle(sessionID));
             invalidateWorkspaceFilesAfterTurn();
