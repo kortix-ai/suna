@@ -5339,8 +5339,8 @@ inode; the next restart booted the stub ("Still waking this session up").
 2. Version changes reach a box only through the runtime-assets manifest and
    `installOpencodeVersion` (`pnpm add -g --allow-build=opencode-ai`).
 
-*Automation:* `connector-mcp-config.test.ts` — "always disables OpenCode
-autoupdate".
+*Automation:* `opencode-config-composition.test.ts` — "always disables
+OpenCode autoupdate".
 
 ## A boot budget measures lack of progress, not wall-clock
 
@@ -5402,7 +5402,8 @@ restarting it under the boot; and the PATH launcher on two boxes was the
    to) the postinstall stub; resolution falls through to the managed links.
    Conservative: anything unreadable is not a stub.
 
-*Automation:* `refresh-converge-guard.test.ts`, `opencode-binary.test.ts`.
+*Automation:* `refresh-route.test.ts` (runtime-assets convergence only for a
+serving runtime), `opencode-binary.test.ts`.
 
 ## Window inline images inside the sandbox; the edge is too late
 

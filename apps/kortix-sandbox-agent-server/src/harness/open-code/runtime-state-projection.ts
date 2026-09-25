@@ -447,10 +447,6 @@ export class RuntimeStateStore {
     })()
     return this.versionProbe
   }
-
-  __docForTests(): RuntimeStateDoc | null {
-    return this.doc
-  }
 }
 
 // ---------------------------------------------------------------------------

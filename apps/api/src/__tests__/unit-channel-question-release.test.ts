@@ -141,7 +141,7 @@ describe('releaseRuntimeQuestion — the runtime contract', () => {
   });
 });
 
-// Asserted on source, as question-relay-scope.test.ts does for the daemon: the
+// Asserted on source: the
 // release is one branch inside a route handler with no seam to import, and
 // what matters is which inputs gate it and where it sits.
 describe('POST /turn-question releases channel questions, and only those', () => {
