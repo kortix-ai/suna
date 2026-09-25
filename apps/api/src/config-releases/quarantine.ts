@@ -23,12 +23,12 @@ import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import type { DaemonConfigReport } from '../projects/lib/session-config-release';
 import { noteRunningRelease } from './running-release';
+import { isUuid } from '../shared/validate';
 
 /** Distinct failing sessions that quarantine a release in a project. Spec open decision 2. */
 export const PROJECT_QUARANTINE_SESSIONS = 2;
 
 const HEX64 = /^[0-9a-f]{64}$/;
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface ProvenRelease {
   releaseId: string;
@@ -200,7 +200,7 @@ export async function recordDaemonConfigReport(
   ledger: ConfigReleaseLedger = dbConfigReleaseLedger,
 ): Promise<void> {
   const { projectId, sessionId, report } = input;
-  if (!report || !UUID.test(projectId) || !UUID.test(sessionId)) return;
+  if (!report || !isUuid(projectId) || !isUuid(sessionId)) return;
   // The ONE place a daemon's own report reaches the API — a health read, a
   // reload, or a convergence answer. The turn-start gate reads this to decide
   // whether a prompt must wait for a convergence (turn-start-convergence.ts).

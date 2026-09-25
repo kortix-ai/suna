@@ -32,7 +32,7 @@ import { projectsApp } from '../projects/lib/app';
 import { callerKortixSessionId } from '../projects/lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../projects/lib/sandbox-token-session';
 import { repositoryAccessFromSessionMetadata } from '../projects/lib/session-sandbox-metadata';
-import { UUID_V4_REGEX } from '../projects/lib/serializers';
+import { isUuid } from '../shared/validate';
 import { db } from '../shared/db';
 import { requireFeatureFlag } from '../feature-flags/gate';
 import { CONFIG_RELEASES_FLAG } from './enabled';
@@ -171,7 +171,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(projectId) || !UUID_V4_REGEX.test(sessionId)) {
+    if (!isUuid(projectId) || !isUuid(sessionId)) {
       return c.json({ error: 'Invalid project or session id' }, 400);
     }
 
@@ -281,7 +281,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const configTreeId = c.req.param('configTreeId');
-    if (!UUID_V4_REGEX.test(projectId)) return c.json({ error: 'Not found' }, 404);
+    if (!isUuid(projectId)) return c.json({ error: 'Not found' }, 404);
     if (!HEX40.test(configTreeId)) return c.json({ error: 'Not found' }, 404);
 
     let project: ProjectRow;

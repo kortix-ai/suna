@@ -23,6 +23,7 @@
 
 import { config } from '../config';
 import { ObjectStore, type PutOutcome } from '../object-store/s3';
+import { isUuid } from '../shared/validate';
 
 export interface ConfigArchiveStore {
   putIfAbsent(key: string, body: Buffer): Promise<PutOutcome>;
@@ -42,11 +43,10 @@ export const CONFIG_ARCHIVE_URL_TTL_SECONDS = 900;
 export const CONFIG_ARCHIVE_CONTENT_TYPE = 'application/gzip';
 
 const TREE_ID = /^[0-9a-f]{40}$/;
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** `projects/<project_id>/trees/` — one project's archives, nothing else. */
 export function configArchiveProjectPrefix(projectId: string): string {
-  if (!UUID.test(projectId)) throw new Error(`invalid project id: ${projectId}`);
+  if (!isUuid(projectId)) throw new Error(`invalid project id: ${projectId}`);
   return `projects/${projectId.toLowerCase()}/trees/`;
 }
 

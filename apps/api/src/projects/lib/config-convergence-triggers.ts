@@ -33,6 +33,7 @@ import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { convergeSessionConfig, type SessionConfigConvergenceOutcome } from './session-config-convergence';
 import { invalidateDesiredRelease } from './turn-start-convergence';
+import { isUuid } from '../../shared/validate';
 
 export const BASE_MOVE_WINDOW_MS = 30_000;
 export const MAX_SESSIONS_PER_BASE_MOVE = 200;
@@ -222,7 +223,6 @@ export function notifyBaseBranchMoved(projectId: string, ref: string, context: s
 }
 
 /** A session branch is named by its session ID. No session uses one as its base. */
-const SESSION_BRANCH = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ZERO_OID = /^0+$/;
 
 /**
@@ -235,7 +235,7 @@ export function pushedBaseCandidates(updates: ReadonlyArray<{ ref: string; newSh
   for (const update of updates) {
     if (!update.ref.startsWith('refs/heads/') || ZERO_OID.test(update.newSha)) continue;
     const branch = update.ref.slice('refs/heads/'.length);
-    if (!SESSION_BRANCH.test(branch)) branches.add(branch);
+    if (!isUuid(branch)) branches.add(branch);
   }
   return [...branches];
 }
