@@ -238,6 +238,12 @@ export interface ShowContentProps {
    * way the user sees one header with the actions on its right.
    */
   toolbarActions?: React.ReactNode;
+  /**
+   * Show the file name in the viewer's header row. Off when the card header
+   * already names the item (the inline carousel's tabs): a row carrying only a
+   * repeated name is dead height, and with no actions it is not drawn at all.
+   */
+  showFileLabel?: boolean;
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -256,6 +262,7 @@ export function ShowContentRenderer({
   fill = false,
   onStatusChange,
   toolbarActions,
+  showFileLabel = true,
 }: ShowContentProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const arCSS = showAspectRatioToCSS(aspectRatio);
@@ -307,6 +314,7 @@ export function ShowContentRenderer({
   }, [path, isLocalPath]);
 
   const fileName = useMemo(() => path.split('/').pop() || '', [path]);
+  const frameLabel = showFileLabel ? fileName : undefined;
 
   /**
    * ── One header, never two ──────────────────────────────────────────────
@@ -330,14 +338,14 @@ export function ShowContentRenderer({
     fill ? (
       node
     ) : (
-      <ViewerFrame label={fileName} actions={toolbarActions}>
+      <ViewerFrame label={frameLabel} actions={toolbarActions}>
         {node}
       </ViewerFrame>
     );
 
   /** For renderers that never draw a header themselves. */
   const alwaysFramed = (node: React.ReactNode) => (
-    <ViewerFrame label={fileName} actions={toolbarActions}>
+    <ViewerFrame label={frameLabel} actions={toolbarActions}>
       {node}
     </ViewerFrame>
   );
@@ -1000,6 +1008,12 @@ export interface ShowCarouselProps {
   /** Header actions for the ACTIVE item, forwarded to its renderer so paging
    *  between deliverables keeps the toolbar instead of losing it after item 1. */
   toolbarActions?: React.ReactNode;
+  /** Controlled active index. The inline card's header tabs own the index, so
+   *  the tabs and the body can never disagree. Omit to let the carousel own it. */
+  activeIndex?: number;
+  /** Hide the chevron + pill strip: the caller renders its own navigation
+   *  (the inline card's header tabs). */
+  hideNav?: boolean;
 }
 
 const SHOW_TYPE_LABELS: Record<string, string> = {
@@ -1086,11 +1100,14 @@ export function ShowCarousel({
   onIndexChange,
   fill = false,
   toolbarActions,
+  activeIndex,
+  hideNav = false,
 }: ShowCarouselProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const typeLabels = useLocalizedUiCatalog(SHOW_TYPE_LABELS);
-  const [requestedIndex, setCurrentIndex] = useState(0);
+  const [ownIndex, setCurrentIndex] = useState(0);
+  const requestedIndex = activeIndex ?? ownIndex;
   const count = items.length;
   // A grouped carousel can lose an item (a call that settled empty), so the
   // stored index is clamped instead of trusted.
@@ -1207,12 +1224,13 @@ export function ShowCarousel({
             attachment={currentItem.attachment}
             LocalhostPreview={LocalhostPreview}
             toolbarActions={toolbarActions}
+            showFileLabel={!hideNav}
             fill={fill}
           />
         )}
       </div>
 
-      {count > 1 && (
+      {count > 1 && !hideNav && (
         <div className="border-border flex shrink-0 items-center gap-2 border-t px-2 py-1.5 pr-3.5">
           <div className="flex shrink-0 items-center">
             <Button

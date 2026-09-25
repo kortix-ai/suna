@@ -27,6 +27,7 @@ import {
   ServicePreviewViewport,
   ShowCarousel,
   ShowCarouselItem,
+  ShowCarouselTabs,
   ShowContentRenderer,
   showDomain,
   ShowFileActions,
@@ -49,7 +50,7 @@ const ActiveServicePreviewContext = createContext<ServicePreviewState | null>(nu
 // the same active item) is always the right one when this is asked to render.
 function CarouselServicePreview({ url, label }: { url: string; label?: string }) {
   const preview = useContext(ActiveServicePreviewContext);
-  if (preview) return <ServicePreviewViewport preview={preview} />;
+  if (preview) return <ServicePreviewViewport preview={preview} slotHeight />;
   return <InlineServicePreview url={url} label={label} />;
 }
 
@@ -87,9 +88,12 @@ export function ShowTool({ part, sessionId }: ToolProps) {
   const isCarousel = !!items && items.length > 0;
 
   const [carouselIndex, setCarouselIndex] = useState(0);
-  const currentItem = isCarousel
-    ? items![Math.min(carouselIndex, items!.length - 1)] || items![0]
-    : null;
+  // Clamped: a grouped carousel can lose an item (a call that settled empty).
+  const activeIndex = isCarousel ? Math.max(0, Math.min(carouselIndex, items!.length - 1)) : 0;
+  const currentItem = isCarousel ? items![activeIndex] || items![0] : null;
+  // Inline, a multi-item card names its items as header tabs (no footer strip)
+  // and folds the secondary actions into ⋯, so the header fits the tabs.
+  const inlineTabs = isCarousel && !fill && items!.length > 1;
 
   const [contentStatus, setContentStatus] = useState<ShowLoadStatus>('loading');
 
@@ -120,7 +124,7 @@ export function ShowTool({ part, sessionId }: ToolProps) {
    */
   const fileActions =
     !isWebsitePreview && activePath ? (
-      <ShowFileActions path={activePath} inPanel={fill} />
+      <ShowFileActions path={activePath} inPanel={fill} compact={inlineTabs} />
     ) : undefined;
   const contentActions =
     !isCarousel && !isWebsitePreview && !activePath && content && activate && navigationEnabled ? (
@@ -163,7 +167,7 @@ export function ShowTool({ part, sessionId }: ToolProps) {
   // Inline card header owns the toolbar. Panel keeps the actions inside the
   // renderer / website header as before.
   const inlineToolbar = isWebsitePreview ? (
-    <ServicePreviewActions preview={preview} />
+    <ServicePreviewActions preview={preview} compact={inlineTabs} />
   ) : (
     fileActions || contentActions
   );
@@ -271,6 +275,8 @@ export function ShowTool({ part, sessionId }: ToolProps) {
                 items={items!}
                 LocalhostPreview={CarouselServicePreview}
                 onIndexChange={setCarouselIndex}
+                activeIndex={activeIndex}
+                hideNav={inlineTabs}
                 fill={fill}
                 toolbarActions={fill ? fileActions : undefined}
               />
@@ -320,16 +326,25 @@ export function ShowTool({ part, sessionId }: ToolProps) {
       className="bg-secondary flex w-full flex-col overflow-hidden rounded-lg border-[0.5px]"
     >
       <div className="flex items-center justify-between gap-2 px-2 py-1.5">
-        <div className="text-foreground flex min-w-0 items-center gap-2 px-1 text-xs [&>svg]:size-4">
-          {(running && !type && !items) || currentItem?.status === 'pending' ? (
-            <Loading className="text-muted-foreground size-4 shrink-0" />
-          ) : (
-            showFileTypeIcon(headerIcon, activePath || undefined)
-          )}
-          <span className="min-w-0 truncate" title={displayTitle}>
-            {displayTitle}
-          </span>
-        </div>
+        {inlineTabs ? (
+          <ShowCarouselTabs
+            items={items!}
+            activeIndex={activeIndex}
+            onSelect={setCarouselIndex}
+            label={title}
+          />
+        ) : (
+          <div className="text-foreground flex min-w-0 items-center gap-2 px-1 text-xs [&>svg]:size-4">
+            {(running && !type && !items) || currentItem?.status === 'pending' ? (
+              <Loading className="text-muted-foreground size-4 shrink-0" />
+            ) : (
+              showFileTypeIcon(headerIcon, activePath || undefined, undefined, activeUrl)
+            )}
+            <span className="min-w-0 truncate" title={displayTitle}>
+              {displayTitle}
+            </span>
+          </div>
+        )}
         {inlineToolbar ? (
           <div className="flex shrink-0 items-center gap-1">{inlineToolbar}</div>
         ) : null}
