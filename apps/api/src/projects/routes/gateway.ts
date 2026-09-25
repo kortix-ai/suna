@@ -26,7 +26,6 @@ import { actorOf } from '../../iam/actor';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { assertProjectCapability, loadProjectForUser, lookupEmailsByUserIds } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { isUuid } from '../../shared/validate';
 import {
   createGatewayKey,
   listGatewayKeys,
@@ -675,7 +674,7 @@ projectsApp.openapi(
     summary: 'DELETE /:projectId/gateway/budgets/:budgetId',
     ...auth,
     request: {
-      params: z.object({ projectId: z.string(), budgetId: z.string().refine(isUuid, 'Invalid uuid') }),
+      params: z.object({ projectId: z.string(), budgetId: z.string().uuid() }),
     },
     responses: { 200: json(z.any(), 'Budget removed'), ...errors(403, 404) },
   }),
@@ -820,7 +819,7 @@ projectsApp.openapi(
     summary: 'DELETE /:projectId/gateway/keys/:keyId',
     ...auth,
     request: {
-      params: z.object({ projectId: z.string(), keyId: z.string().refine(isUuid, 'Invalid uuid') }),
+      params: z.object({ projectId: z.string(), keyId: z.string().uuid() }),
     },
     responses: { 200: json(z.any(), 'Gateway API key revoked'), ...errors(403, 404) },
   }),

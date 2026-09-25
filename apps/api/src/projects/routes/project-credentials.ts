@@ -107,12 +107,7 @@ projectsApp.openapi(
   // Body fields: `name` (defaults to "cli · <project name>") and an optional
   // ISO-8601 `expires_at`. The account's PAT policy (require expiry, maximum
   // lifetime) applies to this token like any other durable PAT.
-  let body: { name?: unknown; expires_at?: unknown } = {};
-  try {
-    body = (await c.req.json()) ?? {};
-  } catch {
-    /* empty body is fine */
-  }
+  const body = await readJsonObject(c);
   const name =
     typeof body.name === 'string' && body.name.trim()
       ? body.name.trim().slice(0, 255)

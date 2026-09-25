@@ -195,7 +195,7 @@ authRouter.openapi(
   }),
   async (c: any) => {
     const body = await readJsonObject(c);
-    return mfaForward(c, `/factors/${encodeURIComponent(c.req.param('factorId'))}/challenge`, 'POST', body ?? {});
+    return mfaForward(c, `/factors/${encodeURIComponent(c.req.param('factorId'))}/challenge`, 'POST', body);
   },
 );
 
@@ -305,7 +305,8 @@ authRouter.openapi(
   }),
   async (c: any) => {
     const token = bearerOf(c);
-    const scope = ((await readJsonObject(c)) as { scope?: string }).scope ?? 'global';
+    const body = await readJsonObject(c);
+    const scope = body.scope === 'local' || body.scope === 'others' ? body.scope : 'global';
     if (token && (c.get('authType') as string) === 'supabase') {
       // Best effort: the local revoke below is what the Kortix gate reads.
       await gotrue('/logout', { method: 'POST', bearer: token, body: {}, query: { scope } });

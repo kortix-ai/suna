@@ -9,7 +9,9 @@
  * A private copy drifts. An address read outside the trusted-proxy rule is not
  * the address KORTIX_TRUSTED_PROXY_HOPS selects, and a strict UUID regex refuses
  * ids a looser one accepted on write. An inline `c.req.json().catch(() => ({}))`
- * returns JSON `null` as `null`, so `body.x` throws a TypeError (a 500).
+ * returns JSON `null` as `null`, so `body.x` throws a TypeError (a 500). An
+ * inline `(await c.req.json()) ?? {}` returns a scalar body as-is, so
+ * `'x' in body` throws a TypeError (a 500).
  * This test fails on a new copy in non-test source under apps/api/src.
  *
  * Out of scope: `c.req.json().catch(() => null)` sites. They pass the result to
@@ -78,8 +80,15 @@ const UUID_ALLOW: Record<string, string> = {
   'iam/sso-sync.ts': 'open SSO identity work edits this file',
 };
 
-// An inline JSON body read that falls back to `{}`.
-const JSON_OBJECT_INLINE = /\.req\.json(?:<[^>]*>)?\(\)\s*\.catch\(\s*\(\)\s*=>\s*\(\s*\{\s*\}\s*\)\s*\)/;
+// An inline JSON body read that falls back to `{}`, in either form:
+//   c.req.json().catch(() => ({}))
+//   try { body = (await c.req.json()) ?? {}; } catch {}
+const JSON_OBJECT_INLINE = new RegExp(
+  [
+    /\.req\.json(?:<[^>]*>)?\(\)\s*\.catch\(\s*\(\)\s*=>\s*\(\s*\{\s*\}\s*\)\s*\)/.source,
+    /\.req\.json(?:<[^>]*>)?\(\)\s*\)\s*\?\?\s*\{\s*\}/.source,
+  ].join('|'),
+);
 const JSON_OBJECT_ALLOW: Record<string, string> = {};
 
 const ESCAPE_HTML_DEF = /function\s+escapeHtml\b|\bescapeHtml\s*=\s*(?:\(|function)/;
@@ -98,6 +107,15 @@ describe('request primitives have one implementation', () => {
   test('UUID regex literals live only in shared/validate.ts', () => {
     expect(offenders(UUID_LITERAL, UUID_ALLOW)).toEqual([]);
     expect(staleAllowlist(UUID_LITERAL, UUID_ALLOW)).toEqual([]);
+  });
+
+  test('the JSON object pattern matches both inline forms', () => {
+    expect(JSON_OBJECT_INLINE.test('const body = await c.req.json().catch(() => ({}));')).toBe(true);
+    expect(JSON_OBJECT_INLINE.test('await c.req.json<Foo>().catch(() => ({ }))')).toBe(true);
+    expect(JSON_OBJECT_INLINE.test('try { body = (await c.req.json()) ?? {}; } catch {}')).toBe(true);
+    expect(JSON_OBJECT_INLINE.test('body = (await c.req.json<Foo>())  ??  { };')).toBe(true);
+    expect(JSON_OBJECT_INLINE.test('const body = await c.req.json().catch(() => null);')).toBe(false);
+    expect(JSON_OBJECT_INLINE.test('const body = await readJsonObject(c);')).toBe(false);
   });
 
   test('JSON object bodies are read only through shared/http-body.ts', () => {

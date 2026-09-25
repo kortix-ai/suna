@@ -320,7 +320,7 @@ projectsApp.openapi(
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
     const body = await readJsonObject(c);
-    const answers = (body as { answers?: unknown }).answers;
+    const answers = body.answers;
     if (!Array.isArray(answers) || answers.length === 0) {
       return c.json({ error: 'answers must be a non-empty array' }, 400);
     }

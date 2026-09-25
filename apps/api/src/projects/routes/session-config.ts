@@ -113,7 +113,7 @@ projectsApp.openapi(
       );
     }
 
-    const body = (await readJsonObject(c)) as { refresh_repo?: unknown; force?: unknown };
+    const body = await readJsonObject(c);
 
     const result = await reloadSessionConfig({
       projectId,
@@ -123,7 +123,7 @@ projectsApp.openapi(
       defaultBranch: loaded.row.defaultBranch,
       manifestPath: loaded.row.manifestPath,
       baseRef: visible.row.baseRef ?? loaded.row.defaultBranch,
-      refreshRepo: body?.refresh_repo !== false,
+      refreshRepo: body.refresh_repo !== false,
       force: body?.force === true,
     });
     // A reload restarts opencode, which ENDS the turn in flight. Refused by
@@ -197,7 +197,7 @@ projectsApp.openapi(
       );
     }
 
-    const body = (await readJsonObject(c)) as { refresh_repo?: unknown; force?: unknown };
+    const body = await readJsonObject(c);
 
     return new Response(
       new ReadableStream({
@@ -222,7 +222,7 @@ projectsApp.openapi(
               defaultBranch: loaded.row.defaultBranch,
               manifestPath: loaded.row.manifestPath,
               baseRef: visible.row.baseRef ?? loaded.row.defaultBranch,
-              refreshRepo: body?.refresh_repo !== false,
+              refreshRepo: body.refresh_repo !== false,
               force: body?.force === true,
               onPhase: (phase) => write({ type: 'phase', phase }),
             });

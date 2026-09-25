@@ -221,7 +221,7 @@ projectsApp.post(
     if (!(await loadMutableConnection(c, projectId, connectionId))) {
       return c.json({ error: 'Not found' }, 404);
     }
-    const parsed = OAuth2ResourceDiscoveryInputSchema.safeParse((await readJsonObject(c)) ?? {});
+    const parsed = OAuth2ResourceDiscoveryInputSchema.safeParse(await readJsonObject(c));
     if (!parsed.success) return c.json({ error: 'invalid resource URL' }, 400);
     try {
       return c.json({

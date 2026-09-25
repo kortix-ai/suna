@@ -11,6 +11,10 @@ import { makeOpenApiApp, json, errors } from '../../openapi';
 import { getTunnelOwnerContext } from './auth';
 import { readJsonObject } from '../../shared/http-body';
 
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
 type SSEWriter = (event: string, data: unknown) => void;
 const sseSubscribers = new Map<string, Set<SSEWriter>>();
 
@@ -173,6 +177,20 @@ export function createPermissionRequestsRouter() {
       const { accountId, authorizedAccountIds, ownerClause } = await getTunnelOwnerContext(c);
       const requestId = c.req.param('requestId');
       const body = await readJsonObject(c);
+      // The zod body schema runs only for a JSON content-type, so the handler
+      // checks both fields itself.
+      const scopeInput = body.scope;
+      if (scopeInput !== undefined && !isJsonObject(scopeInput)) {
+        return c.json({ error: 'scope must be an object' }, 400);
+      }
+      const expiresAtInput = body.expiresAt;
+      if (
+        expiresAtInput !== undefined &&
+        typeof expiresAtInput !== 'string' &&
+        typeof expiresAtInput !== 'number'
+      ) {
+        return c.json({ error: 'expiresAt must be a valid future timestamp' }, 400);
+      }
       const rateCheck = tunnelRateLimiter.check('permGrant', accountId);
       if (!rateCheck.allowed) {
         return c.json(
@@ -221,9 +239,10 @@ export function createPermissionRequestsRouter() {
         return c.json({ error: `Capability is not enabled: ${request.capability}` }, 409);
       }
 
-      const scope = (body.scope || request.requestedScope || {}) as Record<string, unknown>;
+      const storedScope: unknown = request.requestedScope;
+      const scope = scopeInput ?? (isJsonObject(storedScope) ? storedScope : {});
       let sanitizedScope: Record<string, unknown> = {};
-      if (scope && Object.keys(scope).length > 0) {
+      if (Object.keys(scope).length > 0) {
         const scopeResult = validateScopeInput(request.capability, scope);
         if (!scopeResult.valid) {
           return c.json({ error: `Invalid scope: ${scopeResult.error}` }, 400);
@@ -232,8 +251,8 @@ export function createPermissionRequestsRouter() {
       }
 
       let expiresAt: Date | null = null;
-      if (body.expiresAt !== undefined) {
-        expiresAt = new Date(body.expiresAt as string | number);
+      if (expiresAtInput !== undefined) {
+        expiresAt = new Date(expiresAtInput);
         if (!Number.isFinite(expiresAt.getTime()) || expiresAt <= new Date()) {
           return c.json({ error: 'expiresAt must be a valid future timestamp' }, 400);
         }

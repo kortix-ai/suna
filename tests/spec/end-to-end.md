@@ -631,7 +631,7 @@ Every BYOK route has `billingMode:'none'` and zero markup. The gateway resolves 
 ### Tunnel (reverse tunnel to local machines)
 
 `TUN-1` connections `GET/POST /tunnel/connections`, `GET/PATCH /:tid`, `POST /:tid/rotate-token`, `DELETE /:tid`.
-`TUN-2` permissions `GET/POST /tunnel/permissions/:tid`, `DELETE /:tid/:permissionId`; requests `GET /tunnel/permission-requests`, `GET …/stream` (SSE), `POST /:rid/approve|deny`.
+`TUN-2` permissions `GET/POST /tunnel/permissions/:tid`, `DELETE /:tid/:permissionId`; requests `GET /tunnel/permission-requests`, `GET …/stream` (SSE), `POST /:rid/approve|deny`; approve with a non-object `scope` or an `expiresAt` that is not a string or number → 400, with or without a JSON content-type.
 `TUN-3` rpc `POST /tunnel/rpc/:tid`; audit `GET /tunnel/audit/:tid`.
 `TUN-4` device auth (public) `POST /tunnel/device-auth`, `GET …/:code/status`; (auth) `GET …/:code/info`, `POST …/:code/approve|deny`.
 `TUN-5` WS `GET /tunnel/ws?tunnelId=` — auth via first message; rate-limited.
@@ -915,7 +915,7 @@ sends the key on create.
 `MKTP-2` `GET /marketplace/items/:id` → auth → 200 item detail (`files`, `readme`, `capabilities`, managed metadata when applicable); unknown id → 404.
 `EXP-1` `PATCH /projects/:id/features {feature,enabled}` (canonical) and `PATCH /projects/:id/experimental` (deprecated alias, same handler) → 200 with `experimental`/`experimental_features` in body; unknown flag → 400; non-bool enabled → 400; `enabled:null` clears the override → 200; archived project → 404 with metadata unchanged. Flag-gated routes reject with `403 {code:'feature_disabled', feature}` when their flag is off.
 `SNAP-3` `POST /projects/:id/snapshots/fix-with-agent` → no failed build → 409; else 201.
-`SBX-3` `GET /projects/:id/sandboxes` · `/sandbox-health` · `/sandbox-templates` → 200.
+`SBX-3` `GET /projects/:id/sandboxes` · `/sandbox-health` · `/sandbox-templates` → 200; `PATCH /sandbox-templates/:unknown` with a scalar body and no JSON content-type → 404, never 500.
 `SBX-4` `POST /sandbox-templates` → 201; bad → 400; reserved/dup → 409; `PATCH/DELETE/build /:templateId`; unknown → 404.
 `PACC-5` `POST /projects/:id/access/invite` → 201 pending; `GET/POST resend/DELETE pending-invites[/:id]` → manage; missing email → 400; unknown → 404.
 `PACC-6` `GET/POST /projects/:id/group-grants` · `PATCH/DELETE /:groupId` → manage; missing group_id → 400; unknown → 404.
@@ -1058,7 +1058,7 @@ These contracts use product IDs. They replace the old route-coverage bucket IDs.
 `CHN-28` An anonymous caller cannot bind a Slack identity.
 `CHN-29` A project Slack app's signed events, commands, and interactions stay inside that project and the workspace its install proved. A request naming another workspace is refused, and an interaction naming another project changes nothing there.
 `CHN-30` An agent binds a Slack thread only to its own session. A sibling session in the same project is refused, and nothing is written.
-`CHN-31` The Slack and Teams identity previews name the chat account a login link would link only for a signed-in caller with a token that verifies; anonymous callers get `401`, a forged token never names an account, and a missing token is a validation error.
+`CHN-31` The Slack and Teams identity previews name the chat account a login link would link only for a signed-in caller with a token that verifies; anonymous callers get `401`, a forged token never names an account, and a missing or non-string token is a validation error (`400`, also without a JSON content-type).
 `CHN-32` A chat channel's model, agent and session policy change only for a linked Kortix account with `project.connector.write` on the channel's project, the capability the web binding editor requires. A linked project member without it and an unlinked Slack user are refused and the binding is unchanged; the linked project manager's changes are stored.
 `CHN-33` `/kortix sessions` lists only the chat-started sessions the caller's linked Kortix account may open: a member sees their own session and project-visible sessions, never another user's private session. An unlinked Slack user is asked to connect and sees no session.
 `CHN-T1` A project member reads the Microsoft Teams installation state.

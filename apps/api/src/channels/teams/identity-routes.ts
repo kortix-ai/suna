@@ -75,7 +75,8 @@ teamsIdentityApp.openapi(
     if (!config.MICROSOFT_APP_PASSWORD) {
       return c.json({ error: 'Teams identity binding is not configured on this server.' }, 503);
     }
-    const { token } = (await readJsonObject(c)) as { token?: string };
+    const body = await readJsonObject(c);
+    const token = typeof body.token === 'string' ? body.token : '';
     if (!token) return c.json({ error: 'Missing token' }, 400);
 
     const payload = verifyTeamsLoginState(token);
@@ -130,7 +131,8 @@ teamsIdentityApp.openapi(
       return c.json({ error: 'Teams identity binding is not configured on this server.' }, 503);
     }
     const userId = c.get('userId') as string;
-    const { token } = (await readJsonObject(c)) as { token?: string };
+    const body = await readJsonObject(c);
+    const token = typeof body.token === 'string' ? body.token : '';
     if (!token) return c.json({ error: 'Missing token' }, 400);
 
     const payload = verifyTeamsLoginState(token);
