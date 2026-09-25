@@ -37,6 +37,13 @@ warmMarketplaceCatalog();
 
 export const marketplaceApp = makeOpenApiApp<AppEnv>();
 
+const AddMarketplaceSourceBodySchema = z.object({
+  address: z.string().min(1),
+  gitRef: z.string().optional(),
+  sparsePaths: z.array(z.string()).optional(),
+  label: z.string().optional(),
+});
+
 marketplaceApp.openapi(
   createRoute({
     method: 'get',
@@ -209,14 +216,7 @@ marketplaceApp.openapi(
     request: {
       body: {
         content: {
-          'application/json': {
-            schema: z.object({
-              address: z.string().min(1),
-              gitRef: z.string().optional(),
-              sparsePaths: z.array(z.string()).optional(),
-              label: z.string().optional(),
-            }),
-          },
+          'application/json': { schema: AddMarketplaceSourceBodySchema },
         },
       },
     },
@@ -226,12 +226,18 @@ marketplaceApp.openapi(
     },
   }),
   async (c: any) => {
-    const body = await readJsonObject(c);
+    // The route validator runs only for a JSON content-type, so the handler
+    // parses the body with the same schema.
+    const parsed = AddMarketplaceSourceBodySchema.safeParse(await readJsonObject(c));
+    if (!parsed.success) {
+      return c.json({ error: 'Invalid marketplace source' }, 400);
+    }
+    const body = parsed.data;
     // Adding an arbitrary source is admin-only; the curated FEATURED_MARKETPLACES
     // are vetted, public, read-only git repos (they resolve out of the box and
     // carry no SSRF/LFI surface) so any signed-in user may enable one to explore
     // it. See the module-level comment above for the full rationale.
-    const address = String(body.address ?? '').trim();
+    const address = body.address.trim();
     if (!FEATURED_SOURCE_ADDRESSES.has(address)) {
       // Throws (401/403) on failure — caught by the app's global onError and
       // turned into the right response; resolves to undefined on success.
@@ -239,15 +245,8 @@ marketplaceApp.openapi(
     }
     try {
       // LFI/SSRF guard — reject local-folder + private/non-https URL sources.
-      assertAllowedSourceAddress(String(body.address ?? ''));
-      const source = await addSource({
-        address,
-        gitRef: typeof body.gitRef === 'string' ? body.gitRef : undefined,
-        sparsePaths: Array.isArray(body.sparsePaths)
-          ? body.sparsePaths.filter((p): p is string => typeof p === 'string')
-          : undefined,
-        label: typeof body.label === 'string' ? body.label : undefined,
-      });
+      assertAllowedSourceAddress(body.address);
+      const source = await addSource(body);
       _resetExternalCache();
       warmMarketplaceCatalog();
       return c.json({ source });

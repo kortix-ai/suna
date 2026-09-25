@@ -207,10 +207,10 @@ flow(
       r.status(404);
     });
 
-    await ctx.step("approve with a non-object scope or a non-scalar expiresAt → 400 before the request lookup", async () => {
-      // No JSON content-type, so the route schema does not run and the
-      // handler must check both field types itself.
-      for (const body of ['{"scope":"x"}', '{"scope":[]}', '{"scope":null}', '{"expiresAt":{}}', '{"expiresAt":true}']) {
+    await ctx.step("approve with a non-object scope or a non-string expiresAt → 400 before the request lookup", async () => {
+      // No JSON content-type, so the route validator does not run. The
+      // handler parses the body with the same schema and rejects it.
+      for (const body of ['{"scope":"x"}', '{"scope":[]}', '{"scope":null}', '{"expiresAt":{}}', '{"expiresAt":true}', '{"expiresAt":4102444800000}']) {
         const r = await ctx.client
           .as(ctx.P.OWNER)
           .post("/v1/tunnel/permission-requests/:requestId/approve", body, {

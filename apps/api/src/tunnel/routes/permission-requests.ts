@@ -10,10 +10,12 @@ import type { AppEnv } from '../../types';
 import { makeOpenApiApp, json, errors } from '../../openapi';
 import { getTunnelOwnerContext } from './auth';
 import { readJsonObject } from '../../shared/http-body';
+import { isPlainObject } from '../../shared/json';
 
-function isJsonObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
+const ApprovePermissionRequestBodySchema = z.object({
+  scope: z.record(z.string(), z.any()).optional(),
+  expiresAt: z.string().optional(),
+});
 
 type SSEWriter = (event: string, data: unknown) => void;
 const sseSubscribers = new Map<string, Set<SSEWriter>>();
@@ -153,12 +155,7 @@ export function createPermissionRequestsRouter() {
         params: z.object({ requestId: z.string() }),
         body: {
           content: {
-            'application/json': {
-              schema: z.object({
-                scope: z.record(z.string(), z.any()).optional(),
-                expiresAt: z.string().optional(),
-              }),
-            },
+            'application/json': { schema: ApprovePermissionRequestBodySchema },
           },
         },
       },
@@ -176,21 +173,13 @@ export function createPermissionRequestsRouter() {
     async (c: any) => {
       const { accountId, authorizedAccountIds, ownerClause } = await getTunnelOwnerContext(c);
       const requestId = c.req.param('requestId');
-      const body = await readJsonObject(c);
-      // The zod body schema runs only for a JSON content-type, so the handler
-      // checks both fields itself.
-      const scopeInput = body.scope;
-      if (scopeInput !== undefined && !isJsonObject(scopeInput)) {
-        return c.json({ error: 'scope must be an object' }, 400);
+      // The route validator runs only for a JSON content-type, so the handler
+      // parses the body with the same schema.
+      const parsed = ApprovePermissionRequestBodySchema.safeParse(await readJsonObject(c));
+      if (!parsed.success) {
+        return c.json({ error: 'scope must be an object and expiresAt a string' }, 400);
       }
-      const expiresAtInput = body.expiresAt;
-      if (
-        expiresAtInput !== undefined &&
-        typeof expiresAtInput !== 'string' &&
-        typeof expiresAtInput !== 'number'
-      ) {
-        return c.json({ error: 'expiresAt must be a valid future timestamp' }, 400);
-      }
+      const { scope: scopeInput, expiresAt: expiresAtInput } = parsed.data;
       const rateCheck = tunnelRateLimiter.check('permGrant', accountId);
       if (!rateCheck.allowed) {
         return c.json(
@@ -240,7 +229,7 @@ export function createPermissionRequestsRouter() {
       }
 
       const storedScope: unknown = request.requestedScope;
-      const scope = scopeInput ?? (isJsonObject(storedScope) ? storedScope : {});
+      const scope = scopeInput ?? (isPlainObject(storedScope) ? storedScope : {});
       let sanitizedScope: Record<string, unknown> = {};
       if (Object.keys(scope).length > 0) {
         const scopeResult = validateScopeInput(request.capability, scope);

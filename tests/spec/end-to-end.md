@@ -631,7 +631,7 @@ Every BYOK route has `billingMode:'none'` and zero markup. The gateway resolves 
 ### Tunnel (reverse tunnel to local machines)
 
 `TUN-1` connections `GET/POST /tunnel/connections`, `GET/PATCH /:tid`, `POST /:tid/rotate-token`, `DELETE /:tid`.
-`TUN-2` permissions `GET/POST /tunnel/permissions/:tid`, `DELETE /:tid/:permissionId`; requests `GET /tunnel/permission-requests`, `GET …/stream` (SSE), `POST /:rid/approve|deny`; approve with a non-object `scope` or an `expiresAt` that is not a string or number → 400, with or without a JSON content-type.
+`TUN-2` permissions `GET/POST /tunnel/permissions/:tid`, `DELETE /:tid/:permissionId`; requests `GET /tunnel/permission-requests`, `GET …/stream` (SSE), `POST /:rid/approve|deny`; approve with a non-object `scope` or a non-string `expiresAt` → 400, with or without a JSON content-type.
 `TUN-3` rpc `POST /tunnel/rpc/:tid`; audit `GET /tunnel/audit/:tid`.
 `TUN-4` device auth (public) `POST /tunnel/device-auth`, `GET …/:code/status`; (auth) `GET …/:code/info`, `POST …/:code/approve|deny`.
 `TUN-5` WS `GET /tunnel/ws?tunnelId=` — auth via first message; rate-limited.
@@ -1097,7 +1097,7 @@ These contracts use product IDs. They replace the old route-coverage bucket IDs.
 `MKTP-7` An authenticated user lists available marketplaces.
 `MKTP-8` An authenticated user reads the featured marketplace collection.
 `MKTP-9` An authenticated user lists configured marketplace sources.
-`MKTP-10` An authorized user adds and removes one marketplace source. Invalid and protected sources are rejected.
+`MKTP-10` An authorized user adds and removes one marketplace source. Invalid and protected sources are rejected. A body with a wrong-typed field → 400, with or without a JSON content-type.
 `MKTP-11` A project writer starts an agent-driven marketplace installation session. Missing items, unknown items, and unauthorized callers are rejected.
 `PROJ-20` An authenticated user reads whether managed Git is configured.
 `PROJ-27` A project member reads model choices and a project manager sets, reads, and clears model defaults.
