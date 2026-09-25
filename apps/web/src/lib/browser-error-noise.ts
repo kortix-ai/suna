@@ -3250,28 +3250,97 @@ export function isNonErrorUndefinedRejectionNoise(input: {
 // `OperationError` rejection the negative guard exists to preserve; the
 // frame-aware `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`)
 // is the only safe gate.
+//
+// SECOND production shape (KRTX-227 / KRTX-228, 2026-09-22 → 2026-09-23): the
+// SAME browser-internal message now arrives WITH a stack. `popErrorScope` is
+// WebGPU-only, and the only WebGPU code on the site is the three.js renderer
+// behind the public `/a1o` landing page's `<Canvas>` (`three@0.185.1`,
+// `apps/web/src/app/[locale]/a1o/die-scene.tsx`). When the GPU device is
+// dropped (device loss, tab teardown, page navigation) between the error-scope
+// push and pop, the browser rejects `popErrorScope()` with this exact
+// `OperationError`, and three.js surfaces the rejection uncaught from its
+// `createRenderPipeline` pipeline cache. Better Stack patterns
+// a44862f663502fe8edeff94c657db30439856b5584c7f9a5e7b22b13d4843643 (KRTX-228)
+// and 93f6cf89c4b58805d19b8a8ebbd8ebe9b4e27cb25b2ba710bdd907db2a790d18
+// (KRTX-227) (Kortix Frontend prod, application_id 2346967): `OperationError`,
+// ~42-43 occurrences over ~11 h, 0 identified users, release `52c2174f…`,
+// request URL `https://kortix.com/`, Chrome, mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (`handled:false` —
+// UNCAUGHT, never reached a React error boundary). The stack is ENTIRELY
+// minified three.js bundle frames in
+// `app:///_next/static/immutable/chunks/1lmxku8mlk4v9.js` —
+// `vz.createRenderPipeline`, `d4._getRenderPipeline`, `Te._renderScene`,
+// `Te._renderObjects`, `dV._animationLoop` — with NO de-minified
+// `apps/web/src/…` frame. The old matcher's negative guard #2
+// (`isResolvableFrameSource`) vetoed every one of them, because a minified
+// `app:///_next/…` chunk counts as "resolvable", so the class leaked. The fix
+// adds a POSITIVE anchor — a browser-bundle frame whose function is one of the
+// three.js WebGPU renderer pipeline helpers — alongside the existing frameless
+// shape; the first-party `apps/web/src/…` negative guard is unchanged and still
+// preserves a real first-party `OperationError` rejection.
 const OPERATION_ERROR_POP_ERROR_SCOPE_PATTERN = /^Instance dropped in popErrorScope$/;
+
+// The three.js WebGPU renderer internals that drive GPUDevice error scopes.
+// `GPUDevice.createRenderPipeline` is wrapped by the renderer's
+// `createRenderPipeline` / `_getRenderPipeline` pipeline-cache helpers, and the
+// browser rejects `popErrorScope()` with `OperationError: Instance dropped in
+// popErrorScope` when the GPU device is dropped (device loss, tab teardown,
+// page navigation) between the push and the pop. These method names survive
+// minification, so they are a stable positive anchor for the renderer stack.
+// They are three.js internals, never first-party `apps/web/src/…` functions.
+const WEBGPU_RENDERER_PIPELINE_FRAME_FUNCTIONS = new Set([
+  'createRenderPipeline',
+  '_getRenderPipeline',
+  'getForRender',
+  'updateForRender',
+]);
+
+// Sentry frame function names carry the minified receiver
+// (`vz.createRenderPipeline`, `d4._getRenderPipeline`). Compare the method name
+// only — it survives minification.
+function browserBundleFunctionName(frame: { function?: unknown } | undefined): string {
+  const name = normalizeString(frame?.function);
+  const dot = name.lastIndexOf('.');
+  return dot >= 0 ? name.slice(dot + 1) : name;
+}
+
+// A positive anchor frame: a browser bundle chunk (`app:///_next/static/…`)
+// whose function is one of the three.js WebGPU renderer's pipeline helpers. The
+// bundle-source requirement keeps the anchor on bundled library code, never a
+// de-minified first-party path (which negative guard #1 already preserves).
+function isWebGpuRendererPipelineFrame(
+  frame: { filename?: unknown; function?: unknown } | undefined,
+): boolean {
+  return (
+    isBrowserBundleSource(frame?.filename) &&
+    WEBGPU_RENDERER_PIPELINE_FRAME_FUNCTIONS.has(browserBundleFunctionName(frame))
+  );
+}
 
 /**
  * Whether a Sentry event is the browser-internal DOM/binding
  * `OperationError: Instance dropped in popErrorScope` noise class:
  * `popErrorScope` is part of the WebIDL/internal error-scope machinery
  * (DOMQueuingStrategy, ResizeObserver, IntersectionObserver, media streams,
- * GPU, …), NOT a first-party Kortix API. Some browser code paths surface a
- * frameless `OperationError` with this exact message as an uncaught global
- * `onunhandledrejection` — never first-party app code. Requires the EXACT
- * message (case-sensitive; `OperationError` alone is a generic WebIDL type a
- * real first-party `new OperationError(...)` could also surface with) AND a
- * NEGATIVE guard: if any frame resolves to a de-minified first-party
- * `apps/web/src/…` source path OR any resolvable frame location at all, the
- * event keeps reporting (a real first-party `OperationError` rejection we can
- * attribute should still surface). The production noise pattern has NO frames
- * at all; only the frameless capture is dropped. See
- * `OPERATION_ERROR_POP_ERROR_SCOPE_PATTERN` for the full rationale.
+ * GPU, …), NOT a first-party Kortix API. Two production shapes are covered:
+ * (a) the frameless `OperationError` with this exact message surfaced as an
+ * uncaught global `onunhandledrejection`; and (b) the stack-bearing shape from
+ * the three.js WebGPU renderer on the `/a1o` landing page, whose rejection
+ * carries only minified `app:///_next/static/…` bundle frames (the renderer's
+ * `createRenderPipeline` / `_getRenderPipeline` pipeline helpers) and no
+ * de-minified `apps/web/src/…` frame. Both are never first-party app code.
+ * Requires the EXACT message (case-sensitive; `OperationError` alone is a
+ * generic WebIDL type a real first-party `new OperationError(...)` could also
+ * surface with), AND a NEGATIVE guard: if any frame resolves to a de-minified
+ * first-party `apps/web/src/…` source path, the event keeps reporting (a real
+ * first-party `OperationError` rejection we can attribute should still
+ * surface). A non-anchored resolvable frame location still keeps reporting
+ * (guard #2). See `OPERATION_ERROR_POP_ERROR_SCOPE_PATTERN` for the full
+ * rationale.
  */
 export function isOperationErrorPopErrorScopeNoise(input: {
   message?: unknown;
-  frames?: Array<{ filename?: unknown } | undefined>;
+  frames?: Array<{ filename?: unknown; function?: unknown } | undefined>;
 }): boolean {
   const message = normalizeString(input.message);
   if (!OPERATION_ERROR_POP_ERROR_SCOPE_PATTERN.test(message)) {
@@ -3284,9 +3353,19 @@ export function isOperationErrorPopErrorScopeNoise(input: {
   if (frames.some((frame) => isFirstPartyResolvedSource(frame?.filename))) {
     return false;
   }
-  // Negative guard #2: any resolvable source location (real chunk/URL/named
-  // file) → an attributable error with a real stack; keep reporting. Only the
-  // frameless capture (the production noise pattern) remains → drop it.
+  // Positive anchor: the WebGPU renderer stack. `popErrorScope` is WebGPU-only,
+  // and the three.js renderer is the code that drives a GPU error scope. Its
+  // pipeline helpers (`createRenderPipeline` / `_getRenderPipeline`) live in a
+  // minified `app:///_next/static/…` bundle chunk. This is the stack-bearing
+  // sibling of the frameless production shape — the browser drops the GPU error
+  // scope mid-render (device loss / teardown) and three.js surfaces the
+  // rejection uncaught. No first-party frame → noise; drop it.
+  if (frames.some(isWebGpuRendererPipelineFrame)) {
+    return true;
+  }
+  // Negative guard #2: any other resolvable source location (real chunk/URL/
+  // named file) → an attributable error with a real stack; keep reporting. Only
+  // the frameless capture and the anchored WebGPU-renderer capture remain.
   if (frames.some((frame) => isResolvableFrameSource(frame?.filename))) {
     return false;
   }
@@ -4772,7 +4851,7 @@ export function shouldIgnoreSentryBrowserNoise(event: {
     values?: Array<{
       value?: unknown;
       mechanism?: { type?: unknown; handled?: unknown };
-      stacktrace?: { frames?: Array<{ filename?: unknown }> };
+      stacktrace?: { frames?: Array<{ filename?: unknown; function?: unknown }> };
     }>;
   };
 }): boolean {
@@ -5332,14 +5411,16 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // Browser-internal DOM/binding `OperationError: Instance dropped in
   // popErrorScope` noise — `popErrorScope` is part of the WebIDL/internal
   // error-scope machinery (DOMQueuingStrategy, ResizeObserver,
-  // IntersectionObserver, media streams, GPU, …), NOT a first-party API. Some
-  // browser code paths surface a frameless `OperationError` with this exact
-  // message as an uncaught global `onunhandledrejection`; never first-party
-  // app code. Requires the EXACT message AND NEGATIVE guards: any resolved
-  // first-party `apps/web/src/…` frame OR any resolvable frame location → keep
-  // reporting (a real first-party `OperationError` rejection we can attribute
-  // should still surface). The production noise pattern has NO frames at all;
-  // only the frameless capture is dropped. See
+  // IntersectionObserver, media streams, GPU, …), NOT a first-party API. Two
+  // production shapes: a frameless `OperationError` surfaced as an uncaught
+  // global `onunhandledrejection`, and the stack-bearing three.js WebGPU
+  // renderer shape (minified `app:///_next/static/…` pipeline-helper frames,
+  // no first-party frame) from the `/a1o` landing page. Never first-party app
+  // code. Requires the EXACT message AND NEGATIVE guard #1: any resolved
+  // first-party `apps/web/src/…` frame → keep reporting (a real first-party
+  // `OperationError` rejection we can attribute must still surface). The
+  // frameless capture and the anchored WebGPU-renderer capture are dropped;
+  // any other resolvable frame location still keeps reporting (guard #2). See
   // `isOperationErrorPopErrorScopeNoise`. NOT in `ignoreErrors` (no frame
   // context there).
   if (isOperationErrorPopErrorScopeNoise({ message, frames })) {
