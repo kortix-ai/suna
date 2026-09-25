@@ -9,7 +9,7 @@
  *     family), not the resolved set; `PUT /model-enablement` replaces the WHOLE
  *     exception map, so every write here reads the current map first and merges
  *     into it. The gateway still serves a disabled model if a caller names it
- *     outright (apps/api/src/projects/routes/r4.ts:3070).
+ *     outright (apps/api/src/projects/routes/models.ts).
  *  2. DEFAULTS (`default`) — what `auto` resolves to, at project or account
  *     scope. The per-AGENT pin stays on `kortix agents model <agent> <id>`.
  *
@@ -35,7 +35,7 @@ interface PickerModel {
   tool_call?: boolean;
 }
 
-/** GET /projects/:id/model-picker (r4.ts:2983). */
+/** GET /projects/:id/model-picker (routes/models.ts). */
 interface ModelPicker {
   models: Record<string, PickerModel>;
   modelOverrides?: Record<string, boolean>;
@@ -43,7 +43,7 @@ interface ModelPicker {
   defaultModel?: string;
 }
 
-/** GET /projects/:id/model-defaults (r4.ts:3187). */
+/** GET /projects/:id/model-defaults (routes/models.ts). */
 interface ModelDefaults {
   platformDefault: string | null;
   accountDefault: string | null;

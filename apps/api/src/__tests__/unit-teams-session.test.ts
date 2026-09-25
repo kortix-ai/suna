@@ -17,6 +17,7 @@ const calls: string[] = [];
 let actor: { userId: string } | { reason: 'unlinked' | 'not_member' } = { userId: 'user-1' };
 let existingThread: Array<{
   sessionId: string;
+  projectId?: string;
   createdBy?: string | null;
   metadata?: Record<string, unknown> | null;
   status?: string | null;
@@ -742,5 +743,30 @@ describe('models and keys — a chat runs what its /model picked, on the keys it
     existingThread = [{ sessionId: 'sess-existing', createdBy: 'user-1', metadata: null, status: 'running' }];
     await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });
     expect(continued[0]).not.toHaveProperty('overrides');
+  });
+});
+
+/**
+ * A conversation's session lives in exactly one project (`chat_threads`). A
+ * per-project (bring-your-own) bot may reach only its own project, so a
+ * conversation whose session another project owns is refused: no card, no
+ * identity lookup, no delivery.
+ */
+describe('createOrJoinTeamsConversationSession — a session owned by another project', () => {
+  test('a per-project bot refuses it before posting anything', async () => {
+    existingThread = [{ sessionId: 'sess-other', projectId: 'project-other' }];
+
+    await createOrJoinTeamsConversationSession({
+      projectId: PROJECT_ID,
+      tenantId: TENANT_ID,
+      conversationId: CONVERSATION_ID,
+      activity,
+      ownThreadsOnly: true,
+    });
+
+    expect(calls).not.toContain('startTurn');
+    expect(calls).not.toContain('resolveTeamsActor');
+    expect(continued).toHaveLength(0);
+    expect(created).toHaveLength(0);
   });
 });

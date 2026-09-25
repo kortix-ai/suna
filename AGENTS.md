@@ -417,10 +417,13 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 ### One local testing system
 
 - `pnpm test` is the only repository-level test command. It runs local REST and
-  CLI flows, SDK tests, runner unit tests, route coverage, and worktree tests
-  concurrently.
+  CLI flows, SDK tests, PostgreSQL-backed suites (`db-suites`), runner unit
+  tests, route coverage, and worktree tests concurrently.
 - `pnpm test -- --id ACC-4` runs one flow. `--domain access` runs one domain.
 - `pnpm test -- --sdk-only` runs only `packages/sdk` tests.
+- `pnpm test -- --db-only [path-filter]` runs only the PostgreSQL-backed suites
+  (`integration-*.test.ts`, `*.integration.test.ts`, `tests/migration`), each
+  file against its own fresh migrated database. A skipped DB suite fails.
 - `pnpm test -- --browser-only` runs Playwright browser journeys. It starts the
   deterministic local stack.
 - Local browser runs use two Playwright workers. CI browser shards use one.

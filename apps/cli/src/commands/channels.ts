@@ -133,7 +133,7 @@ type ProjectCtx = NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>
 
 // ── Email (AgentMail) ───────────────────────────────────────────────────────
 // apps/api/src/channels/install-store.ts AgentMailSenderPolicy /
-// AgentMailInstallSummary; routes at apps/api/src/projects/routes/r4.ts:1907-2231.
+// AgentMailInstallSummary; routes at apps/api/src/projects/routes/channel-email.ts.
 
 interface EmailSenderPolicy {
   mode: 'allow_all' | 'restricted';
@@ -186,7 +186,7 @@ interface ChannelBindingsResponse {
   bindings: ChannelBinding[];
 }
 
-/** The default connector slug every email route falls back to (r4.ts:1917). */
+/** The default connector slug every email route falls back to (channel-email.ts). */
 const DEFAULT_EMAIL_CONNECTOR = 'kortix_email';
 
 /** The voice bot's fallback display name (channels/voice-identity.ts:29). */
@@ -749,7 +749,7 @@ async function teamsManifest(
 }
 
 // ─── Microsoft Teams: disconnect ─────────────────────────────────────────
-// DELETE /projects/:id/channels/teams/installation (r4.ts:1791). Needs the
+// DELETE /projects/:id/channels/teams/installation (channel-teams.ts). Needs the
 // 'manage' project role + `project.connector.write`; no feature-flag gate, so
 // a project whose `teams` flag was turned off can still clean up its install.
 

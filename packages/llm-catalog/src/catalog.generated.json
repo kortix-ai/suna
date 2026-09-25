@@ -157613,7 +157613,7 @@
           }
         },
         {
-          "id": "samplecolai/Rnj-1-Instruct",
+          "id": "essentialai/Rnj-1-Instruct",
           "name": "Rnj-1 Instruct",
           "description": "Open-weight instruction model for adaptable chat and self-hosted production workloads",
           "released": "2025-12-05",

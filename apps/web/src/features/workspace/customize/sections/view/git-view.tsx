@@ -50,7 +50,7 @@ import {
   WarningIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import Link from 'next/link';
+import Link from '@/components/site-link';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 
 import { CopyButton } from '@/components/markdown/copy-button';
@@ -713,7 +713,7 @@ function OwnGitClient({ project }: { project: ProjectWithOrigin }) {
  * Two things the old gate got wrong, both fixed here:
  *
  * 1. It read `project.write`. The route asserts `project.members.manage`
- *    (`apps/api/src/projects/routes/r1.ts`, "Inviting a git collaborator
+ *    (`apps/api/src/projects/routes/project-git.ts`, "Inviting a git collaborator
  *    grants a human standing access to the repo — membership-tier, not plain
  *    write"). A custom role holding write-but-not-members.manage saw the form
  *    and got a 403 on submit; the reverse role saw nothing though the API
@@ -903,7 +903,7 @@ export function GitView({ projectId }: { projectId: string }) {
   // Two leaves, one roundtrip. This used to be a single `project.write` probe
   // reused for BOTH the repository settings and the collaborator invite — but
   // the invite route asserts `project.members.manage`
-  // (`apps/api/src/projects/routes/r1.ts`), a strictly different leaf, so the
+  // (`apps/api/src/projects/routes/project-git.ts`), a strictly different leaf, so the
   // one probe was answering a question the server never asked. `GIT_VIEW_ACTIONS`
   // is module-level and stable because the action-list identity is part of the
   // SDK query key.

@@ -5,7 +5,7 @@ const state = {
   getCustomerByStripeIdResult: null as any,
   upsertCreditAccountCalls: [] as Array<{ accountId: string; data: Record<string, unknown> }>,
   updateCreditAccountCalls: [] as Array<{ accountId: string; data: Record<string, unknown> }>,
-  resetExpiringCreditsCalls: [] as Array<any[]>,
+  walletResets: [] as Array<Record<string, unknown>>,
   stripeUpdateCalls: [] as Array<{ id: string; params: Record<string, unknown> }>,
 };
 
@@ -60,10 +60,12 @@ mock.module('../billing/repositories/transactions', () => ({
   getPurchaseByPaymentIntent: async () => null,
 }));
 
-mock.module('../billing/services/credits', () => ({
-  grantCredits: async () => null,
-  resetExpiringCredits: async (...args: any[]) => {
-    state.resetExpiringCreditsCalls.push(args);
+mock.module('../billing/wallet', () => ({
+  wallet: {
+    grant: async () => ({ replayed: false, ledgerId: null }),
+    reset: async (input: Record<string, unknown>) => {
+      state.walletResets.push(input);
+    },
   },
 }));
 
@@ -83,6 +85,14 @@ mock.module('../shared/resolve-account', () => ({
 mock.module('../shared/db', () => ({
   hasDatabase: true,
   db: {
+    // isWebhookEventProcessed: the event has not been processed yet.
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => [],
+        }),
+      }),
+    }),
     insert: () => ({
       values: () => ({
         onConflictDoNothing: () => ({
@@ -103,7 +113,7 @@ beforeEach(() => {
   state.getCustomerByStripeIdResult = null;
   state.upsertCreditAccountCalls = [];
   state.updateCreditAccountCalls = [];
-  state.resetExpiringCreditsCalls = [];
+  state.walletResets = [];
   state.stripeUpdateCalls = [];
 });
 
@@ -153,12 +163,12 @@ describe('Stripe webhook canonicalization', () => {
     expect(state.upsertCreditAccountCalls).toHaveLength(1);
     expect(state.upsertCreditAccountCalls[0].accountId).toBe('acc_canonical_123');
     expect(state.upsertCreditAccountCalls[0].data.tier).toBe('tier_2_20');
-    expect(state.resetExpiringCreditsCalls).toContainEqual([
-      'acc_canonical_123',
-      20,
-      'Recovered Stripe subscription: 20 credits',
-      'subscription_activation:sub_legacy_123',
-    ]);
+    expect(state.walletResets).toContainEqual({
+      accountId: 'acc_canonical_123',
+      amount: 20,
+      description: 'Recovered Stripe subscription: 20 credits',
+      key: { event: 'subscription_activation:sub_legacy_123' },
+    });
     expect(state.stripeUpdateCalls).toHaveLength(1);
     expect(state.stripeUpdateCalls[0]).toEqual({
       id: 'sub_legacy_123',

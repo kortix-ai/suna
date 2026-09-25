@@ -6,7 +6,7 @@ import {
   stopAuditWebhookWorker,
 } from './audit-webhooks';
 
-const databaseUrl = process.env.AUDIT_V2_DATABASE_URL;
+const databaseUrl = process.env.TEST_DATABASE_URL;
 const ACCOUNT = 'c7100000-0000-4000-a000-000000000001';
 const WEBHOOK = 'c7200000-0000-4000-a000-000000000001';
 

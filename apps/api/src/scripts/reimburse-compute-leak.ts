@@ -19,7 +19,7 @@
  *   - the affected set + amounts are computed purely from the DB (no provider
  *     calls), so a dry-run and the apply run agree.
  *   - refunds are keyed `compute_refund:v1:<accountId>` and written via
- *     grantCredits(..., stripeEventId=<key>), which lands on the UNIQUE
+ *     wallet.grant({ key: { event: <key> } }), which lands on the UNIQUE
  *     credit_ledger.stripe_event_id index — re-running can never double-pay.
  *
  * Usage (run by a human, with prod env):
@@ -35,7 +35,7 @@ import { inArray, sql } from 'drizzle-orm';
 import { sandboxComputeSessions } from '@kortix/db';
 import { db } from '../shared/db';
 import { pauseComputeSession } from '../billing/services/compute-metering';
-import { grantCredits } from '../billing/services/credits';
+import { wallet } from '../billing/wallet';
 
 interface Args {
   apply: boolean;
@@ -226,14 +226,14 @@ async function main() {
     const amount = round2(v.refund);
     if (amount <= 0) continue;
     try {
-      await grantCredits(
-        acct,
+      await wallet.grant({
+        accountId: acct,
         amount,
-        'compute_refund',
-        `Compute over-billing reimbursement — full refund of ${v.count} affected session(s)`,
-        false, // non-expiring
-        key,   // → credit_ledger.stripe_event_id UNIQUE index = permanent idempotency
-      );
+        kind: 'compute_refund',
+        description: `Compute over-billing reimbursement — full refund of ${v.count} affected session(s)`,
+        expiring: false,
+        key: { event: key },
+      });
       refundedAccounts += 1;
       refundedUsd += amount;
       console.log(`[reimburse] refunded ${acct}: $${amount} (${v.count} sessions)`);

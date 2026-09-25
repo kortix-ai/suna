@@ -130,8 +130,8 @@ describe('androidBackMove', () => {
 });
 
 describe('sub-pages', () => {
-  test('project Settings, Schedules and Secrets are the pages that open as sub-pages', () => {
-    expect([...SUB_PAGE_IDS]).toEqual(['page:settings', 'page:schedules', 'page:secrets-nav']);
+  test('project Settings, Schedules, Secrets and Members are the pages that open as sub-pages', () => {
+    expect([...SUB_PAGE_IDS]).toEqual(['page:settings', 'page:schedules', 'page:secrets-nav', 'page:members']);
     for (const id of SUB_PAGE_IDS) expect(isSubPageId(id)).toBe(true);
   });
 

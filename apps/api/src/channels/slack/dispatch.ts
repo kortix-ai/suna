@@ -392,19 +392,22 @@ export async function maybeHandleDmCommand(
   const arg = rest.join(' ').trim();
   const threadTs = event.thread_ts ?? event.ts;
 
-  // A bot token to reply with: prefer the channel's bound project, else the BYO
-  // project this webhook serves, else any workspace install.
-  let tokenProjectId: string | null = null;
-  const [binding] = await db
-    .select({ projectId: chatChannelBindings.projectId })
-    .from(chatChannelBindings)
-    .where(and(
-      eq(chatChannelBindings.platform, 'slack'),
-      eq(chatChannelBindings.workspaceId, teamId),
-      eq(chatChannelBindings.channelId, channelId),
-    ))
-    .limit(1);
-  tokenProjectId = binding?.projectId ?? fallbackProjectId ?? null;
+  // A bot token to reply with. A per-project (BYO) webhook replies with its own
+  // app: the DM is with that app's bot, and no other project's token belongs in
+  // it. The shared app prefers the channel's bound project, else any install.
+  let tokenProjectId: string | null = fallbackProjectId ?? null;
+  if (!tokenProjectId) {
+    const [binding] = await db
+      .select({ projectId: chatChannelBindings.projectId })
+      .from(chatChannelBindings)
+      .where(and(
+        eq(chatChannelBindings.platform, 'slack'),
+        eq(chatChannelBindings.workspaceId, teamId),
+        eq(chatChannelBindings.channelId, channelId),
+      ))
+      .limit(1);
+    tokenProjectId = binding?.projectId ?? null;
+  }
   if (!tokenProjectId) {
     const [install] = await db
       .select({ projectId: chatInstalls.projectId })
@@ -730,13 +733,20 @@ export async function dispatchSlackEvent(
     return;
   }
 
-  await spawnAgentTurn(projectId, envelope, event);
+  await spawnAgentTurn(projectId, envelope, event, opts);
 }
 
+const FOREIGN_THREAD_NOTICE =
+  'This thread belongs to a different Kortix project. Mention me in a new message to start here.';
+
+// `ownThreadsOnly`: the per-project (BYO) webhook. Its requests may reach only
+// its own project, so a thread another project owns is refused, not joined.
+// `threadProjectResolved`: internal — set on the re-dispatch below.
 export async function spawnAgentTurn(
   projectId: string,
   envelope: SlackEnvelope,
   event: SlackEvent,
+  opts: { ownThreadsOnly?: boolean; threadProjectResolved?: boolean } = {},
 ): Promise<void> {
   const teamId = envelope.team_id ?? event.team ?? '';
   const threadId = event.thread_ts ?? event.ts ?? '';
@@ -794,6 +804,7 @@ export async function spawnAgentTurn(
     const [existing] = await db
       .select({
         sessionId: chatThreads.sessionId,
+        projectId: chatThreads.projectId,
         createdBy: projectSessions.createdBy,
         metadata: projectSessions.metadata,
         agentName: projectSessions.agentName,
@@ -808,6 +819,23 @@ export async function spawnAgentTurn(
         ),
       )
       .limit(1);
+    // A known thread maps to exactly one session in exactly one project, and
+    // the message is delivered THERE. The sender above was authorized against
+    // the project this event resolved to; if the thread belongs to another
+    // project (after `/kortix use` re-binds a channel, an older thread still
+    // belongs to its original project), delivering on the strength of that
+    // authorization would cross projects and accounts. So re-run the whole
+    // turn against the thread's own project — its access check, its
+    // participant gate — or, for a per-project app, refuse.
+    if (existing?.projectId && existing.projectId !== projectId) {
+      if (opts.ownThreadsOnly && !event.bot_id && event.channel) {
+        const token = await loadSlackTokenForProject(projectId);
+        if (token) await postMessage(token, event.channel, FOREIGN_THREAD_NOTICE, threadId);
+      }
+      if (opts.ownThreadsOnly || opts.threadProjectResolved) return;
+      await spawnAgentTurn(existing.projectId, envelope, event, { threadProjectResolved: true });
+      return;
+    }
     if (existing) {
       if (config.SLACK_REQUIRE_USER_IDENTITY) {
         const selection = event.channel
@@ -820,7 +848,7 @@ export async function spawnAgentTurn(
           threadId,
           sessionId: existing.sessionId,
           sessionOwnerId: existing.createdBy,
-          sessionMetadata: existing.metadata,
+          sessionMetadata: existing.metadata as Record<string, unknown> | null,
           channelPolicy: selection?.conversationPolicy,
           slackUserId: event.user ?? '',
           actorUserId,

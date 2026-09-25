@@ -13,6 +13,9 @@
 // caveat as dead-letter-marks-session-failed.test.ts.
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
+/** The claim the writes below hold: the row is `running` under this owner. */
+const LEASE = { commandId: 'cmd-1', lockedBy: 'worker-1' };
+
 let selectedRow: Record<string, unknown> | null = null;
 let updateCalls: Array<{ updates: Record<string, unknown> }> = [];
 let updateReturns: Array<Record<string, unknown>> = [];
@@ -105,7 +108,7 @@ describe('parkPromptForUnreachableRuntime', () => {
   test('the first unreachable attempt parks the row instead of failing it', async () => {
     selectedRow = { payload: { text: 'hi' } };
 
-    const outcome = await parkPromptForUnreachableRuntime('cmd-1', 'delivery outcome: unreachable', {
+    const outcome = await parkPromptForUnreachableRuntime(LEASE, 'delivery outcome: unreachable', {
       sessionId: 'sess-1',
       now: new Date('2026-08-26T10:00:00.000Z'),
     });
@@ -133,7 +136,7 @@ describe('parkPromptForUnreachableRuntime', () => {
     const dueAfter = async (spent: number) => {
       updateCalls = [];
       selectedRow = { payload: { runtimeUnreachableRetries: spent } };
-      await parkPromptForUnreachableRuntime('cmd-1', 'x', { now });
+      await parkPromptForUnreachableRuntime(LEASE, 'x', { now });
       return (updateCalls[0]!.updates.availableAt as Date).getTime() - now.getTime();
     };
     expect(await dueAfter(0)).toBe(30_000);
@@ -144,7 +147,7 @@ describe('parkPromptForUnreachableRuntime', () => {
   test('the budget is bounded — the last attempt refuses to park', async () => {
     selectedRow = { payload: { runtimeUnreachableRetries: MAX_RUNTIME_UNREACHABLE_RETRIES } };
 
-    const outcome = await parkPromptForUnreachableRuntime('cmd-1', 'x', { sessionId: 'sess-1' });
+    const outcome = await parkPromptForUnreachableRuntime(LEASE, 'x', { sessionId: 'sess-1' });
 
     expect(outcome).toEqual({ parked: false, retries: MAX_RUNTIME_UNREACHABLE_RETRIES });
     // Nothing written: the caller dead-letters through markCommandFailed, which
@@ -154,7 +157,7 @@ describe('parkPromptForUnreachableRuntime', () => {
 
   test('the next attempt carries a FRESH idempotency key', async () => {
     selectedRow = { payload: {} };
-    await parkPromptForUnreachableRuntime('cmd-1', 'x', {});
+    await parkPromptForUnreachableRuntime(LEASE, 'x', {});
     // `withNextDeliveryAttempt` bumps payload.deliveryAttempt, which is what
     // makes the re-POST key `<commandId>:rN`. Without it the proxy's 10-minute
     // dedupe claim from the failed POST swallows every re-attempt inside the
@@ -166,7 +169,7 @@ describe('parkPromptForUnreachableRuntime', () => {
   test('a Stop that landed during delivery survives the park as a HOLD', async () => {
     selectedRow = { payload: { stopPausedOnDelivery: 'true' } };
 
-    await parkPromptForUnreachableRuntime('cmd-1', 'x', {});
+    await parkPromptForUnreachableRuntime(LEASE, 'x', {});
 
     expect(updateCalls[0]!.updates.result).toMatchObject({
       delivery_blocked: RUNTIME_UNREACHABLE_REASON,
@@ -180,7 +183,7 @@ describe('parkPromptForUnreachableRuntime', () => {
 
   test('a row that vanished is not parked', async () => {
     selectedRow = null;
-    expect(await parkPromptForUnreachableRuntime('cmd-1', 'x', {})).toEqual({
+    expect(await parkPromptForUnreachableRuntime(LEASE, 'x', {})).toEqual({
       parked: false,
       retries: 0,
     });
@@ -190,7 +193,7 @@ describe('parkPromptForUnreachableRuntime', () => {
   test('a lost UPDATE race (row already dead-lettered) reports not-parked', async () => {
     selectedRow = { payload: {} };
     updateReturns = [];
-    expect(await parkPromptForUnreachableRuntime('cmd-1', 'x', {})).toEqual({
+    expect(await parkPromptForUnreachableRuntime(LEASE, 'x', {})).toEqual({
       parked: false,
       retries: 0,
     });

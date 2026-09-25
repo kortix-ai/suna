@@ -91,6 +91,8 @@ export async function applyTeamsModelChoice(
   tenantId: string,
   conversationId: string,
   choice: string,
+  /** A per-project bot: only a session of this project is the live one. */
+  sessionProjectId?: string,
 ) {
   const ctx = teamsChannelCtx(tenantId, conversationId);
   const id = choice.trim();
@@ -116,7 +118,7 @@ export async function applyTeamsModelChoice(
   // secret grant, and whether it reaches the person's own keys. A personal
   // chat's session created before these became private is shared, so it
   // cannot, whatever the chat is.
-  const live = await conversationSession(tenantId, conversationId).catch(() => null);
+  const live = await conversationSession(tenantId, conversationId, sessionProjectId).catch(() => null);
   if (live?.sessionId) {
     // The choice reaches the live session: every message in it runs on the
     // new model and keys. Choosing needs the same standing as sending one.

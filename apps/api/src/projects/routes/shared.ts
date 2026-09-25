@@ -3,7 +3,7 @@ import type {
   SessionStartFailure,
   SessionStartResult,
 } from '@kortix/api-contract';
-import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
+import { changeRequests, sessionSandboxes } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import {
   markComputeSessionAlive,
@@ -49,6 +49,7 @@ import { runStoppedObservationFollowUp } from '../session-lifecycle/stopped-obse
 import type { StopReason } from '../stop-reason';
 import { recoverTurnsAfterRuntimeRestart } from '../session-lifecycle/runtime-restart-recovery';
 import { metadataDelta, stripMetadataKeys } from '../session-lifecycle/sandbox-metadata-sql';
+import { transitionRuntime, transitionSession } from '../session-lifecycle/status-transitions';
 import {
   RUNTIME_READINESS_CLOCK_KEYS,
   STALE_OPENCODE_BOOT_HARD_MS,
@@ -95,6 +96,25 @@ export const RUNTIME_WAKE_CLAIM_CLEARED_KEYS = [
   'runtimeWakeLateStartStoppedAt',
   'runtimeWakeProgressAt',
   ...RUNTIME_READINESS_CLOCK_KEYS,
+] as const;
+
+/** Keys the wake's finalize drops once the provider confirms the box runs. */
+const RUNTIME_WAKE_FINALIZE_CLEARED_KEYS = [
+  'runtimeWakeStartedAt',
+  'runtimeWakeId',
+  'runtimeWakeLeaseExpiresAt',
+  'runtimeWakeProviderStatus',
+  'runtimeWakeError',
+  'runtimeWakeFailedAt',
+  'runtimeWakeRetryAfterAt',
+  'runtimeWakeCleanupUntilAt',
+  'runtimeWakeCleanupId',
+  'runtimeWakeCleanupLeaseExpiresAt',
+  'runtimeWakeLateStartCheckedAt',
+  'runtimeWakeLateStartProviderStatus',
+  'runtimeWakeLateStartStoppedAt',
+  'runtimeWakeProgressAt',
+  ...RUNTIME_START_FAILURE_KEYS,
 ] as const;
 
 /**
@@ -219,48 +239,23 @@ export async function resumeStoppedSandbox(
     isMissingError: isMissingRuntimeError,
     finalize: async () => {
       const confirmedAt = new Date();
-      const finalized = await db.transaction(async (tx) => {
-        const [activated] = await tx
-          .update(sessionSandboxes)
-          .set({
-            status: 'active',
-            updatedAt: confirmedAt,
-            metadata: sql`(
-              coalesce(${sessionSandboxes.metadata}, '{}'::jsonb)
-                - 'runtimeWakeStartedAt'
-                - 'runtimeWakeId'
-                - 'runtimeWakeLeaseExpiresAt'
-                - 'runtimeWakeProviderStatus'
-                - 'runtimeWakeError'
-                - 'runtimeWakeFailedAt'
-                - 'runtimeWakeRetryAfterAt'
-                - 'runtimeWakeCleanupUntilAt'
-                - 'runtimeWakeCleanupId'
-                - 'runtimeWakeCleanupLeaseExpiresAt'
-                - 'runtimeWakeLateStartCheckedAt'
-                - 'runtimeWakeLateStartProviderStatus'
-                - 'runtimeWakeLateStartStoppedAt'
-                - 'runtimeWakeProgressAt'
-                - ${RUNTIME_START_FAILURE_KEYS[0]}
-                - ${RUNTIME_START_FAILURE_KEYS[1]}
-                - ${RUNTIME_START_FAILURE_KEYS[2]}
-              ) || ${JSON.stringify({ providerRunningConfirmedAt: confirmedAt.toISOString() })}::jsonb`,
-          })
-          .where(
-            and(
-              eq(sessionSandboxes.sandboxId, row.sandboxId),
-              eq(sessionSandboxes.externalId, externalId),
-              eq(sessionSandboxes.status, 'stopped'),
-              sql`${sessionSandboxes.metadata}->>'runtimeWakeId' = ${runtimeWakeId}`,
-            ),
-          )
-          .returning({ sandboxId: sessionSandboxes.sandboxId });
-        if (!activated) return false;
-        await tx
-          .update(projectSessions)
-          .set({ status: 'running', error: null, updatedAt: confirmedAt })
-          .where(eq(projectSessions.sessionId, row.sessionId));
-        return true;
+      // Both rows move together, or neither does: the sandbox CAS on this
+      // wake's own id, the session guarded against a delete.
+      const finalized = await transitionRuntime({
+        sessionId: row.sessionId,
+        sandboxId: row.sandboxId,
+        session: 'resume',
+        sandbox: 'wake',
+        at: confirmedAt,
+        error: null,
+        metadata: {
+          strip: RUNTIME_WAKE_FINALIZE_CLEARED_KEYS,
+          merge: { providerRunningConfirmedAt: confirmedAt.toISOString() },
+        },
+        guard: and(
+          eq(sessionSandboxes.externalId, externalId),
+          sql`${sessionSandboxes.metadata}->>'runtimeWakeId' = ${runtimeWakeId}`,
+        ),
       });
       if (!finalized) return false;
       invalidateSandbox(externalId);
@@ -420,15 +415,12 @@ export async function allocateRuntimeOnOpen(
   const providerName = session.sandboxProvider as SandboxProviderName;
   if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(providerName)) return;
   if (sandboxCallbackUnreachableReason()) return;
-  await db
-    .update(projectSessions)
-    .set({ status: 'provisioning', error: null, updatedAt: new Date() })
-    .where(eq(projectSessions.sessionId, sessionId));
+  await transitionSession('provision', sessionId, { error: null });
   const opencodeModel =
     typeof session.metadata?.opencode_model === 'string' ? session.metadata.opencode_model : null;
   const runtimeMetadata = { opened_at: new Date().toISOString() };
   const sessionMetadata = { ...(session.metadata ?? {}), ...runtimeMetadata };
-  const rehydrate = legacyRehydrateSpec(session.metadata, loaded.row.metadata);
+  const rehydrate = legacyRehydrateSpec(session.metadata, loaded.row.metadata, loaded.row.projectId);
 
   allocateSessionRuntime({
     sessionId,

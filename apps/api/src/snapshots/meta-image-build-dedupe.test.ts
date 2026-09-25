@@ -69,3 +69,18 @@ test('concurrent meta cold builds share one provider build', async () => {
   const [firstResult, secondResult] = await Promise.all([first, second]);
   expect(firstResult).toBe(secondResult);
 });
+
+test('a meta image reports the size it was built with, so metering bills that size', async () => {
+  let builtSpec: unknown = null;
+  platinumProvider.isConfigured = () => true;
+  platinumProvider.getSnapshotState = async () => 'missing';
+  platinumProvider.buildSnapshot = async (input: { spec?: unknown }) => {
+    builtSpec = input.spec;
+    return { externalTemplateId: 'tpl_test' };
+  };
+  platinumProvider.listSnapshots = async () => [];
+
+  const result = await ensureMetaSandboxImage({ source: 'session-start', provider: 'platinum' });
+  expect(builtSpec).toEqual({ cpu: 1, memoryGb: 2, diskGb: 8 });
+  expect(result.spec).toEqual(builtSpec as typeof result.spec);
+});

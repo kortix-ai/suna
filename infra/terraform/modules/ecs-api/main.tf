@@ -519,7 +519,7 @@ resource "aws_ecs_task_definition" "this" {
   container_definitions = jsonencode([{
     name      = var.container_name
     image     = var.image
-    samplecol = true
+    essential = true
     # Give the app time to finish in-flight work after SIGTERM. Without this
     # ECS defaults to 30s, so a streaming response longer than that was killed
     # on every deploy, scale-in and Spot reclaim.

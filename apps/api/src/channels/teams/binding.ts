@@ -217,6 +217,8 @@ export interface TeamsConversationSession {
 export async function conversationSession(
   tenantId: string,
   conversationId: string,
+  /** Only a session of this project counts (a per-project bot's scope). */
+  projectId?: string,
 ): Promise<TeamsConversationSession | null> {
   const [thread] = await db
     .select({ sessionId: chatThreads.sessionId })
@@ -226,6 +228,7 @@ export async function conversationSession(
         eq(chatThreads.platform, PLATFORM),
         eq(chatThreads.workspaceId, tenantId),
         eq(chatThreads.threadId, conversationId),
+        projectId ? eq(chatThreads.projectId, projectId) : undefined,
       ),
     )
     .limit(1);

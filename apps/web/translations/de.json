@@ -6226,7 +6226,8 @@
       "line64JsxTextAllWorkerExecutionsAreCurrentlyPaused": "Alle Worker-Ausführungen sind derzeit pausiert."
     },
     "componentsMarkdownUnifiedMarkdown": {
-      "line1115JsxTextNoContent": "Kein Inhalt"
+      "line1115JsxTextNoContent": "Kein Inhalt",
+      "loadRemoteImage": "Bild von {host} laden"
     },
     "componentsOnboardingBootOverlay": {
       "line135JsxTextPressEnterToBoot": "Drücke Enter zum Starten..."
@@ -7052,7 +7053,6 @@
       "line2118JsxAttrAriaLabelCancelCommand": "Befehl abbrechen",
       "line2145JsxTextAddToQueue": "Zur Warteschlange hinzufügen",
       "line2185JsxTextEnterDetailsAndPressEnterOrPressEsc": "Details eingeben und Enter drücken oder Esc zum Abbrechen",
-      "line2237JsxAttrAcceptImagePdfTxtMdJsonCsvXmlYaml": "image/*,.pdf,.txt,.md,.json,.csv,.xml,.yaml,.yml,.toml,.js,.ts,.jsx,.tsx,.py,.rb,.go,.rs,.java,.c,.cpp,.h,.css,.html,.vue,.svelte,.log,.sql,.zip,.tar,.gz,.rar",
       "line2252JsxTextAttachFiles": "Dateien anhängen"
     },
     "componentsSessionSessionChat": {
@@ -7271,7 +7271,6 @@
       "line368JsxTextNewToken": "Neues Token"
     },
     "componentsSettingsUserSettingsModal": {
-      "line596JsxAttrAcceptImage": "image/*",
       "line876JsxTextKeyboardShortcuts": "Tastenkürzel",
       "line878JsxTextViewAndCustomizeKeyboardShortcutsForTabNavigation": "Tastenkürzel für die Tab-Navigation anzeigen und anpassen.",
       "line884JsxTextModifierKey": "Modifikatortaste",
@@ -7488,7 +7487,7 @@
     "componentsThreadToolViewsPresentationToolsDeletepresentationtoolview": {
       "line128JsxAttrTitleDeletePresentation": "Präsentation löschen",
       "line136JsxAttrIconcolorTextRed500DarkTextRed400": "text-red-500 dark:text-red-400",
-      "line137JsxAttrBgcolorBgGradientToBFromRed100To": "bg-gradient-to-b from-red-100 zu-red-50 schatten-innen dark:from-red-800/40 dark:to-red-900/60 dark:shadow-red-950/20",
+      "line137JsxAttrBgcolorBgGradientToBFromRed100To": "bg-gradient-to-b from-red-100 to-red-50 shadow-inner dark:from-red-800/40 dark:to-red-900/60 dark:shadow-red-950/20",
       "line138JsxAttrTitleDeletingPresentation": "Präsentation wird gelöscht",
       "line139JsxAttrFilepathRemovingAllFiles": "Alle Dateien werden entfernt...",
       "line151JsxTextThereWasAnErrorDeletingThePresentationPlease": "Beim Löschen der Präsentation ist ein Fehler aufgetreten. Bitte versuche es erneut.",
@@ -7499,7 +7498,7 @@
     "componentsThreadToolViewsPresentationToolsDeleteslidetoolview": {
       "line67JsxAttrTitleDeleteSlide": "Folie löschen",
       "line75JsxAttrIconcolorTextRed500DarkTextRed400": "text-red-500 dark:text-red-400",
-      "line76JsxAttrBgcolorBgGradientToBFromRed100To": "bg-gradient-to-b from-red-100 zu-red-50 schatten-innen dark:from-red-800/40 dark:to-red-900/60 dark:shadow-red-950/20",
+      "line76JsxAttrBgcolorBgGradientToBFromRed100To": "bg-gradient-to-b from-red-100 to-red-50 shadow-inner dark:from-red-800/40 dark:to-red-900/60 dark:shadow-red-950/20",
       "line77JsxAttrTitleDeletingSlide": "Folie wird gelöscht",
       "line78JsxAttrFilepathRemovingSlideFile": "Foliendatei wird entfernt...",
       "line90JsxTextThereWasAnErrorDeletingTheSlidePlease": "Beim Löschen der Folie ist ein Fehler aufgetreten. Bitte versuche es erneut.",
@@ -7523,7 +7522,7 @@
     "componentsThreadToolViewsPresentationToolsListpresentationtemplatestoolview": {
       "line134JsxTextTemplatePreview": "Vorlagenvorschau",
       "line156JsxAttrIconcolorTextOrange500DarkTextOrange400": "text-orange-500 dark:text-orange-400",
-      "line157JsxAttrBgcolorBgGradientToBFromOrange100To": "bg-gradient-to-b from-orange-100 zu-orange-50 schatten-innen dark:from-orange-800/40 dark:to-orange-900/60 dark:shadow-orange-950/20",
+      "line157JsxAttrBgcolorBgGradientToBFromOrange100To": "bg-gradient-to-b from-orange-100 to-orange-50 shadow-inner dark:from-orange-800/40 dark:to-orange-900/60 dark:shadow-orange-950/20",
       "line158JsxAttrTitleLoadingPresentationTemplates": "Präsentationsvorlagen werden geladen",
       "line159JsxAttrFilepathFetchingAvailableTemplates": "Verfügbare Vorlagen werden abgerufen...",
       "line168JsxTextNoTemplatesAvailable": "Keine Vorlagen verfügbar"
@@ -7531,7 +7530,7 @@
     "componentsThreadToolViewsPresentationToolsListpresentationstoolview": {
       "line96JsxAttrTitleAllPresentations": "Alle Präsentationen",
       "line106JsxAttrIconcolorTextZinc500DarkTextZinc400": "text-zinc-500 dark:text-zinc-400",
-      "line107JsxAttrBgcolorBgGradientToBFromBlue100To": "bg-gradient-to-b from-blue-100 zu-blue-50 schatten-innen dark:from-blue-800/40 dark:to-blue-900/60 dark:shadow-blue-950/20",
+      "line107JsxAttrBgcolorBgGradientToBFromBlue100To": "bg-gradient-to-b from-blue-100 to-blue-50 shadow-inner dark:from-blue-800/40 dark:to-blue-900/60 dark:shadow-blue-950/20",
       "line108JsxAttrTitleLoadingPresentations": "Präsentationen werden geladen",
       "line109JsxAttrFilepathScanningWorkspace": "Arbeitsbereich wird gescannt...",
       "line121JsxTextThereWasAnErrorLoadingThePresentationsPlease": "Beim Laden der Präsentationen ist ein Fehler aufgetreten. Bitte versuche es erneut.",
@@ -8532,7 +8531,7 @@
     "autoAppPublicMarketingDesignSystemPageJsxTextLoadingErrorda06eee7": "Laden → Fehler",
     "autoAppPublicMarketingDesignSystemPageJsxTextInTooltips3dc63b0c": "In Tooltips",
     "autoAppPublicMarketingDesignSystemPageJsxTextCommandPalettea9dabb80": "Befehlspalette",
-    "autoAppPublicMarketingDevelopersPageJsxAttrParentClassAnimateSpin79162867": "animate-spin mt-0 größe-3",
+    "autoAppPublicMarketingDevelopersPageJsxAttrParentClassAnimateSpin79162867": "animate-spin mt-0 size-3",
     "autoAppPublicMarketingDevelopersPageJsxTextConnectorsRequestPath28e55918": "Konnektoren · Anforderungspfad",
     "autoAppPublicMarketingDevelopersPageJsxTextAgentRuntime00a9a84b": "Agentenlaufzeit",
     "autoAppPublicMarketingDevelopersPageJsxAttrLabelOnlyAfa7b37b0": "Nur ein Gültigkeitsbereich-Token verlässt die Box",
@@ -8629,7 +8628,6 @@
     "autoAppPublicShareSessionTokenPageJsxTextOpenAppa9aa1bb9": "App öffnen",
     "autoAppPublicShareSessionTokenPageJsxTextStartSessiond4216ec8": "Sitzung starten",
     "autoAppPublicShareSessionTokenPageJsxTextSignInb66c3487": "Melden Sie sich an, um zu beginnen",
-    "autoAppPublicShareSessionTokenPublicFileShareViewJsxeeb5b063": "Allow-Same-Origin, Allow-Scripts, Allow-Forms, Allow-Popups, Allow-Downloads",
     "autoAppPublicTemplatesShareIdErrorJsxAttrDescriptionWeCouldn8189e2ca": "Wir konnten diese Vorlage nicht laden. Versuchen Sie es erneut oder laden Sie neu, wenn das Problem weiterhin auftritt.",
     "autoAppSystemDebugErrorPageJsxTextPreviewVariant8b7cfd4d": "Vorschauvariante",
     "autoAppSystemDebugErrorPageJsxTextThrowForRealc87f3f6e": "⚠ Echt werfen (die Grenze erreichen)",
@@ -8876,10 +8874,10 @@
     "autoComponentsHomeCliDemoJsxAttrParentClassMt0Animateaddcd0bb": "mt-0 animate-spin",
     "autoComponentsHomeCliDemoJsxTextPickYourCodingAgent67e01482": "Wählen Sie Ihren Codierungsagenten aus – ←/→ zum Verschieben · Eingabetaste zum Bestätigen · oder klicken Sie unten",
     "autoComponentsHomeCliDemoJsxAttrAriaLabelKortixTerminalc0bdb15a": "Kortix-Terminaleingang",
-    "autoComponentsHomeCodeWindowJsxAttrIndicatorClassNameBgForegroundRounded88279797": "BG-Vordergrund gerundet",
-    "autoComponentsHomeDesktopDemoJsxAttrContentClassNameMaxWFull783e15fd": "max-breite-voll mx-0 höhe-voll p-0 md:p-0 lg:p-0",
-    "autoComponentsHomeDesktopDemoJsxAttrInnerClassNameHFullMincaf5a8f0": "h-voll min-h-0 gerundet-keine Rand-keine BG-Karte Schatten-keine",
-    "autoComponentsHomeDesktopDemoJsxAttrParentClassNameHFullMinb9286cc2": "h-voll min-h-0",
+    "autoComponentsHomeCodeWindowJsxAttrIndicatorClassNameBgForegroundRounded88279797": "bg-foreground rounded",
+    "autoComponentsHomeDesktopDemoJsxAttrContentClassNameMaxWFull783e15fd": "max-w-full mx-0 h-full p-0 md:p-0 lg:p-0",
+    "autoComponentsHomeDesktopDemoJsxAttrInnerClassNameHFullMincaf5a8f0": "h-full min-h-0 rounded-none border-none bg-card shadow-none",
+    "autoComponentsHomeDesktopDemoJsxAttrParentClassNameHFullMinb9286cc2": "h-full min-h-0",
     "autoComponentsHomeDevelopersRepoBrowserJsxTextYourCompanyAse8329445": "Ihr Unternehmen, als Git-Repo",
     "autoComponentsHomeDevelopersRepoBrowserJsxTextReadOnlyd13e142f": "Nur lesen",
     "autoComponentsHomeFooterJsxText4e1e5394": "↗",
@@ -9209,7 +9207,7 @@
     "autoComponentsProjectsProjectOnboardingWizardJsxTextStartBuilding342653ba": "Beginnen Sie mit dem Bau",
     "autoComponentsProjectsProjectOnboardingWizardJsxText3000Connectors0d987bba": "Über 3.000 Connectoren, mit denen Sie eine Verbindung herstellen können – OAuth, MCP, REST und die Tools, mit denen Ihr Team bereits arbeitet.",
     "autoComponentsProjectsProjectOnboardingWizardJsxTextToMakeIt58c5adb1": "Um es wirklich zu Ihrem zu machen, bauen Sie Folgendes auf:",
-    "autoComponentsProjectsProjectOnboardingWizardJsxAttrParentClassMt1f0eb5c30": "mt-1,5 Größe-3",
+    "autoComponentsProjectsProjectOnboardingWizardJsxAttrParentClassMt1f0eb5c30": "mt-1.5 size-3",
     "autoComponentsProjectsProjectOnboardingWizardJsxTextAllOfIt1d62a58a": "Alles davon befindet sich Woche für Woche als Code, versioniert und zusammengesetzt in Ihrem Repo.",
     "autoComponentsProjectsProjectOnboardingWizardJsxAttrAriaLabelOnboarding0aefa252": "Onboarding-Fortschritt",
     "autoComponentsProjectsProjectOnboardingWizardJsxAttrTitleBookA7b71ab51": "Vereinbaren Sie einen Anruf mit Marko",
@@ -9334,7 +9332,7 @@
     "autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxAttrAria0ca75c68": "Seitenleiste erweitern",
     "autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxTextBulled44625b": "•",
     "autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxAttrAria39d6d82d": "Sitzungen umschalten",
-    "autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxAttrContentClassName35c48ace": "Flex h-voll min-h-0 Flex-col",
+    "autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxAttrContentClassName35c48ace": "flex h-full min-h-0 flex-col",
     "autoFeaturesCoWorkerSharedSharingPickerJsxAttrPlaceholderSearch5747dea4": "Mitglieder suchen…",
     "autoFeaturesContactDemoQualifierModalJsxAttrPlaceholderYourName7a7a05ae": "Dein Name",
     "autoFeaturesContactDemoQualifierModalJsxAttrPlaceholderYouCompanyee6aa000": "you@company.com",
@@ -9353,30 +9351,6 @@
     "autoFeaturesFileViewerFileContentRendererJsxTextCouldnT794ae800": "Diese Datei konnte nicht in der Vorschau angezeigt werden",
     "autoFeaturesFileViewerFilePreviewModalJsxAttrTooltipCopy42229181": "Kopieren Sie einen öffentlichen, schreibgeschützten Link für diese Datei",
     "autoFeaturesFilesComponentsFileSearchJsxAttrAriaLabelClose93fc5ea3": "Suche schließen",
-    "autoFeaturesIconIconJsxAttrGradientTransformMatrix193688518debb5b5": "Matrix (-1.936885,1.043001,1.455731,2.555422,290.5254,-400.6338)",
-    "autoFeaturesIconIconJsxAttrGradientTransformMatrix35125954e5619e4d": "Matrix (-3.512595,-4.45809,-1.692547,1.260616,870.8006,191.554)",
-    "autoFeaturesIconIconJsxAttrGradientTransformMatrix20643534620b14ef": "Matrix(2.064353,-4.926832e-6,-2.901531e-6,2.592041,-297.6788,-151.7469)",
-    "autoFeaturesIconIconJsxAttrGradientTransformMatrix024857832979fd706": "Matrix (-0,2485783,2,083138,2,962486,0,3341668,-255,1463,-331,1636)",
-    "autoFeaturesIconIconJsxAttrGradientTransformMatrix1249206127d8954d": "Matrix (-1.249206,1.343263,-3.896837,-3.425693,880.5011,194.9051)",
-    "autoFeaturesIconIconJsxAttrGradientTransformMatrix19368851b3aa9e38": "Matrix (-1,936885,-1,043001,1,455731,-2,555422,290,5254,838,6834)",
-    "autoFeaturesIconIconJsxAttrGradientTransformMatrix008140216c322569": "Matrix (-0,081402,-1,93722,2,926737,-0,1162508,-215,1345,632,8606)",
-    "autoFeaturesIconIconJsxAttrTransformMatrix09579220ee393908": "Matrix(0,957922,0,0,0,985255,-90,17436,-78,85577)",
-    "autoFeaturesIconIconJsxAttrGradientTransformMatrix134784080dcd1a2": "Matrix(13,4784 0 0 33,2694 39,7967 22,1739)",
-    "autoFeaturesIconIconJsxAttrGradientTransformRotate681539705bbe58f": "drehen(68,1539 -7,71566095 14,71355834)skalieren(32,752 33,1231)",
-    "autoFeaturesIconIconJsxAttrGradientTransformRotate11332682d9828e3": "drehen(113,326 8,09285255 17,64474501)skalieren(19,2186 15,4273)",
-    "autoFeaturesIconIconJsxAttrGradientTransformMatrix01012f866ac38": "Matrix(0 -10 12,6216 0 32,9999 11,5714)",
-    "autoFeaturesIconIconJsxAttrGradientTransformRotate40051603068196b1fe2992": "drehen(40,0516 -.03068196 44,8729095)skalieren(7,14629 10,3363)",
-    "autoFeaturesIconIconJsxAttrGradientTransformRotate416581323f58d687": "drehen (-41,6581 32,11799918 -43,41948423) skalieren (8,51275 20,8824)",
-    "autoFeaturesIconIconJsxAttrGradientTransformMatrix01215c59ab36f": "Matrix(0 -12 15,146 0 17,9999 8,28571)",
-    "autoFeaturesIconIconJsxAttrGradientTransformRotate4005163c117110d": "drehen (40,0516 -3,15465147 21,41641466) skalieren (8,57554 12,4035)",
-    "autoFeaturesIconIconJsxAttrGradientTransformRotate4165812089e5adbd": "drehen (-41,6581 20,38180375 -26,51566158) skalieren (10,2153 25,0589)",
-    "autoFeaturesIconIconJsxAttrGradientTransformRotate452576345597a649bf7b": "drehen (45 -25,76345597 16,32842712) skalieren (22,6274)",
-    "autoFeaturesIconIconJsxAttrGradientTransformMatrix01122d674bc1": "Matrix(0 11,2 -13,0702 0 12 32,6)",
-    "autoFeaturesIconIconJsxAttrEnableBackgroundNew00322530287f": "neu 0 0 32 32",
-    "autoFeaturesIconIconJsxAttrTransformMatrix133333330f9d3080d": "Matrix(1.3333333,0,0,-1.3333333,-133.33333,799.99999)",
-    "autoFeaturesIconIconJsxAttrTransformTranslate600350958bc249": "übersetzen(600.350)",
-    "autoFeaturesIconIconJsxAttrTransformTranslate447917527396b8cb72": "übersetzen(447.9175,273.6036)",
-    "autoFeaturesIconIconJsxAttrGradientTransformMatrix100276a42f8": "Matrix(1 0 0 -1 0 1705.333)",
     "autoFeaturesLayoutDownloadAppsModalJsxTextPlanMyWeek142b5d17": "Planen Sie meine Woche und verfassen Sie die E-Mails",
     "autoFeaturesLayoutDownloadAppsModalJsxTextOnItDrafting85ec739b": "Darauf – jetzt 3 E-Mails verfassen …",
     "autoFeaturesLayoutDownloadAppsModalJsxTextCurlFsSLKortix0e6a96da": "curl -fsSL kortix.com/install | bash",
@@ -9388,7 +9362,7 @@
     "autoFeaturesLayoutDownloadAppsModalJsxTextDoMoreWith33a6da8d": "Machen Sie mehr mit Kortix, wo auch immer Sie arbeiten",
     "autoFeaturesLayoutDownloadAppsModalJsxTextRunKortixNatively85de8599": "Führen Sie Kortix nativ aus, in Ihrem Terminal, in Ihrem Browser und unterwegs.",
     "autoFeaturesLayoutDownloadAppsModalJsxAttrDescriptionChatCowork8b4379e0": "Chatten, zusammenarbeiten und programmieren in einer App. Kortix läuft nativ mit Ihren Dateien, Apps und Browser-Registerkarten.",
-    "autoFeaturesLayoutDownloadAppsModalJsxAttrTintBgGradient25efe36b": "bg-gradient-to-b von-muted/40 zu-card",
+    "autoFeaturesLayoutDownloadAppsModalJsxAttrTintBgGradient25efe36b": "bg-gradient-to-b from-muted/40 to-card",
     "autoFeaturesLayoutDownloadAppsModalJsxTextDownloadFor926941d2": "Herunterladen für",
     "autoFeaturesLayoutDownloadAppsModalJsxTextAlsoForff95d8c9": "Auch für",
     "autoFeaturesLayoutDownloadAppsModalJsxAttrTitleLocalDevelopment31cefec4": "Lokale Entwicklung",
@@ -9773,7 +9747,6 @@
       "text0762fc8b575e": "Nachricht an eine Sitzung gesendet",
       "text077d12b54cea": "Benutzer zuweisen und Gruppen übertragen",
       "text0789d42d0a2c": "Gruppenattribut hinzufügen",
-      "text07a0daf2512a": "h-3.5, w-3.5, shrink-0",
       "text07a2d579c3f0": "Markiert",
       "text07a68eba3f79": "- Anschlüsse: zendesk, slack",
       "text07c307281d31": "Eine Empfehlung mit Begründung in der Zeile",
@@ -12263,7 +12236,6 @@
       "text4f35f7ed49ec": "Erster Start",
       "text4f370db531ba": "Nucleus-Sampling. Nicht ändern, außer du optimierst das Modell.",
       "text4f3a9bd00397": "Klasse",
-      "text4f3ce4e17d38": "Größe-4, shrink-0, Text-muted-Vordergrund",
       "text4f4003ab9539": "Token erstellen",
       "text4f4c5e40c2e8": "<span className=\"text-",
       "text4f503dc583f3": "Dateizugriff",
@@ -13898,7 +13870,6 @@
       "text7e497182c7ed": "Berechtigung angefordert",
       "text7e49c68db30e": "Keine Antwort",
       "text7e4f3f8089ab": "Einladungs-E-Mail gesendet",
-      "text7e50640f91b5": "size-4 shrink-0",
       "text7e55d6bb3b71": "cron: \"0 0 3 * * *\"",
       "text7e5b252f0c53": "Der Abschluss beginnt, bevor Sie da sind",
       "text7e658675b5ca": "Karriere",
@@ -14342,7 +14313,6 @@
       "text8b64afef1a24": "Noch nichts vorbereitet",
       "text8b728638c006": "verliert diese Umgehung. Jede Aktion durchläuft wieder die normalen Berechtigungsprüfungen.",
       "text8b7d1a3187ab": "OpenAI",
-      "text8b85bfda7d7c": "translate(-8px, 9px) scale(1)",
       "text8b898ca34ce7": "Wird hochgeladen",
       "text8b9965f7aaa5": "Zugriffsrichtlinie hinzufügen",
       "text8b9c643731c9": "Trigger",
@@ -14371,7 +14341,6 @@
       "text8c4e24be27f2": "Ändern Sie, was in möglich ist.",
       "text8c4eef5ab253": "Diese Woche",
       "text8c5430fac0d9": "Fertig in 8 Min. 42 Sek.",
-      "text8c5f37b673ef": "drehen({value0}Grad)",
       "text8c5fe5f09fc1": "Mitglieder sehen deine Marke ab dem Anmelden",
       "text8c64de57e442": "Wählen Sie den Anwendungstyp „SaaS“ und anschließend SAML (nicht OIDC) als Protokoll. Geben Sie einen Namen wie „Kortix“ ein.",
       "text8c67b476d59b": "Deaktiviert lassen, um alle eingehenden Absender zu akzeptieren. Aktivieren, um exakte E-Mail-Adressen, Domains oder einen regulären Ausdruck zuzulassen.",
@@ -14429,7 +14398,6 @@
       "text8d9bb76e99d5": "180.000",
       "text8db3d1ec199a": "Connector und exakte Aktion, Agent, Person oder Trigger hinter der Sitzung, Ergebnis, Hash der Eingaben und die Person, die einen zurückgehaltenen Aufruf freigegeben hat. Das Gateway, das die Zugangsdaten auflöst, schreibt auch die Zeile.",
       "text8db700617f19": "env:",
-      "text8db7e9afa45d": "h-4 w-4 shrink-0 text-muted-foreground",
       "text8dbf35488c3f": "Auf GitHub bearbeiten",
       "text8dc2c5ef44fc": "MFA-Anforderung angezeigt",
       "text8dc321b9135e": "Nachr.",
@@ -16880,7 +16848,6 @@
       "textd1db29ebc76d": "Seitenleiste ausblenden",
       "textd1dc8f6ab64a": "Alles bearbeiten",
       "textd1dcd7a7bbec": "E-Mail-Posteingang hinzugefügt",
-      "textd1ec3c181d68": "translate(-104px, -52px) scale(0.9)",
       "textd1f4d56aecde": "Beschreibe eine Aufgabe, um eine Sitzung zu starten …",
       "textd1f9c6739594": "In Stripe öffnen",
       "textd1fc8381e22d": "”",
@@ -18142,7 +18109,6 @@
       "textf55f49c47f7f": "noch nicht.",
       "textf5652094d0cd": "13 Aufgaben zur Website-Optimierung abgeschlossen",
       "textf57829f4ec88": "App auswählen, durch den OAuth-Bildschirm klicken, fertig. Kortix speichert die Verbindung, nicht dein Passwort — Gmail, Notion, Linear, Salesforce, HubSpot, Zendesk, Google Drive und Tausende mehr.",
-      "textf5797adb113e": "Größe-3.5, shrink-0, Text-muted-Vordergrund",
       "textf57a23c69b34": "Secret hinzufügen",
       "textf5828f35ad93": "Single-Tenant",
       "textf58830babafb": "Vollständige Projektverwaltung einschließlich Mitgliedern und Löschen.",
@@ -19170,7 +19136,21 @@
       "text2afef4702cc0": "Systemstatus-Banner angezeigt",
       "textbda3fcd4343c": "Stufenkonfigurationen angezeigt",
       "text30cef615e8e3": "Transaktionsübersicht angezeigt",
-      "textd2c6127fc332": "Versions-Diff angezeigt"
+      "textd2c6127fc332": "Versions-Diff angezeigt",
+      "text8cc0d84b66bb": "Slack-Identitätslink angesehen",
+      "text508b43cc4545": "Teams-Identitätslink angesehen",
+      "text467f597e95b0": "SSO-Domain verifiziert",
+      "text8295f9d4861b": "SSO-Domain-Verifizierung des Kontos gesetzt"
+    },
+    "publicShareConfirm": {
+      "title": "Öffentlichen Link erstellen?",
+      "description": "Jeder mit dem Link kann dies ohne Anmeldung ansehen. Der Link bleibt aktiv, bis du ihn widerrufst.",
+      "confirm": "Link erstellen"
+    },
+    "chatIdentityConnect": {
+      "chatAccount": "{service}-Konto",
+      "chatWorkspace": "{service}-Workspace",
+      "checking": "Link wird geprüft…"
     }
   },
   "projectOnboarding": {
@@ -20182,5 +20162,18 @@
   },
   "connectorsAppReturn": {
     "done": "Fertig. Zurück zur Kortix-App"
+  },
+  "ssoDomainVerification": {
+    "title": "Domain-Verifizierung",
+    "verified": "Verifiziert",
+    "unverified": "Nicht verifiziert",
+    "verifiedDescription": "Ihrem Identitätsanbieter wird für {domain} vertraut. Die SSO-Pflicht gilt für diese Domain.",
+    "unverifiedDescription": "Fügen Sie diesen DNS-TXT-Eintrag hinzu, um nachzuweisen, dass Sie {domain} kontrollieren. Bis dahin funktioniert die SSO-Anmeldung nur innerhalb dieses Kontos, und die SSO-Pflicht hat keine Wirkung.",
+    "recordName": "Name",
+    "recordValue": "Wert",
+    "verify": "Domain verifizieren",
+    "verifiedToast": "Domain verifiziert",
+    "failedToast": "Domain noch nicht verifiziert",
+    "enforceNeedsVerification": "Verifizieren Sie zuerst die Domain. Die SSO-Pflicht gilt nur für eine verifizierte Domain."
   }
 }

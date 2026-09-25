@@ -4,11 +4,11 @@ import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import type { ShowCarouselItem } from '@/features/file-renderers/show-content-renderer';
 import {
-  SHOW_HTML_EXT_RE,
   ShowCarousel,
   ShowContentRenderer,
   showDomain,
 } from '@/features/file-renderers/show-content-renderer';
+import { getFileCategory } from '@/features/file-viewer/preview-policy';
 import { binaryBlobKeys } from '@/features/files/hooks/use-binary-blob';
 import { fileContentKeys } from '@/features/files/hooks/use-file-content';
 import {
@@ -17,6 +17,7 @@ import {
   useServicePreview,
   useToolNavigation,
 } from '@/features/session/tool/shared/infrastructure';
+import { useTranslations } from '@/i18n/use-translations';
 import { safeHttpUrl } from '@/lib/safe-url';
 import { cn } from '@/lib/utils';
 import { isAppRouteUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-url';
@@ -24,7 +25,6 @@ import { enrichPreviewMetadata } from '@/lib/utils/session-context';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
 import { STATUS_BORDER } from '@/components/ui/status';
@@ -56,7 +56,12 @@ import {
 } from '@phosphor-icons/react';
 import { useCallback } from 'react';
 
-export { SHOW_HTML_EXT_RE, ShowCarousel, ShowContentRenderer, showDomain };
+export { ShowCarousel, ShowContentRenderer, showDomain };
+
+/** A `show` item that points at an HTML file the static file server can serve. */
+export function isShowHtmlFile(type: string, path: string): boolean {
+  return !!path && getFileCategory(path) === 'html' && (type === 'file' || type === 'html');
+}
 export type { ShowCarouselItem };
 
 export const SHOW_BORDER_STYLES: Record<string, string> = {
@@ -156,8 +161,7 @@ export function useShowOpenInTab(props: {
   const hasLocalhostUrl = !!parseLocalhostUrl(url) && !isAppRouteUrl(url);
   const safeExternalUrl = safeHttpUrl(url);
 
-  const isHtmlFilePath =
-    !!path && SHOW_HTML_EXT_RE.test(path) && (type === 'file' || type === 'html');
+  const isHtmlFilePath = isShowHtmlFile(type, path);
   const htmlStaticUrl = isHtmlFilePath ? buildStaticFileLocalUrl(path) : '';
   const htmlStaticProxy = useProxyUrl(htmlStaticUrl);
 

@@ -223,8 +223,8 @@ describe('the gate codemod is complete', () => {
     // routes.md §5.2: POST|DELETE /projects/:id/cli-token gated on
     // loadProjectForUser('manage') === project.write, so anyone who could edit
     // the project could mint a token that outlives the request.
-    const r3 = code(join(SRC, 'projects/routes/r3.ts'));
-    const cliTokenGates = [...r3.matchAll(/loadProjectForUser\(c, projectId, '(\w+)'\)/g)].map(
+    const credentialRoutes = code(join(SRC, 'projects/routes/project-credentials.ts'));
+    const cliTokenGates = [...credentialRoutes.matchAll(/loadProjectForUser\(c, projectId, '(\w+)'\)/g)].map(
       (m) => m[1],
     );
     expect(cliTokenGates.filter((g) => g === 'credentials')).toHaveLength(2);

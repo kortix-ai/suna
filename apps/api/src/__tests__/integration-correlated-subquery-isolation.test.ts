@@ -17,6 +17,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import { loadSandbox } from '../sandbox-proxy/backend';
 import { db } from '../shared/db';
+import { removeSeeded, seedProject } from './helpers/integration-fixtures';
 
 const run = crypto.randomUUID().slice(0, 8);
 const fixtures = {
@@ -69,9 +70,11 @@ async function insertSandbox(input: {
 }
 
 beforeAll(async () => {
-  projectsForTest = (await db.execute(
-    sql`select project_id, account_id from kortix.projects order by created_at asc limit 2`,
-  )) as unknown as ProjectRow[];
+  // Two tenants: each project in its own synthetic account.
+  projectsForTest = [
+    await seedProject(`iso-a-${run}`),
+    await seedProject(`iso-b-${run}`),
+  ];
 });
 
 afterAll(async () => {
@@ -92,6 +95,7 @@ afterAll(async () => {
   for (const sessionId of fixtures.sessionIds) {
     await db.execute(sql`delete from kortix.project_sessions where session_id = ${sessionId}`);
   }
+  await removeSeeded(projectsForTest);
 });
 
 describe('correlated reads stay on their own row', () => {

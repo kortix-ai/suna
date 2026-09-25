@@ -280,7 +280,7 @@ A command resolves "the project" in this order:
 | `kortix projects features [ls] [--json]` | List every feature flag with its key, state, origin, and stability. |
 | `kortix projects features enable\|disable\|reset <flag>` | Set the project override on, off, or clear it so the flag follows the platform default. |
 | `kortix projects cli-tokens ls [--json]` | List the project's CLI tokens. |
-| `kortix projects cli-tokens new [--name <name>]` | Mint a project-scoped CLI token. The secret prints once. |
+| `kortix projects cli-tokens new [--name <name>] [--expires-at <iso>]` | Mint a project-scoped CLI token. The secret prints once. |
 | `kortix projects cli-tokens rm <token-id> [-y\|--yes]` | Revoke one project CLI token. |
 | `kortix projects upgrade [<id>] [--json]` | Start the agent session that migrates a v1 `kortix.toml` to a v2 `kortix.yaml` and opens a change request. |
 
@@ -293,8 +293,11 @@ unavailable stays off regardless of the project override.
 A project CLI token is bound to one project — the API rejects it everywhere
 else. A session sandbox uses its session-bound `KORTIX_TOKEN`. `cli-tokens ls`
 needs project read; `new` and `rm` need
-`project.credentials.issue`. An agent-session token can neither mint nor
-revoke project tokens (`403`).
+`project.credentials.issue`. A session-bound token can neither mint nor
+revoke project tokens (`403`), whether or not the project declares agents. A
+project CLI token follows the account's PAT policy: when the account requires
+an expiry, pass `--expires-at`; an expiry beyond the maximum lifetime returns
+`400`.
 
 `kortix projects upgrade` needs project write. The default agent refreshes the
 marketplace baseline, rewrites the manifest, runs `kortix validate`, and opens
@@ -706,7 +709,9 @@ The in-sandbox agent's interface to every connector. Every call is checked, reso
 | --- | --- |
 | `kortix connectors discover "<intent>"` | Search tools by natural-language intent. |
 | `kortix connectors show <connector>.<action>` | Show an action's input schema. |
-| `kortix connectors call <connector>.<action> '<json-args>'` | Run a tool. A governed call returns its authenticated `approval_url` immediately. The server resumes the session after one approve or deny decision. |
+| `kortix connectors call <connector>.<action> '<json-args>'` | Run a tool. A governed call returns its authenticated `approval_url` immediately. The server resumes the session after one approve or deny decision. Pass large args as `@file.json` or `-` (stdin). |
+| `kortix connectors call <connector>.<action> @args.json --attach <file>` | Stage a file and append its reference to the action's attachments array. The gateway writes the bytes into the provider's attachment item. `--attach` repeats; `--attach-path <a.b.c>` names the array. See [Attach files](/docs/connect/connectors#attach-files). |
+| `kortix connectors upload <file> --connector <slug>` | Stage one file. Prints `ref`, `{"$kortix_attachment":"<id>"}`, to place in call args. |
 | `kortix connectors add <slug> --provider pipedream --app <app>` | Add a connector immediately, then connect it. |
 | `kortix connectors rm <slug>` | Remove a connector from the project. |
 | `kortix connectors connect <slug>` | Mint a connect link for a human. |

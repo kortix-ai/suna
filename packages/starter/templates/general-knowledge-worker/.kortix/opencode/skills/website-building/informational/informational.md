@@ -24,7 +24,7 @@ See `skills/website-building/shared/01-design-tokens.md` for size floors and col
 ### 1. Content Hierarchy is the Design
 
 - Keep primary navigation to 5-7 items maximum
-- Use progressive disclosure -- samplecol first, depth on demand
+- Use progressive disclosure -- essential first, depth on demand
 - Every page answers: "Where am I? What can I find here? Where can I go next?"
 
 ### 2. Typography Carries the Voice

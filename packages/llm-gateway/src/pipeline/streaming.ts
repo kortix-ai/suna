@@ -10,10 +10,32 @@ export interface StreamRelayOptions {
     error: (...args: unknown[]) => void;
     debug?: (...args: unknown[]) => void;
   };
-  settle: (usage: ExtractedUsage | null, streamError?: SseErrorFrame | null) => Promise<void>;
+  /**
+   * Called exactly once when the stream ends, however it ends. `observed`
+   * carries what the relay saw of the output, so a stream that ended before
+   * its usage frame can still be settled (see usage/estimate.ts).
+   */
+  settle: (
+    usage: ExtractedUsage | null,
+    streamError?: SseErrorFrame | null,
+    observed?: StreamObservation,
+  ) => Promise<void>;
   signal?: AbortSignal;
   heartbeatMs?: number;
   inactivityTimeoutMs?: number;
+  /**
+   * Rewrites the relayed text before the client receives it. Called only with
+   * whole lines (a partial trailing line waits for the next chunk). Usage and
+   * error scanning always read the original upstream text.
+   */
+  rewriteLines?: (text: string) => string;
+}
+
+export interface StreamObservation {
+  /** Generated output characters the provider streamed before the end. */
+  outputChars: number;
+  /** The client stopped reading (Stop, abort, closed socket). */
+  clientStopped: boolean;
 }
 
 const HEARTBEAT = new TextEncoder().encode(': keep-alive\n\n');
@@ -33,14 +55,39 @@ export function relayStream(options: StreamRelayOptions): ReadableStream<Uint8Ar
   const inactivityMs = options.inactivityTimeoutMs ?? DEFAULT_INACTIVITY_MS;
   let lastByteAt = Date.now();
   let tail = '';
+  // Upstream text after the last newline, held back until its line completes.
+  let carry = '';
+  const encoder = new TextEncoder();
+  const relay = (controller: ReadableStreamDefaultController<Uint8Array>, value: Uint8Array, text: string): void => {
+    if (!options.rewriteLines) {
+      controller.enqueue(value);
+      return;
+    }
+    const buffered = carry + text;
+    const cut = buffered.lastIndexOf('\n') + 1;
+    carry = buffered.slice(cut);
+    if (cut > 0) controller.enqueue(encoder.encode(options.rewriteLines(buffered.slice(0, cut))));
+  };
+  const flushCarry = (controller: ReadableStreamDefaultController<Uint8Array>): void => {
+    if (!options.rewriteLines || !carry) return;
+    controller.enqueue(encoder.encode(options.rewriteLines(carry)));
+    carry = '';
+  };
   let settled = false;
   let pendingRead: ReturnType<typeof reader.read> | null = null;
+  // Set the moment the client goes away, BEFORE the provider read is
+  // cancelled: cancelling resolves the pending read as `done`, and that branch
+  // must settle as a client stop, not as a clean end of stream.
+  let clientStop: SseErrorFrame | null = null;
 
   const settle = async (error: SseErrorFrame | null = null): Promise<void> => {
     if (settled) return;
     settled = true;
     try {
-      await options.settle(scanner.usage, error ?? scanner.error);
+      await options.settle(scanner.usage, error ?? scanner.error, {
+        outputChars: scanner.outputChars,
+        clientStopped: error?.code === 'client_aborted',
+      });
     } catch (settlementError) {
       // A settlement failure means REVENUE WAS NOT RECORDED for a turn that
       // has already been served. It cannot be thrown (the response bytes are
@@ -53,10 +100,9 @@ export function relayStream(options: StreamRelayOptions): ReadableStream<Uint8Ar
       // was aggregating. `error` level so it is alertable, and the account is
       // named so the lost amount is chaseable.
       //
-      // The durable half of this fix lives in the API hook
-      // (recordGatewayUsage): an unsettled usage_events row is left with
-      // `settled_at IS NULL` and retried by the settlement sweeper, so the
-      // debt survives this catch rather than depending on it.
+      // No sweeper retries it: the API client retries a refused or 5xx-answered
+      // settlement (idempotent per request id), and this line is what is left
+      // when those retries are exhausted.
       options.logger.error('[gateway] usage settlement failed — spend not recorded', {
         error: settlementError instanceof Error ? settlementError.message : String(settlementError),
         requestId: options.requestId,
@@ -67,8 +113,9 @@ export function relayStream(options: StreamRelayOptions): ReadableStream<Uint8Ar
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
       if (options.signal?.aborted) {
+        clientStop ??= { message: 'client aborted', code: 'client_aborted' };
         await reader.cancel('client aborted').catch(() => undefined);
-        await settle({ message: 'client aborted', code: 'client_aborted' });
+        await settle(clientStop);
         controller.close();
         return;
       }
@@ -106,9 +153,13 @@ export function relayStream(options: StreamRelayOptions): ReadableStream<Uint8Ar
           // line has no trailing newline keeps its usage frame in the carry,
           // and without this that turn is billed as zero tokens.
           const trailing = decoder.decode();
-          if (trailing) scanner.push(trailing);
+          if (trailing) {
+            scanner.push(trailing);
+            carry += trailing;
+          }
+          flushCarry(controller);
           scanner.finish();
-          await settle();
+          await settle(clientStop);
           controller.close();
           return;
         }
@@ -117,7 +168,7 @@ export function relayStream(options: StreamRelayOptions): ReadableStream<Uint8Ar
         const text = decoder.decode(value, { stream: true });
         scanner.push(text);
         tail = (tail + text).slice(-2);
-        controller.enqueue(value);
+        relay(controller, value, text);
       } catch (error) {
         if (timer) clearTimeout(timer);
         const streamError = { message: messageOf(error), code: 'upstream_stream_error' };
@@ -126,8 +177,9 @@ export function relayStream(options: StreamRelayOptions): ReadableStream<Uint8Ar
       }
     },
     async cancel(reason) {
+      clientStop ??= { message: 'client cancelled response', code: 'client_aborted' };
       await reader.cancel(reason).catch(() => undefined);
-      await settle({ message: 'client cancelled response', code: 'client_aborted' });
+      await settle(clientStop);
     },
   });
 }

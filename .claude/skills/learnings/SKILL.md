@@ -21,6 +21,179 @@ linked, not inlined.
 
 ## Register
 
+### A scheduled workflow runs as the last person who edited its cron line (2026-09-25)
+
+**Rule:** When someone leaves the org, list every workflow whose scheduled runs
+carry their login, and change each cron line in a PR. GitHub dispatches a
+`schedule` as the user who last changed that line and stops dispatching once
+that user loses repository access. The workflow still reads `active`, so
+`gh workflow list` shows nothing wrong. **Trigger surface:** offboarding, or a
+nightly job whose newest run is weeks old.
+
+**Incident:** `db-drift.yml` last ran on schedule 2026-08-04 and
+`security-scan.yml` on 2026-08-03. Both runs' `actor` was the author of the
+2026-06-21 cron lines, who is no longer an org member (`GET
+/orgs/<org>/members/<login>` → 404). Every other scheduled workflow ran as a
+current member and kept running. Seven weeks of drift checks and CVE scans did
+not run, and nothing reported it. **Check:** for each scheduled workflow, `gh
+run list --workflow <file> --event schedule --limit 1 --json databaseId`, then
+`gh api repos/<repo>/actions/runs/<id> --jq .actor.login`, and compare the date
+with the cron. **Enforcer:** none; the check above is manual.
+
+### A live-schema check that ignores indexes and constraints passes a crippled table (2026-09-25)
+
+**Rule:** Verify a live environment against a freshly migrated database for
+index DEFINITIONS and constraint definitions, not only tables and columns. A
+faked baseline copies the ledger, not the objects. **Trigger surface:** faking
+or re-baselining an environment, or triaging a slow query on prod only.
+**Incident:** prod `credit_ledger` (2.7M rows) had 4 of its 15 indexes, and
+`account_memberships` had no primary key. `verify-live-schema.ts` reported OK
+because it compared tables and columns only. Account-scoped ledger reads ran
+2.0 s mean (4,804 calls); prod-only because dev/staging ran the real baseline.
+**Enforcer:** `verify-live-schema.ts` now fails on missing index/constraint
+definitions (waivers with evidence in `verify-live-schema-waivers.ts`), PR #7635.
+
+### A declared index is not a built index; kortix.ts is checked against the migrated catalog (2026-09-25)
+
+**Rule:** Every index, unique constraint, table and view in `kortix.ts` must
+exist in a freshly migrated database, and the reverse. Declaring an index in
+`kortix.ts` builds nothing: build it in a `.concurrent.ts` migration in the
+same PR. Declare a compatibility view with `.view(...).existing()`, never as a
+table. **Trigger surface:** any edit to `packages/db/src/schema/kortix.ts` or
+an index migration. **Near-miss:** `kortix.ts` declared
+`uniq_sandbox_compute_sessions_one_open` from 2026-07-16; no migration built
+it until 2026-09-24, so compute metering's de-duplication could never fire.
+Eight RBAC compatibility views were declared as tables. Found by a codebase
+audit. **Enforcer:** `packages/db/scripts/schema-contract.ts` in the
+`shadow-db` job of `db-migrations.yml`; exceptions only on
+`schema-contract-sql-only.ts`, which can only shrink.
+
+### A cancelled controller does not stop detached work on a reused remote host (2026-09-24)
+
+**Rule:** Before a controller launches work on a reused remote host, stop the
+previous detached process group. Controller cancellation is not a remote
+lifecycle signal. **Trigger surface:** preview deploys and remote test workers.
+**Near-miss:** A cancelled preview suite continued creating cloud session boxes
+and held the next deploy behind its lock. **Enforcer:** the Platinum deploy
+sends `TERM`, waits 10 seconds, then sends `KILL`; `sandbox-preview.test.ts`
+asserts the anchored process match and both signals.
+
+### Turning workers off in a stack also turns off the deadline reaper; a shared provider org needs an owner tag on every child box (2026-09-24)
+
+**Rule:** A stack that sets `KORTIX_WORKERS_ENABLED=false` runs no project
+maintenance, so `deadline_at` never stops an idle session box and the
+provider's idle timer is the only stop. Never disable workers in a stack that
+creates real sandboxes. When several stacks with separate databases share one
+provider org and one `kortix.env` tag, stamp every child box with its owning
+stack (`KORTIX_INSTANCE_ID` -> `kortix.instance`) BEFORE enabling an orphan
+reaper: an unscoped reaper stops every other stack's live boxes, because they
+have no row in its database. **Trigger surface:** any `KORTIX_*_ENABLED` change
+in `tests/src/core/preview-stack.ts` or a self-host profile; any provider
+listing used to stop or delete boxes.
+
+**Incident:** 2026-09-23/24. Preview APIs ran with workers off since #6347
+(2026-08-10). 87 idle 4 GB preview session boxes (348 GB, 42 idle > 6 h) plus
+9 preview hosts filled the shared 524288 MB Platinum pool. Every preview deploy,
+every preview session and every dev session returned `429 org resource pool
+exhausted`. Evidence from the provider listing: of 262 stopped preview session
+boxes, 85 stopped at 700-740 min idle (the 720 min native timer), versus 4144 of
+4779 dev boxes at < 20 min (the deadline reaper). The session boxes carried no
+tag naming their preview, so teardown could not find them either.
+
+**Enforcers:** `previewWorkerEnvironment()` enables maintenance only with an
+instance id (`tests/unit/preview-stack.test.ts`); `providerBoxBelongsToThisInstance`
+lists only exactly-stamped boxes (`platinum-list-managed.test.ts`); teardown,
+PR-preview replacement, every deploy and the daily reconcile stop owned,
+orphaned and > 6 h idle preview session boxes, never other envs and never hosts
+(`preview-session-reaper.test.ts`, `preview-session-teardown.test.ts`); each
+deploy logs pool usage and names the top consumers on a `429`.
+
+### An identity claim is only as trusted as whoever controls its source (2026-09-24)
+
+**Rule:** Before an email, id or scope from a request decides whose identity or
+which tenant a write touches, name who controls that value. An email a SAML IdP
+asserts is controlled by the account admin who configured the IdP, so it proves
+nothing outside that account until the account verified the domain
+(`iam/email-trust.ts`). A `scope_id` in a body is controlled by the caller, so a
+write authorized against the URL account must prove the scope belongs to it.
+**Near-miss:** a codebase audit found invite matching, add-by-email and SAML
+identity merge keyed on IdP-asserted emails, `enforce_sso` honoured on unverified
+domains, and project-scoped assignments accepted for another account's project.
+Fixed before any known use, PR #7615.
+**Enforcers:** flows `SSO-1`, `SSO-2`, `SSO-3`, `IAM-41`, `IAM-42`;
+`integration-iam-sso-sync.test.ts`; trigger
+`role_assignments_project_account_guard`.
+
+### Client database roles get no privileged grant; a blanket grant is an open door (2026-09-24)
+
+**Rule:** Never `GRANT ... ON ALL FUNCTIONS` or `ON ALL TABLES` to `anon`,
+`authenticated` or `PUBLIC`. Supabase PostgREST hands those roles to anyone
+with the public anon key or their own login JWT. A function that trusts its
+arguments (`p_account_id`, `p_amount`) is SECURITY DEFINER-safe only if no
+client role can execute it. New functions and tables are born private; grant a
+client role one named object, with a reason, when a client really calls it.
+**Incident:** the baseline and `20260704160000000_reassert_kortix_runtime_grants`
+granted EXECUTE on every `public` function to `authenticated`. On prod, any
+signed-up user could call 106 SECURITY DEFINER functions plus the invoker
+wallet RPCs: mint or drain credits on any account, delete a user's login,
+schedule `pg_net` HTTP jobs, read other users' emails. The anon key read and
+wrote `public.documents` (~2.6M rows); on dev it read every `kortix` table.
+Found by a codebase audit; locked down by hand on dev, staging and prod at
+19:40Z the same day, then migration `20260924194804787_client_role_lockdown`.
+**Enforcer:** product flow `SEC-K` calls PostgREST as the anon key and as a
+user and requires `42501`; the migration's post-condition aborts if any
+privileged function is still client-executable.
+
+### A position id minted by a copied formula drifts silently; every producer uses the one minter (2026-09-24)
+
+**Incident.** A prod session showed "Thinking" forever. The agent was working,
+but its replies rendered in a turn drawn above two older prompts. Those prompts
+came from `kortix sessions chat --queue`, whose `wireMessageId()` copied the
+SDK's `ascendingId` formula: the HIGH 12 hex digits of `Date.now() * 0x1000`.
+OpenCode keeps the LOW 48 bits. CLI ids were about 40 days ahead (`msg_1a0d…`
+against `msg_0d4…`). Every host orders placed messages by id, so each later turn
+sorted above them. The server let them through: `POST /prompts` checks shape
+only, a first delivery keeps the client id, and proxy repair re-mints only ids
+that are too low. 104 prod turns in 59 sessions across 4 accounts, from
+2026-09-16. 101 of the 104 matched a CLI POST.
+
+**Rules.**
+1. An id that encodes an ordering position is minted by ONE function. Do not
+   copy the formula. The SDK exports `mintWireMessageId`; the CLI imports it.
+2. A client that cannot read the transcript sends `remint_on_delivery: true`.
+   Only the process that holds the transcript places the id.
+3. A placement check rejects ids that are too far AHEAD, not only too low. A
+   floor or lift ignores any id more than 1 h past the clock (`isWireIdAheadOf`),
+   including the SQL floor, so one bad row cannot hide the real floor.
+4. A header that lets a caller skip a check (`X-Kortix-Wire-Id-Placed`) skips
+   only the expensive read. The pure check still runs.
+5. Display order trusts an id only while it agrees with its own `time.created`
+   (±1 h). Otherwise it falls back to the server's order (`time_created`, then
+   id). This also fixes sessions that span the 48-bit wrap on 2026-08-14.
+
+**Enforcement.** `tests/spec/wire-message-id.vectors.json` (API and SDK);
+`packages/sdk/src/core/turns/display-order.test.ts` (prod-shaped ids, the
+wrap); `apps/cli/src/commands/sessions-queue.test.ts`; API tests for POST
+stamping, drain floors, and proxy repair (`forward-prompt-wire-id.test.ts`).
+PR #7597.
+
+### A guest fix in the boot path must also reach sandboxes that only resume (2026-09-24)
+
+**Rule:** A change to a sandbox's boot path (Platinum `pt-init`, the image
+entrypoint) never reaches a sandbox that resumes from a memory snapshot: it
+must ship with a converge step that runs on restore. Fix a guest-OS default in
+the layer that owns the guest (Platinum), not from the Kortix control plane.
+Never stage bulk data in a sandbox's `/tmp`. A step that moves files under
+running processes must refuse on sockets and locks held there.
+**Incident:** 2 of 17 active 4 GiB prod sandboxes had a RAM-backed `/tmp` full
+(1.96 GiB: abandoned legacy-transfer uploads 8 days old, agent virtualenvs);
+the memory guard stopped their turns on every command. A first live remount
+started a second Platinum keepalive through a copied, unlocked `pt-ka.lock`.
+**Enforcers:** Platinum `infra/test/guest-tmp-on-disk.test.sh`,
+`infra/test/pt-tmp-migrate.test.sh` (byte parity with the host-agent copy),
+`guest_tmp_test.go`; kortixd `resources.test.ts` names RAM-backed files in the
+guard's stop reason.
+
 ### A model check that says "usable" must use the scope the gateway uses, or a chat pins a model that fails every turn (2026-09-24)
 
 **Rule:** Every check made before a request — a picker list, a servability probe, a create-time validation, a per-message replacement check — resolves with the personal-key scope the gateway uses at request time (`resolveSessionPersonalOwner`, `personalUserId`). When a change narrows what a session may reach, find every such check of that resource and move it in the same PR.
@@ -795,7 +968,7 @@ control or CLI command that clears it, for every caller who can hit it
 missing UI. *Incident:* a `user`-strategy connector had no connect flow
 anywhere — no shared account to offer, so the card rendered a button-less
 refusal and the composer spun on "Thinking" forever. *Enforcer:*
-`apps/api/src/projects/routes/r8-session-prompts.test.ts:377` ("queues the
+`apps/api/src/projects/routes/session-prompts.test.ts` ("queues the
 prompt even when the project has an unconnected connector"); the denial's
 `connect_url` remedy: `apps/api/src/connectors/principal-access.ts:110-114`.
 
@@ -2152,7 +2325,8 @@ one billing period on every drained per-seat account. Fixed in PR #7080.
 balance-to-number decisions outside the decision layer, no billing prose in
 components, the bypass stays deleted on both sides of the wire);
 `billing-state.test.ts` sweeps every Stripe status x plan class against the
-universal floor; `settle-credits.test.ts` pins the settlement contract.
+universal floor; `tests/migration/wallet-ledger.test.ts` pins the settlement
+contract (`wallet.settle`) against real PostgreSQL.
 
 ### Keep lazy optional dependencies type-lazy across shared-source imports (2026-08-28)
 
@@ -4289,7 +4463,7 @@ deploy — probe credentials, and never let a janitor gate the payload.** The
 `needs:`-depended on it, so every staging WEB deploy was skipped for a week —
 the release gate drove an Aug-12 frontend against the current API, and the
 resulting browser failures read as product bugs. Fix (#6626, #6639): the
-non-samplecol job is `continue-on-error`, and the deploy step probes each
+non-essential job is `continue-on-error`, and the deploy step probes each
 credential with a cheap authenticated read and uses the first one that works.
 Rule: when a job fails REPEATEDLY and everything still "works", find out what
 its `needs:` dependents silently stopped doing.
@@ -6424,7 +6598,7 @@ each delivery attempt. Inspect stored bindings when the resolved scope omits
 a disabled connector; a resolved scope is not a list of all stored bindings.
 
 **Enforcement.** `SESS-29` exercises refusal, Stop, fresh GET, and Resume through
-HTTP with PostgreSQL read-back. `r8-session-prompts.test.ts` covers admission
+HTTP with PostgreSQL read-back. `session-prompts.test.ts` covers admission
 refusals and reload. `queued-continue-inbox-delivery.test.ts` proves a connector
 refusal sends once and Stop prevents a second POST after a transient failure.
 Production recovery removed the stale binding through the session scope API.
@@ -6919,3 +7093,116 @@ then sends a second request on the same socket. The receive-pack upstream
 `fetch` in `apps/api/src/git-proxy/index.ts` sets `keepalive: false`.
 `receive-pack-gate.test.ts` asserts that no later upstream request reuses the
 push's connection.
+
+### 2026-09-24 — A term scrub that matches substrings rewrites every word containing the term
+
+**Incident.** A branch scrubbed a customer's name from the repository with a
+case-insensitive substring replacement (merged 2026-09-23 20:27Z, PR #7526).
+The name is a prefix of the word "essential", so every "essential" in the tree
+became "samplecol": 35 occurrences in 29 files, and 0 "essential" left. The
+sandbox Dockerfile then asked apt for `build-samplecol`. Nothing on the pull
+request built the sandbox image, so the first build after the merge failed on
+the provider (05:42Z) and every later one did too. Each preview waited 15
+minutes for an image that could not exist and ran 0 API flows; dev kept
+serving the previous image. The same rewrite removed the `essential` flag from
+ECS container definitions (Terraform and the ECS preview script), changed a
+model id in the LLM catalog, and changed prose, docs, and tests. `staging` and
+`prod` never received it.
+
+**Rule.** Scrub a term as a whole word, never as a substring. Before
+committing a scrub, list every distinct word the replacement changed
+(`git diff -U0 | grep '^+' | grep -oiE '\w*<replacement>\w*' | sort | uniq -c`)
+and read it: a replacement that turns up inside other words is a corruption,
+not a scrub. A change to the sandbox image's package list is checked on the
+pull request, not after the merge.
+
+**Enforcement.** `scripts/check-sandbox-apt-packages.sh` resolves the runtime
+stage's apt packages against its base image (`apt-get install --dry-run`); the
+`Sandbox image apt packages` job in `.github/workflows/ci.yml` runs it when the
+Dockerfile, the script, or `ci.yml` changes. `scripts/check-blocked-terms.sh`
+already matches blocked terms as whole words.
+
+### 2026-09-24 — A customer could not send a PDF through an OpenAPI Microsoft Graph connector
+
+**Incident.** A customer's agent sent text email through an OpenAPI
+`microsoft-graph` connector but could not attach a PDF. Four defects stacked:
+(1) the MCP `attachment_files` path accepted only a top-level `attachments`
+property, and Graph nests it at `body.message.attachments`; (2) staged files
+resolved only for the native Email channel, never for OpenAPI or HTTP
+connectors; (3) `kortix connectors call` read args only from one argv string,
+which Linux caps at 128 KiB, so an inline base64 body could not pass; (4) the
+request builder double-encoded a `body` passed as a JSON string and emitted two
+`Content-Type` headers when a spec declared `content-type` as a header
+parameter. Graph answered (4) with "Unable to read JSON request payload.
+Please ensure Content-Type header is set", which pointed at the wrong layer.
+
+**Rule.** A request body is encoded exactly once, and exactly one
+`Content-Type` header matches the encoding; header merges are
+case-insensitive. File bytes never travel in call args or through the model:
+stage the file, pass the namespaced reference `{"$kortix_attachment": id}`, and
+resolve it server-side from the action schema with exact-key profiles, never
+fuzzy field-name guesses. A reference marker must be a key no upstream API
+uses — an earlier draft keyed on `attachment_id` and would have hijacked APIs
+that use that field themselves.
+
+**Enforcement.** `apps/api/src/connectors/attachment-inline.test.ts` (profiles,
+collision regression, redaction), `unit-connector-call.test.ts` (one header,
+no double encoding, spec media type), `e2e-connector-faces.test.ts` (real CLI
+and MCP processes against a Graph-strict fake upstream, byte-for-byte).
+
+### 2026-09-24 — A managed route pinned to one shared upstream endpoint fails every time that endpoint's pool is busy
+
+**Incident.** `glm-5.3-flash` answered HTTP 429 on most turns. The route pinned
+one OpenRouter endpoint (`only: ['coreweave/nvfp4']`, `allow_fallbacks: false`).
+That endpoint serves all non-BYOK OpenRouter traffic from one shared pool
+(`limit_source: upstream_provider_shared_pool`). On 2026-09-24 it returned 429
+for 11 of 15 requests routed to it. The 429 was recorded on 2026-09-18 and
+shipped anyway. The raw upstream body also reached the session: it named the
+endpoint provider and linked openrouter.ai.
+
+**Rules.**
+1. A managed model has at least two upstreams, each verified with a real
+   text + image + tool request. An OpenRouter `only` list with
+   `allow_fallbacks: false` does not fail over inside the list: 4 of 6 probes
+   returned the first member's 429 while another member was healthy. Use
+   `allow_fallbacks: true` with `only`.
+2. HTTP 200 does not prove an image was read. Two DeepSeek endpoints answered
+   200 with "I don't see an image". Assert on the answer's content.
+3. A managed upstream's identity never reaches a client. Rewrite errors, bodies,
+   SSE events, headers, and customer-visible records. Keep the real upstream
+   in staff-only channels.
+
+**Enforcement.** `packages/llm-catalog/src/managed.test.ts` (pool size ≥ 5,
+`allow_fallbacks: true`, `max_price`, the excluded endpoints),
+`packages/llm-gateway/src/pipeline/simple-handler.test.ts` (failover and
+public-identity suites), `apps/api/src/llm-gateway/__tests__/gateway.live.test.ts`
+(real Morph + OpenRouter). PR #7589.
+
+### 2026-09-25 — A dry run that calls up() is not read-only; status reads the ledger, never the runner
+
+**Near-miss.** `pnpm migrate:status` was documented as "dry-run, writes nothing",
+and the failed-deploy drill in `packages/db/MIGRATIONS.md` sent operators to run
+it against prod. It called node-pg-migrate 8.0.4 `runner({ dryRun: true })`.
+That dry run takes the advisory lock, creates the ledger schema and table if
+absent, sends `BEGIN` and `COMMIT` unconditionally, and calls every pending
+migration's `up()`. Only SQL collected through `pgm.sql()` is skipped. The
+statements `up()` runs itself through `pgm.db.query()` execute and commit; four
+batched `.concurrent.ts` data passes do that. A disposable PostgreSQL proved it:
+the old status committed a pending migration's `INSERT` (`n: 1`, expected `0`).
+Found while wiring the DB suites into CI (#7636). No known run against a
+database with such a migration pending.
+
+**Rule.** A command that claims to write nothing must not call code that can
+write. "Dry run" describes what a library chooses to skip, not what it runs:
+read the implementation before you document it as read-only. A status check
+reads the ledger itself, inside `BEGIN READ ONLY`, on a session opened with
+`default_transaction_read_only = on`, and refuses to run when that setting
+did not take.
+
+**Enforcement.** `packages/db/scripts/migration-status.integration.test.ts`
+(real PostgreSQL: a pending `pgm.db.query` INSERT stays unwritten and is
+reported pending; no ledger is created on an empty database; the session
+refuses writes even when the URL's `options=` turns read-only off; the real CLI
+lists every migration on an empty database and creates no schema). It failed
+on the old status (3 of 5). `migration-status.test.ts` pins that `migrate.ts`
+has no `dryRun` and that the status path never calls `runner(`.

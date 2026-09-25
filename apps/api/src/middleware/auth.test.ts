@@ -393,3 +393,68 @@ describe('legacy sandbox credential route allowlist', () => {
     }
   });
 });
+
+describe('unknown-token attempt budget (pre-authentication, per client IP)', () => {
+  const { config } = require('../config') as { config: Record<string, unknown> };
+  const { resetTokenAttemptBudget } = require('./token-attempt-budget') as {
+    resetTokenAttemptBudget: () => void;
+  };
+
+  function supabaseApp() {
+    const app = new Hono();
+    app.use('/*', supabaseAuth);
+    app.get('/v1/projects/:projectId', (c) => c.json({ ok: true }));
+    return app;
+  }
+
+  test('an address that keeps presenting unknown tokens is refused before any hashing', async () => {
+    resetTokenAttemptBudget();
+    config.KORTIX_UNKNOWN_TOKEN_ATTEMPTS_PER_MIN = '3';
+    try {
+      const app = supabaseApp();
+      const statuses: number[] = [];
+      for (let i = 0; i < 5; i++) {
+        const res = await app.request('/v1/projects/p1', {
+          headers: {
+            Authorization: `Bearer kortix_pat_unknown_${i}`,
+            'x-forwarded-for': `10.9.9.${i}, 203.0.113.50, 172.70.1.2`,
+          },
+        });
+        statuses.push(res.status);
+        if (res.status === 429) expect(res.headers.get('Retry-After')).toBeTruthy();
+      }
+      expect(statuses).toEqual([401, 401, 401, 429, 429]);
+
+      // Another caller behind the same proxies keeps its own budget.
+      const other = await app.request('/v1/projects/p1', {
+        headers: {
+          Authorization: 'Bearer kortix_pat_unknown_other',
+          'x-forwarded-for': '198.51.100.60, 172.70.1.2',
+        },
+      });
+      expect(other.status).toBe(401);
+    } finally {
+      delete config.KORTIX_UNKNOWN_TOKEN_ATTEMPTS_PER_MIN;
+      resetTokenAttemptBudget();
+    }
+  });
+
+  test('the budget also guards combinedAuth and ignores non-Kortix bearers', async () => {
+    resetTokenAttemptBudget();
+    config.KORTIX_UNKNOWN_TOKEN_ATTEMPTS_PER_MIN = '1';
+    try {
+      const app = appWithProbe();
+      const headers = (token: string) => ({
+        Authorization: `Bearer ${token}`,
+        'x-forwarded-for': '203.0.113.51, 172.70.1.2',
+      });
+      expect((await app.request('/v1/projects/p1', { headers: headers('kortix_pat_x1') })).status).toBe(401);
+      expect((await app.request('/v1/projects/p1', { headers: headers('kortix_pat_x2') })).status).toBe(429);
+      // A Supabase JWT never costs a scrypt, so the budget never refuses it.
+      expect((await app.request('/v1/projects/p1', { headers: headers('eyJhbGciOi.jwt.sig') })).status).toBe(401);
+    } finally {
+      delete config.KORTIX_UNKNOWN_TOKEN_ATTEMPTS_PER_MIN;
+      resetTokenAttemptBudget();
+    }
+  });
+});

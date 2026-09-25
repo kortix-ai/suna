@@ -27,7 +27,7 @@ export interface ServableProjectCatalog {
  * now": the runtime catalog reduced to managed models the account may use,
  * the providers its secrets connect, and the ids its defaults/routing name —
  * stamped with per-project enablement. Served to the web picker
- * (`GET /projects/:id/model-picker`, r4.ts) AND to the sandbox at boot
+ * (`GET /projects/:id/model-picker`, routes/models.ts) AND to the sandbox at boot
  * (`GET /v1/llm/models?scope=picker` → internal `/models` with
  * `scope:'picker'`), so the list OpenCode registers on the `kortix` provider
  * is exactly the list the composer offers. Before this the sandbox learned

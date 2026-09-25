@@ -90,7 +90,7 @@ const basePayload = {
   team: { id: 'T1' },
   user: { id: 'U1' },
   channel: { id: 'C1' },
-  response_url: 'https://hooks.slack/response',
+  response_url: 'https://hooks.slack.com/response',
 } as any;
 
 describe('agent/model picker clicks', () => {
@@ -170,7 +170,7 @@ describe('Open in Kortix message shortcut', () => {
       team: { id: 'T1' },
       channel: { id: 'C1' },
       message: { ts: '5.5', thread_ts: '1.1' },
-      response_url: 'https://hooks.slack/response',
+      response_url: 'https://hooks.slack.com/response',
     } as any);
     const txt = JSON.stringify(posts[0]?.body);
     expect(txt).toContain('/projects/proj-1/sessions/sess-9');
@@ -185,7 +185,7 @@ describe('Open in Kortix message shortcut', () => {
       team: { id: 'T1' },
       channel: { id: 'C1' },
       message: { ts: '5.5' },
-      response_url: 'https://hooks.slack/response',
+      response_url: 'https://hooks.slack.com/response',
     } as any);
     expect(posts[0]?.body.text).toContain('No Kortix session is attached');
   });
@@ -195,8 +195,56 @@ describe('Open in Kortix message shortcut', () => {
       type: 'message_action',
       callback_id: 'something_else',
       team: { id: 'T1' },
-      response_url: 'https://hooks.slack/response',
+      response_url: 'https://hooks.slack.com/response',
     } as any);
     expect(posts.length).toBe(0);
+  });
+});
+
+/**
+ * A per-project (bring-your-own) app signs its requests with a secret its
+ * project admin chose, so every project or thread named in the payload must be
+ * that project's own. Handlers receive the verified scope and stay inside it.
+ */
+describe('per-project interactivity stays inside its own project', () => {
+  const byo = { kind: 'project' as const, projectId: 'proj-1', teamId: 'T1' };
+
+  test('a picker click for a channel bound to another project is refused, nothing persisted', async () => {
+    dbResults = [[{ projectId: 'proj-other' }]]; // the channel's binding
+    await handleBlockAction(
+      { ...basePayload, actions: [{ action_id: 'set_agent_reviewer', value: JSON.stringify({ c: 'C1', a: 'reviewer' }) }] },
+      byo,
+    );
+    expect(setAgentCalls).toEqual([]);
+    expect(posts[0]?.body.text).toContain('different Kortix project');
+  });
+
+  test('a picker click for a channel bound to this project is applied', async () => {
+    dbResults = [[{ projectId: 'proj-1' }]];
+    await handleBlockAction(
+      { ...basePayload, actions: [{ action_id: 'set_agent_reviewer', value: JSON.stringify({ c: 'C1', a: 'reviewer' }) }] },
+      byo,
+    );
+    expect(setAgentCalls).toEqual(['reviewer']);
+  });
+
+  test('"Request access" naming another project files nothing', async () => {
+    await handleBlockAction(
+      { ...basePayload, actions: [{ action_id: 'slack_request_access', value: JSON.stringify({ projectId: 'proj-other' }) }] },
+      byo,
+    );
+    expect(posts).toHaveLength(1);
+    expect(posts[0]?.body.text).toContain('different Kortix project');
+  });
+});
+
+describe('response_url', () => {
+  test('a response_url outside the Slack webhook host is never POSTed to', async () => {
+    await handleBlockAction({
+      ...basePayload,
+      response_url: 'https://collector.example.test/in',
+      actions: [{ action_id: 'set_agent_reviewer', value: JSON.stringify({ c: 'C1', a: 'reviewer' }) }],
+    });
+    expect(posts).toHaveLength(0);
   });
 });

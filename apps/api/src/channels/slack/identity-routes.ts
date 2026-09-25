@@ -17,7 +17,12 @@ import { db } from '../../shared/db';
 import { config } from '../../config';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
 import { combinedAuth } from '../../middleware/auth';
-import { listProjectsForWorkspace, loadSlackTeamNameForProject } from '../install-store';
+import {
+  listProjectsForWorkspace,
+  loadSlackTeamNameForProject,
+  loadSlackTokenForProject,
+} from '../install-store';
+import { getSlackUserDisplayName } from '../slack-api';
 import { spawnAgentTurn } from './dispatch';
 import { consumePendingSlackAuthMessage, replaceSlackAuthPromptConnected } from './auth-resume';
 import { verifyLoginState } from './login';
@@ -58,6 +63,57 @@ slackIdentityApp.openapi(
 );
 
 const BindBody = z.object({ token: z.string().min(1) });
+const PreviewResult = z.object({
+  service: z.literal('slack'),
+  workspaceName: z.string().nullable(),
+  chatUserId: z.string(),
+  chatUserName: z.string().nullable(),
+});
+
+// Which Slack account a /login link would link, shown on the consent screen
+// BEFORE the user presses Connect. Read-only: it links nothing and consumes
+// nothing. Same token and workspace checks as /bind, so a link that /bind
+// would refuse is refused here first.
+slackIdentityApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/preview',
+    tags: ['channels'],
+    summary: 'Show which Slack account a /login token would link',
+    ...auth,
+    middleware: [combinedAuth] as const,
+    request: { body: { content: { 'application/json': { schema: BindBody } } } },
+    responses: {
+      200: json(PreviewResult, 'The Slack account behind the token'),
+      ...errors(400, 403, 404, 410),
+    },
+  }),
+  async (c: any) => {
+    if (!config.SLACK_REQUIRE_USER_IDENTITY) return c.json({ error: 'Not found' }, 404);
+    const { token } = (await c.req.json().catch(() => ({}))) as { token?: string };
+    if (!token) return c.json({ error: 'Missing token' }, 400);
+
+    const payload = verifyLoginState(token);
+    if (!payload) return c.json({ error: 'This link is invalid or has expired. Run `/kortix login` again.' }, 410);
+
+    const projectIds = await listProjectsForWorkspace('slack', payload.teamId);
+    if (projectIds.length === 0) {
+      return c.json({ error: 'This Slack workspace is not connected to any Kortix project.' }, 403);
+    }
+    const [workspaceName, botToken] = await Promise.all([
+      loadSlackTeamNameForProject(projectIds[0]!).catch(() => null),
+      loadSlackTokenForProject(projectIds[0]!).catch(() => null),
+    ]);
+    const chatUserName = botToken ? await getSlackUserDisplayName(botToken, payload.slackUserId) : null;
+    return c.json({
+      service: 'slack',
+      workspaceName: workspaceName || null,
+      chatUserId: payload.slackUserId,
+      chatUserName,
+    });
+  },
+);
+
 const BindResult = z.object({
   ok: z.boolean(),
   workspaceName: z.string().nullable(),

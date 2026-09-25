@@ -141,7 +141,7 @@ describe('promptDeliveryKey', () => {
     });
 
     // T13 — the no-blind-repost guarantee for the API's OWN
-    // `continue_session` delivery (session-lifecycle/engine.ts `postPrompt`,
+    // `continue_session` delivery (session-lifecycle/runtime-client.ts `postPrompt`,
     // called through the SAME `forwardToSandbox` → prompt-dedupe path a
     // browser/CLI send goes through). `postPrompt` sends no messageID field —
     // its body is exactly `{"parts":[{"type":"text","text":…}]}` — so a
@@ -149,7 +149,7 @@ describe('promptDeliveryKey', () => {
     // falls to the content-hash key, and MUST collide with the first attempt's
     // claim so the drain loop's re-post is recognized as the same delivery
     // instead of re-enqueuing it. See the comment on `executeQueuedContinue`
-    // in engine.ts for the full mechanism this pins.
+    // in queued-continue.ts for the full mechanism this pins.
     test('a retried continue_session delivery — postPrompt\'s exact body shape — collides on the same dedupe key', () => {
       const postPromptBody = (text: string) =>
         new TextEncoder().encode(JSON.stringify({ parts: [{ type: 'text', text }] })).buffer;
@@ -176,10 +176,10 @@ describe('promptDeliveryKey', () => {
       expect(claimPromptDelivery(retryAfterWake, 90_000)).toBe(false);
     });
 
-    // F2 — `postPrompt` (session-lifecycle/engine.ts) now sends
+    // F2 — `postPrompt` (session-lifecycle/runtime-client.ts) now sends
     // `Idempotency-Key: <row.commandId>` on every continue_session delivery.
     // These pin the two halves of that guarantee directly against the real
-    // dedupe cache, one layer below the engine.ts-level proof in
+    // dedupe cache, one layer below the session-lifecycle proof in
     // `postprompt-idempotency-key.test.ts`.
     describe('F2 — Idempotency-Key outranks the content hash for postPrompt deliveries', () => {
       const postPromptBody = (text: string) =>
@@ -392,7 +392,7 @@ describe('shouldClaimPromptDelivery', () => {
 describe('Idempotency-Key scoping', () => {
   // A failed create can requeue and re-provision onto a DIFFERENT
   // session/sandbox while carrying the SAME command-scoped Idempotency-Key
-  // (session-lifecycle/engine.ts reuses the create command's id for the
+  // (session-lifecycle/create-session.ts reuses the create command's id for the
   // post-create prompt). An unscoped `idem:` key let the first attempt's
   // claim swallow the retry's delivery to the NEW sandbox as a "duplicate" —
   // that sandbox genuinely never saw the prompt. Scope by sandbox+session,

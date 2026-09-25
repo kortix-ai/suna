@@ -36,6 +36,7 @@ import {
 } from '../../platform/providers';
 import { getProviderComputeRateCard } from '../../platform/providers/compute-rates';
 import { db } from '../../shared/db';
+import { isUniqueViolation } from '../../shared/postgres-errors';
 import {
   type SandboxSpec,
   claimComputeWindow,
@@ -52,7 +53,7 @@ import {
   computeLivenessGraceMs,
   lastAliveAtOf,
 } from './compute-liveness';
-import { settleCredits } from './settle-credits';
+import { wallet } from '../wallet';
 import {
   DEFAULT_COMPUTE_RATE_MULTIPLIER,
   clampComputeRateMultiplier,
@@ -190,7 +191,10 @@ export async function startComputeSession(opts: StartComputeOpts): Promise<strin
     workloadType: opts.workloadType ?? 'session',
     appRuntimeId: opts.appRuntimeId ?? null,
   }).catch(async (err) => {
-    if ((err as { code?: string })?.code !== '23505') throw err;
+    // `uniq_sandbox_compute_sessions_one_open`: a concurrent start opened the
+    // row between the read above and this insert. Reuse it. Drizzle wraps the
+    // driver error, so the SQLSTATE is read through the cause chain.
+    if (!isUniqueViolation(err)) throw err;
     return getOpenComputeSession(opts.sandboxId);
   });
   return row?.id ?? null;
@@ -272,29 +276,29 @@ async function settleComputeWindow(
 
   // Settle the wallet. These seconds are already consumed — the sandbox ran —
   // so this is a SETTLEMENT, not an admission, and it records even when the
-  // wallet cannot cover it (see settleCredits). Auto-topup still fires.
+  // wallet cannot cover it (see wallet.settle). Auto-topup still fires.
   //
   // The release path below is now a genuine error path rather than the steady
   // state it used to be: a drained account no longer bounces every window
   // forever, it records the overdraft once and blocks the next admission.
   try {
-    await settleCredits(
-      row.accountId,
-      windowCost,
+    await wallet.settle({
+      accountId: row.accountId,
+      amount: windowCost,
       // The multiplier is named in the description only when it is not list
       // price, so a custom-priced debit is self-explaining in the ledger and an
       // ordinary one reads exactly as it always has.
-      `Sandbox compute · ${row.cpuCores}vCPU/${row.memoryGb}GB/${row.diskGb}GB · ${durationSeconds.toFixed(0)}s${
+      description: `Sandbox compute · ${row.cpuCores}vCPU/${row.memoryGb}GB/${row.diskGb}GB · ${durationSeconds.toFixed(0)}s${
         rateMultiplier === DEFAULT_COMPUTE_RATE_MULTIPLIER ? '' : ` · ${rateMultiplier}× rate`
       }`,
-      'compute_debit',
+      kind: 'compute_debit',
       // Derived from WHAT is billed — this session and this window end — so a
       // retry after a lost response produces the same key and replays instead
       // of charging again. The CAS claim above already stops two settlers from
       // both billing; this covers the single settler that never learned its own
       // debit succeeded.
-      `compute:${row.id}:${claimedEnd.toISOString()}`,
-    );
+      key: { request: `compute:${row.id}:${claimedEnd.toISOString()}` },
+    });
   } catch (err) {
     // No longer reachable for a merely-drained wallet (settlement overdrafts
     // instead of refusing). Retained for the real failures that remain — a

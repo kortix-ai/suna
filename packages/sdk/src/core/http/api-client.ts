@@ -86,7 +86,7 @@ export const FEATURE_NOT_SUPPORTED_CODE = 'feature_not_supported';
  * Stable error code the platform API returns (HTTP 409) when a user tries to
  * set a model their account can't use — e.g. a managed model on a free tier,
  * or a BYOK model whose provider isn't connected. The API emits this from the
- * model-defaults PUT (`apps/api/src/projects/routes/r4.ts`) and the channel
+ * model-defaults PUT (`apps/api/src/projects/routes/models.ts`) and the channel
  * binding model set (`apps/api/src/projects/routes/channel-bindings.ts`) via
  * `isModelServableForAccount`. This is an EXPECTED condition — a UI validation
  * error, not a server bug — so `makeRequest` classifies a 409 carrying this
@@ -104,7 +104,7 @@ export const MODEL_NOT_SERVABLE_CODE = 'model_not_servable';
  * carrying the same `idempotency_key` is still mid-provision — see
  * `apps/api/src/projects/lib/provision-idempotency.ts`'s `in_flight` case and
  * the two `POST /projects/provision` handlers in
- * `apps/api/src/projects/routes/r1.ts`. This is a RETRYABLE, EXPECTED state:
+ * `apps/api/src/projects/routes/projects.ts`. This is a RETRYABLE, EXPECTED state:
  * the concurrent attempt simply hasn't committed yet, and the caller retries
  * with the same key until it does. First-run onboarding hits it whenever a
  * second tab (or the other entry door) races the same auto-create, so it must
@@ -455,7 +455,7 @@ async function makeRequest<T = any>(
 
       // Expected "this model isn't available for this account" state — the
       // backend returns a TYPED 409 with `code: 'model_not_servable'` (from
-      // `isModelServableForAccount` in `apps/api/src/projects/routes/r4.ts` and
+      // `isModelServableForAccount` in `apps/api/src/projects/routes/models.ts` and
       // `channel-bindings.ts`) when a user picks a model their account can't
       // use (free-tier managed model, disconnected BYOK provider). This is a UI
       // validation error, not a server defect, so it must NEVER page Better

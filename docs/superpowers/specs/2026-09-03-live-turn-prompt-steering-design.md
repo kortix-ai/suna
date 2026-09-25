@@ -182,7 +182,7 @@ surface change. Existing `202` responses and queue endpoints remain compatible.
 
 ### Real-sandbox API gate
 
-Run the existing `integration-inbox-midturn-forward.test.ts` with three queued
+Run the existing `inbox-midturn-forward.live.test.ts` with three queued
 messages:
 
 1. Start a turn containing a 36-second shell loop.

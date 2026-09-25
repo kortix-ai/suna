@@ -55,9 +55,37 @@ export interface ParsedUserMessageText {
   sessions: ParsedSessionRef[];
 }
 
+const XML_ATTR_ESCAPES: Readonly<Record<string, string>> = {
+  '&': '&amp;',
+  '"': '&quot;',
+  "'": '&#39;',
+  '<': '&lt;',
+  '>': '&gt;',
+};
+
+/** One-pass attribute escape; same table as the web composer (project-preamble.ts). */
+function escapeAttr(value: string): string {
+  return value.replace(/[&"'<>]/g, (ch) => XML_ATTR_ESCAPES[ch]!);
+}
+
+/**
+ * The `Referenced sessions` block the composer appends for session mentions.
+ * Same wire shape as the web composer (`buildSessionRefsBlock` in
+ * apps/web/src/lib/project-preamble.ts): ids and titles are attribute-escaped,
+ * so a title with a quote cannot break the tag.
+ */
+export function buildSessionRefsBlock(sessions: readonly { id: string; title: string }[]): string {
+  if (!sessions.length) return '';
+  const refs = sessions
+    .map((s) => `<session_ref id="${escapeAttr(s.id)}" title="${escapeAttr(s.title)}" />`)
+    .join('\n');
+  return `Referenced sessions (${SESSION_REFERENCE_HINT}):\n${refs}`;
+}
+
 function unescapeAttr(value: string): string {
   return value
     .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&amp;/g, '&');
@@ -180,7 +208,8 @@ export function parseUserMessageText(raw: string): ParsedUserMessageText {
 
   const sessions: ParsedSessionRef[] = [];
   text = text.replace(/<session_ref\s+id="([^"]*?)"\s+title="([^"]*?)"\s*\/>/g, (_, id: string, title: string) => {
-    sessions.push({ id, title });
+    // `buildSessionRefsBlock` (and the web composer) escape both attributes.
+    sessions.push({ id: unescapeAttr(id), title: unescapeAttr(title) });
     return '';
   });
   text = removeSpans(text, referenceHeaders(text, 'sessions', SESSION_REFERENCE_HINT)).trim();

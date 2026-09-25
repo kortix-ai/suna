@@ -8,7 +8,7 @@ import {
   sessionLifecycleCommands,
   sessionProviderSecretPools,
 } from '@kortix/db';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG, PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
@@ -111,6 +111,7 @@ import {
   resolveSessionSandboxSlug,
 } from './session-sandbox-metadata';
 import { projectSessionMetadataMerge } from './session-metadata-merge';
+import { transitionSession } from '../session-lifecycle/status-transitions';
 import {
   buildSessionRuntimeContextEnv,
   mergeSessionSandboxEnv,
@@ -869,6 +870,8 @@ async function loadParentSessionSharing(
 
 export async function createProjectSession(input: {
   attachmentSourceCommandId?: string;
+  /** The `create_session` command to link the new session to, atomically. */
+  createCommandId?: string;
   project: ProjectRow;
   userId: string;
   requestingPrincipalType: 'human' | 'service_account';
@@ -1645,6 +1648,22 @@ export async function createProjectSession(input: {
       })
       .returning();
     if (!row) throw new Error('Session insert returned no row');
+    if (input.createCommandId) {
+      // Same transaction as the session row: a create command whose worker
+      // dies after this commit is reclaimed WITH its session id, and
+      // executeQueuedCreate returns this session instead of provisioning a
+      // second one.
+      await tx
+        .update(sessionLifecycleCommands)
+        .set({ sessionId, updatedAt: new Date() })
+        .where(
+          and(
+            eq(sessionLifecycleCommands.commandId, input.createCommandId),
+            eq(sessionLifecycleCommands.commandType, 'create_session'),
+            isNull(sessionLifecycleCommands.sessionId),
+          ),
+        );
+    }
     if (providerSecretPools && Object.keys(providerSecretPools).length > 0) {
       await tx.insert(sessionProviderSecretPools).values(
         Object.entries(providerSecretPools).map(([providerId, secretIds]) => ({ sessionId, providerId, secretIds })),
@@ -2032,18 +2051,14 @@ export async function createProjectSession(input: {
       const message = (err as Error)?.message || 'Sandbox provisioning failed';
       console.error(`[projects] Failed to kick off sandbox for session ${sessionId}:`, err);
       try {
-        await db
-          .update(projectSessions)
-          .set({
-            status: 'failed',
-            error: message,
-            // Merge, never re-write the create-time snapshot: by the time
-            // provisioning fails the row may already carry a generated title,
-            // remote_branch or the start timeline.
-            metadata: projectSessionMetadataMerge({ provisioning_error: message }),
-            updatedAt: new Date(),
-          })
-          .where(eq(projectSessions.sessionId, sessionId));
+        // Merge, never re-write the create-time snapshot: by the time
+        // provisioning fails the row may already carry a generated title,
+        // remote_branch or the start timeline. A session deleted meanwhile
+        // keeps its tombstone.
+        await transitionSession('fail', sessionId, {
+          error: message,
+          metadata: { provisioning_error: message },
+        });
       } catch (markErr) {
         console.error(`[projects] Failed to mark session ${sessionId} failed:`, markErr);
       }

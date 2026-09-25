@@ -22,8 +22,8 @@ function read(relative: string): string {
 }
 
 const shell = read('./instant-session-shell.tsx');
-const projectHome = read('../../app/(app)/projects/[id]/page.tsx');
-const sessionPage = read('../../app/(app)/projects/[id]/sessions/[sessionId]/page.tsx');
+const projectHome = read('../../app/[locale]/(app)/projects/[id]/page.tsx');
+const sessionPage = read('../../app/[locale]/(app)/projects/[id]/sessions/[sessionId]/page.tsx');
 const configureThread = read('../workspace/customize/use-configure-thread.ts');
 const runUpgrade = read('../workspace/customize/migrate-to-v2/use-run-upgrade.ts');
 

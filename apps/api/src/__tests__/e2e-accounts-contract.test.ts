@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { mockIamAssignments, mockIamReadModels } from './helpers/iam-mocks';
@@ -321,6 +322,16 @@ mock.module('../middleware/auth', () => ({
     c.set('authType', 'supabase');
     await next();
   },
+}));
+
+// The invite routes read the caller's email from `auth.users` through the
+// email-trust rule; this contract suite has no auth schema, so every caller
+// here is a non-SSO identity whose email is its own. The SSO rule itself is
+// covered by integration-iam-sso-sync.test.ts and flow SSO-2.
+mock.module('../iam/email-trust', () => ({
+  trustedEmailForUser: async (userId: string | null | undefined) =>
+    userId && userId === currentUserId ? currentUserEmail.trim().toLowerCase() : '',
+  emailTrustedSql: () => sql`true`,
 }));
 
 mock.module('../shared/supabase', () => ({

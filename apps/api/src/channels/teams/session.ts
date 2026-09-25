@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { chatEventDedup, chatThreads, projectSessions, projects } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
+import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import {
   continueSession as continueLifecycleSession,
   createSession as createLifecycleSession,
@@ -90,8 +91,15 @@ async function resolveTeamsTurnActor(
   return null;
 }
 
-/** True when a session is already bound to this conversation (a thread the bot owns). */
-export async function hasConversationSession(tenantId: string, conversationId: string): Promise<boolean> {
+/**
+ * True when a session is already bound to this conversation (a thread the bot
+ * owns). With `projectId`, only a session of that project counts.
+ */
+export async function hasConversationSession(
+  tenantId: string,
+  conversationId: string,
+  projectId?: string,
+): Promise<boolean> {
   if (!tenantId || !conversationId) return false;
   const [row] = await db
     .select({ sessionId: chatThreads.sessionId })
@@ -101,10 +109,28 @@ export async function hasConversationSession(tenantId: string, conversationId: s
         eq(chatThreads.platform, 'teams'),
         eq(chatThreads.workspaceId, tenantId),
         eq(chatThreads.threadId, conversationId),
+        projectId ? eq(chatThreads.projectId, projectId) : undefined,
       ),
     )
     .limit(1);
   return Boolean(row);
+}
+
+/** The project that owns this conversation's session mapping, if any. */
+async function conversationThreadProject(tenantId: string, conversationId: string): Promise<string | null> {
+  if (!tenantId || !conversationId) return null;
+  const [row] = await db
+    .select({ projectId: chatThreads.projectId })
+    .from(chatThreads)
+    .where(
+      and(
+        eq(chatThreads.platform, 'teams'),
+        eq(chatThreads.workspaceId, tenantId),
+        eq(chatThreads.threadId, conversationId),
+      ),
+    )
+    .limit(1);
+  return row?.projectId ?? null;
 }
 
 export async function deliverTeamsFollowUpToSession(input: {
@@ -428,15 +454,38 @@ export async function createOrJoinTeamsConversationSession(input: {
   tenantId: string;
   conversationId: string;
   activity: TeamsActivity;
+  /**
+   * Set by the per-project (BYO) webhook: its activities may reach only its
+   * own project, so a conversation another project's session owns is refused.
+   */
+  ownThreadsOnly?: boolean;
 }): Promise<void> {
-  const { projectId, tenantId, conversationId, activity } = input;
+  const { tenantId, conversationId, activity } = input;
+  let projectId = input.projectId;
 
-  const [project] = await db
+  let [project] = await db
     .select()
     .from(projects)
     .where(eq(projects.projectId, projectId))
     .limit(1);
   if (!project) return;
+
+  // A conversation's session lives in exactly one project, and a follow-up is
+  // delivered THERE — so the sender is authorized against that project, never
+  // only against the one the conversation currently resolves to (a `/use`
+  // re-points the conversation, but its running session stays where it was
+  // created until `/new`).
+  const threadProjectId = await conversationThreadProject(tenantId, conversationId);
+  if (threadProjectId && threadProjectId !== projectId) {
+    if (input.ownThreadsOnly) {
+      console.warn('[teams-webhook] conversation session belongs to another project — ignoring', { projectId });
+      return;
+    }
+    if (!(await projectFeatureFlagEnabled(threadProjectId, 'teams'))) return;
+    projectId = threadProjectId;
+    [project] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
+    if (!project) return;
+  }
 
   // Time-to-first-card: the "Working on it…" card depends on nothing below
   // this line, so it is posted before the identity link, the membership
@@ -471,6 +520,7 @@ export async function createOrJoinTeamsConversationSession(input: {
           eq(chatThreads.platform, 'teams'),
           eq(chatThreads.workspaceId, tenantId),
           eq(chatThreads.threadId, conversationId),
+          eq(chatThreads.projectId, projectId),
         ),
       )
       .limit(1);
@@ -498,7 +548,7 @@ export async function createOrJoinTeamsConversationSession(input: {
 
   const claimKey = tenantId && conversationId ? `teams:threadcreate:${tenantId}:${conversationId}` : null;
   if (claimKey && !(await claimThreadCreate(claimKey))) {
-    const sessionId = await waitForConversationSession(tenantId, conversationId);
+    const sessionId = await waitForConversationSession(tenantId, conversationId, projectId);
     if (sessionId) {
       const [row] = await db
         .select({
@@ -703,7 +753,11 @@ async function releaseThreadCreate(key: string): Promise<void> {
   }
 }
 
-async function waitForConversationSession(tenantId: string, conversationId: string): Promise<string | null> {
+async function waitForConversationSession(
+  tenantId: string,
+  conversationId: string,
+  projectId: string,
+): Promise<string | null> {
   const deadline = Date.now() + 8_000;
   for (;;) {
     const [row] = await db
@@ -714,6 +768,7 @@ async function waitForConversationSession(tenantId: string, conversationId: stri
           eq(chatThreads.platform, 'teams'),
           eq(chatThreads.workspaceId, tenantId),
           eq(chatThreads.threadId, conversationId),
+          eq(chatThreads.projectId, projectId),
         ),
       )
       .limit(1);
