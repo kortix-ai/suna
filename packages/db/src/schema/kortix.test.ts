@@ -217,14 +217,14 @@ describe('canonical audit ledger', () => {
     // Regression guard: some index must carry (session_id, session_sequence,
     // event_id) as its leading columns, in that order, so the planner walks the
     // index and stops at LIMIT.
-    const indexColumns = getTableConfig(auditEvents).indexes.map((i) =>
-      i.config.columns.map((c: any) => c.name as string | undefined),
-    );
-    const servesSessionRead = indexColumns.some(
-      (cols) =>
-        cols[0] === 'session_id' && cols[1] === 'session_sequence' && cols[2] === 'event_id',
-    );
-    expect(servesSessionRead).toBe(true);
+    const serving = getTableConfig(auditEvents).indexes.find((i) => {
+      const cols = i.config.columns.map((c: any) => c.name as string | undefined);
+      return cols[0] === 'session_id' && cols[1] === 'session_sequence' && cols[2] === 'event_id';
+    });
+    // A partial index with an excluding predicate would keep the leading-column
+    // guard green while the planner stops serving the route's general read.
+    expect(serving).toBeDefined();
+    expect(serving?.config.where).toBeUndefined();
   });
 
   test('preserves tenant scope when the account record is deleted', () => {
