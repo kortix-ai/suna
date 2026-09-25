@@ -4,7 +4,6 @@ import {
   decideStuckProvisioning,
   provisioningOwnerLapsed,
 } from './stuck-provisioning';
-import { removalBackoffMs, shouldAttemptRemoval } from './archived-box-removal';
 
 const NOW = new Date('2026-09-24T12:00:00.000Z');
 const minutesAgo = (m: number) => new Date(NOW.getTime() - m * 60_000);
@@ -82,22 +81,5 @@ describe('decideStuckProvisioning — converge to what the provider says', () =>
   test('a live owner or a live wake always wins', () => {
     expect(decideStuckProvisioning({ ...base, ownerLapsed: false })).toBe('skip');
     expect(decideStuckProvisioning({ ...base, wakeInProgress: true })).toBe('skip');
-  });
-});
-
-describe('archived-box removal retry schedule', () => {
-  test('backs off exponentially from one minute to a six-hour ceiling, never giving up', () => {
-    expect(removalBackoffMs(1)).toBe(60_000);
-    expect(removalBackoffMs(2)).toBe(120_000);
-    expect(removalBackoffMs(5)).toBe(16 * 60_000);
-    expect(removalBackoffMs(50)).toBe(6 * 60 * 60_000);
-  });
-
-  test('a row is retried only when its retry time has come', () => {
-    const nowMs = NOW.getTime();
-    expect(shouldAttemptRemoval({ providerAllowed: true, retryAfterMs: null, nowMs })).toBe(true);
-    expect(shouldAttemptRemoval({ providerAllowed: true, retryAfterMs: nowMs - 1, nowMs })).toBe(true);
-    expect(shouldAttemptRemoval({ providerAllowed: true, retryAfterMs: nowMs + 1, nowMs })).toBe(false);
-    expect(shouldAttemptRemoval({ providerAllowed: false, retryAfterMs: null, nowMs })).toBe(false);
   });
 });

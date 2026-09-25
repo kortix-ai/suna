@@ -20,6 +20,7 @@ import { resolveBranchTip } from '../git';
 import { legacyRehydrateSpec, rehydrateSessionChat } from '../legacy-migration-rehydrate';
 import { withProjectGitAuth } from '../lib/git';
 import { scheduleSandboxRuntimeRefresh } from '../lib/sandbox-runtime-refresh';
+import { scheduleSessionConfigConvergence } from '../lib/session-config-convergence';
 import { type ProjectRow, serializeSessionSandboxConfig } from '../lib/serializers';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import {
@@ -80,7 +81,7 @@ import {
  * Deliberately ABSENT: `runtimeStartFailureCount` and `runtimeStartFailedAt`.
  * They drive the escalating cooldown between automatic rungs and must survive
  * one — unlike an explicit human Restart, which resets the whole episode
- * (`prepareInPlaceRestartMetadata`).
+ * (`IN_PLACE_RESTART_CLEARED_KEYS`, stripped by `claimInPlaceRestart`).
  */
 export const RUNTIME_WAKE_CLAIM_CLEARED_KEYS = [
   'runtimeIdentityState',
@@ -151,7 +152,7 @@ export async function resumeStoppedSandbox(
   // A stamped runtime-start failure blocks a re-attempt for its COOLDOWN, and
   // for nothing longer. Refusing outright — which is what this gate used to do
   // for both `runtime_boot_failed` and `runtime_wake_failed` — is what made
-  // `POST /restart` the only way back for sessions e06ad0c4 and 9c8749ac.
+  // `POST /restart` the only way back for two prod sessions on 2026-08-26.
   const stampedFailure = stampedRuntimeFailureState(row.metadata, now);
   if (stampedFailure === 'cooling_down' || stampedFailure === 'terminal') return false;
 
@@ -288,6 +289,11 @@ export async function resumeStoppedSandbox(
       // extend the wake the user is waiting on. It retries on its own, because
       // provider-running precedes the guest daemon binding its port.
       scheduleSandboxRuntimeRefresh(row.sessionId, 'resume');
+      // The project's half of the same problem. The woken VM still holds the
+      // `.kortix/opencode` tree and compiled agent config of its provision day;
+      // nothing on a resume re-reads the base branch. Detached, idle-gated, and
+      // a no-op — no opencode restart — on a box that is already current.
+      scheduleSessionConfigConvergence(row.sessionId, 'resume');
       return true;
     },
     fail: async (reason) => {
@@ -761,8 +767,8 @@ export function stoppedWakeResult(
   // A STAMPED runtime-start failure — `runtime_wake_failed` from a wake that
   // ran out of budget, `runtime_boot_failed` from a park. It used to short
   // -circuit every later `/start` to a terminal payload forever, so the session
-  // could only be recovered by a human pressing Restart (SampleCo 2026-08-26:
-  // e06ad0c4 answered `failed` in 47ms for a startable box; 9c8749ac replayed a
+  // could only be recovered by a human pressing Restart (2026-08-26: one prod
+  // session answered `failed` in 47ms for a startable box; another replayed a
   // 03:37Z stamp for 10+ hours). Now it is a cooldown with three outcomes.
   const failureState = stampedRuntimeFailureState(metadata, now);
   // `retry`: say nothing here. The caller falls through to the resume path and
@@ -1361,7 +1367,7 @@ async function runOpenSession(args: {
         stopUnconfirmed = true;
         // OWN the confirmation instead of hoping someone reads again. Without
         // this the row keeps claiming `running` for as long as nothing polls —
-        // 5+ minutes on SampleCo 2026-08-26, with the queued prompt delivered
+        // 5+ minutes on a prod session 2026-08-26, with the queued prompt delivered
         // against a box the provider had already stopped. Detached: the answer
         // this call returns must not wait a confirmation window for it.
         void runStoppedObservationFollowUp({

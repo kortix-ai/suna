@@ -139,7 +139,7 @@ billingApp.openapi(
 );
 
 // Trial-expiry sweep cron endpoint. Pure status hygiene: the trial overlay
-// stops granting lazily at trial_ends_at (effective-tier.ts trialIsActive);
+// stops granting lazily at trial_ends_at (resolve-billing.ts trialIsActive);
 // this flips trial_status to 'expired' so rows read honestly.
 billingApp.openapi(
   createRoute({

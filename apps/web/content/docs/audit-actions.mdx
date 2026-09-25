@@ -13,7 +13,7 @@ Every row in the [audit log](/docs/accounts#audit-log) carries an `action`: `dom
 - A route with two actions (`secret.strategy.update` or `secret.strategy.changed`) records the second when its handler records that event, for example only for a real change. That event, with its before and after state, is then the request's row.
 - Rows written before 2026-09-24 carry `METHOD /template` as their action. The web app and the CLI show them with the same titles.
 
-This page lists 677 route actions and 64 other events.
+This page lists 679 route actions and 64 other events.
 
 ## `account.`
 
@@ -558,6 +558,7 @@ This page lists 677 route actions and 64 other events.
 | `project.cli_token.create` | Created project CLI token | `POST /v1/projects/:projectId/cli-token` |
 | `project.cli_token.list` | Listed project CLI tokens | `GET /v1/projects/:projectId/cli-token` |
 | `project.cli_token.revoke` | Revoked project CLI token | `DELETE /v1/projects/:projectId/cli-token/:tokenId` |
+| `project.config_archive.download` | Downloaded project config archive | `GET /v1/projects/:projectId/config-archives/:configTreeId` |
 | `project.create` | Created project | `POST /v1/projects` |
 | `project.default_agent.update` | Updated default agent | `PUT /v1/projects/:projectId/default-agent` |
 | `project.delete` | Deleted project | `DELETE /v1/projects/:projectId` |
@@ -642,7 +643,7 @@ This page lists 677 route actions and 64 other events.
 | --- | --- | --- |
 | `sandbox.boot_timeline.create` | Recorded sandbox boot timeline | `POST /v1/platform/boot-timeline` |
 | `sandbox.health.read` | Viewed sandbox health | `GET /v1/projects/:projectId/sandbox-health` |
-| `sandbox.port.proxy` | Accessed sandbox port | `/v1/p/:sandboxId/:port/*`, any method (also `/v1/p/:sandboxId/:port`, any method) |
+| `sandbox.port.proxy` | Accessed sandbox port | `/v1/p/:sandboxId/:port/*`, any method |
 | `sandbox.port.websocket.connect` | Opened sandbox port WebSocket | before the API router |
 | `sandbox.port_share.create` | Created sandbox port share link | `POST /v1/p/share` |
 | `sandbox.port_share.list` | Listed sandbox port share links | `GET /v1/p/share` |
@@ -718,6 +719,7 @@ This page lists 677 route actions and 64 other events.
 | `session.agent_config.reload` | Reloaded session agent config | `POST /v1/projects/:projectId/sessions/:sessionId/reload` (also `POST /v1/projects/:projectId/sessions/:sessionId/reload-stream`) |
 | `session.attachment.download` | Downloaded session attachment | `GET /v1/projects/:projectId/sessions/:sessionId/attachments/:attachmentId` |
 | `session.attachment.upload` | Uploaded session attachment | `POST /v1/projects/:projectId/sessions/:sessionId/attachments` |
+| `session.config_release.resolve` | Resolved session config release | `POST /v1/projects/:projectId/sessions/:sessionId/config-release` |
 | `session.create` | Created session | `POST /v1/projects/:projectId/sessions` |
 | `session.delete` | Deleted session | `DELETE /v1/projects/:projectId/sessions/:sessionId` |
 | `session.environment.read` | Viewed session environment | `GET /v1/projects/:projectId/sessions/:sessionId/environment` |

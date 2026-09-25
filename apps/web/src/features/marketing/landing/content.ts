@@ -406,90 +406,9 @@ export const useCases = {
   ] satisfies readonly UseCase[],
 } as const;
 
-export type StackLayerId =
-  'models' | 'harness' | 'computer' | 'context' | 'control' | 'security' | 'kortix';
-
-/**
- * Every icon module `stack.layers[].logos` is allowed to name. Narrowed (not
- * `string`) so a typo'd or unmapped name fails here, at the data, instead of
- * silently rendering a blank slot in `StackSection`'s `LAYER_ICONS` lookup.
- */
-export type StackLogoKey =
-  | 'Claude'
-  | 'OpenAI'
-  | 'Gemini'
-  | 'OpenCode'
-  | 'Slack'
-  | 'Notion'
-  | 'Linear'
-  | 'Github'
-  | 'MicrosoftTeams'
-  | 'Gmail';
-
-export type StackLayer = {
-  id: StackLayerId;
-  name: string;
-  body: string;
-  /** Logo chips shown beside the layer. Keys map to `features/icon`. */
-  logos?: readonly StackLogoKey[];
-  /** Plain text chips where no logo exists. */
-  chips?: readonly string[];
-};
-
-export const stack = {
-  eyebrow: 'One platform',
-  title: 'Every layer an AI workforce needs — unified.',
-  sub: 'Most tools hand you one layer and rent you the rest. Kortix is all of them, open source, running wherever you put it.',
-  layers: [
-    {
-      id: 'models',
-      name: 'Large Language Models',
-      body: 'Run any frontier model and switch between them as they improve. Bring your own API keys, the subscription you already pay for, or your own models running on your hardware. Kortix stays model-agnostic, so every agent uses the best model for the job.',
-      logos: ['Claude', 'OpenAI', 'Gemini'],
-      chips: ['Bedrock', 'OpenRouter', 'Your own, on-prem'],
-    },
-    {
-      id: 'harness',
-      name: 'Agentic Harness',
-      body: 'The layer that turns a model into an agent: planning, tool use, and multi-step runs it actually finishes. Fully customizable and powered by OpenCode, so the way your agents think is yours to edit.',
-      logos: ['OpenCode'],
-    },
-    {
-      id: 'computer',
-      name: 'Agent Computer',
-      body: 'Every agent gets its own computer — its own isolated Linux machine, pre-set-up with your repo, tools and dependencies. It can install, run and break anything. Nothing to configure, no local machine required.',
-      chips: ['One machine per session', 'Pre-configured', 'Thousands in parallel'],
-    },
-    {
-      id: 'context',
-      name: 'Context & Connections',
-      body: 'Every tool your company runs on, connected once and shared across agents and people, so everyone works from the same picture. 3,000+ apps in a click, plus MCP, OpenAPI, GraphQL and raw HTTP.',
-      logos: ['Slack', 'Notion', 'Linear', 'Github', 'MicrosoftTeams', 'Gmail'],
-    },
-    {
-      id: 'control',
-      name: 'Product / Control Plane',
-      body: 'The control plane that ties every layer together: one place to configure, deploy, observe and operate every agent across your whole organization — from the web, Slack, mobile or the CLI.',
-      chips: ['Web', 'Slack', 'Teams', 'Mobile', 'CLI', 'API'],
-    },
-    {
-      id: 'security',
-      name: 'Security & Governance',
-      body: 'SSO, members, groups and role-based access come built in, with per-resource permissions for people and agents, encrypted secrets and a full audit trail. Self-host so the entire platform runs inside your own environment.',
-      chips: ['SSO', 'RBAC', 'Secrets vault', 'Audit trail', 'SOC 2 Type II in progress'],
-    },
-    {
-      id: 'kortix',
-      name: 'Kortix',
-      body: 'Every layer above brought together in one platform your team owns, deploys and scales end to end — from the model to the finished work. That’s Kortix.',
-      chips: ['Open source', 'Self-hostable', 'Yours down to the metal'],
-    },
-  ] satisfies readonly StackLayer[],
-} as const;
-
 export function getLocalizedLandingContent(tI18nComplete: UiTranslator) {
   return localizeUiCatalog(
-    { hero, heroEyebrow, cta, trust, useCases, stack },
+    { hero, heroEyebrow, cta, trust, useCases },
     tI18nComplete,
     AGENTS_LANDING_TRANSLATION_KEYS,
   );

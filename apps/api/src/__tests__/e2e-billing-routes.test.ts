@@ -95,7 +95,7 @@ mock.module('../billing/services/credits', () => ({
     const outputCost = (completion / 1_000_000) * 15;
     return (inputCost + outputCost) * 1.2;
   },
-  getCreditSummary: async () => ({ total: 100, daily: 3, monthly: 80, extra: 20, canRun: true }),
+  getCreditSummary: () => ({ total: 100, daily: 3, monthly: 80, extra: 20 }),
 }));
 
 mock.module('../billing/wallet', () => ({

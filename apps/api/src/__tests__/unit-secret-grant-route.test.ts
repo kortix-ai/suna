@@ -133,6 +133,15 @@ mock.module('../projects/lib/triggers', () => ({
   },
 }));
 
+// A widened grant must reach live sessions now, not on their next prompt: the
+// human who just enabled the secret is looking at a session that still lacks it.
+const propagated: string[] = [];
+mock.module('../projects/lib/sandbox-env-sync', () => ({
+  propagateProjectSecretsToActiveSandboxes: async (projectId: string) => {
+    propagated.push(projectId);
+  },
+}));
+
 const { projectsApp } = await import('../projects/lib/app');
 await import('../projects/routes/agent-scope');
 
@@ -176,6 +185,7 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/grant', () => {
     commitFailure = null;
     commits.length = 0;
     capabilities.length = 0;
+    propagated.length = 0;
     authType = 'supabase';
     sessionId = undefined;
     agentGrant = null;
@@ -199,6 +209,7 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/grant', () => {
     expect(capabilities).toEqual(['project.agent.write', 'project.secret.read']);
     expect(commits).toHaveLength(1);
     expect(commits[0]?.message).toBe('chore(agents): grant BROKER_KEY to support');
+    expect(propagated).toEqual([PROJECT_ID]);
     const support = agentsOf(commits[0]!.raw).support;
     expect(support.secrets).toEqual(['OTHER_KEY', 'BROKER_KEY']);
     expect(support.connectors).toEqual(['gmail']);
@@ -283,6 +294,8 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/grant', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ already_granted: true });
+    // Nothing committed, nothing changed: no push.
+    expect(propagated).toEqual([]);
     expect(commits).toHaveLength(0);
   });
 
@@ -397,5 +410,47 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/grant', () => {
 
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ error: 'manifest changed' });
+    expect(propagated).toEqual([]);
+  });
+});
+
+describe('PUT /v1/projects/:projectId/agents/:agentName/scope — pushing the change', () => {
+  beforeEach(() => {
+    secretRows = [{ identifier: 'OTHER_KEY', ownerUserId: null, strategy: 'runtime' }];
+    manifest = governedManifest();
+    manifestError = null;
+    commitFailure = null;
+    commits.length = 0;
+    propagated.length = 0;
+    authType = 'supabase';
+    sessionId = undefined;
+    agentGrant = null;
+  });
+
+  function scope(agent: string, body: Record<string, unknown>) {
+    return buildApp().request(`/v1/projects/${PROJECT_ID}/agents/${agent}/scope`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+
+  test('a person enabling a secret for an agent pushes it to live sessions now', async () => {
+    const response = await scope('support', { env: ['OTHER_KEY', 'NEW_KEY'] });
+
+    expect(response.status).toBe(200);
+    expect(commits).toHaveLength(1);
+    expect(propagated).toEqual([PROJECT_ID]);
+  });
+
+  test('an agent session editing a scope never forces a push', async () => {
+    authType = 'pat';
+    sessionId = '66666666-6666-4666-8666-666666666666';
+    agentGrant = { agent: 'scout', permissions: 'all', connectors: 'all', env: 'all' };
+
+    const response = await scope('support', { env: ['OTHER_KEY', 'NEW_KEY'] });
+
+    expect(response.status).toBe(200);
+    expect(propagated).toEqual([]);
   });
 });

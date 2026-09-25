@@ -111,51 +111,22 @@ describe('getOrCreateStripeCustomer', () => {
 });
 
 describe('createCheckoutSession', () => {
-  test('creates checkout for new subscription', async () => {
+  test('opens Checkout on the configured monthly price of the requested tier', async () => {
     mockRegistry.getCreditAccount = async () =>
       createMockCreditAccount({ tier: 'free', stripeSubscriptionId: null });
 
-    const result = await createCheckoutSession({
-      accountId: 'acc_test_123',
-      email: 'test@example.com',
-      tierKey: 'pro',
-      successUrl: 'https://example.com/success',
-      cancelUrl: 'https://example.com/cancel',
-    });
-
-    expect((result as any).status).toBe('checkout_created');
-    expect((result as any).session_id).toBeDefined();
-  });
-
-  test('creates checkout for free-to-pro with an existing free subscription', async () => {
-    mockRegistry.getCreditAccount = async () =>
-      createMockCreditAccount({
-        tier: 'free',
-        stripeSubscriptionId: 'sub_existing',
-      });
-
-    const result = await createCheckoutSession({
-      accountId: 'acc_test_123',
-      email: 'test@example.com',
-      tierKey: 'pro',
-      successUrl: 'https://example.com/success',
-      cancelUrl: 'https://example.com/cancel',
-    });
-
-    expect((result as any).status).toBe('checkout_created');
-  });
-
-  test('resolves the current paid tier price ID', async () => {
-    mockRegistry.getCreditAccount = async () =>
-      createMockCreditAccount({ tier: 'free', stripeSubscriptionId: null });
-
+    const retrievedPrices: string[] = [];
+    mockRegistry.stripeClient.prices.retrieve = async (id: string) => {
+      retrievedPrices.push(id);
+      return { id, unit_amount: 2000, recurring: { interval: 'month' } };
+    };
     let capturedParams: any = null;
     mockRegistry.stripeClient.checkout.sessions.create = async (params: any) => {
       capturedParams = params;
       return { id: 'cs_new_123', url: 'https://checkout.stripe.com/test' };
     };
 
-    await createCheckoutSession({
+    const result = await createCheckoutSession({
       accountId: 'acc_test_123',
       email: 'test@example.com',
       tierKey: 'pro',
@@ -163,7 +134,9 @@ describe('createCheckoutSession', () => {
       cancelUrl: 'https://example.com/cancel',
     });
 
-    expect(capturedParams).not.toBeNull();
+    expect((result as any).status).toBe('checkout_created');
+    // The staging `pro` monthly price (tests run with INTERNAL_KORTIX_ENV=staging).
+    expect(retrievedPrices).toEqual(['price_1TeyA7G6l1KZGqIr7ZhEpoVm']);
     expect(capturedParams.line_items[0].price_data.unit_amount).toBe(2000);
     expect(capturedParams.line_items[0].price_data.recurring.interval).toBe('month');
   });
@@ -357,9 +330,9 @@ describe('createInlineCheckout: free tier handling', () => {
         stripeSubscriptionId: 'sub_old_free',
       });
 
-    let subscriptionCreateCalled = false;
+    let createParams: any = null;
     mockRegistry.stripeClient.subscriptions.create = async (params: any) => {
-      subscriptionCreateCalled = true;
+      createParams = params;
       return createMockStripeSubscription({
         id: 'sub_new_paid',
         latest_invoice: { amount_due: 5000, payment_intent: { client_secret: 'cs_test' } },
@@ -374,35 +347,8 @@ describe('createInlineCheckout: free tier handling', () => {
       billingPeriod: 'monthly',
     });
 
-    expect(subscriptionCreateCalled).toBe(true);
+    expect(createParams?.metadata.previous_subscription_id).toBe('sub_old_free');
     expect((result as any).previous_subscription_id).toBe('sub_old_free');
-  });
-
-  test('includes previous_subscription_id in subscription metadata', async () => {
-    mockRegistry.getCreditAccount = async () =>
-      createMockCreditAccount({
-        tier: 'free',
-        stripeSubscriptionId: 'sub_old_free',
-      });
-
-    let capturedParams: any = null;
-    mockRegistry.stripeClient.subscriptions.create = async (params: any) => {
-      capturedParams = params;
-      return createMockStripeSubscription({
-        id: 'sub_new_paid',
-        latest_invoice: { amount_due: 5000, payment_intent: { client_secret: 'cs_test' } },
-        metadata: params.metadata,
-      });
-    };
-
-    await createInlineCheckout({
-      accountId: 'acc_test_123',
-      email: 'test@example.com',
-      tierKey: 'pro',
-      billingPeriod: 'monthly',
-    });
-
-    expect(capturedParams.metadata.previous_subscription_id).toBe('sub_old_free');
   });
 
   test('cancels old free sub immediately when amount_due is 0', async () => {
@@ -428,8 +374,7 @@ describe('createInlineCheckout: free tier handling', () => {
 
     expect((result as any).no_payment_required).toBe(true);
     expect(upsertCreditAccountCalls.length).toBe(1);
-    // cancelFreeSubscriptionForUpgrade was called
-    expect(mockRegistry.stripeClient.subscriptions.cancel).toBeDefined();
+    expect(stripeCancelSubCalls).toEqual(['sub_old_free']);
   });
 });
 
@@ -570,11 +515,20 @@ describe('confirmInlineCheckout: the subscription must be the caller\'s and the 
     expect(tierWrites()).toHaveLength(0);
   });
 
-  test('a missing or malformed subscription_id is rejected with 400', async () => {
-    await expect(
-      confirmInlineCheckout({ accountId: 'acc_test_123', subscriptionId: undefined }),
-    ).rejects.toMatchObject({ statusCode: 400 });
-  });
+  test.each([undefined, 'cs_not_a_subscription'])(
+    'a missing or malformed subscription_id (%p) is rejected with 400',
+    async (subscriptionId) => {
+      // Stripe would answer with a paid, owned subscription: only the id check
+      // can refuse it.
+      mockRegistry.stripeClient.subscriptions.retrieve = async () =>
+        paidProSubscription({ id: subscriptionId });
+
+      await expect(
+        confirmInlineCheckout({ accountId: 'acc_test_123', subscriptionId }),
+      ).rejects.toMatchObject({ statusCode: 400 });
+      expect(tierWrites()).toHaveLength(0);
+    },
+  );
 });
 
 describe('cancelFreeSubscriptionForUpgrade', () => {

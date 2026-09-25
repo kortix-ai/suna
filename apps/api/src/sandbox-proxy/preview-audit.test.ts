@@ -61,7 +61,22 @@ describe('previewActorFields', () => {
         sandboxAuthored: true,
         method: 'account_token',
       }),
-    ).toMatchObject({ actorType: 'agent', authoritativeSource: 'agent' });
+    ).toEqual({
+      actorType: 'agent',
+      actorUserId: null,
+      authoritativeSource: 'agent',
+      authMethod: { kind: 'account_token', principal_id: USER },
+    });
+    // The session the token is bound to is named with it.
+    expect(
+      previewActorFields({
+        kind: 'user',
+        principalId: USER,
+        sandboxAuthored: true,
+        method: 'account_token',
+        callerSessionId: 'ses-1',
+      }).authMethod,
+    ).toEqual({ kind: 'account_token', principal_id: USER, session_id: 'ses-1' });
   });
 
   test('a service account is not a user id', () => {
@@ -96,35 +111,11 @@ describe('previewActorFields', () => {
     });
   });
 
-  test('a cookie minted before the kind was recorded names the principal but asserts nothing', () => {
-    expect(
-      previewActorFields({ principalId: USER, sandboxAuthored: false, method: 'preview_session' }),
-    ).toEqual({ authMethod: { kind: 'preview_session', principal_id: USER } });
-  });
 });
 
+// A principal cookie and a cookie minted before the kind existed are
+// attributed through the real handler in preview-origin.test.ts.
 describe('binding a preview request', () => {
-  test('a principal session names its caller', () => {
-    const scope = scopeAfter(() =>
-      bindPreviewSession({
-        kind: 'principal',
-        principalKind: 'user',
-        userId: USER,
-        callerSessionId: null,
-        sandboxAuthored: false,
-        sandboxLabel: 'sbx-known',
-        sandboxId: 'sbx-known',
-        port: 3000,
-        exp: 0,
-      }),
-    );
-    expect(scope.principal).toMatchObject({
-      actorType: 'human',
-      actorUserId: USER,
-      authMethod: { kind: 'preview_session' },
-    });
-  });
-
   test('a public share viewer is anonymous, and the share is named', () => {
     const scope = scopeAfter(() =>
       bindPreviewSession({
@@ -157,10 +148,9 @@ describe('binding a preview request', () => {
     const late = await scope.principal.lateAttribution?.();
     expect(late).toEqual({ accountId: 'acct-owner', projectId: 'proj-1' });
     expect(ownerLookups).toBe(1);
-  });
 
-  test('an unknown sandbox resolves to no owner', async () => {
-    const scope = scopeAfter(() => bindPreviewResource('sbx-unknown', null));
-    expect(await scope.principal.lateAttribution?.()).toBeNull();
+    // A sandbox nobody knows has no owner to file the row under.
+    const unknown = scopeAfter(() => bindPreviewResource('sbx-unknown', null));
+    expect(await unknown.principal.lateAttribution?.()).toBeNull();
   });
 });

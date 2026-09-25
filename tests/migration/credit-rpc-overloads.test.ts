@@ -227,6 +227,77 @@ suite('credit RPC overload resolution (throwaway Postgres)', () => {
     ]);
   });
 
+  test('every wallet function and wrapper pins an empty search_path', () => {
+    // A function without a pinned search_path resolves unqualified names through
+    // the caller's path, so a caller-owned object could shadow a wallet table.
+    const unpinned = psql(
+      `select n.nspname || '.' || p.proname || ' ' || coalesce(array_to_string(p.proconfig, ','), '<none>')
+       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where ((n.nspname = 'public' and p.proname like 'atomic\\_%') or n.nspname = 'kortix_wallet')
+         and coalesce(p.proconfig, '{}') <> '{"search_path=\\"\\""}'::text[]
+       order by 1`,
+    );
+    expect(unpinned).toBe('');
+    expect(atomicOverloads().length).toBeGreaterThanOrEqual(7);
+  });
+
+  test('a NULL floor argument enforces the floor and writes nothing', () => {
+    const account = fundedAccount('1');
+    const result = psql(
+      `select kortix_wallet.debit_credits(p_account_id => '${account}'::uuid, p_amount => 5, p_enforce_floor => null,
+              p_description => 'too much', p_ledger_type => 'llm_debit', p_idempotency_key => null) ->> 'error'`,
+    );
+    expect(result).toBe('Insufficient credits');
+    expect(psql(`select balance_precise from kortix.credit_accounts where account_id = '${account}'`)).toBe(
+      '1.0000000000',
+    );
+    expect(psql(`select count(*) from kortix.credit_ledger where account_id = '${account}'`)).toBe('0');
+  });
+
+  test('two concurrent admissions cannot both spend the same balance', async () => {
+    const account = fundedAccount('10');
+    const debit = `select kortix_wallet.debit_credits(p_account_id => '${account}'::uuid, p_amount => 6,
+      p_enforce_floor => true, p_description => 'LLM', p_ledger_type => 'llm_debit', p_idempotency_key => null) as r`;
+    const first = createDb(url, { max: 1 });
+    const second = createDb(url, { max: 1 });
+    try {
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let debited!: () => void;
+      const firstDebited = new Promise<void>((resolve) => {
+        debited = resolve;
+      });
+      // The first admission debits and holds its transaction open.
+      const firstTx = first.$client.begin(async (tx) => {
+        const [row] = await tx.unsafe(debit);
+        debited();
+        await held;
+        return row.r as { success: boolean };
+      });
+      await firstDebited;
+      // The second admission must wait on the account row lock, then see the
+      // drained balance. A guard that reads before the lock sees 10 and overdraws.
+      const secondTx = second.$client.begin(async (tx) => {
+        const [row] = await tx.unsafe(debit);
+        return row.r as { success: boolean; error?: string };
+      });
+      await Bun.sleep(300);
+      release();
+      const [a, b] = await Promise.all([firstTx, secondTx]);
+      expect(a.success).toBe(true);
+      expect(b).toMatchObject({ success: false, error: 'Insufficient credits' });
+    } finally {
+      await first.$client.end({ timeout: 5 });
+      await second.$client.end({ timeout: 5 });
+    }
+    expect(psql(`select balance_precise from kortix.credit_accounts where account_id = '${account}'`)).toBe(
+      '4.0000000000',
+    );
+    expect(psql(`select count(*) from kortix.credit_ledger where account_id = '${account}'`)).toBe('1');
+  });
+
   test('client roles can neither use the wallet schema nor execute any wallet function', () => {
     expect(
       psql(

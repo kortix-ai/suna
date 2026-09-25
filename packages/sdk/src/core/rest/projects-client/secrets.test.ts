@@ -1,6 +1,10 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
-import type { SecretDeliveryBlockedReason, SecretEgressPolicy } from './secrets';
+import type {
+  ProjectSecretsAgentScope,
+  SecretDeliveryBlockedReason,
+  SecretEgressPolicy,
+} from './secrets';
 import {
   deletePersonalProjectSecret,
   deleteProjectProviderOAuth,
@@ -390,4 +394,20 @@ test('setProjectSecretStrategy still sends a legacy policy that carries an injec
     name: 'authorization',
     template: 'Bearer {{secret}}',
   });
+});
+
+test('listProjectSecrets surfaces the calling agent own secrets grant', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      items: [],
+      required: ['API_KEY'],
+      optional: [],
+      agent_scope: { agent: 'analyst', secrets: ['OTHER_KEY'] },
+    },
+  };
+
+  const scope: ProjectSecretsAgentScope | null | undefined = (await listProjectSecrets('P1'))
+    .agent_scope;
+  expect(scope).toEqual({ agent: 'analyst', secrets: ['OTHER_KEY'] });
 });
