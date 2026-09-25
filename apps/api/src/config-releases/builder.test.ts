@@ -136,6 +136,112 @@ function seed(): string {
   return sha;
 }
 
+const ROOT_MANIFEST = [
+  'kortix_version: 2',
+  'project:',
+  '  name: builder-test',
+  'default_agent: kortix',
+  'agents:',
+  '  kortix:',
+  '    file: agents/kortix.md',
+  '    skills: all',
+  '',
+].join('\n');
+
+/** The harness-neutral layout: agents/ and skills/ at the root, OpenCode files in harnesses/opencode. */
+function seedRootLayout(extra: Record<string, string> = {}): string {
+  return commit(
+    {
+      'kortix.yaml': ROOT_MANIFEST,
+      'agents/kortix.md': AGENT,
+      'skills/demo/SKILL.md': '---\nname: demo\n---\nDemo skill.\n',
+      'skills/demo/reference.md': 'More.\n',
+      // No SKILL.md anywhere under it: not a skill, never part of a release.
+      'skills/notes/readme.txt': 'not a skill\n',
+      'harnesses/opencode/opencode.jsonc': '{ "$schema": "https://opencode.ai/config.json" }\n',
+      'harnesses/opencode/tools/hello.ts': 'export default {}\n',
+      ...extra,
+    },
+    'seed root layout',
+  );
+}
+
+describe('buildConfigRelease on the root project layout', () => {
+  test('composes harnesses/opencode with the root skills, and the archive holds exactly the listed files', async () => {
+    const sha = seedRootLayout();
+    const release = await buildConfigRelease(project, sha, 'project', { store });
+    const mirror = await refreshMirror(project);
+
+    expect(release.reason).toBeNull();
+    expect(release.config_dir).toBe('harnesses/opencode');
+    // A composed tree: not the config dir's own tree, and absent from the mirror.
+    expect(release.config_tree_id).not.toBe(run('git', ['rev-parse', `${sha}:harnesses/opencode`], mirror));
+    expect(await isTreeObject(mirror, release.config_tree_id!)).toBe(false);
+    expect(release.archive?.url).toBe(
+      `/v1/projects/${project.projectId}/config-archives/${release.config_tree_id}?commit=${sha}`,
+    );
+    expect(release.files?.map(([path]) => path)).toEqual([
+      'opencode.jsonc',
+      'skills/demo/SKILL.md',
+      'skills/demo/reference.md',
+      'tools/hello.ts',
+    ]);
+
+    const archive = store.objects.get(configArchiveKey(project.projectId, release.config_tree_id!));
+    expect(release.archive?.bytes).toBe(archive!.length);
+    const dir = extract(archive!);
+    for (const [path, , blob] of release.files!) expect(blobOf(join(dir, path))).toBe(blob);
+    const listed = run('find', ['.', '-type', 'f'], dir)
+      .split('\n')
+      .map((p) => p.replace(/^\.\//, ''))
+      .sort();
+    expect(listed).toEqual(release.files!.map(([path]) => path));
+  });
+
+  test('the composed tree and its archive are deterministic', async () => {
+    const sha = seedRootLayout();
+    const first = await buildConfigRelease(project, sha, 'project', { store, noCache: true });
+    const firstBytes = store.objects.get(configArchiveKey(project.projectId, first.config_tree_id!))!;
+    __clearConfigReleaseCachesForTests();
+    const again = new MemoryConfigArchiveStore();
+    const second = await buildConfigRelease(project, sha, 'project', { store: again, noCache: true });
+    expect(second.config_tree_id).toBe(first.config_tree_id);
+    expect(second.release_id).toBe(first.release_id);
+    expect(again.objects.get(configArchiveKey(project.projectId, second.config_tree_id!))!.equals(firstBytes)).toBe(true);
+  });
+
+  test('a root skill replaces the config dir skill of the same name; the others stay', async () => {
+    const sha = commit(
+      {
+        'kortix.yaml': MANIFEST('first'),
+        '.kortix/opencode/opencode.jsonc': '{}\n',
+        '.kortix/opencode/agents/kortix.md': AGENT,
+        '.kortix/opencode/skills/demo/SKILL.md': 'legacy demo\n',
+        '.kortix/opencode/skills/other/SKILL.md': 'legacy other\n',
+        'skills/demo/SKILL.md': 'root demo\n',
+      },
+      'mixed layout',
+    );
+    const release = await buildConfigRelease(project, sha, 'project', { store });
+    const mirror = await refreshMirror(project);
+    const byPath = new Map(release.files!.map(([path, , blob]) => [path, blob]));
+    expect(byPath.get('skills/demo/SKILL.md')).toBe(run('git', ['rev-parse', `${sha}:skills/demo/SKILL.md`], mirror));
+    expect(byPath.get('skills/other/SKILL.md')).toBe(
+      run('git', ['rev-parse', `${sha}:.kortix/opencode/skills/other/SKILL.md`], mirror),
+    );
+    expect(byPath.has('agents/kortix.md')).toBe(true);
+  });
+
+  test('a legacy project with an unrelated root skills/ folder keeps its exact tree ID', async () => {
+    seed();
+    const sha = commit({ 'skills/notes/readme.txt': 'code, not a skill\n' }, 'unrelated folder');
+    const release = await buildConfigRelease(project, sha, 'project', { store });
+    const mirror = await refreshMirror(project);
+    expect(release.config_tree_id).toBe(run('git', ['rev-parse', `${sha}:.kortix/opencode`], mirror));
+    expect(release.archive?.url).toBe(`/v1/projects/${project.projectId}/config-archives/${release.config_tree_id}`);
+  });
+});
+
 describe('buildConfigRelease', () => {
   test('returns a descriptor whose files match the archive blob for blob', async () => {
     const sha = seed();

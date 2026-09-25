@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildConfigArchive } from './builder';
+import { buildConfigArchive, readComposedRelease, resolveReleaseTreeSource } from './builder';
 import { publicDownloadTarget, serveConfigArchive, storageOriginIsPublic } from './serve-archive';
 import { MemoryConfigArchiveStore, configArchiveKey } from './store';
 
@@ -187,5 +187,51 @@ describe('serveConfigArchive', () => {
       ...PRIVATE,
     });
     expect(response.status).toBe(413);
+  });
+});
+
+describe('serveConfigArchive — a composed release tree (root skills/)', () => {
+  let rootCommit = '';
+  let composedTree = '';
+
+  beforeAll(async () => {
+    mkdirSync(join(repo, 'harnesses/opencode'), { recursive: true });
+    mkdirSync(join(repo, 'skills/demo'), { recursive: true });
+    writeFileSync(join(repo, 'harnesses/opencode/opencode.jsonc'), '{}\n');
+    writeFileSync(join(repo, 'skills/demo/SKILL.md'), 'demo\n');
+    git('rm', '-rq', '.kortix', 'huge');
+    git('add', '-A');
+    git('commit', '-qm', 'root layout');
+    rootCommit = git('rev-parse', 'HEAD');
+    const resolved = await resolveReleaseTreeSource(repo, project, rootCommit);
+    if (!('source' in resolved)) throw new Error(resolved.reason);
+    composedTree = (await readComposedRelease(repo, resolved.source, { archive: false })).treeId;
+  });
+
+  test('rebuilds the archive from the commit when the store has nothing', async () => {
+    const m = mirrors();
+    const response = await serveConfigArchive(
+      project,
+      composedTree,
+      m.mirror,
+      m.forced,
+      { store: new MemoryConfigArchiveStore(), ...PRIVATE },
+      rootCommit,
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get('X-Kortix-Config-Archive-Source')).toBe('mirror');
+    expect((await response.arrayBuffer()).byteLength).toBeGreaterThan(0);
+  });
+
+  test('404 without the commit, and for a commit that composes a different tree', async () => {
+    const m = mirrors();
+    const store = new MemoryConfigArchiveStore();
+    expect((await serveConfigArchive(project, composedTree, m.mirror, m.forced, { store, ...PRIVATE })).status).toBe(404);
+    expect(
+      (await serveConfigArchive(project, composedTree, m.mirror, m.forced, { store, ...PRIVATE }, commit)).status,
+    ).toBe(404);
+    expect(
+      (await serveConfigArchive(project, composedTree, m.mirror, m.forced, { store, ...PRIVATE }, 'not-a-sha')).status,
+    ).toBe(404);
   });
 });

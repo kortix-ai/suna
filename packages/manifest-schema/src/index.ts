@@ -69,6 +69,7 @@ export {
   SKILLS_DIR,
   agentFileCandidates,
   defaultAgentFile,
+  legacyConfigDir,
   manifestOpencodeConfigDir,
   opencodeConfigDirCandidates,
   safeAgentFile,

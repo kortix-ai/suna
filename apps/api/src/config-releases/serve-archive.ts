@@ -1,7 +1,9 @@
 /**
  * Serve one config archive (docs/specs/config-releases.md, "Download path").
  *
- * 1. The tree ID must name a tree object in the project's mirror, else 404.
+ * 1. The tree ID must name a tree object in the project's mirror, or be the
+ *    composed release tree of the `commit` the path names (config dir plus
+ *    root skills, see `composeReleaseTree`), else 404.
  * 2. The store presigns a download URL. Public host: `302` to it.
  * 3. Loopback or private host: stream the stored bytes. A cloud sandbox
  *    reaches neither local Supabase at 127.0.0.1 nor a self-host `supabase-kong`.
@@ -14,6 +16,7 @@
  */
 
 import { config } from '../config';
+import { runGitCapture } from '../projects/git/mirror';
 import type { GitBackedProject } from '../projects/git/types';
 import { rewriteStorageOrigin } from '../shared/storage-url';
 import { classifyIpHost, sanitizeUrlForLog } from '../snapshots/providers/upload-url-guard';
@@ -22,6 +25,8 @@ import {
   ConfigArchiveTooLargeError,
   isTreeObject,
   MAX_CONFIG_ARCHIVE_BYTES,
+  readComposedRelease,
+  resolveReleaseTreeSource,
   storeConfigArchive,
 } from './builder';
 import {
@@ -121,11 +126,20 @@ export async function serveConfigArchive(
   mirror: () => Promise<string>,
   forcedMirror: () => Promise<string>,
   deps: ServeConfigArchiveDeps = {},
+  /** The commit a composed release tree was built from (the path's `?commit=`). */
+  composedFrom?: string | null,
 ): Promise<Response> {
   let repo = await mirror();
+  // Builds the archive when the store cannot serve it. A composed tree exists
+  // only in a scratch repository, so it is rebuilt from its commit.
+  let build: () => Promise<Buffer> = () => buildConfigArchive(repo, treeId);
   if (!(await isTreeObject(repo, treeId))) {
     repo = await forcedMirror();
-    if (!(await isTreeObject(repo, treeId))) return json(404, { error: 'Not found' });
+    if (!(await isTreeObject(repo, treeId))) {
+      const composed = await composedArchiveBuilder(repo, project, treeId, composedFrom);
+      if (!composed) return json(404, { error: 'Not found' });
+      build = composed;
+    }
   }
 
   const store = deps.store ?? getConfigArchiveStore();
@@ -153,7 +167,7 @@ export async function serveConfigArchive(
 
   let archive: Buffer;
   try {
-    archive = await buildConfigArchive(repo, treeId);
+    archive = await build();
   } catch (error) {
     if (error instanceof ConfigArchiveTooLargeError) {
       return json(413, { error: `config archive exceeds ${MAX_CONFIG_ARCHIVE_BYTES} bytes` });
@@ -163,4 +177,26 @@ export async function serveConfigArchive(
   // Fill the cache for the next request. The response does not wait for it.
   void storeConfigArchive(store, project.projectId, key, archive);
   return gzipResponse(new Uint8Array(archive), treeId, 'mirror');
+}
+
+/**
+ * A builder for the composed release tree of `commit`, when composing it
+ * yields exactly `treeId`; else null. The equality check is what ties the
+ * archive to this project: only a commit in its mirror composes the tree.
+ */
+async function composedArchiveBuilder(
+  repo: string,
+  project: GitBackedProject,
+  treeId: string,
+  commit: string | null | undefined,
+): Promise<(() => Promise<Buffer>) | null> {
+  if (!commit || !/^[0-9a-f]{40}$/.test(commit)) return null;
+  const known = await runGitCapture(['cat-file', '-e', `${commit}^{commit}`], repo);
+  if (known.exitCode !== 0) return null;
+  const resolved = await resolveReleaseTreeSource(repo, project, commit);
+  if (!('source' in resolved) || resolved.source.rootSkills.length === 0) return null;
+  const { source } = resolved;
+  const probe = await readComposedRelease(repo, source, { archive: false });
+  if (probe.treeId !== treeId) return null;
+  return async () => (await readComposedRelease(repo, source, { archive: true })).archive!;
 }

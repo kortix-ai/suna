@@ -271,7 +271,12 @@ projectsApp.openapi(
     tags: ['sessions'],
     summary: 'Download a config archive',
     ...auth,
-    request: { params: z.object({ projectId: z.string(), configTreeId: z.string() }) },
+    request: {
+      params: z.object({ projectId: z.string(), configTreeId: z.string() }),
+      // Set on a composed release tree (config dir plus root skills): the
+      // commit it is rebuilt from when the store cannot serve it.
+      query: z.object({ commit: z.string().optional() }),
+    },
     responses: {
       200: { description: 'The config archive', content: { 'application/gzip': { schema: z.any() } } },
       302: { description: 'Redirect to a signed store URL' },
@@ -312,6 +317,13 @@ projectsApp.openapi(
     if (disabled) return disabled;
 
     const repo = gitProject(project);
-    return serveConfigArchive(repo, configTreeId, () => refreshMirror(repo), () => refreshMirror(repo, true));
+    return serveConfigArchive(
+      repo,
+      configTreeId,
+      () => refreshMirror(repo),
+      () => refreshMirror(repo, true),
+      {},
+      c.req.query('commit') ?? null,
+    );
   },
 );

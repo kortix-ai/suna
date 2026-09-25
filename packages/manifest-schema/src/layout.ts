@@ -81,7 +81,7 @@ export function opencodeConfigDirCandidates(manifest: unknown): string[] {
 }
 
 /** The dir that held agents/ and skills/ in the pre-2026-09 layout. */
-function legacyContentDir(manifest: unknown): string {
+export function legacyConfigDir(manifest: unknown): string {
   return manifestOpencodeConfigDir(manifest) ?? LEGACY_OPENCODE_CONFIG_DIR;
 }
 
@@ -96,10 +96,10 @@ export function agentFileCandidates(manifest: unknown, agentName: string): strin
     const file = safeAgentFile(block.file);
     return file ? [file] : [];
   }
-  return [defaultAgentFile(agentName), `${legacyContentDir(manifest)}/agents/${agentName}.md`];
+  return [defaultAgentFile(agentName), `${legacyConfigDir(manifest)}/agents/${agentName}.md`];
 }
 
 /** Skill roots, most specific first. A skill name found in two roots resolves to the first. */
 export function skillDirs(manifest: unknown): string[] {
-  return [SKILLS_DIR, `${legacyContentDir(manifest)}/skills`];
+  return [SKILLS_DIR, `${legacyConfigDir(manifest)}/skills`];
 }
