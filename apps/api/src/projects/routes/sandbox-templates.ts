@@ -20,6 +20,7 @@ import { AnyObject, SandboxTemplateSchema, projectsApp } from '../lib/app';
 import { loadGitProject } from '../lib/git';
 import { serializeTemplate } from '../lib/serializers';
 import { templateProviderObservation } from '../lib/template-provider-observation';
+import { readJsonObject } from '../../shared/http-body';
 
 // ─── Template CRUD ─────────────────────────────────────────────────────────
 // Full CRUD over `kortix.sandbox_templates`. Shared/platform rows are read-
@@ -91,8 +92,7 @@ projectsApp.openapi(
   // agent-grant fold applies (agent sessions). Managers hold it by default.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
-  let body: Record<string, unknown> = {};
-  try { body = (await c.req.json()) ?? {}; } catch { /* empty */ }
+  const body = await readJsonObject(c);
 
   const slug = typeof body.slug === 'string' ? body.slug.trim() : '';
   if (!slug || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(slug)) {
@@ -180,8 +180,7 @@ projectsApp.openapi(
   // agent-grant fold applies (agent sessions). Managers hold it by default.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
-  let body: Record<string, unknown> = {};
-  try { body = (await c.req.json()) ?? {}; } catch { /* empty */ }
+  const body = await readJsonObject(c);
 
   const patch = {
     name: typeof body.name === 'string' ? body.name.trim() : undefined,

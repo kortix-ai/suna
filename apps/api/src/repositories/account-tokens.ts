@@ -9,6 +9,7 @@ import {
   isAccountToken,
 } from '../shared/crypto';
 import type { AgentGrant } from '@kortix/db';
+import { isUuid } from '../shared/validate';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -417,8 +418,6 @@ export async function validateAccountToken(
   return result;
 }
 
-const TOKEN_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /**
  * Validate a token row by its id, with EXACTLY the checks
  * `validateAccountToken` applies to a presented secret: active, not revoked,
@@ -431,7 +430,7 @@ const TOKEN_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 export async function validateAccountTokenById(
   tokenId: string,
 ): Promise<AccountTokenValidationResult> {
-  if (!TOKEN_ID_RE.test(tokenId)) return { isValid: false, error: 'Invalid token id' };
+  if (!isUuid(tokenId)) return { isValid: false, error: 'Invalid token id' };
   return validateAccountTokenMatching(() => eq(accountTokens.tokenId, tokenId));
 }
 

@@ -162,6 +162,8 @@ import {
   tunnelApp,
   wsHandlers as tunnelWsHandlers,
 } from './tunnel';
+import { isUuid } from './shared/validate';
+import { readJsonObject } from './shared/http-body';
 
 /**
  * The streaming secret relay routes, matched on the raw pathname in
@@ -226,7 +228,6 @@ process.on('uncaughtException', (err: Error) => {
 // ─── App Setup ──────────────────────────────────────────────────────────────
 
 const app = new OpenAPIHono();
-const UUID_PATH_SEGMENT_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Exported so tooling/tests can introspect the route table (app.routes) without
 // booting the server. See the import.meta.main guard around startup below.
 export { app };
@@ -291,12 +292,12 @@ app.use('*', async (c, next) => {
     // Auto-extract common resource IDs from URL patterns for logs/traces.
     const path = c.req.path;
     const projectSessionMatch = path.match(/\/projects\/([^/]+)\/sessions\/([^/]+)/);
-    if (projectSessionMatch && UUID_PATH_SEGMENT_RE.test(projectSessionMatch[1])) {
+    if (projectSessionMatch && isUuid(projectSessionMatch[1])) {
       setContextField('projectId', projectSessionMatch[1]);
       setContextField('sessionId', projectSessionMatch[2]);
     } else {
       const projectMatch = path.match(/\/projects\/([^/]+)/);
-      if (projectMatch && UUID_PATH_SEGMENT_RE.test(projectMatch[1])) {
+      if (projectMatch && isUuid(projectMatch[1])) {
         setContextField('projectId', projectMatch[1]);
       }
     }
@@ -765,7 +766,7 @@ app.openapi(
       return c.json({ error: 'Admin access required' }, 403);
     }
     if (!hasDatabase) return c.json({ error: 'Database not configured' }, 503);
-    const body = await c.req.json().catch(() => ({}));
+    const body = await readJsonObject(c);
     const maintenanceConfig = {
       ...DEFAULT_MAINTENANCE,
       ...body,
@@ -1811,10 +1812,7 @@ async function dispatchInbound(
 
     const tunnelId = url.searchParams.get('tunnelId');
 
-    if (
-      !tunnelId ||
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tunnelId)
-    ) {
+    if (!isUuid(tunnelId)) {
       return new Response(JSON.stringify({ error: 'A valid tunnelId is required' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' },
@@ -1839,8 +1837,8 @@ async function dispatchInbound(
     // Include the source address so an unauthenticated attacker who learns a
     // tunnelId cannot consume the real machine's reconnect budget.
     const { tunnelRateLimiter } = await import('./tunnel/core/rate-limiter');
-    const { clientIpFromHeaders } = await import('./shared/client-ip');
-    const clientIp = clientIpFromHeaders((name) => req.headers.get(name)) ?? 'unknown';
+    const { clientKeyFromHeaders } = await import('./shared/client-ip');
+    const clientIp = clientKeyFromHeaders((name) => req.headers.get(name));
     const wsIpRateCheck = tunnelRateLimiter.check('wsConnectIp', clientIp);
     if (!wsIpRateCheck.allowed) {
       return new Response(

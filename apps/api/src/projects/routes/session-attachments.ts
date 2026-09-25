@@ -14,7 +14,7 @@ import {
 } from "../lib/access";
 import { callerKortixSessionId } from "../lib/caller-session";
 import { sessionAttachmentStore } from "../lib/session-attachments";
-import { UUID_V4_REGEX } from "../lib/serializers";
+import { isUuid } from '../../shared/validate';
 
 const path = "/{projectId}/sessions/{sessionId}/attachments";
 const params = z.object({
@@ -96,7 +96,7 @@ projectsApp.openapi(
     if (
       !(file instanceof File) ||
       typeof attachmentId !== "string" ||
-      !UUID_V4_REGEX.test(attachmentId)
+      !isUuid(attachmentId)
     ) {
       return c.json(
         { error: "A file and attachment_id UUID are required" },
