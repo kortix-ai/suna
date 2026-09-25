@@ -186,7 +186,11 @@ function client(): ConfigReleaseApi {
 const prepared: string[] = []
 function converge(
   oc: FakeOpencode,
-  over: { api?: ConfigReleaseApi | null; turnInFlight?: () => Promise<boolean | null> } = {},
+  over: {
+    api?: ConfigReleaseApi | null
+    turnInFlight?: () => Promise<boolean | null>
+    delayBeforeSwapMs?: number
+  } = {},
 ) {
   return convergeConfigRelease({
     cfg: cfg(),
@@ -195,6 +199,7 @@ function converge(
     managedSkillsDir: overlay,
     api: over.api === undefined ? client() : over.api,
     turnInFlight: over.turnInFlight,
+    delayBeforeSwapMs: over.delayBeforeSwapMs,
     proofBudgetMs: 1_500,
     prepare: async (dir) => {
       prepared.push(dir)
@@ -952,6 +957,43 @@ describe('a turn that starts while the release is being built keeps its process'
     expect(asked).toBeGreaterThan(1)
     expect(response.outcome).not.toBe('applied')
     expect(response.reason).toContain('turn')
+    expect(oc.state.reloads).toBe(0)
+  })
+})
+
+/**
+ * The fault-injection delay stands in for the seconds a real box spends
+ * downloading and extracting a release. It must widen the window and change no
+ * decision: the gate still runs before it, and the promotion check still runs
+ * after it.
+ */
+describe('delayBeforeSwapMs — the window, made observable', () => {
+  test('a delay holds the convergence and still applies the release', async () => {
+    const release = baseRelease()
+    serveRelease(api, release)
+    const oc = fakeOpencode()
+    const started = Date.now()
+
+    const response = await converge(oc, { delayBeforeSwapMs: 400 })
+
+    expect(Date.now() - started).toBeGreaterThanOrEqual(380)
+    expect(response.outcome).toBe('applied')
+    expect(oc.state.reloads).toBe(1)
+  })
+
+  test('a turn that starts DURING the delay still stops the swap', async () => {
+    const release = baseRelease()
+    serveRelease(api, release)
+    const oc = fakeOpencode()
+    let asked = 0
+    const turnInFlight = async () => {
+      asked += 1
+      return asked > 1
+    }
+
+    const response = await converge(oc, { delayBeforeSwapMs: 200, turnInFlight })
+
+    expect(response.outcome).not.toBe('applied')
     expect(oc.state.reloads).toBe(0)
   })
 })

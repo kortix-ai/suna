@@ -26,6 +26,7 @@ import {
 } from '../../config-release/api-client'
 import type { ConfigReleaseDescriptor } from '../../config-release/descriptor'
 import { clearConfigReleaseNotice, writeConfigReleaseNotice } from '../../config-release/notice'
+import { MAX_SWAP_DELAY_MS } from '../control'
 import { logger } from '../../logger'
 import { ensureInjectedManagedSkills } from '../../managed-skills'
 import { serveConfigDir, servingConfigDir } from './boot-link'
@@ -229,6 +230,20 @@ export interface ConvergeDeps {
   turnInFlight?: () => Promise<boolean | null>
   /** Proven check budget for a release already running; the spec's 90 s. */
   proofBudgetMs?: number
+  /**
+   * FAULT INJECTION, in the same spirit as `verify_fail` on `POST
+   * /kortix/refresh`: hold the convergence between the turn gate and the swap.
+   *
+   * The window this widens is the one DEF-DEV-1 lived in — the seconds a real
+   * box spends downloading and extracting a release. Without it a test that
+   * wants "a prompt arrives mid-convergence" has to win a race it cannot see;
+   * with it the race is a schedule. It changes no decision: the same gate runs
+   * before it and the same `mayPromote` runs after it.
+   *
+   * Bounded by `MAX_SWAP_DELAY_MS`. The route that accepts it is already
+   * authorized, and a caller who can reach it can restart opencode outright.
+   */
+  delayBeforeSwapMs?: number
 }
 
 type ConfigDepsOptions = Omit<NonNullable<Parameters<typeof ensureOpencodeConfigDeps>[1]>, 'platformOwned'>
@@ -651,6 +666,16 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
 
   const notRunning = await requireRunning()
   if (notRunning) return notRunning
+
+  // Fault injection only; zero in production. Stands in for the seconds the
+  // download and extract below cost on a real box — see `delayBeforeSwapMs`.
+  const injectedDelay = Math.min(Math.max(deps.delayBeforeSwapMs ?? 0, 0), MAX_SWAP_DELAY_MS)
+  if (injectedDelay > 0) {
+    logger.warn('[config-release] holding the convergence before the swap (fault injection)', {
+      ms: injectedDelay,
+    })
+    await new Promise((resolve) => setTimeout(resolve, injectedDelay))
+  }
 
   // 5–6. Download, extract, verify, prepare, seal, rename. An intact copy
   //      from an earlier attempt is reused without a download.

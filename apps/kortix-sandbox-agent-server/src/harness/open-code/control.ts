@@ -375,7 +375,8 @@ export function createOpenCodeControlService(
         },
         // Config releases (docs/specs/config-releases.md). The descriptor is
         // always fetched from the API; nothing here takes one as input.
-        convergeConfig: () => convergeConfigRelease({ cfg, opencode }),
+        convergeConfig: (options) =>
+          convergeConfigRelease({ cfg, opencode, delayBeforeSwapMs: options?.delayBeforeSwapMs }),
         async abort() {
           const sessionId = readOpenCodeSessionPin()
           if (!sessionId) {
